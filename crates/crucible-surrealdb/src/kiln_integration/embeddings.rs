@@ -397,9 +397,6 @@ pub async fn store_embeddings_batch(
 
     let normalized_id = normalize_document_id(note_id);
     let chunk_scope = chunk_namespace(&normalized_id);
-    let escaped_entity = escape_record_id(record_body(&normalized_id));
-
-    let mut sql_statements = Vec::with_capacity(embeddings.len() * 2);
     let mut chunk_ids = Vec::with_capacity(embeddings.len());
 
     for embedding in embeddings {
@@ -411,82 +408,48 @@ pub async fn store_embeddings_batch(
         let dims = embedding.dimensions;
         let stored_model = format!("{}::{}", embedding.model, escaped_chunk);
 
-        let upsert_sql = format!(
-            "UPSERT embeddings:⟨{chunk}⟩ SET entity_id = entities:⟨{entity}⟩, embedding = {vector:?}, dimensions = {dims}, model = '{model}', model_version = '{version}', content_used = '' RETURN NONE;",
-            chunk = escaped_chunk,
-            entity = escaped_entity,
-            vector = embedding.vector,
-            dims = dims,
-            model = stored_model.replace('\'', "\\'"),
-            version = embedding.model.replace('\'', "\\'"),
-        );
-        sql_statements.push(upsert_sql);
+        upsert_embedding_record(
+            client,
+            &chunk_id,
+            &normalized_id,
+            &embedding.vector,
+            dims,
+            &stored_model,
+            &embedding.model,
+            "",
+        )
+        .await?;
 
-        let relate_sql = format!(
-            "RELATE entities:⟨{entity}⟩ -> has_embedding -> embeddings:⟨{chunk}⟩;",
-            entity = escaped_entity,
-            chunk = escaped_chunk
-        );
-        sql_statements.push(relate_sql);
+        relate_embedding_record(client, &normalized_id, &chunk_id).await?;
 
         chunk_ids.push(chunk_id);
     }
 
-    let batch_sql = sql_statements.join("\n");
+    debug!(
+        "Stored {} embeddings for {}",
+        embeddings.len(),
+        normalized_id
+    );
 
-    let mut last_error = None;
-    for attempt in 0..MAX_RETRIES {
-        match client.query(&batch_sql, &[]).await {
-            Ok(_) => {
-                debug!(
-                    "Stored {} embeddings for {} in batch",
-                    embeddings.len(),
-                    normalized_id
+    if let Some(first_embedding) = embeddings.first() {
+        let dims = first_embedding.dimensions;
+        let current_dims = MTREE_INDEX_DIMENSIONS.load(Ordering::Relaxed);
+
+        if !MTREE_INDEX_ENSURED.load(Ordering::Relaxed) || current_dims != dims {
+            if let Err(e) = ensure_embedding_index(client, dims).await {
+                warn!(
+                    "Failed to create MTREE index (search will use fallback): {}",
+                    e
                 );
-
-                if let Some(first_embedding) = embeddings.first() {
-                    let dims = first_embedding.dimensions;
-                    let current_dims = MTREE_INDEX_DIMENSIONS.load(Ordering::Relaxed);
-
-                    if !MTREE_INDEX_ENSURED.load(Ordering::Relaxed) || current_dims != dims {
-                        if let Err(e) = ensure_embedding_index(client, dims).await {
-                            warn!(
-                                "Failed to create MTREE index (search will use fallback): {}",
-                                e
-                            );
-                        } else {
-                            MTREE_INDEX_ENSURED.store(true, Ordering::Relaxed);
-                            MTREE_INDEX_DIMENSIONS.store(dims, Ordering::Relaxed);
-                            info!("Created MTREE vector index with {} dimensions", dims);
-                        }
-                    }
-                }
-
-                return Ok(chunk_ids);
-            }
-            Err(e) => {
-                let error_msg = e.to_string();
-                if is_retryable_error(&error_msg) && attempt < MAX_RETRIES - 1 {
-                    let backoff = INITIAL_BACKOFF_MS * (1 << attempt);
-                    debug!(
-                        "Transaction conflict on batch embedding (attempt {}), retrying in {}ms",
-                        attempt + 1,
-                        backoff
-                    );
-                    tokio::time::sleep(tokio::time::Duration::from_millis(backoff)).await;
-                    last_error = Some(e);
-                } else {
-                    return Err(anyhow::anyhow!("Failed to store embeddings batch: {}", e));
-                }
+            } else {
+                MTREE_INDEX_ENSURED.store(true, Ordering::Relaxed);
+                MTREE_INDEX_DIMENSIONS.store(dims, Ordering::Relaxed);
+                info!("Created MTREE vector index with {} dimensions", dims);
             }
         }
     }
 
-    Err(anyhow::anyhow!(
-        "Failed to store embeddings batch after {} retries: {}",
-        MAX_RETRIES,
-        last_error.map(|e| e.to_string()).unwrap_or_default()
-    ))
+    Ok(chunk_ids)
 }
 
 /// Get note embeddings from database
@@ -626,11 +589,9 @@ pub async fn clear_document_embeddings(client: &SurrealClient, document_id: &str
         format!("notes:{}", document_id)
     };
 
-    let query_sql = format!(
-        "SELECT id FROM (SELECT ->has_embedding->id AS emb_ids FROM {})[0].emb_ids",
-        note_id.replace("'", "\\'")
-    );
-    let query_result = client.query(&query_sql, &[]).await?;
+    let query_sql = "SELECT id FROM (SELECT ->has_embedding->id AS emb_ids FROM type::thing($note_id))[0].emb_ids";
+    let params = vec![serde_json::json!({ "note_id": note_id })];
+    let query_result = client.query(query_sql, &params).await?;
 
     let mut embedding_ids = Vec::new();
     if let Some(record) = query_result.records.first() {
@@ -645,15 +606,17 @@ pub async fn clear_document_embeddings(client: &SurrealClient, document_id: &str
         }
     }
 
-    let delete_edges_sql = format!("DELETE {} -> has_embedding", note_id.replace("'", "\\'"));
+    let delete_edges_sql = "DELETE type::thing($note_id) -> has_embedding";
+    let params = vec![serde_json::json!({ "note_id": note_id })];
     client
-        .query(&delete_edges_sql, &[])
+        .query(delete_edges_sql, &params)
         .await
         .map_err(|e| anyhow::anyhow!("Failed to delete has_embedding edges: {}", e))?;
 
     for embedding_id in &embedding_ids {
-        let delete_sql = format!("DELETE {}", embedding_id.replace("'", "\\'"));
-        client.query(&delete_sql, &[]).await?;
+        let delete_sql = "DELETE type::thing($emb_id)";
+        let params = vec![serde_json::json!({ "emb_id": embedding_id })];
+        client.query(delete_sql, &params).await?;
     }
 
     debug!(
@@ -674,14 +637,14 @@ pub async fn get_document_chunk_hashes(
     let normalized = normalize_document_id(doc_id);
     let scope = chunk_namespace(&normalized);
 
-    let sql = format!(
-        "SELECT chunk_position, chunk_hash FROM embeddings WHERE id >= 'embeddings:{}' AND id < 'embeddings:{}~'",
-        scope.replace('\'', "\\'"),
-        scope.replace('\'', "\\'")
-    );
+    let sql = "SELECT chunk_position, chunk_hash FROM embeddings WHERE id >= type::thing('embeddings', $scope_start) AND id < type::thing('embeddings', $scope_end)";
+    let params = vec![serde_json::json!({
+        "scope_start": scope,
+        "scope_end": format!("{}~", scope)
+    })];
 
     let result = client
-        .query(&sql, &[])
+        .query(sql, &params)
         .await
         .map_err(|e| anyhow::anyhow!("Failed to query chunk hashes: {}", e))?;
 
