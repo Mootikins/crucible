@@ -37,6 +37,41 @@ This file provides essential information for AI agents to understand and contrib
 | `crucible-config` | Configuration types and loading | `AppConfig`, provider configs |
 | `crucible-watch` | File system watching | Change detection |
 | `crucible-acp` | Agent Context Protocol | Protocol types |
+| `crucible-daemon` | Daemon server (cru-server) | `Server`, `SessionManager`, `AgentManager` |
+| `crucible-daemon-client` | Daemon client library | `DaemonClient`, `DaemonStorageClient` |
+
+### Daemon Architecture
+
+Crucible uses a **separate daemon binary** (`cru-server`) for multi-session support:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  CLI (cru)                    Daemon (cru-server)           │
+│  ┌─────────────┐              ┌──────────────────────────┐  │
+│  │ cru chat    │◄────────────►│ Unix Socket Server       │  │
+│  │ cru search  │   JSON-RPC   │ ($XDG_RUNTIME_DIR/       │  │
+│  │ cru process │              │  crucible.sock)          │  │
+│  └─────────────┘              │                          │  │
+│                               │ Managers:                │  │
+│  storage.mode = "embedded"    │ • KilnManager            │  │
+│  → Direct DB access           │ • SessionManager         │  │
+│                               │ • AgentManager           │  │
+│  storage.mode = "daemon"      │ • SubscriptionManager    │  │
+│  → RPC to cru-server          └──────────────────────────┘  │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Key concepts:**
+- **Socket path**: `$CRUCIBLE_SOCKET` env var, or `$XDG_RUNTIME_DIR/crucible.sock`, or `/tmp/crucible.sock`
+- **Storage modes**: `embedded` (default, direct DB), `daemon` (RPC to cru-server), `sqlite`, `lightweight`
+- **Auto-spawn**: `DaemonClient::connect_or_start()` spawns `cru-server` if not running
+- **Protocol**: JSON-RPC 2.0 over Unix socket with async event streaming
+
+**Daemon RPC methods:**
+- Kiln: `kiln.open`, `kiln.close`, `kiln.list`, `search_vectors`, `list_notes`, `get_note_by_name`
+- Sessions: `session.create`, `session.list`, `session.get`, `session.pause`, `session.resume`, `session.end`
+- Agents: `session.configure_agent`, `session.send_message`, `session.cancel`
+- Events: `session.subscribe`, `session.unsubscribe`
 
 ### Type Ownership
 

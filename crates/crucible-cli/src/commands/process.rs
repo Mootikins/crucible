@@ -24,7 +24,7 @@ use walkdir::WalkDir;
 use crate::config::CliConfig;
 use crate::event_system::initialize_event_system;
 use crate::{factories, output};
-use crucible_daemon_client::{lifecycle, DaemonClient};
+use crucible_daemon_client::DaemonClient;
 use crucible_watch::traits::{DebounceConfig, HandlerConfig, WatchConfig};
 use crucible_watch::{EventFilter, WatchMode};
 
@@ -81,8 +81,7 @@ pub async fn execute(
     };
 
     // Track if we need to restart daemon later
-    let socket = lifecycle::default_socket_path();
-    let stopped_daemon = false; // We no longer stop the daemon for processing
+    let stopped_daemon = false;
 
     // Initialize Reactor for note lifecycle events
     // This allows Rune handlers to react to note processing
@@ -347,9 +346,8 @@ pub async fn execute(
 
     // Restart daemon if we stopped it
     if stopped_daemon && !watch {
-        let storage_config = config.storage.clone().unwrap_or_default();
         output::info("Restarting daemon...");
-        if let Err(e) = lifecycle::ensure_daemon(&socket, storage_config.idle_timeout_secs).await {
+        if let Err(e) = DaemonClient::connect_or_start().await {
             warn!("Failed to restart daemon: {}", e);
         }
     }

@@ -1,16 +1,13 @@
-//! Client library for connecting to Crucible daemon
+//! Client library for connecting to Crucible daemon (cru-server)
 //!
-//! This crate provides two connection patterns:
-//!
-//! 1. **Daemon binary** (re-exported from crucible-daemon): Separate daemon binary
-//! 2. **Single-binary db-server** (lifecycle module): Fork `cru db-server` on demand
+//! Connection patterns:
+//! - `DaemonClient::connect()` - connect to running daemon
+//! - `DaemonClient::connect_or_start()` - connect or spawn daemon if not running
 //!
 //! Daemon detection is socket-based:
-//! - If socket exists and connectable -> daemon running
-//! - If socket exists but not connectable -> stale socket, safe to replace
-//! - If socket doesn't exist -> daemon not running
-//!
-//! For new code, prefer the single-binary pattern using `lifecycle::ensure_daemon()`.
+//! - Socket exists and connectable -> daemon running
+//! - Socket exists but not connectable -> stale socket, safe to replace
+//! - Socket doesn't exist -> daemon not running
 
 mod agent;
 mod client;
@@ -21,5 +18,5 @@ pub use agent::DaemonAgentHandle;
 pub use client::{DaemonClient, SessionEvent};
 pub use storage::{DaemonNoteStore, DaemonStorageClient};
 
-// Re-exports from crucible-daemon for convenience
-pub use crucible_daemon::socket_path as legacy_socket_path;
+// Re-export canonical socket path
+pub use crucible_daemon::socket_path;

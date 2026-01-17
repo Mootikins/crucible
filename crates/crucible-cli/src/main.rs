@@ -118,7 +118,6 @@ async fn main() -> Result<()> {
     let uses_stdio = match &cli.command {
         Some(Commands::Mcp { stdio, .. }) => *stdio,
         Some(Commands::Chat { .. }) => true,
-        Some(Commands::DbServer { .. }) => true, // Runs in background, needs file logging
         _ => false,
     };
 
@@ -155,7 +154,6 @@ async fn main() -> Result<()> {
             let log_file_name = match &cli.command {
                 Some(Commands::Mcp { .. }) => "mcp.log",
                 Some(Commands::Chat { .. }) => "chat.log",
-                Some(Commands::DbServer { .. }) => "db-server.log",
                 _ => "crucible.log",
             };
 
@@ -204,18 +202,11 @@ async fn main() -> Result<()> {
     // when needed, and the Arc-wrapped SurrealClient ensures cheap cloning.
 
     // Process any pending files on startup using integrated blocking processing
-    // Skip for REPL mode, db-server (needs fast startup), chat (handles own processing),
-    // or when explicitly disabled
+    // Skip for REPL mode, chat (handles own processing), or when explicitly disabled
     match &cli.command {
         None => {
             // Chat mode - process files in background like other commands
             debug!("No command specified, will use chat mode");
-        }
-        Some(Commands::DbServer { .. }) => {
-            // db-server must start quickly - it's forked by ensure_daemon() which
-            // waits with a timeout for the socket to become available. File processing
-            // would delay socket binding and cause connection timeouts.
-            debug!("db-server mode - skipping file processing for fast startup");
         }
         Some(Commands::Chat { .. }) => {
             // Chat command handles its own file processing (background for TUI modes)
@@ -366,13 +357,6 @@ async fn main() -> Result<()> {
 
         Some(Commands::Skills(cmd)) => {
             commands::skills::execute(config, cmd).await?;
-        }
-
-        Some(Commands::DbServer {
-            socket,
-            idle_timeout,
-        }) => {
-            commands::db_server::execute(config, socket, idle_timeout).await?;
         }
 
         Some(Commands::Init {
