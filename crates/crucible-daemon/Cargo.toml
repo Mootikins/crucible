@@ -38,9 +38,6 @@ default = ["storage-sqlite"]
 storage-surrealdb = ["dep:crucible-surrealdb"]
 storage-sqlite = ["dep:crucible-sqlite"]
 
-# Enable real-time event subscriptions
-subscriptions = []
-
 # Test tier flags (see justfile for usage)
 test-fixtures = []       # Tests using docs/ kiln or examples/test-kiln
 test-infrastructure = [] # Tests requiring Ollama, embedding endpoints
