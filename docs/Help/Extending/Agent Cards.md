@@ -19,9 +19,15 @@ Agent cards define who your AI assistants are and what they can do. Each card is
 
 An agent card answers these questions:
 - **Who is this agent?** - Name, role, personality
-- **What can it do?** - Which tools it can access
+- **What can it do?** - Which tools and MCPs it can access
 - **How does it behave?** - System prompt and instructions
-- **What model powers it?** - LLM configuration
+- **What kind of model?** - Specialty (not specific model)
+
+## File Location
+
+Place agent cards in:
+- `~/.config/crucible/agents/` - Personal agents
+- `KILN/Agents/` - Project-specific agents (shared with team)
 
 ## Basic Example
 
@@ -30,15 +36,14 @@ Create `Agents/Researcher.md`:
 ```markdown
 ---
 description: Explores and synthesizes knowledge
-type: agent
-model: llama3.2
+specialty: reasoning
 tools:
-  - semantic_search
-  - read_note
-  - search_by_tags
+  semantic_search: true
+  read_note: true
+  create_note: ask
+mcps:
+  - context7
 ---
-
-# Researcher
 
 You are a research assistant specializing in knowledge exploration.
 
@@ -48,23 +53,80 @@ You are a research assistant specializing in knowledge exploration.
 - Cite sources using [[wikilinks]]
 - Synthesize information from multiple notes
 - Acknowledge gaps in knowledge
-
-## Available Tools
-
-You can search semantically, read notes, and filter by tags.
 ```
 
 ## Frontmatter Fields
 
 | Field | Required | Description |
 |-------|----------|-------------|
-| `title` | Yes | Agent name |
 | `description` | Yes | Brief description |
-| `type` | Yes | Must be `agent` |
-| `model` | No | LLM model override |
-| `tools` | No | List of allowed tools |
-| `temperature` | No | Response creativity (0-1) |
-| `max_tokens` | No | Response length limit |
+| `specialty` | Yes | Model category (coder, vision, reasoning, etc.) |
+| `tools` | No | Tool permissions (true/ask/deny) |
+| `mcps` | No | List of MCP servers to connect |
+| `model` | No | Specific model override (avoid for portability) |
+
+## Specialty Field
+
+The `specialty` field maps to a model category from your config. This keeps agent cards portable - recipients use their own preferred model for each specialty.
+
+| Specialty | Use Case |
+|-----------|----------|
+| `coder` | General programming tasks |
+| `vision` | Image analysis, diagrams |
+| `designer` | UI/UX, visual design |
+| `writing` | Documentation, prose |
+| `reasoning` | Complex analysis, planning |
+
+Configure your preferred models in `config.toml`:
+
+```toml
+[models]
+coder = "claude-sonnet-4"
+vision = "claude-sonnet-4"
+reasoning = "o1-preview"
+writing = "claude-haiku"
+```
+
+## Tool Permissions
+
+Tools can have three permission levels that interact with [[Help/TUI/Modes|runtime modes]]:
+
+```yaml
+tools:
+  semantic_search: true    # Always allowed
+  write_file: ask          # Prompt for permission
+  execute_command: deny    # Never allowed for this agent
+```
+
+Permission values:
+- `true` or `allow` - Auto-approve
+- `ask` - Prompt user for each use  
+- `false` or `deny` - Block the tool
+
+Tools not listed use the current mode's default behavior.
+
+## MCP Connections
+
+The `mcps` field lists MCP servers this agent can access:
+
+```yaml
+mcps:
+  - github        # GitHub API access
+  - context7      # Documentation lookup
+  - filesystem    # Local file access
+```
+
+MCP servers must be configured in your `config.toml`:
+
+```toml
+[mcps.github]
+command = "npx"
+args = ["-y", "@anthropic/mcp-server-github"]
+env = { GITHUB_TOKEN = "..." }
+
+[mcps.context7]
+url = "https://context7.example.com"
+```
 
 ## Available Tools
 
@@ -78,14 +140,14 @@ Common tools to include:
 
 **Note tools:**
 - `read_note` - Read note content
-- `create_note` - Create new notes (requires act mode)
-- `update_note` - Modify notes (requires act mode)
+- `create_note` - Create new notes
+- `update_note` - Modify notes
 
 **Kiln tools:**
 - `list_notes` - List all notes
 - `get_stats` - Kiln statistics
 
-**External tools (if [[Help/Extending/MCP Gateway|MCP Gateway]] configured):**
+**External tools (via MCP):**
 - `gh_search_code` - GitHub code search
 - `fs_read_file` - Filesystem access
 

@@ -32,6 +32,14 @@ Standard readline keybindings for the input box:
 | `End` | Scroll to bottom |
 | `Ctrl+C` | Cancel current operation / Exit |
 
+## Mode Switching
+
+| Key | Action |
+|-----|--------|
+| `Shift+Tab` | Cycle mode: Default → Plan → Auto → Default |
+
+See [[Help/TUI/Modes]] for details on what each mode does.
+
 ## Display Toggles
 
 | Key | Action |
