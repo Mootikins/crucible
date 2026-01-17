@@ -76,7 +76,7 @@ colored = { workspace = true }
 
 # Interactive UI
 indicatif = { workspace = true }
-dialoguer = "0.11"
+dialoguer = "0.12"
 
 # Logging
 tracing = { workspace = true }
@@ -88,7 +88,7 @@ crucible-rune = { workspace = true }
 
 # File system utilities
 walkdir = "2.4"
-rust-embed = { version = "8.5", features = ["include-exclude", "interpolate-folder-path"] }
+rust-embed = { version = "8.11", features = ["include-exclude", "interpolate-folder-path"] }
 
 # Rune scripting
 # rune = { workspace = true }  # Commented out - not MVP critical
@@ -136,10 +136,10 @@ tokio-test = { workspace = true }
 wiremock = { workspace = true }
 mockall = { workspace = true }
 toml = { workspace = true }
-blake3 = "1.5"  # For hash verification tests
-serial_test = "3.2"  # For preventing parallel test execution with shared env vars
+blake3 = "1.8"  # For hash verification tests
+serial_test = "3.3"  # For preventing parallel test execution with shared env vars
 scopeguard = "1.2"  # For RAII-style cleanup in tests
-insta = { version = "1.40", features = ["filters"] }  # Snapshot testing for TUI
+insta = { version = "1.46", features = ["filters"] }  # Snapshot testing for TUI
 expectrl = { workspace = true }  # PTY-based TUI testing
 
 # Additional dependencies for resource constraint testing
