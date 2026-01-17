@@ -51,6 +51,13 @@ pub struct AgentConfig {
 
     /// Optional max tokens
     pub max_tokens: Option<u32>,
+
+    /// Additional provider-specific parameters (e.g., parallel_tool_calls for OpenAI)
+    ///
+    /// Note: `parallel_tool_calls` tells OpenAI to return multiple tool calls in a single
+    /// response. However, Rig currently executes these sequentially. True parallel execution
+    /// would require changes to Rig's streaming implementation.
+    pub additional_params: Option<serde_json::Value>,
 }
 
 impl AgentConfig {
@@ -81,6 +88,7 @@ impl AgentConfig {
             system_prompt: card.system_prompt.clone(),
             temperature,
             max_tokens,
+            additional_params: None,
         })
     }
 
@@ -91,6 +99,7 @@ impl AgentConfig {
             system_prompt: system_prompt.into(),
             temperature: None,
             max_tokens: None,
+            additional_params: None,
         }
     }
 
@@ -103,6 +112,12 @@ impl AgentConfig {
     /// Set max tokens
     pub fn with_max_tokens(mut self, tokens: u32) -> Self {
         self.max_tokens = Some(tokens);
+        self
+    }
+
+    /// Set additional provider-specific parameters
+    pub fn with_additional_params(mut self, params: serde_json::Value) -> Self {
+        self.additional_params = Some(params);
         self
     }
 }
@@ -156,16 +171,15 @@ where
 {
     let mut builder: AgentBuilder<C::CompletionModel> = client.agent(&config.model);
 
-    // Set preamble (system prompt)
     builder = builder.preamble(&config.system_prompt);
 
-    // Set temperature if specified
     if let Some(temp) = config.temperature {
         builder = builder.temperature(temp);
     }
 
-    // Note: max_tokens would be set on individual requests, not on the agent builder
-    // The Rig AgentBuilder doesn't have a max_tokens method
+    if let Some(ref params) = config.additional_params {
+        builder = builder.additional_params(params.clone());
+    }
 
     Ok(builder.build())
 }
@@ -215,6 +229,10 @@ where
         builder = builder.temperature(temp);
     }
 
+    if let Some(ref params) = config.additional_params {
+        builder = builder.additional_params(params.clone());
+    }
+
     let agent = builder
         .tool(ReadFileTool::new(ctx.clone()))
         .tool(EditFileTool::new(ctx.clone()))
@@ -245,15 +263,16 @@ where
 
     let mut builder: AgentBuilder<C::CompletionModel> = client.agent(&config.model);
 
-    // Set preamble (system prompt)
     builder = builder.preamble(&config.system_prompt);
 
-    // Set temperature if specified
     if let Some(temp) = config.temperature {
         builder = builder.temperature(temp);
     }
 
-    // Add tools based on model size and kiln context
+    if let Some(ref params) = config.additional_params {
+        builder = builder.additional_params(params.clone());
+    }
+
     let agent = match (model_size.is_read_only(), kiln_ctx) {
         (true, None) => builder
             .tool(ReadFileTool::new(ctx.clone()))
@@ -331,16 +350,16 @@ where
 
     let mut builder: AgentBuilder<C::CompletionModel> = client.agent(&config.model);
 
-    // Set preamble (system prompt)
     builder = builder.preamble(&config.system_prompt);
 
-    // Set temperature if specified
     if let Some(temp) = config.temperature {
         builder = builder.temperature(temp);
     }
 
-    // Add tools based on model size
-    // Note: Rig's AgentBuilder requires static tool types, so we conditionally add them
+    if let Some(ref params) = config.additional_params {
+        builder = builder.additional_params(params.clone());
+    }
+
     if model_size.is_read_only() {
         // Small models: read-only tools only
         let agent = builder

@@ -2,7 +2,64 @@
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::path::PathBuf;
+
+/// Agent configuration bound to a session.
+///
+/// This captures everything needed to reconstruct an agent when resuming
+/// a session. The configuration is inlined (not just a reference) so that
+/// sessions are self-contained and reproducible.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct SessionAgent {
+    /// Agent type: "acp" (external) or "internal" (built-in)
+    pub agent_type: String,
+
+    /// ACP agent name (e.g., "opencode", "claude") - only for ACP agents
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent_name: Option<String>,
+
+    /// Provider key (e.g., "ollama", "openai", "anthropic") - only for internal agents
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider_key: Option<String>,
+
+    /// LLM provider identifier
+    pub provider: String,
+
+    /// Model identifier (e.g., "llama3.2", "gpt-4o", "claude-3-5-sonnet")
+    pub model: String,
+
+    /// System prompt (full text, inlined from agent card if applicable)
+    pub system_prompt: String,
+
+    /// Generation temperature (0.0 - 2.0)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub temperature: Option<f64>,
+
+    /// Maximum output tokens
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_tokens: Option<u32>,
+
+    /// Maximum context window tokens
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_context_tokens: Option<usize>,
+
+    /// Custom endpoint URL (for self-hosted models)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub endpoint: Option<String>,
+
+    /// Environment variable overrides for ACP agents
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub env_overrides: HashMap<String, String>,
+
+    /// MCP servers this agent can use
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub mcp_servers: Vec<String>,
+
+    /// Source agent card name (for reference, not used for reconstruction)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent_card_name: Option<String>,
+}
 
 /// Generate a session ID with the given type prefix.
 ///
@@ -71,6 +128,10 @@ pub struct Session {
     /// Optional title/description for the session
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
+
+    /// Agent configuration for this session (persisted for resume)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent: Option<SessionAgent>,
 }
 
 impl Session {
@@ -91,6 +152,7 @@ impl Session {
             started_at: Utc::now(),
             continued_from: None,
             title: None,
+            agent: None,
         }
     }
 
@@ -121,6 +183,12 @@ impl Session {
     /// Set the session title.
     pub fn with_title(mut self, title: impl Into<String>) -> Self {
         self.title = Some(title.into());
+        self
+    }
+
+    /// Set the agent configuration.
+    pub fn with_agent(mut self, agent: SessionAgent) -> Self {
+        self.agent = Some(agent);
         self
     }
 
@@ -252,6 +320,9 @@ pub struct SessionSummary {
     pub title: Option<String>,
     /// Number of events in the session
     pub event_count: usize,
+    /// Agent model name (for display)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent_model: Option<String>,
 }
 
 impl From<&Session> for SessionSummary {
@@ -265,6 +336,7 @@ impl From<&Session> for SessionSummary {
             started_at: session.started_at,
             title: session.title.clone(),
             event_count: 0, // Would be populated from storage
+            agent_model: session.agent.as_ref().map(|a| a.model.clone()),
         }
     }
 }
@@ -356,5 +428,107 @@ mod tests {
         let parsed: Session = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed.session_type, session.session_type);
         assert_eq!(parsed.title, session.title);
+    }
+
+    #[test]
+    fn test_session_agent_serialization() {
+        let agent = SessionAgent {
+            agent_type: "internal".to_string(),
+            agent_name: None,
+            provider_key: Some("ollama".to_string()),
+            provider: "ollama".to_string(),
+            model: "llama3.2".to_string(),
+            system_prompt: "You are a helpful assistant.".to_string(),
+            temperature: Some(0.7),
+            max_tokens: Some(4096),
+            max_context_tokens: Some(8192),
+            endpoint: None,
+            env_overrides: HashMap::new(),
+            mcp_servers: vec!["filesystem".to_string()],
+            agent_card_name: Some("default".to_string()),
+        };
+
+        let json = serde_json::to_string(&agent).unwrap();
+        assert!(json.contains("\"agent_type\":\"internal\""));
+        assert!(json.contains("\"model\":\"llama3.2\""));
+        assert!(json.contains("\"temperature\":0.7"));
+
+        let parsed: SessionAgent = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.model, "llama3.2");
+        assert_eq!(parsed.temperature, Some(0.7));
+        assert_eq!(parsed.mcp_servers, vec!["filesystem"]);
+    }
+
+    #[test]
+    fn test_session_with_agent() {
+        let agent = SessionAgent {
+            agent_type: "internal".to_string(),
+            agent_name: None,
+            provider_key: Some("openai".to_string()),
+            provider: "openai".to_string(),
+            model: "gpt-4o".to_string(),
+            system_prompt: "You are helpful.".to_string(),
+            temperature: None,
+            max_tokens: None,
+            max_context_tokens: None,
+            endpoint: None,
+            env_overrides: HashMap::new(),
+            mcp_servers: Vec::new(),
+            agent_card_name: None,
+        };
+
+        let kiln = PathBuf::from("/home/user/notes");
+        let session = Session::new(SessionType::Chat, kiln).with_agent(agent.clone());
+
+        assert!(session.agent.is_some());
+        assert_eq!(session.agent.as_ref().unwrap().model, "gpt-4o");
+
+        let json = serde_json::to_string(&session).unwrap();
+        assert!(json.contains("\"model\":\"gpt-4o\""));
+
+        let parsed: Session = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.agent.as_ref().unwrap().model, "gpt-4o");
+    }
+
+    #[test]
+    fn test_session_backward_compatibility() {
+        // Simulate loading a session.json from before agent field existed
+        let old_json = r#"{
+            "id": "chat-2025-01-08T1530-abc123",
+            "session_type": "chat",
+            "kiln": "/home/user/notes",
+            "workspace": "/home/user/notes",
+            "state": "active",
+            "started_at": "2025-01-08T15:30:00Z"
+        }"#;
+
+        let session: Session = serde_json::from_str(old_json).unwrap();
+        assert!(session.agent.is_none());
+        assert_eq!(session.id, "chat-2025-01-08T1530-abc123");
+    }
+
+    #[test]
+    fn test_session_summary_includes_agent_model() {
+        let agent = SessionAgent {
+            agent_type: "internal".to_string(),
+            agent_name: None,
+            provider_key: Some("anthropic".to_string()),
+            provider: "anthropic".to_string(),
+            model: "claude-3-5-sonnet".to_string(),
+            system_prompt: "".to_string(),
+            temperature: None,
+            max_tokens: None,
+            max_context_tokens: None,
+            endpoint: None,
+            env_overrides: HashMap::new(),
+            mcp_servers: Vec::new(),
+            agent_card_name: None,
+        };
+
+        let kiln = PathBuf::from("/home/user/notes");
+        let session = Session::new(SessionType::Chat, kiln).with_agent(agent);
+
+        let summary = SessionSummary::from(&session);
+        assert_eq!(summary.agent_model, Some("claude-3-5-sonnet".to_string()));
     }
 }
