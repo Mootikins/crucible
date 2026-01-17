@@ -60,21 +60,6 @@ fn select_session_kiln(config: &CliConfig) -> Option<PathBuf> {
     Some(kiln_path.clone())
 }
 
-/// Execute the chat command
-///
-/// # Arguments
-/// * `config` - CLI configuration
-/// * `agent_name` - Optional preferred ACP agent name
-/// * `query` - Optional one-shot query (if None, starts interactive mode)
-/// * `read_only` - Initial mode: if true, starts in plan mode; if false, starts in act mode
-/// * `no_context` - If true, skip context enrichment
-/// * `no_process` - If true, skip auto-processing of files before context enrichment
-/// * `context_size` - Number of context results to include
-/// * `use_internal` - If true, use internal LLM agent instead of ACP agent
-/// * `provider_key` - Optional LLM provider for internal agent
-/// * `max_context_tokens` - Maximum context window tokens for internal agent
-/// * `env_overrides` - Environment variables to pass to ACP agent (KEY=VALUE pairs)
-/// * `resume_session_id` - Optional session ID to resume from
 #[allow(clippy::too_many_arguments)]
 pub async fn execute(
     config: CliConfig,
@@ -85,6 +70,7 @@ pub async fn execute(
     no_process: bool,
     context_size: Option<usize>,
     use_internal: bool,
+    force_local: bool,
     provider_key: Option<String>,
     max_context_tokens: usize,
     env_overrides: Vec<String>,
@@ -173,6 +159,7 @@ pub async fn execute(
             resume_session_id,
             fullscreen,
             use_ink_runner,
+            force_local,
         )
         .await;
     }
@@ -186,16 +173,16 @@ pub async fn execute(
         factories::AgentType::Acp
     };
 
-    // Create agent initialization params
     let mut agent_params = factories::AgentInitParams::new()
         .with_type(agent_type)
         .with_agent_name_opt(agent_name.clone().or(default_agent_from_config.clone()))
         .with_provider_opt(provider_key)
         .with_read_only(is_read_only(initial_mode))
         .with_max_context_tokens(max_context_tokens)
-        .with_env_overrides(parsed_env);
+        .with_env_overrides(parsed_env)
+        .with_force_local(force_local)
+        .with_resume_session_id(resume_session_id.clone());
 
-    // Set working directory if available
     if let Some(ref wd) = working_dir {
         agent_params = agent_params.with_working_dir(wd.clone());
     }
@@ -413,10 +400,6 @@ pub async fn execute(
     Ok(())
 }
 
-/// Run chat with deferred agent creation (picker in TUI)
-///
-/// The agent is created AFTER the user selects it in the TUI picker.
-/// This avoids showing a separate picker screen before entering the TUI.
 #[allow(clippy::too_many_arguments)]
 async fn run_deferred_chat(
     config: CliConfig,
@@ -434,6 +417,7 @@ async fn run_deferred_chat(
     resume_session_id: Option<String>,
     fullscreen: bool,
     use_ink_runner: bool,
+    force_local: bool,
 ) -> Result<()> {
     use crate::chat::{ChatSession, ChatSessionConfig};
 
@@ -449,6 +433,8 @@ async fn run_deferred_chat(
             parsed_env,
             working_dir,
             status,
+            resume_session_id,
+            force_local,
         )
         .await;
     }
@@ -612,7 +598,8 @@ async fn run_deferred_chat(
                         .with_provider_opt(provider_key)
                         .with_read_only(is_read_only(&initial_mode))
                         .with_max_context_tokens(max_context_tokens)
-                        .with_env_overrides(parsed_env);
+                        .with_env_overrides(parsed_env)
+                        .with_force_local(force_local);
 
                     // Set working directory if available
                     if let Some(wd) = working_dir.clone() {
@@ -643,7 +630,8 @@ async fn run_deferred_chat(
                         .with_provider_opt(provider_key)
                         .with_read_only(is_read_only(&initial_mode))
                         .with_max_context_tokens(max_context_tokens)
-                        .with_env_overrides(parsed_env);
+                        .with_env_overrides(parsed_env)
+                        .with_force_local(force_local);
 
                     // Set working directory for internal agents (Rig handles tools internally)
                     if let Some(ref wd) = working_dir {
@@ -683,6 +671,8 @@ async fn run_ink_chat(
     parsed_env: std::collections::HashMap<String, String>,
     working_dir: Option<std::path::PathBuf>,
     status: StatusLine,
+    resume_session_id: Option<String>,
+    force_local: bool,
 ) -> Result<()> {
     use crate::chat::bridge::AgentEventBridge;
     use crate::chat::session::{index_kiln_notes, index_workspace_files};
@@ -698,6 +688,11 @@ async fn run_ink_chat(
 
     let mode = ChatMode::parse(initial_mode);
     let mut runner = InkChatRunner::new()?.with_mode(mode);
+
+    if let Some(session_id) = resume_session_id {
+        info!("Will resume session: {}", session_id);
+        runner = runner.with_resume_session(session_id);
+    }
 
     let workspace_root = working_dir.clone().unwrap_or_else(|| {
         std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."))
@@ -749,7 +744,8 @@ async fn run_ink_chat(
                         .with_provider_opt(provider_key)
                         .with_read_only(is_read_only(&initial_mode))
                         .with_max_context_tokens(max_context_tokens)
-                        .with_env_overrides(parsed_env);
+                        .with_env_overrides(parsed_env)
+                        .with_force_local(force_local);
 
                     if let Some(wd) = working_dir {
                         params = params.with_working_dir(wd);
@@ -773,7 +769,8 @@ async fn run_ink_chat(
                         .with_provider_opt(provider_key)
                         .with_read_only(is_read_only(&initial_mode))
                         .with_max_context_tokens(max_context_tokens)
-                        .with_env_overrides(parsed_env);
+                        .with_env_overrides(parsed_env)
+                        .with_force_local(force_local);
 
                     if let Some(wd) = working_dir {
                         params = params.with_working_dir(wd);

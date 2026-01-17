@@ -70,6 +70,11 @@ pub const REPL_COMMANDS: &[ReplCommand] = &[
         description: "Resume a previous session [:resume <id>]",
     },
     ReplCommand {
+        name: "sessions",
+        aliases: &["sess"],
+        description: "List daemon sessions (pick to resume)",
+    },
+    ReplCommand {
         name: "provider",
         aliases: &["p"],
         description: "Switch LLM provider [:provider ollama|openai|anthropic]",
@@ -150,8 +155,8 @@ mod tests {
     fn test_find_matching_empty_query() {
         let matches = find_matching("");
         assert_eq!(matches.len(), REPL_COMMANDS.len());
-        // Verify expected count (quit, help, mode, agent, config, messages, edit, resume, provider, model, status, palette, write, rename, rewind, context, undo, input)
-        assert_eq!(REPL_COMMANDS.len(), 18);
+        // Verify expected count (quit, help, mode, agent, config, messages, edit, resume, sessions, provider, model, status, palette, write, rename, rewind, context, undo, input)
+        assert_eq!(REPL_COMMANDS.len(), 19);
     }
 
     #[test]
