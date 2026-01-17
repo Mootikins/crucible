@@ -20,10 +20,12 @@ pub struct InkChatRunner {
     terminal: Terminal,
     tick_rate: Duration,
     mode: ChatMode,
+    model: String,
     focus: FocusContext,
     workspace_files: Vec<String>,
     kiln_notes: Vec<String>,
     session_dir: Option<PathBuf>,
+    resume_session_id: Option<String>,
 }
 
 impl InkChatRunner {
@@ -31,16 +33,23 @@ impl InkChatRunner {
         Ok(Self {
             terminal: Terminal::new()?,
             tick_rate: Duration::from_millis(50),
-            mode: ChatMode::Plan,
+            mode: ChatMode::Normal,
+            model: String::new(),
             focus: FocusContext::new(),
             workspace_files: Vec::new(),
             kiln_notes: Vec::new(),
             session_dir: None,
+            resume_session_id: None,
         })
     }
 
     pub fn with_mode(mut self, mode: ChatMode) -> Self {
         self.mode = mode;
+        self
+    }
+
+    pub fn with_model(mut self, model: impl Into<String>) -> Self {
+        self.model = model.into();
         self
     }
 
@@ -59,6 +68,11 @@ impl InkChatRunner {
         self
     }
 
+    pub fn with_resume_session(mut self, session_id: impl Into<String>) -> Self {
+        self.resume_session_id = Some(session_id.into());
+        self
+    }
+
     pub async fn run_with_factory<F, Fut, A>(
         &mut self,
         bridge: &AgentEventBridge,
@@ -73,6 +87,9 @@ impl InkChatRunner {
 
         let mut app = InkChatApp::default();
         app.set_mode(self.mode);
+        if !self.model.is_empty() {
+            app.set_model(std::mem::take(&mut self.model));
+        }
         app.set_status("Connecting...");
 
         if !self.workspace_files.is_empty() {

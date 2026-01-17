@@ -469,17 +469,17 @@ fn multiple_errors_replace_previous() {
 // =============================================================================
 
 #[test]
-fn slash_act_sets_mode_to_act() {
+fn slash_default_sets_mode_to_default() {
     let mut harness: AppHarness<InkChatApp> = AppHarness::new(80, 24);
     harness.render();
 
-    harness.send_text("/act");
+    harness.send_text("/normal");
     harness.send_enter();
 
     let output = harness.viewport();
     assert!(
-        output.contains("Act") || output.contains("act"),
-        "Mode should be set to act: {}",
+        output.contains("NORMAL") || output.contains("normal"),
+        "Mode should be set to normal: {}",
         output
     );
 }
@@ -494,7 +494,7 @@ fn slash_auto_sets_mode_to_auto() {
 
     let output = harness.viewport();
     assert!(
-        output.contains("Auto") || output.contains("auto"),
+        output.contains("AUTO") || output.contains("auto"),
         "Mode should be set to auto: {}",
         output
     );
@@ -560,10 +560,10 @@ fn repl_help_adds_system_message() {
 fn slash_mode_cycles_through_modes() {
     let mut app = InkChatApp::default();
 
-    // Start in Plan mode
+    // Start in Normal mode
     let tree = view_with_default_ctx(&app);
     let output = render_to_string(&tree, 80);
-    assert!(output.contains("Plan"), "Should start in Plan mode");
+    assert!(output.contains("NORMAL"), "Should start in Normal mode");
 
     // Type /mode and submit
     for c in "/mode".chars() {
@@ -573,7 +573,7 @@ fn slash_mode_cycles_through_modes() {
 
     let tree = view_with_default_ctx(&app);
     let output = render_to_string(&tree, 80);
-    assert!(output.contains("Act"), "Should cycle to Act mode");
+    assert!(output.contains("PLAN"), "Should cycle to Plan mode");
 
     // Type /mode again
     for c in "/mode".chars() {
@@ -583,7 +583,7 @@ fn slash_mode_cycles_through_modes() {
 
     let tree = view_with_default_ctx(&app);
     let output = render_to_string(&tree, 80);
-    assert!(output.contains("Auto"), "Should cycle to Auto mode");
+    assert!(output.contains("AUTO"), "Should cycle to Auto mode");
 
     // Type /mode again
     for c in "/mode".chars() {
@@ -593,7 +593,10 @@ fn slash_mode_cycles_through_modes() {
 
     let tree = view_with_default_ctx(&app);
     let output = render_to_string(&tree, 80);
-    assert!(output.contains("Plan"), "Should cycle back to Plan mode");
+    assert!(
+        output.contains("NORMAL"),
+        "Should cycle back to Normal mode"
+    );
 }
 
 // =============================================================================

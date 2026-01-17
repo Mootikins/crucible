@@ -153,9 +153,9 @@ fn snapshot_status_bar_plan_mode() {
 }
 
 #[test]
-fn snapshot_status_bar_act_mode() {
+fn snapshot_status_bar_normal_mode() {
     let mut app = InkChatApp::default();
-    app.set_mode(ChatMode::Act);
+    app.set_mode(ChatMode::Normal);
     app.on_message(ChatAppMsg::ContextUsage {
         used: 64000,
         total: 128000,
