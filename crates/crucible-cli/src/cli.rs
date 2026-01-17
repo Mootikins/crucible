@@ -102,6 +102,11 @@ pub enum Commands {
         #[arg(long)]
         internal: bool,
 
+        /// Force local agent execution (skip daemon).
+        /// By default, chat uses daemon for agent execution.
+        #[arg(long)]
+        local: bool,
+
         /// LLM provider to use for internal agent (from config [llm.providers])
         /// Requires --internal flag
         #[arg(long, requires = "internal")]

@@ -45,6 +45,14 @@ pub struct AgentInitParams {
     /// Optional kiln context for knowledge base access
     /// When provided, agent will have semantic_search, read_note, list_notes tools
     pub kiln_context: Option<crucible_rig::KilnContext>,
+    /// Force local agent execution (skip daemon).
+    /// Default (None): try daemon first, fall back to local.
+    /// Some(true): skip daemon, use local agent directly.
+    pub force_local: Option<bool>,
+    /// Resume an existing daemon session instead of creating a new one.
+    /// If Some(session_id), resume that specific session.
+    /// If Some(""), resume most recent session for the workspace.
+    pub resume_session_id: Option<String>,
 }
 
 impl AgentInitParams {
@@ -58,7 +66,19 @@ impl AgentInitParams {
             env_overrides: std::collections::HashMap::new(),
             working_dir: None,
             kiln_context: None,
+            force_local: None,
+            resume_session_id: None,
         }
+    }
+
+    pub fn with_force_local(mut self, force: bool) -> Self {
+        self.force_local = Some(force);
+        self
+    }
+
+    pub fn with_resume_session_id(mut self, session_id: Option<String>) -> Self {
+        self.resume_session_id = session_id;
+        self
     }
 
     /// Set kiln context for knowledge base access
@@ -276,7 +296,7 @@ pub async fn create_internal_agent(
 
     let system_prompt = prompt_builder.build();
 
-    let agent_config = crucible_rig::AgentConfig::new(&model, &system_prompt);
+    let mut agent_config = crucible_rig::AgentConfig::new(&model, &system_prompt);
 
     use crucible_config::{LlmProviderConfig, LlmProviderType};
 
@@ -344,15 +364,19 @@ pub async fn create_internal_agent(
                 })?
             }
         }
-        LlmProvider::OpenAI => crucible_rig::create_client(&LlmProviderConfig {
-            provider_type: LlmProviderType::OpenAI,
-            endpoint: config.chat.endpoint.clone(),
-            default_model: Some(model.clone()),
-            temperature: config.chat.temperature,
-            max_tokens: config.chat.max_tokens,
-            timeout_secs: config.chat.timeout_secs,
-            api_key: Some("OPENAI_API_KEY".to_string()),
-        })?,
+        LlmProvider::OpenAI => {
+            agent_config = agent_config
+                .with_additional_params(serde_json::json!({"parallel_tool_calls": true}));
+            crucible_rig::create_client(&LlmProviderConfig {
+                provider_type: LlmProviderType::OpenAI,
+                endpoint: config.chat.endpoint.clone(),
+                default_model: Some(model.clone()),
+                temperature: config.chat.temperature,
+                max_tokens: config.chat.max_tokens,
+                timeout_secs: config.chat.timeout_secs,
+                api_key: Some("OPENAI_API_KEY".to_string()),
+            })?
+        }
         LlmProvider::Anthropic => crucible_rig::create_client(&LlmProviderConfig {
             provider_type: LlmProviderType::Anthropic,
             endpoint: config.chat.endpoint.clone(),
@@ -461,17 +485,148 @@ pub async fn create_internal_agent(
     }
 }
 
+/// Create an agent via daemon (auto-starts daemon if needed)
+pub async fn create_daemon_agent(
+    config: &CliAppConfig,
+    params: &AgentInitParams,
+) -> Result<Box<dyn AgentHandle + Send + Sync>> {
+    use crucible_core::session::SessionAgent;
+    use crucible_daemon_client::{DaemonAgentHandle, DaemonClient};
+    use std::sync::Arc;
+
+    info!("Connecting to daemon (auto-start if needed)");
+    let (client, event_rx) = DaemonClient::connect_or_start()
+        .await
+        .and_then(|_| {
+            // Reconnect with event handling
+            futures::executor::block_on(DaemonClient::connect_with_events())
+        })
+        .map_err(|e| anyhow::anyhow!("Failed to connect to daemon: {}", e))?;
+
+    let client = Arc::new(client);
+
+    let workspace = params
+        .working_dir
+        .clone()
+        .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| config.kiln_path.clone()));
+
+    let session_id = match &params.resume_session_id {
+        Some(id) if !id.is_empty() => {
+            // Resume specific session by ID
+            info!("Resuming specific daemon session: {}", id);
+            client.session_resume(id).await?;
+            id.clone()
+        }
+        Some(_) => {
+            // Empty string = resume most recent session for this workspace
+            let sessions = client
+                .session_list(
+                    Some(&config.kiln_path),
+                    Some(&workspace),
+                    Some("chat"),
+                    Some("active"),
+                )
+                .await?;
+
+            let empty = vec![];
+            let sessions = sessions.as_array().unwrap_or(&empty);
+            if let Some(session) = sessions.first() {
+                let id = session["session_id"]
+                    .as_str()
+                    .ok_or_else(|| anyhow::anyhow!("Invalid session data"))?
+                    .to_string();
+                info!("Resuming most recent daemon session: {}", id);
+                client.session_resume(&id).await?;
+                id
+            } else {
+                info!("No existing session to resume, creating new one");
+                create_new_daemon_session(&client, config, &workspace).await?
+            }
+        }
+        None => create_new_daemon_session(&client, config, &workspace).await?,
+    };
+
+    let model = config
+        .chat
+        .model
+        .clone()
+        .unwrap_or_else(|| "llama3.2".to_string());
+
+    let session_agent = SessionAgent {
+        agent_type: "internal".to_string(),
+        agent_name: None,
+        provider_key: Some(format!("{:?}", config.chat.provider).to_lowercase()),
+        provider: format!("{:?}", config.chat.provider).to_lowercase(),
+        model: model.clone(),
+        system_prompt: String::new(),
+        temperature: config.chat.temperature.map(|t| t as f64),
+        max_tokens: config.chat.max_tokens,
+        max_context_tokens: None,
+        endpoint: config.chat.endpoint.clone(),
+        env_overrides: std::collections::HashMap::new(),
+        mcp_servers: vec![],
+        agent_card_name: None,
+    };
+
+    client
+        .session_configure_agent(&session_id, &session_agent)
+        .await?;
+
+    info!("Created daemon agent handle for session: {}", session_id);
+    let handle = DaemonAgentHandle::new_and_subscribe(client, session_id, event_rx).await?;
+
+    Ok(Box::new(handle))
+}
+
+async fn create_new_daemon_session(
+    client: &crucible_daemon_client::DaemonClient,
+    config: &CliAppConfig,
+    workspace: &std::path::Path,
+) -> Result<String> {
+    let result = client
+        .session_create("chat", &config.kiln_path, Some(workspace), vec![])
+        .await?;
+
+    let session_id = result["session_id"]
+        .as_str()
+        .ok_or_else(|| anyhow::anyhow!("No session_id in response"))?
+        .to_string();
+
+    info!("Created new daemon session: {}", session_id);
+    Ok(session_id)
+}
+
 /// Create an agent based on configuration and parameters
 ///
-/// Selection priority:
+/// Routing priority:
+/// 1. If force_local=true, skip daemon entirely
+/// 2. Try daemon first (auto-start if needed)
+/// 3. Fall back to local agent on daemon failure
+///
+/// Agent type priority:
 /// 1. Explicit agent_type in params
 /// 2. Config file setting (chat.agent_preference)
-/// 3. Default: ACP
+/// 3. Default: Internal
 pub async fn create_agent(
     config: &CliAppConfig,
     params: AgentInitParams,
 ) -> Result<InitializedAgent> {
     use crucible_config::AgentPreference;
+
+    // Try daemon first unless force_local is set
+    let use_daemon = !params.force_local.unwrap_or(false);
+
+    if use_daemon {
+        match create_daemon_agent(config, &params).await {
+            Ok(handle) => {
+                info!("Using daemon-backed agent");
+                return Ok(InitializedAgent::Internal(handle));
+            }
+            Err(e) => {
+                tracing::warn!("Daemon agent creation failed, falling back to local: {}", e);
+            }
+        }
+    }
 
     // Determine agent type from params or config
     let agent_type = params
@@ -483,7 +638,7 @@ pub async fn create_agent(
 
     match agent_type {
         AgentType::Internal => {
-            info!("Initializing internal agent");
+            info!("Initializing local internal agent");
             let handle = create_internal_agent(config, params).await?;
             Ok(InitializedAgent::Internal(handle))
         }
@@ -491,7 +646,6 @@ pub async fn create_agent(
             info!("Initializing ACP agent");
             use crate::acp::{discover_agent, CrucibleAcpClient};
 
-            // Discover agent
             let agent_name = params
                 .agent_name
                 .or_else(|| config.acp.default_agent.clone());
@@ -499,7 +653,6 @@ pub async fn create_agent(
 
             debug!("Discovered agent: {}", agent.name);
 
-            // Merge config profile env vars first (lower priority)
             if let Some(profile) = config.acp.agents.get(&agent.name) {
                 if !profile.env.is_empty() {
                     let keys: Vec<_> = profile.env.keys().collect();
@@ -508,18 +661,15 @@ pub async fn create_agent(
                 }
             }
 
-            // Merge CLI env overrides (highest priority - overwrites config)
             if !params.env_overrides.is_empty() {
                 let keys: Vec<_> = params.env_overrides.keys().collect();
                 info!("Applying CLI env overrides: {:?}", keys);
                 agent.env_vars.extend(params.env_overrides);
             }
 
-            // Create ACP client
             let mut client =
                 CrucibleAcpClient::with_acp_config(agent, params.read_only, config.acp.clone());
 
-            // Set working directory if provided
             if let Some(working_dir) = params.working_dir {
                 info!("Setting agent working directory: {}", working_dir.display());
                 client = client.with_working_dir(working_dir);
