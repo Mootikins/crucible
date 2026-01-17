@@ -293,6 +293,19 @@ pub trait CanEmbed: Provider {
 ///
 /// Providers implementing this trait can generate chat completions,
 /// including streaming and tool calling support.
+///
+/// # Status: Unimplemented Design
+///
+/// This trait is part of a planned unified provider capability system but is
+/// **not currently implemented** by any providers. The active chat implementation
+/// uses [`CompletionBackend`](crate::traits::CompletionBackend) instead.
+///
+/// The trait exists to define the target API for future provider consolidation:
+/// - [`CompletionBackend`] will be migrated to implement `CanChat`
+/// - All LLM providers will implement the unified `Provider` + capability traits
+/// - This enables runtime capability queries via [`ProviderExt`]
+///
+/// Until migration is complete, use [`CompletionBackend`] for chat operations.
 #[async_trait]
 pub trait CanChat: Provider {
     /// Generate a chat completion
