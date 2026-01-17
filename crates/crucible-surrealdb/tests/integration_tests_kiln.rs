@@ -13,6 +13,7 @@ mod common;
 
 use common::{count_kiln_files, setup_test_db_with_kiln, test_kiln_root};
 use std::time::{Duration, Instant};
+use tokio::time::sleep;
 
 // ============================================================================
 // Helper Tests
@@ -337,7 +338,7 @@ async fn perf_simple_query() {
 
     // TODO: Execute simple query
     // SELECT * FROM entities WHERE type = 'note' LIMIT 10
-    std::thread::sleep(Duration::from_millis(10)); // Placeholder
+    sleep(Duration::from_millis(10)).await; // Placeholder
 
     let duration = start.elapsed();
 
@@ -369,7 +370,7 @@ async fn perf_complex_query() {
     // - Tag filter
     // - Date range
     // - Relationship check
-    std::thread::sleep(Duration::from_millis(10)); // Placeholder
+    sleep(Duration::from_millis(10)).await; // Placeholder
 
     let duration = start.elapsed();
 
@@ -398,7 +399,7 @@ async fn perf_fulltext_search() {
 
     // TODO: Execute full-text search
     // SELECT * FROM entities WHERE search_text CONTAINS 'knowledge management'
-    std::thread::sleep(Duration::from_millis(10)); // Placeholder
+    sleep(Duration::from_millis(10)).await; // Placeholder
 
     let duration = start.elapsed();
 
@@ -428,7 +429,7 @@ async fn perf_ingestion() {
     let start = Instant::now();
 
     // TODO: Ingest all test-kiln files
-    std::thread::sleep(Duration::from_millis(10)); // Placeholder
+    sleep(Duration::from_millis(10)).await; // Placeholder
 
     let duration = start.elapsed();
 
