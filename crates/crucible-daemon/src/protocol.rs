@@ -124,6 +124,7 @@ impl SessionEventMessage {
     }
 
     /// Create a state changed event
+    #[allow(dead_code)]
     pub fn state_changed(session_id: impl Into<String>, state: impl Into<String>) -> Self {
         Self::new(
             session_id,
@@ -184,7 +185,23 @@ impl SessionEventMessage {
         )
     }
 
+    pub fn message_complete(
+        session_id: impl Into<String>,
+        message_id: impl Into<String>,
+        full_response: impl Into<String>,
+    ) -> Self {
+        Self::new(
+            session_id,
+            "message_complete",
+            serde_json::json!({
+                "message_id": message_id.into(),
+                "full_response": full_response.into(),
+            }),
+        )
+    }
+
     /// Create a terminal output event
+    #[allow(dead_code)]
     pub fn terminal_output(
         session_id: impl Into<String>,
         stream: impl Into<String>,

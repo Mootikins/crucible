@@ -145,7 +145,17 @@ impl SessionManager {
         sessions.get(session_id).cloned()
     }
 
+    pub async fn update_session(&self, session: &Session) -> Result<(), SessionError> {
+        {
+            let mut sessions = self.sessions.write().unwrap();
+            sessions.insert(session.id.clone(), session.clone());
+        }
+        self.storage.save(session).await?;
+        Ok(())
+    }
+
     /// List all active sessions.
+    #[allow(dead_code)]
     pub fn list_sessions(&self) -> Vec<SessionSummary> {
         let sessions = self.sessions.read().unwrap();
         sessions.values().map(SessionSummary::from).collect()
@@ -287,6 +297,7 @@ impl SessionManager {
     /// Remove an ended session from memory.
     ///
     /// Returns the session if it was found and ended.
+    #[allow(dead_code)]
     pub fn remove_session(&self, session_id: &str) -> Result<Session, SessionError> {
         let mut sessions = self.sessions.write().unwrap();
         let session = sessions.get(session_id).cloned();
@@ -306,6 +317,7 @@ impl SessionManager {
     }
 
     /// Get the count of active sessions.
+    #[allow(dead_code)]
     pub fn active_count(&self) -> usize {
         let sessions = self.sessions.read().unwrap();
         sessions
@@ -315,12 +327,14 @@ impl SessionManager {
     }
 
     /// Get the total count of sessions (including paused/ended).
+    #[allow(dead_code)]
     pub fn total_count(&self) -> usize {
         let sessions = self.sessions.read().unwrap();
         sessions.len()
     }
 
     /// Update session title and persist the change.
+    #[allow(dead_code)]
     pub async fn set_title(&self, session_id: &str, title: String) -> Result<(), SessionError> {
         let session = {
             let mut sessions = self.sessions.write().unwrap();
