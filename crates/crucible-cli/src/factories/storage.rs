@@ -74,7 +74,7 @@ pub async fn create_surrealdb_storage(config: &CliConfig) -> Result<adapters::Su
         } else {
             anyhow::bail!(
                 "Database is locked by an orphan daemon process (socket missing).\n\
-                 Find and kill it: pgrep -a cru | grep db-server\n\
+                 Find and kill it: pgrep -a cru-server\n\
                  Then retry your command."
             );
         }
@@ -462,8 +462,8 @@ impl StorageHandle {
 /// - **Embedded** (default): Direct in-process SurrealDB. Fast, simple, but
 ///   single-session only (file locked).
 ///
-/// - **Daemon**: Uses the db-server subprocess via Unix socket. Slower initial
-///   connection (may fork daemon), but supports multiple concurrent sessions.
+/// - **Daemon**: Uses the cru-server daemon via Unix socket. Slower initial
+///   connection (may spawn daemon), but supports multiple concurrent sessions.
 ///
 /// # Example
 ///
@@ -513,13 +513,7 @@ pub async fn get_storage(config: &CliConfig) -> Result<StorageHandle> {
         }
         StorageMode::Daemon => {
             info!("Using daemon storage mode");
-            let socket = lifecycle::default_socket_path();
-
-            // Ensure daemon is running (fork if needed)
-            lifecycle::ensure_daemon(&socket, storage_config.idle_timeout_secs).await?;
-
-            // Connect to daemon
-            let client = DaemonClient::connect_to(&socket).await?;
+            let client = DaemonClient::connect_or_start().await?;
             let kiln_path = config.kiln_path.clone();
 
             // Open the kiln in the daemon (required before any queries)

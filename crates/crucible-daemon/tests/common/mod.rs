@@ -29,7 +29,7 @@ impl TestDaemon {
 
         // Spawn daemon with custom socket path via environment variable
         let process = Command::new(daemon_exe)
-            .env("CRUCIBLE_DAEMON_SOCKET", &socket_path)
+            .env("CRUCIBLE_SOCKET", &socket_path)
             .stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())

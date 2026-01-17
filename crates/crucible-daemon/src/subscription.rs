@@ -146,9 +146,7 @@ impl SubscriptionManager {
         self.subscribe(client_id, WILDCARD_SESSION);
     }
 
-    /// Get all clients subscribed to a specific session.
-    ///
-    /// Returns clients with both specific and wildcard subscriptions.
+    #[allow(dead_code)]
     pub fn get_subscribers(&self, session_id: &str) -> Vec<ClientId> {
         let subs = self.subscriptions.read().unwrap();
 

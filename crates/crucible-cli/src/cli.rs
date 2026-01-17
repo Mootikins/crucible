@@ -254,21 +254,6 @@ pub enum Commands {
     #[command(subcommand)]
     Skills(SkillsCommands),
 
-    /// Internal: Run as database server (auto-started by daemon mode)
-    ///
-    /// This command is not intended for direct user invocation.
-    /// It's spawned automatically when storage.mode = "daemon".
-    #[command(hide = true)]
-    DbServer {
-        /// Unix socket path for client connections
-        #[arg(long)]
-        socket: Option<std::path::PathBuf>,
-
-        /// Idle timeout in seconds before auto-shutdown (0 = no timeout)
-        #[arg(long, default_value = "300")]
-        idle_timeout: u64,
-    },
-
     /// Initialize a new kiln (crucible workspace)
     ///
     /// Creates a .crucible directory with configuration, sessions, and plugins directories.
@@ -808,48 +793,6 @@ mod tests {
             assert!(env.is_empty());
         } else {
             panic!("Expected Chat command");
-        }
-    }
-
-    #[test]
-    fn test_db_server_parses() {
-        // The hidden db-server subcommand should still parse correctly
-        let cli = Cli::try_parse_from(["cru", "db-server"]).unwrap();
-        assert!(matches!(cli.command, Some(Commands::DbServer { .. })));
-    }
-
-    #[test]
-    fn test_db_server_with_options_parses() {
-        let cli = Cli::try_parse_from([
-            "cru",
-            "db-server",
-            "--socket",
-            "/tmp/test.sock",
-            "--idle-timeout",
-            "600",
-        ])
-        .unwrap();
-
-        if let Some(Commands::DbServer {
-            socket,
-            idle_timeout,
-        }) = cli.command
-        {
-            assert_eq!(socket, Some(std::path::PathBuf::from("/tmp/test.sock")));
-            assert_eq!(idle_timeout, 600);
-        } else {
-            panic!("Expected DbServer command");
-        }
-    }
-
-    #[test]
-    fn test_db_server_default_idle_timeout() {
-        let cli = Cli::try_parse_from(["cru", "db-server"]).unwrap();
-
-        if let Some(Commands::DbServer { idle_timeout, .. }) = cli.command {
-            assert_eq!(idle_timeout, 300); // Default is 5 minutes
-        } else {
-            panic!("Expected DbServer command");
         }
     }
 
