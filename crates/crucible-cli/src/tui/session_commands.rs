@@ -228,12 +228,78 @@ pub fn drop_to_shell(command: &str, mouse_mode_enabled: bool) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Mutex;
+
+    // Serialize tests that modify VISUAL/EDITOR env vars
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
 
     #[test]
-    fn test_get_editor() {
-        // Test that we get some editor (may vary by system)
+    fn test_get_editor_defaults_to_vi() {
+        let _guard = ENV_LOCK.lock().unwrap();
+
+        let visual_backup = std::env::var("VISUAL").ok();
+        let editor_backup = std::env::var("EDITOR").ok();
+
+        std::env::remove_var("VISUAL");
+        std::env::remove_var("EDITOR");
+
         let editor = get_editor();
-        assert!(!editor.is_empty());
+        assert_eq!(editor, "vi");
+
+        // Restore env vars
+        if let Some(v) = visual_backup {
+            std::env::set_var("VISUAL", v);
+        }
+        if let Some(v) = editor_backup {
+            std::env::set_var("EDITOR", v);
+        }
+    }
+
+    #[test]
+    fn test_get_editor_respects_visual() {
+        let _guard = ENV_LOCK.lock().unwrap();
+
+        let visual_backup = std::env::var("VISUAL").ok();
+        let editor_backup = std::env::var("EDITOR").ok();
+
+        std::env::set_var("VISUAL", "nvim");
+        std::env::remove_var("EDITOR");
+
+        let editor = get_editor();
+        assert_eq!(editor, "nvim");
+
+        // Restore
+        match visual_backup {
+            Some(v) => std::env::set_var("VISUAL", v),
+            None => std::env::remove_var("VISUAL"),
+        }
+        if let Some(v) = editor_backup {
+            std::env::set_var("EDITOR", v);
+        }
+    }
+
+    #[test]
+    fn test_get_editor_falls_back_to_editor() {
+        let _guard = ENV_LOCK.lock().unwrap();
+
+        let visual_backup = std::env::var("VISUAL").ok();
+        let editor_backup = std::env::var("EDITOR").ok();
+
+        std::env::remove_var("VISUAL");
+        std::env::set_var("EDITOR", "nano");
+
+        let editor = get_editor();
+        assert_eq!(editor, "nano");
+
+        // Restore
+        match visual_backup {
+            Some(v) => std::env::set_var("VISUAL", v),
+            None => std::env::remove_var("VISUAL"),
+        }
+        match editor_backup {
+            Some(v) => std::env::set_var("EDITOR", v),
+            None => std::env::remove_var("EDITOR"),
+        }
     }
 
     #[test]
