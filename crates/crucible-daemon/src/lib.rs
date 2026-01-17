@@ -25,6 +25,8 @@
 //!
 //! - `subscriptions`: Enable real-time event subscriptions (disabled by default)
 
+pub mod agent_factory;
+pub mod agent_manager;
 pub mod kiln_manager;
 pub mod lifecycle;
 pub mod protocol;
@@ -36,6 +38,8 @@ pub mod session_storage;
 #[cfg(feature = "subscriptions")]
 pub mod subscription;
 
+pub use agent_factory::{create_agent_from_session_config, AgentFactoryError};
+pub use agent_manager::{AgentError, AgentManager};
 pub use kiln_manager::KilnManager;
 pub use lifecycle::{remove_socket, socket_path, wait_for_shutdown};
 pub use protocol::{Request, Response, RpcError, SessionEventMessage};

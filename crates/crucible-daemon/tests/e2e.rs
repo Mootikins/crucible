@@ -312,7 +312,7 @@ async fn test_e2e_client_disconnect_handling() {
 // ─────────────────────────────────────────────────────────────────────────────
 
 mod session_helpers {
-    use std::path::PathBuf;
+    use std::path::{Path, PathBuf};
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::UnixStream;
 
@@ -356,7 +356,7 @@ mod session_helpers {
     }
 
     /// Create a kiln directory in the daemon's temp directory
-    pub fn create_kiln_dir(socket_path: &PathBuf) -> PathBuf {
+    pub fn create_kiln_dir(socket_path: &Path) -> PathBuf {
         let kiln_dir = socket_path.parent().unwrap().join("kiln");
         std::fs::create_dir_all(&kiln_dir).expect("Failed to create kiln dir");
         kiln_dir
