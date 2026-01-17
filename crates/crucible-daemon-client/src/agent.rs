@@ -60,10 +60,14 @@ impl DaemonAgentHandle {
         session_id: String,
         event_rx: mpsc::UnboundedReceiver<SessionEvent>,
     ) -> ChatResult<Self> {
+        tracing::debug!(session_id = %session_id, "Subscribing to daemon session events");
+
         client
             .session_subscribe(&[&session_id])
             .await
             .map_err(|e| ChatError::Connection(format!("Failed to subscribe: {}", e)))?;
+
+        tracing::info!(session_id = %session_id, "Successfully subscribed to session events");
 
         Ok(Self::new(client, session_id, event_rx))
     }
@@ -176,28 +180,56 @@ impl AgentHandle for DaemonAgentHandle {
         let event_rx = Arc::clone(&self.event_rx);
 
         Box::pin(async_stream::stream! {
+            tracing::debug!(session_id = %session_id, "Sending message to daemon");
+
             let send_result = client.session_send_message(&session_id, &message).await;
             if let Err(e) = send_result {
+                tracing::error!(error = %e, "Failed to send message to daemon");
                 yield Err(ChatError::Communication(format!("Failed to send message: {}", e)));
                 return;
             }
+
+            tracing::debug!(session_id = %session_id, "Message sent, waiting for events");
 
             let mut rx = event_rx.lock().await;
             loop {
                 match rx.recv().await {
                     Some(event) => {
+                        tracing::trace!(
+                            event_session = %event.session_id,
+                            expected_session = %session_id,
+                            event_type = %event.event_type,
+                            "Received event from daemon"
+                        );
+
                         if event.session_id != session_id {
+                            tracing::debug!(
+                                event_session = %event.session_id,
+                                expected_session = %session_id,
+                                "Filtering out event from different session"
+                            );
                             continue;
                         }
+
                         if let Some(chunk) = session_event_to_chat_chunk(&event) {
+                            tracing::debug!(
+                                delta_len = chunk.delta.len(),
+                                done = chunk.done,
+                                has_tool_calls = chunk.tool_calls.is_some(),
+                                "Converted event to ChatChunk"
+                            );
                             let is_done = chunk.done;
                             yield Ok(chunk);
                             if is_done {
+                                tracing::debug!("Stream complete (done=true)");
                                 break;
                             }
+                        } else {
+                            tracing::debug!(event_type = %event.event_type, "Event not convertible to chunk");
                         }
                     }
                     None => {
+                        tracing::warn!("Event channel closed unexpectedly");
                         yield Err(ChatError::Connection("Event channel closed".to_string()));
                         break;
                     }
