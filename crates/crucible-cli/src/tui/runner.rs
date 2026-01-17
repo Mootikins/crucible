@@ -2665,6 +2665,9 @@ impl RatatuiRunner {
                 // :resume [id] - resume a previous session
                 self.handle_resume_command(args).await?;
             }
+            "sessions" | "sess" => {
+                self.handle_sessions_command().await?;
+            }
             "provider" | "p" | "providers" => {
                 if args.is_empty() {
                     // Show available providers and detected ACP agents
@@ -3062,6 +3065,74 @@ impl RatatuiRunner {
             }
         } else {
             self.view.echo_error("Session logging not configured");
+        }
+
+        Ok(())
+    }
+
+    async fn handle_sessions_command(&mut self) -> Result<()> {
+        use crucible_daemon_client::DaemonClient;
+
+        self.view.set_status_text("Querying daemon sessions...");
+
+        let kiln_path = self
+            .kiln_context
+            .as_ref()
+            .map(|ctx| ctx.config().kiln_path.clone());
+
+        match DaemonClient::connect().await {
+            Ok(client) => {
+                let workspace = std::env::current_dir().ok();
+
+                match client
+                    .session_list(
+                        kiln_path.as_deref(),
+                        workspace.as_deref(),
+                        Some("chat"),
+                        None,
+                    )
+                    .await
+                {
+                    Ok(sessions) => {
+                        let empty = vec![];
+                        let sessions = sessions.as_array().unwrap_or(&empty);
+
+                        if sessions.is_empty() {
+                            self.view.echo_message("No daemon sessions found");
+                            return Ok(());
+                        }
+
+                        let mut content = String::from("Daemon Sessions:\n\n");
+                        for (i, session) in sessions.iter().take(10).enumerate() {
+                            let id = session["session_id"].as_str().unwrap_or("?");
+                            let state = session["state"].as_str().unwrap_or("?");
+                            let created = session["created_at"].as_str().unwrap_or("?");
+                            content.push_str(&format!(
+                                "  {}. {} ({}) - {}\n",
+                                i + 1,
+                                id,
+                                state,
+                                created
+                            ));
+                        }
+                        content.push_str("\nUse :resume <id> or cru chat --resume <id>");
+
+                        self.view.push_dialog(crate::tui::dialog::DialogState::info(
+                            "Daemon Sessions",
+                            content,
+                        ));
+                        self.view.set_status_text("Ready");
+                    }
+                    Err(e) => {
+                        self.view
+                            .echo_error(&format!("Failed to list sessions: {}", e));
+                    }
+                }
+            }
+            Err(_) => {
+                self.view
+                    .echo_error("Daemon not running. Start with: cru daemon start");
+            }
         }
 
         Ok(())
