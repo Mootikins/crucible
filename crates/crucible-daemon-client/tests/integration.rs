@@ -1061,3 +1061,34 @@ async fn test_tui_daemon_agent_full_flow() {
 
     server.shutdown().await;
 }
+
+#[tokio::test]
+async fn test_daemon_agent_error_produces_chat_error() {
+    let server = TestServer::start().await.expect("Failed to start server");
+
+    let (client, _event_rx) = DaemonClient::connect_to_with_events(&server.socket_path)
+        .await
+        .expect("Failed to connect with events");
+
+    let result = client
+        .session_send_message("nonexistent-session-id", "Hello")
+        .await;
+
+    assert!(
+        result.is_err(),
+        "Sending to nonexistent session should fail"
+    );
+
+    let err_msg = result.unwrap_err().to_string();
+    assert!(
+        !err_msg.is_empty(),
+        "Error message should not be empty for TUI display"
+    );
+    assert!(
+        err_msg.len() < 1000,
+        "Error message should be reasonably sized: {}",
+        err_msg
+    );
+
+    server.shutdown().await;
+}
