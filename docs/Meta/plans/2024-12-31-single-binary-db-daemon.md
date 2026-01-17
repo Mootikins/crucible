@@ -1,5 +1,9 @@
 # Single-Binary DB Daemon - Implementation Plan
 
+> **Status:** ⚠️ SUPERSEDED by [[2025-01-17-daemon-consolidation]]
+> 
+> This plan proposed a `cru db-server` subcommand pattern. The consolidation plan chose to keep `cru-server` as a separate binary instead. This document is preserved for historical context.
+
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
 **Goal:** Enable multi-session kiln access via a forked DB daemon, while keeping single-binary simplicity and backward-compatible embedded mode.

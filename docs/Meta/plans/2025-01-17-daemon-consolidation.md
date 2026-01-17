@@ -21,50 +21,40 @@ The daemon architecture diverged during implementation, resulting in:
 
 ## Decision
 
-**Consolidate to single-binary pattern:**
-- Remove `cru-server` binary
-- Move all functionality into `cru db-server` subcommand
+**Keep separate daemon binary:**
+- Keep `cru-server` binary (full-featured daemon)
+- Remove `cru db-server` subcommand (vestigial, incomplete)
 - Single socket path: `$XDG_RUNTIME_DIR/crucible.sock`
-- Auto-fork on demand, idle timeout shutdown
+- `DaemonClient::connect_or_start()` spawns `cru-server`
 
 ## Architecture (Target State)
 
 ```
-┌────────────────────────────────────────────────────────────┐
-│                    cru (single binary)                      │
-├────────────────────────────────────────────────────────────┤
-│                                                             │
-│  CLI Commands          Hidden Subcommand                    │
-│  ┌─────────────┐       ┌──────────────────────────────┐    │
-│  │ cru chat    │       │ cru db-server                │    │
-│  │ cru search  │       │ (auto-forked on demand)      │    │
-│  │ cru process │       │                              │    │
-│  └──────┬──────┘       │ ┌──────────────────────────┐ │    │
-│         │              │ │ Unix Socket Server       │ │    │
-│         │              │ │ • JSON-RPC 2.0           │ │    │
-│         ▼              │ │ • Idle watchdog          │ │    │
-│  ┌──────────────┐      │ └──────────────────────────┘ │    │
-│  │DaemonClient  │◄────►│ ┌──────────────────────────┐ │    │
-│  │ (connects or │      │ │ Managers:                │ │    │
-│  │  forks self) │      │ │ • KilnManager            │ │    │
-│  └──────────────┘      │ │ • SessionManager         │ │    │
-│                        │ │ • AgentManager           │ │    │
-│                        │ │ • SubscriptionManager    │ │    │
-│                        │ └──────────────────────────┘ │    │
-│                        └──────────────────────────────┘    │
-└────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────┐
+│  CLI (cru)                    Daemon (cru-server)           │
+│  ┌─────────────┐              ┌──────────────────────────┐  │
+│  │ cru chat    │◄────────────►│ Unix Socket Server       │  │
+│  │ cru search  │   JSON-RPC   │ ($XDG_RUNTIME_DIR/       │  │
+│  │ cru process │              │  crucible.sock)          │  │
+│  └─────────────┘              │                          │  │
+│                               │ Managers:                │  │
+│  storage.mode = "embedded"    │ • KilnManager            │  │
+│  → Direct DB access           │ • SessionManager         │  │
+│                               │ • AgentManager           │  │
+│  storage.mode = "daemon"      │ • SubscriptionManager    │  │
+│  → RPC to cru-server          └──────────────────────────┘  │
+└─────────────────────────────────────────────────────────────┘
 ```
 
 ## Implementation Tasks
 
-### Phase 1: Unify Socket Path
+### Phase 1: Unify Socket Path ✅
 
-**Files to modify:**
+**Files modified:**
 - `crates/crucible-daemon/src/lifecycle.rs` - canonical `socket_path()`
-- `crates/crucible-daemon-client/src/lifecycle.rs` - use canonical path
-- `crates/crucible-cli/src/commands/db_server.rs` - use canonical path
+- `crates/crucible-daemon-client/src/lifecycle.rs` - delegates to canonical path
 
-**Change:**
+**Result:**
 ```rust
 // Single source of truth in crucible-daemon/src/lifecycle.rs
 pub fn socket_path() -> PathBuf {
@@ -78,78 +68,74 @@ pub fn socket_path() -> PathBuf {
 }
 ```
 
-### Phase 2: Merge RPC Handlers
+### Phase 2: Remove db-server Subcommand ✅
 
-Move session/agent RPC handlers from `crucible-daemon/src/server.rs` into `crucible-cli/src/commands/db_server.rs`.
+**Removed:**
+- `crates/crucible-cli/src/commands/db_server.rs`
+- `DbServer` command variant from CLI
+- All references to `db-server` in factories and tests
 
-**RPC methods to add to db-server:**
-- `session.create`, `session.list`, `session.get`
-- `session.pause`, `session.resume`, `session.end`
-- `session.subscribe`, `session.unsubscribe`
-- `session.configure_agent`, `session.send_message`, `session.cancel`
+**Rationale:** The `db-server` was an incomplete subset of `cru-server`. Rather than duplicating all the session/agent functionality, we kept the full-featured daemon.
 
-**Dependencies to add to crucible-cli:**
-- `crucible-daemon` (for SessionManager, AgentManager, SubscriptionManager)
+### Phase 3: Keep cru-server Binary ✅
 
-### Phase 3: Update Client
+**Kept as-is:**
+- `crates/crucible-daemon/src/main.rs` - daemon entrypoint
+- `crates/crucible-daemon/Cargo.toml` - `[[bin]]` section for `cru-server`
+- All managers (KilnManager, SessionManager, AgentManager, SubscriptionManager)
 
-**File:** `crates/crucible-daemon-client/src/client.rs`
-
-Change `start_daemon()` to fork self:
+**DaemonClient** already spawns `cru-server`:
 ```rust
 async fn start_daemon() -> Result<()> {
-    use crate::lifecycle::{fork_daemon, socket_path};
-    
-    let socket = socket_path();
-    let idle_timeout = 300; // 5 minutes default
-    
-    fork_daemon(&socket, idle_timeout)
+    let daemon_exe = if exe.ends_with("cru") {
+        exe.parent()?.join("cru-server")
+    } else {
+        PathBuf::from("cru-server")
+    };
+    Command::new(daemon_exe).spawn()?;
+    Ok(())
 }
 ```
 
-### Phase 4: Remove cru-server Binary
+### Phase 4: Update Documentation ✅
 
-1. Delete `crates/crucible-daemon/src/main.rs`
-2. Update `crates/crucible-daemon/Cargo.toml` - remove `[[bin]]` section
-3. Keep crate as library (managers, protocol types)
-4. Update `crates/crucible-daemon/tests/` - use db-server instead
-
-### Phase 5: Update Documentation
-
-- Update `AGENTS.md` with daemon architecture section
-- Archive `2024-12-31-single-binary-db-daemon.md` (superseded)
-- Update any docs referencing `cru-server`
+- Updated `AGENTS.md` daemon architecture section
+- This plan document reflects the actual implementation
 
 ## Migration Path
 
 **For existing users:**
-1. Old `cru-server` processes will be orphaned (manual kill)
-2. New `cru db-server` will auto-start on next command
-3. Socket path changes, so old clients won't connect
+1. Old `cru-server` processes at old socket path should be killed
+2. New unified socket path is `$XDG_RUNTIME_DIR/crucible.sock`
+3. `cru-server` auto-starts via `DaemonClient::connect_or_start()`
 
 **Cleanup command:**
 ```bash
 pkill -f 'cru-server'
-rm -f $XDG_RUNTIME_DIR/crucible/daemon.sock
-rm -f $XDG_RUNTIME_DIR/crucible-db.sock
+rm -f $XDG_RUNTIME_DIR/crucible/daemon.sock  # old path
+rm -f $XDG_RUNTIME_DIR/crucible-db.sock      # old path
+rm -f $XDG_RUNTIME_DIR/crucible.sock         # new path
 ```
 
 ## Success Criteria
 
-- [ ] Single socket path used everywhere
-- [ ] `cru db-server` has full session/agent support
-- [ ] `cru-server` binary removed
-- [ ] `DaemonClient::connect_or_start()` forks self as `db-server`
-- [ ] All daemon tests pass using db-server
-- [ ] AGENTS.md documents the architecture
-- [ ] No dead code warnings
+- [x] Single socket path used everywhere (`crucible.sock`)
+- [x] `cru db-server` subcommand removed (obsolete)
+- [x] `cru-server` binary kept (full-featured)
+- [x] `DaemonClient::connect_or_start()` spawns `cru-server`
+- [x] All daemon tests pass
+- [x] AGENTS.md documents the architecture
+- [ ] No dead code warnings (to verify)
 
-## Open Questions
+## Resolved Questions
 
-1. **Idle timeout config:** Should it be configurable via config file, or just CLI arg?
-   - **Decision:** CLI arg for db-server, config file for clients calling ensure_daemon()
+1. **Which binary pattern?** Keep `cru-server` as separate binary or merge into `cru db-server`?
+   - **Decision:** Keep `cru-server` as separate binary (simpler, full-featured)
 
-2. **Session persistence location:** Currently sessions stored in kiln. Keep or move to central location?
+2. **Idle timeout config:** Should it be configurable via config file, or just CLI arg?
+   - **Decision:** Config file via `storage.idle_timeout_secs`
+
+3. **Session persistence location:** Currently sessions stored in kiln. Keep or move to central location?
    - **Decision:** Keep in kiln (`.crucible/sessions/`) for now
 
 ## Related Documents
