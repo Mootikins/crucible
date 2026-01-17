@@ -705,6 +705,52 @@ impl DaemonClient {
         )
         .await
     }
+
+    /// Configure the agent for a session
+    pub async fn session_configure_agent(
+        &self,
+        session_id: &str,
+        agent: &crucible_core::session::SessionAgent,
+    ) -> Result<()> {
+        self.call(
+            "session.configure_agent",
+            serde_json::json!({
+                "session_id": session_id,
+                "agent": agent
+            }),
+        )
+        .await?;
+        Ok(())
+    }
+
+    /// Send a message to a session (streaming via events)
+    pub async fn session_send_message(&self, session_id: &str, content: &str) -> Result<String> {
+        let result = self
+            .call(
+                "session.send_message",
+                serde_json::json!({
+                    "session_id": session_id,
+                    "content": content
+                }),
+            )
+            .await?;
+
+        Ok(result["message_id"].as_str().unwrap_or("").to_string())
+    }
+
+    /// Cancel an active request for a session
+    pub async fn session_cancel(&self, session_id: &str) -> Result<bool> {
+        let result = self
+            .call(
+                "session.cancel",
+                serde_json::json!({
+                    "session_id": session_id
+                }),
+            )
+            .await?;
+
+        Ok(result["cancelled"].as_bool().unwrap_or(false))
+    }
 }
 
 #[cfg(test)]
