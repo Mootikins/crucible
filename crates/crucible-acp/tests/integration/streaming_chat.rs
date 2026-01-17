@@ -50,7 +50,7 @@ async fn test_streaming_chat_with_mock_agent() {
 /// the session/update notifications with AgentMessageChunk that the
 /// client expects for streaming.
 #[tokio::test]
-#[ignore] // Ignore until mock agent supports full streaming simulation
+#[ignore = "requires mock agent with full streaming simulation support"]
 async fn test_prompt_with_streaming_response() {
     // Spawn threaded mock agent with OpenCode behavior
     let config = MockStdioAgentConfig::opencode();

@@ -201,7 +201,7 @@ fn parse_frontmatter_fields(yaml: &str) -> HashMap<String, String> {
 // ============================================================================
 
 #[tokio::test]
-#[ignore] // Slow test - run explicitly
+#[ignore = "slow test - parses all markdown files - run with cargo test --ignored"]
 async fn dev_kiln_all_notes_parse() {
     use crucible_parser::test_utils::parse_note;
 
@@ -253,7 +253,7 @@ async fn dev_kiln_all_notes_parse() {
 // ============================================================================
 
 #[tokio::test]
-#[ignore] // Slow test - run explicitly
+#[ignore = "slow test - parses all markdown files - run with cargo test --ignored"]
 async fn dev_kiln_frontmatter_has_required_fields() {
     let md_files = find_markdown_files();
     let required_fields = vec!["title", "description", "tags"];
@@ -434,7 +434,7 @@ fn is_example_link(target: &str) -> bool {
 }
 
 #[tokio::test]
-#[ignore] // Slow test - run explicitly
+#[ignore = "slow test - parses all markdown files - run with cargo test --ignored"]
 async fn dev_kiln_all_wikilinks_resolve() {
     let dev_kiln_root = dev_kiln_root();
     let md_files = find_markdown_files();
@@ -512,7 +512,7 @@ async fn dev_kiln_all_wikilinks_resolve() {
 // ============================================================================
 
 #[tokio::test]
-#[ignore] // Slow test - run explicitly
+#[ignore = "slow test - parses all markdown files - run with cargo test --ignored"]
 async fn dev_kiln_code_references_exist() {
     let workspace_root = dev_kiln_root()
         .parent()
@@ -571,7 +571,7 @@ async fn dev_kiln_code_references_exist() {
 // ============================================================================
 
 #[tokio::test]
-#[ignore] // Slow test - run explicitly
+#[ignore = "slow test - parses all markdown files - run with cargo test --ignored"]
 async fn dev_kiln_rune_scripts_valid_syntax() {
     let rune_files = find_rune_files();
 
