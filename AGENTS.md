@@ -91,6 +91,16 @@ Other hash infrastructure is in `crucible-core/src/types/hashing.rs`.
 
 **DO NOT duplicate types between crates.** Each type should be defined in exactly one location. Use re-exports for convenience.
 
+**Result Type Aliases** follow the pattern `<Domain>Result<T>`:
+- `StorageResult<T>` - storage operations
+- `ChatResult<T>` - chat/conversation operations
+- `BackendResult<T>` - LLM backend operations
+- `ToolResult<T>` - tool execution
+- `ParserResult<T>` - parsing operations
+- `AcpResult<T>` - agent protocol operations
+
+The crate-level `Result<T>` in `crucible_core::Result` is for general operations.
+
 **Import patterns:**
 ```rust
 // Parser types - prefer canonical location
@@ -102,6 +112,9 @@ use crucible_core::types::hashing::{FileHash, HashAlgorithm};
 // LLM traits - unified provider system
 use crucible_core::traits::provider::{Provider, CanEmbed, CanChat};
 use crucible_core::traits::{CompletionBackend, BackendError, ContextMessage};
+
+// Domain-specific results
+use crucible_core::traits::{StorageResult, ChatResult, BackendResult, ToolResult};
 ```
 
 ### LLM Provider System
