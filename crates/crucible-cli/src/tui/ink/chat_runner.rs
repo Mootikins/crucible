@@ -186,17 +186,21 @@ impl InkChatRunner {
                                 "Received chunk"
                             );
 
-                            if !chunk.delta.is_empty() {
-                                let _ = msg_tx.send(ChatAppMsg::TextDelta(chunk.delta));
+                            if !chunk.delta.is_empty()
+                                && msg_tx.send(ChatAppMsg::TextDelta(chunk.delta)).is_err()
+                            {
+                                tracing::warn!("UI channel closed, TextDelta dropped");
                             }
 
                             if let Some(ref tool_calls) = chunk.tool_calls {
                                 for tc in tool_calls {
                                     let args_val = tc.arguments.clone().unwrap_or_default();
-                                    let _ = msg_tx.send(ChatAppMsg::ToolCall {
+                                    if msg_tx.send(ChatAppMsg::ToolCall {
                                         name: tc.name.clone(),
                                         args: args_val.to_string(),
-                                    });
+                                    }).is_err() {
+                                        tracing::warn!(tool = %tc.name, "UI channel closed, ToolCall dropped");
+                                    }
                                 }
                             }
 
@@ -209,26 +213,36 @@ impl InkChatRunner {
                                         error = ?tr.error,
                                         "Processing tool result"
                                     );
-                                    if !tr.result.is_empty() {
-                                        let _ = msg_tx.send(ChatAppMsg::ToolResultDelta {
-                                            name: tr.name.clone(),
-                                            delta: tr.result.clone(),
-                                        });
+                                    if !tr.result.is_empty()
+                                        && msg_tx
+                                            .send(ChatAppMsg::ToolResultDelta {
+                                                name: tr.name.clone(),
+                                                delta: tr.result.clone(),
+                                            })
+                                            .is_err()
+                                    {
+                                        tracing::warn!(tool = %tr.name, "UI channel closed, ToolResultDelta dropped");
                                     }
-                                    let _ = msg_tx.send(ChatAppMsg::ToolResultComplete {
+                                    if msg_tx.send(ChatAppMsg::ToolResultComplete {
                                         name: tr.name.clone(),
-                                    });
+                                    }).is_err() {
+                                        tracing::warn!(tool = %tr.name, "UI channel closed, ToolResultComplete dropped");
+                                    }
                                 }
                             }
 
                             if chunk.done {
                                 active_stream = None;
-                                let _ = msg_tx.send(ChatAppMsg::StreamComplete);
+                                if msg_tx.send(ChatAppMsg::StreamComplete).is_err() {
+                                    tracing::warn!("UI channel closed, StreamComplete dropped");
+                                }
                             }
                         }
                         Err(e) => {
                             active_stream = None;
-                            let _ = msg_tx.send(ChatAppMsg::Error(e.to_string()));
+                            if msg_tx.send(ChatAppMsg::Error(e.to_string())).is_err() {
+                                tracing::warn!("UI channel closed, Error dropped");
+                            }
                         }
                     }
                     None

@@ -279,7 +279,17 @@ impl SessionStorage for FileSessionStorage {
             .filter(|line| !line.trim().is_empty())
             .skip(offset)
             .take(limit)
-            .filter_map(|line| serde_json::from_str(line).ok())
+            .filter_map(|line| match serde_json::from_str(line) {
+                Ok(val) => Some(val),
+                Err(e) => {
+                    tracing::warn!(
+                        error = %e,
+                        line_preview = %line.chars().take(100).collect::<String>(),
+                        "Failed to parse session event, skipping"
+                    );
+                    None
+                }
+            })
             .collect();
 
         Ok(events)
@@ -631,5 +641,76 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(count, 0);
+    }
+
+    #[tokio::test]
+    async fn test_session_storage_load_events_with_malformed_json() {
+        let tmp = TempDir::new().unwrap();
+        let storage = FileSessionStorage::new();
+
+        let session = Session::new(SessionType::Chat, tmp.path().to_path_buf());
+        storage.save(&session).await.unwrap();
+
+        // Get the JSONL path
+        let jsonl_path = tmp
+            .path()
+            .join(".crucible")
+            .join("sessions")
+            .join(&session.id)
+            .join("session.jsonl");
+
+        // Write a mix of valid and malformed JSON lines directly
+        let content = r#"{"type":"text","content":"valid1"}
+{invalid json here
+{"type":"text","content":"valid2"}
+not json at all
+{"type":"text","content":"valid3"}
+{"unclosed": "brace"
+"#;
+        tokio::fs::write(&jsonl_path, content).await.unwrap();
+
+        // Load events - should skip malformed lines and return only valid ones
+        let events = storage
+            .load_events(&session.id, tmp.path(), None, None)
+            .await
+            .unwrap();
+
+        // Should have 3 valid events (the malformed lines are skipped with warning)
+        assert_eq!(events.len(), 3);
+        assert_eq!(events[0]["content"], "valid1");
+        assert_eq!(events[1]["content"], "valid2");
+        assert_eq!(events[2]["content"], "valid3");
+    }
+
+    #[tokio::test]
+    async fn test_session_storage_load_events_all_malformed() {
+        let tmp = TempDir::new().unwrap();
+        let storage = FileSessionStorage::new();
+
+        let session = Session::new(SessionType::Chat, tmp.path().to_path_buf());
+        storage.save(&session).await.unwrap();
+
+        // Get the JSONL path
+        let jsonl_path = tmp
+            .path()
+            .join(".crucible")
+            .join("sessions")
+            .join(&session.id)
+            .join("session.jsonl");
+
+        // Write only malformed JSON
+        let content = r#"{invalid json
+not json at all
+{"unclosed": "brace"
+"#;
+        tokio::fs::write(&jsonl_path, content).await.unwrap();
+
+        // Load events - should return empty vec when all lines are malformed
+        let events = storage
+            .load_events(&session.id, tmp.path(), None, None)
+            .await
+            .unwrap();
+
+        assert!(events.is_empty());
     }
 }
