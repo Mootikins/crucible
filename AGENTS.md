@@ -9,13 +9,13 @@ This file provides essential information for AI agents to understand and contrib
 **Crucible** is a local-first AI assistant where every conversation becomes a searchable note. It combines:
 - **Agent chat** with session persistence as markdown
 - **Knowledge graph** from wikilinks with semantic search
-- **Multi-language plugins** (Rune, Lua/Fennel)
+- **Lua plugins** with Fennel support
 - **MCP server** for external agent integration
 
 **Core Principles:**
 - Plaintext first — markdown files are source of truth
 - Sessions as notes — conversations saved to your kiln
-- Polyglot extensibility — write plugins in your preferred language
+- Lua extensibility — write plugins in Lua or Fennel
 - Capability-based LLM providers — swap backends freely
 
 ## Architecture
@@ -29,8 +29,8 @@ This file provides essential information for AI agents to understand and contrib
 | `crucible-web` | Browser chat UI (SolidJS + Axum) | HTTP/SSE endpoints |
 | `crucible-tools` | MCP server and tools | Tool implementations |
 | `crucible-surrealdb` | SurrealDB storage with EAV schema | `SurrealStorage`, `EavGraph` |
-| `crucible-rune` | Rune scripting runtime | `RuneExecutor`, `RuneToolRegistry` |
 | `crucible-lua` | Lua/Luau with Fennel support | `LuaExecutor`, `FennelCompiler` |
+| `crucible-rune` | Rune scripting runtime (legacy) | `RuneExecutor`, `RuneToolRegistry` |
 | `crucible-llm` | Embedding backends | `EmbeddingBackend` (FastEmbed, Burn, LlamaCpp) |
 | `crucible-rig` | LLM chat via Rig | Ollama, OpenAI, Anthropic adapters |
 | `crucible-parser` | Markdown parsing implementation | `MarkdownParser` |
@@ -158,7 +158,7 @@ Crucible is organized into orthogonal systems. See **[docs/Meta/Systems.md](./do
 | **agents** | Agent cards, LLM providers, tools |
 | **parser** | Markdown → structured data |
 | **storage** | SurrealDB, EAV graph, Merkle trees |
-| **scripting** | Rune, Lua/Fennel runtimes |
+| **scripting** | Lua/Fennel runtimes |
 | **workflows** | Definitions + sessions |
 | **apis** | HTTP, WebSocket, MCP, events |
 | **cli** | Commands, REPL, configuration |
@@ -173,8 +173,8 @@ crucible/
 │   ├── crucible-web/            # Browser-based chat UI
 │   ├── crucible-tools/          # MCP server and tools
 │   ├── crucible-surrealdb/      # Database layer
-│   ├── crucible-rune/           # Rune scripting runtime
 │   ├── crucible-lua/            # Lua/Luau with Fennel
+│   ├── crucible-rune/           # Rune scripting (legacy)
 │   ├── crucible-llm/            # Embedding backends
 │   ├── crucible-rig/            # LLM chat via Rig
 │   ├── crucible-parser/         # Markdown parsing

@@ -15,9 +15,9 @@ Crucible is a local-first AI assistant where **every conversation becomes a sear
 
 **Knowledge as Context**: Your notes become agent memory. Use `/search` to inject relevant context, or let precognition (coming soon) find it automatically. Wikilinks define relationships. Block-level embeddings enable semantic search at paragraph granularity.
 
-**Polyglot Plugins**: Write extensions in the language that fits:
-- **Rune** — Native Rust integration, sandboxed, fastest
-- **Lua** — LLM-friendly syntax, Fennel support, gradual types
+**Extensible Plugins**: Write extensions in Lua with Fennel support:
+- **Lua** — LLM-friendly syntax, simple semantics, gradual types
+- **Fennel** — Lisp syntax compiling to Lua, macros included
 
 **Plaintext First**: No proprietary formats. No cloud lock-in. Files are always the source of truth. The database is optional acceleration.
 
@@ -87,16 +87,26 @@ Works with Claude Desktop, Claude Code, GPT via plugins, and local models. Tools
 - `create_note` — Add to your knowledge base
 - `get_outlinks` / `get_inlinks` — Traverse relationships
 
-### Multi-Language Plugins
+### Lua Plugins
 
-Define tools and hooks in your preferred language. Place plugin files in `~/.config/crucible/plugins/` or `KILN/plugins/`:
+Define tools and event handlers in Lua. Place plugin files in `~/.config/crucible/plugins/` or `KILN/plugins/`:
 
-| Language | Extension | Strengths |
-|----------|-----------|-----------|
-| Rune | `.rn` | Native Rust integration, fastest, sandboxed |
-| Lua | `.lua`, `.fnl` | Simple syntax, LLM-friendly, Fennel support |
+| Extension | Language | Use Case |
+|-----------|----------|----------|
+| `.lua` | Lua | Tools, handlers, automation |
+| `.fnl` | Fennel | Lisp syntax, macros, DSLs |
 
-See the [docs](./docs/Help/Concepts/Scripting%20Languages.md) for language guides.
+```lua
+--- Search and summarize notes
+-- @tool name="summarize" description="Summarize notes matching query"
+-- @param query string "Search query"
+function summarize(args)
+    local results = crucible.search(args.query)
+    return { summary = "Found " .. #results .. " notes" }
+end
+```
+
+See the [docs](./docs/Help/Concepts/Scripting%20Languages.md) for the full plugin guide.
 
 ## Architecture
 
@@ -106,7 +116,6 @@ crucible-web        Browser chat interface (SolidJS + Axum)
 crucible-tools      MCP server, tool implementations
 crucible-core       Domain logic, traits, parser types
 crucible-surrealdb  Storage with EAV graph schema
-crucible-rune       Rune scripting runtime
 crucible-lua        Lua/Luau with Fennel support
 crucible-llm        Embedding backends (FastEmbed, Burn, LlamaCpp)
 crucible-rig        LLM chat via Rig (Ollama, OpenAI, Anthropic)

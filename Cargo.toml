@@ -176,6 +176,7 @@ crucible-llm = { path = "crates/crucible-llm" }
 crucible-skills = { path = "crates/crucible-skills" }
 crucible-surrealdb = { path = "crates/crucible-surrealdb" }
 crucible-rune = { path = "crates/crucible-rune" }
+crucible-lua = { path = "crates/crucible-lua" }
 crucible-rig = { path = "crates/crucible-rig" }
 crucible-web = { path = "crates/crucible-web" }
 crucible-observe = { path = "crates/crucible-observe" }
