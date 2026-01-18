@@ -32,6 +32,7 @@
 mod ask_module;
 mod attribute_discovery;
 pub mod builtin_handlers;
+pub mod chain_reactor;
 pub mod compaction;
 pub mod core_handler;
 pub mod dependency_graph;
@@ -85,6 +86,7 @@ pub use builtin_handlers::{
     create_tool_selector_handler, create_toon_transform_handler, register_builtin_handlers,
     BuiltinHandlersConfig, EventEmitConfig, HandlerToggle, ToolSelectorConfig,
 };
+pub use chain_reactor::ChainReactor;
 pub use compaction::{CompactionConfig, CompactionMetrics, CompactionReason, CompactionTrigger};
 pub use core_handler::{RuneHandler, RuneHandlerMeta};
 pub use dependency_graph::{
