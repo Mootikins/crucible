@@ -123,11 +123,26 @@ impl SessionStorage for FileSessionStorage {
         let dir = Self::session_dir_by_id(session_id, kiln);
         let meta_path = dir.join("session.json");
 
-        let json = fs::read_to_string(&meta_path)
-            .await
-            .map_err(|_| SessionError::NotFound(session_id.to_string()))?;
+        let json = fs::read_to_string(&meta_path).await.map_err(|e| {
+            // Distinguish between "not found" and other IO errors
+            if e.kind() == std::io::ErrorKind::NotFound {
+                SessionError::NotFound(session_id.to_string())
+            } else {
+                SessionError::IoError(format!(
+                    "Failed to load session '{}' from {}: {}",
+                    session_id,
+                    meta_path.display(),
+                    e
+                ))
+            }
+        })?;
 
-        serde_json::from_str(&json).map_err(|e| SessionError::IoError(e.to_string()))
+        serde_json::from_str(&json).map_err(|e| {
+            SessionError::IoError(format!(
+                "Failed to parse session '{}' JSON: {}",
+                session_id, e
+            ))
+        })
     }
 
     async fn list(&self, kiln: &Path) -> Result<Vec<SessionSummary>, SessionError> {
