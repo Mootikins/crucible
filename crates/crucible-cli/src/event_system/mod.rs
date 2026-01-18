@@ -7,7 +7,7 @@
 //! - `Reactor` from `crucible-core` for unified event dispatch
 //! - `EmbeddingHandler` from `crucible-enrichment` for embedding generation
 //! - `WatchManager` from `crucible-watch` for file system monitoring
-//! - `RuneHandler` from `crucible-rune` for user scripts
+//! - `LuaHandler` from `crucible-lua` for user scripts
 //!
 //! Note: StorageHandler and TagHandler were removed in Phase 4 cleanup.
 //! Storage is now handled through NoteStore trait implementations.
@@ -24,7 +24,7 @@
 //!
 //! Handlers declare dependencies for proper ordering:
 //! - EmbeddingHandler: runs for parsed notes
-//! - Rune handlers: run after all built-in handlers (priority 500+)
+//! - Lua handlers: run after all built-in handlers (priority 500+)
 //!
 //! # Usage
 //!
