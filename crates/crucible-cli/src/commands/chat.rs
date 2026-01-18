@@ -5,6 +5,7 @@
 //! Supports toggleable plan (read-only) and act (write-enabled) modes.
 
 use anyhow::Result;
+use crucible_lua::LuaExecutor;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tracing::{debug, info, warn};
@@ -189,6 +190,14 @@ async fn run_interactive_chat(
         std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."))
     });
     let kiln_root = config.kiln_path.clone();
+
+    if let Ok(executor) = LuaExecutor::new() {
+        if let Err(e) = executor.load_config(Some(&kiln_root)) {
+            warn!("Failed to load Lua config: {}", e);
+        } else {
+            debug!("Lua configuration loaded");
+        }
+    }
 
     let (files, notes) = tokio::join!(
         tokio::task::spawn_blocking({

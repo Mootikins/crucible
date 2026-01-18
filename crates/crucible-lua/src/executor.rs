@@ -70,6 +70,16 @@ impl LuaExecutor {
         }
     }
 
+    /// Load user configuration from init.lua
+    ///
+    /// This registers crucible.statusline and other config modules,
+    /// then loads init.lua from the config directory if it exists.
+    pub fn load_config(&self, kiln_path: Option<&Path>) -> Result<(), LuaError> {
+        use crate::config::ConfigLoader;
+        let loader = ConfigLoader::with_defaults(kiln_path);
+        loader.load(&self.lua)
+    }
+
     /// Set up global functions available to scripts
     fn setup_globals(lua: &Lua) -> Result<(), LuaError> {
         let globals = lua.globals();
