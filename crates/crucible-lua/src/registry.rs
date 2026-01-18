@@ -293,7 +293,7 @@ mod tests {
 
         let param = parse_param("limit number Max results (optional)").unwrap();
         assert_eq!(param.name, "limit");
-        assert!(param.required); // (optional) in desc doesn't change type
+        assert!(!param.required); // (optional) in desc makes it optional
     }
 
     #[test]
