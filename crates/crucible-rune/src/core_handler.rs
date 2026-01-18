@@ -38,11 +38,20 @@ use crate::executor::RuneExecutor;
 use crate::RuneError;
 use async_trait::async_trait;
 use crucible_core::events::{Handler, HandlerContext, HandlerResult, SessionEvent};
+use once_cell::sync::Lazy;
+use regex::Regex;
 use rune::Unit;
 use serde_json::Value as JsonValue;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::task::spawn_blocking;
+
+static HANDLER_ATTR_RE: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"(?m)^\s*#\[(handler|hook)\([^)]*\)\]\s*\n?").unwrap());
+
+fn strip_handler_attributes(source: &str) -> String {
+    HANDLER_ATTR_RE.replace_all(source, "").to_string()
+}
 
 /// Metadata for a discovered Rune handler function.
 ///
@@ -140,7 +149,6 @@ impl RuneHandler {
     ///
     /// Compiles the script if not already compiled.
     pub fn new(meta: RuneHandlerMeta, executor: Arc<RuneExecutor>) -> Result<Self, RuneError> {
-        // Read and compile the script
         let source = std::fs::read_to_string(&meta.script_path).map_err(|e| {
             RuneError::Io(format!(
                 "Failed to read handler script {:?}: {}",
@@ -148,13 +156,15 @@ impl RuneHandler {
             ))
         })?;
 
+        let clean_source = strip_handler_attributes(&source);
+
         let script_name = meta
             .script_path
             .file_name()
             .map(|s| s.to_string_lossy().to_string())
             .unwrap_or_else(|| "unknown".to_string());
 
-        let unit = executor.compile(&script_name, &source)?;
+        let unit = executor.compile(&script_name, &clean_source)?;
 
         Self::with_unit(meta, unit, executor)
     }
