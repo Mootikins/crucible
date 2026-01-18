@@ -81,6 +81,7 @@ mod popup;
 mod registry;
 pub mod schema;
 mod shell;
+pub mod statusline;
 mod types;
 
 pub use annotations::{AnnotationParser, DiscoveredHandler, DiscoveredPlugin, DiscoveredTool};
@@ -116,6 +117,10 @@ pub use popup::{lua_entry_to_core, lua_request_to_core, register_popup_module};
 pub use registry::LuaToolRegistry;
 pub use schema::{generate_input_schema, type_to_string, FunctionSignature, LuauType, TypedParam};
 pub use shell::{register_shell_module, ExecResult, ShellPolicy};
+pub use statusline::{
+    parse_statusline_config, register_statusline_module, ColorSpec, ModeStyleSpec,
+    StatuslineComponent, StatuslineConfig, StyleSpec,
+};
 pub use types::{LuaExecutionResult, LuaTool, ToolParam, ToolResult};
 // Handler system
 pub use handlers::{
