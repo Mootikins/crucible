@@ -28,6 +28,8 @@
 //! let (result, ctx, errors) = bus.emit(event);
 //! ```
 
+#![allow(deprecated)]
+
 use crate::attribute_discovery::AttributeDiscovery;
 use crate::discovery_paths::DiscoveryPaths;
 use crate::event_bus::{Event, EventBus, EventContext, Handler, HandlerError, HandlerResult};

@@ -1,42 +1,23 @@
-//! Logging handler for the event ring buffer system.
+//! Logging handler for the event system.
 //!
 //! This module provides a `LoggingHandler` that logs all events passing through
-//! the ring buffer pipeline. It's useful for debugging, auditing, and tracing
+//! the handler pipeline. It's useful for debugging, auditing, and tracing
 //! event flow through the system.
 //!
 //! ## Usage
 //!
 //! ```rust,ignore
 //! use crucible_rune::logging_handler::{LoggingHandler, LogLevel};
-//! use crucible_rune::handler_chain::HandlerChain;
+//! use crucible_rune::handler_chain::SessionHandlerChain;
 //!
-//! // Create a logging handler with info level
 //! let logger = LoggingHandler::new("event_logger", LogLevel::Info);
-//!
-//! // Add to handler chain (usually first to capture all events)
-//! let mut chain = HandlerChain::new();
-//! chain.register(Box::new(logger));
+//! let mut chain = SessionHandlerChain::new();
+//! chain.add_handler(Box::new(logger)).unwrap();
 //! ```
-//!
-//! ## Log Output
-//!
-//! Events are logged with structured fields:
-//! - `handler`: Handler name ("event_logger")
-//! - `seq`: Sequence number in the ring buffer
-//! - `event_type`: Type of session event
-//! - `event_details`: Summary of event content
-//!
-//! ## Configuration
-//!
-//! The handler can be configured with:
-//! - **Log level**: Debug, Info, Warn, or Error
-//! - **Event filtering**: Optional filter to log only specific event types
-//! - **Dependencies**: Can depend on other handlers
 
 use async_trait::async_trait;
-use std::sync::Arc;
 
-use crate::handler::{RingHandler, RingHandlerContext, RingHandlerResult};
+use crate::handler::{Handler, HandlerContext, HandlerResult};
 use crate::reactor::SessionEvent;
 
 /// Log level for the logging handler.
@@ -211,11 +192,9 @@ impl LoggingHandler {
         self
     }
 
-    /// Log the event using the configured level.
-    fn log_event(&self, seq: u64, event: &SessionEvent) {
+    fn log_event(&self, event: &SessionEvent) {
         let event_type = event.type_name();
 
-        // Check filter
         if !self.config.filter.should_log(event_type) {
             return;
         }
@@ -241,7 +220,6 @@ impl LoggingHandler {
             LogLevel::Trace => {
                 tracing::trace!(
                     handler = %self.name,
-                    seq = seq,
                     event_type = event_type,
                     "{}Event: {} | {}{}",
                     prefix,
@@ -253,7 +231,6 @@ impl LoggingHandler {
             LogLevel::Debug => {
                 tracing::debug!(
                     handler = %self.name,
-                    seq = seq,
                     event_type = event_type,
                     "{}Event: {} | {}{}",
                     prefix,
@@ -265,7 +242,6 @@ impl LoggingHandler {
             LogLevel::Info => {
                 tracing::info!(
                     handler = %self.name,
-                    seq = seq,
                     event_type = event_type,
                     "{}Event: {} | {}",
                     prefix,
@@ -276,7 +252,6 @@ impl LoggingHandler {
             LogLevel::Warn => {
                 tracing::warn!(
                     handler = %self.name,
-                    seq = seq,
                     event_type = event_type,
                     "{}Event: {} | {}",
                     prefix,
@@ -287,7 +262,6 @@ impl LoggingHandler {
             LogLevel::Error => {
                 tracing::error!(
                     handler = %self.name,
-                    seq = seq,
                     event_type = event_type,
                     "{}Event: {} | {}",
                     prefix,
@@ -300,40 +274,30 @@ impl LoggingHandler {
 }
 
 #[async_trait]
-impl RingHandler<SessionEvent> for LoggingHandler {
+impl Handler for LoggingHandler {
     fn name(&self) -> &str {
         &self.name
     }
 
-    fn depends_on(&self) -> &[&str] {
+    fn dependencies(&self) -> &[&str] {
         &self.dependencies
+    }
+
+    fn priority(&self) -> i32 {
+        10
+    }
+
+    fn event_pattern(&self) -> &str {
+        "*"
     }
 
     async fn handle(
         &self,
-        _ctx: &mut RingHandlerContext<SessionEvent>,
-        event: Arc<SessionEvent>,
-        seq: u64,
-    ) -> RingHandlerResult<()> {
-        self.log_event(seq, &event);
-        Ok(())
-    }
-
-    async fn on_register(&self) -> RingHandlerResult<()> {
-        tracing::debug!(
-            handler = %self.name,
-            level = %self.config.level,
-            "LoggingHandler registered"
-        );
-        Ok(())
-    }
-
-    async fn on_unregister(&self) -> RingHandlerResult<()> {
-        tracing::debug!(
-            handler = %self.name,
-            "LoggingHandler unregistered"
-        );
-        Ok(())
+        _ctx: &mut HandlerContext,
+        event: SessionEvent,
+    ) -> HandlerResult<SessionEvent> {
+        self.log_event(&event);
+        HandlerResult::ok(event)
     }
 }
 
@@ -350,11 +314,11 @@ impl std::fmt::Debug for LoggingHandler {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::handler::Handler;
     use crate::reactor::SessionEventConfig;
     use serde_json::json;
     use std::path::PathBuf;
 
-    /// Cross-platform test path helper
     fn test_path(name: &str) -> PathBuf {
         std::env::temp_dir().join(format!("crucible_test_{}", name))
     }
@@ -445,7 +409,7 @@ mod tests {
     #[test]
     fn test_logging_handler_new() {
         let handler = LoggingHandler::new("test_logger", LogLevel::Debug);
-        assert_eq!(handler.name(), "test_logger");
+        assert_eq!(Handler::name(&handler), "test_logger");
         assert!(handler.dependencies.is_empty());
         assert_eq!(handler.config.level, LogLevel::Debug);
     }
@@ -454,7 +418,7 @@ mod tests {
     fn test_logging_handler_with_config() {
         let config = LoggingConfig::with_level(LogLevel::Warn).prefix("TEST");
         let handler = LoggingHandler::with_config("custom_logger", config);
-        assert_eq!(handler.name(), "custom_logger");
+        assert_eq!(Handler::name(&handler), "custom_logger");
         assert_eq!(handler.config.level, LogLevel::Warn);
         assert_eq!(handler.config.prefix, Some("TEST".to_string()));
     }
@@ -560,67 +524,46 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_logging_handler_handle() {
+    async fn test_handler_handle() {
         let handler = LoggingHandler::new("test", LogLevel::Debug);
-        let mut ctx = RingHandlerContext::new();
-        let event = Arc::new(SessionEvent::MessageReceived {
+        let mut ctx = HandlerContext::new();
+        let event = SessionEvent::MessageReceived {
             content: "test message".into(),
             participant_id: "user".into(),
-        });
+        };
 
-        // Should not error
-        let result = handler.handle(&mut ctx, event, 42).await;
-        assert!(result.is_ok());
-
-        // Context should be unchanged (logging is side-effect only)
-        assert_eq!(ctx.emitted_count(), 0);
-        assert!(!ctx.is_cancelled());
+        let result = Handler::handle(&handler, &mut ctx, event).await;
+        assert!(result.is_continue());
     }
 
     #[tokio::test]
-    async fn test_logging_handler_lifecycle() {
-        let handler = LoggingHandler::new("lifecycle_test", LogLevel::Info);
-
-        // on_register should succeed
-        let result = handler.on_register().await;
-        assert!(result.is_ok());
-
-        // on_unregister should succeed
-        let result = handler.on_unregister().await;
-        assert!(result.is_ok());
-    }
-
-    #[tokio::test]
-    async fn test_logging_handler_with_filter() {
+    async fn test_handler_with_filter() {
         let config = LoggingConfig::with_level(LogLevel::Info)
             .filter(EventFilter::Only(vec!["ToolCalled".to_string()]));
         let handler = LoggingHandler::with_config("filtered", config);
 
-        let mut ctx = RingHandlerContext::new();
+        let mut ctx = HandlerContext::new();
 
-        // ToolCalled should be logged (passes filter)
-        let event = Arc::new(SessionEvent::ToolCalled {
+        let event = SessionEvent::ToolCalled {
             name: "test".into(),
             args: json!({}),
-        });
-        let result = handler.handle(&mut ctx, event, 1).await;
-        assert!(result.is_ok());
+        };
+        let result = Handler::handle(&handler, &mut ctx, event).await;
+        assert!(result.is_continue());
 
-        // MessageReceived should be skipped (doesn't pass filter, but handle still succeeds)
-        let event = Arc::new(SessionEvent::MessageReceived {
+        let event = SessionEvent::MessageReceived {
             content: "test".into(),
             participant_id: "user".into(),
-        });
-        let result = handler.handle(&mut ctx, event, 2).await;
-        assert!(result.is_ok());
+        };
+        let result = Handler::handle(&handler, &mut ctx, event).await;
+        assert!(result.is_continue());
     }
 
     #[tokio::test]
     async fn test_logging_handler_all_event_types() {
         let handler = LoggingHandler::new("all_events", LogLevel::Trace);
-        let mut ctx = RingHandlerContext::new();
+        let mut ctx = HandlerContext::new();
 
-        // Test all event variants
         let events: Vec<SessionEvent> = vec![
             SessionEvent::MessageReceived {
                 content: "test".into(),
@@ -670,9 +613,9 @@ mod tests {
             },
         ];
 
-        for (seq, event) in events.into_iter().enumerate() {
-            let result = handler.handle(&mut ctx, Arc::new(event), seq as u64).await;
-            assert!(result.is_ok());
+        for event in events {
+            let result = Handler::handle(&handler, &mut ctx, event).await;
+            assert!(result.is_continue());
         }
     }
 }

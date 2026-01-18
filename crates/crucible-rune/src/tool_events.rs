@@ -26,6 +26,8 @@
 //! let final_result = result_event.payload; // Handlers may have transformed result
 //! ```
 
+#![allow(deprecated)]
+
 use crate::builtin_handlers::{register_builtin_handlers, BuiltinHandlersConfig};
 use crate::event_bus::{Event, EventBus, EventContext, EventType, HandlerError};
 use serde::{Deserialize, Serialize};
