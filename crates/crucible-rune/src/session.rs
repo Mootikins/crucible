@@ -64,12 +64,12 @@ use serde_json::Value as JsonValue;
 use tokio::sync::{mpsc, RwLock};
 
 use crate::event_bus::EventBus;
-use crate::event_markdown::EventToMarkdown;
-use crate::event_ring::EventRing;
 use crate::reactor::{
     Reactor, ReactorContext, ReactorError, ReactorResult, ReactorSessionConfig, SessionEvent,
 };
 use crate::simple_reactor::SimpleReactor;
+use crucible_core::events::markdown::EventToMarkdown;
+use crucible_core::events::EventRing;
 
 /// Default ring buffer capacity.
 const DEFAULT_RING_CAPACITY: usize = 4096;

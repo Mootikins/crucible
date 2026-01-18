@@ -34,9 +34,9 @@ use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use crate::event_markdown::EventToMarkdown;
 use crate::handler::{Handler, HandlerContext, HandlerResult};
 use crate::reactor::SessionEvent;
+use crucible_core::events::markdown::EventToMarkdown;
 use crucible_core::events::EventError;
 
 /// Handler that persists session events to markdown files.

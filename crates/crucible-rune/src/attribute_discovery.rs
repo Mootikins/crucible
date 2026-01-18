@@ -17,8 +17,8 @@
 //! let tools: Vec<RuneTool> = discovery.discover_all(&paths)?;
 //! ```
 
-use crate::discovery_paths::DiscoveryPaths;
 use crate::RuneError;
+use crucible_core::discovery::DiscoveryPaths;
 use glob::glob;
 use regex::Regex;
 use std::path::Path;

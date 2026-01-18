@@ -32,11 +32,11 @@
 
 use crate::attribute_discovery::AttributeDiscovery;
 use crate::core_handler::{RuneHandler as UnifiedRuneHandler, RuneHandlerMeta};
-use crate::discovery_paths::DiscoveryPaths;
 use crate::event_bus::{Event, EventBus, EventContext, Handler, HandlerError, HandlerResult};
 use crate::executor::RuneExecutor;
 use crate::handler_types::RuneHandler;
 use crate::RuneError;
+use crucible_core::discovery::DiscoveryPaths;
 use crucible_core::events::Handler as CoreHandler;
 use rune::Unit;
 use serde_json::Value as JsonValue;
