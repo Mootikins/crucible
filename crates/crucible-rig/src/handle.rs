@@ -868,9 +868,9 @@ where
             );
 
             // Safety net: If stream ended without FinalResponse (e.g., network timeout,
-            // unexpected termination), ensure we still emit a done chunk so TUI doesn't
-            // get stuck in "Generating..." state.
-            if !got_final_response && item_count > 0 {
+            // unexpected termination, or empty response), ensure we still emit a done
+            // chunk so TUI doesn't get stuck in "Generating..." state.
+            if !got_final_response {
                 warn!(
                     item_count,
                     accumulated_len = accumulated_text.len(),
@@ -878,8 +878,6 @@ where
                     "Rig stream ended without FinalResponse - emitting done chunk"
                 );
 
-                // Note: Don't include tool_calls here - they were already emitted
-                // individually via StreamedAssistantContent::ToolCall
                 yield Ok(ChatChunk {
                     delta: String::new(),
                     done: true,
