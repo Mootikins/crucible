@@ -63,6 +63,7 @@ A knowledge management system where:
 - [x] Embeddings - Semantic search working
 - [x] Query System - Context enrichment for agents (see [[Help/Query/Query System]])
 - [x] TUI E2E Testing - expectrl-based test harness for PTY testing (see [[Help/TUI/E2E Testing]])
+- [x] **Ink TUI Migration** - Removed ratatui, ink is now the sole TUI renderer
 
 ---
 
@@ -132,6 +133,15 @@ A knowledge management system where:
 
 ---
 
+## Backlog
+
+| Item | Notes |
+|------|-------|
+| Rune/Core event unification | Merge rune EventBus with core SessionEvent system into single event architecture |
+| Remove remaining unused deps | `cargo machete` shows unused deps in other crates (core, surrealdb, tools, etc.) |
+
+---
+
 ## Archived / Cut
 
 | Item | Reason |
@@ -142,6 +152,7 @@ A knowledge management system where:
 | `add-advanced-tool-architecture` | Overlaps with working MCP bridge |
 | `add-quick-prompt-features` | Nice UX, not core - revisit in Phase 3 |
 | `refactor-clustering-plugins` | Nice feature, not core |
+| Ratatui TUI | Removed - migrated to ink-only TUI (2025-01-17) |
 
 ---
 

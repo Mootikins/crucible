@@ -25,7 +25,6 @@ test-utils = []          # Expose testing utilities for integration tests
 
 [dependencies]
 crucible-core = { path = "../crucible-core" }
-crucible-parser = { path = "../crucible-parser" }
 crucible-surrealdb = { path = "../crucible-surrealdb", optional = true }
 crucible-sqlite = { path = "../crucible-sqlite", optional = true }
 crucible-config = { path = "../crucible-config", features = ["toml"] }
@@ -87,8 +86,7 @@ tracing-subscriber = { workspace = true, features = ["env-filter"] }
 crucible-rune = { workspace = true }
 
 # File system utilities
-walkdir = "2.4"
-rust-embed = { version = "8.5", features = ["include-exclude", "interpolate-folder-path"] }
+walkdir = "2.5"
 
 # Rune scripting
 # rune = { workspace = true }  # Commented out - not MVP critical
@@ -113,16 +111,10 @@ futures = { workspace = true }
 # Terminal utilities (crossterm for ink TUI)
 crossterm = { workspace = true }
 
-# Markdown rendering with syntax highlighting
-syntect = { version = "5.2", default-features = false, features = ["default-syntaxes", "default-themes", "regex-onig"] }
-
 # Diff rendering
 similar = "2.7"
 
-# Concurrency
-parking_lot = { workspace = true }
-nucleo = "0.5.0"
-base64.workspace = true
+# Text wrapping
 textwrap = "0.16.2"
 
 # Flexbox layout for ink TUI
@@ -133,7 +125,7 @@ crucible-cli = { path = ".", features = ["test-utils"] }  # Enable test utilitie
 crucible-config = { path = "../crucible-config", features = ["test-utils"] }
 rune = "0.14"  # For NoteStore integration tests
 # MCP client for testing examples
-rmcp = { version = "0.9.0", features = ["client", "transport-child-process"] }
+rmcp = { version = "0.9.1", features = ["client", "transport-child-process"] }
 tempfile = { workspace = true }
 assert_cmd = { workspace = true }
 predicates = { workspace = true }
@@ -141,12 +133,12 @@ tokio-test = { workspace = true }
 wiremock = { workspace = true }
 mockall = { workspace = true }
 toml = { workspace = true }
-blake3 = "1.5"  # For hash verification tests
-serial_test = "3.2"  # For preventing parallel test execution with shared env vars
+blake3 = "1.8"  # For hash verification tests
+serial_test = "3.3"  # For preventing parallel test execution with shared env vars
 scopeguard = "1.2"  # For RAII-style cleanup in tests
-insta = { version = "1.40", features = ["filters"] }  # Snapshot testing for TUI
+insta = { version = "1.46", features = ["filters"] }  # Snapshot testing for TUI
 expectrl = { workspace = true }  # PTY-based TUI testing
-proptest = "1.4"  # Property-based testing for graduation invariants
+proptest = "1.8"  # Property-based testing for graduation invariants
 test-case = "3.3"  # Parameterized tests
 
 # Additional dependencies for resource constraint testing

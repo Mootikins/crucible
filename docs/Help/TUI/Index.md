@@ -13,14 +13,13 @@ Crucible's Terminal User Interface (TUI) provides an interactive chat experience
 
 ## Architecture
 
-The TUI is built on [[Help/TUI/Component Architecture|composable components]] using ratatui:
+The TUI uses an ink-based renderer with flexbox layout (taffy):
 
-- **SessionHistoryWidget** - Conversation history with scrolling
-- **InputBoxWidget** - Text input with cursor
-- **StatusBarWidget** - Mode indicator, status, token count
-- **PopupWidget** - Command/file autocomplete
-- **DialogWidget** - Modal confirmations and selections
-- **LayerStack** - Event routing through UI layers
+- **ChatApp** - Main application state and event handling
+- **InputBox** - Text input with cursor
+- **StatusBar** - Mode indicator, status, model info
+- **MessageList** - Conversation history with markdown rendering
+- **Popup** - Command/file/agent autocomplete
 
 ## Key Concepts
 

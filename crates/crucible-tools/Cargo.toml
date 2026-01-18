@@ -15,7 +15,7 @@ crucible-skills = { workspace = true, features = ["storage", "embeddings"] }
 oq = { workspace = true }
 
 # MCP support (server for hosting, client for calling upstream)
-rmcp = { version = "0.9.0", features = ["macros", "server", "client", "transport-io", "transport-sse-server", "transport-child-process", "transport-sse-client"] }
+rmcp = { version = "0.9.1", features = ["macros", "server", "client", "transport-io", "transport-sse-server", "transport-child-process", "transport-sse-client"] }
 
 # Serialization
 serde = { workspace = true }
@@ -45,7 +45,7 @@ chrono = { workspace = true }
 uuid = { workspace = true }
 
 # System information
-num_cpus = "1.16"
+num_cpus = "1.17"
 
 # SurrealDB for database operations (moved to dev-dependencies for testing)
 # crucible-surrealdb = { workspace = true }
@@ -73,7 +73,7 @@ sha2 = "0.10"
 rand = { workspace = true }
 
 # File system operations for kiln parsing
-walkdir = "2.4"
+walkdir = "2.5"
 
 # YAML parsing for frontmatter
 serde_yaml = "0.9"

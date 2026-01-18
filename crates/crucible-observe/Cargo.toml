@@ -19,7 +19,7 @@ serde_json = { workspace = true }
 chrono = { workspace = true }
 
 # Hashing for session IDs
-blake3 = "1.7"
+blake3 = "1.8"
 
 # Random number generation
 rand = { workspace = true }
