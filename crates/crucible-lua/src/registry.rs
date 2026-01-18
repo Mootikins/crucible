@@ -225,14 +225,13 @@ fn parse_param(s: &str) -> Option<ToolParam> {
     let mut param_type = parts[1].to_string();
     let description = parts.get(2).map(|s| s.to_string()).unwrap_or_default();
 
-    // Check for optional type (T? syntax)
+    // Check for optional type (T? syntax or "(optional)" in description)
     let required = if param_type.ends_with('?') {
         param_type = param_type.trim_end_matches('?').to_string();
         false
-    } else if description.contains("(optional)") {
-        true // Keep the description handling for backwards compat
     } else {
-        true
+        // Backwards compat: description containing "(optional)" also makes it optional
+        !description.contains("(optional)")
     };
 
     let description = description
