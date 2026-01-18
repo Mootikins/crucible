@@ -463,4 +463,55 @@ mod tests {
             );
         }
     }
+
+    #[test]
+    fn test_tool_result_with_object_result() {
+        let event = SessionEvent {
+            session_id: "test".to_string(),
+            event_type: "tool_result".to_string(),
+            data: json!({
+                "call_id": "tc-123",
+                "result": { "files": ["a.rs", "b.rs"], "count": 2 }
+            }),
+        };
+
+        let chunk = session_event_to_chat_chunk(&event).unwrap();
+        let results = chunk.tool_results.unwrap();
+        assert_eq!(results.len(), 1);
+        assert!(results[0].result.contains("files"));
+        assert!(results[0].result.contains("count"));
+    }
+
+    #[test]
+    fn test_tool_call_without_call_id() {
+        let event = SessionEvent {
+            session_id: "test".to_string(),
+            event_type: "tool_call".to_string(),
+            data: json!({
+                "tool": "search",
+                "args": { "query": "test" }
+            }),
+        };
+
+        let chunk = session_event_to_chat_chunk(&event).unwrap();
+        let tool_calls = chunk.tool_calls.unwrap();
+        assert_eq!(tool_calls[0].name, "search");
+        assert!(tool_calls[0].id.is_none());
+    }
+
+    #[test]
+    fn test_tool_call_without_args() {
+        let event = SessionEvent {
+            session_id: "test".to_string(),
+            event_type: "tool_call".to_string(),
+            data: json!({
+                "tool": "list_files"
+            }),
+        };
+
+        let chunk = session_event_to_chat_chunk(&event).unwrap();
+        let tool_calls = chunk.tool_calls.unwrap();
+        assert_eq!(tool_calls[0].name, "list_files");
+        assert!(tool_calls[0].arguments.is_none());
+    }
 }
