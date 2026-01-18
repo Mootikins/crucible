@@ -277,8 +277,6 @@ async fn main() -> Result<()> {
             no_context,
             context_size,
             act,
-            fullscreen,
-            ink,
         }) => {
             commands::chat::execute(
                 config,
@@ -294,8 +292,6 @@ async fn main() -> Result<()> {
                 max_context,
                 env,
                 resume,
-                fullscreen,
-                ink,
             )
             .await?
         }
@@ -386,8 +382,6 @@ async fn main() -> Result<()> {
                 16384,
                 vec![],
                 None,
-                false,
-                false,
             )
             .await?
         }

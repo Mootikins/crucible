@@ -19,10 +19,7 @@ use crate::chat::mode_registry::ModeRegistry;
 use crate::chat::slash_registry::{SlashCommandRegistry, SlashCommandRegistryBuilder};
 use crate::chat::{AgentHandle, ChatError, ChatResult};
 use crate::core_facade::KilnContext;
-use crate::tui::agent_picker::AgentSelection;
-use crate::tui::ink::{ChatMode, InkChatRunner};
-use crate::tui::DynamicPopupProvider;
-use crate::tui::RatatuiRunner;
+use crate::tui::ink::{AgentSelection, ChatMode, InkChatRunner};
 use crucible_core::traits::registry::{Registry, RegistryBuilder};
 use crucible_rune::SessionBuilder;
 use walkdir::WalkDir;
@@ -53,26 +50,14 @@ pub const DEFAULT_SEARCH_LIMIT: usize = 10;
 /// Note: workspace != kiln. The kiln is for knowledge storage, workspace is for agent work.
 #[derive(Debug, Clone)]
 pub struct ChatSessionConfig {
-    /// Initial chat mode ID (e.g., "plan", "act", "auto")
     pub initial_mode_id: String,
-    /// Enable context enrichment for messages
     pub context_enabled: bool,
-    /// Number of context results to include (if context enabled)
     pub context_size: Option<usize>,
-    /// Skip splash screen (e.g., when agent was already selected via picker)
     pub skip_splash: bool,
-    /// Current agent name for display (e.g., "internal", "opencode", "claude")
     pub agent_name: Option<String>,
-    /// Pre-selected agent for first iteration (skips picker, still allows /new restart)
     pub default_selection: Option<AgentSelection>,
-    /// Session ID to resume from (loads existing conversation history)
     pub resume_session_id: Option<String>,
-    /// Kiln path for session storage (if None, uses core config kiln_path)
     pub session_kiln_path: Option<std::path::PathBuf>,
-    /// Use fullscreen mode (alternate screen) instead of inline viewport
-    pub fullscreen: bool,
-    /// Use experimental Ink-based TUI runner (simpler graduation model)
-    pub use_ink_runner: bool,
 }
 
 impl Default for ChatSessionConfig {
@@ -86,14 +71,11 @@ impl Default for ChatSessionConfig {
             default_selection: None,
             resume_session_id: None,
             session_kiln_path: None,
-            fullscreen: false,
-            use_ink_runner: false,
         }
     }
 }
 
 impl ChatSessionConfig {
-    /// Create a new session configuration
     pub fn new(
         initial_mode_id: impl Into<String>,
         context_enabled: bool,
@@ -108,8 +90,6 @@ impl ChatSessionConfig {
             default_selection: None,
             resume_session_id: None,
             session_kiln_path: None,
-            fullscreen: false,
-            use_ink_runner: false,
         }
     }
 
@@ -152,22 +132,6 @@ impl ChatSessionConfig {
         self
     }
 
-    /// Use fullscreen mode (alternate screen) instead of inline viewport.
-    ///
-    /// By default, the TUI uses inline mode which preserves native terminal
-    /// scrollback for completed messages. Fullscreen mode uses the alternate
-    /// screen buffer like traditional TUIs.
-    pub fn with_fullscreen(mut self, fullscreen: bool) -> Self {
-        self.fullscreen = fullscreen;
-        self
-    }
-
-    pub fn with_ink_runner(mut self, use_ink: bool) -> Self {
-        self.use_ink_runner = use_ink;
-        self
-    }
-
-    /// Validate configuration
     pub fn validate(&self) -> Result<()> {
         if let Some(size) = self.context_size {
             if size == 0 {
@@ -367,122 +331,37 @@ impl ChatSession {
         Fut: std::future::Future<Output = Result<A>>,
         A: AgentHandle,
     {
-        // NOTE: For deferred creation, we can't get agent commands upfront.
-        // The factory will create the agent after selection.
-
-        // Build popup provider snapshot (without agent commands for now)
-        let command_items = self.command_registry.list_all();
-        let popup_provider = std::sync::Arc::new(DynamicPopupProvider::new());
-        popup_provider.set_commands(command_items);
-
-        // Spawn background indexing for workspace files and kiln notes
-        let popup_provider_files = popup_provider.clone();
-        let popup_provider_notes = popup_provider.clone();
-        let popup_provider_agents = popup_provider.clone();
-        let workspace_root =
-            std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
-        let kiln_root = self.core.config().kiln_path.clone();
-
-        // Workspace files: prefer git ls-files; fallback to walkdir; skip hidden; cap entries
-        tokio::spawn(async move {
-            if let Ok(files) =
-                tokio::task::spawn_blocking(move || index_workspace_files(&workspace_root)).await
-            {
-                popup_provider_files.set_files(files);
-            }
-        });
-
-        // Kiln notes: scan for markdown files; emit note:<path> (single kiln)
-        tokio::spawn(async move {
-            if let Ok(notes) =
-                tokio::task::spawn_blocking(move || index_kiln_notes(&kiln_root)).await
-            {
-                popup_provider_notes.set_notes(notes);
-            }
-        });
-
-        // Agents: include configured default agent (best-effort)
-        if let Some(default_agent) = self.core.config().acp.default_agent.clone() {
-            popup_provider_agents.set_agents(vec![(
-                default_agent,
-                "Configured default agent".to_string(),
-            )]);
-        }
-
-        // Create session for event ring management
         let session_folder = self.core.session_folder();
         let session = SessionBuilder::with_generated_id("chat")
             .with_folder(&session_folder)
             .build();
 
-        // Create event bridge
         let ring = session.ring().clone();
         let bridge = AgentEventBridge::new(session.handle(), ring.clone());
 
-        // Create interaction registry for request-response correlation
-        let interaction_registry = std::sync::Arc::new(std::sync::Mutex::new(
-            crucible_core::InteractionRegistry::new(),
-        ));
+        let mode = ChatMode::parse(&self.config.initial_mode_id);
 
-        if self.config.use_ink_runner {
-            let mode = ChatMode::parse(&self.config.initial_mode_id);
+        let workspace_root =
+            std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+        let kiln_root = self.core.config().kiln_path.clone();
 
-            let workspace_root_ink =
-                std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
-            let kiln_root_ink = self.core.config().kiln_path.clone();
+        let (files, notes) = tokio::join!(
+            tokio::task::spawn_blocking(move || index_workspace_files(&workspace_root)),
+            tokio::task::spawn_blocking(move || index_kiln_notes(&kiln_root)),
+        );
 
-            let (files, notes) = tokio::join!(
-                tokio::task::spawn_blocking(move || index_workspace_files(&workspace_root_ink)),
-                tokio::task::spawn_blocking(move || index_kiln_notes(&kiln_root_ink)),
-            );
-
-            let mut runner = InkChatRunner::new()?.with_mode(mode);
-            if let Ok(files) = files {
-                runner = runner.with_workspace_files(files);
-            }
-            if let Ok(notes) = notes {
-                runner = runner.with_kiln_notes(notes);
-            }
-
-            return runner.run_with_factory(&bridge, create_agent).await;
+        let mut runner = InkChatRunner::new()?.with_mode(mode);
+        if let Ok(files) = files {
+            runner = runner.with_workspace_files(files);
         }
-
-        let registry = std::sync::Arc::new(self.command_registry.clone());
-        let mut runner = RatatuiRunner::new(
-            &self.config.initial_mode_id,
-            popup_provider.clone(),
-            registry,
-        )?;
-
-        if self.config.fullscreen {
-            runner.with_fullscreen_mode();
+        if let Ok(notes) = notes {
+            runner = runner.with_kiln_notes(notes);
         }
-
-        runner
-            .with_event_ring(ring)
-            .with_interaction_registry(interaction_registry)
-            .with_kiln_context(self.core.clone());
-
-        let chat_config = &self.core.config().chat;
-        let provider_str = match chat_config.provider {
-            crucible_config::LlmProvider::Ollama => "ollama",
-            crucible_config::LlmProvider::OpenAI => "openai",
-            crucible_config::LlmProvider::Anthropic => "anthropic",
-        };
-        runner.with_runtime_config(provider_str, chat_config.chat_model());
-
-        runner.with_ollama_endpoint(chat_config.llm_endpoint());
-
-        if let Some(kiln_path) = self.config.session_kiln_path.clone() {
-            runner.with_session_logger(kiln_path);
+        if let Some(session_dir) = self.config.session_kiln_path.clone() {
+            runner = runner.with_session_dir(session_dir);
         }
-
-        if let Some(selection) = self.config.default_selection.clone() {
-            runner.with_default_selection(selection);
-        }
-
         if let Some(session_id) = self.config.resume_session_id.clone() {
-            runner.with_resume_session(session_id);
+            runner = runner.with_resume_session(session_id);
         }
 
         runner.run_with_factory(&bridge, create_agent).await

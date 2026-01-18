@@ -1,5 +1,0 @@
----
-source: crates/crucible-cli/src/tui/testing/cross_theme_snapshots.rs
-expression: dark
----
-"- Item one\n-print('hello')"
