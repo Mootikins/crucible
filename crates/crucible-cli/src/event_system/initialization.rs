@@ -103,7 +103,7 @@ pub async fn initialize_event_system(config: &CliConfig) -> Result<EventSystemHa
 
     // Load Rune handlers from kiln
     debug!("Loading Rune handlers from kiln");
-    load_rune_handlers(&mut reactor, &config.kiln_path).await;
+    load_rune_handlers(&mut reactor, &config.kiln_path);
 
     // Get final handler count
     let handler_count = reactor.handler_count();
@@ -142,81 +142,51 @@ pub async fn initialize_event_system(config: &CliConfig) -> Result<EventSystemHa
     ))
 }
 
-/// Load Rune handlers from the kiln's `.crucible/handlers/` directory.
-///
-/// Uses the `RuneHandler` adapter from `crucible_rune::core_handler` to
-/// integrate Rune scripts with the Reactor.
-async fn load_rune_handlers(reactor: &mut Reactor, kiln_path: &Path) {
-    let handlers_dir = kiln_path.join(".crucible").join("handlers");
+fn load_rune_handlers(reactor: &mut Reactor, kiln_path: &Path) {
+    use crucible_rune::{DiscoveryPaths, HandlerRegistry};
 
-    if !handlers_dir.exists() {
-        debug!(
-            "No handlers directory at {}, skipping Rune handlers",
-            handlers_dir.display()
-        );
+    let paths = DiscoveryPaths::new("handlers", Some(kiln_path));
+    let existing = paths.existing_paths();
+    if existing.is_empty() {
+        debug!("No handler directories found, skipping Rune handlers");
         return;
     }
 
-    // Scan for .rn files
-    let entries = match std::fs::read_dir(&handlers_dir) {
-        Ok(entries) => entries,
+    let mut registry = match HandlerRegistry::with_paths(paths) {
+        Ok(r) => r,
         Err(e) => {
-            warn!("Failed to read handlers directory: {}", e);
+            warn!("Failed to create handler registry: {}", e);
+            return;
+        }
+    };
+
+    if let Err(e) = registry.discover() {
+        warn!("Failed to discover handlers: {}", e);
+        return;
+    }
+
+    let handlers = match registry.discover_unified_handlers() {
+        Ok(h) => h,
+        Err(e) => {
+            warn!("Failed to create unified handlers: {}", e);
             return;
         }
     };
 
     let mut loaded_count = 0;
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.extension().is_some_and(|ext| ext == "rn") {
-            match load_single_rune_handler(&path).await {
-                Ok(handler) => {
-                    if let Err(e) = reactor.register(handler) {
-                        warn!("Failed to register Rune handler {}: {}", path.display(), e);
-                    } else {
-                        loaded_count += 1;
-                        debug!("Loaded Rune handler from {}", path.display());
-                    }
-                }
-                Err(e) => {
-                    warn!("Failed to load Rune handler from {}: {}", path.display(), e);
-                }
-            }
+    for handler in handlers {
+        let name = handler.name().to_string();
+        if let Err(e) = reactor.register(handler) {
+            warn!("Failed to register Rune handler {}: {}", name, e);
+        } else {
+            loaded_count += 1;
+            debug!("Loaded Rune handler: {}", name);
         }
     }
 
     if loaded_count > 0 {
-        info!(
-            "Loaded {} Rune handlers from {}",
-            loaded_count,
-            handlers_dir.display()
-        );
+        info!("Loaded {} Rune handlers via HandlerRegistry", loaded_count);
     }
-}
-
-/// Load a single Rune handler from a file.
-///
-/// Uses `crucible_rune::core_handler::RuneHandler` to create a Handler
-/// that can be registered with the Reactor.
-async fn load_single_rune_handler(path: &Path) -> Result<Box<dyn crucible_core::events::Handler>> {
-    use crucible_rune::core_handler::{RuneHandler, RuneHandlerMeta};
-    use crucible_rune::RuneExecutor;
-
-    // Create executor for this handler
-    let executor = Arc::new(RuneExecutor::new().with_context(|| "Failed to create Rune executor")?);
-
-    // Create handler metadata
-    // Priority 500+ for user scripts (after built-in handlers)
-    let meta = RuneHandlerMeta::new(path.to_path_buf(), "handle")
-        .with_priority(500)
-        .with_event_pattern("*");
-
-    // Create RuneHandler - this will compile the script
-    let handler = RuneHandler::new(meta, executor)
-        .with_context(|| format!("Failed to create Rune handler from {}", path.display()))?;
-
-    Ok(Box::new(handler))
 }
 
 #[cfg(test)]
