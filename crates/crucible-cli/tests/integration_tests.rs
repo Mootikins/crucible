@@ -153,7 +153,7 @@ fn test_chat_help() {
     cmd.assert()
         .success()
         .stdout(predicate::str::contains("Natural language chat"))
-        .stdout(predicate::str::contains("--act"))
+        .stdout(predicate::str::contains("--plan"))
         .stdout(predicate::str::contains("plan"));
 }
 
@@ -188,9 +188,9 @@ fn test_chat_with_context_size_flag() {
 }
 
 #[test]
-fn test_chat_with_act_flag() {
+fn test_chat_with_plan_flag() {
     let mut cmd = Command::cargo_bin("cru").unwrap();
-    cmd.arg("chat").arg("--act").arg("--help");
+    cmd.arg("chat").arg("--plan").arg("--help");
 
     cmd.assert().success();
 }
@@ -204,7 +204,7 @@ fn test_chat_all_flags_combined() {
         .arg("--no-context")
         .arg("--context-size")
         .arg("10")
-        .arg("--act")
+        .arg("--plan")
         .arg("--help");
 
     cmd.assert().success();
