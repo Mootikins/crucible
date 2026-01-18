@@ -84,9 +84,9 @@ pub async fn execute(
     let stopped_daemon = false;
 
     // Initialize Reactor for note lifecycle events
-    // This allows Rune handlers to react to note processing
+    // This allows Lua handlers to react to note processing
     let reactor = Arc::new(RwLock::new(Reactor::new()));
-    load_rune_handlers(&mut *reactor.write().await, &config.kiln_path);
+    load_lua_handlers(&mut *reactor.write().await, &config.kiln_path);
     let handler_count = reactor.read().await.handler_count();
     if handler_count > 0 {
         info!("Loaded {} Rune handlers for note events", handler_count);
@@ -445,33 +445,29 @@ async fn emit_note_event(reactor: &Arc<RwLock<Reactor>>, path: &Path, block_coun
     }
 }
 
-fn load_rune_handlers(reactor: &mut Reactor, kiln_path: &Path) {
-    use crucible_rune::{DiscoveryPaths, HandlerRegistry};
+fn load_lua_handlers(reactor: &mut Reactor, kiln_path: &Path) {
+    use crucible_core::discovery::DiscoveryPaths;
+    use crucible_lua::LuaScriptHandlerRegistry;
 
     let paths = DiscoveryPaths::new("handlers", Some(kiln_path));
     let existing = paths.existing_paths();
     if existing.is_empty() {
-        debug!("No handler directories found, skipping Rune handlers");
+        debug!("No handler directories found, skipping Lua handlers");
         return;
     }
 
-    let mut registry = match HandlerRegistry::with_paths(paths) {
+    let registry = match LuaScriptHandlerRegistry::discover(&existing) {
         Ok(r) => r,
         Err(e) => {
-            warn!("Failed to create handler registry: {}", e);
+            warn!("Failed to discover Lua handlers: {}", e);
             return;
         }
     };
 
-    if let Err(e) = registry.discover() {
-        warn!("Failed to discover handlers: {}", e);
-        return;
-    }
-
-    let handlers = match registry.discover_unified_handlers() {
+    let handlers = match registry.to_core_handlers() {
         Ok(h) => h,
         Err(e) => {
-            warn!("Failed to create unified handlers: {}", e);
+            warn!("Failed to create core handlers from Lua: {}", e);
             return;
         }
     };
@@ -480,14 +476,14 @@ fn load_rune_handlers(reactor: &mut Reactor, kiln_path: &Path) {
     for handler in handlers {
         let name = handler.name().to_string();
         if let Err(e) = reactor.register(handler) {
-            warn!("Failed to register Rune handler {}: {}", name, e);
+            warn!("Failed to register Lua handler {}: {}", name, e);
         } else {
             loaded_count += 1;
-            debug!("Loaded Rune handler: {}", name);
+            debug!("Loaded Lua handler: {}", name);
         }
     }
 
     if loaded_count > 0 {
-        info!("Loaded {} Rune handlers via HandlerRegistry", loaded_count);
+        info!("Loaded {} Lua handlers", loaded_count);
     }
 }

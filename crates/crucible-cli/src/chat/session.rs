@@ -20,8 +20,8 @@ use crate::chat::slash_registry::{SlashCommandRegistry, SlashCommandRegistryBuil
 use crate::chat::{AgentHandle, ChatError, ChatResult};
 use crate::core_facade::KilnContext;
 use crate::tui::ink::{AgentSelection, ChatMode, InkChatRunner};
+use crucible_core::events::EventRing;
 use crucible_core::traits::registry::{Registry, RegistryBuilder};
-use crucible_rune::SessionBuilder;
 use walkdir::WalkDir;
 
 /// Default number of context results to include in enriched prompts
@@ -38,7 +38,7 @@ pub const DEFAULT_SEARCH_LIMIT: usize = 10;
 /// User interface settings for the chat command (initial mode, splash screen,
 /// context settings). This is distinct from:
 /// - `crucible_core::SessionConfig` - ACP protocol session parameters
-/// - `crucible_rune::ReactorSessionConfig` - reactor/handler execution config
+/// - `crucible_core::SessionEventConfig` - session event configuration
 /// - `crucible_acp::TransportConfig` - transport layer settings
 ///
 /// # TODO: Scratch Workspace
@@ -331,13 +331,9 @@ impl ChatSession {
         Fut: std::future::Future<Output = Result<A>>,
         A: AgentHandle,
     {
-        let session_folder = self.core.session_folder();
-        let session = SessionBuilder::with_generated_id("chat")
-            .with_folder(&session_folder)
-            .build();
-
-        let ring = session.ring().clone();
-        let bridge = AgentEventBridge::new(session.handle(), ring.clone());
+        let _session_folder = self.core.session_folder();
+        let ring = std::sync::Arc::new(EventRing::new(4096));
+        let bridge = AgentEventBridge::new(ring.clone());
 
         let mode = ChatMode::parse(&self.config.initial_mode_id);
 
