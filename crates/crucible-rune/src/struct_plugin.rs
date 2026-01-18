@@ -35,10 +35,10 @@
 //! ```
 
 use crate::attribute_discovery::{attr_parsers, AttributeDiscovery, FromAttributes};
-use crate::discovery_paths::DiscoveryPaths;
 use crate::mcp_types::{json_to_rune, rune_to_json};
 use crate::RuneError;
 use crucible_config::ShellPolicy;
+use crucible_core::discovery::DiscoveryPaths;
 use glob::Pattern;
 use rune::runtime::Value;
 use rune::{Context, Diagnostics, Source, Sources, Unit, Vm};

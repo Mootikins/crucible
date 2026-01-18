@@ -6,13 +6,13 @@
 //!
 //! Note: Event handlers are now unified with hooks via `#[hook(...)]` attributes.
 
-use crate::discovery_paths::DiscoveryPaths;
 use crate::events::{CrucibleEvent, EnrichedRecipe};
 use crate::oq_module::oq_module;
 use crate::regex_module::regex_module;
 use crate::rune_types::{crucible_module, RuneRecipeEnrichment};
 use crate::shell_module::shell_module;
 use crate::RuneError;
+use crucible_core::discovery::DiscoveryPaths;
 use rune::runtime::RuntimeContext;
 use rune::{Context, Diagnostics, Source, Sources, Vm};
 use serde_json::Value as JsonValue;
