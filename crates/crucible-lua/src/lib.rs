@@ -84,6 +84,8 @@ mod shell;
 pub mod statusline;
 mod types;
 
+pub mod config;
+
 pub use annotations::{AnnotationParser, DiscoveredHandler, DiscoveredPlugin, DiscoveredTool};
 pub use ask::{
     core_answer_to_lua, core_batch_to_lua, core_question_to_lua, core_response_to_lua,
@@ -93,6 +95,7 @@ pub use ask::{
     register_ask_module_with_context, EventPushCallback, LuaAgentAskContext, LuaAskBatch,
     LuaAskBatchResponse, LuaAskContext, LuaAskError, LuaAskQuestion, LuaQuestionAnswer,
 };
+pub use config::{get_statusline_config, ConfigLoader, ConfigState};
 pub use core_handler::{LuaHandler, LuaHandlerMeta};
 pub use error::LuaError;
 pub use executor::LuaExecutor;
