@@ -31,11 +31,13 @@
 #![allow(deprecated)]
 
 use crate::attribute_discovery::AttributeDiscovery;
+use crate::core_handler::{RuneHandler as UnifiedRuneHandler, RuneHandlerMeta};
 use crate::discovery_paths::DiscoveryPaths;
 use crate::event_bus::{Event, EventBus, EventContext, Handler, HandlerError, HandlerResult};
 use crate::executor::RuneExecutor;
 use crate::handler_types::RuneHandler;
 use crate::RuneError;
+use crucible_core::events::Handler as CoreHandler;
 use rune::Unit;
 use serde_json::Value as JsonValue;
 use std::collections::HashMap;
@@ -473,6 +475,57 @@ impl HandlerRegistry {
     pub fn paths(&self) -> &DiscoveryPaths {
         &self.paths
     }
+
+    /// Discover handlers and return them as unified core Handlers.
+    ///
+    /// This is the recommended method for new code. It returns handlers that implement
+    /// `crucible_core::events::Handler` and can be used with the unified Reactor.
+    ///
+    /// Unlike `register_all()` which uses the legacy EventBus, this method returns
+    /// handlers compatible with the new event system.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use crucible_rune::HandlerRegistry;
+    /// use crucible_core::events::Reactor;
+    ///
+    /// let mut registry = HandlerRegistry::new(Some(kiln_path))?;
+    /// registry.discover()?;
+    ///
+    /// let handlers = registry.discover_unified_handlers()?;
+    /// let mut reactor = Reactor::new();
+    /// for handler in handlers {
+    ///     reactor.register(handler)?;
+    /// }
+    /// ```
+    pub fn discover_unified_handlers(&self) -> Result<Vec<Box<dyn CoreHandler>>, RuneError> {
+        let mut handlers: Vec<Box<dyn CoreHandler>> = Vec::new();
+
+        for (name, script_handler) in &self.rune_handlers {
+            let metadata = script_handler.metadata();
+
+            let meta = RuneHandlerMeta::new(&metadata.path, &metadata.handler_fn)
+                .with_event_pattern(&metadata.event_type)
+                .with_priority(metadata.priority as i32)
+                .with_enabled(metadata.enabled);
+            match UnifiedRuneHandler::new(meta, self.executor.clone()) {
+                Ok(handler) => {
+                    debug!(
+                        "Created unified handler: {} (event={}, priority={})",
+                        name, metadata.event_type, metadata.priority
+                    );
+                    handlers.push(Box::new(handler));
+                }
+                Err(e) => {
+                    warn!("Failed to create unified handler '{}': {}", name, e);
+                }
+            }
+        }
+
+        info!("Created {} unified handlers from registry", handlers.len());
+        Ok(handlers)
+    }
 }
 
 impl RuneScriptHandler {
@@ -570,6 +623,12 @@ impl HandlerManager {
     pub fn count(&self) -> usize {
         let reg = self.registry.read().unwrap();
         reg.count()
+    }
+
+    /// Get unified core handlers for use with the Reactor.
+    pub fn discover_unified_handlers(&self) -> Result<Vec<Box<dyn CoreHandler>>, RuneError> {
+        let reg = self.registry.read().unwrap();
+        reg.discover_unified_handlers()
     }
 }
 
@@ -734,5 +793,59 @@ pub fn legacy_handler(ctx, event) {
         let count = registry.discover().unwrap();
         assert_eq!(count, 1);
         assert!(registry.get("legacy_handler").is_some());
+    }
+
+    #[tokio::test]
+    async fn test_discover_unified_handlers() {
+        let temp = TempDir::new().unwrap();
+        let handlers_dir = temp.path().join("handlers");
+        fs::create_dir_all(&handlers_dir).unwrap();
+
+        let script = r#"
+#[handler(event = "tool:after", pattern = "just_*", priority = 25)]
+pub fn unified_test(ctx, event) {
+    event
+}
+"#;
+        fs::write(handlers_dir.join("unified.rn"), script).unwrap();
+
+        let paths = DiscoveryPaths::empty("handlers").with_path(handlers_dir);
+        let mut registry = HandlerRegistry::with_paths(paths).unwrap();
+        registry.discover().unwrap();
+
+        let unified = registry.discover_unified_handlers().unwrap();
+        assert_eq!(unified.len(), 1);
+
+        let handler = &unified[0];
+        assert!(handler.name().contains("unified_test"));
+        assert_eq!(handler.priority(), 25);
+        assert_eq!(handler.event_pattern(), "tool:after");
+    }
+
+    #[tokio::test]
+    async fn test_discover_unified_handlers_multiple() {
+        let temp = TempDir::new().unwrap();
+        let handlers_dir = temp.path().join("handlers");
+        fs::create_dir_all(&handlers_dir).unwrap();
+
+        let script = r#"
+#[handler(event = "tool:before", priority = 10)]
+pub fn handler_a(ctx, event) {
+    event
+}
+
+#[handler(event = "tool:after", priority = 20)]
+pub fn handler_b(ctx, event) {
+    event
+}
+"#;
+        fs::write(handlers_dir.join("multi.rn"), script).unwrap();
+
+        let paths = DiscoveryPaths::empty("handlers").with_path(handlers_dir);
+        let mut registry = HandlerRegistry::with_paths(paths).unwrap();
+        registry.discover().unwrap();
+
+        let unified = registry.discover_unified_handlers().unwrap();
+        assert_eq!(unified.len(), 2);
     }
 }
