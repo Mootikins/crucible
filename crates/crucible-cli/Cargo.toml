@@ -110,10 +110,8 @@ markdown-it = { workspace = true }
 # Async utilities
 futures = { workspace = true }
 
-# Terminal utilities (kept for progress.rs, markdown_renderer.rs)
+# Terminal utilities (crossterm for ink TUI)
 crossterm = { workspace = true }
-ratatui = "0.30"  # scrolling-regions breaks inline viewport mode
-tui-textarea = { version = "0.7", default-features = false, features = ["crossterm"] }
 
 # Markdown rendering with syntax highlighting
 syntect = { version = "5.2", default-features = false, features = ["default-syntaxes", "default-themes", "regex-onig"] }

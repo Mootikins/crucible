@@ -128,18 +128,6 @@ pub enum Commands {
         /// Can be toggled during session with /plan and /act commands
         #[arg(long)]
         act: bool,
-
-        /// Use fullscreen mode (traditional TUI) instead of inline viewport
-        ///
-        /// By default, crucible uses inline mode which preserves native terminal
-        /// scrollback for completed messages. Fullscreen mode uses alternate
-        /// screen buffer like traditional TUIs.
-        #[arg(long)]
-        fullscreen: bool,
-
-        /// Use experimental Ink-based runner (simpler graduation model)
-        #[arg(long)]
-        ink: bool,
     },
 
     /// Start MCP server exposing Crucible tools

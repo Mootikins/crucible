@@ -60,7 +60,6 @@ fn select_session_kiln(config: &CliConfig) -> Option<PathBuf> {
     Some(kiln_path.clone())
 }
 
-#[allow(clippy::too_many_arguments)]
 pub async fn execute(
     config: CliConfig,
     agent_name: Option<String>,
@@ -75,26 +74,55 @@ pub async fn execute(
     max_context_tokens: usize,
     env_overrides: Vec<String>,
     resume_session_id: Option<String>,
-    fullscreen: bool,
-    use_ink_runner: bool,
 ) -> Result<()> {
-    // Determine initial mode
     let initial_mode = if read_only { "plan" } else { "act" };
 
     info!("Starting chat command");
     info!("Initial mode: {}", mode_display_name(initial_mode));
 
-    // Note: DB lock detection is now handled in factories::get_storage()
-    // with proper detection of orphan daemon processes
+    let parsed_env = parse_env_overrides(&env_overrides);
+    let working_dir = std::env::current_dir().ok();
 
-    // Single-line status display for clean startup UX
-    let mut status = StatusLine::new();
+    match query {
+        None => {
+            run_interactive_chat(
+                config,
+                initial_mode,
+                use_internal,
+                agent_name,
+                provider_key,
+                max_context_tokens,
+                parsed_env,
+                working_dir,
+                resume_session_id,
+                force_local,
+            )
+            .await
+        }
+        Some(query_text) => {
+            run_oneshot_chat(
+                config,
+                initial_mode,
+                use_internal,
+                agent_name,
+                provider_key,
+                max_context_tokens,
+                parsed_env,
+                working_dir,
+                resume_session_id,
+                force_local,
+                no_context,
+                no_process,
+                context_size,
+                query_text,
+            )
+            .await
+        }
+    }
+}
 
-    // Get default agent from config before moving config
-    let default_agent_from_config = config.acp.default_agent.clone();
-
-    // Parse env overrides from CLI (KEY=VALUE format) - needed for both paths
-    let parsed_env: std::collections::HashMap<String, String> = env_overrides
+fn parse_env_overrides(env_overrides: &[String]) -> std::collections::HashMap<String, String> {
+    let parsed: std::collections::HashMap<String, String> = env_overrides
         .iter()
         .filter_map(|s| {
             let mut parts = s.splitn(2, '=');
@@ -110,566 +138,24 @@ pub async fn execute(
         })
         .collect();
 
-    if !parsed_env.is_empty() {
-        let keys: Vec<_> = parsed_env.keys().collect();
+    if !parsed.is_empty() {
+        let keys: Vec<_> = parsed.keys().collect();
         info!("CLI env overrides: {:?}", keys);
     }
 
-    // Capture current working directory for agent initialization
-    // This ensures the agent operates in the user's current directory (where they invoked cru)
-    // This is distinct from the kiln path, which is where knowledge is stored.
-    let working_dir = std::env::current_dir().ok();
-
-    // === INTERACTIVE MODE: Always use factory path for /new restart support ===
-    let is_interactive = query.is_none();
-    if is_interactive {
-        // Compute preselected agent from CLI args and config
-        // Priority: CLI flags > config agent_preference > config default_agent
-        use crucible_config::AgentPreference;
-        let preselected_agent = if use_internal {
-            // Explicit CLI flag for internal agent
-            Some(AgentSelection::Internal)
-        } else if let Some(ref name) = agent_name {
-            // Explicit CLI flag for specific ACP agent
-            Some(AgentSelection::Acp(name.clone()))
-        } else {
-            // No CLI flags - use config preference
-            match config.chat.agent_preference {
-                AgentPreference::Crucible => Some(AgentSelection::Internal),
-                AgentPreference::Acp => {
-                    // Use configured default agent or discover
-                    default_agent_from_config.clone().map(AgentSelection::Acp)
-                }
-            }
-        };
-
-        return run_deferred_chat(
-            config,
-            default_agent_from_config,
-            initial_mode,
-            no_context,
-            no_process,
-            context_size,
-            provider_key,
-            max_context_tokens,
-            parsed_env,
-            working_dir.clone(),
-            status,
-            preselected_agent,
-            resume_session_id,
-            fullscreen,
-            use_ink_runner,
-            force_local,
-        )
-        .await;
-    }
-
-    // === ONE-SHOT MODE: Agent created before query execution ===
-
-    // Determine agent type based on selection
-    let agent_type = if use_internal {
-        factories::AgentType::Internal
-    } else {
-        factories::AgentType::Acp
-    };
-
-    let mut agent_params = factories::AgentInitParams::new()
-        .with_type(agent_type)
-        .with_agent_name_opt(agent_name.clone().or(default_agent_from_config.clone()))
-        .with_provider_opt(provider_key)
-        .with_read_only(is_read_only(initial_mode))
-        .with_max_context_tokens(max_context_tokens)
-        .with_env_overrides(parsed_env)
-        .with_force_local(force_local)
-        .with_resume_session_id(resume_session_id.clone());
-
-    if let Some(ref wd) = working_dir {
-        agent_params = agent_params.with_working_dir(wd.clone());
-    }
-
-    // Fetch available models for OpenCode (unused in one-shot mode, but kept for future use)
-    let _available_models = if agent_type == factories::AgentType::Acp {
-        let effective_agent = agent_name.clone().or(default_agent_from_config);
-        if effective_agent.as_deref() == Some("opencode") {
-            status.update("Fetching available models from OpenCode...");
-            crate::acp::models::fetch_opencode_models().await.ok()
-        } else {
-            None
-        }
-    } else {
-        None
-    };
-
-    // Initialize storage first (needed for kiln tools in internal agents)
-    status.update("Initializing storage...");
-    let storage_handle = factories::get_storage(&config).await?;
-    let storage_client = storage_handle
-        .get_embedded_for_operation(&config, "chat initialization")
-        .await?;
-    factories::initialize_surrealdb_schema(&storage_client).await?;
-
-    // For internal agents, create kiln context for knowledge tools
-    let initialized_agent = if use_internal {
-        status.update("Initializing LLM provider with kiln tools...");
-
-        // Create kiln context for knowledge base access
-        let embedding_provider = factories::get_or_create_embedding_provider(&config).await?;
-        let knowledge_repo = storage_client.as_knowledge_repository();
-        let kiln_ctx =
-            crucible_rig::KilnContext::new(&config.kiln_path, knowledge_repo, embedding_provider);
-
-        let agent_params = agent_params.with_kiln_context(kiln_ctx);
-        factories::create_agent(&config, agent_params).await?
-    } else {
-        // ACP agents don't need kiln tools directly (they use MCP)
-        status.update("Discovering agent...");
-        factories::create_agent(&config, agent_params).await?
-    };
-
-    // Quick sync check + background processing (unless --no-process or --no-context)
-    let bg_progress: Option<BackgroundProgress> = if !no_process && !no_context {
-        use crate::sync::quick_sync_check;
-
-        status.update("Checking for file changes...");
-
-        let kiln_path = &config.kiln_path;
-        let sync_status = quick_sync_check(&storage_client, kiln_path).await?;
-
-        if sync_status.needs_processing() {
-            let pending = sync_status.pending_count();
-            status.update(&format!(
-                "Starting background indexing ({} files)...",
-                pending
-            ));
-
-            // Create pipeline for background processing
-            let note_store = storage_handle.note_store().ok_or_else(|| {
-                anyhow::anyhow!("Storage mode does not support background indexing")
-            })?;
-            let pipeline = factories::create_pipeline(note_store, &config, false).await?;
-
-            let files_to_process = sync_status.files_to_process();
-            let bg_pipeline = Arc::new(pipeline);
-            let progress = BackgroundProgress::new(pending);
-
-            // Spawn background processing with progress tracking
-            let bg_pipeline_clone = bg_pipeline.clone();
-            let progress_clone = progress.clone();
-            tokio::spawn(async move {
-                for file in files_to_process {
-                    match bg_pipeline_clone.process(&file).await {
-                        Ok(_) => progress_clone.inc_completed(),
-                        Err(e) => {
-                            tracing::warn!(
-                                "Background process failed for {}: {}",
-                                file.display(),
-                                e
-                            );
-                            progress_clone.inc_failed();
-                        }
-                    }
-                }
-                tracing::debug!("Background file processing completed");
-            });
-
-            // Spawn background watch task
-            let watch_config = config.clone();
-            let watch_pipeline = bg_pipeline;
-            tokio::spawn(async move {
-                if let Err(e) = spawn_background_watch(watch_config, watch_pipeline).await {
-                    tracing::error!("Background watch failed: {}", e);
-                }
-            });
-
-            info!("Background processing spawned for {} files", pending);
-            Some(progress)
-        } else {
-            // All files up to date, still spawn watch
-            if let Some(note_store) = storage_handle.note_store() {
-                let pipeline = factories::create_pipeline(note_store, &config, false).await?;
-                let watch_config = config.clone();
-                let watch_pipeline = Arc::new(pipeline);
-                tokio::spawn(async move {
-                    if let Err(e) = spawn_background_watch(watch_config, watch_pipeline).await {
-                        tracing::error!("Background watch failed: {}", e);
-                    }
-                });
-            }
-            None
-        }
-    } else {
-        None
-    };
-
-    // Initialize core facade
-    status.update("Initializing core...");
-    let core = Arc::new(KilnContext::from_storage(storage_client.clone(), config));
-
-    // Get cached embedding provider
-    status.update("Initializing embedding provider...");
-    let embedding_provider = factories::get_or_create_embedding_provider(core.config()).await?;
-
-    // Get knowledge repository from storage (one-shot mode always has embedded client)
-    let knowledge_repo = storage_client.as_knowledge_repository();
-
-    // Handle agent type specific setup and session execution
-    match initialized_agent {
-        factories::InitializedAgent::Acp(client) => {
-            // Configure ACP client with MCP dependencies for in-process tool execution
-            let kiln_path = core.config().kiln_path.clone();
-            let mut client = client
-                .with_kiln_path(kiln_path)
-                .with_mcp_dependencies(knowledge_repo, embedding_provider);
-
-            // Spawn agent (tools will be initialized via in-process SSE MCP server)
-            status.update("Connecting to agent...");
-            client.spawn().await?;
-
-            // Finalize startup status
-            status.success("Ready");
-
-            // One-shot mode - query is guaranteed Some here (interactive returned early)
-            let query_text = query.expect("query should be Some in one-shot path");
-            info!("One-shot query mode");
-            let _live_progress = bg_progress.map(LiveProgress::start);
-
-            let prompt = if no_context {
-                info!("Context enrichment disabled");
-                query_text
-            } else {
-                // Enrich with context
-                info!("Enriching query with context...");
-                let enricher = ContextEnricher::new(core.clone(), context_size);
-                enricher.enrich(&query_text).await?
-            };
-
-            // Start chat with enriched prompt
-            client.start_chat(&prompt).await?;
-
-            // Cleanup
-            client.shutdown().await?;
-        }
-        factories::InitializedAgent::Internal(mut handle) => {
-            // Internal agent is ready immediately
-            status.success("Ready");
-
-            // One-shot mode - query is guaranteed Some here (interactive returned early)
-            let query_text = query.expect("query should be Some in one-shot path");
-            info!("One-shot query mode (internal agent)");
-            let _live_progress = bg_progress.map(LiveProgress::start);
-
-            let prompt = if no_context {
-                info!("Context enrichment disabled");
-                query_text
-            } else {
-                // Enrich with context
-                info!("Enriching query with context...");
-                let enricher = ContextEnricher::new(core.clone(), context_size);
-                enricher.enrich(&query_text).await?
-            };
-
-            // Send message and stream response, accumulate for markdown rendering
-            use crate::tui::MarkdownRenderer;
-            use crucible_core::traits::chat::AgentHandle;
-            use futures::StreamExt;
-
-            let renderer = MarkdownRenderer::new();
-            let mut response_content = String::new();
-
-            let mut stream = handle.send_message_stream(prompt.clone());
-            while let Some(result) = stream.next().await {
-                match result {
-                    Ok(chunk) => {
-                        if !chunk.done {
-                            response_content.push_str(&chunk.delta);
-                        }
-                    }
-                    Err(e) => {
-                        eprintln!("\nError: {}", e);
-                        return Err(e.into());
-                    }
-                }
-            }
-
-            // Render and print the complete response with markdown
-            let rendered = renderer.render(&response_content);
-            println!("{}", rendered);
-        }
-    }
-
-    Ok(())
+    parsed
 }
 
 #[allow(clippy::too_many_arguments)]
-async fn run_deferred_chat(
+async fn run_interactive_chat(
     config: CliConfig,
-    default_agent: Option<String>,
     initial_mode: &str,
-    no_context: bool,
-    no_process: bool,
-    context_size: Option<usize>,
+    _use_internal: bool,
+    _agent_name: Option<String>,
     provider_key: Option<String>,
     max_context_tokens: usize,
     parsed_env: std::collections::HashMap<String, String>,
     working_dir: Option<std::path::PathBuf>,
-    mut status: StatusLine,
-    preselected_agent: Option<AgentSelection>,
-    resume_session_id: Option<String>,
-    fullscreen: bool,
-    use_ink_runner: bool,
-    force_local: bool,
-) -> Result<()> {
-    use crate::chat::{ChatSession, ChatSessionConfig};
-
-    info!("Using deferred agent creation (picker in TUI)");
-
-    if use_ink_runner {
-        return run_ink_chat(
-            config,
-            default_agent,
-            initial_mode,
-            provider_key,
-            max_context_tokens,
-            parsed_env,
-            working_dir,
-            status,
-            resume_session_id,
-            force_local,
-        )
-        .await;
-    }
-
-    status.update("Initializing storage...");
-    let storage_handle = factories::get_storage(&config).await?;
-
-    // Background processing only in embedded mode
-    // Daemon mode: cru-server handles schema init and file watching
-    let _bg_progress: Option<BackgroundProgress> = if storage_handle.is_embedded()
-        && !no_process
-        && !no_context
-    {
-        // Only embedded mode can do schema init and background processing
-        let storage_client = storage_handle.as_embedded();
-        factories::initialize_surrealdb_schema(storage_client).await?;
-
-        use crate::sync::quick_sync_check;
-
-        status.update("Checking for file changes...");
-
-        let kiln_path = &config.kiln_path;
-        let sync_status = quick_sync_check(storage_client, kiln_path).await?;
-
-        if sync_status.needs_processing() {
-            let pending = sync_status.pending_count();
-            status.update(&format!(
-                "Starting background indexing ({} files)...",
-                pending
-            ));
-
-            let note_store = storage_handle
-                .note_store()
-                .ok_or_else(|| anyhow::anyhow!("Storage mode does not support NoteStore"))?;
-            let pipeline = factories::create_pipeline(note_store, &config, false).await?;
-
-            let files_to_process = sync_status.files_to_process();
-            let bg_pipeline = Arc::new(pipeline);
-            let progress = BackgroundProgress::new(pending);
-
-            let bg_pipeline_clone = bg_pipeline.clone();
-            let progress_clone = progress.clone();
-            tokio::spawn(async move {
-                for file in files_to_process {
-                    match bg_pipeline_clone.process(&file).await {
-                        Ok(_) => progress_clone.inc_completed(),
-                        Err(e) => {
-                            tracing::warn!(
-                                "Background process failed for {}: {}",
-                                file.display(),
-                                e
-                            );
-                            progress_clone.inc_failed();
-                        }
-                    }
-                }
-                tracing::debug!("Background file processing completed");
-            });
-
-            let watch_config = config.clone();
-            let watch_pipeline = bg_pipeline;
-            tokio::spawn(async move {
-                if let Err(e) = spawn_background_watch(watch_config, watch_pipeline).await {
-                    tracing::error!("Background watch failed: {}", e);
-                }
-            });
-
-            info!("Background processing spawned for {} files", pending);
-            Some(progress)
-        } else {
-            let note_store = storage_handle
-                .note_store()
-                .ok_or_else(|| anyhow::anyhow!("Storage mode does not support NoteStore"))?;
-            let pipeline = factories::create_pipeline(note_store, &config, false).await?;
-            let watch_config = config.clone();
-            let watch_pipeline = Arc::new(pipeline);
-            tokio::spawn(async move {
-                if let Err(e) = spawn_background_watch(watch_config, watch_pipeline).await {
-                    tracing::error!("Background watch failed: {}", e);
-                }
-            });
-            None
-        }
-    } else {
-        if storage_handle.is_daemon() {
-            info!("Running in daemon mode - schema init and background processing handled by cru-server");
-        }
-        None
-    };
-
-    // Initialize core facade (works with both embedded and daemon modes)
-    status.update("Initializing core...");
-    let core = Arc::new(KilnContext::from_storage_handle(
-        storage_handle.clone(),
-        config.clone(),
-    ));
-
-    // Get cached embedding provider
-    status.update("Initializing embedding provider...");
-    let embedding_provider = factories::get_or_create_embedding_provider(core.config()).await?;
-
-    // Get knowledge repository from storage handle (works with both modes)
-    let knowledge_repo = storage_handle
-        .as_knowledge_repository()
-        .ok_or_else(|| anyhow::anyhow!("Knowledge repository not available in lightweight mode"))?;
-
-    // Clear status line - TUI will take over with its own display
-    // Note: We don't print "Ready" since TUI's EnterAlternateScreen clears the screen
-    status.update("");
-
-    // Create session configuration
-    let mut session_config = ChatSessionConfig::new(initial_mode, !no_context, context_size);
-
-    // Set up session logging to appropriate kiln
-    if let Some(kiln_path) = select_session_kiln(&config) {
-        session_config = session_config.with_session_kiln(kiln_path);
-    }
-
-    // Set preselected agent if provided (skips picker first time, allows /new restart)
-    if let Some(selection) = preselected_agent {
-        session_config = session_config.with_default_selection(selection);
-    }
-
-    // Set session to resume from (loads existing conversation history)
-    if let Some(session_id) = resume_session_id {
-        info!("Will resume session: {}", session_id);
-        session_config = session_config.with_resume_session(session_id);
-    }
-
-    session_config = session_config
-        .with_fullscreen(fullscreen)
-        .with_ink_runner(use_ink_runner);
-
-    let mut session = ChatSession::new(session_config, core.clone(), None);
-
-    // Create the agent factory closure
-    // This captures all dependencies needed to create the agent after picker selection
-    let config_for_factory = config.clone();
-    let initial_mode_str = initial_mode.to_string();
-    let working_dir_for_factory = working_dir.clone();
-    let factory = move |selection: AgentSelection| {
-        let config = config_for_factory.clone();
-        let default_agent = default_agent.clone();
-        let provider_key = provider_key.clone();
-        let parsed_env = parsed_env.clone();
-        let core = core.clone();
-        let embedding_provider = embedding_provider.clone();
-        let knowledge_repo = knowledge_repo.clone();
-        let initial_mode = initial_mode_str.clone();
-        let working_dir = working_dir_for_factory.clone();
-
-        async move {
-            match selection {
-                AgentSelection::Acp(agent_name) => {
-                    info!("Creating ACP agent: {}", agent_name);
-
-                    let mut params = factories::AgentInitParams::new()
-                        .with_type(factories::AgentType::Acp)
-                        .with_agent_name_opt(Some(agent_name).or(default_agent))
-                        .with_provider_opt(provider_key)
-                        .with_read_only(is_read_only(&initial_mode))
-                        .with_max_context_tokens(max_context_tokens)
-                        .with_env_overrides(parsed_env)
-                        .with_force_local(force_local);
-
-                    // Set working directory if available
-                    if let Some(wd) = working_dir.clone() {
-                        params = params.with_working_dir(wd);
-                    }
-
-                    let agent = factories::create_agent(&config, params).await?;
-
-                    match agent {
-                        factories::InitializedAgent::Acp(client) => {
-                            let kiln_path = core.config().kiln_path.clone();
-                            let mut client = client
-                                .with_kiln_path(kiln_path)
-                                .with_mcp_dependencies(knowledge_repo, embedding_provider);
-                            client.spawn().await?;
-                            Ok(DynamicAgent::acp(client))
-                        }
-                        factories::InitializedAgent::Internal(_) => {
-                            anyhow::bail!("Expected ACP agent but got Internal")
-                        }
-                    }
-                }
-                AgentSelection::Internal => {
-                    info!("Creating internal agent");
-
-                    let mut params = factories::AgentInitParams::new()
-                        .with_type(factories::AgentType::Internal)
-                        .with_provider_opt(provider_key)
-                        .with_read_only(is_read_only(&initial_mode))
-                        .with_max_context_tokens(max_context_tokens)
-                        .with_env_overrides(parsed_env)
-                        .with_force_local(force_local);
-
-                    // Set working directory for internal agents (Rig handles tools internally)
-                    if let Some(ref wd) = working_dir {
-                        params = params.with_working_dir(wd.clone());
-                    }
-
-                    let agent = factories::create_agent(&config, params).await?;
-
-                    match agent {
-                        factories::InitializedAgent::Internal(handle) => {
-                            Ok(DynamicAgent::local(handle))
-                        }
-                        factories::InitializedAgent::Acp(_) => {
-                            anyhow::bail!("Expected Internal agent but got ACP")
-                        }
-                    }
-                }
-                AgentSelection::Cancelled => {
-                    // This shouldn't happen - runner handles cancellation before calling factory
-                    anyhow::bail!("Agent selection was cancelled")
-                }
-            }
-        }
-    };
-
-    // Run deferred session - picker runs in TUI, then factory creates agent
-    session.run_deferred(factory).await
-}
-
-#[allow(clippy::too_many_arguments)]
-async fn run_ink_chat(
-    config: CliConfig,
-    default_agent: Option<String>,
-    initial_mode: &str,
-    provider_key: Option<String>,
-    max_context_tokens: usize,
-    parsed_env: std::collections::HashMap<String, String>,
-    working_dir: Option<std::path::PathBuf>,
-    status: StatusLine,
     resume_session_id: Option<String>,
     force_local: bool,
 ) -> Result<()> {
@@ -679,7 +165,7 @@ async fn run_ink_chat(
     use crucible_core::traits::chat::is_read_only;
     use crucible_rune::SessionBuilder;
 
-    let _ = status;
+    let default_agent = config.acp.default_agent.clone();
 
     let session = SessionBuilder::with_generated_id("chat").build();
     let ring = session.ring().clone();
@@ -729,7 +215,7 @@ async fn run_ink_chat(
     std::fs::create_dir_all(&session_dir).ok();
     runner = runner.with_session_dir(session_dir);
 
-    let config_for_factory = config.clone();
+    let config_for_factory = config;
     let initial_mode_str = initial_mode.to_string();
     let factory = move |selection: AgentSelection| {
         let config = config_for_factory.clone();
@@ -799,6 +285,199 @@ async fn run_ink_chat(
     };
 
     runner.run_with_factory(&bridge, factory).await
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn run_oneshot_chat(
+    config: CliConfig,
+    initial_mode: &str,
+    use_internal: bool,
+    agent_name: Option<String>,
+    provider_key: Option<String>,
+    max_context_tokens: usize,
+    parsed_env: std::collections::HashMap<String, String>,
+    working_dir: Option<std::path::PathBuf>,
+    resume_session_id: Option<String>,
+    force_local: bool,
+    no_context: bool,
+    no_process: bool,
+    context_size: Option<usize>,
+    query_text: String,
+) -> Result<()> {
+    let mut status = StatusLine::new();
+    let default_agent = config.acp.default_agent.clone();
+
+    let agent_type = if use_internal {
+        factories::AgentType::Internal
+    } else {
+        factories::AgentType::Acp
+    };
+
+    let mut agent_params = factories::AgentInitParams::new()
+        .with_type(agent_type)
+        .with_agent_name_opt(agent_name.clone().or(default_agent.clone()))
+        .with_provider_opt(provider_key)
+        .with_read_only(is_read_only(initial_mode))
+        .with_max_context_tokens(max_context_tokens)
+        .with_env_overrides(parsed_env)
+        .with_force_local(force_local)
+        .with_resume_session_id(resume_session_id);
+
+    if let Some(ref wd) = working_dir {
+        agent_params = agent_params.with_working_dir(wd.clone());
+    }
+
+    status.update("Initializing storage...");
+    let storage_handle = factories::get_storage(&config).await?;
+    let storage_client = storage_handle
+        .get_embedded_for_operation(&config, "chat initialization")
+        .await?;
+    factories::initialize_surrealdb_schema(&storage_client).await?;
+
+    let initialized_agent = if use_internal {
+        status.update("Initializing LLM provider with kiln tools...");
+        let embedding_provider = factories::get_or_create_embedding_provider(&config).await?;
+        let knowledge_repo = storage_client.as_knowledge_repository();
+        let kiln_ctx =
+            crucible_rig::KilnContext::new(&config.kiln_path, knowledge_repo, embedding_provider);
+        let agent_params = agent_params.with_kiln_context(kiln_ctx);
+        factories::create_agent(&config, agent_params).await?
+    } else {
+        status.update("Discovering agent...");
+        factories::create_agent(&config, agent_params).await?
+    };
+
+    let bg_progress: Option<BackgroundProgress> = if !no_process && !no_context {
+        use crate::sync::quick_sync_check;
+
+        status.update("Checking for file changes...");
+        let sync_status = quick_sync_check(&storage_client, &config.kiln_path).await?;
+
+        if sync_status.needs_processing() {
+            let pending = sync_status.pending_count();
+            status.update(&format!(
+                "Starting background indexing ({pending} files)..."
+            ));
+
+            let note_store = storage_handle.note_store().ok_or_else(|| {
+                anyhow::anyhow!("Storage mode does not support background indexing")
+            })?;
+            let pipeline = factories::create_pipeline(note_store, &config, false).await?;
+            let files_to_process = sync_status.files_to_process();
+            let bg_pipeline = Arc::new(pipeline);
+            let progress = BackgroundProgress::new(pending);
+
+            let bg_pipeline_clone = bg_pipeline.clone();
+            let progress_clone = progress.clone();
+            tokio::spawn(async move {
+                for file in files_to_process {
+                    match bg_pipeline_clone.process(&file).await {
+                        Ok(_) => progress_clone.inc_completed(),
+                        Err(e) => {
+                            tracing::warn!(
+                                "Background process failed for {}: {}",
+                                file.display(),
+                                e
+                            );
+                            progress_clone.inc_failed();
+                        }
+                    }
+                }
+            });
+
+            let watch_config = config.clone();
+            let watch_pipeline = bg_pipeline;
+            tokio::spawn(async move {
+                if let Err(e) = spawn_background_watch(watch_config, watch_pipeline).await {
+                    tracing::error!("Background watch failed: {}", e);
+                }
+            });
+
+            Some(progress)
+        } else {
+            if let Some(note_store) = storage_handle.note_store() {
+                let pipeline = factories::create_pipeline(note_store, &config, false).await?;
+                let watch_config = config.clone();
+                let watch_pipeline = Arc::new(pipeline);
+                tokio::spawn(async move {
+                    if let Err(e) = spawn_background_watch(watch_config, watch_pipeline).await {
+                        tracing::error!("Background watch failed: {}", e);
+                    }
+                });
+            }
+            None
+        }
+    } else {
+        None
+    };
+
+    status.update("Initializing core...");
+    let core = Arc::new(KilnContext::from_storage(storage_client.clone(), config));
+
+    status.update("Initializing embedding provider...");
+    let embedding_provider = factories::get_or_create_embedding_provider(core.config()).await?;
+    let knowledge_repo = storage_client.as_knowledge_repository();
+
+    match initialized_agent {
+        factories::InitializedAgent::Acp(client) => {
+            let kiln_path = core.config().kiln_path.clone();
+            let mut client = client
+                .with_kiln_path(kiln_path)
+                .with_mcp_dependencies(knowledge_repo, embedding_provider);
+
+            status.update("Connecting to agent...");
+            client.spawn().await?;
+            status.success("Ready");
+
+            let _live_progress = bg_progress.map(LiveProgress::start);
+
+            let prompt = if no_context {
+                query_text
+            } else {
+                let enricher = ContextEnricher::new(core.clone(), context_size);
+                enricher.enrich(&query_text).await?
+            };
+
+            client.start_chat(&prompt).await?;
+            client.shutdown().await?;
+        }
+        factories::InitializedAgent::Internal(mut handle) => {
+            status.success("Ready");
+
+            let _live_progress = bg_progress.map(LiveProgress::start);
+
+            let prompt = if no_context {
+                query_text
+            } else {
+                let enricher = ContextEnricher::new(core.clone(), context_size);
+                enricher.enrich(&query_text).await?
+            };
+
+            use crate::formatting::render_markdown;
+            use crucible_core::traits::chat::AgentHandle;
+            use futures::StreamExt;
+
+            let mut response_content = String::new();
+            let mut stream = handle.send_message_stream(prompt);
+            while let Some(result) = stream.next().await {
+                match result {
+                    Ok(chunk) => {
+                        if !chunk.done {
+                            response_content.push_str(&chunk.delta);
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("\nError: {}", e);
+                        return Err(e.into());
+                    }
+                }
+            }
+
+            println!("{}", render_markdown(&response_content));
+        }
+    }
+
+    Ok(())
 }
 
 /// Spawn background watch task for chat mode using the event system
