@@ -27,8 +27,9 @@ use crucible_core::events::{SessionEvent, ToolProvider};
 use crucible_core::traits::KnowledgeRepository;
 use crucible_rune::{
     builtin_handlers::{create_test_filter_handler, BuiltinHandlersConfig},
-    event_bus::EventBus,
+    event_bus::{EventBus, EventContext},
     mcp_gateway::McpGatewayManager,
+    reactor::Reactor,
     ContentBlock, EventHandler, EventHandlerConfig, EventPipeline, PluginLoader,
     RuneDiscoveryConfig, RuneToolRegistry, StructPluginHandle, ToolResultEvent,
 };
@@ -51,6 +52,16 @@ use tracing::{debug, info, warn};
 /// - **Upstream MCP tools** (dynamic): Tools from external MCP servers via gateway
 ///
 /// Struct-based plugins (e.g., `just.rn`) provide tools that integrate with file watching.
+///
+/// ## Event Handling
+///
+/// Events are processed through either:
+/// - **Reactor** (preferred): Unified async event handling via `Reactor` trait
+/// - **`EventBus`** (legacy): Synchronous hook-based handlers
+///
+/// When a `Reactor` is configured via `with_reactor()`, it takes precedence over the
+/// `EventBus` for event processing. The `EventBus` is still used for built-in handlers
+/// if no reactor is provided.
 pub struct ExtendedMcpServer {
     /// Core Crucible MCP server with 12 kiln tools
     kiln_server: CrucibleMcpServer,
@@ -66,8 +77,10 @@ pub struct ExtendedMcpServer {
     event_pipeline: Option<EventPipeline>,
     /// Configuration for built-in output filtering
     filter_config: FilterConfig,
-    /// Unified event bus for all events
+    /// Unified event bus for all events (legacy, use reactor when available)
     event_bus: Arc<RwLock<EventBus>>,
+    /// Unified reactor for async event handling (preferred over `event_bus`)
+    reactor: Option<Arc<dyn Reactor + Send + Sync>>,
     /// Upstream MCP server connections (None until explicitly configured)
     upstream_clients: Option<Arc<McpGatewayManager>>,
 }
@@ -252,6 +265,7 @@ impl ExtendedMcpServer {
             event_pipeline,
             filter_config: FilterConfig::default(),
             event_bus,
+            reactor: None,
             upstream_clients: None,
         })
     }
@@ -280,6 +294,7 @@ impl ExtendedMcpServer {
             event_pipeline: None,
             filter_config: FilterConfig::default(),
             event_bus: Arc::new(RwLock::new(EventBus::new())),
+            reactor: None,
             upstream_clients: None,
         }
     }
@@ -314,12 +329,25 @@ impl ExtendedMcpServer {
     }
 
     /// Set upstream MCP clients (builder pattern)
-    ///
-    /// This allows adding upstream MCP server connections after creation.
-    /// The manager should be configured to use the same event bus as this server.
     #[must_use]
     pub fn with_upstream_clients(mut self, clients: Arc<McpGatewayManager>) -> Self {
         self.upstream_clients = Some(clients);
+        self
+    }
+
+    /// Get reference to the reactor if configured
+    #[must_use]
+    pub fn reactor(&self) -> Option<Arc<dyn Reactor + Send + Sync>> {
+        self.reactor.as_ref().map(Arc::clone)
+    }
+
+    /// Set a unified reactor for event handling (builder pattern)
+    ///
+    /// When a reactor is configured, it takes precedence over the `EventBus`
+    /// for processing tool events.
+    #[must_use]
+    pub fn with_reactor(mut self, reactor: Arc<dyn Reactor + Send + Sync>) -> Self {
+        self.reactor = Some(reactor);
         self
     }
 
@@ -489,9 +517,6 @@ impl ExtendedMcpServer {
 
     /// Emit tool:discovered event for upstream tool
     async fn emit_upstream_tool_discovered(&self, tool: &crucible_rune::mcp_gateway::UpstreamTool) {
-        let bus = self.event_bus.read().await;
-
-        // Emit SessionEvent::ToolDiscovered for upstream tool
         let event = SessionEvent::ToolDiscovered {
             name: tool.prefixed_name.clone(),
             source: ToolProvider::Mcp {
@@ -500,12 +525,31 @@ impl ExtendedMcpServer {
             schema: Some(tool.input_schema.clone()),
         };
 
-        let (_result_event, _ctx, errors) = bus.emit_session(event);
+        self.emit_event(event).await;
+    }
 
-        if !errors.is_empty() {
-            for e in &errors {
-                warn!("Hook error during tool:discovered for upstream tool: {}", e);
+    /// Emit a `SessionEvent` through the reactor (preferred) or `EventBus` (fallback).
+    ///
+    /// Returns `(processed_event, is_cancelled)` tuple.
+    async fn emit_event(&self, event: SessionEvent) -> (SessionEvent, bool) {
+        if let Some(reactor) = &self.reactor {
+            let mut ctx = EventContext::new();
+            match reactor.handle_event(&mut ctx, event.clone()).await {
+                Ok(processed) => (processed, ctx.is_cancelled()),
+                Err(e) => {
+                    warn!("Reactor error: {}", e);
+                    (event, false)
+                }
             }
+        } else {
+            let bus = self.event_bus.read().await;
+            let (processed, ctx, errors) = bus.emit_session(event);
+
+            for e in &errors {
+                warn!("Hook error: {}", e);
+            }
+
+            (processed, ctx.is_cancelled())
         }
     }
 
@@ -552,31 +596,19 @@ impl ExtendedMcpServer {
             name, arguments
         );
 
-        // Emit SessionEvent::ToolCalled (before tool execution)
-        {
-            let bus = self.event_bus.read().await;
-            let event = SessionEvent::ToolCalled {
-                name: name.to_string(),
-                args: arguments.clone(),
-            };
-            let (_result_event, ctx, errors) = bus.emit_session(event);
+        let event = SessionEvent::ToolCalled {
+            name: name.to_string(),
+            args: arguments.clone(),
+        };
+        let (_, is_cancelled) = self.emit_event(event).await;
 
-            if !errors.is_empty() {
-                for e in &errors {
-                    warn!("Hook error during tool:called: {}", e);
-                }
-            }
-
-            // Check if execution was cancelled via context
-            if ctx.is_cancelled() {
-                return Err(rmcp::ErrorData::internal_error(
-                    format!("Struct plugin tool '{name}' execution cancelled by hook"),
-                    None,
-                ));
-            }
+        if is_cancelled {
+            return Err(rmcp::ErrorData::internal_error(
+                format!("Struct plugin tool '{name}' execution cancelled by hook"),
+                None,
+            ));
         }
 
-        // Dispatch to struct plugin handle
         let result = self.struct_plugins.dispatch(name, arguments.clone()).await;
 
         match result {
@@ -644,42 +676,26 @@ impl ExtendedMcpServer {
                     obj.insert("stdout".to_string(), json!(final_output));
                 }
 
-                // Emit SessionEvent::ToolCompleted with the response
-                {
-                    let bus = self.event_bus.read().await;
-                    let event = SessionEvent::ToolCompleted {
-                        name: name.to_string(),
-                        result: final_output.clone(),
-                        error: if is_error {
-                            Some("Tool returned error".to_string())
-                        } else {
-                            None
-                        },
-                    };
-
-                    let (_result_event, _ctx, errors) = bus.emit_session(event);
-
-                    if !errors.is_empty() {
-                        for e in &errors {
-                            warn!("Hook error during tool:completed: {}", e);
-                        }
-                    }
-                }
+                let event = SessionEvent::ToolCompleted {
+                    name: name.to_string(),
+                    result: final_output.clone(),
+                    error: if is_error {
+                        Some("Tool returned error".to_string())
+                    } else {
+                        None
+                    },
+                };
+                self.emit_event(event).await;
 
                 Ok(toon_success_smart(response))
             }
             Err(e) => {
-                // Emit SessionEvent::ToolCompleted with error
-                {
-                    let bus = self.event_bus.read().await;
-                    let event = SessionEvent::ToolCompleted {
-                        name: name.to_string(),
-                        result: String::new(),
-                        error: Some(e.to_string()),
-                    };
-
-                    let (_result_event, _ctx, _errors) = bus.emit_session(event);
-                }
+                let event = SessionEvent::ToolCompleted {
+                    name: name.to_string(),
+                    result: String::new(),
+                    error: Some(e.to_string()),
+                };
+                self.emit_event(event).await;
 
                 Err(rmcp::ErrorData::internal_error(
                     format!("Struct plugin tool '{name}' failed: {e}"),
@@ -702,28 +718,17 @@ impl ExtendedMcpServer {
 
         debug!("Executing Rune tool: {} with args: {:?}", name, arguments);
 
-        // Emit SessionEvent::ToolCalled (before tool execution)
-        {
-            let bus = self.event_bus.read().await;
-            let event = SessionEvent::ToolCalled {
-                name: name.to_string(),
-                args: arguments.clone(),
-            };
-            let (_result_event, ctx, errors) = bus.emit_session(event);
+        let event = SessionEvent::ToolCalled {
+            name: name.to_string(),
+            args: arguments.clone(),
+        };
+        let (_, is_cancelled) = self.emit_event(event).await;
 
-            if !errors.is_empty() {
-                for e in &errors {
-                    warn!("Hook error during tool:called: {}", e);
-                }
-            }
-
-            // Check if execution was cancelled via context
-            if ctx.is_cancelled() {
-                return Err(rmcp::ErrorData::internal_error(
-                    format!("Rune tool '{name}' execution cancelled by hook"),
-                    None,
-                ));
-            }
+        if is_cancelled {
+            return Err(rmcp::ErrorData::internal_error(
+                format!("Rune tool '{name}' execution cancelled by hook"),
+                None,
+            ));
         }
 
         match self.rune_registry.execute(name, arguments).await {
@@ -731,68 +736,43 @@ impl ExtendedMcpServer {
                 let _duration_ms = start.elapsed().as_millis() as u64;
 
                 if result.success {
-                    // Emit SessionEvent::ToolCompleted
                     let result_text = match &result.result {
                         Some(v) => serde_json::to_string(v).unwrap_or_default(),
                         None => String::new(),
                     };
 
-                    {
-                        let bus = self.event_bus.read().await;
-                        let event = SessionEvent::ToolCompleted {
-                            name: name.to_string(),
-                            result: result_text.clone(),
-                            error: None,
-                        };
+                    let event = SessionEvent::ToolCompleted {
+                        name: name.to_string(),
+                        result: result_text.clone(),
+                        error: None,
+                    };
+                    self.emit_event(event).await;
 
-                        let (_result_event, _ctx, errors) = bus.emit_session(event);
-
-                        if !errors.is_empty() {
-                            for e in &errors {
-                                warn!("Hook error during tool:completed: {}", e);
-                            }
-                        }
-                    }
-
-                    // Return result directly - only use TOON for structured data
                     match &result.result {
                         Some(Value::Object(_) | Value::Array(_)) => {
-                            // Structured data - use TOON
                             Ok(toon_success_smart(result.result.unwrap_or(Value::Null)))
                         }
                         Some(Value::String(s)) => {
-                            // Plain string - return as-is
                             Ok(CallToolResult::success(vec![Content::text(s.clone())]))
                         }
                         Some(Value::Number(n)) => {
-                            // Number - return as string representation
                             Ok(CallToolResult::success(vec![Content::text(n.to_string())]))
                         }
                         Some(Value::Bool(b)) => {
-                            // Bool - return as string representation
                             Ok(CallToolResult::success(vec![Content::text(b.to_string())]))
                         }
-                        Some(Value::Null) | None => {
-                            // Null/empty - return empty success
-                            Ok(CallToolResult::success(vec![]))
-                        }
+                        Some(Value::Null) | None => Ok(CallToolResult::success(vec![])),
                     }
                 } else {
                     let error_msg = result.error.unwrap_or_else(|| "Unknown error".to_string());
 
-                    // Emit SessionEvent::ToolCompleted with error
-                    {
-                        let bus = self.event_bus.read().await;
-                        let event = SessionEvent::ToolCompleted {
-                            name: name.to_string(),
-                            result: String::new(),
-                            error: Some(error_msg.clone()),
-                        };
+                    let event = SessionEvent::ToolCompleted {
+                        name: name.to_string(),
+                        result: String::new(),
+                        error: Some(error_msg.clone()),
+                    };
+                    self.emit_event(event).await;
 
-                        let (_result_event, _ctx, _errors) = bus.emit_session(event);
-                    }
-
-                    // Error - return as error message
                     Err(rmcp::ErrorData::internal_error(
                         format!("Rune tool '{name}' failed: {error_msg}"),
                         None,
@@ -800,17 +780,12 @@ impl ExtendedMcpServer {
                 }
             }
             Err(e) => {
-                // Emit SessionEvent::ToolCompleted with error
-                {
-                    let bus = self.event_bus.read().await;
-                    let event = SessionEvent::ToolCompleted {
-                        name: name.to_string(),
-                        result: String::new(),
-                        error: Some(e.to_string()),
-                    };
-
-                    let (_result_event, _ctx, _errors) = bus.emit_session(event);
-                }
+                let event = SessionEvent::ToolCompleted {
+                    name: name.to_string(),
+                    result: String::new(),
+                    error: Some(e.to_string()),
+                };
+                self.emit_event(event).await;
 
                 Err(rmcp::ErrorData::internal_error(
                     format!("Rune tool '{name}' failed: {e}"),
@@ -1531,5 +1506,43 @@ mod tests {
                 .is_none(),
             "kiln tools should not be in gateway"
         );
+    }
+
+    #[test]
+    fn test_reactor_initially_none() {
+        let temp = TempDir::new().unwrap();
+        let knowledge_repo = Arc::new(MockKnowledgeRepository) as Arc<dyn KnowledgeRepository>;
+        let embedding_provider = Arc::new(MockEmbeddingProvider) as Arc<dyn EmbeddingProvider>;
+
+        let server = ExtendedMcpServer::kiln_only(
+            temp.path().to_str().unwrap().to_string(),
+            knowledge_repo,
+            embedding_provider,
+        );
+
+        assert!(
+            server.reactor().is_none(),
+            "reactor should be None initially"
+        );
+    }
+
+    #[test]
+    fn test_with_reactor_sets_reactor() {
+        use crucible_rune::SimpleReactor;
+
+        let temp = TempDir::new().unwrap();
+        let knowledge_repo = Arc::new(MockKnowledgeRepository) as Arc<dyn KnowledgeRepository>;
+        let embedding_provider = Arc::new(MockEmbeddingProvider) as Arc<dyn EmbeddingProvider>;
+
+        let server = ExtendedMcpServer::kiln_only(
+            temp.path().to_str().unwrap().to_string(),
+            knowledge_repo,
+            embedding_provider,
+        );
+
+        let reactor: Arc<dyn Reactor + Send + Sync> = Arc::new(SimpleReactor::new());
+        let server = server.with_reactor(Arc::clone(&reactor));
+
+        assert!(server.reactor().is_some(), "reactor should be set");
     }
 }
