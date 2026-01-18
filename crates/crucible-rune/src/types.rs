@@ -1,8 +1,8 @@
 //! Types for Rune tool system
 
 use crate::attribute_discovery::{attr_parsers, FromAttributes};
-use crate::discovery_paths::DiscoveryPaths;
 use crate::RuneError;
+use crucible_core::discovery::DiscoveryPaths;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::path::{Path, PathBuf};

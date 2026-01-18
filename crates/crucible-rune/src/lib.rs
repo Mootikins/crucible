@@ -37,12 +37,12 @@ pub mod compaction;
 pub mod core_handler;
 pub mod dependency_graph;
 mod discovery;
-mod discovery_paths;
+
 pub mod event_bus;
 mod event_handler;
-pub mod event_markdown;
+// event_markdown moved to crucible-core::events::markdown
 mod event_pipeline;
-mod event_ring;
+
 mod events;
 mod executor;
 mod fs_module;
@@ -89,18 +89,19 @@ pub use builtin_handlers::{
 pub use chain_reactor::ChainReactor;
 pub use compaction::{CompactionConfig, CompactionMetrics, CompactionReason, CompactionTrigger};
 pub use core_handler::{RuneHandler, RuneHandlerMeta};
+
+pub use crucible_core::events::{EventRing, OverflowCallback};
 pub use dependency_graph::{
     DependencyError, DependencyGraph, DependencyResult, GraphNode, SessionHandlerGraph,
 };
 pub use discovery::ToolDiscovery;
-pub use discovery_paths::{DiscoveryConfig, DiscoveryPaths};
 pub use event_bus::{Event, EventBus, EventContext, EventType};
 pub use event_handler::{EventHandler, EventHandlerConfig};
-pub use event_markdown::{
+// Re-export from core (moved from this crate)
+pub use crucible_core::events::markdown::{
     EventToMarkdown, MarkdownParseError, MarkdownParseResult, MarkdownToEvent,
 };
 pub use event_pipeline::EventPipeline;
-pub use event_ring::{EventRing, OverflowCallback};
 pub use events::{
     ContentBlock, CrucibleEvent, EnrichedRecipe, RecipeEnrichment, RecipeParameter, ToolResultEvent,
 };
