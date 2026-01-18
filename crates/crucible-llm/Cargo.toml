@@ -120,7 +120,7 @@ uuid = { workspace = true }
 tracing = { workspace = true }
 
 # FastEmbed for local embeddings and reranking (optional, feature-gated)
-fastembed = { version = "5.5", optional = true }
+fastembed = { version = "5.8", optional = true }
 
 # Path expansion (for tilde expansion)
 shellexpand = "3.1"
@@ -129,17 +129,17 @@ shellexpand = "3.1"
 dirs = "6.0"
 
 # CPU detection for thread count
-num_cpus = "1.16"
+num_cpus = "1.17"
 
 [dev-dependencies]
 tokio-test = "0.4"
-mockito = "1.0"
+mockito = "1.7"
 tempfile = { workspace = true }
 tracing-subscriber = { workspace = true }
 toon-format = "0.4"
 criterion = { workspace = true, features = ["html_reports"] }
-serial_test = "3.2"
+serial_test = "3.3"
 wiremock = { workspace = true }
 futures-util = { workspace = true }
-proptest = "1.4"
+proptest = "1.8"
 

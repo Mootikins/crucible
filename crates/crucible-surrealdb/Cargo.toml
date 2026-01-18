@@ -30,14 +30,14 @@ chrono = { workspace = true }
 uuid = { workspace = true }
 comfy-table = "7"
 urlencoding = "2.1"
-regex = "1.11"
+regex = "1.12"
 
 # For static data in algorithms
-once_cell = "1.19"
+once_cell = "1.21"
 
 # File system operations
-walkdir = "2.4"
-blake3 = "1.0"
+walkdir = "2.5"
+blake3 = "1.8"
 hex = "0.4"
 bincode = { version = "2.0", features = ["serde"] }
 
@@ -64,5 +64,5 @@ tracing-test = "0.2"
 fake = { version = "4.4", features = ["derive"] }
 rand = "0.9"
 crucible-parser = { path = "../crucible-parser" }
-walkdir = "2.4"
-regex = "1.11"
+walkdir = "2.5"
+regex = "1.12"
