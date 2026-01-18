@@ -7,6 +7,7 @@ pub mod content_category;
 pub mod crdt;
 pub mod crucible_core;
 pub mod database;
+pub mod discovery;
 pub mod enrichment;
 pub mod events;
 pub mod hashing;
@@ -34,6 +35,7 @@ pub use agent::{
 pub use canvas::{CanvasEdge, CanvasNode};
 pub use content_category::{ContentCategory, ContentCategoryError};
 pub use crucible_core::CrucibleCore;
+pub use discovery::{DiscoveryConfig, DiscoveryPaths};
 
 // Re-export enrichment traits and types (implementations in crucible-enrichment crate)
 pub use enrichment::{

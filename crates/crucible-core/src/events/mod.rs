@@ -108,7 +108,9 @@ pub mod builtin_handlers;
 pub mod dependency;
 pub mod emitter;
 pub mod handler;
+pub mod markdown;
 pub mod reactor;
+pub mod ring;
 pub mod session_event;
 pub mod subscriber;
 
@@ -149,3 +151,9 @@ pub use session_event::{
     EntityType, FileChangeKind, InputType, NoteChangeType, NotePayload, Priority, SessionEvent,
     SessionEventConfig, TerminalStream, ToolCall, ToolProvider,
 };
+
+// Ring buffer for event storage
+pub use ring::{EventRing, OverflowCallback};
+
+// Event markdown serialization
+pub use markdown::{EventToMarkdown, MarkdownParseError, MarkdownParseResult, MarkdownToEvent};
