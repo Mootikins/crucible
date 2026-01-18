@@ -3604,6 +3604,7 @@ dependencies = [
  "crucible-enrichment",
  "crucible-lance",
  "crucible-llm",
+ "crucible-lua",
  "crucible-observe",
  "crucible-pipeline",
  "crucible-rig",
@@ -3858,6 +3859,7 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "crucible-core",
+ "dirs 6.0.0",
  "full_moon",
  "glob",
  "mlua",
