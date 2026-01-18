@@ -130,10 +130,12 @@ impl AgentManager {
             tokio::select! {
                 _ = cancel_rx => {
                     debug!(session_id = %session_id_owned, "Request cancelled");
-                    let _ = event_tx_clone.send(SessionEventMessage::ended(
+                    if event_tx_clone.send(SessionEventMessage::ended(
                         &session_id_owned,
                         "cancelled",
-                    ));
+                    )).is_err() {
+                        warn!(session_id = %session_id_owned, "No subscribers for cancelled event");
+                    }
                 }
                 _ = Self::execute_agent_stream(
                     agent,
@@ -211,7 +213,12 @@ impl AgentManager {
 
                     if let Some(reasoning) = &chunk.reasoning {
                         debug!(session_id = %session_id, "Sending thinking event");
-                        let _ = event_tx.send(SessionEventMessage::thinking(session_id, reasoning));
+                        if event_tx
+                            .send(SessionEventMessage::thinking(session_id, reasoning))
+                            .is_err()
+                        {
+                            warn!(session_id = %session_id, "No subscribers for thinking event");
+                        }
                     }
 
                     if let Some(tool_calls) = &chunk.tool_calls {
@@ -221,9 +228,14 @@ impl AgentManager {
                                 .clone()
                                 .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
                             let args = tc.arguments.clone().unwrap_or(serde_json::Value::Null);
-                            let _ = event_tx.send(SessionEventMessage::tool_call(
-                                session_id, &call_id, &tc.name, args,
-                            ));
+                            if event_tx
+                                .send(SessionEventMessage::tool_call(
+                                    session_id, &call_id, &tc.name, args,
+                                ))
+                                .is_err()
+                            {
+                                warn!(session_id = %session_id, tool = %tc.name, "No subscribers for tool_call event");
+                            }
                         }
                     }
 
@@ -235,9 +247,14 @@ impl AgentManager {
                             } else {
                                 serde_json::json!({ "result": tr.result })
                             };
-                            let _ = event_tx.send(SessionEventMessage::tool_result(
-                                session_id, &call_id, result,
-                            ));
+                            if event_tx
+                                .send(SessionEventMessage::tool_result(
+                                    session_id, &call_id, result,
+                                ))
+                                .is_err()
+                            {
+                                warn!(session_id = %session_id, tool = %tr.name, "No subscribers for tool_result event");
+                            }
                         }
                     }
 
@@ -248,20 +265,30 @@ impl AgentManager {
                             response_len = accumulated_response.len(),
                             "Sending message_complete event"
                         );
-                        let _ = event_tx.send(SessionEventMessage::message_complete(
-                            session_id,
-                            message_id,
-                            accumulated_response.clone(),
-                        ));
+                        if event_tx
+                            .send(SessionEventMessage::message_complete(
+                                session_id,
+                                message_id,
+                                accumulated_response.clone(),
+                            ))
+                            .is_err()
+                        {
+                            warn!(session_id = %session_id, "No subscribers for message_complete event");
+                        }
                         break;
                     }
                 }
                 Err(e) => {
                     error!(session_id = %session_id, error = %e, "Agent stream error");
-                    let _ = event_tx.send(SessionEventMessage::ended(
-                        session_id,
-                        format!("error: {}", e),
-                    ));
+                    if event_tx
+                        .send(SessionEventMessage::ended(
+                            session_id,
+                            format!("error: {}", e),
+                        ))
+                        .is_err()
+                    {
+                        warn!(session_id = %session_id, "No subscribers for error event");
+                    }
                     break;
                 }
             }
@@ -385,5 +412,35 @@ mod tests {
 
         let cancelled = agent_manager.cancel("nonexistent").await;
         assert!(!cancelled);
+    }
+
+    #[tokio::test]
+    async fn test_broadcast_send_with_no_receivers_returns_error() {
+        let (tx, _rx) = broadcast::channel::<SessionEventMessage>(16);
+
+        drop(_rx);
+
+        let result = tx.send(SessionEventMessage::ended("test-session", "cancelled"));
+
+        assert!(
+            result.is_err(),
+            "Broadcast send should return error when no receivers"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_broadcast_send_with_receiver_succeeds() {
+        let (tx, mut rx) = broadcast::channel::<SessionEventMessage>(16);
+
+        let result = tx.send(SessionEventMessage::text_delta("test-session", "hello"));
+
+        assert!(
+            result.is_ok(),
+            "Broadcast send should succeed with receiver"
+        );
+
+        let received = rx.recv().await.unwrap();
+        assert_eq!(received.session_id, "test-session");
+        assert_eq!(received.event, "text_delta");
     }
 }
