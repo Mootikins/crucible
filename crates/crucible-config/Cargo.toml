@@ -18,7 +18,7 @@ tracing = { workspace = true }
 tokio = { workspace = true, features = ["fs"] }
 tempfile = { workspace = true, optional = true }
 schemars = { workspace = true }
-num_cpus = "1.16"
+num_cpus = "1.17"
 dirs = "6.0"
 
 [features]
@@ -32,4 +32,4 @@ tempfile = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }
 futures = "0.3"
 toml = "0.9"
-serial_test = "3.2"
+serial_test = "3.3"
