@@ -4,13 +4,13 @@ version.workspace = true
 authors.workspace = true
 license.workspace = true
 edition.workspace = true
-description = "System and Rune tools for Crucible knowledge management with dynamic scripting capabilities"
+description = "System and Lua tools for Crucible knowledge management with plugin capabilities"
 
 [dependencies]
 # Core crates
 crucible-core = { workspace = true }
 crucible-config = { workspace = true }
-crucible-rune = { workspace = true }
+crucible-lua = { workspace = true, features = ["send"] }
 crucible-skills = { workspace = true, features = ["storage", "embeddings"] }
 oq = { workspace = true }
 
@@ -54,11 +54,6 @@ num_cpus = "1.17"
 reqwest = { workspace = true }
 urlencoding = { workspace = true }
 
-# Rune scripting language (commented out - not MVP critical)
-# rune = { workspace = true, optional = true }
-# rune-modules = { workspace = true, optional = true }
-# crucible-rune-macros = { workspace = true }
-
 # File operations
 pathdiff = "0.2"
 url = "2.5"
@@ -77,10 +72,6 @@ walkdir = "2.5"
 
 # YAML parsing for frontmatter
 serde_yaml = "0.9"
-
-# Additional dependencies for Rune
-parking_lot = { workspace = true }
-dashmap = { workspace = true }
 
 # Additional dependencies for migration
 futures = "0.3"
