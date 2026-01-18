@@ -1,5 +1,0 @@
----
-source: crates/crucible-cli/src/tui/components/status_bar.rs
-expression: terminal.backend()
----
-"▸ Plan │ 50% ctx │ Ready                                              File saved"

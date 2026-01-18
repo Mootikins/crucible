@@ -1,5 +1,5 @@
 use crate::chat::bridge::AgentEventBridge;
-use crate::tui::agent_picker::AgentSelection;
+use crate::tui::ink::agent_selection::AgentSelection;
 use crate::tui::ink::app::{Action, App, ViewContext};
 use crate::tui::ink::chat_app::{ChatAppMsg, ChatMode, InkChatApp};
 use crate::tui::ink::event::Event;

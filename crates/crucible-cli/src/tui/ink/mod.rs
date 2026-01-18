@@ -33,6 +33,7 @@
 //! }
 //! ```
 
+mod agent_selection;
 mod ansi;
 mod app;
 pub mod chat_app;
@@ -52,6 +53,7 @@ mod taffy_layout;
 mod terminal;
 mod test_harness;
 
+pub use agent_selection::AgentSelection;
 pub use app::*;
 pub use chat_app::{ChatAppMsg, ChatItem, ChatMode, InkChatApp, Role};
 pub use chat_runner::InkChatRunner;
