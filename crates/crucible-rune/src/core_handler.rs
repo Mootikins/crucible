@@ -291,8 +291,7 @@ impl Handler for RuneHandler {
             }
         };
 
-        // Parse the result
-        parse_handler_result(result, event, &handler_name)
+        parse_handler_result(result, event, &handler_name, ctx)
     }
 }
 
@@ -301,37 +300,56 @@ impl Handler for RuneHandler {
 /// Rune handlers can return:
 /// - `null` or `None` - Pass through unchanged
 /// - `{ cancel: true }` - Cancel the event
-/// - `{ emit: [...] }` - Emit additional events (then continue)
+/// - `{ emit: [...] }` - Emit additional events (queued in ctx, continue with original)
+/// - `{ emit: [...], event: {...} }` - Emit events and continue with modified event
 /// - Modified event object - Continue with modified event
 fn parse_handler_result(
     result: JsonValue,
     original_event: SessionEvent,
     handler_name: &str,
+    ctx: &mut HandlerContext,
 ) -> HandlerResult<SessionEvent> {
     if result.is_null() {
-        // Handler returned null/None - pass through unchanged
         return HandlerResult::ok(original_event);
     }
 
-    // Check for cancel directive
     if let Some(obj) = result.as_object() {
         if obj.get("cancel") == Some(&JsonValue::Bool(true)) {
             return HandlerResult::cancel();
         }
 
-        // Check for emit directive (we can't actually emit here, but we can log)
         if let Some(events) = obj.get("emit") {
-            if events.is_array() {
-                tracing::debug!(
-                    "Handler {} wants to emit {} events (not yet implemented in unified handler)",
-                    handler_name,
-                    events.as_array().map(|a| a.len()).unwrap_or(0)
-                );
+            if let Some(events_arr) = events.as_array() {
+                for event_json in events_arr {
+                    match serde_json::from_value::<SessionEvent>(event_json.clone()) {
+                        Ok(event) => {
+                            ctx.emit(event);
+                        }
+                        Err(e) => {
+                            tracing::warn!("Handler {} emitted invalid event: {}", handler_name, e);
+                        }
+                    }
+                }
             }
+
+            if let Some(event_json) = obj.get("event") {
+                match serde_json::from_value::<SessionEvent>(event_json.clone()) {
+                    Ok(modified_event) => return HandlerResult::ok(modified_event),
+                    Err(e) => {
+                        tracing::warn!(
+                            "Handler {} returned invalid event in emit response: {}",
+                            handler_name,
+                            e
+                        );
+                        return HandlerResult::ok(original_event);
+                    }
+                }
+            }
+
+            return HandlerResult::ok(original_event);
         }
     }
 
-    // Try to deserialize back to SessionEvent
     match serde_json::from_value::<SessionEvent>(result.clone()) {
         Ok(modified_event) => HandlerResult::ok(modified_event),
         Err(e) => {
@@ -340,7 +358,6 @@ fn parse_handler_result(
                 handler_name,
                 e
             );
-            // Return original event on parse error (fail-open)
             HandlerResult::ok(original_event)
         }
     }
@@ -607,5 +624,98 @@ pub fn tool_handler(ctx, event) {
         let meta = RuneHandlerMeta::new("/path/script.rn", "handler");
         let debug = format!("{:?}", meta);
         assert!(debug.contains("script.rn"));
+    }
+
+    #[test]
+    fn test_parse_handler_result_emit_events() {
+        use crucible_core::events::{SessionEvent, SessionEventConfig};
+
+        let original = SessionEvent::SessionStarted {
+            config: SessionEventConfig::new("test-session"),
+        };
+
+        let mut ctx = HandlerContext::new();
+
+        let result = serde_json::json!({
+            "emit": [
+                { "type": "session_paused", "session_id": "test-session" }
+            ]
+        });
+
+        let handler_result =
+            parse_handler_result(result, original.clone(), "test_handler", &mut ctx);
+
+        assert!(
+            matches!(handler_result, HandlerResult::Continue(ev) if matches!(ev, SessionEvent::SessionStarted { .. }))
+        );
+
+        let emitted = ctx.take_emitted();
+        assert_eq!(emitted.len(), 1);
+        assert!(matches!(emitted[0], SessionEvent::SessionPaused { .. }));
+    }
+
+    #[test]
+    fn test_parse_handler_result_emit_with_modified_event() {
+        use crucible_core::events::{SessionEvent, SessionEventConfig};
+
+        let original = SessionEvent::SessionStarted {
+            config: SessionEventConfig::new("original"),
+        };
+
+        let mut ctx = HandlerContext::new();
+
+        let result = serde_json::json!({
+            "emit": [
+                { "type": "session_paused", "session_id": "emitted" }
+            ],
+            "event": {
+                "type": "session_started",
+                "config": { "session_id": "modified" }
+            }
+        });
+
+        let handler_result = parse_handler_result(result, original, "test_handler", &mut ctx);
+
+        match handler_result {
+            HandlerResult::Continue(SessionEvent::SessionStarted { config }) => {
+                assert_eq!(config.session_id, "modified");
+            }
+            _ => panic!("Expected Continue with modified SessionStarted"),
+        }
+
+        let emitted = ctx.take_emitted();
+        assert_eq!(emitted.len(), 1);
+        match &emitted[0] {
+            SessionEvent::SessionPaused { session_id } => {
+                assert_eq!(session_id, "emitted");
+            }
+            _ => panic!("Expected SessionPaused"),
+        }
+    }
+
+    #[test]
+    fn test_parse_handler_result_invalid_emit_events_are_skipped() {
+        use crucible_core::events::{SessionEvent, SessionEventConfig};
+
+        let original = SessionEvent::SessionStarted {
+            config: SessionEventConfig::new("test"),
+        };
+
+        let mut ctx = HandlerContext::new();
+
+        let result = serde_json::json!({
+            "emit": [
+                { "type": "session_paused", "session_id": "valid" },
+                { "type": "invalid_event", "bad": "data" },
+                { "type": "session_resumed", "session_id": "also-valid" }
+            ]
+        });
+
+        let _ = parse_handler_result(result, original, "test_handler", &mut ctx);
+
+        let emitted = ctx.take_emitted();
+        assert_eq!(emitted.len(), 2);
+        assert!(matches!(emitted[0], SessionEvent::SessionPaused { .. }));
+        assert!(matches!(emitted[1], SessionEvent::SessionResumed { .. }));
     }
 }
