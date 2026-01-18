@@ -1632,14 +1632,12 @@ impl InkChatApp {
     }
 
     fn render_status(&self) -> Node {
-        let (mode_bg, mode_fg) = match self.mode {
-            ChatMode::Normal => (Color::Green, Color::Black),
-            ChatMode::Plan => (Color::Blue, Color::White),
-            ChatMode::Auto => (Color::Yellow, Color::Black),
+        let mode_bg = match self.mode {
+            ChatMode::Normal => Color::Green,
+            ChatMode::Plan => Color::Blue,
+            ChatMode::Auto => Color::Yellow,
         };
-        let mode_style = Style::new().bg(mode_bg).fg(mode_fg).bold();
-
-        let separator = " │ ";
+        let mode_style = Style::new().bg(mode_bg).fg(Color::Black).bold();
 
         let context_percent = if self.context_total > 0 {
             (self.context_used as f64 / self.context_total as f64 * 100.0).round() as usize
@@ -1671,9 +1669,9 @@ impl InkChatApp {
         if let Some(notif) = active_notification {
             row([
                 styled(mode_str.to_string(), mode_style),
-                styled(separator.to_string(), Style::new().fg(Color::DarkGray)),
+                styled(" ".to_string(), Style::new().fg(Color::DarkGray)),
                 styled(model_str, Style::new().fg(Color::Cyan)),
-                styled(separator.to_string(), Style::new().fg(Color::DarkGray)),
+                styled(" ".to_string(), Style::new().fg(Color::DarkGray)),
                 styled(ctx_str, Style::new().fg(Color::DarkGray)),
                 spacer(),
                 styled(format!(" {} ", notif), Style::new().fg(Color::Yellow)),
@@ -1681,9 +1679,9 @@ impl InkChatApp {
         } else {
             row([
                 styled(mode_str.to_string(), mode_style),
-                styled(separator.to_string(), Style::new().fg(Color::DarkGray)),
+                styled(" ".to_string(), Style::new().fg(Color::DarkGray)),
                 styled(model_str, Style::new().fg(Color::Cyan)),
-                styled(separator.to_string(), Style::new().fg(Color::DarkGray)),
+                styled(" ".to_string(), Style::new().fg(Color::DarkGray)),
                 styled(ctx_str, Style::new().fg(Color::DarkGray)),
             ])
         }
