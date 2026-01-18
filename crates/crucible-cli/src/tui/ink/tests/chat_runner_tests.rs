@@ -28,7 +28,7 @@ impl MockAgent {
             chunks: Arc::new(Mutex::new(Vec::new())),
             error: None,
             connected: true,
-            mode: "plan".to_string(),
+            mode: "normal".to_string(),
         }
     }
 
@@ -37,7 +37,7 @@ impl MockAgent {
             chunks: Arc::new(Mutex::new(chunks)),
             error: None,
             connected: true,
-            mode: "plan".to_string(),
+            mode: "normal".to_string(),
         }
     }
 
@@ -75,7 +75,7 @@ impl MockAgent {
             chunks: Arc::new(Mutex::new(Vec::new())),
             error: Some(error),
             connected: true,
-            mode: "plan".to_string(),
+            mode: "normal".to_string(),
         }
     }
 
@@ -84,7 +84,7 @@ impl MockAgent {
             chunks: Arc::new(Mutex::new(Vec::new())),
             error: None,
             connected: false,
-            mode: "plan".to_string(),
+            mode: "normal".to_string(),
         }
     }
 }
@@ -305,10 +305,10 @@ fn mock_agent_connected_state() {
 async fn mock_agent_mode_changes() {
     let mut agent = MockAgent::new();
 
-    assert_eq!(agent.get_mode_id(), "plan");
+    assert_eq!(agent.get_mode_id(), "normal");
 
-    agent.set_mode_str("act").await.unwrap();
-    assert_eq!(agent.get_mode_id(), "act");
+    agent.set_mode_str("plan").await.unwrap();
+    assert_eq!(agent.get_mode_id(), "plan");
 
     agent.set_mode_str("auto").await.unwrap();
     assert_eq!(agent.get_mode_id(), "auto");

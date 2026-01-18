@@ -27,8 +27,11 @@ impl Display {
         );
         println!();
         println!("{}", "Commands:".bold());
+        println!(
+            "  {} - Switch to normal mode (full access)",
+            "/normal".green()
+        );
         println!("  {} - Switch to plan mode (read-only)", "/plan".green());
-        println!("  {} - Switch to act mode (write-enabled)", "/act".green());
         println!("  {} - Switch to auto-approve mode", "/auto".green());
         println!("  {} - Cycle modes (or Shift+Tab)", "/mode".green());
         println!("  {} - Search knowledge base", "/search <query>".green());

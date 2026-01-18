@@ -269,17 +269,17 @@ pub fn is_auto_approve(mode_id: &str) -> bool {
 
 pub fn cycle_mode_id(current: &str) -> &'static str {
     match current {
-        "plan" => "act",
-        "act" => "auto",
-        "auto" => "plan",
-        _ => "plan",
+        "normal" => "plan",
+        "plan" => "auto",
+        "auto" => "normal",
+        _ => "normal",
     }
 }
 
 pub fn mode_display_name(mode_id: &str) -> &'static str {
     match mode_id {
+        "normal" => "Normal",
         "plan" => "Plan",
-        "act" => "Act",
         "auto" => "Auto",
         _ => "Unknown",
     }
@@ -355,13 +355,13 @@ mod tests {
     #[test]
     fn test_is_read_only() {
         assert!(is_read_only("plan"));
-        assert!(!is_read_only("act"));
+        assert!(!is_read_only("normal"));
     }
 
     #[test]
     fn test_cycle_mode_id() {
-        assert_eq!(cycle_mode_id("plan"), "act");
-        assert_eq!(cycle_mode_id("act"), "auto");
-        assert_eq!(cycle_mode_id("auto"), "plan");
+        assert_eq!(cycle_mode_id("normal"), "plan");
+        assert_eq!(cycle_mode_id("plan"), "auto");
+        assert_eq!(cycle_mode_id("auto"), "normal");
     }
 }

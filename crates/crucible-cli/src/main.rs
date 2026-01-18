@@ -276,13 +276,13 @@ async fn main() -> Result<()> {
             max_context,
             no_context,
             context_size,
-            act,
+            plan,
         }) => {
             commands::chat::execute(
                 config,
                 agent,
                 query,
-                !act,
+                plan,
                 no_context,
                 cli.no_process,
                 Some(context_size),
