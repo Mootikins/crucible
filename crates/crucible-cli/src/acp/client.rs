@@ -74,7 +74,7 @@ impl CrucibleAcpClient {
         let mode_id = if read_only {
             "plan".to_string()
         } else {
-            "act".to_string()
+            "normal".to_string()
         };
 
         Self {
@@ -371,7 +371,7 @@ impl CrucibleAcpClient {
     /// Changes the agent's permission level (plan/act/auto).
     ///
     /// # Arguments
-    /// * `mode_id` - The new mode ID to set ("plan", "act", "auto")
+    /// * `mode_id` - The new mode ID to set ("normal", "plan", "auto")
     ///
     /// # Note
     /// Currently updates local state only. Future versions may propagate

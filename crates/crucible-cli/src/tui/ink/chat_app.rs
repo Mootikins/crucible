@@ -834,7 +834,7 @@ impl InkChatApp {
             }
             "help" => {
                 self.add_system_message(
-                    "Commands: /mode, /default, /plan, /auto, /clear, /help, /quit".to_string(),
+                    "Commands: /mode, /normal, /plan, /auto, /clear, /help, /quit".to_string(),
                 );
                 Action::Continue
             }

@@ -57,14 +57,14 @@ impl ModeHandler {
     fn validate_mode(args: &str) -> ChatResult<&'static str> {
         let mode_str = args.trim().to_lowercase();
         match mode_str.as_str() {
+            "normal" => Ok("normal"),
             "plan" => Ok("plan"),
-            "act" => Ok("act"),
             "auto" | "autoapprove" => Ok("auto"),
             "" => Err(ChatError::InvalidInput(
-                "Mode required. Usage: /mode <plan|act|auto>".to_string(),
+                "Mode required. Usage: /mode <normal|plan|auto>".to_string(),
             )),
             _ => Err(ChatError::InvalidInput(format!(
-                "Invalid mode '{}'. Valid modes: plan, act, auto",
+                "Invalid mode '{}'. Valid modes: normal, plan, auto",
                 mode_str
             ))),
         }
@@ -237,7 +237,7 @@ impl CommandHandler for HelpHandler {
         println!("  {}", "/exit - Exit the chat session".dimmed());
         println!(
             "  {}",
-            "/mode <plan|act|auto> - Switch to a specific mode".dimmed()
+            "/mode <normal|plan|auto> - Switch to a specific mode".dimmed()
         );
         println!("  {}", "/cycle - Cycle to the next mode".dimmed());
         println!(
@@ -863,8 +863,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_mode_handler_validates_modes() {
+        assert_eq!(ModeHandler::validate_mode("normal").unwrap(), "normal");
         assert_eq!(ModeHandler::validate_mode("plan").unwrap(), "plan");
-        assert_eq!(ModeHandler::validate_mode("act").unwrap(), "act");
         assert_eq!(ModeHandler::validate_mode("auto").unwrap(), "auto");
         assert_eq!(ModeHandler::validate_mode("autoapprove").unwrap(), "auto");
     }
@@ -879,11 +879,11 @@ mod tests {
     async fn test_mode_handler_executes() {
         let handler = ModeHandler;
         let mut ctx = MockContext {
-            mode_id: "plan".to_string(),
+            mode_id: "normal".to_string(),
             search_results: vec![],
         };
 
-        let result = handler.execute("act", &mut ctx).await;
+        let result = handler.execute("plan", &mut ctx).await;
         assert!(result.is_ok());
     }
 
@@ -891,7 +891,7 @@ mod tests {
     async fn test_mode_cycle_handler_executes() {
         let handler = ModeCycleHandler;
         let mut ctx = MockContext {
-            mode_id: "plan".to_string(),
+            mode_id: "normal".to_string(),
             search_results: vec![],
         };
 
@@ -903,7 +903,7 @@ mod tests {
     async fn test_search_handler_requires_query() {
         let handler = SearchHandler;
         let mut ctx = MockContext {
-            mode_id: "plan".to_string(),
+            mode_id: "normal".to_string(),
             search_results: vec![],
         };
 
@@ -915,7 +915,7 @@ mod tests {
     async fn test_search_handler_executes_with_query() {
         let handler = SearchHandler;
         let mut ctx = MockContext {
-            mode_id: "plan".to_string(),
+            mode_id: "normal".to_string(),
             search_results: vec![SearchResult {
                 title: "Test Note".to_string(),
                 snippet: "Test content".to_string(),
@@ -931,7 +931,7 @@ mod tests {
     async fn test_help_handler_executes() {
         let handler = HelpHandler;
         let mut ctx = MockContext {
-            mode_id: "plan".to_string(),
+            mode_id: "normal".to_string(),
             search_results: vec![],
         };
 
@@ -976,11 +976,10 @@ mod tests {
             None,
         );
         let mut ctx = MockContext {
-            mode_id: "plan".to_string(),
+            mode_id: "normal".to_string(),
             search_results: vec![],
         };
         handler.execute("", &mut ctx).await.unwrap();
-        // Should have printed model list (visual output, hard to test)
     }
 
     #[tokio::test]
@@ -990,10 +989,9 @@ mod tests {
             Some("model-a".into()),
         );
         let mut ctx = MockContext {
-            mode_id: "plan".to_string(),
+            mode_id: "normal".to_string(),
             search_results: vec![],
         };
-        // Just verify it doesn't crash - output has ✓ next to model-a
         handler.execute("", &mut ctx).await.unwrap();
     }
 
@@ -1001,10 +999,9 @@ mod tests {
     async fn test_models_handler_switch() {
         let handler = ModelsHandler::new(vec!["model-a".into()], None);
         let mut ctx = MockContext {
-            mode_id: "plan".to_string(),
+            mode_id: "normal".to_string(),
             search_results: vec![],
         };
-        // Default switch_model returns NotSupported - should get error
         let result = handler.execute("model-a", &mut ctx).await;
         assert!(result.is_err());
         assert!(matches!(result.unwrap_err(), ChatError::NotSupported(_)));
@@ -1014,7 +1011,7 @@ mod tests {
     async fn test_models_handler_invalid_model() {
         let handler = ModelsHandler::new(vec!["model-a".into()], None);
         let mut ctx = MockContext {
-            mode_id: "plan".to_string(),
+            mode_id: "normal".to_string(),
             search_results: vec![],
         };
         let result = handler.execute("nonexistent", &mut ctx).await;

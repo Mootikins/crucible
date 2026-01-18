@@ -2,6 +2,14 @@
 //!
 //! This module contains types for describing chat modes with UI metadata.
 //! `ModeDescriptor` wraps ACP's `SessionMode` with additional display information.
+//!
+//! # Default Mode
+//!
+//! The default mode is `normal` (full read/write access). This follows the pattern
+//! of other AI coding assistants (OpenCode's "build", Codex's "workspace-write")
+//! where developers expect to code by default, not just read.
+//!
+//! Use `plan` mode for read-only exploration when you want to prevent modifications.
 
 use serde::{Deserialize, Serialize};
 
@@ -97,13 +105,13 @@ impl From<&SessionMode> for ModeDescriptor {
 
 /// Create default internal modes for internal agents
 ///
-/// Returns a `SessionModeState` with the standard Plan/Act/Auto modes.
+/// Returns a `SessionModeState` with the standard Normal/Plan/Auto modes.
 /// This is used by internal agents that don't connect to an external ACP agent.
 ///
 /// # Modes
 ///
+/// - **normal**: Full read/write access (default)
 /// - **plan**: Read-only exploration mode
-/// - **act**: Write-enabled execution mode
 /// - **auto**: Auto-approve all operations
 ///
 /// # Example
@@ -112,17 +120,17 @@ impl From<&SessionMode> for ModeDescriptor {
 /// use crucible_core::types::mode::default_internal_modes;
 ///
 /// let modes = default_internal_modes();
-/// assert_eq!(modes.current_mode_id.0.as_ref(), "plan");
+/// assert_eq!(modes.current_mode_id.0.as_ref(), "normal");
 /// assert_eq!(modes.available_modes.len(), 3);
 /// ```
 pub fn default_internal_modes() -> SessionModeState {
     SessionModeState::new(
-        SessionModeId::new("plan"),
+        SessionModeId::new("normal"),
         vec![
+            SessionMode::new(SessionModeId::new("normal"), "Normal".to_string())
+                .description("Full read/write access".to_string()),
             SessionMode::new(SessionModeId::new("plan"), "Plan".to_string())
                 .description("Read-only exploration mode".to_string()),
-            SessionMode::new(SessionModeId::new("act"), "Act".to_string())
-                .description("Write-enabled execution mode".to_string()),
             SessionMode::new(SessionModeId::new("auto"), "Auto".to_string())
                 .description("Auto-approve all operations".to_string()),
         ],
@@ -147,10 +155,10 @@ mod tests {
 
     #[test]
     fn test_mode_descriptor_new() {
-        let mode = ModeDescriptor::new("plan", "Plan Mode");
+        let mode = ModeDescriptor::new("normal", "Normal Mode");
 
-        assert_eq!(mode.id, "plan");
-        assert_eq!(mode.name, "Plan Mode");
+        assert_eq!(mode.id, "normal");
+        assert_eq!(mode.name, "Normal Mode");
         assert_eq!(mode.description, None);
         assert_eq!(mode.icon, None);
         assert_eq!(mode.color, None);
@@ -200,9 +208,9 @@ mod tests {
 
     #[test]
     fn test_mode_descriptor_equality() {
-        let mode1 = ModeDescriptor::new("plan", "Plan Mode").with_icon("📖");
-        let mode2 = ModeDescriptor::new("plan", "Plan Mode").with_icon("📖");
-        let mode3 = ModeDescriptor::new("act", "Act Mode");
+        let mode1 = ModeDescriptor::new("normal", "Normal Mode").with_icon("⚡");
+        let mode2 = ModeDescriptor::new("normal", "Normal Mode").with_icon("⚡");
+        let mode3 = ModeDescriptor::new("plan", "Plan Mode");
 
         assert_eq!(mode1, mode2);
         assert_ne!(mode1, mode3);
@@ -210,9 +218,9 @@ mod tests {
 
     #[test]
     fn test_mode_descriptor_serialization() {
-        let mode = ModeDescriptor::new("plan", "Plan")
+        let mode = ModeDescriptor::new("normal", "Normal")
             .with_description("desc")
-            .with_icon("📖")
+            .with_icon("⚡")
             .with_color("#000");
 
         let json = serde_json::to_string(&mode).unwrap();
@@ -232,9 +240,9 @@ mod tests {
     }
 
     #[test]
-    fn test_default_internal_modes_current_is_plan() {
+    fn test_default_internal_modes_current_is_normal() {
         let state = default_internal_modes();
-        assert_eq!(state.current_mode_id.0.as_ref(), "plan");
+        assert_eq!(state.current_mode_id.0.as_ref(), "normal");
     }
 
     #[test]
@@ -264,8 +272,8 @@ mod tests {
             .map(|m| m.id.0.as_ref())
             .collect();
 
+        assert!(ids.contains(&"normal"));
         assert!(ids.contains(&"plan"));
-        assert!(ids.contains(&"act"));
         assert!(ids.contains(&"auto"));
     }
 }

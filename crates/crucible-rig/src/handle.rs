@@ -980,7 +980,7 @@ mod tests {
         let handle = RigAgentHandle::new(agent);
 
         assert!(handle.is_connected());
-        assert_eq!(handle.get_mode_id(), "plan");
+        assert_eq!(handle.get_mode_id(), "normal");
         assert!(handle.get_modes().is_some());
     }
 
@@ -989,10 +989,10 @@ mod tests {
         let agent = create_test_agent();
         let mut handle = RigAgentHandle::new(agent);
 
-        assert_eq!(handle.get_mode_id(), "plan");
+        assert_eq!(handle.get_mode_id(), "normal");
 
-        handle.set_mode_str("act").await.unwrap();
-        assert_eq!(handle.get_mode_id(), "act");
+        handle.set_mode_str("plan").await.unwrap();
+        assert_eq!(handle.get_mode_id(), "plan");
 
         handle.set_mode_str("auto").await.unwrap();
         assert_eq!(handle.get_mode_id(), "auto");
