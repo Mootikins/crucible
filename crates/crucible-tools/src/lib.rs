@@ -40,6 +40,7 @@ pub mod mcp_server;
 pub mod notes;
 pub mod output_filter;
 pub mod search;
+pub mod tool_discovery;
 pub mod toon_response;
 pub mod utils;
 pub mod workspace;
@@ -52,6 +53,9 @@ pub use mcp_client::{create_stdio_executor, create_stdio_executor_with_env, Rmcp
 pub use mcp_server::CrucibleMcpServer;
 pub use notes::NoteTools;
 pub use search::SearchTools;
+pub use tool_discovery::{
+    DiscoverToolsParams, GetToolSchemaParams, ToolDiscovery, ToolInfo, ToolSchema,
+};
 pub use workspace::WorkspaceTools;
 
 /// Crate version

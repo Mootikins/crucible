@@ -51,6 +51,8 @@
 //! let result = client.call_tool("search_repositories", args).await?;
 //! ```
 
+#![allow(deprecated)]
+
 use crate::event_bus::{Event, EventBus, EventContext, HandlerError};
 use crate::tool_events::ToolSource;
 use crucible_core::traits::mcp::McpToolExecutor;

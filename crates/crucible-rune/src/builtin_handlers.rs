@@ -21,6 +21,8 @@
 //! pattern = "*"
 //! ```
 
+#![allow(deprecated)]
+
 use crate::event_bus::{EventType, Handler};
 use crucible_core::utils::glob_match;
 use serde::{Deserialize, Serialize};
