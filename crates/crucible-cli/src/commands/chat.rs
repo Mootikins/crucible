@@ -60,6 +60,7 @@ fn select_session_kiln(config: &CliConfig) -> Option<PathBuf> {
     Some(kiln_path.clone())
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn execute(
     config: CliConfig,
     agent_name: Option<String>,
