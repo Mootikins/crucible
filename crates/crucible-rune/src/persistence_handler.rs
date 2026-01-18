@@ -1,6 +1,6 @@
 //! Persistence Handler for Session Events
 //!
-//! This module provides `PersistenceHandler`, a `RingHandler` implementation
+//! This module provides `PersistenceHandler`, a `Handler` implementation
 //! that persists session events to markdown files in the kiln.
 //!
 //! ## Architecture
@@ -18,11 +18,11 @@
 //!
 //! ```rust,ignore
 //! use crucible_rune::persistence_handler::PersistenceHandler;
-//! use crucible_rune::handler_chain::HandlerChain;
+//! use crucible_rune::handler_chain::SessionHandlerChain;
 //! use std::path::PathBuf;
 //!
 //! let handler = PersistenceHandler::new(PathBuf::from("/kiln/Sessions/my-session"));
-//! let mut chain: HandlerChain<SessionEvent> = HandlerChain::new();
+//! let mut chain = SessionHandlerChain::new();
 //! chain.add_handler(Box::new(handler)).unwrap();
 //! ```
 
@@ -35,8 +35,9 @@ use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::event_markdown::EventToMarkdown;
-use crate::handler::{RingHandler, RingHandlerContext, RingHandlerError, RingHandlerResult};
+use crate::handler::{Handler, HandlerContext, HandlerResult};
 use crate::reactor::SessionEvent;
+use crucible_core::events::EventError;
 
 /// Handler that persists session events to markdown files.
 ///
@@ -283,112 +284,80 @@ impl std::fmt::Debug for PersistenceHandler {
 }
 
 #[async_trait]
-impl RingHandler<SessionEvent> for PersistenceHandler {
+impl Handler for PersistenceHandler {
     fn name(&self) -> &str {
         &self.name
     }
 
-    fn depends_on(&self) -> &[&str] {
-        // Persistence is the first handler - no dependencies
+    fn dependencies(&self) -> &[&str] {
         &[]
+    }
+
+    fn priority(&self) -> i32 {
+        0
+    }
+
+    fn event_pattern(&self) -> &str {
+        "*"
     }
 
     async fn handle(
         &self,
-        ctx: &mut RingHandlerContext<SessionEvent>,
-        event: Arc<SessionEvent>,
-        seq: u64,
-    ) -> RingHandlerResult<()> {
-        // Get current timestamp
+        ctx: &mut HandlerContext,
+        event: SessionEvent,
+    ) -> HandlerResult<SessionEvent> {
         let timestamp_ms = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map(|d| d.as_millis() as u64)
             .unwrap_or(0);
 
-        // Persist the event
         match self.persist_event(&event, Some(timestamp_ms)) {
             Ok(bytes_written) => {
-                // Update last persisted sequence
-                self.last_persisted_seq.store(seq, Ordering::SeqCst);
+                self.last_persisted_seq.fetch_add(1, Ordering::SeqCst);
 
-                // Store persistence metadata for other handlers
-                ctx.set_metadata("persist:bytes_written", serde_json::json!(bytes_written));
-                ctx.set_metadata(
+                ctx.set("persist:bytes_written", serde_json::json!(bytes_written));
+                ctx.set(
                     "persist:file_path",
                     serde_json::json!(self.current_file_path()),
                 );
 
                 tracing::trace!(
                     handler = %self.name,
-                    seq,
                     event_type = event.event_type_name(),
                     bytes_written,
                     "Event persisted"
                 );
 
-                Ok(())
+                HandlerResult::ok(event)
             }
             Err(e) => {
                 let error_msg = format!(
-                    "Failed to persist event {} to {}: {}",
-                    seq,
+                    "Failed to persist event to {}: {}",
                     self.current_file_path().display(),
                     e
                 );
 
                 tracing::error!(
                     handler = %self.name,
-                    seq,
                     file = %self.current_file_path().display(),
                     error = %e,
                     "Event persistence failed"
                 );
 
                 if self.fatal_on_error {
-                    Err(RingHandlerError::fatal(&self.name, error_msg))
+                    HandlerResult::FatalError(EventError::other(error_msg))
                 } else {
-                    Err(RingHandlerError::non_fatal(&self.name, error_msg))
+                    HandlerResult::soft_error(event, error_msg)
                 }
             }
         }
-    }
-
-    async fn on_register(&self) -> RingHandlerResult<()> {
-        // Ensure the session folder exists when the handler is registered
-        self.ensure_folder_exists().map_err(|e| {
-            RingHandlerError::fatal(
-                &self.name,
-                format!(
-                    "Failed to create session folder '{}': {}",
-                    self.folder.display(),
-                    e
-                ),
-            )
-        })?;
-
-        tracing::debug!(
-            handler = %self.name,
-            folder = %self.folder.display(),
-            file_index = self.file_index.load(Ordering::SeqCst),
-            "PersistenceHandler registered"
-        );
-
-        Ok(())
-    }
-
-    async fn on_unregister(&self) -> RingHandlerResult<()> {
-        tracing::debug!(
-            handler = %self.name,
-            last_persisted_seq = self.last_persisted_seq.load(Ordering::SeqCst),
-            "PersistenceHandler unregistered"
-        );
-        Ok(())
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::handler::Handler;
     use serde_json::json;
     use std::path::PathBuf;
     use tempfile::tempdir;
@@ -403,7 +372,7 @@ mod tests {
         let folder = test_path("test-session");
         let handler = PersistenceHandler::new(folder.clone());
 
-        assert_eq!(handler.name(), PersistenceHandler::NAME);
+        assert_eq!(Handler::name(&handler), PersistenceHandler::NAME);
         assert_eq!(handler.folder(), &folder);
         assert_eq!(handler.file_index(), 0);
         assert_eq!(handler.last_persisted_seq(), 0);
@@ -413,7 +382,7 @@ mod tests {
     fn test_persistence_handler_with_name() {
         let handler = PersistenceHandler::new(test_path("test")).with_name("custom_persist");
 
-        assert_eq!(handler.name(), "custom_persist");
+        assert_eq!(Handler::name(&handler), "custom_persist");
     }
 
     #[test]
@@ -589,7 +558,7 @@ mod tests {
     #[test]
     fn test_handler_no_dependencies() {
         let handler = PersistenceHandler::new(test_path("test"));
-        assert!(handler.depends_on().is_empty());
+        assert!(Handler::dependencies(&handler).is_empty());
     }
 
     #[tokio::test]
@@ -597,26 +566,54 @@ mod tests {
         let dir = tempdir().unwrap();
         let handler = PersistenceHandler::new(dir.path().to_path_buf());
 
-        let mut ctx = RingHandlerContext::new();
+        let mut ctx = HandlerContext::new();
         let mock_path = test_path("test.txt");
-        let event = Arc::new(SessionEvent::ToolCalled {
+        let event = SessionEvent::ToolCalled {
             name: "read_file".into(),
             args: json!({"path": mock_path.to_string_lossy()}),
-        });
+        };
 
-        handler.handle(&mut ctx, event.clone(), 42).await.unwrap();
+        let result = Handler::handle(&handler, &mut ctx, event).await;
 
-        // Verify last_persisted_seq updated
-        assert_eq!(handler.last_persisted_seq(), 42);
+        assert!(result.is_continue());
+        assert!(ctx.get("persist:bytes_written").is_some());
+        assert!(ctx.get("persist:file_path").is_some());
 
-        // Verify metadata was set
-        assert!(ctx.get_metadata("persist:bytes_written").is_some());
-        assert!(ctx.get_metadata("persist:file_path").is_some());
-
-        // Verify file contains the event
         let content = std::fs::read_to_string(handler.current_file_path()).unwrap();
         assert!(content.contains("ToolCalled"));
         assert!(content.contains("read_file"));
+    }
+
+    #[tokio::test]
+    async fn test_handler_handle_io_error_non_fatal() {
+        let handler = PersistenceHandler::new(PathBuf::from("/root/nonexistent/session"));
+
+        let mut ctx = HandlerContext::new();
+        let event = SessionEvent::MessageReceived {
+            content: "Test".into(),
+            participant_id: "user".into(),
+        };
+
+        let result = Handler::handle(&handler, &mut ctx, event).await;
+
+        assert!(result.is_soft_error());
+        assert!(result.event().is_some());
+    }
+
+    #[tokio::test]
+    async fn test_handler_handle_io_error_fatal() {
+        let handler = PersistenceHandler::new(PathBuf::from("/root/nonexistent/session"))
+            .with_fatal_on_error(true);
+
+        let mut ctx = HandlerContext::new();
+        let event = SessionEvent::MessageReceived {
+            content: "Test".into(),
+            participant_id: "user".into(),
+        };
+
+        let result = Handler::handle(&handler, &mut ctx, event).await;
+
+        assert!(result.is_fatal());
     }
 
     #[tokio::test]
@@ -625,32 +622,26 @@ mod tests {
         let handler = PersistenceHandler::new(dir.path().to_path_buf());
 
         let events = [
-            Arc::new(SessionEvent::MessageReceived {
+            SessionEvent::MessageReceived {
                 content: "First".into(),
                 participant_id: "user".into(),
-            }),
-            Arc::new(SessionEvent::MessageReceived {
+            },
+            SessionEvent::MessageReceived {
                 content: "Second".into(),
                 participant_id: "user".into(),
-            }),
-            Arc::new(SessionEvent::MessageReceived {
+            },
+            SessionEvent::MessageReceived {
                 content: "Third".into(),
                 participant_id: "user".into(),
-            }),
+            },
         ];
 
-        for (seq, event) in events.iter().enumerate() {
-            let mut ctx = RingHandlerContext::new();
-            handler
-                .handle(&mut ctx, Arc::clone(event), seq as u64)
-                .await
-                .unwrap();
+        for event in events {
+            let mut ctx = HandlerContext::new();
+            let result = Handler::handle(&handler, &mut ctx, event).await;
+            assert!(result.is_continue());
         }
 
-        // Verify last_persisted_seq is the last sequence
-        assert_eq!(handler.last_persisted_seq(), 2);
-
-        // Verify all events in file
         let content = std::fs::read_to_string(handler.current_file_path()).unwrap();
         assert!(content.contains("First"));
         assert!(content.contains("Second"));
@@ -658,97 +649,27 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_handler_handle_io_error_non_fatal() {
-        // Create handler with non-existent folder that can't be created
-        let handler = PersistenceHandler::new(PathBuf::from("/root/nonexistent/session"));
-
-        let mut ctx = RingHandlerContext::new();
-        let event = Arc::new(SessionEvent::MessageReceived {
-            content: "Test".into(),
-            participant_id: "user".into(),
-        });
-
-        let result = handler.handle(&mut ctx, event, 0).await;
-
-        // Should be non-fatal error
-        assert!(result.is_err());
-        let err = result.unwrap_err();
-        assert!(!err.is_fatal());
-    }
-
-    #[tokio::test]
-    async fn test_handler_handle_io_error_fatal() {
-        // Create handler with fatal_on_error and non-existent folder
-        let handler = PersistenceHandler::new(PathBuf::from("/root/nonexistent/session"))
-            .with_fatal_on_error(true);
-
-        let mut ctx = RingHandlerContext::new();
-        let event = Arc::new(SessionEvent::MessageReceived {
-            content: "Test".into(),
-            participant_id: "user".into(),
-        });
-
-        let result = handler.handle(&mut ctx, event, 0).await;
-
-        // Should be fatal error
-        assert!(result.is_err());
-        let err = result.unwrap_err();
-        assert!(err.is_fatal());
-    }
-
-    #[tokio::test]
-    async fn test_handler_on_register_creates_folder() {
-        let dir = tempdir().unwrap();
-        let nested_folder = dir.path().join("nested").join("session");
-        let handler = PersistenceHandler::new(nested_folder.clone());
-
-        assert!(!nested_folder.exists());
-
-        handler.on_register().await.unwrap();
-
-        assert!(nested_folder.exists());
-    }
-
-    #[tokio::test]
-    async fn test_handler_on_register_invalid_path() {
-        let handler = PersistenceHandler::new(PathBuf::from("/root/nonexistent/session"));
-
-        let result = handler.on_register().await;
-        assert!(result.is_err());
-    }
-
-    // ========================
-    // Integration with HandlerChain
-    // ========================
-
-    #[tokio::test]
-    async fn test_integration_with_handler_chain() {
-        use crate::handler_chain::HandlerChain;
+    async fn test_integration_with_session_handler_chain() {
+        use crate::handler_chain::SessionHandlerChain;
 
         let dir = tempdir().unwrap();
         let handler = PersistenceHandler::new(dir.path().to_path_buf());
+        handler.ensure_folder_exists().unwrap();
 
-        // Register the handler
-        handler.on_register().await.unwrap();
-
-        let mut chain: HandlerChain<SessionEvent> = HandlerChain::new();
+        let mut chain = SessionHandlerChain::new();
         chain.add_handler(Box::new(handler)).unwrap();
-
-        // Validate chain
         chain.validate().unwrap();
 
-        // Process an event
-        let event = Arc::new(SessionEvent::MessageReceived {
+        let event = SessionEvent::MessageReceived {
             content: "Test via chain".into(),
             participant_id: "user".into(),
-        });
+        };
 
-        let result = chain.process(event, 0).await.unwrap();
+        let (result, _) = chain.process(event).await.unwrap();
 
         assert!(result.is_ok());
         assert!(!result.has_errors());
 
-        // Verify persistence
         let content = std::fs::read_to_string(dir.path().join("000-context.md")).unwrap();
         assert!(content.contains("Test via chain"));
     }

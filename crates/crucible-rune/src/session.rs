@@ -66,10 +66,10 @@ use tokio::sync::{mpsc, RwLock};
 use crate::event_bus::EventBus;
 use crate::event_markdown::EventToMarkdown;
 use crate::event_ring::EventRing;
-use crate::linear_reactor::LinearReactor;
 use crate::reactor::{
     Reactor, ReactorContext, ReactorError, ReactorResult, ReactorSessionConfig, SessionEvent,
 };
+use crate::simple_reactor::SimpleReactor;
 
 /// Default ring buffer capacity.
 const DEFAULT_RING_CAPACITY: usize = 4096;
@@ -1105,10 +1105,9 @@ impl SessionBuilder {
             custom: self.custom,
         };
 
-        // Use provided reactor or create default LinearReactor
         let reactor: Arc<dyn Reactor> = self
             .reactor
-            .unwrap_or_else(|| Arc::new(LinearReactor::with_defaults()));
+            .unwrap_or_else(|| Arc::new(SimpleReactor::new()));
 
         Session::new(config, reactor, self.ring_capacity, self.channel_capacity)
     }
@@ -1227,16 +1226,6 @@ mod tests {
         session.start().await.unwrap();
 
         assert_eq!(session.state().await, SessionState::Active);
-        // LinearReactor pushes a SessionStarted event
-        assert_eq!(session.event_count(), 1);
-
-        let event = session.get_event(0).unwrap();
-        match event.as_ref() {
-            SessionEvent::SessionStarted { config } => {
-                assert_eq!(config.session_id, "test");
-            }
-            _ => panic!("Expected SessionStarted event"),
-        }
     }
 
     #[tokio::test]

@@ -49,7 +49,6 @@
 pub mod backends;
 mod change_detector;
 pub mod config;
-mod embedding_events;
 pub mod error;
 mod events;
 mod file_scanner;
@@ -71,10 +70,6 @@ pub use config::{
     ValidationError, WatchLoggingConfig, WatchManagerConfig, WatchModeConfig, WatchPath,
     WatchPerformanceConfig, WatchProfile,
 };
-// Note: embedding_events types are deprecated. Use SessionEvent variants from
-// crucible_core::events instead (EmbeddingRequested, EmbeddingStored, EmbeddingFailed).
-#[allow(deprecated)]
-pub use embedding_events::*;
 pub use error::*;
 pub use events::*;
 pub use file_scanner::{
@@ -98,28 +93,13 @@ pub enum WatchBackend {
     Editor,
 }
 
-/// Re-export common types for convenience.
-///
-/// Note: The embedding_events types are deprecated. New code should use:
-/// - `SessionEvent::EmbeddingRequested` instead of `EmbeddingEvent`
-/// - `SessionEvent::EmbeddingStored` instead of `EmbeddingEventResult::success`
-/// - `SessionEvent::EmbeddingFailed` instead of `EmbeddingEventResult::failure`
-/// - `Priority` from `crucible_core::events` instead of `EmbeddingEventPriority`
 pub mod prelude {
-    #[allow(deprecated)]
+    pub use crate::config::DebounceConfig as ConfigDebounceConfig;
+    pub use crate::config::WatchConfig as ConfigWatchConfig;
+    pub use crate::traits::DebounceConfig as TraitDebounceConfig;
+    pub use crate::traits::WatchConfig as TraitWatchConfig;
     pub use crate::{
-        embedding_events::{
-            create_embedding_metadata, determine_content_type, determine_event_priority,
-            generate_document_id, EmbeddingEvent, EmbeddingEventMetadata, EmbeddingEventPriority,
-            EmbeddingEventResult, EventDrivenEmbeddingConfig,
-        },
         Error, EventHandler, FileEvent, FileEventKind, FileWatcher, Result, WatchBackend,
         WatchManager,
     };
-    // Re-export both WatchConfig types with clear names
-    pub use crate::config::WatchConfig as ConfigWatchConfig;
-    pub use crate::traits::WatchConfig as TraitWatchConfig;
-    // Re-export both DebounceConfig types with clear names
-    pub use crate::config::DebounceConfig as ConfigDebounceConfig;
-    pub use crate::traits::DebounceConfig as TraitDebounceConfig;
 }

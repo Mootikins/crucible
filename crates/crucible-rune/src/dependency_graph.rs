@@ -1,51 +1,24 @@
-//! Handler Dependency Graph for Topological Ordering
+//! Handler dependency graph for topological ordering.
 //!
-//! This module provides dependency graph construction and topological sorting
-//! for ring handlers. Handlers declare dependencies via `depends_on()`, and
-//! this module ensures they execute in the correct order.
-//!
-//! ## Design
-//!
-//! The dependency graph:
-//! - Validates handler dependencies at registration time
-//! - Detects cycles (returns error instead of infinite loop)
-//! - Computes stable topological order
-//! - Supports dynamic handler registration/removal
+//! Provides dependency graph construction and topological sorting for handlers.
+//! Handlers declare dependencies via `dependencies()`, and this module ensures
+//! they execute in the correct order.
 //!
 //! ## Usage
 //!
 //! ```rust,ignore
-//! use crucible_rune::dependency_graph::HandlerGraph;
-//! use crucible_rune::handler::{RingHandler, BoxedRingHandler};
+//! use crucible_rune::dependency_graph::SessionHandlerGraph;
 //!
-//! let mut graph: HandlerGraph<MyEvent> = HandlerGraph::new();
+//! let mut graph = SessionHandlerGraph::new();
+//! graph.add_handler(Box::new(persist_handler))?;
+//! graph.add_handler(Box::new(react_handler))?;
 //!
-//! // Add handlers (order doesn't matter)
-//! graph.add_handler(Box::new(PersistHandler));  // depends_on: []
-//! graph.add_handler(Box::new(ReactHandler));    // depends_on: ["persist"]
-//! graph.add_handler(Box::new(EmitHandler));     // depends_on: ["react"]
-//!
-//! // Get handlers in execution order (topologically sorted)
-//! let handlers = graph.sorted_handlers()?;
-//! // Returns handlers in order: [PersistHandler, ReactHandler, EmitHandler]
-//! ```
-//!
-//! ## Lower-level API
-//!
-//! For cases where you only need the dependency graph without storing handlers:
-//!
-//! ```rust,ignore
-//! use crucible_rune::dependency_graph::DependencyGraph;
-//!
-//! let mut graph = DependencyGraph::new();
-//! graph.add("persist", vec![]).unwrap();
-//! graph.add("react", vec!["persist".to_string()]).unwrap();
-//!
-//! let order = graph.execution_order()?;
-//! // Returns: ["persist", "react"]
+//! for handler in graph.sorted_handlers()? {
+//!     println!("Handler: {}", handler.name());
+//! }
 //! ```
 
-use crate::handler::BoxedRingHandler;
+use crate::handler::BoxedHandler;
 use std::collections::{HashMap, HashSet, VecDeque};
 
 /// Error types for dependency graph operations.
@@ -399,36 +372,51 @@ impl DependencyGraph {
     }
 }
 
-/// Handler graph that stores actual handlers with their dependency relationships.
+/// Handler graph for SessionEvent handlers using the unified Handler trait.
 ///
-/// This is the high-level API that combines `DependencyGraph` with handler storage.
-/// It automatically extracts dependency information from the `RingHandler::depends_on()`
-/// method and maintains topological order.
+/// This is the modern replacement for the deprecated `HandlerGraph<E>`.
+/// It works exclusively with `SessionEvent` and the unified `Handler` trait
+/// from `crucible_core::events`.
 ///
 /// ## Example
 ///
 /// ```rust,ignore
-/// use crucible_rune::dependency_graph::HandlerGraph;
+/// use crucible_rune::dependency_graph::SessionHandlerGraph;
+/// use crucible_core::events::{Handler, HandlerContext, HandlerResult, SessionEvent};
 ///
-/// let mut graph: HandlerGraph<MyEvent> = HandlerGraph::new();
+/// let mut graph = SessionHandlerGraph::new();
 ///
-/// graph.add_handler(Box::new(LogHandler))?;     // depends_on: []
-/// graph.add_handler(Box::new(ParseHandler))?;   // depends_on: ["log"]
-/// graph.add_handler(Box::new(ExecuteHandler))?; // depends_on: ["parse"]
+/// graph.add_handler(Box::new(LogHandler))?;     // dependencies: []
+/// graph.add_handler(Box::new(ParseHandler))?;   // dependencies: ["log"]
+/// graph.add_handler(Box::new(ExecuteHandler))?; // dependencies: ["parse"]
 ///
 /// // Get handlers in correct execution order
 /// for handler in graph.sorted_handlers()? {
 ///     println!("Handler: {}", handler.name());
 /// }
 /// ```
-pub struct HandlerGraph<E> {
+///
+/// ## Migration from HandlerGraph
+///
+/// Replace:
+/// ```rust,ignore
+/// let mut graph: HandlerGraph<SessionEvent> = HandlerGraph::new();
+/// graph.add_handler(Box::new(my_ring_handler))?;
+/// ```
+///
+/// With:
+/// ```rust,ignore
+/// let mut graph = SessionHandlerGraph::new();
+/// graph.add_handler(Box::new(my_handler))?; // Handler trait, not RingHandler
+/// ```
+pub struct SessionHandlerGraph {
     /// Handlers stored by name
-    handlers: HashMap<String, BoxedRingHandler<E>>,
+    handlers: HashMap<String, BoxedHandler>,
     /// Dependency graph for ordering
     graph: DependencyGraph,
 }
 
-impl<E> Default for HandlerGraph<E> {
+impl Default for SessionHandlerGraph {
     fn default() -> Self {
         Self {
             handlers: HashMap::new(),
@@ -437,7 +425,7 @@ impl<E> Default for HandlerGraph<E> {
     }
 }
 
-impl<E> HandlerGraph<E> {
+impl SessionHandlerGraph {
     /// Create a new empty handler graph.
     pub fn new() -> Self {
         Self::default()
@@ -445,20 +433,21 @@ impl<E> HandlerGraph<E> {
 
     /// Add a handler to the graph.
     ///
-    /// The handler's `name()` and `depends_on()` are automatically extracted
+    /// The handler's `name()` and `dependencies()` are automatically extracted
     /// and added to the dependency graph.
     ///
     /// # Errors
     ///
     /// Returns an error if a handler with the same name already exists.
-    pub fn add_handler(&mut self, handler: BoxedRingHandler<E>) -> DependencyResult<()> {
+    pub fn add_handler(&mut self, handler: BoxedHandler) -> DependencyResult<()> {
         let name = handler.name().to_string();
-        let deps: Vec<String> = handler.depends_on().iter().map(|s| s.to_string()).collect();
+        let deps: Vec<String> = handler
+            .dependencies()
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
 
-        // Add to dependency graph first
         self.graph.add(&name, deps)?;
-
-        // Then store the handler
         self.handlers.insert(name, handler);
 
         Ok(())
@@ -469,7 +458,7 @@ impl<E> HandlerGraph<E> {
     /// # Errors
     ///
     /// Returns an error if the handler doesn't exist.
-    pub fn remove_handler(&mut self, name: &str) -> DependencyResult<BoxedRingHandler<E>> {
+    pub fn remove_handler(&mut self, name: &str) -> DependencyResult<BoxedHandler> {
         self.graph.remove(name)?;
         self.handlers
             .remove(name)
@@ -477,7 +466,7 @@ impl<E> HandlerGraph<E> {
     }
 
     /// Get a handler by name.
-    pub fn get_handler(&self, name: &str) -> Option<&BoxedRingHandler<E>> {
+    pub fn get_handler(&self, name: &str) -> Option<&BoxedHandler> {
         self.handlers.get(name)
     }
 
@@ -512,7 +501,7 @@ impl<E> HandlerGraph<E> {
     /// # Errors
     ///
     /// Returns an error if there's a cycle or missing dependency.
-    pub fn sorted_handlers(&mut self) -> DependencyResult<Vec<&BoxedRingHandler<E>>> {
+    pub fn sorted_handlers(&mut self) -> DependencyResult<Vec<&BoxedHandler>> {
         let order = self.graph.execution_order()?;
         Ok(order
             .iter()
@@ -556,9 +545,9 @@ impl<E> HandlerGraph<E> {
     }
 }
 
-impl<E> std::fmt::Debug for HandlerGraph<E> {
+impl std::fmt::Debug for SessionHandlerGraph {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("HandlerGraph")
+        f.debug_struct("SessionHandlerGraph")
             .field("handler_count", &self.handlers.len())
             .field("handlers", &self.handlers.keys().collect::<Vec<_>>())
             .field("graph", &self.graph)
@@ -939,53 +928,45 @@ mod tests {
         assert!(pos("notify") < pos("log_end"));
     }
 
-    // ========================
-    // HandlerGraph tests
-    // ========================
-
-    use crate::handler::{RingHandler, RingHandlerContext, RingHandlerResult};
     use async_trait::async_trait;
-    use std::sync::Arc;
+    use crucible_core::events::{Handler, HandlerContext, HandlerResult, SessionEvent};
 
-    /// Test handler with configurable name and dependencies.
-    struct TestRingHandler {
+    struct TestSessionHandler {
         name: &'static str,
         deps: &'static [&'static str],
     }
 
     #[async_trait]
-    impl RingHandler<String> for TestRingHandler {
+    impl Handler for TestSessionHandler {
         fn name(&self) -> &str {
             self.name
         }
 
-        fn depends_on(&self) -> &[&str] {
+        fn dependencies(&self) -> &[&str] {
             self.deps
         }
 
         async fn handle(
             &self,
-            ctx: &mut RingHandlerContext<String>,
-            event: Arc<String>,
-            seq: u64,
-        ) -> RingHandlerResult<()> {
-            ctx.emit(format!("{}:{}:{}", self.name, seq, event));
-            Ok(())
+            _ctx: &mut HandlerContext,
+            event: SessionEvent,
+        ) -> HandlerResult<SessionEvent> {
+            HandlerResult::ok(event)
         }
     }
 
     #[test]
-    fn test_handler_graph_empty() {
-        let graph: HandlerGraph<String> = HandlerGraph::new();
+    fn test_session_handler_graph_empty() {
+        let graph = SessionHandlerGraph::new();
         assert!(graph.is_empty());
         assert_eq!(graph.len(), 0);
     }
 
     #[test]
-    fn test_handler_graph_add_single() {
-        let mut graph: HandlerGraph<String> = HandlerGraph::new();
+    fn test_session_handler_graph_add_single() {
+        let mut graph = SessionHandlerGraph::new();
 
-        let handler: BoxedRingHandler<String> = Box::new(TestRingHandler {
+        let handler: BoxedHandler = Box::new(TestSessionHandler {
             name: "test",
             deps: &[],
         });
@@ -999,24 +980,23 @@ mod tests {
     }
 
     #[test]
-    fn test_handler_graph_sorted_handlers() {
-        let mut graph: HandlerGraph<String> = HandlerGraph::new();
+    fn test_session_handler_graph_sorted_handlers() {
+        let mut graph = SessionHandlerGraph::new();
 
-        // Add in reverse order
         graph
-            .add_handler(Box::new(TestRingHandler {
+            .add_handler(Box::new(TestSessionHandler {
                 name: "C",
                 deps: &["B"],
             }))
             .unwrap();
         graph
-            .add_handler(Box::new(TestRingHandler {
+            .add_handler(Box::new(TestSessionHandler {
                 name: "B",
                 deps: &["A"],
             }))
             .unwrap();
         graph
-            .add_handler(Box::new(TestRingHandler {
+            .add_handler(Box::new(TestSessionHandler {
                 name: "A",
                 deps: &[],
             }))
@@ -1029,17 +1009,17 @@ mod tests {
     }
 
     #[test]
-    fn test_handler_graph_cycle_detection() {
-        let mut graph: HandlerGraph<String> = HandlerGraph::new();
+    fn test_session_handler_graph_cycle_detection() {
+        let mut graph = SessionHandlerGraph::new();
 
         graph
-            .add_handler(Box::new(TestRingHandler {
+            .add_handler(Box::new(TestSessionHandler {
                 name: "A",
                 deps: &["B"],
             }))
             .unwrap();
         graph
-            .add_handler(Box::new(TestRingHandler {
+            .add_handler(Box::new(TestSessionHandler {
                 name: "B",
                 deps: &["A"],
             }))
@@ -1050,11 +1030,11 @@ mod tests {
     }
 
     #[test]
-    fn test_handler_graph_unknown_dependency() {
-        let mut graph: HandlerGraph<String> = HandlerGraph::new();
+    fn test_session_handler_graph_unknown_dependency() {
+        let mut graph = SessionHandlerGraph::new();
 
         graph
-            .add_handler(Box::new(TestRingHandler {
+            .add_handler(Box::new(TestSessionHandler {
                 name: "A",
                 deps: &["nonexistent"],
             }))
@@ -1068,17 +1048,17 @@ mod tests {
     }
 
     #[test]
-    fn test_handler_graph_duplicate_handler() {
-        let mut graph: HandlerGraph<String> = HandlerGraph::new();
+    fn test_session_handler_graph_duplicate_handler() {
+        let mut graph = SessionHandlerGraph::new();
 
         graph
-            .add_handler(Box::new(TestRingHandler {
+            .add_handler(Box::new(TestSessionHandler {
                 name: "A",
                 deps: &[],
             }))
             .unwrap();
 
-        let result = graph.add_handler(Box::new(TestRingHandler {
+        let result = graph.add_handler(Box::new(TestSessionHandler {
             name: "A",
             deps: &[],
         }));
@@ -1087,11 +1067,11 @@ mod tests {
     }
 
     #[test]
-    fn test_handler_graph_remove() {
-        let mut graph: HandlerGraph<String> = HandlerGraph::new();
+    fn test_session_handler_graph_remove() {
+        let mut graph = SessionHandlerGraph::new();
 
         graph
-            .add_handler(Box::new(TestRingHandler {
+            .add_handler(Box::new(TestSessionHandler {
                 name: "A",
                 deps: &[],
             }))
@@ -1105,47 +1085,17 @@ mod tests {
     }
 
     #[test]
-    fn test_handler_graph_complex() {
-        let mut graph: HandlerGraph<String> = HandlerGraph::new();
-
-        // persist -> react -> emit chain
+    fn test_session_handler_graph_debug() {
+        let mut graph = SessionHandlerGraph::new();
         graph
-            .add_handler(Box::new(TestRingHandler {
-                name: "persist",
-                deps: &[],
-            }))
-            .unwrap();
-        graph
-            .add_handler(Box::new(TestRingHandler {
-                name: "react",
-                deps: &["persist"],
-            }))
-            .unwrap();
-        graph
-            .add_handler(Box::new(TestRingHandler {
-                name: "emit",
-                deps: &["react"],
-            }))
-            .unwrap();
-
-        let sorted = graph.sorted_handlers().unwrap();
-        let names: Vec<&str> = sorted.iter().map(|h| h.name()).collect();
-
-        assert_eq!(names, vec!["persist", "react", "emit"]);
-    }
-
-    #[test]
-    fn test_handler_graph_debug() {
-        let mut graph: HandlerGraph<String> = HandlerGraph::new();
-        graph
-            .add_handler(Box::new(TestRingHandler {
+            .add_handler(Box::new(TestSessionHandler {
                 name: "test",
                 deps: &[],
             }))
             .unwrap();
 
         let debug = format!("{:?}", graph);
-        assert!(debug.contains("HandlerGraph"));
+        assert!(debug.contains("SessionHandlerGraph"));
         assert!(debug.contains("handler_count: 1"));
     }
 }

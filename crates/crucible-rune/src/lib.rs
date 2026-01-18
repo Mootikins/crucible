@@ -52,7 +52,6 @@ pub mod handler_system;
 mod handler_types;
 pub mod handler_wiring;
 mod http_module;
-pub mod linear_reactor;
 pub mod logging_handler;
 pub mod mcp_gateway;
 pub mod mcp_module;
@@ -71,6 +70,7 @@ mod registry;
 mod rune_types;
 pub mod session;
 mod shell_module;
+pub mod simple_reactor;
 mod struct_plugin;
 pub mod tool_events;
 mod types;
@@ -88,13 +88,11 @@ pub use builtin_handlers::{
 pub use compaction::{CompactionConfig, CompactionMetrics, CompactionReason, CompactionTrigger};
 pub use core_handler::{RuneHandler, RuneHandlerMeta};
 pub use dependency_graph::{
-    DependencyError, DependencyGraph, DependencyResult, GraphNode, HandlerGraph,
+    DependencyError, DependencyGraph, DependencyResult, GraphNode, SessionHandlerGraph,
 };
 pub use discovery::ToolDiscovery;
 pub use discovery_paths::{DiscoveryConfig, DiscoveryPaths};
-pub use event_bus::{
-    Event, EventBus, EventContext, EventType, Handler, HandlerError, HandlerResult,
-};
+pub use event_bus::{Event, EventBus, EventContext, EventType};
 pub use event_handler::{EventHandler, EventHandlerConfig};
 pub use event_markdown::{
     EventToMarkdown, MarkdownParseError, MarkdownParseResult, MarkdownToEvent,
@@ -110,19 +108,13 @@ pub use graph_module::{
     graph_module, graph_module_with_all, graph_module_with_executor, graph_module_with_stores,
     register_graph_view_functions, register_note_functions,
 };
-pub use handler::{
-    BoxedRingHandler, RingHandler, RingHandlerContext, RingHandlerError, RingHandlerInfo,
-    RingHandlerResult,
-};
-pub use handler_chain::{ChainResult, HandlerChain};
+pub use handler::{BoxedHandler, Handler, HandlerContext, HandlerResult, SharedHandler};
+pub use handler_chain::{SessionChainResult, SessionHandlerChain};
 pub use handler_system::{
     BuiltinHandler, HandlerManager, HandlerRegistry, RuneScriptHandler, ScriptHandler,
 };
-pub use handler_wiring::{
-    wire_event_bus, wire_event_bus_default, EventBusRingHandler, HandlerWiringBuilder,
-};
+pub use handler_wiring::SessionEventBusHandler;
 pub use http_module::http_module;
-pub use linear_reactor::{LinearReactor, LinearReactorConfig};
 pub use logging_handler::{EventFilter, LogLevel, LoggingConfig, LoggingHandler};
 pub use mcp_gateway::{
     BoxedMcpExecutor, ContentBlock as GatewayContentBlock, GatewayError, McpGatewayManager,
@@ -157,6 +149,7 @@ pub use rune_types::{
 };
 pub use session::{Session, SessionBuilder, SessionHandle, SessionState};
 pub use shell_module::{shell_module, shell_module_with_policy};
+pub use simple_reactor::SimpleReactor;
 pub use struct_plugin::{
     PluginMetadata, StructPluginHandle, ToolDefinition, ToolParameter, WatchEvent, WatchEventKind,
 };

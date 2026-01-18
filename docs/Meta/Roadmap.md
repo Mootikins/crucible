@@ -44,8 +44,16 @@ A knowledge management system where:
 
 - [ ] **MCP Tool System** (95%) - Permission prompts, ACP integration
 - [ ] **MCP Bridge/Gateway** (85%) - Integration tests, documentation
-- [ ] **Rune programmatic tool calling** - Complete and test
+- [x] **Rune programmatic tool calling** - Tool discovery (`discover_tools`, `get_tool_schema`) complete
 - [x] **Event/Hook System** - Note lifecycle hooks (`note:created`, `note:modified`, `note:deleted`) complete
+
+### Polish & Stability (Dogfooding Focus)
+
+- [ ] **Error handling UX** - Clear error messages, graceful degradation when services unavailable
+- [ ] **Session persistence** - Reliable save/resume, handle crashes gracefully
+- [ ] **Plugin loading errors** - Clear feedback when Rune/Lua plugins fail to load
+- [ ] **MCP connection stability** - Reconnect logic, timeout handling, status indicators
+- [ ] **CLI help & discoverability** - `--help` completeness, command suggestions
 
 ### Maintain
 

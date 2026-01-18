@@ -1,15 +1,13 @@
 //! Integration handler for automatic file parsing and database indexing.
 //! Integrates PulldownParser with file watching for real-time note processing.
 //!
-//! Note: This handler currently uses deprecated `EmbeddingEvent` types for backward
-//! compatibility. New code should use `SessionEvent::EmbeddingRequested` from
-//! `crucible_core::events` instead.
+//! This handler emits `SessionEvent` variants (FileChanged, FileDeleted, FileMoved)
+//! to the event bus. Embedding generation is handled downstream by `EmbeddingHandler`
+//! in `crucible-enrichment` which listens for `NoteParsed` events.
 
 #![allow(clippy::ptr_arg)]
 
-#[allow(deprecated)]
 use crate::{
-    embedding_events::{create_embedding_metadata, EmbeddingEvent, EventDrivenEmbeddingConfig},
     error::{Error, Result},
     events::FileEvent,
     traits::EventHandler,
@@ -18,63 +16,22 @@ use async_trait::async_trait;
 use crucible_core::events::{EventEmitter, NoOpEmitter, SessionEvent};
 use std::path::PathBuf;
 use std::sync::Arc;
-use tokio::sync::{mpsc, RwLock};
 use tracing::{debug, error, info, warn};
 
-/// Handler for automatically indexing files when they change.
-/// Integrates with PulldownParser for note parsing and prepares for database storage.
-/// Emits SessionEvent variants (FileChanged, FileDeleted, FileMoved) to the event bus
-/// and EmbeddingEvent objects for integration with the embedding pipeline.
-#[allow(deprecated)]
 pub struct IndexingHandler {
     supported_extensions: Vec<String>,
     index_debounce: std::time::Duration,
-
-    /// Event-driven embedding configuration
-    embedding_config: EventDrivenEmbeddingConfig,
-
-    /// Channel for sending embedding events
-    embedding_event_tx: Option<mpsc::UnboundedSender<EmbeddingEvent>>,
-
-    /// Recent events for deduplication
-    recent_events: Arc<RwLock<std::collections::HashMap<String, std::time::Instant>>>,
-
-    /// Event emitter for SessionEvent emission (FileChanged, FileDeleted, FileMoved)
     emitter: Arc<dyn EventEmitter<Event = SessionEvent>>,
-    // Database connection will be added in Phase 4
 }
 
-#[allow(dead_code, deprecated)] // Many methods scaffolded for future Phase 4 implementation
+#[allow(dead_code)]
 impl IndexingHandler {
-    /// Create a new indexing handler with default NoOpEmitter.
-    ///
-    /// Uses a no-op emitter by default. To emit events, use `with_emitter()` to
-    /// provide a real event bus.
     pub fn new() -> Result<Self> {
         Self::with_emitter(Arc::new(NoOpEmitter::new()))
     }
 
-    /// Create a new indexing handler with a custom event emitter.
-    ///
-    /// The emitter is used to emit `SessionEvent` variants (e.g., `FileChanged`,
-    /// `FileDeleted`, `FileMoved`) when file system changes are processed.
     pub fn with_emitter(emitter: Arc<dyn EventEmitter<Event = SessionEvent>>) -> Result<Self> {
-        Self::with_emitter_and_config(emitter, EventDrivenEmbeddingConfig::default())
-    }
-
-    /// Create a new indexing handler with custom embedding configuration.
-    ///
-    /// Uses a no-op emitter by default. To emit events, chain with `set_emitter()`.
-    pub fn with_embedding_config(embedding_config: EventDrivenEmbeddingConfig) -> Result<Self> {
-        Self::with_emitter_and_config(Arc::new(NoOpEmitter::new()), embedding_config)
-    }
-
-    /// Create a new indexing handler with both custom emitter and embedding configuration.
-    pub fn with_emitter_and_config(
-        emitter: Arc<dyn EventEmitter<Event = SessionEvent>>,
-        embedding_config: EventDrivenEmbeddingConfig,
-    ) -> Result<Self> {
-        info!("IndexingHandler created with PulldownParser integration and embedding events");
+        info!("IndexingHandler created");
         Ok(Self {
             supported_extensions: vec![
                 "md".to_string(),
@@ -83,33 +40,16 @@ impl IndexingHandler {
                 "adoc".to_string(),
             ],
             index_debounce: std::time::Duration::from_millis(500),
-            embedding_config,
-            embedding_event_tx: None,
-            recent_events: Arc::new(RwLock::new(std::collections::HashMap::new())),
             emitter,
         })
     }
 
-    /// Set the event emitter for SessionEvent emission.
-    ///
-    /// The emitter is used to emit `SessionEvent` variants when file system
-    /// changes are processed by this handler.
     pub fn set_emitter(&mut self, emitter: Arc<dyn EventEmitter<Event = SessionEvent>>) {
         self.emitter = emitter;
     }
 
-    /// Get a reference to the event emitter.
     pub fn emitter(&self) -> &Arc<dyn EventEmitter<Event = SessionEvent>> {
         &self.emitter
-    }
-
-    /// Set the embedding event channel for sending embedding events.
-    pub fn with_embedding_event_channel(
-        mut self,
-        tx: mpsc::UnboundedSender<EmbeddingEvent>,
-    ) -> Self {
-        self.embedding_event_tx = Some(tx);
-        self
     }
 
     /// Set the supported file extensions.
@@ -129,12 +69,6 @@ impl IndexingHandler {
         info!("Database initialization will be implemented in Phase 4");
         // Phase 4: Initialize SurrealDB connection here
         Ok(())
-    }
-
-    /// Set the embedding configuration (Phase 4 placeholder).
-    pub fn set_embedding_config(&mut self, _config: ()) {
-        info!("Embedding configuration will be implemented in Phase 4");
-        // Phase 4: Configure embedding generation here
     }
 
     fn should_index_file(&self, path: &PathBuf) -> bool {
@@ -195,182 +129,7 @@ impl IndexingHandler {
 
     async fn remove_file_index(&self, path: &PathBuf) -> Result<()> {
         debug!("Removing index for file: {}", path.display());
-        // Phase 4: Remove note and associated blocks from database
-        debug!("Database removal will be implemented in Phase 4");
         Ok(())
-    }
-
-    /// Create and emit an embedding event from parsed note content
-    async fn create_and_emit_embedding_event(
-        &self,
-        path: &PathBuf,
-        parsed_doc: &crucible_core::parser::ParsedNote,
-        file_size: u64,
-        trigger_event: crate::events::FileEventKind,
-    ) -> Result<()> {
-        // Check for deduplication if enabled
-        if self.embedding_config.enable_deduplication && self.should_deduplicate_event(path).await {
-            debug!("Deduplicating embedding event for: {}", path.display());
-            return Ok(());
-        }
-
-        // Extract content for embedding
-        let content = self.extract_content_for_embedding(parsed_doc);
-
-        if content.trim().is_empty() {
-            debug!(
-                "Skipping embedding event for empty content: {}",
-                path.display()
-            );
-            return Ok(());
-        }
-
-        // Create embedding metadata
-        let metadata = create_embedding_metadata(path, &trigger_event, Some(file_size));
-
-        // Create embedding event
-        let embedding_event = EmbeddingEvent::new(path.clone(), trigger_event, content, metadata);
-
-        // Send event if channel is available
-        if let Some(ref tx) = self.embedding_event_tx {
-            if let Err(e) = tx.send(embedding_event.clone()) {
-                warn!(
-                    "Failed to send embedding event for {}: {}",
-                    path.display(),
-                    e
-                );
-            } else {
-                debug!("Successfully sent embedding event for: {}", path.display());
-            }
-        } else {
-            debug!("No embedding event channel configured, skipping event emission");
-        }
-
-        // Track event for deduplication
-        self.track_event_for_deduplication(path).await;
-
-        Ok(())
-    }
-
-    /// Extract content from parsed note for embedding
-    fn extract_content_for_embedding(
-        &self,
-        parsed_doc: &crucible_core::parser::ParsedNote,
-    ) -> String {
-        let mut content_parts = Vec::new();
-
-        // Add title if available
-        let title = parsed_doc.title();
-        if !title.is_empty() {
-            content_parts.push(format!("# {}", title));
-        }
-
-        // Add frontmatter metadata as structured text
-        if let Some(ref frontmatter) = parsed_doc.frontmatter {
-            if !frontmatter.raw.trim().is_empty() {
-                content_parts.push("## Note Metadata".to_string());
-                content_parts.push(frontmatter.raw.clone());
-                content_parts.push(String::new()); // Empty line after metadata
-            }
-        }
-
-        // Add headings with their content
-        for heading in &parsed_doc.content.headings {
-            content_parts.push(format!(
-                "{} {}",
-                "#".repeat(heading.level as usize),
-                heading.text
-            ));
-        }
-
-        // Add paragraphs
-        for paragraph in &parsed_doc.content.paragraphs {
-            content_parts.push(paragraph.content.clone());
-        }
-
-        // Add code blocks with language annotations
-        for code_block in &parsed_doc.content.code_blocks {
-            if let Some(ref lang) = code_block.language {
-                content_parts.push(format!("```{}", lang));
-            } else {
-                content_parts.push("```".to_string());
-            }
-            content_parts.push(code_block.content.clone());
-            content_parts.push("```".to_string());
-        }
-
-        // Add list items
-        for list in &parsed_doc.content.lists {
-            for item in &list.items {
-                let prefix = if item.task_status.is_some() {
-                    match item.task_status {
-                        Some(crucible_core::parser::TaskStatus::Completed) => "- [x] ",
-                        Some(crucible_core::parser::TaskStatus::Pending) => "- [ ] ",
-                        _ => "- ",
-                    }
-                } else {
-                    "- "
-                };
-                content_parts.push(format!("{}{}", prefix, item.content));
-            }
-        }
-
-        // Join all parts with newlines
-        content_parts.join("\n")
-    }
-
-    /// Check if an event should be deduplicated
-    async fn should_deduplicate_event(&self, path: &PathBuf) -> bool {
-        let recent_events = self.recent_events.read().await;
-        let path_str = path.to_string_lossy();
-
-        if let Some(last_time) = recent_events.get(path_str.as_ref()) {
-            let elapsed = last_time.elapsed();
-            let dedup_window =
-                std::time::Duration::from_millis(self.embedding_config.deduplication_window_ms);
-            elapsed < dedup_window
-        } else {
-            false
-        }
-    }
-
-    /// Track an event for deduplication purposes
-    async fn track_event_for_deduplication(&self, path: &PathBuf) {
-        let mut recent_events = self.recent_events.write().await;
-        let path_str = path.to_string_lossy();
-        recent_events.insert(path_str.to_string(), std::time::Instant::now());
-
-        // Clean up old events (simple cleanup strategy)
-        let cutoff = std::time::Instant::now()
-            - std::time::Duration::from_millis(self.embedding_config.deduplication_window_ms * 2);
-
-        recent_events.retain(|_, &mut time| time > cutoff);
-    }
-
-    /// Get a receiver for embedding events (useful for testing)
-    pub fn create_embedding_event_channel() -> (
-        mpsc::UnboundedSender<EmbeddingEvent>,
-        mpsc::UnboundedReceiver<EmbeddingEvent>,
-    ) {
-        mpsc::unbounded_channel()
-    }
-
-    /// Clean up old deduplication entries
-    pub async fn cleanup_deduplication_cache(&self) {
-        let mut recent_events = self.recent_events.write().await;
-        let cutoff = std::time::Instant::now()
-            - std::time::Duration::from_millis(self.embedding_config.deduplication_window_ms * 2);
-
-        let initial_count = recent_events.len();
-        recent_events.retain(|_, &mut time| time > cutoff);
-        let final_count = recent_events.len();
-
-        if initial_count != final_count {
-            debug!(
-                "Cleaned up {} old deduplication entries",
-                initial_count - final_count
-            );
-        }
     }
 
     /// Report parsing progress and performance metrics

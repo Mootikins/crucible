@@ -28,6 +28,8 @@
 //! let (event, ctx, errors) = emitter.emit_modified("notes/example.md", changes);
 //! ```
 
+#![allow(deprecated)]
+
 use crate::event_bus::{Event, EventBus, EventContext, EventType, HandlerError};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value as JsonValue};

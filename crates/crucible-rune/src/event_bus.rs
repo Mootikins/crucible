@@ -483,16 +483,12 @@ fn event_to_session_event(event: Event) -> SessionEvent {
 /// Errors that can occur during handler execution
 #[derive(Debug, Clone)]
 pub struct HandlerError {
-    /// Name of the handler that failed
     pub handler_name: String,
-    /// Error message
     pub message: String,
-    /// Whether this error should stop the pipeline (default: false for fail-open)
-    pub fatal: bool,
+    fatal: bool,
 }
 
 impl HandlerError {
-    /// Create a non-fatal error (fail-open semantics)
     pub fn non_fatal(handler_name: impl Into<String>, message: impl Into<String>) -> Self {
         Self {
             handler_name: handler_name.into(),
@@ -501,13 +497,16 @@ impl HandlerError {
         }
     }
 
-    /// Create a fatal error that stops the pipeline
     pub fn fatal(handler_name: impl Into<String>, message: impl Into<String>) -> Self {
         Self {
             handler_name: handler_name.into(),
             message: message.into(),
             fatal: true,
         }
+    }
+
+    pub fn is_fatal(&self) -> bool {
+        self.fatal
     }
 }
 
@@ -530,7 +529,6 @@ impl std::error::Error for HandlerError {}
 /// Takes mutable context and event, returns modified event or error.
 pub type HandlerFn = Arc<dyn Fn(&mut EventContext, Event) -> HandlerResult + Send + Sync>;
 
-/// A registered event handler
 pub struct Handler {
     /// Unique name for this handler
     pub name: String,

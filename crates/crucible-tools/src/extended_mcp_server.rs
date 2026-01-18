@@ -329,6 +329,8 @@ impl ExtendedMcpServer {
     pub async fn list_all_tools(&self) -> Vec<Tool> {
         let mut tools = self.kiln_server.list_tools();
 
+        tools.extend(Self::discovery_tools());
+
         // Add struct plugin tools (just.rn and similar plugins)
         for tool_def in self.struct_plugins.all_tools().await {
             // Convert ToolDefinition to rmcp Tool
@@ -350,6 +352,72 @@ impl ExtendedMcpServer {
         }
 
         tools
+    }
+
+    fn discovery_tools() -> Vec<Tool> {
+        use std::borrow::Cow;
+        use std::sync::Arc;
+
+        vec![
+            Tool {
+                name: Cow::Borrowed("discover_tools"),
+                description: Some(Cow::Borrowed(
+                    "Search available tools by name, description, or source. \
+                     Use to find tools before calling them.",
+                )),
+                input_schema: Arc::new(serde_json::Map::from_iter([
+                    ("type".to_string(), json!("object")),
+                    (
+                        "properties".to_string(),
+                        json!({
+                            "query": {
+                                "type": "string",
+                                "description": "Search query to filter by name or description"
+                            },
+                            "source": {
+                                "type": "string",
+                                "enum": ["builtin", "rune", "just", "upstream"],
+                                "description": "Filter by tool source"
+                            },
+                            "limit": {
+                                "type": "integer",
+                                "default": 50,
+                                "description": "Maximum results to return"
+                            }
+                        }),
+                    ),
+                ])),
+                annotations: None,
+                title: None,
+                output_schema: None,
+                icons: None,
+                meta: None,
+            },
+            Tool {
+                name: Cow::Borrowed("get_tool_schema"),
+                description: Some(Cow::Borrowed(
+                    "Get the full JSON Schema for a specific tool's input parameters.",
+                )),
+                input_schema: Arc::new(serde_json::Map::from_iter([
+                    ("type".to_string(), json!("object")),
+                    (
+                        "properties".to_string(),
+                        json!({
+                            "name": {
+                                "type": "string",
+                                "description": "The name of the tool to get schema for"
+                            }
+                        }),
+                    ),
+                    ("required".to_string(), json!(["name"])),
+                ])),
+                annotations: None,
+                title: None,
+                output_schema: None,
+                icons: None,
+                meta: None,
+            },
+        ]
     }
 
     /// Convert a struct plugin `ToolDefinition` to `rmcp::model::Tool`
@@ -444,9 +512,10 @@ impl ExtendedMcpServer {
     /// Get total tool count
     pub async fn tool_count(&self) -> usize {
         let kiln = self.kiln_server.tool_count();
+        let discovery = Self::discovery_tools().len();
         let struct_plugins = self.struct_plugins.all_tools().await.len();
         let rune = self.rune_registry.tool_count().await;
-        kiln + struct_plugins + rune
+        kiln + discovery + struct_plugins + rune
     }
 
     /// Check if a tool name is handled by Rune
@@ -923,24 +992,55 @@ impl ServerHandler for ExtendedMcpService {
 
         debug!("Calling tool: {} with args: {:?}", name, arguments);
 
-        // Route to appropriate handler - check struct plugins first (dynamic lookup)
+        if name == "discover_tools" || name == "get_tool_schema" {
+            let tools = self.cached_tools.read().await.clone();
+            return handle_discovery_tool(name, arguments, tools);
+        }
+
         if self.inner.has_struct_plugin_tool(name).await {
             self.inner.call_struct_plugin_tool(name, arguments).await
         } else if ExtendedMcpServer::is_rune_tool(name) {
-            // Pass full name to registry (it stores tools with rune_ prefix)
             self.inner.call_rune_tool(name, arguments).await
         } else {
-            // Try upstream tools if configured
             if let Some(gateway) = self.inner.upstream_clients() {
-                // Check if this tool exists in any upstream client
                 if gateway.find_client_for_tool(name).await.is_some() {
                     return self.inner.call_upstream_tool(name, arguments).await;
                 }
             }
-
-            // Delegate to kiln server for core tools
             self.inner.kiln_server.call_tool(request, context).await
         }
+    }
+}
+
+fn handle_discovery_tool(
+    name: &str,
+    arguments: Value,
+    tools: Vec<Tool>,
+) -> Result<CallToolResult, rmcp::ErrorData> {
+    use crate::tool_discovery::{DiscoverToolsParams, GetToolSchemaParams, ToolDiscovery};
+
+    let discovery = ToolDiscovery::new(tools);
+
+    match name {
+        "discover_tools" => {
+            let params: DiscoverToolsParams =
+                serde_json::from_value(arguments).unwrap_or(DiscoverToolsParams {
+                    query: None,
+                    source: None,
+                    limit: 50,
+                });
+            discovery.discover_tools(&params)
+        }
+        "get_tool_schema" => {
+            let params: GetToolSchemaParams = serde_json::from_value(arguments)
+                .map_err(|e| rmcp::ErrorData::invalid_params(e.to_string(), None))?;
+            discovery.get_tool_schema(&params)
+        }
+        _ => Err(rmcp::ErrorData::new(
+            rmcp::model::ErrorCode::METHOD_NOT_FOUND,
+            "Unknown discovery tool",
+            None,
+        )),
     }
 }
 
@@ -1044,7 +1144,7 @@ mod tests {
         );
 
         let tools = server.list_all_tools().await;
-        assert_eq!(tools.len(), 12); // 12 kiln tools
+        assert_eq!(tools.len(), 14); // 12 kiln tools + 2 discovery tools
     }
 
     #[test]
