@@ -69,6 +69,10 @@ glob-match = "0.2.1"
 # HTTP client for scripting runtimes
 reqwest = { workspace = true }
 
+# Path discovery utilities
+dirs = { workspace = true }
+shellexpand = "3.1"
+
 [features]
 default = ["core"]
 core = []
