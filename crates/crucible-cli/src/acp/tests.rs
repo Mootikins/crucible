@@ -372,8 +372,8 @@ mod client_tests {
             },
             false,
         );
-        // Write-enabled should start in Act mode
-        assert_eq!(client2.mode_id(), "act");
+        // Write-enabled should start in Normal mode (default)
+        assert_eq!(client2.mode_id(), "normal");
     }
 
     #[tokio::test]
@@ -388,7 +388,7 @@ mod client_tests {
         };
 
         let mut client = CrucibleAcpClient::new(agent, false);
-        assert_eq!(client.mode_id(), "act");
+        assert_eq!(client.mode_id(), "normal");
 
         // Should be able to change mode
         client.set_mode_str("plan").await.unwrap();
@@ -397,8 +397,8 @@ mod client_tests {
         client.set_mode_str("auto").await.unwrap();
         assert_eq!(client.mode_id(), "auto");
 
-        client.set_mode_str("act").await.unwrap();
-        assert_eq!(client.mode_id(), "act");
+        client.set_mode_str("normal").await.unwrap();
+        assert_eq!(client.mode_id(), "normal");
     }
 
     #[tokio::test]
@@ -439,7 +439,7 @@ mod client_tests {
         assert!(!client.is_connected());
 
         // Mode should work through trait
-        assert_eq!(client.mode_id(), "act");
+        assert_eq!(client.mode_id(), "normal");
 
         // Should be able to call set_mode through trait
         client.set_mode_str("plan").await.unwrap();

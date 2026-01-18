@@ -63,7 +63,7 @@ pub struct ChatSessionConfig {
 impl Default for ChatSessionConfig {
     fn default() -> Self {
         Self {
-            initial_mode_id: "plan".to_string(),
+            initial_mode_id: "normal".to_string(),
             context_enabled: true,
             context_size: Some(DEFAULT_CONTEXT_SIZE),
             skip_splash: false,
@@ -546,14 +546,14 @@ mod tests {
     #[test]
     fn test_session_config_default() {
         let config = ChatSessionConfig::default();
-        assert_eq!(config.initial_mode_id, "plan");
+        assert_eq!(config.initial_mode_id, "normal");
         assert!(config.context_enabled);
         assert_eq!(config.context_size, Some(5));
     }
 
     #[test]
     fn test_session_config_clone() {
-        let config = ChatSessionConfig::new("act", false, None);
+        let config = ChatSessionConfig::new("normal", false, None);
         let cloned = config.clone();
         assert_eq!(config.initial_mode_id, cloned.initial_mode_id);
         assert_eq!(config.context_enabled, cloned.context_enabled);
@@ -576,11 +576,11 @@ mod tests {
 
     #[test]
     fn test_session_config_all_modes() {
+        let normal_config = ChatSessionConfig::new("normal", true, Some(5));
+        assert_eq!(normal_config.initial_mode_id, "normal");
+
         let plan_config = ChatSessionConfig::new("plan", true, Some(5));
         assert_eq!(plan_config.initial_mode_id, "plan");
-
-        let act_config = ChatSessionConfig::new("act", true, Some(5));
-        assert_eq!(act_config.initial_mode_id, "act");
 
         let auto_config = ChatSessionConfig::new("auto", true, Some(5));
         assert_eq!(auto_config.initial_mode_id, "auto");
@@ -865,19 +865,19 @@ mod tests {
         }
 
         let mut agent = MockAgent {
-            current_mode: "plan".to_string(),
+            current_mode: "normal".to_string(),
         };
 
         let mut mode_registry = ModeRegistry::from_agent(default_mode_state());
 
-        assert!(mode_registry.exists("act"), "act mode should exist");
+        assert!(mode_registry.exists("plan"), "plan mode should exist");
 
-        if mode_registry.exists("act") {
-            agent.set_mode_str("act").await.unwrap();
-            mode_registry.set_mode("act").unwrap();
+        if mode_registry.exists("plan") {
+            agent.set_mode_str("plan").await.unwrap();
+            mode_registry.set_mode("plan").unwrap();
         }
-        assert_eq!(agent.current_mode, "act");
-        assert_eq!(mode_registry.current_id(), "act");
+        assert_eq!(agent.current_mode, "plan");
+        assert_eq!(mode_registry.current_id(), "plan");
     }
 
     #[tokio::test]
@@ -927,14 +927,14 @@ mod tests {
         let counter = Arc::new(AtomicUsize::new(0));
         let mut agent = MockAgentWithCounter {
             set_mode_call_count: counter.clone(),
-            mode_id: "plan".to_string(),
+            mode_id: "normal".to_string(),
         };
 
         let mut mode_registry = ModeRegistry::from_agent(default_mode_state());
 
-        if mode_registry.exists("act") {
-            agent.set_mode_str("act").await.unwrap();
-            mode_registry.set_mode("act").unwrap();
+        if mode_registry.exists("plan") {
+            agent.set_mode_str("plan").await.unwrap();
+            mode_registry.set_mode("plan").unwrap();
         }
 
         assert_eq!(

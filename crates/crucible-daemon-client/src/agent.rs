@@ -44,7 +44,7 @@ impl DaemonAgentHandle {
             client,
             session_id,
             event_rx: Arc::new(Mutex::new(event_rx)),
-            mode_id: "plan".to_string(),
+            mode_id: "normal".to_string(),
             connected: true,
         }
     }

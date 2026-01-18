@@ -124,10 +124,10 @@ pub enum Commands {
         #[arg(long, default_value = "5")]
         context_size: usize,
 
-        /// Start in act mode (write-enabled) instead of plan mode (read-only)
-        /// Can be toggled during session with /plan and /act commands
+        /// Start in plan mode (read-only) instead of normal mode (full access)
+        /// Can be toggled during session with /plan and /normal commands
         #[arg(long)]
-        act: bool,
+        plan: bool,
     },
 
     /// Start MCP server exposing Crucible tools

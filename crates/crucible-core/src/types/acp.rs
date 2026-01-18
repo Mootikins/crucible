@@ -156,7 +156,7 @@ impl SessionConfig {
     pub fn new(cwd: PathBuf) -> Self {
         Self {
             cwd,
-            mode_id: "plan".to_string(),
+            mode_id: "normal".to_string(),
             context_size: 100_000,
             enable_enrichment: true,
             enrichment_count: 5,

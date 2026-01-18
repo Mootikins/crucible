@@ -76,7 +76,7 @@ pub async fn execute(
     env_overrides: Vec<String>,
     resume_session_id: Option<String>,
 ) -> Result<()> {
-    let initial_mode = if read_only { "plan" } else { "act" };
+    let initial_mode = if read_only { "plan" } else { "normal" };
 
     info!("Starting chat command");
     info!("Initial mode: {}", mode_display_name(initial_mode));
