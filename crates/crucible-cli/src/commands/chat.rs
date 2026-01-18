@@ -164,14 +164,13 @@ async fn run_interactive_chat(
     use crate::chat::bridge::AgentEventBridge;
     use crate::chat::session::{index_kiln_notes, index_workspace_files};
     use crate::tui::ink::{ChatMode, InkChatRunner};
+    use crucible_core::events::EventRing;
     use crucible_core::traits::chat::is_read_only;
-    use crucible_rune::SessionBuilder;
 
     let default_agent = config.acp.default_agent.clone();
 
-    let session = SessionBuilder::with_generated_id("chat").build();
-    let ring = session.ring().clone();
-    let bridge = AgentEventBridge::new(session.handle(), ring);
+    let ring = std::sync::Arc::new(EventRing::new(4096));
+    let bridge = AgentEventBridge::new(ring);
 
     let mode = ChatMode::parse(initial_mode);
     let model_name = config.chat_model();
@@ -217,11 +216,12 @@ async fn run_interactive_chat(
         runner = runner.with_kiln_notes(notes);
     }
 
+    let session_id = format!("chat-{}", chrono::Utc::now().format("%Y%m%d-%H%M%S"));
     let session_dir = config
         .kiln_path
         .join(".crucible")
         .join("sessions")
-        .join(session.session_id());
+        .join(&session_id);
     std::fs::create_dir_all(&session_dir).ok();
     runner = runner.with_session_dir(session_dir);
 

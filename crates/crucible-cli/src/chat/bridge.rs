@@ -7,9 +7,8 @@
 use std::sync::Arc;
 
 use anyhow::Result;
-use crucible_core::events::{SessionEvent, ToolCall};
+use crucible_core::events::{EventRing, SessionEvent, ToolCall};
 use crucible_core::traits::chat::{AgentHandle, ChatToolCall};
-use crucible_rune::{EventRing, SessionHandle};
 use futures::StreamExt;
 
 /// Bridge between AgentHandle streaming and SessionEvent ring buffer.
@@ -17,14 +16,13 @@ use futures::StreamExt;
 /// Converts streaming ChatChunks from an agent into SessionEvents
 /// that the TUI can poll from the ring buffer.
 pub struct AgentEventBridge {
-    pub(crate) handle: SessionHandle,
     pub(crate) ring: Arc<EventRing<SessionEvent>>,
 }
 
 impl AgentEventBridge {
-    /// Create a new bridge with the given session handle and ring.
-    pub fn new(handle: SessionHandle, ring: Arc<EventRing<SessionEvent>>) -> Self {
-        Self { handle, ring }
+    /// Create a new bridge with the given ring buffer.
+    pub fn new(ring: Arc<EventRing<SessionEvent>>) -> Self {
+        Self { ring }
     }
 
     /// Send a user message through the agent and emit events to the ring.
@@ -182,32 +180,16 @@ mod tests {
 
     #[tokio::test]
     async fn test_bridge_creation() {
-        use crucible_rune::SessionBuilder;
-        use tempfile::TempDir;
-
-        let temp = TempDir::new().unwrap();
-        let session = SessionBuilder::new("test-bridge")
-            .with_folder(temp.path())
-            .build();
-
-        let ring = session.ring().clone();
-        let bridge = AgentEventBridge::new(session.handle(), ring);
-        assert!(bridge.handle.session_id().contains("test-bridge"));
+        let ring = Arc::new(EventRing::new(1024));
+        let _bridge = AgentEventBridge::new(ring);
     }
 
     #[tokio::test]
     async fn test_bridge_emits_message_received() {
         use crucible_core::events::SessionEvent;
-        use crucible_rune::SessionBuilder;
-        use tempfile::TempDir;
 
-        let temp = TempDir::new().unwrap();
-        let session = SessionBuilder::new("test-msg")
-            .with_folder(temp.path())
-            .build();
-
-        let ring = session.ring().clone();
-        let bridge = AgentEventBridge::new(session.handle(), ring.clone());
+        let ring = Arc::new(EventRing::new(1024));
+        let bridge = AgentEventBridge::new(ring.clone());
         let mut agent = MockAgent::single("Response");
 
         bridge
@@ -233,16 +215,9 @@ mod tests {
     #[tokio::test]
     async fn test_bridge_emits_text_deltas() {
         use crucible_core::events::SessionEvent;
-        use crucible_rune::SessionBuilder;
-        use tempfile::TempDir;
 
-        let temp = TempDir::new().unwrap();
-        let session = SessionBuilder::new("test-deltas")
-            .with_folder(temp.path())
-            .build();
-
-        let ring = session.ring().clone();
-        let bridge = AgentEventBridge::new(session.handle(), ring.clone());
+        let ring = Arc::new(EventRing::new(1024));
+        let bridge = AgentEventBridge::new(ring.clone());
         let mut agent = MockAgent::new(vec!["Hello ".into(), "beautiful ".into(), "world!".into()]);
 
         bridge.send_message("Hi", &mut agent).await.unwrap();
@@ -268,16 +243,9 @@ mod tests {
     #[tokio::test]
     async fn test_bridge_emits_agent_responded() {
         use crucible_core::events::SessionEvent;
-        use crucible_rune::SessionBuilder;
-        use tempfile::TempDir;
 
-        let temp = TempDir::new().unwrap();
-        let session = SessionBuilder::new("test-responded")
-            .with_folder(temp.path())
-            .build();
-
-        let ring = session.ring().clone();
-        let bridge = AgentEventBridge::new(session.handle(), ring.clone());
+        let ring = Arc::new(EventRing::new(1024));
+        let bridge = AgentEventBridge::new(ring.clone());
         let mut agent = MockAgent::new(vec!["Hello ".into(), "world!".into()]);
 
         let result = bridge.send_message("Hi", &mut agent).await.unwrap();
@@ -302,16 +270,9 @@ mod tests {
     #[tokio::test]
     async fn test_bridge_event_order() {
         use crucible_core::events::SessionEvent;
-        use crucible_rune::SessionBuilder;
-        use tempfile::TempDir;
 
-        let temp = TempDir::new().unwrap();
-        let session = SessionBuilder::new("test-order")
-            .with_folder(temp.path())
-            .build();
-
-        let ring = session.ring().clone();
-        let bridge = AgentEventBridge::new(session.handle(), ring.clone());
+        let ring = Arc::new(EventRing::new(1024));
+        let bridge = AgentEventBridge::new(ring.clone());
         let mut agent = MockAgent::new(vec!["A".into(), "B".into()]);
 
         bridge.send_message("test", &mut agent).await.unwrap();
@@ -390,16 +351,9 @@ mod tests {
     #[tokio::test]
     async fn test_bridge_emits_tool_called_events() {
         use crucible_core::events::SessionEvent;
-        use crucible_rune::SessionBuilder;
-        use tempfile::TempDir;
 
-        let temp = TempDir::new().unwrap();
-        let session = SessionBuilder::new("test-tools")
-            .with_folder(temp.path())
-            .build();
-
-        let ring = session.ring().clone();
-        let bridge = AgentEventBridge::new(session.handle(), ring.clone());
+        let ring = Arc::new(EventRing::new(1024));
+        let bridge = AgentEventBridge::new(ring.clone());
 
         let tool_calls = vec![ChatToolCall {
             name: "read_file".to_string(),
@@ -447,16 +401,9 @@ mod tests {
     #[tokio::test]
     async fn test_bridge_handles_multiple_tool_calls() {
         use crucible_core::events::SessionEvent;
-        use crucible_rune::SessionBuilder;
-        use tempfile::TempDir;
 
-        let temp = TempDir::new().unwrap();
-        let session = SessionBuilder::new("test-multi-tools")
-            .with_folder(temp.path())
-            .build();
-
-        let ring = session.ring().clone();
-        let bridge = AgentEventBridge::new(session.handle(), ring.clone());
+        let ring = Arc::new(EventRing::new(1024));
+        let bridge = AgentEventBridge::new(ring.clone());
 
         let tool_calls = vec![
             ChatToolCall {

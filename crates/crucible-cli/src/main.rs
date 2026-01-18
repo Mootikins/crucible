@@ -302,7 +302,6 @@ async fn main() -> Result<()> {
             kiln_path,
             just_dir,
             no_just,
-            no_rune,
             log_file,
         }) => {
             let args = commands::mcp::McpArgs {
@@ -311,7 +310,6 @@ async fn main() -> Result<()> {
                 kiln_path,
                 just_dir,
                 no_just,
-                no_rune,
                 log_file,
             };
             commands::mcp::execute(config, args).await?

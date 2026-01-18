@@ -19,7 +19,7 @@ use anyhow::Result;
 use clap::Parser;
 use crucible_core::enrichment::EmbeddingProvider;
 use crucible_llm::embeddings::CoreProviderAdapter;
-use crucible_rune::RuneDiscoveryConfig;
+
 use crucible_tools::{ExtendedMcpServer, ExtendedMcpService};
 use std::net::SocketAddr;
 use std::path::PathBuf;
@@ -52,10 +52,6 @@ pub struct McpArgs {
     #[arg(long)]
     pub no_just: bool,
 
-    /// Disable Rune tools
-    #[arg(long)]
-    pub no_rune: bool,
-
     /// Log file path (default: ~/.crucible/logs/mcp.log for stdio mode)
     #[arg(long)]
     pub log_file: Option<PathBuf>,
@@ -69,7 +65,6 @@ impl Default for McpArgs {
             kiln_path: None,
             just_dir: None,
             no_just: false,
-            no_rune: false,
             log_file: None,
         }
     }
@@ -80,7 +75,7 @@ impl Default for McpArgs {
 /// This starts an MCP server that:
 /// - Exposes 12 Crucible kiln tools (6 note + 3 search + 3 kiln operations)
 /// - Exposes Just recipe tools (if justfile exists and --no-just not set)
-/// - Exposes Rune script tools (from ~/.crucible/runes/ and {kiln}/runes/)
+/// - Exposes Lua script tools (from ~/.crucible/plugins/ and {kiln}/plugins/)
 /// - All responses are TOON-formatted for token efficiency
 ///
 /// ## Transport Modes
@@ -124,45 +119,8 @@ pub async fn execute(config: CliConfig, args: McpArgs) -> Result<()> {
         .just_dir
         .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
 
-    // Create plugin discovery config
-    // Load order matches agent discovery (later sources override earlier by tool name):
-    // 1. ~/.config/crucible/plugins/ - Global personal plugins
-    // 2. KILN_DIR/.crucible/plugins/ - Kiln-specific personal plugins (gitignored)
-    // 3. KILN_DIR/plugins/ - Kiln-tracked shared plugins (versioned)
-    let rune_config = if args.no_rune {
-        RuneDiscoveryConfig::default()
-    } else {
-        let mut dirs = vec![];
-
-        // 1. Global plugins directory: ~/.config/crucible/plugins/
-        if let Some(config_dir) = dirs::config_dir() {
-            let global_plugins = config_dir.join("crucible").join("plugins");
-            if global_plugins.exists() {
-                dirs.push(global_plugins);
-            }
-        }
-
-        // 2. Kiln hidden: KILN_DIR/.crucible/plugins/
-        let kiln_hidden_plugins = core.kiln_root().join(".crucible").join("plugins");
-        if kiln_hidden_plugins.exists() {
-            dirs.push(kiln_hidden_plugins);
-        }
-
-        // 3. Kiln visible: KILN_DIR/plugins/
-        let kiln_plugins = core.kiln_root().join("plugins");
-        if kiln_plugins.exists() {
-            dirs.push(kiln_plugins);
-        }
-
-        RuneDiscoveryConfig {
-            tool_directories: dirs,
-            extensions: vec!["rn".to_string(), "rune".to_string()],
-            recursive: true,
-        }
-    };
-
     // Create extended MCP server
-    let server = if args.no_just && args.no_rune {
+    let server = if args.no_just {
         // Kiln-only mode
         ExtendedMcpServer::kiln_only(
             core.kiln_root().to_string_lossy().to_string(),
@@ -170,13 +128,12 @@ pub async fn execute(config: CliConfig, args: McpArgs) -> Result<()> {
             embedding_provider,
         )
     } else {
-        // Full mode with Just and/or Rune
+        // Full mode with Just
         ExtendedMcpServer::new(
             core.kiln_root().to_string_lossy().to_string(),
             knowledge_repo,
             embedding_provider,
             &just_dir,
-            rune_config,
         )
         .await
         .map_err(|e| anyhow::anyhow!("Failed to create ExtendedMcpServer: {}", e))?

@@ -156,10 +156,6 @@ pub enum Commands {
         #[arg(long)]
         no_just: bool,
 
-        /// Disable Rune tools
-        #[arg(long)]
-        no_rune: bool,
-
         /// Log file path (default: ~/.crucible/logs/mcp.log for stdio mode)
         #[arg(long)]
         log_file: Option<std::path::PathBuf>,
