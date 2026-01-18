@@ -80,6 +80,7 @@ mod paths;
 mod popup;
 mod registry;
 pub mod schema;
+pub mod session;
 mod shell;
 pub mod statusline;
 mod types;
@@ -133,4 +134,7 @@ pub use handlers::{
 };
 pub use mcp::{
     register_mcp_module, register_mcp_module_stub, LuaMcpClient, McpToolInfo, McpToolResult,
+};
+pub use session::{
+    LuaSession, LuaSessionBuilder, LuaSessionConfig, LuaSessionHandle, SessionState,
 };

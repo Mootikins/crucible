@@ -488,6 +488,54 @@ impl LuaScriptHandlerRegistry {
     pub fn runtime_handlers(&self) -> Arc<Mutex<Vec<RuntimeHandler>>> {
         self.runtime_handlers.clone()
     }
+
+    /// Convert discovered handlers to core `Handler` trait objects.
+    ///
+    /// This enables Lua handlers to be registered with the core `Reactor`
+    /// for unified event dispatch. Returns handlers that implement
+    /// `crucible_core::events::Handler`.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use crucible_lua::LuaScriptHandlerRegistry;
+    /// use crucible_core::events::Reactor;
+    ///
+    /// let paths = vec![PathBuf::from("./handlers")];
+    /// let registry = LuaScriptHandlerRegistry::discover(&paths)?;
+    ///
+    /// let mut reactor = Reactor::new();
+    /// for handler in registry.to_core_handlers()? {
+    ///     reactor.register(handler)?;
+    /// }
+    /// ```
+    pub fn to_core_handlers(
+        &self,
+    ) -> Result<Vec<Box<dyn crucible_core::events::Handler>>, crate::LuaError> {
+        use crate::core_handler::{LuaHandler, LuaHandlerMeta};
+
+        let mut core_handlers: Vec<Box<dyn crucible_core::events::Handler>> = Vec::new();
+
+        for script_handler in &self.handlers {
+            let meta = &script_handler.metadata;
+
+            // Convert event_type:pattern to core event_pattern format
+            let event_pattern = if meta.pattern == "*" {
+                meta.event_type.clone()
+            } else {
+                format!("{}:{}", meta.event_type, meta.pattern)
+            };
+
+            let lua_meta = LuaHandlerMeta::new(&meta.source_path, &meta.handler_fn)
+                .with_event_pattern(event_pattern)
+                .with_priority(meta.priority as i32);
+
+            let handler = LuaHandler::with_source(lua_meta, script_handler.source.clone())?;
+            core_handlers.push(Box::new(handler));
+        }
+
+        Ok(core_handlers)
+    }
 }
 
 impl Default for LuaScriptHandlerRegistry {
