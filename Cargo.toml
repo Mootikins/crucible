@@ -14,7 +14,6 @@ members = [
     "crates/crucible-llm",
     "crates/crucible-tools",
     "crates/crucible-watch",
-    "crates/crucible-rune",
     "crates/crucible-lua",
     "crates/crucible-web",
     "crates/crucible-daemon",
@@ -28,13 +27,6 @@ members = [
     "crates/crucible-observe",
 ]
 default-members = ["crates/crucible-cli"]
-
-# Rune-related crates (excluded from default build)
-# To include: uncomment these and add rune dependencies back to workspace.dependencies
-# members += [
-#     "crates/crucible-plugins",
-#     "crates/crucible-rune-macros",
-# ]
 
 [workspace.package]
 version = "0.1.0"
@@ -170,12 +162,10 @@ crossterm = { version = "0.29", features = ["event-stream"] }
 crucible-core = { path = "crates/crucible-core" }
 crucible-config = { path = "crates/crucible-config" }
 crucible-acp = { path = "crates/crucible-acp" }
-# crucible-rune-macros = { path = "crates/crucible-rune-macros" }
 crucible-tools = { path = "crates/crucible-tools" }
 crucible-llm = { path = "crates/crucible-llm" }
 crucible-skills = { path = "crates/crucible-skills" }
 crucible-surrealdb = { path = "crates/crucible-surrealdb" }
-crucible-rune = { path = "crates/crucible-rune" }
 crucible-lua = { path = "crates/crucible-lua" }
 crucible-rig = { path = "crates/crucible-rig" }
 crucible-web = { path = "crates/crucible-web" }

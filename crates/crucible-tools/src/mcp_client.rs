@@ -7,17 +7,12 @@
 //!
 //! ```rust,ignore
 //! use crucible_tools::mcp_client::{RmcpExecutor, create_stdio_executor};
-//! use crucible_rune::UpstreamMcpClient;
 //!
 //! // Create executor for a stdio-based MCP server
 //! let executor = create_stdio_executor("uvx", &["mcp-server-git"]).await?;
 //!
-//! // Inject into client
-//! let client = UpstreamMcpClient::new(config)
-//!     .with_executor(Box::new(executor));
-//!
-//! // Now tool calls work
-//! let result = client.call_tool_with_events("git_status", args).await?;
+//! // Call tools directly
+//! let result = executor.call_tool("git_status", args).await?;
 //! ```
 
 #![allow(
