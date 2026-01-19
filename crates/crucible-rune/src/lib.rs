@@ -154,7 +154,7 @@ pub use session::{Session, SessionBuilder, SessionHandle, SessionState};
 pub use shell_module::{shell_module, shell_module_with_policy};
 pub use simple_reactor::SimpleReactor;
 pub use struct_plugin::{
-    PluginMetadata, StructPluginHandle, ToolDefinition, ToolParameter, WatchEvent, WatchEventKind,
+    PluginMetadata, RuneToolDef, StructPluginHandle, ToolParameter, WatchEvent, WatchEventKind,
 };
 pub use tool_events::{ContentBlock as ToolContentBlock, ToolEventEmitter, ToolSource};
 pub use types::{RuneDiscoveryConfig, RuneExecutionResult, RuneTool};
