@@ -576,3 +576,108 @@ async fn spawn_background_watch(config: CliConfig, _pipeline: Arc<NotePipeline>)
     info!("Background watch stopped");
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    #[test]
+    fn test_parse_env_overrides_empty() {
+        let result = parse_env_overrides(&[]);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_parse_env_overrides_single() {
+        let result = parse_env_overrides(&["FOO=bar".to_string()]);
+        assert_eq!(result.len(), 1);
+        assert_eq!(result.get("FOO"), Some(&"bar".to_string()));
+    }
+
+    #[test]
+    fn test_parse_env_overrides_multiple() {
+        let result = parse_env_overrides(&["FOO=bar".to_string(), "BAZ=qux".to_string()]);
+        assert_eq!(result.len(), 2);
+        assert_eq!(result.get("FOO"), Some(&"bar".to_string()));
+        assert_eq!(result.get("BAZ"), Some(&"qux".to_string()));
+    }
+
+    #[test]
+    fn test_parse_env_overrides_with_equals_in_value() {
+        let result = parse_env_overrides(&["KEY=value=with=equals".to_string()]);
+        assert_eq!(result.len(), 1);
+        assert_eq!(result.get("KEY"), Some(&"value=with=equals".to_string()));
+    }
+
+    #[test]
+    fn test_parse_env_overrides_empty_key_ignored() {
+        let result = parse_env_overrides(&["=value".to_string()]);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_parse_env_overrides_no_equals_ignored() {
+        let result = parse_env_overrides(&["INVALID".to_string()]);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_parse_env_overrides_mixed_valid_invalid() {
+        let result = parse_env_overrides(&[
+            "VALID=value".to_string(),
+            "INVALID".to_string(),
+            "=nokey".to_string(),
+            "ALSO_VALID=123".to_string(),
+        ]);
+        assert_eq!(result.len(), 2);
+        assert_eq!(result.get("VALID"), Some(&"value".to_string()));
+        assert_eq!(result.get("ALSO_VALID"), Some(&"123".to_string()));
+    }
+
+    #[test]
+    fn test_parse_env_overrides_empty_value() {
+        let result = parse_env_overrides(&["KEY=".to_string()]);
+        assert_eq!(result.len(), 1);
+        assert_eq!(result.get("KEY"), Some(&"".to_string()));
+    }
+
+    #[test]
+    fn test_select_session_kiln_valid_directory() {
+        let temp = TempDir::new().unwrap();
+        let config = CliConfig {
+            kiln_path: temp.path().to_path_buf(),
+            ..Default::default()
+        };
+
+        let result = select_session_kiln(&config);
+        assert!(result.is_some());
+        assert_eq!(result.unwrap(), temp.path());
+    }
+
+    #[test]
+    fn test_select_session_kiln_nonexistent_path() {
+        let config = CliConfig {
+            kiln_path: std::path::PathBuf::from("/nonexistent/path/that/does/not/exist"),
+            ..Default::default()
+        };
+
+        let result = select_session_kiln(&config);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_select_session_kiln_file_not_directory() {
+        let temp = TempDir::new().unwrap();
+        let file_path = temp.path().join("file.txt");
+        std::fs::write(&file_path, "content").unwrap();
+
+        let config = CliConfig {
+            kiln_path: file_path,
+            ..Default::default()
+        };
+
+        let result = select_session_kiln(&config);
+        assert!(result.is_none());
+    }
+}

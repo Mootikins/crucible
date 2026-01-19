@@ -96,9 +96,43 @@ mod tests {
 
     #[tokio::test]
     async fn test_fetch_models_command_fails() {
-        // Should handle command execution failures gracefully
         let result = fetch_opencode_models_from_path("/bin/false").await;
         assert!(result.is_ok());
         assert!(result.unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_parse_opencode_models_with_whitespace() {
+        let output = "  model-a  \n  model-b  \n";
+        let models = parse_opencode_models(output);
+        assert_eq!(models, vec!["model-a", "model-b"]);
+    }
+
+    #[test]
+    fn test_parse_opencode_models_single_model() {
+        let output = "ollama/llama3\n";
+        let models = parse_opencode_models(output);
+        assert_eq!(models, vec!["ollama/llama3"]);
+    }
+
+    #[test]
+    fn test_parse_opencode_models_no_trailing_newline() {
+        let output = "model-a\nmodel-b";
+        let models = parse_opencode_models(output);
+        assert_eq!(models, vec!["model-a", "model-b"]);
+    }
+
+    #[test]
+    fn test_parse_opencode_models_only_whitespace_lines() {
+        let output = "   \n\t\n  \n";
+        let models = parse_opencode_models(output);
+        assert!(models.is_empty());
+    }
+
+    #[test]
+    fn test_parse_opencode_models_mixed_content() {
+        let output = "\nanthropic/claude-3\n\n  openai/gpt-4  \n\n";
+        let models = parse_opencode_models(output);
+        assert_eq!(models, vec!["anthropic/claude-3", "openai/gpt-4"]);
     }
 }

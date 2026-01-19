@@ -319,4 +319,78 @@ mod tests {
         assert!(!is_markdown_file(Path::new("test.txt")));
         assert!(!is_markdown_file(Path::new("test")));
     }
+
+    #[test]
+    fn test_is_markdown_file_edge_cases() {
+        assert!(is_markdown_file(Path::new(".hidden.md")));
+        assert!(!is_markdown_file(Path::new("file.MD")));
+        assert!(!is_markdown_file(Path::new("file.markdown")));
+        assert!(!is_markdown_file(Path::new("file.mdx")));
+        assert!(!is_markdown_file(Path::new("")));
+    }
+
+    #[test]
+    fn test_is_excluded_dir_edge_cases() {
+        assert!(is_excluded_dir(Path::new(".trash")));
+        assert!(!is_excluded_dir(Path::new("trash")));
+        assert!(!is_excluded_dir(Path::new(".config")));
+        assert!(!is_excluded_dir(Path::new("git")));
+        assert!(!is_excluded_dir(Path::new("crucible")));
+    }
+
+    #[test]
+    fn test_sync_status_files_to_process() {
+        let status = SyncStatus {
+            fresh_count: 5,
+            stale_files: vec![PathBuf::from("a.md")],
+            new_files: vec![PathBuf::from("b.md"), PathBuf::from("c.md")],
+            deleted_files: vec![],
+            check_duration: Duration::from_millis(10),
+        };
+        let files = status.files_to_process();
+        assert_eq!(files.len(), 3);
+        assert!(files.contains(&PathBuf::from("a.md")));
+        assert!(files.contains(&PathBuf::from("b.md")));
+        assert!(files.contains(&PathBuf::from("c.md")));
+    }
+
+    #[test]
+    fn test_sync_status_empty() {
+        let status = SyncStatus {
+            fresh_count: 0,
+            stale_files: vec![],
+            new_files: vec![],
+            deleted_files: vec![],
+            check_duration: Duration::from_millis(1),
+        };
+        assert!(!status.needs_processing());
+        assert_eq!(status.pending_count(), 0);
+        assert!(status.files_to_process().is_empty());
+    }
+
+    #[test]
+    fn test_sync_status_with_new_files_only() {
+        let status = SyncStatus {
+            fresh_count: 0,
+            stale_files: vec![],
+            new_files: vec![PathBuf::from("new.md")],
+            deleted_files: vec![],
+            check_duration: Duration::from_millis(5),
+        };
+        assert!(status.needs_processing());
+        assert_eq!(status.pending_count(), 1);
+    }
+
+    #[test]
+    fn test_sync_status_deleted_files_not_in_pending() {
+        let status = SyncStatus {
+            fresh_count: 5,
+            stale_files: vec![],
+            new_files: vec![],
+            deleted_files: vec![PathBuf::from("deleted.md")],
+            check_duration: Duration::from_millis(5),
+        };
+        assert!(!status.needs_processing());
+        assert_eq!(status.pending_count(), 0);
+    }
 }

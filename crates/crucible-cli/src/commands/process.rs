@@ -487,3 +487,68 @@ fn load_lua_handlers(reactor: &mut Reactor, kiln_path: &Path) {
         info!("Loaded {} Lua handlers", loaded_count);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::Path;
+
+    #[test]
+    fn test_is_markdown_file_with_md_extension() {
+        assert!(is_markdown_file(Path::new("test.md")));
+        assert!(is_markdown_file(Path::new("README.md")));
+        assert!(is_markdown_file(Path::new("/path/to/notes/document.md")));
+    }
+
+    #[test]
+    fn test_is_markdown_file_with_other_extensions() {
+        assert!(!is_markdown_file(Path::new("test.txt")));
+        assert!(!is_markdown_file(Path::new("test.rs")));
+        assert!(!is_markdown_file(Path::new("test.markdown")));
+        assert!(!is_markdown_file(Path::new("test.mdx")));
+    }
+
+    #[test]
+    fn test_is_markdown_file_without_extension() {
+        assert!(!is_markdown_file(Path::new("test")));
+        assert!(!is_markdown_file(Path::new("README")));
+        assert!(!is_markdown_file(Path::new("/path/to/file")));
+    }
+
+    #[test]
+    fn test_is_markdown_file_with_hidden_files() {
+        assert!(is_markdown_file(Path::new(".hidden.md")));
+        assert!(!is_markdown_file(Path::new(".hidden")));
+    }
+
+    #[test]
+    fn test_is_excluded_dir_standard_exclusions() {
+        assert!(is_excluded_dir(Path::new(".crucible")));
+        assert!(is_excluded_dir(Path::new(".git")));
+        assert!(is_excluded_dir(Path::new(".obsidian")));
+        assert!(is_excluded_dir(Path::new("node_modules")));
+        assert!(is_excluded_dir(Path::new(".trash")));
+    }
+
+    #[test]
+    fn test_is_excluded_dir_nested_paths() {
+        assert!(is_excluded_dir(Path::new("/home/user/kiln/.git")));
+        assert!(is_excluded_dir(Path::new("/project/node_modules")));
+        assert!(is_excluded_dir(Path::new("some/path/.crucible")));
+    }
+
+    #[test]
+    fn test_is_excluded_dir_not_excluded() {
+        assert!(!is_excluded_dir(Path::new("notes")));
+        assert!(!is_excluded_dir(Path::new("documents")));
+        assert!(!is_excluded_dir(Path::new("my_folder")));
+        assert!(!is_excluded_dir(Path::new(".config")));
+    }
+
+    #[test]
+    fn test_is_excluded_dir_partial_matches_not_excluded() {
+        assert!(!is_excluded_dir(Path::new("git")));
+        assert!(!is_excluded_dir(Path::new("crucible")));
+        assert!(!is_excluded_dir(Path::new("obsidian")));
+    }
+}

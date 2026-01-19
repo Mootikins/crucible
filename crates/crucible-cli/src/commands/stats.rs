@@ -103,3 +103,145 @@ pub async fn execute_with_service(
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+    use tempfile::TempDir;
+
+    struct MockStatsService {
+        stats: KilnStats,
+    }
+
+    impl KilnStatsService for MockStatsService {
+        fn collect(&self, _kiln_path: &Path) -> Result<KilnStats> {
+            Ok(self.stats.clone())
+        }
+    }
+
+    struct ErrorStatsService;
+
+    impl KilnStatsService for ErrorStatsService {
+        fn collect(&self, _kiln_path: &Path) -> Result<KilnStats> {
+            Err(anyhow!("Mock error"))
+        }
+    }
+
+    #[test]
+    fn test_kiln_stats_default() {
+        let stats = KilnStats::default();
+        assert_eq!(stats.total_files, 0);
+        assert_eq!(stats.markdown_files, 0);
+        assert_eq!(stats.total_size_bytes, 0);
+    }
+
+    #[test]
+    fn test_kiln_stats_equality() {
+        let stats1 = KilnStats {
+            total_files: 10,
+            markdown_files: 5,
+            total_size_bytes: 1024,
+        };
+        let stats2 = KilnStats {
+            total_files: 10,
+            markdown_files: 5,
+            total_size_bytes: 1024,
+        };
+        assert_eq!(stats1, stats2);
+    }
+
+    #[test]
+    fn test_filesystem_service_empty_dir() {
+        let temp = TempDir::new().unwrap();
+        let service = FileSystemKilnStatsService;
+        let stats = service.collect(temp.path()).unwrap();
+        assert_eq!(stats.total_files, 0);
+        assert_eq!(stats.markdown_files, 0);
+    }
+
+    #[test]
+    fn test_filesystem_service_with_markdown_files() {
+        let temp = TempDir::new().unwrap();
+        std::fs::write(temp.path().join("note1.md"), "# Note 1").unwrap();
+        std::fs::write(temp.path().join("note2.md"), "# Note 2").unwrap();
+        std::fs::write(temp.path().join("readme.txt"), "readme").unwrap();
+
+        let service = FileSystemKilnStatsService;
+        let stats = service.collect(temp.path()).unwrap();
+
+        assert_eq!(stats.total_files, 3);
+        assert_eq!(stats.markdown_files, 2);
+        assert!(stats.total_size_bytes > 0);
+    }
+
+    #[test]
+    fn test_filesystem_service_recursive() {
+        let temp = TempDir::new().unwrap();
+        let subdir = temp.path().join("subdir");
+        std::fs::create_dir(&subdir).unwrap();
+
+        std::fs::write(temp.path().join("root.md"), "# Root").unwrap();
+        std::fs::write(subdir.join("nested.md"), "# Nested").unwrap();
+
+        let service = FileSystemKilnStatsService;
+        let stats = service.collect(temp.path()).unwrap();
+
+        assert_eq!(stats.total_files, 2);
+        assert_eq!(stats.markdown_files, 2);
+    }
+
+    #[test]
+    fn test_filesystem_service_nonexistent_path() {
+        let service = FileSystemKilnStatsService;
+        let stats = service.collect(Path::new("/nonexistent/path")).unwrap();
+        assert_eq!(stats.total_files, 0);
+    }
+
+    #[tokio::test]
+    async fn test_execute_with_mock_service() {
+        let temp = TempDir::new().unwrap();
+        let config = CliConfig {
+            kiln_path: temp.path().to_path_buf(),
+            ..Default::default()
+        };
+
+        let mock = MockStatsService {
+            stats: KilnStats {
+                total_files: 100,
+                markdown_files: 50,
+                total_size_bytes: 1024 * 1024,
+            },
+        };
+
+        let result = execute_with_service(Arc::new(mock), config).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_execute_with_nonexistent_kiln_path() {
+        let config = CliConfig {
+            kiln_path: PathBuf::from("/nonexistent/kiln/path"),
+            ..Default::default()
+        };
+
+        let mock = MockStatsService {
+            stats: KilnStats::default(),
+        };
+
+        let result = execute_with_service(Arc::new(mock), config).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_execute_with_service_error() {
+        let temp = TempDir::new().unwrap();
+        let config = CliConfig {
+            kiln_path: temp.path().to_path_buf(),
+            ..Default::default()
+        };
+
+        let result = execute_with_service(Arc::new(ErrorStatsService), config).await;
+        assert!(result.is_err());
+    }
+}
