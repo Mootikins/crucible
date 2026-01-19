@@ -370,7 +370,7 @@ async fn main() -> Result<()> {
                 config,
                 None,
                 None,
-                true,
+                false, // read_only: false = normal mode (not plan mode)
                 false,
                 cli.no_process,
                 Some(5),
