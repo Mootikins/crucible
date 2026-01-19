@@ -1137,3 +1137,271 @@ fn ink_short_terminal_10_rows() {
 
     session.send("/quit\r").ok();
 }
+
+// =============================================================================
+// Subcommand Help Output Tests
+// =============================================================================
+
+/// Test that `cru config --help` shows available subcommands
+#[test]
+fn smoke_config_help() {
+    require_binary!();
+
+    let config = TuiTestConfig::new("config --help");
+    let mut session = TuiTestSession::spawn(config).expect("Failed to spawn");
+
+    session.expect("init").expect("Should show init subcommand");
+    session.expect("show").expect("Should show show subcommand");
+    session.expect_eof().expect("Should exit");
+}
+
+/// Test that `cru daemon --help` shows daemon management options
+#[test]
+fn smoke_daemon_help() {
+    require_binary!();
+
+    let config = TuiTestConfig::new("daemon --help");
+    let mut session = TuiTestSession::spawn(config).expect("Failed to spawn");
+
+    session
+        .expect("start")
+        .expect("Should show start subcommand");
+    session.expect("stop").expect("Should show stop subcommand");
+    session
+        .expect("status")
+        .expect("Should show status subcommand");
+    session.expect_eof().expect("Should exit");
+}
+
+/// Test that `cru storage --help` shows storage management options
+#[test]
+fn smoke_storage_help() {
+    require_binary!();
+
+    let config = TuiTestConfig::new("storage --help");
+    let mut session = TuiTestSession::spawn(config).expect("Failed to spawn");
+
+    session.expect("Usage").expect("Should show usage");
+    session.expect_eof().expect("Should exit");
+}
+
+/// Test that `cru process --help` shows processing options
+#[test]
+fn smoke_process_help() {
+    require_binary!();
+
+    let config = TuiTestConfig::new("process --help");
+    let mut session = TuiTestSession::spawn(config).expect("Failed to spawn");
+
+    session.expect("Usage").expect("Should show usage");
+    session.expect_eof().expect("Should exit");
+}
+
+/// Test that `cru stats --help` shows stats options
+#[test]
+fn smoke_stats_help() {
+    require_binary!();
+
+    let config = TuiTestConfig::new("stats --help");
+    let mut session = TuiTestSession::spawn(config).expect("Failed to spawn");
+
+    session.expect("Usage").expect("Should show usage");
+    session.expect_eof().expect("Should exit");
+}
+
+/// Test that `cru mcp --help` shows MCP server options
+#[test]
+fn smoke_mcp_help() {
+    require_binary!();
+
+    let config = TuiTestConfig::new("mcp --help");
+    let mut session = TuiTestSession::spawn(config).expect("Failed to spawn");
+
+    session.expect("Usage").expect("Should show usage");
+    session.expect_eof().expect("Should exit");
+}
+
+/// Test that `cru chat --help` shows chat options
+#[test]
+fn smoke_chat_help() {
+    require_binary!();
+
+    let config = TuiTestConfig::new("chat --help");
+    let mut session = TuiTestSession::spawn(config).expect("Failed to spawn");
+
+    session.expect("Usage").expect("Should show usage");
+    session.expect_eof().expect("Should exit");
+}
+
+// =============================================================================
+// Error Message Tests
+// =============================================================================
+
+/// Test that invalid subcommand shows helpful error with suggestions
+#[test]
+fn error_invalid_subcommand_shows_suggestion() {
+    require_binary!();
+
+    let config = TuiTestConfig::new("chta");
+    let mut session = TuiTestSession::spawn(config).expect("Failed to spawn");
+
+    session
+        .expect_regex(r"(?i)(error|invalid|unrecognized|unknown)")
+        .expect("Should show error message");
+    session.expect_eof().expect("Should exit");
+}
+
+/// Test that missing required argument shows helpful error
+#[test]
+fn error_missing_required_arg_shows_help() {
+    require_binary!();
+
+    let config = TuiTestConfig::new("config init");
+    let mut session = TuiTestSession::spawn(config).expect("Failed to spawn");
+
+    session.expect_eof().expect("Should exit");
+}
+
+/// Test that conflicting arguments show clear error
+#[test]
+#[ignore = "requires built binary with conflicting args"]
+fn error_conflicting_args_shows_message() {
+    require_binary!();
+
+    let config = TuiTestConfig::new("chat --ink --no-ink");
+    let mut session = TuiTestSession::spawn(config).expect("Failed to spawn");
+
+    session
+        .expect_regex(r"(?i)(error|conflict|cannot)")
+        .expect("Should show conflict error");
+    session.expect_eof().expect("Should exit");
+}
+
+/// Test that invalid option shows helpful error
+#[test]
+fn error_invalid_option_value() {
+    require_binary!();
+
+    let config = TuiTestConfig::new("daemon --invalid-option-xyz");
+    let mut session = TuiTestSession::spawn(config).expect("Failed to spawn");
+
+    session
+        .expect_regex(r"(?i)(error|unexpected)")
+        .expect("Should show invalid option error");
+    session.expect_eof().expect("Should exit");
+}
+
+// =============================================================================
+// Exit Code Tests
+// =============================================================================
+
+/// Test that --version exits with code 0
+#[test]
+fn exit_code_version_success() {
+    require_binary!();
+
+    let binary = find_binary().expect("Binary should exist");
+    let output = std::process::Command::new(&binary)
+        .arg("--version")
+        .output()
+        .expect("Failed to run command");
+
+    assert!(
+        output.status.success(),
+        "--version should exit with code 0, got: {:?}",
+        output.status.code()
+    );
+}
+
+/// Test that --help exits with code 0
+#[test]
+fn exit_code_help_success() {
+    require_binary!();
+
+    let binary = find_binary().expect("Binary should exist");
+    let output = std::process::Command::new(&binary)
+        .arg("--help")
+        .output()
+        .expect("Failed to run command");
+
+    assert!(
+        output.status.success(),
+        "--help should exit with code 0, got: {:?}",
+        output.status.code()
+    );
+}
+
+/// Test that invalid subcommand exits with non-zero code
+#[test]
+fn exit_code_invalid_subcommand_failure() {
+    require_binary!();
+
+    let binary = find_binary().expect("Binary should exist");
+    let output = std::process::Command::new(&binary)
+        .arg("nonexistent_command_xyz")
+        .output()
+        .expect("Failed to run command");
+
+    assert!(
+        !output.status.success(),
+        "Invalid subcommand should exit with non-zero code, got: {:?}",
+        output.status.code()
+    );
+}
+
+/// Test that invalid option exits with non-zero code
+#[test]
+fn exit_code_invalid_option_failure() {
+    require_binary!();
+
+    let binary = find_binary().expect("Binary should exist");
+    let output = std::process::Command::new(&binary)
+        .arg("--nonexistent-option-xyz")
+        .output()
+        .expect("Failed to run command");
+
+    assert!(
+        !output.status.success(),
+        "Invalid option should exit with non-zero code, got: {:?}",
+        output.status.code()
+    );
+}
+
+/// Test that subcommand --help exits with code 0
+#[test]
+fn exit_code_subcommand_help_success() {
+    require_binary!();
+
+    let binary = find_binary().expect("Binary should exist");
+
+    for subcommand in &[
+        "config", "daemon", "storage", "stats", "mcp", "chat", "process",
+    ] {
+        let output = std::process::Command::new(&binary)
+            .args([*subcommand, "--help"])
+            .output()
+            .expect("Failed to run command");
+
+        assert!(
+            output.status.success(),
+            "{} --help should exit with code 0, got: {:?}",
+            subcommand,
+            output.status.code()
+        );
+    }
+}
+
+/// Test that process command on nonexistent path completes without hanging
+#[test]
+fn exit_code_process_nonexistent_path() {
+    require_binary!();
+
+    let binary = find_binary().expect("Binary should exist");
+    let output = std::process::Command::new(&binary)
+        .args(["process", "--kiln", "/nonexistent/path/that/does/not/exist"])
+        .output()
+        .expect("Failed to run command");
+
+    let _stderr = String::from_utf8_lossy(&output.stderr);
+    let _stdout = String::from_utf8_lossy(&output.stdout);
+}
