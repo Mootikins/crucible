@@ -247,6 +247,6 @@ Editors can enhance handler documents with:
 
 ## Related
 
-- [[Event Hooks]] — Code-based event handlers in Rune
+- [[Event Hooks]] — Code-based event handlers in Lua
 - [[Creating Plugins]] — Full plugin development
 - [[Workflows]] — Higher-level orchestration

@@ -24,7 +24,7 @@ The internal agent provides:
 - **Task tracking** - ACP-style task lists as working memory
 - **Explicit search** - Use `/search` to inject context when needed
 
-Future: Precognition (auto-RAG), Rune hooks, session compaction.
+Future: Precognition (auto-RAG), Lua hooks, session compaction.
 
 ## Memory Architecture
 
@@ -218,9 +218,9 @@ The agent uses an ACP-style task list as working memory. Tasks track progress wi
 | `[~]` | in_progress | Currently working on |
 | `[x]` | completed | Finished |
 
-### Future: Rune Task Hooks
+### Future: Lua Task Hooks
 
-> Task validation via Rune hooks is planned for v2.
+> Task validation via Lua hooks is planned for v2.
 
 ## Future: Precognition (Auto Context)
 
@@ -228,26 +228,26 @@ The agent uses an ACP-style task list as working memory. Tasks track progress wi
 
 Precognition will automatically search your kiln before each LLM call and inject relevant context. For now, use `/search` explicitly.
 
-## Future: Rune Integration
+## Future: Lua Integration
 
-> Rune hooks and storage namespace are planned for v2.
+> Lua hooks and storage namespace are planned for v2.
 
 ### Storage Namespace
 
 Plugins can use namespaced storage within the kiln:
 
-```rune
-use storage;
+```lua
+local storage = require("crucible.storage")
 
-// Get a namespace for your plugin
-let store = storage::namespace("my-plugin");
+-- Get a namespace for your plugin
+local store = storage.namespace("my-plugin")
 
-// Append to a log
-store.append_log("events", entry);
+-- Append to a log
+store:append_log("events", entry)
 
-// Read/write state
-let state = store.get_state("config")?;
-store.set_state("config", new_state)?;
+-- Read/write state
+local state = store:get_state("config")
+store:set_state("config", new_state)
 ```
 
 ### Hook Points
@@ -263,20 +263,21 @@ store.set_state("config", new_state)?;
 
 ### Example: Custom Context Injection
 
-```rune
-#[hook(event = "agent:before_llm")]
-pub fn inject_recent(ctx, state) {
-    // Add recently modified notes to context
-    let recent = crucible::search_by_properties(#{
-        modified_after: crucible::now() - Duration::hours(24)
-    })?;
+```lua
+--- Inject recently modified notes into context
+-- @handler event="agent:before_llm" pattern="*" priority=100
+function inject_recent(ctx, state)
+    -- Add recently modified notes to context
+    local recent = crucible.search({
+        modified_after = os.time() - 86400  -- 24 hours
+    })
 
-    if !recent.is_empty() {
-        state.inject_context("## Recent Activity", recent);
-    }
+    if #recent > 0 then
+        state:inject_context("## Recent Activity", recent)
+    end
 
-    state
-}
+    return state
+end
 ```
 
 ## Using the Internal Agent
@@ -342,5 +343,5 @@ Start chat from the relevant project directory to keep sessions organized.
 - [[Help/Extending/Event Hooks]] - React to agent events
 - [[Help/Extending/Custom Tools]] - Add tools for agents
 - [[Help/Concepts/Agents & Protocols]] - MCP vs ACP
-- [[Help/Rune/Crucible API]] - Rune functions
+- [[Help/Lua/Language Basics]] - Lua scripting
 - [[AI Features]] - All AI capabilities

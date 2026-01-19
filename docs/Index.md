@@ -41,7 +41,7 @@ Understand the fundamentals:
 - **[[Help/Concepts/The Knowledge Graph]]** — How wikilinks connect ideas
 - **[[Help/Concepts/Semantic Search]]** — Finding by meaning
 - **[[Help/Concepts/Plaintext First]]** — Why markdown matters
-- **[[Help/Concepts/Scripting Languages]]** — Rune, Steel, Lua — pick your language
+- **[[Help/Concepts/Scripting Languages]]** — Lua with Fennel support
 
 ## Getting Started
 
@@ -77,10 +77,9 @@ cru mcp
 - **[[Help/Config/agents]]** — Agent configuration options
 
 ### Scripting Languages
-- **[[Help/Concepts/Scripting Languages]]** — Overview and comparison
-- **[[Help/Rune/Language Basics]]** — Rune syntax fundamentals
-- **[[Help/Steel/Language Basics]]** — Steel (Scheme) with contracts
+- **[[Help/Concepts/Scripting Languages]]** — Overview
 - **[[Help/Lua/Language Basics]]** — Lua with Fennel support
+- **[[Help/Lua/Configuration]]** — Lua configuration system
 
 ### Core Features
 - **[[Help/Wikilinks]]** — `[[link]]` syntax and behavior

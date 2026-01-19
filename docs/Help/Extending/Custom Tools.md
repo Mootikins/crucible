@@ -11,7 +11,7 @@ aliases:
 
 # Custom Tools
 
-Extend agent capabilities with custom tools written in Rune or exposed via MCP.
+Extend agent capabilities with custom tools written in Lua or exposed via MCP.
 
 ## Overview
 
@@ -21,17 +21,20 @@ Tools are functions that agents can call to interact with the world:
 - Execute commands
 - Call external APIs
 
-## Rune Tools
+## Lua Tools
 
-Create tools using the Rune scripting language:
+Create tools using the Lua scripting language:
 
-```rune
-// tools/search_web.rn
-pub fn search_web(query) {
-    // Tool implementation
-    let results = http::get(f"https://api.search.com?q={query}");
-    results
-}
+```lua
+-- tools/search_web.lua
+
+--- Search the web for information
+-- @tool name="search_web" description="Search the web for information"
+-- @param query string "Search query"
+function search_web(args)
+    local response = http.get("https://api.search.com?q=" .. args.query)
+    return { results = response.body }
+end
 ```
 
 ## MCP Tools
@@ -59,7 +62,6 @@ parameters:
 
 ## See Also
 
-- [[Help/Rune/Tool Definition]] - Tool and param attributes
 - [[Help/Extending/Creating Plugins]] - Plugin development guide
 - [[Help/Extending/MCP Gateway]] - External tool integration
-- [[Scripts/Auto Tagging]] - Example Rune script
+- [[Help/Lua/Language Basics]] - Lua syntax

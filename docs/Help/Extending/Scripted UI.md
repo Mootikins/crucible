@@ -6,8 +6,6 @@ tags:
   - ui
   - popup
   - panel
-  - rune
-  - steel
   - lua
 ---
 
@@ -28,110 +26,7 @@ Two primitives are available:
 
 Use `PopupRequest` for simple "pick one" scenarios. Use `InteractivePanel` for richer interactions like confirmation dialogs, multi-select, or searchable lists.
 
-## Rune
-
-### PopupRequest
-
-```rune
-use crucible::popup::{entry, request, request_with_other};
-
-// Create entries
-let entries = [
-    entry("Daily Note", Some("Today's journal")),
-    entry("Todo List", None),
-];
-
-// Basic popup
-let popup = request("Select a note", entries);
-
-// Popup that allows free-text input
-let search = request_with_other("Search or select", entries);
-```
-
-### InteractivePanel
-
-```rune
-use crucible::panel::{item, panel, confirm, select, multi_select};
-
-// Create panel items
-let items = [
-    item("PostgreSQL", Some("Full-featured RDBMS")),
-    item("SQLite", Some("Embedded, single-file")),
-];
-
-// Basic panel
-let db_panel = panel("Select database", items);
-
-// Convenience functions
-let confirmed = confirm("Delete this file?");           // Yes/No
-let choice = select("Pick one", ["A", "B", "C"]);       // Single select
-let choices = multi_select("Pick many", ["X", "Y"]);    // Multi-select
-```
-
-### Panel Hints
-
-Control panel behavior with hints:
-
-```rune
-use crucible::panel::{Panel, PanelHints};
-
-let hints = PanelHints::new()
-    .filterable()      // Enable search/filter
-    .multi_select()    // Allow multiple selections
-    .allow_other();    // Allow free-text input
-
-let panel = Panel::new("Choose options")
-    .items(items)
-    .hints(hints);
-```
-
-## Steel
-
-### PopupRequest
-
-```scheme
-;; Create popup entries
-(define entries
-  (list
-    (popup-entry "Daily Note" "Today's journal")
-    (popup-entry "Todo List" #f)))
-
-;; Basic popup
-(define popup (popup-request "Select a note" entries))
-
-;; Allow free-text input
-(define search (popup-request-with-other "Search or select" entries))
-```
-
-### InteractivePanel
-
-```scheme
-;; Create panel items
-(define items
-  (list
-    (panel-item "PostgreSQL" "Full-featured RDBMS")
-    (panel-item "SQLite" "Embedded, single-file")))
-
-;; Basic panel
-(define db-panel (panel "Select database" items))
-
-;; Convenience functions
-(define confirmed (confirm "Delete this file?"))
-(define choice (select "Pick one" (list "A" "B" "C")))
-(define choices (multi-select "Pick many" (list "X" "Y")))
-```
-
-### Panel Hints
-
-```scheme
-;; Create hints for panel behavior
-(define hints (panel-hints-multi-select))  ; or panel-hints-filterable
-
-;; Panel with custom hints
-(define panel (panel-with-hints "Choose" items hints))
-```
-
-## Lua
+## Lua API
 
 ### PopupRequest
 
@@ -173,14 +68,16 @@ local choices = ui.multi_select("Pick many", {"X", "Y"})
 
 ### Panel Hints
 
+Control panel behavior with hints:
+
 ```lua
 local ui = require("crucible.ui")
 
 -- Create hints
 local hints = ui.panel_hints()
-    :filterable()
-    :multi_select()
-    :allow_other()
+    :filterable()      -- Enable search/filter
+    :multi_select()    -- Allow multiple selections
+    :allow_other()     -- Allow free-text input
 
 -- Panel with hints
 local panel = ui.panel_with_hints("Choose", items, hints)
@@ -192,33 +89,7 @@ local panel = ui.panel_with_hints("Choose", items, hints)
 
 When user selects from a popup:
 
-```rune
-// Rune
-match response {
-    PopupResponse::Selected { index, entry } => {
-        // User selected an entry
-    }
-    PopupResponse::Other { text } => {
-        // User entered free text
-    }
-    PopupResponse::None => {
-        // User dismissed the popup
-    }
-}
-```
-
-```scheme
-;; Steel
-(cond
-  [(hash-ref response 'selected_index)
-   => (lambda (idx) (handle-selection idx))]
-  [(hash-ref response 'other)
-   => (lambda (text) (handle-text text))]
-  [else (handle-dismiss)])
-```
-
 ```lua
--- Lua
 if response.selected_index then
     handle_selection(response.selected_index, response.selected_entry)
 elseif response.other then
@@ -232,30 +103,7 @@ end
 
 When user interacts with a panel:
 
-```rune
-// Rune
-if result.cancelled {
-    // User cancelled
-} else if let Some(other) = result.other {
-    // Free-text input
-} else {
-    // result.selected contains indices
-    for idx in result.selected {
-        // Process selection
-    }
-}
-```
-
-```scheme
-;; Steel
-(cond
-  [(hash-ref result 'cancelled) (handle-cancel)]
-  [(hash-ref result 'other) => handle-text]
-  [else (for-each handle-item (hash-ref result 'selected))])
-```
-
 ```lua
--- Lua
 if result.cancelled then
     handle_cancel()
 elseif result.other then
@@ -271,39 +119,56 @@ end
 
 A complete example showing a panel-based tool:
 
-```rune
-// Rune - database_selector.rn
-use crucible::panel::{item, panel};
+```lua
+-- database_selector.lua
+local ui = require("crucible.ui")
 
-#[tool(
-    name = "choose_database",
-    description = "Select a database type for your project"
-)]
-pub async fn choose_database() -> Result {
-    let items = [
-        item("PostgreSQL", Some("Full-featured, ACID-compliant RDBMS")),
-        item("SQLite", Some("Embedded, zero-configuration")),
-        item("SurrealDB", Some("Multi-model with graph queries")),
-    ];
-
-    let panel = panel("Select database", items);
-
-    // Display panel and get result
-    let result = crucible::show_panel(panel).await?;
-
-    if result.cancelled {
-        Ok("Cancelled")
-    } else {
-        let selected = items[result.selected[0]].label;
-        Ok(format!("You chose: {}", selected))
+--- Select a database type for your project
+-- @tool name="choose_database" description="Select a database type for your project"
+function choose_database(args)
+    local items = {
+        ui.panel_item("PostgreSQL", "Full-featured, ACID-compliant RDBMS"),
+        ui.panel_item("SQLite", "Embedded, zero-configuration"),
+        ui.panel_item("SurrealDB", "Multi-model with graph queries"),
     }
-}
+
+    local panel = ui.panel("Select database", items)
+
+    -- Display panel and get result
+    local result = crucible.show_panel(panel)
+
+    if result.cancelled then
+        return { message = "Cancelled" }
+    else
+        local selected = items[result.selected[1]].label
+        return { message = "You chose: " .. selected }
+    end
+end
+```
+
+## Fennel Support
+
+The same API is available in Fennel:
+
+```fennel
+;; database_selector.fnl
+(local ui (require "crucible.ui"))
+
+(fn choose-database []
+  (let [items [(ui.panel_item "PostgreSQL" "Full-featured RDBMS")
+               (ui.panel_item "SQLite" "Embedded, single-file")]
+        panel (ui.panel "Select database" items)
+        result (crucible.show_panel panel)]
+    (if result.cancelled
+        {:message "Cancelled"}
+        {:message (.. "You chose: " (. (. items (. result.selected 1)) :label))})))
+
+{:choose_database choose-database}
 ```
 
 ## See Also
 
-- [[Help/Concepts/Scripting Languages]] - Language overview
-- [[Help/Rune/Crucible API]] - Rune API reference
-- [[Help/Steel/Language Basics]] - Steel reference
 - [[Help/Lua/Language Basics]] - Lua reference
+- [[Help/Lua/Configuration]] - Lua configuration
 - [[Help/TUI/Component Architecture]] - UI internals
+- [[Help/Extending/Creating Plugins]] - Plugin development

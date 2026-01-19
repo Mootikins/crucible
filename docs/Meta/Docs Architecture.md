@@ -69,10 +69,9 @@ docs/
 │   │   ├── storage.md
 │   │   └── agents.md
 │   │
-│   ├── Rune/                  # Rune scripting guides
+│   ├── Lua/                   # Lua scripting guides
 │   │   ├── Language Basics.md
-│   │   ├── Crucible API.md
-│   │   └── Best Practices.md
+│   │   └── Configuration.md
 │   │
 │   ├── Extending/             # Extension guides
 │   │   ├── Creating Plugins.md
@@ -95,9 +94,8 @@ docs/
 │   ├── Coder.md
 │   └── Reviewer.md
 │
-├── Scripts/                    # Example Rune scripts
-│   ├── Auto Tagging.rn
-│   └── Daily Summary.rn
+├── Scripts/                    # Example Lua scripts
+│   └── *.lua
 │
 ├── Meta/                       # About this kiln
 │   ├── Docs Architecture.md    # This file
@@ -111,7 +109,7 @@ docs/
 - **Titlecase with spaces**: `Getting Started.md` not `getting-started.md`
 - **Subtopics with hyphen**: `Parser - Block Extraction.md`
 - **Prose-first**: Names should read like document titles
-- **Rune scripts**: `.rn` extension
+- **Lua scripts**: `.lua` extension
 
 ## Content Conventions
 
@@ -183,7 +181,7 @@ When writing Help/ docs, reference these code locations:
 
 ### MCP/Tools
 - `crates/crucible-tools/src/` - MCP server
-- `crates/crucible-rune/src/` - Rune integration
+- `crates/crucible-lua/src/` - Lua integration
 
 ## Test Integration
 

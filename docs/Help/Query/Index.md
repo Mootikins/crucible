@@ -145,13 +145,13 @@ notes where tags contains "task"
 /query notes where tags contains "research"
 ```
 
-### In Rune Plugins
+### In Lua Plugins
 
-```rune
-let results = crucible::query("notes where status = 'active'")?;
-for note in results {
-    println("{}", note.path);
-}
+```lua
+local results = cru.query("notes where status = 'active'")
+for _, note in ipairs(results) do
+    print(note.path)
+end
 ```
 
 ### From CLI

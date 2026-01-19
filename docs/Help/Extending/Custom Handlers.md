@@ -1,11 +1,11 @@
 ---
-description: Write custom event handlers in Rust or Rune for advanced processing
+description: Write custom event handlers in Rust or Lua for advanced processing
 status: implemented
 tags:
   - extending
   - handlers
   - rust
-  - rune
+  - lua
   - events
 aliases:
   - Writing Handlers
@@ -21,7 +21,7 @@ This guide explains how to create custom event handlers for the Crucible event s
 Crucible supports two types of handlers:
 
 1. **Rust Handlers**: Compiled handlers with full access to the Rust ecosystem
-2. **Rune Handlers**: Scripted handlers for user customization without recompilation
+2. **Lua Handlers**: Scripted handlers for user customization without recompilation
 
 ## Rust Handlers
 
@@ -29,7 +29,6 @@ Crucible supports two types of handlers:
 
 ```rust
 use crucible_core::events::{SessionEvent, SharedEventBus};
-use crucible_rune::{EventType, Handler};
 use std::sync::Arc;
 
 pub struct MyHandler {
@@ -59,28 +58,6 @@ impl MyHandler {
 
         Ok(())
     }
-}
-```
-
-### Registering a Rust Handler
-
-```rust
-use crucible_rune::{EventBus, Handler};
-
-fn register_handler(bus: &mut EventBus, handler: MyHandler) {
-    let handler = Arc::new(handler);
-
-    let h = handler.clone();
-    let bus_handler = Handler::new(
-        "my_handler_note_parsed",
-        EventType::NoteParsed,
-        "*",  // Pattern to match (glob syntax)
-        move |_ctx, event| {
-            Ok(event)
-        },
-    ).with_priority(MyHandler::PRIORITY);
-
-    bus.register(bus_handler);
 }
 ```
 
@@ -115,127 +92,87 @@ impl StorageHandler {
 }
 ```
 
-#### TagHandler
+## Lua Handlers
 
-Handles tag extraction and association:
-
-```rust
-// From crucible-surrealdb/src/event_handlers/tag_handler.rs
-
-pub struct TagHandler {
-    store: Arc<EAVGraphStore>,
-    emitter: SharedEventBus<SessionEvent>,
-}
-
-impl TagHandler {
-    pub const PRIORITY: u32 = 110;
-
-    async fn handle_note_parsed(&self, event: &SessionEvent) -> Result<()> {
-        if let SessionEvent::NoteParsed { path, payload, .. } = event {
-            let tags = extract_tags(payload)?;
-
-            for tag in tags {
-                self.store.associate_tag(path, &tag).await?;
-                self.emitter.emit(SessionEvent::TagAssociated {
-                    entity_id: path.to_string(),
-                    tag: tag.clone(),
-                }).await?;
-            }
-        }
-        Ok(())
-    }
-}
-```
-
-## Rune Handlers
-
-Rune handlers are scripts that process events without requiring Rust compilation.
+Lua handlers are scripts that process events without requiring Rust compilation.
 
 ### Location
 
-Place Rune handler files in:
+Place Lua handler files in:
 ```
-{kiln}/.crucible/handlers/*.rn
+{kiln}/.crucible/handlers/*.lua
 ```
 
 ### Basic Structure
 
-```rune
-// my_handler.rn
+```lua
+-- my_handler.lua
 
-pub fn handle(event) {
-    let event_type = event.event_type();
+--- Handle events
+-- @handler event="note:parsed" pattern="*" priority=100
+function handle_note_parsed(ctx, event)
+    crucible.log("info", "Note parsed: " .. event.identifier)
+    return event
+end
 
-    match event_type {
-        "note_parsed" => {
-            println!("Note parsed: {}", event.path());
-        }
-        "file_changed" => {
-            println!("File changed: {}", event.path());
-        }
-        _ => {
-            // Ignore other events
-        }
-    }
-
-    // Return the event to continue processing
-    event
-}
+--- Handle file changes
+-- @handler event="file:changed" pattern="*" priority=100
+function handle_file_changed(ctx, event)
+    crucible.log("info", "File changed: " .. event.identifier)
+    return event
+end
 ```
 
-### Event API in Rune
+### Event API in Lua
 
-Events expose methods for common operations:
+Events expose fields for common operations:
 
-```rune
-pub fn handle(event) {
-    // Get event metadata
-    let event_type = event.event_type();  // "note_parsed", "file_changed", etc.
-    let identifier = event.identifier();  // Path or entity ID
+```lua
+-- @handler event="note:parsed" pattern="*" priority=100
+function handle(ctx, event)
+    -- Get event metadata
+    local event_type = event.event_type  -- "note:parsed", "file:changed", etc.
+    local identifier = event.identifier  -- Path or entity ID
 
-    // Check event categories
-    if event.is_note_event() {
-        println!("Processing note event");
-    }
-    if event.is_file_event() {
-        println!("Processing file event");
-    }
-    if event.is_storage_event() {
-        println!("Processing storage event");
-    }
+    -- Access payload
+    local tags = event.payload.tags
+    local content = event.payload.content
 
-    event
-}
+    return event
+end
 ```
 
 ### Cancelling Events
 
 Handlers can cancel preventable events:
 
-```rune
-pub fn handle(event) {
-    if event.path().contains(".secret") {
-        println!("Blocking access to secret file");
-        return null;  // Cancel the event
-    }
-
-    event
-}
+```lua
+-- @handler event="tool:before" pattern="*" priority=5
+function block_secrets(ctx, event)
+    if string.find(event.identifier, ".secret") then
+        crucible.log("warn", "Blocked access to secret file")
+        event.cancelled = true
+    end
+    return event
+end
 ```
 
 ### Emitting Custom Events
 
-```rune
-pub fn handle(event) {
-    process_event(event);
+```lua
+-- @handler event="note:parsed" pattern="*" priority=100
+function handle(ctx, event)
+    -- Process event
+    process_note(event)
 
-    emit_custom("my_handler_done", #{
-        "source": event.path(),
-        "timestamp": now()
-    });
+    -- Emit custom event
+    ctx:emit("my_handler_done", {
+        source = event.identifier,
+        timestamp = os.time()
+    })
 
-    event
-}
+    return event
+end
 ```
 
 ## Testing Handlers
@@ -272,36 +209,6 @@ async fn test_handler_in_event_system() {
     tokio::time::sleep(Duration::from_millis(500)).await;
 
     // Verify expected outcomes
-    handle.shutdown().await?;
-}
-```
-
-### Testing Rune Handlers
-
-```rust
-#[tokio::test]
-async fn test_rune_handler() {
-    let temp_dir = TempDir::new()?;
-
-    let handlers_dir = temp_dir.path().join(".crucible").join("handlers");
-    std::fs::create_dir_all(&handlers_dir)?;
-
-    std::fs::write(
-        handlers_dir.join("test.rn"),
-        r#"
-        pub fn handle(event) {
-            println!("Test handler invoked");
-            event
-        }
-        "#,
-    )?;
-
-    let config = create_test_config(temp_dir.path().to_path_buf());
-    let handle = initialize_event_system(&config).await?;
-
-    let count = handle.handler_count().await;
-    assert!(count >= 3); // storage + tag + rune
-
     handle.shutdown().await?;
 }
 ```
@@ -391,20 +298,18 @@ async fn handle(&self, event: &SessionEvent) -> Result<()> {
 
 ### Events Not Propagating
 
-1. Ensure handlers return `Ok(event)` not `Cancel`
+1. Ensure handlers return the event (not cancel it)
 2. Check for fatal errors in handler chain
 3. Verify emitter is properly configured
 
-### Rune Handler Errors
+### Lua Handler Errors
 
-1. Check syntax with `rune check handlers/*.rn`
-2. Verify `handle` function signature
+1. Check syntax with `lua -p handlers/*.lua`
+2. Verify handler function signature
 3. Check for runtime errors in logs
 
 ## See Also
 
 - [[Help/Extending/Event Hooks]] - Simpler hook-based approach
-- [[Meta/Analysis/event-architecture]] - Internal event system design
-- [[Help/Rune/Event Types]] - Complete event type reference
-- [[Help/Rune/Error Handling]] - Fail-open semantics
-- [[Help/Rune/Language Basics]] - Rune syntax
+- [[Meta/Analysis/Event Architecture]] - Internal event system design
+- [[Help/Lua/Language Basics]] - Lua syntax

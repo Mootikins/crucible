@@ -1,5 +1,5 @@
 ---
-description: Making HTTP requests from Lua and Rune scripts
+description: Making HTTP requests from Lua scripts
 tags:
   - help
   - extending
@@ -16,7 +16,7 @@ Make HTTP requests from scripts to interact with external APIs and services.
 
 ## Overview
 
-Both Lua and Rune scripts can make HTTP requests:
+Lua scripts can make HTTP requests:
 - GET, POST, PUT, PATCH, DELETE methods
 - Custom headers and request bodies
 - Configurable timeouts
@@ -60,51 +60,23 @@ All HTTP functions return a table with:
 | `ok` | boolean | True if status is 2xx |
 | `error` | string | Error message (only on failure) |
 
-## Rune API
-
-Rune uses the built-in `rune-modules` HTTP client:
-
-```rune
-use ::http;
-
-pub async fn fetch_data() {
-    // Create a client
-    let client = http::Client::new();
-
-    // GET request
-    let response = client.get("https://api.example.com/data")
-        .send()
-        .await?;
-    let body = response.text().await?;
-
-    // POST with headers and body
-    let response = client.post("https://api.example.com/users")
-        .header("Content-Type", "application/json")
-        .body(r#"{"name": "Alice"}"#)
-        .send()
-        .await?;
-}
-```
-
 ## Handler Integration
 
 Use HTTP in handlers to fetch external data:
 
 ```lua
 -- Handler that enriches tool calls with external data
-function on_pre_tool_call(event)
-    if event.tool == "fetch_prices" then
-        local response = http.get("https://api.prices.com/latest")
-        if not response.ok then
-            return { cancel = true, reason = response.error }
-        end
-        event.args.prices = oq.parse(response.body)
+-- @handler event="tool:before" pattern="fetch_prices" priority=10
+function on_fetch_prices(ctx, event)
+    local response = http.get("https://api.prices.com/latest")
+    if not response.ok then
+        event.cancelled = true
+        event.cancel_reason = response.error
         return event
     end
-    return nil  -- pass through
+    event.payload.prices = oq.parse(response.body)
+    return event
 end
-
-crucible.on("pre_tool_call", on_pre_tool_call)
 ```
 
 ## Error Handling
@@ -118,10 +90,10 @@ if response.ok then
     process(response.body)
 elseif response.error then
     -- Request failed (network error, timeout)
-    log.error("Request failed: " .. response.error)
+    crucible.log("error", "Request failed: " .. response.error)
 else
     -- HTTP error (4xx, 5xx)
-    log.error("HTTP " .. response.status)
+    crucible.log("error", "HTTP " .. response.status)
 end
 ```
 
@@ -129,4 +101,4 @@ end
 
 - [[Help/Extending/Custom Handlers]] - Handler development
 - [[Help/Extending/Creating Plugins]] - Plugin development guide
-- [[Help/Lua/TOON Query]] - JSON/YAML parsing with `oq`
+- [[Help/Lua/Language Basics]] - Lua syntax
