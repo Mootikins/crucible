@@ -1,4 +1,4 @@
-use crate::tui::ink::ansi::visible_width;
+use crate::tui::ink::ansi::{visible_width, visual_rows};
 use crate::tui::ink::node::{
     BoxNode, Direction, InputNode, Node, PopupNode, Size, SpinnerNode, TextNode,
 };
@@ -7,10 +7,279 @@ use crossterm::style::Stylize;
 use std::io::{self, Write};
 use textwrap::{wrap, Options, WordSplitter};
 
+#[derive(Debug, Clone, Copy, Default)]
+pub struct CursorInfo {
+    pub col: u16,
+    pub row_from_end: u16,
+    pub visible: bool,
+}
+
+pub struct RenderResult {
+    pub content: String,
+    pub cursor: CursorInfo,
+}
+
 pub fn render_to_string(node: &Node, width: usize) -> String {
+    render_with_cursor(node, width).content
+}
+
+pub fn render_with_cursor(node: &Node, width: usize) -> RenderResult {
     let mut output = String::new();
-    render_node_to_string(node, width, &mut output);
-    output
+    let mut cursor_info = CursorInfo::default();
+    render_node_tracking_cursor(node, width, &mut output, &mut cursor_info);
+
+    if cursor_info.visible {
+        let lines: Vec<&str> = output.lines().collect();
+        let cursor_line_idx = cursor_info.row_from_end as usize;
+
+        let visual_rows_below: usize = lines
+            .iter()
+            .skip(cursor_line_idx + 1)
+            .map(|line| visual_rows(line, width))
+            .sum();
+
+        cursor_info.row_from_end = visual_rows_below as u16;
+    }
+
+    RenderResult {
+        content: output,
+        cursor: cursor_info,
+    }
+}
+
+fn render_node_tracking_cursor(
+    node: &Node,
+    width: usize,
+    output: &mut String,
+    cursor_info: &mut CursorInfo,
+) {
+    match node {
+        Node::Empty => {}
+
+        Node::Text(text) => {
+            render_text(text, width, output);
+        }
+
+        Node::Box(boxnode) => {
+            render_box_tracking_cursor(boxnode, width, output, cursor_info);
+        }
+
+        Node::Static(static_node) => {
+            for child in &static_node.children {
+                render_node_tracking_cursor(child, width, output, cursor_info);
+            }
+        }
+
+        Node::Input(input) => {
+            render_input_tracking_cursor(input, output, cursor_info);
+        }
+
+        Node::Spinner(spinner) => {
+            render_spinner(spinner, output);
+        }
+
+        Node::Popup(popup) => {
+            render_popup(popup, width, output);
+        }
+
+        Node::Fragment(children) => {
+            for child in children {
+                render_node_tracking_cursor(child, width, output, cursor_info);
+            }
+        }
+
+        Node::Focusable(focusable) => {
+            render_node_tracking_cursor(&focusable.child, width, output, cursor_info);
+        }
+
+        Node::ErrorBoundary(boundary) => {
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                let mut child_output = String::new();
+                let mut child_cursor = CursorInfo::default();
+                render_node_tracking_cursor(
+                    &boundary.child,
+                    width,
+                    &mut child_output,
+                    &mut child_cursor,
+                );
+                (child_output, child_cursor)
+            }));
+
+            match result {
+                Ok((child_output, child_cursor)) => {
+                    output.push_str(&child_output);
+                    if child_cursor.visible {
+                        *cursor_info = child_cursor;
+                    }
+                }
+                Err(_) => {
+                    render_node_tracking_cursor(&boundary.fallback, width, output, cursor_info)
+                }
+            }
+        }
+    }
+}
+
+fn render_input_tracking_cursor(
+    input: &InputNode,
+    output: &mut String,
+    cursor_info: &mut CursorInfo,
+) {
+    let col_before = output.lines().last().map(visible_width).unwrap_or(0);
+
+    if input.value.is_empty() {
+        if let Some(placeholder) = &input.placeholder {
+            let styled = apply_style(placeholder, &Style::new().dim());
+            output.push_str(&styled);
+        }
+    } else {
+        let styled = apply_style(&input.value, &input.style);
+        output.push_str(&styled);
+    }
+
+    if input.focused {
+        let cursor_char_pos = input.cursor.min(input.value.chars().count());
+        let cursor_col = input.value.chars().take(cursor_char_pos).count();
+        cursor_info.col = (col_before + cursor_col) as u16;
+        cursor_info.row_from_end = output.lines().count().saturating_sub(1) as u16;
+        cursor_info.visible = true;
+    }
+}
+
+fn render_box_tracking_cursor(
+    boxnode: &BoxNode,
+    width: usize,
+    output: &mut String,
+    cursor_info: &mut CursorInfo,
+) {
+    let border_size = if boxnode.border.is_some() { 2 } else { 0 };
+    let inner_width = width
+        .saturating_sub(boxnode.padding.horizontal() as usize)
+        .saturating_sub(border_size);
+
+    match boxnode.direction {
+        Direction::Column => {
+            render_column_children_tracking_cursor(
+                &boxnode.children,
+                inner_width,
+                output,
+                cursor_info,
+            );
+        }
+        Direction::Row => {
+            render_row_children_tracking_cursor(
+                &boxnode.children,
+                inner_width,
+                output,
+                cursor_info,
+            );
+        }
+    };
+
+    if cursor_info.visible {
+        let padding_offset = boxnode.padding.left;
+        let border_offset = if boxnode.border.is_some() { 1 } else { 0 };
+        cursor_info.col += padding_offset + border_offset;
+    }
+}
+
+fn render_column_children_tracking_cursor(
+    children: &[Node],
+    width: usize,
+    output: &mut String,
+    cursor_info: &mut CursorInfo,
+) {
+    for (i, child) in children.iter().enumerate() {
+        if matches!(child, Node::Empty) {
+            continue;
+        }
+        if i > 0 && !output.is_empty() {
+            output.push_str("\r\n");
+        }
+        render_node_tracking_cursor(child, width, output, cursor_info);
+    }
+}
+
+fn render_row_children_tracking_cursor(
+    children: &[Node],
+    width: usize,
+    output: &mut String,
+    cursor_info: &mut CursorInfo,
+) {
+    if children.is_empty() {
+        return;
+    }
+
+    let mut fixed_width_used = 0usize;
+    let mut total_flex_weight = 0u16;
+    let mut child_infos: Vec<RowChildInfo> = Vec::with_capacity(children.len());
+
+    for child in children {
+        if matches!(child, Node::Empty) {
+            child_infos.push(RowChildInfo::Skip);
+            continue;
+        }
+
+        let size = get_node_size(child);
+        match size {
+            Size::Fixed(w) => {
+                fixed_width_used += w as usize;
+                child_infos.push(RowChildInfo::Fixed(w as usize));
+            }
+            Size::Flex(weight) => {
+                total_flex_weight += weight;
+                child_infos.push(RowChildInfo::Flex(weight));
+            }
+            Size::Content => {
+                let mut temp = String::new();
+                let mut temp_cursor = CursorInfo::default();
+                render_node_tracking_cursor(child, width, &mut temp, &mut temp_cursor);
+                let content_width = temp.lines().next().map(visible_width).unwrap_or(0);
+                fixed_width_used += content_width;
+                child_infos.push(RowChildInfo::Content(temp, temp_cursor));
+            }
+        }
+    }
+
+    let remaining = width.saturating_sub(fixed_width_used);
+
+    for (child, child_info) in children.iter().zip(child_infos.into_iter()) {
+        match child_info {
+            RowChildInfo::Skip => {}
+            RowChildInfo::Content(rendered, child_cursor) => {
+                if child_cursor.visible {
+                    let col_offset = output.lines().last().map(visible_width).unwrap_or(0);
+                    let row_offset = output.lines().count().saturating_sub(1);
+                    cursor_info.col = child_cursor.col + col_offset as u16;
+                    cursor_info.row_from_end = child_cursor.row_from_end + row_offset as u16;
+                    cursor_info.visible = true;
+                }
+                if !rendered.is_empty() {
+                    output.push_str(&rendered);
+                }
+            }
+            RowChildInfo::Fixed(w) => {
+                render_node_tracking_cursor(child, w, output, cursor_info);
+            }
+            RowChildInfo::Flex(weight) => {
+                let flex_width = if total_flex_weight > 0 {
+                    (remaining as u32 * weight as u32 / total_flex_weight as u32) as usize
+                } else {
+                    0
+                };
+                if flex_width > 0 {
+                    output.push_str(&" ".repeat(flex_width));
+                }
+            }
+        }
+    }
+}
+
+enum RowChildInfo {
+    Skip,
+    Fixed(usize),
+    Flex(u16),
+    Content(String, CursorInfo),
 }
 
 fn render_node_to_string(node: &Node, width: usize, output: &mut String) {

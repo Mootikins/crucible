@@ -1,3 +1,4 @@
+use crate::tui::ink::render::{render_with_cursor, CursorInfo};
 use crate::tui::ink::*;
 
 #[test]
@@ -166,4 +167,202 @@ fn multiline_text_preserved() {
 
     let lines: Vec<&str> = output.lines().collect();
     assert_eq!(lines.len(), 3);
+}
+
+#[test]
+fn cursor_tracked_for_focused_input() {
+    let input = InputNode {
+        value: "hello".into(),
+        cursor: 3,
+        placeholder: None,
+        style: Style::default(),
+        focused: true,
+    };
+    let node = Node::Input(input);
+    let result = render_with_cursor(&node, 80);
+
+    assert!(
+        result.cursor.visible,
+        "Cursor should be visible for focused input"
+    );
+    assert_eq!(
+        result.cursor.col, 3,
+        "Cursor column should match input cursor position"
+    );
+}
+
+#[test]
+fn cursor_not_tracked_for_unfocused_input() {
+    let input = InputNode {
+        value: "hello".into(),
+        cursor: 3,
+        placeholder: None,
+        style: Style::default(),
+        focused: false,
+    };
+    let node = Node::Input(input);
+    let result = render_with_cursor(&node, 80);
+
+    assert!(
+        !result.cursor.visible,
+        "Cursor should not be visible for unfocused input"
+    );
+}
+
+#[test]
+fn cursor_position_accounts_for_prefix_in_row() {
+    let node = row([
+        text(" > "),
+        Node::Input(InputNode {
+            value: "hello".into(),
+            cursor: 2,
+            placeholder: None,
+            style: Style::default(),
+            focused: true,
+        }),
+    ]);
+    let result = render_with_cursor(&node, 80);
+
+    assert!(result.cursor.visible);
+    assert_eq!(
+        result.cursor.col, 5,
+        "Cursor should be at prefix(3) + cursor(2) = 5"
+    );
+}
+
+#[test]
+fn cursor_row_from_end_for_input_on_last_line() {
+    let node = col([
+        text("Line 1"),
+        text("Line 2"),
+        Node::Input(InputNode {
+            value: "input".into(),
+            cursor: 0,
+            placeholder: None,
+            style: Style::default(),
+            focused: true,
+        }),
+    ]);
+    let result = render_with_cursor(&node, 80);
+
+    assert!(result.cursor.visible);
+    assert_eq!(
+        result.cursor.row_from_end, 0,
+        "Input on last line should have row_from_end=0"
+    );
+}
+
+#[test]
+fn cursor_row_from_end_for_input_with_lines_below() {
+    let node = col([
+        text("Line 1"),
+        Node::Input(InputNode {
+            value: "input".into(),
+            cursor: 0,
+            placeholder: None,
+            style: Style::default(),
+            focused: true,
+        }),
+        text("Line 3"),
+    ]);
+    let result = render_with_cursor(&node, 80);
+
+    assert!(result.cursor.visible);
+    assert_eq!(
+        result.cursor.row_from_end, 1,
+        "Input with 1 line below should have row_from_end=1"
+    );
+}
+
+#[test]
+fn cursor_in_chat_input_structure() {
+    let node = col([
+        text("History line"),
+        row([
+            text(" > "),
+            Node::Input(InputNode {
+                value: "user input".into(),
+                cursor: 5,
+                placeholder: None,
+                style: Style::default(),
+                focused: true,
+            }),
+        ]),
+        text("Status bar"),
+    ]);
+    let result = render_with_cursor(&node, 80);
+
+    assert!(result.cursor.visible);
+    assert_eq!(result.cursor.col, 8, "Cursor at prefix(3) + cursor(5) = 8");
+    assert_eq!(
+        result.cursor.row_from_end, 1,
+        "Input row with status bar below"
+    );
+}
+
+#[test]
+fn cursor_in_full_input_box_structure() {
+    // Mimics actual chat app input box structure:
+    // - top_edge (▄▄▄)
+    // - row with prompt + InputNode
+    // - bottom_edge (▀▀▀)
+    // - status bar
+    let input_box = col([
+        text("top_edge"),
+        row([
+            text(" > "),
+            Node::Input(InputNode {
+                value: "hello".into(),
+                cursor: 2,
+                placeholder: None,
+                style: Style::default(),
+                focused: true,
+            }),
+        ]),
+        text("bottom_edge"),
+    ]);
+
+    let node = col([text("History"), input_box, text("Status bar")]);
+
+    let result = render_with_cursor(&node, 80);
+
+    // Structure:
+    // Line 0: History
+    // Line 1: top_edge
+    // Line 2: " > hello" (input line - cursor here)
+    // Line 3: bottom_edge
+    // Line 4: Status bar
+    // Total: 5 lines, cursor on line 2, so row_from_end = 5 - 3 = 2
+
+    assert!(result.cursor.visible);
+    assert_eq!(result.cursor.col, 5, "Cursor at prefix(3) + cursor(2) = 5");
+    assert_eq!(
+        result.cursor.row_from_end, 2,
+        "Input line with bottom_edge and status below"
+    );
+}
+
+#[test]
+fn cursor_row_from_end_uses_visual_rows() {
+    // Test that row_from_end accounts for line wrapping
+    // With width=20, a 30-char line wraps to 2 visual rows
+    let node = col([
+        Node::Input(InputNode {
+            value: "input".into(),
+            cursor: 0,
+            placeholder: None,
+            style: Style::default(),
+            focused: true,
+        }),
+        text("this line is exactly thirty!!"), // 30 chars, wraps at width 20
+    ]);
+
+    let result = render_with_cursor(&node, 20);
+
+    assert!(result.cursor.visible);
+    // The line below wraps to 2 visual rows, so row_from_end should be 2
+    assert_eq!(
+        result.cursor.row_from_end, 2,
+        "30-char line at width 20 = 2 visual rows below cursor"
+    );
 }
