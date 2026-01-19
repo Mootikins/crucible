@@ -1,130 +1,17 @@
 //! Scripting Runtime FFI Comparison Benchmarks
 //!
-//! Compares FFI overhead across Rune and Lua scripting runtimes.
+//! Compares FFI overhead for Lua scripting runtime.
 //!
 //! Run with:
 //! ```bash
-//! cargo bench -p crucible-benchmarks --features rune,lua -- scripting
+//! cargo bench -p crucible-benchmarks --features lua -- scripting
 //! ```
 
-#[cfg(any(feature = "rune", feature = "lua"))]
+#[cfg(feature = "lua")]
 use criterion::BenchmarkId;
 use criterion::{criterion_group, criterion_main, Criterion, Throughput};
-#[cfg(any(feature = "rune", feature = "lua"))]
+#[cfg(feature = "lua")]
 use serde_json::json;
-
-// =============================================================================
-// Rune Benchmarks
-// =============================================================================
-
-#[cfg(feature = "rune")]
-mod rune_bench {
-    use crucible_rune::RuneExecutor;
-    use serde_json::Value as JsonValue;
-    use std::sync::Arc;
-
-    // Re-export the Unit type from rune via crucible-rune
-    pub type Unit = rune::Unit;
-
-    pub struct RuneFixture {
-        pub executor: RuneExecutor,
-        pub simple_unit: Arc<Unit>,
-        pub add_unit: Arc<Unit>,
-        pub loop_unit: Arc<Unit>,
-        pub complex_unit: Arc<Unit>,
-    }
-
-    pub fn setup() -> RuneFixture {
-        let executor = RuneExecutor::new().unwrap();
-
-        let simple_unit = executor
-            .compile("simple", "pub fn main() { 1 + 2 + 3 }")
-            .unwrap();
-
-        let add_unit = executor
-            .compile("add", "pub fn add(a, b) { a + b }")
-            .unwrap();
-
-        let loop_unit = executor
-            .compile(
-                "loop",
-                r#"
-                pub fn sum_to(n) {
-                    let sum = 0;
-                    for i in 0..n {
-                        sum += i;
-                    }
-                    sum
-                }
-                "#,
-            )
-            .unwrap();
-
-        let complex_unit = executor
-            .compile(
-                "complex",
-                r#"
-                pub fn count_active(data) {
-                    let count = 0;
-                    for item in data["items"] {
-                        if item["active"] {
-                            count += 1;
-                        }
-                    }
-                    count
-                }
-                "#,
-            )
-            .unwrap();
-
-        RuneFixture {
-            executor,
-            simple_unit,
-            add_unit,
-            loop_unit,
-            complex_unit,
-        }
-    }
-
-    /// Execute a simple arithmetic expression
-    pub async fn simple_expr(fixture: &RuneFixture) -> JsonValue {
-        fixture
-            .executor
-            .call_function(&fixture.simple_unit, "main", ())
-            .await
-            .unwrap()
-    }
-
-    /// Execute a function with arguments
-    pub async fn with_args(fixture: &RuneFixture, a: i64, b: i64) -> JsonValue {
-        fixture
-            .executor
-            .call_function(&fixture.add_unit, "add", (a, b))
-            .await
-            .unwrap()
-    }
-
-    /// Execute a loop to test iteration overhead
-    pub async fn loop_sum(fixture: &RuneFixture, n: i64) -> JsonValue {
-        fixture
-            .executor
-            .call_function(&fixture.loop_unit, "sum_to", (n,))
-            .await
-            .unwrap()
-    }
-
-    /// Execute with complex JSON data
-    pub async fn complex_data(fixture: &RuneFixture, data: JsonValue) -> JsonValue {
-        // Convert JSON to Rune value
-        let rune_val = fixture.executor.json_to_rune_value(data).unwrap();
-        let result: JsonValue = fixture
-            .executor
-            .call_function(&fixture.complex_unit, "count_active", (rune_val,))
-            .await
-            .unwrap();
-        result
-    }
-}
 
 // =============================================================================
 // Lua Benchmarks
@@ -243,17 +130,9 @@ mod lua_bench {
 
 #[allow(unused_variables, unused_mut)]
 fn bench_simple_expr(c: &mut Criterion) {
-    #[cfg(any(feature = "rune", feature = "lua"))]
+    #[cfg(feature = "lua")]
     let rt = tokio::runtime::Runtime::new().unwrap();
     let mut group = c.benchmark_group("scripting/simple_expr");
-
-    #[cfg(feature = "rune")]
-    {
-        let fixture = rune_bench::setup();
-        group.bench_function("rune", |b| {
-            b.to_async(&rt).iter(|| rune_bench::simple_expr(&fixture));
-        });
-    }
 
     #[cfg(feature = "lua")]
     {
@@ -278,18 +157,9 @@ fn bench_simple_expr(c: &mut Criterion) {
 
 #[allow(unused_variables, unused_mut)]
 fn bench_function_args(c: &mut Criterion) {
-    #[cfg(any(feature = "rune", feature = "lua"))]
+    #[cfg(feature = "lua")]
     let rt = tokio::runtime::Runtime::new().unwrap();
     let mut group = c.benchmark_group("scripting/function_args");
-
-    #[cfg(feature = "rune")]
-    {
-        let fixture = rune_bench::setup();
-        group.bench_function("rune", |b| {
-            b.to_async(&rt)
-                .iter(|| rune_bench::with_args(&fixture, 10, 20));
-        });
-    }
 
     #[cfg(feature = "lua")]
     {
@@ -309,34 +179,24 @@ fn bench_function_args(c: &mut Criterion) {
 
 #[allow(unused_variables, unused_mut)]
 fn bench_loop_iterations(c: &mut Criterion) {
-    #[cfg(any(feature = "rune", feature = "lua"))]
+    #[cfg(feature = "lua")]
     let rt = tokio::runtime::Runtime::new().unwrap();
     let mut group = c.benchmark_group("scripting/loop");
 
+    #[cfg(feature = "lua")]
     for n in [100i64, 1000, 10000] {
         group.throughput(Throughput::Elements(n as u64));
 
-        #[cfg(feature = "rune")]
-        {
-            let fixture = rune_bench::setup();
-            group.bench_with_input(BenchmarkId::new("rune", n), &n, |b, &n| {
-                b.to_async(&rt).iter(|| rune_bench::loop_sum(&fixture, n));
-            });
-        }
+        let executor = lua_bench::create_executor();
+        group.bench_with_input(BenchmarkId::new("lua", n), &n, |b, &n| {
+            b.to_async(&rt).iter(|| lua_bench::loop_sum(&executor, n));
+        });
 
-        #[cfg(feature = "lua")]
-        {
-            let executor = lua_bench::create_executor();
-            group.bench_with_input(BenchmarkId::new("lua", n), &n, |b, &n| {
-                b.to_async(&rt).iter(|| lua_bench::loop_sum(&executor, n));
+        if lua_bench::fennel_available(&executor) {
+            group.bench_with_input(BenchmarkId::new("fennel", n), &n, |b, &n| {
+                b.to_async(&rt)
+                    .iter(|| lua_bench::fennel_loop(&executor, n));
             });
-
-            if lua_bench::fennel_available(&executor) {
-                group.bench_with_input(BenchmarkId::new("fennel", n), &n, |b, &n| {
-                    b.to_async(&rt)
-                        .iter(|| lua_bench::fennel_loop(&executor, n));
-                });
-            }
         }
     }
 
@@ -349,12 +209,11 @@ fn bench_loop_iterations(c: &mut Criterion) {
 
 #[allow(unused_variables, unused_mut)]
 fn bench_complex_data(c: &mut Criterion) {
-    #[cfg(any(feature = "rune", feature = "lua"))]
+    #[cfg(feature = "lua")]
     let rt = tokio::runtime::Runtime::new().unwrap();
     let mut group = c.benchmark_group("scripting/complex_data");
 
-    // Generate test data with N items
-    #[cfg(any(feature = "rune", feature = "lua"))]
+    #[cfg(feature = "lua")]
     for item_count in [10usize, 100, 1000] {
         let data = json!({
             "items": (0..item_count).map(|i| {
@@ -369,23 +228,11 @@ fn bench_complex_data(c: &mut Criterion) {
 
         group.throughput(Throughput::Elements(item_count as u64));
 
-        #[cfg(feature = "rune")]
-        {
-            let fixture = rune_bench::setup();
-            group.bench_with_input(BenchmarkId::new("rune", item_count), &data, |b, data| {
-                b.to_async(&rt)
-                    .iter(|| rune_bench::complex_data(&fixture, data.clone()));
-            });
-        }
-
-        #[cfg(feature = "lua")]
-        {
-            let executor = lua_bench::create_executor();
-            group.bench_with_input(BenchmarkId::new("lua", item_count), &data, |b, data| {
-                b.to_async(&rt)
-                    .iter(|| lua_bench::complex_data(&executor, data.clone()));
-            });
-        }
+        let executor = lua_bench::create_executor();
+        group.bench_with_input(BenchmarkId::new("lua", item_count), &data, |b, data| {
+            b.to_async(&rt)
+                .iter(|| lua_bench::complex_data(&executor, data.clone()));
+        });
     }
 
     group.finish();
@@ -399,13 +246,6 @@ fn bench_complex_data(c: &mut Criterion) {
 fn bench_executor_creation(c: &mut Criterion) {
     let mut group = c.benchmark_group("scripting/executor_creation");
 
-    #[cfg(feature = "rune")]
-    {
-        group.bench_function("rune", |b| {
-            b.iter(|| crucible_rune::RuneExecutor::new().unwrap());
-        });
-    }
-
     #[cfg(feature = "lua")]
     {
         group.bench_function("lua", |b| {
@@ -416,51 +256,6 @@ fn bench_executor_creation(c: &mut Criterion) {
     group.finish();
 }
 
-// =============================================================================
-// Compilation Overhead (Rune-specific: compile vs reuse)
-// =============================================================================
-
-#[cfg(feature = "rune")]
-fn bench_compilation(c: &mut Criterion) {
-    let rt = tokio::runtime::Runtime::new().unwrap();
-    let mut group = c.benchmark_group("scripting/rune_compilation");
-
-    let executor = crucible_rune::RuneExecutor::new().unwrap();
-    let source = r#"
-        pub fn process(x) {
-            let result = 0;
-            for i in 0..x {
-                result += i * 2;
-            }
-            result
-        }
-    "#;
-
-    // Compile each time
-    group.bench_function("compile_each_call", |b| {
-        b.to_async(&rt).iter(|| async {
-            let unit = executor.compile("bench", source).unwrap();
-            executor.call_function(&unit, "process", (100i64,)).await
-        });
-    });
-
-    // Pre-compiled unit
-    let unit = executor.compile("bench", source).unwrap();
-    group.bench_function("reuse_compiled", |b| {
-        b.to_async(&rt)
-            .iter(|| executor.call_function(&unit, "process", (100i64,)));
-    });
-
-    group.finish();
-}
-
-// =============================================================================
-// Benchmark Registration
-// =============================================================================
-
-#[cfg(feature = "rune")]
-criterion_group!(rune_specific, bench_compilation,);
-
 criterion_group!(
     scripting_benches,
     bench_simple_expr,
@@ -470,8 +265,4 @@ criterion_group!(
     bench_executor_creation,
 );
 
-#[cfg(feature = "rune")]
-criterion_main!(scripting_benches, rune_specific);
-
-#[cfg(not(feature = "rune"))]
 criterion_main!(scripting_benches);

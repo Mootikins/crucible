@@ -10,8 +10,7 @@
 //! # Example
 //!
 //! ```ignore
-//! use crucible_core::events::{EventEmitter, EmitResult};
-//! use crucible_rune::reactor::SessionEvent;
+//! use crucible_core::events::{EventEmitter, EmitResult, SessionEvent, NoteChangeType};
 //!
 //! async fn notify_file_change<E: EventEmitter>(emitter: &E, path: &str) -> EmitResult<()> {
 //!     emitter.emit(SessionEvent::NoteModified {
