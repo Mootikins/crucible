@@ -155,7 +155,7 @@ impl InputMode {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum AutocompleteKind {
     #[default]
     None,
@@ -164,6 +164,10 @@ pub enum AutocompleteKind {
     Command,
     SlashCommand,
     ReplCommand,
+    CommandArg {
+        command: String,
+        arg_index: usize,
+    },
 }
 
 #[derive(Debug, Clone, Default)]
@@ -270,6 +274,13 @@ impl ShellModal {
     }
 }
 
+pub struct McpServerDisplay {
+    pub name: String,
+    pub prefix: String,
+    pub tool_count: usize,
+    pub connected: bool,
+}
+
 pub struct InkChatApp {
     items: Vec<ChatItem>,
     input: InputBuffer,
@@ -298,6 +309,7 @@ pub struct InkChatApp {
     shell_history_index: Option<usize>,
     session_dir: Option<PathBuf>,
     needs_full_redraw: bool,
+    mcp_servers: Vec<McpServerDisplay>,
 }
 
 impl Default for InkChatApp {
@@ -330,6 +342,7 @@ impl Default for InkChatApp {
             shell_history_index: None,
             session_dir: None,
             needs_full_redraw: false,
+            mcp_servers: Vec::new(),
         }
     }
 }
@@ -509,6 +522,10 @@ impl InkChatApp {
 
     pub fn set_session_dir(&mut self, path: PathBuf) {
         self.session_dir = Some(path);
+    }
+
+    pub fn set_mcp_servers(&mut self, servers: Vec<McpServerDisplay>) {
+        self.mcp_servers = servers;
     }
 
     pub fn load_previous_messages(&mut self, items: Vec<ChatItem>) {
@@ -698,9 +715,28 @@ impl InkChatApp {
                     .last()
                     .is_some_and(char::is_whitespace);
             if preceded_by_whitespace {
-                let filter = &before_cursor[colon_pos + 1..];
-                if !filter.contains(char::is_whitespace) {
-                    return Some((AutocompleteKind::ReplCommand, colon_pos, filter.to_string()));
+                let after_colon = &before_cursor[colon_pos + 1..];
+                if let Some(space_pos) = after_colon.find(char::is_whitespace) {
+                    let command = after_colon[..space_pos].to_string();
+                    let args_part = after_colon[space_pos..].trim_start();
+                    let arg_index = args_part.split_whitespace().count();
+                    let filter = args_part
+                        .split_whitespace()
+                        .last()
+                        .unwrap_or("")
+                        .to_string();
+                    let trigger_pos = cursor - filter.len();
+                    return Some((
+                        AutocompleteKind::CommandArg { command, arg_index },
+                        trigger_pos,
+                        filter,
+                    ));
+                } else {
+                    return Some((
+                        AutocompleteKind::ReplCommand,
+                        colon_pos,
+                        after_colon.to_string(),
+                    ));
                 }
             }
         }
@@ -726,7 +762,7 @@ impl InkChatApp {
                 let items = self.get_popup_items();
                 if let Some(item) = items.get(self.popup_selected) {
                     let label = item.label.clone();
-                    let kind = self.popup_kind;
+                    let kind = self.popup_kind.clone();
                     self.insert_autocomplete_selection(&label);
                     if kind == AutocompleteKind::SlashCommand {
                         self.input.handle(InputAction::Clear);
@@ -851,7 +887,7 @@ impl InkChatApp {
             "q" | "quit" => Action::Quit,
             "help" | "h" => {
                 self.add_system_message(
-                    "REPL commands: :q(uit), :h(elp), :palette, :commands".to_string(),
+                    "[core] :quit :help :palette :export <path>\n[mcp] :mcp".to_string(),
                 );
                 Action::Continue
             }
@@ -862,11 +898,113 @@ impl InkChatApp {
                 self.popup_selected = 0;
                 Action::Continue
             }
+            "mcp" => {
+                self.handle_mcp_command();
+                Action::Continue
+            }
+            _ if command.starts_with("export ") => {
+                let path = command.strip_prefix("export ").unwrap().trim();
+                self.handle_export_command(path);
+                Action::Continue
+            }
             _ => {
                 self.error = Some(format!("Unknown REPL command: {}", cmd));
                 Action::Continue
             }
         }
+    }
+
+    fn handle_export_command(&mut self, path: &str) {
+        if path.is_empty() {
+            self.error = Some("Usage: :export <path>".to_string());
+            return;
+        }
+
+        let export_path = std::path::Path::new(path);
+        let content = self.format_session_for_export();
+
+        match std::fs::write(export_path, &content) {
+            Ok(_) => {
+                self.add_system_message(format!("Session exported to {}", path));
+            }
+            Err(e) => {
+                self.error = Some(format!("Export failed: {}", e));
+            }
+        }
+    }
+
+    fn format_session_for_export(&self) -> String {
+        let mut output = String::new();
+        output.push_str("# Chat Session Export\n\n");
+
+        for item in &self.items {
+            match item {
+                ChatItem::Message { role, content, .. } => match role {
+                    Role::User => {
+                        output.push_str("## User\n\n");
+                        output.push_str(content);
+                        output.push_str("\n\n");
+                    }
+                    Role::Assistant => {
+                        output.push_str("## Assistant\n\n");
+                        output.push_str(content);
+                        output.push_str("\n\n");
+                    }
+                    Role::System => {
+                        output.push_str("> ");
+                        output.push_str(&content.replace('\n', "\n> "));
+                        output.push_str("\n\n");
+                    }
+                },
+                ChatItem::ToolCall {
+                    name, args, result, ..
+                } => {
+                    output.push_str(&format!("### Tool: {}\n\n", name));
+                    if !args.is_empty() {
+                        output.push_str(&format!("```json\n{}\n```\n\n", args));
+                    }
+                    if !result.is_empty() {
+                        output.push_str(&format!("**Result:**\n```\n{}\n```\n\n", result));
+                    }
+                }
+                ChatItem::ShellExecution {
+                    command,
+                    exit_code,
+                    output_tail,
+                    ..
+                } => {
+                    output.push_str(&format!("### Shell: `{}`\n\n", command));
+                    output.push_str(&format!("Exit code: {}\n\n", exit_code));
+                    if !output_tail.is_empty() {
+                        output.push_str("```\n");
+                        for line in output_tail {
+                            output.push_str(line);
+                            output.push('\n');
+                        }
+                        output.push_str("```\n\n");
+                    }
+                }
+            }
+        }
+
+        output
+    }
+
+    fn handle_mcp_command(&mut self) {
+        if self.mcp_servers.is_empty() {
+            self.add_system_message("No MCP servers configured".to_string());
+            return;
+        }
+
+        let mut lines = vec![format!("MCP Servers ({}):", self.mcp_servers.len())];
+        for server in &self.mcp_servers {
+            let status = if server.connected { "●" } else { "○" };
+            lines.push(format!(
+                "  {} {} ({}_) - {} tools",
+                status, server.name, server.prefix, server.tool_count
+            ));
+        }
+        self.add_system_message(lines.join("\n"));
     }
 
     fn handle_shell_command(&mut self, cmd: &str) -> Action<ChatAppMsg> {
@@ -1888,29 +2026,76 @@ impl InkChatApp {
                 PopupItemNode {
                     label: ":quit".to_string(),
                     description: Some("Exit chat".to_string()),
-                    kind: Some("repl".to_string()),
+                    kind: Some("core".to_string()),
                 },
                 PopupItemNode {
                     label: ":help".to_string(),
                     description: Some("Show help".to_string()),
-                    kind: Some("repl".to_string()),
+                    kind: Some("core".to_string()),
                 },
                 PopupItemNode {
                     label: ":palette".to_string(),
                     description: Some("Open command palette".to_string()),
-                    kind: Some("repl".to_string()),
+                    kind: Some("core".to_string()),
                 },
                 PopupItemNode {
-                    label: ":commands".to_string(),
-                    description: Some("Open command palette".to_string()),
-                    kind: Some("repl".to_string()),
+                    label: ":mcp".to_string(),
+                    description: Some("List MCP servers".to_string()),
+                    kind: Some("mcp".to_string()),
+                },
+                PopupItemNode {
+                    label: ":export".to_string(),
+                    description: Some("Export session to file".to_string()),
+                    kind: Some("core".to_string()),
                 },
             ]
             .into_iter()
             .filter(|c| filter.is_empty() || c.label.to_lowercase().contains(&filter))
             .collect(),
+            AutocompleteKind::CommandArg {
+                ref command,
+                arg_index,
+            } => self.get_command_arg_completions(command, arg_index, &filter),
             AutocompleteKind::None => vec![],
         }
+    }
+
+    fn get_command_arg_completions(
+        &self,
+        command: &str,
+        _arg_index: usize,
+        filter: &str,
+    ) -> Vec<PopupItemNode> {
+        match command {
+            "export" => self.complete_file_paths(filter),
+            "mcp" => self.complete_mcp_servers(filter),
+            _ => self.complete_file_paths(filter),
+        }
+    }
+
+    fn complete_file_paths(&self, filter: &str) -> Vec<PopupItemNode> {
+        self.workspace_files
+            .iter()
+            .filter(|f| filter.is_empty() || f.to_lowercase().contains(filter))
+            .take(15)
+            .map(|f| PopupItemNode {
+                label: f.clone(),
+                description: None,
+                kind: Some("path".to_string()),
+            })
+            .collect()
+    }
+
+    fn complete_mcp_servers(&self, filter: &str) -> Vec<PopupItemNode> {
+        self.mcp_servers
+            .iter()
+            .filter(|s| filter.is_empty() || s.name.to_lowercase().contains(filter))
+            .map(|s| PopupItemNode {
+                label: s.name.clone(),
+                description: Some(format!("{} tools", s.tool_count)),
+                kind: Some("mcp".to_string()),
+            })
+            .collect()
     }
 
     fn render_popup(&self) -> Node {
@@ -1986,6 +2171,23 @@ impl InkChatApp {
                 self.input.handle(InputAction::Clear);
                 for ch in label.chars() {
                     self.input.handle(InputAction::Insert(ch));
+                }
+            }
+            AutocompleteKind::CommandArg { .. } => {
+                let content = self.input.content().to_string();
+                let trigger_pos = self.popup_trigger_pos;
+                let prefix = &content[..trigger_pos];
+                let replacement = format!("{} ", label);
+                let suffix = &content[self.input.cursor()..];
+                let new_content = format!("{}{}{}", prefix, replacement, suffix);
+                let new_cursor = prefix.len() + replacement.len();
+
+                self.input.handle(InputAction::Clear);
+                for ch in new_content.chars() {
+                    self.input.handle(InputAction::Insert(ch));
+                }
+                while self.input.cursor() > new_cursor {
+                    self.input.handle(InputAction::Left);
                 }
             }
             AutocompleteKind::None => {}

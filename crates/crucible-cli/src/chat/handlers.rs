@@ -804,6 +804,99 @@ impl CommandHandler for ResumeHandler {
     }
 }
 
+// ============================================================================
+// REPL Command Handlers (colon prefix)
+// ============================================================================
+
+pub struct ReplQuitHandler;
+
+#[async_trait]
+impl CommandHandler for ReplQuitHandler {
+    async fn execute(&self, _args: &str, ctx: &mut dyn ChatContext) -> ChatResult<()> {
+        ctx.request_exit();
+        Ok(())
+    }
+}
+
+pub struct ReplHelpHandler;
+
+#[async_trait]
+impl CommandHandler for ReplHelpHandler {
+    async fn execute(&self, _args: &str, ctx: &mut dyn ChatContext) -> ChatResult<()> {
+        ctx.display_info("REPL commands: :quit, :help, :palette, :mcp");
+        Ok(())
+    }
+}
+
+pub struct ReplPaletteHandler;
+
+#[async_trait]
+impl CommandHandler for ReplPaletteHandler {
+    async fn execute(&self, _args: &str, ctx: &mut dyn ChatContext) -> ChatResult<()> {
+        ctx.display_info("Opening command palette... (handled by TUI)");
+        Ok(())
+    }
+}
+
+#[derive(Default)]
+pub struct McpInfo {
+    pub servers: Vec<McpServerInfo>,
+}
+
+#[derive(Clone)]
+pub struct McpServerInfo {
+    pub name: String,
+    pub prefix: String,
+    pub tools: Vec<String>,
+    pub connected: bool,
+}
+
+pub struct ReplMcpHandler {
+    mcp_info: Arc<std::sync::RwLock<McpInfo>>,
+}
+
+impl ReplMcpHandler {
+    pub fn new(mcp_info: Arc<std::sync::RwLock<McpInfo>>) -> Self {
+        Self { mcp_info }
+    }
+}
+
+#[async_trait]
+impl CommandHandler for ReplMcpHandler {
+    async fn execute(&self, args: &str, ctx: &mut dyn ChatContext) -> ChatResult<()> {
+        let info = self
+            .mcp_info
+            .read()
+            .map_err(|e| ChatError::Internal(e.to_string()))?;
+
+        if info.servers.is_empty() {
+            ctx.display_info("No MCP servers configured");
+            return Ok(());
+        }
+
+        let show_tools = args.trim() == "tools" || args.trim() == "-v";
+
+        let mut output = format!("MCP Servers ({} connected):\n", info.servers.len());
+        for server in &info.servers {
+            let status = if server.connected { "●" } else { "○" };
+            output.push_str(&format!(
+                "  {} {} ({}_) - {} tools\n",
+                status,
+                server.name,
+                server.prefix,
+                server.tools.len()
+            ));
+            if show_tools && !server.tools.is_empty() {
+                for tool in &server.tools {
+                    output.push_str(&format!("      {}\n", tool));
+                }
+            }
+        }
+        ctx.display_info(&output);
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

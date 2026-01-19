@@ -69,6 +69,7 @@ fn create_test_config(kiln_path: PathBuf, _db_path: PathBuf) -> CliConfig {
             mode: StorageMode::Embedded,
             idle_timeout_secs: 300,
         }),
+        mcp: None,
         source_map: None,
     }
 }
