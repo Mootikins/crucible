@@ -13,46 +13,35 @@ Crucible is designed to be extended. This map connects all the ways you can cust
 
 ## Scripting Languages
 
-Crucible supports multiple scripting languages to serve different needs:
+Crucible supports multiple scripting languages:
 
 | Language | Best For | Syntax |
 |----------|----------|--------|
 | **Lua** | General users, LLM-generated code | Simple, familiar |
 | **Fennel** | Power users wanting macros | Lisp (compiles to Lua) |
-| **Rune** | Rust developers, system integration | Rust-like |
 
-See [[Meta/Analysis/scripting-language-philosophy]] for the reasoning behind this design.
-
-### Lua (Recommended for Most Users)
+### Lua (Recommended)
 
 Simple, accessible syntax that LLMs write exceptionally well:
 
-- [[Help/Lua/Getting Started]] - First steps with Lua extensions
-- [[Help/Lua/Tool Definitions]] - Creating custom tools
-- [[Help/Lua/Event Handlers]] - Reacting to system events
+- [[Help/Lua/Language Basics]] - Lua syntax fundamentals
+- [[Help/Lua/Configuration]] - Configuring Crucible via init.lua
 
 ### Fennel (Optional)
 
 S-expression syntax with compile-time macros, for power users:
 
-- [[Help/Fennel/Overview]] - When and why to use Fennel
-- [[Help/Fennel/Macros]] - Defining custom DSLs
-
-### Rune
-
-Rust-like syntax with native async and the `?` operator:
-
-- [[Help/Rune/Language Basics]] - Rune syntax fundamentals
-- [[Help/Rune/Crucible API]] - Built-in functions for reading, searching, creating notes
-- [[Help/Rune/Best Practices]] - Error handling, mode checking, debugging
+- Compiles to Lua at load time
+- Full access to Lua ecosystem
+- Macro support for custom DSLs
 
 ## Extension Points
 
 Create reusable extensions:
 
-- [[Help/Extending/Creating Plugins]] - Build and run Rune plugins
+- [[Help/Extending/Creating Plugins]] - Build and run Lua plugins
 - [[Help/Extending/Event Hooks]] - React to file changes and system events
-- [[Help/Extending/Custom Tools]] - Add tools via MCP or Rune
+- [[Help/Extending/Custom Tools]] - Add tools via MCP or Lua
 - [[Help/Extending/Agent Cards]] - Configure AI agent behavior
 
 ## Workflows
@@ -68,8 +57,6 @@ See working examples in this kiln:
 - [[Agents/Researcher]] - Research-focused agent card
 - [[Agents/Coder]] - Code analysis agent
 - [[Agents/Reviewer]] - Quality review agent
-- [[Scripts/Auto Tagging]] - Automatic tag suggestions
-- [[Scripts/Daily Summary]] - Daily note generation
 
 ## Related
 

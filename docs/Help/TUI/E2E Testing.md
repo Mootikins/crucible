@@ -267,4 +267,4 @@ Future versions may integrate VTE parsing for:
 
 - [[Help/TUI/Index|TUI Reference]] - TUI architecture overview
 - [[Help/TUI/Component Architecture]] - Widget system details
-- [[Help/Rune/Testing Plugins]] - Testing Rune plugins
+- [[Help/Lua/Testing Plugins]] - Testing Lua plugins

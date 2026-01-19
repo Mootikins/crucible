@@ -1,6 +1,6 @@
 # Plugin Examples
 
-Example Rune plugins demonstrating tools and hooks for the Crucible plugin system.
+Example Lua plugins demonstrating tools and hooks for the Crucible plugin system.
 
 ## Installation
 
@@ -8,114 +8,106 @@ Plugins can be installed at three levels:
 
 1. **Global personal** (applies to all kilns):
    ```bash
-   cp *.rn ~/.config/crucible/plugins/
+   cp *.lua ~/.config/crucible/plugins/
    ```
 
 2. **Kiln personal** (kiln-specific, gitignored):
    ```bash
-   cp *.rn KILN/.crucible/plugins/
+   cp *.lua KILN/.crucible/plugins/
    ```
 
 3. **Kiln shared** (version-controlled with kiln):
    ```bash
-   cp *.rn KILN/plugins/
+   cp *.lua KILN/plugins/
    ```
 
 Restart Crucible to load plugins, or wait for hot-reload if enabled.
-
-## Available Plugins
-
-### filter_test_output.rn
-
-**Type**: Hook
-**Event**: `tool:after`
-**Pattern**: `just_test*`
-**Priority**: 10 (early)
-
-Filters verbose test output to show only summaries and failures:
-- Detects test framework (Cargo, pytest, Jest, Go)
-- Extracts summary information
-- Includes failure details
-- Reduces token usage for LLM processing
-
-### log_tool_calls.rn
-
-**Type**: Hook
-**Events**: `tool:after`, `tool:error`, `tool:discovered`
-**Pattern**: `*` (all tools)
-**Priority**: 200 (late)
-
-Comprehensive audit logging:
-- Logs every tool execution
-- Tracks errors with context
-- Records tool discovery
-- Emits custom audit events
-
-### enrich_recipes.rn
-
-**Type**: Hook
-**Event**: `tool:discovered`
-**Pattern**: `just_*`
-**Priority**: 5 (very early)
-
-Auto-categorizes Just recipes:
-- Categories: testing, build, quality, documentation, ci, web, maintenance
-- Adds relevant tags
-- Assigns priority based on category
-
-### categorizer.rn
-
-**Type**: Hook
-**Event**: `tool:discovered`
-**Pattern**: `just_*`
-**Priority**: 5 (very early)
-
-Recipe categorizer that auto-categorizes Just recipes by name patterns. Demonstrates the `#[hook(...)]` attribute pattern for event handling.
 
 ## Plugin Structure
 
 ### Single-File Plugin
 
-Most plugins are single `.rn` files with `#[tool]` or `#[hook]` attributes:
+Most plugins are single `.lua` files with tool annotations:
 
-```rune
-/// Description of what this plugin does
-#[hook(event = "tool:after", pattern = "*", priority = 100)]
-pub fn my_hook(ctx, event) {
-    // Process event
-    event
-}
+```lua
+--- Description of what this plugin does
+-- @tool name="my_tool" description="Does something useful"
+-- @param query string "Search query"
+function my_tool(args)
+    -- Implementation
+    return { result = "success" }
+end
 
-#[tool(name = "my_tool", description = "Does something")]
-pub fn my_tool(param) {
-    Ok("result")
-}
+--- Event handler example
+-- @handler event="tool:after" pattern="*" priority=100
+function on_tool_complete(ctx, event)
+    crucible.log("info", "Tool completed: " .. event.tool_name)
+    return event
+end
 ```
 
 ### Module Plugin
 
-For complex plugins, use a directory with `mod.rn`:
+For complex plugins, use a directory with `init.lua`:
 
 ```
 my_plugin/
-├── mod.rn       # Entry point
-├── helpers.rn   # Helper module
-└── types.rn     # Type definitions
+├── init.lua     # Entry point
+├── helpers.lua  # Helper module
+└── types.lua    # Type definitions
 ```
 
-## Customization
+## Writing Plugins
 
-### Modifying Patterns
+### Tool Template
 
-```rune
-// Match only integration tests
-#[hook(event = "tool:after", pattern = "just_test_integration*", priority = 10)]
-
-// Match all GitHub tools
-#[hook(event = "tool:after", pattern = "gh_*", priority = 50)]
+```lua
+--- Tool description shown to agents
+-- @tool name="my_tool" description="What this tool does"
+-- @param query string "Search query to execute"
+-- @param limit number "Maximum results (optional)"
+function my_tool(args)
+    local query = args.query
+    local limit = args.limit or 10
+    
+    local results = crucible.search(query)
+    return {
+        count = #results,
+        items = results
+    }
+end
 ```
 
-### Adjusting Priority
+### Handler Template
+
+```lua
+--- Brief description
+-- @handler event="tool:after" pattern="*" priority=100
+function my_handler(ctx, event)
+    -- Modify event.payload as needed
+    -- Use ctx:set/get for cross-handler state
+    -- Use ctx:emit for new events
+    return event  -- Must return event
+end
+```
+
+### Handler Patterns
+
+```lua
+-- Match specific tools
+-- @handler event="tool:after" pattern="search_*" priority=10
+
+-- Match all tools
+-- @handler event="tool:after" pattern="*" priority=50
+
+-- Very early processing (validation, security)
+-- @handler event="tool:before" pattern="*" priority=5
+
+-- Very late processing (audit, logging)
+-- @handler event="tool:after" pattern="*" priority=200
+```
+
+### Priority Levels
 
 Lower numbers run earlier:
 - `priority = 5` - Very early (validation, security)
@@ -124,50 +116,23 @@ Lower numbers run earlier:
 - `priority = 100` - Late (default)
 - `priority = 200` - Very late (audit, logging)
 
-### Disabling Hooks
+## Fennel Support
 
-```rune
-#[hook(event = "tool:after", pattern = "*", priority = 10, enabled = false)]
-pub fn disabled_hook(ctx, event) {
-    event
-}
+Crucible also supports Fennel (Lisp syntax that compiles to Lua):
+
+```fennel
+;; my-plugin.fnl
+(fn my-tool [args]
+  "Tool that does something"
+  {:result (.. "Hello, " args.name)})
+
+{:my_tool my-tool}
 ```
 
-## Creating Plugins
-
-### Hook Template
-
-```rune
-/// Brief description
-#[hook(
-    event = "tool:after",
-    pattern = "*",
-    priority = 100
-)]
-pub fn my_hook(ctx, event) {
-    // Modify event.payload as needed
-    // Use ctx.set/get for cross-handler state
-    // Use ctx.emit_custom() for new events
-    event  // Must return event
-}
-```
-
-### Tool Template
-
-```rune
-/// Tool description
-#[tool(
-    name = "my_tool",
-    description = "What this tool does"
-)]
-pub fn my_tool(param) {
-    // Implementation
-    Ok(format!("Result: {}", param))
-}
-```
+Place `.fnl` files in the same plugin directories.
 
 ## Documentation
 
-- **Plugin Discovery**: `/openspec/specs/plugins/discovery.md`
-- **Hook Guide**: `/openspec/specs/plugins/hooks.md`
 - **Creating Plugins**: `/docs/Help/Extending/Creating Plugins.md`
+- **Lua Configuration**: `/docs/Help/Lua/Configuration.md`
+- **Event Hooks**: `/docs/Help/Extending/Event Hooks.md`

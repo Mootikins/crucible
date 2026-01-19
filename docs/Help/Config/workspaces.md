@@ -97,7 +97,7 @@ When a plugin tries a non-whitelisted command, you're prompted:
 ```
 ┌─ Shell command not whitelisted ─────────────────────────┐
 │ Command: aws s3 ls                                      │
-│ Plugin:  deploy.rn                                      │
+│ Plugin:  deploy.lua                                     │
 │                                                         │
 │ Whitelist:                                              │
 │   [1] aws          [2] aws s3       [3] aws s3 ls       │

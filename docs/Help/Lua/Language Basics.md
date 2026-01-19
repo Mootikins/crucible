@@ -40,5 +40,4 @@ Fennel is a Lisp that compiles to Lua. Use `.fnl` files if you prefer Lisp synta
 
 ## See Also
 
-- [[Help/Rune/Language Basics]] — Rune reference
 - [[Help/Steel/Language Basics]] — Steel reference

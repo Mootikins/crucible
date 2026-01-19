@@ -4,7 +4,7 @@ status: implemented
 tags:
   - extending
   - plugins
-  - rune
+  - lua
 aliases:
   - Plugin Development
   - Writing Plugins
@@ -28,10 +28,10 @@ your-kiln/
 ├── .crucible/
 │   └── plugins/
 │       ├── tasks/           # Directory plugin
-│       │   ├── mod.rn       # Main module
-│       │   ├── parser.rn    # Helper module
+│       │   ├── init.lua     # Main module
+│       │   ├── parser.lua   # Helper module
 │       │   └── README.md    # Documentation
-│       └── quick-tag.rn     # Single-file plugin
+│       └── quick-tag.lua    # Single-file plugin
 ```
 
 Plugins are also discovered from global config:
@@ -45,108 +45,106 @@ Plugins can be written in:
 
 | Language | Extension | Status |
 |----------|-----------|--------|
-| Rune | `.rn` | Implemented |
-| Lua | `.lua` | Planned |
-| WASM | `.wasm` | Future |
+| Lua | `.lua` | Implemented |
+| Fennel | `.fnl` | Implemented (compiles to Lua) |
 
 File extension determines the runtime. All languages use the same discovery and registration system.
 
 ## Single-File Plugin
 
-The simplest plugin is a single `.rn` file:
+The simplest plugin is a single `.lua` file:
 
-```rune
-// .crucible/plugins/greet.rn
+```lua
+-- .crucible/plugins/greet.lua
 
-/// A friendly greeting tool
-#[tool(
-    name = "greet",
-    description = "Say hello to someone"
-)]
-pub fn greet(name) {
-    Ok(format!("Hello, {}!", name))
-}
+--- A friendly greeting tool
+-- @tool name="greet" description="Say hello to someone"
+-- @param name string "Name to greet"
+function greet(args)
+    return { message = "Hello, " .. args.name .. "!" }
+end
 ```
 
 This registers one tool. Agents can now call `greet`.
 
 ## Directory Plugin
 
-For complex plugins, use a directory with `mod.rn`:
+For complex plugins, use a directory with `init.lua`:
 
 ```
 plugins/tasks/
-├── mod.rn          # Entry point, exports public items
-├── parser.rn       # TASKS.md format parser
-├── commands.rn     # CLI command handlers
+├── init.lua        # Entry point, exports public items
+├── parser.lua      # TASKS.md format parser
+├── commands.lua    # Command handlers
 └── README.md       # Usage documentation
 ```
 
-```rune
-// mod.rn - Main module that exports everything
+```lua
+-- init.lua - Main module that exports everything
 
-mod parser;
-mod commands;
+local parser = require("parser")
+local commands = require("commands")
 
-use parser::parse_tasks;
-use commands::{list_tasks, next_task, pick_task, done_task};
+--- List all tasks with status
+-- @tool name="tasks_list" description="List all tasks"
+-- @param path string "Path to TASKS.md"
+function tasks_list(args)
+    local tasks = parser.parse_tasks(args.path)
+    return commands.list_tasks(tasks)
+end
 
-/// List all tasks with status
-#[tool(name = "tasks_list")]
-pub fn list(path) {
-    let tasks = parse_tasks(path)?;
-    commands::list_tasks(tasks)
+--- Get next available task
+-- @tool name="tasks_next" description="Get the next available task"
+-- @param path string "Path to TASKS.md"
+function tasks_next(args)
+    local tasks = parser.parse_tasks(args.path)
+    return commands.next_task(tasks)
+end
+
+-- Export tools
+return {
+    tasks_list = tasks_list,
+    tasks_next = tasks_next
 }
-
-/// Get next available task
-#[tool(name = "tasks_next")]
-pub fn next(path) {
-    let tasks = parse_tasks(path)?;
-    commands::next_task(tasks)
-}
-
-// ... more tools
 ```
 
 ## Providing Tools
 
-Use the `#[tool]` attribute to expose functions as MCP tools:
+Use doc comment annotations to expose functions as MCP tools:
 
-```rune
-#[tool(
-    name = "search_notes",
-    description = "Search notes by content",
-    schema = #{
-        query: #{ type: "string", description: "Search query" },
-        limit: #{ type: "integer", default: 10 }
-    }
-)]
-pub fn search_notes(query, limit) {
-    let results = crucible::search_by_content(query, limit)?;
-    Ok(results)
-}
+```lua
+--- Search notes by content
+-- @tool name="search_notes" description="Search notes by content"
+-- @param query string "Search query"
+-- @param limit number "Maximum results (default: 10)"
+function search_notes(args)
+    local query = args.query
+    local limit = args.limit or 10
+    local results = crucible.search(query, { limit = limit })
+    return { results = results }
+end
 ```
 
 Tools are automatically registered when the plugin loads.
 
 ## Providing Hooks
 
-Use `#[hook]` to react to events:
+Use `@handler` to react to events:
 
-```rune
-/// Log all tool calls
-#[hook(event = "tool:after", pattern = "*")]
-pub fn log_tools(ctx, event) {
-    println!("Tool called: {}", event.identifier);
-    event
-}
+```lua
+--- Log all tool calls
+-- @handler event="tool:after" pattern="*" priority=100
+function log_tools(ctx, event)
+    crucible.log("info", "Tool called: " .. event.tool_name)
+    return event
+end
 
-/// Block dangerous operations
-#[hook(event = "tool:before", pattern = "*delete*", priority = 5)]
-pub fn block_deletes(ctx, event) {
-    event.cancelled = true;
-    event
-}
+--- Block dangerous operations
+-- @handler event="tool:before" pattern="*delete*" priority=5
+function block_deletes(ctx, event)
+    event.cancelled = true
+    return event
+end
 ```
 
 See [[Help/Extending/Event Hooks]] for event types and patterns.
@@ -158,34 +156,20 @@ See [[Help/Extending/Event Hooks]] for event types and patterns.
 3. **Registration**: Tools, hooks, and other exports are registered
 4. **Execution**: Components are invoked as needed
 
-## Standalone Scripts
-
-For one-off automation (not reusable tools), use `Scripts/`:
-
-```rune
-// Scripts/cleanup.rn - Run manually with: cru script Scripts/cleanup.rn
-
-pub fn main() {
-    let notes = crucible::search_by_properties(#{})?;
-    // ... cleanup logic
-    Ok(())
-}
-```
-
-Scripts in `Scripts/` are not auto-registered as tools.
-
 ## Shell Commands
 
-Plugins can execute shell commands using `shell::exec()`:
+Plugins can execute shell commands using `crucible.shell()`:
 
-```rune
-use shell::exec;
-
-#[tool(name = "run_tests")]
-pub fn run_tests() {
-    let result = exec("cargo", ["test"], #{})?;
-    Ok(result.stdout)
-}
+```lua
+--- Run project tests
+-- @tool name="run_tests" description="Run the test suite"
+function run_tests(args)
+    local result = crucible.shell("cargo", {"test"})
+    return { 
+        stdout = result.stdout,
+        exit_code = result.exit_code
+    }
+end
 ```
 
 ### Security Model
@@ -209,59 +193,40 @@ See [[Help/Config/workspaces]] for full security configuration.
 
 ### Shell Options
 
-```rune
-let result = exec("cargo", ["build"], #{
-    cwd: "/path/to/project",      # Working directory
-    env: #{ RUST_LOG: "debug" },  # Environment variables
-    timeout: 60000,               # Timeout in milliseconds
-})?;
+```lua
+local result = crucible.shell("cargo", {"build"}, {
+    cwd = "/path/to/project",      -- Working directory
+    env = { RUST_LOG = "debug" },  -- Environment variables
+    timeout = 60000,               -- Timeout in milliseconds
+})
 
-// result.stdout, result.stderr, result.exit_code
+-- result.stdout, result.stderr, result.exit_code
 ```
 
-## Plugin Dependencies
+## Fennel Support
 
-Plugins can declare dependencies on other plugins using the `deps` attribute:
+For a Lisp-like experience with macros, use Fennel:
 
-```rune
-#[plugin(
-    name = "deploy",
-    deps = ["shell"]  // Requires shell module
-)]
-pub fn create() {
-    DeployPlugin::new()
-}
+```fennel
+;; .crucible/plugins/greet.fnl
+
+(fn greet [args]
+  "A friendly greeting tool"
+  {:message (.. "Hello, " args.name "!")})
+
+;; Export
+{:greet greet}
 ```
 
-Dependencies are resolved at load time:
-- Plugins load in topological order (dependencies first)
-- Missing dependencies cause a load error
-- Circular dependencies are detected and rejected
-
-### Built-in Modules
-
-These modules are always available (no need to declare as deps):
-- `shell` - Shell command execution
-- `oq` - JSON/TOON query operations
-
-### Plugin-to-Plugin Dependencies
-
-For plugins that depend on other plugins:
-
-```rune
-#[plugin(name = "ci", deps = ["deploy", "tasks"])]
-pub fn create() {
-    // Can use deploy:: and tasks:: modules
-}
-```
+Fennel files are compiled to Lua at load time. See [[Help/Lua/Language Basics]] for more on the Lua ecosystem.
 
 ## Best Practices
 
 1. **One concern per plugin** - Keep plugins focused
 2. **Document with README.md** - Explain what it does and how to use it
 3. **Use descriptive tool names** - `tasks_list` not `list`
-4. **Handle errors gracefully** - Return `Err()` with helpful messages
-5. **Provide schemas** - Help agents understand your tools
+4. **Handle errors gracefully** - Return error tables with helpful messages
+5. **Provide param descriptions** - Help agents understand your tools
 6. **Minimize shell usage** - Prefer Crucible APIs over shelling out
 
 ## Example: Tasks Plugin
@@ -269,13 +234,12 @@ pub fn create() {
 See [[Help/Task Management]] for a complete example plugin that demonstrates:
 - Programmatic tool generation
 - File-as-state patterns
-- Tools→workflow integration
+- Tools to workflow integration
 
 ## See Also
 
-- [[Help/Rune/Language Basics]] - Rune syntax
-- [[Help/Rune/Crucible API]] - Available functions
-- [[Help/Rune/Tool Definition]] - Tool attribute details
+- [[Help/Lua/Language Basics]] - Lua syntax
+- [[Help/Lua/Configuration]] - Lua configuration
 - [[Help/Extending/Event Hooks]] - Hook system
 - [[Help/Extending/Custom Tools]] - Tool deep dive
 - [[Help/Config/workspaces]] - Workspace and security configuration

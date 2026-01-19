@@ -14,7 +14,7 @@ User stories for Crucible's plugin/extension system, organized by persona and ma
 
 ## Design Context
 
-**Extension Languages (near-term):** Rune, possibly Luau
+**Extension Languages:** Lua with Fennel support
 **Future Extensions:** WASM, dynamic libraries
 
 **MVP vs Full-Featured:**
@@ -187,7 +187,7 @@ User stories for Crucible's plugin/extension system, organized by persona and ma
 #### SE-MVP-5: Local Testing Workflow
 > As a plugin author, I want to run tests against a fixture vault and verify behavior before publishing so I ship working code.
 
-*Example:* `cru test my-plugin.rn --vault ./test-vault`
+*Example:* `cru test my-plugin.lua --vault ./test-vault`
 
 ### Full-Featured
 
@@ -248,11 +248,10 @@ User stories for Crucible's plugin/extension system, organized by persona and ma
 
 ## Related Documents
 
-- [[Help/Rune/Language Basics]] — Rune syntax fundamentals
-- [[Help/Rune/Crucible API]] — API reference for scripts
-- [[Help/Rune/Tool Definition]] — Creating MCP-callable tools
-- [[Help/Rune/Event Types]] — Hook event reference
+- [[Help/Lua/Language Basics]] — Lua syntax fundamentals
+- [[Help/Lua/Configuration]] — Lua configuration system
 - [[Help/Extending/Creating Plugins]] — Plugin authoring guide
+- [[Help/Extending/Event Hooks]] — Hook system reference
 
 ---
 

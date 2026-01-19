@@ -40,7 +40,7 @@ Events propagate top-down through layers:
 ### Modes
 
 Three session modes control agent permissions (see [[Help/TUI/Modes]]):
-- **Default** - Auto-read, ask for writes
+- **Normal** - Auto-read, ask for writes (default)
 - **Plan** - Read-only, creates plan files
 - **Auto** - Full access, minimal prompts
 
@@ -48,7 +48,7 @@ Toggle with `Shift+Tab`.
 
 ## Extending the TUI
 
-See [[Help/TUI/Rune API]] for scripting TUI behavior.
+The TUI can be customized via Lua configuration. See [[Help/Lua/Configuration]] for details on statusline customization and other options.
 
 ## Keyboard Shortcuts
 
@@ -76,9 +76,9 @@ For developers contributing to the TUI, see [[Help/TUI/E2E Testing]] for informa
 ## See Also
 
 - [[Help/TUI/Keybindings]] - Complete keyboard shortcuts
-- [[Help/TUI/Modes]] - Permission modes (default/plan/auto)
+- [[Help/TUI/Modes]] - Permission modes (normal/plan/auto)
 - [[Help/TUI/Shell Execution]] - Running shell commands
 - [[Help/TUI/Component Architecture]] - Widget system details
-- [[Help/TUI/Rune API]] - Scripting interface
+- [[Help/Lua/Configuration]] - TUI customization via Lua
 - [[Help/TUI/E2E Testing]] - End-to-end test harness
 - [[Help/CLI/chat]] - Chat command reference

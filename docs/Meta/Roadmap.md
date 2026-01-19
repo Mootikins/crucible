@@ -18,7 +18,7 @@ tags:
 A knowledge management system where:
 - AI agents have perfect context from your vault
 - Workflows are defined in markdown and executed by agents
-- Everything is extensible via Rune scripting and hooks
+- Everything is extensible via Lua scripting and hooks
 - Power users get CLI, everyone else gets web/desktop UI eventually
 
 ## Killer Workflows
@@ -31,7 +31,7 @@ A knowledge management system where:
 | Phase | Users | Interface |
 |-------|-------|-----------|
 | Now | Power users, developers | CLI (chat-focused) |
-| Next | Plugin creators, agent developers | CLI + Rune scripting |
+| Next | Plugin creators, agent developers | CLI + Lua scripting |
 | Later | Non-technical users | Web UI, Tauri desktop |
 
 ---
@@ -44,14 +44,14 @@ A knowledge management system where:
 
 - [ ] **MCP Tool System** (95%) - Permission prompts, ACP integration
 - [ ] **MCP Bridge/Gateway** (85%) - Integration tests, documentation
-- [x] **Rune programmatic tool calling** - Tool discovery (`discover_tools`, `get_tool_schema`) complete
+- [x] **Lua programmatic tool calling** - Tool discovery (`discover_tools`, `get_tool_schema`) complete
 - [x] **Event/Hook System** - Note lifecycle hooks (`note:created`, `note:modified`, `note:deleted`) complete
 
 ### Polish & Stability (Dogfooding Focus)
 
 - [ ] **Error handling UX** - Clear error messages, graceful degradation when services unavailable
 - [ ] **Session persistence** - Reliable save/resume, handle crashes gracefully
-- [ ] **Plugin loading errors** - Clear feedback when Rune/Lua plugins fail to load
+- [ ] **Plugin loading errors** - Clear feedback when Lua plugins fail to load
 - [ ] **MCP connection stability** - Reconnect logic, timeout handling, status indicators
 - [ ] **CLI help & discoverability** - `--help` completeness, command suggestions
 
@@ -73,9 +73,9 @@ A knowledge management system where:
 
 ### High Priority
 
-- [ ] **Rune Integration (full)** - Complete scripting API for custom workflows, agent behaviors, callout handlers
+- [ ] **Lua Integration (full)** - Complete scripting API for custom workflows, agent behaviors, callout handlers
 - [ ] **Internal Agent System** - Direct LLM usage (Ollama, OpenAI) without ACP dependency
-- [ ] **Grammar + Rune integration** - Constrained generation for specific flows
+- [ ] **Grammar + Lua integration** - Constrained generation for specific flows
 
 ### Medium Priority
 
@@ -137,7 +137,6 @@ A knowledge management system where:
 
 | Item | Notes |
 |------|-------|
-| Rune/Core event unification | Merge rune EventBus with core SessionEvent system into single event architecture |
 | Remove remaining unused deps | `cargo machete` shows unused deps in other crates (core, surrealdb, tools, etc.) |
 
 ---
@@ -148,7 +147,7 @@ A knowledge management system where:
 |------|--------|
 | `crucible-desktop` (GPUI) | Cut - using Tauri + web instead |
 | `add-desktop-ui` OpenSpec | Archived - GPUI approach abandoned |
-| `add-meta-systems` | Too ambitious (365 tasks), overlaps with focused Rune approach |
+| `add-meta-systems` | Too ambitious (365 tasks), overlaps with focused Lua approach |
 | `add-advanced-tool-architecture` | Overlaps with working MCP bridge |
 | `add-quick-prompt-features` | Nice UX, not core - revisit in Phase 3 |
 | `refactor-clustering-plugins` | Nice feature, not core |
@@ -163,7 +162,7 @@ A knowledge management system where:
 | 2024-12-13 | Cut GPUI desktop, keep Tauri | Web tech enables rich features (canvas, mermaid, latex) at low cost |
 | 2024-12-13 | Keep ACP | Working, enables Cursor-specific models |
 | 2024-12-13 | Event hooks = Tool + Note lifecycle | Focused scope vs. 317-task proposal |
-| 2024-12-13 | Keep grammar crate | Integrate with Rune for constrained generation |
+| 2024-12-13 | Keep grammar crate | Integrate with Lua for constrained generation |
 | 2024-12-13 | CLI is chat-focused | Other commands for testing, primary UX is conversation |
 
 ---
