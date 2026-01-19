@@ -111,7 +111,72 @@ pub async fn create_default_enrichment_service(
 }
 
 /// Clear the embedding provider cache (useful for testing)
-#[allow(dead_code)]
 pub fn clear_embedding_provider_cache() {
     EMBEDDING_PROVIDER_CACHE.lock().unwrap().clear();
+}
+
+#[cfg(test)]
+fn cache_size() -> usize {
+    EMBEDDING_PROVIDER_CACHE.lock().unwrap().len()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_clear_embedding_provider_cache_no_panic() {
+        clear_embedding_provider_cache();
+        assert_eq!(cache_size(), 0);
+    }
+
+    #[test]
+    fn test_clear_cache_is_idempotent() {
+        clear_embedding_provider_cache();
+        clear_embedding_provider_cache();
+        clear_embedding_provider_cache();
+        assert_eq!(cache_size(), 0);
+    }
+
+    #[test]
+    fn test_embedding_config_cache_key_format() {
+        let config = CliConfig::default();
+        let key = embedding_config_cache_key(&config);
+        assert!(!key.is_empty());
+        assert!(key.contains("|"));
+    }
+
+    #[test]
+    fn test_embedding_config_cache_key_deterministic() {
+        let config = CliConfig::default();
+        let key1 = embedding_config_cache_key(&config);
+        let key2 = embedding_config_cache_key(&config);
+        assert_eq!(key1, key2);
+    }
+
+    #[test]
+    fn test_embedding_config_cache_key_varies_with_provider() {
+        let mut config1 = CliConfig::default();
+        let mut config2 = CliConfig::default();
+
+        config1.embedding.model = Some("model-a".to_string());
+        config2.embedding.model = Some("model-b".to_string());
+
+        let key1 = embedding_config_cache_key(&config1);
+        let key2 = embedding_config_cache_key(&config2);
+        assert_ne!(key1, key2);
+    }
+
+    #[test]
+    fn test_embedding_config_cache_key_varies_with_url() {
+        let mut config1 = CliConfig::default();
+        let mut config2 = CliConfig::default();
+
+        config1.embedding.api_url = Some("http://localhost:11434".to_string());
+        config2.embedding.api_url = Some("http://localhost:8080".to_string());
+
+        let key1 = embedding_config_cache_key(&config1);
+        let key2 = embedding_config_cache_key(&config2);
+        assert_ne!(key1, key2);
+    }
 }

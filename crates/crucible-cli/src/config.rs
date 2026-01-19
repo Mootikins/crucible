@@ -297,14 +297,104 @@ provider = "openai"
         let temp = TempDir::new().unwrap();
         let nonexistent = temp.path().join("nonexistent.toml");
 
-        // Should not error when file doesn't exist
         let config = CliConfig::load(Some(nonexistent), None, None).unwrap();
 
-        // Should have all defaults
         assert_eq!(config.chat_model(), "llama3.2");
         assert_eq!(
             config.embedding.provider,
             crucible_config::EmbeddingProviderType::FastEmbed
         );
+    }
+
+    #[test]
+    fn test_config_load_empty_file() {
+        let temp = TempDir::new().unwrap();
+        let config_path = temp.path().join("empty.toml");
+        fs::write(&config_path, "").unwrap();
+
+        let result = CliConfig::load(Some(config_path), None, None);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_config_load_whitespace_only_file() {
+        let temp = TempDir::new().unwrap();
+        let config_path = temp.path().join("whitespace.toml");
+        fs::write(&config_path, "   \n\t\n   ").unwrap();
+
+        let result = CliConfig::load(Some(config_path), None, None);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_config_load_comments_only() {
+        let temp = TempDir::new().unwrap();
+        let config_path = temp.path().join("comments.toml");
+        fs::write(&config_path, "# This is a comment\n# Another comment\n").unwrap();
+
+        let result = CliConfig::load(Some(config_path), None, None);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_config_builder_default() {
+        let builder = CliConfigBuilder::default();
+        let config = builder.build().unwrap();
+        assert!(!config.kiln_path.to_str().unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_config_builder_with_kiln_path() {
+        let path = PathBuf::from("/custom/kiln/path");
+        let config = CliConfigBuilder::new()
+            .kiln_path(path.clone())
+            .build()
+            .unwrap();
+        assert_eq!(config.kiln_path, path);
+    }
+
+    #[test]
+    fn test_toml_serialization_roundtrip() {
+        let config = CliConfig::default();
+        let toml_str = config.display_as_toml().unwrap();
+
+        let temp = TempDir::new().unwrap();
+        let config_path = temp.path().join("roundtrip.toml");
+        fs::write(&config_path, &toml_str).unwrap();
+
+        let loaded = CliConfig::load(Some(config_path), None, None).unwrap();
+        assert_eq!(config.chat_model(), loaded.chat_model());
+        assert_eq!(config.temperature(), loaded.temperature());
+    }
+
+    #[test]
+    fn test_json_serialization_valid() {
+        let config = CliConfig::default();
+        let json_str = config.display_as_json().unwrap();
+
+        let parsed: serde_json::Value = serde_json::from_str(&json_str).unwrap();
+        assert!(parsed.is_object());
+        assert!(parsed.get("kiln_path").is_some());
+        assert!(parsed.get("embedding").is_some());
+    }
+
+    #[test]
+    fn test_config_unknown_fields_ignored() {
+        let temp = TempDir::new().unwrap();
+        let config_path = temp.path().join("unknown.toml");
+        fs::write(
+            &config_path,
+            r#"
+kiln_path = "/test/kiln"
+unknown_field = "should be ignored"
+
+[unknown_section]
+foo = "bar"
+"#,
+        )
+        .unwrap();
+
+        let result = CliConfig::load(Some(config_path), None, None);
+        assert!(result.is_ok());
     }
 }

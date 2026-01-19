@@ -178,4 +178,59 @@ mod tests {
         // Basic smoke test that the commands are defined correctly
         // Actual integration tests would need a running daemon
     }
+
+    #[test]
+    fn test_daemon_commands_start_default() {
+        let cmd = DaemonCommands::Start {
+            foreground: false,
+            wait: false,
+        };
+        matches!(cmd, DaemonCommands::Start { .. });
+    }
+
+    #[test]
+    fn test_daemon_commands_start_foreground() {
+        let cmd = DaemonCommands::Start {
+            foreground: true,
+            wait: false,
+        };
+        if let DaemonCommands::Start { foreground, wait } = cmd {
+            assert!(foreground);
+            assert!(!wait);
+        } else {
+            panic!("Expected Start variant");
+        }
+    }
+
+    #[test]
+    fn test_daemon_commands_start_wait() {
+        let cmd = DaemonCommands::Start {
+            foreground: false,
+            wait: true,
+        };
+        if let DaemonCommands::Start { foreground, wait } = cmd {
+            assert!(!foreground);
+            assert!(wait);
+        } else {
+            panic!("Expected Start variant");
+        }
+    }
+
+    #[test]
+    fn test_daemon_commands_stop() {
+        let cmd = DaemonCommands::Stop;
+        matches!(cmd, DaemonCommands::Stop);
+    }
+
+    #[test]
+    fn test_daemon_commands_status() {
+        let cmd = DaemonCommands::Status;
+        matches!(cmd, DaemonCommands::Status);
+    }
+
+    #[test]
+    fn test_socket_path_returns_path() {
+        let path = socket_path();
+        assert!(path.file_name().is_some());
+    }
 }

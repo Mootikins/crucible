@@ -312,3 +312,138 @@ impl Gap {
         Self { row, column }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_style_builder_chain() {
+        let style = Style::new()
+            .fg(Color::Red)
+            .bg(Color::Blue)
+            .bold()
+            .italic()
+            .underline()
+            .dim();
+
+        assert_eq!(style.fg, Some(Color::Red));
+        assert_eq!(style.bg, Some(Color::Blue));
+        assert!(style.bold);
+        assert!(style.italic);
+        assert!(style.underline);
+        assert!(style.dim);
+    }
+
+    #[test]
+    fn test_style_default() {
+        let style = Style::default();
+        assert!(style.fg.is_none());
+        assert!(style.bg.is_none());
+        assert!(!style.bold);
+        assert!(!style.italic);
+        assert!(!style.underline);
+        assert!(!style.dim);
+    }
+
+    #[test]
+    fn test_style_to_ansi_codes_empty() {
+        let style = Style::new();
+        assert_eq!(style.to_ansi_codes(), "");
+    }
+
+    #[test]
+    fn test_style_to_ansi_codes_bold() {
+        let style = Style::new().bold();
+        assert!(style.to_ansi_codes().contains("1"));
+    }
+
+    #[test]
+    fn test_color_to_ansi_fg() {
+        assert_eq!(Color::Red.to_ansi_fg(), vec![31]);
+        assert_eq!(Color::Green.to_ansi_fg(), vec![32]);
+        assert_eq!(Color::Blue.to_ansi_fg(), vec![34]);
+    }
+
+    #[test]
+    fn test_color_to_ansi_bg() {
+        assert_eq!(Color::Red.to_ansi_bg(), vec![41]);
+        assert_eq!(Color::Green.to_ansi_bg(), vec![42]);
+        assert_eq!(Color::Blue.to_ansi_bg(), vec![44]);
+    }
+
+    #[test]
+    fn test_color_rgb_ansi() {
+        assert_eq!(
+            Color::Rgb(255, 128, 64).to_ansi_fg(),
+            vec![38, 2, 255, 128, 64]
+        );
+        assert_eq!(
+            Color::Rgb(255, 128, 64).to_ansi_bg(),
+            vec![48, 2, 255, 128, 64]
+        );
+    }
+
+    #[test]
+    fn test_padding_all() {
+        let p = Padding::all(5);
+        assert_eq!(p.top, 5);
+        assert_eq!(p.right, 5);
+        assert_eq!(p.bottom, 5);
+        assert_eq!(p.left, 5);
+    }
+
+    #[test]
+    fn test_padding_xy() {
+        let p = Padding::xy(10, 5);
+        assert_eq!(p.top, 5);
+        assert_eq!(p.right, 10);
+        assert_eq!(p.bottom, 5);
+        assert_eq!(p.left, 10);
+    }
+
+    #[test]
+    fn test_padding_horizontal_vertical() {
+        let p = Padding {
+            top: 1,
+            right: 2,
+            bottom: 3,
+            left: 4,
+        };
+        assert_eq!(p.horizontal(), 6);
+        assert_eq!(p.vertical(), 4);
+    }
+
+    #[test]
+    fn test_border_chars_single() {
+        let chars = Border::Single.chars();
+        assert_eq!(chars.top_left, '┌');
+        assert_eq!(chars.horizontal, '─');
+    }
+
+    #[test]
+    fn test_border_chars_rounded() {
+        let chars = Border::Rounded.chars();
+        assert_eq!(chars.top_left, '╭');
+        assert_eq!(chars.top_right, '╮');
+    }
+
+    #[test]
+    fn test_gap_constructors() {
+        let g1 = Gap::all(5);
+        assert_eq!(g1.row, 5);
+        assert_eq!(g1.column, 5);
+
+        let g2 = Gap::row(3);
+        assert_eq!(g2.row, 3);
+        assert_eq!(g2.column, 0);
+
+        let g3 = Gap::column(4);
+        assert_eq!(g3.row, 0);
+        assert_eq!(g3.column, 4);
+
+        let g4 = Gap::new(1, 2);
+        assert_eq!(g4.row, 1);
+        assert_eq!(g4.column, 2);
+    }
+}

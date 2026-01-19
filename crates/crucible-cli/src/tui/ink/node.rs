@@ -491,3 +491,181 @@ impl SpinnerNode {
         SPINNER_FRAMES[self.frame % SPINNER_FRAMES.len()]
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_text_creates_text_node() {
+        let node = text("hello");
+        assert!(matches!(node, Node::Text(TextNode { content, .. }) if content == "hello"));
+    }
+
+    #[test]
+    fn test_col_creates_column_box() {
+        let node = col([text("a"), text("b")]);
+        match node {
+            Node::Box(b) => {
+                assert_eq!(b.direction, Direction::Column);
+                assert_eq!(b.children.len(), 2);
+            }
+            _ => panic!("Expected BoxNode"),
+        }
+    }
+
+    #[test]
+    fn test_row_creates_row_box() {
+        let node = row([text("a"), text("b")]);
+        match node {
+            Node::Box(b) => {
+                assert_eq!(b.direction, Direction::Row);
+                assert_eq!(b.children.len(), 2);
+            }
+            _ => panic!("Expected BoxNode"),
+        }
+    }
+
+    #[test]
+    fn test_when_returns_node_on_true() {
+        let node = when(true, text("visible"));
+        assert!(matches!(node, Node::Text(_)));
+    }
+
+    #[test]
+    fn test_when_returns_empty_on_false() {
+        let node = when(false, text("hidden"));
+        assert!(matches!(node, Node::Empty));
+    }
+
+    #[test]
+    fn test_if_else_returns_correct_branch() {
+        let node_true = if_else(true, text("yes"), text("no"));
+        let node_false = if_else(false, text("yes"), text("no"));
+
+        match node_true {
+            Node::Text(t) => assert_eq!(t.content, "yes"),
+            _ => panic!("Expected Text"),
+        }
+        match node_false {
+            Node::Text(t) => assert_eq!(t.content, "no"),
+            _ => panic!("Expected Text"),
+        }
+    }
+
+    #[test]
+    fn test_maybe_returns_node_on_some() {
+        let node = maybe(Some("value"), text);
+        assert!(matches!(node, Node::Text(_)));
+    }
+
+    #[test]
+    fn test_maybe_returns_empty_on_none() {
+        let node: Node = maybe(None::<&str>, text);
+        assert!(matches!(node, Node::Empty));
+    }
+
+    #[test]
+    fn test_progress_bar_clamps_values() {
+        let bar_neg = progress_bar(-0.5, 10);
+        let bar_over = progress_bar(1.5, 10);
+
+        assert!(matches!(bar_neg, Node::Text(_)));
+        assert!(matches!(bar_over, Node::Text(_)));
+    }
+
+    #[test]
+    fn test_progress_bar_at_boundaries() {
+        let bar_zero = progress_bar(0.0, 10);
+        let bar_full = progress_bar(1.0, 10);
+
+        if let Node::Text(t) = bar_zero {
+            assert!(t.content.chars().all(|c| c == '░'));
+        }
+        if let Node::Text(t) = bar_full {
+            assert!(t.content.chars().all(|c| c == '█'));
+        }
+    }
+
+    #[test]
+    fn test_spinner_current_char_cycles() {
+        let spinner = SpinnerNode {
+            label: None,
+            style: Style::default(),
+            frame: 0,
+        };
+        assert_eq!(spinner.current_char(), SPINNER_FRAMES[0]);
+
+        let spinner_4 = SpinnerNode {
+            label: None,
+            style: Style::default(),
+            frame: 4,
+        };
+        assert_eq!(spinner_4.current_char(), SPINNER_FRAMES[0]);
+    }
+
+    #[test]
+    fn test_popup_viewport_offset() {
+        let items = vec![
+            popup_item("a"),
+            popup_item("b"),
+            popup_item("c"),
+            popup_item("d"),
+            popup_item("e"),
+        ];
+
+        let node = popup(items.clone(), 0, 3);
+        if let Node::Popup(p) = node {
+            assert_eq!(p.viewport_offset, 0);
+        }
+
+        let node_scroll = popup(items, 4, 3);
+        if let Node::Popup(p) = node_scroll {
+            assert_eq!(p.viewport_offset, 2);
+        }
+    }
+
+    #[test]
+    fn test_popup_item_builder() {
+        let item = popup_item("Label").desc("Description").kind("file");
+        assert_eq!(item.label, "Label");
+        assert_eq!(item.description, Some("Description".to_string()));
+        assert_eq!(item.kind, Some("file".to_string()));
+    }
+
+    #[test]
+    fn test_node_with_style() {
+        let node = text("hello").with_style(Style::new().bold());
+        if let Node::Text(t) = node {
+            assert!(t.style.bold);
+        } else {
+            panic!("Expected Text");
+        }
+    }
+
+    #[test]
+    fn test_node_with_border_wraps_non_box() {
+        let node = text("hello").with_border(Border::Single);
+        assert!(matches!(node, Node::Box(_)));
+    }
+
+    #[test]
+    fn test_spacer_has_flex_size() {
+        let node = spacer();
+        if let Node::Box(b) = node {
+            assert_eq!(b.size, Size::Flex(1));
+        } else {
+            panic!("Expected BoxNode");
+        }
+    }
+
+    #[test]
+    fn test_divider_creates_repeated_char() {
+        let node = divider('-', 5);
+        if let Node::Text(t) = node {
+            assert_eq!(t.content, "-----");
+        } else {
+            panic!("Expected Text");
+        }
+    }
+}

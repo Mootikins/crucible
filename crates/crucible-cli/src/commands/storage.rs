@@ -341,3 +341,55 @@ async fn execute_restore(
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_storage_output_format_from_json() {
+        let format: StorageOutputFormat = "json".to_string().into();
+        assert!(matches!(format, StorageOutputFormat::Json));
+    }
+
+    #[test]
+    fn test_storage_output_format_from_plain() {
+        let format: StorageOutputFormat = "plain".to_string().into();
+        assert!(matches!(format, StorageOutputFormat::Plain));
+    }
+
+    #[test]
+    fn test_storage_output_format_from_table() {
+        let format: StorageOutputFormat = "table".to_string().into();
+        assert!(matches!(format, StorageOutputFormat::Table));
+    }
+
+    #[test]
+    fn test_storage_output_format_default() {
+        let format: StorageOutputFormat = "unknown".to_string().into();
+        assert!(matches!(format, StorageOutputFormat::Table));
+    }
+
+    #[test]
+    fn test_storage_output_format_case_insensitive() {
+        let format: StorageOutputFormat = "JSON".to_string().into();
+        assert!(matches!(format, StorageOutputFormat::Json));
+
+        let format: StorageOutputFormat = "Json".to_string().into();
+        assert!(matches!(format, StorageOutputFormat::Json));
+    }
+
+    #[test]
+    fn test_storage_output_format_clone() {
+        let format = StorageOutputFormat::Json;
+        let cloned = format.clone();
+        assert!(matches!(cloned, StorageOutputFormat::Json));
+    }
+
+    #[test]
+    fn test_storage_output_format_debug() {
+        let format = StorageOutputFormat::Table;
+        let debug = format!("{:?}", format);
+        assert_eq!(debug, "Table");
+    }
+}
