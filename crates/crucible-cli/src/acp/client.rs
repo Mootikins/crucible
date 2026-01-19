@@ -229,17 +229,6 @@ impl CrucibleAcpClient {
         // Create ChatSession with the ACP client
         let mut session = ChatSession::with_agent(self.config.clone(), acp_client);
 
-        // Initialize tools if kiln path is available
-        if let Some(kiln_path) = &self.kiln_path {
-            info!("Initializing tools for kiln: {}", kiln_path.display());
-            session
-                .initialize_tools(kiln_path.clone())
-                .map_err(|e| anyhow!("Failed to initialize tools: {}", e))?;
-            info!("Tools initialized successfully");
-        } else {
-            info!("No kiln path provided - tools will not be available");
-        }
-
         // Connect to the agent - use in-process SSE if dependencies are available
         if let (Some(kiln_path), Some(knowledge_repo), Some(embedding_provider)) = (
             &self.kiln_path,
