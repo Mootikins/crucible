@@ -123,6 +123,6 @@ Cons:
 
 ## See Also
 
-- [[../Analysis/storage-types-flow]] - Current storage architecture
+- [[../Analysis/Storage Types Flow]] - Current storage architecture
 - [[Help/Query/Index]] - Planned query system
 - `crates/crucible-surrealdb/src/graph_query.rs` - jaq → SurrealQL translator

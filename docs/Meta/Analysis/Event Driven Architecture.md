@@ -22,7 +22,7 @@ Event → Handler(s) → Event(s) → Handler(s) → ...
 
 ### Compile Phase (startup)
 
-1. **Discovery**: Scan for handlers (Rust, Rune, Lua, MCP)
+1. **Discovery**: Scan for handlers (Rust, Lua, MCP)
 2. **Topo-sort**: Resolve priorities and dependencies
 3. **Build**: Construct immutable `ExecutionGraph`
 
@@ -226,7 +226,7 @@ async fn normalize_xml_tools(ctx: &mut Context, event: PreToolCall) -> HandlerRe
 
 ## Extension Points
 
-### Script Handlers (Rune/Lua)
+### Script Handlers (Lua)
 
 Scripts register handlers at compile phase:
 
@@ -237,14 +237,6 @@ crucible.on("PreCompose", function(event)
     event.context:add(load_custom_context())
     return event
 end)
-```
-
-```rune
-// Rune handler
-pub fn on_pre_compose(event) {
-    event.context.push(custom_context());
-    event
-}
 ```
 
 ### MCP Tool Integration
