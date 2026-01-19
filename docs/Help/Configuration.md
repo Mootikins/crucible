@@ -143,6 +143,46 @@ temperature = 0.9
 max_tokens = 8192
 ```
 
+### [mcp] - MCP Gateway Configuration
+
+Configure upstream MCP (Model Context Protocol) servers to aggregate external tools.
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `servers` | list | `[]` | List of upstream MCP server configurations |
+
+Each server in the list has these options:
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `name` | string | required | Unique identifier for this upstream |
+| `prefix` | string | required | Prefix for tool names (must end with `_`) |
+| `transport` | table | required | Connection configuration |
+| `allowed_tools` | list | all | Whitelist of tool patterns (glob) |
+| `blocked_tools` | list | none | Blacklist of tool patterns (glob) |
+| `auto_reconnect` | bool | `true` | Reconnect on disconnect |
+| `timeout_secs` | int | `30` | Tool call timeout |
+
+**Transport types:**
+- `stdio` - Spawn subprocess: `command`, `args`, `env`
+- `sse` - HTTP SSE: `url`, `auth_header`
+
+```toml
+[[mcp.servers]]
+name = "github"
+prefix = "gh_"
+
+[mcp.servers.transport]
+type = "stdio"
+command = "npx"
+args = ["-y", "@modelcontextprotocol/server-github"]
+
+[mcp.servers.transport.env]
+GITHUB_TOKEN = "{env:GITHUB_TOKEN}"
+```
+
+See [[Help/Config/mcp|MCP Configuration]] for full details.
+
 ### [processing] - Processing Configuration
 
 Controls how notes are processed during indexing.
@@ -247,5 +287,9 @@ size_aware_prompts = false  # Give small model all tools
 
 ## See Also
 
+- [[Help/Config/mcp|MCP Configuration]] - Upstream MCP server setup
+- [[Help/Config/llm|LLM Configuration]] - Language model providers
+- [[Help/Config/embedding|Embedding Configuration]] - Text embeddings
+- [[Help/Config/workspaces|Workspace Configuration]] - Multi-workspace setup
 - [[Rules Files]] - Project-specific agent instructions
 - [[Internal Agents]] - Built-in agent configuration
