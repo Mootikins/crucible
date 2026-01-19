@@ -11,26 +11,25 @@ pub mod embedding;
 pub mod gateway;
 pub mod handlers;
 pub mod llm;
+pub mod mcp;
 pub mod storage;
 
-// New unified provider configuration
 pub mod backend;
 pub mod provider;
 pub mod providers;
 
-// Re-export essential component types
 pub use acp::*;
 pub use chat::*;
 pub use cli::*;
 pub use context::*;
 pub use discovery::*;
 pub use embedding::*;
-pub use gateway::*;
+pub use gateway::{GatewayConfig, UpstreamServerConfig as GatewayUpstreamServerConfig};
 pub use handlers::*;
 pub use llm::*;
+pub use mcp::{McpConfig, TransportType, UpstreamServerConfig};
 pub use storage::*;
 
-// Re-export unified provider types
 pub use backend::BackendType;
 pub use provider::{ModelConfig, ProviderConfig};
 pub use providers::ProvidersConfig;
