@@ -12,12 +12,10 @@
 use crate::session::AcpSession;
 use crate::streaming::{StreamingCallback, StreamingChunk};
 use crate::{
-    discover_crucible_tools, ClientError, ContextConfig, ConversationHistory, CrucibleAcpClient,
-    HistoryConfig, HistoryMessage, PromptEnricher, Result, StreamConfig, ToolCallInfo,
-    ToolExecutor, ToolRegistry,
+    ClientError, ContextConfig, ConversationHistory, CrucibleAcpClient, HistoryConfig,
+    HistoryMessage, PromptEnricher, Result, StreamConfig, ToolCallInfo,
 };
 use agent_client_protocol::AvailableCommand;
-use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Maximum allowed message length (50K characters)
@@ -205,8 +203,6 @@ pub struct ChatSession {
     metadata: SessionMetadata,
     agent_client: Option<CrucibleAcpClient>,
     agent_session: Option<AcpSession>,
-    tool_registry: ToolRegistry,
-    tool_executor: Option<ToolExecutor>,
 }
 
 impl ChatSession {
@@ -221,9 +217,6 @@ impl ChatSession {
         let state = ConversationState::new();
         let metadata = SessionMetadata::new();
 
-        // Initialize tool registry (no executor in mock mode)
-        let tool_registry = ToolRegistry::new();
-
         Self {
             config,
             history,
@@ -232,8 +225,6 @@ impl ChatSession {
             metadata,
             agent_client: None,
             agent_session: None,
-            tool_registry,
-            tool_executor: None,
         }
     }
 
@@ -253,9 +244,6 @@ impl ChatSession {
         let state = ConversationState::new();
         let metadata = SessionMetadata::new();
 
-        // Initialize tool registry (executor will be set when kiln_path is provided)
-        let tool_registry = ToolRegistry::new();
-
         Self {
             config,
             history,
@@ -264,40 +252,7 @@ impl ChatSession {
             metadata,
             agent_client: Some(agent_client),
             agent_session: None,
-            tool_registry,
-            tool_executor: None,
         }
-    }
-
-    /// Set the kiln path and initialize tools
-    ///
-    /// # Arguments
-    ///
-    /// * `kiln_path` - Path to the kiln for tool operations
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if tool discovery fails
-    pub fn initialize_tools(&mut self, kiln_path: PathBuf) -> Result<()> {
-        // Discover and register all Crucible tools
-        let count =
-            discover_crucible_tools(&mut self.tool_registry, kiln_path.to_str().unwrap_or(""))?;
-        tracing::info!("Registered {} tools for chat session", count);
-
-        // Create tool executor
-        self.tool_executor = Some(ToolExecutor::new(kiln_path));
-
-        Ok(())
-    }
-
-    /// Get the tool registry
-    pub fn tool_registry(&self) -> &ToolRegistry {
-        &self.tool_registry
-    }
-
-    /// Check if tools are initialized
-    pub fn has_tools(&self) -> bool {
-        self.tool_executor.is_some()
     }
 
     /// Connect to the agent and establish a session

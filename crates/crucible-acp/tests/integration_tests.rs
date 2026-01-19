@@ -668,24 +668,6 @@ async fn baseline_client_configuration_variants() {
     assert!(!client_full.is_connected());
 }
 
-/// Baseline test: Tool discovery integration
-#[tokio::test]
-async fn baseline_tool_discovery() {
-    use crucible_acp::ToolRegistry;
-
-    // Create a tool registry and discover tools
-    let mut registry = ToolRegistry::new();
-    let result = crucible_acp::discover_crucible_tools(&mut registry, "/test/kiln");
-
-    // Should discover at least the core tools
-    assert!(result.is_ok(), "Tool discovery should succeed");
-    let count = result.unwrap();
-    assert!(count > 0, "Should discover at least one tool");
-
-    // Verify registry has tools
-    assert!(registry.count() > 0, "Registry should contain tools");
-}
-
 /// Baseline test: Error type conversions
 #[tokio::test]
 async fn baseline_error_type_conversions() {

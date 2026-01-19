@@ -85,9 +85,7 @@ pub use streaming::{
     channel_callback, humanize_tool_title, StreamConfig, StreamHandler, StreamingCallback,
     StreamingChunk, ToolCallInfo,
 };
-pub use tools::{
-    discover_crucible_tools, get_crucible_system_prompt, ToolDescriptor, ToolExecutor, ToolRegistry,
-};
+pub use tools::get_crucible_system_prompt;
 pub use tracing_utils::{LogCapture, TraceContext};
 
 // Re-export test utilities when feature is enabled
