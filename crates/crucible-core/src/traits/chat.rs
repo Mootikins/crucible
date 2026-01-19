@@ -205,20 +205,102 @@ pub struct ChatToolCall {
     pub id: Option<String>,
 }
 
+/// Command invocation style
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum CommandKind {
+    #[default]
+    Slash,
+    Repl,
+}
+
+impl CommandKind {
+    pub fn prefix(&self) -> char {
+        match self {
+            CommandKind::Slash => '/',
+            CommandKind::Repl => ':',
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CommandDescriptor {
     pub name: String,
     pub description: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub input_hint: Option<String>,
-    /// Optional secondary selection options advertised by the agent (e.g., model choices)
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub secondary_options: Vec<CommandOption>,
+    #[serde(default)]
+    pub kind: CommandKind,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub module: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub args: Vec<ArgumentSpec>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CommandOption {
     pub label: String,
     pub value: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub enum CompletionSource {
+    #[default]
+    None,
+    Static(Vec<String>),
+    FilePath,
+    Directory,
+    Note,
+    Model,
+    McpServer,
+    McpTool,
+    Agent,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ArgumentSpec {
+    pub name: String,
+    #[serde(default)]
+    pub hint: Option<String>,
+    #[serde(default)]
+    pub source: CompletionSource,
+    #[serde(default)]
+    pub required: bool,
+    #[serde(default)]
+    pub variadic: bool,
+}
+
+impl ArgumentSpec {
+    pub fn new(name: impl Into<String>) -> Self {
+        Self {
+            name: name.into(),
+            hint: None,
+            source: CompletionSource::None,
+            required: false,
+            variadic: false,
+        }
+    }
+
+    pub fn required(mut self) -> Self {
+        self.required = true;
+        self
+    }
+
+    pub fn hint(mut self, hint: impl Into<String>) -> Self {
+        self.hint = Some(hint.into());
+        self
+    }
+
+    pub fn source(mut self, source: CompletionSource) -> Self {
+        self.source = source;
+        self
+    }
+
+    pub fn variadic(mut self) -> Self {
+        self.variadic = true;
+        self
+    }
 }
 
 #[async_trait]
