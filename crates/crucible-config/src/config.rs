@@ -3,7 +3,7 @@
 use crate::components::{
     AcpConfig, ChatConfig, CliConfig, ContextConfig, DiscoveryPathsConfig, EmbeddingConfig,
     EmbeddingProviderType, GatewayConfig, HandlersConfig, LlmConfig, LlmProvider, LlmProviderType,
-    ProvidersConfig, StorageConfig,
+    McpConfig, ProvidersConfig, StorageConfig,
 };
 use crate::includes::IncludeConfig;
 use crate::{EnrichmentConfig, ProfileConfig};
@@ -187,9 +187,13 @@ pub struct Config {
     #[serde(default)]
     pub discovery: Option<DiscoveryPathsConfig>,
 
-    /// Gateway configuration for upstream MCP servers.
+    /// Gateway configuration for upstream MCP servers (legacy alias for mcp).
     #[serde(default)]
     pub gateway: Option<GatewayConfig>,
+
+    /// MCP upstream server configuration.
+    #[serde(default)]
+    pub mcp: Option<McpConfig>,
 
     /// Handlers configuration.
     #[serde(default)]
@@ -221,6 +225,7 @@ impl Default for Config {
             logging: None,
             discovery: None,
             gateway: None,
+            mcp: None,
             handlers: None,
             context: None,
             custom: HashMap::new(),
@@ -397,6 +402,11 @@ impl Config {
         self.gateway.as_ref()
     }
 
+    /// Get the effective MCP configuration.
+    pub fn mcp_config(&self) -> Option<&McpConfig> {
+        self.mcp.as_ref()
+    }
+
     /// Get the effective handlers configuration.
     pub fn handlers_config(&self) -> Option<&HandlersConfig> {
         self.handlers.as_ref()
@@ -464,9 +474,8 @@ impl Config {
                     errors.push("Gateway server name cannot be empty".to_string());
                 }
 
-                // Validate transport configuration
                 match &server.transport {
-                    crate::components::TransportType::Stdio { command, .. } => {
+                    crate::components::gateway::TransportType::Stdio { command, .. } => {
                         if command.is_empty() {
                             errors.push(format!(
                                 "Gateway server '{}': stdio command cannot be empty",
@@ -474,14 +483,13 @@ impl Config {
                             ));
                         }
                     }
-                    crate::components::TransportType::Sse { url, .. } => {
+                    crate::components::gateway::TransportType::Sse { url, .. } => {
                         if url.is_empty() {
                             errors.push(format!(
                                 "Gateway server '{}': SSE url cannot be empty",
                                 server.name
                             ));
                         }
-                        // Validate URL format
                         if !url.starts_with("http://") && !url.starts_with("https://") {
                             errors.push(format!(
                                 "Gateway server '{}': SSE url must start with http:// or https://",
@@ -672,6 +680,10 @@ pub struct CliAppConfig {
     #[serde(default)]
     pub storage: Option<StorageConfig>,
 
+    /// MCP server configuration (upstream servers, gateway settings)
+    #[serde(default)]
+    pub mcp: Option<McpConfig>,
+
     /// Value source tracking for configuration provenance
     ///
     /// Tracks where each configuration value came from (file, environment, CLI, default).
@@ -699,6 +711,7 @@ impl Default for CliAppConfig {
             processing: ProcessingConfig::default(),
             context: None,
             storage: None,
+            mcp: None,
             source_map: None,
         }
     }
@@ -1991,9 +2004,9 @@ allowed_tools = ["search_*"]
     fn test_validate_gateway_empty_name() {
         let config = Config {
             gateway: Some(GatewayConfig {
-                servers: vec![crate::components::UpstreamServerConfig {
+                servers: vec![crate::components::gateway::UpstreamServerConfig {
                     name: "".to_string(),
-                    transport: crate::components::TransportType::Stdio {
+                    transport: crate::components::gateway::TransportType::Stdio {
                         command: "test".to_string(),
                         args: vec![],
                         env: std::collections::HashMap::new(),
@@ -2015,9 +2028,9 @@ allowed_tools = ["search_*"]
     fn test_validate_gateway_invalid_sse_url() {
         let config = Config {
             gateway: Some(GatewayConfig {
-                servers: vec![crate::components::UpstreamServerConfig {
+                servers: vec![crate::components::gateway::UpstreamServerConfig {
                     name: "test".to_string(),
-                    transport: crate::components::TransportType::Sse {
+                    transport: crate::components::gateway::TransportType::Sse {
                         url: "invalid-url".to_string(),
                         auth_header: None,
                     },
@@ -2038,9 +2051,9 @@ allowed_tools = ["search_*"]
     fn test_validate_gateway_valid() {
         let config = Config {
             gateway: Some(GatewayConfig {
-                servers: vec![crate::components::UpstreamServerConfig {
+                servers: vec![crate::components::gateway::UpstreamServerConfig {
                     name: "test".to_string(),
-                    transport: crate::components::TransportType::Sse {
+                    transport: crate::components::gateway::TransportType::Sse {
                         url: "http://localhost:3000/sse".to_string(),
                         auth_header: None,
                     },
@@ -2101,9 +2114,9 @@ allowed_tools = ["search_*"]
     fn test_validate_all_sections() {
         let config = Config {
             gateway: Some(GatewayConfig {
-                servers: vec![crate::components::UpstreamServerConfig {
+                servers: vec![crate::components::gateway::UpstreamServerConfig {
                     name: "test".to_string(),
-                    transport: crate::components::TransportType::Stdio {
+                    transport: crate::components::gateway::TransportType::Stdio {
                         command: "npx".to_string(),
                         args: vec![],
                         env: std::collections::HashMap::new(),
