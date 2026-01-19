@@ -355,6 +355,7 @@ mod tests {
             providers: ProvidersConfig::default(),
             context: None,
             storage: None,
+            mcp: None,
             source_map: None,
         }
     }

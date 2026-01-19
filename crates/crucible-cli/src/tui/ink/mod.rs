@@ -55,7 +55,7 @@ mod test_harness;
 
 pub use agent_selection::AgentSelection;
 pub use app::*;
-pub use chat_app::{ChatAppMsg, ChatItem, ChatMode, InkChatApp, Role};
+pub use chat_app::{ChatAppMsg, ChatItem, ChatMode, InkChatApp, McpServerDisplay, Role};
 pub use chat_runner::InkChatRunner;
 pub use event::*;
 pub use focus::*;

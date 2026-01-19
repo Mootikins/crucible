@@ -30,8 +30,7 @@ use std::borrow::Borrow;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use crucible_core::traits::chat::CommandOption;
-use crucible_core::traits::chat::{CommandDescriptor, CommandHandler};
+use crucible_core::traits::chat::{CommandDescriptor, CommandHandler, CommandKind, CommandOption};
 use crucible_core::traits::registry::{Registry, RegistryBuilder};
 use crucible_core::types::acp::schema::AvailableCommand;
 use serde_json::Value;
@@ -119,7 +118,6 @@ pub struct SlashCommand {
 }
 
 impl SlashCommand {
-    /// Create a new slash command
     pub fn new(
         handler: Arc<dyn CommandHandler>,
         name: impl Into<String>,
@@ -133,11 +131,34 @@ impl SlashCommand {
                 description: description.into(),
                 input_hint,
                 secondary_options: Vec::new(),
+                kind: CommandKind::Slash,
+                module: None,
+                args: Vec::new(),
             },
         }
     }
 
-    /// Create a new slash command with secondary options
+    pub fn new_with_kind(
+        handler: Arc<dyn CommandHandler>,
+        name: impl Into<String>,
+        description: impl Into<String>,
+        kind: CommandKind,
+        module: Option<String>,
+    ) -> Self {
+        Self {
+            handler,
+            descriptor: CommandDescriptor {
+                name: name.into(),
+                description: description.into(),
+                input_hint: None,
+                secondary_options: Vec::new(),
+                kind,
+                module,
+                args: Vec::new(),
+            },
+        }
+    }
+
     pub fn new_with_options(
         handler: Arc<dyn CommandHandler>,
         name: impl Into<String>,
@@ -151,6 +172,9 @@ impl SlashCommand {
                 description: description.into(),
                 input_hint: None,
                 secondary_options: options,
+                kind: CommandKind::Slash,
+                module: None,
+                args: Vec::new(),
             },
         }
     }
@@ -360,6 +384,9 @@ impl SlashCommandRegistry {
                     description: agent_cmd.description.clone(),
                     input_hint,
                     secondary_options,
+                    kind: CommandKind::Slash,
+                    module: None,
+                    args: Vec::new(),
                 },
             });
         }
@@ -383,6 +410,24 @@ impl SlashCommandRegistry {
     /// Get the namespaced name for a client command if it was shadowed
     pub fn get_namespaced_name(&self, name: &str) -> Option<&String> {
         self.namespaced_client_commands.get(name)
+    }
+
+    /// List commands filtered by kind
+    pub fn list_by_kind(&self, kind: CommandKind) -> Vec<CommandDescriptor> {
+        self.list_all()
+            .into_iter()
+            .filter(|d| d.kind == kind)
+            .collect()
+    }
+
+    /// List all REPL commands
+    pub fn list_repl_commands(&self) -> Vec<CommandDescriptor> {
+        self.list_by_kind(CommandKind::Repl)
+    }
+
+    /// List all slash commands
+    pub fn list_slash_commands(&self) -> Vec<CommandDescriptor> {
+        self.list_by_kind(CommandKind::Slash)
     }
 
     /// List all command descriptors (static + dynamic + agent)
@@ -418,6 +463,9 @@ impl SlashCommandRegistry {
                 description: agent_cmd.description.clone(),
                 input_hint,
                 secondary_options,
+                kind: CommandKind::Slash,
+                module: None,
+                args: Vec::new(),
             });
         }
 
@@ -500,6 +548,47 @@ impl SlashCommandRegistryBuilder {
     ) -> Self {
         let name_str = name.into();
         let cmd = SlashCommand::new_with_options(handler, name_str.clone(), description, options);
+        self.commands.insert(name_str, cmd);
+        self
+    }
+
+    /// Register a REPL command (colon prefix, always local)
+    pub fn repl_command(
+        mut self,
+        name: impl Into<String>,
+        handler: Arc<dyn CommandHandler>,
+        description: impl Into<String>,
+        module: impl Into<String>,
+    ) -> Self {
+        let name_str = name.into();
+        let cmd = SlashCommand::new_with_kind(
+            handler,
+            name_str.clone(),
+            description,
+            CommandKind::Repl,
+            Some(module.into()),
+        );
+        self.commands.insert(name_str, cmd);
+        self
+    }
+
+    /// Register a command with explicit kind and module
+    pub fn command_with_module(
+        mut self,
+        name: impl Into<String>,
+        handler: Arc<dyn CommandHandler>,
+        description: impl Into<String>,
+        kind: CommandKind,
+        module: impl Into<String>,
+    ) -> Self {
+        let name_str = name.into();
+        let cmd = SlashCommand::new_with_kind(
+            handler,
+            name_str.clone(),
+            description,
+            kind,
+            Some(module.into()),
+        );
         self.commands.insert(name_str, cmd);
         self
     }
@@ -626,6 +715,9 @@ mod tests {
             description: "Search web".to_string(),
             input_hint: None,
             secondary_options: Vec::new(),
+            kind: CommandKind::Slash,
+            module: None,
+            args: Vec::new(),
         }]);
 
         assert!(registry.is_dynamic("web"));
@@ -644,6 +736,9 @@ mod tests {
             description: "Search web".to_string(),
             input_hint: None,
             secondary_options: Vec::new(),
+            kind: CommandKind::Slash,
+            module: None,
+            args: Vec::new(),
         }]);
 
         let all = registry.list_all();
@@ -666,6 +761,9 @@ mod tests {
             description: "Search web".to_string(),
             input_hint: None,
             secondary_options: Vec::new(),
+            kind: CommandKind::Slash,
+            module: None,
+            args: Vec::new(),
         }]);
 
         // Original static command still accessible
