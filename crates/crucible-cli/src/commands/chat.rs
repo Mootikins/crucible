@@ -16,6 +16,7 @@ use crate::config::CliConfig;
 use crate::core_facade::KilnContext;
 use crate::factories;
 use crate::progress::{BackgroundProgress, LiveProgress, StatusLine};
+use crate::tui::ink::McpServerDisplay;
 use crate::tui::AgentSelection;
 use crucible_core::traits::chat::{is_read_only, mode_display_name};
 use crucible_pipeline::NotePipeline;
@@ -214,6 +215,25 @@ async fn run_interactive_chat(
     }
     if let Ok(notes) = notes {
         runner = runner.with_kiln_notes(notes);
+    }
+
+    let mcp_servers: Vec<McpServerDisplay> = config
+        .mcp
+        .as_ref()
+        .map(|mcp| {
+            mcp.servers
+                .iter()
+                .map(|s| McpServerDisplay {
+                    name: s.name.clone(),
+                    prefix: s.prefix.trim_end_matches('_').to_string(),
+                    tool_count: 0,
+                    connected: false,
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    if !mcp_servers.is_empty() {
+        runner = runner.with_mcp_servers(mcp_servers);
     }
 
     let session_id = format!("chat-{}", chrono::Utc::now().format("%Y%m%d-%H%M%S"));

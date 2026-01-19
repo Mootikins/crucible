@@ -1,7 +1,7 @@
 use crate::chat::bridge::AgentEventBridge;
 use crate::tui::ink::agent_selection::AgentSelection;
 use crate::tui::ink::app::{Action, App, ViewContext};
-use crate::tui::ink::chat_app::{ChatAppMsg, ChatMode, InkChatApp};
+use crate::tui::ink::chat_app::{ChatAppMsg, ChatMode, InkChatApp, McpServerDisplay};
 use crate::tui::ink::event::Event;
 use crate::tui::ink::focus::FocusContext;
 use crate::tui::ink::terminal::Terminal;
@@ -26,6 +26,7 @@ pub struct InkChatRunner {
     kiln_notes: Vec<String>,
     session_dir: Option<PathBuf>,
     resume_session_id: Option<String>,
+    mcp_servers: Vec<McpServerDisplay>,
 }
 
 impl InkChatRunner {
@@ -40,6 +41,7 @@ impl InkChatRunner {
             kiln_notes: Vec::new(),
             session_dir: None,
             resume_session_id: None,
+            mcp_servers: Vec::new(),
         })
     }
 
@@ -73,6 +75,11 @@ impl InkChatRunner {
         self
     }
 
+    pub fn with_mcp_servers(mut self, servers: Vec<McpServerDisplay>) -> Self {
+        self.mcp_servers = servers;
+        self
+    }
+
     pub async fn run_with_factory<F, Fut, A>(
         &mut self,
         bridge: &AgentEventBridge,
@@ -100,6 +107,9 @@ impl InkChatRunner {
         }
         if let Some(session_dir) = self.session_dir.take() {
             app.set_session_dir(session_dir);
+        }
+        if !self.mcp_servers.is_empty() {
+            app.set_mcp_servers(std::mem::take(&mut self.mcp_servers));
         }
 
         let ctx = ViewContext::new(&self.focus);
