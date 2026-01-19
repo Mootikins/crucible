@@ -12,38 +12,53 @@ use tracing::{debug, info, warn};
 /// Error type for gateway operations.
 #[derive(Debug, thiserror::Error)]
 pub enum GatewayError {
+    /// Upstream server not found by name.
     #[error("Upstream '{0}' not found")]
     UpstreamNotFound(String),
+    /// Tool not found by prefixed name.
     #[error("Tool '{0}' not found")]
     ToolNotFound(String),
+    /// Failed to establish connection to upstream.
     #[error("Connection failed: {0}")]
     ConnectionFailed(String),
+    /// Tool execution failed on upstream.
     #[error("Tool call failed: {0}")]
     ToolCallFailed(String),
+    /// Upstream with this name already registered.
     #[error("Upstream '{0}' already exists")]
     DuplicateUpstream(String),
+    /// Prefix already in use by another upstream.
     #[error("Prefix '{0}' already in use by upstream '{1}'")]
     DuplicatePrefix(String, String),
+    /// Tool call timed out.
     #[error("Tool '{0}' timed out after {1}s")]
     Timeout(String, u64),
+    /// Invalid prefix format.
     #[error("Invalid prefix '{0}': {1}")]
     InvalidPrefix(String, String),
 }
 
+/// Result type for gateway operations.
 pub type GatewayResult<T> = Result<T, GatewayError>;
 
 /// State of an upstream connection.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConnectionState {
+    /// Successfully connected and ready.
     Connected,
+    /// Not connected (initial state or after disconnect).
     Disconnected,
+    /// Connection failed with error.
     Error,
 }
 
 /// An upstream MCP client with its configuration and tools.
 pub struct UpstreamClient {
+    /// Unique name for this upstream.
     pub name: String,
+    /// Prefix applied to all tools from this upstream.
     pub prefix: String,
+    /// Configuration for this upstream.
     pub config: UpstreamServerConfig,
     executor: Option<RmcpExecutor>,
     tools: Vec<McpToolInfo>,
@@ -51,6 +66,8 @@ pub struct UpstreamClient {
 }
 
 impl UpstreamClient {
+    /// Create a new upstream client from configuration.
+    #[must_use]
     pub fn new(config: UpstreamServerConfig) -> Self {
         Self {
             name: config.name.clone(),
@@ -62,10 +79,14 @@ impl UpstreamClient {
         }
     }
 
+    /// Connect to the upstream server and discover available tools.
+    ///
+    /// # Errors
+    /// Returns `GatewayError::ConnectionFailed` if connection fails.
     pub async fn connect(&mut self) -> GatewayResult<()> {
         match &self.config.transport {
             TransportType::Stdio { command, args, env } => {
-                let args_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+                let args_refs: Vec<&str> = args.iter().map(String::as_str).collect();
                 let env_refs: Vec<(&str, &str)> =
                     env.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
 
@@ -78,7 +99,7 @@ impl UpstreamClient {
                             .filter(|t| self.is_tool_allowed(&t.name))
                             .map(|mut t| {
                                 t.prefixed_name = format!("{}{}", self.prefix, t.name);
-                                t.upstream = self.name.clone();
+                                t.upstream.clone_from(&self.name);
                                 t
                             })
                             .collect();
@@ -132,14 +153,22 @@ impl UpstreamClient {
         true
     }
 
+    /// Get the list of tools available from this upstream.
+    #[must_use]
     pub fn tools(&self) -> &[McpToolInfo] {
         &self.tools
     }
 
+    /// Get the current connection state.
+    #[must_use]
     pub fn state(&self) -> ConnectionState {
         self.state
     }
 
+    /// Call a tool on this upstream.
+    ///
+    /// # Errors
+    /// Returns error if not connected, tool call fails, or times out.
     pub async fn call_tool(
         &self,
         tool_name: &str,
@@ -157,6 +186,7 @@ impl UpstreamClient {
             .map_err(|e| GatewayError::ToolCallFailed(e.to_string()))
     }
 
+    /// Disconnect from the upstream server.
     pub fn disconnect(&mut self) {
         self.executor = None;
         self.tools.clear();
@@ -171,6 +201,8 @@ pub struct McpGatewayManager {
 }
 
 impl McpGatewayManager {
+    /// Create a new empty gateway manager.
+    #[must_use]
     pub fn new() -> Self {
         Self {
             upstreams: HashMap::new(),
@@ -179,6 +211,9 @@ impl McpGatewayManager {
     }
 
     /// Create and connect to all upstreams from config.
+    ///
+    /// # Errors
+    /// Returns error if any upstream fails to connect (logged but continues).
     pub async fn from_config(config: &McpConfig) -> GatewayResult<Self> {
         let mut manager = Self::new();
 
@@ -192,6 +227,9 @@ impl McpGatewayManager {
     }
 
     /// Add and connect to an upstream server.
+    ///
+    /// # Errors
+    /// Returns error if upstream name/prefix is duplicate or connection fails.
     pub async fn add_upstream(&mut self, config: UpstreamServerConfig) -> GatewayResult<()> {
         let name = config.name.clone();
         let prefix = config.prefix.clone();
@@ -246,7 +284,10 @@ impl McpGatewayManager {
     }
 
     /// Remove an upstream server.
-    pub async fn remove_upstream(&mut self, name: &str) -> GatewayResult<()> {
+    ///
+    /// # Errors
+    /// Returns error if upstream not found.
+    pub fn remove_upstream(&mut self, name: &str) -> GatewayResult<()> {
         let mut client = self
             .upstreams
             .remove(name)
@@ -273,10 +314,13 @@ impl McpGatewayManager {
     /// Find which upstream owns a tool by its prefixed name.
     #[must_use]
     pub fn find_upstream(&self, prefixed_tool_name: &str) -> Option<&str> {
-        self.tool_index.get(prefixed_tool_name).map(|s| s.as_str())
+        self.tool_index.get(prefixed_tool_name).map(String::as_str)
     }
 
     /// Call a tool by its prefixed name.
+    ///
+    /// # Errors
+    /// Returns error if tool or upstream not found, or call fails.
     pub async fn call_tool(
         &self,
         prefixed_name: &str,
@@ -311,9 +355,8 @@ impl McpGatewayManager {
     }
 
     /// Get upstream names.
-    #[must_use]
     pub fn upstream_names(&self) -> impl Iterator<Item = &str> {
-        self.upstreams.keys().map(|s| s.as_str())
+        self.upstreams.keys().map(String::as_str)
     }
 
     /// Get upstream count.
@@ -329,6 +372,9 @@ impl McpGatewayManager {
     }
 
     /// Try to reconnect a disconnected upstream.
+    ///
+    /// # Errors
+    /// Returns error if upstream not found or reconnection fails.
     pub async fn reconnect(&mut self, name: &str) -> GatewayResult<()> {
         let client = self
             .upstreams
