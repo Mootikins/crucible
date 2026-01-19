@@ -61,7 +61,7 @@ impl AgentInitParams {
             agent_type: None,
             agent_name: None,
             provider_key: None,
-            read_only: true,
+            read_only: false,
             max_context_tokens: None,
             env_overrides: std::collections::HashMap::new(),
             working_dir: None,
@@ -705,7 +705,7 @@ mod tests {
         assert_eq!(params.agent_type, None);
         assert_eq!(params.agent_name, None);
         assert_eq!(params.provider_key, None);
-        assert!(params.read_only);
+        assert!(!params.read_only);
         assert_eq!(params.max_context_tokens, None);
     }
 

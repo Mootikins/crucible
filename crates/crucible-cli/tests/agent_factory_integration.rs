@@ -28,7 +28,7 @@ fn test_agent_init_params_default() {
     assert_eq!(params.agent_type, None);
     assert_eq!(params.agent_name, None);
     assert_eq!(params.provider_key, None);
-    assert!(params.read_only);
+    assert!(!params.read_only);
     assert_eq!(params.max_context_tokens, None);
 }
 
@@ -134,20 +134,20 @@ fn test_max_context_tokens_boundary_values() {
 
 #[test]
 fn test_read_only_toggle() {
-    // Default should be read-only
+    // Default should be read-write (normal mode)
     let default_params = AgentInitParams::default();
-    assert!(default_params.read_only);
+    assert!(!default_params.read_only);
 
-    // Explicit false
-    let write_params = AgentInitParams::new().with_read_only(false);
-    assert!(!write_params.read_only);
+    // Explicit true
+    let read_only_params = AgentInitParams::new().with_read_only(true);
+    assert!(read_only_params.read_only);
 
     // Toggle back and forth
     let toggled = AgentInitParams::new()
-        .with_read_only(false)
         .with_read_only(true)
-        .with_read_only(false);
-    assert!(!toggled.read_only);
+        .with_read_only(false)
+        .with_read_only(true);
+    assert!(toggled.read_only);
 }
 
 #[test]
