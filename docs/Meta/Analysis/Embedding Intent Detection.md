@@ -16,7 +16,7 @@ Research into using embeddings for detecting tool/action intent from text stream
 
 ## Core Idea
 
-Expose embedding primitives to scripting (Lua/Rune) so plugin authors can build custom intent detection for their use cases.
+Expose embedding primitives to scripting (Lua) so plugin authors can build custom intent detection for their use cases.
 
 ## Proposed Scripting API
 
@@ -56,7 +56,7 @@ Different detection strategies suit different contexts:
 
 ## Research Findings
 
-See [[tool-embedding-strategies]] for detailed benchmarks.
+See [[Tool Embedding Strategies]] for detailed benchmarks.
 
 **TL;DR**: Pure embeddings struggle with technical content ("the search algorithm" vs "search for X"). Hybrid approach (patterns + embeddings) achieves 81% accuracy with 4% FP rate.
 
@@ -66,5 +66,5 @@ Parked. Core embedding infrastructure exists. Scripting API exposure is future w
 
 ## Related
 
-- [[tool-embedding-strategies]] - Detailed benchmark results
+- [[Tool Embedding Strategies]] - Detailed benchmark results
 - [[Help/Extending/Scripting Languages]] - Plugin development guide
