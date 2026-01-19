@@ -3569,12 +3569,10 @@ dependencies = [
  "crucible-core",
  "crucible-lance",
  "crucible-lua",
- "crucible-rune",
  "crucible-sqlite",
  "crucible-surrealdb",
  "rand 0.9.2",
  "rand_chacha 0.9.0",
- "rune",
  "rusqlite",
  "serde_json",
  "tempfile",
@@ -3608,7 +3606,6 @@ dependencies = [
  "crucible-observe",
  "crucible-pipeline",
  "crucible-rig",
- "crucible-rune",
  "crucible-skills",
  "crucible-sqlite",
  "crucible-surrealdb",
@@ -3977,37 +3974,6 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "uuid",
-]
-
-[[package]]
-name = "crucible-rune"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-trait",
- "crucible-config",
- "crucible-core",
- "dirs 6.0.0",
- "glob",
- "humantime-serde",
- "once_cell",
- "oq",
- "parking_lot",
- "regex",
- "rune",
- "rune-modules",
- "serde",
- "serde_json",
- "serde_yaml",
- "shellexpand",
- "tempfile",
- "thiserror 2.0.17",
- "tokio",
- "tokio-test",
- "toml 0.9.10+spec-1.1.0",
- "toon-format",
- "tracing",
- "tracing-subscriber",
 ]
 
 [[package]]
@@ -7981,16 +7947,6 @@ name = "humantime"
 version = "2.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "135b12329e5e3ce057a9f972339ea52bc954fe1e9358ef27f95e89716fbc5424"
-
-[[package]]
-name = "humantime-serde"
-version = "1.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "57a3db5ea5923d99402c94e9feb261dc5ee9b4efa158b0315f788cf549cc200c"
-dependencies = [
- "humantime",
- "serde",
-]
 
 [[package]]
 name = "hyper"
@@ -13359,19 +13315,6 @@ dependencies = [
  "quote",
  "rune-core",
  "syn 2.0.111",
-]
-
-[[package]]
-name = "rune-modules"
-version = "0.14.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5f4ef5dc3546042989f4abc70d6b9f707a539d5cbb5cb2fb167f8fbe891e1b64"
-dependencies = [
- "reqwest",
- "rune",
- "serde_json",
- "tokio",
- "toml 0.8.23",
 ]
 
 [[package]]

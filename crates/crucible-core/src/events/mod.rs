@@ -93,16 +93,13 @@
 //!
 //! # Script Handlers
 //!
-//! For Rune scripts, use `crucible_rune::RuneHandler`.
 //! For Lua scripts, use `crucible_lua::LuaHandler`.
-//!
-//! Both implement the `Handler` trait and use `spawn_blocking` for async execution.
+//! It implements the `Handler` trait and uses `spawn_blocking` for async execution.
 //!
 //! # Legacy EventBus
 //!
 //! The `emitter` and `subscriber` modules provide the older EventBus pattern.
-//! The `crucible_rune::event_bus` module is transitional and being migrated
-//! to use the Reactor pattern. New code should use `Reactor` directly.
+//! New code should use `Reactor` directly.
 
 pub mod builtin_handlers;
 pub mod dependency;
