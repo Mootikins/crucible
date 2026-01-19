@@ -201,6 +201,34 @@ fn chat_input_backspace() {
     session.send_control('c').expect("Failed to send Ctrl+C");
 }
 
+/// Regression test: backspace should not delete terminal scrollback
+#[test]
+#[ignore = "requires built binary"]
+fn chat_backspace_preserves_scrollback() {
+    let mut session = TuiTestBuilder::new()
+        .command("chat")
+        .timeout(10)
+        .spawn()
+        .expect("Failed to spawn chat");
+
+    session.wait(Duration::from_secs(1));
+
+    session.send("Hello").expect("Failed to send text");
+    session.wait(Duration::from_millis(200));
+
+    for _ in 0..5 {
+        session
+            .send_key(Key::Backspace)
+            .expect("Failed to send backspace");
+        session.wait(Duration::from_millis(100));
+    }
+
+    session.send("Done").expect("Failed to send text");
+    session.wait(Duration::from_millis(200));
+
+    session.send_control('c').expect("Failed to send Ctrl+C");
+}
+
 // =============================================================================
 // Slash Command Tests
 // =============================================================================

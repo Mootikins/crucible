@@ -41,7 +41,15 @@ impl OutputBuffer {
         self.terminal_height = height;
     }
 
-    pub fn render(&mut self, content: &str) -> io::Result<()> {
+    pub fn render(&mut self, content: &str) -> io::Result<bool> {
+        self.render_with_cursor_restore(content, 0)
+    }
+
+    pub fn render_with_cursor_restore(
+        &mut self,
+        content: &str,
+        cursor_offset_from_end: u16,
+    ) -> io::Result<bool> {
         let all_lines: Vec<String> = collapse_blank_lines(content);
 
         let line_visual_rows: Vec<usize> = all_lines
@@ -67,7 +75,7 @@ impl OutputBuffer {
                 .all(|(a, b)| lines_visually_equal(a, b));
 
         if all_equal {
-            return Ok(());
+            return Ok(false);
         }
 
         tracing::debug!(
@@ -77,23 +85,26 @@ impl OutputBuffer {
             width = self.terminal_width,
             height = self.terminal_height,
             force = self.force_next_redraw,
+            cursor_offset_from_end,
             "render"
         );
 
         self.force_next_redraw = false;
 
         if self.previous_visual_rows > 0 {
-            tracing::trace!(
-                move_up = self.previous_visual_rows.saturating_sub(1),
-                "cursor move up"
-            );
-            execute!(
-                self.stdout,
-                cursor::MoveUp(self.previous_visual_rows.saturating_sub(1) as u16),
-                cursor::MoveToColumn(0),
-            )?;
-        } else {
-            tracing::trace!("no cursor move (previous_visual_rows=0)");
+            let move_up_amount = (self.previous_visual_rows as u16)
+                .saturating_sub(1)
+                .saturating_sub(cursor_offset_from_end);
+            tracing::trace!(move_up_amount, "cursor move up");
+            if move_up_amount > 0 {
+                execute!(
+                    self.stdout,
+                    cursor::MoveUp(move_up_amount),
+                    cursor::MoveToColumn(0),
+                )?;
+            } else {
+                execute!(self.stdout, cursor::MoveToColumn(0))?;
+            }
         }
 
         execute!(
@@ -112,7 +123,7 @@ impl OutputBuffer {
         self.previous_lines = viewport_lines;
         self.previous_visual_rows = viewport_visual_rows;
 
-        Ok(())
+        Ok(true)
     }
 
     pub fn clear(&mut self) -> io::Result<()> {

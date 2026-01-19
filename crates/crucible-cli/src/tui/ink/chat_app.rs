@@ -1863,7 +1863,8 @@ impl InkChatApp {
 
     fn render_input(&self, ctx: &ViewContext<'_>) -> Node {
         let width = terminal_width();
-        let is_focused = ctx.is_focused(FOCUS_INPUT);
+        // TODO: Wire up proper focus registration. For now, input is focused when no popup is visible.
+        let is_focused = !self.show_popup || ctx.is_focused(FOCUS_INPUT);
         let input_mode = self.detect_input_mode();
 
         let prompt = input_mode.prompt();
