@@ -65,9 +65,11 @@ pub struct ExtendedMcpServer {
     clippy::too_many_lines,
     clippy::missing_panics_doc,
     clippy::unused_self,
-    clippy::cast_possible_truncation
+    clippy::cast_possible_truncation,
+    missing_docs
 )]
 impl ExtendedMcpServer {
+    /// Create a new extended MCP server with full plugin discovery.
     pub async fn new(
         kiln_path: String,
         knowledge_repo: Arc<dyn KnowledgeRepository>,

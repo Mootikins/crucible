@@ -452,11 +452,11 @@ impl LuaSessionBuilder {
         let handlers = if self.handler_paths.is_empty() {
             LuaScriptHandlerRegistry::new()
         } else {
-            LuaScriptHandlerRegistry::discover(&self.handler_paths).map_err(|e| LuaError::Io(e))?
+            LuaScriptHandlerRegistry::discover(&self.handler_paths).map_err(LuaError::Io)?
         };
 
         // Create or use provided Lua instance
-        let lua = self.lua.unwrap_or_else(|| Lua::new());
+        let lua = self.lua.unwrap_or_default();
 
         Ok(LuaSession {
             config,
