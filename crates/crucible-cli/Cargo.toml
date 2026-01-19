@@ -76,7 +76,7 @@ colored = { workspace = true }
 
 # Interactive UI
 indicatif = { workspace = true }
-dialoguer = "0.11"
+dialoguer = "0.12"
 
 # Logging
 tracing = { workspace = true }
@@ -116,7 +116,7 @@ similar = "2.7"
 textwrap = "0.16.2"
 
 # Flexbox layout for ink TUI
-taffy = "0.7"
+taffy = "0.9"
 
 [dev-dependencies]
 crucible-cli = { path = ".", features = ["test-utils"] }  # Enable test utilities
