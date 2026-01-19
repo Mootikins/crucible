@@ -19,12 +19,12 @@ use anyhow::Result;
 use clap::Parser;
 use crucible_core::enrichment::EmbeddingProvider;
 use crucible_llm::embeddings::CoreProviderAdapter;
-
+use crucible_tools::mcp_gateway::McpGatewayManager;
 use crucible_tools::{ExtendedMcpServer, ExtendedMcpService};
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
 use crate::config::CliConfig;
 use crate::core_facade::KilnContext;
@@ -137,6 +137,36 @@ pub async fn execute(config: CliConfig, args: McpArgs) -> Result<()> {
         )
         .await
         .map_err(|e| anyhow::anyhow!("Failed to create ExtendedMcpServer: {}", e))?
+    };
+
+    let server = if let Some(mcp_config) = &config.mcp {
+        if !mcp_config.servers.is_empty() {
+            info!(
+                "Initializing MCP gateway with {} upstream servers",
+                mcp_config.servers.len()
+            );
+            match McpGatewayManager::from_config(mcp_config).await {
+                Ok(gateway) => {
+                    let gateway_tools = gateway.tool_count();
+                    info!(
+                        "Gateway loaded {} tools from upstream servers",
+                        gateway_tools
+                    );
+                    server.with_gateway(gateway)
+                }
+                Err(e) => {
+                    warn!(
+                        "Failed to initialize gateway: {}. Continuing without gateway.",
+                        e
+                    );
+                    server
+                }
+            }
+        } else {
+            server
+        }
+    } else {
+        server
     };
 
     let tool_count = server.tool_count().await;
