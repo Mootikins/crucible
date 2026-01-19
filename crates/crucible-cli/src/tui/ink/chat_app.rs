@@ -1839,15 +1839,26 @@ impl InkChatApp {
         let bottom_edge = styled("▀".repeat(width), Style::new().fg(INPUT_BG));
 
         let prefix = " > ";
-        let suffix = " ";
-        let used = prefix.len() + content.len() + suffix.len();
-        let padding = " ".repeat(width.saturating_sub(used));
-        let content_line = styled(
-            format!("{}{}{}{}", prefix, content, padding, suffix),
-            Style::new().bg(INPUT_BG),
-        );
+        let continuation_prefix = "   ";
+        let content_width = width.saturating_sub(prefix.len() + 1);
+        let lines = wrap_content(content, content_width);
 
-        col([text(""), top_edge, content_line, bottom_edge])
+        let mut rows: Vec<Node> = Vec::with_capacity(lines.len() + 3);
+        rows.push(text(""));
+        rows.push(top_edge);
+
+        for (i, line) in lines.iter().enumerate() {
+            let line_len = line.chars().count();
+            let line_padding = " ".repeat(content_width.saturating_sub(line_len) + 1);
+            let line_prefix = if i == 0 { prefix } else { continuation_prefix };
+            rows.push(styled(
+                format!("{}{}{}", line_prefix, line, line_padding),
+                Style::new().bg(INPUT_BG),
+            ));
+        }
+
+        rows.push(bottom_edge);
+        col(rows)
     }
 
     fn detect_input_mode(&self) -> InputMode {
@@ -1863,7 +1874,6 @@ impl InkChatApp {
 
     fn render_input(&self, ctx: &ViewContext<'_>) -> Node {
         let width = terminal_width();
-        // TODO: Wire up proper focus registration. For now, input is focused when no popup is visible.
         let is_focused = !self.show_popup || ctx.is_focused(FOCUS_INPUT);
         let input_mode = self.detect_input_mode();
 
@@ -1880,8 +1890,23 @@ impl InkChatApp {
             InputMode::Normal => content,
         };
 
+        let cursor_offset = if matches!(input_mode, InputMode::Command | InputMode::Shell) {
+            1
+        } else {
+            0
+        };
+        let display_cursor = self.input.cursor().saturating_sub(cursor_offset);
+
         let content_width = width.saturating_sub(prompt.len() + 1);
         let lines = wrap_content(display_content, content_width);
+
+        let (cursor_line, cursor_col) = if content_width > 0 && !lines.is_empty() {
+            let line_idx = display_cursor / content_width;
+            let col_in_line = display_cursor % content_width;
+            (line_idx.min(lines.len() - 1), col_in_line)
+        } else {
+            (0, display_cursor)
+        };
 
         let mut rows: Vec<Node> = Vec::with_capacity(lines.len() + 2);
         rows.push(top_edge);
@@ -1889,32 +1914,23 @@ impl InkChatApp {
         for (i, line) in lines.iter().enumerate() {
             let line_len = line.chars().count();
             let line_padding = " ".repeat(content_width.saturating_sub(line_len) + 1);
+            let line_prefix = if i == 0 { prompt } else { "   " };
 
-            if i == 0 {
-                let cursor_offset = if matches!(input_mode, InputMode::Command | InputMode::Shell) {
-                    1
-                } else {
-                    0
-                };
+            if i == cursor_line && is_focused {
                 rows.push(row([
-                    styled(prompt, Style::new().bg(bg)),
+                    styled(line_prefix, Style::new().bg(bg)),
                     Node::Input(crate::tui::ink::node::InputNode {
                         value: line.to_string(),
-                        cursor: self
-                            .input
-                            .cursor()
-                            .saturating_sub(cursor_offset)
-                            .min(line.len()),
+                        cursor: cursor_col.min(line_len),
                         placeholder: None,
                         style: Style::new().bg(bg),
-                        focused: is_focused,
+                        focused: true,
                     }),
                     styled(line_padding, Style::new().bg(bg)),
                 ]));
             } else {
-                let prefix_padding = " ".repeat(prompt.len());
                 rows.push(styled(
-                    format!("{}{}{}", prefix_padding, line, line_padding),
+                    format!("{}{}{}", line_prefix, line, line_padding),
                     Style::new().bg(bg),
                 ));
             }
