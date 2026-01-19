@@ -199,5 +199,5 @@ fn test_empty_conversation() {
 ## See Also
 
 - [[Help/TUI/Index]] - TUI overview
-- [[Help/TUI/Rune API]] - Scripting interface
+- [[Help/Lua/TUI Module]] - Scripting interface
 - [[Help/Extending/Creating Plugins]] - Plugin development

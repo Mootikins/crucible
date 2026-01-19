@@ -171,25 +171,6 @@ local function decide_action(context)
 end
 ```
 
-## Rune Equivalent
-
-Rune has the same functionality via `ask_agent`:
-
-```rune
-use crucible::ask::{batch, question};
-
-pub async fn main() {
-    let b = batch()
-        .question(question("Auth", "Method?")
-            .choice("OAuth")
-            .choice("JWT"));
-
-    let response = ask_agent(b)?;
-    let answer = response.get_answer(0)?;
-    let selected = answer.selected_indices();
-}
-```
-
 ## See Also
 
 - [[Help/Extending/Custom Handlers]] - Using ask_agent in handlers

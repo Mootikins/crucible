@@ -21,7 +21,7 @@ Ideas for extending workflow markup with DAG execution and hook-based guides.
 | Layer | Purpose | Vocabulary | Processor |
 |-------|---------|------------|-----------|
 | **Agent guardrails** | Shape LLM behavior | Checkboxes + prose | Agent reads & infers |
-| **Programmatic DAGs** | Formal execution | Rich metadata | Rune/TaskGraph code |
+| **Programmatic DAGs** | Formal execution | Rich metadata | Lua/TaskGraph code |
 
 **Key insight**: Tasks ARE inline system prompts. The agent's context window IS the runtime.
 

@@ -1,43 +1,44 @@
 ---
-description: React to events in your kiln with Rune scripts
+description: React to events in your kiln with Lua scripts
 status: implemented
 tags:
   - extending
   - hooks
-  - rune
+  - lua
   - events
 aliases:
   - Hooks
-  - Rune Hooks
+  - Lua Hooks
 ---
 
 # Event Hooks
 
-Event hooks let you react to things happening in your kiln - tool calls, note changes, server connections. Write a Rune function, add an attribute, and Crucible calls it automatically.
+Event hooks let you react to things happening in your kiln - tool calls, note changes, server connections. Write a Lua function, add an annotation, and Crucible calls it automatically.
 
 ## Basic Example
 
-```rune
-/// Log every tool call
-#[hook(event = "tool:after", pattern = "*")]
-pub fn log_tools(ctx, event) {
-    println("Tool called: {}", event.identifier);
-    event
-}
+```lua
+--- Log every tool call
+-- @handler event="tool:after" pattern="*" priority=100
+function log_tools(ctx, event)
+    crucible.log("info", "Tool called: " .. event.identifier)
+    return event
+end
 ```
 
-Place this in a `.rn` file in your `Scripts/` folder and it runs whenever a tool executes.
+Place this in a `.lua` file in your `plugins/` folder and it runs whenever a tool executes.
 
-## The Hook Attribute
+## The Handler Annotation
 
-Every hook needs the `#[hook(...)]` attribute:
+Every hook needs the `@handler` annotation:
 
-```rune
-#[hook(event = "tool:after", pattern = "gh_*", priority = 50)]
-pub fn my_hook(ctx, event) {
-    // Process event
-    event  // Always return the event
-}
+```lua
+--- My hook description
+-- @handler event="tool:after" pattern="gh_*" priority=50
+function my_hook(ctx, event)
+    -- Process event
+    return event  -- Always return the event
+end
 ```
 
 **Parameters:**
@@ -67,83 +68,83 @@ pub fn my_hook(ctx, event) {
 
 Patterns use glob syntax:
 
-```rune
-#[hook(event = "tool:after", pattern = "*")]        // All tools
-#[hook(event = "tool:after", pattern = "gh_*")]     // GitHub tools
-#[hook(event = "tool:after", pattern = "just_test*")] // Just test recipes
+```lua
+-- @handler event="tool:after" pattern="*"           -- All tools
+-- @handler event="tool:after" pattern="gh_*"        -- GitHub tools
+-- @handler event="tool:after" pattern="just_test*"  -- Just test recipes
 ```
 
 ## Practical Examples
 
 ### Filter Verbose Output
 
-```rune
-/// Keep only summary from test output
-#[hook(event = "tool:after", pattern = "just_test*", priority = 10)]
-pub fn filter_test_output(ctx, event) {
-    let result = event.payload.result;
+```lua
+--- Keep only summary from test output
+-- @handler event="tool:after" pattern="just_test*" priority=10
+function filter_test_output(ctx, event)
+    local result = event.payload.result
 
-    if let Some(content) = result.content {
-        let text = content[0].text;
-        let filtered = keep_summary_lines(text);
-        content[0].text = filtered;
-    }
+    if result and result.content then
+        local text = result.content[1].text
+        local filtered = keep_summary_lines(text)
+        result.content[1].text = filtered
+    end
 
-    event
-}
+    return event
+end
 ```
 
 ### Block Dangerous Operations
 
-```rune
-/// Prevent accidental deletions
-#[hook(event = "tool:before", pattern = "*delete*", priority = 5)]
-pub fn block_deletes(ctx, event) {
-    println("Blocked: {}", event.identifier);
-    event.cancelled = true;
-    event
-}
+```lua
+--- Prevent accidental deletions
+-- @handler event="tool:before" pattern="*delete*" priority=5
+function block_deletes(ctx, event)
+    crucible.log("warn", "Blocked: " .. event.identifier)
+    event.cancelled = true
+    return event
+end
 ```
 
 ### Add Metadata to Tools
 
-```rune
-/// Tag tools by category
-#[hook(event = "tool:discovered", pattern = "just_*", priority = 5)]
-pub fn categorize_recipes(ctx, event) {
-    let name = event.identifier;
+```lua
+--- Tag tools by category
+-- @handler event="tool:discovered" pattern="just_*" priority=5
+function categorize_recipes(ctx, event)
+    local name = event.identifier
 
-    if name.contains("test") {
-        event.payload.category = "testing";
-    } else if name.contains("build") {
-        event.payload.category = "build";
-    }
+    if string.find(name, "test") then
+        event.payload.category = "testing"
+    elseif string.find(name, "build") then
+        event.payload.category = "build"
+    end
 
-    event
-}
+    return event
+end
 ```
 
 ## The Event Object
 
 Hooks receive an `event` with these fields:
 
-```rune
-event.event_type    // "tool:after", "note:parsed", etc.
-event.identifier    // Tool name, note path, etc.
-event.payload       // Event-specific data
-event.timestamp_ms  // When it happened
-event.cancelled     // Set true to cancel (tool:before only)
+```lua
+event.event_type    -- "tool:after", "note:parsed", etc.
+event.identifier    -- Tool name, note path, etc.
+event.payload       -- Event-specific data
+event.timestamp_ms  -- When it happened
+event.cancelled     -- Set true to cancel (tool:before only)
 ```
 
 ## The Context Object
 
 Use `ctx` to store data and emit new events:
 
-```rune
-ctx.set("key", value)           // Store data
-ctx.get("key")                  // Retrieve data
-ctx.emit_custom("my:event", #{  // Emit custom event
-    data: "value"
+```lua
+ctx:set("key", value)           -- Store data
+ctx:get("key")                  -- Retrieve data
+ctx:emit("my:event", {          -- Emit custom event
+    data = "value"
 })
 ```
 
@@ -164,34 +165,35 @@ Lower numbers run earlier:
 
 ### Multi-Stage Processing
 
-```rune
-/// Stage 1: Extract data
-#[hook(event = "note:parsed", pattern = "*", priority = 10)]
-pub fn extract(ctx, event) {
-    ctx.set("tags", event.payload.tags);
-    event
-}
+```lua
+--- Stage 1: Extract data
+-- @handler event="note:parsed" pattern="*" priority=10
+function extract(ctx, event)
+    ctx:set("tags", event.payload.tags)
+    return event
+end
 
-/// Stage 2: Use extracted data
-#[hook(event = "note:parsed", pattern = "*", priority = 20)]
-pub fn process(ctx, event) {
-    if let Some(tags) = ctx.get("tags") {
-        // Process tags
-    }
-    event
-}
+--- Stage 2: Use extracted data
+-- @handler event="note:parsed" pattern="*" priority=20
+function process(ctx, event)
+    local tags = ctx:get("tags")
+    if tags then
+        -- Process tags
+    end
+    return event
+end
 ```
 
 ### Conditional Processing
 
-```rune
-#[hook(event = "tool:after", pattern = "*", priority = 100)]
-pub fn conditional(ctx, event) {
-    if should_process(event) {
-        // Do something
-    }
-    event
-}
+```lua
+-- @handler event="tool:after" pattern="*" priority=100
+function conditional(ctx, event)
+    if should_process(event) then
+        -- Do something
+    end
+    return event
+end
 ```
 
 ## Best Practices
@@ -204,9 +206,7 @@ pub fn conditional(ctx, event) {
 
 ## See Also
 
-- [[Help/Rune/Event Types]] - Complete event type reference
-- [[Help/Rune/Error Handling]] - Fail-open semantics
-- [[Help/Rune/Language Basics]] - Rune syntax
-- [[Help/Rune/Crucible API]] - Available functions
+- [[Help/Extending/Custom Handlers]] - Advanced handler development
 - [[Help/Extending/MCP Gateway]] - External tool integration
+- [[Help/Lua/Language Basics]] - Lua syntax
 - [[Extending Crucible]] - All extension points

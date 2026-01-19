@@ -38,5 +38,4 @@ This makes Steel ideal for building validated pipelines where correctness matter
 
 ## See Also
 
-- [[Help/Rune/Language Basics]] — Rune reference
 - [[Help/Lua/Language Basics]] — Lua reference

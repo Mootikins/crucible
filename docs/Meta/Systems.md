@@ -20,7 +20,7 @@ This document defines the orthogonal systems that make up Crucible. Each system 
 | **sync** | Merkle-CRDT sync across devices, collaborators, and federated agents | `crucible-sync` (future) |
 | **agents** | Agent cards, handles, LLM providers, tool registry | `crucible-core/agents`, `crucible-llm`, `crucible-tools`, `crucible-acp` |
 | **workflows** | Definitions (markup) + sessions (logging, resumption) | `crucible-core/workflow` (future) |
-| **plugins** | Extension points, hooks, scripting (Rune) | `crucible-rune`, `crucible-lua` |
+| **plugins** | Extension points, hooks, scripting (Lua) | `crucible-lua` |
 | **apis** | HTTP REST, WebSocket, events | `crucible-web` |
 | **cli** | Commands, REPL, TUI, configuration | `crucible-cli`, `crucible-config` |
 
@@ -88,7 +88,7 @@ See: [[Help/Workflows/Workflow Syntax]]
 Extension and customization layer.
 
 - Hook points (pre/post processing)
-- Scripting runtime (Rune, Lua)
+- Scripting runtime (Lua with Fennel support)
 - Event handlers in markdown
 
 See: [[Help/Extending/Event Hooks]], [[Help/Extending/Markdown Handlers]]

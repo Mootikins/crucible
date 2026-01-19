@@ -2,58 +2,14 @@
 
 MVP-level API designs for Crucible's plugin/extension system, based on patterns from Neovim, Emacs, Obsidian, VSCode, and Bevy.
 
+> **Note**: Crucible uses Lua (via mlua) as its primary scripting language, with Fennel as an optional layer.
+> See [[Meta/Analysis/Scripting Language Philosophy]] for the rationale.
+
 ---
 
 ## 1. Basic Hooks on Events
 
 The simplest extension point: subscribe to events, optionally modify or cancel them.
-
-### Rune API
-
-```rune
-//! Event Hook Plugin
-//! Demonstrates basic event subscription
-
-/// Plugin initialization - called once on load
-pub fn init(ctx) {
-    // Subscribe to events with priority
-    ctx.on("note:before_save", on_before_save, #{ priority: -50 });
-    ctx.on("note:saved", on_saved, #{ priority: 0 });
-    ctx.on("tool:after", on_tool_result, #{ pattern: "search_*" });
-
-    Ok(())
-}
-
-/// Before-save hook: can modify or cancel
-fn on_before_save(event, ctx) {
-    let note = event.payload;
-
-    // Validation: cancel if invalid
-    if note.content.len() == 0 {
-        return #{ cancel: true, reason: "Empty note not allowed" };
-    }
-
-    // Modification: add timestamp
-    note.frontmatter.modified = ctx.now();
-
-    // Continue with modified payload
-    #{ payload: note }
-}
-
-/// After-save hook: notification only
-fn on_saved(event, ctx) {
-    ctx.log("info", `Saved: ${event.payload.path}`);
-    #{}  // No modifications for "after" events
-}
-
-/// Pattern-matched hook
-fn on_tool_result(event, ctx) {
-    // Only fires for tools matching "search_*"
-    let results = event.payload.results;
-    ctx.emit("custom:search_completed", #{ count: results.len() });
-    #{}
-}
-```
 
 ### Rust Host Types
 
@@ -148,106 +104,6 @@ pub trait PluginContext: Send + Sync {
 ## 2. State Machine-Based Flows
 
 For multi-step workflows with defined states and transitions.
-
-### Rune API
-
-```rune
-//! State Machine Flow Plugin
-//! Implements a review workflow with explicit states
-
-/// Define the workflow states and transitions
-pub fn define_flow() {
-    #{
-        id: "review_workflow",
-        initial: "draft",
-
-        states: #{
-            draft: #{
-                on: #{
-                    submit: "pending_review",
-                    discard: "discarded",
-                },
-                enter: on_enter_draft,
-            },
-            pending_review: #{
-                on: #{
-                    approve: "approved",
-                    reject: "draft",
-                    request_changes: "needs_changes",
-                },
-                enter: on_enter_pending,
-                guards: #{
-                    approve: can_approve,
-                },
-            },
-            needs_changes: #{
-                on: #{
-                    resubmit: "pending_review",
-                    discard: "discarded",
-                },
-            },
-            approved: #{
-                type: "final",
-                enter: on_approved,
-            },
-            discarded: #{
-                type: "final",
-            },
-        },
-
-        // Global context available to all handlers
-        context: #{
-            reviewer: None,
-            comments: [],
-            history: [],
-        },
-    }
-}
-
-/// Guard: check if user can approve
-fn can_approve(ctx, event) {
-    // Can't approve your own submission
-    ctx.context.submitter != ctx.current_user
-}
-
-/// State entry handler
-fn on_enter_draft(ctx, event) {
-    ctx.context.comments = [];
-    ctx.log("info", "Entered draft state");
-}
-
-fn on_enter_pending(ctx, event) {
-    ctx.context.submitted_at = ctx.now();
-    ctx.emit("notification:review_requested", #{
-        note: ctx.subject,
-        submitter: ctx.current_user,
-    });
-}
-
-fn on_approved(ctx, event) {
-    ctx.context.approved_at = ctx.now();
-    ctx.context.approver = event.user;
-
-    // Trigger downstream actions
-    ctx.emit("workflow:completed", #{
-        workflow: "review",
-        result: "approved",
-        note: ctx.subject,
-    });
-}
-
-/// Runtime usage from the host
-pub fn start_review(note_path) {
-    crucible::flow::start("review_workflow", #{
-        subject: note_path,
-        submitter: crucible::current_user(),
-    })
-}
-
-pub fn transition(flow_id, action, data) {
-    crucible::flow::send(flow_id, action, data)
-}
-```
 
 ### Rust Host Types
 
@@ -380,132 +236,6 @@ pub trait FlowManager: Send + Sync {
 ## 3. Context/Concurrency Control for Generation
 
 Control how LLM generation happens: context assembly, concurrent vs sequential, streaming.
-
-### Rune API
-
-```rune
-//! Generation Control Plugin
-//! Demonstrates context assembly and concurrency control
-
-/// Define a generation pipeline
-pub fn define_pipeline() {
-    #{
-        id: "research_pipeline",
-
-        // Context assembly: what goes into the prompt
-        context: #{
-            // Static system prompt
-            system: "You are a research assistant...",
-
-            // Dynamic context sources (run in parallel)
-            sources: [
-                #{ type: "semantic_search", query: "${user_query}", limit: 5 },
-                #{ type: "recent_notes", folder: "Research", limit: 3 },
-                #{ type: "linked_notes", from: "${current_note}", depth: 1 },
-            ],
-
-            // Context budget (tokens)
-            max_tokens: 8000,
-
-            // Priority for truncation (higher = keep)
-            priorities: #{
-                system: 100,
-                user_message: 90,
-                semantic_search: 70,
-                recent_notes: 50,
-                linked_notes: 30,
-            },
-        },
-
-        // Generation strategy
-        strategy: #{
-            // "sequential", "parallel", "chain"
-            type: "chain",
-
-            steps: [
-                #{
-                    id: "outline",
-                    prompt: "Create an outline for: ${user_query}",
-                    model: "fast",  // Use faster model for outline
-                },
-                #{
-                    id: "expand",
-                    prompt: "Expand this outline:\n${outline.result}",
-                    model: "capable",
-                    // Run sections in parallel
-                    parallel_on: "outline.sections",
-                },
-                #{
-                    id: "synthesize",
-                    prompt: "Synthesize these sections:\n${expand.results}",
-                    model: "capable",
-                },
-            ],
-        },
-
-        // Streaming control
-        streaming: #{
-            enabled: true,
-            chunk_handler: on_chunk,
-            buffer_size: 100,  // chars before flush
-        },
-    }
-}
-
-/// Handle streaming chunks
-fn on_chunk(chunk, ctx) {
-    // Real-time processing of generation
-    if chunk.contains("```") {
-        ctx.set("in_code_block", !ctx.get("in_code_block"));
-    }
-
-    // Emit for UI updates
-    ctx.emit("generation:chunk", #{
-        step: ctx.current_step,
-        content: chunk,
-    });
-}
-
-/// Context source: custom implementation
-pub fn context_source_recent_notes(config, ctx) {
-    let notes = crucible::search(#{
-        folder: config.folder,
-        sort: "modified",
-        limit: config.limit,
-    })?;
-
-    notes.iter().map(|n| #{
-        type: "note",
-        path: n.path,
-        content: n.content,
-        tokens: crucible::count_tokens(n.content),
-    }).collect()
-}
-
-/// Run the pipeline
-pub fn run_research(query, current_note) {
-    crucible::generate::run("research_pipeline", #{
-        user_query: query,
-        current_note: current_note,
-    })
-}
-
-/// Simpler API for basic generation
-pub fn simple_generate(prompt, options) {
-    crucible::generate::complete(prompt, #{
-        model: options.model ?? "default",
-        max_tokens: options.max_tokens ?? 1000,
-        temperature: options.temperature ?? 0.7,
-
-        // Context control
-        include_context: options.include_context ?? true,
-        context_sources: options.context_sources ?? ["semantic_search"],
-
-        // Concurrency
-        stream: options.stream ?? false,
-    })
-}
-```
 
 ### Rust Host Types
 
@@ -737,13 +467,11 @@ pub struct CompletionOptions {
 
 ---
 
----
+## 4. Lua Implementation
 
-## 4. Luau Equivalents
+Lua (via mlua with Luau mode) offers gradual typing with union types, generics, and excellent Rust embedding. These sketches show the complete plugin API.
 
-Luau (Roblox's typed Lua) offers gradual typing with union types, generics, and excellent Rust embedding via `mlua`. These sketches mirror the Rune patterns above.
-
-### 4.1 Basic Hooks on Events (Luau)
+### 4.1 Basic Hooks on Events (Lua)
 
 ```lua
 --!strict
@@ -840,7 +568,7 @@ end
 return Plugin
 ```
 
-### 4.2 State Machine-Based Flows (Luau)
+### 4.2 State Machine-Based Flows (Lua)
 
 ```lua
 --!strict
@@ -1000,7 +728,7 @@ end
 return ReviewWorkflow
 ```
 
-### 4.3 Generation Control (Luau)
+### 4.3 Generation Control (Lua)
 
 ```lua
 --!strict
@@ -1202,23 +930,23 @@ end
 return ResearchPipeline
 ```
 
-### 4.4 Rust Host for Luau (mlua)
+### 4.4 Rust Host for Lua (mlua)
 
 ```rust
-//! Luau plugin host using mlua
+//! Lua plugin host using mlua
 //!
-//! Demonstrates exposing the same APIs to Luau scripts
+//! Demonstrates exposing the plugin APIs to Lua scripts
 
 use mlua::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-/// Plugin context exposed to Luau
-struct LuauPluginContext {
+/// Plugin context exposed to Lua
+struct LuaPluginContext {
     handlers: HashMap<String, Vec<LuaRegistryKey>>,
 }
 
-impl LuauPluginContext {
+impl LuaPluginContext {
     fn new() -> Self {
         Self {
             handlers: HashMap::new(),
@@ -1226,7 +954,7 @@ impl LuauPluginContext {
     }
 }
 
-impl UserData for LuauPluginContext {
+impl UserData for LuaPluginContext {
     fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
         // Subscribe to events
         methods.add_method_mut("on", |lua, this,
@@ -1267,11 +995,11 @@ impl UserData for LuauPluginContext {
             (level, message): (String, String)
         | -> LuaResult<()> {
             match level.as_str() {
-                "debug" => log::debug!("[luau] {}", message),
-                "info" => log::info!("[luau] {}", message),
-                "warn" => log::warn!("[luau] {}", message),
-                "error" => log::error!("[luau] {}", message),
-                _ => log::info!("[luau] {}", message),
+                "debug" => log::debug!("[lua] {}", message),
+                "info" => log::info!("[lua] {}", message),
+                "warn" => log::warn!("[lua] {}", message),
+                "error" => log::error!("[lua] {}", message),
+                _ => log::info!("[lua] {}", message),
             }
             Ok(())
         });
@@ -1279,14 +1007,14 @@ impl UserData for LuauPluginContext {
 }
 
 /// Flow context for state machine handlers
-struct LuauFlowContext {
+struct LuaFlowContext {
     current_state: String,
     context: HashMap<String, serde_json::Value>,
     subject: String,
     current_user: String,
 }
 
-impl UserData for LuauFlowContext {
+impl UserData for LuaFlowContext {
     fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
         methods.add_method("currentState", |_lua, this, ()| -> LuaResult<String> {
             Ok(this.current_state.clone())
@@ -1333,15 +1061,15 @@ impl UserData for LuauFlowContext {
     }
 }
 
-/// Load and initialize a Luau plugin
-pub fn load_luau_plugin(script_path: &str) -> LuaResult<()> {
+/// Load and initialize a Lua plugin
+pub fn load_lua_plugin(script_path: &str) -> LuaResult<()> {
     let lua = Lua::new();
 
     // Enable sandbox mode for untrusted plugins
     lua.sandbox(true)?;
 
     // Create and expose plugin context
-    let ctx = LuauPluginContext::new();
+    let ctx = LuaPluginContext::new();
     lua.globals().set("PluginContext", ctx)?;
 
     // Load and execute the plugin
@@ -1364,7 +1092,7 @@ pub fn dispatch_event(
     payload: serde_json::Value,
 ) -> LuaResult<Option<serde_json::Value>> {
     let ctx: LuaAnyUserData = lua.globals().get("PluginContext")?;
-    let ctx_ref = ctx.borrow::<LuauPluginContext>()?;
+    let ctx_ref = ctx.borrow::<LuaPluginContext>()?;
 
     let event_table = lua.create_table()?;
     event_table.set("type", event_type)?;
@@ -1417,17 +1145,18 @@ All three share:
 - Plugin lifecycle management (init/cleanup)
 - Event emission for cross-plugin communication
 - Async-friendly design
-- Type-safe Rust host with flexible scripting
+- Type-safe Rust host with flexible Lua scripting
 
-### Language Comparison
+### Lua Features
 
-| Feature | Rune | Luau |
-|---------|------|------|
-| **Type System** | Static (Rust-like) | Gradual (opt-in strict) |
-| **Union Types** | Limited | Full support with tagged unions |
-| **Generics** | Yes | Yes with inference |
-| **Async** | Native async/await | Via mlua + Rust executor |
-| **Sandboxing** | Rust safety guarantees | VM-level + memory/CPU limits |
-| **Learning Curve** | Medium (Rust-like) | Low (Lua familiar) |
-| **Embedding** | Native Rust crate | mlua (excellent) |
-| **IDE Support** | rustc integration | LSP + type checker |
+| Feature | Lua (via mlua) |
+|---------|----------------|
+| **Type System** | Gradual (opt-in strict with Luau) |
+| **Union Types** | Full support with tagged unions |
+| **Generics** | Yes with inference |
+| **Async** | Via mlua + Rust executor |
+| **Sandboxing** | VM-level + memory/CPU limits |
+| **Learning Curve** | Low (familiar syntax) |
+| **Embedding** | mlua (excellent) |
+| **IDE Support** | LSP + type checker |
+| **LLM Writability** | Excellent (massive training data) |

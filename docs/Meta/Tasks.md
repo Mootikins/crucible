@@ -31,9 +31,7 @@ tags:
 - [ ] Refactor InternalAgentHandle to use AgentRuntime
 
 ### Low Priority
-- [ ] Rune compilation caching
 - [ ] Just parameter type inference
-- [ ] Rune arity limit workaround (>5 params)
 - [ ] Language detection (currently defaults to "en")
 - [ ] TokenBudget integration with ContextManager
 - [ ] LayeredPromptBuilder - use or remove

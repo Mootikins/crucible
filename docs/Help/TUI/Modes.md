@@ -15,13 +15,13 @@ Modes control what actions an agent can take at runtime. They act as a permissio
 
 | Mode | Behavior | Use When |
 |------|----------|----------|
-| **Default** | Auto-read, ask for writes | Normal interactive use |
+| **Normal** | Auto-read, ask for writes | Normal interactive use (default) |
 | **Plan** | Read-only, creates plan files | Exploring options before acting |
 | **Auto** | Full access, minimal prompts | Trusted automated workflows |
 
-## Default Mode
+## Normal Mode
 
-The standard mode for interactive use. The agent can:
+The standard mode for interactive use (and the default when starting a session). The agent can:
 - Read files and search freely
 - Must ask permission for writes, deletes, or commands
 
@@ -54,12 +54,12 @@ Use auto mode carefully - it gives the agent significant autonomy.
 
 ### Keyboard
 
-Press `Shift+Tab` to cycle through modes: Default → Plan → Auto → Default
+Press `Shift+Tab` to cycle through modes: Normal → Plan → Auto → Normal
 
 ### Slash Commands
 
 ```
-/default    Switch to default mode
+/normal     Switch to normal mode
 /plan       Switch to plan mode  
 /auto       Switch to auto mode
 /mode       Cycle to next mode
@@ -70,11 +70,11 @@ Press `Shift+Tab` to cycle through modes: Default → Plan → Auto → Default
 The current mode is shown in the status bar:
 
 ```
-Default │ claude-sonnet │ 23% ctx
+Normal │ claude-sonnet │ 23% ctx
 ```
 
 Mode colors:
-- **Default** - Green
+- **Normal** - Green
 - **Plan** - Blue
 - **Auto** - Yellow
 
@@ -86,7 +86,7 @@ Modes and agent cards work together:
 2. **Mode** adds runtime restrictions (when to ask permission)
 
 Example: An agent card allows `write_file: ask`. In different modes:
-- **Default**: Prompts before each write
+- **Normal**: Prompts before each write
 - **Plan**: Blocked entirely (plan mode is read-only)
 - **Auto**: Writes without prompting
 

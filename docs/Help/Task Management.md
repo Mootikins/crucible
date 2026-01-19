@@ -13,7 +13,7 @@ aliases:
 
 # Task Management
 
-> **Status**: This feature is planned as an official Rune plugin. It will demonstrate programmatic tool generation, file-as-state patterns, and the tools→workflow bridge.
+> **Status**: This feature is planned as an official Lua plugin. It will demonstrate programmatic tool generation, file-as-state patterns, and the tools→workflow bridge.
 
 Task management in Crucible uses structured markdown files (typically `TASKS.md`) to track implementation plans. The file format is designed for both human readability and machine parsing.
 
@@ -123,7 +123,7 @@ Tasks with `[deps:: ...]` metadata won't be available until all dependencies are
 
 ## Plugin Architecture
 
-This feature will be implemented as an official Rune plugin, demonstrating:
+This feature will be implemented as an official Lua plugin, demonstrating:
 
 1. **Programmatic tool generation**: Tools are generated at initialization based on the TASKS.md format
 2. **File-as-state**: No runtime state—the markdown file is the source of truth
@@ -134,22 +134,22 @@ This feature will be implemented as an official Rune plugin, demonstrating:
 ```
 Scripts/
 └── tasks/
-    ├── plugin.rn          # Main plugin with tool generators
-    ├── parser.rn          # TASKS.md format parser
+    ├── init.lua           # Main plugin with tool generators
+    ├── parser.lua         # TASKS.md format parser
     └── README.md          # Usage documentation
 ```
 
 ### Tool Generation Pattern
 
-```rune
-// At initialization, generate tools from task format
-pub fn on_init(ctx) {
-    // Register task management tools
-    ctx.register_tool("tasks_list", tasks_list_handler);
-    ctx.register_tool("tasks_next", tasks_next_handler);
-    ctx.register_tool("tasks_pick", tasks_pick_handler);
-    ctx.register_tool("tasks_done", tasks_done_handler);
-}
+```lua
+-- At initialization, generate tools from task format
+function on_init(ctx)
+    -- Register task management tools
+    ctx:register_tool("tasks_list", tasks_list_handler)
+    ctx:register_tool("tasks_next", tasks_next_handler)
+    ctx:register_tool("tasks_pick", tasks_pick_handler)
+    ctx:register_tool("tasks_done", tasks_done_handler)
+end
 ```
 
 ## Context Optimization
@@ -206,6 +206,5 @@ Curated handoffs in the file replace expensive message passing.
 ## See Also
 
 - [[Help/Extending/Creating Plugins]] - Plugin development guide
-- [[Help/Rune/Tool Definition]] - Defining custom tools
 - [[Help/Workflows/Index]] - Workflow system overview
 - [[Meta/Plugin User Stories]] - Plugin system user stories

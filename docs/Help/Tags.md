@@ -169,7 +169,7 @@ tags:
 Use the [[Scripts/Auto Tagging]] script to suggest tags based on content:
 
 ```bash
-cru script "Scripts/Auto Tagging.rn" --note "My Note.md"
+cru script "Scripts/Auto Tagging.lua" --note "My Note.md"
 ```
 
 ## Implementation

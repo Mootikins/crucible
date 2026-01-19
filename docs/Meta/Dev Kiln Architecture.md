@@ -30,12 +30,12 @@ docs/
 │   ├── Config/              # Configuration guides
 │   ├── Concepts/            # Core concepts
 │   ├── Extending/           # Extension guides
-│   ├── Rune/                # Scripting reference
+│   ├── Lua/                 # Scripting reference
 │   ├── TUI/                 # Terminal UI reference
 │   └── ...
 ├── Organization Styles/     # PKM methodology guides
 ├── Agents/                  # Example agent cards
-├── Scripts/                 # Example Rune scripts
+├── Scripts/                 # Example Lua scripts
 ├── plugins/                 # Example plugins
 └── Meta/                    # Internal documentation
 ```
