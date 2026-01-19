@@ -76,7 +76,7 @@ enum PluginCommand {
     },
     /// Get all tool definitions
     AllTools {
-        reply: oneshot::Sender<Vec<ToolDefinition>>,
+        reply: oneshot::Sender<Vec<RuneToolDef>>,
     },
     /// Check if a tool exists
     HasTool {
@@ -171,8 +171,7 @@ impl StructPluginHandle {
                 }
                 PluginCommand::AllTools { reply } => {
                     // Clone the tool definitions to send across thread boundary
-                    let tools: Vec<ToolDefinition> =
-                        loader.all_tools().into_iter().cloned().collect();
+                    let tools: Vec<RuneToolDef> = loader.all_tools().into_iter().cloned().collect();
                     let _ = reply.send(tools);
                 }
                 PluginCommand::HasTool { name, reply } => {
@@ -241,7 +240,7 @@ impl StructPluginHandle {
     }
 
     /// Get all tool definitions from all plugins
-    pub async fn all_tools(&self) -> Vec<ToolDefinition> {
+    pub async fn all_tools(&self) -> Vec<RuneToolDef> {
         let (reply_tx, reply_rx) = oneshot::channel();
         if self
             .command_tx
@@ -365,7 +364,7 @@ impl FromAttributes for PluginMetadata {
 
 /// Tool definition returned by plugin's `tools()` method
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ToolDefinition {
+pub struct RuneToolDef {
     /// Tool name (e.g., "just_test")
     pub name: String,
     /// Tool description
@@ -398,7 +397,7 @@ struct PluginInstance {
     /// The plugin instance (Value holding the struct)
     pub instance: Value,
     /// Cached tool definitions (refreshed after on_watch)
-    pub tools: Vec<ToolDefinition>,
+    pub tools: Vec<RuneToolDef>,
 }
 
 impl PluginInstance {
@@ -484,7 +483,7 @@ impl PluginRegistry {
     }
 
     /// Get all registered tools across all plugins
-    pub fn all_tools(&self) -> Vec<&ToolDefinition> {
+    pub fn all_tools(&self) -> Vec<&RuneToolDef> {
         self.instances
             .values()
             .flat_map(|p| p.tools.iter())
@@ -749,7 +748,7 @@ impl StructPluginLoader {
         &self,
         unit: &Arc<Unit>,
         instance: &Value,
-    ) -> Result<Vec<ToolDefinition>, RuneError> {
+    ) -> Result<Vec<RuneToolDef>, RuneError> {
         // Clone the instance for the call
         let instance_clone = instance.clone();
 
@@ -790,7 +789,7 @@ impl StructPluginLoader {
 
         // Parse as array of tool definitions
         if let JsonValue::Array(arr) = json {
-            let tools: Vec<ToolDefinition> = arr
+            let tools: Vec<RuneToolDef> = arr
                 .into_iter()
                 .filter_map(|v| serde_json::from_value(v).ok())
                 .collect();
@@ -863,7 +862,7 @@ impl StructPluginLoader {
     }
 
     /// Get all tools from all plugins
-    pub fn all_tools(&self) -> Vec<&ToolDefinition> {
+    pub fn all_tools(&self) -> Vec<&RuneToolDef> {
         self.registry.all_tools()
     }
 
@@ -1038,7 +1037,7 @@ mod tests {
             ]
         });
 
-        let tool: ToolDefinition = serde_json::from_value(json).unwrap();
+        let tool: RuneToolDef = serde_json::from_value(json).unwrap();
         assert_eq!(tool.name, "just_test");
         assert_eq!(tool.description, "Run tests");
         assert_eq!(tool.parameters.len(), 1);
@@ -1052,7 +1051,7 @@ mod tests {
             "name": "my_tool"
         });
 
-        let tool: ToolDefinition = serde_json::from_value(json).unwrap();
+        let tool: RuneToolDef = serde_json::from_value(json).unwrap();
         assert_eq!(tool.name, "my_tool");
         assert_eq!(tool.description, "");
         assert!(tool.parameters.is_empty());
