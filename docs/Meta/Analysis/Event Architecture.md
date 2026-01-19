@@ -24,7 +24,7 @@ FileChanged -> NoteParsed -> EntityStored -> BlocksUpdated -> EmbeddingRequested
 
 ### EventBus
 
-The `EventBus` from `crucible-rune` is the central event dispatch mechanism. It:
+The `EventBus` is the central event dispatch mechanism. It:
 - Maintains a registry of event handlers
 - Dispatches events to handlers based on event type and pattern matching
 - Supports priority-based handler ordering
@@ -60,7 +60,7 @@ pub enum SessionEvent {
     EmbeddingFailed { entity_id, block_id, error },
     EmbeddingBatchComplete { entity_id, count, duration_ms },
 
-    // Custom Events (for Rune handlers)
+    // Custom Events (for Lua handlers)
     Custom { name, payload },
 
     // ... and more
@@ -76,7 +76,7 @@ Handlers subscribe to specific event types and perform operations when events ar
 | StorageHandler | 100 | NoteParsed, FileDeleted, FileMoved | Store/update/delete entities in EAV graph |
 | TagHandler | 110 | NoteParsed | Extract and associate tags |
 | EmbeddingHandler | 200 | NoteParsed | Generate and store embeddings |
-| Rune Handlers | 500+ | Custom | User-defined custom logic |
+| Lua Handlers | 500+ | Custom | User-defined custom logic |
 
 ### WatchManager
 
@@ -136,7 +136,7 @@ Handlers execute in priority order (lower numbers first):
 - **100**: StorageHandler (entities must exist first)
 - **110**: TagHandler (tags reference entities)
 - **200**: EmbeddingHandler (embeddings reference entities/blocks)
-- **500+**: Rune handlers (custom logic)
+- **500+**: Lua handlers (custom logic)
 
 ## Handler Result Types
 
@@ -169,24 +169,22 @@ The `EventSystemHandle` provides clean shutdown:
 handle.shutdown().await?;
 ```
 
-## Custom Handlers (Rune)
+## Custom Handlers (Lua)
 
-Users can create custom handlers in Rune scripting language. See [[Help/Extending/Event Hooks]] for the user-facing guide.
+Users can create custom handlers in Lua. See [[Help/Extending/Event Hooks]] for the user-facing guide.
 
-**Location**: `{kiln}/.crucible/handlers/*.rn`
+**Location**: `{kiln}/.crucible/handlers/*.lua`
 
-```rune
-// Example: custom_handler.rn
-pub fn handle(event) {
-    if event.event_type() == "note_parsed" {
-        // Custom processing logic
-        println!("Note parsed: {}", event.path);
-    }
-    event  // Return event to continue processing
-}
+```lua
+-- Example: custom_handler.lua
+-- @handler event="note:parsed" pattern="*" priority=500
+function handle_note_parsed(ctx, event)
+    crucible.log("info", "Note parsed: " .. event.identifier)
+    return event  -- Return event to continue processing
+end
 ```
 
-Rune handlers run at priority 500+ (after built-in handlers).
+Lua handlers run at priority 500+ (after built-in handlers).
 
 ## Integration Points
 
@@ -232,5 +230,4 @@ handle.shutdown().await?;
 ## See Also
 
 - [[Help/Extending/Event Hooks]] - User-facing hook guide
-- [[Help/Extending/Custom Handlers]] - Writing Rust and Rune handlers
-- [[Help/Rune/Event Types]] - Complete event type reference
+- [[Help/Extending/Custom Handlers]] - Writing Rust and Lua handlers

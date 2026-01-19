@@ -84,7 +84,7 @@ The crucible-core crate follows **Dependency Inversion** architecture where trai
 | Storage | ✅ | crucible-surrealdb | ✅ Active |
 | MarkdownParser | ✅ | crucible-parser | ✅ Active |
 | ContentHasher | ✅ | core (Blake3/SHA256) | ✅ Active |
-| ToolExecutor | ✅ | crucible-rune, crucible-just | ✅ Active |
+| ToolExecutor | ✅ | crucible-lua, crucible-just | ✅ Active |
 | EmbeddingProvider | ✅ | crucible-enrichment | ✅ Active |
 | RelationalDB | ✅ | None visible | ❓ Unused? |
 | GraphDB | ✅ | None visible | ❓ Unused? |

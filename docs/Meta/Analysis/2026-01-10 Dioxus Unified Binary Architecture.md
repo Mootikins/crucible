@@ -123,12 +123,10 @@ Binary sizes are small (~3-5MB) because they use system WebViews.
 
 ## Plugin Compatibility
 
-Rune/Lua scripting is **unaffected** by this architecture:
+Lua scripting is **unaffected** by this architecture:
 
 ```
-crucible-rune  ──┐
-                 ├──> Tool/Handler Registry ──> Daemon
-crucible-lua   ──┘
+crucible-lua   ──> Tool/Handler Registry ──> Daemon
                               │
                     ┌─────────┼─────────┐
                     ▼         ▼         ▼
@@ -189,7 +187,7 @@ The monolithic binary with fork-based daemon is architecturally sound:
 
 ## Relationship to DB Daemon Plan
 
-The [[plans/2024-12-31-single-binary-db-daemon|Single Binary DB Daemon Plan]] covers the **storage layer**:
+The [[Meta/plans/2024-12-31 Single Binary DB Daemon|Single Binary DB Daemon Plan]] covers the **storage layer**:
 - Fork-based daemon for SurrealDB
 - Multi-session kiln access
 - Embedded vs daemon storage modes
@@ -228,4 +226,4 @@ The DB daemon plan is a prerequisite - it provides the RPC layer that thick clie
 - [Dioxus Desktop Guide](https://dioxuslabs.com/learn/0.7/guides/platforms/desktop/)
 - [Blitz Native Renderer Discussion](https://github.com/DioxusLabs/dioxus/discussions/1519)
 - [Rink TUI (abandoned)](https://github.com/DioxusLabs/rink)
-- [[plans/2024-12-31-single-binary-db-daemon|Single Binary DB Daemon Plan]]
+- [[Meta/plans/2024-12-31 Single Binary DB Daemon|Single Binary DB Daemon Plan]]

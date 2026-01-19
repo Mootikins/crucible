@@ -6,11 +6,12 @@ tags:
   - extensibility
   - scripting
 date: 2025-12-27
+updated: 2026-01-18
 ---
 
 # Scripting Language Philosophy
 
-This document captures the reasoning behind Crucible's multi-language extension approach.
+This document captures the reasoning behind Crucible's Lua-based extension approach.
 
 ## Core Principles
 
@@ -29,9 +30,9 @@ For extensibility specifically, the gold standards are **Neovim** and **Obsidian
 Extensions return **data structures**, not UI code. The runtime interprets declarations and renders appropriate components for each frontend (CLI, web, desktop).
 
 ```
-Extension Code (any language)
+Extension Code (Lua/Fennel)
        ↓
-Returns: { component: "search_results", data: [...] }
+Returns: { component = "search_results", data = {...} }
        ↓
 Rust Runtime (interprets declaration)
        ↓
@@ -40,43 +41,33 @@ UI Layer (renders "search_results" appropriately)
 
 This decouples the scripting language from UI concerns and enables multi-frontend support.
 
-### Multi-Language Support
+### Lua as Primary Language
 
-Crucible supports multiple scripting languages to serve different audiences:
+Crucible uses **Lua** (via mlua) as its primary scripting language, with **Fennel** as an optional layer:
 
 | Language | Audience | Strengths |
 |----------|----------|-----------|
-| **Rune** | Rust developers, system integration | Rust-like syntax, native async, `?` operator |
 | **Lua** | General users, LLM-generated code | Simple syntax, massive training data, mature ecosystem |
 | **Fennel** | Power users wanting macros | S-expressions, compile-time macros, compiles to Lua |
 
-All languages return the same data shapes to Rust, enabling a unified tool/handler interface.
+Both languages return the same data shapes to Rust, enabling a unified tool/handler interface.
 
-### Why Multiple Languages?
+### Why Lua?
 
-**No single language optimizes for all criteria:**
+**Lua optimizes for the criteria that matter most:**
 
-| Criterion | Rune | Lua | Fennel |
-|-----------|------|-----|--------|
-| Rust-familiar syntax | Excellent | Poor | Poor |
-| Non-technical accessibility | Medium | Excellent | Poor |
-| LLM code generation | Good | Excellent | Good |
-| Macro system | Limited | None | Excellent |
-| Threading (`Send+Sync`) | No* | Yes (`send` feature) | Yes (via Lua) |
-| Async support | Native | Via mlua | Via Lua |
-
-*Rune has `SyncFunction` workaround for limited cases.
+| Criterion | Lua | Fennel |
+|-----------|-----|--------|
+| Non-technical accessibility | Excellent | Medium |
+| LLM code generation | Excellent | Good |
+| Macro system | None | Excellent |
+| Threading (`Send+Sync`) | Yes (`send` feature) | Yes (via Lua) |
+| Async support | Via mlua | Via Lua |
+| Ecosystem | Neovim patterns, massive libraries | Compiles to Lua |
 
 ### Language Selection Rationale
 
-#### Rune (Existing)
-
-- **Rust-like syntax** familiar to contributors
-- **Native async** fits the async Rust ecosystem
-- **`?` try operator** is intuitive for error handling
-- **Investment exists** - already integrated
-
-#### Lua via mlua (New)
+#### Lua via mlua
 
 - **LLM writability** - models write Lua exceptionally well
 - **Non-technical users** - simple, forgiving syntax
@@ -100,6 +91,7 @@ All languages return the same data shapes to Rust, enabling a unified tool/handl
 | **Gluon** | Unmaintained | Dead project (last commit 2022) |
 | **Starlark** | Mature | No async support |
 | **Teal** | Active | Adds complexity (compile step) |
+| **Rune** | Removed | `!Send/!Sync` limitation blocked multi-threaded usage |
 
 ### Runtime Contract Systems
 
@@ -123,13 +115,11 @@ Rejected for MVP - requires compilation rather than interpretation. May revisit 
 ┌─────────────────────────────────────────────┐
 │  User Extensions                            │
 │  ├── tool.lua      (simple, accessible)     │
-│  ├── tool.fnl      (power users)            │
-│  └── tool.rune     (Rust developers)        │
+│  └── tool.fnl      (power users)            │
 ├─────────────────────────────────────────────┤
 │  Scripting Runtimes                         │
-│  ├── mlua (Lua 5.4, async, send feature)    │
-│  ├── Fennel compiler (~160KB, optional)     │
-│  └── Rune (existing)                        │
+│  ├── mlua (Luau, async, send feature)       │
+│  └── Fennel compiler (~160KB, optional)     │
 ├─────────────────────────────────────────────┤
 │  Unified Tool Interface                     │
 │  └── All languages return same ToolResult   │
@@ -160,13 +150,12 @@ fn load_tool(source: &str) -> Result<Tool> {
 
 ## Future Considerations
 
-- **Gradual typing for Rune** - if upstream adds it, would improve the Rune story
 - **WASM plugins** - for untrusted third-party code with true sandboxing
 - **Runtime contracts** - could add Lua-side validation via library
+- **Luau type annotations** - leverage gradual typing in Luau mode
 
 ## Related
 
 - [[Extending Crucible]] - User-facing extension documentation
-- [[Meta/Analysis/event-architecture]] - Event system design
+- [[Meta/Analysis/Event Architecture]] - Event system design
 - [[Meta/Plugin API Sketches]] - API design details
-- [[Meta/Analysis/tools-mcp-rune]] - Tool integration patterns

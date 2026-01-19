@@ -4,7 +4,7 @@ tags: [meta, ux, tui, user-stories]
 
 # TUI User Stories
 
-User-facing requirements for the Crucible chat TUI. These define **what** users should experience, guiding [[docs/plans/2025-12-23-tui-redesign|TUI Redesign]] implementation.
+User-facing requirements for the Crucible chat TUI. These define **what** users should experience, guiding [[plans/2025-12-23 TUI Redesign|TUI Redesign]] implementation.
 
 ## Streaming
 
@@ -185,5 +185,5 @@ Key test categories map to user stories:
 
 - [[Plugin User Stories]] - Extension system requirements
 - [[Roadmap]] - Feature prioritization
-- [[docs/plans/2025-12-23-tui-redesign]] - Implementation plan
+- [[plans/2025-12-23 TUI Redesign]] - Implementation plan
 - [[Help/TUI/E2E Testing]] - Test harness for verification
