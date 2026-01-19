@@ -596,6 +596,57 @@ mod tests {
         // This is more of a compile-time check that the types work
     }
 
+    #[test]
+    fn test_storage_cache_key_format() {
+        let config = SurrealDbConfig {
+            path: "/path/to/db".to_string(),
+            namespace: "ns".to_string(),
+            database: "db".to_string(),
+            max_connections: Some(5),
+            timeout_seconds: Some(30),
+        };
+        let key = storage_cache_key(&config);
+        assert!(key.contains("/path/to/db"));
+        assert!(key.contains("ns"));
+        assert!(key.contains("db"));
+        assert!(key.contains("5"));
+        assert!(key.contains("30"));
+    }
+
+    #[test]
+    fn test_storage_cache_key_with_none_values() {
+        let config = SurrealDbConfig {
+            path: "/path".to_string(),
+            namespace: "ns".to_string(),
+            database: "db".to_string(),
+            max_connections: None,
+            timeout_seconds: None,
+        };
+        let key = storage_cache_key(&config);
+        assert!(key.contains("0|0"));
+    }
+
+    #[test]
+    fn test_storage_cache_key_deterministic() {
+        let config = SurrealDbConfig {
+            path: "/path".to_string(),
+            namespace: "ns".to_string(),
+            database: "db".to_string(),
+            max_connections: Some(10),
+            timeout_seconds: Some(60),
+        };
+        let key1 = storage_cache_key(&config);
+        let key2 = storage_cache_key(&config);
+        assert_eq!(key1, key2);
+    }
+
+    #[test]
+    fn test_shutdown_storage_clears_cache() {
+        shutdown_storage();
+        let cache = SURREAL_CLIENT_CACHE.lock().unwrap();
+        assert!(cache.is_empty());
+    }
+
     /// Test that create_surrealdb_storage fails with clear error when DB is locked
     ///
     /// This prevents the confusing "Resource temporarily unavailable" error

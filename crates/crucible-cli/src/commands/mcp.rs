@@ -194,3 +194,56 @@ pub async fn execute(config: CliConfig, args: McpArgs) -> Result<()> {
     info!("MCP server terminated");
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_mcp_args_default() {
+        let args = McpArgs::default();
+        assert!(!args.stdio);
+        assert_eq!(args.port, 3847);
+        assert!(args.kiln_path.is_none());
+        assert!(args.just_dir.is_none());
+        assert!(!args.no_just);
+        assert!(args.log_file.is_none());
+    }
+
+    #[test]
+    fn test_mcp_args_with_stdio() {
+        let args = McpArgs {
+            stdio: true,
+            ..Default::default()
+        };
+        assert!(args.stdio);
+        assert_eq!(args.port, 3847);
+    }
+
+    #[test]
+    fn test_mcp_args_with_custom_port() {
+        let args = McpArgs {
+            port: 8080,
+            ..Default::default()
+        };
+        assert_eq!(args.port, 8080);
+    }
+
+    #[test]
+    fn test_mcp_args_with_kiln_path() {
+        let args = McpArgs {
+            kiln_path: Some(PathBuf::from("/custom/kiln")),
+            ..Default::default()
+        };
+        assert_eq!(args.kiln_path, Some(PathBuf::from("/custom/kiln")));
+    }
+
+    #[test]
+    fn test_mcp_args_no_just() {
+        let args = McpArgs {
+            no_just: true,
+            ..Default::default()
+        };
+        assert!(args.no_just);
+    }
+}
