@@ -1,7 +1,7 @@
 use crate::tui::ink::node::Node;
 use crate::tui::ink::output::OutputBuffer;
-use crate::tui::ink::render::{render_to_string, render_with_cursor_filtered, CursorInfo};
-use crate::tui::ink::runtime::GraduationState;
+use crate::tui::ink::planning::{FramePlanner, FrameSnapshot};
+use crate::tui::ink::render::{render_to_string, CursorInfo};
 use crossterm::{
     cursor::{self, Hide, MoveDown, MoveTo, MoveToColumn, MoveUp, Show},
     event::{
@@ -18,7 +18,7 @@ pub struct Terminal {
     stdout: Stdout,
     width: u16,
     height: u16,
-    graduation: GraduationState,
+    planner: FramePlanner,
     use_alternate_screen: bool,
     output: OutputBuffer,
     keyboard_enhanced: bool,
@@ -32,7 +32,7 @@ impl Terminal {
             stdout: io::stdout(),
             width,
             height,
-            graduation: GraduationState::new(),
+            planner: FramePlanner::new(width, height),
             use_alternate_screen: false,
             output: OutputBuffer::new(width as usize, height as usize),
             keyboard_enhanced: false,
@@ -91,6 +91,7 @@ impl Terminal {
         self.width = width;
         self.height = height;
         self.output.set_size(width as usize, height as usize);
+        self.planner.set_size(width, height);
         Ok(())
     }
 
@@ -103,46 +104,39 @@ impl Terminal {
     }
 
     pub fn render(&mut self, tree: &Node) -> io::Result<()> {
+        let snapshot = self.planner.plan(tree);
+        self.apply(&snapshot)
+    }
+
+    fn apply(&mut self, snapshot: &FrameSnapshot) -> io::Result<()> {
         execute!(self.stdout, Hide)?;
 
-        let graduated = self.graduation.graduate(tree, self.width as usize)?;
-
-        if !graduated.is_empty() {
+        if !snapshot.stdout_delta.is_empty() {
             tracing::debug!(
-                count = graduated.len(),
-                keys = ?graduated.iter().map(|g| &g.key).collect::<Vec<_>>(),
+                count = snapshot.plan.graduated.len(),
+                keys = ?snapshot.plan.trace.graduated_keys,
                 "graduating"
             );
 
             self.output.clear()?;
-
-            for item in &graduated {
-                write!(self.stdout, "{}", item.content)?;
-                if item.newline {
-                    write!(self.stdout, "\r\n")?;
-                }
-            }
-
-            write!(self.stdout, "\r\n")?;
+            write!(self.stdout, "{}", snapshot.stdout_delta)?;
             self.stdout.flush()?;
 
             self.output.force_redraw();
             self.last_cursor = None;
         }
 
-        let result = render_with_cursor_filtered(tree, self.width as usize, &self.graduation);
-
         let did_render = self.output.render_with_cursor_restore(
-            &result.content,
+            &snapshot.plan.viewport.content,
             self.last_cursor
                 .as_ref()
                 .map(|c| c.row_from_end)
                 .unwrap_or(0),
         )?;
 
-        if result.cursor.visible {
-            self.last_cursor = Some(result.cursor);
-            self.position_cursor(&result.cursor, did_render)?;
+        if snapshot.plan.viewport.cursor.visible {
+            self.last_cursor = Some(snapshot.plan.viewport.cursor);
+            self.position_cursor(&snapshot.plan.viewport.cursor, did_render)?;
         } else {
             self.last_cursor = None;
         }
@@ -198,7 +192,7 @@ impl Terminal {
 
     pub fn force_full_redraw(&mut self) -> io::Result<()> {
         self.output.force_redraw();
-        self.graduation.clear();
+        self.planner.reset_graduation();
         Ok(())
     }
 

@@ -8,3 +8,4 @@ cc bfd24580b65f81f3c2074640b5f0cfe2383c687fbbfbc1c4a667bdd3a2ebf303 # shrinks to
 cc 3e1c8a19d9f699f0c566d93757d8b691df5a4e480f95551b402acf16aa4c51f7 # shrinks to text = "* *_\n #-*", width = 10
 cc ebcdbe0f075a9147fcc4b1ba5314a726a56ac582271cbdba1009b977e55ef99a # shrinks to mode_str = "default"
 cc ec05f501c2450c7c07f8d0e06f6a0545b6c964a3efd6160552ac987a0f7ba192 # shrinks to lang = "l", line1 = "aaA A", line2 = " (0(AA_((00a__(0(A_0a_Aa0( _AAa_A a000__A00a000", width = 40
+cc 4ee610f63d1261997275d179da66dc219dab54e4460bcb7afe5d778f7c4e71da # shrinks to lang = "", line1 = "0_aa ", line2 = " a0A0a(aAAAA0((00aaaAA0a(Aa0Aaaa0(A((A_AA", width = 40

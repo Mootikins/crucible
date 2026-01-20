@@ -269,37 +269,27 @@ fn viewport_excludes_graduated_content() {
 }
 
 #[test]
-fn flush_to_buffer_handles_pending_newline() {
-    use crate::tui::ink::runtime::GraduationState;
+fn cross_frame_newline_handling() {
+    let mut runtime = TestRuntime::new(80, 24);
 
-    let mut state = GraduationState::new();
+    let tree1 = col([scrollback("msg-1", [text("First")]), text("Viewport")]);
+    runtime.render(&tree1);
 
-    let tree1 = scrollback("msg-1", [text("First")]);
-    let graduated1 = state.graduate(&tree1, 80).unwrap();
-    state.flush_to_buffer(&graduated1);
+    let tree2 = col([
+        scrollback("msg-1", [text("First")]),
+        scrollback("msg-2", [text("Second")]),
+        text("Viewport"),
+    ]);
+    runtime.render(&tree2);
 
-    let tree2 = scrollback("msg-2", [text("Second")]);
-    let graduated2 = state.graduate(&tree2, 80).unwrap();
-    state.flush_to_buffer(&graduated2);
-
-    let content = state.stdout_content();
+    let stdout = runtime.stdout_content();
+    assert!(stdout.contains("First"));
+    assert!(stdout.contains("Second"));
     assert!(
-        content.contains("First\nSecond")
-            || content.contains("First") && content.contains("Second"),
-        "Should have newline between flushed content: {:?}",
-        content
+        stdout.contains("First\r\nSecond") || stdout.contains("First\nSecond"),
+        "Cross-frame graduation should have newline between messages, got: {:?}",
+        stdout
     );
-}
-
-#[test]
-fn flush_to_buffer_empty_input_no_op() {
-    use crate::tui::ink::runtime::GraduationState;
-
-    let mut state = GraduationState::new();
-    state.flush_to_buffer(&[]);
-
-    assert!(state.stdout_content().is_empty());
-    assert_eq!(state.graduated_count(), 0);
 }
 
 #[test]
@@ -461,5 +451,60 @@ fn multiline_content_preserves_newlines_in_graduation() {
         between_msg_and_bottom.contains("\r\n") || between_msg_and_bottom.contains('\n'),
         "between: {:?}",
         between_msg_and_bottom
+    );
+}
+
+#[test]
+fn stdout_delta_uses_terminal_line_endings() {
+    let mut runtime = TestRuntime::new(80, 24);
+
+    let tree = col([
+        scrollback("msg-1", [text("Line one")]),
+        scrollback("msg-2", [text("Line two")]),
+        text("Viewport"),
+    ]);
+
+    runtime.render(&tree);
+
+    let snapshot = runtime.last_snapshot().expect("should have snapshot");
+    let delta = &snapshot.stdout_delta;
+
+    assert!(
+        delta.contains("\r\n"),
+        "stdout_delta should use \\r\\n for terminal compatibility, got: {:?}",
+        delta
+    );
+    assert!(
+        !delta.contains("\n\n"),
+        "should not have bare \\n\\n (double newline without \\r)"
+    );
+}
+
+#[test]
+fn stdout_delta_matches_accumulated_stdout() {
+    let mut runtime = TestRuntime::new(80, 24);
+
+    let tree1 = scrollback("msg-1", [text("First message")]);
+    runtime.render(&tree1);
+    let delta1 = runtime
+        .last_snapshot()
+        .map(|s| s.stdout_delta.clone())
+        .unwrap_or_default();
+
+    let tree2 = col([
+        scrollback("msg-1", [text("First message")]),
+        scrollback("msg-2", [text("Second message")]),
+    ]);
+    runtime.render(&tree2);
+    let delta2 = runtime
+        .last_snapshot()
+        .map(|s| s.stdout_delta.clone())
+        .unwrap_or_default();
+
+    let expected_stdout = format!("{}{}", delta1, delta2);
+    assert_eq!(
+        runtime.stdout_content(),
+        expected_stdout,
+        "Accumulated stdout should equal sum of deltas"
     );
 }

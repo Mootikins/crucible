@@ -1,12 +1,10 @@
 use crate::tui::ink::node::{Node, StaticNode};
-use crate::tui::ink::render::{render_to_string, RenderFilter};
+use crate::tui::ink::render::{render_children_to_string, RenderFilter};
 use std::collections::HashSet;
 use std::io::{self, Write};
 
 pub struct GraduationState {
     graduated_keys: HashSet<String>,
-    stdout_buffer: String,
-    pending_newline: bool,
 }
 
 impl Default for GraduationState {
@@ -19,8 +17,6 @@ impl GraduationState {
     pub fn new() -> Self {
         Self {
             graduated_keys: HashSet::new(),
-            stdout_buffer: String::new(),
-            pending_newline: false,
         }
     }
 
@@ -34,36 +30,81 @@ impl GraduationState {
 
     pub fn clear(&mut self) {
         self.graduated_keys.clear();
-        self.stdout_buffer.clear();
-        self.pending_newline = false;
     }
 
-    pub fn stdout_content(&self) -> &str {
-        &self.stdout_buffer
-    }
-
-    pub fn graduate(&mut self, node: &Node, width: usize) -> io::Result<Vec<GraduatedContent>> {
+    /// Collects content to graduate WITHOUT committing keys.
+    /// This is the "planning" phase - pure, no side effects on graduated_keys.
+    pub fn plan_graduation(&self, node: &Node) -> Vec<GraduatedContent> {
         let mut graduated = Vec::new();
-        self.collect_static_nodes(node, width, &mut graduated);
+        self.collect_static_nodes_readonly(node, &mut graduated);
+        graduated
+    }
+
+    /// Marks keys as graduated. Call AFTER plan_graduation() to commit.
+    pub fn commit_graduation(&mut self, graduated: &[GraduatedContent]) {
+        for item in graduated {
+            self.graduated_keys.insert(item.key.clone());
+        }
+    }
+
+    /// Builds the stdout delta string from graduated content.
+    /// Returns (output_string, new_pending_newline_state).
+    /// Uses \r\n for terminal compatibility.
+    ///
+    /// Newline logic: A newline is added BEFORE an item's content only if
+    /// both the previous item had newline=true AND the current item has newline=true.
+    /// This allows continuations (newline=false) to append without separator.
+    pub fn format_stdout_delta(
+        graduated: &[GraduatedContent],
+        pending_newline: bool,
+        boundary_lines: usize,
+    ) -> (String, bool) {
+        if graduated.is_empty() {
+            return (String::new(), pending_newline);
+        }
+
+        let mut output = String::new();
+        let mut current_pending = pending_newline;
+
+        for item in graduated {
+            if current_pending && item.newline {
+                output.push_str("\r\n");
+            }
+            output.push_str(&item.content);
+            current_pending = item.newline;
+        }
+
+        for _ in 0..boundary_lines {
+            output.push_str("\r\n");
+        }
+
+        // If we added boundary newlines, the separator is already present,
+        // so next frame shouldn't add another leading newline.
+        let final_pending = if boundary_lines > 0 {
+            false
+        } else {
+            current_pending
+        };
+        (output, final_pending)
+    }
+
+    /// Legacy method that both collects AND commits in one step.
+    /// Prefer plan_graduation() + commit_graduation() for testability.
+    pub fn graduate(&mut self, node: &Node, _width: usize) -> io::Result<Vec<GraduatedContent>> {
+        let graduated = self.plan_graduation(node);
+        self.commit_graduation(&graduated);
         Ok(graduated)
     }
 
-    #[allow(clippy::only_used_in_recursion)]
-    fn collect_static_nodes(
-        &mut self,
-        node: &Node,
-        width: usize,
-        graduated: &mut Vec<GraduatedContent>,
-    ) {
+    /// Read-only collection of static nodes (doesn't modify graduated_keys)
+    fn collect_static_nodes_readonly(&self, node: &Node, graduated: &mut Vec<GraduatedContent>) {
         match node {
             Node::Static(static_node) => {
                 if !self.graduated_keys.contains(&static_node.key) {
                     // Use large width for graduation - let terminal handle wrapping
                     let graduation_width = 10000;
-                    let content = render_to_string(
-                        &Node::Fragment(static_node.children.clone()),
-                        graduation_width,
-                    );
+                    let content =
+                        render_children_to_string(&static_node.children, graduation_width);
 
                     if !content.is_empty() {
                         graduated.push(GraduatedContent {
@@ -71,57 +112,23 @@ impl GraduationState {
                             content,
                             newline: static_node.newline,
                         });
-                        self.graduated_keys.insert(static_node.key.clone());
                     }
                 }
             }
 
             Node::Box(boxnode) => {
                 for child in &boxnode.children {
-                    self.collect_static_nodes(child, width, graduated);
+                    self.collect_static_nodes_readonly(child, graduated);
                 }
             }
 
             Node::Fragment(children) => {
                 for child in children {
-                    self.collect_static_nodes(child, width, graduated);
+                    self.collect_static_nodes_readonly(child, graduated);
                 }
             }
 
             _ => {}
-        }
-    }
-
-    pub fn flush_to_stdout(&mut self, graduated: &[GraduatedContent]) -> io::Result<()> {
-        if graduated.is_empty() {
-            return Ok(());
-        }
-
-        let mut stdout = io::stdout().lock();
-
-        for item in graduated {
-            if self.pending_newline && item.newline {
-                writeln!(stdout)?;
-                self.stdout_buffer.push('\n');
-            }
-
-            write!(stdout, "{}", item.content)?;
-            self.stdout_buffer.push_str(&item.content);
-
-            self.pending_newline = item.newline;
-        }
-
-        stdout.flush()
-    }
-
-    pub fn flush_to_buffer(&mut self, graduated: &[GraduatedContent]) {
-        for item in graduated {
-            if self.pending_newline && item.newline {
-                self.stdout_buffer.push('\n');
-            }
-
-            self.stdout_buffer.push_str(&item.content);
-            self.pending_newline = item.newline;
         }
     }
 }
@@ -140,45 +147,47 @@ pub struct GraduatedContent {
 }
 
 pub struct TestRuntime {
-    width: u16,
-    height: u16,
-    graduation: GraduationState,
-    viewport_buffer: String,
+    planner: crate::tui::ink::planning::FramePlanner,
+    last_snapshot: Option<crate::tui::ink::planning::FrameSnapshot>,
+    stdout_buffer: String,
 }
 
 impl TestRuntime {
     pub fn new(width: u16, height: u16) -> Self {
         Self {
-            width,
-            height,
-            graduation: GraduationState::new(),
-            viewport_buffer: String::new(),
+            planner: crate::tui::ink::planning::FramePlanner::new(width, height),
+            last_snapshot: None,
+            stdout_buffer: String::new(),
         }
     }
 
     pub fn render(&mut self, tree: &Node) {
-        let graduated = self.graduation.graduate(tree, self.width as usize).unwrap();
-
-        self.graduation.flush_to_buffer(&graduated);
-
-        self.viewport_buffer = self.render_viewport(tree);
-    }
-
-    fn render_viewport(&self, tree: &Node) -> String {
-        use crate::tui::ink::render::render_with_cursor_filtered;
-        render_with_cursor_filtered(tree, self.width as usize, &self.graduation).content
+        let snapshot = self.planner.plan(tree);
+        self.stdout_buffer.push_str(&snapshot.stdout_delta);
+        self.last_snapshot = Some(snapshot);
     }
 
     pub fn stdout_content(&self) -> &str {
-        self.graduation.stdout_content()
+        &self.stdout_buffer
     }
 
     pub fn viewport_content(&self) -> &str {
-        &self.viewport_buffer
+        self.last_snapshot
+            .as_ref()
+            .map(|s| s.viewport_content())
+            .unwrap_or("")
     }
 
     pub fn graduated_count(&self) -> usize {
-        self.graduation.graduated_count()
+        self.planner.graduation().graduated_count()
+    }
+
+    pub fn trace(&self) -> Option<&crate::tui::ink::planning::FrameTrace> {
+        self.last_snapshot.as_ref().map(|s| s.trace())
+    }
+
+    pub fn last_snapshot(&self) -> Option<&crate::tui::ink::planning::FrameSnapshot> {
+        self.last_snapshot.as_ref()
     }
 }
 
@@ -191,7 +200,6 @@ mod tests {
         let state = GraduationState::new();
 
         assert_eq!(state.graduated_count(), 0);
-        assert!(state.stdout_content().is_empty());
         assert!(!state.is_graduated("any-key"));
     }
 
@@ -220,27 +228,6 @@ mod tests {
     }
 
     #[test]
-    fn stdout_content_accumulates() {
-        use crate::tui::ink::node::{scrollback, text};
-
-        let mut state = GraduationState::new();
-
-        let tree1 = scrollback("msg-1", [text("Hello")]);
-        let graduated1 = state.graduate(&tree1, 80).unwrap();
-        state.flush_to_buffer(&graduated1);
-
-        assert!(state.stdout_content().contains("Hello"));
-
-        let tree2 = scrollback("msg-2", [text("World")]);
-        let graduated2 = state.graduate(&tree2, 80).unwrap();
-        state.flush_to_buffer(&graduated2);
-
-        let content = state.stdout_content();
-        assert!(content.contains("Hello"));
-        assert!(content.contains("World"));
-    }
-
-    #[test]
     fn test_runtime_new() {
         let runtime = TestRuntime::new(80, 24);
 
@@ -265,5 +252,133 @@ mod tests {
         assert!(runtime.stdout_content().contains("Old message"));
         assert!(!runtime.viewport_content().contains("Old message"));
         assert!(runtime.viewport_content().contains("Current content"));
+    }
+
+    #[test]
+    fn trace_captures_graduated_keys_per_frame() {
+        use crate::tui::ink::node::{col, scrollback, text};
+
+        let mut runtime = TestRuntime::new(80, 24);
+
+        // Frame 1: two static nodes graduate
+        let tree1 = col([
+            scrollback("msg-1", [text("First")]),
+            scrollback("msg-2", [text("Second")]),
+            text("Viewport"),
+        ]);
+        runtime.render(&tree1);
+
+        let trace1 = runtime.trace().expect("should have trace after render");
+        assert_eq!(trace1.frame_no, 1);
+        assert_eq!(trace1.graduated_keys, vec!["msg-1", "msg-2"]);
+        assert!(trace1.boundary_lines > 0);
+
+        // Frame 2: one new static node, previous two already graduated
+        let tree2 = col([
+            scrollback("msg-1", [text("First")]),
+            scrollback("msg-2", [text("Second")]),
+            scrollback("msg-3", [text("Third")]),
+            text("Viewport"),
+        ]);
+        runtime.render(&tree2);
+
+        let trace2 = runtime.trace().expect("should have trace");
+        assert_eq!(trace2.frame_no, 2);
+        assert_eq!(trace2.graduated_keys, vec!["msg-3"]);
+
+        // Frame 3: no new static nodes
+        let tree3 = col([
+            scrollback("msg-1", [text("First")]),
+            scrollback("msg-2", [text("Second")]),
+            scrollback("msg-3", [text("Third")]),
+            text("New viewport"),
+        ]);
+        runtime.render(&tree3);
+
+        let trace3 = runtime.trace().expect("should have trace");
+        assert_eq!(trace3.frame_no, 3);
+        assert!(trace3.graduated_keys.is_empty());
+        assert_eq!(trace3.boundary_lines, 0);
+    }
+
+    #[test]
+    fn plan_graduation_is_pure() {
+        use crate::tui::ink::node::{scrollback, text};
+
+        let state = GraduationState::new();
+        let tree = scrollback("key-1", [text("Content")]);
+
+        let graduated1 = state.plan_graduation(&tree);
+        let graduated2 = state.plan_graduation(&tree);
+
+        assert_eq!(graduated1.len(), 1);
+        assert_eq!(graduated2.len(), 1);
+        assert_eq!(graduated1[0].key, "key-1");
+        assert_eq!(state.graduated_count(), 0);
+    }
+
+    #[test]
+    fn commit_graduation_marks_keys() {
+        use crate::tui::ink::node::{scrollback, text};
+
+        let mut state = GraduationState::new();
+        let tree = scrollback("key-1", [text("Content")]);
+
+        let graduated = state.plan_graduation(&tree);
+        assert!(!state.is_graduated("key-1"));
+
+        state.commit_graduation(&graduated);
+        assert!(state.is_graduated("key-1"));
+
+        let graduated_again = state.plan_graduation(&tree);
+        assert!(graduated_again.is_empty());
+    }
+
+    #[test]
+    fn format_stdout_delta_builds_output() {
+        let graduated = vec![
+            GraduatedContent {
+                key: "k1".to_string(),
+                content: "Hello".to_string(),
+                newline: true,
+            },
+            GraduatedContent {
+                key: "k2".to_string(),
+                content: "World".to_string(),
+                newline: true,
+            },
+        ];
+
+        let (delta, new_pending) = GraduationState::format_stdout_delta(&graduated, false, 1);
+        assert!(delta.contains("Hello"));
+        assert!(delta.contains("World"));
+        assert!(delta.contains("\r\n"));
+        assert!(delta.ends_with("\r\n"));
+        // With boundary_lines > 0, pending_newline resets to false
+        // because the boundary already provides the separator
+        assert!(!new_pending);
+    }
+
+    #[test]
+    fn format_stdout_delta_boundary_after_content() {
+        let graduated = vec![GraduatedContent {
+            key: "k1".to_string(),
+            content: "Content".to_string(),
+            newline: true,
+        }];
+
+        let (delta, _) = GraduationState::format_stdout_delta(&graduated, false, 1);
+        assert_eq!(delta, "Content\r\n");
+    }
+
+    #[test]
+    fn format_stdout_delta_empty_returns_unchanged_pending() {
+        let (delta, pending) = GraduationState::format_stdout_delta(&[], true, 1);
+        assert!(delta.is_empty());
+        assert!(pending);
+
+        let (delta2, pending2) = GraduationState::format_stdout_delta(&[], false, 1);
+        assert!(delta2.is_empty());
+        assert!(!pending2);
     }
 }
