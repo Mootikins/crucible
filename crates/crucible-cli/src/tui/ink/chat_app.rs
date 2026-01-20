@@ -334,7 +334,7 @@ impl Default for InkChatApp {
             kiln_notes: Vec::new(),
             attached_context: Vec::new(),
             context_used: 0,
-            context_total: 128000,
+            context_total: 0,
             last_ctrl_c: None,
             notification: None,
             shell_modal: None,
@@ -1756,9 +1756,17 @@ impl InkChatApp {
                         styled(BULLET_PREFIX, Style::new().fg(Color::DarkGray)),
                         content_node,
                     ]),
-                    spinner(None, self.spinner_frame),
+                    text(""),
+                    row([text(" "), spinner(None, self.spinner_frame)]),
                 ]),
-                spinner(Some("Thinking...".into()), self.spinner_frame),
+                col([
+                    text(""),
+                    text(""),
+                    row([
+                        text(" "),
+                        spinner(Some("Thinking...".into()), self.spinner_frame),
+                    ]),
+                ]),
             )
         })
     }
@@ -1777,18 +1785,21 @@ impl InkChatApp {
         };
         let mode_style = Style::new().bg(mode_bg).fg(Color::Black).bold();
 
-        let context_percent = if self.context_total > 0 {
-            (self.context_used as f64 / self.context_total as f64 * 100.0).round() as usize
-        } else {
-            0
-        };
-
         let mode_str = match self.mode {
             ChatMode::Normal => " NORMAL ",
             ChatMode::Plan => " PLAN ",
             ChatMode::Auto => " AUTO ",
         };
-        let ctx_str = format!("{}% ctx", context_percent);
+
+        let ctx_str = if self.context_total > 0 {
+            let percent =
+                (self.context_used as f64 / self.context_total as f64 * 100.0).round() as usize;
+            format!("{}% ctx", percent)
+        } else if self.context_used > 0 {
+            format!("{}k tok", self.context_used / 1000)
+        } else {
+            String::new()
+        };
 
         let model_str = if self.model.is_empty() {
             "...".to_string()
@@ -2464,11 +2475,11 @@ mod tests {
     }
 
     #[test]
-    fn test_context_percentage_zero_total() {
+    fn test_context_display_unknown_total() {
         let mut app = InkChatApp::init();
 
         app.on_message(ChatAppMsg::ContextUsage {
-            used: 1000,
+            used: 5000,
             total: 0,
         });
 
@@ -2477,7 +2488,31 @@ mod tests {
         let tree = app.view(&ctx);
         let output = render_to_string(&tree, 80);
 
-        assert!(output.contains("0%"), "Should show 0% when total is 0");
+        assert!(
+            output.contains("5k tok"),
+            "Should show token count when total is unknown: {}",
+            output
+        );
+        assert!(
+            !output.contains("%"),
+            "Should not show percentage when total is unknown"
+        );
+    }
+
+    #[test]
+    fn test_context_display_no_usage() {
+        let app = InkChatApp::init();
+
+        let focus = FocusContext::new();
+        let ctx = ViewContext::new(&focus);
+        let tree = app.view(&ctx);
+        let output = render_to_string(&tree, 80);
+
+        assert!(
+            !output.contains("ctx") && !output.contains("tok"),
+            "Should not show context info when no usage: {}",
+            output
+        );
     }
 
     #[test]

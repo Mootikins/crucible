@@ -28,6 +28,7 @@ use async_trait::async_trait;
 use futures::stream::BoxStream;
 use serde::{Deserialize, Serialize};
 
+use super::llm::TokenUsage;
 use crate::types::acp::schema::{AvailableCommand, SessionModeState};
 
 /// Result type for chat operations
@@ -84,6 +85,9 @@ pub struct ChatChunk {
     /// Rendered separately from main delta, typically in a collapsible block
     #[serde(default)]
     pub reasoning: Option<String>,
+    /// Token usage (typically only present in final chunk when done=true)
+    #[serde(default)]
+    pub usage: Option<TokenUsage>,
 }
 
 /// Result from a completed tool execution
@@ -410,6 +414,7 @@ mod tests {
                         tool_calls: None,
                         tool_results: None,
                         reasoning: None,
+                        usage: None,
                     })
                 },
             )))

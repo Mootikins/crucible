@@ -21,6 +21,7 @@ pub struct InkChatRunner {
     tick_rate: Duration,
     mode: ChatMode,
     model: String,
+    context_limit: usize,
     focus: FocusContext,
     workspace_files: Vec<String>,
     kiln_notes: Vec<String>,
@@ -36,6 +37,7 @@ impl InkChatRunner {
             tick_rate: Duration::from_millis(50),
             mode: ChatMode::Normal,
             model: String::new(),
+            context_limit: 0,
             focus: FocusContext::new(),
             workspace_files: Vec::new(),
             kiln_notes: Vec::new(),
@@ -43,6 +45,11 @@ impl InkChatRunner {
             resume_session_id: None,
             mcp_servers: Vec::new(),
         })
+    }
+
+    pub fn with_context_limit(mut self, limit: usize) -> Self {
+        self.context_limit = limit;
+        self
     }
 
     pub fn with_mode(mut self, mode: ChatMode) -> Self {
@@ -238,6 +245,15 @@ impl InkChatRunner {
                                     }).is_err() {
                                         tracing::warn!(tool = %tr.name, "UI channel closed, ToolResultComplete dropped");
                                     }
+                                }
+                            }
+
+                            if let Some(ref usage) = chunk.usage {
+                                if msg_tx.send(ChatAppMsg::ContextUsage {
+                                    used: usage.total_tokens as usize,
+                                    total: self.context_limit,
+                                }).is_err() {
+                                    tracing::warn!("UI channel closed, ContextUsage dropped");
                                 }
                             }
 
