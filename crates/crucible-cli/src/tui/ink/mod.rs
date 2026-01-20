@@ -58,6 +58,7 @@ mod taffy_layout;
 mod terminal;
 mod test_harness;
 mod viewport;
+mod viewport_cache;
 
 pub use agent_selection::AgentSelection;
 pub use app::*;
@@ -78,6 +79,7 @@ pub use style::*;
 pub use terminal::*;
 pub use test_harness::*;
 pub use viewport::*;
+pub use viewport_cache::{CachedMessage, StreamingBuffer, ViewportAnchor, ViewportCache};
 
 #[cfg(test)]
 mod tests;
