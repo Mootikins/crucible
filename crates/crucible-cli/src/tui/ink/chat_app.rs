@@ -5,7 +5,9 @@ use crate::tui::ink::markdown::{
 };
 use crate::tui::ink::node::*;
 use crate::tui::ink::style::{Color, Gap, Style};
-use crate::tui::ink::viewport_cache::{CachedMessage, ViewportCache};
+use crate::tui::ink::viewport_cache::{
+    CachedChatItem, CachedMessage, CachedShellExecution, CachedToolCall, ViewportCache,
+};
 use crossterm::event::KeyCode;
 use crossterm::terminal::{EnterAlternateScreen, LeaveAlternateScreen};
 use crossterm::{cursor, execute};
@@ -622,7 +624,7 @@ impl InkChatApp {
     }
 
     pub fn is_streaming(&self) -> bool {
-        self.streaming.active
+        self.cache.is_streaming() || self.streaming.active
     }
 
     pub fn input_content(&self) -> &str {
@@ -1041,48 +1043,43 @@ impl InkChatApp {
 
         let mut output = String::from("# Chat Session Export\n\n");
 
-        for item in &self.items {
+        for item in self.cache.items() {
             match item {
-                ChatItem::Message { role, content, .. } => match role {
-                    Role::User => writeln!(output, "## User\n\n{}\n", content),
-                    Role::Assistant => writeln!(output, "## Assistant\n\n{}\n", content),
-                    Role::System => writeln!(output, "> {}\n", content.replace('\n', "\n> ")),
-                }
-                .ok(),
-                ChatItem::ToolCall {
-                    name, args, result, ..
-                } => {
-                    let _ = writeln!(output, "### Tool: {}\n", name);
-                    if !args.is_empty() {
-                        let _ = writeln!(output, "```json\n{}\n```\n", args);
+                CachedChatItem::Message(msg) => {
+                    match msg.role {
+                        Role::User => writeln!(output, "## User\n\n{}\n", msg.content()),
+                        Role::Assistant => writeln!(output, "## Assistant\n\n{}\n", msg.content()),
+                        Role::System => {
+                            writeln!(output, "> {}\n", msg.content().replace('\n', "\n> "))
+                        }
                     }
-                    if !result.is_empty() {
-                        let _ = writeln!(output, "**Result:**\n```\n{}\n```\n", result);
-                    }
-                    None
+                    .ok();
                 }
-                ChatItem::ShellExecution {
-                    command,
-                    exit_code,
-                    output_tail,
-                    ..
-                } => {
+                CachedChatItem::ToolCall(tool) => {
+                    let _ = writeln!(output, "### Tool: {}\n", tool.name);
+                    if !tool.args.is_empty() {
+                        let _ = writeln!(output, "```json\n{}\n```\n", tool.args);
+                    }
+                    if !tool.result.is_empty() {
+                        let _ = writeln!(output, "**Result:**\n```\n{}\n```\n", tool.result);
+                    }
+                }
+                CachedChatItem::ShellExecution(shell) => {
                     let _ = writeln!(
                         output,
                         "### Shell: `{}`\n\nExit code: {}\n",
-                        command, exit_code
+                        shell.command, shell.exit_code
                     );
-                    if !output_tail.is_empty() {
+                    if !shell.output_tail.is_empty() {
                         output.push_str("```\n");
-                        output_tail.iter().for_each(|line| {
+                        shell.output_tail.iter().for_each(|line| {
                             output.push_str(line);
                             output.push('\n');
                         });
                         output.push_str("```\n\n");
                     }
-                    None
                 }
-            };
+            }
         }
 
         output
@@ -1703,9 +1700,120 @@ impl InkChatApp {
     }
 
     fn render_items(&self) -> Node {
-        col(self.items.iter().map(|item| self.render_item(item)))
+        col(self.cache.items().map(|item| self.render_cached_item(item)))
     }
 
+    fn render_cached_item(&self, item: &CachedChatItem) -> Node {
+        match item {
+            CachedChatItem::Message(msg) => self.render_message(msg),
+            CachedChatItem::ToolCall(tool) => self.render_tool_call(tool),
+            CachedChatItem::ShellExecution(shell) => self.render_shell_execution(shell),
+        }
+    }
+
+    fn render_message(&self, msg: &CachedMessage) -> Node {
+        let content_node = match msg.role {
+            Role::User => self.render_user_prompt(msg.content()),
+            Role::Assistant => {
+                let content_width = terminal_width().saturating_sub(BULLET_PREFIX_WIDTH);
+                let style = RenderStyle::natural(content_width);
+                let md_node = markdown_to_node_styled(msg.content(), style);
+                col([
+                    text(""),
+                    row([
+                        styled(BULLET_PREFIX, Style::new().fg(Color::DarkGray)),
+                        md_node,
+                    ]),
+                    text(""),
+                ])
+            }
+            Role::System => col([
+                text(""),
+                styled(
+                    format!(" * {} ", msg.content()),
+                    Style::new().fg(Color::Yellow).dim(),
+                ),
+            ]),
+        };
+        scrollback(&msg.id, [content_node])
+    }
+
+    fn render_tool_call(&self, tool: &CachedToolCall) -> Node {
+        let (status_icon, status_color) = if tool.complete {
+            ("✓", Color::Green)
+        } else {
+            ("…", Color::White)
+        };
+
+        let args_formatted = Self::format_tool_args(&tool.args);
+
+        let header = row([
+            styled(format!(" {} ", status_icon), Style::new().fg(status_color)),
+            styled(tool.name.as_ref(), Style::new().fg(Color::White)),
+            styled(
+                format!("({})", args_formatted),
+                Style::new().fg(Color::DarkGray),
+            ),
+        ]);
+
+        let result_node = if tool.result.is_empty() {
+            Node::Empty
+        } else if tool.complete {
+            Self::format_tool_result(&tool.name, &tool.result)
+        } else {
+            Self::format_streaming_output(&tool.result)
+        };
+
+        let content = col([header, result_node]);
+        if tool.complete {
+            scrollback(&tool.id, [content])
+        } else {
+            col([text(""), content])
+        }
+    }
+
+    fn render_shell_execution(&self, shell: &CachedShellExecution) -> Node {
+        let exit_style = if shell.exit_code == 0 {
+            Style::new().fg(Color::Green)
+        } else {
+            Style::new().fg(Color::Red)
+        };
+
+        let header = row([
+            styled(" $ ", Style::new().fg(Color::DarkGray)),
+            styled(shell.command.as_ref(), Style::new().fg(Color::White)),
+            styled(format!("  exit {}", shell.exit_code), exit_style.dim()),
+        ]);
+
+        let tail_nodes: Vec<Node> = shell
+            .output_tail
+            .iter()
+            .map(|line| {
+                styled(
+                    format!("   {}", line),
+                    Style::new().fg(Color::Rgb(180, 180, 180)),
+                )
+            })
+            .collect();
+
+        let path_node = shell
+            .output_path
+            .as_ref()
+            .map(|p| {
+                styled(
+                    format!("   → {}", p.display()),
+                    Style::new().fg(Color::Rgb(140, 140, 140)),
+                )
+            })
+            .unwrap_or(Node::Empty);
+
+        let content = col(std::iter::once(header)
+            .chain(tail_nodes)
+            .chain(std::iter::once(path_node)));
+        scrollback(&shell.id, [content])
+    }
+
+    #[allow(dead_code)]
     fn render_item(&self, item: &ChatItem) -> Node {
         match item {
             ChatItem::Message { id, role, content } => {
@@ -1821,12 +1929,13 @@ impl InkChatApp {
     }
 
     fn render_streaming(&self) -> Node {
-        when(self.streaming.active, {
+        when(self.cache.is_streaming(), {
             let content_width = terminal_width().saturating_sub(BULLET_PREFIX_WIDTH);
-            let content_node = markdown_to_node_with_width(&self.streaming.content, content_width);
+            let streaming_content = self.cache.streaming_content().unwrap_or("");
+            let content_node = markdown_to_node_with_width(streaming_content, content_width);
 
             if_else(
-                !self.streaming.content.is_empty(),
+                !streaming_content.is_empty(),
                 col([
                     text(""),
                     row([
