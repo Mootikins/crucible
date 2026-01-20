@@ -403,3 +403,200 @@ fn graduated_table_fits_terminal_width() {
         }
     }
 }
+
+#[test]
+fn live_graduation_does_not_duplicate_content() {
+    let mut runtime = TestRuntime::new(80, 24);
+    let mut app = InkChatApp::default();
+
+    app.on_message(ChatAppMsg::UserMessage("Question".to_string()));
+
+    let tree = view_with_default_ctx(&app);
+    runtime.render(&tree);
+
+    // Send first paragraph with blank line (triggers graduation)
+    app.on_message(ChatAppMsg::TextDelta("First paragraph.\n\n".to_string()));
+
+    let tree = view_with_default_ctx(&app);
+    runtime.render(&tree);
+
+    // Send second paragraph with blank line (triggers second graduation)
+    app.on_message(ChatAppMsg::TextDelta("Second paragraph.\n\n".to_string()));
+
+    let tree = view_with_default_ctx(&app);
+    runtime.render(&tree);
+
+    // Send third paragraph (still in progress)
+    app.on_message(ChatAppMsg::TextDelta(
+        "Third paragraph in progress".to_string(),
+    ));
+
+    let tree = view_with_default_ctx(&app);
+    runtime.render(&tree);
+
+    let stdout = strip_ansi(runtime.stdout_content());
+
+    // Each paragraph should appear exactly once in stdout
+    let first_count = stdout.matches("First paragraph").count();
+    let second_count = stdout.matches("Second paragraph").count();
+
+    assert_eq!(
+        first_count, 1,
+        "First paragraph appears {} times in stdout (should be 1):\n{}",
+        first_count, stdout
+    );
+    assert_eq!(
+        second_count, 1,
+        "Second paragraph appears {} times in stdout (should be 1):\n{}",
+        second_count, stdout
+    );
+
+    // Third paragraph should be in viewport, not stdout (still in progress)
+    assert!(
+        !stdout.contains("Third paragraph"),
+        "In-progress content should not be in stdout yet:\n{}",
+        stdout
+    );
+
+    let viewport = strip_ansi(runtime.viewport_content());
+    assert!(
+        viewport.contains("Third paragraph"),
+        "In-progress content should be in viewport:\n{}",
+        viewport
+    );
+}
+
+#[test]
+fn graduated_table_has_bottom_border() {
+    let mut runtime = TestRuntime::new(80, 24);
+    let mut app = InkChatApp::default();
+
+    let table = r#"| Header |
+|--------|
+| Cell   |"#;
+
+    app.on_message(ChatAppMsg::UserMessage("Show table".to_string()));
+    app.on_message(ChatAppMsg::TextDelta(table.to_string()));
+    app.on_message(ChatAppMsg::StreamComplete);
+
+    let tree = view_with_default_ctx(&app);
+    runtime.render(&tree);
+
+    let stdout = strip_ansi(runtime.stdout_content());
+
+    assert!(
+        stdout.contains('┌'),
+        "Table missing top-left corner in stdout:\n{}",
+        stdout
+    );
+    assert!(
+        stdout.contains('┐'),
+        "Table missing top-right corner in stdout:\n{}",
+        stdout
+    );
+    assert!(
+        stdout.contains('└'),
+        "Table missing bottom-left corner in stdout:\n{}",
+        stdout
+    );
+    assert!(
+        stdout.contains('┘'),
+        "Table missing bottom-right corner in stdout:\n{}",
+        stdout
+    );
+}
+
+#[test]
+fn live_graduated_table_preserves_all_lines() {
+    let mut runtime = TestRuntime::new(80, 24);
+    let mut app = InkChatApp::default();
+
+    app.on_message(ChatAppMsg::UserMessage("Show table".to_string()));
+
+    let table_content = "| Header |\n|--------|\n| Cell   |\n\n";
+    app.on_message(ChatAppMsg::TextDelta(table_content.to_string()));
+
+    let tree = view_with_default_ctx(&app);
+    runtime.render(&tree);
+
+    let stdout = strip_ansi(runtime.stdout_content());
+
+    let top_left_count = stdout.matches('┌').count();
+    let bottom_left_count = stdout.matches('└').count();
+
+    assert!(
+        top_left_count >= 1,
+        "Table missing top-left corner (┌) in stdout:\n{}",
+        stdout
+    );
+    assert!(
+        bottom_left_count >= 1,
+        "Table missing bottom-left corner (└) in stdout - last line may be eaten:\n{}",
+        stdout
+    );
+    assert_eq!(
+        top_left_count, bottom_left_count,
+        "Mismatched table corners - {} top-left vs {} bottom-left:\n{}",
+        top_left_count, bottom_left_count, stdout
+    );
+}
+
+#[test]
+fn graduated_user_prompt_has_bottom_border() {
+    let mut runtime = TestRuntime::new(80, 24);
+    let mut app = InkChatApp::default();
+
+    app.on_message(ChatAppMsg::UserMessage("Test message".to_string()));
+
+    let tree = view_with_default_ctx(&app);
+    runtime.render(&tree);
+
+    let stdout = strip_ansi(runtime.stdout_content());
+
+    let top_border_count = stdout.matches('▄').count();
+    let bottom_border_count = stdout.matches('▀').count();
+
+    assert!(
+        top_border_count >= 1,
+        "User prompt missing top border (▄) in stdout:\n{}",
+        stdout
+    );
+    assert!(
+        bottom_border_count >= 1,
+        "User prompt missing bottom border (▀) in stdout:\n{}",
+        stdout
+    );
+}
+
+#[test]
+fn graduated_user_prompt_bottom_border_not_eaten_by_viewport() {
+    let mut runtime = TestRuntime::new(80, 24);
+    let mut app = InkChatApp::default();
+
+    app.on_message(ChatAppMsg::UserMessage("Test message".to_string()));
+
+    let tree = view_with_default_ctx(&app);
+    runtime.render(&tree);
+
+    let stdout = strip_ansi(runtime.stdout_content());
+    let viewport = strip_ansi(runtime.viewport_content());
+
+    let stdout_lines: Vec<&str> = stdout.lines().collect();
+    let viewport_lines: Vec<&str> = viewport.lines().collect();
+
+    let last_stdout_line = stdout_lines.last().unwrap_or(&"");
+    let first_viewport_line = viewport_lines.first().unwrap_or(&"");
+
+    assert!(
+        last_stdout_line.contains('▀') || last_stdout_line.is_empty(),
+        "Last stdout line should be bottom border (▀) or empty, not: {:?}\nFull stdout:\n{}",
+        last_stdout_line,
+        stdout
+    );
+
+    assert!(
+        !first_viewport_line.contains('▀'),
+        "Viewport should not start with bottom border (it should be in stdout):\n{}",
+        viewport
+    );
+}

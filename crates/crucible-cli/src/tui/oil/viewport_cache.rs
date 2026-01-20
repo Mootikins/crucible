@@ -312,6 +312,32 @@ impl ViewportCache {
         self.streaming.as_ref().map(|b| b.content())
     }
 
+    pub fn streaming_graduated_content(&self) -> Option<&str> {
+        self.streaming.as_ref().map(|b| b.graduated_content())
+    }
+
+    pub fn streaming_graduated_blocks(&self) -> Option<&[String]> {
+        self.streaming.as_ref().map(|b| b.graduated_blocks())
+    }
+
+    pub fn streaming_in_progress_content(&self) -> Option<&str> {
+        self.streaming.as_ref().map(|b| b.in_progress_content())
+    }
+
+    pub fn streaming_graduated_block_count(&self) -> usize {
+        self.streaming
+            .as_ref()
+            .map(|b| b.graduated_block_count())
+            .unwrap_or(0)
+    }
+
+    pub fn has_streaming_graduated_content(&self) -> bool {
+        self.streaming
+            .as_ref()
+            .map(|b| b.has_graduated_content())
+            .unwrap_or(false)
+    }
+
     pub fn is_streaming(&self) -> bool {
         self.streaming.is_some()
     }
@@ -364,34 +390,122 @@ impl ContentSource for ViewportCache {
 }
 
 pub struct StreamingBuffer {
-    content: String,
+    graduated_blocks: Vec<String>,
+    in_progress: String,
 }
 
 impl StreamingBuffer {
     pub fn new() -> Self {
         Self {
-            content: String::new(),
+            graduated_blocks: Vec::new(),
+            in_progress: String::new(),
         }
     }
 
     pub fn append(&mut self, delta: &str) {
-        self.content.push_str(delta);
+        self.in_progress.push_str(delta);
+        self.try_graduate_blocks();
     }
 
     pub fn content(&self) -> &str {
-        &self.content
+        &self.in_progress
+    }
+
+    pub fn all_content(&self) -> String {
+        let graduated: String = self.graduated_blocks.concat();
+        if graduated.is_empty() {
+            self.in_progress.clone()
+        } else if self.in_progress.is_empty() {
+            graduated
+        } else {
+            format!("{}{}", graduated, self.in_progress)
+        }
+    }
+
+    pub fn graduated_content(&self) -> &str {
+        if self.graduated_blocks.is_empty() {
+            ""
+        } else if self.graduated_blocks.len() == 1 {
+            &self.graduated_blocks[0]
+        } else {
+            ""
+        }
+    }
+
+    pub fn graduated_blocks(&self) -> &[String] {
+        &self.graduated_blocks
+    }
+
+    pub fn in_progress_content(&self) -> &str {
+        &self.in_progress
+    }
+
+    pub fn graduated_block_count(&self) -> usize {
+        self.graduated_blocks.len()
+    }
+
+    pub fn has_graduated_content(&self) -> bool {
+        !self.graduated_blocks.is_empty()
     }
 
     pub fn into_content(self) -> String {
-        self.content
+        self.all_content()
     }
 
     pub fn len(&self) -> usize {
-        self.content.len()
+        self.graduated_blocks.iter().map(|b| b.len()).sum::<usize>() + self.in_progress.len()
     }
 
     pub fn is_empty(&self) -> bool {
-        self.content.is_empty()
+        self.graduated_blocks.is_empty() && self.in_progress.is_empty()
+    }
+
+    fn try_graduate_blocks(&mut self) {
+        if let Some(split_pos) = self.find_graduation_point() {
+            let to_graduate = self.in_progress[..split_pos].to_string();
+            let remaining = self.in_progress[split_pos..].to_string();
+
+            if !to_graduate.is_empty() {
+                self.graduated_blocks.push(to_graduate);
+                self.in_progress = remaining;
+            }
+        }
+    }
+
+    /// Finds byte offset where content can graduate. Graduates at blank lines (\n\n)
+    /// but never inside unclosed code blocks (```)
+    fn find_graduation_point(&self) -> Option<usize> {
+        let content = &self.in_progress;
+
+        if content.len() < 4 {
+            return None;
+        }
+
+        let fence_count = content.matches("```").count();
+        if fence_count % 2 != 0 {
+            return None;
+        }
+
+        let mut last_valid_split = None;
+        let mut in_code_block = false;
+        let mut i = 0;
+        let bytes = content.as_bytes();
+
+        while i < bytes.len() {
+            if i + 3 <= bytes.len() && &bytes[i..i + 3] == b"```" {
+                in_code_block = !in_code_block;
+                i += 3;
+                continue;
+            }
+
+            if !in_code_block && i + 2 <= bytes.len() && &bytes[i..i + 2] == b"\n\n" {
+                last_valid_split = Some(i + 2);
+            }
+
+            i += 1;
+        }
+
+        last_valid_split
     }
 }
 
@@ -843,5 +957,93 @@ mod tests {
 
         assert!(tool1.result.is_empty());
         assert_eq!(tool2.result, "result");
+    }
+
+    #[test]
+    fn streaming_graduation_with_blank_line() {
+        let mut buf = StreamingBuffer::new();
+
+        buf.append("First paragraph.\n\n");
+        assert!(buf.has_graduated_content());
+        assert_eq!(buf.graduated_content(), "First paragraph.\n\n");
+        assert!(buf.in_progress_content().is_empty());
+
+        buf.append("Second para");
+        assert_eq!(buf.graduated_content(), "First paragraph.\n\n");
+        assert_eq!(buf.in_progress_content(), "Second para");
+    }
+
+    #[test]
+    fn streaming_graduation_no_graduation_without_blank_line() {
+        let mut buf = StreamingBuffer::new();
+
+        buf.append("Incomplete paragraph");
+        assert!(!buf.has_graduated_content());
+        assert_eq!(buf.in_progress_content(), "Incomplete paragraph");
+    }
+
+    #[test]
+    fn streaming_graduation_preserves_code_blocks() {
+        let mut buf = StreamingBuffer::new();
+
+        buf.append("```rust\nfn main() {\n\n    println!(\"hello\");\n}\n```\n\n");
+        assert!(buf.has_graduated_content());
+        assert_eq!(
+            buf.graduated_content(),
+            "```rust\nfn main() {\n\n    println!(\"hello\");\n}\n```\n\n"
+        );
+    }
+
+    #[test]
+    fn streaming_graduation_blocks_unclosed_code_fence() {
+        let mut buf = StreamingBuffer::new();
+
+        buf.append("Text\n\n```rust\ncode here\n\nmore code");
+        assert!(!buf.has_graduated_content());
+        assert_eq!(
+            buf.in_progress_content(),
+            "Text\n\n```rust\ncode here\n\nmore code"
+        );
+    }
+
+    #[test]
+    fn streaming_graduation_multiple_blocks() {
+        let mut buf = StreamingBuffer::new();
+
+        buf.append("Block 1\n\nBlock 2\n\nBlock ");
+        assert!(buf.has_graduated_content());
+        assert_eq!(buf.graduated_content(), "Block 1\n\nBlock 2\n\n");
+        assert_eq!(buf.in_progress_content(), "Block ");
+        assert_eq!(buf.graduated_block_count(), 1);
+    }
+
+    #[test]
+    fn streaming_all_content_combines_graduated_and_in_progress() {
+        let mut buf = StreamingBuffer::new();
+
+        buf.append("Graduated\n\nIn progress");
+        assert_eq!(buf.all_content(), "Graduated\n\nIn progress");
+    }
+
+    #[test]
+    fn streaming_into_content_combines_all() {
+        let mut buf = StreamingBuffer::new();
+        buf.append("Part 1\n\nPart 2");
+
+        let content = buf.into_content();
+        assert_eq!(content, "Part 1\n\nPart 2");
+    }
+
+    #[test]
+    fn viewport_cache_streaming_graduation_methods() {
+        let mut cache = ViewportCache::new();
+
+        cache.start_streaming();
+        cache.append_streaming("First block\n\nSecond ");
+
+        assert!(cache.has_streaming_graduated_content());
+        assert_eq!(cache.streaming_graduated_content(), Some("First block\n\n"));
+        assert_eq!(cache.streaming_in_progress_content(), Some("Second "));
+        assert_eq!(cache.streaming_graduated_block_count(), 1);
     }
 }
