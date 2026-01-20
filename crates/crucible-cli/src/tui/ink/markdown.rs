@@ -311,11 +311,15 @@ fn render_code_block(node: &markdown_it::Node, ctx: &mut RenderContext) {
 
 fn render_highlighted_code(content: &str, lang: &str, ctx: &mut RenderContext) {
     use crate::formatting::SyntaxHighlighter;
+    use crate::tui::ink::ansi::wrap_styled_text;
 
     if lang.is_empty() || !SyntaxHighlighter::supports_language(lang) {
         let fallback_style = Style::new().fg(Color::Green);
         for line in content.lines() {
-            ctx.push_block(styled(line, fallback_style));
+            let spans = vec![(line.to_string(), fallback_style.to_ansi_codes())];
+            for wrapped in wrap_styled_text(&spans, ctx.width) {
+                ctx.push_block(text_node(&wrapped));
+            }
         }
         return;
     }
@@ -329,16 +333,14 @@ fn render_highlighted_code(content: &str, lang: &str, ctx: &mut RenderContext) {
             continue;
         }
 
-        if highlighted_line.spans.len() == 1 {
-            let span = &highlighted_line.spans[0];
-            ctx.push_block(styled(&span.text, span.style));
-        } else {
-            let nodes: Vec<Node> = highlighted_line
-                .spans
-                .iter()
-                .map(|span| styled(&span.text, span.style))
-                .collect();
-            ctx.push_block(row(nodes));
+        let spans: Vec<(String, String)> = highlighted_line
+            .spans
+            .iter()
+            .map(|span| (span.text.clone(), span.style.to_ansi_codes()))
+            .collect();
+
+        for wrapped in wrap_styled_text(&spans, ctx.width) {
+            ctx.push_block(text_node(&wrapped));
         }
     }
 }
