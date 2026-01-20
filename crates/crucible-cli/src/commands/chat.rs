@@ -17,7 +17,7 @@ use crate::core_facade::KilnContext;
 use crate::factories;
 use crate::progress::{BackgroundProgress, LiveProgress, StatusLine};
 use crate::provider_detect::fetch_model_context_length;
-use crate::tui::ink::McpServerDisplay;
+use crate::tui::oil::McpServerDisplay;
 use crate::tui::AgentSelection;
 use crucible_core::traits::chat::{is_read_only, mode_display_name};
 use crucible_pipeline::NotePipeline;
@@ -165,7 +165,7 @@ async fn run_interactive_chat(
 ) -> Result<()> {
     use crate::chat::bridge::AgentEventBridge;
     use crate::chat::session::{index_kiln_notes, index_workspace_files};
-    use crate::tui::ink::{ChatMode, InkChatRunner};
+    use crate::tui::oil::{ChatMode, InkChatRunner};
     use crucible_core::events::EventRing;
     use crucible_core::traits::chat::is_read_only;
 
@@ -193,7 +193,7 @@ async fn run_interactive_chat(
         .with_model(&model_name)
         .with_context_limit(context_limit);
 
-    info!("Starting ink chat with model: {}", model_name);
+    info!("Starting oil chat with model: {}", model_name);
 
     if let Some(session_id) = resume_session_id {
         info!("Will resume session: {}", session_id);

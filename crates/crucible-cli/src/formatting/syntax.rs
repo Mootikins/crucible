@@ -1,4 +1,4 @@
-use crate::tui::ink::{Color, Style};
+use crate::tui::oil::{Color, Style};
 use crucible_config::HighlightingConfig;
 use once_cell::sync::Lazy;
 use syntect::easy::HighlightLines;
