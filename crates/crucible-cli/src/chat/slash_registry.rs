@@ -580,6 +580,30 @@ impl SlashCommandRegistryBuilder {
         self.commands.insert(name_str, cmd);
         self
     }
+
+    /// Register a Lua command from a discovered command annotation.
+    pub fn lua_command(mut self, cmd: &crucible_lua::DiscoveredCommand) -> Self {
+        use crucible_lua::{command_to_descriptor, LuaCommandHandler};
+
+        let handler = Arc::new(LuaCommandHandler::from_discovered(cmd));
+        let descriptor = command_to_descriptor(cmd);
+
+        let slash_cmd = SlashCommand {
+            handler,
+            descriptor,
+        };
+
+        self.commands.insert(cmd.name.clone(), slash_cmd);
+        self
+    }
+
+    /// Register multiple Lua commands from discovered annotations.
+    pub fn lua_commands(mut self, commands: &[crucible_lua::DiscoveredCommand]) -> Self {
+        for cmd in commands {
+            self = self.lua_command(cmd);
+        }
+        self
+    }
 }
 
 impl RegistryBuilder for SlashCommandRegistryBuilder {
@@ -992,5 +1016,73 @@ mod tests {
         assert_eq!(desc.secondary_options.len(), 2);
         assert_eq!(desc.secondary_options[0].label, "model-a");
         assert_eq!(desc.secondary_options[1].label, "model-b");
+    }
+
+    #[test]
+    fn test_lua_command_registration() {
+        use crucible_lua::annotations::DiscoveredParam;
+        use crucible_lua::DiscoveredCommand;
+
+        let lua_cmd = DiscoveredCommand {
+            name: "daily".to_string(),
+            description: "Create a daily note".to_string(),
+            params: vec![DiscoveredParam {
+                name: "title".to_string(),
+                param_type: "string".to_string(),
+                description: "Note title".to_string(),
+                optional: true,
+            }],
+            input_hint: Some("title".to_string()),
+            source_path: "/tmp/daily.lua".to_string(),
+            handler_fn: "create_daily".to_string(),
+            is_fennel: false,
+        };
+
+        let registry = SlashCommandRegistryBuilder::default()
+            .lua_command(&lua_cmd)
+            .build();
+
+        assert!(registry.contains("daily"));
+        let desc = registry.get_descriptor("daily").unwrap();
+        assert_eq!(desc.description, "Create a daily note");
+        assert_eq!(desc.input_hint, Some("title".to_string()));
+        assert_eq!(desc.module, Some("lua".to_string()));
+        assert_eq!(desc.args.len(), 1);
+        assert_eq!(desc.args[0].name, "title");
+        assert!(!desc.args[0].required);
+    }
+
+    #[test]
+    fn test_lua_commands_multiple() {
+        use crucible_lua::DiscoveredCommand;
+
+        let commands = vec![
+            DiscoveredCommand {
+                name: "cmd1".to_string(),
+                description: "First".to_string(),
+                params: vec![],
+                input_hint: None,
+                source_path: "/tmp/cmd1.lua".to_string(),
+                handler_fn: "cmd1".to_string(),
+                is_fennel: false,
+            },
+            DiscoveredCommand {
+                name: "cmd2".to_string(),
+                description: "Second".to_string(),
+                params: vec![],
+                input_hint: None,
+                source_path: "/tmp/cmd2.lua".to_string(),
+                handler_fn: "cmd2".to_string(),
+                is_fennel: false,
+            },
+        ];
+
+        let registry = SlashCommandRegistryBuilder::default()
+            .lua_commands(&commands)
+            .build();
+
+        assert!(registry.contains("cmd1"));
+        assert!(registry.contains("cmd2"));
+        assert_eq!(registry.len(), 2);
     }
 }

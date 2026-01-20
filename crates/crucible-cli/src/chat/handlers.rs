@@ -733,6 +733,57 @@ impl CommandHandler for ResumeHandler {
     }
 }
 
+/// Handler for /view command - opens or lists Lua-defined views
+pub struct ViewHandler {
+    views: Vec<crucible_lua::DiscoveredView>,
+}
+
+impl ViewHandler {
+    pub fn new(views: Vec<crucible_lua::DiscoveredView>) -> Self {
+        Self { views }
+    }
+}
+
+#[async_trait]
+impl CommandHandler for ViewHandler {
+    async fn execute(&self, args: &str, ctx: &mut dyn ChatContext) -> ChatResult<()> {
+        let view_name = args.trim();
+
+        if view_name.is_empty() {
+            if self.views.is_empty() {
+                ctx.display_info("No Lua views available. Define views with @view annotation.");
+            } else {
+                let mut msg = String::from("Available views:\n");
+                for view in &self.views {
+                    msg.push_str(&format!(
+                        "  {} - {}\n",
+                        view.name.bright_cyan(),
+                        view.description
+                    ));
+                }
+                msg.push_str("\nUsage: /view <name>");
+                ctx.display_info(&msg);
+            }
+            return Ok(());
+        }
+
+        if let Some(view) = self.views.iter().find(|v| v.name == view_name) {
+            ctx.display_info(&format!(
+                "Opening view '{}' (handled by TUI)...\nSource: {}",
+                view.name.bright_cyan(),
+                view.source_path
+            ));
+        } else {
+            ctx.display_error(&format!(
+                "View '{}' not found. Use /view to list available views.",
+                view_name
+            ));
+        }
+
+        Ok(())
+    }
+}
+
 // ============================================================================
 // REPL Command Handlers (colon prefix)
 // ============================================================================
