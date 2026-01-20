@@ -244,9 +244,7 @@ function format_search_results(ctx, event)
 end
 "#;
 
-    let tools = parser
-        .parse_lua_tools(source, Path::new("multi.lua"))
-        .unwrap();
+    let tools = parser.parse_tools(source, Path::new("multi.lua")).unwrap();
     assert_eq!(tools.len(), 2, "Should find 2 tools");
 
     // Verify search tool
@@ -257,9 +255,8 @@ end
     assert_eq!(search.params[1].name, "limit");
     assert!(search.params[1].param_type.contains("number"));
 
-    // Verify handlers
     let handlers = parser
-        .parse_handlers(source, Path::new("multi.lua"), false)
+        .parse_handlers(source, Path::new("multi.lua"))
         .unwrap();
     assert_eq!(handlers.len(), 1);
     assert_eq!(handlers[0].event_type, "tool:after");
@@ -288,9 +285,7 @@ fn test_annotation_parser_fennel_syntax() {
   event)
 "#;
 
-    let tools = parser
-        .parse_fennel_tools(source, Path::new("math.fnl"))
-        .unwrap();
+    let tools = parser.parse_tools(source, Path::new("math.fnl")).unwrap();
     assert_eq!(tools.len(), 1);
     assert!(tools[0].is_fennel);
     assert_eq!(tools[0].name, "factorial");
@@ -298,7 +293,7 @@ fn test_annotation_parser_fennel_syntax() {
     assert_eq!(tools[0].params[0].name, "n");
 
     let handlers = parser
-        .parse_handlers(source, Path::new("math.fnl"), true)
+        .parse_handlers(source, Path::new("math.fnl"))
         .unwrap();
     assert_eq!(handlers.len(), 1);
     assert_eq!(handlers[0].name, "log_call");
@@ -324,9 +319,7 @@ function init(config)
 end
 "#;
 
-    let plugins = parser
-        .parse_plugins(source, Path::new("git.lua"), false)
-        .unwrap();
+    let plugins = parser.parse_plugins(source, Path::new("git.lua")).unwrap();
     assert_eq!(plugins.len(), 1);
     assert_eq!(plugins[0].name, "git_tools");
     assert_eq!(plugins[0].description, "Git integration plugin");
