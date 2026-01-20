@@ -600,3 +600,71 @@ fn graduated_user_prompt_bottom_border_not_eaten_by_viewport() {
         viewport
     );
 }
+
+#[test]
+fn streaming_only_first_block_gets_bullet() {
+    let mut runtime = TestRuntime::new(80, 24);
+    let mut app = InkChatApp::default();
+
+    app.on_message(ChatAppMsg::UserMessage("Question".to_string()));
+
+    let tree = view_with_default_ctx(&app);
+    runtime.render(&tree);
+
+    app.on_message(ChatAppMsg::TextDelta("First paragraph.\n\n".to_string()));
+    let tree = view_with_default_ctx(&app);
+    runtime.render(&tree);
+
+    app.on_message(ChatAppMsg::TextDelta("Second paragraph.\n\n".to_string()));
+    let tree = view_with_default_ctx(&app);
+    runtime.render(&tree);
+
+    app.on_message(ChatAppMsg::TextDelta("Third paragraph.".to_string()));
+    let tree = view_with_default_ctx(&app);
+    runtime.render(&tree);
+
+    let stdout = strip_ansi(runtime.stdout_content());
+    let bullet_count = stdout.matches('●').count();
+
+    assert_eq!(
+        bullet_count, 1,
+        "Only one bullet should appear (for first block), found {}: {}",
+        bullet_count, stdout
+    );
+}
+
+#[test]
+fn stream_cancel_graduates_existing_content() {
+    let mut runtime = TestRuntime::new(80, 24);
+    let mut app = InkChatApp::default();
+
+    app.on_message(ChatAppMsg::UserMessage("Question".to_string()));
+
+    let tree = view_with_default_ctx(&app);
+    runtime.render(&tree);
+
+    app.on_message(ChatAppMsg::TextDelta("First part of answer. ".to_string()));
+    app.on_message(ChatAppMsg::TextDelta("More content here.".to_string()));
+
+    let tree = view_with_default_ctx(&app);
+    runtime.render(&tree);
+
+    let pre_cancel_viewport = strip_ansi(runtime.viewport_content());
+    assert!(
+        pre_cancel_viewport.contains("First part"),
+        "Content should be visible before cancel: {}",
+        pre_cancel_viewport
+    );
+
+    app.on_message(ChatAppMsg::StreamCancelled);
+
+    let tree = view_with_default_ctx(&app);
+    runtime.render(&tree);
+
+    let post_cancel = strip_ansi(runtime.stdout_content());
+    assert!(
+        post_cancel.contains("First part"),
+        "Cancelled content should be graduated to stdout: {}",
+        post_cancel
+    );
+}
