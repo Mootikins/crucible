@@ -150,31 +150,42 @@ pub fn markdown_to_node_with_width(markdown: &str, width: usize) -> Node {
 
 /// Convert markdown with explicit render style
 pub fn markdown_to_node_styled(markdown: &str, style: RenderStyle) -> Node {
-    let markdown = normalize_br_tags(markdown);
-    let md = create_parser();
-    let ast = md.parse(&markdown);
+    use std::panic::{catch_unwind, AssertUnwindSafe};
 
-    let mut ctx = RenderContext::new(
-        style.text_width(),
-        style.table_width(),
-        style.blockquote_width(),
-        style.margins(),
-    );
-    render_node(&ast, &mut ctx);
-    ctx.into_node()
+    let markdown = normalize_br_tags(markdown);
+    let result = catch_unwind(AssertUnwindSafe(|| {
+        let md = create_parser();
+        let ast = md.parse(&markdown);
+
+        let mut ctx = RenderContext::new(
+            style.text_width(),
+            style.table_width(),
+            style.blockquote_width(),
+            style.margins(),
+        );
+        render_node(&ast, &mut ctx);
+        ctx.into_node()
+    }));
+
+    result.unwrap_or_else(|_| text(&markdown))
 }
 
 /// Convert markdown text to an oil Node tree with separate widths for text and tables.
 /// Prefer `markdown_to_node_styled` for clearer intent.
 pub fn markdown_to_node_with_widths(markdown: &str, text_width: usize, table_width: usize) -> Node {
+    use std::panic::{catch_unwind, AssertUnwindSafe};
+
     let markdown = normalize_br_tags(markdown);
+    let result = catch_unwind(AssertUnwindSafe(|| {
+        let md = create_parser();
+        let ast = md.parse(&markdown);
 
-    let md = create_parser();
-    let ast = md.parse(&markdown);
+        let mut ctx = RenderContext::new(text_width, table_width, table_width, Margins::default());
+        render_node(&ast, &mut ctx);
+        ctx.into_node()
+    }));
 
-    let mut ctx = RenderContext::new(text_width, table_width, table_width, Margins::default());
-    render_node(&ast, &mut ctx);
-    ctx.into_node()
+    result.unwrap_or_else(|_| text(&markdown))
 }
 
 fn create_parser() -> MarkdownIt {
@@ -1512,5 +1523,17 @@ mod tests {
             assert!(output.contains("answer"), "Should contain variable name");
             assert!(output.contains("42"), "Should contain number literal");
         }
+    }
+
+    #[test]
+    fn markdown_with_bullet_and_list_does_not_panic() {
+        let md = "● I don't have the ability to look directly into your local file system, but I can definitely help you understand the structure and contents of a repo if you share them with me. Here's what you can do:\n\n   1. Copy the folder tree";
+
+        let result = std::panic::catch_unwind(|| markdown_to_node(md));
+
+        assert!(
+            result.is_ok(),
+            "Should not panic on bullet with apostrophe and list"
+        );
     }
 }
