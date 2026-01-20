@@ -7,6 +7,18 @@ use crossterm::style::Stylize;
 use std::io::{self, Write};
 use textwrap::{wrap, Options, WordSplitter};
 
+pub trait RenderFilter {
+    fn skip_static(&self, key: &str) -> bool;
+}
+
+pub struct NoFilter;
+
+impl RenderFilter for NoFilter {
+    fn skip_static(&self, _key: &str) -> bool {
+        false
+    }
+}
+
 #[derive(Debug, Clone, Copy, Default)]
 pub struct CursorInfo {
     pub col: u16,
@@ -24,9 +36,17 @@ pub fn render_to_string(node: &Node, width: usize) -> String {
 }
 
 pub fn render_with_cursor(node: &Node, width: usize) -> RenderResult {
+    render_with_cursor_filtered(node, width, &NoFilter)
+}
+
+pub fn render_with_cursor_filtered(
+    node: &Node,
+    width: usize,
+    filter: &dyn RenderFilter,
+) -> RenderResult {
     let mut output = String::new();
     let mut cursor_info = CursorInfo::default();
-    render_node_tracking_cursor(node, width, &mut output, &mut cursor_info);
+    render_node_filtered(node, width, filter, &mut output, &mut cursor_info);
 
     if cursor_info.visible {
         let lines: Vec<&str> = output.lines().collect();
@@ -53,6 +73,16 @@ fn render_node_tracking_cursor(
     output: &mut String,
     cursor_info: &mut CursorInfo,
 ) {
+    render_node_filtered(node, width, &NoFilter, output, cursor_info);
+}
+
+fn render_node_filtered(
+    node: &Node,
+    width: usize,
+    filter: &dyn RenderFilter,
+    output: &mut String,
+    cursor_info: &mut CursorInfo,
+) {
     match node {
         Node::Empty => {}
 
@@ -61,12 +91,15 @@ fn render_node_tracking_cursor(
         }
 
         Node::Box(boxnode) => {
-            render_box_tracking_cursor(boxnode, width, output, cursor_info);
+            render_box_filtered(boxnode, width, filter, output, cursor_info);
         }
 
         Node::Static(static_node) => {
+            if filter.skip_static(&static_node.key) {
+                return;
+            }
             for child in &static_node.children {
-                render_node_tracking_cursor(child, width, output, cursor_info);
+                render_node_filtered(child, width, filter, output, cursor_info);
             }
         }
 
@@ -84,21 +117,22 @@ fn render_node_tracking_cursor(
 
         Node::Fragment(children) => {
             for child in children {
-                render_node_tracking_cursor(child, width, output, cursor_info);
+                render_node_filtered(child, width, filter, output, cursor_info);
             }
         }
 
         Node::Focusable(focusable) => {
-            render_node_tracking_cursor(&focusable.child, width, output, cursor_info);
+            render_node_filtered(&focusable.child, width, filter, output, cursor_info);
         }
 
         Node::ErrorBoundary(boundary) => {
             let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 let mut child_output = String::new();
                 let mut child_cursor = CursorInfo::default();
-                render_node_tracking_cursor(
+                render_node_filtered(
                     &boundary.child,
                     width,
+                    &NoFilter,
                     &mut child_output,
                     &mut child_cursor,
                 );
@@ -113,7 +147,7 @@ fn render_node_tracking_cursor(
                     }
                 }
                 Err(_) => {
-                    render_node_tracking_cursor(&boundary.fallback, width, output, cursor_info)
+                    render_node_filtered(&boundary.fallback, width, filter, output, cursor_info)
                 }
             }
         }
@@ -152,6 +186,16 @@ fn render_box_tracking_cursor(
     output: &mut String,
     cursor_info: &mut CursorInfo,
 ) {
+    render_box_filtered(boxnode, width, &NoFilter, output, cursor_info);
+}
+
+fn render_box_filtered(
+    boxnode: &BoxNode,
+    width: usize,
+    filter: &dyn RenderFilter,
+    output: &mut String,
+    cursor_info: &mut CursorInfo,
+) {
     let border_size = if boxnode.border.is_some() { 2 } else { 0 };
     let inner_width = width
         .saturating_sub(boxnode.padding.horizontal() as usize)
@@ -159,17 +203,19 @@ fn render_box_tracking_cursor(
 
     match boxnode.direction {
         Direction::Column => {
-            render_column_children_tracking_cursor(
+            render_column_children_filtered(
                 &boxnode.children,
                 inner_width,
+                filter,
                 output,
                 cursor_info,
             );
         }
         Direction::Row => {
-            render_row_children_tracking_cursor(
+            render_row_children_filtered(
                 &boxnode.children,
                 inner_width,
+                filter,
                 output,
                 cursor_info,
             );
@@ -189,6 +235,16 @@ fn render_column_children_tracking_cursor(
     output: &mut String,
     cursor_info: &mut CursorInfo,
 ) {
+    render_column_children_filtered(children, width, &NoFilter, output, cursor_info);
+}
+
+fn render_column_children_filtered(
+    children: &[Node],
+    width: usize,
+    filter: &dyn RenderFilter,
+    output: &mut String,
+    cursor_info: &mut CursorInfo,
+) {
     for (i, child) in children.iter().enumerate() {
         if matches!(child, Node::Empty) {
             continue;
@@ -196,13 +252,23 @@ fn render_column_children_tracking_cursor(
         if i > 0 && !output.is_empty() {
             output.push_str("\r\n");
         }
-        render_node_tracking_cursor(child, width, output, cursor_info);
+        render_node_filtered(child, width, filter, output, cursor_info);
     }
 }
 
 fn render_row_children_tracking_cursor(
     children: &[Node],
     width: usize,
+    output: &mut String,
+    cursor_info: &mut CursorInfo,
+) {
+    render_row_children_filtered(children, width, &NoFilter, output, cursor_info);
+}
+
+fn render_row_children_filtered(
+    children: &[Node],
+    width: usize,
+    filter: &dyn RenderFilter,
     output: &mut String,
     cursor_info: &mut CursorInfo,
 ) {
@@ -233,7 +299,7 @@ fn render_row_children_tracking_cursor(
             Size::Content => {
                 let mut temp = String::new();
                 let mut temp_cursor = CursorInfo::default();
-                render_node_tracking_cursor(child, width, &mut temp, &mut temp_cursor);
+                render_node_filtered(child, width, filter, &mut temp, &mut temp_cursor);
                 let content_width = temp.lines().next().map(visible_width).unwrap_or(0);
                 fixed_width_used += content_width;
                 child_infos.push(RowChildInfo::Content(temp, temp_cursor));
@@ -259,7 +325,7 @@ fn render_row_children_tracking_cursor(
                 }
             }
             RowChildInfo::Fixed(w) => {
-                render_node_tracking_cursor(child, w, output, cursor_info);
+                render_node_filtered(child, w, filter, output, cursor_info);
             }
             RowChildInfo::Flex(weight) => {
                 let flex_width = if total_flex_weight > 0 {
