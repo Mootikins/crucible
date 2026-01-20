@@ -6,7 +6,7 @@ use textwrap::{wrap, Options, WordSplitter};
 use super::chat_app::Role;
 use crucible_ink::ContentSource;
 
-const MAX_CACHED_ITEMS: usize = 32;
+pub const MAX_CACHED_ITEMS: usize = 32;
 
 #[derive(Debug, Clone)]
 pub struct CachedMessage {
