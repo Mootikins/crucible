@@ -60,13 +60,6 @@ impl GraduationState {
         }
     }
 
-    /// Builds the stdout delta string from graduated content.
-    /// Returns (output_string, new_pending_newline_state).
-    /// Uses \r\n for terminal compatibility.
-    ///
-    /// Newline logic: A newline is added BEFORE an item's content only if
-    /// both the previous item had newline=true AND the current item has newline=true.
-    /// This allows continuations (newline=false) to append without separator.
     pub fn format_stdout_delta(
         graduated: &[GraduatedContent],
         pending_newline: bool,
@@ -91,8 +84,6 @@ impl GraduationState {
             output.push_str("\r\n");
         }
 
-        // If we added boundary newlines, the separator is already present,
-        // so next frame shouldn't add another leading newline.
         let final_pending = if boundary_lines > 0 {
             false
         } else {
@@ -109,7 +100,6 @@ impl GraduationState {
         Ok(graduated)
     }
 
-    /// Read-only collection of static nodes (doesn't modify graduated_keys)
     fn collect_static_nodes_readonly(&self, node: &Node, graduated: &mut Vec<GraduatedContent>) {
         match node {
             Node::Static(static_node) => {
