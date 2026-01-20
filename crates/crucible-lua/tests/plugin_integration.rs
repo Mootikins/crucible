@@ -1,0 +1,450 @@
+//! Integration tests for the plugin system
+//!
+//! Tests the full plugin lifecycle:
+//! 1. Plugin discovery from directories
+//! 2. Manifest loading and validation
+//! 3. Plugin loading with dependency resolution
+//! 4. Tool/Command/View/Handler registration
+//! 5. Programmatic registration API
+//! 6. Plugin unloading and reloading
+
+use crucible_lua::{
+    CommandBuilder, HandlerBuilder, PluginManager, PluginState, ToolBuilder, ViewBuilder,
+};
+use std::fs;
+use tempfile::TempDir;
+
+fn create_plugin_structure(
+    base: &std::path::Path,
+    name: &str,
+    version: &str,
+) -> std::path::PathBuf {
+    let plugin_dir = base.join(name);
+    fs::create_dir_all(&plugin_dir).unwrap();
+
+    let manifest = format!(
+        "name: \"{}\"\nversion: \"{}\"\nmain: init.lua\n",
+        name, version
+    );
+
+    fs::write(plugin_dir.join("plugin.yaml"), manifest).unwrap();
+    fs::write(
+        plugin_dir.join("init.lua"),
+        r#"
+--- Example tool
+-- @tool desc="Test tool"
+-- @param query string Search query
+function M.test_tool(args)
+    return { result = "ok" }
+end
+"#,
+    )
+    .unwrap();
+
+    plugin_dir
+}
+
+fn create_plugin_with_dependency(
+    base: &std::path::Path,
+    name: &str,
+    version: &str,
+    deps: &[(&str, &str)],
+) -> std::path::PathBuf {
+    let plugin_dir = base.join(name);
+    fs::create_dir_all(&plugin_dir).unwrap();
+
+    let deps_yaml: Vec<String> = deps
+        .iter()
+        .map(|(n, v)| format!("  - name: \"{}\"\n    version: \"{}\"", n, v))
+        .collect();
+
+    let manifest = format!(
+        r#"name: "{}"
+version: "{}"
+main: init.lua
+dependencies:
+{}
+"#,
+        name,
+        version,
+        deps_yaml.join("\n")
+    );
+
+    fs::write(plugin_dir.join("plugin.yaml"), manifest).unwrap();
+    fs::write(plugin_dir.join("init.lua"), "-- empty").unwrap();
+
+    plugin_dir
+}
+
+// ============================================================================
+// PLUGIN DISCOVERY
+// ============================================================================
+
+#[test]
+fn test_discover_single_plugin() {
+    let temp = TempDir::new().unwrap();
+    create_plugin_structure(temp.path(), "my-plugin", "1.0.0");
+
+    let mut manager = PluginManager::new().with_search_paths(vec![temp.path().to_path_buf()]);
+    let discovered = manager.discover().unwrap();
+
+    assert_eq!(discovered.len(), 1);
+    assert!(discovered.contains(&"my-plugin".to_string()));
+}
+
+#[test]
+fn test_discover_multiple_plugins() {
+    let temp = TempDir::new().unwrap();
+    create_plugin_structure(temp.path(), "plugin-a", "1.0.0");
+    create_plugin_structure(temp.path(), "plugin-b", "2.0.0");
+    create_plugin_structure(temp.path(), "plugin-c", "0.1.0");
+
+    let mut manager = PluginManager::new().with_search_paths(vec![temp.path().to_path_buf()]);
+    let discovered = manager.discover().unwrap();
+
+    assert_eq!(discovered.len(), 3);
+    assert!(discovered.contains(&"plugin-a".to_string()));
+    assert!(discovered.contains(&"plugin-b".to_string()));
+    assert!(discovered.contains(&"plugin-c".to_string()));
+}
+
+#[test]
+fn test_discover_ignores_invalid_plugins() {
+    let temp = TempDir::new().unwrap();
+
+    // Valid plugin
+    create_plugin_structure(temp.path(), "valid-plugin", "1.0.0");
+
+    // Invalid: missing manifest
+    let invalid_dir = temp.path().join("invalid-no-manifest");
+    fs::create_dir_all(&invalid_dir).unwrap();
+    fs::write(invalid_dir.join("init.lua"), "-- code").unwrap();
+
+    // Invalid: bad manifest JSON
+    let bad_json_dir = temp.path().join("invalid-bad-json");
+    fs::create_dir_all(&bad_json_dir).unwrap();
+    fs::write(bad_json_dir.join("plugin.json"), "{ broken json").unwrap();
+
+    let mut manager = PluginManager::new().with_search_paths(vec![temp.path().to_path_buf()]);
+    let discovered = manager.discover().unwrap();
+
+    assert_eq!(discovered.len(), 1);
+    assert!(discovered.contains(&"valid-plugin".to_string()));
+}
+
+// ============================================================================
+// PLUGIN LOADING
+// ============================================================================
+
+#[test]
+fn test_load_plugin() {
+    let temp = TempDir::new().unwrap();
+    create_plugin_structure(temp.path(), "loadable", "1.0.0");
+
+    let mut manager = PluginManager::new().with_search_paths(vec![temp.path().to_path_buf()]);
+    manager.discover().unwrap();
+
+    manager.load("loadable").unwrap();
+
+    let plugin = manager.get("loadable").unwrap();
+    assert_eq!(plugin.state, PluginState::Active);
+}
+
+#[test]
+fn test_load_all_plugins() {
+    let temp = TempDir::new().unwrap();
+    create_plugin_structure(temp.path(), "plugin-1", "1.0.0");
+    create_plugin_structure(temp.path(), "plugin-2", "1.0.0");
+
+    let mut manager = PluginManager::new().with_search_paths(vec![temp.path().to_path_buf()]);
+    manager.discover().unwrap();
+
+    let loaded = manager.load_all().unwrap();
+
+    assert_eq!(loaded.len(), 2);
+    assert!(loaded.contains(&"plugin-1".to_string()));
+    assert!(loaded.contains(&"plugin-2".to_string()));
+}
+
+#[test]
+fn test_load_with_dependencies() {
+    let temp = TempDir::new().unwrap();
+
+    // Base plugin
+    create_plugin_structure(temp.path(), "base-plugin", "1.0.0");
+
+    // Plugin that depends on base
+    create_plugin_with_dependency(
+        temp.path(),
+        "dependent-plugin",
+        "1.0.0",
+        &[("base-plugin", ">=1.0.0")],
+    );
+
+    let mut manager = PluginManager::new().with_search_paths(vec![temp.path().to_path_buf()]);
+    manager.discover().unwrap();
+
+    // Should automatically load base first
+    let loaded = manager.load_all().unwrap();
+
+    assert_eq!(loaded.len(), 2);
+    // Base should be loaded before dependent
+    let base_idx = loaded.iter().position(|n| n == "base-plugin").unwrap();
+    let dep_idx = loaded.iter().position(|n| n == "dependent-plugin").unwrap();
+    assert!(base_idx < dep_idx);
+}
+
+#[test]
+fn test_load_fails_for_missing_dependency() {
+    let temp = TempDir::new().unwrap();
+
+    // Plugin that depends on non-existent plugin
+    create_plugin_with_dependency(
+        temp.path(),
+        "orphan-plugin",
+        "1.0.0",
+        &[("non-existent", ">=1.0.0")],
+    );
+
+    let mut manager = PluginManager::new().with_search_paths(vec![temp.path().to_path_buf()]);
+    manager.discover().unwrap();
+
+    let result = manager.load("orphan-plugin");
+    assert!(result.is_err());
+}
+
+// ============================================================================
+// PLUGIN UNLOADING
+// ============================================================================
+
+#[test]
+fn test_unload_plugin() {
+    let temp = TempDir::new().unwrap();
+    create_plugin_structure(temp.path(), "unloadable", "1.0.0");
+
+    let mut manager = PluginManager::new().with_search_paths(vec![temp.path().to_path_buf()]);
+    manager.discover().unwrap();
+    manager.load("unloadable").unwrap();
+
+    manager.unload("unloadable").unwrap();
+
+    let plugin = manager.get("unloadable").unwrap();
+    assert_eq!(plugin.state, PluginState::Discovered);
+}
+
+#[test]
+fn test_unload_removes_plugin_tools() {
+    let temp = TempDir::new().unwrap();
+    create_plugin_structure(temp.path(), "tool-plugin", "1.0.0");
+
+    let mut manager = PluginManager::new().with_search_paths(vec![temp.path().to_path_buf()]);
+    manager.discover().unwrap();
+    manager.load("tool-plugin").unwrap();
+
+    let tools_before = manager.tools().len();
+    assert!(tools_before > 0, "Plugin should have tools");
+
+    manager.unload("tool-plugin").unwrap();
+
+    let tools_after = manager.tools().len();
+    assert_eq!(tools_after, 0, "Tools should be removed on unload");
+}
+
+#[test]
+fn test_cannot_unload_if_depended_upon() {
+    let temp = TempDir::new().unwrap();
+    create_plugin_structure(temp.path(), "base-plugin", "1.0.0");
+    create_plugin_with_dependency(
+        temp.path(),
+        "dependent",
+        "1.0.0",
+        &[("base-plugin", ">=1.0.0")],
+    );
+
+    let mut manager = PluginManager::new().with_search_paths(vec![temp.path().to_path_buf()]);
+    manager.discover().unwrap();
+    manager.load_all().unwrap();
+
+    // Should fail because dependent relies on base
+    let result = manager.unload("base-plugin");
+    assert!(result.is_err());
+}
+
+// ============================================================================
+// PROGRAMMATIC REGISTRATION
+// ============================================================================
+
+#[test]
+fn test_register_tool_programmatically() {
+    let mut manager = PluginManager::new();
+
+    let tool = ToolBuilder::new("custom_search")
+        .description("A custom search tool")
+        .param("query", "string")
+        .param_optional("limit", "number")
+        .returns("SearchResult[]")
+        .build();
+
+    let handle = manager.register_tool(tool, None);
+
+    assert_eq!(manager.tools().len(), 1);
+    assert_eq!(manager.tools()[0].name, "custom_search");
+    assert_eq!(manager.tools()[0].params.len(), 2);
+
+    assert!(manager.unregister(handle));
+    assert_eq!(manager.tools().len(), 0);
+}
+
+#[test]
+fn test_register_command_programmatically() {
+    let mut manager = PluginManager::new();
+
+    let cmd = CommandBuilder::new("tasks")
+        .description("Manage tasks")
+        .hint("[add|list|done] <args>")
+        .param("action", "string")
+        .build();
+
+    let handle = manager.register_command(cmd, None);
+
+    assert_eq!(manager.commands().len(), 1);
+    assert_eq!(manager.commands()[0].name, "tasks");
+    assert!(manager.commands()[0].input_hint.is_some());
+
+    assert!(manager.unregister(handle));
+    assert_eq!(manager.commands().len(), 0);
+}
+
+#[test]
+fn test_register_handler_programmatically() {
+    let mut manager = PluginManager::new();
+
+    let handler = HandlerBuilder::new("log_calls", "tool:before")
+        .pattern("*")
+        .priority(100)
+        .build();
+
+    let handle = manager.register_handler(handler, None);
+
+    assert_eq!(manager.handlers().len(), 1);
+    assert_eq!(manager.handlers()[0].event_type, "tool:before");
+    assert_eq!(manager.handlers()[0].priority, 100);
+
+    assert!(manager.unregister(handle));
+    assert_eq!(manager.handlers().len(), 0);
+}
+
+#[test]
+fn test_register_view_programmatically() {
+    let mut manager = PluginManager::new();
+
+    let view = ViewBuilder::new("graph")
+        .description("Interactive graph view")
+        .handler_fn("render_graph")
+        .build();
+
+    let handle = manager.register_view(view, None);
+
+    assert_eq!(manager.views().len(), 1);
+    assert_eq!(manager.views()[0].name, "graph");
+    assert_eq!(
+        manager.views()[0].handler_fn,
+        Some("render_graph".to_string())
+    );
+
+    assert!(manager.unregister(handle));
+    assert_eq!(manager.views().len(), 0);
+}
+
+#[test]
+fn test_register_with_owner() {
+    let mut manager = PluginManager::new();
+
+    let tool1 = ToolBuilder::new("owned_tool").build();
+    let tool2 = ToolBuilder::new("orphan_tool").build();
+    let cmd = CommandBuilder::new("owned_cmd").build();
+
+    manager.register_tool(tool1, Some("my_workflow"));
+    manager.register_tool(tool2, None);
+    manager.register_command(cmd, Some("my_workflow"));
+
+    assert_eq!(manager.tools().len(), 2);
+    assert_eq!(manager.commands().len(), 1);
+
+    let removed = manager.unregister_by_owner("my_workflow");
+
+    assert_eq!(removed, 2);
+    assert_eq!(manager.tools().len(), 1);
+    assert_eq!(manager.tools()[0].name, "orphan_tool");
+    assert_eq!(manager.commands().len(), 0);
+}
+
+// ============================================================================
+// CONDITIONAL HANDLERS
+// ============================================================================
+
+#[test]
+fn test_conditional_handler_until() {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Arc;
+
+    let mut manager = PluginManager::new();
+    let done_flag = Arc::new(AtomicBool::new(false));
+    let flag_clone = done_flag.clone();
+
+    let handler = HandlerBuilder::new("temp_handler", "session:message")
+        .pattern("*")
+        .build();
+
+    manager.register_handler_until(handler, move || flag_clone.load(Ordering::Relaxed));
+
+    assert_eq!(manager.handlers().len(), 1);
+
+    // Should not be removed yet
+    let expired = manager.check_conditional_handlers();
+    assert!(expired.is_empty());
+    assert_eq!(manager.handlers().len(), 1);
+
+    // Now trigger the condition
+    done_flag.store(true, Ordering::Relaxed);
+
+    let expired = manager.check_conditional_handlers();
+    assert_eq!(expired.len(), 1);
+    assert_eq!(manager.handlers().len(), 0);
+}
+
+#[test]
+fn test_conditional_handler_for_count() {
+    let mut manager = PluginManager::new();
+
+    let handler = HandlerBuilder::new("counted_handler", "tool:after")
+        .pattern("*")
+        .build();
+
+    manager.register_handler_for_count(handler, 3);
+
+    assert_eq!(manager.handlers().len(), 1);
+
+    for i in 0..3 {
+        let expired = manager.check_conditional_handlers();
+        assert!(expired.is_empty(), "Should not expire on check {}", i + 1);
+    }
+
+    let expired = manager.check_conditional_handlers();
+    assert_eq!(expired.len(), 1);
+    assert_eq!(manager.handlers().len(), 0);
+}
+
+// ============================================================================
+// PLUGIN MANAGER DEBUG
+// ============================================================================
+
+#[test]
+fn test_plugin_manager_debug() {
+    let mut manager = PluginManager::new();
+    manager.register_tool(ToolBuilder::new("test").build(), None);
+
+    let debug_str = format!("{:?}", manager);
+    assert!(debug_str.contains("PluginManager"));
+    assert!(debug_str.contains("tools_count"));
+}
