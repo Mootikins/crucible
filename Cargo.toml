@@ -25,6 +25,7 @@ members = [
     "crates/crucible-lance",
     "crates/crucible-benchmarks",
     "crates/crucible-observe",
+    "crates/crucible-ink",
 ]
 default-members = ["crates/crucible-cli"]
 
@@ -172,6 +173,7 @@ crucible-web = { path = "crates/crucible-web" }
 crucible-observe = { path = "crates/crucible-observe" }
 crucible-daemon = { path = "crates/crucible-daemon" }
 crucible-daemon-client = { path = "crates/crucible-daemon-client" }
+crucible-ink = { path = "crates/crucible-ink" }
 oq = "0.1"
 
 # Workspace-level test feature flags
