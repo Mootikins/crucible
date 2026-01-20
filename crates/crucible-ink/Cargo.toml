@@ -1,0 +1,23 @@
+[package]
+name = "crucible-ink"
+version.workspace = true
+authors.workspace = true
+license.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Minimal Elm/Dioxus-inspired TUI framework for terminal applications"
+
+[features]
+default = []
+test-utils = []
+
+[dependencies]
+crossterm = { workspace = true }
+unicode-width = "0.2"
+taffy = "0.7"
+textwrap = "0.16.2"
+similar = "2.7"
+
+[dev-dependencies]
+insta = { version = "1.46", features = ["filters"] }
+test-case = "3.3"
