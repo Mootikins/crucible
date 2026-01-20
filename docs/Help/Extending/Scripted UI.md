@@ -146,6 +146,96 @@ function choose_database(args)
 end
 ```
 
+## cru.oil: Building Views (Obvious Interface Language)
+
+The `cru.oil` module provides a declarative API for building TUI nodes in Lua:
+
+```lua
+local oil = cru.oil
+
+-- Text with styling
+local heading = oil.text("Tasks", { bold = true, fg = "blue" })
+
+-- Box containers
+local container = oil.box({
+    direction = "column",
+    padding = 1,
+    border = "rounded",
+    children = {
+        oil.text("Header"),
+        oil.divider(),
+        oil.text("Content"),
+    }
+})
+
+-- Lists
+local bullets = oil.bullet_list({
+    oil.text("First item"),
+    oil.text("Second item"),
+})
+
+-- Progress indicators
+local progress = oil.progress_bar(0.75)
+local loading = oil.spinner()
+```
+
+### Available Components
+
+| Function | Description |
+|----------|-------------|
+| `oil.text(content, style?)` | Styled text |
+| `oil.box(opts)` | Container with direction, padding, border |
+| `oil.divider()` | Horizontal line |
+| `oil.spacer()` | Flexible space |
+| `oil.bullet_list(children)` | Bulleted list |
+| `oil.numbered_list(children)` | Numbered list |
+| `oil.key_value(key, value)` | Key: value pair |
+| `oil.badge(text, color)` | Colored badge |
+| `oil.progress_bar(percent)` | Progress indicator |
+| `oil.spinner()` | Loading spinner |
+| `oil.horizontal_rule()` | Full-width divider |
+
+### Style Options
+
+```lua
+local style = {
+    fg = "red",        -- Foreground color
+    bg = "blue",       -- Background color
+    bold = true,       -- Bold text
+    dim = true,        -- Dimmed text
+    italic = true,     -- Italic text
+    underline = true,  -- Underlined text
+}
+```
+
+### Box Options
+
+```lua
+local opts = {
+    direction = "row",      -- "row" or "column"
+    justify = "center",     -- start, end, center, space_between, space_around, space_evenly
+    align = "stretch",      -- start, end, center, stretch
+    padding = 2,            -- All sides
+    margin = 1,             -- All sides
+    gap = 1,                -- Between children
+    border = "single",      -- single, double, rounded, heavy
+    children = {},          -- Child nodes
+}
+```
+
+### Node Spec Syntax
+
+For concise UI definitions, use node spec syntax (array-based markup):
+
+```lua
+local view = oil.build({
+    "box", { direction = "column", border = "rounded" },
+    {"text", { bold = true }, "Header"},
+    {"divider"},
+    {"text", "Content here"},
+})
+```
+
 ## Fennel Support
 
 The same API is available in Fennel:
@@ -172,3 +262,4 @@ The same API is available in Fennel:
 - [[Help/Lua/Configuration]] - Lua configuration
 - [[Help/TUI/Component Architecture]] - UI internals
 - [[Help/Extending/Creating Plugins]] - Plugin development
+- [[Help/Extending/Plugin Manifest]] - Plugin manifest format
