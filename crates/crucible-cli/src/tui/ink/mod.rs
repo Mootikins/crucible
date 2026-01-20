@@ -38,6 +38,7 @@ mod ansi;
 mod app;
 pub mod chat_app;
 pub mod chat_runner;
+pub mod diff;
 mod event;
 pub mod example;
 mod focus;
