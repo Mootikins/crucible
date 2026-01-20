@@ -151,6 +151,12 @@ pub trait AgentHandle: Send + Sync {
     fn get_commands(&self) -> &[AvailableCommand] {
         &[]
     }
+
+    /// Clear conversation history
+    ///
+    /// Resets the agent's conversation context, removing all previous messages.
+    /// UI state should be cleared separately.
+    fn clear_history(&mut self) {}
 }
 
 /// Blanket implementation for boxed trait objects
@@ -193,6 +199,10 @@ impl AgentHandle for Box<dyn AgentHandle + Send + Sync> {
 
     fn get_commands(&self) -> &[AvailableCommand] {
         (**self).get_commands()
+    }
+
+    fn clear_history(&mut self) {
+        (**self).clear_history()
     }
 }
 

@@ -52,6 +52,7 @@ pub enum ChatAppMsg {
     Status(String),
     ModeChanged(String),
     ContextUsage { used: usize, total: usize },
+    ClearHistory,
 }
 
 #[derive(Debug, Clone)]
@@ -483,6 +484,7 @@ impl App for InkChatApp {
                 self.context_total = total;
                 Action::Continue
             }
+            ChatAppMsg::ClearHistory => Action::Continue,
         }
     }
 
@@ -862,15 +864,9 @@ impl InkChatApp {
                 self.status = "Mode: auto".to_string();
                 Action::Continue
             }
-            "clear" => {
-                self.items.clear();
-                self.message_counter = 0;
-                self.status = "Cleared".to_string();
-                Action::Continue
-            }
             "help" => {
                 self.add_system_message(
-                    "Commands: /mode, /normal, /plan, /auto, /clear, /help, /quit".to_string(),
+                    "Commands: /mode, /normal, /plan, /auto, /help, /quit".to_string(),
                 );
                 Action::Continue
             }
@@ -887,7 +883,7 @@ impl InkChatApp {
             "q" | "quit" => Action::Quit,
             "help" | "h" => {
                 self.add_system_message(
-                    "[core] :quit :help :palette :export <path>\n[mcp] :mcp".to_string(),
+                    "[core] :quit :help :clear :palette :export <path>\n[mcp] :mcp".to_string(),
                 );
                 Action::Continue
             }
@@ -901,6 +897,13 @@ impl InkChatApp {
             "mcp" => {
                 self.handle_mcp_command();
                 Action::Continue
+            }
+            "clear" => {
+                self.items.clear();
+                self.message_counter = 0;
+                self.streaming = StreamingState::default();
+                self.status = "Cleared".to_string();
+                Action::Send(ChatAppMsg::ClearHistory)
             }
             _ if command.starts_with("export ") => {
                 let path = command.strip_prefix("export ").unwrap().trim();
@@ -1545,54 +1548,38 @@ impl InkChatApp {
     }
 
     fn format_tool_result(name: &str, result: &str) -> Node {
-        match name {
-            "read_file" => {
-                let summary = if let Some(bracket_start) = result.rfind('[') {
-                    result[bracket_start..].trim_end_matches(']').to_string()
-                } else {
-                    format!("{} lines", result.lines().count())
-                };
-                styled(format!("   {}", summary), Style::new().fg(Color::DarkGray))
-            }
-            _ => {
-                let all_lines: Vec<&str> = result.lines().collect();
-                let lines: Vec<&str> = all_lines.iter().rev().take(3).rev().copied().collect();
-                let truncated = all_lines.len() > 3;
-
-                col(std::iter::once(if truncated {
-                    styled("   …", Style::new().fg(Color::DarkGray))
-                } else {
-                    Node::Empty
-                })
-                .chain(lines.iter().map(|line| {
-                    let truncated_line = if line.len() > 77 {
-                        format!("   {}…", &line[..74])
-                    } else {
-                        format!("   {}", line)
-                    };
-                    styled(truncated_line, Style::new().fg(Color::DarkGray))
-                })))
-            }
+        if name == "read_file" {
+            let summary = result
+                .rfind('[')
+                .map(|i| result[i..].trim_end_matches(']').to_string())
+                .unwrap_or_else(|| format!("{} lines", result.lines().count()));
+            return styled(format!("   {}", summary), Style::new().fg(Color::DarkGray));
         }
+        Self::format_output_tail(result, "   ", 77)
     }
 
     fn format_streaming_output(output: &str) -> Node {
+        Self::format_output_tail(output, "     ", 72)
+    }
+
+    fn format_output_tail(output: &str, prefix: &str, max_line_len: usize) -> Node {
         let all_lines: Vec<&str> = output.lines().collect();
         let lines: Vec<&str> = all_lines.iter().rev().take(3).rev().copied().collect();
         let truncated = all_lines.len() > 3;
+        let truncate_at = max_line_len.saturating_sub(prefix.len() + 1);
 
         col(std::iter::once(if truncated {
-            styled("     …", Style::new().fg(Color::DarkGray))
+            styled(format!("{}…", prefix), Style::new().fg(Color::DarkGray))
         } else {
             Node::Empty
         })
         .chain(lines.iter().map(|line| {
-            let truncated_line = if line.len() > 72 {
-                format!("     {}…", &line[..69])
+            let display = if line.len() > truncate_at {
+                format!("{}{}…", prefix, &line[..truncate_at])
             } else {
-                format!("     {}", line)
+                format!("{}{}", prefix, line)
             };
-            styled(truncated_line, Style::new().fg(Color::DarkGray))
+            styled(display, Style::new().fg(Color::DarkGray))
         })))
     }
 
@@ -1778,17 +1765,10 @@ impl InkChatApp {
     }
 
     fn render_status(&self) -> Node {
-        let mode_bg = match self.mode {
-            ChatMode::Normal => Color::Green,
-            ChatMode::Plan => Color::Blue,
-            ChatMode::Auto => Color::Yellow,
-        };
-        let mode_style = Style::new().bg(mode_bg).fg(Color::Black).bold();
-
-        let mode_str = match self.mode {
-            ChatMode::Normal => " NORMAL ",
-            ChatMode::Plan => " PLAN ",
-            ChatMode::Auto => " AUTO ",
+        let (mode_bg, mode_str) = match self.mode {
+            ChatMode::Normal => (Color::Green, " NORMAL "),
+            ChatMode::Plan => (Color::Blue, " PLAN "),
+            ChatMode::Auto => (Color::Yellow, " AUTO "),
         };
 
         let ctx_str = if self.context_total > 0 {
@@ -1807,33 +1787,33 @@ impl InkChatApp {
             self.truncate_model_name(&self.model, 20)
         };
 
-        let active_notification = self.notification.as_ref().and_then(|(msg, set_at)| {
-            if set_at.elapsed() < NOTIFICATION_TIMEOUT {
-                Some(msg.as_str())
-            } else {
-                None
-            }
-        });
+        let active_notification = self
+            .notification
+            .as_ref()
+            .filter(|(_, set_at)| set_at.elapsed() < NOTIFICATION_TIMEOUT)
+            .map(|(msg, _)| msg.as_str());
+
+        let dark_gray = Style::new().fg(Color::DarkGray);
+        let mut items = vec![
+            styled(
+                mode_str.to_string(),
+                Style::new().bg(mode_bg).fg(Color::Black).bold(),
+            ),
+            styled(" ".to_string(), dark_gray),
+            styled(model_str, Style::new().fg(Color::Cyan)),
+            styled(" ".to_string(), dark_gray),
+            styled(ctx_str, dark_gray),
+        ];
 
         if let Some(notif) = active_notification {
-            row([
-                styled(mode_str.to_string(), mode_style),
-                styled(" ".to_string(), Style::new().fg(Color::DarkGray)),
-                styled(model_str, Style::new().fg(Color::Cyan)),
-                styled(" ".to_string(), Style::new().fg(Color::DarkGray)),
-                styled(ctx_str, Style::new().fg(Color::DarkGray)),
-                spacer(),
-                styled(format!(" {} ", notif), Style::new().fg(Color::Yellow)),
-            ])
-        } else {
-            row([
-                styled(mode_str.to_string(), mode_style),
-                styled(" ".to_string(), Style::new().fg(Color::DarkGray)),
-                styled(model_str, Style::new().fg(Color::Cyan)),
-                styled(" ".to_string(), Style::new().fg(Color::DarkGray)),
-                styled(ctx_str, Style::new().fg(Color::DarkGray)),
-            ])
+            items.push(spacer());
+            items.push(styled(
+                format!(" {} ", notif),
+                Style::new().fg(Color::Yellow),
+            ));
         }
+
+        row(items)
     }
 
     fn truncate_model_name(&self, name: &str, max_len: usize) -> String {
@@ -1997,11 +1977,6 @@ impl InkChatApp {
                     kind: Some("command".to_string()),
                 },
                 PopupItemNode {
-                    label: "/clear".to_string(),
-                    description: Some("Clear history".to_string()),
-                    kind: Some("command".to_string()),
-                },
-                PopupItemNode {
                     label: "/help".to_string(),
                     description: Some("Show help".to_string()),
                     kind: Some("command".to_string()),
@@ -2032,11 +2007,6 @@ impl InkChatApp {
                     kind: Some("command".to_string()),
                 },
                 PopupItemNode {
-                    label: "/clear".to_string(),
-                    description: Some("Clear history".to_string()),
-                    kind: Some("command".to_string()),
-                },
-                PopupItemNode {
                     label: "/help".to_string(),
                     description: Some("Show help".to_string()),
                     kind: Some("command".to_string()),
@@ -2059,6 +2029,11 @@ impl InkChatApp {
                 PopupItemNode {
                     label: ":help".to_string(),
                     description: Some("Show help".to_string()),
+                    kind: Some("core".to_string()),
+                },
+                PopupItemNode {
+                    label: ":clear".to_string(),
+                    description: Some("Clear conversation history".to_string()),
                     kind: Some("core".to_string()),
                 },
                 PopupItemNode {
@@ -2346,11 +2321,18 @@ mod tests {
 
         app.handle_slash_command("/normal");
         assert_eq!(app.mode, ChatMode::Normal);
+    }
+
+    #[test]
+    fn test_clear_repl_command() {
+        let mut app = InkChatApp::init();
 
         app.add_user_message("test".to_string());
         assert_eq!(app.items.len(), 1);
-        app.handle_slash_command("/clear");
+
+        let action = app.handle_repl_command(":clear");
         assert!(app.items.is_empty());
+        assert!(matches!(action, Action::Send(ChatAppMsg::ClearHistory)));
     }
 
     #[test]

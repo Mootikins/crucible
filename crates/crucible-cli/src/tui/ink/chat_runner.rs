@@ -164,6 +164,10 @@ impl InkChatRunner {
             }
 
             while let Ok(msg) = msg_rx.try_recv() {
+                if matches!(msg, ChatAppMsg::ClearHistory) {
+                    agent.clear_history();
+                    tracing::info!("Conversation history cleared");
+                }
                 let action = app.on_message(msg);
                 if action.is_quit() {
                     return Ok(());
@@ -303,7 +307,7 @@ impl InkChatRunner {
 
                 let action = app.update(ev.clone());
                 tracing::trace!(?ev, ?action, "processed event");
-                if self.process_action(action, app)? {
+                if self.process_action(action, app, agent)? {
                     tracing::trace!("quit action received, breaking loop");
                     break;
                 }
@@ -331,21 +335,26 @@ impl InkChatRunner {
         AgentSelection::Internal
     }
 
-    fn process_action(
+    fn process_action<A: AgentHandle>(
         &mut self,
         action: Action<ChatAppMsg>,
         app: &mut InkChatApp,
+        agent: &mut A,
     ) -> io::Result<bool> {
         match action {
             Action::Quit => Ok(true),
             Action::Continue => Ok(false),
             Action::Send(msg) => {
+                if matches!(msg, ChatAppMsg::ClearHistory) {
+                    agent.clear_history();
+                    tracing::info!("Conversation history cleared");
+                }
                 let action = app.on_message(msg);
-                self.process_action(action, app)
+                self.process_action(action, app, agent)
             }
             Action::Batch(actions) => {
                 for action in actions {
-                    if self.process_action(action, app)? {
+                    if self.process_action(action, app, agent)? {
                         return Ok(true);
                     }
                 }

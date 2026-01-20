@@ -1030,7 +1030,7 @@ fn ink_unknown_command_error() {
     session.send_control('c').ok();
 }
 
-/// Test /clear command works
+/// Test :clear command works
 #[test]
 #[ignore = "requires built binary"]
 fn ink_clear_command() {
@@ -1049,7 +1049,7 @@ fn ink_clear_command() {
     let screen_before = session.capture_screen().unwrap_or_default();
     eprintln!("Before clear: {}", safe_truncate(&screen_before, 200));
 
-    session.send("/clear\r").expect("Clear failed");
+    session.send(":clear\r").expect("Clear failed");
     session.wait(Duration::from_millis(500));
 
     let screen_after = session.capture_screen().unwrap_or_default();
