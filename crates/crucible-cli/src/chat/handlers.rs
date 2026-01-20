@@ -120,33 +120,23 @@ impl SearchHandler {
     /// Default number of search results
     const DEFAULT_LIMIT: usize = 10;
 
-    /// Format search results for display
     fn format_results(results: Vec<crucible_core::traits::chat::SearchResult>) -> String {
         if results.is_empty() {
             return "No results found.".bright_yellow().to_string();
         }
 
         let mut output = String::new();
-        output.push_str(&format!(
-            "{}
-",
-            "Search Results:".bright_cyan().bold()
-        ));
+        output.push_str(&format!("{}\n", "Search Results:".bright_cyan().bold()));
 
         for (i, result) in results.iter().enumerate() {
+            let similarity = format!("(similarity: {:.2})", result.similarity).dimmed();
             output.push_str(&format!(
-                "
-{}. {} {}
-",
+                "\n{}. {} {}\n",
                 i + 1,
                 result.title.bright_white().bold(),
-                format!("(similarity: {:.2})", result.similarity).dimmed()
+                similarity
             ));
-            output.push_str(&format!(
-                "   {}
-",
-                result.snippet.dimmed()
-            ));
+            output.push_str(&format!("   {}\n", result.snippet.dimmed()));
         }
 
         output
@@ -179,8 +169,6 @@ impl CommandHandler for SearchHandler {
 pub struct HelpHandler;
 
 impl HelpHandler {
-    // Note: This method is reserved for future integration with CommandRegistry
-    // Currently using inline display in execute()
     #[allow(dead_code)]
     fn format_commands(commands: Vec<crucible_core::traits::chat::CommandDescriptor>) -> String {
         if commands.is_empty() {
@@ -188,11 +176,7 @@ impl HelpHandler {
         }
 
         let mut output = String::new();
-        output.push_str(&format!(
-            "{}
-",
-            "Available Commands:".bright_cyan().bold()
-        ));
+        output.push_str(&format!("{}\n", "Available Commands:".bright_cyan().bold()));
 
         for cmd in commands {
             let hint = cmd
@@ -211,17 +195,11 @@ impl HelpHandler {
             };
 
             output.push_str(&format!(
-                "
-  /{}{}
-",
+                "\n  /{}{}\n",
                 cmd.name.bright_white().bold(),
                 format!("{}{}", hint, options).dimmed()
             ));
-            output.push_str(&format!(
-                "    {}
-",
-                cmd.description.dimmed()
-            ));
+            output.push_str(&format!("    {}\n", cmd.description.dimmed()));
         }
 
         output
@@ -298,13 +276,20 @@ impl CommitHandler {
         Ok(String::from_utf8_lossy(&output.stdout).to_string())
     }
 
-    /// Check if we're in a git repository
-    fn is_git_repo() -> bool {
-        Command::new("git")
+    fn require_git_repo() -> ChatResult<()> {
+        let is_repo = Command::new("git")
             .args(["rev-parse", "--git-dir"])
             .output()
             .map(|o| o.status.success())
-            .unwrap_or(false)
+            .unwrap_or(false);
+
+        if is_repo {
+            Ok(())
+        } else {
+            Err(ChatError::InvalidInput(
+                "Not in a git repository".to_string(),
+            ))
+        }
     }
 
     /// Get staged files
@@ -407,13 +392,8 @@ impl CommitHandler {
         suggestions
     }
 
-    /// Smart commit mode - analyze and suggest
     async fn smart_mode(&self, message: Option<&str>) -> ChatResult<()> {
-        if !Self::is_git_repo() {
-            return Err(ChatError::InvalidInput(
-                "Not in a git repository".to_string(),
-            ));
-        }
+        Self::require_git_repo()?;
 
         let staged_files = Self::get_staged_files()?;
 
@@ -430,51 +410,29 @@ impl CommitHandler {
         let diff = Self::get_staged_diff().unwrap_or_default();
         let suggestions = Self::suggest_commit_message(&staged_files, &diff);
 
-        println!(
-            "{}",
-            "
-📋 Staged Changes:"
-                .bright_cyan()
-                .bold()
-        );
+        println!("\n{}", "📋 Staged Changes:".bright_cyan().bold());
         for file in &staged_files {
             println!("  {}", file.dimmed());
         }
 
-        println!(
-            "
-{}",
-            "💡 Suggested Commit Messages:".bright_cyan().bold()
-        );
+        println!("\n{}", "💡 Suggested Commit Messages:".bright_cyan().bold());
         for (i, suggestion) in suggestions.iter().enumerate() {
             println!("  {}. {}", i + 1, suggestion.bright_white());
         }
 
-        let commit_msg = if let Some(msg) = message {
-            msg.to_string()
-        } else {
-            // Use first suggestion
-            suggestions[0].clone()
-        };
+        let commit_msg = message
+            .map(String::from)
+            .unwrap_or_else(|| suggestions[0].clone());
 
-        println!(
-            "
-{}",
-            format!("Committing: {}", commit_msg).bright_green()
-        );
+        println!("\n{}", format!("Committing: {}", commit_msg).bright_green());
         Self::run_git_command(&["commit", "-m", &commit_msg])?;
         println!("{}", "✅ Commit created successfully!".bright_green());
 
         Ok(())
     }
 
-    /// Quick commit mode
     async fn quick_mode(&self, message: &str) -> ChatResult<()> {
-        if !Self::is_git_repo() {
-            return Err(ChatError::InvalidInput(
-                "Not in a git repository".to_string(),
-            ));
-        }
+        Self::require_git_repo()?;
 
         if message.trim().is_empty() {
             return Err(ChatError::InvalidInput(
@@ -506,13 +464,8 @@ impl CommitHandler {
         Ok(())
     }
 
-    /// Review mode - show changes and suggest options
     async fn review_mode(&self) -> ChatResult<()> {
-        if !Self::is_git_repo() {
-            return Err(ChatError::InvalidInput(
-                "Not in a git repository".to_string(),
-            ));
-        }
+        Self::require_git_repo()?;
 
         let status = Self::get_status()?;
         if status.trim().is_empty() {
@@ -520,22 +473,12 @@ impl CommitHandler {
             return Ok(());
         }
 
-        println!(
-            "{}",
-            "
-📊 Repository Status:"
-                .bright_cyan()
-                .bold()
-        );
+        println!("\n{}", "📊 Repository Status:".bright_cyan().bold());
         println!("{}", status);
 
         let staged_files = Self::get_staged_files()?;
         if staged_files.is_empty() {
-            println!(
-                "
-{}",
-                "No staged changes.".bright_yellow()
-            );
+            println!("\n{}", "No staged changes.".bright_yellow());
             println!(
                 "{}",
                 "Use 'git add' to stage files, or run '/commit wip' to auto-stage.".dimmed()
@@ -546,27 +489,18 @@ impl CommitHandler {
         let diff = Self::get_staged_diff().unwrap_or_default();
         let suggestions = Self::suggest_commit_message(&staged_files, &diff);
 
-        println!(
-            "
-{}",
-            "📋 Staged Files:".bright_cyan().bold()
-        );
+        println!("\n{}", "📋 Staged Files:".bright_cyan().bold());
         for file in &staged_files {
             println!("  {}", file.dimmed());
         }
 
-        println!(
-            "
-{}",
-            "💡 Suggested Commit Messages:".bright_cyan().bold()
-        );
+        println!("\n{}", "💡 Suggested Commit Messages:".bright_cyan().bold());
         for (i, suggestion) in suggestions.iter().enumerate() {
             println!("  {}. {}", i + 1, suggestion.bright_white());
         }
 
         println!(
-            "
-{}",
+            "\n{}",
             "Run '/commit quick \"message\"' to commit with a specific message.".dimmed()
         );
         println!(
@@ -577,13 +511,8 @@ impl CommitHandler {
         Ok(())
     }
 
-    /// WIP mode - work in progress commit
     async fn wip_mode(&self) -> ChatResult<()> {
-        if !Self::is_git_repo() {
-            return Err(ChatError::InvalidInput(
-                "Not in a git repository".to_string(),
-            ));
-        }
+        Self::require_git_repo()?;
 
         // Auto-stage modified files
         println!("{}", "Staging modified files...".bright_cyan());

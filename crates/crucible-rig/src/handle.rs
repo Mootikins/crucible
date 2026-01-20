@@ -964,6 +964,15 @@ where
 
         Ok(())
     }
+
+    fn clear_history(&mut self) {
+        if let Ok(mut history) = self.chat_history.try_write() {
+            history.clear();
+            debug!("Cleared chat history");
+        } else {
+            warn!("Could not acquire write lock to clear chat history");
+        }
+    }
 }
 
 #[cfg(test)]

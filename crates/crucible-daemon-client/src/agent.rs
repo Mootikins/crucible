@@ -272,6 +272,10 @@ impl AgentHandle for DaemonAgentHandle {
     fn get_commands(&self) -> &[AvailableCommand] {
         &[]
     }
+
+    fn clear_history(&mut self) {
+        tracing::info!(session_id = %self.session_id, "Clear history requested (daemon handles internally)");
+    }
 }
 
 #[cfg(test)]
