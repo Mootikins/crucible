@@ -1,7 +1,7 @@
 use crate::tui::ink::app::{Action, App, ViewContext};
 use crate::tui::ink::event::{Event, InputAction, InputBuffer};
 use crate::tui::ink::markdown::{
-    markdown_to_node_styled, markdown_to_node_with_width, RenderStyle,
+    markdown_to_node_styled, markdown_to_node_with_width, Margins, RenderStyle,
 };
 use crate::tui::ink::node::*;
 use crate::tui::ink::style::{Color, Gap, Style};
@@ -19,8 +19,6 @@ use std::sync::mpsc::{self, Receiver, Sender};
 use std::time::{Duration, Instant};
 
 const INPUT_BG: Color = Color::Rgb(40, 44, 52);
-const BULLET_PREFIX: &str = " ● ";
-const BULLET_PREFIX_WIDTH: usize = BULLET_PREFIX.len();
 const FOCUS_INPUT: &str = "input";
 const FOCUS_POPUP: &str = "popup";
 const POPUP_HEIGHT: usize = 10;
@@ -1624,17 +1622,10 @@ impl InkChatApp {
         let content_node = match msg.role {
             Role::User => self.render_user_prompt(msg.content()),
             Role::Assistant => {
-                let content_width = terminal_width().saturating_sub(BULLET_PREFIX_WIDTH);
-                let style = RenderStyle::natural(content_width);
+                let term_width = terminal_width();
+                let style = RenderStyle::natural_with_margins(term_width, Margins::assistant());
                 let md_node = markdown_to_node_styled(msg.content(), style);
-                col([
-                    text(""),
-                    row([
-                        styled(BULLET_PREFIX, Style::new().fg(Color::DarkGray)),
-                        md_node,
-                    ]),
-                    text(""),
-                ])
+                col([text(""), md_node, text("")])
             }
             Role::System => col([
                 text(""),
@@ -1724,26 +1715,27 @@ impl InkChatApp {
 
     fn render_streaming(&self) -> Node {
         when(self.cache.is_streaming(), {
-            let content_width = terminal_width().saturating_sub(BULLET_PREFIX_WIDTH);
+            let term_width = terminal_width();
             let streaming_content = self.cache.streaming_content().unwrap_or("");
-            let content_node = markdown_to_node_with_width(streaming_content, content_width);
+            let style = RenderStyle::viewport_with_margins(term_width, Margins::assistant());
+            let content_node = markdown_to_node_styled(streaming_content, style);
+
+            let margins = Margins::assistant();
+            let spinner_indent = " ".repeat(margins.left);
 
             if_else(
                 !streaming_content.is_empty(),
                 col([
                     text(""),
-                    row([
-                        styled(BULLET_PREFIX, Style::new().fg(Color::DarkGray)),
-                        content_node,
-                    ]),
+                    content_node,
                     text(""),
-                    row([text(" "), spinner(None, self.spinner_frame)]),
+                    row([text(&spinner_indent), spinner(None, self.spinner_frame)]),
                 ]),
                 col([
                     text(""),
                     text(""),
                     row([
-                        text(" "),
+                        text(&spinner_indent),
                         spinner(Some("Thinking...".into()), self.spinner_frame),
                     ]),
                 ]),
