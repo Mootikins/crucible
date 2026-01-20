@@ -25,6 +25,7 @@ mod layout;
 mod node;
 mod overlay;
 mod render;
+mod span;
 mod style;
 mod taffy_layout;
 
@@ -34,6 +35,7 @@ pub use layout::*;
 pub use node::*;
 pub use overlay::{composite_overlays, Overlay, OverlayAnchor};
 pub use render::*;
+pub use span::{OwnedSpan, OwnedSpanLine, Span, SpanLine};
 pub use style::*;
 
 pub mod utils {
