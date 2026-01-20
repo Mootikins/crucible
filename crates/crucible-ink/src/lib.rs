@@ -19,6 +19,7 @@
 #![allow(dead_code)]
 
 mod ansi;
+mod compositor;
 mod diff;
 mod focus;
 mod layout;
@@ -29,6 +30,7 @@ mod span;
 mod style;
 mod taffy_layout;
 
+pub use compositor::{Compositor, ContentSource, StaticCompositor};
 pub use diff::*;
 pub use focus::*;
 pub use layout::*;
