@@ -151,44 +151,35 @@ impl Terminal {
     }
 
     fn position_cursor(&mut self, cursor_info: &CursorInfo, did_render: bool) -> io::Result<()> {
-        let viewport_height = self.output.height();
-        if viewport_height == 0 {
+        if self.output.height() == 0 {
             return Ok(());
         }
 
-        if did_render {
-            let rows_up = cursor_info.row_from_end;
-            if rows_up > 0 {
-                execute!(
-                    self.stdout,
-                    MoveUp(rows_up),
-                    MoveToColumn(cursor_info.col),
-                    Show
-                )?;
-            } else {
-                execute!(self.stdout, MoveToColumn(cursor_info.col), Show)?;
-            }
+        let (move_up, move_down) = if did_render {
+            (cursor_info.row_from_end, 0)
         } else if let Some(last) = &self.last_cursor {
-            let row_up = cursor_info.row_from_end.saturating_sub(last.row_from_end);
-            let row_down = last.row_from_end.saturating_sub(cursor_info.row_from_end);
+            (
+                cursor_info.row_from_end.saturating_sub(last.row_from_end),
+                last.row_from_end.saturating_sub(cursor_info.row_from_end),
+            )
+        } else {
+            (0, 0)
+        };
 
-            if row_up > 0 {
-                execute!(
-                    self.stdout,
-                    MoveUp(row_up),
-                    MoveToColumn(cursor_info.col),
-                    Show
-                )?;
-            } else if row_down > 0 {
-                execute!(
-                    self.stdout,
-                    MoveDown(row_down),
-                    MoveToColumn(cursor_info.col),
-                    Show
-                )?;
-            } else {
-                execute!(self.stdout, MoveToColumn(cursor_info.col), Show)?;
-            }
+        if move_up > 0 {
+            execute!(
+                self.stdout,
+                MoveUp(move_up),
+                MoveToColumn(cursor_info.col),
+                Show
+            )?;
+        } else if move_down > 0 {
+            execute!(
+                self.stdout,
+                MoveDown(move_down),
+                MoveToColumn(cursor_info.col),
+                Show
+            )?;
         } else {
             execute!(self.stdout, MoveToColumn(cursor_info.col), Show)?;
         }

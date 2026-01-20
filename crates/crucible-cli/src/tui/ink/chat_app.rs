@@ -976,38 +976,29 @@ impl InkChatApp {
     }
 
     fn format_session_for_export(&self) -> String {
-        let mut output = String::new();
-        output.push_str("# Chat Session Export\n\n");
+        use std::fmt::Write;
+
+        let mut output = String::from("# Chat Session Export\n\n");
 
         for item in &self.items {
             match item {
                 ChatItem::Message { role, content, .. } => match role {
-                    Role::User => {
-                        output.push_str("## User\n\n");
-                        output.push_str(content);
-                        output.push_str("\n\n");
-                    }
-                    Role::Assistant => {
-                        output.push_str("## Assistant\n\n");
-                        output.push_str(content);
-                        output.push_str("\n\n");
-                    }
-                    Role::System => {
-                        output.push_str("> ");
-                        output.push_str(&content.replace('\n', "\n> "));
-                        output.push_str("\n\n");
-                    }
-                },
+                    Role::User => writeln!(output, "## User\n\n{}\n", content),
+                    Role::Assistant => writeln!(output, "## Assistant\n\n{}\n", content),
+                    Role::System => writeln!(output, "> {}\n", content.replace('\n', "\n> ")),
+                }
+                .ok(),
                 ChatItem::ToolCall {
                     name, args, result, ..
                 } => {
-                    output.push_str(&format!("### Tool: {}\n\n", name));
+                    let _ = writeln!(output, "### Tool: {}\n", name);
                     if !args.is_empty() {
-                        output.push_str(&format!("```json\n{}\n```\n\n", args));
+                        let _ = writeln!(output, "```json\n{}\n```\n", args);
                     }
                     if !result.is_empty() {
-                        output.push_str(&format!("**Result:**\n```\n{}\n```\n\n", result));
+                        let _ = writeln!(output, "**Result:**\n```\n{}\n```\n", result);
                     }
+                    None
                 }
                 ChatItem::ShellExecution {
                     command,
@@ -1015,18 +1006,22 @@ impl InkChatApp {
                     output_tail,
                     ..
                 } => {
-                    output.push_str(&format!("### Shell: `{}`\n\n", command));
-                    output.push_str(&format!("Exit code: {}\n\n", exit_code));
+                    let _ = writeln!(
+                        output,
+                        "### Shell: `{}`\n\nExit code: {}\n",
+                        command, exit_code
+                    );
                     if !output_tail.is_empty() {
                         output.push_str("```\n");
-                        for line in output_tail {
+                        output_tail.iter().for_each(|line| {
                             output.push_str(line);
                             output.push('\n');
-                        }
+                        });
                         output.push_str("```\n\n");
                     }
+                    None
                 }
-            }
+            };
         }
 
         output
@@ -1218,41 +1213,17 @@ impl InkChatApp {
                 self.open_shell_output_in_editor();
             }
             KeyCode::Up | KeyCode::Char('k') => {
-                if let Some(ref mut modal) = self.shell_modal {
-                    modal.scroll_up(1);
-                    modal.user_scrolled = true;
-                }
+                self.scroll_modal(|m, _| m.scroll_up(1), visible_lines)
             }
             KeyCode::Down | KeyCode::Char('j') => {
-                if let Some(ref mut modal) = self.shell_modal {
-                    modal.scroll_down(1, visible_lines);
-                    modal.user_scrolled = true;
-                }
+                self.scroll_modal(|m, v| m.scroll_down(1, v), visible_lines)
             }
-            KeyCode::Char('u') => {
-                if let Some(ref mut modal) = self.shell_modal {
-                    modal.scroll_up(half_page);
-                    modal.user_scrolled = true;
-                }
-            }
+            KeyCode::Char('u') => self.scroll_modal(|m, _| m.scroll_up(half_page), visible_lines),
             KeyCode::Char('d') => {
-                if let Some(ref mut modal) = self.shell_modal {
-                    modal.scroll_down(half_page, visible_lines);
-                    modal.user_scrolled = true;
-                }
+                self.scroll_modal(|m, v| m.scroll_down(half_page, v), visible_lines)
             }
-            KeyCode::PageUp => {
-                if let Some(ref mut modal) = self.shell_modal {
-                    modal.scroll_up(visible_lines);
-                    modal.user_scrolled = true;
-                }
-            }
-            KeyCode::PageDown => {
-                if let Some(ref mut modal) = self.shell_modal {
-                    modal.scroll_down(visible_lines, visible_lines);
-                    modal.user_scrolled = true;
-                }
-            }
+            KeyCode::PageUp => self.scroll_modal(|m, v| m.scroll_up(v), visible_lines),
+            KeyCode::PageDown => self.scroll_modal(|m, v| m.scroll_down(v, v), visible_lines),
             KeyCode::Char('g') if !is_running => {
                 if let Some(ref mut modal) = self.shell_modal {
                     modal.scroll_to_top();
@@ -1273,6 +1244,16 @@ impl InkChatApp {
             .map(|(_, h)| h as usize)
             .unwrap_or(24);
         term_height.saturating_sub(2)
+    }
+
+    fn scroll_modal<F>(&mut self, scroll_fn: F, visible_lines: usize)
+    where
+        F: FnOnce(&mut ShellModal, usize),
+    {
+        if let Some(ref mut modal) = self.shell_modal {
+            scroll_fn(modal, visible_lines);
+            modal.user_scrolled = true;
+        }
     }
 
     fn cancel_shell(&mut self) {

@@ -14,30 +14,18 @@ pub fn extract_overlays(node: &Node) -> Vec<OverlayNode> {
 
 fn collect_overlays(node: &Node, overlays: &mut Vec<OverlayNode>) {
     match node {
-        Node::Overlay(overlay) => {
-            overlays.push(overlay.clone());
-        }
-        Node::Box(boxnode) => {
-            for child in &boxnode.children {
-                collect_overlays(child, overlays);
-            }
-        }
-        Node::Fragment(children) => {
-            for child in children {
-                collect_overlays(child, overlays);
-            }
-        }
-        Node::Static(static_node) => {
-            for child in &static_node.children {
-                collect_overlays(child, overlays);
-            }
-        }
-        Node::Focusable(focusable) => {
-            collect_overlays(&focusable.child, overlays);
-        }
-        Node::ErrorBoundary(boundary) => {
-            collect_overlays(&boundary.child, overlays);
-        }
+        Node::Overlay(overlay) => overlays.push(overlay.clone()),
+        Node::Box(b) => b
+            .children
+            .iter()
+            .for_each(|c| collect_overlays(c, overlays)),
+        Node::Fragment(children) => children.iter().for_each(|c| collect_overlays(c, overlays)),
+        Node::Static(s) => s
+            .children
+            .iter()
+            .for_each(|c| collect_overlays(c, overlays)),
+        Node::Focusable(f) => collect_overlays(&f.child, overlays),
+        Node::ErrorBoundary(b) => collect_overlays(&b.child, overlays),
         _ => {}
     }
 }
@@ -45,29 +33,25 @@ fn collect_overlays(node: &Node, overlays: &mut Vec<OverlayNode>) {
 pub fn filter_overlays(node: Node) -> Node {
     match node {
         Node::Overlay(_) => Node::Empty,
-        Node::Box(mut boxnode) => {
-            boxnode.children = boxnode.children.into_iter().map(filter_overlays).collect();
-            Node::Box(boxnode)
+        Node::Box(mut b) => {
+            b.children = b.children.into_iter().map(filter_overlays).collect();
+            Node::Box(b)
         }
         Node::Fragment(children) => {
             Node::Fragment(children.into_iter().map(filter_overlays).collect())
         }
-        Node::Static(mut static_node) => {
-            static_node.children = static_node
-                .children
-                .into_iter()
-                .map(filter_overlays)
-                .collect();
-            Node::Static(static_node)
+        Node::Static(mut s) => {
+            s.children = s.children.into_iter().map(filter_overlays).collect();
+            Node::Static(s)
         }
-        Node::Focusable(mut focusable) => {
-            focusable.child = Box::new(filter_overlays(*focusable.child));
-            Node::Focusable(focusable)
+        Node::Focusable(mut f) => {
+            f.child = Box::new(filter_overlays(*f.child));
+            Node::Focusable(f)
         }
-        Node::ErrorBoundary(mut boundary) => {
-            boundary.child = Box::new(filter_overlays(*boundary.child));
-            boundary.fallback = Box::new(filter_overlays(*boundary.fallback));
-            Node::ErrorBoundary(boundary)
+        Node::ErrorBoundary(mut b) => {
+            b.child = Box::new(filter_overlays(*b.child));
+            b.fallback = Box::new(filter_overlays(*b.fallback));
+            Node::ErrorBoundary(b)
         }
         other => other,
     }
@@ -122,12 +106,10 @@ pub fn composite_overlays(base: &[String], overlays: &[Overlay], width: usize) -
 
 fn pad_or_truncate(line: &str, width: usize) -> String {
     let vis_width = visible_width(line);
-    if vis_width > width {
-        truncate_to_width(line, width)
-    } else if vis_width < width {
-        format!("{}{}", line, " ".repeat(width - vis_width))
-    } else {
-        line.to_string()
+    match vis_width.cmp(&width) {
+        std::cmp::Ordering::Greater => truncate_to_width(line, width),
+        std::cmp::Ordering::Less => format!("{}{}", line, " ".repeat(width - vis_width)),
+        std::cmp::Ordering::Equal => line.to_string(),
     }
 }
 
