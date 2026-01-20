@@ -32,10 +32,10 @@ use markdown_it::MarkdownIt;
 
 const NATURAL_TEXT_WIDTH: usize = 10000;
 
-/// Default bullet marker for assistant messages
 pub const ASSISTANT_BULLET: &str = " ● ";
+pub const ASSISTANT_BULLET_WIDTH: usize = 3;
+pub const CONTENT_PADDING: usize = ASSISTANT_BULLET_WIDTH;
 
-/// Margin configuration for content indentation in viewport
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Margins {
     pub left: usize,
@@ -44,11 +44,10 @@ pub struct Margins {
 }
 
 impl Margins {
-    /// Create margins for assistant messages with bullet prefix
     pub fn assistant() -> Self {
         Self {
-            left: ASSISTANT_BULLET.len(),
-            right: 1,
+            left: CONTENT_PADDING,
+            right: CONTENT_PADDING,
             show_bullet: true,
         }
     }
@@ -122,6 +121,18 @@ impl RenderStyle {
             }
         }
     }
+
+    fn blockquote_width(&self) -> usize {
+        match self {
+            RenderStyle::Viewport { width, margins } => {
+                width.saturating_sub(margins.left + margins.right)
+            }
+            RenderStyle::Natural {
+                terminal_width,
+                margins,
+            } => terminal_width.saturating_sub(margins.left + margins.right),
+        }
+    }
 }
 
 /// Convert markdown text to an oil Node tree
@@ -143,7 +154,12 @@ pub fn markdown_to_node_styled(markdown: &str, style: RenderStyle) -> Node {
     let md = create_parser();
     let ast = md.parse(&markdown);
 
-    let mut ctx = RenderContext::new(style.text_width(), style.table_width(), style.margins());
+    let mut ctx = RenderContext::new(
+        style.text_width(),
+        style.table_width(),
+        style.blockquote_width(),
+        style.margins(),
+    );
     render_node(&ast, &mut ctx);
     ctx.into_node()
 }
@@ -156,7 +172,7 @@ pub fn markdown_to_node_with_widths(markdown: &str, text_width: usize, table_wid
     let md = create_parser();
     let ast = md.parse(&markdown);
 
-    let mut ctx = RenderContext::new(text_width, table_width, Margins::default());
+    let mut ctx = RenderContext::new(text_width, table_width, table_width, Margins::default());
     render_node(&ast, &mut ctx);
     ctx.into_node()
 }
@@ -177,12 +193,13 @@ struct RenderContext {
     needs_blank_line: bool,
     width: usize,
     table_width: usize,
+    blockquote_width: usize,
     margins: Margins,
     is_first_paragraph: bool,
 }
 
 impl RenderContext {
-    fn new(width: usize, table_width: usize, margins: Margins) -> Self {
+    fn new(width: usize, table_width: usize, blockquote_width: usize, margins: Margins) -> Self {
         Self {
             blocks: Vec::new(),
             current_spans: Vec::new(),
@@ -192,6 +209,7 @@ impl RenderContext {
             needs_blank_line: false,
             width,
             table_width,
+            blockquote_width,
             margins,
             is_first_paragraph: true,
         }
@@ -293,10 +311,27 @@ fn render_node(node: &markdown_it::Node, ctx: &mut RenderContext) {
             ctx.blocks.push(text(""));
         }
         let style = heading_style(heading.level);
-        ctx.push_style(style);
-        render_children(node, ctx);
-        ctx.pop_style();
-        ctx.flush_line();
+        let margins = ctx.margins;
+        let has_margins = margins.left > 0 || margins.show_bullet;
+
+        if !has_margins {
+            ctx.push_style(style);
+            render_children(node, ctx);
+            ctx.pop_style();
+            ctx.flush_line();
+        } else {
+            let heading_text = extract_all_text(node);
+            let show_bullet = margins.show_bullet && ctx.is_first_paragraph;
+            let bullet_style = Style::new().fg(Color::DarkGray);
+
+            let prefix = if show_bullet {
+                styled(ASSISTANT_BULLET, bullet_style)
+            } else {
+                text(" ".repeat(margins.left))
+            };
+            ctx.blocks.push(row([prefix, styled(&heading_text, style)]));
+            ctx.is_first_paragraph = false;
+        }
         ctx.mark_block_end();
         return;
     }
@@ -519,27 +554,61 @@ fn render_highlighted_code(content: &str, lang: &str, ctx: &mut RenderContext, i
 }
 
 fn render_list_item(node: &markdown_it::Node, ctx: &mut RenderContext) {
-    let indent = "  ".repeat(ctx.list_depth.saturating_sub(1));
+    let margins = ctx.margins;
+    let margin_indent = " ".repeat(margins.left);
+    let list_indent = "  ".repeat(ctx.list_depth.saturating_sub(1));
 
-    let bullet = if let Some(counter) = ctx.list_counter.as_mut() {
+    let (bullet, bullet_width) = if let Some(counter) = ctx.list_counter.as_mut() {
         let n = *counter;
         *counter += 1;
-        format!("{}{}. ", indent, n)
+        let b = format!("{}. ", n);
+        let w = b.len();
+        (b, w)
     } else {
-        format!("{}• ", indent)
+        ("• ".to_string(), 2)
     };
 
-    ctx.current_spans.push((bullet, Style::default()));
+    let item_text = extract_all_text(node);
+    let content_width = ctx.width.saturating_sub(bullet_width);
+    let wrapped = wrap_text(&item_text, content_width);
+
+    for (i, line) in wrapped.iter().enumerate() {
+        if i == 0 {
+            if margins.left > 0 {
+                ctx.blocks.push(row([
+                    text(&margin_indent),
+                    text(&list_indent),
+                    text(&bullet),
+                    text_node(line),
+                ]));
+            } else {
+                ctx.blocks
+                    .push(row([text(&list_indent), text(&bullet), text_node(line)]));
+            }
+        } else {
+            let continuation_indent = " ".repeat(bullet_width);
+            if margins.left > 0 {
+                ctx.blocks.push(row([
+                    text(&margin_indent),
+                    text(&list_indent),
+                    text(&continuation_indent),
+                    text_node(line),
+                ]));
+            } else {
+                ctx.blocks.push(row([
+                    text(&list_indent),
+                    text(&continuation_indent),
+                    text_node(line),
+                ]));
+            }
+        }
+    }
 
     for child in node.children.iter() {
         if child.cast::<BulletList>().is_some() || child.cast::<OrderedList>().is_some() {
-            ctx.flush_line();
-            render_node(child, ctx);
-        } else {
             render_node(child, ctx);
         }
     }
-    ctx.flush_line();
 }
 
 fn render_blockquote(node: &markdown_it::Node, ctx: &mut RenderContext) {
@@ -553,7 +622,9 @@ fn render_blockquote(node: &markdown_it::Node, ctx: &mut RenderContext) {
     let margin_indent = " ".repeat(margins.left);
     let prefix = "│ ";
     let prefix_width = 2;
-    let content_width = ctx.width.saturating_sub(prefix_width);
+    let content_width = ctx
+        .blockquote_width
+        .saturating_sub(prefix_width + margins.left);
 
     for child in node.children.iter() {
         let child_text = extract_all_text(child);
@@ -835,7 +906,23 @@ fn wrap_text(text: &str, width: usize) -> Vec<String> {
     }
 
     use textwrap::{wrap, Options, WordSplitter};
-    let options = Options::new(width).word_splitter(WordSplitter::NoHyphenation);
+
+    fn split_at_break_chars(word: &str) -> Vec<usize> {
+        const BREAK_AFTER: &[char] = &['-', '.', ',', ';', ':', '!', '?', ')', ']', '}', '/', '\\'];
+
+        word.char_indices()
+            .filter_map(|(idx, c)| {
+                if BREAK_AFTER.contains(&c) {
+                    Some(idx + c.len_utf8())
+                } else {
+                    None
+                }
+            })
+            .filter(|&idx| idx < word.len())
+            .collect()
+    }
+
+    let options = Options::new(width).word_splitter(WordSplitter::Custom(split_at_break_chars));
     wrap(text, options)
         .into_iter()
         .map(|cow| cow.into_owned())
