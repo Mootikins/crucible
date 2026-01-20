@@ -19,7 +19,7 @@ use crate::chat::mode_registry::ModeRegistry;
 use crate::chat::slash_registry::{SlashCommandRegistry, SlashCommandRegistryBuilder};
 use crate::chat::{AgentHandle, ChatError, ChatResult};
 use crate::core_facade::KilnContext;
-use crate::tui::ink::{AgentSelection, ChatMode, InkChatRunner};
+use crate::tui::oil::{AgentSelection, ChatMode, InkChatRunner};
 use crucible_core::events::EventRing;
 use crucible_core::traits::registry::{Registry, RegistryBuilder};
 use walkdir::WalkDir;
@@ -166,12 +166,38 @@ impl ChatSession {
         core: Arc<KilnContext>,
         available_models: Option<Vec<String>>,
     ) -> Self {
+        Self::with_lua_plugins(config, core, available_models, &[], &[])
+    }
+
+    /// Create a chat session with pre-discovered Lua commands.
+    ///
+    /// Use `crucible_lua::discover_commands_from` to discover commands before calling this.
+    pub fn with_lua_commands(
+        config: ChatSessionConfig,
+        core: Arc<KilnContext>,
+        available_models: Option<Vec<String>>,
+        lua_commands: &[crucible_lua::DiscoveredCommand],
+    ) -> Self {
+        Self::with_lua_plugins(config, core, available_models, lua_commands, &[])
+    }
+
+    /// Create a chat session with pre-discovered Lua commands and views.
+    ///
+    /// Use `crucible_lua::discover_commands_from` and `crucible_lua::discover_views_from`
+    /// to discover plugins before calling this.
+    pub fn with_lua_plugins(
+        config: ChatSessionConfig,
+        core: Arc<KilnContext>,
+        available_models: Option<Vec<String>>,
+        lua_commands: &[crucible_lua::DiscoveredCommand],
+        lua_views: &[crucible_lua::DiscoveredView],
+    ) -> Self {
         let context_size = config.context_size.unwrap_or(5);
         let enricher = ContextEnricher::new(core.clone(), Some(context_size));
 
-        // Build the command registry with all static commands
         let exit_flag = Arc::new(std::sync::atomic::AtomicBool::new(false));
         let mut registry_builder = SlashCommandRegistryBuilder::default()
+            .lua_commands(lua_commands)
             .command(
                 "exit",
                 Arc::new(handlers::ExitHandler::new(exit_flag.clone())),
@@ -233,6 +259,12 @@ impl ChatSession {
                 "resume",
                 Arc::new(handlers::ResumeHandler),
                 "Browse and resume recent sessions",
+            )
+            .command_with_hint(
+                "view",
+                Arc::new(handlers::ViewHandler::new(lua_views.to_vec())),
+                "Open or list Lua-defined views",
+                Some("name".to_string()),
             );
 
         // Register /models command if models are available (e.g., from OpenCode)
