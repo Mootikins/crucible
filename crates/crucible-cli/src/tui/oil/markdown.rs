@@ -51,6 +51,14 @@ impl Margins {
             show_bullet: true,
         }
     }
+
+    pub fn assistant_continuation() -> Self {
+        Self {
+            left: CONTENT_PADDING,
+            right: CONTENT_PADDING,
+            show_bullet: false,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
