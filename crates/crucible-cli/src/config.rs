@@ -15,6 +15,7 @@ pub use crucible_config::{
     EmbeddingConfig,
     EmbeddingProviderConfig,
     EmbeddingProviderType as ProviderType,
+    HighlightingConfig,
 };
 
 // Legacy type aliases for backward compatibility
