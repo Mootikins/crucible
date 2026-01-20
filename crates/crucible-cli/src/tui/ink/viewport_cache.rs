@@ -1,11 +1,12 @@
 use std::collections::VecDeque;
+use std::path::PathBuf;
 use std::sync::Arc;
 use textwrap::{wrap, Options, WordSplitter};
 
 use super::chat_app::Role;
 use crucible_ink::ContentSource;
 
-const MAX_CACHED_MESSAGES: usize = 32;
+const MAX_CACHED_ITEMS: usize = 32;
 
 #[derive(Debug, Clone)]
 pub struct CachedMessage {
@@ -42,8 +43,126 @@ impl CachedMessage {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct CachedToolCall {
+    pub id: String,
+    pub name: Arc<str>,
+    pub args: Arc<str>,
+    pub result: String,
+    pub complete: bool,
+}
+
+impl CachedToolCall {
+    pub fn new(id: impl Into<String>, name: impl AsRef<str>, args: impl AsRef<str>) -> Self {
+        Self {
+            id: id.into(),
+            name: Arc::from(name.as_ref()),
+            args: Arc::from(args.as_ref()),
+            result: String::new(),
+            complete: false,
+        }
+    }
+
+    pub fn append_result(&mut self, delta: &str) {
+        self.result.push_str(delta);
+    }
+
+    pub fn mark_complete(&mut self) {
+        self.complete = true;
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct CachedShellExecution {
+    pub id: String,
+    pub command: Arc<str>,
+    pub exit_code: i32,
+    pub output_tail: Vec<Arc<str>>,
+    pub output_path: Option<PathBuf>,
+}
+
+impl CachedShellExecution {
+    pub fn new(
+        id: impl Into<String>,
+        command: impl AsRef<str>,
+        exit_code: i32,
+        output_tail: Vec<String>,
+        output_path: Option<PathBuf>,
+    ) -> Self {
+        Self {
+            id: id.into(),
+            command: Arc::from(command.as_ref()),
+            exit_code,
+            output_tail: output_tail
+                .into_iter()
+                .map(|s| Arc::from(s.as_str()))
+                .collect(),
+            output_path,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum CachedChatItem {
+    Message(CachedMessage),
+    ToolCall(CachedToolCall),
+    ShellExecution(CachedShellExecution),
+}
+
+impl CachedChatItem {
+    pub fn id(&self) -> &str {
+        match self {
+            CachedChatItem::Message(m) => &m.id,
+            CachedChatItem::ToolCall(t) => &t.id,
+            CachedChatItem::ShellExecution(s) => &s.id,
+        }
+    }
+
+    pub fn content(&self) -> Option<&str> {
+        match self {
+            CachedChatItem::Message(m) => Some(m.content()),
+            _ => None,
+        }
+    }
+
+    pub fn as_message(&self) -> Option<&CachedMessage> {
+        match self {
+            CachedChatItem::Message(m) => Some(m),
+            _ => None,
+        }
+    }
+
+    pub fn as_message_mut(&mut self) -> Option<&mut CachedMessage> {
+        match self {
+            CachedChatItem::Message(m) => Some(m),
+            _ => None,
+        }
+    }
+
+    pub fn as_tool_call(&self) -> Option<&CachedToolCall> {
+        match self {
+            CachedChatItem::ToolCall(t) => Some(t),
+            _ => None,
+        }
+    }
+
+    pub fn as_tool_call_mut(&mut self) -> Option<&mut CachedToolCall> {
+        match self {
+            CachedChatItem::ToolCall(t) => Some(t),
+            _ => None,
+        }
+    }
+
+    pub fn as_shell_execution(&self) -> Option<&CachedShellExecution> {
+        match self {
+            CachedChatItem::ShellExecution(s) => Some(s),
+            _ => None,
+        }
+    }
+}
+
 pub struct ViewportCache {
-    messages: VecDeque<CachedMessage>,
+    items: VecDeque<CachedChatItem>,
     streaming: Option<StreamingBuffer>,
     anchor: Option<ViewportAnchor>,
 }
@@ -63,40 +182,109 @@ impl Default for ViewportCache {
 impl ViewportCache {
     pub fn new() -> Self {
         Self {
-            messages: VecDeque::with_capacity(MAX_CACHED_MESSAGES),
+            items: VecDeque::with_capacity(MAX_CACHED_ITEMS),
             streaming: None,
             anchor: None,
         }
     }
 
-    pub fn push_message(&mut self, msg: CachedMessage) {
-        if self.messages.len() >= MAX_CACHED_MESSAGES {
-            self.messages.pop_front();
+    pub fn push_item(&mut self, item: CachedChatItem) {
+        if self.items.len() >= MAX_CACHED_ITEMS {
+            self.items.pop_front();
         }
-        self.messages.push_back(msg);
+        self.items.push_back(item);
+    }
+
+    pub fn push_message(&mut self, msg: CachedMessage) {
+        self.push_item(CachedChatItem::Message(msg));
+    }
+
+    pub fn push_tool_call(&mut self, id: String, name: &str, args: &str) {
+        self.push_item(CachedChatItem::ToolCall(CachedToolCall::new(
+            id, name, args,
+        )));
+    }
+
+    pub fn push_shell_execution(
+        &mut self,
+        id: String,
+        command: &str,
+        exit_code: i32,
+        output_tail: Vec<String>,
+        output_path: Option<PathBuf>,
+    ) {
+        self.push_item(CachedChatItem::ShellExecution(CachedShellExecution::new(
+            id,
+            command,
+            exit_code,
+            output_tail,
+            output_path,
+        )));
+    }
+
+    pub fn items(&self) -> impl Iterator<Item = &CachedChatItem> {
+        self.items.iter()
+    }
+
+    pub fn item_count(&self) -> usize {
+        self.items.len()
+    }
+
+    pub fn get_item(&self, id: &str) -> Option<&CachedChatItem> {
+        self.items.iter().find(|item| item.id() == id)
+    }
+
+    pub fn get_item_mut(&mut self, id: &str) -> Option<&mut CachedChatItem> {
+        self.items.iter_mut().find(|item| item.id() == id)
+    }
+
+    pub fn find_tool_mut(&mut self, name: &str) -> Option<&mut CachedToolCall> {
+        self.items.iter_mut().rev().find_map(|item| match item {
+            CachedChatItem::ToolCall(t) if t.name.as_ref() == name => Some(t),
+            _ => None,
+        })
+    }
+
+    pub fn append_tool_result(&mut self, name: &str, delta: &str) {
+        if let Some(tool) = self.find_tool_mut(name) {
+            tool.append_result(delta);
+        }
+    }
+
+    pub fn complete_tool(&mut self, name: &str) {
+        if let Some(tool) = self.find_tool_mut(name) {
+            tool.mark_complete();
+        }
     }
 
     pub fn get_content(&self, id: &str) -> Option<&str> {
-        self.messages
+        self.items
             .iter()
-            .find(|m| m.id == id)
-            .map(|m| m.content())
+            .find(|item| item.id() == id)
+            .and_then(|item| item.content())
     }
 
     pub fn get_message(&self, id: &str) -> Option<&CachedMessage> {
-        self.messages.iter().find(|m| m.id == id)
+        self.items
+            .iter()
+            .find_map(|item| item.as_message().filter(|m| m.id == id))
     }
 
     pub fn get_message_mut(&mut self, id: &str) -> Option<&mut CachedMessage> {
-        self.messages.iter_mut().find(|m| m.id == id)
+        self.items
+            .iter_mut()
+            .find_map(|item| item.as_message_mut().filter(|m| m.id == id))
     }
 
     pub fn messages(&self) -> impl Iterator<Item = &CachedMessage> {
-        self.messages.iter()
+        self.items.iter().filter_map(|item| item.as_message())
     }
 
     pub fn message_count(&self) -> usize {
-        self.messages.len()
+        self.items
+            .iter()
+            .filter(|item| item.as_message().is_some())
+            .count()
     }
 
     pub fn start_streaming(&mut self) {
@@ -141,13 +329,15 @@ impl ViewportCache {
     }
 
     pub fn invalidate_all_wraps(&mut self) {
-        for msg in &mut self.messages {
-            msg.invalidate_wrap();
+        for item in &mut self.items {
+            if let Some(msg) = item.as_message_mut() {
+                msg.invalidate_wrap();
+            }
         }
     }
 
     pub fn clear(&mut self) {
-        self.messages.clear();
+        self.items.clear();
         self.streaming = None;
         self.anchor = None;
     }
@@ -155,10 +345,10 @@ impl ViewportCache {
 
 impl ContentSource for ViewportCache {
     fn get_content(&self, id: &str) -> Option<&str> {
-        self.messages
+        self.items
             .iter()
-            .find(|m| m.id == id)
-            .map(|m| m.content())
+            .find(|item| item.id() == id)
+            .and_then(|item| item.content())
     }
 }
 
@@ -238,7 +428,7 @@ mod tests {
             ));
         }
 
-        assert!(cache.message_count() <= MAX_CACHED_MESSAGES);
+        assert!(cache.message_count() <= MAX_CACHED_ITEMS);
         assert!(cache.get_content("msg-0").is_none());
         assert!(cache.get_content("msg-49").is_some());
     }
@@ -519,5 +709,128 @@ mod tests {
         assert_eq!(anchor.line_offset, 2);
 
         assert!(cache.get_content("msg-5").is_some());
+    }
+
+    #[test]
+    fn tool_call_creation_and_streaming() {
+        let mut cache = ViewportCache::new();
+
+        cache.push_tool_call("tool-1".to_string(), "read_file", r#"{"path":"test.rs"}"#);
+        assert_eq!(cache.item_count(), 1);
+
+        let tool = cache.find_tool_mut("read_file").unwrap();
+        assert!(!tool.complete);
+        assert!(tool.result.is_empty());
+
+        cache.append_tool_result("read_file", "line 1\n");
+        cache.append_tool_result("read_file", "line 2\n");
+
+        let tool = cache.find_tool_mut("read_file").unwrap();
+        assert_eq!(tool.result, "line 1\nline 2\n");
+
+        cache.complete_tool("read_file");
+        let tool = cache.find_tool_mut("read_file").unwrap();
+        assert!(tool.complete);
+    }
+
+    #[test]
+    fn tool_call_arc_sharing() {
+        let tool = CachedToolCall::new("t1", "read_file", r#"{"path":"test.rs"}"#);
+        let cloned = tool.clone();
+
+        assert!(Arc::ptr_eq(&tool.name, &cloned.name));
+        assert!(Arc::ptr_eq(&tool.args, &cloned.args));
+    }
+
+    #[test]
+    fn shell_execution_creation() {
+        let mut cache = ViewportCache::new();
+
+        cache.push_shell_execution(
+            "shell-1".to_string(),
+            "ls -la",
+            0,
+            vec!["file1.rs".to_string(), "file2.rs".to_string()],
+            Some(PathBuf::from("/tmp/output.txt")),
+        );
+
+        assert_eq!(cache.item_count(), 1);
+        let item = cache.get_item("shell-1").unwrap();
+        let shell = item.as_shell_execution().unwrap();
+        assert_eq!(shell.command.as_ref(), "ls -la");
+        assert_eq!(shell.exit_code, 0);
+        assert_eq!(shell.output_tail.len(), 2);
+    }
+
+    #[test]
+    fn mixed_item_types() {
+        let mut cache = ViewportCache::new();
+
+        cache.push_message(CachedMessage::new("msg-1", Role::User, "Hello"));
+        cache.push_tool_call("tool-1".to_string(), "search", "{}");
+        cache.push_message(CachedMessage::new("msg-2", Role::Assistant, "Response"));
+        cache.push_shell_execution("shell-1".to_string(), "pwd", 0, vec![], None);
+
+        assert_eq!(cache.item_count(), 4);
+        assert_eq!(cache.message_count(), 2);
+
+        let items: Vec<_> = cache.items().collect();
+        assert!(items[0].as_message().is_some());
+        assert!(items[1].as_tool_call().is_some());
+        assert!(items[2].as_message().is_some());
+        assert!(items[3].as_shell_execution().is_some());
+    }
+
+    #[test]
+    fn cached_chat_item_id() {
+        let msg = CachedChatItem::Message(CachedMessage::new("msg-1", Role::User, "test"));
+        let tool = CachedChatItem::ToolCall(CachedToolCall::new("tool-1", "test", "{}"));
+        let shell = CachedChatItem::ShellExecution(CachedShellExecution::new(
+            "shell-1",
+            "ls",
+            0,
+            vec![],
+            None,
+        ));
+
+        assert_eq!(msg.id(), "msg-1");
+        assert_eq!(tool.id(), "tool-1");
+        assert_eq!(shell.id(), "shell-1");
+    }
+
+    #[test]
+    fn content_source_only_returns_message_content() {
+        let mut cache = ViewportCache::new();
+        cache.push_message(CachedMessage::new("msg-1", Role::User, "Hello"));
+        cache.push_tool_call("tool-1".to_string(), "test", "{}");
+
+        assert_eq!(cache.get_content("msg-1"), Some("Hello"));
+        assert_eq!(cache.get_content("tool-1"), None);
+    }
+
+    #[test]
+    fn item_count_vs_message_count() {
+        let mut cache = ViewportCache::new();
+        cache.push_message(CachedMessage::new("msg-1", Role::User, "Hello"));
+        cache.push_tool_call("tool-1".to_string(), "test", "{}");
+        cache.push_tool_call("tool-2".to_string(), "test2", "{}");
+
+        assert_eq!(cache.item_count(), 3);
+        assert_eq!(cache.message_count(), 1);
+    }
+
+    #[test]
+    fn find_tool_mut_finds_most_recent() {
+        let mut cache = ViewportCache::new();
+        cache.push_tool_call("tool-1".to_string(), "read", "{}");
+        cache.push_tool_call("tool-2".to_string(), "read", "{}");
+
+        cache.append_tool_result("read", "result");
+
+        let tool1 = cache.get_item("tool-1").unwrap().as_tool_call().unwrap();
+        let tool2 = cache.get_item("tool-2").unwrap().as_tool_call().unwrap();
+
+        assert!(tool1.result.is_empty());
+        assert_eq!(tool2.result, "result");
     }
 }
