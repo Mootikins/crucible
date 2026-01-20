@@ -1,4 +1,6 @@
 use crate::tui::ink::ansi::{strip_ansi, visual_rows};
+use crate::tui::ink::overlay::{composite_overlays, Overlay, OverlayAnchor};
+use crate::tui::ink::planning::RenderedOverlay;
 use crossterm::{cursor, execute, terminal};
 use std::io::{self, Stdout, Write};
 
@@ -42,13 +44,22 @@ impl OutputBuffer {
     }
 
     pub fn render(&mut self, content: &str) -> io::Result<bool> {
-        self.render_with_cursor_restore(content, 0)
+        self.render_with_overlays(content, 0, &[])
     }
 
     pub fn render_with_cursor_restore(
         &mut self,
         content: &str,
         cursor_offset_from_end: u16,
+    ) -> io::Result<bool> {
+        self.render_with_overlays(content, cursor_offset_from_end, &[])
+    }
+
+    pub fn render_with_overlays(
+        &mut self,
+        content: &str,
+        cursor_offset_from_end: u16,
+        overlays: &[RenderedOverlay],
     ) -> io::Result<bool> {
         let all_lines: Vec<String> = collapse_blank_lines(content);
 
@@ -60,12 +71,21 @@ impl OutputBuffer {
         let total_visual_rows: usize = line_visual_rows.iter().sum();
         let available_rows = self.terminal_height.saturating_sub(1);
 
-        let (viewport_lines, viewport_visual_rows) = self.clamp_to_viewport(
+        let (mut viewport_lines, viewport_visual_rows) = self.clamp_to_viewport(
             &all_lines,
             &line_visual_rows,
             total_visual_rows,
             available_rows,
         );
+
+        let overlay_refs: Vec<Overlay> = overlays
+            .iter()
+            .map(|o| Overlay {
+                lines: o.lines.clone(),
+                anchor: o.anchor,
+            })
+            .collect();
+        viewport_lines = composite_overlays(&viewport_lines, &overlay_refs, self.terminal_width);
 
         let all_equal = !self.force_next_redraw
             && viewport_lines.len() == self.previous_lines.len()
