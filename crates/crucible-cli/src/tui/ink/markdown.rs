@@ -303,13 +303,44 @@ fn render_code_block(node: &markdown_it::Node, ctx: &mut RenderContext) {
         ctx.push_block(styled("```", Style::new().fg(Color::DarkGray)));
     }
 
-    let code_style = Style::new().fg(Color::Green);
-    for line in content.lines() {
-        ctx.push_block(styled(line, code_style));
-    }
+    render_highlighted_code(&content, lang_str, ctx);
 
     ctx.push_block(styled("```", Style::new().fg(Color::DarkGray)));
     ctx.mark_block_end();
+}
+
+fn render_highlighted_code(content: &str, lang: &str, ctx: &mut RenderContext) {
+    use crate::formatting::SyntaxHighlighter;
+
+    if lang.is_empty() || !SyntaxHighlighter::supports_language(lang) {
+        let fallback_style = Style::new().fg(Color::Green);
+        for line in content.lines() {
+            ctx.push_block(styled(line, fallback_style));
+        }
+        return;
+    }
+
+    let highlighter = SyntaxHighlighter::new();
+    let highlighted_lines = highlighter.highlight(content, lang);
+
+    for highlighted_line in highlighted_lines {
+        if highlighted_line.spans.is_empty() {
+            ctx.push_block(text(""));
+            continue;
+        }
+
+        if highlighted_line.spans.len() == 1 {
+            let span = &highlighted_line.spans[0];
+            ctx.push_block(styled(&span.text, span.style));
+        } else {
+            let nodes: Vec<Node> = highlighted_line
+                .spans
+                .iter()
+                .map(|span| styled(&span.text, span.style))
+                .collect();
+            ctx.push_block(row(nodes));
+        }
+    }
 }
 
 fn render_list_item(node: &markdown_it::Node, ctx: &mut RenderContext) {
@@ -973,5 +1004,87 @@ mod tests {
             super::normalize_br_tags("multi<br>line<br>text"),
             "multi  \nline  \ntext"
         );
+    }
+
+    mod syntax_highlighting {
+        use super::*;
+
+        #[test]
+        fn rust_code_block_has_multiple_colors() {
+            let md = "```rust\nfn main() {\n    println!(\"Hello\");\n}\n```";
+            let node = markdown_to_node(md);
+            let output = render_to_string(&node, 80);
+
+            // Syntax highlighting should produce multiple distinct RGB color codes
+            // RGB escape sequence pattern: \x1b[38;2;R;G;B;m
+            let rgb_pattern = regex::Regex::new(r"\x1b\[38;2;\d+;\d+;\d+m").unwrap();
+            let matches: Vec<_> = rgb_pattern.find_iter(&output).collect();
+
+            assert!(
+                matches.len() >= 3,
+                "Rust code should have at least 3 different color codes for keywords, \
+                 strings, and identifiers. Got {} matches in output:\n{}",
+                matches.len(),
+                output.escape_debug()
+            );
+        }
+
+        #[test]
+        fn python_code_block_has_highlighting() {
+            let md = "```python\ndef hello():\n    print(\"world\")\n```";
+            let node = markdown_to_node(md);
+            let output = render_to_string(&node, 80);
+
+            let rgb_pattern = regex::Regex::new(r"\x1b\[38;2;\d+;\d+;\d+m").unwrap();
+            let has_rgb_colors = rgb_pattern.is_match(&output);
+
+            assert!(
+                has_rgb_colors,
+                "Python code should have RGB syntax colors. Output:\n{}",
+                output.escape_debug()
+            );
+        }
+
+        #[test]
+        fn unknown_language_still_renders() {
+            let md = "```unknownlang\nsome code here\n```";
+            let node = markdown_to_node(md);
+            let output = render_to_string(&node, 80);
+
+            assert!(output.contains("some code here"));
+        }
+
+        #[test]
+        fn code_block_without_language_renders() {
+            let md = "```\nplain code\n```";
+            let node = markdown_to_node(md);
+            let output = render_to_string(&node, 80);
+
+            assert!(output.contains("plain code"));
+        }
+
+        #[test]
+        fn javascript_code_block_has_highlighting() {
+            let md = "```js\nconst x = 42;\nfunction test() { return x; }\n```";
+            let node = markdown_to_node(md);
+            let output = render_to_string(&node, 80);
+
+            let rgb_pattern = regex::Regex::new(r"\x1b\[38;2;\d+;\d+;\d+m").unwrap();
+            assert!(
+                rgb_pattern.is_match(&output),
+                "JavaScript code should have syntax highlighting"
+            );
+        }
+
+        #[test]
+        fn highlighted_code_preserves_content() {
+            let md = "```rust\nlet answer = 42;\n```";
+            let node = markdown_to_node(md);
+            let output = render_to_string(&node, 80);
+
+            assert!(output.contains("let"), "Should contain 'let' keyword");
+            assert!(output.contains("answer"), "Should contain variable name");
+            assert!(output.contains("42"), "Should contain number literal");
+        }
     }
 }

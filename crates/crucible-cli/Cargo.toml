@@ -112,6 +112,9 @@ crossterm = { workspace = true }
 # Diff rendering
 similar = "2.7"
 
+# Syntax highlighting
+syntect = { version = "5.2", default-features = false, features = ["default-fancy"] }
+
 # Text wrapping
 textwrap = "0.16.2"
 

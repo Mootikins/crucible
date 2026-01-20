@@ -6,13 +6,9 @@
 use colored::Colorize;
 use similar::{ChangeTag, TextDiff};
 
-/// Renders file diffs with configurable context lines
-///
-/// Used to display file edits in chat:
-/// - Post-execution: show what changed after edit tool completes
-/// - Pre-approval: show proposed changes before user approves in act mode
 pub struct DiffRenderer {
     context_lines: usize,
+    word_diff: bool,
 }
 
 impl Default for DiffRenderer {
@@ -22,15 +18,51 @@ impl Default for DiffRenderer {
 }
 
 impl DiffRenderer {
-    /// Create a new DiffRenderer with default settings (0 context lines)
     pub fn new() -> Self {
-        Self { context_lines: 0 }
+        Self {
+            context_lines: 0,
+            word_diff: false,
+        }
     }
 
-    /// Set the number of context lines to show around changes
     pub fn with_context(mut self, lines: usize) -> Self {
         self.context_lines = lines;
         self
+    }
+
+    pub fn with_word_diff(mut self, enabled: bool) -> Self {
+        self.word_diff = enabled;
+        self
+    }
+
+    pub fn render_inline(&self, old: &str, new: &str) -> String {
+        use similar::Algorithm;
+
+        if old == new {
+            return old.to_string();
+        }
+
+        let diff = TextDiff::configure()
+            .algorithm(Algorithm::Patience)
+            .diff_words(old, new);
+
+        let mut output = String::new();
+
+        for change in diff.iter_all_changes() {
+            match change.tag() {
+                ChangeTag::Equal => {
+                    output.push_str(change.value());
+                }
+                ChangeTag::Delete => {
+                    output.push_str(&format!("{}{}{}", "\x1b[31m", change.value(), "\x1b[0m"));
+                }
+                ChangeTag::Insert => {
+                    output.push_str(&format!("{}{}{}", "\x1b[32m", change.value(), "\x1b[0m"));
+                }
+            }
+        }
+
+        output
     }
 
     /// Render diff to a string (without ANSI colors) for testing
@@ -504,5 +536,127 @@ mod tests {
         let result = renderer.render(old, new);
         assert!(result.contains("-port = 8080"));
         assert!(result.contains("+port = 3000"));
+    }
+
+    mod word_level_diff {
+        use super::*;
+
+        const ANSI_RED: &str = "\x1b[31m";
+        const ANSI_GREEN: &str = "\x1b[32m";
+        const ANSI_RESET: &str = "\x1b[0m";
+
+        fn has_deletion_color(s: &str) -> bool {
+            s.contains(ANSI_RED)
+        }
+
+        fn has_insertion_color(s: &str) -> bool {
+            s.contains(ANSI_GREEN)
+        }
+
+        #[test]
+        fn render_inline_highlights_changed_words_with_color() {
+            let renderer = DiffRenderer::new().with_word_diff(true);
+            let old = "The quick brown fox\n";
+            let new = "The slow brown dog\n";
+            let result = renderer.render_inline(old, new);
+
+            assert!(
+                has_deletion_color(&result),
+                "Deleted words should be red. Got:\n{}",
+                result.escape_debug()
+            );
+            assert!(
+                has_insertion_color(&result),
+                "Inserted words should be green. Got:\n{}",
+                result.escape_debug()
+            );
+            assert!(
+                result.contains(ANSI_RESET),
+                "Should reset ANSI codes after highlighting"
+            );
+        }
+
+        #[test]
+        fn render_inline_deletions_are_red() {
+            let renderer = DiffRenderer::new().with_word_diff(true);
+            let old = "remove this word\n";
+            let new = "remove word\n";
+            let result = renderer.render_inline(old, new);
+
+            assert!(
+                has_deletion_color(&result),
+                "Deleted word 'this' should be red. Got:\n{}",
+                result.escape_debug()
+            );
+        }
+
+        #[test]
+        fn render_inline_insertions_are_green() {
+            let renderer = DiffRenderer::new().with_word_diff(true);
+            let old = "add word\n";
+            let new = "add new word\n";
+            let result = renderer.render_inline(old, new);
+
+            assert!(
+                has_insertion_color(&result),
+                "Inserted word 'new' should be green. Got:\n{}",
+                result.escape_debug()
+            );
+        }
+
+        #[test]
+        fn render_inline_preserves_unchanged_text() {
+            let renderer = DiffRenderer::new().with_word_diff(true);
+            let old = "start middle end\n";
+            let new = "start changed end\n";
+            let result = renderer.render_inline(old, new);
+
+            assert!(result.contains("start"), "Unchanged 'start' should appear");
+            assert!(result.contains("end"), "Unchanged 'end' should appear");
+        }
+
+        #[test]
+        fn with_word_diff_is_chainable() {
+            let renderer = DiffRenderer::new().with_context(3).with_word_diff(true);
+            assert_eq!(renderer.context_lines, 3);
+            assert!(renderer.word_diff);
+        }
+
+        #[test]
+        fn word_diff_disabled_by_default() {
+            let renderer = DiffRenderer::new();
+            assert!(!renderer.word_diff);
+        }
+
+        #[test]
+        fn render_inline_multiline_colors_each_change() {
+            let renderer = DiffRenderer::new().with_word_diff(true);
+            let old = "line one\nline two\n";
+            let new = "line ONE\nline TWO\n";
+            let result = renderer.render_inline(old, new);
+
+            let red_count = result.matches(ANSI_RED).count();
+            let green_count = result.matches(ANSI_GREEN).count();
+            assert!(
+                red_count >= 2 && green_count >= 2,
+                "Each changed word should have its own color. Red: {}, Green: {}. Got:\n{}",
+                red_count,
+                green_count,
+                result.escape_debug()
+            );
+        }
+
+        #[test]
+        fn render_inline_identical_has_no_colors() {
+            let renderer = DiffRenderer::new().with_word_diff(true);
+            let same = "identical content\n";
+            let result = renderer.render_inline(same, same);
+
+            assert!(
+                !has_deletion_color(&result) && !has_insertion_color(&result),
+                "Identical content should have no diff colors. Got:\n{}",
+                result.escape_debug()
+            );
+        }
     }
 }
