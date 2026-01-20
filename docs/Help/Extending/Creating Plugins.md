@@ -69,15 +69,40 @@ This registers one tool. Agents can now call `greet`.
 
 ## Directory Plugin
 
-For complex plugins, use a directory with `init.lua`:
+For complex plugins, use a directory with a manifest and entry point:
 
 ```
 plugins/tasks/
+├── plugin.yaml     # Plugin manifest (required)
 ├── init.lua        # Entry point, exports public items
 ├── parser.lua      # TASKS.md format parser
 ├── commands.lua    # Command handlers
 └── README.md       # Usage documentation
 ```
+
+### Plugin Manifest
+
+Every directory plugin needs a `plugin.yaml` (or `plugin.yml`, `manifest.yaml`, `manifest.yml`):
+
+```yaml
+name: tasks
+version: 1.0.0
+main: init.lua
+description: Task management tools
+author: Your Name
+
+# Optional: declare dependencies
+dependencies:
+  - name: core-utils
+    version: ">=1.0.0"
+
+# Optional: request capabilities
+capabilities:
+  - filesystem
+  - vault
+```
+
+See [[Help/Extending/Plugin Manifest]] for the complete manifest specification.
 
 ```lua
 -- init.lua - Main module that exports everything
@@ -151,10 +176,22 @@ See [[Help/Extending/Event Hooks]] for event types and patterns.
 
 ## Plugin Lifecycle
 
-1. **Discovery**: Crucible scans plugin directories on startup
-2. **Loading**: Each plugin is compiled/loaded by its runtime
-3. **Registration**: Tools, hooks, and other exports are registered
-4. **Execution**: Components are invoked as needed
+1. **Discovery**: Crucible scans plugin directories for manifests
+2. **Validation**: Manifests are validated (name, version, dependencies)
+3. **Dependency Resolution**: Load order determined by dependencies
+4. **Loading**: Each plugin is compiled/loaded by its runtime
+5. **Registration**: Tools, hooks, commands, and views are registered
+6. **Execution**: Components are invoked as needed
+7. **Unloading**: Plugins can be disabled/unloaded at runtime
+
+### Lifecycle States
+
+| State | Description |
+|-------|-------------|
+| `Discovered` | Manifest found, not yet loaded |
+| `Active` | Loaded and running |
+| `Disabled` | Explicitly disabled by user |
+| `Error` | Failed to load |
 
 ## Shell Commands
 
@@ -220,6 +257,47 @@ For a Lisp-like experience with macros, use Fennel:
 
 Fennel files are compiled to Lua at load time. See [[Help/Lua/Language Basics]] for more on the Lua ecosystem.
 
+## Providing Commands
+
+Commands are slash-commands that users can invoke in the TUI:
+
+```lua
+--- List all tasks
+-- @command name="tasks" hint="[add|list|done] <args>"
+-- @param action string "Action to perform"
+function M.tasks(ctx, args)
+    if args.action == "list" then
+        ctx:display_info("Listing tasks...")
+    elseif args.action == "add" then
+        ctx:display_info("Adding task: " .. (args[2] or ""))
+    end
+end
+```
+
+Commands receive a context object with display methods.
+
+## Providing Views
+
+Views are custom UI components rendered in the TUI:
+
+```lua
+--- Interactive graph visualization
+-- @view name="graph"
+function M.graph_view()
+    local oil = cru.oil
+    return oil.box({
+        direction = "column",
+        children = {
+            oil.text("Graph View", { bold = true }),
+            oil.divider(),
+            oil.text("Nodes: 42, Edges: 128"),
+        }
+    })
+end
+```
+
+See [[Help/Extending/Scripted UI]] for the `cru.oil` API.
+
 ## Best Practices
 
 1. **One concern per plugin** - Keep plugins focused
@@ -228,6 +306,7 @@ Fennel files are compiled to Lua at load time. See [[Help/Lua/Language Basics]] 
 4. **Handle errors gracefully** - Return error tables with helpful messages
 5. **Provide param descriptions** - Help agents understand your tools
 6. **Minimize shell usage** - Prefer Crucible APIs over shelling out
+7. **Declare capabilities** - Only request what you need in manifest
 
 ## Example: Tasks Plugin
 
@@ -238,9 +317,11 @@ See [[Help/Task Management]] for a complete example plugin that demonstrates:
 
 ## See Also
 
+- [[Help/Extending/Plugin Manifest]] - Manifest format and programmatic API
 - [[Help/Lua/Language Basics]] - Lua syntax
 - [[Help/Lua/Configuration]] - Lua configuration
 - [[Help/Extending/Event Hooks]] - Hook system
 - [[Help/Extending/Custom Tools]] - Tool deep dive
+- [[Help/Extending/Scripted UI]] - cru.oil UI building
 - [[Help/Config/workspaces]] - Workspace and security configuration
 - [[Extending Crucible]] - All extension points
