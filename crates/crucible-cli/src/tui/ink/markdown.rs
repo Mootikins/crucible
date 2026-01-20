@@ -2,6 +2,16 @@
 //!
 //! Parses markdown using markdown-it and converts to ink Node trees
 //! for styled terminal rendering.
+//!
+//! # Render Styles
+//!
+//! Two render styles are supported:
+//!
+//! - **Viewport**: Content is pre-wrapped to fit the terminal width. Use for content
+//!   that will be rendered in-place and redrawn (streaming, popups).
+//!
+//! - **Natural**: Text uses large width (terminal wraps), but tables use terminal width
+//!   for correct column sizing. Use for graduated/scrollback content that won't be redrawn.
 
 use crate::tui::ink::ansi::{visible_width, wrap_styled_text};
 use crate::tui::ink::node::*;
@@ -20,6 +30,41 @@ use markdown_it::plugins::cmark::inline::newline::{Hardbreak, Softbreak};
 use markdown_it::plugins::extra::tables::{Table, TableBody, TableCell, TableHead, TableRow};
 use markdown_it::MarkdownIt;
 
+const NATURAL_TEXT_WIDTH: usize = 10000;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RenderStyle {
+    /// Pre-wrap all content to terminal width. For viewport/streaming content.
+    Viewport { width: usize },
+    /// Text uses natural width (terminal wraps), tables use terminal width.
+    /// For graduated/scrollback content.
+    Natural { terminal_width: usize },
+}
+
+impl RenderStyle {
+    pub fn viewport(width: usize) -> Self {
+        RenderStyle::Viewport { width }
+    }
+
+    pub fn natural(terminal_width: usize) -> Self {
+        RenderStyle::Natural { terminal_width }
+    }
+
+    fn text_width(&self) -> usize {
+        match self {
+            RenderStyle::Viewport { width } => *width,
+            RenderStyle::Natural { .. } => NATURAL_TEXT_WIDTH,
+        }
+    }
+
+    fn table_width(&self) -> usize {
+        match self {
+            RenderStyle::Viewport { width } => *width,
+            RenderStyle::Natural { terminal_width } => *terminal_width,
+        }
+    }
+}
+
 /// Convert markdown text to an ink Node tree
 pub fn markdown_to_node(markdown: &str) -> Node {
     let width = crossterm::terminal::size()
@@ -28,16 +73,25 @@ pub fn markdown_to_node(markdown: &str) -> Node {
     markdown_to_node_with_width(markdown, width)
 }
 
-/// Convert markdown text to an ink Node tree with explicit width
+/// Convert markdown text to an ink Node tree with explicit width (viewport style)
 pub fn markdown_to_node_with_width(markdown: &str, width: usize) -> Node {
-    // Normalize <br> tags to newlines before parsing
-    // This handles HTML line breaks that markdown-it doesn't process by default
+    markdown_to_node_styled(markdown, RenderStyle::viewport(width))
+}
+
+/// Convert markdown with explicit render style
+pub fn markdown_to_node_styled(markdown: &str, style: RenderStyle) -> Node {
+    markdown_to_node_with_widths(markdown, style.text_width(), style.table_width())
+}
+
+/// Convert markdown text to an ink Node tree with separate widths for text and tables.
+/// Prefer `markdown_to_node_styled` for clearer intent.
+pub fn markdown_to_node_with_widths(markdown: &str, text_width: usize, table_width: usize) -> Node {
     let markdown = normalize_br_tags(markdown);
 
     let md = create_parser();
     let ast = md.parse(&markdown);
 
-    let mut ctx = RenderContext::new(width);
+    let mut ctx = RenderContext::new(text_width, table_width);
     render_node(&ast, &mut ctx);
     ctx.into_node()
 }
@@ -57,10 +111,13 @@ struct RenderContext {
     list_counter: Option<usize>,
     needs_blank_line: bool,
     width: usize,
+    /// Separate width for tables - tables need actual terminal width for column sizing
+    /// even when text width is set large (for graduation/scrollback)
+    table_width: usize,
 }
 
 impl RenderContext {
-    fn new(width: usize) -> Self {
+    fn new(width: usize, table_width: usize) -> Self {
         Self {
             blocks: Vec::new(),
             current_spans: Vec::new(),
@@ -69,6 +126,7 @@ impl RenderContext {
             list_counter: None,
             needs_blank_line: false,
             width,
+            table_width,
         }
     }
 
@@ -468,7 +526,7 @@ fn render_table(node: &markdown_it::Node, ctx: &mut RenderContext) {
     }
 
     let fixed_overhead = num_cols + 1 + num_cols * 2;
-    let max_content_width = ctx.width.saturating_sub(fixed_overhead);
+    let max_content_width = ctx.table_width.saturating_sub(fixed_overhead);
 
     let total_content: usize = col_widths.iter().sum();
 
@@ -1006,6 +1064,140 @@ mod tests {
             super::normalize_br_tags("multi<br>line<br>text"),
             "multi  \nline  \ntext"
         );
+    }
+
+    #[test]
+    fn table_uses_table_width_not_text_width() {
+        use super::markdown_to_node_with_widths;
+
+        let table = "| A | B | C |\n|---|---|---|\n| 1 | 2 | 3 |";
+
+        let node = markdown_to_node_with_widths(table, 10000, 50);
+        let output = render_to_string(&node, 50);
+
+        assert_lines_fit_width(&output, 50);
+        assert!(output.contains("┌"), "Should have table border");
+    }
+
+    #[test]
+    fn text_ignores_table_width() {
+        use super::markdown_to_node_with_widths;
+
+        let long_text = "This is text that should use the large text_width and not wrap early.";
+
+        let node = markdown_to_node_with_widths(long_text, 10000, 20);
+        let output = render_to_string(&node, 200);
+
+        let lines: Vec<&str> = output.split("\r\n").collect();
+        assert_eq!(lines.len(), 1, "Text should not wrap (text_width=10000)");
+    }
+
+    mod render_style_tests {
+        use super::*;
+        use crate::tui::ink::markdown::{markdown_to_node_styled, RenderStyle, NATURAL_TEXT_WIDTH};
+
+        #[test]
+        fn render_style_viewport_widths() {
+            let style = RenderStyle::viewport(80);
+            assert_eq!(style.text_width(), 80);
+            assert_eq!(style.table_width(), 80);
+        }
+
+        #[test]
+        fn render_style_natural_widths() {
+            let style = RenderStyle::natural(80);
+            assert_eq!(style.text_width(), NATURAL_TEXT_WIDTH);
+            assert_eq!(style.table_width(), 80);
+        }
+
+        #[test]
+        fn viewport_style_wraps_text_at_width() {
+            let long_text = "This is a long paragraph that should wrap at the viewport width boundary when using viewport style rendering.";
+            let style = RenderStyle::viewport(40);
+            let node = markdown_to_node_styled(long_text, style);
+            let output = render_to_string(&node, 40);
+
+            assert_lines_fit_width(&output, 40);
+            let lines: Vec<&str> = output.split("\r\n").collect();
+            assert!(lines.len() > 1, "Viewport style should wrap text");
+        }
+
+        #[test]
+        fn natural_style_does_not_wrap_text() {
+            let long_text = "This is a long paragraph that should not wrap when using natural style rendering because text width is large.";
+            let style = RenderStyle::natural(40);
+            let node = markdown_to_node_styled(long_text, style);
+            let output = render_to_string(&node, 200);
+
+            let lines: Vec<&str> = output.split("\r\n").collect();
+            assert_eq!(lines.len(), 1, "Natural style should not wrap text");
+        }
+
+        #[test]
+        fn viewport_style_table_fits_width() {
+            let table = "| Header A | Header B | Header C |\n|----------|----------|----------|\n| Cell 1   | Cell 2   | Cell 3   |";
+            let style = RenderStyle::viewport(50);
+            let node = markdown_to_node_styled(table, style);
+            let output = render_to_string(&node, 50);
+
+            assert_lines_fit_width(&output, 50);
+        }
+
+        #[test]
+        fn natural_style_table_fits_terminal_width() {
+            let table = "| Header A | Header B | Header C |\n|----------|----------|----------|\n| Cell 1   | Cell 2   | Cell 3   |";
+            let style = RenderStyle::natural(50);
+            let node = markdown_to_node_styled(table, style);
+            let output = render_to_string(&node, 50);
+
+            assert_lines_fit_width(&output, 50);
+        }
+
+        #[test]
+        fn natural_style_mixed_content_text_unwrapped_table_fits() {
+            let md = "This paragraph uses natural text width.\n\n| A | B |\n|---|---|\n| 1 | 2 |";
+            let style = RenderStyle::natural(40);
+            let node = markdown_to_node_styled(md, style);
+            let output = render_to_string(&node, 200);
+
+            for line in output.lines() {
+                if line.contains('┌') || line.contains('│') || line.contains('└') {
+                    let width = visible_width(line);
+                    assert!(
+                        width <= 40,
+                        "Table line should fit terminal width: {} > 40",
+                        width
+                    );
+                }
+            }
+
+            assert!(
+                output.contains("This paragraph uses natural text width."),
+                "Paragraph should be intact"
+            );
+        }
+
+        #[test]
+        fn constructor_helpers_work() {
+            let v = RenderStyle::viewport(100);
+            let n = RenderStyle::natural(100);
+
+            assert!(matches!(v, RenderStyle::Viewport { width: 100 }));
+            assert!(matches!(
+                n,
+                RenderStyle::Natural {
+                    terminal_width: 100
+                }
+            ));
+        }
+
+        #[test]
+        fn render_style_equality() {
+            assert_eq!(RenderStyle::viewport(80), RenderStyle::viewport(80));
+            assert_ne!(RenderStyle::viewport(80), RenderStyle::viewport(100));
+            assert_ne!(RenderStyle::viewport(80), RenderStyle::natural(80));
+            assert_eq!(RenderStyle::natural(80), RenderStyle::natural(80));
+        }
     }
 
     mod syntax_highlighting {

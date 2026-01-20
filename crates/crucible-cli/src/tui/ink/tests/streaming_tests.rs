@@ -313,3 +313,93 @@ fn terminal_render_produces_stable_output() {
         terminal.render(&tree).expect("render failed");
     }
 }
+
+#[test]
+fn table_graduates_at_large_width_not_terminal_width() {
+    let mut runtime = TestRuntime::new(40, 24);
+    let mut app = InkChatApp::default();
+
+    let wide_table = r#"| Column One | Column Two | Column Three |
+|------------|------------|--------------|
+| Data A     | Data B     | Data C       |"#;
+
+    app.on_message(ChatAppMsg::UserMessage("Show table".to_string()));
+    app.on_message(ChatAppMsg::TextDelta(wide_table.to_string()));
+    app.on_message(ChatAppMsg::StreamComplete);
+
+    let tree = view_with_default_ctx(&app);
+    runtime.render(&tree);
+
+    let stdout = strip_ansi(runtime.stdout_content());
+    let lines: Vec<&str> = stdout.lines().collect();
+    let header_line = lines.iter().find(|l| l.contains("Column One"));
+
+    assert!(
+        header_line.is_some(),
+        "Should find header line in stdout: {}",
+        stdout
+    );
+
+    let header = header_line.unwrap();
+    assert!(
+        header.contains("Column Two") && header.contains("Column Three"),
+        "Completed table columns should be on same line (not wrapped to terminal width): {}",
+        header
+    );
+}
+
+#[test]
+fn streaming_table_uses_terminal_width_for_viewport() {
+    let mut runtime = TestRuntime::new(40, 24);
+    let mut app = InkChatApp::default();
+
+    let wide_table = r#"| Column One | Column Two | Column Three |
+|------------|------------|--------------|
+| Data A     | Data B     | Data C       |"#;
+
+    app.on_message(ChatAppMsg::UserMessage("Show table".to_string()));
+    app.on_message(ChatAppMsg::TextDelta(wide_table.to_string()));
+
+    let tree = view_with_default_ctx(&app);
+    runtime.render(&tree);
+
+    let viewport = strip_ansi(runtime.viewport_content());
+    assert!(
+        viewport.contains("Column"),
+        "Streaming table should be in viewport: {}",
+        viewport
+    );
+}
+
+#[test]
+fn graduated_table_fits_terminal_width() {
+    use crate::tui::ink::ansi::visible_width;
+
+    let mut runtime = TestRuntime::new(60, 24);
+    let mut app = InkChatApp::default();
+
+    let table = r#"| Header A | Header B | Header C |
+|----------|----------|----------|
+| Cell 1   | Cell 2   | Cell 3   |"#;
+
+    app.on_message(ChatAppMsg::UserMessage("Show table".to_string()));
+    app.on_message(ChatAppMsg::TextDelta(table.to_string()));
+    app.on_message(ChatAppMsg::StreamComplete);
+
+    let tree = view_with_default_ctx(&app);
+    runtime.render(&tree);
+
+    let stdout = strip_ansi(runtime.stdout_content());
+
+    for line in stdout.lines() {
+        if line.contains('┌') || line.contains('│') || line.contains('└') {
+            let width = visible_width(line);
+            assert!(
+                width <= 60,
+                "Table line exceeds terminal width (60): {} chars\n{}",
+                width,
+                line
+            );
+        }
+    }
+}
