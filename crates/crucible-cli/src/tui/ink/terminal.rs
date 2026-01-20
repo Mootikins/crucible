@@ -1,6 +1,6 @@
-use crate::tui::ink::node::{BoxNode, Direction, Node, StaticNode};
+use crate::tui::ink::node::Node;
 use crate::tui::ink::output::OutputBuffer;
-use crate::tui::ink::render::{render_to_string, render_with_cursor, CursorInfo};
+use crate::tui::ink::render::{render_to_string, render_with_cursor_filtered, CursorInfo};
 use crate::tui::ink::runtime::GraduationState;
 use crossterm::{
     cursor::{self, Hide, MoveDown, MoveTo, MoveToColumn, MoveUp, Show},
@@ -130,8 +130,7 @@ impl Terminal {
             self.last_cursor = None;
         }
 
-        let dynamic = self.filter_graduated(tree);
-        let result = render_with_cursor(&dynamic, self.width as usize);
+        let result = render_with_cursor_filtered(tree, self.width as usize, &self.graduation);
 
         let did_render = self.output.render_with_cursor_restore(
             &result.content,
@@ -207,46 +206,6 @@ impl Terminal {
         let content = render_to_string(tree, self.width as usize);
         self.output.render_fullscreen(&content)?;
         Ok(())
-    }
-
-    fn filter_graduated(&self, node: &Node) -> Node {
-        match node {
-            Node::Static(s) if self.graduation.is_graduated(&s.key) => Node::Empty,
-
-            // Popup rendered inline, not filtered
-            Node::Static(s) => Node::Static(StaticNode {
-                key: s.key.clone(),
-                children: s
-                    .children
-                    .iter()
-                    .map(|c| self.filter_graduated(c))
-                    .collect(),
-                newline: s.newline,
-            }),
-
-            Node::Box(b) => Node::Box(BoxNode {
-                children: b
-                    .children
-                    .iter()
-                    .map(|c| self.filter_graduated(c))
-                    .collect(),
-                direction: b.direction,
-                size: b.size,
-                padding: b.padding,
-                margin: b.margin,
-                border: b.border,
-                style: b.style,
-                justify: b.justify,
-                align: b.align,
-                gap: b.gap,
-            }),
-
-            Node::Fragment(children) => {
-                Node::Fragment(children.iter().map(|c| self.filter_graduated(c)).collect())
-            }
-
-            other => other.clone(),
-        }
     }
 
     pub fn show_cursor_at(&mut self, x: u16, y: u16) -> io::Result<()> {
