@@ -90,16 +90,6 @@ pub enum ChatItem {
     },
 }
 
-impl ChatItem {
-    fn id(&self) -> &str {
-        match self {
-            ChatItem::Message { id, .. } => id,
-            ChatItem::ToolCall { id, .. } => id,
-            ChatItem::ShellExecution { id, .. } => id,
-        }
-    }
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Role {
     User,
@@ -180,12 +170,6 @@ pub enum AutocompleteKind {
         command: String,
         arg_index: usize,
     },
-}
-
-#[derive(Debug, Clone, Default)]
-struct StreamingState {
-    content: String,
-    active: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -294,10 +278,8 @@ pub struct McpServerDisplay {
 }
 
 pub struct InkChatApp {
-    items: VecDeque<ChatItem>,
     cache: ViewportCache,
     input: InputBuffer,
-    streaming: StreamingState,
     spinner_frame: usize,
     mode: ChatMode,
     model: String,
@@ -328,10 +310,8 @@ pub struct InkChatApp {
 impl Default for InkChatApp {
     fn default() -> Self {
         Self {
-            items: VecDeque::with_capacity(MAX_DISPLAY_ITEMS),
             cache: ViewportCache::new(),
             input: InputBuffer::new(),
-            streaming: StreamingState::default(),
             spinner_frame: 0,
             mode: ChatMode::Normal,
             model: String::new(),
@@ -411,8 +391,6 @@ impl App for InkChatApp {
                     self.cache.start_streaming();
                 }
                 self.cache.append_streaming(&delta);
-                self.streaming.content.push_str(&delta);
-                self.streaming.active = true;
                 Action::Continue
             }
             ChatAppMsg::ToolCall { name, args } => {
@@ -421,15 +399,10 @@ impl App for InkChatApp {
                     tool_name = %name,
                     args_len = args.len(),
                     counter = self.message_counter,
-                    "Adding ToolCall to items"
+                    "Adding ToolCall to cache"
                 );
-                self.push_item(ChatItem::ToolCall {
-                    id: format!("tool-{}", self.message_counter),
-                    name,
-                    args,
-                    result: String::new(),
-                    complete: false,
-                });
+                self.cache
+                    .push_tool_call(format!("tool-{}", self.message_counter), &name, &args);
                 Action::Continue
             }
             ChatAppMsg::ToolResultDelta { name, delta } => {
@@ -440,32 +413,11 @@ impl App for InkChatApp {
                     "Received ToolResultDelta"
                 );
                 self.cache.append_tool_result(&name, &delta);
-                let found =
-                    self.items.iter_mut().rev().find(
-                        |item| matches!(item, ChatItem::ToolCall { name: n, .. } if n == &name),
-                    );
-                if let Some(ChatItem::ToolCall {
-                    result,
-                    name: found_name,
-                    ..
-                }) = found
-                {
-                    tracing::debug!(found_name = %found_name, "Found matching tool call");
-                    result.push_str(&delta);
-                }
                 Action::Continue
             }
             ChatAppMsg::ToolResultComplete { name } => {
                 tracing::debug!(tool_name = %name, "Received ToolResultComplete");
                 self.cache.complete_tool(&name);
-                let found =
-                    self.items.iter_mut().rev().find(
-                        |item| matches!(item, ChatItem::ToolCall { name: n, .. } if n == &name),
-                    );
-                if let Some(ChatItem::ToolCall { complete, .. }) = found {
-                    *complete = true;
-                    tracing::debug!(tool_name = %name, "Marked tool complete");
-                }
                 Action::Continue
             }
             ChatAppMsg::StreamComplete => {
@@ -475,7 +427,6 @@ impl App for InkChatApp {
             ChatAppMsg::Error(msg) => {
                 self.error = Some(msg);
                 self.cache.cancel_streaming();
-                self.streaming.active = false;
                 Action::Continue
             }
             ChatAppMsg::Status(status) => {
@@ -539,11 +490,11 @@ impl InkChatApp {
 
     pub fn load_previous_messages(&mut self, items: Vec<ChatItem>) {
         self.cache.clear();
-        for item in &items {
+        for item in items {
             match item {
                 ChatItem::Message { id, role, content } => {
                     self.cache
-                        .push_message(CachedMessage::new(id.clone(), *role, content.clone()));
+                        .push_message(CachedMessage::new(id, role, content));
                 }
                 ChatItem::ToolCall {
                     id,
@@ -552,12 +503,12 @@ impl InkChatApp {
                     result,
                     complete,
                 } => {
-                    self.cache.push_tool_call(id.clone(), name, args);
+                    self.cache.push_tool_call(id, &name, &args);
                     if !result.is_empty() {
-                        self.cache.append_tool_result(name, result);
+                        self.cache.append_tool_result(&name, &result);
                     }
-                    if *complete {
-                        self.cache.complete_tool(name);
+                    if complete {
+                        self.cache.complete_tool(&name);
                     }
                 }
                 ChatItem::ShellExecution {
@@ -568,52 +519,16 @@ impl InkChatApp {
                     output_path,
                 } => {
                     self.cache.push_shell_execution(
-                        id.clone(),
-                        command,
-                        *exit_code,
-                        output_tail.clone(),
-                        output_path.clone(),
+                        id,
+                        &command,
+                        exit_code,
+                        output_tail,
+                        output_path,
                     );
                 }
             }
         }
-        self.items = VecDeque::from(items);
-        if self.items.len() > MAX_DISPLAY_ITEMS {
-            let excess = self.items.len() - MAX_DISPLAY_ITEMS;
-            self.items.drain(..excess);
-        }
-        self.message_counter = self.items.len();
-    }
-
-    fn push_item(&mut self, item: ChatItem) {
-        if self.items.len() >= MAX_DISPLAY_ITEMS {
-            self.items.pop_front();
-        }
-        match &item {
-            ChatItem::Message { id, role, content } => {
-                self.cache
-                    .push_message(CachedMessage::new(id.clone(), *role, content.clone()));
-            }
-            ChatItem::ToolCall { id, name, args, .. } => {
-                self.cache.push_tool_call(id.clone(), name, args);
-            }
-            ChatItem::ShellExecution {
-                id,
-                command,
-                exit_code,
-                output_tail,
-                output_path,
-            } => {
-                self.cache.push_shell_execution(
-                    id.clone(),
-                    command,
-                    *exit_code,
-                    output_tail.clone(),
-                    output_path.clone(),
-                );
-            }
-        }
-        self.items.push_back(item);
+        self.message_counter = self.cache.item_count();
     }
 
     fn push_shell_history(&mut self, cmd: String) {
@@ -624,7 +539,7 @@ impl InkChatApp {
     }
 
     pub fn is_streaming(&self) -> bool {
-        self.cache.is_streaming() || self.streaming.active
+        self.cache.is_streaming()
     }
 
     pub fn input_content(&self) -> &str {
@@ -928,11 +843,7 @@ impl InkChatApp {
         }
 
         self.add_user_message(content);
-
-        self.streaming = StreamingState {
-            content: String::new(),
-            active: true,
-        };
+        self.cache.start_streaming();
         self.status = "Thinking...".to_string();
 
         Action::Continue
@@ -1000,10 +911,8 @@ impl InkChatApp {
                 Action::Continue
             }
             "clear" => {
-                self.items.clear();
                 self.cache.clear();
                 self.message_counter = 0;
-                self.streaming = StreamingState::default();
                 self.status = "Cleared".to_string();
                 Action::Send(ChatAppMsg::ClearHistory)
             }
@@ -1361,13 +1270,13 @@ impl InkChatApp {
                 .collect();
 
             self.message_counter += 1;
-            self.push_item(ChatItem::ShellExecution {
-                id: format!("shell-{}", self.message_counter),
-                command: modal.command,
+            self.cache.push_shell_execution(
+                format!("shell-{}", self.message_counter),
+                &modal.command,
                 exit_code,
                 output_tail,
-                output_path: modal.output_path,
-            });
+                modal.output_path,
+            );
         }
         self.leave_alternate_screen();
     }
@@ -1663,39 +1572,39 @@ impl InkChatApp {
 
     fn add_user_message(&mut self, content: String) {
         self.message_counter += 1;
-        self.push_item(ChatItem::Message {
-            id: format!("user-{}", self.message_counter),
-            role: Role::User,
+        self.cache.push_message(CachedMessage::new(
+            format!("user-{}", self.message_counter),
+            Role::User,
             content,
-        });
+        ));
     }
 
     fn add_system_message(&mut self, content: String) {
         self.message_counter += 1;
-        self.push_item(ChatItem::Message {
-            id: format!("system-{}", self.message_counter),
-            role: Role::System,
+        self.cache.push_message(CachedMessage::new(
+            format!("system-{}", self.message_counter),
+            Role::System,
             content,
-        });
+        ));
     }
 
     fn finalize_streaming(&mut self) {
-        if !self.streaming.content.is_empty() {
-            self.message_counter += 1;
-            let id = format!("assistant-{}", self.message_counter);
-            let content = std::mem::take(&mut self.streaming.content);
-            self.cache.cancel_streaming();
-            self.cache
-                .push_message(CachedMessage::new(&id, Role::Assistant, &content));
-            self.push_item(ChatItem::Message {
-                id,
-                role: Role::Assistant,
-                content,
-            });
+        let streaming_content = self.cache.streaming_content().map(|s| s.to_string());
+        if let Some(content) = streaming_content {
+            if !content.is_empty() {
+                self.message_counter += 1;
+                self.cache.cancel_streaming();
+                self.cache.push_message(CachedMessage::new(
+                    format!("assistant-{}", self.message_counter),
+                    Role::Assistant,
+                    content,
+                ));
+            } else {
+                self.cache.cancel_streaming();
+            }
         } else {
             self.cache.cancel_streaming();
         }
-        self.streaming.active = false;
         self.status = "Ready".to_string();
     }
 
@@ -1811,121 +1720,6 @@ impl InkChatApp {
             .chain(tail_nodes)
             .chain(std::iter::once(path_node)));
         scrollback(&shell.id, [content])
-    }
-
-    #[allow(dead_code)]
-    fn render_item(&self, item: &ChatItem) -> Node {
-        match item {
-            ChatItem::Message { id, role, content } => {
-                let content_node = match role {
-                    Role::User => self.render_user_prompt(content),
-                    Role::Assistant => {
-                        let content_width = terminal_width().saturating_sub(BULLET_PREFIX_WIDTH);
-                        let style = RenderStyle::natural(content_width);
-                        let md_node = markdown_to_node_styled(content, style);
-                        col([
-                            text(""),
-                            row([
-                                styled(BULLET_PREFIX, Style::new().fg(Color::DarkGray)),
-                                md_node,
-                            ]),
-                            text(""),
-                        ])
-                    }
-                    Role::System => col([
-                        text(""),
-                        styled(
-                            format!(" * {} ", content),
-                            Style::new().fg(Color::Yellow).dim(),
-                        ),
-                    ]),
-                };
-                scrollback(id, [content_node])
-            }
-            ChatItem::ToolCall {
-                id,
-                name,
-                args,
-                result,
-                complete,
-            } => {
-                let (status_icon, status_color) = if *complete {
-                    ("✓", Color::Green)
-                } else {
-                    ("…", Color::White)
-                };
-
-                let args_formatted = Self::format_tool_args(args);
-
-                let header = row([
-                    styled(format!(" {} ", status_icon), Style::new().fg(status_color)),
-                    styled(name, Style::new().fg(Color::White)),
-                    styled(
-                        format!("({})", args_formatted),
-                        Style::new().fg(Color::DarkGray),
-                    ),
-                ]);
-
-                let result_node = if result.is_empty() {
-                    Node::Empty
-                } else if *complete {
-                    Self::format_tool_result(name, result)
-                } else {
-                    Self::format_streaming_output(result)
-                };
-
-                let content = col([header, result_node]);
-                if *complete {
-                    scrollback(id, [content])
-                } else {
-                    col([text(""), content])
-                }
-            }
-            ChatItem::ShellExecution {
-                id,
-                command,
-                exit_code,
-                output_tail,
-                output_path,
-            } => {
-                let exit_style = if *exit_code == 0 {
-                    Style::new().fg(Color::Green)
-                } else {
-                    Style::new().fg(Color::Red)
-                };
-
-                let header = row([
-                    styled(" $ ", Style::new().fg(Color::DarkGray)),
-                    styled(command, Style::new().fg(Color::White)),
-                    styled(format!("  exit {}", exit_code), exit_style.dim()),
-                ]);
-
-                let tail_nodes: Vec<Node> = output_tail
-                    .iter()
-                    .map(|line| {
-                        styled(
-                            format!("   {}", line),
-                            Style::new().fg(Color::Rgb(180, 180, 180)),
-                        )
-                    })
-                    .collect();
-
-                let path_node = output_path
-                    .as_ref()
-                    .map(|p| {
-                        styled(
-                            format!("   → {}", p.display()),
-                            Style::new().fg(Color::Rgb(140, 140, 140)),
-                        )
-                    })
-                    .unwrap_or(Node::Empty);
-
-                let content = col(std::iter::once(header)
-                    .chain(tail_nodes)
-                    .chain(std::iter::once(path_node)));
-                scrollback(id, [content])
-            }
-        }
     }
 
     fn render_streaming(&self) -> Node {
@@ -2479,8 +2273,8 @@ mod tests {
     #[test]
     fn test_app_init() {
         let app = InkChatApp::init();
-        assert!(app.items.is_empty());
-        assert!(!app.streaming.active);
+        assert_eq!(app.cache.item_count(), 0);
+        assert!(!app.is_streaming());
         assert_eq!(app.mode, ChatMode::Normal);
     }
 
@@ -2489,11 +2283,10 @@ mod tests {
         let mut app = InkChatApp::init();
         app.add_user_message("Hello".to_string());
 
-        assert_eq!(app.items.len(), 1);
-        assert!(matches!(
-            &app.items[0],
-            ChatItem::Message { role: Role::User, content, .. } if content == "Hello"
-        ));
+        assert_eq!(app.cache.item_count(), 1);
+        let msg = app.cache.items().next().unwrap().as_message().unwrap();
+        assert_eq!(msg.role, Role::User);
+        assert_eq!(msg.content(), "Hello");
     }
 
     #[test]
@@ -2501,19 +2294,17 @@ mod tests {
         let mut app = InkChatApp::init();
 
         app.on_message(ChatAppMsg::TextDelta("Hello ".to_string()));
-        assert!(app.streaming.active);
-        assert_eq!(app.streaming.content, "Hello ");
+        assert!(app.cache.is_streaming());
+        assert_eq!(app.cache.streaming_content(), Some("Hello "));
 
         app.on_message(ChatAppMsg::TextDelta("World".to_string()));
-        assert_eq!(app.streaming.content, "Hello World");
+        assert_eq!(app.cache.streaming_content(), Some("Hello World"));
 
         app.on_message(ChatAppMsg::StreamComplete);
-        assert!(!app.streaming.active);
-        assert_eq!(app.items.len(), 1);
-        assert!(matches!(
-            &app.items[0],
-            ChatItem::Message { content, .. } if content == "Hello World"
-        ));
+        assert!(!app.cache.is_streaming());
+        assert_eq!(app.cache.item_count(), 1);
+        let msg = app.cache.items().next().unwrap().as_message().unwrap();
+        assert_eq!(msg.content(), "Hello World");
     }
 
     #[test]
@@ -2524,37 +2315,30 @@ mod tests {
             name: "Read".to_string(),
             args: r#"{"path":"file.md","offset":10}"#.to_string(),
         });
-        assert_eq!(app.items.len(), 1);
-        assert!(matches!(
-            &app.items[0],
-            ChatItem::ToolCall { name, complete: false, .. } if name == "Read"
-        ));
+        assert_eq!(app.cache.item_count(), 1);
+        let tool = app.cache.items().next().unwrap().as_tool_call().unwrap();
+        assert_eq!(tool.name.as_ref(), "Read");
+        assert!(!tool.complete);
 
         app.on_message(ChatAppMsg::ToolResultDelta {
             name: "Read".to_string(),
             delta: "line 1\n".to_string(),
         });
-        assert!(matches!(
-            &app.items[0],
-            ChatItem::ToolCall { result, .. } if result == "line 1\n"
-        ));
+        let tool = app.cache.items().next().unwrap().as_tool_call().unwrap();
+        assert_eq!(tool.result, "line 1\n");
 
         app.on_message(ChatAppMsg::ToolResultDelta {
             name: "Read".to_string(),
             delta: "line 2\n".to_string(),
         });
-        assert!(matches!(
-            &app.items[0],
-            ChatItem::ToolCall { result, .. } if result == "line 1\nline 2\n"
-        ));
+        let tool = app.cache.items().next().unwrap().as_tool_call().unwrap();
+        assert_eq!(tool.result, "line 1\nline 2\n");
 
         app.on_message(ChatAppMsg::ToolResultComplete {
             name: "Read".to_string(),
         });
-        assert!(matches!(
-            &app.items[0],
-            ChatItem::ToolCall { complete: true, .. }
-        ));
+        let tool = app.cache.items().next().unwrap().as_tool_call().unwrap();
+        assert!(tool.complete);
     }
 
     #[test]
@@ -2574,10 +2358,10 @@ mod tests {
         let mut app = InkChatApp::init();
 
         app.add_user_message("test".to_string());
-        assert_eq!(app.items.len(), 1);
+        assert_eq!(app.cache.item_count(), 1);
 
         let action = app.handle_repl_command(":clear");
-        assert!(app.items.is_empty());
+        assert_eq!(app.cache.item_count(), 0);
         assert!(matches!(action, Action::Send(ChatAppMsg::ClearHistory)));
     }
 
@@ -2768,22 +2552,22 @@ mod tests {
     }
 
     #[test]
-    fn test_items_ring_buffer_evicts_oldest() {
+    fn test_cache_ring_buffer_evicts_oldest() {
+        use crate::tui::ink::viewport_cache::MAX_CACHED_ITEMS;
         let mut app = InkChatApp::init();
 
-        for i in 0..(MAX_DISPLAY_ITEMS + 10) {
+        for i in 0..(MAX_CACHED_ITEMS + 10) {
             app.add_user_message(format!("Message {}", i));
         }
 
-        assert_eq!(app.items.len(), MAX_DISPLAY_ITEMS);
+        assert_eq!(app.cache.item_count(), MAX_CACHED_ITEMS);
 
-        let first = app.items.front().unwrap();
-        assert!(matches!(first, ChatItem::Message { content, .. } if content == "Message 10"));
+        let items: Vec<_> = app.cache.items().collect();
+        let first = items.first().unwrap().as_message().unwrap();
+        assert_eq!(first.content(), "Message 10");
 
-        let last = app.items.back().unwrap();
-        assert!(
-            matches!(last, ChatItem::Message { content, .. } if content == &format!("Message {}", MAX_DISPLAY_ITEMS + 9))
-        );
+        let last = items.last().unwrap().as_message().unwrap();
+        assert_eq!(last.content(), format!("Message {}", MAX_CACHED_ITEMS + 9));
     }
 
     #[test]
