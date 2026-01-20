@@ -2,17 +2,14 @@ use crate::tui::ink::app::{Action, App, ViewContext};
 use crate::tui::ink::event::Event;
 use crate::tui::ink::focus::FocusContext;
 use crate::tui::ink::node::Node;
-use crate::tui::ink::render::render_to_string;
-use crate::tui::ink::runtime::{GraduatedContent, GraduationState};
+use crate::tui::ink::planning::{FramePlanner, FrameSnapshot, FrameTrace};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 pub struct AppHarness<A: App> {
     app: A,
     focus: FocusContext,
-    width: u16,
-    height: u16,
-    graduation: GraduationState,
-    viewport_buffer: String,
+    planner: FramePlanner,
+    last_snapshot: Option<FrameSnapshot>,
     stdout_buffer: String,
 }
 
@@ -21,10 +18,8 @@ impl<A: App> AppHarness<A> {
         Self {
             app: A::init(),
             focus: FocusContext::new(),
-            width,
-            height,
-            graduation: GraduationState::new(),
-            viewport_buffer: String::new(),
+            planner: FramePlanner::new(width, height),
+            last_snapshot: None,
             stdout_buffer: String::new(),
         }
     }
@@ -111,21 +106,9 @@ impl<A: App> AppHarness<A> {
     pub fn render(&mut self) -> &mut Self {
         let ctx = ViewContext::new(&self.focus);
         let tree = self.app.view(&ctx);
-
-        let graduated = self
-            .graduation
-            .graduate(&tree, self.width as usize)
-            .unwrap();
-        self.graduation.flush_to_buffer(&graduated);
-
-        for item in &graduated {
-            self.stdout_buffer.push_str(&item.content);
-            if item.newline {
-                self.stdout_buffer.push('\n');
-            }
-        }
-
-        self.viewport_buffer = render_to_string(&tree, self.width as usize);
+        let snapshot = self.planner.plan(&tree);
+        self.stdout_buffer.push_str(&snapshot.stdout_delta);
+        self.last_snapshot = Some(snapshot);
         self
     }
 
@@ -135,15 +118,36 @@ impl<A: App> AppHarness<A> {
     }
 
     pub fn viewport(&self) -> &str {
-        &self.viewport_buffer
+        self.last_snapshot
+            .as_ref()
+            .map(|s| s.viewport_content())
+            .unwrap_or("")
     }
 
     pub fn stdout(&self) -> &str {
         &self.stdout_buffer
     }
 
+    pub fn stdout_delta(&self) -> &str {
+        self.last_snapshot
+            .as_ref()
+            .map(|s| s.stdout_delta.as_str())
+            .unwrap_or("")
+    }
+
+    pub fn screen(&self) -> String {
+        self.last_snapshot
+            .as_ref()
+            .map(|s| s.screen())
+            .unwrap_or_default()
+    }
+
+    pub fn trace(&self) -> Option<&FrameTrace> {
+        self.last_snapshot.as_ref().map(|s| s.trace())
+    }
+
     pub fn graduated_count(&self) -> usize {
-        self.graduation.graduated_count()
+        self.planner.graduation().graduated_count()
     }
 
     pub fn is_focused(&self, id: &str) -> bool {
@@ -191,5 +195,26 @@ mod tests {
         harness.render();
 
         harness.send_text("hello");
+    }
+
+    #[test]
+    fn trace_available_after_render() {
+        let mut harness: AppHarness<InkChatApp> = AppHarness::new(80, 24);
+
+        assert!(harness.trace().is_none());
+
+        harness.render();
+
+        let trace = harness.trace().expect("trace should exist after render");
+        assert_eq!(trace.frame_no, 1);
+    }
+
+    #[test]
+    fn screen_combines_stdout_and_viewport() {
+        let mut harness: AppHarness<InkChatApp> = AppHarness::new(80, 24);
+        harness.render();
+
+        let screen = harness.screen();
+        assert!(!screen.is_empty());
     }
 }

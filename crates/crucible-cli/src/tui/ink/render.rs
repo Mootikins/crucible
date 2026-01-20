@@ -26,6 +26,7 @@ pub struct CursorInfo {
     pub visible: bool,
 }
 
+#[derive(Debug, Clone)]
 pub struct RenderResult {
     pub content: String,
     pub cursor: CursorInfo,
@@ -33,6 +34,16 @@ pub struct RenderResult {
 
 pub fn render_to_string(node: &Node, width: usize) -> String {
     render_with_cursor(node, width).content
+}
+
+/// Render a slice of nodes without cloning them into a Fragment.
+pub fn render_children_to_string(children: &[Node], width: usize) -> String {
+    let mut output = String::new();
+    let mut cursor_info = CursorInfo::default();
+    for child in children {
+        render_node_filtered(child, width, &NoFilter, &mut output, &mut cursor_info);
+    }
+    output
 }
 
 pub fn render_with_cursor(node: &Node, width: usize) -> RenderResult {
