@@ -8,11 +8,11 @@ expression: render_app(&app)
                                                                                 
                                                                                 
                                                                                 
-   tool semantic_search  Search notes by meaning                                
-   tool create_note  Create a new note                                          
- ▸ command /mode  Cycle chat mode                                               
-   command /help  Show help                                                     
+                                                                                
+ ▸ file src/main.rs                                                             
+   file src/lib.rs                                                              
+   file Cargo.toml                                                              
 ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄
- >                                                                              
+ > @                                                                            
 ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
  NORMAL  ...

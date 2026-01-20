@@ -1,10 +1,21 @@
 use crate::tui::ink::node::{Node, StaticNode};
 use crate::tui::ink::render::{render_children_to_string, RenderFilter};
-use std::collections::HashSet;
+use std::collections::VecDeque;
 use std::io::{self, Write};
 
+/// Width used for rendering graduated content. Large value lets terminal handle wrapping.
+/// This matches `NATURAL_TEXT_WIDTH` in markdown.rs - graduated content uses "natural" style.
+pub const GRADUATION_WIDTH: usize = 10000;
+
+/// Maximum number of graduated keys to track. Once full, oldest keys are evicted.
+/// This bounds memory usage and provides natural cleanup for long sessions.
+/// 256 messages is ~10 screens of typical chat content.
+const MAX_GRADUATED_KEYS: usize = 256;
+
+/// Ring buffer for tracking graduated message keys.
+/// Uses VecDeque for O(1) push/pop at both ends with good cache locality.
 pub struct GraduationState {
-    graduated_keys: HashSet<String>,
+    graduated_keys: VecDeque<String>,
 }
 
 impl Default for GraduationState {
@@ -16,12 +27,12 @@ impl Default for GraduationState {
 impl GraduationState {
     pub fn new() -> Self {
         Self {
-            graduated_keys: HashSet::new(),
+            graduated_keys: VecDeque::with_capacity(MAX_GRADUATED_KEYS),
         }
     }
 
     pub fn is_graduated(&self, key: &str) -> bool {
-        self.graduated_keys.contains(key)
+        self.graduated_keys.iter().any(|k| k == key)
     }
 
     pub fn graduated_count(&self) -> usize {
@@ -32,18 +43,20 @@ impl GraduationState {
         self.graduated_keys.clear();
     }
 
-    /// Collects content to graduate WITHOUT committing keys.
-    /// This is the "planning" phase - pure, no side effects on graduated_keys.
     pub fn plan_graduation(&self, node: &Node) -> Vec<GraduatedContent> {
         let mut graduated = Vec::new();
         self.collect_static_nodes_readonly(node, &mut graduated);
         graduated
     }
 
-    /// Marks keys as graduated. Call AFTER plan_graduation() to commit.
     pub fn commit_graduation(&mut self, graduated: &[GraduatedContent]) {
         for item in graduated {
-            self.graduated_keys.insert(item.key.clone());
+            if !self.is_graduated(&item.key) {
+                if self.graduated_keys.len() >= MAX_GRADUATED_KEYS {
+                    self.graduated_keys.pop_front();
+                }
+                self.graduated_keys.push_back(item.key.clone());
+            }
         }
     }
 
@@ -101,10 +114,8 @@ impl GraduationState {
         match node {
             Node::Static(static_node) => {
                 if !self.graduated_keys.contains(&static_node.key) {
-                    // Use large width for graduation - let terminal handle wrapping
-                    let graduation_width = 10000;
                     let content =
-                        render_children_to_string(&static_node.children, graduation_width);
+                        render_children_to_string(&static_node.children, GRADUATION_WIDTH);
 
                     if !content.is_empty() {
                         graduated.push(GraduatedContent {

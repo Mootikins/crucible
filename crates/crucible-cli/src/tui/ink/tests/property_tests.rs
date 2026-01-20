@@ -454,3 +454,185 @@ mod chat_mode_properties {
         }
     }
 }
+
+mod composer_stability_properties {
+    use crate::tui::ink::app::App;
+    use crate::tui::ink::chat_app::{InkChatApp, INPUT_MAX_CONTENT_LINES};
+    use crate::tui::ink::event::{Event, InputAction};
+    use crate::tui::ink::focus::FocusContext;
+    use crate::tui::ink::render::render_to_string;
+    use crate::tui::ViewContext;
+    use crossterm::event::KeyCode;
+    use proptest::prelude::*;
+
+    fn count_lines(output: &str) -> usize {
+        output.split("\r\n").count()
+    }
+
+    fn extract_input_region(output: &str) -> Vec<&str> {
+        let lines: Vec<&str> = output.split("\r\n").collect();
+        let mut in_input = false;
+        let mut input_lines = Vec::new();
+
+        for line in lines {
+            if line.contains('▄') && !in_input {
+                in_input = true;
+                input_lines.push(line);
+            } else if line.contains('▀') && in_input {
+                input_lines.push(line);
+                break;
+            } else if in_input {
+                input_lines.push(line);
+            }
+        }
+        input_lines
+    }
+
+    fn render_app(app: &InkChatApp) -> String {
+        let focus = FocusContext::new();
+        let ctx = ViewContext::new(&focus);
+        let node = app.view(&ctx);
+        render_to_string(&node, 80)
+    }
+
+    fn measure_input_height(app: &InkChatApp) -> usize {
+        let output = render_app(app);
+        extract_input_region(&output).len()
+    }
+
+    #[test]
+    fn input_region_has_expected_height_when_empty() {
+        let app = InkChatApp::default();
+        let height = measure_input_height(&app);
+        assert_eq!(
+            height, 3,
+            "Empty input should have 3 lines (top_edge + 1 content + bottom_edge), got {}",
+            height
+        );
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(100))]
+
+        #[test]
+        fn input_height_bounded_by_max_content_lines(text in "[a-zA-Z0-9 ]{0,500}") {
+            let mut app = InkChatApp::default();
+            app.set_input_content(&text);
+
+            let height = measure_input_height(&app);
+            let max_height = INPUT_MAX_CONTENT_LINES + 2;
+
+            prop_assert!(
+                height >= 3,
+                "Input should have at least 3 lines (edges + 1 content), got {}",
+                height
+            );
+            prop_assert!(
+                height <= max_height,
+                "Input should have at most {} lines, got {}",
+                max_height, height
+            );
+        }
+
+        #[test]
+        fn input_height_bounded_after_typing(
+            chars in prop::collection::vec(any::<char>().prop_filter("printable", |c| c.is_ascii_graphic() || *c == ' '), 1..100)
+        ) {
+            let mut app = InkChatApp::default();
+
+            for c in chars {
+                app.handle_input_action(InputAction::Insert(c));
+            }
+
+            let height = measure_input_height(&app);
+            let max_height = INPUT_MAX_CONTENT_LINES + 2;
+            prop_assert!(
+                height >= 3 && height <= max_height,
+                "Input height {} should be between 3 and {}",
+                height, max_height
+            );
+        }
+
+        #[test]
+        fn input_height_bounded_with_mixed_operations(
+            actions in prop::collection::vec(
+                prop_oneof![
+                    any::<char>()
+                        .prop_filter("printable", |c| c.is_ascii_graphic() || *c == ' ')
+                        .prop_map(InputAction::Insert),
+                    Just(InputAction::Backspace),
+                    Just(InputAction::Delete),
+                    Just(InputAction::Left),
+                    Just(InputAction::Right),
+                    Just(InputAction::Home),
+                    Just(InputAction::End),
+                ],
+                1..50
+            )
+        ) {
+            let mut app = InkChatApp::default();
+            let max_height = INPUT_MAX_CONTENT_LINES + 2;
+
+            for action in actions {
+                app.handle_input_action(action);
+                let height = measure_input_height(&app);
+                prop_assert!(
+                    height >= 3 && height <= max_height,
+                    "Input height {} should be between 3 and {}",
+                    height, max_height
+                );
+            }
+        }
+
+
+
+        #[test]
+        fn long_text_clamped_to_max_lines(word_count in 5usize..50, word_len in 3usize..15) {
+            let mut app = InkChatApp::default();
+
+            let text: String = (0..word_count)
+                .map(|_| "x".repeat(word_len))
+                .collect::<Vec<_>>()
+                .join(" ");
+
+            app.set_input_content(&text);
+
+            let height = measure_input_height(&app);
+            let max_height = INPUT_MAX_CONTENT_LINES + 2;
+
+            prop_assert!(
+                height <= max_height,
+                "Input with {} chars should render at most {} lines (got {})",
+                text.len(), max_height, height
+            );
+        }
+
+        #[test]
+        fn cursor_navigation_does_not_exceed_bounds(
+            text in "[a-zA-Z ]{50,300}",
+            nav_actions in prop::collection::vec(
+                prop_oneof![
+                    Just(InputAction::Left),
+                    Just(InputAction::Right),
+                    Just(InputAction::Home),
+                    Just(InputAction::End),
+                ],
+                5..30
+            )
+        ) {
+            let mut app = InkChatApp::default();
+            app.set_input_content(&text);
+            let max_height = INPUT_MAX_CONTENT_LINES + 2;
+
+            for action in nav_actions {
+                app.handle_input_action(action);
+                let height = measure_input_height(&app);
+                prop_assert!(
+                    height >= 3 && height <= max_height,
+                    "Height {} out of bounds [3, {}] during navigation",
+                    height, max_height
+                );
+            }
+        }
+    }
+}

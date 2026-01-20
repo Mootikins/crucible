@@ -118,20 +118,26 @@ impl Terminal {
                 "graduating"
             );
 
+            // Clear viewport BEFORE writing graduated content to prevent
+            // old viewport lines from bleeding into the graduated output.
             self.output.clear()?;
+
+            // Write graduated content to stdout (becomes terminal scrollback).
             write!(self.stdout, "{}", snapshot.stdout_delta)?;
             self.stdout.flush()?;
 
+            // Force redraw since cursor position shifted after graduation output
             self.output.force_redraw();
             self.last_cursor = None;
         }
 
-        let did_render = self.output.render_with_cursor_restore(
+        let did_render = self.output.render_with_overlays(
             &snapshot.plan.viewport.content,
             self.last_cursor
                 .as_ref()
                 .map(|c| c.row_from_end)
                 .unwrap_or(0),
+            &snapshot.plan.overlays,
         )?;
 
         if snapshot.plan.viewport.cursor.visible {

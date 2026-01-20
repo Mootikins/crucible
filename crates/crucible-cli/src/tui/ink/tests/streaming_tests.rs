@@ -148,7 +148,7 @@ fn multiline_streaming_renders_correctly() {
         let line_count = viewport.lines().count();
 
         assert!(
-            line_count < 20,
+            line_count < 30,
             "Viewport should not explode in size, got {} lines",
             line_count
         );

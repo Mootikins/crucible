@@ -154,6 +154,8 @@ impl LayoutEngine {
             Node::ErrorBoundary(boundary) => {
                 return self.build_node(&boundary.child, available_width);
             }
+
+            Node::Overlay(_) => self.tree.new_leaf(taffy::style::Style::default()).unwrap(),
         };
 
         self.node_map.insert(id, node_id);

@@ -82,10 +82,23 @@ pub fn wrap_styled_text(spans: &[(String, String)], width: usize) -> Vec<String>
 
     use textwrap::{wrap, Options, WordSplitter};
     let options = Options::new(width).word_splitter(WordSplitter::NoHyphenation);
-    let wrapped_lines: Vec<String> = wrap(&plain_text, options)
+    let initial_wrapped: Vec<String> = wrap(&plain_text, options)
         .into_iter()
         .map(|cow| cow.into_owned())
         .collect();
+
+    let mut wrapped_lines: Vec<String> = Vec::new();
+    for line in initial_wrapped {
+        let char_count = line.chars().count();
+        if char_count <= width {
+            wrapped_lines.push(line);
+        } else {
+            let chars: Vec<char> = line.chars().collect();
+            for chunk in chars.chunks(width) {
+                wrapped_lines.push(chunk.iter().collect());
+            }
+        }
+    }
 
     let mut result: Vec<String> = Vec::new();
     let mut char_offset = 0;
