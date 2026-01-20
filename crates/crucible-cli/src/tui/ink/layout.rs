@@ -116,6 +116,8 @@ fn layout_node(node: &Node, available: &Rect) -> LayoutNode {
         Node::Focusable(focusable) => layout_node(&focusable.child, available),
 
         Node::ErrorBoundary(boundary) => layout_node(&boundary.child, available),
+
+        Node::Overlay(_) => LayoutNode::empty(),
     }
 }
 

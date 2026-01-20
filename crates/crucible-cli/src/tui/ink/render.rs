@@ -162,6 +162,10 @@ fn render_node_filtered(
                 }
             }
         }
+
+        Node::Overlay(overlay) => {
+            render_node_filtered(&overlay.child, width, filter, output, cursor_info);
+        }
     }
 }
 
@@ -411,6 +415,10 @@ fn render_node_to_string(node: &Node, width: usize, output: &mut String) {
                 Err(_) => render_node_to_string(&boundary.fallback, width, output),
             }
         }
+
+        Node::Overlay(overlay) => {
+            render_node_to_string(&overlay.child, width, output);
+        }
     }
 }
 
@@ -644,7 +652,7 @@ fn render_spinner(spinner: &SpinnerNode, output: &mut String) {
 
 fn render_popup(popup: &PopupNode, width: usize, output: &mut String) {
     let popup_width = width.saturating_sub(2);
-    if popup_width == 0 || popup.items.is_empty() {
+    if popup_width == 0 {
         return;
     }
 
@@ -653,6 +661,16 @@ fn render_popup(popup: &PopupNode, width: usize, output: &mut String) {
 
     let visible_end = (popup.viewport_offset + popup.max_visible).min(popup.items.len());
     let visible_items = &popup.items[popup.viewport_offset..visible_end];
+    let item_count = visible_items.len();
+    let blank_lines = popup.max_visible.saturating_sub(item_count);
+    let mut lines_rendered = 0;
+
+    for _ in 0..blank_lines {
+        lines_rendered += 1;
+        if lines_rendered < popup.max_visible {
+            output.push_str("\r\n");
+        }
+    }
 
     for (i, item) in visible_items.iter().enumerate() {
         let actual_index = popup.viewport_offset + i;
@@ -717,7 +735,8 @@ fn render_popup(popup: &PopupNode, width: usize, output: &mut String) {
             output.push_str(&apply_style(&line, &Style::new().bg(bg)));
         }
 
-        if i < visible_items.len() - 1 {
+        lines_rendered += 1;
+        if lines_rendered < popup.max_visible {
             output.push_str("\r\n");
         }
     }

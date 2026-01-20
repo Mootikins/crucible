@@ -1,4 +1,5 @@
 use crate::tui::ink::focus::FocusId;
+use crate::tui::ink::overlay::OverlayAnchor;
 use crate::tui::ink::style::{AlignItems, Border, Color, Gap, JustifyContent, Padding, Style};
 
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -14,6 +15,7 @@ pub enum Node {
     Fragment(Vec<Node>),
     Focusable(FocusableNode),
     ErrorBoundary(ErrorBoundaryNode),
+    Overlay(OverlayNode),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -27,6 +29,12 @@ pub struct FocusableNode {
 pub struct ErrorBoundaryNode {
     pub child: Box<Node>,
     pub fallback: Box<Node>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct OverlayNode {
+    pub child: Box<Node>,
+    pub anchor: OverlayAnchor,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -236,6 +244,13 @@ pub fn error_boundary(child: Node, fallback: Node) -> Node {
     Node::ErrorBoundary(ErrorBoundaryNode {
         child: Box::new(child),
         fallback: Box::new(fallback),
+    })
+}
+
+pub fn overlay_from_bottom(child: Node, offset: usize) -> Node {
+    Node::Overlay(OverlayNode {
+        child: Box::new(child),
+        anchor: OverlayAnchor::FromBottom(offset),
     })
 }
 

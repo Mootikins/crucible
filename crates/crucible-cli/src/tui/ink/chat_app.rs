@@ -8,6 +8,7 @@ use crate::tui::ink::style::{Color, Gap, Style};
 use crossterm::event::KeyCode;
 use crossterm::terminal::{EnterAlternateScreen, LeaveAlternateScreen};
 use crossterm::{cursor, execute};
+use std::collections::VecDeque;
 use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
@@ -19,6 +20,11 @@ const BULLET_PREFIX: &str = " ● ";
 const BULLET_PREFIX_WIDTH: usize = BULLET_PREFIX.len();
 const FOCUS_INPUT: &str = "input";
 const FOCUS_POPUP: &str = "popup";
+const POPUP_HEIGHT: usize = 10;
+pub const INPUT_MAX_CONTENT_LINES: usize = 3;
+
+const MAX_DISPLAY_ITEMS: usize = 512;
+const MAX_SHELL_HISTORY: usize = 100;
 
 fn wrap_content(content: &str, max_width: usize) -> Vec<String> {
     if content.is_empty() || max_width == 0 {
@@ -285,7 +291,7 @@ pub struct McpServerDisplay {
 }
 
 pub struct InkChatApp {
-    items: Vec<ChatItem>,
+    items: VecDeque<ChatItem>,
     input: InputBuffer,
     streaming: StreamingState,
     spinner_frame: usize,
@@ -308,7 +314,7 @@ pub struct InkChatApp {
     last_ctrl_c: Option<std::time::Instant>,
     notification: Option<(String, std::time::Instant)>,
     shell_modal: Option<ShellModal>,
-    shell_history: Vec<String>,
+    shell_history: VecDeque<String>,
     shell_history_index: Option<usize>,
     session_dir: Option<PathBuf>,
     needs_full_redraw: bool,
@@ -318,7 +324,7 @@ pub struct InkChatApp {
 impl Default for InkChatApp {
     fn default() -> Self {
         Self {
-            items: Vec::new(),
+            items: VecDeque::with_capacity(MAX_DISPLAY_ITEMS),
             input: InputBuffer::new(),
             streaming: StreamingState::default(),
             spinner_frame: 0,
@@ -341,7 +347,7 @@ impl Default for InkChatApp {
             last_ctrl_c: None,
             notification: None,
             shell_modal: None,
-            shell_history: Vec::new(),
+            shell_history: VecDeque::with_capacity(MAX_SHELL_HISTORY),
             shell_history_index: None,
             session_dir: None,
             needs_full_redraw: false,
@@ -371,7 +377,7 @@ impl App for InkChatApp {
             spacer(),
             self.render_input(ctx),
             self.render_status(),
-            self.render_popup(),
+            self.render_popup_overlay(),
         ])
         .gap(Gap::row(0))
     }
@@ -408,7 +414,7 @@ impl App for InkChatApp {
                     counter = self.message_counter,
                     "Adding ToolCall to items"
                 );
-                self.items.push(ChatItem::ToolCall {
+                self.push_item(ChatItem::ToolCall {
                     id: format!("tool-{}", self.message_counter),
                     name,
                     args,
@@ -533,8 +539,26 @@ impl InkChatApp {
     }
 
     pub fn load_previous_messages(&mut self, items: Vec<ChatItem>) {
-        self.items = items;
+        self.items = VecDeque::from(items);
+        if self.items.len() > MAX_DISPLAY_ITEMS {
+            let excess = self.items.len() - MAX_DISPLAY_ITEMS;
+            self.items.drain(..excess);
+        }
         self.message_counter = self.items.len();
+    }
+
+    fn push_item(&mut self, item: ChatItem) {
+        if self.items.len() >= MAX_DISPLAY_ITEMS {
+            self.items.pop_front();
+        }
+        self.items.push_back(item);
+    }
+
+    fn push_shell_history(&mut self, cmd: String) {
+        if self.shell_history.len() >= MAX_SHELL_HISTORY {
+            self.shell_history.pop_front();
+        }
+        self.shell_history.push_back(cmd);
     }
 
     pub fn is_streaming(&self) -> bool {
@@ -581,6 +605,19 @@ impl InkChatApp {
             .as_ref()
             .map(|m| m.scroll_offset)
             .unwrap_or(0)
+    }
+
+    #[cfg(test)]
+    pub fn set_input_content(&mut self, content: &str) {
+        self.input.handle(InputAction::Clear);
+        for ch in content.chars() {
+            self.input.handle(InputAction::Insert(ch));
+        }
+    }
+
+    #[cfg(test)]
+    pub fn handle_input_action(&mut self, action: InputAction) {
+        self.input.handle(action);
     }
 
     pub fn take_needs_full_redraw(&mut self) -> bool {
@@ -1021,10 +1058,10 @@ impl InkChatApp {
 
         if !self
             .shell_history
-            .last()
+            .back()
             .is_some_and(|last| last == &shell_cmd)
         {
-            self.shell_history.push(shell_cmd.clone());
+            self.push_shell_history(shell_cmd.clone());
         }
         self.shell_history_index = None;
 
@@ -1285,7 +1322,7 @@ impl InkChatApp {
                 .collect();
 
             self.message_counter += 1;
-            self.items.push(ChatItem::ShellExecution {
+            self.push_item(ChatItem::ShellExecution {
                 id: format!("shell-{}", self.message_counter),
                 command: modal.command,
                 exit_code,
@@ -1587,7 +1624,7 @@ impl InkChatApp {
 
     fn add_user_message(&mut self, content: String) {
         self.message_counter += 1;
-        self.items.push(ChatItem::Message {
+        self.push_item(ChatItem::Message {
             id: format!("user-{}", self.message_counter),
             role: Role::User,
             content,
@@ -1596,7 +1633,7 @@ impl InkChatApp {
 
     fn add_system_message(&mut self, content: String) {
         self.message_counter += 1;
-        self.items.push(ChatItem::Message {
+        self.push_item(ChatItem::Message {
             id: format!("system-{}", self.message_counter),
             role: Role::System,
             content,
@@ -1606,10 +1643,11 @@ impl InkChatApp {
     fn finalize_streaming(&mut self) {
         if !self.streaming.content.is_empty() {
             self.message_counter += 1;
-            self.items.push(ChatItem::Message {
+            let content = std::mem::take(&mut self.streaming.content);
+            self.push_item(ChatItem::Message {
                 id: format!("assistant-{}", self.message_counter),
                 role: Role::Assistant,
-                content: std::mem::take(&mut self.streaming.content),
+                content,
             });
         }
         self.streaming.active = false;
@@ -1617,7 +1655,7 @@ impl InkChatApp {
     }
 
     fn render_items(&self) -> Node {
-        fragment(self.items.iter().map(|item| self.render_item(item)))
+        col(self.items.iter().map(|item| self.render_item(item)))
     }
 
     fn render_item(&self, item: &ChatItem) -> Node {
@@ -1894,25 +1932,29 @@ impl InkChatApp {
         let display_cursor = self.input.cursor().saturating_sub(cursor_offset);
 
         let content_width = width.saturating_sub(prompt.len() + 1);
-        let lines = wrap_content(display_content, content_width);
+        let all_lines = wrap_content(display_content, content_width);
 
-        let (cursor_line, cursor_col) = if content_width > 0 && !lines.is_empty() {
+        let (cursor_line, cursor_col) = if content_width > 0 && !all_lines.is_empty() {
             let line_idx = display_cursor / content_width;
             let col_in_line = display_cursor % content_width;
-            (line_idx.min(lines.len() - 1), col_in_line)
+            (line_idx.min(all_lines.len() - 1), col_in_line)
         } else {
             (0, display_cursor)
         };
 
-        let mut rows: Vec<Node> = Vec::with_capacity(lines.len() + 2);
+        let (visible_lines, visible_cursor_line) =
+            Self::clamp_input_lines(&all_lines, cursor_line, INPUT_MAX_CONTENT_LINES);
+
+        let mut rows: Vec<Node> = Vec::with_capacity(INPUT_MAX_CONTENT_LINES + 2);
         rows.push(top_edge);
 
-        for (i, line) in lines.iter().enumerate() {
+        for (i, line) in visible_lines.iter().enumerate() {
             let line_len = line.chars().count();
             let line_padding = " ".repeat(content_width.saturating_sub(line_len) + 1);
-            let line_prefix = if i == 0 { prompt } else { "   " };
+            let is_first_visible = i == 0 && visible_lines.len() == all_lines.len();
+            let line_prefix = if is_first_visible { prompt } else { "   " };
 
-            if i == cursor_line && is_focused {
+            if i == visible_cursor_line && is_focused {
                 rows.push(row([
                     styled(line_prefix, Style::new().bg(bg)),
                     Node::Input(crate::tui::ink::node::InputNode {
@@ -1937,6 +1979,31 @@ impl InkChatApp {
         let input_node = col(rows);
 
         focusable_auto(FOCUS_INPUT, input_node)
+    }
+
+    fn clamp_input_lines(
+        lines: &[String],
+        cursor_line: usize,
+        max_lines: usize,
+    ) -> (Vec<String>, usize) {
+        if lines.len() <= max_lines {
+            return (lines.to_vec(), cursor_line);
+        }
+
+        let half = max_lines / 2;
+        let start = if cursor_line <= half {
+            0
+        } else if cursor_line >= lines.len() - half {
+            lines.len() - max_lines
+        } else {
+            cursor_line - half
+        };
+
+        let end = (start + max_lines).min(lines.len());
+        let visible = lines[start..end].to_vec();
+        let adjusted_cursor = cursor_line - start;
+
+        (visible, adjusted_cursor)
     }
 
     fn get_popup_items(&self) -> Vec<PopupItemNode> {
@@ -2106,18 +2173,35 @@ impl InkChatApp {
             .collect()
     }
 
-    fn render_popup(&self) -> Node {
-        when(
-            self.show_popup && self.popup_kind != AutocompleteKind::None,
-            {
-                let items = self.get_popup_items();
-                if items.is_empty() {
-                    Node::Empty
-                } else {
-                    focusable(FOCUS_POPUP, popup(items, self.popup_selected, 10))
-                }
-            },
-        )
+    fn render_popup_overlay(&self) -> Node {
+        let show = self.show_popup && self.popup_kind != AutocompleteKind::None;
+        let items = if show { self.get_popup_items() } else { vec![] };
+
+        if show && !items.is_empty() {
+            let input_height = self.calculate_input_height();
+            let status_height = 1;
+            let offset_from_bottom = input_height + status_height;
+
+            let popup_node =
+                focusable(FOCUS_POPUP, popup(items, self.popup_selected, POPUP_HEIGHT));
+            overlay_from_bottom(popup_node, offset_from_bottom)
+        } else {
+            Node::Empty
+        }
+    }
+
+    fn calculate_input_height(&self) -> usize {
+        let width = terminal_width();
+        let content = self.input.content();
+        let display_content = if content.starts_with(':') || content.starts_with('!') {
+            &content[1..]
+        } else {
+            content
+        };
+        let content_width = width.saturating_sub(4);
+        let lines = wrap_content(display_content, content_width);
+        let visible_lines = lines.len().min(INPUT_MAX_CONTENT_LINES);
+        visible_lines + 2
     }
 
     fn insert_autocomplete_selection(&mut self, label: &str) {
@@ -2524,5 +2608,40 @@ mod tests {
 
         app.on_message(ChatAppMsg::Error("Connection lost".to_string()));
         assert!(!app.is_streaming(), "Error should stop streaming");
+    }
+
+    #[test]
+    fn test_items_ring_buffer_evicts_oldest() {
+        let mut app = InkChatApp::init();
+
+        for i in 0..(MAX_DISPLAY_ITEMS + 10) {
+            app.add_user_message(format!("Message {}", i));
+        }
+
+        assert_eq!(app.items.len(), MAX_DISPLAY_ITEMS);
+
+        let first = app.items.front().unwrap();
+        assert!(matches!(first, ChatItem::Message { content, .. } if content == "Message 10"));
+
+        let last = app.items.back().unwrap();
+        assert!(
+            matches!(last, ChatItem::Message { content, .. } if content == &format!("Message {}", MAX_DISPLAY_ITEMS + 9))
+        );
+    }
+
+    #[test]
+    fn test_shell_history_ring_buffer_evicts_oldest() {
+        let mut app = InkChatApp::init();
+
+        for i in 0..(MAX_SHELL_HISTORY + 5) {
+            app.push_shell_history(format!("cmd {}", i));
+        }
+
+        assert_eq!(app.shell_history.len(), MAX_SHELL_HISTORY);
+        assert_eq!(app.shell_history.front().unwrap(), "cmd 5");
+        assert_eq!(
+            app.shell_history.back().unwrap(),
+            &format!("cmd {}", MAX_SHELL_HISTORY + 4)
+        );
     }
 }

@@ -1,6 +1,7 @@
 use crate::tui::ink::ansi::visual_rows;
-use crate::tui::ink::node::Node;
-use crate::tui::ink::render::{render_with_cursor_filtered, RenderResult};
+use crate::tui::ink::node::{Node, OverlayNode};
+use crate::tui::ink::overlay::{extract_overlays, filter_overlays, OverlayAnchor};
+use crate::tui::ink::render::{render_to_string, render_with_cursor_filtered, RenderResult};
 use crate::tui::ink::runtime::{GraduatedContent, GraduationState};
 
 #[derive(Debug, Clone)]
@@ -12,11 +13,18 @@ pub struct FrameTrace {
 }
 
 #[derive(Debug, Clone)]
+pub struct RenderedOverlay {
+    pub lines: Vec<String>,
+    pub anchor: OverlayAnchor,
+}
+
+#[derive(Debug, Clone)]
 pub struct FramePlan {
     pub frame_no: u64,
     pub graduated: Vec<GraduatedContent>,
     pub boundary_lines: usize,
     pub viewport: RenderResult,
+    pub overlays: Vec<RenderedOverlay>,
     pub trace: FrameTrace,
 }
 
@@ -33,6 +41,33 @@ impl FrameSnapshot {
 
     pub fn viewport_content(&self) -> &str {
         &self.plan.viewport.content
+    }
+
+    pub fn viewport_with_overlays(&self, width: usize) -> String {
+        use crate::tui::ink::overlay::{composite_overlays, Overlay};
+
+        if self.plan.overlays.is_empty() {
+            return self.plan.viewport.content.clone();
+        }
+
+        let base_lines: Vec<String> = self
+            .plan
+            .viewport
+            .content
+            .lines()
+            .map(String::from)
+            .collect();
+        let overlay_refs: Vec<Overlay> = self
+            .plan
+            .overlays
+            .iter()
+            .map(|o| Overlay {
+                lines: o.lines.clone(),
+                anchor: o.anchor,
+            })
+            .collect();
+        let composited = composite_overlays(&base_lines, &overlay_refs, width);
+        composited.join("\r\n")
     }
 
     pub fn screen(&self) -> String {
@@ -64,7 +99,10 @@ impl FramePlanner {
     pub fn plan(&mut self, tree: &Node) -> FrameSnapshot {
         self.frame_no += 1;
 
-        let graduated = self.graduation.plan_graduation(tree);
+        let overlay_nodes = extract_overlays(tree);
+        let main_tree = filter_overlays(tree.clone());
+
+        let graduated = self.graduation.plan_graduation(&main_tree);
 
         let boundary_lines = if graduated.is_empty() {
             0
@@ -78,7 +116,10 @@ impl FramePlanner {
 
         self.graduation.commit_graduation(&graduated);
 
-        let viewport = render_with_cursor_filtered(tree, self.width as usize, &self.graduation);
+        let viewport =
+            render_with_cursor_filtered(&main_tree, self.width as usize, &self.graduation);
+
+        let rendered_overlays = self.render_overlays(&overlay_nodes);
 
         let trace = FrameTrace {
             frame_no: self.frame_no,
@@ -93,10 +134,25 @@ impl FramePlanner {
                 graduated,
                 boundary_lines,
                 viewport,
+                overlays: rendered_overlays,
                 trace,
             },
             stdout_delta,
         }
+    }
+
+    fn render_overlays(&self, overlay_nodes: &[OverlayNode]) -> Vec<RenderedOverlay> {
+        overlay_nodes
+            .iter()
+            .map(|overlay_node| {
+                let content = render_to_string(&overlay_node.child, self.width as usize);
+                let lines: Vec<String> = content.lines().map(String::from).collect();
+                RenderedOverlay {
+                    lines,
+                    anchor: overlay_node.anchor,
+                }
+            })
+            .collect()
     }
 
     pub fn graduation(&self) -> &GraduationState {
