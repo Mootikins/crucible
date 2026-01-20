@@ -310,7 +310,7 @@ impl InkChatRunner {
 
                 let action = app.update(ev.clone());
                 tracing::trace!(?ev, ?action, "processed event");
-                if self.process_action(action, app, agent)? {
+                if self.process_action(action, app, agent, &mut active_stream)? {
                     tracing::trace!("quit action received, breaking loop");
                     break;
                 }
@@ -376,21 +376,33 @@ impl InkChatRunner {
         action: Action<ChatAppMsg>,
         app: &mut InkChatApp,
         agent: &mut A,
+        active_stream: &mut Option<BoxStream<'static, ChatResult<ChatChunk>>>,
     ) -> io::Result<bool> {
         match action {
             Action::Quit => Ok(true),
             Action::Continue => Ok(false),
             Action::Send(msg) => {
-                if matches!(msg, ChatAppMsg::ClearHistory) {
-                    agent.clear_history();
-                    tracing::info!("Conversation history cleared");
+                match &msg {
+                    ChatAppMsg::ClearHistory => {
+                        agent.clear_history();
+                        tracing::info!("Conversation history cleared");
+                    }
+                    ChatAppMsg::StreamCancelled => {
+                        if active_stream.is_some() {
+                            tracing::info!(
+                                "Dropping active stream due to cancellation (from action)"
+                            );
+                            *active_stream = None;
+                        }
+                    }
+                    _ => {}
                 }
                 let action = app.on_message(msg);
-                self.process_action(action, app, agent)
+                self.process_action(action, app, agent, active_stream)
             }
             Action::Batch(actions) => {
                 for action in actions {
-                    if self.process_action(action, app, agent)? {
+                    if self.process_action(action, app, agent, active_stream)? {
                         return Ok(true);
                     }
                 }
