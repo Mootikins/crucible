@@ -405,6 +405,10 @@ impl App for InkChatApp {
                 Action::Continue
             }
             ChatAppMsg::TextDelta(delta) => {
+                if !self.cache.is_streaming() {
+                    self.cache.start_streaming();
+                }
+                self.cache.append_streaming(&delta);
                 self.streaming.content.push_str(&delta);
                 self.streaming.active = true;
                 Action::Continue
@@ -430,9 +434,10 @@ impl App for InkChatApp {
                 tracing::debug!(
                     tool_name = %name,
                     delta_len = delta.len(),
-                    items_count = self.items.len(),
+                    items_count = self.cache.item_count(),
                     "Received ToolResultDelta"
                 );
+                self.cache.append_tool_result(&name, &delta);
                 let found =
                     self.items.iter_mut().rev().find(
                         |item| matches!(item, ChatItem::ToolCall { name: n, .. } if n == &name),
@@ -445,22 +450,12 @@ impl App for InkChatApp {
                 {
                     tracing::debug!(found_name = %found_name, "Found matching tool call");
                     result.push_str(&delta);
-                } else {
-                    tracing::warn!(
-                        tool_name = %name,
-                        existing_tools = ?self.items.iter().filter_map(|i| {
-                            match i {
-                                ChatItem::ToolCall { name, .. } => Some(name.as_str()),
-                                _ => None,
-                            }
-                        }).collect::<Vec<_>>(),
-                        "No matching tool call found for result"
-                    );
                 }
                 Action::Continue
             }
             ChatAppMsg::ToolResultComplete { name } => {
                 tracing::debug!(tool_name = %name, "Received ToolResultComplete");
+                self.cache.complete_tool(&name);
                 let found =
                     self.items.iter_mut().rev().find(
                         |item| matches!(item, ChatItem::ToolCall { name: n, .. } if n == &name),
@@ -468,8 +463,6 @@ impl App for InkChatApp {
                 if let Some(ChatItem::ToolCall { complete, .. }) = found {
                     *complete = true;
                     tracing::debug!(tool_name = %name, "Marked tool complete");
-                } else {
-                    tracing::warn!(tool_name = %name, "No matching tool call found for completion");
                 }
                 Action::Continue
             }
@@ -479,6 +472,7 @@ impl App for InkChatApp {
             }
             ChatAppMsg::Error(msg) => {
                 self.error = Some(msg);
+                self.cache.cancel_streaming();
                 self.streaming.active = false;
                 Action::Continue
             }
@@ -542,6 +536,45 @@ impl InkChatApp {
     }
 
     pub fn load_previous_messages(&mut self, items: Vec<ChatItem>) {
+        self.cache.clear();
+        for item in &items {
+            match item {
+                ChatItem::Message { id, role, content } => {
+                    self.cache
+                        .push_message(CachedMessage::new(id.clone(), *role, content.clone()));
+                }
+                ChatItem::ToolCall {
+                    id,
+                    name,
+                    args,
+                    result,
+                    complete,
+                } => {
+                    self.cache.push_tool_call(id.clone(), name, args);
+                    if !result.is_empty() {
+                        self.cache.append_tool_result(name, result);
+                    }
+                    if *complete {
+                        self.cache.complete_tool(name);
+                    }
+                }
+                ChatItem::ShellExecution {
+                    id,
+                    command,
+                    exit_code,
+                    output_tail,
+                    output_path,
+                } => {
+                    self.cache.push_shell_execution(
+                        id.clone(),
+                        command,
+                        *exit_code,
+                        output_tail.clone(),
+                        output_path.clone(),
+                    );
+                }
+            }
+        }
         self.items = VecDeque::from(items);
         if self.items.len() > MAX_DISPLAY_ITEMS {
             let excess = self.items.len() - MAX_DISPLAY_ITEMS;
@@ -966,6 +999,7 @@ impl InkChatApp {
             }
             "clear" => {
                 self.items.clear();
+                self.cache.clear();
                 self.message_counter = 0;
                 self.streaming = StreamingState::default();
                 self.status = "Cleared".to_string();
@@ -1651,12 +1685,18 @@ impl InkChatApp {
     fn finalize_streaming(&mut self) {
         if !self.streaming.content.is_empty() {
             self.message_counter += 1;
+            let id = format!("assistant-{}", self.message_counter);
             let content = std::mem::take(&mut self.streaming.content);
+            self.cache.cancel_streaming();
+            self.cache
+                .push_message(CachedMessage::new(&id, Role::Assistant, &content));
             self.push_item(ChatItem::Message {
-                id: format!("assistant-{}", self.message_counter),
+                id,
                 role: Role::Assistant,
                 content,
             });
+        } else {
+            self.cache.cancel_streaming();
         }
         self.streaming.active = false;
         self.status = "Ready".to_string();
