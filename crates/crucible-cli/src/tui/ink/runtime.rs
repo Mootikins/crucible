@@ -1,5 +1,5 @@
 use crate::tui::ink::node::{Node, StaticNode};
-use crate::tui::ink::render::render_to_string;
+use crate::tui::ink::render::{render_to_string, RenderFilter};
 use std::collections::HashSet;
 use std::io::{self, Write};
 
@@ -126,6 +126,12 @@ impl GraduationState {
     }
 }
 
+impl RenderFilter for GraduationState {
+    fn skip_static(&self, key: &str) -> bool {
+        self.is_graduated(key)
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct GraduatedContent {
     pub key: String,
@@ -159,47 +165,8 @@ impl TestRuntime {
     }
 
     fn render_viewport(&self, tree: &Node) -> String {
-        let filtered = self.filter_graduated(tree);
-        render_to_string(&filtered, self.width as usize)
-    }
-
-    fn filter_graduated(&self, node: &Node) -> Node {
-        match node {
-            Node::Static(s) if self.graduation.is_graduated(&s.key) => Node::Empty,
-
-            Node::Static(s) => Node::Static(StaticNode {
-                key: s.key.clone(),
-                children: s
-                    .children
-                    .iter()
-                    .map(|c| self.filter_graduated(c))
-                    .collect(),
-                newline: s.newline,
-            }),
-
-            Node::Box(b) => Node::Box(crate::tui::ink::node::BoxNode {
-                children: b
-                    .children
-                    .iter()
-                    .map(|c| self.filter_graduated(c))
-                    .collect(),
-                direction: b.direction,
-                size: b.size,
-                padding: b.padding,
-                margin: b.margin,
-                border: b.border,
-                style: b.style,
-                justify: b.justify,
-                align: b.align,
-                gap: b.gap,
-            }),
-
-            Node::Fragment(children) => {
-                Node::Fragment(children.iter().map(|c| self.filter_graduated(c)).collect())
-            }
-
-            other => other.clone(),
-        }
+        use crate::tui::ink::render::render_with_cursor_filtered;
+        render_with_cursor_filtered(tree, self.width as usize, &self.graduation).content
     }
 
     pub fn stdout_content(&self) -> &str {
