@@ -113,6 +113,10 @@ impl Terminal {
                 keys = ?graduated.iter().map(|g| &g.key).collect::<Vec<_>>(),
                 "graduating"
             );
+
+            // Reset output state BEFORE clearing to prevent stale previous_visual_rows
+            // from affecting the clear operation
+            self.output.force_redraw();
             self.output.clear()?;
 
             for item in &graduated {
@@ -121,10 +125,8 @@ impl Terminal {
                     write!(self.stdout, "\r\n")?;
                 }
             }
-            write!(self.stdout, "\r\n")?;
             self.stdout.flush()?;
 
-            self.output.force_redraw();
             self.last_cursor = None;
         }
 
