@@ -32,35 +32,107 @@ use markdown_it::MarkdownIt;
 
 const NATURAL_TEXT_WIDTH: usize = 10000;
 
+/// Default bullet marker for assistant messages
+pub const ASSISTANT_BULLET: &str = " ● ";
+
+/// Margin configuration for content indentation in viewport
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Margins {
+    /// Left margin for all content
+    pub left: usize,
+    /// Right margin (symmetric with left for tables/code)
+    pub right: usize,
+    /// Whether to show bullet on first line of paragraphs
+    pub show_bullet: bool,
+}
+
+impl Default for Margins {
+    fn default() -> Self {
+        Self {
+            left: 0,
+            right: 0,
+            show_bullet: false,
+        }
+    }
+}
+
+impl Margins {
+    /// Create margins for assistant messages with bullet prefix
+    pub fn assistant() -> Self {
+        Self {
+            left: ASSISTANT_BULLET.len(),
+            right: 1,
+            show_bullet: true,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RenderStyle {
     /// Pre-wrap all content to terminal width. For viewport/streaming content.
-    Viewport { width: usize },
+    Viewport { width: usize, margins: Margins },
     /// Text uses natural width (terminal wraps), tables use terminal width.
     /// For graduated/scrollback content.
-    Natural { terminal_width: usize },
+    Natural {
+        terminal_width: usize,
+        margins: Margins,
+    },
 }
 
 impl RenderStyle {
     pub fn viewport(width: usize) -> Self {
-        RenderStyle::Viewport { width }
+        RenderStyle::Viewport {
+            width,
+            margins: Margins::default(),
+        }
+    }
+
+    pub fn viewport_with_margins(width: usize, margins: Margins) -> Self {
+        RenderStyle::Viewport { width, margins }
     }
 
     pub fn natural(terminal_width: usize) -> Self {
-        RenderStyle::Natural { terminal_width }
+        RenderStyle::Natural {
+            terminal_width,
+            margins: Margins::default(),
+        }
+    }
+
+    pub fn natural_with_margins(terminal_width: usize, margins: Margins) -> Self {
+        RenderStyle::Natural {
+            terminal_width,
+            margins,
+        }
     }
 
     fn text_width(&self) -> usize {
         match self {
-            RenderStyle::Viewport { width } => *width,
-            RenderStyle::Natural { .. } => NATURAL_TEXT_WIDTH,
+            RenderStyle::Viewport { width, margins } => {
+                width.saturating_sub(margins.left + margins.right)
+            }
+            RenderStyle::Natural { margins, .. } => {
+                NATURAL_TEXT_WIDTH.saturating_sub(margins.left + margins.right)
+            }
         }
     }
 
     fn table_width(&self) -> usize {
         match self {
-            RenderStyle::Viewport { width } => *width,
-            RenderStyle::Natural { terminal_width } => *terminal_width,
+            RenderStyle::Viewport { width, margins } => {
+                width.saturating_sub(margins.left + margins.right)
+            }
+            RenderStyle::Natural {
+                terminal_width,
+                margins,
+            } => terminal_width.saturating_sub(margins.left + margins.right),
+        }
+    }
+
+    fn margins(&self) -> Margins {
+        match self {
+            RenderStyle::Viewport { margins, .. } | RenderStyle::Natural { margins, .. } => {
+                *margins
+            }
         }
     }
 }
@@ -80,7 +152,13 @@ pub fn markdown_to_node_with_width(markdown: &str, width: usize) -> Node {
 
 /// Convert markdown with explicit render style
 pub fn markdown_to_node_styled(markdown: &str, style: RenderStyle) -> Node {
-    markdown_to_node_with_widths(markdown, style.text_width(), style.table_width())
+    let markdown = normalize_br_tags(markdown);
+    let md = create_parser();
+    let ast = md.parse(&markdown);
+
+    let mut ctx = RenderContext::new(style.text_width(), style.table_width(), style.margins());
+    render_node(&ast, &mut ctx);
+    ctx.into_node()
 }
 
 /// Convert markdown text to an ink Node tree with separate widths for text and tables.
@@ -91,7 +169,7 @@ pub fn markdown_to_node_with_widths(markdown: &str, text_width: usize, table_wid
     let md = create_parser();
     let ast = md.parse(&markdown);
 
-    let mut ctx = RenderContext::new(text_width, table_width);
+    let mut ctx = RenderContext::new(text_width, table_width, Margins::default());
     render_node(&ast, &mut ctx);
     ctx.into_node()
 }
@@ -111,13 +189,13 @@ struct RenderContext {
     list_counter: Option<usize>,
     needs_blank_line: bool,
     width: usize,
-    /// Separate width for tables - tables need actual terminal width for column sizing
-    /// even when text width is set large (for graduation/scrollback)
     table_width: usize,
+    margins: Margins,
+    is_first_paragraph: bool,
 }
 
 impl RenderContext {
-    fn new(width: usize, table_width: usize) -> Self {
+    fn new(width: usize, table_width: usize, margins: Margins) -> Self {
         Self {
             blocks: Vec::new(),
             current_spans: Vec::new(),
@@ -127,6 +205,8 @@ impl RenderContext {
             needs_blank_line: false,
             width,
             table_width,
+            margins,
+            is_first_paragraph: true,
         }
     }
 
@@ -217,12 +297,7 @@ impl RenderContext {
 
 fn render_node(node: &markdown_it::Node, ctx: &mut RenderContext) {
     if node.cast::<Paragraph>().is_some() {
-        if ctx.needs_blank_line && !ctx.blocks.is_empty() {
-            ctx.blocks.push(text(""));
-        }
-        render_children(node, ctx);
-        ctx.flush_line();
-        ctx.mark_block_end();
+        render_paragraph(node, ctx);
         return;
     }
 
@@ -336,6 +411,42 @@ fn render_children(node: &markdown_it::Node, ctx: &mut RenderContext) {
     }
 }
 
+fn render_paragraph(node: &markdown_it::Node, ctx: &mut RenderContext) {
+    let in_list = ctx.list_depth > 0;
+    if ctx.needs_blank_line && !ctx.blocks.is_empty() && !in_list {
+        ctx.blocks.push(text(""));
+    }
+
+    let margins = ctx.margins;
+    let has_margins = margins.left > 0 || margins.show_bullet;
+
+    if !has_margins {
+        render_children(node, ctx);
+        ctx.flush_line();
+        ctx.mark_block_end();
+        return;
+    }
+
+    let para_text = extract_all_text(node);
+    let wrapped = wrap_text(&para_text, ctx.width);
+
+    let show_bullet = margins.show_bullet && ctx.is_first_paragraph;
+    let indent = " ".repeat(margins.left);
+    let bullet_style = Style::new().fg(Color::DarkGray);
+
+    for (i, line) in wrapped.iter().enumerate() {
+        let prefix = if i == 0 && show_bullet {
+            styled(ASSISTANT_BULLET, bullet_style)
+        } else {
+            text(&indent)
+        };
+        ctx.blocks.push(row([prefix, text_node(line)]));
+    }
+
+    ctx.is_first_paragraph = false;
+    ctx.mark_block_end();
+}
+
 fn render_code_block(node: &markdown_it::Node, ctx: &mut RenderContext) {
     let (content, lang) = if let Some(fence) = node.cast::<CodeFence>() {
         let lang = fence.info.split_whitespace().next().map(|s| s.to_string());
@@ -351,23 +462,40 @@ fn render_code_block(node: &markdown_it::Node, ctx: &mut RenderContext) {
     }
 
     let lang_str = lang.as_deref().unwrap_or("");
+    let margins = ctx.margins;
+    let indent = " ".repeat(margins.left);
 
-    if !lang_str.is_empty() {
-        ctx.push_block(styled(
-            format!("```{}", lang_str),
-            Style::new().fg(Color::DarkGray),
-        ));
+    let fence_marker = if !lang_str.is_empty() {
+        format!("```{}", lang_str)
     } else {
-        ctx.push_block(styled("```", Style::new().fg(Color::DarkGray)));
-    }
+        "```".to_string()
+    };
 
-    render_highlighted_code(&content, lang_str, ctx);
+    push_indented_block(
+        ctx,
+        styled(&fence_marker, Style::new().fg(Color::DarkGray)),
+        &indent,
+    );
+    render_highlighted_code(&content, lang_str, ctx, &indent);
+    push_indented_block(
+        ctx,
+        styled("```", Style::new().fg(Color::DarkGray)),
+        &indent,
+    );
 
-    ctx.push_block(styled("```", Style::new().fg(Color::DarkGray)));
     ctx.mark_block_end();
 }
 
-fn render_highlighted_code(content: &str, lang: &str, ctx: &mut RenderContext) {
+fn push_indented_block(ctx: &mut RenderContext, node: Node, indent: &str) {
+    ctx.flush_line();
+    if indent.is_empty() {
+        ctx.blocks.push(node);
+    } else {
+        ctx.blocks.push(row([text(indent), node]));
+    }
+}
+
+fn render_highlighted_code(content: &str, lang: &str, ctx: &mut RenderContext, indent: &str) {
     use crate::formatting::SyntaxHighlighter;
     use crate::tui::ink::ansi::wrap_styled_text;
 
@@ -376,7 +504,7 @@ fn render_highlighted_code(content: &str, lang: &str, ctx: &mut RenderContext) {
         for line in content.lines() {
             let spans = vec![(line.to_string(), fallback_style.to_ansi_codes())];
             for wrapped in wrap_styled_text(&spans, ctx.width) {
-                ctx.push_block(text_node(&wrapped));
+                push_indented_block(ctx, text_node(&wrapped), indent);
             }
         }
         return;
@@ -387,7 +515,7 @@ fn render_highlighted_code(content: &str, lang: &str, ctx: &mut RenderContext) {
 
     for highlighted_line in highlighted_lines {
         if highlighted_line.spans.is_empty() {
-            ctx.push_block(text(""));
+            push_indented_block(ctx, text(""), indent);
             continue;
         }
 
@@ -398,7 +526,7 @@ fn render_highlighted_code(content: &str, lang: &str, ctx: &mut RenderContext) {
             .collect();
 
         for wrapped in wrap_styled_text(&spans, ctx.width) {
-            ctx.push_block(text_node(&wrapped));
+            push_indented_block(ctx, text_node(&wrapped), indent);
         }
     }
 }
@@ -434,6 +562,8 @@ fn render_blockquote(node: &markdown_it::Node, ctx: &mut RenderContext) {
         ctx.blocks.push(text(""));
     }
 
+    let margins = ctx.margins;
+    let margin_indent = " ".repeat(margins.left);
     let prefix = "│ ";
     let prefix_width = 2;
     let content_width = ctx.width.saturating_sub(prefix_width);
@@ -442,10 +572,15 @@ fn render_blockquote(node: &markdown_it::Node, ctx: &mut RenderContext) {
         let child_text = extract_all_text(child);
         let wrapped = wrap_text(&child_text, content_width);
         for line in wrapped {
-            ctx.push_block(row([
+            let quote_row = row([
                 styled(prefix, Style::new().fg(Color::DarkGray)),
                 styled(line, Style::new().fg(Color::Gray).italic()),
-            ]));
+            ]);
+            if margins.left > 0 {
+                ctx.push_block(row([text(&margin_indent), quote_row]));
+            } else {
+                ctx.push_block(quote_row);
+            }
         }
     }
     ctx.mark_block_end();
@@ -642,7 +777,19 @@ fn render_table_border(
         }
     }
     line.push(right);
-    ctx.push_block(styled(line, style));
+
+    let margins = ctx.margins;
+    if margins.left > 0 || margins.right > 0 {
+        let left_pad = " ".repeat(margins.left);
+        let right_pad = " ".repeat(margins.right);
+        ctx.push_block(row([
+            text(&left_pad),
+            styled(line, style),
+            text(&right_pad),
+        ]));
+    } else {
+        ctx.push_block(styled(line, style));
+    }
 }
 
 fn render_table_data_row(
@@ -664,9 +811,15 @@ fn render_table_data_row(
     }
 
     let max_lines = wrapped_cells.iter().map(|c| c.len()).max().unwrap_or(1);
+    let margins = ctx.margins;
 
     for line_idx in 0..max_lines {
         let mut nodes: Vec<Node> = Vec::new();
+
+        if margins.left > 0 {
+            nodes.push(text(" ".repeat(margins.left)));
+        }
+
         nodes.push(styled(box_chars::VERTICAL.to_string(), border_style));
 
         for (col_idx, wrapped) in wrapped_cells.iter().enumerate() {
@@ -679,6 +832,10 @@ fn render_table_data_row(
             nodes.push(styled(content.to_string(), content_style));
             nodes.push(styled(" ".repeat(padding_right + 1), border_style));
             nodes.push(styled(box_chars::VERTICAL.to_string(), border_style));
+        }
+
+        if margins.right > 0 {
+            nodes.push(text(" ".repeat(margins.right)));
         }
 
         ctx.push_block(row(nodes));
@@ -1182,11 +1339,12 @@ mod tests {
             let v = RenderStyle::viewport(100);
             let n = RenderStyle::natural(100);
 
-            assert!(matches!(v, RenderStyle::Viewport { width: 100 }));
+            assert!(matches!(v, RenderStyle::Viewport { width: 100, .. }));
             assert!(matches!(
                 n,
                 RenderStyle::Natural {
-                    terminal_width: 100
+                    terminal_width: 100,
+                    ..
                 }
             ));
         }
