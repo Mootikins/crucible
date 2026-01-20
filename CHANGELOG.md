@@ -12,6 +12,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - MIT + Apache 2.0 dual licensing
 - GitHub Actions CI
 - Contributing guidelines
+- Lua plugin system with manifest-based lifecycle management
+- `CRUCIBLE_PLUGIN_PATH` environment variable for custom plugin directories
+- ViewportCache with configurable max items (`with_max_items()`)
+
+### Changed
+- **BREAKING**: Renamed `crucible-ink` crate to `crucible-oil` (Obvious Interface Language)
+  - Update imports: `crucible_ink::*` → `crucible_oil::*`
+  - TUI module path: `tui::ink::*` → `tui::oil::*`
 
 ## [0.1.0] - 2025-12-19
 
