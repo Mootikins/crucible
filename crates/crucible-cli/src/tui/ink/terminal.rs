@@ -121,9 +121,11 @@ impl Terminal {
                     write!(self.stdout, "\r\n")?;
                 }
             }
+            write!(self.stdout, "\r\n")?;
             self.stdout.flush()?;
 
             self.output.force_redraw();
+            self.last_cursor = None;
         }
 
         let dynamic = self.filter_graduated(tree);
