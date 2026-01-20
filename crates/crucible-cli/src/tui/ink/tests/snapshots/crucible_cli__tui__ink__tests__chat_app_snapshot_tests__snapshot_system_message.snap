@@ -2,10 +2,9 @@
 source: crates/crucible-cli/src/tui/ink/tests/chat_app_snapshot_tests.rs
 expression: render_app(&app)
 ---
-
- * Commands: /mode, /normal, /plan, /auto, /clear, /help, /quit 
+ * Commands: /mode, /normal, /plan, /auto, /help, /quit 
 
 ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄
  >                                                                              
 ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
- NORMAL  ... 0% ctx
+ NORMAL  ...

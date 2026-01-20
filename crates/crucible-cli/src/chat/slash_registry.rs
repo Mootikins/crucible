@@ -45,13 +45,13 @@ use serde_json::Value;
 /// be shadowed by agent-provided commands. Commands like exit, quit, help
 /// are essential for session control.
 pub const RESERVED_COMMANDS: &[&str] = &[
-    "exit",    // Exit the session
-    "quit",    // Alias for exit
-    "help",    // Show help
-    "search",  // Search knowledge base
+    "exit",   // Exit the session
+    "quit",   // Alias for exit
+    "help",   // Show help
+    "search", // Search knowledge base
     "context", // Context management
-    "clear",   // Clear screen/context
-               // Note: /mode removed - use Shift+Tab for mode switching
+              // Note: /mode removed - use Shift+Tab for mode switching
+              // Note: /clear moved to :clear REPL command
 ];
 
 /// Unshadowable commands that can NEVER be overridden by agents.
@@ -181,10 +181,9 @@ impl SlashCommand {
 }
 
 fn parse_secondary_options(meta: &Option<serde_json::Map<String, Value>>) -> Vec<CommandOption> {
-    let mut options = Vec::new();
     let map = match meta {
         Some(m) => m,
-        None => return options,
+        None => return Vec::new(),
     };
 
     let secondary = map
@@ -194,12 +193,13 @@ fn parse_secondary_options(meta: &Option<serde_json::Map<String, Value>>) -> Vec
 
     let items = match secondary {
         Some(Value::Array(items)) => items,
-        _ => return options,
+        _ => return Vec::new(),
     };
 
-    for item in items {
-        match item {
-            Value::String(s) => options.push(CommandOption {
+    items
+        .iter()
+        .filter_map(|item| match item {
+            Value::String(s) => Some(CommandOption {
                 label: s.clone(),
                 value: s.clone(),
             }),
@@ -215,15 +215,33 @@ fn parse_secondary_options(meta: &Option<serde_json::Map<String, Value>>) -> Vec
                     .and_then(|v| v.as_str())
                     .unwrap_or(label.as_str())
                     .to_string();
-                if !label.is_empty() || !value.is_empty() {
-                    options.push(CommandOption { label, value });
+                if label.is_empty() && value.is_empty() {
+                    None
+                } else {
+                    Some(CommandOption { label, value })
                 }
             }
-            _ => {}
-        }
-    }
+            _ => None,
+        })
+        .collect()
+}
 
-    options
+fn agent_command_to_descriptor(agent_cmd: &AvailableCommand) -> CommandDescriptor {
+    let input_hint = agent_cmd.input.as_ref().and_then(|input| match input {
+        crucible_core::types::acp::schema::AvailableCommandInput::Unstructured(unstructured) => {
+            Some(unstructured.hint.clone())
+        }
+        _ => None,
+    });
+    CommandDescriptor {
+        name: agent_cmd.name.clone(),
+        description: agent_cmd.description.clone(),
+        input_hint,
+        secondary_options: parse_secondary_options(&agent_cmd.meta),
+        kind: CommandKind::Slash,
+        module: None,
+        args: Vec::new(),
+    }
 }
 
 /// Immutable registry of slash commands
@@ -369,25 +387,10 @@ impl SlashCommandRegistry {
 
         // 3. Check for agent command
         if let Some(agent_cmd) = self.agent_commands.iter().find(|c| c.name == name) {
-            let input_hint = agent_cmd.input.as_ref().and_then(|input| match input {
-                crucible_core::types::acp::schema::AvailableCommandInput::Unstructured(
-                    unstructured,
-                ) => Some(unstructured.hint.clone()),
-                _ => None,
-            });
-            let secondary_options = parse_secondary_options(&agent_cmd.meta);
             return Some(CommandResolution {
                 name: name.to_string(),
                 source: CommandSource::Agent,
-                descriptor: CommandDescriptor {
-                    name: agent_cmd.name.clone(),
-                    description: agent_cmd.description.clone(),
-                    input_hint,
-                    secondary_options,
-                    kind: CommandKind::Slash,
-                    module: None,
-                    args: Vec::new(),
-                },
+                descriptor: agent_command_to_descriptor(agent_cmd),
             });
         }
 
@@ -451,22 +454,7 @@ impl SlashCommandRegistry {
 
         // Add agent commands
         for agent_cmd in &self.agent_commands {
-            let input_hint = agent_cmd.input.as_ref().and_then(|input| match input {
-                crucible_core::types::acp::schema::AvailableCommandInput::Unstructured(
-                    unstructured,
-                ) => Some(unstructured.hint.clone()),
-                _ => None,
-            });
-            let secondary_options = parse_secondary_options(&agent_cmd.meta);
-            all.push(CommandDescriptor {
-                name: agent_cmd.name.clone(),
-                description: agent_cmd.description.clone(),
-                input_hint,
-                secondary_options,
-                kind: CommandKind::Slash,
-                module: None,
-                args: Vec::new(),
-            });
+            all.push(agent_command_to_descriptor(agent_cmd));
         }
 
         all
@@ -802,8 +790,6 @@ mod tests {
         assert!(is_reserved("help"));
         assert!(is_reserved("search"));
         assert!(is_reserved("context"));
-        assert!(is_reserved("clear"));
-        // Note: mode removed - use Shift+Tab for mode switching
     }
 
     #[test]

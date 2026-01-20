@@ -67,10 +67,19 @@ impl DiffRenderer {
 
     /// Render diff to a string (without ANSI colors) for testing
     pub fn render(&self, old: &str, new: &str) -> String {
+        self.render_hunks(old, new, false)
+    }
+
+    /// Render diff with ANSI colors for terminal display
+    fn render_colored(&self, old: &str, new: &str) -> String {
+        self.render_hunks(old, new, true)
+    }
+
+    /// Core diff rendering logic shared by both render() and render_colored()
+    fn render_hunks(&self, old: &str, new: &str, colored: bool) -> String {
         let diff = TextDiff::from_lines(old, new);
         let mut output = String::new();
 
-        // Track hunks for hunk headers
         let mut in_hunk = false;
         let mut hunk_old_start = 0;
         let mut hunk_new_start = 0;
@@ -85,7 +94,6 @@ impl DiffRenderer {
             match tag {
                 ChangeTag::Equal => {
                     if self.context_lines > 0 {
-                        // With context, include equal lines
                         if !in_hunk {
                             in_hunk = true;
                             hunk_old_start = idx + 1;
@@ -95,13 +103,13 @@ impl DiffRenderer {
                         hunk_old_count += 1;
                         hunk_new_count += 1;
                     } else if in_hunk {
-                        // Flush current hunk when we hit equal without context
                         output.push_str(&self.format_hunk(
                             hunk_old_start,
                             hunk_old_count,
                             hunk_new_start,
                             hunk_new_count,
                             &hunk_lines,
+                            colored,
                         ));
                         in_hunk = false;
                         hunk_lines.clear();
@@ -109,28 +117,22 @@ impl DiffRenderer {
                         hunk_new_count = 0;
                     }
                 }
-                ChangeTag::Delete => {
+                ChangeTag::Delete | ChangeTag::Insert => {
                     if !in_hunk {
                         in_hunk = true;
                         hunk_old_start = idx + 1;
                         hunk_new_start = idx + 1;
                     }
                     hunk_lines.push((tag, line));
-                    hunk_old_count += 1;
-                }
-                ChangeTag::Insert => {
-                    if !in_hunk {
-                        in_hunk = true;
-                        hunk_old_start = idx + 1;
-                        hunk_new_start = idx + 1;
+                    if tag == ChangeTag::Delete {
+                        hunk_old_count += 1;
+                    } else {
+                        hunk_new_count += 1;
                     }
-                    hunk_lines.push((tag, line));
-                    hunk_new_count += 1;
                 }
             }
         }
 
-        // Flush final hunk
         if in_hunk && !hunk_lines.is_empty() {
             output.push_str(&self.format_hunk(
                 hunk_old_start,
@@ -138,13 +140,14 @@ impl DiffRenderer {
                 hunk_new_start,
                 hunk_new_count,
                 &hunk_lines,
+                colored,
             ));
         }
 
         output
     }
 
-    /// Format a single hunk with header and lines
+    /// Format a single hunk with optional ANSI colors
     fn format_hunk(
         &self,
         old_start: usize,
@@ -152,132 +155,41 @@ impl DiffRenderer {
         new_start: usize,
         new_count: usize,
         lines: &[(ChangeTag, String)],
+        colored: bool,
     ) -> String {
         let mut output = String::new();
 
-        // Hunk header
-        output.push_str(&format!(
-            "@@ -{},{} +{},{} @@\n",
-            old_start, old_count, new_start, new_count
-        ));
-
-        // Lines
-        for (tag, line) in lines {
-            let prefix = match tag {
-                ChangeTag::Delete => "-",
-                ChangeTag::Insert => "+",
-                ChangeTag::Equal => " ",
-            };
-            // Line already contains newline from similar
-            let line_content = line.strip_suffix('\n').unwrap_or(line);
-            output.push_str(&format!("{}{}\n", prefix, line_content));
-        }
-
-        output
-    }
-
-    /// Render diff with ANSI colors for terminal display
-    fn render_colored(&self, old: &str, new: &str) -> String {
-        let diff = TextDiff::from_lines(old, new);
-        let mut output = String::new();
-
-        let mut in_hunk = false;
-        let mut hunk_old_start = 0;
-        let mut hunk_new_start = 0;
-        let mut hunk_old_count = 0;
-        let mut hunk_new_count = 0;
-        let mut hunk_lines: Vec<(ChangeTag, String)> = Vec::new();
-
-        for (idx, change) in diff.iter_all_changes().enumerate() {
-            let tag = change.tag();
-            let line = change.to_string();
-
-            match tag {
-                ChangeTag::Equal => {
-                    if self.context_lines > 0 {
-                        if !in_hunk {
-                            in_hunk = true;
-                            hunk_old_start = idx + 1;
-                            hunk_new_start = idx + 1;
-                        }
-                        hunk_lines.push((tag, line));
-                        hunk_old_count += 1;
-                        hunk_new_count += 1;
-                    } else if in_hunk {
-                        output.push_str(&self.format_hunk_colored(
-                            hunk_old_start,
-                            hunk_old_count,
-                            hunk_new_start,
-                            hunk_new_count,
-                            &hunk_lines,
-                        ));
-                        in_hunk = false;
-                        hunk_lines.clear();
-                        hunk_old_count = 0;
-                        hunk_new_count = 0;
-                    }
-                }
-                ChangeTag::Delete => {
-                    if !in_hunk {
-                        in_hunk = true;
-                        hunk_old_start = idx + 1;
-                        hunk_new_start = idx + 1;
-                    }
-                    hunk_lines.push((tag, line));
-                    hunk_old_count += 1;
-                }
-                ChangeTag::Insert => {
-                    if !in_hunk {
-                        in_hunk = true;
-                        hunk_old_start = idx + 1;
-                        hunk_new_start = idx + 1;
-                    }
-                    hunk_lines.push((tag, line));
-                    hunk_new_count += 1;
-                }
-            }
-        }
-
-        if in_hunk && !hunk_lines.is_empty() {
-            output.push_str(&self.format_hunk_colored(
-                hunk_old_start,
-                hunk_old_count,
-                hunk_new_start,
-                hunk_new_count,
-                &hunk_lines,
-            ));
-        }
-
-        output
-    }
-
-    /// Format a hunk with ANSI colors
-    fn format_hunk_colored(
-        &self,
-        old_start: usize,
-        old_count: usize,
-        new_start: usize,
-        new_count: usize,
-        lines: &[(ChangeTag, String)],
-    ) -> String {
-        let mut output = String::new();
-
-        // Hunk header in cyan/dimmed
         let header = format!(
             "@@ -{},{} +{},{} @@",
             old_start, old_count, new_start, new_count
         );
-        output.push_str(&format!("    {}\n", header.dimmed()));
 
-        // Lines with colors
+        if colored {
+            output.push_str(&format!("    {}\n", header.dimmed()));
+        } else {
+            output.push_str(&header);
+            output.push('\n');
+        }
+
         for (tag, line) in lines {
             let line_content = line.strip_suffix('\n').unwrap_or(line);
-            let formatted = match tag {
-                ChangeTag::Delete => format!("    {}", format!("-{}", line_content).red()),
-                ChangeTag::Insert => format!("    {}", format!("+{}", line_content).green()),
-                ChangeTag::Equal => format!("     {}", line_content.dimmed()),
+            let (prefix, content) = match tag {
+                ChangeTag::Delete => ("-", line_content),
+                ChangeTag::Insert => ("+", line_content),
+                ChangeTag::Equal => (" ", line_content),
             };
-            output.push_str(&formatted);
+
+            if colored {
+                let formatted = match tag {
+                    ChangeTag::Delete => format!("    {}", format!("-{}", content).red()),
+                    ChangeTag::Insert => format!("    {}", format!("+{}", content).green()),
+                    ChangeTag::Equal => format!("     {}", content.dimmed()),
+                };
+                output.push_str(&formatted);
+            } else {
+                output.push_str(prefix);
+                output.push_str(content);
+            }
             output.push('\n');
         }
 
