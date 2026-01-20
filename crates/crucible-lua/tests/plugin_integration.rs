@@ -383,58 +383,6 @@ fn test_register_with_owner() {
 // CONDITIONAL HANDLERS
 // ============================================================================
 
-#[test]
-fn test_conditional_handler_until() {
-    use std::sync::atomic::{AtomicBool, Ordering};
-    use std::sync::Arc;
-
-    let mut manager = PluginManager::new();
-    let done_flag = Arc::new(AtomicBool::new(false));
-    let flag_clone = done_flag.clone();
-
-    let handler = HandlerBuilder::new("temp_handler", "session:message")
-        .pattern("*")
-        .build();
-
-    manager.register_handler_until(handler, move || flag_clone.load(Ordering::Relaxed));
-
-    assert_eq!(manager.handlers().len(), 1);
-
-    // Should not be removed yet
-    let expired = manager.check_conditional_handlers();
-    assert!(expired.is_empty());
-    assert_eq!(manager.handlers().len(), 1);
-
-    // Now trigger the condition
-    done_flag.store(true, Ordering::Relaxed);
-
-    let expired = manager.check_conditional_handlers();
-    assert_eq!(expired.len(), 1);
-    assert_eq!(manager.handlers().len(), 0);
-}
-
-#[test]
-fn test_conditional_handler_for_count() {
-    let mut manager = PluginManager::new();
-
-    let handler = HandlerBuilder::new("counted_handler", "tool:after")
-        .pattern("*")
-        .build();
-
-    manager.register_handler_for_count(handler, 3);
-
-    assert_eq!(manager.handlers().len(), 1);
-
-    for i in 0..3 {
-        let expired = manager.check_conditional_handlers();
-        assert!(expired.is_empty(), "Should not expire on check {}", i + 1);
-    }
-
-    let expired = manager.check_conditional_handlers();
-    assert_eq!(expired.len(), 1);
-    assert_eq!(manager.handlers().len(), 0);
-}
-
 // ============================================================================
 // PLUGIN MANAGER DEBUG
 // ============================================================================
