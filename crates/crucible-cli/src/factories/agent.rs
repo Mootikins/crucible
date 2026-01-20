@@ -396,6 +396,8 @@ pub async fn create_internal_agent(
         workspace_root.display()
     );
 
+    let initial_mode = if params.read_only { "plan" } else { "normal" };
+
     // Build Rig agent with size-appropriate tools (and kiln tools if context provided)
     let kiln_ctx = params.kiln_context;
     match client {
@@ -407,7 +409,9 @@ pub async fn create_internal_agent(
                 model_size,
                 kiln_ctx,
             )?;
-            let handle = RigAgentHandle::new(agent).with_workspace_context(ws_ctx);
+            let handle = RigAgentHandle::new(agent)
+                .with_workspace_context(ws_ctx)
+                .with_initial_mode(initial_mode);
             Ok(if let Some(endpoint) = reasoning_endpoint {
                 Box::new(handle.with_reasoning_endpoint(endpoint, model))
             } else {
@@ -422,7 +426,9 @@ pub async fn create_internal_agent(
                 model_size,
                 kiln_ctx,
             )?;
-            let handle = RigAgentHandle::new(agent).with_workspace_context(ws_ctx);
+            let handle = RigAgentHandle::new(agent)
+                .with_workspace_context(ws_ctx)
+                .with_initial_mode(initial_mode);
             Ok(if let Some(endpoint) = reasoning_endpoint {
                 Box::new(handle.with_reasoning_endpoint(endpoint, model))
             } else {
@@ -437,7 +443,9 @@ pub async fn create_internal_agent(
                 model_size,
                 kiln_ctx,
             )?;
-            let handle = RigAgentHandle::new(agent).with_workspace_context(ws_ctx);
+            let handle = RigAgentHandle::new(agent)
+                .with_workspace_context(ws_ctx)
+                .with_initial_mode(initial_mode);
             Ok(if let Some(endpoint) = reasoning_endpoint {
                 Box::new(handle.with_reasoning_endpoint(endpoint, model))
             } else {
@@ -453,7 +461,9 @@ pub async fn create_internal_agent(
                 kiln_ctx,
             )?;
             Ok(Box::new(
-                RigAgentHandle::new(agent).with_workspace_context(ws_ctx),
+                RigAgentHandle::new(agent)
+                    .with_workspace_context(ws_ctx)
+                    .with_initial_mode(initial_mode),
             ))
         }
         crucible_rig::RigClient::GitHubCopilot(copilot_client) => {
@@ -475,7 +485,9 @@ pub async fn create_internal_agent(
                 model_size,
                 kiln_ctx,
             )?;
-            let handle = RigAgentHandle::new(agent).with_workspace_context(ws_ctx);
+            let handle = RigAgentHandle::new(agent)
+                .with_workspace_context(ws_ctx)
+                .with_initial_mode(initial_mode);
             Ok(if let Some(endpoint) = reasoning_endpoint {
                 Box::new(handle.with_reasoning_endpoint(endpoint, model))
             } else {

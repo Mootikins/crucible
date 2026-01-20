@@ -1186,6 +1186,7 @@ mod event_flow_tests {
                     tool_calls: None,
                     tool_results: None,
                     reasoning: None,
+                    usage: None,
                 })
             }
             "thinking" => {
@@ -1196,6 +1197,7 @@ mod event_flow_tests {
                     tool_calls: None,
                     tool_results: None,
                     reasoning: Some(content.to_string()),
+                    usage: None,
                 })
             }
             "tool_call" => {
@@ -1212,6 +1214,7 @@ mod event_flow_tests {
                     }]),
                     tool_results: None,
                     reasoning: None,
+                    usage: None,
                 })
             }
             "tool_result" => {
@@ -1232,6 +1235,7 @@ mod event_flow_tests {
                         error: None,
                     }]),
                     reasoning: None,
+                    usage: None,
                 })
             }
             "message_complete" | "ended" => Some(crucible_core::traits::chat::ChatChunk {
@@ -1240,6 +1244,7 @@ mod event_flow_tests {
                 tool_calls: None,
                 tool_results: None,
                 reasoning: None,
+                usage: None,
             }),
             _ => None,
         }

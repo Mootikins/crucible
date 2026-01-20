@@ -136,6 +136,27 @@ where
         self
     }
 
+    /// Set the initial mode (plan/normal/auto)
+    ///
+    /// This is a synchronous builder method for setting the mode at construction time.
+    /// For runtime mode changes, use `set_mode_str` instead.
+    pub fn with_initial_mode(mut self, mode_id: &str) -> Self {
+        if self
+            .mode_state
+            .available_modes
+            .iter()
+            .any(|m| m.id.0.as_ref() == mode_id)
+        {
+            self.current_mode_id = mode_id.to_string();
+            self.mode_state.current_mode_id =
+                crucible_core::types::acp::schema::SessionModeId::new(mode_id);
+            if let Some(ref ctx) = self.workspace_ctx {
+                ctx.set_mode(mode_id);
+            }
+        }
+        self
+    }
+
     /// Set the maximum tool call depth
     ///
     /// This prevents infinite loops when the LLM keeps requesting tool calls.
