@@ -229,6 +229,208 @@ fn popup_positioned_above_input_bar() {
     );
 }
 
+mod overlay_graduation_tests {
+    use super::*;
+    use crate::tui::oil::ansi::strip_ansi;
+    use crate::tui::oil::app::{App, ViewContext};
+    use crate::tui::oil::chat_app::InkChatApp;
+    use crate::tui::oil::event::Event;
+    use crate::tui::oil::focus::FocusContext;
+    use crate::tui::oil::planning::FramePlanner;
+    use crate::tui::oil::TestRuntime;
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+    fn key(code: KeyCode) -> KeyEvent {
+        KeyEvent::new(code, KeyModifiers::NONE)
+    }
+
+    fn view_with_default_ctx(app: &InkChatApp) -> Node {
+        let focus = FocusContext::new();
+        let ctx = ViewContext::new(&focus);
+        app.view(&ctx)
+    }
+
+    #[test]
+    fn slash_backspace_sequence_no_popup_duplication() {
+        let mut app = InkChatApp::default();
+        let mut planner = FramePlanner::new(80, 24);
+
+        app.update(Event::Key(key(KeyCode::Char('/'))));
+
+        let tree = view_with_default_ctx(&app);
+        let snapshot = planner.plan(&tree);
+        let composited = snapshot.viewport_with_overlays(80);
+        let stripped = strip_ansi(&composited);
+
+        let indicator_count = stripped.matches("▸").count();
+        assert_eq!(
+            indicator_count, 1,
+            "After typing /, popup should appear exactly once, found {}. Output:\n{}",
+            indicator_count, stripped
+        );
+
+        app.update(Event::Key(key(KeyCode::Backspace)));
+
+        let tree2 = view_with_default_ctx(&app);
+        let snapshot2 = planner.plan(&tree2);
+        let composited2 = snapshot2.viewport_with_overlays(80);
+        let stripped2 = strip_ansi(&composited2);
+
+        let indicator_count2 = stripped2.matches("▸").count();
+        assert_eq!(
+            indicator_count2, 0,
+            "After backspace deleting /, popup should be gone, found {}. Output:\n{}",
+            indicator_count2, stripped2
+        );
+    }
+
+    #[test]
+    fn composited_viewport_height_includes_overlays() {
+        let base_content = "line1\nline2\nline3";
+        let overlays = vec![crate::tui::oil::planning::RenderedOverlay {
+            lines: vec!["overlay1".into(), "overlay2".into(), "overlay3".into()],
+            anchor: crate::tui::oil::OverlayAnchor::FromBottom(1),
+        }];
+
+        let composited = crate::tui::oil::composite_overlays(
+            &base_content.lines().map(String::from).collect::<Vec<_>>(),
+            &overlays
+                .iter()
+                .map(|o| crate::tui::oil::Overlay {
+                    lines: o.lines.clone(),
+                    anchor: o.anchor,
+                })
+                .collect::<Vec<_>>(),
+            80,
+        );
+
+        assert!(
+            composited.len() >= 3,
+            "Composited should include space for overlay, got {} lines",
+            composited.len()
+        );
+    }
+
+    #[test]
+    fn overlay_popup_not_duplicated_with_graduation() {
+        let mut runtime = TestRuntime::new(80, 24);
+
+        // Chat view with scrollback messages and overlay popup
+        let tree = col([
+            scrollback("msg-1", [text("User message")]),
+            scrollback("msg-2", [text("Assistant response")]),
+            spacer(),
+            text("▄".repeat(80)),
+            text(" > /"),
+            text("▀".repeat(80)),
+            text(" NORMAL │ Ready"),
+            overlay_from_bottom(popup(sample_items(), 0, 10), 4), // offset from bottom: input + status
+        ]);
+
+        runtime.render(&tree);
+
+        let viewport = runtime.viewport_content();
+        let snapshot = runtime.last_snapshot().expect("should have snapshot");
+        let composited = snapshot.viewport_with_overlays(80);
+
+        // Popup should NOT appear in base viewport (it's an overlay)
+        let base_popup_count = viewport.matches("▸").count();
+        assert_eq!(
+            base_popup_count, 0,
+            "Popup should not appear in base viewport (it's an overlay), found {} occurrences",
+            base_popup_count
+        );
+
+        // Popup SHOULD appear exactly once in composited output
+        let composited_popup_count = composited.matches("▸").count();
+        assert_eq!(
+            composited_popup_count, 1,
+            "Popup should appear exactly once in composited output, found {}",
+            composited_popup_count
+        );
+
+        // Search label should appear exactly once in composited output
+        let search_count = composited.matches("search").count();
+        assert_eq!(
+            search_count, 1,
+            "Popup item 'search' should appear exactly once, found {}",
+            search_count
+        );
+    }
+
+    #[test]
+    fn overlay_popup_appears_after_graduation() {
+        let mut runtime = TestRuntime::new(80, 24);
+
+        // First render: messages graduate
+        let tree1 = col([
+            scrollback("msg-1", [text("First message")]),
+            scrollback("msg-2", [text("Second message")]),
+            text_input("typing here", 11),
+        ]);
+        runtime.render(&tree1);
+        assert_eq!(runtime.graduated_count(), 2, "Messages should graduate");
+
+        // Second render: add overlay popup
+        let tree2 = col([
+            scrollback("msg-1", [text("First message")]),
+            scrollback("msg-2", [text("Second message")]),
+            text_input("@", 1),
+            overlay_from_bottom(popup(sample_items(), 0, 10), 1),
+        ]);
+        runtime.render(&tree2);
+
+        let snapshot = runtime.last_snapshot().expect("should have snapshot");
+        let composited = snapshot.viewport_with_overlays(80);
+
+        // Popup should appear exactly once
+        let popup_count = composited.matches("▸").count();
+        assert_eq!(
+            popup_count, 1,
+            "Popup should appear exactly once after graduation, found {}",
+            popup_count
+        );
+    }
+
+    #[test]
+    fn overlay_compositing_does_not_include_graduated_content() {
+        let mut runtime = TestRuntime::new(80, 24);
+
+        let tree = col([
+            scrollback("msg-1", [text("GRADUATED_MARKER")]),
+            text("VIEWPORT_MARKER"),
+            overlay_from_bottom(popup(sample_items(), 0, 5), 1),
+        ]);
+
+        runtime.render(&tree);
+
+        // Graduated content should be in stdout, not viewport
+        assert!(
+            runtime.stdout_content().contains("GRADUATED_MARKER"),
+            "Graduated content should be in stdout"
+        );
+
+        let snapshot = runtime.last_snapshot().expect("should have snapshot");
+        let composited = snapshot.viewport_with_overlays(80);
+
+        // Composited output should NOT include graduated content
+        assert!(
+            !composited.contains("GRADUATED_MARKER"),
+            "Graduated content should not be in composited viewport"
+        );
+
+        // But should include viewport content and popup
+        assert!(
+            composited.contains("VIEWPORT_MARKER"),
+            "Viewport content should be in composited output"
+        );
+        assert!(
+            composited.contains("search"),
+            "Popup content should be in composited output"
+        );
+    }
+}
+
 mod composer_stability_tests {
     use super::*;
     use crate::tui::oil::ansi::strip_ansi;
