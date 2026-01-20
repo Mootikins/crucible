@@ -1,0 +1,37 @@
+name: todo-list
+version: "1.0.0"
+description: Task management with TASKS.md format
+author: Crucible Contributors
+license: MIT
+
+main: init.lua
+
+capabilities:
+  - filesystem
+  - vault
+
+exports:
+  tools:
+    - tasks_list
+    - tasks_add
+    - tasks_complete
+    - tasks_next
+  commands:
+    - /tasks
+  auto_discover: false
+
+config:
+  properties:
+    default_file:
+      type: string
+      description: Default tasks file path
+      default: "TASKS.md"
+    show_completed:
+      type: boolean
+      description: Show completed tasks in list
+      default: false
+
+keywords:
+  - tasks
+  - todo
+  - productivity
