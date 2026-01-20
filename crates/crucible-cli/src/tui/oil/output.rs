@@ -151,14 +151,30 @@ impl OutputBuffer {
         Ok(true)
     }
 
-    pub fn clear(&mut self) -> io::Result<()> {
+    /// Clear the viewport from terminal.
+    ///
+    /// `cursor_offset_from_end` indicates where the cursor currently is,
+    /// measured as rows from the bottom of the viewport. This is needed
+    /// to correctly calculate how many rows to move up before clearing.
+    pub fn clear(&mut self, cursor_offset_from_end: u16) -> io::Result<()> {
         if self.previous_visual_rows > 0 {
-            execute!(
-                self.stdout,
-                cursor::MoveUp(self.previous_visual_rows.saturating_sub(1) as u16),
-                cursor::MoveToColumn(0),
-                terminal::Clear(terminal::ClearType::FromCursorDown),
-            )?;
+            let move_up_amount = (self.previous_visual_rows as u16)
+                .saturating_sub(1)
+                .saturating_sub(cursor_offset_from_end);
+            if move_up_amount > 0 {
+                execute!(
+                    self.stdout,
+                    cursor::MoveUp(move_up_amount),
+                    cursor::MoveToColumn(0),
+                    terminal::Clear(terminal::ClearType::FromCursorDown),
+                )?;
+            } else {
+                execute!(
+                    self.stdout,
+                    cursor::MoveToColumn(0),
+                    terminal::Clear(terminal::ClearType::FromCursorDown),
+                )?;
+            }
             self.previous_lines.clear();
             self.previous_visual_rows = 0;
         }
