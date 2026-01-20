@@ -1,6 +1,8 @@
 use crate::tui::ink::app::{Action, App, ViewContext};
 use crate::tui::ink::event::{Event, InputAction, InputBuffer};
-use crate::tui::ink::markdown::markdown_to_node_with_width;
+use crate::tui::ink::markdown::{
+    markdown_to_node_styled, markdown_to_node_with_width, RenderStyle,
+};
 use crate::tui::ink::node::*;
 use crate::tui::ink::style::{Color, Gap, Style};
 use crossterm::event::KeyCode;
@@ -367,9 +369,9 @@ impl App for InkChatApp {
             self.render_streaming(),
             self.render_error(),
             spacer(),
-            self.render_popup(),
             self.render_input(ctx),
             self.render_status(),
+            self.render_popup(),
         ])
         .gap(Gap::row(0))
     }
@@ -1625,13 +1627,15 @@ impl InkChatApp {
                     Role::User => self.render_user_prompt(content),
                     Role::Assistant => {
                         let content_width = terminal_width().saturating_sub(BULLET_PREFIX_WIDTH);
-                        let md_node = markdown_to_node_with_width(content, content_width);
+                        let style = RenderStyle::natural(content_width);
+                        let md_node = markdown_to_node_styled(content, style);
                         col([
                             text(""),
                             row([
                                 styled(BULLET_PREFIX, Style::new().fg(Color::DarkGray)),
                                 md_node,
                             ]),
+                            text(""),
                         ])
                     }
                     Role::System => col([
@@ -1849,6 +1853,7 @@ impl InkChatApp {
         }
 
         rows.push(bottom_edge);
+        rows.push(text(""));
         col(rows)
     }
 
