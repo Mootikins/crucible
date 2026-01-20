@@ -1804,30 +1804,54 @@ impl InkChatApp {
     fn render_streaming(&self) -> Node {
         when(self.cache.is_streaming(), {
             let term_width = terminal_width();
-            let streaming_content = self.cache.streaming_content().unwrap_or("");
-            let style = RenderStyle::viewport_with_margins(term_width, Margins::assistant());
-            let content_node = markdown_to_node_styled(streaming_content, style);
-
             let margins = Margins::assistant();
-            let spinner_indent = " ".repeat(margins.left);
+            let spinner_indent = " ";
 
-            if_else(
-                !streaming_content.is_empty(),
-                col([
-                    text(""),
-                    content_node,
-                    text(""),
-                    row([text(&spinner_indent), spinner(None, self.spinner_frame)]),
-                ]),
-                col([
-                    text(""),
-                    text(""),
-                    row([
-                        text(&spinner_indent),
-                        spinner(Some("Thinking...".into()), self.spinner_frame),
-                    ]),
-                ]),
-            )
+            let graduated_blocks = self.cache.streaming_graduated_blocks().unwrap_or(&[]);
+            let in_progress_content = self.cache.streaming_in_progress_content().unwrap_or("");
+            let has_graduated = !graduated_blocks.is_empty();
+
+            let graduated_nodes: Vec<Node> = graduated_blocks
+                .iter()
+                .enumerate()
+                .map(|(i, block_content)| {
+                    let style = RenderStyle::natural_with_margins(term_width, margins);
+                    let md_node = markdown_to_node_styled(block_content, style);
+                    scrollback(
+                        format!("streaming-graduated-{}", i),
+                        [col([text(""), md_node, text("")])],
+                    )
+                })
+                .collect();
+
+            let in_progress_node = {
+                let style = RenderStyle::viewport_with_margins(term_width, margins);
+                let content_node = markdown_to_node_styled(in_progress_content, style);
+
+                if !in_progress_content.is_empty() {
+                    col([
+                        text(""),
+                        content_node,
+                        text(""),
+                        row([text(spinner_indent), spinner(None, self.spinner_frame)]),
+                    ])
+                } else if !has_graduated {
+                    col([
+                        text(""),
+                        text(""),
+                        row([
+                            text(spinner_indent),
+                            spinner(Some("Thinking...".into()), self.spinner_frame),
+                        ]),
+                    ])
+                } else {
+                    row([text(spinner_indent), spinner(None, self.spinner_frame)])
+                }
+            };
+
+            let mut nodes = graduated_nodes;
+            nodes.push(in_progress_node);
+            col(nodes)
         })
     }
 
