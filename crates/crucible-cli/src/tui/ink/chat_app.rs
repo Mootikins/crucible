@@ -5,6 +5,7 @@ use crate::tui::ink::markdown::{
 };
 use crate::tui::ink::node::*;
 use crate::tui::ink::style::{Color, Gap, Style};
+use crate::tui::ink::viewport_cache::{CachedMessage, ViewportCache};
 use crossterm::event::KeyCode;
 use crossterm::terminal::{EnterAlternateScreen, LeaveAlternateScreen};
 use crossterm::{cursor, execute};
@@ -292,6 +293,7 @@ pub struct McpServerDisplay {
 
 pub struct InkChatApp {
     items: VecDeque<ChatItem>,
+    cache: ViewportCache,
     input: InputBuffer,
     streaming: StreamingState,
     spinner_frame: usize,
@@ -325,6 +327,7 @@ impl Default for InkChatApp {
     fn default() -> Self {
         Self {
             items: VecDeque::with_capacity(MAX_DISPLAY_ITEMS),
+            cache: ViewportCache::new(),
             input: InputBuffer::new(),
             streaming: StreamingState::default(),
             spinner_frame: 0,
@@ -550,6 +553,30 @@ impl InkChatApp {
     fn push_item(&mut self, item: ChatItem) {
         if self.items.len() >= MAX_DISPLAY_ITEMS {
             self.items.pop_front();
+        }
+        match &item {
+            ChatItem::Message { id, role, content } => {
+                self.cache
+                    .push_message(CachedMessage::new(id.clone(), *role, content.clone()));
+            }
+            ChatItem::ToolCall { id, name, args, .. } => {
+                self.cache.push_tool_call(id.clone(), name, args);
+            }
+            ChatItem::ShellExecution {
+                id,
+                command,
+                exit_code,
+                output_tail,
+                output_path,
+            } => {
+                self.cache.push_shell_execution(
+                    id.clone(),
+                    command,
+                    *exit_code,
+                    output_tail.clone(),
+                    output_path.clone(),
+                );
+            }
         }
         self.items.push_back(item);
     }
