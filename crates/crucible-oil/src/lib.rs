@@ -26,6 +26,8 @@ mod layout;
 mod line_buffer;
 mod node;
 mod overlay;
+#[cfg(any(test, feature = "test-utils"))]
+pub mod proptest_strategies;
 mod render;
 mod span;
 mod style;

@@ -1,0 +1,10 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc bbe002b4e4ce82a5ffe48bd9c015c9013dfa52a02b157d6bf84aa3617a7c2b1a # shrinks to children = [Input(InputNode { value: "0Aa aa0AaAAa00", cursor: 0, placeholder: None, style: Style { fg: None, bg: None, bold: false, italic: false, underline: false, dim: false }, focused: true })], width = 10
+cc 0381bb8e05e99889a5fc6ec60405e96623a88220cbd05e881f7564826a0b1429 # shrinks to node = Box(BoxNode { children: [Input(InputNode { value: "AA 0AAA0aa0 aaaaAAAa0 a00A 0aaa AAAA0AAA00 A0A0AaA0a0 aAAa0AAAa", cursor: 0, placeholder: None, style: Style { fg: None, bg: None, bold: false, italic: false, underline: false, dim: false }, focused: true })], direction: Column, size: Content, padding: Padding { top: 0, right: 0, bottom: 0, left: 0 }, margin: Padding { top: 0, right: 0, bottom: 0, left: 0 }, border: None, style: Style { fg: None, bg: None, bold: false, italic: false, underline: false, dim: false }, justify: Start, align: Start, gap: Gap { row: 0, column: 0 } }), width = 1
+cc c9909911321733b15715f8339f34c67307c496137b0340bcc1819fd0d8387f47 # shrinks to items = [PopupItemNode { label: "0 0aA aA", description: None, kind: Some("AaaaAaaA") }], width = 20
+cc 42aa85ae2d1d030c969461b0742ce21f76c4a23a200b07d30ae256c4091245fb # shrinks to children = [Spinner(SpinnerNode { label: Some("a0AaAAaaA0 a0a0aa a 000AA00Aaa a0AaAaA0a AAa0a0a Aa0a aAAAAA 0Aa00a00AA AaAA0aaaaaAa aAaaa0"), style: Style { fg: None, bg: None, bold: false, italic: false, underline: false, dim: false }, frame: 0 })], width = 10
