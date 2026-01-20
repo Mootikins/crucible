@@ -7,6 +7,7 @@ use crate::ask::register_ask_module;
 use crate::error::LuaError;
 #[cfg(feature = "fennel")]
 use crate::fennel::FennelCompiler;
+use crate::oil::register_oil_module;
 use crate::types::{LuaExecutionResult, LuaTool, ToolResult};
 use mlua::{Function, Lua, LuaOptions, Result as LuaResult, StdLib, Value};
 use serde_json::Value as JsonValue;
@@ -118,6 +119,9 @@ impl LuaExecutor {
 
         // Register ask module for user interaction
         register_ask_module(lua)?;
+
+        // Register oil module for UI building
+        register_oil_module(lua)?;
 
         Ok(())
     }

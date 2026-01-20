@@ -64,6 +64,7 @@
 
 pub mod annotations;
 mod ask;
+mod commands;
 pub mod core_handler;
 mod error;
 mod executor;
@@ -74,7 +75,11 @@ mod graph;
 mod handlers;
 mod http;
 mod json_query;
+pub mod lifecycle;
+mod lua_util;
+pub mod manifest;
 mod mcp;
+mod oil;
 mod panel;
 mod paths;
 mod popup;
@@ -84,10 +89,15 @@ pub mod session;
 mod shell;
 pub mod statusline;
 mod types;
+mod vault;
+mod views;
 
 pub mod config;
 
-pub use annotations::{AnnotationParser, DiscoveredHandler, DiscoveredPlugin, DiscoveredTool};
+pub use annotations::{
+    AnnotationParser, DiscoveredCommand, DiscoveredHandler, DiscoveredPlugin, DiscoveredTool,
+    DiscoveredView,
+};
 pub use ask::{
     core_answer_to_lua, core_batch_to_lua, core_question_to_lua, core_response_to_lua,
     lua_answer_table_to_core, lua_answer_to_core, lua_batch_table_to_core, lua_batch_to_core,
@@ -96,6 +106,7 @@ pub use ask::{
     register_ask_module_with_context, EventPushCallback, LuaAgentAskContext, LuaAskBatch,
     LuaAskBatchResponse, LuaAskContext, LuaAskError, LuaAskQuestion, LuaQuestionAnswer,
 };
+pub use commands::{command_to_descriptor, discover_commands_from, LuaCommandHandler};
 pub use config::{get_statusline_config, ConfigLoader, ConfigState};
 pub use core_handler::{LuaHandler, LuaHandlerMeta};
 pub use error::LuaError;
@@ -113,6 +124,7 @@ pub use json_query::{
     detect_format, encode_to_format, json_to_lua, lua_to_json, parse_auto, parse_with_format,
     register_oq_module, Format,
 };
+pub use oil::{register_oil_module, LuaNode};
 pub use panel::{
     core_result_to_lua, lua_item_to_core, lua_panel_to_core, lua_result_to_core, register_ui_module,
 };
@@ -126,11 +138,24 @@ pub use statusline::{
     StatuslineComponent, StatuslineConfig, StyleSpec,
 };
 pub use types::{LuaExecutionResult, LuaTool, ToolParam, ToolResult};
+pub use vault::{
+    register_vault_module, register_vault_module_full, register_vault_module_with_graph,
+    register_vault_module_with_store,
+};
+pub use views::discover_views_from;
 // Handler system
 pub use handlers::{
     execute_handler, interpret_handler_result, register_crucible_on_api, run_handler_chain,
     HandlerExecutionResult, LuaScriptHandler, LuaScriptHandlerRegistry, RuntimeHandler,
     ScriptHandlerResult,
+};
+pub use lifecycle::{
+    CommandBuilder, HandlerBuilder, LifecycleError, LifecycleResult, PluginManager,
+    RegistrationHandle, ToolBuilder, ViewBuilder,
+};
+pub use manifest::{
+    Capability, ConfigProperty, ConfigSchema, ConfigType, ExportDeclarations, LoadedPlugin,
+    ManifestError, ManifestResult, PluginDependency, PluginManifest, PluginState,
 };
 pub use mcp::{
     register_mcp_module, register_mcp_module_stub, LuaMcpClient, McpToolInfo, McpToolResult,
