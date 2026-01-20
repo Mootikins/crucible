@@ -1,0 +1,41 @@
+name: graph-view
+version: "0.1.0"
+description: Knowledge graph visualization using Fennel
+author: Crucible Team
+license: MIT
+
+# Plugin capabilities
+capabilities:
+  - ui
+  - vault
+
+main: init.fnl
+
+# Plugin dependencies
+dependencies: []
+
+# Configuration schema
+config:
+  properties:
+    max_depth:
+      type: number
+      description: Maximum depth for graph traversal
+      default: 3
+    show_orphans:
+      type: boolean
+      description: Show notes with no links
+      default: false
+    layout:
+      type: string
+      description: Graph layout algorithm
+      default: "force"
+      enum: ["force", "tree", "radial"]
+
+exports:
+  views:
+    - graph
+  commands:
+    - /graph
+  tools:
+    - graph_stats
+  auto_discover: false
