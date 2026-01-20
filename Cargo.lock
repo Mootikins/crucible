@@ -3600,6 +3600,7 @@ dependencies = [
  "crucible-daemon",
  "crucible-daemon-client",
  "crucible-enrichment",
+ "crucible-ink",
  "crucible-lance",
  "crucible-llm",
  "crucible-lua",
@@ -3786,6 +3787,19 @@ dependencies = [
  "thiserror 2.0.17",
  "tokio",
  "tracing",
+]
+
+[[package]]
+name = "crucible-ink"
+version = "0.1.0"
+dependencies = [
+ "crossterm 0.29.0",
+ "insta",
+ "similar",
+ "taffy",
+ "test-case",
+ "textwrap 0.16.2",
+ "unicode-width 0.2.0",
 ]
 
 [[package]]
