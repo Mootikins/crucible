@@ -1,0 +1,40 @@
+name: daily-notes
+version: "1.0.0"
+description: Create and navigate daily notes
+author: Crucible Contributors
+license: MIT
+
+main: init.lua
+
+capabilities:
+  - filesystem
+  - vault
+
+exports:
+  tools:
+    - daily_create
+    - daily_open
+    - daily_list
+  commands:
+    - /daily
+  auto_discover: false
+
+config:
+  properties:
+    folder:
+      type: string
+      description: Folder for daily notes
+      default: "Journal"
+    template:
+      type: string
+      description: Template file path
+      default: ""
+    date_format:
+      type: string
+      description: Date format for filenames
+      default: "%Y-%m-%d"
+
+keywords:
+  - journal
+  - daily
+  - notes
