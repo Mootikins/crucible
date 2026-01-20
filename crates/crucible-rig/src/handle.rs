@@ -14,6 +14,7 @@ use async_trait::async_trait;
 use crucible_core::traits::chat::{
     AgentHandle, ChatChunk, ChatError, ChatResult, ChatToolCall, ChatToolResult,
 };
+use crucible_core::traits::TokenUsage;
 use crucible_core::types::acp::schema::SessionModeState;
 use crucible_core::types::mode::default_internal_modes;
 use futures::stream::BoxStream;
@@ -312,6 +313,7 @@ where
                                     tool_calls: None,
                                     tool_results: None,
                                     reasoning: None,
+                                usage: None,
                                 });
                             }
                             ReasoningChunk::Reasoning(reasoning) => {
@@ -322,6 +324,7 @@ where
                                     tool_calls: None,
                                     tool_results: None,
                                     reasoning: Some(reasoning),
+                                usage: None,
                                 });
                             }
                             ReasoningChunk::ToolCall { id, name, arguments } => {
@@ -341,6 +344,7 @@ where
                                     }]),
                                     tool_results: None,
                                     reasoning: None,
+                                usage: None,
                                 });
                             }
                             ReasoningChunk::Done => {
@@ -364,6 +368,7 @@ where
                                     tool_calls: None,
                                     tool_results: None,
                                     reasoning: None,
+                                usage: None,
                                 });
                                 return;
                             }
@@ -384,6 +389,7 @@ where
                 tool_calls: None,
                 tool_results: None,
                 reasoning: None,
+                                usage: None,
             });
         })
     }
@@ -535,6 +541,7 @@ where
                                                     tool_calls: Some(vec![chat_tc]),
                                                     tool_results: None,
                                                     reasoning: None,
+                                usage: None,
                                                 });
                                                 // Immediately emit error result (shows as red failed tool)
                                                 yield Ok(ChatChunk {
@@ -547,6 +554,7 @@ where
                                                         error: Some("Blocked in plan mode".to_string()),
                                                     }]),
                                                     reasoning: None,
+                                usage: None,
                                                 });
                                             } else {
                                                 yield Ok(ChatChunk {
@@ -555,6 +563,7 @@ where
                                                     tool_calls: Some(vec![chat_tc]),
                                                     tool_results: None,
                                                     reasoning: None,
+                                usage: None,
                                                 });
                                             }
                                         }
@@ -571,6 +580,7 @@ where
                                                 tool_calls: None,
                                                 tool_results: None,
                                                 reasoning: None,
+                                usage: None,
                                             });
                                             emitted_text_len = parse_result.cleaned_text.len();
                                         }
@@ -604,6 +614,7 @@ where
                                                     tool_calls: None,
                                                     tool_results: None,
                                                     reasoning: None,
+                                usage: None,
                                                 });
                                             }
                                             emitted_text_len = accumulated_text.len();
@@ -616,6 +627,7 @@ where
                                             tool_calls: None,
                                             tool_results: None,
                                             reasoning: None,
+                                usage: None,
                                         });
                                         emitted_text_len = accumulated_text.len();
                                     }
@@ -655,6 +667,7 @@ where
                                         tool_calls: Some(vec![chat_tc]),
                                         tool_results: None,
                                         reasoning: None,
+                                usage: None,
                                     });
                                     // Immediately emit error result (shows as red failed tool)
                                     yield Ok(ChatChunk {
@@ -667,6 +680,7 @@ where
                                             error: Some("Blocked in plan mode".to_string()),
                                         }]),
                                         reasoning: None,
+                                usage: None,
                                     });
                                 } else {
                                     // Emit tool call immediately via tool_calls field
@@ -677,6 +691,7 @@ where
                                         tool_calls: Some(vec![chat_tc]),
                                         tool_results: None,
                                         reasoning: None,
+                                usage: None,
                                     });
                                 }
                             }
@@ -690,6 +705,7 @@ where
                                         tool_calls: None,
                                         tool_results: None,
                                         reasoning: Some(reasoning_text),
+                                        usage: None,
                                     });
                                 }
                             }
@@ -702,6 +718,7 @@ where
                                         tool_calls: None,
                                         tool_results: None,
                                         reasoning: Some(reasoning),
+                                usage: None,
                                     });
                                 }
                             }
@@ -753,6 +770,7 @@ where
                                 error: None, // Rig doesn't distinguish error results
                             }]),
                             reasoning: None,
+                                usage: None,
                         });
 
                         tool_results.push(tr);
@@ -780,6 +798,7 @@ where
                                     tool_calls: None,
                                     tool_results: None,
                                     reasoning: None,
+                                usage: None,
                                 });
                             }
                         }
@@ -828,18 +847,27 @@ where
                             }
                         }
 
-                        // Emit final chunk
-                        // Note: Don't include tool_calls here - they were already emitted
-                        // individually via StreamedAssistantContent::ToolCall above
-                        info!("Yielding final done=true chunk");
+                        let rig_usage = final_resp.usage();
+                        let usage = Some(TokenUsage {
+                            prompt_tokens: rig_usage.input_tokens as u32,
+                            completion_tokens: rig_usage.output_tokens as u32,
+                            total_tokens: rig_usage.total_tokens as u32,
+                        });
+
+                        info!(
+                            input_tokens = rig_usage.input_tokens,
+                            output_tokens = rig_usage.output_tokens,
+                            total_tokens = rig_usage.total_tokens,
+                            "Yielding final done=true chunk with usage"
+                        );
                         yield Ok(ChatChunk {
                             delta: String::new(),
                             done: true,
                             tool_calls: None,
                             tool_results: None,
                             reasoning: None,
+                            usage,
                         });
-                        info!("Final chunk yielded successfully");
                     }
                     Err(e) => {
                         warn!(
@@ -884,6 +912,7 @@ where
                     tool_calls: None,
                     tool_results: None,
                     reasoning: None,
+                                usage: None,
                 });
             }
         })

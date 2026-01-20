@@ -16,6 +16,7 @@ use crate::config::CliConfig;
 use crate::core_facade::KilnContext;
 use crate::factories;
 use crate::progress::{BackgroundProgress, LiveProgress, StatusLine};
+use crate::provider_detect::fetch_model_context_length;
 use crate::tui::ink::McpServerDisplay;
 use crate::tui::AgentSelection;
 use crucible_core::traits::chat::{is_read_only, mode_display_name};
@@ -175,9 +176,22 @@ async fn run_interactive_chat(
 
     let mode = ChatMode::parse(initial_mode);
     let model_name = config.chat_model();
+    let endpoint = config.chat.llm_endpoint();
+
+    let context_limit = fetch_model_context_length(&endpoint, &model_name)
+        .await
+        .unwrap_or(0);
+    if context_limit > 0 {
+        info!(
+            "Model {} context length: {} tokens",
+            model_name, context_limit
+        );
+    }
+
     let mut runner = InkChatRunner::new()?
         .with_mode(mode)
-        .with_model(&model_name);
+        .with_model(&model_name)
+        .with_context_limit(context_limit);
 
     info!("Starting ink chat with model: {}", model_name);
 

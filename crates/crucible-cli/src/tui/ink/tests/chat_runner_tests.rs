@@ -48,6 +48,7 @@ impl MockAgent {
             tool_calls: None,
             tool_results: None,
             reasoning: None,
+            usage: None,
         }])
     }
 
@@ -60,6 +61,7 @@ impl MockAgent {
                 tool_calls: None,
                 tool_results: None,
                 reasoning: None,
+                usage: None,
             })
             .collect();
 
@@ -388,8 +390,15 @@ fn app_handles_context_usage_update() {
 
 mod daemon_event_to_tui_tests {
     use super::*;
+    use crucible_core::traits::llm::TokenUsage;
+
+    const TEST_CONTEXT_LIMIT: usize = 128000;
 
     fn chunk_to_app_msgs(chunk: ChatChunk) -> Vec<ChatAppMsg> {
+        chunk_to_app_msgs_with_limit(chunk, TEST_CONTEXT_LIMIT)
+    }
+
+    fn chunk_to_app_msgs_with_limit(chunk: ChatChunk, context_limit: usize) -> Vec<ChatAppMsg> {
         let mut msgs = vec![];
 
         if !chunk.delta.is_empty() {
@@ -418,6 +427,13 @@ mod daemon_event_to_tui_tests {
             }
         }
 
+        if let Some(ref usage) = chunk.usage {
+            msgs.push(ChatAppMsg::ContextUsage {
+                used: usage.total_tokens as usize,
+                total: context_limit,
+            });
+        }
+
         if chunk.done {
             msgs.push(ChatAppMsg::StreamComplete);
         }
@@ -436,6 +452,7 @@ mod daemon_event_to_tui_tests {
             tool_calls: None,
             tool_results: None,
             reasoning: None,
+            usage: None,
         };
 
         for msg in chunk_to_app_msgs(chunk) {
@@ -470,6 +487,7 @@ mod daemon_event_to_tui_tests {
             }]),
             tool_results: None,
             reasoning: None,
+            usage: None,
         };
 
         for msg in chunk_to_app_msgs(chunk) {
@@ -507,6 +525,7 @@ mod daemon_event_to_tui_tests {
                 error: None,
             }]),
             reasoning: None,
+            usage: None,
         };
 
         for msg in chunk_to_app_msgs(chunk) {
@@ -538,6 +557,7 @@ mod daemon_event_to_tui_tests {
             tool_calls: None,
             tool_results: None,
             reasoning: None,
+            usage: None,
         };
 
         for msg in chunk_to_app_msgs(chunk) {
@@ -559,6 +579,7 @@ mod daemon_event_to_tui_tests {
                 tool_calls: None,
                 tool_results: None,
                 reasoning: None,
+                usage: None,
             },
             ChatChunk {
                 delta: "am ".to_string(),
@@ -566,6 +587,7 @@ mod daemon_event_to_tui_tests {
                 tool_calls: None,
                 tool_results: None,
                 reasoning: None,
+                usage: None,
             },
             ChatChunk {
                 delta: "Claude!".to_string(),
@@ -573,6 +595,7 @@ mod daemon_event_to_tui_tests {
                 tool_calls: None,
                 tool_results: None,
                 reasoning: None,
+                usage: None,
             },
         ];
 
@@ -592,6 +615,74 @@ mod daemon_event_to_tui_tests {
         assert!(
             output.contains("Claude"),
             "Full response should appear in UI: {}",
+            output
+        );
+    }
+
+    #[test]
+    fn chunk_with_usage_updates_context_display() {
+        let mut app = InkChatApp::default();
+        app.on_message(ChatAppMsg::UserMessage("Hello".to_string()));
+
+        let chunk = ChatChunk {
+            delta: "Response".to_string(),
+            done: true,
+            tool_calls: None,
+            tool_results: None,
+            reasoning: None,
+            usage: Some(TokenUsage {
+                prompt_tokens: 100,
+                completion_tokens: 50,
+                total_tokens: 150,
+            }),
+        };
+
+        for msg in chunk_to_app_msgs_with_limit(chunk, 1000) {
+            app.on_message(msg);
+        }
+
+        let focus = FocusContext::new();
+        let ctx = ViewContext::new(&focus);
+        let tree = app.view(&ctx);
+        let output = render_to_string(&tree, 80);
+
+        assert!(
+            output.contains("15%") || output.contains("ctx"),
+            "Should show context usage from chunk: {}",
+            output
+        );
+    }
+
+    #[test]
+    fn chunk_with_usage_unknown_total_shows_tokens() {
+        let mut app = InkChatApp::default();
+        app.on_message(ChatAppMsg::UserMessage("Hello".to_string()));
+
+        let chunk = ChatChunk {
+            delta: "Response".to_string(),
+            done: true,
+            tool_calls: None,
+            tool_results: None,
+            reasoning: None,
+            usage: Some(TokenUsage {
+                prompt_tokens: 2000,
+                completion_tokens: 500,
+                total_tokens: 2500,
+            }),
+        };
+
+        for msg in chunk_to_app_msgs_with_limit(chunk, 0) {
+            app.on_message(msg);
+        }
+
+        let focus = FocusContext::new();
+        let ctx = ViewContext::new(&focus);
+        let tree = app.view(&ctx);
+        let output = render_to_string(&tree, 80);
+
+        assert!(
+            output.contains("2k tok") || output.contains("tok"),
+            "Should show token count when total is unknown: {}",
             output
         );
     }

@@ -96,6 +96,7 @@ fn session_event_to_chat_chunk(event: &SessionEvent) -> Option<ChatChunk> {
                 tool_calls: None,
                 tool_results: None,
                 reasoning: None,
+                usage: None,
             })
         }
         "thinking" => {
@@ -106,6 +107,7 @@ fn session_event_to_chat_chunk(event: &SessionEvent) -> Option<ChatChunk> {
                 tool_calls: None,
                 tool_results: None,
                 reasoning: Some(content.to_string()),
+                usage: None,
             })
         }
         "tool_call" => {
@@ -123,6 +125,7 @@ fn session_event_to_chat_chunk(event: &SessionEvent) -> Option<ChatChunk> {
                 }]),
                 tool_results: None,
                 reasoning: None,
+                usage: None,
             })
         }
         "tool_result" => {
@@ -146,6 +149,7 @@ fn session_event_to_chat_chunk(event: &SessionEvent) -> Option<ChatChunk> {
                     error: None,
                 }]),
                 reasoning: None,
+                usage: None,
             })
         }
         "message_complete" => Some(ChatChunk {
@@ -154,6 +158,7 @@ fn session_event_to_chat_chunk(event: &SessionEvent) -> Option<ChatChunk> {
             tool_calls: None,
             tool_results: None,
             reasoning: None,
+            usage: None,
         }),
         "ended" => Some(ChatChunk {
             delta: String::new(),
@@ -161,6 +166,7 @@ fn session_event_to_chat_chunk(event: &SessionEvent) -> Option<ChatChunk> {
             tool_calls: None,
             tool_results: None,
             reasoning: None,
+            usage: None,
         }),
         _ => {
             tracing::debug!("Unknown session event type: {}", event.event_type);
