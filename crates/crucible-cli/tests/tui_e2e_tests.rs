@@ -481,19 +481,19 @@ fn chat_rapid_input() {
 }
 
 // =============================================================================
-// Ink Runner Tests
+// Oil Runner Tests
 // =============================================================================
 
-/// Test that ink runner stays responsive during extended use
+/// Test that oil runner stays responsive during extended use
 #[test]
 #[ignore = "requires built binary"]
-fn ink_runner_does_not_freeze() {
+fn oil_runner_does_not_freeze() {
     let config = TuiTestConfig::new("chat")
-        .with_args(&["--ink", "--no-process"])
+        .with_args(&["--no-process"])
         .with_env("RUST_LOG", "warn")
         .with_timeout(Duration::from_secs(3));
 
-    let mut session = TuiTestSession::spawn(config).expect("Failed to spawn chat --ink");
+    let mut session = TuiTestSession::spawn(config).expect("Failed to spawn chat");
 
     let start = std::time::Instant::now();
 
@@ -519,13 +519,13 @@ fn ink_runner_does_not_freeze() {
 /// Test that /quit command causes exit
 #[test]
 #[ignore = "requires built binary"]
-fn ink_quit_with_slash_command() {
+fn oil_quit_with_slash_command() {
     let config = TuiTestConfig::new("chat")
-        .with_args(&["--ink", "--no-process"])
+        .with_args(&["--no-process"])
         .with_env("RUST_LOG", "warn")
         .with_timeout(Duration::from_secs(5));
 
-    let mut session = TuiTestSession::spawn(config).expect("Failed to spawn chat --ink");
+    let mut session = TuiTestSession::spawn(config).expect("Failed to spawn chat");
 
     session.wait(Duration::from_secs(1));
     eprintln!("Sending /quit command");
@@ -543,13 +543,13 @@ fn ink_quit_with_slash_command() {
 /// Test that typing and Enter works - check output for echo
 #[test]
 #[ignore = "requires built binary"]
-fn ink_verify_pty_works() {
+fn oil_verify_pty_works() {
     let config = TuiTestConfig::new("chat")
-        .with_args(&["--ink", "--no-process"])
-        .with_env("RUST_LOG", "crucible_cli::tui::ink=debug")
+        .with_args(&["--no-process"])
+        .with_env("RUST_LOG", "crucible_cli::tui::oil=debug")
         .with_timeout(Duration::from_secs(10));
 
-    let mut session = TuiTestSession::spawn(config).expect("Failed to spawn chat --ink");
+    let mut session = TuiTestSession::spawn(config).expect("Failed to spawn chat");
 
     session.wait(Duration::from_secs(2));
 
@@ -574,16 +574,16 @@ fn ink_verify_pty_works() {
     session.send_control('c').ok();
 }
 
-/// Test ink runner stays responsive for extended period
+/// Test oil runner stays responsive for extended period
 #[test]
 #[ignore = "requires built binary"]
-fn ink_runner_stays_responsive_10s() {
+fn oil_runner_stays_responsive_10s() {
     let config = TuiTestConfig::new("chat")
-        .with_args(&["--ink", "--no-process"])
+        .with_args(&["--no-process"])
         .with_env("RUST_LOG", "warn")
         .with_timeout(Duration::from_secs(20));
 
-    let mut session = TuiTestSession::spawn(config).expect("Failed to spawn chat --ink");
+    let mut session = TuiTestSession::spawn(config).expect("Failed to spawn chat");
 
     session.wait(Duration::from_secs(1));
 
@@ -615,15 +615,15 @@ fn ink_runner_stays_responsive_10s() {
 }
 
 // =============================================================================
-// Ink Runner Streaming Tests (require Ollama)
+// Oil Runner Streaming Tests (require Ollama)
 // =============================================================================
 
 /// Test streaming response renders progressively
 #[test]
 #[ignore = "requires built binary and Ollama"]
-fn ink_streaming_response_renders() {
+fn oil_streaming_response_renders() {
     let config = TuiTestConfig::new("chat")
-        .with_args(&["--ink", "--no-process", "--internal"])
+        .with_args(&["--no-process", "--internal"])
         .with_env("RUST_LOG", "warn")
         .with_timeout(Duration::from_secs(60));
 
@@ -648,9 +648,9 @@ fn ink_streaming_response_renders() {
 /// Test long streaming response with markdown tables
 #[test]
 #[ignore = "requires built binary and Ollama"]
-fn ink_streaming_with_markdown_table() {
+fn oil_streaming_with_markdown_table() {
     let config = TuiTestConfig::new("chat")
-        .with_args(&["--ink", "--no-process", "--internal"])
+        .with_args(&["--no-process", "--internal"])
         .with_env("RUST_LOG", "warn")
         .with_timeout(Duration::from_secs(90));
 
@@ -684,15 +684,15 @@ fn ink_streaming_with_markdown_table() {
 }
 
 // =============================================================================
-// Ink Runner Ctrl+C Edge Cases
+// Oil Runner Ctrl+C Edge Cases
 // =============================================================================
 
 /// Test Ctrl+C during active streaming cancels gracefully
 #[test]
 #[ignore = "requires built binary and Ollama"]
-fn ink_ctrl_c_during_streaming() {
+fn oil_ctrl_c_during_streaming() {
     let config = TuiTestConfig::new("chat")
-        .with_args(&["--ink", "--no-process", "--internal"])
+        .with_args(&["--no-process", "--internal"])
         .with_env("RUST_LOG", "warn")
         .with_timeout(Duration::from_secs(30));
 
@@ -727,9 +727,9 @@ fn ink_ctrl_c_during_streaming() {
 /// Test double Ctrl+C exits even during streaming
 #[test]
 #[ignore = "requires built binary and Ollama"]
-fn ink_double_ctrl_c_exits_during_streaming() {
+fn oil_double_ctrl_c_exits_during_streaming() {
     let config = TuiTestConfig::new("chat")
-        .with_args(&["--ink", "--no-process", "--internal"])
+        .with_args(&["--no-process", "--internal"])
         .with_env("RUST_LOG", "warn")
         .with_timeout(Duration::from_secs(30));
 
@@ -760,9 +760,9 @@ fn ink_double_ctrl_c_exits_during_streaming() {
 /// Test Ctrl+C with empty input shows notification
 #[test]
 #[ignore = "requires built binary"]
-fn ink_ctrl_c_empty_input_notification() {
+fn oil_ctrl_c_empty_input_notification() {
     let config = TuiTestConfig::new("chat")
-        .with_args(&["--ink", "--no-process"])
+        .with_args(&["--no-process"])
         .with_env("RUST_LOG", "warn")
         .with_timeout(Duration::from_secs(10));
 
@@ -791,15 +791,15 @@ fn ink_ctrl_c_empty_input_notification() {
 }
 
 // =============================================================================
-// Ink Runner Mode Switching Tests
+// Oil Runner Mode Switching Tests
 // =============================================================================
 
 /// Test /mode command cycles through modes (visual verification)
 #[test]
 #[ignore = "requires built binary"]
-fn ink_mode_cycle() {
+fn oil_mode_cycle() {
     let config = TuiTestConfig::new("chat")
-        .with_args(&["--ink", "--no-process"])
+        .with_args(&["--no-process"])
         .with_env("RUST_LOG", "warn")
         .with_timeout(Duration::from_secs(10));
 
@@ -821,9 +821,9 @@ fn ink_mode_cycle() {
 /// Test /act and /plan commands
 #[test]
 #[ignore = "requires built binary"]
-fn ink_explicit_mode_commands() {
+fn oil_explicit_mode_commands() {
     let config = TuiTestConfig::new("chat")
-        .with_args(&["--ink", "--no-process"])
+        .with_args(&["--no-process"])
         .with_env("RUST_LOG", "warn")
         .with_timeout(Duration::from_secs(10));
 
@@ -854,15 +854,15 @@ fn ink_explicit_mode_commands() {
 }
 
 // =============================================================================
-// Ink Runner Popup Tests
+// Oil Runner Popup Tests
 // =============================================================================
 
 /// Test F1 toggles popup
 #[test]
 #[ignore = "requires built binary"]
-fn ink_f1_popup_toggle() {
+fn oil_f1_popup_toggle() {
     let config = TuiTestConfig::new("chat")
-        .with_args(&["--ink", "--no-process"])
+        .with_args(&["--no-process"])
         .with_env("RUST_LOG", "warn")
         .with_timeout(Duration::from_secs(10));
 
@@ -889,9 +889,9 @@ fn ink_f1_popup_toggle() {
 /// Test popup navigation with arrow keys
 #[test]
 #[ignore = "requires built binary"]
-fn ink_popup_arrow_navigation() {
+fn oil_popup_arrow_navigation() {
     let config = TuiTestConfig::new("chat")
-        .with_args(&["--ink", "--no-process"])
+        .with_args(&["--no-process"])
         .with_env("RUST_LOG", "warn")
         .with_timeout(Duration::from_secs(10));
 
@@ -922,15 +922,15 @@ fn ink_popup_arrow_navigation() {
 }
 
 // =============================================================================
-// Ink Runner Stress Tests
+// Oil Runner Stress Tests
 // =============================================================================
 
 /// Test rapid input doesn't corrupt display
 #[test]
 #[ignore = "requires built binary"]
-fn ink_rapid_typing_stress() {
+fn oil_rapid_typing_stress() {
     let config = TuiTestConfig::new("chat")
-        .with_args(&["--ink", "--no-process"])
+        .with_args(&["--no-process"])
         .with_env("RUST_LOG", "warn")
         .with_timeout(Duration::from_secs(15));
 
@@ -966,9 +966,9 @@ fn ink_rapid_typing_stress() {
 /// Test alternating input and commands
 #[test]
 #[ignore = "requires built binary"]
-fn ink_alternating_input_commands() {
+fn oil_alternating_input_commands() {
     let config = TuiTestConfig::new("chat")
-        .with_args(&["--ink", "--no-process"])
+        .with_args(&["--no-process"])
         .with_env("RUST_LOG", "warn")
         .with_timeout(Duration::from_secs(15));
 
@@ -998,15 +998,15 @@ fn ink_alternating_input_commands() {
 }
 
 // =============================================================================
-// Ink Runner Error Handling
+// Oil Runner Error Handling
 // =============================================================================
 
 /// Test unknown command shows error
 #[test]
 #[ignore = "requires built binary"]
-fn ink_unknown_command_error() {
+fn oil_unknown_command_error() {
     let config = TuiTestConfig::new("chat")
-        .with_args(&["--ink", "--no-process"])
+        .with_args(&["--no-process"])
         .with_env("RUST_LOG", "warn")
         .with_timeout(Duration::from_secs(10));
 
@@ -1033,9 +1033,9 @@ fn ink_unknown_command_error() {
 /// Test :clear command works
 #[test]
 #[ignore = "requires built binary"]
-fn ink_clear_command() {
+fn oil_clear_command() {
     let config = TuiTestConfig::new("chat")
-        .with_args(&["--ink", "--no-process"])
+        .with_args(&["--no-process"])
         .with_env("RUST_LOG", "warn")
         .with_timeout(Duration::from_secs(10));
 
@@ -1059,15 +1059,15 @@ fn ink_clear_command() {
 }
 
 // =============================================================================
-// Ink Runner Terminal Size Tests
+// Oil Runner Terminal Size Tests
 // =============================================================================
 
-/// Test ink runner at narrow terminal width (60 cols)
+/// Test oil runner at narrow terminal width (60 cols)
 #[test]
 #[ignore = "requires built binary"]
-fn ink_narrow_terminal_60_cols() {
+fn oil_narrow_terminal_60_cols() {
     let config = TuiTestConfig::new("chat")
-        .with_args(&["--ink", "--no-process"])
+        .with_args(&["--no-process"])
         .with_env("RUST_LOG", "warn")
         .with_dimensions(60, 24)
         .with_timeout(Duration::from_secs(10));
@@ -1094,12 +1094,12 @@ fn ink_narrow_terminal_60_cols() {
     session.send("/quit\r").ok();
 }
 
-/// Test ink runner at very narrow terminal width (40 cols)
+/// Test oil runner at very narrow terminal width (40 cols)
 #[test]
 #[ignore = "requires built binary"]
 fn ink_very_narrow_terminal_40_cols() {
     let config = TuiTestConfig::new("chat")
-        .with_args(&["--ink", "--no-process"])
+        .with_args(&["--no-process"])
         .with_env("RUST_LOG", "warn")
         .with_dimensions(40, 24)
         .with_timeout(Duration::from_secs(10));
@@ -1114,12 +1114,12 @@ fn ink_very_narrow_terminal_40_cols() {
     session.send("/quit\r").ok();
 }
 
-/// Test ink runner at wide terminal width (120 cols)
+/// Test oil runner at wide terminal width (120 cols)
 #[test]
 #[ignore = "requires built binary"]
-fn ink_wide_terminal_120_cols() {
+fn oil_wide_terminal_120_cols() {
     let config = TuiTestConfig::new("chat")
-        .with_args(&["--ink", "--no-process"])
+        .with_args(&["--no-process"])
         .with_env("RUST_LOG", "warn")
         .with_dimensions(120, 40)
         .with_timeout(Duration::from_secs(10));
@@ -1146,12 +1146,12 @@ fn ink_wide_terminal_120_cols() {
     session.send("/quit\r").ok();
 }
 
-/// Test ink runner at short terminal height (10 rows)
+/// Test oil runner at short terminal height (10 rows)
 #[test]
 #[ignore = "requires built binary"]
-fn ink_short_terminal_10_rows() {
+fn oil_short_terminal_10_rows() {
     let config = TuiTestConfig::new("chat")
-        .with_args(&["--ink", "--no-process"])
+        .with_args(&["--no-process"])
         .with_env("RUST_LOG", "warn")
         .with_dimensions(80, 10)
         .with_timeout(Duration::from_secs(10));
@@ -1296,7 +1296,7 @@ fn error_missing_required_arg_shows_help() {
 fn error_conflicting_args_shows_message() {
     require_binary!();
 
-    let config = TuiTestConfig::new("chat --ink --no-ink");
+    let config = TuiTestConfig::new("chat");
     let mut session = TuiTestSession::spawn(config).expect("Failed to spawn");
 
     session

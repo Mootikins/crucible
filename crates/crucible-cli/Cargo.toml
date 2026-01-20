@@ -42,7 +42,7 @@ crucible-daemon-client = { path = "../crucible-daemon-client" }
 crucible-skills = { path = "../crucible-skills" }
 crucible-lance = { path = "../crucible-lance" }
 crucible-observe = { path = "../crucible-observe" }
-crucible-ink = { path = "../crucible-ink" }
+crucible-oil = { path = "../crucible-oil" }
 
 # CLI framework
 clap = { workspace = true, features = ["derive", "env", "string"] }
@@ -121,6 +121,9 @@ textwrap = "0.16.2"
 
 # Flexbox layout for ink TUI
 taffy = "0.7"
+
+# Lua scripting (for lua_view)
+mlua = { workspace = true }
 
 [dev-dependencies]
 crucible-cli = { path = ".", features = ["test-utils"] }  # Enable test utilities
