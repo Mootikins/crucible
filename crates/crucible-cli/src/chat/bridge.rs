@@ -146,6 +146,7 @@ mod tests {
                         tool_calls: None,
                         tool_results: None,
                         reasoning: None,
+                        usage: None,
                     })
                 },
             )))
@@ -326,7 +327,6 @@ mod tests {
                     Ok(ChatChunk {
                         delta,
                         done: is_last,
-                        // Include tool calls in final chunk
                         tool_calls: if is_last && !tool_calls.is_empty() {
                             Some(tool_calls.clone())
                         } else {
@@ -334,6 +334,7 @@ mod tests {
                         },
                         tool_results: None,
                         reasoning: None,
+                        usage: None,
                     })
                 },
             )))

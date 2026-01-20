@@ -470,13 +470,15 @@ impl AgentHandle for CrucibleAcpClient {
                                         tool_calls: None,
                                         tool_results: None,
                                         reasoning: None,
+                                        usage: None,
                                     },
                                     StreamingChunk::Thinking(text) => ChatChunk {
                                         delta: String::new(),
                                         done: false,
                                         tool_calls: None,
                                         tool_results: None,
-                                        reasoning: Some(text), // Reasoning in dedicated field
+                                        reasoning: Some(text),
+                                        usage: None,
                                     },
                                     StreamingChunk::ToolStart { name, id } => {
                                         tool_calls.push(ChatToolCall {
@@ -494,6 +496,7 @@ impl AgentHandle for CrucibleAcpClient {
                                             }]),
                                             tool_results: None,
                                             reasoning: None,
+                                            usage: None,
                                         }
                                     }
                                     StreamingChunk::ToolEnd { id: _ } => ChatChunk {
@@ -502,6 +505,7 @@ impl AgentHandle for CrucibleAcpClient {
                                         tool_calls: None,
                                         tool_results: None,
                                         reasoning: None,
+                                        usage: None,
                                     },
                                 };
                                 Some((Ok(chat_chunk), Some((rx, result_rx, tool_calls, false))))
@@ -542,8 +546,9 @@ impl AgentHandle for CrucibleAcpClient {
                                                 },
                                                 tool_results: None,
                                                 reasoning: None,
+                                                usage: None,
                                             }),
-                                            None, // Terminate stream after this
+                                            None,
                                         ))
                                     }
                                     Ok(Err(e)) => {

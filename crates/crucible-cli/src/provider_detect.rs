@@ -77,6 +77,54 @@ pub async fn check_ollama_at(endpoint: &str) -> Option<Vec<String>> {
     Some(tags.models.into_iter().map(|m| m.name).collect())
 }
 
+/// Fetch context length for a model from OpenAI-compatible /v1/models endpoint
+pub async fn fetch_model_context_length(endpoint: &str, model_id: &str) -> Option<usize> {
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(5))
+        .build()
+        .ok()?;
+
+    let url = format!("{}/v1/models", endpoint.trim_end_matches('/'));
+    let resp = client.get(&url).send().await.ok()?;
+
+    if !resp.status().is_success() {
+        return None;
+    }
+
+    #[derive(serde::Deserialize)]
+    struct ModelsResponse {
+        data: Vec<ModelData>,
+    }
+
+    #[derive(serde::Deserialize)]
+    struct ModelData {
+        id: String,
+        #[serde(default)]
+        meta: Option<ModelMeta>,
+    }
+
+    #[derive(serde::Deserialize)]
+    struct ModelMeta {
+        #[serde(default)]
+        llamaswap: Option<LlamaSwapMeta>,
+    }
+
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct LlamaSwapMeta {
+        context_length: Option<usize>,
+    }
+
+    let models: ModelsResponse = resp.json().await.ok()?;
+    models
+        .data
+        .iter()
+        .find(|m| m.id == model_id)
+        .and_then(|m| m.meta.as_ref())
+        .and_then(|meta| meta.llamaswap.as_ref())
+        .and_then(|ls| ls.context_length)
+}
+
 /// Detect all available providers
 pub async fn detect_providers_available() -> Vec<DetectedProvider> {
     let mut providers = Vec::new();
@@ -222,5 +270,21 @@ mod tests {
         std::env::set_var("OLLAMA_HOST", "https://secure-ollama.example.com");
         assert_eq!(ollama_endpoint(), "https://secure-ollama.example.com");
         std::env::remove_var("OLLAMA_HOST");
+    }
+
+    #[tokio::test]
+    async fn test_fetch_model_context_length_nonexistent_endpoint() {
+        let result = fetch_model_context_length("http://localhost:99999", "test-model").await;
+        assert!(result.is_none());
+    }
+
+    #[tokio::test]
+    #[ignore = "requires llama.krohnos.io endpoint"]
+    async fn test_fetch_model_context_length_real_endpoint() {
+        let result =
+            fetch_model_context_length("https://llama.krohnos.io", "qwen3-4b-instruct-2507-q8_0")
+                .await;
+        assert!(result.is_some());
+        assert!(result.unwrap() > 0);
     }
 }
