@@ -114,9 +114,6 @@ impl Terminal {
                 "graduating"
             );
 
-            // Reset output state BEFORE clearing to prevent stale previous_visual_rows
-            // from affecting the clear operation
-            self.output.force_redraw();
             self.output.clear()?;
 
             for item in &graduated {
@@ -127,6 +124,7 @@ impl Terminal {
             }
             self.stdout.flush()?;
 
+            self.output.force_redraw();
             self.last_cursor = None;
         }
 

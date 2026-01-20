@@ -419,3 +419,47 @@ fn graduation_width_uses_large_value_for_terminal_wrapping() {
         stdout
     );
 }
+
+#[test]
+fn multiline_content_preserves_newlines_in_graduation() {
+    let mut runtime = TestRuntime::new(80, 24);
+
+    let user_msg = scrollback(
+        "user-1",
+        [col([
+            text("TOP_BORDER"),
+            text(" > Hello world"),
+            text("BOTTOM_BORDER"),
+        ])],
+    );
+
+    let tree = col([user_msg, text_input("", 0)]);
+    runtime.render(&tree);
+
+    let stdout = runtime.stdout_content();
+
+    assert!(stdout.contains("TOP_BORDER"), "stdout: {:?}", stdout);
+    assert!(stdout.contains("Hello world"), "stdout: {:?}", stdout);
+    assert!(stdout.contains("BOTTOM_BORDER"), "stdout: {:?}", stdout);
+
+    let top_pos = stdout.find("TOP_BORDER").unwrap();
+    let msg_pos = stdout.find("Hello world").unwrap();
+    let bottom_pos = stdout.find("BOTTOM_BORDER").unwrap();
+
+    assert!(top_pos < msg_pos);
+    assert!(msg_pos < bottom_pos);
+
+    let between_top_and_msg = &stdout[top_pos..msg_pos];
+    let between_msg_and_bottom = &stdout[msg_pos..bottom_pos];
+
+    assert!(
+        between_top_and_msg.contains("\r\n") || between_top_and_msg.contains('\n'),
+        "between: {:?}",
+        between_top_and_msg
+    );
+    assert!(
+        between_msg_and_bottom.contains("\r\n") || between_msg_and_bottom.contains('\n'),
+        "between: {:?}",
+        between_msg_and_bottom
+    );
+}
