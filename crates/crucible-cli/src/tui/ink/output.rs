@@ -95,7 +95,12 @@ impl OutputBuffer {
             let move_up_amount = (self.previous_visual_rows as u16)
                 .saturating_sub(1)
                 .saturating_sub(cursor_offset_from_end);
-            tracing::trace!(move_up_amount, "cursor move up");
+            tracing::debug!(
+                previous_visual_rows = self.previous_visual_rows,
+                cursor_offset_from_end,
+                move_up_amount,
+                "render: moving cursor up before clear"
+            );
             if move_up_amount > 0 {
                 execute!(
                     self.stdout,

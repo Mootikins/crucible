@@ -3634,6 +3634,7 @@ dependencies = [
  "serde_json",
  "serial_test",
  "similar",
+ "syntect",
  "tabled",
  "taffy",
  "tempfile",
