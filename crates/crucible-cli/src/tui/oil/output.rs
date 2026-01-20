@@ -71,7 +71,7 @@ impl OutputBuffer {
         let total_visual_rows: usize = line_visual_rows.iter().sum();
         let available_rows = self.terminal_height.saturating_sub(1);
 
-        let (mut viewport_lines, viewport_visual_rows) = self.clamp_to_viewport(
+        let (mut viewport_lines, _base_visual_rows) = self.clamp_to_viewport(
             &all_lines,
             &line_visual_rows,
             total_visual_rows,
@@ -86,6 +86,11 @@ impl OutputBuffer {
             })
             .collect();
         viewport_lines = composite_overlays(&viewport_lines, &overlay_refs, self.terminal_width);
+
+        let viewport_visual_rows: usize = viewport_lines
+            .iter()
+            .map(|line| visual_rows(line, self.terminal_width))
+            .sum();
 
         let all_equal = !self.force_next_redraw
             && viewport_lines.len() == self.previous_lines.len()
