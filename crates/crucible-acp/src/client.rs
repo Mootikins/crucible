@@ -574,6 +574,47 @@ impl CrucibleAcpClient {
         Ok(session_response)
     }
 
+    /// Send SetSessionModeRequest to change the session mode
+    ///
+    /// This sends the `session/set_mode` ACP message to the agent.
+    ///
+    /// # Arguments
+    ///
+    /// * `session_id` - The session ID to set the mode for
+    /// * `mode_id` - The mode ID to set (e.g., "normal", "plan", "auto", "ask", "architect", "code")
+    ///
+    /// # Returns
+    ///
+    /// The SetSessionModeResponse from the agent
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the mode change fails
+    pub async fn set_session_mode(
+        &mut self,
+        session_id: impl Into<String>,
+        mode_id: impl Into<String>,
+    ) -> Result<agent_client_protocol::SetSessionModeResponse> {
+        use agent_client_protocol::{ClientRequest, SetSessionModeRequest};
+
+        let request = SetSessionModeRequest::new(session_id.into(), mode_id.into());
+
+        let response = self
+            .send_request(ClientRequest::SetSessionModeRequest(request))
+            .await?;
+
+        // Extract the result field from JSON-RPC response
+        let result = response.get("result").ok_or_else(|| {
+            ClientError::Session("Missing result field in set mode response".to_string())
+        })?;
+
+        // Parse the result as SetSessionModeResponse
+        let mode_response: agent_client_protocol::SetSessionModeResponse =
+            serde_json::from_value(result.clone())?;
+
+        Ok(mode_response)
+    }
+
     /// Connect to agent with full ACP protocol handshake
     ///
     /// This performs the complete connection sequence:
