@@ -118,15 +118,16 @@ impl Terminal {
                 "graduating"
             );
 
-            // Clear viewport BEFORE writing graduated content to prevent
-            // old viewport lines from bleeding into the graduated output.
-            self.output.clear()?;
+            let cursor_offset = self
+                .last_cursor
+                .as_ref()
+                .map(|c| c.row_from_end)
+                .unwrap_or(0);
+            self.output.clear(cursor_offset)?;
 
-            // Write graduated content to stdout (becomes terminal scrollback).
             write!(self.stdout, "{}", snapshot.stdout_delta)?;
             self.stdout.flush()?;
 
-            // Force redraw since cursor position shifted after graduation output
             self.output.force_redraw();
             self.last_cursor = None;
         }
