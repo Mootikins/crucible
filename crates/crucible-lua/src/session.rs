@@ -18,7 +18,7 @@ use serde::{Deserialize, Serialize};
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::{mpsc, RwLock};
 use tracing::{debug, error, warn};
@@ -86,11 +86,19 @@ impl From<&LuaSessionConfig> for SessionEventConfig {
 ///
 /// Combines EventRing, handler registry, and markdown persistence
 /// into a simple event processing loop.
+///
+/// # Thread Safety
+/// This struct uses `Arc<Mutex<Lua>>` despite `Lua` being `!Send + !Sync`.
+/// The `Arc` is for reference counting within a single-threaded async runtime,
+/// not for cross-thread sharing. Must be used with `spawn_local` or similar.
+#[allow(clippy::arc_with_non_send_sync)]
 pub struct LuaSession {
     config: Arc<LuaSessionConfig>,
     ring: Arc<EventRing<SessionEvent>>,
     handlers: Arc<RwLock<LuaScriptHandlerRegistry>>,
-    lua: Arc<RwLock<Lua>>,
+    /// Lua state wrapped in std::sync::Mutex (not tokio) because Lua is !Send
+    /// and execution is blocking. Use lock() in sync context or spawn_blocking.
+    lua: Arc<Mutex<Lua>>,
     state: Arc<RwLock<SessionState>>,
     event_tx: mpsc::Sender<SessionEvent>,
     event_rx: Arc<RwLock<Option<mpsc::Receiver<SessionEvent>>>>,
@@ -203,7 +211,10 @@ impl LuaSession {
         let matching_handlers = handlers.handlers_for(&event);
 
         if !matching_handlers.is_empty() {
-            let lua = self.lua.read().await;
+            let lua = self
+                .lua
+                .lock()
+                .map_err(|e| LuaError::Runtime(e.to_string()))?;
             match run_handler_chain(&lua, &matching_handlers, event) {
                 Ok(Some(_modified_event)) => {}
                 Ok(None) => {
@@ -458,11 +469,14 @@ impl LuaSessionBuilder {
         // Create or use provided Lua instance
         let lua = self.lua.unwrap_or_default();
 
+        #[allow(clippy::arc_with_non_send_sync)]
+        let lua = Arc::new(Mutex::new(lua));
+
         Ok(LuaSession {
             config,
             ring,
             handlers: Arc::new(RwLock::new(handlers)),
-            lua: Arc::new(RwLock::new(lua)),
+            lua,
             state: Arc::new(RwLock::new(SessionState::Initializing)),
             event_tx,
             event_rx: Arc::new(RwLock::new(Some(event_rx))),

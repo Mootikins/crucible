@@ -390,10 +390,7 @@ impl LuaScriptHandlerRegistry {
                     }
                 };
 
-                let is_fennel = entry_path.extension().is_some_and(|e| e == "fnl");
-
-                // Try @handler annotations (also supports legacy @hook)
-                match parser.parse_handlers(&source, entry_path, is_fennel) {
+                match parser.parse_handlers(&source, entry_path) {
                     Ok(hooks) => {
                         for hook in hooks {
                             // Use with_source to avoid re-reading the file
