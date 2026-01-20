@@ -440,7 +440,7 @@ impl App for InkChatApp {
                 self.process_deferred_queue()
             }
             ChatAppMsg::StreamCancelled => {
-                self.cache.cancel_streaming();
+                self.finalize_streaming();
                 self.status = "Cancelled".to_string();
                 self.process_deferred_queue()
             }
@@ -1804,7 +1804,6 @@ impl InkChatApp {
     fn render_streaming(&self) -> Node {
         when(self.cache.is_streaming(), {
             let term_width = terminal_width();
-            let margins = Margins::assistant();
             let spinner_indent = " ";
 
             let graduated_blocks = self.cache.streaming_graduated_blocks().unwrap_or(&[]);
@@ -1815,6 +1814,11 @@ impl InkChatApp {
                 .iter()
                 .enumerate()
                 .map(|(i, block_content)| {
+                    let margins = if i == 0 {
+                        Margins::assistant()
+                    } else {
+                        Margins::assistant_continuation()
+                    };
                     let style = RenderStyle::natural_with_margins(term_width, margins);
                     let md_node = markdown_to_node_styled(block_content, style);
                     scrollback(
@@ -1825,6 +1829,11 @@ impl InkChatApp {
                 .collect();
 
             let in_progress_node = {
+                let margins = if has_graduated {
+                    Margins::assistant_continuation()
+                } else {
+                    Margins::assistant()
+                };
                 let style = RenderStyle::viewport_with_margins(term_width, margins);
                 let content_node = markdown_to_node_styled(in_progress_content, style);
 
