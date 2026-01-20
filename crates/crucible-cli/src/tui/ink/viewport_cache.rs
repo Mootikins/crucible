@@ -3,6 +3,7 @@ use std::sync::Arc;
 use textwrap::{wrap, Options, WordSplitter};
 
 use super::chat_app::Role;
+use crucible_ink::ContentSource;
 
 const MAX_CACHED_MESSAGES: usize = 32;
 
@@ -149,6 +150,15 @@ impl ViewportCache {
         self.messages.clear();
         self.streaming = None;
         self.anchor = None;
+    }
+}
+
+impl ContentSource for ViewportCache {
+    fn get_content(&self, id: &str) -> Option<&str> {
+        self.messages
+            .iter()
+            .find(|m| m.id == id)
+            .map(|m| m.content())
     }
 }
 
@@ -383,5 +393,131 @@ mod tests {
             &(msg.content as Arc<str>),
             &(cloned.content as Arc<str>)
         ));
+    }
+
+    #[test]
+    fn viewport_cache_implements_content_source() {
+        use crucible_ink::{Compositor, Style};
+
+        let mut cache = ViewportCache::new();
+        cache.push_message(CachedMessage::new("msg-1", Role::User, "Hello World"));
+        cache.push_message(CachedMessage::new("msg-2", Role::Assistant, "Response"));
+
+        let mut comp = Compositor::new(&cache, 80);
+        assert!(comp.render_message("msg-1", Style::new()));
+        assert!(comp.render_message("msg-2", Style::new().bold()));
+        assert!(!comp.render_message("nonexistent", Style::new()));
+
+        let lines = comp.finish();
+        assert_eq!(lines.len(), 2);
+        assert_eq!(lines[0].spans[0].text, "Hello World");
+        assert_eq!(lines[1].spans[0].text, "Response");
+    }
+
+    #[test]
+    fn compositor_with_viewport_cache_multiline() {
+        use crucible_ink::{Compositor, Style};
+
+        let mut cache = ViewportCache::new();
+        cache.push_message(CachedMessage::new(
+            "msg-1",
+            Role::User,
+            "Line 1\nLine 2\nLine 3",
+        ));
+
+        let mut comp = Compositor::new(&cache, 80);
+        comp.render_message("msg-1", Style::new());
+
+        let lines = comp.finish();
+        assert_eq!(lines.len(), 3);
+    }
+
+    #[test]
+    fn resize_preserves_anchor() {
+        let mut cache = ViewportCache::new();
+        cache.push_message(CachedMessage::new(
+            "msg-1",
+            Role::User,
+            "A long message that will wrap at 80 columns but differently at 40",
+        ));
+
+        cache.set_anchor(ViewportAnchor {
+            message_id: "msg-1".to_string(),
+            line_offset: 0,
+        });
+
+        cache.invalidate_all_wraps();
+
+        assert!(cache.anchor().is_some());
+        assert_eq!(cache.anchor().unwrap().message_id, "msg-1");
+    }
+
+    #[test]
+    fn resize_invalidates_wrapping() {
+        let mut cache = ViewportCache::new();
+        let mut msg = CachedMessage::new("test", Role::User, "Content that wraps");
+
+        let _ = msg.wrapped_lines(80);
+        assert!(msg.wrapped.is_some());
+
+        cache.push_message(msg);
+        cache.invalidate_all_wraps();
+
+        for msg in cache.messages() {
+            assert!(msg.wrapped.is_none());
+        }
+    }
+
+    #[test]
+    fn line_buffer_resize_with_anchor_workflow() {
+        use crucible_ink::LineBuffer;
+
+        let mut cache = ViewportCache::new();
+        cache.push_message(CachedMessage::new("msg-1", Role::User, "Message 1"));
+        cache.push_message(CachedMessage::new("msg-2", Role::User, "Message 2"));
+        cache.push_message(CachedMessage::new("msg-3", Role::User, "Message 3"));
+
+        let mut line_buffer = LineBuffer::new(80, 24);
+        let mut prev_line_buffer = LineBuffer::new(80, 24);
+
+        cache.set_anchor(ViewportAnchor {
+            message_id: "msg-2".to_string(),
+            line_offset: 0,
+        });
+
+        line_buffer.resize(40, 12);
+        prev_line_buffer.resize(40, 12);
+        cache.invalidate_all_wraps();
+
+        assert_eq!(line_buffer.width(), 40);
+        assert_eq!(line_buffer.capacity(), 11);
+        assert!(cache.anchor().is_some());
+        assert_eq!(cache.anchor().unwrap().message_id, "msg-2");
+    }
+
+    #[test]
+    fn anchor_workflow_for_resize() {
+        let mut cache = ViewportCache::new();
+
+        for i in 0..10 {
+            cache.push_message(CachedMessage::new(
+                format!("msg-{}", i),
+                Role::User,
+                format!("Content for message {}", i),
+            ));
+        }
+
+        cache.set_anchor(ViewportAnchor {
+            message_id: "msg-5".to_string(),
+            line_offset: 2,
+        });
+
+        cache.invalidate_all_wraps();
+
+        let anchor = cache.anchor().unwrap();
+        assert_eq!(anchor.message_id, "msg-5");
+        assert_eq!(anchor.line_offset, 2);
+
+        assert!(cache.get_content("msg-5").is_some());
     }
 }
