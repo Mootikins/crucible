@@ -6,7 +6,8 @@ use textwrap::{wrap, Options, WordSplitter};
 use super::chat_app::Role;
 use crucible_oil::ContentSource;
 
-pub const MAX_CACHED_ITEMS: usize = 32;
+/// Default maximum cached items in viewport (can be overridden via `with_max_items`)
+pub const DEFAULT_MAX_CACHED_ITEMS: usize = 32;
 
 #[derive(Debug, Clone)]
 pub struct CachedMessage {
@@ -163,6 +164,7 @@ impl CachedChatItem {
 
 pub struct ViewportCache {
     items: VecDeque<CachedChatItem>,
+    max_items: usize,
     streaming: Option<StreamingBuffer>,
     anchor: Option<ViewportAnchor>,
 }
@@ -181,15 +183,24 @@ impl Default for ViewportCache {
 
 impl ViewportCache {
     pub fn new() -> Self {
+        Self::with_max_items(DEFAULT_MAX_CACHED_ITEMS)
+    }
+
+    pub fn with_max_items(max_items: usize) -> Self {
         Self {
-            items: VecDeque::with_capacity(MAX_CACHED_ITEMS),
+            items: VecDeque::with_capacity(max_items),
+            max_items,
             streaming: None,
             anchor: None,
         }
     }
 
+    pub fn max_items(&self) -> usize {
+        self.max_items
+    }
+
     pub fn push_item(&mut self, item: CachedChatItem) {
-        if self.items.len() >= MAX_CACHED_ITEMS {
+        if self.items.len() >= self.max_items {
             self.items.pop_front();
         }
         self.items.push_back(item);
@@ -428,7 +439,7 @@ mod tests {
             ));
         }
 
-        assert!(cache.message_count() <= MAX_CACHED_ITEMS);
+        assert!(cache.message_count() <= DEFAULT_MAX_CACHED_ITEMS);
         assert!(cache.get_content("msg-0").is_none());
         assert!(cache.get_content("msg-49").is_some());
     }

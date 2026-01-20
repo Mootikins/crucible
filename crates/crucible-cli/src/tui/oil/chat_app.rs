@@ -2638,21 +2638,22 @@ mod tests {
 
     #[test]
     fn test_cache_ring_buffer_evicts_oldest() {
-        use crate::tui::oil::viewport_cache::MAX_CACHED_ITEMS;
+        use crate::tui::oil::viewport_cache::DEFAULT_MAX_CACHED_ITEMS;
         let mut app = InkChatApp::init();
+        let max_items = app.cache.max_items();
 
-        for i in 0..(MAX_CACHED_ITEMS + 10) {
+        for i in 0..(max_items + 10) {
             app.add_user_message(format!("Message {}", i));
         }
 
-        assert_eq!(app.cache.item_count(), MAX_CACHED_ITEMS);
+        assert_eq!(app.cache.item_count(), max_items);
 
         let items: Vec<_> = app.cache.items().collect();
         let first = items.first().unwrap().as_message().unwrap();
         assert_eq!(first.content(), "Message 10");
 
         let last = items.last().unwrap().as_message().unwrap();
-        assert_eq!(last.content(), format!("Message {}", MAX_CACHED_ITEMS + 9));
+        assert_eq!(last.content(), format!("Message {}", max_items + 9));
     }
 
     #[test]

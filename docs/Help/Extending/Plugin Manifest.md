@@ -281,45 +281,6 @@ manager.register_handler(handler, Some("my_workflow"));
 let removed_count = manager.unregister_by_owner("my_workflow");
 ```
 
-### Conditional Handlers
-
-Register handlers that auto-remove based on conditions:
-
-```rust
-use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
-
-// Handler that removes itself when a flag is set
-let done_flag = Arc::new(AtomicBool::new(false));
-let done_clone = done_flag.clone();
-
-let handler = HandlerBuilder::new("temp_handler", "session:message")
-    .pattern("*")
-    .priority(50)
-    .build();
-
-manager.register_handler_until(handler, move || {
-    done_clone.load(Ordering::Relaxed)
-});
-
-// Handler runs until done_flag is set to true
-// Call check_conditional_handlers() periodically to clean up
-done_flag.store(true, Ordering::Relaxed);
-manager.check_conditional_handlers(); // Handler is now removed
-```
-
-### Count-Limited Handlers
-
-Register handlers that run a fixed number of times:
-
-```rust
-let handler = HandlerBuilder::new("one_shot", "tool:before")
-    .pattern("search_*")
-    .build();
-
-// Handler will be removed after 3 invocations
-manager.register_handler_for_count(handler, 3);
-```
-
 ### Available Builders
 
 | Builder | Creates | Key Methods |
@@ -337,11 +298,8 @@ manager.register_handler_for_count(handler, 3);
 | `register_command(cmd, owner)` | `RegistrationHandle` | Register a command |
 | `register_view(view, owner)` | `RegistrationHandle` | Register a view |
 | `register_handler(handler, owner)` | `RegistrationHandle` | Register a handler |
-| `register_handler_until(handler, predicate)` | `RegistrationHandle` | Auto-remove when predicate returns true |
-| `register_handler_for_count(handler, n)` | `RegistrationHandle` | Auto-remove after n checks |
 | `unregister(handle)` | `bool` | Remove by handle |
 | `unregister_by_owner(owner)` | `usize` | Remove all with owner |
-| `check_conditional_handlers()` | `Vec<Handle>` | Process conditional handlers |
 
 ## Validation Rules
 

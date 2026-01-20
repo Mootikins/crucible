@@ -53,16 +53,8 @@ impl RegistrationHandle {
 struct RegisteredItem<T> {
     item: T,
     handle: RegistrationHandle,
-    source: RegistrationSource,
+    owner: Option<String>,
 }
-
-#[derive(Debug, Clone, PartialEq)]
-enum RegistrationSource {
-    Annotation { plugin: Option<String> },
-    Programmatic { owner: Option<String> },
-}
-
-type ConditionalPredicate = Box<dyn Fn() -> bool + Send + Sync>;
 
 pub struct PluginManager {
     plugins: HashMap<String, LoadedPlugin>,
@@ -71,7 +63,6 @@ pub struct PluginManager {
     commands: Vec<RegisteredItem<DiscoveredCommand>>,
     views: Vec<RegisteredItem<DiscoveredView>>,
     handlers: Vec<RegisteredItem<DiscoveredHandler>>,
-    conditional_handles: Vec<(RegistrationHandle, ConditionalPredicate)>,
 }
 
 impl Default for PluginManager {
@@ -89,7 +80,6 @@ impl std::fmt::Debug for PluginManager {
             .field("commands_count", &self.commands.len())
             .field("views_count", &self.views.len())
             .field("handlers_count", &self.handlers.len())
-            .field("conditional_handles_count", &self.conditional_handles.len())
             .finish()
     }
 }
@@ -103,12 +93,21 @@ impl PluginManager {
             commands: Vec::new(),
             views: Vec::new(),
             handlers: Vec::new(),
-            conditional_handles: Vec::new(),
         }
     }
 
     pub fn with_standard_paths(kiln_path: Option<&Path>) -> Self {
         let mut paths = Vec::new();
+
+        if let Ok(env_paths) = std::env::var("CRUCIBLE_PLUGIN_PATH") {
+            let separator = if cfg!(windows) { ';' } else { ':' };
+            for p in env_paths.split(separator) {
+                let path = PathBuf::from(p);
+                if !p.is_empty() && !paths.contains(&path) {
+                    paths.push(path);
+                }
+            }
+        }
 
         if let Some(config_dir) = dirs::config_dir() {
             paths.push(config_dir.join("crucible").join("plugins"));
@@ -465,7 +464,7 @@ impl PluginManager {
                     self.tools.push(RegisteredItem {
                         item: tool,
                         handle: RegistrationHandle::new(),
-                        source: RegistrationSource::Annotation { plugin: None },
+                        owner: None,
                     });
                 }
             }
@@ -482,7 +481,7 @@ impl PluginManager {
                     self.commands.push(RegisteredItem {
                         item: cmd,
                         handle: RegistrationHandle::new(),
-                        source: RegistrationSource::Annotation { plugin: None },
+                        owner: None,
                     });
                 }
             }
@@ -499,7 +498,7 @@ impl PluginManager {
                     self.views.push(RegisteredItem {
                         item: view,
                         handle: RegistrationHandle::new(),
-                        source: RegistrationSource::Annotation { plugin: None },
+                        owner: None,
                     });
                 }
             }
@@ -519,7 +518,7 @@ impl PluginManager {
                     self.handlers.push(RegisteredItem {
                         item: handler,
                         handle: RegistrationHandle::new(),
-                        source: RegistrationSource::Annotation { plugin: None },
+                        owner: None,
                     });
                 }
             }
@@ -573,9 +572,7 @@ impl PluginManager {
         self.tools.push(RegisteredItem {
             item: tool,
             handle,
-            source: RegistrationSource::Programmatic {
-                owner: owner.map(String::from),
-            },
+            owner: owner.map(String::from),
         });
         handle
     }
@@ -589,9 +586,7 @@ impl PluginManager {
         self.commands.push(RegisteredItem {
             item: command,
             handle,
-            source: RegistrationSource::Programmatic {
-                owner: owner.map(String::from),
-            },
+            owner: owner.map(String::from),
         });
         handle
     }
@@ -605,9 +600,7 @@ impl PluginManager {
         self.views.push(RegisteredItem {
             item: view,
             handle,
-            source: RegistrationSource::Programmatic {
-                owner: owner.map(String::from),
-            },
+            owner: owner.map(String::from),
         });
         handle
     }
@@ -621,9 +614,7 @@ impl PluginManager {
         self.handlers.push(RegisteredItem {
             item: handler,
             handle,
-            source: RegistrationSource::Programmatic {
-                owner: owner.map(String::from),
-            },
+            owner: owner.map(String::from),
         });
         handle
     }
@@ -652,71 +643,19 @@ impl PluginManager {
     }
 
     pub fn unregister_by_owner(&mut self, owner: &str) -> usize {
-        let owner_source = RegistrationSource::Programmatic {
-            owner: Some(owner.to_string()),
-        };
-
         let before =
             self.tools.len() + self.commands.len() + self.views.len() + self.handlers.len();
 
-        self.tools.retain(|t| t.source != owner_source);
-        self.commands.retain(|c| c.source != owner_source);
-        self.views.retain(|v| v.source != owner_source);
-        self.handlers.retain(|h| h.source != owner_source);
+        let matches_owner =
+            |item_owner: &Option<String>| item_owner.as_ref().is_some_and(|o| o == owner);
+
+        self.tools.retain(|t| !matches_owner(&t.owner));
+        self.commands.retain(|c| !matches_owner(&c.owner));
+        self.views.retain(|v| !matches_owner(&v.owner));
+        self.handlers.retain(|h| !matches_owner(&h.owner));
 
         let after = self.tools.len() + self.commands.len() + self.views.len() + self.handlers.len();
         before - after
-    }
-
-    pub fn register_handler_until<F>(
-        &mut self,
-        handler: DiscoveredHandler,
-        condition: F,
-    ) -> RegistrationHandle
-    where
-        F: Fn() -> bool + Send + Sync + 'static,
-    {
-        let handle = self.register_handler(handler, None);
-        self.conditional_handles.push((handle, Box::new(condition)));
-        handle
-    }
-
-    pub fn register_handler_for_count(
-        &mut self,
-        handler: DiscoveredHandler,
-        max_invocations: usize,
-    ) -> RegistrationHandle {
-        let counter = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
-        let counter_clone = counter.clone();
-
-        let handle = self.register_handler(handler, None);
-        self.conditional_handles.push((
-            handle,
-            Box::new(move || {
-                let count = counter_clone.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                count >= max_invocations
-            }),
-        ));
-        handle
-    }
-
-    pub fn check_conditional_handlers(&mut self) -> Vec<RegistrationHandle> {
-        let mut expired = Vec::new();
-
-        self.conditional_handles.retain(|(handle, condition)| {
-            if condition() {
-                expired.push(*handle);
-                false
-            } else {
-                true
-            }
-        });
-
-        for handle in &expired {
-            self.unregister(*handle);
-        }
-
-        expired
     }
 }
 
@@ -1494,89 +1433,5 @@ enabled: false
         manager.unregister(handle);
         assert_eq!(manager.tools().len(), 1);
         assert_eq!(manager.tools()[0].name, "test_tool");
-    }
-
-    #[test]
-    fn test_conditional_handler_until() {
-        use std::sync::atomic::{AtomicBool, Ordering};
-        use std::sync::Arc;
-
-        let mut manager = PluginManager::new();
-        let should_remove = Arc::new(AtomicBool::new(false));
-        let should_remove_clone = should_remove.clone();
-
-        let handler = HandlerBuilder::new("conditional", "test:event").build();
-        let _handle = manager
-            .register_handler_until(handler, move || should_remove_clone.load(Ordering::Relaxed));
-
-        assert_eq!(manager.handlers().len(), 1);
-
-        let expired = manager.check_conditional_handlers();
-        assert!(expired.is_empty());
-        assert_eq!(manager.handlers().len(), 1);
-
-        should_remove.store(true, Ordering::Relaxed);
-
-        let expired = manager.check_conditional_handlers();
-        assert_eq!(expired.len(), 1);
-        assert_eq!(manager.handlers().len(), 0);
-    }
-
-    #[test]
-    fn test_conditional_handler_for_count() {
-        let mut manager = PluginManager::new();
-
-        let handler = HandlerBuilder::new("counted", "test:event").build();
-        let _handle = manager.register_handler_for_count(handler, 3);
-
-        assert_eq!(manager.handlers().len(), 1);
-
-        for i in 0..4 {
-            let expired = manager.check_conditional_handlers();
-            if i < 3 {
-                assert!(expired.is_empty(), "Should not expire on check {}", i);
-                assert_eq!(
-                    manager.handlers().len(),
-                    1,
-                    "Handler should exist on check {}",
-                    i
-                );
-            } else {
-                assert_eq!(expired.len(), 1, "Should expire on check {}", i);
-                assert_eq!(manager.handlers().len(), 0);
-            }
-        }
-    }
-
-    #[test]
-    fn test_multiple_conditional_handlers() {
-        use std::sync::atomic::{AtomicBool, Ordering};
-        use std::sync::Arc;
-
-        let mut manager = PluginManager::new();
-
-        let flag1 = Arc::new(AtomicBool::new(false));
-        let flag2 = Arc::new(AtomicBool::new(false));
-        let flag1_clone = flag1.clone();
-        let flag2_clone = flag2.clone();
-
-        let h1 = HandlerBuilder::new("h1", "event1").build();
-        let h2 = HandlerBuilder::new("h2", "event2").build();
-
-        manager.register_handler_until(h1, move || flag1_clone.load(Ordering::Relaxed));
-        manager.register_handler_until(h2, move || flag2_clone.load(Ordering::Relaxed));
-
-        assert_eq!(manager.handlers().len(), 2);
-
-        flag1.store(true, Ordering::Relaxed);
-        let expired = manager.check_conditional_handlers();
-        assert_eq!(expired.len(), 1);
-        assert_eq!(manager.handlers().len(), 1);
-        assert_eq!(manager.handlers()[0].name, "h2");
-
-        flag2.store(true, Ordering::Relaxed);
-        let expired = manager.check_conditional_handlers();
-        assert_eq!(expired.len(), 1);
-        assert_eq!(manager.handlers().len(), 0);
     }
 }
