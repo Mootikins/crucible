@@ -3600,11 +3600,11 @@ dependencies = [
  "crucible-daemon",
  "crucible-daemon-client",
  "crucible-enrichment",
- "crucible-ink",
  "crucible-lance",
  "crucible-llm",
  "crucible-lua",
  "crucible-observe",
+ "crucible-oil",
  "crucible-pipeline",
  "crucible-rig",
  "crucible-skills",
@@ -3620,6 +3620,7 @@ dependencies = [
  "indicatif 0.18.3",
  "insta",
  "markdown-it",
+ "mlua",
  "mockall",
  "nix 0.30.1",
  "once_cell",
@@ -3790,19 +3791,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "crucible-ink"
-version = "0.1.0"
-dependencies = [
- "crossterm 0.29.0",
- "insta",
- "similar",
- "taffy",
- "test-case",
- "textwrap 0.16.2",
- "unicode-width 0.2.0",
-]
-
-[[package]]
 name = "crucible-lance"
 version = "0.1.0"
 dependencies = [
@@ -3873,6 +3861,7 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "crucible-core",
+ "crucible-oil",
  "dirs 6.0.0",
  "full_moon",
  "glob",
@@ -3907,6 +3896,20 @@ dependencies = [
  "tokio",
  "tokio-test",
  "tracing",
+]
+
+[[package]]
+name = "crucible-oil"
+version = "0.1.0"
+dependencies = [
+ "crossterm 0.29.0",
+ "html_parser",
+ "insta",
+ "similar",
+ "taffy",
+ "test-case",
+ "textwrap 0.16.2",
+ "unicode-width 0.2.0",
 ]
 
 [[package]]
@@ -5924,6 +5927,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "doc-comment"
+version = "0.3.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "780955b8b195a21ab8e4ac6b60dd1dbdcec1dc6c51c0617964b08c81785e12c9"
+
+[[package]]
 name = "document-features"
 version = "0.2.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7876,6 +7885,21 @@ dependencies = [
  "log",
  "markup5ever",
  "match_token",
+]
+
+[[package]]
+name = "html_parser"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f6f56db07b6612644f6f7719f8ef944f75fff9d6378fdf3d316fd32194184abd"
+dependencies = [
+ "doc-comment",
+ "pest",
+ "pest_derive",
+ "serde",
+ "serde_derive",
+ "serde_json",
+ "thiserror 1.0.69",
 ]
 
 [[package]]

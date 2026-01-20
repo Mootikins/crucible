@@ -25,7 +25,7 @@ members = [
     "crates/crucible-lance",
     "crates/crucible-benchmarks",
     "crates/crucible-observe",
-    "crates/crucible-ink",
+    "crates/crucible-oil",
 ]
 default-members = ["crates/crucible-cli"]
 
@@ -151,6 +151,7 @@ colored = "3.0"
 # CLI specific dependencies
 indicatif = "0.18"
 dirs = "6.0"
+mlua = { version = "0.11", features = ["vendored", "lua54"] }
 csv = "1.4"
 nu-ansi-term = "0.50"
 crossterm = { version = "0.29", features = ["event-stream"] }
@@ -173,7 +174,7 @@ crucible-web = { path = "crates/crucible-web" }
 crucible-observe = { path = "crates/crucible-observe" }
 crucible-daemon = { path = "crates/crucible-daemon" }
 crucible-daemon-client = { path = "crates/crucible-daemon-client" }
-crucible-ink = { path = "crates/crucible-ink" }
+crucible-oil = { path = "crates/crucible-oil" }
 oq = "0.1"
 
 # Workspace-level test feature flags
