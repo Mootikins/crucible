@@ -1,5 +1,117 @@
 use crate::tui::ink::*;
 
+mod viewport_layout_tests {
+    use super::*;
+
+    #[test]
+    fn viewport_with_input_at_top_no_streaming() {
+        let mut runtime = TestRuntime::new(80, 24);
+
+        let tree = col([
+            scrollback("msg-1", [text("User question")]),
+            scrollback("msg-2", [text("Assistant answer")]),
+            text_input("next question", 13),
+        ]);
+
+        runtime.render(&tree);
+
+        let viewport = runtime.viewport_content();
+        assert!(
+            viewport.contains("next question"),
+            "Input should be in viewport"
+        );
+        assert!(
+            !viewport.contains("User question"),
+            "Graduated content should not be in viewport"
+        );
+        assert!(
+            !viewport.contains("Assistant answer"),
+            "Graduated content should not be in viewport"
+        );
+    }
+
+    #[test]
+    fn viewport_input_appears_before_streaming_content() {
+        let mut runtime = TestRuntime::new(80, 24);
+
+        let tree = col([
+            scrollback("msg-1", [text("Previous message")]),
+            text_input("typing here", 11),
+            text("Streaming response..."),
+        ]);
+
+        runtime.render(&tree);
+
+        let viewport = runtime.viewport_content();
+        let input_pos = viewport.find("typing here");
+        let streaming_pos = viewport.find("Streaming");
+
+        assert!(
+            input_pos.is_some(),
+            "Input should be in viewport, got: {:?}",
+            viewport
+        );
+        assert!(
+            streaming_pos.is_some(),
+            "Streaming should be in viewport, got: {:?}",
+            viewport
+        );
+
+        if let (Some(inp), Some(stream)) = (input_pos, streaming_pos) {
+            assert!(
+                inp < stream,
+                "Input ({}) should appear before streaming content ({})",
+                inp,
+                stream
+            );
+        }
+    }
+
+    #[test]
+    fn all_completed_messages_graduate_to_stdout() {
+        let mut runtime = TestRuntime::new(80, 24);
+
+        let tree = col([
+            scrollback("user-1", [text("First question")]),
+            scrollback("assistant-1", [text("First answer")]),
+            scrollback("user-2", [text("Second question")]),
+            scrollback("assistant-2", [text("Second answer")]),
+            text_input("", 0),
+        ]);
+
+        runtime.render(&tree);
+
+        let stdout = runtime.stdout_content();
+        assert!(stdout.contains("First question"));
+        assert!(stdout.contains("First answer"));
+        assert!(stdout.contains("Second question"));
+        assert!(stdout.contains("Second answer"));
+
+        let viewport = runtime.viewport_content();
+        assert!(!viewport.contains("First question"));
+        assert!(!viewport.contains("Second answer"));
+    }
+
+    #[test]
+    fn blank_line_between_graduated_content_and_viewport() {
+        let mut runtime = TestRuntime::new(80, 24);
+
+        let tree = col([
+            scrollback("msg-1", [text("Graduated content")]),
+            text(""),
+            text_input("input", 5),
+        ]);
+
+        runtime.render(&tree);
+
+        let stdout = runtime.stdout_content();
+        assert!(
+            stdout.ends_with("\r\n") || stdout.ends_with('\n'),
+            "Stdout should end with newline for clean separation"
+        );
+    }
+}
+
 #[test]
 fn static_node_graduates_to_stdout() {
     let mut runtime = TestRuntime::new(80, 24);
