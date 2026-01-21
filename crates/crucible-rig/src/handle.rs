@@ -28,7 +28,9 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::{debug, info, warn};
 
+use crate::agent::{build_agent_from_components_generic, AgentComponents};
 use crate::openai_reasoning::{self, ReasoningChunk};
+use crate::providers::RigClient;
 use crate::xml_tool_parser;
 
 /// Check if a tool name represents a write operation
@@ -104,6 +106,15 @@ where
 
     /// Workspace context for mode synchronization with tools
     workspace_ctx: Option<crate::workspace_tools::WorkspaceContext>,
+
+    /// Components for rebuilding the agent (enables model switching)
+    components: Option<AgentComponents>,
+
+    /// Flag indicating agent needs rebuild (set by switch_model, cleared by rebuild)
+    needs_rebuild: AtomicBool,
+
+    /// Type-erased rebuild function (set when components are provided)
+    rebuild_fn: Option<Arc<dyn Fn(&AgentComponents, &str) -> Result<Agent<M>, ChatError> + Send + Sync>>,
 }
 
 impl<M> RigAgentHandle<M>
@@ -133,6 +144,9 @@ where
             thinking_budget: None,
             http_client: reqwest::Client::new(),
             workspace_ctx: None,
+            components: None,
+            needs_rebuild: AtomicBool::new(false),
+            rebuild_fn: None,
         }
     }
 
@@ -219,7 +233,51 @@ where
     pub async fn clear_history(&self) {
         self.chat_history.write().await.clear();
     }
+}
 
+impl RigAgentHandle<rig::providers::ollama::CompletionModel> {
+    /// Set components with Ollama-specific rebuild support
+    pub fn with_ollama_components(mut self, components: AgentComponents) -> Self {
+        self.workspace_ctx = Some(components.workspace_ctx.clone());
+        self.ollama_endpoint = components.ollama_endpoint.clone();
+        self.thinking_budget = components.thinking_budget;
+        self.model_name = Some(components.config.model.clone());
+
+        let rebuild_fn: Arc<
+            dyn Fn(
+                    &AgentComponents,
+                    &str,
+                )
+                    -> Result<rig::agent::Agent<rig::providers::ollama::CompletionModel>, ChatError>
+                + Send
+                + Sync,
+        > = Arc::new(|comp, model| {
+            let client = match &comp.client {
+                RigClient::Ollama(c) => c,
+                _ => {
+                    return Err(ChatError::NotSupported(
+                        "Ollama handle received non-Ollama client".into(),
+                    ))
+                }
+            };
+
+            let built = build_agent_from_components_generic(comp, model, client)
+                .map_err(|e| ChatError::Internal(format!("Agent rebuild failed: {}", e)))?;
+
+            Ok(built.agent)
+        });
+
+        self.rebuild_fn = Some(rebuild_fn);
+        self.components = Some(components);
+        self
+    }
+}
+
+impl<M> RigAgentHandle<M>
+where
+    M: CompletionModel + 'static,
+    M::StreamingResponse: Clone + Send + Sync + rig::completion::GetTokenUsage,
+{
     /// Stream with custom SSE parsing for reasoning_content extraction
     ///
     /// This bypasses Rig's streaming to directly parse the `reasoning_content`
@@ -228,6 +286,7 @@ where
     ///
     /// Note: This currently doesn't support multi-turn tool execution. Tool calls
     /// are emitted but not automatically executed.
+    #[allow(dead_code)]
     fn send_message_stream_with_reasoning(
         &self,
         message: String,
@@ -460,32 +519,21 @@ where
 
         debug!("RigAgentHandle::send_message_stream called: {}", message);
 
-        // Use custom streaming if we have an endpoint and model name set
-        // This enables model switching at runtime (reasoning_endpoint or ollama_endpoint)
-        let custom_endpoint = self.reasoning_endpoint.clone().or_else(|| {
-            self.ollama_endpoint
-                .as_ref()
-                .map(|e| format!("{}/v1", e.trim_end_matches('/')))
-        });
-
-        debug!(
-            reasoning_endpoint = ?self.reasoning_endpoint,
-            ollama_endpoint = ?self.ollama_endpoint,
-            model_name = ?self.model_name,
-            custom_endpoint = ?custom_endpoint,
-            "Evaluating streaming path"
-        );
-
-        if let (Some(endpoint), Some(model)) = (custom_endpoint, &self.model_name) {
-            info!(
-                endpoint = %endpoint,
-                model = %model,
-                "Using custom streaming path with model switching support"
-            );
-            return self.send_message_stream_with_reasoning(message, endpoint, model.clone());
+        if self.needs_rebuild.swap(false, Ordering::SeqCst) {
+            if let (Some(rebuild_fn), Some(components), Some(model)) =
+                (&self.rebuild_fn, &self.components, &self.model_name)
+            {
+                match rebuild_fn(components, model) {
+                    Ok(new_agent) => {
+                        self.agent = Arc::new(new_agent);
+                        info!(model = %model, "Agent rebuilt before streaming");
+                    }
+                    Err(e) => {
+                        warn!(error = %e, "Failed to rebuild agent, continuing with old agent");
+                    }
+                }
+            }
         }
-
-        debug!("Using native Rig streaming (model switching NOT available)");
 
         let agent = Arc::clone(&self.agent);
         let history = Arc::clone(&self.chat_history);
@@ -1045,6 +1093,10 @@ where
     async fn switch_model(&mut self, model_id: &str) -> ChatResult<()> {
         info!(model = %model_id, "Switching model");
         self.model_name = Some(model_id.to_string());
+        if let Some(ref mut comp) = self.components {
+            comp.config.model = model_id.to_string();
+            self.needs_rebuild.store(true, Ordering::SeqCst);
+        }
         Ok(())
     }
 
@@ -2049,5 +2101,78 @@ mod tests {
         }
 
         assert!(got_response, "Should have received response from new model");
+    }
+
+    #[tokio::test]
+    async fn test_model_switching_with_components_sets_rebuild_flag() {
+        use crate::agent::{AgentComponents, AgentConfig};
+        use crate::providers::RigClient;
+        use crate::workspace_tools::WorkspaceContext;
+        use tempfile::TempDir;
+
+        let temp = TempDir::new().unwrap();
+        let client = create_test_client();
+        let agent = client.agent("llama3.2").preamble("Test").build();
+
+        let config = AgentConfig::new("llama3.2", "Test");
+        let ws_ctx = WorkspaceContext::new(temp.path());
+        let components = AgentComponents::new(config, RigClient::Ollama(client), ws_ctx);
+
+        let mut handle = RigAgentHandle::new(agent).with_ollama_components(components);
+
+        assert!(!handle.needs_rebuild.load(Ordering::SeqCst));
+        assert_eq!(handle.current_model(), Some("llama3.2"));
+
+        handle.switch_model("qwen3-8b").await.unwrap();
+
+        assert!(handle.needs_rebuild.load(Ordering::SeqCst));
+        assert_eq!(handle.current_model(), Some("qwen3-8b"));
+    }
+
+    #[tokio::test]
+    async fn test_model_switching_preserves_history() {
+        use crate::agent::{AgentComponents, AgentConfig};
+        use crate::providers::RigClient;
+        use crate::workspace_tools::WorkspaceContext;
+        use tempfile::TempDir;
+
+        let temp = TempDir::new().unwrap();
+        let client = create_test_client();
+        let agent = client.agent("llama3.2").preamble("Test").build();
+
+        let config = AgentConfig::new("llama3.2", "Test");
+        let ws_ctx = WorkspaceContext::new(temp.path());
+        let components = AgentComponents::new(config, RigClient::Ollama(client), ws_ctx);
+
+        let mut handle = RigAgentHandle::new(agent)
+            .with_ollama_components(components)
+            .with_history(vec![
+                Message::user("Hello"),
+                Message::assistant("Hi there!"),
+            ]);
+
+        assert_eq!(handle.get_history().await.len(), 2);
+
+        handle.switch_model("qwen3-8b").await.unwrap();
+
+        assert_eq!(
+            handle.get_history().await.len(),
+            2,
+            "History should be preserved after model switch"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_without_components_model_switch_does_not_set_rebuild() {
+        let agent = create_test_agent();
+        let mut handle = RigAgentHandle::new(agent);
+
+        handle.switch_model("new-model").await.unwrap();
+
+        assert!(
+            !handle.needs_rebuild.load(Ordering::SeqCst),
+            "Without components, rebuild flag should not be set"
+        );
+        assert_eq!(handle.current_model(), Some("new-model"));
     }
 }
