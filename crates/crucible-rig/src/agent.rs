@@ -58,6 +58,70 @@ pub enum AgentBuildError {
 /// Result type for agent building operations
 pub type AgentBuildResult<T> = Result<T, AgentBuildError>;
 
+fn configure_builder<C>(
+    client: &C,
+    config: &AgentConfig,
+) -> AgentBuilder<C::CompletionModel>
+where
+    C: CompletionClient,
+    C::CompletionModel: CompletionModel<Client = C>,
+{
+    let mut builder = client.agent(&config.model);
+    builder = builder.preamble(&config.system_prompt);
+
+    if let Some(temp) = config.temperature {
+        builder = builder.temperature(temp);
+    }
+
+    if let Some(ref params) = config.additional_params {
+        builder = builder.additional_params(params.clone());
+    }
+
+    builder
+}
+
+fn attach_tools<M: CompletionModel>(
+    builder: AgentBuilder<M>,
+    ctx: &WorkspaceContext,
+    kiln_ctx: Option<&KilnContext>,
+    read_only: bool,
+) -> Agent<M> {
+    match (read_only, kiln_ctx) {
+        (true, None) => builder
+            .tool(ReadFileTool::new(ctx.clone()))
+            .tool(GlobTool::new(ctx.clone()))
+            .tool(GrepTool::new(ctx.clone()))
+            .build(),
+        (true, Some(kiln)) => builder
+            .tool(ReadFileTool::new(ctx.clone()))
+            .tool(GlobTool::new(ctx.clone()))
+            .tool(GrepTool::new(ctx.clone()))
+            .tool(SemanticSearchTool::new(kiln.clone()))
+            .tool(ReadNoteTool::new(kiln.clone()))
+            .tool(ListNotesTool::new(kiln.clone()))
+            .build(),
+        (false, None) => builder
+            .tool(ReadFileTool::new(ctx.clone()))
+            .tool(EditFileTool::new(ctx.clone()))
+            .tool(WriteFileTool::new(ctx.clone()))
+            .tool(BashTool::new(ctx.clone()))
+            .tool(GlobTool::new(ctx.clone()))
+            .tool(GrepTool::new(ctx.clone()))
+            .build(),
+        (false, Some(kiln)) => builder
+            .tool(ReadFileTool::new(ctx.clone()))
+            .tool(EditFileTool::new(ctx.clone()))
+            .tool(WriteFileTool::new(ctx.clone()))
+            .tool(BashTool::new(ctx.clone()))
+            .tool(GlobTool::new(ctx.clone()))
+            .tool(GrepTool::new(ctx.clone()))
+            .tool(SemanticSearchTool::new(kiln.clone()))
+            .tool(ReadNoteTool::new(kiln.clone()))
+            .tool(ListNotesTool::new(kiln.clone()))
+            .build(),
+    }
+}
+
 /// Configuration extracted from an AgentCard for building agents
 #[derive(Debug, Clone)]
 pub struct AgentConfig {
@@ -238,51 +302,13 @@ where
     let ctx = components.workspace_ctx.clone();
     let kiln_ctx = components.kiln_ctx.clone();
 
-    let mut builder: AgentBuilder<C::CompletionModel> = client.agent(&config.model);
-    builder = builder.preamble(&config.system_prompt);
-
-    if let Some(temp) = config.temperature {
-        builder = builder.temperature(temp);
-    }
-
-    if let Some(ref params) = config.additional_params {
-        builder = builder.additional_params(params.clone());
-    }
-
-    let agent = match (components.model_size.is_read_only(), &kiln_ctx) {
-        (true, None) => builder
-            .tool(ReadFileTool::new(ctx.clone()))
-            .tool(GlobTool::new(ctx.clone()))
-            .tool(GrepTool::new(ctx.clone()))
-            .build(),
-        (true, Some(kiln)) => builder
-            .tool(ReadFileTool::new(ctx.clone()))
-            .tool(GlobTool::new(ctx.clone()))
-            .tool(GrepTool::new(ctx.clone()))
-            .tool(SemanticSearchTool::new(kiln.clone()))
-            .tool(ReadNoteTool::new(kiln.clone()))
-            .tool(ListNotesTool::new(kiln.clone()))
-            .build(),
-        (false, None) => builder
-            .tool(ReadFileTool::new(ctx.clone()))
-            .tool(EditFileTool::new(ctx.clone()))
-            .tool(WriteFileTool::new(ctx.clone()))
-            .tool(BashTool::new(ctx.clone()))
-            .tool(GlobTool::new(ctx.clone()))
-            .tool(GrepTool::new(ctx.clone()))
-            .build(),
-        (false, Some(kiln)) => builder
-            .tool(ReadFileTool::new(ctx.clone()))
-            .tool(EditFileTool::new(ctx.clone()))
-            .tool(WriteFileTool::new(ctx.clone()))
-            .tool(BashTool::new(ctx.clone()))
-            .tool(GlobTool::new(ctx.clone()))
-            .tool(GrepTool::new(ctx.clone()))
-            .tool(SemanticSearchTool::new(kiln.clone()))
-            .tool(ReadNoteTool::new(kiln.clone()))
-            .tool(ListNotesTool::new(kiln.clone()))
-            .build(),
-    };
+    let builder = configure_builder(client, &config);
+    let agent = attach_tools(
+        builder,
+        &ctx,
+        kiln_ctx.as_ref(),
+        components.model_size.is_read_only(),
+    );
 
     Ok(BuiltAgent {
         agent,
@@ -338,19 +364,7 @@ where
     C: CompletionClient,
     C::CompletionModel: CompletionModel<Client = C>,
 {
-    let mut builder: AgentBuilder<C::CompletionModel> = client.agent(&config.model);
-
-    builder = builder.preamble(&config.system_prompt);
-
-    if let Some(temp) = config.temperature {
-        builder = builder.temperature(temp);
-    }
-
-    if let Some(ref params) = config.additional_params {
-        builder = builder.additional_params(params.clone());
-    }
-
-    Ok(builder.build())
+    Ok(configure_builder(client, config).build())
 }
 
 /// Build a Rig agent with workspace tools from configuration and client.
@@ -389,28 +403,8 @@ where
     C::CompletionModel: CompletionModel<Client = C>,
 {
     let ctx = WorkspaceContext::new(workspace_root.as_ref());
-
-    let mut builder: AgentBuilder<C::CompletionModel> = client.agent(&config.model);
-
-    builder = builder.preamble(&config.system_prompt);
-
-    if let Some(temp) = config.temperature {
-        builder = builder.temperature(temp);
-    }
-
-    if let Some(ref params) = config.additional_params {
-        builder = builder.additional_params(params.clone());
-    }
-
-    let agent = builder
-        .tool(ReadFileTool::new(ctx.clone()))
-        .tool(EditFileTool::new(ctx.clone()))
-        .tool(WriteFileTool::new(ctx.clone()))
-        .tool(BashTool::new(ctx.clone()))
-        .tool(GlobTool::new(ctx.clone()))
-        .tool(GrepTool::new(ctx.clone()))
-        .build();
-
+    let builder = configure_builder(client, config);
+    let agent = attach_tools(builder, &ctx, None, false);
     Ok((agent, ctx))
 }
 
@@ -429,53 +423,8 @@ where
     C::CompletionModel: CompletionModel<Client = C>,
 {
     let ctx = WorkspaceContext::new(workspace_root.as_ref());
-
-    let mut builder: AgentBuilder<C::CompletionModel> = client.agent(&config.model);
-
-    builder = builder.preamble(&config.system_prompt);
-
-    if let Some(temp) = config.temperature {
-        builder = builder.temperature(temp);
-    }
-
-    if let Some(ref params) = config.additional_params {
-        builder = builder.additional_params(params.clone());
-    }
-
-    let agent = match (model_size.is_read_only(), kiln_ctx) {
-        (true, None) => builder
-            .tool(ReadFileTool::new(ctx.clone()))
-            .tool(GlobTool::new(ctx.clone()))
-            .tool(GrepTool::new(ctx.clone()))
-            .build(),
-        (true, Some(kiln)) => builder
-            .tool(ReadFileTool::new(ctx.clone()))
-            .tool(GlobTool::new(ctx.clone()))
-            .tool(GrepTool::new(ctx.clone()))
-            .tool(SemanticSearchTool::new(kiln.clone()))
-            .tool(ReadNoteTool::new(kiln.clone()))
-            .tool(ListNotesTool::new(kiln))
-            .build(),
-        (false, None) => builder
-            .tool(ReadFileTool::new(ctx.clone()))
-            .tool(EditFileTool::new(ctx.clone()))
-            .tool(WriteFileTool::new(ctx.clone()))
-            .tool(BashTool::new(ctx.clone()))
-            .tool(GlobTool::new(ctx.clone()))
-            .tool(GrepTool::new(ctx.clone()))
-            .build(),
-        (false, Some(kiln)) => builder
-            .tool(ReadFileTool::new(ctx.clone()))
-            .tool(EditFileTool::new(ctx.clone()))
-            .tool(WriteFileTool::new(ctx.clone()))
-            .tool(BashTool::new(ctx.clone()))
-            .tool(GlobTool::new(ctx.clone()))
-            .tool(GrepTool::new(ctx.clone()))
-            .tool(SemanticSearchTool::new(kiln.clone()))
-            .tool(ReadNoteTool::new(kiln.clone()))
-            .tool(ListNotesTool::new(kiln))
-            .build(),
-    };
+    let builder = configure_builder(client, config);
+    let agent = attach_tools(builder, &ctx, kiln_ctx.as_ref(), model_size.is_read_only());
     Ok((agent, ctx))
 }
 
@@ -516,39 +465,8 @@ where
     C::CompletionModel: CompletionModel<Client = C>,
 {
     let ctx = WorkspaceContext::new(workspace_root.as_ref());
-
-    let mut builder: AgentBuilder<C::CompletionModel> = client.agent(&config.model);
-
-    builder = builder.preamble(&config.system_prompt);
-
-    if let Some(temp) = config.temperature {
-        builder = builder.temperature(temp);
-    }
-
-    if let Some(ref params) = config.additional_params {
-        builder = builder.additional_params(params.clone());
-    }
-
-    if model_size.is_read_only() {
-        // Small models: read-only tools only
-        let agent = builder
-            .tool(ReadFileTool::new(ctx.clone()))
-            .tool(GlobTool::new(ctx.clone()))
-            .tool(GrepTool::new(ctx))
-            .build();
-        Ok(agent)
-    } else {
-        // Medium/Large models: all tools
-        let agent = builder
-            .tool(ReadFileTool::new(ctx.clone()))
-            .tool(EditFileTool::new(ctx.clone()))
-            .tool(WriteFileTool::new(ctx.clone()))
-            .tool(BashTool::new(ctx.clone()))
-            .tool(GlobTool::new(ctx.clone()))
-            .tool(GrepTool::new(ctx))
-            .build();
-        Ok(agent)
-    }
+    let builder = configure_builder(client, config);
+    Ok(attach_tools(builder, &ctx, None, model_size.is_read_only()))
 }
 
 #[cfg(test)]
