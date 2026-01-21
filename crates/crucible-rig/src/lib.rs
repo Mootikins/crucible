@@ -48,8 +48,9 @@ pub mod xml_tool_parser;
 
 // Re-export key types
 pub use agent::{
-    build_agent, build_agent_from_config, build_agent_with_kiln_tools, build_agent_with_model_size,
-    build_agent_with_tools, AgentBuildError, AgentConfig,
+    build_agent, build_agent_from_components_generic, build_agent_from_config,
+    build_agent_with_kiln_tools, build_agent_with_model_size, build_agent_with_tools,
+    AgentBuildError, AgentComponents, AgentConfig, BuiltAgent,
 };
 pub use completion::RigCompletionBackend;
 pub use crucible_agent::{CrucibleAgent, CrucibleAgentError, CrucibleAgentResult};
