@@ -99,11 +99,15 @@ pub async fn create_agent_from_session_config(
 
     let ollama_endpoint = agent_config.endpoint.clone();
 
+    let thinking_budget = agent_config.thinking_budget;
+
     let handle: Box<dyn AgentHandle + Send + Sync> = match client {
         RigClient::Ollama(ollama_client) => {
             let agent = crucible_rig::build_agent_from_config(&rig_agent_config, &ollama_client)
                 .map_err(|e| AgentFactoryError::AgentBuild(e.to_string()))?;
-            let mut handle = RigAgentHandle::new(agent).with_model(agent_config.model.clone());
+            let mut handle = RigAgentHandle::new(agent)
+                .with_model(agent_config.model.clone())
+                .with_thinking_budget(thinking_budget);
             if let Some(endpoint) = &ollama_endpoint {
                 handle = handle.with_ollama_endpoint(endpoint.clone());
             }
@@ -112,7 +116,9 @@ pub async fn create_agent_from_session_config(
         RigClient::OpenAI(openai_client) => {
             let agent = crucible_rig::build_agent_from_config(&rig_agent_config, &openai_client)
                 .map_err(|e| AgentFactoryError::AgentBuild(e.to_string()))?;
-            let mut handle = RigAgentHandle::new(agent).with_model(agent_config.model.clone());
+            let mut handle = RigAgentHandle::new(agent)
+                .with_model(agent_config.model.clone())
+                .with_thinking_budget(thinking_budget);
             if let Some(endpoint) = &ollama_endpoint {
                 handle = handle.with_ollama_endpoint(endpoint.clone());
             }
@@ -121,7 +127,9 @@ pub async fn create_agent_from_session_config(
         RigClient::OpenAICompat(compat_client) => {
             let agent = crucible_rig::build_agent_from_config(&rig_agent_config, &compat_client)
                 .map_err(|e| AgentFactoryError::AgentBuild(e.to_string()))?;
-            let mut handle = RigAgentHandle::new(agent).with_model(agent_config.model.clone());
+            let mut handle = RigAgentHandle::new(agent)
+                .with_model(agent_config.model.clone())
+                .with_thinking_budget(thinking_budget);
             if let Some(endpoint) = &ollama_endpoint {
                 handle = handle.with_ollama_endpoint(endpoint.clone());
             }
@@ -130,7 +138,11 @@ pub async fn create_agent_from_session_config(
         RigClient::Anthropic(anthropic_client) => {
             let agent = crucible_rig::build_agent_from_config(&rig_agent_config, &anthropic_client)
                 .map_err(|e| AgentFactoryError::AgentBuild(e.to_string()))?;
-            Box::new(RigAgentHandle::new(agent).with_model(agent_config.model.clone()))
+            Box::new(
+                RigAgentHandle::new(agent)
+                    .with_model(agent_config.model.clone())
+                    .with_thinking_budget(thinking_budget),
+            )
         }
         RigClient::GitHubCopilot(copilot_client) => {
             let api_token = copilot_client
@@ -147,7 +159,11 @@ pub async fn create_agent_from_session_config(
 
             let agent = crucible_rig::build_agent_from_config(&rig_agent_config, &compat_client)
                 .map_err(|e| AgentFactoryError::AgentBuild(e.to_string()))?;
-            Box::new(RigAgentHandle::new(agent).with_model(agent_config.model.clone()))
+            Box::new(
+                RigAgentHandle::new(agent)
+                    .with_model(agent_config.model.clone())
+                    .with_thinking_budget(thinking_budget),
+            )
         }
     };
 
@@ -176,6 +192,7 @@ mod tests {
             temperature: Some(0.7),
             max_tokens: None,
             max_context_tokens: None,
+            thinking_budget: None,
             endpoint: None,
             env_overrides: HashMap::new(),
             mcp_servers: Vec::new(),
