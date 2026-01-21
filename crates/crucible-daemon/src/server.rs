@@ -741,6 +741,7 @@ async fn handle_session_get(req: Request, sm: &Arc<SessionManager>) -> Response 
                 "started_at": session.started_at.to_rfc3339(),
                 "title": session.title,
                 "continued_from": session.continued_from,
+                "agent": session.agent,
             }),
         ),
         None => Response::error(
