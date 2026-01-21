@@ -7,7 +7,8 @@ use crate::protocol::{
     PARSE_ERROR,
 };
 use crate::rpc_helpers::{
-    optional_str_param, optional_u64_param, require_array_param, require_str_param,
+    optional_str_param, optional_u64_param, require_array_param, require_i64_param,
+    require_str_param,
 };
 use crate::session_manager::SessionManager;
 use crate::session_storage::{FileSessionStorage, SessionStorage};
@@ -25,7 +26,6 @@ use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn};
 
 /// Log internal error details and return a generic error message.
-/// Prevents leaking sensitive internal information to clients.
 fn internal_error(req_id: Option<RequestId>, err: impl std::fmt::Display) -> Response {
     error!("Internal error: {}", err);
     Response::error(req_id, INTERNAL_ERROR, "Internal server error")
@@ -42,6 +42,38 @@ fn invalid_state_error(
         req_id,
         INVALID_PARAMS,
         format!("Operation '{}' not allowed in current state", operation),
+    )
+}
+
+fn session_not_found(req_id: Option<RequestId>, session_id: &str) -> Response {
+    Response::error(
+        req_id,
+        INVALID_PARAMS,
+        format!("Session not found: {}", session_id),
+    )
+}
+
+fn agent_not_configured(req_id: Option<RequestId>, session_id: &str) -> Response {
+    Response::error(
+        req_id,
+        INVALID_PARAMS,
+        format!("No agent configured for session: {}", session_id),
+    )
+}
+
+fn concurrent_request(req_id: Option<RequestId>, session_id: &str) -> Response {
+    Response::error(
+        req_id,
+        INVALID_PARAMS,
+        format!("Request already in progress for session: {}", session_id),
+    )
+}
+
+fn invalid_param_range(req_id: Option<RequestId>, param: &str, constraint: &str) -> Response {
+    Response::error(
+        req_id,
+        INVALID_PARAMS,
+        format!("Invalid '{}': {}", param, constraint),
     )
 }
 
@@ -299,6 +331,7 @@ async fn handle_request(
     tracing::debug!("RPC request: method={:?}, id={:?}", req.method, req.id);
     match req.method.as_str() {
         "ping" => Response::success(req.id, "pong"),
+        "daemon.capabilities" => handle_daemon_capabilities(req),
         "shutdown" => {
             info!("Shutdown requested via RPC");
             let _ = shutdown_tx.send(());
@@ -340,6 +373,12 @@ async fn handle_request(
         "session.cancel" => handle_session_cancel(req, agent_manager).await,
         "session.switch_model" => handle_session_switch_model(req, agent_manager, event_tx).await,
         "session.list_models" => handle_session_list_models(req, agent_manager).await,
+        "session.set_thinking_budget" => {
+            handle_session_set_thinking_budget(req, agent_manager, event_tx).await
+        }
+        "session.get_thinking_budget" => {
+            handle_session_get_thinking_budget(req, agent_manager).await
+        }
         _ => {
             tracing::warn!("Unknown RPC method: {:?}", req.method);
             Response::error(
@@ -349,6 +388,58 @@ async fn handle_request(
             )
         }
     }
+}
+
+fn handle_daemon_capabilities(req: Request) -> Response {
+    Response::success(
+        req.id,
+        serde_json::json!({
+            "version": env!("CARGO_PKG_VERSION"),
+            "protocol_version": "1.0",
+            "capabilities": {
+                "kilns": true,
+                "sessions": true,
+                "agents": true,
+                "events": true,
+                "thinking_budget": true,
+                "model_switching": true,
+            },
+            "methods": [
+                "ping",
+                "shutdown",
+                "daemon.capabilities",
+                "kiln.open",
+                "kiln.close",
+                "kiln.list",
+                "search_vectors",
+                "list_notes",
+                "get_note_by_name",
+                "note.upsert",
+                "note.get",
+                "note.delete",
+                "note.list",
+                "process_file",
+                "process_batch",
+                "session.create",
+                "session.list",
+                "session.get",
+                "session.pause",
+                "session.resume",
+                "session.resume_from_storage",
+                "session.end",
+                "session.compact",
+                "session.subscribe",
+                "session.unsubscribe",
+                "session.configure_agent",
+                "session.send_message",
+                "session.cancel",
+                "session.switch_model",
+                "session.list_models",
+                "session.set_thinking_budget",
+                "session.get_thinking_budget",
+            ]
+        }),
+    )
 }
 
 async fn handle_kiln_open(req: Request, km: &Arc<KilnManager>) -> Response {
@@ -1049,13 +1140,61 @@ async fn handle_session_list_models(req: Request, am: &Arc<AgentManager>) -> Res
             }),
         ),
         Err(crate::agent_manager::AgentError::SessionNotFound(id)) => {
-            Response::error(req.id, INVALID_PARAMS, format!("Session not found: {}", id))
+            session_not_found(req.id, &id)
         }
-        Err(crate::agent_manager::AgentError::NoAgentConfigured(id)) => Response::error(
+        Err(crate::agent_manager::AgentError::NoAgentConfigured(id)) => {
+            agent_not_configured(req.id, &id)
+        }
+        Err(e) => internal_error(req.id, e),
+    }
+}
+
+async fn handle_session_set_thinking_budget(
+    req: Request,
+    am: &Arc<AgentManager>,
+    event_tx: &broadcast::Sender<SessionEventMessage>,
+) -> Response {
+    let session_id = require_str_param!(req, "session_id");
+    let budget = require_i64_param!(req, "budget");
+
+    match am.set_thinking_budget(session_id, budget, Some(event_tx)).await {
+        Ok(()) => Response::success(
             req.id,
-            INVALID_PARAMS,
-            format!("No agent configured for session: {}", id),
+            serde_json::json!({
+                "session_id": session_id,
+                "thinking_budget": budget,
+            }),
         ),
+        Err(crate::agent_manager::AgentError::SessionNotFound(id)) => {
+            session_not_found(req.id, &id)
+        }
+        Err(crate::agent_manager::AgentError::NoAgentConfigured(id)) => {
+            agent_not_configured(req.id, &id)
+        }
+        Err(crate::agent_manager::AgentError::ConcurrentRequest(id)) => {
+            concurrent_request(req.id, &id)
+        }
+        Err(e) => internal_error(req.id, e),
+    }
+}
+
+async fn handle_session_get_thinking_budget(req: Request, am: &Arc<AgentManager>) -> Response {
+    let session_id = require_str_param!(req, "session_id");
+
+    match am.get_thinking_budget(session_id) {
+        Ok(budget) => Response::success(
+            req.id,
+            serde_json::json!({
+                "session_id": session_id,
+                "thinking_budget": budget,
+            }),
+        ),
+        Err(crate::agent_manager::AgentError::SessionNotFound(id)) => {
+            session_not_found(req.id, &id)
+        }
+        Err(crate::agent_manager::AgentError::NoAgentConfigured(id)) => {
+            agent_not_configured(req.id, &id)
+        }
         Err(e) => internal_error(req.id, e),
     }
 }

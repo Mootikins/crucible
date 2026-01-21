@@ -59,6 +59,39 @@ impl AgentManager {
         }
     }
 
+    pub fn get_session_with_agent(
+        &self,
+        session_id: &str,
+    ) -> Result<(crucible_core::session::Session, SessionAgent), AgentError> {
+        let session = self
+            .session_manager
+            .get_session(session_id)
+            .ok_or_else(|| AgentError::SessionNotFound(session_id.to_string()))?;
+
+        let agent = session
+            .agent
+            .clone()
+            .ok_or_else(|| AgentError::NoAgentConfigured(session_id.to_string()))?;
+
+        Ok((session, agent))
+    }
+
+    pub fn get_session_if_idle(
+        &self,
+        session_id: &str,
+    ) -> Result<crucible_core::session::Session, AgentError> {
+        if self.request_state.contains_key(session_id) {
+            return Err(AgentError::ConcurrentRequest(session_id.to_string()));
+        }
+        self.session_manager
+            .get_session(session_id)
+            .ok_or_else(|| AgentError::SessionNotFound(session_id.to_string()))
+    }
+
+    pub fn invalidate_agent_cache(&self, session_id: &str) {
+        self.agent_cache.remove(session_id);
+    }
+
     pub async fn configure_agent(
         &self,
         session_id: &str,
@@ -379,14 +412,7 @@ impl AgentManager {
     }
 
     pub async fn list_models(&self, session_id: &str) -> Result<Vec<String>, AgentError> {
-        let session = self
-            .session_manager
-            .get_session(session_id)
-            .ok_or_else(|| AgentError::SessionNotFound(session_id.to_string()))?;
-
-        let agent_config = session
-            .agent
-            .ok_or_else(|| AgentError::NoAgentConfigured(session_id.to_string()))?;
+        let (_, agent_config) = self.get_session_with_agent(session_id)?;
 
         let endpoint = agent_config
             .endpoint
@@ -402,6 +428,50 @@ impl AgentManager {
                 Ok(Vec::new())
             }
         }
+    }
+
+    pub async fn set_thinking_budget(
+        &self,
+        session_id: &str,
+        budget: i64,
+        event_tx: Option<&broadcast::Sender<SessionEventMessage>>,
+    ) -> Result<(), AgentError> {
+        if self.request_state.contains_key(session_id) {
+            return Err(AgentError::ConcurrentRequest(session_id.to_string()));
+        }
+
+        let (mut session, mut agent_config) = self.get_session_with_agent(session_id)?;
+
+        agent_config.thinking_budget = Some(budget);
+        session.agent = Some(agent_config.clone());
+
+        self.session_manager
+            .update_session(&session)
+            .await
+            .map_err(AgentError::Session)?;
+
+        self.invalidate_agent_cache(session_id);
+
+        info!(
+            session_id = %session_id,
+            budget = budget,
+            "Thinking budget updated (agent cache invalidated)"
+        );
+
+        if let Some(tx) = event_tx {
+            let _ = tx.send(SessionEventMessage::new(
+                session_id,
+                "thinking_budget_changed",
+                serde_json::json!({ "budget": budget }),
+            ));
+        }
+
+        Ok(())
+    }
+
+    pub fn get_thinking_budget(&self, session_id: &str) -> Result<Option<i64>, AgentError> {
+        let (_, agent_config) = self.get_session_with_agent(session_id)?;
+        Ok(agent_config.thinking_budget)
     }
 
     async fn list_ollama_models(&self, endpoint: &str) -> Result<Vec<String>, AgentError> {
@@ -478,6 +548,7 @@ mod tests {
             temperature: Some(0.7),
             max_tokens: None,
             max_context_tokens: None,
+            thinking_budget: None,
             endpoint: None,
             env_overrides: HashMap::new(),
             mcp_servers: Vec::new(),
