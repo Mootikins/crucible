@@ -2257,6 +2257,7 @@ allowed_tools = ["search_*"]
                 max_tokens: Some(4096),
                 timeout_secs: Some(60),
                 size_aware_prompts: true,
+                show_thinking: false,
             }),
             ..Config::default()
         };

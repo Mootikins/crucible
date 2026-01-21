@@ -59,6 +59,13 @@ pub struct ChatConfig {
     /// When disabled, all models get standard prompts and all tools.
     #[serde(default = "default_true")]
     pub size_aware_prompts: bool,
+    /// Show thinking/reasoning tokens from models that support it
+    ///
+    /// When enabled, thinking tokens are streamed in a quote block below the
+    /// spinner instead of just showing "Thinking...". Useful for debugging
+    /// or understanding model reasoning.
+    #[serde(default)]
+    pub show_thinking: bool,
 }
 
 fn default_true() -> bool {
@@ -68,7 +75,7 @@ fn default_true() -> bool {
 impl Default for ChatConfig {
     fn default() -> Self {
         Self {
-            model: None, // Use agent default
+            model: None,
             enable_markdown: true,
             provider: LlmProvider::default(),
             agent_preference: AgentPreference::default(),
@@ -77,6 +84,7 @@ impl Default for ChatConfig {
             max_tokens: None,
             timeout_secs: None,
             size_aware_prompts: true,
+            show_thinking: false,
         }
     }
 }

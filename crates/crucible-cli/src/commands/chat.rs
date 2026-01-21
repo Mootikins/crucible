@@ -191,7 +191,8 @@ async fn run_interactive_chat(
     let mut runner = InkChatRunner::new()?
         .with_mode(mode)
         .with_model(&model_name)
-        .with_context_limit(context_limit);
+        .with_context_limit(context_limit)
+        .with_show_thinking(config.chat.show_thinking);
 
     info!("Starting oil chat with model: {}", model_name);
 
