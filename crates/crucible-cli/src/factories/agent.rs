@@ -217,7 +217,7 @@ pub async fn create_internal_agent(
     use crucible_config::LlmProvider;
     use crucible_context::{LayeredPromptBuilder, PromptBuilder};
     use crucible_core::prompts::{base_prompt_for_size, ModelSize};
-    use crucible_rig::{build_agent_with_kiln_tools, RigAgentHandle};
+    use crucible_rig::{build_agent_with_kiln_tools, AgentComponents, RigAgentHandle};
 
     // Get model name from config
     let model = config
@@ -407,15 +407,27 @@ pub async fn create_internal_agent(
                 &ollama_client,
                 &workspace_root,
                 model_size,
-                kiln_ctx,
+                kiln_ctx.clone(),
             )?;
-            let mut handle = RigAgentHandle::new(agent)
-                .with_workspace_context(ws_ctx)
-                .with_initial_mode(initial_mode)
-                .with_model(model.clone());
-            if let Some(endpoint) = ollama_endpoint.clone() {
-                handle = handle.with_ollama_endpoint(endpoint);
+
+            let mut components = AgentComponents::new(
+                agent_config.clone(),
+                crucible_rig::RigClient::Ollama(ollama_client),
+                ws_ctx.clone(),
+            )
+            .with_model_size(model_size);
+
+            if let Some(kc) = kiln_ctx {
+                components = components.with_kiln(kc);
             }
+            if let Some(ref endpoint) = ollama_endpoint {
+                components = components.with_ollama_endpoint(endpoint.clone());
+            }
+
+            let mut handle = RigAgentHandle::new(agent)
+                .with_ollama_components(components)
+                .with_initial_mode(initial_mode);
+
             if let Some(endpoint) = reasoning_endpoint {
                 handle = handle.with_reasoning_endpoint(endpoint, model);
             }
