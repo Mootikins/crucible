@@ -128,6 +128,20 @@ impl AgentHandle for DynamicAgent {
             Self::Local(handle) => handle.fetch_available_models().await,
         }
     }
+
+    async fn switch_model(&mut self, model_id: &str) -> ChatResult<()> {
+        match self {
+            Self::Acp(client) => client.switch_model(model_id).await,
+            Self::Local(handle) => handle.switch_model(model_id).await,
+        }
+    }
+
+    fn current_model(&self) -> Option<&str> {
+        match self {
+            Self::Acp(client) => client.current_model(),
+            Self::Local(handle) => handle.current_model(),
+        }
+    }
 }
 
 impl std::fmt::Debug for DynamicAgent {
