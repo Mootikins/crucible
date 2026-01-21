@@ -145,12 +145,14 @@ impl ProviderConfig {
 
     /// Get the effective temperature (default 0.7)
     pub fn temperature(&self) -> f32 {
-        self.temperature.unwrap_or(0.7)
+        self.temperature
+            .unwrap_or(super::defaults::DEFAULT_TEMPERATURE)
     }
 
     /// Get the effective max tokens (default 4096)
     pub fn max_tokens(&self) -> u32 {
-        self.max_tokens.unwrap_or(4096)
+        self.max_tokens
+            .unwrap_or(super::defaults::DEFAULT_PROVIDER_MAX_TOKENS)
     }
 
     /// Get the effective batch size (default 16)

@@ -95,22 +95,27 @@ impl ChatConfig {
 
     /// Get the chat model, using default if not specified
     pub fn chat_model(&self) -> String {
-        self.model.clone().unwrap_or_else(|| "llama3.2".to_string())
+        self.model
+            .clone()
+            .unwrap_or_else(|| super::defaults::DEFAULT_CHAT_MODEL.to_string())
     }
 
     /// Get the temperature, using default if not specified
     pub fn temperature(&self) -> f32 {
-        self.temperature.unwrap_or(0.7)
+        self.temperature
+            .unwrap_or(super::defaults::DEFAULT_TEMPERATURE)
     }
 
     /// Get max tokens, using default if not specified
     pub fn max_tokens(&self) -> u32 {
-        self.max_tokens.unwrap_or(2048)
+        self.max_tokens
+            .unwrap_or(super::defaults::DEFAULT_CHAT_MAX_TOKENS)
     }
 
     /// Get timeout in seconds, using default if not specified
     pub fn timeout_secs(&self) -> u64 {
-        self.timeout_secs.unwrap_or(120)
+        self.timeout_secs
+            .unwrap_or(super::defaults::DEFAULT_TIMEOUT_SECS)
     }
 }
 
