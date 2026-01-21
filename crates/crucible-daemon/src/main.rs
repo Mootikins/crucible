@@ -3,6 +3,7 @@ mod agent_manager;
 mod kiln_manager;
 mod lifecycle;
 mod protocol;
+mod rpc;
 mod rpc_helpers;
 mod server;
 mod session_manager;

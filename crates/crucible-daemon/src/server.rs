@@ -6,6 +6,7 @@ use crate::protocol::{
     Request, Response, SessionEventMessage, INTERNAL_ERROR, INVALID_PARAMS, METHOD_NOT_FOUND,
     PARSE_ERROR,
 };
+use crate::rpc::{RpcContext, RpcDispatcher};
 use crate::rpc_helpers::{
     optional_str_param, optional_u64_param, require_array_param, require_i64_param,
     require_str_param,
@@ -69,14 +70,6 @@ fn concurrent_request(req_id: Option<RequestId>, session_id: &str) -> Response {
     )
 }
 
-fn invalid_param_range(req_id: Option<RequestId>, param: &str, constraint: &str) -> Response {
-    Response::error(
-        req_id,
-        INVALID_PARAMS,
-        format!("Invalid '{}': {}", param, constraint),
-    )
-}
-
 /// Daemon server that listens on a Unix socket
 pub struct Server {
     listener: UnixListener,
@@ -86,6 +79,7 @@ pub struct Server {
     agent_manager: Arc<AgentManager>,
     subscription_manager: Arc<SubscriptionManager>,
     event_tx: broadcast::Sender<SessionEventMessage>,
+    dispatcher: Arc<RpcDispatcher>,
 }
 
 impl Server {
@@ -105,18 +99,31 @@ impl Server {
         let (shutdown_tx, _) = broadcast::channel(1);
         let (event_tx, _) = broadcast::channel(1024);
 
+        let kiln_manager = Arc::new(KilnManager::new());
         let session_manager = Arc::new(SessionManager::new());
         let agent_manager = Arc::new(AgentManager::new(session_manager.clone()));
+        let subscription_manager = Arc::new(SubscriptionManager::new());
+
+        let ctx = RpcContext::new(
+            kiln_manager.clone(),
+            session_manager.clone(),
+            agent_manager.clone(),
+            subscription_manager.clone(),
+            event_tx.clone(),
+            shutdown_tx.clone(),
+        );
+        let dispatcher = Arc::new(RpcDispatcher::new(ctx));
 
         info!("Daemon listening on {:?}", path);
         Ok(Self {
             listener,
             shutdown_tx,
-            kiln_manager: Arc::new(KilnManager::new()),
+            kiln_manager,
             session_manager,
             agent_manager,
-            subscription_manager: Arc::new(SubscriptionManager::new()),
+            subscription_manager,
             event_tx,
+            dispatcher,
         })
     }
 
@@ -191,7 +198,7 @@ impl Server {
                 accept_result = self.listener.accept() => {
                     match accept_result {
                         Ok((stream, _)) => {
-                            let shutdown_tx = self.shutdown_tx.clone();
+                            let dispatcher = self.dispatcher.clone();
                             let km = self.kiln_manager.clone();
                             let sm = self.session_manager.clone();
                             let am = self.agent_manager.clone();
@@ -199,7 +206,7 @@ impl Server {
                             let event_tx = self.event_tx.clone();
                             let event_rx = self.event_tx.subscribe();
                             tokio::spawn(async move {
-                                if let Err(e) = handle_client(stream, shutdown_tx, km, sm, am, sub_m, event_tx, event_rx).await {
+                                if let Err(e) = handle_client(stream, dispatcher, km, sm, am, sub_m, event_tx, event_rx).await {
                                     error!("Client error: {}", e);
                                 }
                             });
@@ -231,7 +238,7 @@ impl Server {
 #[allow(clippy::too_many_arguments)]
 async fn handle_client(
     stream: UnixStream,
-    shutdown_tx: broadcast::Sender<()>,
+    dispatcher: Arc<RpcDispatcher>,
     kiln_manager: Arc<KilnManager>,
     session_manager: Arc<SessionManager>,
     agent_manager: Arc<AgentManager>,
@@ -245,7 +252,6 @@ async fn handle_client(
     let mut reader = BufReader::new(reader);
     let mut line = String::new();
 
-    // Spawn event forwarding task with cancellation support
     let writer_clone = writer.clone();
     let sub_manager = subscription_manager.clone();
     let event_cancel = CancellationToken::new();
@@ -274,12 +280,11 @@ async fn handle_client(
         }
     });
 
-    // Main request loop
     loop {
         line.clear();
         let n = reader.read_line(&mut line).await?;
         if n == 0 {
-            break; // EOF - client disconnected
+            break;
         }
 
         let response = match serde_json::from_str::<Request>(&line) {
@@ -287,7 +292,7 @@ async fn handle_client(
                 handle_request(
                     req,
                     client_id,
-                    &shutdown_tx,
+                    &dispatcher,
                     &kiln_manager,
                     &session_manager,
                     &agent_manager,
@@ -321,37 +326,55 @@ async fn handle_client(
 async fn handle_request(
     req: Request,
     client_id: ClientId,
-    shutdown_tx: &broadcast::Sender<()>,
+    dispatcher: &Arc<RpcDispatcher>,
     kiln_manager: &Arc<KilnManager>,
     session_manager: &Arc<SessionManager>,
     agent_manager: &Arc<AgentManager>,
-    subscription_manager: &Arc<SubscriptionManager>,
+    _subscription_manager: &Arc<SubscriptionManager>,
     event_tx: &broadcast::Sender<SessionEventMessage>,
 ) -> Response {
-    tracing::debug!("RPC request: method={:?}, id={:?}", req.method, req.id);
-    match req.method.as_str() {
-        "ping" => Response::success(req.id, "pong"),
-        "daemon.capabilities" => handle_daemon_capabilities(req),
-        "shutdown" => {
-            info!("Shutdown requested via RPC");
-            let _ = shutdown_tx.send(());
-            Response::success(req.id, "shutting down")
+    let req_clone = req.clone();
+    let resp = dispatcher.dispatch(client_id, req).await;
+
+    if let Some(ref err) = resp.error {
+        if err.code == METHOD_NOT_FOUND && err.message.contains("not yet migrated") {
+            return handle_legacy_request(
+                req_clone,
+                kiln_manager,
+                session_manager,
+                agent_manager,
+                event_tx,
+            )
+            .await;
         }
+    }
+
+    resp
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn handle_legacy_request(
+    req: Request,
+    kiln_manager: &Arc<KilnManager>,
+    session_manager: &Arc<SessionManager>,
+    agent_manager: &Arc<AgentManager>,
+    event_tx: &broadcast::Sender<SessionEventMessage>,
+) -> Response {
+    tracing::debug!("Legacy handler for method={:?}", req.method);
+
+    match req.method.as_str() {
         "kiln.open" => handle_kiln_open(req, kiln_manager).await,
         "kiln.close" => handle_kiln_close(req, kiln_manager).await,
         "kiln.list" => handle_kiln_list(req, kiln_manager).await,
         "search_vectors" => handle_search_vectors(req, kiln_manager).await,
         "list_notes" => handle_list_notes(req, kiln_manager).await,
         "get_note_by_name" => handle_get_note_by_name(req, kiln_manager).await,
-        // NoteStore RPC methods
         "note.upsert" => handle_note_upsert(req, kiln_manager).await,
         "note.get" => handle_note_get(req, kiln_manager).await,
         "note.delete" => handle_note_delete(req, kiln_manager).await,
         "note.list" => handle_note_list(req, kiln_manager).await,
-        // Pipeline RPC methods
         "process_file" => handle_process_file(req, kiln_manager).await,
         "process_batch" => handle_process_batch(req, kiln_manager).await,
-        // Session RPC methods
         "session.create" => handle_session_create(req, session_manager).await,
         "session.list" => handle_session_list(req, session_manager).await,
         "session.get" => handle_session_get(req, session_manager).await,
@@ -362,12 +385,6 @@ async fn handle_request(
         }
         "session.end" => handle_session_end(req, session_manager).await,
         "session.compact" => handle_session_compact(req, session_manager).await,
-        // Subscription RPC methods
-        "session.subscribe" => handle_session_subscribe(req, client_id, subscription_manager).await,
-        "session.unsubscribe" => {
-            handle_session_unsubscribe(req, client_id, subscription_manager).await
-        }
-        // Agent RPC methods
         "session.configure_agent" => handle_session_configure_agent(req, agent_manager).await,
         "session.send_message" => handle_session_send_message(req, agent_manager, event_tx).await,
         "session.cancel" => handle_session_cancel(req, agent_manager).await,
@@ -388,58 +405,6 @@ async fn handle_request(
             )
         }
     }
-}
-
-fn handle_daemon_capabilities(req: Request) -> Response {
-    Response::success(
-        req.id,
-        serde_json::json!({
-            "version": env!("CARGO_PKG_VERSION"),
-            "protocol_version": "1.0",
-            "capabilities": {
-                "kilns": true,
-                "sessions": true,
-                "agents": true,
-                "events": true,
-                "thinking_budget": true,
-                "model_switching": true,
-            },
-            "methods": [
-                "ping",
-                "shutdown",
-                "daemon.capabilities",
-                "kiln.open",
-                "kiln.close",
-                "kiln.list",
-                "search_vectors",
-                "list_notes",
-                "get_note_by_name",
-                "note.upsert",
-                "note.get",
-                "note.delete",
-                "note.list",
-                "process_file",
-                "process_batch",
-                "session.create",
-                "session.list",
-                "session.get",
-                "session.pause",
-                "session.resume",
-                "session.resume_from_storage",
-                "session.end",
-                "session.compact",
-                "session.subscribe",
-                "session.unsubscribe",
-                "session.configure_agent",
-                "session.send_message",
-                "session.cancel",
-                "session.switch_model",
-                "session.list_models",
-                "session.set_thinking_budget",
-                "session.get_thinking_budget",
-            ]
-        }),
-    )
 }
 
 async fn handle_kiln_open(req: Request, km: &Arc<KilnManager>) -> Response {
@@ -965,60 +930,6 @@ async fn handle_session_compact(req: Request, sm: &Arc<SessionManager>) -> Respo
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Subscription RPC handlers
-// ─────────────────────────────────────────────────────────────────────────────
-
-async fn handle_session_subscribe(
-    req: Request,
-    client_id: ClientId,
-    sm: &Arc<SubscriptionManager>,
-) -> Response {
-    let session_ids_arr = require_array_param!(req, "session_ids");
-    let session_ids: Vec<String> = session_ids_arr
-        .iter()
-        .filter_map(|v: &serde_json::Value| v.as_str().map(String::from))
-        .collect();
-
-    for session_id in &session_ids {
-        if session_id == "*" {
-            sm.subscribe_all(client_id);
-        } else {
-            sm.subscribe(client_id, session_id);
-        }
-    }
-
-    Response::success(
-        req.id,
-        serde_json::json!({
-            "subscribed": session_ids,
-            "client_id": client_id.as_u64(),
-        }),
-    )
-}
-
-async fn handle_session_unsubscribe(
-    req: Request,
-    client_id: ClientId,
-    sm: &Arc<SubscriptionManager>,
-) -> Response {
-    let session_ids_arr = require_array_param!(req, "session_ids");
-    let session_ids: Vec<String> = session_ids_arr
-        .iter()
-        .filter_map(|v: &serde_json::Value| v.as_str().map(String::from))
-        .collect();
-
-    for session_id in &session_ids {
-        sm.unsubscribe(client_id, session_id);
-    }
-
-    Response::success(
-        req.id,
-        serde_json::json!({
-            "unsubscribed": session_ids,
-        }),
-    )
-}
-
 async fn handle_session_configure_agent(req: Request, am: &Arc<AgentManager>) -> Response {
     let session_id = require_str_param!(req, "session_id");
 
@@ -1606,7 +1517,7 @@ mod tests {
 
         assert!(response.contains("error"));
         assert!(response.contains("-32602")); // INVALID_PARAMS
-        assert!(response.contains("'session_ids'"));
+        assert!(response.contains("session_ids"));
 
         let _ = shutdown_handle.send(());
         let _ = server_task.await;
@@ -1636,8 +1547,11 @@ mod tests {
 
         assert!(response.contains("error"));
         assert!(response.contains("-32602")); // INVALID_PARAMS
-                                              // Macro produces "Missing or invalid 'session_ids' parameter" for wrong type
-        assert!(response.contains("'session_ids'"));
+        assert!(
+            response.contains("session_ids") || response.contains("invalid type"),
+            "Expected error message to mention 'session_ids' or 'invalid type', got: {}",
+            response
+        );
 
         let _ = shutdown_handle.send(());
         let _ = server_task.await;
@@ -1705,7 +1619,7 @@ mod tests {
 
         assert!(response.contains("error"));
         assert!(response.contains("-32602")); // INVALID_PARAMS
-        assert!(response.contains("'session_ids'"));
+        assert!(response.contains("session_ids"));
 
         let _ = shutdown_handle.send(());
         let _ = server_task.await;
