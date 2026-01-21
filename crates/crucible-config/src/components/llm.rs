@@ -2,6 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::str::FromStr;
 
 /// LLM provider type
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -18,6 +19,32 @@ pub enum LlmProviderType {
     /// Requires initial device flow authentication, then stores OAuth token.
     #[serde(alias = "github-copilot", alias = "github_copilot", alias = "copilot")]
     GitHubCopilot,
+}
+
+impl LlmProviderType {
+    /// Get the environment variable name for this provider's API key
+    pub fn api_key_env_var(&self) -> Option<&'static str> {
+        match self {
+            LlmProviderType::Ollama => None,
+            LlmProviderType::OpenAI => Some("OPENAI_API_KEY"),
+            LlmProviderType::Anthropic => Some("ANTHROPIC_API_KEY"),
+            LlmProviderType::GitHubCopilot => None,
+        }
+    }
+}
+
+impl FromStr for LlmProviderType {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "ollama" => Ok(LlmProviderType::Ollama),
+            "openai" => Ok(LlmProviderType::OpenAI),
+            "anthropic" => Ok(LlmProviderType::Anthropic),
+            "github-copilot" | "github_copilot" | "copilot" => Ok(LlmProviderType::GitHubCopilot),
+            other => Err(format!("Unknown provider: {}", other)),
+        }
+    }
 }
 
 /// Named LLM provider instance configuration
@@ -73,22 +100,136 @@ impl LlmProviderConfig {
 
     /// Get temperature (default 0.7)
     pub fn temperature(&self) -> f32 {
-        self.temperature.unwrap_or(0.7)
+        self.temperature
+            .unwrap_or(super::defaults::DEFAULT_TEMPERATURE)
     }
 
     /// Get max tokens (default 4096)
     pub fn max_tokens(&self) -> u32 {
-        self.max_tokens.unwrap_or(4096)
+        self.max_tokens
+            .unwrap_or(super::defaults::DEFAULT_PROVIDER_MAX_TOKENS)
     }
 
     /// Get timeout in seconds (default 120)
     pub fn timeout_secs(&self) -> u64 {
-        self.timeout_secs.unwrap_or(120)
+        self.timeout_secs
+            .unwrap_or(super::defaults::DEFAULT_TIMEOUT_SECS)
     }
 
     /// Get the API key (already resolved if `{env:VAR}` was used)
     pub fn api_key(&self) -> Option<String> {
         self.api_key.clone()
+    }
+
+    /// Create a new builder for this config type
+    pub fn builder(provider_type: LlmProviderType) -> LlmProviderConfigBuilder {
+        LlmProviderConfigBuilder::new(provider_type)
+    }
+}
+
+/// Builder for LlmProviderConfig
+#[derive(Debug, Clone)]
+pub struct LlmProviderConfigBuilder {
+    provider_type: LlmProviderType,
+    endpoint: Option<String>,
+    default_model: Option<String>,
+    temperature: Option<f32>,
+    max_tokens: Option<u32>,
+    timeout_secs: Option<u64>,
+    api_key: Option<String>,
+}
+
+impl LlmProviderConfigBuilder {
+    /// Create a new builder with the specified provider type
+    pub fn new(provider_type: LlmProviderType) -> Self {
+        Self {
+            provider_type,
+            endpoint: None,
+            default_model: None,
+            temperature: None,
+            max_tokens: None,
+            timeout_secs: None,
+            api_key: None,
+        }
+    }
+
+    /// Set the API endpoint
+    pub fn endpoint(mut self, endpoint: impl Into<String>) -> Self {
+        self.endpoint = Some(endpoint.into());
+        self
+    }
+
+    /// Set the API endpoint if Some
+    pub fn maybe_endpoint(mut self, endpoint: Option<String>) -> Self {
+        self.endpoint = endpoint;
+        self
+    }
+
+    /// Set the default model
+    pub fn model(mut self, model: impl Into<String>) -> Self {
+        self.default_model = Some(model.into());
+        self
+    }
+
+    /// Set the temperature
+    pub fn temperature(mut self, temp: f32) -> Self {
+        self.temperature = Some(temp);
+        self
+    }
+
+    /// Set the temperature if Some
+    pub fn maybe_temperature(mut self, temp: Option<f32>) -> Self {
+        self.temperature = temp;
+        self
+    }
+
+    /// Set max tokens
+    pub fn max_tokens(mut self, tokens: u32) -> Self {
+        self.max_tokens = Some(tokens);
+        self
+    }
+
+    /// Set max tokens if Some
+    pub fn maybe_max_tokens(mut self, tokens: Option<u32>) -> Self {
+        self.max_tokens = tokens;
+        self
+    }
+
+    /// Set timeout in seconds
+    pub fn timeout_secs(mut self, secs: u64) -> Self {
+        self.timeout_secs = Some(secs);
+        self
+    }
+
+    /// Set timeout if Some
+    pub fn maybe_timeout_secs(mut self, secs: Option<u64>) -> Self {
+        self.timeout_secs = secs;
+        self
+    }
+
+    /// Set API key
+    pub fn api_key(mut self, key: impl Into<String>) -> Self {
+        self.api_key = Some(key.into());
+        self
+    }
+
+    /// Set API key from provider's default env var name
+    pub fn api_key_from_env(mut self) -> Self {
+        self.api_key = self.provider_type.api_key_env_var().map(String::from);
+        self
+    }
+
+    /// Build the config
+    pub fn build(self) -> LlmProviderConfig {
+        LlmProviderConfig {
+            provider_type: self.provider_type,
+            endpoint: self.endpoint,
+            default_model: self.default_model,
+            temperature: self.temperature,
+            max_tokens: self.max_tokens,
+            timeout_secs: self.timeout_secs,
+            api_key: self.api_key,
+        }
     }
 }
 
