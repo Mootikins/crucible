@@ -97,26 +97,40 @@ pub async fn create_agent_from_session_config(
         "Building Rig agent"
     );
 
+    let ollama_endpoint = agent_config.endpoint.clone();
+
     let handle: Box<dyn AgentHandle + Send + Sync> = match client {
         RigClient::Ollama(ollama_client) => {
             let agent = crucible_rig::build_agent_from_config(&rig_agent_config, &ollama_client)
                 .map_err(|e| AgentFactoryError::AgentBuild(e.to_string()))?;
-            Box::new(RigAgentHandle::new(agent))
+            let mut handle = RigAgentHandle::new(agent).with_model(agent_config.model.clone());
+            if let Some(endpoint) = &ollama_endpoint {
+                handle = handle.with_ollama_endpoint(endpoint.clone());
+            }
+            Box::new(handle)
         }
         RigClient::OpenAI(openai_client) => {
             let agent = crucible_rig::build_agent_from_config(&rig_agent_config, &openai_client)
                 .map_err(|e| AgentFactoryError::AgentBuild(e.to_string()))?;
-            Box::new(RigAgentHandle::new(agent))
+            let mut handle = RigAgentHandle::new(agent).with_model(agent_config.model.clone());
+            if let Some(endpoint) = &ollama_endpoint {
+                handle = handle.with_ollama_endpoint(endpoint.clone());
+            }
+            Box::new(handle)
         }
         RigClient::OpenAICompat(compat_client) => {
             let agent = crucible_rig::build_agent_from_config(&rig_agent_config, &compat_client)
                 .map_err(|e| AgentFactoryError::AgentBuild(e.to_string()))?;
-            Box::new(RigAgentHandle::new(agent))
+            let mut handle = RigAgentHandle::new(agent).with_model(agent_config.model.clone());
+            if let Some(endpoint) = &ollama_endpoint {
+                handle = handle.with_ollama_endpoint(endpoint.clone());
+            }
+            Box::new(handle)
         }
         RigClient::Anthropic(anthropic_client) => {
             let agent = crucible_rig::build_agent_from_config(&rig_agent_config, &anthropic_client)
                 .map_err(|e| AgentFactoryError::AgentBuild(e.to_string()))?;
-            Box::new(RigAgentHandle::new(agent))
+            Box::new(RigAgentHandle::new(agent).with_model(agent_config.model.clone()))
         }
         RigClient::GitHubCopilot(copilot_client) => {
             let api_token = copilot_client
@@ -133,7 +147,7 @@ pub async fn create_agent_from_session_config(
 
             let agent = crucible_rig::build_agent_from_config(&rig_agent_config, &compat_client)
                 .map_err(|e| AgentFactoryError::AgentBuild(e.to_string()))?;
-            Box::new(RigAgentHandle::new(agent))
+            Box::new(RigAgentHandle::new(agent).with_model(agent_config.model.clone()))
         }
     };
 
