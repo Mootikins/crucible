@@ -29,6 +29,7 @@ pub struct InkChatRunner {
     resume_session_id: Option<String>,
     mcp_servers: Vec<McpServerDisplay>,
     available_models: Vec<String>,
+    show_thinking: bool,
 }
 
 impl InkChatRunner {
@@ -46,6 +47,7 @@ impl InkChatRunner {
             resume_session_id: None,
             mcp_servers: Vec::new(),
             available_models: Vec::new(),
+            show_thinking: false,
         })
     }
 
@@ -94,6 +96,11 @@ impl InkChatRunner {
         self
     }
 
+    pub fn with_show_thinking(mut self, show: bool) -> Self {
+        self.show_thinking = show;
+        self
+    }
+
     pub async fn run_with_factory<F, Fut, A>(
         &mut self,
         bridge: &AgentEventBridge,
@@ -128,6 +135,7 @@ impl InkChatRunner {
         if !self.available_models.is_empty() {
             app.set_available_models(std::mem::take(&mut self.available_models));
         }
+        app.set_show_thinking(self.show_thinking);
 
         let ctx = ViewContext::new(&self.focus);
         let tree = app.view(&ctx);
@@ -224,6 +232,14 @@ impl InkChatRunner {
                                 && msg_tx.send(ChatAppMsg::TextDelta(chunk.delta)).is_err()
                             {
                                 tracing::warn!("UI channel closed, TextDelta dropped");
+                            }
+
+                            if let Some(ref reasoning) = chunk.reasoning {
+                                if !reasoning.is_empty()
+                                    && msg_tx.send(ChatAppMsg::ThinkingDelta(reasoning.clone())).is_err()
+                                {
+                                    tracing::warn!("UI channel closed, ThinkingDelta dropped");
+                                }
                             }
 
                             if let Some(ref tool_calls) = chunk.tool_calls {

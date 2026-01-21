@@ -53,37 +53,21 @@ fn wrap_content(content: &str, max_width: usize) -> Vec<String> {
 pub enum ChatAppMsg {
     UserMessage(String),
     TextDelta(String),
-    ToolCall {
-        name: String,
-        args: String,
-    },
-    ToolResultDelta {
-        name: String,
-        delta: String,
-    },
-    ToolResultComplete {
-        name: String,
-    },
+    ThinkingDelta(String),
+    ToolCall { name: String, args: String },
+    ToolResultDelta { name: String, delta: String },
+    ToolResultComplete { name: String },
     StreamComplete,
-    /// Stream was cancelled by user (Ctrl+C/Esc during streaming)
     StreamCancelled,
     Error(String),
     Status(String),
     ModeChanged(String),
-    ContextUsage {
-        used: usize,
-        total: usize,
-    },
+    ContextUsage { used: usize, total: usize },
     ClearHistory,
-    /// Queue a message to send after current stream completes
     QueueMessage(String),
-    /// Request to switch the active model
     SwitchModel(String),
-    /// Request to fetch available models from provider
     FetchModels,
-    /// Models successfully loaded
     ModelsLoaded(Vec<String>),
-    /// Model fetch failed
     ModelsFetchFailed(String),
 }
 
@@ -339,6 +323,8 @@ pub struct InkChatApp {
     deferred_messages: VecDeque<String>,
     available_models: Vec<String>,
     model_list_state: ModelListState,
+    in_progress_thinking: String,
+    show_thinking: bool,
 }
 
 impl Default for InkChatApp {
@@ -374,6 +360,8 @@ impl Default for InkChatApp {
             deferred_messages: VecDeque::new(),
             available_models: Vec::new(),
             model_list_state: ModelListState::NotLoaded,
+            in_progress_thinking: String::new(),
+            show_thinking: false,
         }
     }
 }
@@ -428,6 +416,12 @@ impl App for InkChatApp {
                     self.cache.start_streaming();
                 }
                 self.cache.append_streaming(&delta);
+                Action::Continue
+            }
+            ChatAppMsg::ThinkingDelta(delta) => {
+                if self.show_thinking {
+                    self.in_progress_thinking.push_str(&delta);
+                }
                 Action::Continue
             }
             ChatAppMsg::ToolCall { name, args } => {
@@ -565,6 +559,10 @@ impl InkChatApp {
 
     pub fn set_available_models(&mut self, models: Vec<String>) {
         self.available_models = models;
+    }
+
+    pub fn set_show_thinking(&mut self, show: bool) {
+        self.show_thinking = show;
     }
 
     pub fn load_previous_messages(&mut self, items: Vec<ChatItem>) {
@@ -1783,6 +1781,7 @@ impl InkChatApp {
         } else {
             self.cache.cancel_streaming();
         }
+        self.in_progress_thinking.clear();
         self.status = "Ready".to_string();
     }
 
@@ -1948,9 +1947,30 @@ impl InkChatApp {
                         row([text(spinner_indent), spinner(None, self.spinner_frame)]),
                     ])
                 } else if !has_graduated {
+                    let thinking_node =
+                        if self.show_thinking && !self.in_progress_thinking.is_empty() {
+                            let thinking_lines: Vec<Node> = self
+                                .in_progress_thinking
+                                .lines()
+                                .rev()
+                                .take(6)
+                                .collect::<Vec<_>>()
+                                .into_iter()
+                                .rev()
+                                .map(|line| {
+                                    styled(
+                                        format!("  > {}", line),
+                                        Style::new().fg(Color::DarkGray).italic(),
+                                    )
+                                })
+                                .collect();
+                            col(thinking_lines)
+                        } else {
+                            text("")
+                        };
                     col([
                         text(""),
-                        text(""),
+                        thinking_node,
                         row([
                             text(spinner_indent),
                             spinner(Some("Thinking...".into()), self.spinner_frame),
