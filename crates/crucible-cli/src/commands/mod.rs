@@ -4,6 +4,7 @@ pub mod chat;
 pub mod daemon;
 pub mod init;
 pub mod mcp;
+pub mod models;
 pub mod process;
 pub mod session;
 pub mod skills;

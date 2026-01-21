@@ -25,6 +25,9 @@ pub enum AgentError {
     #[error("Concurrent request in progress for session: {0}")]
     ConcurrentRequest(String),
 
+    #[error("Invalid model ID: {0}")]
+    InvalidModelId(String),
+
     #[error("Session error: {0}")]
     Session(#[from] SessionError),
 
@@ -319,6 +322,122 @@ impl AgentManager {
             false
         }
     }
+
+    pub async fn switch_model(
+        &self,
+        session_id: &str,
+        model_id: &str,
+        event_tx: Option<&broadcast::Sender<SessionEventMessage>>,
+    ) -> Result<(), AgentError> {
+        let model_id = model_id.trim();
+        if model_id.is_empty() {
+            return Err(AgentError::InvalidModelId(
+                "Model ID cannot be empty".to_string(),
+            ));
+        }
+
+        if self.request_state.contains_key(session_id) {
+            return Err(AgentError::ConcurrentRequest(session_id.to_string()));
+        }
+
+        let mut session = self
+            .session_manager
+            .get_session(session_id)
+            .ok_or_else(|| AgentError::SessionNotFound(session_id.to_string()))?;
+
+        let mut agent_config = session
+            .agent
+            .clone()
+            .ok_or_else(|| AgentError::NoAgentConfigured(session_id.to_string()))?;
+
+        agent_config.model = model_id.to_string();
+        session.agent = Some(agent_config.clone());
+
+        self.session_manager
+            .update_session(&session)
+            .await
+            .map_err(AgentError::Session)?;
+
+        self.agent_cache.remove(session_id);
+
+        info!(
+            session_id = %session_id,
+            model = %model_id,
+            provider = %agent_config.provider,
+            "Model switched for session (agent cache invalidated)"
+        );
+
+        if let Some(tx) = event_tx {
+            let _ = tx.send(SessionEventMessage::model_switched(
+                session_id,
+                model_id,
+                &agent_config.provider,
+            ));
+        }
+
+        Ok(())
+    }
+
+    pub async fn list_models(&self, session_id: &str) -> Result<Vec<String>, AgentError> {
+        let session = self
+            .session_manager
+            .get_session(session_id)
+            .ok_or_else(|| AgentError::SessionNotFound(session_id.to_string()))?;
+
+        let agent_config = session
+            .agent
+            .ok_or_else(|| AgentError::NoAgentConfigured(session_id.to_string()))?;
+
+        let endpoint = agent_config
+            .endpoint
+            .unwrap_or_else(|| "http://localhost:11434".to_string());
+
+        match agent_config.provider.as_str() {
+            "ollama" => self.list_ollama_models(&endpoint).await,
+            _ => {
+                debug!(
+                    provider = %agent_config.provider,
+                    "Model listing not supported for provider"
+                );
+                Ok(Vec::new())
+            }
+        }
+    }
+
+    async fn list_ollama_models(&self, endpoint: &str) -> Result<Vec<String>, AgentError> {
+        let client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(5))
+            .build()
+            .map_err(|e| AgentError::InvalidModelId(format!("HTTP client error: {}", e)))?;
+
+        let url = format!("{}/api/tags", endpoint.trim_end_matches('/'));
+
+        #[derive(serde::Deserialize)]
+        struct TagsResponse {
+            models: Vec<ModelInfo>,
+        }
+        #[derive(serde::Deserialize)]
+        struct ModelInfo {
+            name: String,
+        }
+
+        match client.get(&url).send().await {
+            Ok(resp) if resp.status().is_success() => {
+                let tags: TagsResponse = resp.json().await.map_err(|e| {
+                    AgentError::InvalidModelId(format!("Failed to parse models: {}", e))
+                })?;
+                Ok(tags.models.into_iter().map(|m| m.name).collect())
+            }
+            Ok(resp) => {
+                debug!(status = %resp.status(), "Ollama returned non-success status");
+                Ok(Vec::new())
+            }
+            Err(e) => {
+                debug!(error = %e, "Failed to connect to Ollama");
+                Ok(Vec::new())
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -326,8 +445,27 @@ mod tests {
     use super::*;
     use crate::session_storage::FileSessionStorage;
     use crucible_core::session::SessionType;
+    use crucible_core::traits::chat::{AgentHandle, ChatChunk, ChatResult};
+    use futures::stream::BoxStream;
     use std::collections::HashMap;
     use tempfile::TempDir;
+
+    struct MockAgent;
+
+    #[async_trait::async_trait]
+    impl AgentHandle for MockAgent {
+        fn send_message_stream(&mut self, _: String) -> BoxStream<'static, ChatResult<ChatChunk>> {
+            Box::pin(futures::stream::empty())
+        }
+
+        fn is_connected(&self) -> bool {
+            true
+        }
+
+        async fn set_mode_str(&mut self, _: &str) -> ChatResult<()> {
+            Ok(())
+        }
+    }
 
     fn test_agent() -> SessionAgent {
         SessionAgent {
@@ -415,6 +553,155 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_switch_model() {
+        let tmp = TempDir::new().unwrap();
+        let storage = Arc::new(FileSessionStorage::new());
+        let session_manager = Arc::new(SessionManager::with_storage(storage));
+
+        let session = session_manager
+            .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![])
+            .await
+            .unwrap();
+
+        let agent_manager = AgentManager::new(session_manager.clone());
+
+        agent_manager
+            .configure_agent(&session.id, test_agent())
+            .await
+            .unwrap();
+
+        let updated = session_manager.get_session(&session.id).unwrap();
+        assert_eq!(updated.agent.as_ref().unwrap().model, "llama3.2");
+
+        agent_manager
+            .switch_model(&session.id, "gpt-4", None)
+            .await
+            .unwrap();
+
+        let updated = session_manager.get_session(&session.id).unwrap();
+        assert_eq!(updated.agent.as_ref().unwrap().model, "gpt-4");
+    }
+
+    #[tokio::test]
+    async fn test_switch_model_no_agent() {
+        let tmp = TempDir::new().unwrap();
+        let storage = Arc::new(FileSessionStorage::new());
+        let session_manager = Arc::new(SessionManager::with_storage(storage));
+
+        let session = session_manager
+            .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![])
+            .await
+            .unwrap();
+
+        let agent_manager = AgentManager::new(session_manager);
+
+        let result = agent_manager.switch_model(&session.id, "gpt-4", None).await;
+
+        assert!(matches!(result, Err(AgentError::NoAgentConfigured(_))));
+    }
+
+    #[tokio::test]
+    async fn test_switch_model_session_not_found() {
+        let storage = Arc::new(FileSessionStorage::new());
+        let session_manager = Arc::new(SessionManager::with_storage(storage));
+        let agent_manager = AgentManager::new(session_manager);
+
+        let result = agent_manager
+            .switch_model("nonexistent", "gpt-4", None)
+            .await;
+
+        assert!(matches!(result, Err(AgentError::SessionNotFound(_))));
+    }
+
+    #[tokio::test]
+    async fn test_switch_model_rejects_empty_model_id() {
+        let storage = Arc::new(FileSessionStorage::new());
+        let session_manager = Arc::new(SessionManager::with_storage(storage));
+        let agent_manager = AgentManager::new(session_manager);
+
+        let result = agent_manager.switch_model("any-session", "", None).await;
+        assert!(matches!(result, Err(AgentError::InvalidModelId(_))));
+
+        let result = agent_manager.switch_model("any-session", "   ", None).await;
+        assert!(matches!(result, Err(AgentError::InvalidModelId(_))));
+    }
+
+    #[tokio::test]
+    async fn test_switch_model_rejected_during_active_request() {
+        let tmp = TempDir::new().unwrap();
+        let storage = Arc::new(FileSessionStorage::new());
+        let session_manager = Arc::new(SessionManager::with_storage(storage));
+
+        let session = session_manager
+            .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![])
+            .await
+            .unwrap();
+
+        let agent_manager = AgentManager::new(session_manager.clone());
+
+        agent_manager
+            .configure_agent(&session.id, test_agent())
+            .await
+            .unwrap();
+
+        agent_manager.request_state.insert(
+            session.id.clone(),
+            super::RequestState {
+                cancel_tx: None,
+                task_handle: None,
+                started_at: std::time::Instant::now(),
+            },
+        );
+
+        let result = agent_manager.switch_model(&session.id, "gpt-4", None).await;
+
+        assert!(matches!(result, Err(AgentError::ConcurrentRequest(_))));
+
+        let updated = session_manager.get_session(&session.id).unwrap();
+        assert_eq!(
+            updated.agent.as_ref().unwrap().model,
+            "llama3.2",
+            "Model should not change during active request"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_switch_model_invalidates_cache() {
+        let tmp = TempDir::new().unwrap();
+        let storage = Arc::new(FileSessionStorage::new());
+        let session_manager = Arc::new(SessionManager::with_storage(storage));
+
+        let session = session_manager
+            .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![])
+            .await
+            .unwrap();
+
+        let agent_manager = AgentManager::new(session_manager.clone());
+
+        agent_manager
+            .configure_agent(&session.id, test_agent())
+            .await
+            .unwrap();
+
+        agent_manager.agent_cache.insert(
+            session.id.clone(),
+            Arc::new(Mutex::new(Box::new(MockAgent))),
+        );
+
+        assert!(agent_manager.agent_cache.contains_key(&session.id));
+
+        agent_manager
+            .switch_model(&session.id, "gpt-4", None)
+            .await
+            .unwrap();
+
+        assert!(
+            !agent_manager.agent_cache.contains_key(&session.id),
+            "Cache should be invalidated after model switch"
+        );
+    }
+
+    #[tokio::test]
     async fn test_broadcast_send_with_no_receivers_returns_error() {
         let (tx, _rx) = broadcast::channel::<SessionEventMessage>(16);
 
@@ -442,5 +729,113 @@ mod tests {
         let received = rx.recv().await.unwrap();
         assert_eq!(received.session_id, "test-session");
         assert_eq!(received.event, "text_delta");
+    }
+
+    #[tokio::test]
+    async fn test_switch_model_multiple_times_updates_each_time() {
+        let tmp = TempDir::new().unwrap();
+        let storage = Arc::new(FileSessionStorage::new());
+        let session_manager = Arc::new(SessionManager::with_storage(storage));
+
+        let session = session_manager
+            .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![])
+            .await
+            .unwrap();
+
+        let agent_manager = AgentManager::new(session_manager.clone());
+
+        agent_manager
+            .configure_agent(&session.id, test_agent())
+            .await
+            .unwrap();
+
+        let models = ["model-a", "model-b", "model-c", "model-d"];
+        for model in models {
+            agent_manager
+                .switch_model(&session.id, model, None)
+                .await
+                .unwrap();
+
+            let updated = session_manager.get_session(&session.id).unwrap();
+            assert_eq!(
+                updated.agent.as_ref().unwrap().model,
+                model,
+                "Model should be updated to {}",
+                model
+            );
+            assert!(
+                !agent_manager.agent_cache.contains_key(&session.id),
+                "Cache should be invalidated after each switch"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_switch_model_preserves_other_agent_config() {
+        let tmp = TempDir::new().unwrap();
+        let storage = Arc::new(FileSessionStorage::new());
+        let session_manager = Arc::new(SessionManager::with_storage(storage));
+
+        let session = session_manager
+            .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![])
+            .await
+            .unwrap();
+
+        let agent_manager = AgentManager::new(session_manager.clone());
+
+        let mut agent = test_agent();
+        agent.temperature = Some(0.9);
+        agent.system_prompt = "Custom prompt".to_string();
+        agent.provider = "custom-provider".to_string();
+
+        agent_manager
+            .configure_agent(&session.id, agent)
+            .await
+            .unwrap();
+
+        agent_manager
+            .switch_model(&session.id, "new-model", None)
+            .await
+            .unwrap();
+
+        let updated = session_manager.get_session(&session.id).unwrap();
+        let updated_agent = updated.agent.as_ref().unwrap();
+
+        assert_eq!(updated_agent.model, "new-model");
+        assert_eq!(updated_agent.temperature, Some(0.9));
+        assert_eq!(updated_agent.system_prompt, "Custom prompt");
+        assert_eq!(updated_agent.provider, "custom-provider");
+    }
+
+    #[tokio::test]
+    async fn test_switch_model_emits_event() {
+        let tmp = TempDir::new().unwrap();
+        let storage = Arc::new(FileSessionStorage::new());
+        let session_manager = Arc::new(SessionManager::with_storage(storage));
+
+        let session = session_manager
+            .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![])
+            .await
+            .unwrap();
+
+        let agent_manager = AgentManager::new(session_manager.clone());
+
+        agent_manager
+            .configure_agent(&session.id, test_agent())
+            .await
+            .unwrap();
+
+        let (tx, mut rx) = broadcast::channel::<SessionEventMessage>(16);
+
+        agent_manager
+            .switch_model(&session.id, "gpt-4", Some(&tx))
+            .await
+            .unwrap();
+
+        let event = rx.recv().await.unwrap();
+        assert_eq!(event.session_id, session.id);
+        assert_eq!(event.event, "model_switched");
+        assert_eq!(event.data["model_id"], "gpt-4");
+        assert_eq!(event.data["provider"], "ollama");
     }
 }

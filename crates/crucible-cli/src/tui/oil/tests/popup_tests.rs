@@ -287,7 +287,7 @@ mod overlay_graduation_tests {
     #[test]
     fn composited_viewport_height_includes_overlays() {
         let base_content = "line1\nline2\nline3";
-        let overlays = vec![crate::tui::oil::planning::RenderedOverlay {
+        let overlays = [crate::tui::oil::planning::RenderedOverlay {
             lines: vec!["overlay1".into(), "overlay2".into(), "overlay3".into()],
             anchor: crate::tui::oil::OverlayAnchor::FromBottom(1),
         }];

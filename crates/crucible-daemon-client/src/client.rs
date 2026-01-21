@@ -823,6 +823,38 @@ impl DaemonClient {
 
         Ok(result["cancelled"].as_bool().unwrap_or(false))
     }
+
+    pub async fn session_switch_model(&self, session_id: &str, model_id: &str) -> Result<()> {
+        self.call(
+            "session.switch_model",
+            serde_json::json!({
+                "session_id": session_id,
+                "model_id": model_id
+            }),
+        )
+        .await?;
+        Ok(())
+    }
+
+    pub async fn session_list_models(&self, session_id: &str) -> Result<Vec<String>> {
+        let result = self
+            .call(
+                "session.list_models",
+                serde_json::json!({ "session_id": session_id }),
+            )
+            .await?;
+
+        let models = result["models"]
+            .as_array()
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str().map(String::from))
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        Ok(models)
+    }
 }
 
 #[cfg(test)]

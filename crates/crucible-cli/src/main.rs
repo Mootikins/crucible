@@ -328,6 +328,8 @@ async fn main() -> Result<()> {
 
         Some(Commands::Stats) => commands::stats::execute(config).await?,
 
+        Some(Commands::Models) => commands::models::execute(config).await?,
+
         Some(Commands::Config(cmd)) => commands::config::execute(cmd).await?,
 
         Some(Commands::Status {

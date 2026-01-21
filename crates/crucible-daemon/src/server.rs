@@ -338,6 +338,8 @@ async fn handle_request(
         "session.configure_agent" => handle_session_configure_agent(req, agent_manager).await,
         "session.send_message" => handle_session_send_message(req, agent_manager, event_tx).await,
         "session.cancel" => handle_session_cancel(req, agent_manager).await,
+        "session.switch_model" => handle_session_switch_model(req, agent_manager, event_tx).await,
+        "session.list_models" => handle_session_list_models(req, agent_manager).await,
         _ => {
             tracing::warn!("Unknown RPC method: {:?}", req.method);
             Response::error(
@@ -992,6 +994,69 @@ async fn handle_session_cancel(req: Request, am: &Arc<AgentManager>) -> Response
             "cancelled": cancelled,
         }),
     )
+}
+
+async fn handle_session_switch_model(
+    req: Request,
+    am: &Arc<AgentManager>,
+    event_tx: &broadcast::Sender<SessionEventMessage>,
+) -> Response {
+    let session_id = require_str_param!(req, "session_id");
+    let model_id = require_str_param!(req, "model_id");
+
+    match am.switch_model(session_id, model_id, Some(event_tx)).await {
+        Ok(()) => Response::success(
+            req.id,
+            serde_json::json!({
+                "session_id": session_id,
+                "model_id": model_id,
+                "switched": true,
+            }),
+        ),
+        Err(crate::agent_manager::AgentError::SessionNotFound(id)) => {
+            Response::error(req.id, INVALID_PARAMS, format!("Session not found: {}", id))
+        }
+        Err(crate::agent_manager::AgentError::NoAgentConfigured(id)) => Response::error(
+            req.id,
+            INVALID_PARAMS,
+            format!("No agent configured for session: {}", id),
+        ),
+        Err(crate::agent_manager::AgentError::ConcurrentRequest(id)) => Response::error(
+            req.id,
+            INVALID_PARAMS,
+            format!(
+                "Cannot switch model while request is in progress for session: {}",
+                id
+            ),
+        ),
+        Err(crate::agent_manager::AgentError::InvalidModelId(msg)) => {
+            Response::error(req.id, INVALID_PARAMS, msg)
+        }
+        Err(e) => internal_error(req.id, e),
+    }
+}
+
+async fn handle_session_list_models(req: Request, am: &Arc<AgentManager>) -> Response {
+    let session_id = require_str_param!(req, "session_id");
+
+    match am.list_models(session_id).await {
+        Ok(models) => Response::success(
+            req.id,
+            serde_json::json!({
+                "session_id": session_id,
+                "models": models,
+            }),
+        ),
+        Err(crate::agent_manager::AgentError::SessionNotFound(id)) => {
+            Response::error(req.id, INVALID_PARAMS, format!("Session not found: {}", id))
+        }
+        Err(crate::agent_manager::AgentError::NoAgentConfigured(id)) => Response::error(
+            req.id,
+            INVALID_PARAMS,
+            format!("No agent configured for session: {}", id),
+        ),
+        Err(e) => internal_error(req.id, e),
+    }
 }
 
 #[cfg(test)]

@@ -52,7 +52,7 @@ pub async fn check_ollama() -> Option<Vec<String>> {
 /// Check if Ollama is running at a specific endpoint
 pub async fn check_ollama_at(endpoint: &str) -> Option<Vec<String>> {
     let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(2))
+        .timeout(Duration::from_secs(5))
         .build()
         .ok()?;
 
@@ -75,6 +75,109 @@ pub async fn check_ollama_at(endpoint: &str) -> Option<Vec<String>> {
 
     let tags: TagsResponse = resp.json().await.ok()?;
     Some(tags.models.into_iter().map(|m| m.name).collect())
+}
+
+/// Fetch available models for a provider, returning formatted as "provider/model"
+pub async fn fetch_provider_models(
+    provider: &crucible_config::LlmProvider,
+    endpoint: &str,
+) -> Vec<String> {
+    use crucible_config::LlmProvider;
+
+    match provider {
+        LlmProvider::Ollama => fetch_ollama_models(endpoint).await,
+        LlmProvider::OpenAI => fetch_openai_models(endpoint).await,
+        LlmProvider::Anthropic => anthropic_models(),
+    }
+}
+
+async fn fetch_ollama_models(endpoint: &str) -> Vec<String> {
+    let client = match reqwest::Client::builder()
+        .timeout(Duration::from_secs(5))
+        .build()
+    {
+        Ok(c) => c,
+        Err(_) => return Vec::new(),
+    };
+
+    let base = endpoint.trim_end_matches('/').trim_end_matches("/v1");
+    let url = format!("{}/api/tags", base);
+
+    let resp = match client.get(&url).send().await {
+        Ok(r) if r.status().is_success() => r,
+        _ => return Vec::new(),
+    };
+
+    #[derive(serde::Deserialize)]
+    struct TagsResponse {
+        models: Vec<ModelInfo>,
+    }
+    #[derive(serde::Deserialize)]
+    struct ModelInfo {
+        name: String,
+    }
+
+    match resp.json::<TagsResponse>().await {
+        Ok(tags) => tags.models.into_iter().map(|m| m.name).collect(),
+        Err(_) => Vec::new(),
+    }
+}
+
+async fn fetch_openai_models(endpoint: &str) -> Vec<String> {
+    let api_key = match std::env::var("OPENAI_API_KEY") {
+        Ok(k) => k,
+        Err(_) => return Vec::new(),
+    };
+
+    let client = match reqwest::Client::builder()
+        .timeout(Duration::from_secs(5))
+        .build()
+    {
+        Ok(c) => c,
+        Err(_) => return Vec::new(),
+    };
+
+    let url = format!("{}/models", endpoint.trim_end_matches('/'));
+    let resp = match client
+        .get(&url)
+        .header("Authorization", format!("Bearer {}", api_key))
+        .send()
+        .await
+    {
+        Ok(r) if r.status().is_success() => r,
+        _ => return Vec::new(),
+    };
+
+    #[derive(serde::Deserialize)]
+    struct ModelsResponse {
+        data: Vec<ModelData>,
+    }
+    #[derive(serde::Deserialize)]
+    struct ModelData {
+        id: String,
+    }
+
+    match resp.json::<ModelsResponse>().await {
+        Ok(models) => models
+            .data
+            .into_iter()
+            .filter(|m| {
+                m.id.starts_with("gpt-") || m.id.starts_with("o1") || m.id.starts_with("o3")
+            })
+            .map(|m| m.id)
+            .collect(),
+        Err(_) => Vec::new(),
+    }
+}
+
+fn anthropic_models() -> Vec<String> {
+    vec![
+        "claude-sonnet-4-20250514".to_string(),
+        "claude-3-7-sonnet-20250219".to_string(),
+        "claude-3-5-sonnet-20241022".to_string(),
+        "claude-3-5-haiku-20241022".to_string(),
+        "claude-3-opus-20240229".to_string(),
+    ]
 }
 
 /// Fetch context length for a model from OpenAI-compatible /v1/models endpoint

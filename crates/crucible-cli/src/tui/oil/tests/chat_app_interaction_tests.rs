@@ -1175,3 +1175,188 @@ fn shell_modal_render_shows_first_line_in_small_viewport() {
             .join("\n")
     );
 }
+
+// =============================================================================
+// Model Command Tests
+// =============================================================================
+
+#[test]
+fn model_command_opens_popup_with_available_models() {
+    let mut app = InkChatApp::default();
+    app.set_available_models(vec![
+        "ollama/llama3".to_string(),
+        "anthropic/claude-3".to_string(),
+        "openai/gpt-4".to_string(),
+    ]);
+
+    for c in ":model ".chars() {
+        app.update(Event::Key(key(KeyCode::Char(c))));
+    }
+
+    assert!(
+        app.is_popup_visible(),
+        "Popup should open when typing ':model '"
+    );
+
+    let tree = view_with_default_ctx(&app);
+    let output = render_to_string(&tree, 80);
+
+    assert!(output.contains("llama3"), "Popup should show llama3 model");
+    assert!(
+        output.contains("claude-3"),
+        "Popup should show claude-3 model"
+    );
+}
+
+#[test]
+fn model_command_filters_models() {
+    let mut app = InkChatApp::default();
+    app.set_available_models(vec![
+        "ollama/llama3".to_string(),
+        "anthropic/claude-3".to_string(),
+        "openai/gpt-4".to_string(),
+    ]);
+
+    for c in ":model clau".chars() {
+        app.update(Event::Key(key(KeyCode::Char(c))));
+    }
+
+    assert!(app.is_popup_visible(), "Popup should be visible");
+    assert_eq!(
+        app.current_popup_filter(),
+        "clau",
+        "Filter should be 'clau'"
+    );
+
+    let tree = view_with_default_ctx(&app);
+    let output = render_to_string(&tree, 80);
+
+    assert!(
+        output.contains("claude-3"),
+        "Popup should show claude-3 (matches filter)"
+    );
+}
+
+#[test]
+fn model_command_selection_fills_input() {
+    let mut app = InkChatApp::default();
+    app.set_available_models(vec![
+        "ollama/llama3".to_string(),
+        "anthropic/claude-3".to_string(),
+    ]);
+
+    for c in ":model ".chars() {
+        app.update(Event::Key(key(KeyCode::Char(c))));
+    }
+
+    assert!(app.is_popup_visible(), "Popup should be visible");
+
+    app.update(Event::Key(key(KeyCode::Enter)));
+
+    assert!(
+        !app.is_popup_visible(),
+        "Popup should close after selection"
+    );
+    assert!(
+        app.input_content().contains(":model ollama/llama3"),
+        "Input should contain ':model ollama/llama3', got: {}",
+        app.input_content()
+    );
+}
+
+#[test]
+fn model_command_popup_select_updates_model() {
+    let mut app = InkChatApp::default();
+    app.set_available_models(vec!["ollama/llama3".to_string()]);
+
+    for c in ":model ".chars() {
+        app.update(Event::Key(key(KeyCode::Char(c))));
+    }
+
+    assert!(app.is_popup_visible(), "Popup should open after ':model '");
+
+    app.update(Event::Key(key(KeyCode::Enter)));
+
+    assert!(
+        !app.is_popup_visible(),
+        "Popup should close after selection"
+    );
+
+    assert!(
+        app.input_content().contains(":model ollama/llama3"),
+        "Input should contain ':model ollama/llama3', got: {}",
+        app.input_content()
+    );
+
+    let action = app.update(Event::Key(key(KeyCode::Enter)));
+
+    match action {
+        Action::Send(msg) => {
+            app.on_message(msg);
+        }
+        other => panic!(
+            "Expected Action::Send after submitting, got {:?}. Input was: '{}'",
+            other,
+            app.input_content()
+        ),
+    }
+
+    assert_eq!(
+        app.current_model(),
+        "ollama/llama3",
+        "Model should be updated to ollama/llama3"
+    );
+}
+
+#[test]
+fn model_command_no_models_shows_message() {
+    use crate::tui::oil::chat_app::ChatAppMsg;
+
+    let mut app = InkChatApp::default();
+
+    // First :model triggers lazy fetch (state is NotLoaded)
+    for c in ":model".chars() {
+        app.update(Event::Key(key(KeyCode::Char(c))));
+    }
+    app.update(Event::Key(key(KeyCode::Enter)));
+
+    // Simulate the fetch completing with empty model list
+    app.on_message(ChatAppMsg::ModelsLoaded(vec![]));
+
+    // Close popup with Escape
+    app.update(Event::Key(key(KeyCode::Esc)));
+
+    // Now try :model again - should show "No models available" message
+    for c in ":model".chars() {
+        app.update(Event::Key(key(KeyCode::Char(c))));
+    }
+    app.update(Event::Key(key(KeyCode::Enter)));
+
+    let tree = view_with_default_ctx(&app);
+    let output = render_to_string(&tree, 80);
+
+    assert!(
+        output.contains("No models available"),
+        "Should show 'No models available' when no models configured. Got: {}",
+        output
+    );
+}
+
+#[test]
+fn model_repl_command_in_popup_list() {
+    let mut app = InkChatApp::default();
+
+    for c in ":".chars() {
+        app.update(Event::Key(key(KeyCode::Char(c))));
+    }
+
+    assert!(app.is_popup_visible(), "Popup should open on :");
+
+    let tree = view_with_default_ctx(&app);
+    let output = render_to_string(&tree, 80);
+
+    assert!(
+        output.contains(":model"),
+        "REPL command popup should include :model"
+    );
+}

@@ -121,6 +121,13 @@ impl AgentHandle for DynamicAgent {
             Self::Local(handle) => handle.on_commands_update(commands).await,
         }
     }
+
+    async fn fetch_available_models(&mut self) -> Vec<String> {
+        match self {
+            Self::Acp(client) => client.fetch_available_models().await,
+            Self::Local(handle) => handle.fetch_available_models().await,
+        }
+    }
 }
 
 impl std::fmt::Debug for DynamicAgent {

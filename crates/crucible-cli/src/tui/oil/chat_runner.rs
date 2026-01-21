@@ -28,6 +28,7 @@ pub struct InkChatRunner {
     session_dir: Option<PathBuf>,
     resume_session_id: Option<String>,
     mcp_servers: Vec<McpServerDisplay>,
+    available_models: Vec<String>,
 }
 
 impl InkChatRunner {
@@ -44,6 +45,7 @@ impl InkChatRunner {
             session_dir: None,
             resume_session_id: None,
             mcp_servers: Vec::new(),
+            available_models: Vec::new(),
         })
     }
 
@@ -87,6 +89,11 @@ impl InkChatRunner {
         self
     }
 
+    pub fn with_available_models(mut self, models: Vec<String>) -> Self {
+        self.available_models = models;
+        self
+    }
+
     pub async fn run_with_factory<F, Fut, A>(
         &mut self,
         bridge: &AgentEventBridge,
@@ -117,6 +124,9 @@ impl InkChatRunner {
         }
         if !self.mcp_servers.is_empty() {
             app.set_mcp_servers(std::mem::take(&mut self.mcp_servers));
+        }
+        if !self.available_models.is_empty() {
+            app.set_available_models(std::mem::take(&mut self.available_models));
         }
 
         let ctx = ViewContext::new(&self.focus);
@@ -310,7 +320,10 @@ impl InkChatRunner {
 
                 let action = app.update(ev.clone());
                 tracing::trace!(?ev, ?action, "processed event");
-                if self.process_action(action, app, agent, &mut active_stream)? {
+                if self
+                    .process_action(action, app, agent, &mut active_stream)
+                    .await?
+                {
                     tracing::trace!("quit action received, breaking loop");
                     break;
                 }
@@ -371,7 +384,7 @@ impl InkChatRunner {
         app.on_message(msg.clone())
     }
 
-    fn process_action<A: AgentHandle>(
+    async fn process_action<A: AgentHandle>(
         &mut self,
         action: Action<ChatAppMsg>,
         app: &mut InkChatApp,
@@ -395,14 +408,37 @@ impl InkChatRunner {
                             *active_stream = None;
                         }
                     }
+                    ChatAppMsg::SwitchModel(model_id) => {
+                        tracing::info!(model = %model_id, "Model switch requested");
+                        match agent.switch_model(model_id).await {
+                            Ok(()) => {
+                                tracing::info!(model = %model_id, "Model switched successfully");
+                            }
+                            Err(e) => {
+                                tracing::warn!(model = %model_id, error = %e, "Model switch not supported by this agent");
+                            }
+                        }
+                    }
+                    ChatAppMsg::FetchModels => {
+                        tracing::info!("Fetching available models");
+                        let models = agent.fetch_available_models().await;
+                        if models.is_empty() {
+                            let _ = app.on_message(ChatAppMsg::ModelsFetchFailed(
+                                "No models available".to_string(),
+                            ));
+                        } else {
+                            tracing::info!(count = models.len(), "Models fetched successfully");
+                            let _ = app.on_message(ChatAppMsg::ModelsLoaded(models));
+                        }
+                    }
                     _ => {}
                 }
                 let action = app.on_message(msg);
-                self.process_action(action, app, agent, active_stream)
+                Box::pin(self.process_action(action, app, agent, active_stream)).await
             }
             Action::Batch(actions) => {
                 for action in actions {
-                    if self.process_action(action, app, agent, active_stream)? {
+                    if Box::pin(self.process_action(action, app, agent, active_stream)).await? {
                         return Ok(true);
                     }
                 }
