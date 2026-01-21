@@ -453,9 +453,24 @@ where
                 .map(|e| format!("{}/v1", e.trim_end_matches('/')))
         });
 
+        debug!(
+            reasoning_endpoint = ?self.reasoning_endpoint,
+            ollama_endpoint = ?self.ollama_endpoint,
+            model_name = ?self.model_name,
+            custom_endpoint = ?custom_endpoint,
+            "Evaluating streaming path"
+        );
+
         if let (Some(endpoint), Some(model)) = (custom_endpoint, &self.model_name) {
+            info!(
+                endpoint = %endpoint,
+                model = %model,
+                "Using custom streaming path with model switching support"
+            );
             return self.send_message_stream_with_reasoning(message, endpoint, model.clone());
         }
+
+        debug!("Using native Rig streaming (model switching NOT available)");
 
         let agent = Arc::clone(&self.agent);
         let history = Arc::clone(&self.chat_history);
@@ -1932,5 +1947,91 @@ mod tests {
         ];
         let (ok, _) = check_no_consecutive_assistant_messages(&valid3);
         assert!(ok, "Tool call flow should be valid");
+    }
+
+    /// Test that model switching is wired correctly and affects the streaming path
+    #[tokio::test]
+    async fn test_model_switching_configuration() {
+        let agent = create_test_agent();
+
+        // Create handle WITHOUT endpoints - should NOT use custom streaming
+        let handle = RigAgentHandle::new(agent);
+        assert!(handle.ollama_endpoint.is_none());
+        assert!(handle.reasoning_endpoint.is_none());
+        assert!(handle.model_name.is_none());
+
+        // Create new handle WITH endpoints - should use custom streaming
+        let agent2 = create_test_agent();
+        let handle2 = RigAgentHandle::new(agent2)
+            .with_ollama_endpoint("https://llama.krohnos.io".to_string())
+            .with_model("initial-model".to_string());
+
+        assert!(handle2.ollama_endpoint.is_some());
+        assert_eq!(
+            handle2.ollama_endpoint.as_deref(),
+            Some("https://llama.krohnos.io")
+        );
+        assert_eq!(handle2.model_name.as_deref(), Some("initial-model"));
+
+        // After switch_model, model_name should change
+        let agent3 = create_test_agent();
+        let mut handle3 = RigAgentHandle::new(agent3)
+            .with_ollama_endpoint("https://llama.krohnos.io".to_string())
+            .with_model("initial-model".to_string());
+
+        handle3.switch_model("new-model").await.unwrap();
+        assert_eq!(handle3.model_name.as_deref(), Some("new-model"));
+
+        // current_model() should reflect the switch
+        assert_eq!(handle3.current_model(), Some("new-model"));
+    }
+
+    /// Integration test: verify custom streaming path is taken when endpoints are set
+    #[tokio::test]
+    #[ignore = "requires remote Ollama endpoint"]
+    async fn test_model_switching_uses_custom_streaming() {
+        use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+
+        let _ = tracing_subscriber::registry()
+            .with(tracing_subscriber::fmt::layer().with_target(true))
+            .with(tracing_subscriber::EnvFilter::new("crucible_rig=debug"))
+            .try_init();
+
+        let client = create_openai_compatible_client();
+        let agent = client
+            .agent("gpt-oss-20b-q8_k_xl")
+            .preamble("You are a test assistant.")
+            .build();
+
+        let mut handle = RigAgentHandle::new(agent)
+            .with_ollama_endpoint("https://llama.krohnos.io".to_string())
+            .with_model("gpt-oss-20b-q8_k_xl".to_string());
+
+        // Switch to a different model
+        handle.switch_model("glm-4.7-flash-q8_0").await.unwrap();
+        assert_eq!(handle.current_model(), Some("glm-4.7-flash-q8_0"));
+
+        // Send a message - this should use the NEW model via custom streaming
+        let mut stream = handle.send_message_stream("Say just 'test' and nothing else.".to_string());
+
+        let mut got_response = false;
+        while let Some(result) = stream.next().await {
+            match result {
+                Ok(chunk) => {
+                    if !chunk.delta.is_empty() {
+                        println!("Got delta: {}", chunk.delta);
+                        got_response = true;
+                    }
+                    if chunk.done {
+                        break;
+                    }
+                }
+                Err(e) => {
+                    panic!("Stream error: {}", e);
+                }
+            }
+        }
+
+        assert!(got_response, "Should have received response from new model");
     }
 }
