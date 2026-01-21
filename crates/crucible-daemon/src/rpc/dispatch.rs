@@ -178,7 +178,10 @@ mod tests {
     }
 
     fn test_context() -> RpcContext {
-        use crate::{AgentManager, KilnManager, SessionManager, SubscriptionManager};
+        use crate::agent_manager::AgentManager;
+        use crate::kiln_manager::KilnManager;
+        use crate::session_manager::SessionManager;
+        use crate::subscription::SubscriptionManager;
         use tokio::sync::broadcast;
 
         let (event_tx, _) = broadcast::channel(16);
