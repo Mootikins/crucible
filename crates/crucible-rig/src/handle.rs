@@ -89,10 +89,11 @@ where
     max_tool_depth: usize,
 
     /// OpenAI-compatible endpoint URL for custom streaming with reasoning support
-    /// When set, uses our SSE parser to extract reasoning_content field
     reasoning_endpoint: Option<String>,
 
-    /// Model name (needed for custom streaming)
+    /// Base Ollama API endpoint for model discovery
+    ollama_endpoint: Option<String>,
+
     model_name: Option<String>,
 
     /// HTTP client for custom streaming
@@ -124,6 +125,7 @@ where
             mode_context_sent: AtomicBool::new(false),
             max_tool_depth: 50,
             reasoning_endpoint: None,
+            ollama_endpoint: None,
             model_name: None,
             http_client: reqwest::Client::new(),
             workspace_ctx: None,
@@ -173,6 +175,12 @@ where
     pub fn with_reasoning_endpoint(mut self, endpoint: String, model: String) -> Self {
         self.reasoning_endpoint = Some(endpoint);
         self.model_name = Some(model);
+        self
+    }
+
+    /// Set base Ollama endpoint for model discovery
+    pub fn with_ollama_endpoint(mut self, endpoint: String) -> Self {
+        self.ollama_endpoint = Some(endpoint);
         self
     }
 
@@ -992,6 +1000,49 @@ where
             debug!("Cleared chat history");
         } else {
             warn!("Could not acquire write lock to clear chat history");
+        }
+    }
+
+    async fn fetch_available_models(&mut self) -> Vec<String> {
+        let endpoint = self
+            .ollama_endpoint
+            .as_deref()
+            .or(self.reasoning_endpoint.as_deref())
+            .unwrap_or("http://localhost:11434");
+
+        let base = endpoint.trim_end_matches('/').trim_end_matches("/v1");
+        let url = format!("{}/api/tags", base);
+        debug!(url = %url, "Fetching available models from Ollama");
+
+        #[derive(serde::Deserialize)]
+        struct TagsResponse {
+            models: Vec<ModelInfo>,
+        }
+        #[derive(serde::Deserialize)]
+        struct ModelInfo {
+            name: String,
+        }
+
+        match self.http_client.get(&url).send().await {
+            Ok(resp) if resp.status().is_success() => match resp.json::<TagsResponse>().await {
+                Ok(tags) => {
+                    let models: Vec<String> = tags.models.into_iter().map(|m| m.name).collect();
+                    info!(count = models.len(), "Fetched available models");
+                    models
+                }
+                Err(e) => {
+                    warn!(error = %e, "Failed to parse Ollama models response");
+                    Vec::new()
+                }
+            },
+            Ok(resp) => {
+                warn!(status = %resp.status(), "Ollama API returned non-success status");
+                Vec::new()
+            }
+            Err(e) => {
+                warn!(error = %e, "Failed to fetch models from Ollama");
+                Vec::new()
+            }
         }
     }
 }

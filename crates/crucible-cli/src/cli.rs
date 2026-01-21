@@ -187,6 +187,9 @@ pub enum Commands {
     /// Display kiln statistics
     Stats,
 
+    /// List available models from configured provider
+    Models,
+
     /// Configuration management
     #[command(subcommand)]
     Config(ConfigCommands),
