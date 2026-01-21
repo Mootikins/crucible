@@ -96,6 +96,9 @@ where
 
     model_name: Option<String>,
 
+    /// Thinking budget for reasoning models (-1=unlimited, 0=disabled, >0=max tokens)
+    thinking_budget: Option<i64>,
+
     /// HTTP client for custom streaming
     http_client: reqwest::Client,
 
@@ -127,6 +130,7 @@ where
             reasoning_endpoint: None,
             ollama_endpoint: None,
             model_name: None,
+            thinking_budget: None,
             http_client: reqwest::Client::new(),
             workspace_ctx: None,
         }
@@ -190,6 +194,12 @@ where
         self
     }
 
+    /// Set thinking budget for reasoning models (-1=unlimited, 0=disabled, >0=max tokens)
+    pub fn with_thinking_budget(mut self, budget: Option<i64>) -> Self {
+        self.thinking_budget = budget;
+        self
+    }
+
     /// Set initial conversation history
     ///
     /// Useful for resuming sessions or multi-agent handoff.
@@ -227,6 +237,7 @@ where
         let history = Arc::clone(&self.chat_history);
         let http_client = self.http_client.clone();
         let current_mode_id = self.current_mode_id.clone();
+        let thinking_budget = self.thinking_budget;
 
         // Check if we need to send mode context (only once per mode)
         let should_send_mode_context =
@@ -325,12 +336,16 @@ where
             );
 
             // Create custom stream with reasoning support
+            let options = openai_reasoning::ReasoningOptions {
+                tools: None, // TODO: Support tools in custom streaming
+                thinking_budget,
+            };
             let mut stream = openai_reasoning::stream_with_reasoning(
                 http_client,
                 &endpoint,
                 &model,
                 messages,
-                None, // TODO: Support tools in custom streaming
+                options,
             );
 
             let mut accumulated_text = String::new();
@@ -1584,7 +1599,7 @@ mod tests {
     #[tokio::test]
     #[ignore = "requires remote endpoint with thinking model"]
     async fn test_reasoning_stream_extraction() {
-        use crate::openai_reasoning::{stream_with_reasoning, ReasoningChunk};
+        use crate::openai_reasoning::{stream_with_reasoning, ReasoningChunk, ReasoningOptions};
 
         let client = reqwest::Client::new();
         let endpoint = "https://llama.krohnos.io/v1";
@@ -1596,7 +1611,8 @@ mod tests {
 
         println!("=== Testing reasoning extraction ===");
 
-        let mut stream = stream_with_reasoning(client, endpoint, model, messages, None);
+        let options = ReasoningOptions::default();
+        let mut stream = stream_with_reasoning(client, endpoint, model, messages, options);
 
         let mut reasoning_chunks = 0u32;
         let mut text_chunks = 0u32;
