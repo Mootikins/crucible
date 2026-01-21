@@ -2,12 +2,33 @@
 //!
 //! This module provides utilities for building Rig agents from Crucible's
 //! AgentCard configuration.
+//!
+//! ## Agent Components Pattern
+//!
+//! For runtime model switching, agents are built from reusable [`AgentComponents`]:
+//!
+//! ```rust,ignore
+//! use crucible_rig::agent::{AgentComponents, build_agent_from_components_generic};
+//!
+//! // Create components once
+//! let components = AgentComponents::new(config, client, workspace_ctx)
+//!     .with_kiln(kiln_ctx)
+//!     .with_model_size(ModelSize::Medium);
+//!
+//! // Build initial agent
+//! let handle = rebuild_agent_handle(&components, "llama3.2")?;
+//!
+//! // Later: switch model by rebuilding with same components
+//! let new_handle = rebuild_agent_handle(&components, "qwen3-8b")?;
+//! ```
 
 use crate::kiln_tools::{KilnContext, ListNotesTool, ReadNoteTool, SemanticSearchTool};
+use crate::providers::RigClient;
 use crate::workspace_tools::{
     BashTool, EditFileTool, GlobTool, GrepTool, ReadFileTool, WorkspaceContext, WriteFileTool,
 };
 use crucible_core::agent::AgentCard;
+use crucible_core::prompts::ModelSize;
 use rig::agent::{Agent, AgentBuilder};
 use rig::client::CompletionClient;
 use rig::completion::CompletionModel;
@@ -120,6 +141,154 @@ impl AgentConfig {
         self.additional_params = Some(params);
         self
     }
+
+    /// Create a copy with a different model name
+    pub fn with_model(&self, model: impl Into<String>) -> Self {
+        Self {
+            model: model.into(),
+            system_prompt: self.system_prompt.clone(),
+            temperature: self.temperature,
+            max_tokens: self.max_tokens,
+            additional_params: self.additional_params.clone(),
+        }
+    }
+}
+
+/// Components needed to build and rebuild Rig agents.
+///
+/// Holds tool contexts and configuration separately from the agent itself,
+/// enabling runtime model switching by rebuilding the agent with the same
+/// tools but a different model.
+#[derive(Clone)]
+pub struct AgentComponents {
+    pub config: AgentConfig,
+    pub client: RigClient,
+    pub workspace_ctx: WorkspaceContext,
+    pub kiln_ctx: Option<KilnContext>,
+    pub model_size: ModelSize,
+    /// Ollama endpoint for custom streaming (enables model switching)
+    pub ollama_endpoint: Option<String>,
+    /// Thinking budget for reasoning models
+    pub thinking_budget: Option<i64>,
+}
+
+impl AgentComponents {
+    pub fn new(config: AgentConfig, client: RigClient, workspace_ctx: WorkspaceContext) -> Self {
+        Self {
+            config,
+            client,
+            workspace_ctx,
+            kiln_ctx: None,
+            model_size: ModelSize::Medium,
+            ollama_endpoint: None,
+            thinking_budget: None,
+        }
+    }
+
+    pub fn with_kiln(mut self, kiln_ctx: KilnContext) -> Self {
+        self.kiln_ctx = Some(kiln_ctx);
+        self
+    }
+
+    pub fn with_model_size(mut self, size: ModelSize) -> Self {
+        self.model_size = size;
+        self
+    }
+
+    pub fn with_ollama_endpoint(mut self, endpoint: impl Into<String>) -> Self {
+        self.ollama_endpoint = Some(endpoint.into());
+        self
+    }
+
+    pub fn with_thinking_budget(mut self, budget: i64) -> Self {
+        self.thinking_budget = Some(budget);
+        self
+    }
+
+    /// Get a config with the specified model name
+    pub fn config_for_model(&self, model: &str) -> AgentConfig {
+        self.config.with_model(model)
+    }
+}
+
+/// Build result containing the agent handle and workspace context for mode sync.
+pub struct BuiltAgent<M>
+where
+    M: CompletionModel + 'static,
+{
+    pub agent: Agent<M>,
+    pub workspace_ctx: WorkspaceContext,
+    pub kiln_ctx: Option<KilnContext>,
+}
+
+/// Build an agent from components with a specific model.
+///
+/// This is the core function for the rebuild pattern - given components and a model name,
+/// it constructs a new agent with the appropriate tools based on model size.
+pub fn build_agent_from_components_generic<C>(
+    components: &AgentComponents,
+    model: &str,
+    client: &C,
+) -> AgentBuildResult<BuiltAgent<C::CompletionModel>>
+where
+    C: CompletionClient,
+    C::CompletionModel: CompletionModel<Client = C>,
+{
+    let config = components.config_for_model(model);
+    let ctx = components.workspace_ctx.clone();
+    let kiln_ctx = components.kiln_ctx.clone();
+
+    let mut builder: AgentBuilder<C::CompletionModel> = client.agent(&config.model);
+    builder = builder.preamble(&config.system_prompt);
+
+    if let Some(temp) = config.temperature {
+        builder = builder.temperature(temp);
+    }
+
+    if let Some(ref params) = config.additional_params {
+        builder = builder.additional_params(params.clone());
+    }
+
+    let agent = match (components.model_size.is_read_only(), &kiln_ctx) {
+        (true, None) => builder
+            .tool(ReadFileTool::new(ctx.clone()))
+            .tool(GlobTool::new(ctx.clone()))
+            .tool(GrepTool::new(ctx.clone()))
+            .build(),
+        (true, Some(kiln)) => builder
+            .tool(ReadFileTool::new(ctx.clone()))
+            .tool(GlobTool::new(ctx.clone()))
+            .tool(GrepTool::new(ctx.clone()))
+            .tool(SemanticSearchTool::new(kiln.clone()))
+            .tool(ReadNoteTool::new(kiln.clone()))
+            .tool(ListNotesTool::new(kiln.clone()))
+            .build(),
+        (false, None) => builder
+            .tool(ReadFileTool::new(ctx.clone()))
+            .tool(EditFileTool::new(ctx.clone()))
+            .tool(WriteFileTool::new(ctx.clone()))
+            .tool(BashTool::new(ctx.clone()))
+            .tool(GlobTool::new(ctx.clone()))
+            .tool(GrepTool::new(ctx.clone()))
+            .build(),
+        (false, Some(kiln)) => builder
+            .tool(ReadFileTool::new(ctx.clone()))
+            .tool(EditFileTool::new(ctx.clone()))
+            .tool(WriteFileTool::new(ctx.clone()))
+            .tool(BashTool::new(ctx.clone()))
+            .tool(GlobTool::new(ctx.clone()))
+            .tool(GrepTool::new(ctx.clone()))
+            .tool(SemanticSearchTool::new(kiln.clone()))
+            .tool(ReadNoteTool::new(kiln.clone()))
+            .tool(ListNotesTool::new(kiln.clone()))
+            .build(),
+    };
+
+    Ok(BuiltAgent {
+        agent,
+        workspace_ctx: ctx,
+        kiln_ctx,
+    })
 }
 
 /// Build a Rig agent from an AgentCard and client.
