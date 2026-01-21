@@ -300,11 +300,9 @@ pub async fn create_internal_agent(
 
     use crucible_config::{LlmProviderConfig, LlmProviderType};
 
-    // Track reasoning endpoint for models that support it
-    // This is used for custom SSE parsing to extract reasoning_content field
     let mut reasoning_endpoint: Option<String> = None;
+    let mut ollama_endpoint: Option<String> = None;
 
-    // Create Rig client based on provider
     let client = match config.chat.provider {
         LlmProvider::Ollama => {
             let endpoint = config
@@ -312,6 +310,8 @@ pub async fn create_internal_agent(
                 .endpoint
                 .clone()
                 .unwrap_or_else(|| "http://localhost:11434".to_string());
+
+            ollama_endpoint = Some(endpoint.clone());
 
             // For custom Ollama endpoints (not localhost), use OpenAI-compatible client
             // This provides better tool calling support via /v1/chat/completions
@@ -409,14 +409,16 @@ pub async fn create_internal_agent(
                 model_size,
                 kiln_ctx,
             )?;
-            let handle = RigAgentHandle::new(agent)
+            let mut handle = RigAgentHandle::new(agent)
                 .with_workspace_context(ws_ctx)
                 .with_initial_mode(initial_mode);
-            Ok(if let Some(endpoint) = reasoning_endpoint {
-                Box::new(handle.with_reasoning_endpoint(endpoint, model))
-            } else {
-                Box::new(handle)
-            })
+            if let Some(endpoint) = ollama_endpoint.clone() {
+                handle = handle.with_ollama_endpoint(endpoint);
+            }
+            if let Some(endpoint) = reasoning_endpoint {
+                handle = handle.with_reasoning_endpoint(endpoint, model);
+            }
+            Ok(Box::new(handle))
         }
         crucible_rig::RigClient::OpenAI(openai_client) => {
             let (agent, ws_ctx) = build_agent_with_kiln_tools(
@@ -426,14 +428,16 @@ pub async fn create_internal_agent(
                 model_size,
                 kiln_ctx,
             )?;
-            let handle = RigAgentHandle::new(agent)
+            let mut handle = RigAgentHandle::new(agent)
                 .with_workspace_context(ws_ctx)
                 .with_initial_mode(initial_mode);
-            Ok(if let Some(endpoint) = reasoning_endpoint {
-                Box::new(handle.with_reasoning_endpoint(endpoint, model))
-            } else {
-                Box::new(handle)
-            })
+            if let Some(endpoint) = ollama_endpoint.clone() {
+                handle = handle.with_ollama_endpoint(endpoint);
+            }
+            if let Some(endpoint) = reasoning_endpoint {
+                handle = handle.with_reasoning_endpoint(endpoint, model);
+            }
+            Ok(Box::new(handle))
         }
         crucible_rig::RigClient::OpenAICompat(compat_client) => {
             let (agent, ws_ctx) = build_agent_with_kiln_tools(
@@ -443,14 +447,16 @@ pub async fn create_internal_agent(
                 model_size,
                 kiln_ctx,
             )?;
-            let handle = RigAgentHandle::new(agent)
+            let mut handle = RigAgentHandle::new(agent)
                 .with_workspace_context(ws_ctx)
                 .with_initial_mode(initial_mode);
-            Ok(if let Some(endpoint) = reasoning_endpoint {
-                Box::new(handle.with_reasoning_endpoint(endpoint, model))
-            } else {
-                Box::new(handle)
-            })
+            if let Some(endpoint) = ollama_endpoint.clone() {
+                handle = handle.with_ollama_endpoint(endpoint);
+            }
+            if let Some(endpoint) = reasoning_endpoint {
+                handle = handle.with_reasoning_endpoint(endpoint, model);
+            }
+            Ok(Box::new(handle))
         }
         crucible_rig::RigClient::Anthropic(anthropic_client) => {
             let (agent, ws_ctx) = build_agent_with_kiln_tools(

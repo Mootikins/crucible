@@ -157,6 +157,44 @@ pub trait AgentHandle: Send + Sync {
     /// Resets the agent's conversation context, removing all previous messages.
     /// UI state should be cleared separately.
     fn clear_history(&mut self) {}
+
+    /// Switch to a different model
+    ///
+    /// This may require recreating the underlying agent/connection.
+    /// The implementation should preserve conversation history if possible.
+    ///
+    /// # Arguments
+    /// * `model_id` - The model identifier (e.g., "llama3.2", "gpt-4", "claude-3-opus")
+    ///
+    /// # Returns
+    /// * `Ok(())` if the switch was successful
+    /// * `Err(ChatError::NotSupported)` if the agent doesn't support model switching
+    async fn switch_model(&mut self, _model_id: &str) -> ChatResult<()> {
+        Err(ChatError::NotSupported("switch_model".into()))
+    }
+
+    /// Get the current model identifier
+    ///
+    /// Returns the currently active model, if known.
+    fn current_model(&self) -> Option<&str> {
+        None
+    }
+
+    /// Get available models for this agent (cached)
+    ///
+    /// Returns a list of model identifiers that can be used with `switch_model`.
+    /// Returns empty if model listing is not supported or models haven't been fetched.
+    fn available_models(&self) -> Vec<String> {
+        Vec::new()
+    }
+
+    /// Fetch available models from the provider
+    ///
+    /// This is an async method that queries the provider for available models.
+    /// Use this for lazy loading when models are needed.
+    async fn fetch_available_models(&mut self) -> Vec<String> {
+        self.available_models()
+    }
 }
 
 /// Blanket implementation for boxed trait objects
@@ -203,6 +241,22 @@ impl AgentHandle for Box<dyn AgentHandle + Send + Sync> {
 
     fn clear_history(&mut self) {
         (**self).clear_history()
+    }
+
+    async fn switch_model(&mut self, model_id: &str) -> ChatResult<()> {
+        (**self).switch_model(model_id).await
+    }
+
+    fn current_model(&self) -> Option<&str> {
+        (**self).current_model()
+    }
+
+    fn available_models(&self) -> Vec<String> {
+        (**self).available_models()
+    }
+
+    async fn fetch_available_models(&mut self) -> Vec<String> {
+        (**self).fetch_available_models().await
     }
 }
 

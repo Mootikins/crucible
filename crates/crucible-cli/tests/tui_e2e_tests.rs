@@ -857,6 +857,222 @@ fn oil_explicit_mode_commands() {
 // Oil Runner Popup Tests
 // =============================================================================
 
+// =============================================================================
+// Model Popup Tests
+// =============================================================================
+
+/// Test :model command shows popup (models loaded at startup)
+///
+/// When models are fetched at startup (parallel with file/note indexing),
+/// the :model command should show a popup with available models.
+#[test]
+#[ignore = "requires built binary and Ollama"]
+fn model_popup_shows_with_ollama() {
+    let config = TuiTestConfig::new("chat")
+        .with_args(&["--no-process", "--internal"])
+        .with_env("RUST_LOG", "warn")
+        .with_timeout(Duration::from_secs(15));
+
+    let mut session = TuiTestSession::spawn(config).expect("Failed to spawn");
+
+    session.wait(Duration::from_secs(3));
+
+    session.send(":model\r").expect("Failed to send :model");
+    session.wait(Duration::from_millis(500));
+
+    let screen = session.capture_screen().unwrap_or_default();
+    eprintln!("Screen after :model: {}", safe_truncate(&screen, 500));
+
+    session.send_key(Key::Escape).expect("Escape failed");
+    session.wait(Duration::from_millis(200));
+
+    session.send_control('c').ok();
+    session.send_control('c').ok();
+}
+
+/// Test :model triggers lazy fetch when models not loaded
+///
+/// When no models are pre-loaded (e.g., Ollama was slow to start),
+/// the :model command should trigger a fetch and show "Fetching models..."
+#[test]
+#[ignore = "requires built binary"]
+fn model_popup_lazy_fetch_on_demand() {
+    let config = TuiTestConfig::new("chat")
+        .with_args(&["--no-process"])
+        .with_env("RUST_LOG", "crucible_cli::tui::oil=debug")
+        .with_timeout(Duration::from_secs(15));
+
+    let mut session = TuiTestSession::spawn(config).expect("Failed to spawn");
+
+    session.wait(Duration::from_secs(1));
+
+    session.send(":model\r").expect("Failed to send :model");
+    session.wait(Duration::from_secs(2));
+
+    let screen = session.capture_screen().unwrap_or_default();
+    eprintln!(
+        "Screen after :model (lazy fetch): {}",
+        safe_truncate(&screen, 500)
+    );
+
+    session.send_key(Key::Escape).expect("Escape failed");
+    session.wait(Duration::from_millis(200));
+
+    session.send_control('c').ok();
+    session.send_control('c').ok();
+}
+
+/// Test :model with filter shows filtered models
+///
+/// Typing `:model lla` should filter to llama models.
+#[test]
+#[ignore = "requires built binary and Ollama"]
+fn model_popup_filter_works() {
+    let config = TuiTestConfig::new("chat")
+        .with_args(&["--no-process", "--internal"])
+        .with_env("RUST_LOG", "warn")
+        .with_timeout(Duration::from_secs(15));
+
+    let mut session = TuiTestSession::spawn(config).expect("Failed to spawn");
+
+    session.wait(Duration::from_secs(3));
+
+    session
+        .send(":model lla")
+        .expect("Failed to send :model lla");
+    session.wait(Duration::from_millis(500));
+
+    let screen = session.capture_screen().unwrap_or_default();
+    eprintln!("Screen with filter 'lla': {}", safe_truncate(&screen, 500));
+
+    session.send_key(Key::Escape).expect("Escape failed");
+    session.wait(Duration::from_millis(200));
+
+    session.send_control('c').ok();
+    session.send_control('c').ok();
+}
+
+/// Test model selection updates status bar
+///
+/// Selecting a model from popup should update the status bar.
+#[test]
+#[ignore = "requires built binary and Ollama"]
+fn model_selection_updates_status() {
+    let config = TuiTestConfig::new("chat")
+        .with_args(&["--no-process", "--internal"])
+        .with_env("RUST_LOG", "warn")
+        .with_timeout(Duration::from_secs(15));
+
+    let mut session = TuiTestSession::spawn(config).expect("Failed to spawn");
+
+    session.wait(Duration::from_secs(3));
+
+    session.send(":model\r").expect("Failed to send :model");
+    session.wait(Duration::from_millis(500));
+
+    session.send_key(Key::Down).expect("Down failed");
+    session.wait(Duration::from_millis(100));
+
+    session.send_key(Key::Enter).expect("Enter failed");
+    session.wait(Duration::from_millis(500));
+
+    let screen = session.capture_screen().unwrap_or_default();
+    eprintln!(
+        "Screen after model selection: {}",
+        safe_truncate(&screen, 500)
+    );
+
+    session.send_control('c').ok();
+    session.send_control('c').ok();
+}
+
+/// Test :model popup navigation with arrow keys
+#[test]
+#[ignore = "requires built binary and Ollama"]
+fn model_popup_navigation() {
+    let config = TuiTestConfig::new("chat")
+        .with_args(&["--no-process", "--internal"])
+        .with_env("RUST_LOG", "warn")
+        .with_timeout(Duration::from_secs(15));
+
+    let mut session = TuiTestSession::spawn(config).expect("Failed to spawn");
+
+    session.wait(Duration::from_secs(3));
+
+    session.send(":model\r").expect("Failed to send :model");
+    session.wait(Duration::from_millis(500));
+
+    for i in 0..3 {
+        session.send_key(Key::Down).expect("Down failed");
+        session.wait(Duration::from_millis(100));
+        eprintln!("Down {}", i + 1);
+    }
+
+    for i in 0..2 {
+        session.send_key(Key::Up).expect("Up failed");
+        session.wait(Duration::from_millis(100));
+        eprintln!("Up {}", i + 1);
+    }
+
+    session.send_key(Key::Escape).expect("Escape failed");
+    session.wait(Duration::from_millis(200));
+
+    session.send_control('c').ok();
+    session.send_control('c').ok();
+}
+
+/// Test :model <name> direct switch (no popup)
+#[test]
+#[ignore = "requires built binary and Ollama"]
+fn model_direct_switch_command() {
+    let config = TuiTestConfig::new("chat")
+        .with_args(&["--no-process", "--internal"])
+        .with_env("RUST_LOG", "warn")
+        .with_timeout(Duration::from_secs(15));
+
+    let mut session = TuiTestSession::spawn(config).expect("Failed to spawn");
+
+    session.wait(Duration::from_secs(2));
+
+    session
+        .send(":model llama3.2\r")
+        .expect("Failed to send :model llama3.2");
+    session.wait(Duration::from_millis(500));
+
+    let screen = session.capture_screen().unwrap_or_default();
+    eprintln!(
+        "Screen after direct model switch: {}",
+        safe_truncate(&screen, 500)
+    );
+
+    session.send_control('c').ok();
+    session.send_control('c').ok();
+}
+
+/// Test :model shows message when no models available (Ollama not running)
+#[test]
+#[ignore = "requires built binary without Ollama"]
+fn model_popup_no_models_message() {
+    let config = TuiTestConfig::new("chat")
+        .with_args(&["--no-process"])
+        .with_env("OLLAMA_HOST", "http://localhost:99999")
+        .with_env("RUST_LOG", "warn")
+        .with_timeout(Duration::from_secs(10));
+
+    let mut session = TuiTestSession::spawn(config).expect("Failed to spawn");
+
+    session.wait(Duration::from_secs(2));
+
+    session.send(":model\r").expect("Failed to send :model");
+    session.wait(Duration::from_secs(3));
+
+    let screen = session.capture_screen().unwrap_or_default();
+    eprintln!("Screen with no Ollama: {}", safe_truncate(&screen, 500));
+
+    session.send_control('c').ok();
+    session.send_control('c').ok();
+}
+
 /// Test F1 toggles popup
 #[test]
 #[ignore = "requires built binary"]

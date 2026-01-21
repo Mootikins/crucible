@@ -185,6 +185,22 @@ impl SessionEventMessage {
         )
     }
 
+    /// Create a model switched event
+    pub fn model_switched(
+        session_id: impl Into<String>,
+        model_id: impl Into<String>,
+        provider: impl Into<String>,
+    ) -> Self {
+        Self::new(
+            session_id,
+            "model_switched",
+            serde_json::json!({
+                "model_id": model_id.into(),
+                "provider": provider.into(),
+            }),
+        )
+    }
+
     pub fn message_complete(
         session_id: impl Into<String>,
         message_id: impl Into<String>,

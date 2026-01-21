@@ -16,7 +16,7 @@ use crate::config::CliConfig;
 use crate::core_facade::KilnContext;
 use crate::factories;
 use crate::progress::{BackgroundProgress, LiveProgress, StatusLine};
-use crate::provider_detect::fetch_model_context_length;
+use crate::provider_detect::{fetch_model_context_length, fetch_provider_models};
 use crate::tui::oil::McpServerDisplay;
 use crate::tui::AgentSelection;
 use crucible_core::traits::chat::{is_read_only, mode_display_name};
@@ -213,7 +213,10 @@ async fn run_interactive_chat(
         }
     }
 
-    let (files, notes) = tokio::join!(
+    let provider = config.chat.provider.clone();
+    let model_endpoint = config.chat.llm_endpoint();
+
+    let (files, notes, available_models) = tokio::join!(
         tokio::task::spawn_blocking({
             let root = workspace_root.clone();
             move || index_workspace_files(&root)
@@ -222,6 +225,7 @@ async fn run_interactive_chat(
             let root = kiln_root.clone();
             move || index_kiln_notes(&root)
         }),
+        fetch_provider_models(&provider, &model_endpoint),
     );
 
     if let Ok(files) = files {
@@ -229,6 +233,13 @@ async fn run_interactive_chat(
     }
     if let Ok(notes) = notes {
         runner = runner.with_kiln_notes(notes);
+    }
+    if !available_models.is_empty() {
+        debug!(
+            count = available_models.len(),
+            "Discovered models for popup"
+        );
+        runner = runner.with_available_models(available_models);
     }
 
     let mcp_servers: Vec<McpServerDisplay> = config

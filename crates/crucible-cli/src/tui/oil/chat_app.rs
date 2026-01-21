@@ -77,6 +77,14 @@ pub enum ChatAppMsg {
     ClearHistory,
     /// Queue a message to send after current stream completes
     QueueMessage(String),
+    /// Request to switch the active model
+    SwitchModel(String),
+    /// Request to fetch available models from provider
+    FetchModels,
+    /// Models successfully loaded
+    ModelsLoaded(Vec<String>),
+    /// Model fetch failed
+    ModelsFetchFailed(String),
 }
 
 #[derive(Debug, Clone)]
@@ -179,6 +187,7 @@ pub enum AutocompleteKind {
     Command,
     SlashCommand,
     ReplCommand,
+    Model,
     CommandArg {
         command: String,
         arg_index: usize,
@@ -190,6 +199,15 @@ pub enum ShellStatus {
     Running,
     Completed { exit_code: i32 },
     Cancelled,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub enum ModelListState {
+    #[default]
+    NotLoaded,
+    Loading,
+    Loaded,
+    Failed(String),
 }
 
 pub struct ShellModal {
@@ -319,6 +337,8 @@ pub struct InkChatApp {
     needs_full_redraw: bool,
     mcp_servers: Vec<McpServerDisplay>,
     deferred_messages: VecDeque<String>,
+    available_models: Vec<String>,
+    model_list_state: ModelListState,
 }
 
 impl Default for InkChatApp {
@@ -352,6 +372,8 @@ impl Default for InkChatApp {
             needs_full_redraw: false,
             mcp_servers: Vec::new(),
             deferred_messages: VecDeque::new(),
+            available_models: Vec::new(),
+            model_list_state: ModelListState::NotLoaded,
         }
     }
 }
@@ -473,6 +495,29 @@ impl App for InkChatApp {
                 Action::Continue
             }
             ChatAppMsg::ClearHistory => Action::Continue,
+            ChatAppMsg::SwitchModel(model) => {
+                self.model = model;
+                self.status = format!("Model: {}", self.model);
+                Action::Continue
+            }
+            ChatAppMsg::FetchModels => {
+                self.model_list_state = ModelListState::Loading;
+                self.status = "Fetching models...".to_string();
+                Action::Continue
+            }
+            ChatAppMsg::ModelsLoaded(models) => {
+                self.available_models = models;
+                self.model_list_state = ModelListState::Loaded;
+                if self.popup_kind == AutocompleteKind::Model && self.show_popup {
+                    self.popup_selected = 0;
+                }
+                Action::Continue
+            }
+            ChatAppMsg::ModelsFetchFailed(reason) => {
+                self.model_list_state = ModelListState::Failed(reason.clone());
+                self.error = Some(format!("Failed to fetch models: {}", reason));
+                Action::Continue
+            }
         }
     }
 
@@ -516,6 +561,10 @@ impl InkChatApp {
 
     pub fn set_mcp_servers(&mut self, servers: Vec<McpServerDisplay>) {
         self.mcp_servers = servers;
+    }
+
+    pub fn set_available_models(&mut self, models: Vec<String>) {
+        self.available_models = models;
     }
 
     pub fn load_previous_messages(&mut self, items: Vec<ChatItem>) {
@@ -584,6 +633,11 @@ impl InkChatApp {
     #[cfg(test)]
     pub fn current_popup_filter(&self) -> &str {
         &self.popup_filter
+    }
+
+    #[cfg(test)]
+    pub fn current_model(&self) -> &str {
+        &self.model
     }
 
     pub fn has_shell_modal(&self) -> bool {
@@ -695,26 +749,37 @@ impl InkChatApp {
             return self.handle_submit(submitted);
         }
 
-        self.check_autocomplete_trigger();
+        if let Some(fetch_action) = self.check_autocomplete_trigger() {
+            return fetch_action;
+        }
 
         Action::Continue
     }
 
-    fn check_autocomplete_trigger(&mut self) {
+    fn check_autocomplete_trigger(&mut self) -> Option<Action<ChatAppMsg>> {
         let content = self.input.content();
         let cursor = self.input.cursor();
 
         if let Some((kind, trigger_pos, filter)) = self.detect_trigger(content, cursor) {
+            let needs_model_fetch = kind == AutocompleteKind::Model
+                && self.model_list_state == ModelListState::NotLoaded;
+
             self.popup_kind = kind;
             self.popup_trigger_pos = trigger_pos;
             self.popup_filter = filter;
             self.popup_selected = 0;
             self.show_popup = !self.get_popup_items().is_empty();
+
+            if needs_model_fetch {
+                self.show_popup = true;
+                return Some(Action::Send(ChatAppMsg::FetchModels));
+            }
         } else if self.popup_kind != AutocompleteKind::None {
             self.popup_kind = AutocompleteKind::None;
             self.popup_filter.clear();
             self.show_popup = false;
         }
+        None
     }
 
     fn detect_trigger(
@@ -771,13 +836,19 @@ impl InkChatApp {
                 if let Some(space_pos) = after_colon.find(char::is_whitespace) {
                     let command = after_colon[..space_pos].to_string();
                     let args_part = after_colon[space_pos..].trim_start();
-                    let arg_index = args_part.split_whitespace().count();
                     let filter = args_part
                         .split_whitespace()
                         .last()
                         .unwrap_or("")
                         .to_string();
                     let trigger_pos = cursor - filter.len();
+
+                    // Special case: :model triggers Model popup for fuzzy model search
+                    if command == "model" {
+                        return Some((AutocompleteKind::Model, trigger_pos, filter));
+                    }
+
+                    let arg_index = args_part.split_whitespace().count();
                     return Some((
                         AutocompleteKind::CommandArg { command, arg_index },
                         trigger_pos,
@@ -970,7 +1041,8 @@ impl InkChatApp {
             "q" | "quit" => Action::Quit,
             "help" | "h" => {
                 self.add_system_message(
-                    "[core] :quit :help :clear :palette :export <path>\n[mcp] :mcp".to_string(),
+                    "[core] :quit :help :clear :palette :model :export <path>\n[mcp] :mcp"
+                        .to_string(),
                 );
                 Action::Continue
             }
@@ -984,6 +1056,37 @@ impl InkChatApp {
             "mcp" => {
                 self.handle_mcp_command();
                 Action::Continue
+            }
+            "model" => {
+                if self.model_list_state == ModelListState::NotLoaded {
+                    self.show_popup = true;
+                    self.popup_kind = AutocompleteKind::Model;
+                    self.popup_filter.clear();
+                    self.popup_selected = 0;
+                    self.popup_trigger_pos = 0;
+                    return Action::Send(ChatAppMsg::FetchModels);
+                }
+                if self.available_models.is_empty() {
+                    self.add_system_message(
+                        "No models available. Type :model <name> to switch.".to_string(),
+                    );
+                } else {
+                    self.show_popup = true;
+                    self.popup_kind = AutocompleteKind::Model;
+                    self.popup_filter.clear();
+                    self.popup_selected = 0;
+                    self.popup_trigger_pos = 0;
+                }
+                Action::Continue
+            }
+            _ if command.starts_with("model ") => {
+                let model_name = command.strip_prefix("model ").unwrap().trim();
+                if model_name.is_empty() {
+                    self.error = Some("Usage: :model <name>".to_string());
+                    Action::Continue
+                } else {
+                    Action::Send(ChatAppMsg::SwitchModel(model_name.to_string()))
+                }
             }
             "clear" => {
                 self.cache.clear();
@@ -2183,6 +2286,11 @@ impl InkChatApp {
                     kind: Some("core".to_string()),
                 },
                 PopupItemNode {
+                    label: ":model".to_string(),
+                    description: Some("Switch model".to_string()),
+                    kind: Some("core".to_string()),
+                },
+                PopupItemNode {
                     label: ":mcp".to_string(),
                     description: Some("List MCP servers".to_string()),
                     kind: Some("mcp".to_string()),
@@ -2196,6 +2304,17 @@ impl InkChatApp {
             .into_iter()
             .filter(|c| filter.is_empty() || c.label.to_lowercase().contains(&filter))
             .collect(),
+            AutocompleteKind::Model => self
+                .available_models
+                .iter()
+                .filter(|m| filter.is_empty() || m.to_lowercase().contains(&filter))
+                .take(15)
+                .map(|m| PopupItemNode {
+                    label: m.clone(),
+                    description: None,
+                    kind: Some("model".to_string()),
+                })
+                .collect(),
             AutocompleteKind::CommandArg {
                 ref command,
                 arg_index,
@@ -2331,6 +2450,13 @@ impl InkChatApp {
             AutocompleteKind::ReplCommand => {
                 self.input.handle(InputAction::Clear);
                 for ch in label.chars() {
+                    self.input.handle(InputAction::Insert(ch));
+                }
+            }
+            AutocompleteKind::Model => {
+                self.input.handle(InputAction::Clear);
+                let cmd = format!(":model {}", label);
+                for ch in cmd.chars() {
                     self.input.handle(InputAction::Insert(ch));
                 }
             }

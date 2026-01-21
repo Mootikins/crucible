@@ -31,6 +31,7 @@ crucible-sqlite = { path = "../crucible-sqlite", optional = true }
 crucible-pipeline = { path = "../crucible-pipeline" }
 crucible-enrichment = { path = "../crucible-enrichment" }
 scopeguard = "1"
+reqwest = { workspace = true }
 
 [features]
 default = ["storage-sqlite"]
