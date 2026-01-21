@@ -184,6 +184,12 @@ where
         self
     }
 
+    /// Set initial model name (enables custom streaming with model switching)
+    pub fn with_model(mut self, model: String) -> Self {
+        self.model_name = Some(model);
+        self
+    }
+
     /// Set initial conversation history
     ///
     /// Useful for resuming sessions or multi-agent handoff.
@@ -439,13 +445,16 @@ where
 
         debug!("RigAgentHandle::send_message_stream called: {}", message);
 
-        // Check if we should use custom streaming for reasoning extraction
-        if let (Some(endpoint), Some(model)) = (&self.reasoning_endpoint, &self.model_name) {
-            return self.send_message_stream_with_reasoning(
-                message,
-                endpoint.clone(),
-                model.clone(),
-            );
+        // Use custom streaming if we have an endpoint and model name set
+        // This enables model switching at runtime (reasoning_endpoint or ollama_endpoint)
+        let custom_endpoint = self.reasoning_endpoint.clone().or_else(|| {
+            self.ollama_endpoint
+                .as_ref()
+                .map(|e| format!("{}/v1", e.trim_end_matches('/')))
+        });
+
+        if let (Some(endpoint), Some(model)) = (custom_endpoint, &self.model_name) {
+            return self.send_message_stream_with_reasoning(message, endpoint, model.clone());
         }
 
         let agent = Arc::clone(&self.agent);
@@ -1001,6 +1010,16 @@ where
         } else {
             warn!("Could not acquire write lock to clear chat history");
         }
+    }
+
+    async fn switch_model(&mut self, model_id: &str) -> ChatResult<()> {
+        info!(model = %model_id, "Switching model");
+        self.model_name = Some(model_id.to_string());
+        Ok(())
+    }
+
+    fn current_model(&self) -> Option<&str> {
+        self.model_name.as_deref()
     }
 
     async fn fetch_available_models(&mut self) -> Vec<String> {
