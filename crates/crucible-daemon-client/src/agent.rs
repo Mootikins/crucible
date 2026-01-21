@@ -276,6 +276,28 @@ impl AgentHandle for DaemonAgentHandle {
     fn clear_history(&mut self) {
         tracing::info!(session_id = %self.session_id, "Clear history requested (daemon handles internally)");
     }
+
+    async fn switch_model(&mut self, model_id: &str) -> ChatResult<()> {
+        tracing::info!(session_id = %self.session_id, model = %model_id, "Switching model via daemon");
+        self.client
+            .session_switch_model(&self.session_id, model_id)
+            .await
+            .map_err(|e| ChatError::Communication(format!("Failed to switch model: {}", e)))
+    }
+
+    fn current_model(&self) -> Option<&str> {
+        None
+    }
+
+    async fn fetch_available_models(&mut self) -> Vec<String> {
+        match self.client.session_list_models(&self.session_id).await {
+            Ok(models) => models,
+            Err(e) => {
+                tracing::warn!(error = %e, "Failed to fetch models from daemon");
+                Vec::new()
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -523,5 +545,20 @@ mod tests {
         let tool_calls = chunk.tool_calls.unwrap();
         assert_eq!(tool_calls[0].name, "list_files");
         assert!(tool_calls[0].arguments.is_none());
+    }
+
+    #[test]
+    fn test_model_switched_event_conversion() {
+        let event = SessionEvent {
+            session_id: "test".to_string(),
+            event_type: "model_switched".to_string(),
+            data: json!({
+                "model": "gpt-4",
+                "provider": "openai"
+            }),
+        };
+
+        let chunk = session_event_to_chat_chunk(&event);
+        assert!(chunk.is_none(), "model_switched events should not produce chunks");
     }
 }
