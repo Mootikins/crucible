@@ -94,10 +94,160 @@ macro_rules! require_array_param {
     };
 }
 
+/// Extract a required f64 parameter from a request.
+///
+/// Returns the parameter value as `f64`, or returns early with an error Response
+/// if the parameter is missing or not a number.
+///
+/// # Example
+///
+/// ```ignore
+/// let temperature = require_f64_param!(req, "temperature");
+/// // `temperature` is f64, or function returned early with error
+/// ```
+#[macro_export]
+macro_rules! require_f64_param {
+    ($req:expr, $name:literal) => {
+        match $req.params.get($name).and_then(|v| v.as_f64()) {
+            Some(v) => v,
+            None => {
+                return $crate::protocol::Response::error(
+                    $req.id.clone(),
+                    $crate::protocol::INVALID_PARAMS,
+                    concat!(
+                        "Missing or invalid '",
+                        $name,
+                        "' parameter (expected number)"
+                    ),
+                )
+            }
+        }
+    };
+}
+
+/// Extract an optional f64 parameter from a request.
+///
+/// Returns `Option<f64>`. Returns `None` if the parameter is missing or not a number.
+///
+/// # Example
+///
+/// ```ignore
+/// let temperature = optional_f64_param!(req, "temperature").unwrap_or(0.7);
+/// // `temperature` is f64, defaulting to 0.7
+/// ```
+#[macro_export]
+macro_rules! optional_f64_param {
+    ($req:expr, $name:literal) => {
+        $req.params.get($name).and_then(|v| v.as_f64())
+    };
+}
+
+/// Extract a required i64 parameter from a request.
+///
+/// Returns the parameter value as `i64`, or returns early with an error Response
+/// if the parameter is missing or not a number.
+///
+/// # Example
+///
+/// ```ignore
+/// let budget = require_i64_param!(req, "thinking_budget");
+/// // `budget` is i64, or function returned early with error
+/// ```
+#[macro_export]
+macro_rules! require_i64_param {
+    ($req:expr, $name:literal) => {
+        match $req.params.get($name).and_then(|v| v.as_i64()) {
+            Some(v) => v,
+            None => {
+                return $crate::protocol::Response::error(
+                    $req.id.clone(),
+                    $crate::protocol::INVALID_PARAMS,
+                    concat!(
+                        "Missing or invalid '",
+                        $name,
+                        "' parameter (expected integer)"
+                    ),
+                )
+            }
+        }
+    };
+}
+
+/// Extract an optional i64 parameter from a request.
+///
+/// Returns `Option<i64>`. Returns `None` if the parameter is missing or not a number.
+///
+/// # Example
+///
+/// ```ignore
+/// let budget = optional_i64_param!(req, "thinking_budget");
+/// // `budget` is Option<i64>
+/// ```
+#[macro_export]
+macro_rules! optional_i64_param {
+    ($req:expr, $name:literal) => {
+        $req.params.get($name).and_then(|v| v.as_i64())
+    };
+}
+
+/// Extract a required bool parameter from a request.
+///
+/// Returns the parameter value as `bool`, or returns early with an error Response
+/// if the parameter is missing or not a boolean.
+///
+/// # Example
+///
+/// ```ignore
+/// let enabled = require_bool_param!(req, "enabled");
+/// // `enabled` is bool, or function returned early with error
+/// ```
+#[macro_export]
+macro_rules! require_bool_param {
+    ($req:expr, $name:literal) => {
+        match $req.params.get($name).and_then(|v| v.as_bool()) {
+            Some(v) => v,
+            None => {
+                return $crate::protocol::Response::error(
+                    $req.id.clone(),
+                    $crate::protocol::INVALID_PARAMS,
+                    concat!(
+                        "Missing or invalid '",
+                        $name,
+                        "' parameter (expected boolean)"
+                    ),
+                )
+            }
+        }
+    };
+}
+
+/// Extract an optional bool parameter from a request.
+///
+/// Returns `Option<bool>`. Returns `None` if the parameter is missing or not a boolean.
+///
+/// # Example
+///
+/// ```ignore
+/// let verbose = optional_bool_param!(req, "verbose").unwrap_or(false);
+/// // `verbose` is bool, defaulting to false
+/// ```
+#[macro_export]
+macro_rules! optional_bool_param {
+    ($req:expr, $name:literal) => {
+        $req.params.get($name).and_then(|v| v.as_bool())
+    };
+}
+
 // Re-export macros for use in sibling modules via `use crate::rpc_helpers::*`
+pub use crate::optional_bool_param;
+pub use crate::optional_f64_param;
+pub use crate::optional_i64_param;
 pub use crate::optional_str_param;
 pub use crate::optional_u64_param;
 pub use crate::require_array_param;
+pub use crate::require_bool_param;
+pub use crate::require_f64_param;
+pub use crate::require_i64_param;
 pub use crate::require_str_param;
 
 #[cfg(test)]
@@ -275,5 +425,186 @@ mod tests {
         assert!(resp.result.is_none());
         let err = resp.error.unwrap();
         assert_eq!(err.code, INVALID_PARAMS);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // require_f64_param! tests
+    // ─────────────────────────────────────────────────────────────────────────
+
+    fn extract_required_f64(req: Request) -> Response {
+        let value = require_f64_param!(req, "temperature");
+        Response::success(req.id, value)
+    }
+
+    fn extract_optional_f64(req: Request) -> Response {
+        let value = optional_f64_param!(req, "temperature");
+        Response::success(req.id, value.unwrap_or(0.7))
+    }
+
+    #[test]
+    fn require_f64_param_success() {
+        let req = make_request(json!({"temperature": 0.5}));
+        let resp = extract_required_f64(req);
+
+        assert!(resp.error.is_none());
+        assert_eq!(resp.result.unwrap(), 0.5);
+    }
+
+    #[test]
+    fn require_f64_param_integer_coerced() {
+        let req = make_request(json!({"temperature": 1}));
+        let resp = extract_required_f64(req);
+
+        assert!(resp.error.is_none());
+        assert_eq!(resp.result.unwrap(), 1.0);
+    }
+
+    #[test]
+    fn require_f64_param_missing() {
+        let req = make_request(json!({}));
+        let resp = extract_required_f64(req);
+
+        assert!(resp.result.is_none());
+        let err = resp.error.unwrap();
+        assert_eq!(err.code, INVALID_PARAMS);
+        assert!(err.message.contains("'temperature'"));
+    }
+
+    #[test]
+    fn optional_f64_param_present() {
+        let req = make_request(json!({"temperature": 1.5}));
+        let resp = extract_optional_f64(req);
+
+        assert!(resp.error.is_none());
+        assert_eq!(resp.result.unwrap(), 1.5);
+    }
+
+    #[test]
+    fn optional_f64_param_missing() {
+        let req = make_request(json!({}));
+        let resp = extract_optional_f64(req);
+
+        assert!(resp.error.is_none());
+        assert_eq!(resp.result.unwrap(), 0.7);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // require_i64_param! tests
+    // ─────────────────────────────────────────────────────────────────────────
+
+    fn extract_required_i64(req: Request) -> Response {
+        let value = require_i64_param!(req, "budget");
+        Response::success(req.id, value)
+    }
+
+    fn extract_optional_i64(req: Request) -> Response {
+        let value = optional_i64_param!(req, "budget");
+        Response::success(req.id, value.unwrap_or(-1))
+    }
+
+    #[test]
+    fn require_i64_param_success() {
+        let req = make_request(json!({"budget": 1024}));
+        let resp = extract_required_i64(req);
+
+        assert!(resp.error.is_none());
+        assert_eq!(resp.result.unwrap(), 1024);
+    }
+
+    #[test]
+    fn require_i64_param_negative() {
+        let req = make_request(json!({"budget": -1}));
+        let resp = extract_required_i64(req);
+
+        assert!(resp.error.is_none());
+        assert_eq!(resp.result.unwrap(), -1);
+    }
+
+    #[test]
+    fn require_i64_param_missing() {
+        let req = make_request(json!({}));
+        let resp = extract_required_i64(req);
+
+        assert!(resp.result.is_none());
+        let err = resp.error.unwrap();
+        assert_eq!(err.code, INVALID_PARAMS);
+    }
+
+    #[test]
+    fn optional_i64_param_present() {
+        let req = make_request(json!({"budget": 2048}));
+        let resp = extract_optional_i64(req);
+
+        assert!(resp.error.is_none());
+        assert_eq!(resp.result.unwrap(), 2048);
+    }
+
+    #[test]
+    fn optional_i64_param_missing() {
+        let req = make_request(json!({}));
+        let resp = extract_optional_i64(req);
+
+        assert!(resp.error.is_none());
+        assert_eq!(resp.result.unwrap(), -1);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // require_bool_param! tests
+    // ─────────────────────────────────────────────────────────────────────────
+
+    fn extract_required_bool(req: Request) -> Response {
+        let value = require_bool_param!(req, "enabled");
+        Response::success(req.id, value)
+    }
+
+    fn extract_optional_bool(req: Request) -> Response {
+        let value = optional_bool_param!(req, "enabled");
+        Response::success(req.id, value.unwrap_or(false))
+    }
+
+    #[test]
+    fn require_bool_param_true() {
+        let req = make_request(json!({"enabled": true}));
+        let resp = extract_required_bool(req);
+
+        assert!(resp.error.is_none());
+        assert_eq!(resp.result.unwrap(), true);
+    }
+
+    #[test]
+    fn require_bool_param_false() {
+        let req = make_request(json!({"enabled": false}));
+        let resp = extract_required_bool(req);
+
+        assert!(resp.error.is_none());
+        assert_eq!(resp.result.unwrap(), false);
+    }
+
+    #[test]
+    fn require_bool_param_missing() {
+        let req = make_request(json!({}));
+        let resp = extract_required_bool(req);
+
+        assert!(resp.result.is_none());
+        let err = resp.error.unwrap();
+        assert_eq!(err.code, INVALID_PARAMS);
+    }
+
+    #[test]
+    fn optional_bool_param_present() {
+        let req = make_request(json!({"enabled": true}));
+        let resp = extract_optional_bool(req);
+
+        assert!(resp.error.is_none());
+        assert_eq!(resp.result.unwrap(), true);
+    }
+
+    #[test]
+    fn optional_bool_param_missing() {
+        let req = make_request(json!({}));
+        let resp = extract_optional_bool(req);
+
+        assert!(resp.error.is_none());
+        assert_eq!(resp.result.unwrap(), false);
     }
 }
