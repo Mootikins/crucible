@@ -1,0 +1,57 @@
+//! RPC error types and conversions
+
+use crate::agent_manager::AgentError;
+use crate::protocol::{RpcError, INTERNAL_ERROR, INVALID_PARAMS};
+
+pub type RpcResult<T> = Result<T, RpcError>;
+
+pub trait ToRpcError {
+    fn to_rpc_error(&self) -> RpcError;
+}
+
+impl From<AgentError> for RpcError {
+    fn from(e: AgentError) -> Self {
+        use AgentError::*;
+        match e {
+            SessionNotFound(id) => RpcError {
+                code: INVALID_PARAMS,
+                message: format!("Session not found: {}", id),
+                data: None,
+            },
+            NoAgentConfigured(id) => RpcError {
+                code: INVALID_PARAMS,
+                message: format!("No agent configured for session: {}", id),
+                data: None,
+            },
+            ConcurrentRequest(id) => RpcError {
+                code: INVALID_PARAMS,
+                message: format!("Request already in progress for session: {}", id),
+                data: None,
+            },
+            InvalidModelId(msg) => RpcError {
+                code: INVALID_PARAMS,
+                message: msg,
+                data: None,
+            },
+            other => {
+                tracing::error!("Internal agent error: {}", other);
+                RpcError {
+                    code: INTERNAL_ERROR,
+                    message: "Internal server error".into(),
+                    data: None,
+                }
+            }
+        }
+    }
+}
+
+impl From<anyhow::Error> for RpcError {
+    fn from(e: anyhow::Error) -> Self {
+        tracing::error!("Internal error: {}", e);
+        RpcError {
+            code: INTERNAL_ERROR,
+            message: "Internal server error".into(),
+            data: None,
+        }
+    }
+}
