@@ -411,7 +411,8 @@ pub async fn create_internal_agent(
             )?;
             let mut handle = RigAgentHandle::new(agent)
                 .with_workspace_context(ws_ctx)
-                .with_initial_mode(initial_mode);
+                .with_initial_mode(initial_mode)
+                .with_model(model.clone());
             if let Some(endpoint) = ollama_endpoint.clone() {
                 handle = handle.with_ollama_endpoint(endpoint);
             }
@@ -430,7 +431,8 @@ pub async fn create_internal_agent(
             )?;
             let mut handle = RigAgentHandle::new(agent)
                 .with_workspace_context(ws_ctx)
-                .with_initial_mode(initial_mode);
+                .with_initial_mode(initial_mode)
+                .with_model(model.clone());
             if let Some(endpoint) = ollama_endpoint.clone() {
                 handle = handle.with_ollama_endpoint(endpoint);
             }
@@ -449,7 +451,8 @@ pub async fn create_internal_agent(
             )?;
             let mut handle = RigAgentHandle::new(agent)
                 .with_workspace_context(ws_ctx)
-                .with_initial_mode(initial_mode);
+                .with_initial_mode(initial_mode)
+                .with_model(model.clone());
             if let Some(endpoint) = ollama_endpoint.clone() {
                 handle = handle.with_ollama_endpoint(endpoint);
             }
