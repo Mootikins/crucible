@@ -67,6 +67,19 @@ struct StreamResponse {
     choices: Vec<Choice>,
 }
 
+/// Options for streaming with reasoning support
+#[derive(Debug, Clone, Default)]
+pub struct ReasoningOptions {
+    /// Tool definitions for function calling
+    pub tools: Option<Vec<serde_json::Value>>,
+    /// Thinking budget for reasoning models:
+    /// - None: Use model's default
+    /// - Some(-1): Unlimited thinking tokens (maps to very large number)
+    /// - Some(0): Disable thinking (not all models support this)
+    /// - Some(n) where n > 0: Max thinking tokens
+    pub thinking_budget: Option<i64>,
+}
+
 /// Stream completions with reasoning_content support
 ///
 /// This bypasses Rig's streaming to directly parse SSE events,
@@ -76,7 +89,7 @@ pub fn stream_with_reasoning(
     endpoint: &str,
     model: &str,
     messages: Vec<serde_json::Value>,
-    tools: Option<Vec<serde_json::Value>>,
+    options: ReasoningOptions,
 ) -> BoxStream<'static, Result<ReasoningChunk, String>> {
     let url = format!("{}/chat/completions", endpoint.trim_end_matches('/'));
     let model = model.to_string();
@@ -88,8 +101,16 @@ pub fn stream_with_reasoning(
             "stream": true,
         });
 
-        if let Some(tools) = tools {
+        if let Some(tools) = options.tools {
             body["tools"] = serde_json::Value::Array(tools);
+        }
+
+        // max_completion_tokens is supported by OpenAI o1/o3, Ollama, and DeepSeek R1
+        if let Some(budget) = options.thinking_budget {
+            let effective_budget = if budget == -1 { 1_000_000i64 } else { budget };
+            if effective_budget > 0 {
+                body["max_completion_tokens"] = serde_json::json!(effective_budget);
+            }
         }
 
         let response = match client
