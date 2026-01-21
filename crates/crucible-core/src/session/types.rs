@@ -44,6 +44,11 @@ pub struct SessionAgent {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_context_tokens: Option<usize>,
 
+    /// Thinking/reasoning token budget for models that support extended thinking.
+    /// -1 = unlimited, 0 = disabled, >0 = max tokens for thinking
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub thinking_budget: Option<i64>,
+
     /// Custom endpoint URL (for self-hosted models)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub endpoint: Option<String>,
@@ -442,6 +447,7 @@ mod tests {
             temperature: Some(0.7),
             max_tokens: Some(4096),
             max_context_tokens: Some(8192),
+            thinking_budget: None,
             endpoint: None,
             env_overrides: HashMap::new(),
             mcp_servers: vec!["filesystem".to_string()],
@@ -471,6 +477,7 @@ mod tests {
             temperature: None,
             max_tokens: None,
             max_context_tokens: None,
+            thinking_budget: None,
             endpoint: None,
             env_overrides: HashMap::new(),
             mcp_servers: Vec::new(),
@@ -519,6 +526,7 @@ mod tests {
             temperature: None,
             max_tokens: None,
             max_context_tokens: None,
+            thinking_budget: None,
             endpoint: None,
             env_overrides: HashMap::new(),
             mcp_servers: Vec::new(),

@@ -579,6 +579,7 @@ pub async fn create_daemon_agent(
         temperature: config.chat.temperature.map(|t| t as f64),
         max_tokens: config.chat.max_tokens,
         max_context_tokens: None,
+        thinking_budget: None,
         endpoint: config.chat.endpoint.clone(),
         env_overrides: std::collections::HashMap::new(),
         mcp_servers: vec![],
