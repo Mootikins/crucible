@@ -24,6 +24,25 @@ pub struct SessionEvent {
     pub data: serde_json::Value,
 }
 
+/// Daemon capabilities returned by `daemon.capabilities` RPC
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct DaemonCapabilities {
+    pub version: String,
+    pub protocol_version: String,
+    pub capabilities: CapabilityFlags,
+    pub methods: Vec<String>,
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct CapabilityFlags {
+    pub kilns: bool,
+    pub sessions: bool,
+    pub agents: bool,
+    pub events: bool,
+    pub thinking_budget: bool,
+    pub model_switching: bool,
+}
+
 type PendingRequests = Arc<Mutex<HashMap<u64, oneshot::Sender<serde_json::Value>>>>;
 
 /// Client for communicating with the Crucible daemon
@@ -375,6 +394,12 @@ impl DaemonClient {
     pub async fn shutdown(&self) -> Result<()> {
         self.call("shutdown", serde_json::json!({})).await?;
         Ok(())
+    }
+
+    pub async fn capabilities(&self) -> Result<DaemonCapabilities> {
+        let result = self.call("daemon.capabilities", serde_json::json!({})).await?;
+        let caps: DaemonCapabilities = serde_json::from_value(result)?;
+        Ok(caps)
     }
 
     // =========================================================================
@@ -855,6 +880,48 @@ impl DaemonClient {
 
         Ok(models)
     }
+
+    /// Set the thinking budget for a session's agent.
+    ///
+    /// The thinking budget controls reasoning token allocation for thinking models
+    /// (e.g., Qwen, DeepSeek R1):
+    /// - `None` - Use model's default behavior
+    /// - `Some(-1)` - Unlimited thinking tokens
+    /// - `Some(0)` - Disable thinking/reasoning
+    /// - `Some(n)` where n > 0 - Maximum thinking tokens
+    ///
+    /// Changes take effect on the next message. Invalidates cached agent handles.
+    pub async fn session_set_thinking_budget(
+        &self,
+        session_id: &str,
+        budget: Option<i64>,
+    ) -> Result<()> {
+        let mut params = serde_json::json!({ "session_id": session_id });
+        if let Some(b) = budget {
+            params["budget"] = serde_json::json!(b);
+        }
+
+        self.call("session.set_thinking_budget", params).await?;
+        Ok(())
+    }
+
+    /// Get the current thinking budget for a session's agent.
+    ///
+    /// Returns the configured thinking budget, or `None` if not set (using defaults).
+    pub async fn session_get_thinking_budget(&self, session_id: &str) -> Result<Option<i64>> {
+        let result = self
+            .call(
+                "session.get_thinking_budget",
+                serde_json::json!({ "session_id": session_id }),
+            )
+            .await?;
+
+        let budget = result
+            .get("budget")
+            .and_then(|v| if v.is_null() { None } else { v.as_i64() });
+
+        Ok(budget)
+    }
 }
 
 #[cfg(test)]
@@ -886,6 +953,24 @@ mod tests {
         let client = DaemonClient::connect_to(&sock_path).await.unwrap();
         let result = client.ping().await.unwrap();
         assert_eq!(result, "pong");
+    }
+
+    #[tokio::test]
+    async fn test_client_capabilities() {
+        let (_tmp, sock_path, _handle) = setup_test_server().await;
+
+        let client = DaemonClient::connect_to(&sock_path).await.unwrap();
+        let caps = client.capabilities().await.unwrap();
+
+        assert_eq!(caps.protocol_version, "1.0");
+        assert!(caps.capabilities.kilns);
+        assert!(caps.capabilities.sessions);
+        assert!(caps.capabilities.agents);
+        assert!(caps.capabilities.events);
+        assert!(caps.capabilities.thinking_budget);
+        assert!(caps.capabilities.model_switching);
+        assert!(caps.methods.contains(&"ping".to_string()));
+        assert!(caps.methods.contains(&"session.set_thinking_budget".to_string()));
     }
 
     #[tokio::test]
@@ -1027,6 +1112,45 @@ mod tests {
 
         let result = tokio::time::timeout(Duration::from_millis(100), event_rx.recv()).await;
         assert!(result.is_err(), "Expected timeout, got event");
+
+        let _ = client.session_end(session_id).await;
+    }
+
+    #[tokio::test]
+    #[ignore = "requires running daemon with session and agent support"]
+    async fn test_session_thinking_budget() {
+        let client = DaemonClient::connect().await.unwrap();
+        let tmp = TempDir::new().unwrap();
+
+        let result = client
+            .session_create("chat", tmp.path(), None, vec![])
+            .await
+            .unwrap();
+        let session_id = result["session_id"].as_str().unwrap();
+
+        let initial = client.session_get_thinking_budget(session_id).await.unwrap();
+        assert!(initial.is_none(), "Initial budget should be None");
+
+        client
+            .session_set_thinking_budget(session_id, Some(10000))
+            .await
+            .unwrap();
+        let budget = client.session_get_thinking_budget(session_id).await.unwrap();
+        assert_eq!(budget, Some(10000));
+
+        client
+            .session_set_thinking_budget(session_id, Some(-1))
+            .await
+            .unwrap();
+        let unlimited = client.session_get_thinking_budget(session_id).await.unwrap();
+        assert_eq!(unlimited, Some(-1));
+
+        client
+            .session_set_thinking_budget(session_id, None)
+            .await
+            .unwrap();
+        let cleared = client.session_get_thinking_budget(session_id).await.unwrap();
+        assert!(cleared.is_none(), "Budget should be cleared");
 
         let _ = client.session_end(session_id).await;
     }
