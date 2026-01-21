@@ -9,6 +9,7 @@ use crucible_core::session::SessionAgent;
 use crucible_core::traits::chat::AgentHandle;
 use crucible_rig::{create_client, AgentConfig, RigAgentHandle, RigClient};
 use std::path::Path;
+use std::str::FromStr;
 use thiserror::Error;
 use tracing::{debug, info};
 
@@ -58,38 +59,25 @@ pub async fn create_agent_from_session_config(
         "Creating agent from session config"
     );
 
-    let provider_type = match agent_config.provider.to_lowercase().as_str() {
-        "ollama" => LlmProviderType::Ollama,
-        "openai" => LlmProviderType::OpenAI,
-        "anthropic" => LlmProviderType::Anthropic,
-        other => {
-            return Err(AgentFactoryError::ClientCreation(format!(
-                "Unknown provider: {}",
-                other
-            )))
-        }
-    };
+    let provider_type = LlmProviderType::from_str(&agent_config.provider)
+        .map_err(|e| AgentFactoryError::ClientCreation(e))?;
 
-    let api_key = match provider_type {
-        LlmProviderType::OpenAI => Some("OPENAI_API_KEY".to_string()),
-        LlmProviderType::Anthropic => Some("ANTHROPIC_API_KEY".to_string()),
-        _ => None,
-    };
-
-    let llm_config = LlmProviderConfig {
-        provider_type,
-        endpoint: agent_config.endpoint.clone(),
-        default_model: Some(agent_config.model.clone()),
-        temperature: agent_config.temperature.map(|t| t as f32),
-        max_tokens: agent_config.max_tokens,
-        timeout_secs: None,
-        api_key,
-    };
+    let llm_config = LlmProviderConfig::builder(provider_type.clone())
+        .maybe_endpoint(agent_config.endpoint.clone())
+        .model(agent_config.model.clone())
+        .api_key_from_env()
+        .build();
 
     let client =
         create_client(&llm_config).map_err(|e| AgentFactoryError::ClientCreation(e.to_string()))?;
 
-    let rig_agent_config = AgentConfig::new(&agent_config.model, &agent_config.system_prompt);
+    let mut rig_agent_config = AgentConfig::new(&agent_config.model, &agent_config.system_prompt);
+    if let Some(temp) = agent_config.temperature {
+        rig_agent_config = rig_agent_config.with_temperature(temp);
+    }
+    if let Some(tokens) = agent_config.max_tokens {
+        rig_agent_config = rig_agent_config.with_max_tokens(tokens);
+    }
 
     debug!(
         model = %agent_config.model,

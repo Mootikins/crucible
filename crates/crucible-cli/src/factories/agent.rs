@@ -297,6 +297,12 @@ pub async fn create_internal_agent(
     let system_prompt = prompt_builder.build();
 
     let mut agent_config = crucible_rig::AgentConfig::new(&model, &system_prompt);
+    if let Some(temp) = config.chat.temperature {
+        agent_config = agent_config.with_temperature(temp as f64);
+    }
+    if let Some(tokens) = config.chat.max_tokens {
+        agent_config = agent_config.with_max_tokens(tokens);
+    }
 
     use crucible_config::{LlmProviderConfig, LlmProviderType};
 
@@ -325,15 +331,13 @@ pub async fn create_internal_agent(
                     info!("Enabling reasoning extraction for model: {}", model);
                 }
                 // Local Ollama - use native client
-                crucible_rig::create_client(&LlmProviderConfig {
-                    provider_type: LlmProviderType::Ollama,
-                    endpoint: Some(endpoint),
-                    default_model: Some(model.clone()),
-                    temperature: config.chat.temperature,
-                    max_tokens: config.chat.max_tokens,
-                    timeout_secs: config.chat.timeout_secs,
-                    api_key: None,
-                })?
+                crucible_rig::create_client(
+                    &LlmProviderConfig::builder(LlmProviderType::Ollama)
+                        .endpoint(endpoint)
+                        .model(model.clone())
+                        .maybe_timeout_secs(config.chat.timeout_secs)
+                        .build(),
+                )?
             } else {
                 // Remote Ollama-compatible (e.g., llama-swappo) - use OpenAI-compatible client
                 // Append /v1 if not already present for OpenAI-compatible endpoint
@@ -353,39 +357,35 @@ pub async fn create_internal_agent(
                     "Using OpenAI-compatible endpoint for remote Ollama: {}",
                     compat_endpoint
                 );
-                crucible_rig::create_client(&LlmProviderConfig {
-                    provider_type: LlmProviderType::OpenAI,
-                    endpoint: Some(compat_endpoint),
-                    default_model: Some(model.clone()),
-                    temperature: config.chat.temperature,
-                    max_tokens: config.chat.max_tokens,
-                    timeout_secs: config.chat.timeout_secs,
-                    api_key: None,
-                })?
+                crucible_rig::create_client(
+                    &LlmProviderConfig::builder(LlmProviderType::OpenAI)
+                        .endpoint(compat_endpoint)
+                        .model(model.clone())
+                        .maybe_timeout_secs(config.chat.timeout_secs)
+                        .build(),
+                )?
             }
         }
         LlmProvider::OpenAI => {
             agent_config = agent_config
                 .with_additional_params(serde_json::json!({"parallel_tool_calls": true}));
-            crucible_rig::create_client(&LlmProviderConfig {
-                provider_type: LlmProviderType::OpenAI,
-                endpoint: config.chat.endpoint.clone(),
-                default_model: Some(model.clone()),
-                temperature: config.chat.temperature,
-                max_tokens: config.chat.max_tokens,
-                timeout_secs: config.chat.timeout_secs,
-                api_key: Some("OPENAI_API_KEY".to_string()),
-            })?
+            crucible_rig::create_client(
+                &LlmProviderConfig::builder(LlmProviderType::OpenAI)
+                    .maybe_endpoint(config.chat.endpoint.clone())
+                    .model(model.clone())
+                    .maybe_timeout_secs(config.chat.timeout_secs)
+                    .api_key_from_env()
+                    .build(),
+            )?
         }
-        LlmProvider::Anthropic => crucible_rig::create_client(&LlmProviderConfig {
-            provider_type: LlmProviderType::Anthropic,
-            endpoint: config.chat.endpoint.clone(),
-            default_model: Some(model.clone()),
-            temperature: config.chat.temperature,
-            max_tokens: config.chat.max_tokens,
-            timeout_secs: config.chat.timeout_secs,
-            api_key: Some("ANTHROPIC_API_KEY".to_string()),
-        })?,
+        LlmProvider::Anthropic => crucible_rig::create_client(
+            &LlmProviderConfig::builder(LlmProviderType::Anthropic)
+                .maybe_endpoint(config.chat.endpoint.clone())
+                .model(model.clone())
+                .maybe_timeout_secs(config.chat.timeout_secs)
+                .api_key_from_env()
+                .build(),
+        )?,
     };
 
     let has_kiln = params.kiln_context.is_some();
