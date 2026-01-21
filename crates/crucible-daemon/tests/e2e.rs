@@ -449,6 +449,80 @@ async fn test_e2e_session_list() {
     daemon.stop().await.expect("Failed to stop daemon");
 }
 
+/// Test model switching updates the session agent config
+#[tokio::test]
+async fn test_e2e_model_switching() {
+    let mut daemon = TestDaemon::start().await.expect("Failed to start daemon");
+
+    let mut stream = UnixStream::connect(&daemon.socket_path)
+        .await
+        .expect("Failed to connect");
+
+    let kiln_dir = create_kiln_dir(&daemon.socket_path);
+    let kiln_path = kiln_dir.to_string_lossy();
+
+    // 1. Create session
+    let response = rpc_call(&mut stream, &session_create_request(1, &kiln_path)).await;
+    let session_id = get_str(get_result(&response), "session_id");
+
+    // 2. Configure agent with initial model
+    let configure_request = format!(
+        r#"{{"jsonrpc":"2.0","id":2,"method":"session.configure_agent","params":{{"session_id":"{}","agent":{{"agent_type":"internal","provider":"ollama","model":"initial-model","system_prompt":"test"}}}}}}"#,
+        session_id
+    );
+    let response = rpc_call(&mut stream, &configure_request).await;
+    assert!(
+        response.get("result").is_some(),
+        "Configure should succeed: {:?}",
+        response
+    );
+
+    // 3. Get session to verify initial model
+    let get_request = format!(
+        r#"{{"jsonrpc":"2.0","id":3,"method":"session.get","params":{{"session_id":"{}"}}}}"#,
+        session_id
+    );
+    let response = rpc_call(&mut stream, &get_request).await;
+    let result = get_result(&response);
+    let agent = result.get("agent").expect("Should have agent");
+    let initial_model = agent.get("model").and_then(|v| v.as_str()).unwrap_or("");
+    assert_eq!(initial_model, "initial-model", "Should have initial model");
+
+    // 4. Switch to new model
+    let switch_request = format!(
+        r#"{{"jsonrpc":"2.0","id":4,"method":"session.switch_model","params":{{"session_id":"{}","model_id":"switched-model"}}}}"#,
+        session_id
+    );
+    let response = rpc_call(&mut stream, &switch_request).await;
+    assert!(
+        response.get("result").is_some(),
+        "Switch should succeed: {:?}",
+        response
+    );
+    let result = get_result(&response);
+    assert_eq!(
+        result.get("switched").and_then(|v| v.as_bool()),
+        Some(true),
+        "Should indicate switch succeeded"
+    );
+
+    // 5. Get session again to verify model was updated
+    let get_request = format!(
+        r#"{{"jsonrpc":"2.0","id":5,"method":"session.get","params":{{"session_id":"{}"}}}}"#,
+        session_id
+    );
+    let response = rpc_call(&mut stream, &get_request).await;
+    let result = get_result(&response);
+    let agent = result.get("agent").expect("Should have agent after switch");
+    let new_model = agent.get("model").and_then(|v| v.as_str()).unwrap_or("");
+    assert_eq!(
+        new_model, "switched-model",
+        "Model should be updated after switch"
+    );
+
+    daemon.stop().await.expect("Failed to stop daemon");
+}
+
 /// Test session persisted to disk
 #[tokio::test]
 async fn test_e2e_session_persistence() {
