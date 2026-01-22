@@ -222,10 +222,15 @@ impl AgentConfig {
 /// tools but a different model.
 #[derive(Clone)]
 pub struct AgentComponents {
+    /// Agent configuration (model, system prompt, etc.)
     pub config: AgentConfig,
+    /// LLM client for API calls
     pub client: RigClient,
+    /// Workspace context for tool execution
     pub workspace_ctx: WorkspaceContext,
+    /// Optional kiln context for knowledge base tools
     pub kiln_ctx: Option<KilnContext>,
+    /// Model size classification for tool selection
     pub model_size: ModelSize,
     /// Ollama endpoint for custom streaming (enables model switching)
     pub ollama_endpoint: Option<String>,
@@ -234,6 +239,7 @@ pub struct AgentComponents {
 }
 
 impl AgentComponents {
+    /// Create new agent components with required fields.
     pub fn new(config: AgentConfig, client: RigClient, workspace_ctx: WorkspaceContext) -> Self {
         Self {
             config,
@@ -246,21 +252,25 @@ impl AgentComponents {
         }
     }
 
+    /// Set the kiln context for knowledge base tools.
     pub fn with_kiln(mut self, kiln_ctx: KilnContext) -> Self {
         self.kiln_ctx = Some(kiln_ctx);
         self
     }
 
+    /// Set the model size for tool selection.
     pub fn with_model_size(mut self, size: ModelSize) -> Self {
         self.model_size = size;
         self
     }
 
+    /// Set the Ollama endpoint for custom streaming.
     pub fn with_ollama_endpoint(mut self, endpoint: impl Into<String>) -> Self {
         self.ollama_endpoint = Some(endpoint.into());
         self
     }
 
+    /// Set the thinking budget for reasoning models.
     pub fn with_thinking_budget(mut self, budget: i64) -> Self {
         self.thinking_budget = Some(budget);
         self
@@ -277,8 +287,11 @@ pub struct BuiltAgent<M>
 where
     M: CompletionModel + 'static,
 {
+    /// The built Rig agent.
     pub agent: Agent<M>,
+    /// Workspace context for tool execution.
     pub workspace_ctx: WorkspaceContext,
+    /// Optional kiln context for knowledge base tools.
     pub kiln_ctx: Option<KilnContext>,
 }
 
