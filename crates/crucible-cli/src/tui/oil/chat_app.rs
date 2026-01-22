@@ -325,7 +325,8 @@ pub struct InkChatApp {
     model_list_state: ModelListState,
     in_progress_thinking: String,
     thinking_token_count: usize,
-    last_thinking: Option<(String, usize)>,
+    /// (message_id, thinking_content, token_count)
+    last_thinking: Option<(String, String, usize)>,
     show_thinking: bool,
 }
 
@@ -1779,15 +1780,15 @@ impl InkChatApp {
 
     fn finalize_streaming(&mut self) {
         let streaming_content = self.cache.streaming_content().map(|s| s.to_string());
+        let mut finalized_msg_id: Option<String> = None;
         if let Some(content) = streaming_content {
             if !content.is_empty() {
                 self.message_counter += 1;
+                let msg_id = format!("assistant-{}", self.message_counter);
+                finalized_msg_id = Some(msg_id.clone());
                 self.cache.cancel_streaming();
-                self.cache.push_message(CachedMessage::new(
-                    format!("assistant-{}", self.message_counter),
-                    Role::Assistant,
-                    content,
-                ));
+                self.cache
+                    .push_message(CachedMessage::new(msg_id, Role::Assistant, content));
             } else {
                 self.cache.cancel_streaming();
             }
@@ -1795,10 +1796,15 @@ impl InkChatApp {
             self.cache.cancel_streaming();
         }
         if self.show_thinking && !self.in_progress_thinking.is_empty() {
-            self.last_thinking = Some((
-                std::mem::take(&mut self.in_progress_thinking),
-                self.thinking_token_count,
-            ));
+            if let Some(msg_id) = finalized_msg_id {
+                self.last_thinking = Some((
+                    msg_id,
+                    std::mem::take(&mut self.in_progress_thinking),
+                    self.thinking_token_count,
+                ));
+            } else {
+                self.in_progress_thinking.clear();
+            }
         } else {
             self.in_progress_thinking.clear();
             self.last_thinking = None;
@@ -1838,10 +1844,15 @@ impl InkChatApp {
                 let style = RenderStyle::natural_with_margins(term_width, Margins::assistant());
                 let md_node = markdown_to_node_styled(msg.content(), style);
 
-                if let Some((thinking_content, token_count)) = &self.last_thinking {
-                    let thinking_node =
-                        self.render_thinking_block(thinking_content, *token_count, term_width);
-                    col([text(""), thinking_node, md_node, text("")])
+                if let Some((thinking_msg_id, thinking_content, token_count)) = &self.last_thinking
+                {
+                    if thinking_msg_id == &msg.id {
+                        let thinking_node =
+                            self.render_thinking_block(thinking_content, *token_count, term_width);
+                        col([text(""), thinking_node, md_node, text("")])
+                    } else {
+                        col([text(""), md_node, text("")])
+                    }
                 } else {
                     col([text(""), md_node, text("")])
                 }
