@@ -78,11 +78,11 @@ impl RpcDispatcher {
             "ping" => to_response(id, self.handle_ping()),
             "daemon.capabilities" => to_response(id, self.handle_capabilities()),
             "shutdown" => to_response(id, self.handle_shutdown()),
-            
+
             // Subscription handlers (need client_id)
             "session.subscribe" => to_response(id, self.handle_subscribe(client_id, &req)),
             "session.unsubscribe" => to_response(id, self.handle_unsubscribe(client_id, &req)),
-            
+
             // For other methods, we return METHOD_NOT_FOUND here.
             // In production, server.rs will handle these until we migrate them.
             // This allows incremental migration.
@@ -125,7 +125,9 @@ impl RpcDispatcher {
         use serde::Deserialize;
 
         #[derive(Deserialize)]
-        struct Params { session_ids: Vec<String> }
+        struct Params {
+            session_ids: Vec<String>,
+        }
         let p: Params = parse_params(req)?;
 
         for session_id in &p.session_ids {
@@ -142,12 +144,18 @@ impl RpcDispatcher {
         }))
     }
 
-    fn handle_unsubscribe(&self, client_id: ClientId, req: &Request) -> RpcResult<serde_json::Value> {
+    fn handle_unsubscribe(
+        &self,
+        client_id: ClientId,
+        req: &Request,
+    ) -> RpcResult<serde_json::Value> {
         use crate::rpc::params::parse_params;
         use serde::Deserialize;
 
         #[derive(Deserialize)]
-        struct Params { session_ids: Vec<String> }
+        struct Params {
+            session_ids: Vec<String>,
+        }
         let p: Params = parse_params(req)?;
 
         for session_id in &p.session_ids {
@@ -252,9 +260,12 @@ mod tests {
         let ctx = test_context();
         let dispatcher = RpcDispatcher::new(ctx);
         let client_id = ClientId::new();
-        let req = make_request("session.subscribe", serde_json::json!({
-            "session_ids": ["session-123"]
-        }));
+        let req = make_request(
+            "session.subscribe",
+            serde_json::json!({
+                "session_ids": ["session-123"]
+            }),
+        );
 
         let resp = dispatcher.dispatch(client_id, req).await;
 
