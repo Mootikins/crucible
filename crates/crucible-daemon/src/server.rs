@@ -1066,9 +1066,12 @@ async fn handle_session_set_thinking_budget(
     event_tx: &broadcast::Sender<SessionEventMessage>,
 ) -> Response {
     let session_id = require_str_param!(req, "session_id");
-    let budget = require_i64_param!(req, "budget");
+    let budget = require_i64_param!(req, "thinking_budget");
 
-    match am.set_thinking_budget(session_id, budget, Some(event_tx)).await {
+    match am
+        .set_thinking_budget(session_id, budget, Some(event_tx))
+        .await
+    {
         Ok(()) => Response::success(
             req.id,
             serde_json::json!({

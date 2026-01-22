@@ -397,7 +397,9 @@ impl DaemonClient {
     }
 
     pub async fn capabilities(&self) -> Result<DaemonCapabilities> {
-        let result = self.call("daemon.capabilities", serde_json::json!({})).await?;
+        let result = self
+            .call("daemon.capabilities", serde_json::json!({}))
+            .await?;
         let caps: DaemonCapabilities = serde_json::from_value(result)?;
         Ok(caps)
     }
@@ -898,7 +900,7 @@ impl DaemonClient {
     ) -> Result<()> {
         let mut params = serde_json::json!({ "session_id": session_id });
         if let Some(b) = budget {
-            params["budget"] = serde_json::json!(b);
+            params["thinking_budget"] = serde_json::json!(b);
         }
 
         self.call("session.set_thinking_budget", params).await?;
@@ -916,9 +918,10 @@ impl DaemonClient {
             )
             .await?;
 
-        let budget = result
-            .get("budget")
-            .and_then(|v| if v.is_null() { None } else { v.as_i64() });
+        let budget =
+            result
+                .get("thinking_budget")
+                .and_then(|v| if v.is_null() { None } else { v.as_i64() });
 
         Ok(budget)
     }
@@ -970,7 +973,9 @@ mod tests {
         assert!(caps.capabilities.thinking_budget);
         assert!(caps.capabilities.model_switching);
         assert!(caps.methods.contains(&"ping".to_string()));
-        assert!(caps.methods.contains(&"session.set_thinking_budget".to_string()));
+        assert!(caps
+            .methods
+            .contains(&"session.set_thinking_budget".to_string()));
     }
 
     #[tokio::test]
@@ -1128,29 +1133,41 @@ mod tests {
             .unwrap();
         let session_id = result["session_id"].as_str().unwrap();
 
-        let initial = client.session_get_thinking_budget(session_id).await.unwrap();
+        let initial = client
+            .session_get_thinking_budget(session_id)
+            .await
+            .unwrap();
         assert!(initial.is_none(), "Initial budget should be None");
 
         client
             .session_set_thinking_budget(session_id, Some(10000))
             .await
             .unwrap();
-        let budget = client.session_get_thinking_budget(session_id).await.unwrap();
+        let budget = client
+            .session_get_thinking_budget(session_id)
+            .await
+            .unwrap();
         assert_eq!(budget, Some(10000));
 
         client
             .session_set_thinking_budget(session_id, Some(-1))
             .await
             .unwrap();
-        let unlimited = client.session_get_thinking_budget(session_id).await.unwrap();
+        let unlimited = client
+            .session_get_thinking_budget(session_id)
+            .await
+            .unwrap();
         assert_eq!(unlimited, Some(-1));
 
         client
-            .session_set_thinking_budget(session_id, None)
+            .session_set_thinking_budget(session_id, Some(0))
             .await
             .unwrap();
-        let cleared = client.session_get_thinking_budget(session_id).await.unwrap();
-        assert!(cleared.is_none(), "Budget should be cleared");
+        let cleared = client
+            .session_get_thinking_budget(session_id)
+            .await
+            .unwrap();
+        assert_eq!(cleared, Some(0), "Budget should be 0 (disabled)");
 
         let _ = client.session_end(session_id).await;
     }
