@@ -58,10 +58,7 @@ pub enum AgentBuildError {
 /// Result type for agent building operations
 pub type AgentBuildResult<T> = Result<T, AgentBuildError>;
 
-fn configure_builder<C>(
-    client: &C,
-    config: &AgentConfig,
-) -> AgentBuilder<C::CompletionModel>
+fn configure_builder<C>(client: &C, config: &AgentConfig) -> AgentBuilder<C::CompletionModel>
 where
     C: CompletionClient,
     C::CompletionModel: CompletionModel<Client = C>,

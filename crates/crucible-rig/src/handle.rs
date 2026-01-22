@@ -114,7 +114,8 @@ where
     needs_rebuild: AtomicBool,
 
     /// Type-erased rebuild function (set when components are provided)
-    rebuild_fn: Option<Arc<dyn Fn(&AgentComponents, &str) -> Result<Agent<M>, ChatError> + Send + Sync>>,
+    rebuild_fn:
+        Option<Arc<dyn Fn(&AgentComponents, &str) -> Result<Agent<M>, ChatError> + Send + Sync>>,
 }
 
 impl<M> RigAgentHandle<M>
@@ -2080,7 +2081,8 @@ mod tests {
         assert_eq!(handle.current_model(), Some("glm-4.7-flash-q8_0"));
 
         // Send a message - this should use the NEW model via custom streaming
-        let mut stream = handle.send_message_stream("Say just 'test' and nothing else.".to_string());
+        let mut stream =
+            handle.send_message_stream("Say just 'test' and nothing else.".to_string());
 
         let mut got_response = false;
         while let Some(result) = stream.next().await {
