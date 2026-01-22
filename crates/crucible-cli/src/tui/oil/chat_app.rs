@@ -325,6 +325,7 @@ pub struct InkChatApp {
     model_list_state: ModelListState,
     in_progress_thinking: String,
     thinking_token_count: usize,
+    last_thinking: Option<(String, usize)>,
     show_thinking: bool,
 }
 
@@ -363,6 +364,7 @@ impl Default for InkChatApp {
             model_list_state: ModelListState::NotLoaded,
             in_progress_thinking: String::new(),
             thinking_token_count: 0,
+            last_thinking: None,
             show_thinking: false,
         }
     }
@@ -1757,6 +1759,7 @@ impl InkChatApp {
     }
 
     fn add_user_message(&mut self, content: String) {
+        self.last_thinking = None;
         self.message_counter += 1;
         self.cache.push_message(CachedMessage::new(
             format!("user-{}", self.message_counter),
@@ -1791,7 +1794,15 @@ impl InkChatApp {
         } else {
             self.cache.cancel_streaming();
         }
-        self.in_progress_thinking.clear();
+        if self.show_thinking && !self.in_progress_thinking.is_empty() {
+            self.last_thinking = Some((
+                std::mem::take(&mut self.in_progress_thinking),
+                self.thinking_token_count,
+            ));
+        } else {
+            self.in_progress_thinking.clear();
+            self.last_thinking = None;
+        }
         self.thinking_token_count = 0;
         self.status = "Ready".to_string();
     }
@@ -1826,7 +1837,14 @@ impl InkChatApp {
                 let term_width = terminal_width();
                 let style = RenderStyle::natural_with_margins(term_width, Margins::assistant());
                 let md_node = markdown_to_node_styled(msg.content(), style);
-                col([text(""), md_node, text("")])
+
+                if let Some((thinking_content, token_count)) = &self.last_thinking {
+                    let thinking_node =
+                        self.render_thinking_block(thinking_content, *token_count, term_width);
+                    col([text(""), thinking_node, md_node, text("")])
+                } else {
+                    col([text(""), md_node, text("")])
+                }
             }
             Role::System => col([
                 text(""),
@@ -1837,6 +1855,55 @@ impl InkChatApp {
             ]),
         };
         scrollback(&msg.id, [content_node])
+    }
+
+    fn render_thinking_block(&self, content: &str, token_count: usize, width: usize) -> Node {
+        let bar_color = Color::Rgb(80, 80, 80);
+        let text_color = Color::Rgb(140, 140, 140);
+        let content_width = width.saturating_sub(6);
+
+        let header = row([
+            styled("  │ ", Style::new().fg(bar_color)),
+            styled(
+                format!("thinking ({} tokens)", token_count),
+                Style::new().fg(bar_color).italic(),
+            ),
+        ]);
+
+        let display_content = if content.len() > 1200 {
+            let start = content.len() - 1200;
+            let boundary = content[start..]
+                .find(char::is_whitespace)
+                .map(|i| start + i + 1)
+                .unwrap_or(start);
+            format!("…{}", &content[boundary..])
+        } else {
+            content.to_string()
+        };
+
+        let lines: Vec<Node> = display_content
+            .lines()
+            .flat_map(|line| {
+                if line.len() <= content_width {
+                    vec![line.to_string()]
+                } else {
+                    textwrap::wrap(line, content_width)
+                        .into_iter()
+                        .map(|s| s.to_string())
+                        .collect()
+                }
+            })
+            .map(|line| {
+                row([
+                    styled("  │ ", Style::new().fg(bar_color)),
+                    styled(line, Style::new().fg(text_color)),
+                ])
+            })
+            .collect();
+
+        col(std::iter::once(header)
+            .chain(lines)
+            .chain(std::iter::once(text(""))))
     }
 
     fn render_tool_call(&self, tool: &CachedToolCall) -> Node {
@@ -1960,33 +2027,11 @@ impl InkChatApp {
                 } else if !has_graduated {
                     let thinking_node =
                         if self.show_thinking && !self.in_progress_thinking.is_empty() {
-                            let thinking_content = &self.in_progress_thinking;
-                            let display_content = if thinking_content.len() > 800 {
-                                let start = thinking_content.len() - 800;
-                                let boundary = thinking_content[start..]
-                                    .find(char::is_whitespace)
-                                    .map(|i| start + i + 1)
-                                    .unwrap_or(start);
-                                format!("…{}", &thinking_content[boundary..])
-                            } else {
-                                thinking_content.clone()
-                            };
-                            let md_style = RenderStyle::viewport_with_margins(
-                                term_width.saturating_sub(4),
-                                Margins {
-                                    left: 4,
-                                    right: 0,
-                                    show_bullet: false,
-                                },
-                            );
-                            let content_node = markdown_to_node_styled(&display_content, md_style);
-                            col([
-                                styled(
-                                    "  ┌─ thinking",
-                                    Style::new().fg(Color::Rgb(100, 100, 100)).italic(),
-                                ),
-                                content_node,
-                            ])
+                            self.render_thinking_block(
+                                &self.in_progress_thinking,
+                                self.thinking_token_count,
+                                term_width,
+                            )
                         } else {
                             text("")
                         };
