@@ -195,6 +195,18 @@ pub trait AgentHandle: Send + Sync {
     async fn fetch_available_models(&mut self) -> Vec<String> {
         self.available_models()
     }
+
+    /// Set the thinking budget for reasoning models.
+    ///
+    /// Values: -1 = unlimited, 0 = disabled, >0 = max tokens
+    async fn set_thinking_budget(&mut self, _budget: i64) -> ChatResult<()> {
+        Err(ChatError::NotSupported("set_thinking_budget".into()))
+    }
+
+    /// Get the current thinking budget.
+    fn get_thinking_budget(&self) -> Option<i64> {
+        None
+    }
 }
 
 /// Blanket implementation for boxed trait objects
@@ -257,6 +269,14 @@ impl AgentHandle for Box<dyn AgentHandle + Send + Sync> {
 
     async fn fetch_available_models(&mut self) -> Vec<String> {
         (**self).fetch_available_models().await
+    }
+
+    async fn set_thinking_budget(&mut self, budget: i64) -> ChatResult<()> {
+        (**self).set_thinking_budget(budget).await
+    }
+
+    fn get_thinking_budget(&self) -> Option<i64> {
+        (**self).get_thinking_budget()
     }
 }
 

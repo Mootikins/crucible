@@ -298,6 +298,18 @@ impl AgentHandle for DaemonAgentHandle {
             }
         }
     }
+
+    async fn set_thinking_budget(&mut self, budget: i64) -> ChatResult<()> {
+        tracing::info!(session_id = %self.session_id, budget = budget, "Setting thinking budget via daemon");
+        self.client
+            .session_set_thinking_budget(&self.session_id, Some(budget))
+            .await
+            .map_err(|e| ChatError::Communication(format!("Failed to set thinking budget: {}", e)))
+    }
+
+    fn get_thinking_budget(&self) -> Option<i64> {
+        None
+    }
 }
 
 #[cfg(test)]
@@ -559,6 +571,9 @@ mod tests {
         };
 
         let chunk = session_event_to_chat_chunk(&event);
-        assert!(chunk.is_none(), "model_switched events should not produce chunks");
+        assert!(
+            chunk.is_none(),
+            "model_switched events should not produce chunks"
+        );
     }
 }
