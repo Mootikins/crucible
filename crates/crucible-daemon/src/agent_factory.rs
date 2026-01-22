@@ -5,9 +5,13 @@
 //! `SessionAgent` contains fully-resolved configuration.
 
 use crucible_config::{LlmProviderConfig, LlmProviderType};
+use crucible_core::prompts::ModelSize;
 use crucible_core::session::SessionAgent;
 use crucible_core::traits::chat::AgentHandle;
-use crucible_rig::{create_client, AgentConfig, RigAgentHandle, RigClient};
+use crucible_rig::{
+    build_agent_with_model_size, create_client, AgentConfig, RigAgentHandle, RigClient,
+    WorkspaceContext,
+};
 use std::path::Path;
 use std::str::FromStr;
 use thiserror::Error;
@@ -86,14 +90,21 @@ pub async fn create_agent_from_session_config(
     );
 
     let ollama_endpoint = agent_config.endpoint.clone();
-
     let thinking_budget = agent_config.thinking_budget;
+    let model_size = ModelSize::from_model_name(&agent_config.model);
 
     let handle: Box<dyn AgentHandle + Send + Sync> = match client {
         RigClient::Ollama(ollama_client) => {
-            let agent = crucible_rig::build_agent_from_config(&rig_agent_config, &ollama_client)
-                .map_err(|e| AgentFactoryError::AgentBuild(e.to_string()))?;
+            let agent = build_agent_with_model_size(
+                &rig_agent_config,
+                &ollama_client,
+                workspace,
+                model_size,
+            )
+            .map_err(|e| AgentFactoryError::AgentBuild(e.to_string()))?;
+            let ws_ctx = WorkspaceContext::new(workspace);
             let mut handle = RigAgentHandle::new(agent)
+                .with_workspace_context(ws_ctx)
                 .with_model(agent_config.model.clone())
                 .with_thinking_budget(thinking_budget);
             if let Some(endpoint) = &ollama_endpoint {
@@ -102,9 +113,16 @@ pub async fn create_agent_from_session_config(
             Box::new(handle)
         }
         RigClient::OpenAI(openai_client) => {
-            let agent = crucible_rig::build_agent_from_config(&rig_agent_config, &openai_client)
-                .map_err(|e| AgentFactoryError::AgentBuild(e.to_string()))?;
+            let agent = build_agent_with_model_size(
+                &rig_agent_config,
+                &openai_client,
+                workspace,
+                model_size,
+            )
+            .map_err(|e| AgentFactoryError::AgentBuild(e.to_string()))?;
+            let ws_ctx = WorkspaceContext::new(workspace);
             let mut handle = RigAgentHandle::new(agent)
+                .with_workspace_context(ws_ctx)
                 .with_model(agent_config.model.clone())
                 .with_thinking_budget(thinking_budget);
             if let Some(endpoint) = &ollama_endpoint {
@@ -113,9 +131,16 @@ pub async fn create_agent_from_session_config(
             Box::new(handle)
         }
         RigClient::OpenAICompat(compat_client) => {
-            let agent = crucible_rig::build_agent_from_config(&rig_agent_config, &compat_client)
-                .map_err(|e| AgentFactoryError::AgentBuild(e.to_string()))?;
+            let agent = build_agent_with_model_size(
+                &rig_agent_config,
+                &compat_client,
+                workspace,
+                model_size,
+            )
+            .map_err(|e| AgentFactoryError::AgentBuild(e.to_string()))?;
+            let ws_ctx = WorkspaceContext::new(workspace);
             let mut handle = RigAgentHandle::new(agent)
+                .with_workspace_context(ws_ctx)
                 .with_model(agent_config.model.clone())
                 .with_thinking_budget(thinking_budget);
             if let Some(endpoint) = &ollama_endpoint {
@@ -124,10 +149,17 @@ pub async fn create_agent_from_session_config(
             Box::new(handle)
         }
         RigClient::Anthropic(anthropic_client) => {
-            let agent = crucible_rig::build_agent_from_config(&rig_agent_config, &anthropic_client)
-                .map_err(|e| AgentFactoryError::AgentBuild(e.to_string()))?;
+            let agent = build_agent_with_model_size(
+                &rig_agent_config,
+                &anthropic_client,
+                workspace,
+                model_size,
+            )
+            .map_err(|e| AgentFactoryError::AgentBuild(e.to_string()))?;
+            let ws_ctx = WorkspaceContext::new(workspace);
             Box::new(
                 RigAgentHandle::new(agent)
+                    .with_workspace_context(ws_ctx)
                     .with_model(agent_config.model.clone())
                     .with_thinking_budget(thinking_budget),
             )
@@ -145,10 +177,17 @@ pub async fn create_agent_from_session_config(
             let compat_client = crucible_rig::create_openai_compat_client(&api_token, &api_base)
                 .map_err(|e| AgentFactoryError::ClientCreation(e.to_string()))?;
 
-            let agent = crucible_rig::build_agent_from_config(&rig_agent_config, &compat_client)
-                .map_err(|e| AgentFactoryError::AgentBuild(e.to_string()))?;
+            let agent = build_agent_with_model_size(
+                &rig_agent_config,
+                &compat_client,
+                workspace,
+                model_size,
+            )
+            .map_err(|e| AgentFactoryError::AgentBuild(e.to_string()))?;
+            let ws_ctx = WorkspaceContext::new(workspace);
             Box::new(
                 RigAgentHandle::new(agent)
+                    .with_workspace_context(ws_ctx)
                     .with_model(agent_config.model.clone())
                     .with_thinking_budget(thinking_budget),
             )
