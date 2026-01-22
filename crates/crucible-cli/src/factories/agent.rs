@@ -539,15 +539,13 @@ pub async fn create_daemon_agent(
         .clone()
         .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| config.kiln_path.clone()));
 
-    let session_id = match &params.resume_session_id {
+    let (session_id, is_new_session) = match &params.resume_session_id {
         Some(id) if !id.is_empty() => {
-            // Resume specific session by ID
             info!("Resuming specific daemon session: {}", id);
             client.session_resume(id).await?;
-            id.clone()
+            (id.clone(), false)
         }
         Some(_) => {
-            // Empty string = resume most recent session for this workspace
             let sessions = client
                 .session_list(
                     Some(&config.kiln_path),
@@ -566,43 +564,55 @@ pub async fn create_daemon_agent(
                     .to_string();
                 info!("Resuming most recent daemon session: {}", id);
                 client.session_resume(&id).await?;
-                id
+                (id, false)
             } else {
                 info!("No existing session to resume, creating new one");
-                create_new_daemon_session(&client, config, &workspace).await?
+                (
+                    create_new_daemon_session(&client, config, &workspace).await?,
+                    true,
+                )
             }
         }
-        None => create_new_daemon_session(&client, config, &workspace).await?,
+        None => (
+            create_new_daemon_session(&client, config, &workspace).await?,
+            true,
+        ),
     };
 
-    let model = config
-        .chat
-        .model
-        .clone()
-        .unwrap_or_else(|| "llama3.2".to_string());
+    if is_new_session {
+        let model = config
+            .chat
+            .model
+            .clone()
+            .unwrap_or_else(|| "llama3.2".to_string());
 
-    let session_agent = SessionAgent {
-        agent_type: "internal".to_string(),
-        agent_name: None,
-        provider_key: Some(format!("{:?}", config.chat.provider).to_lowercase()),
-        provider: format!("{:?}", config.chat.provider).to_lowercase(),
-        model: model.clone(),
-        system_prompt: String::new(),
-        temperature: config.chat.temperature.map(|t| t as f64),
-        max_tokens: config.chat.max_tokens,
-        max_context_tokens: None,
-        thinking_budget: None,
-        endpoint: config.chat.endpoint.clone(),
-        env_overrides: std::collections::HashMap::new(),
-        mcp_servers: vec![],
-        agent_card_name: None,
-    };
+        let session_agent = SessionAgent {
+            agent_type: "internal".to_string(),
+            agent_name: None,
+            provider_key: Some(format!("{:?}", config.chat.provider).to_lowercase()),
+            provider: format!("{:?}", config.chat.provider).to_lowercase(),
+            model: model.clone(),
+            system_prompt: String::new(),
+            temperature: config.chat.temperature.map(|t| t as f64),
+            max_tokens: config.chat.max_tokens,
+            max_context_tokens: None,
+            thinking_budget: None,
+            endpoint: config.chat.endpoint.clone(),
+            env_overrides: std::collections::HashMap::new(),
+            mcp_servers: vec![],
+            agent_card_name: None,
+        };
 
-    client
-        .session_configure_agent(&session_id, &session_agent)
-        .await?;
+        client
+            .session_configure_agent(&session_id, &session_agent)
+            .await?;
+    }
 
-    info!("Created daemon agent handle for session: {}", session_id);
+    info!(
+        session_id = %session_id,
+        resumed = !is_new_session,
+        "Daemon agent handle ready"
+    );
     let handle = DaemonAgentHandle::new_and_subscribe(client, session_id, event_rx).await?;
 
     Ok(Box::new(handle))
