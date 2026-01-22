@@ -164,7 +164,9 @@ mod switch_model_tests {
 
     impl MockAgentHandle {
         fn new() -> Self {
-            Self { model: std::sync::Mutex::new(None) }
+            Self {
+                model: std::sync::Mutex::new(None),
+            }
         }
     }
 
@@ -173,12 +175,24 @@ mod switch_model_tests {
         fn send_message_stream(&mut self, _: String) -> BoxStream<'static, ChatResult<ChatChunk>> {
             Box::pin(futures::stream::empty())
         }
-        fn is_connected(&self) -> bool { true }
-        fn supports_streaming(&self) -> bool { true }
-        fn get_modes(&self) -> Option<&SessionModeState> { None }
-        fn get_mode_id(&self) -> &str { "normal" }
-        async fn set_mode_str(&mut self, _: &str) -> ChatResult<()> { Ok(()) }
-        fn get_commands(&self) -> &[AvailableCommand] { &[] }
+        fn is_connected(&self) -> bool {
+            true
+        }
+        fn supports_streaming(&self) -> bool {
+            true
+        }
+        fn get_modes(&self) -> Option<&SessionModeState> {
+            None
+        }
+        fn get_mode_id(&self) -> &str {
+            "normal"
+        }
+        async fn set_mode_str(&mut self, _: &str) -> ChatResult<()> {
+            Ok(())
+        }
+        fn get_commands(&self) -> &[AvailableCommand] {
+            &[]
+        }
 
         async fn switch_model(&mut self, model_id: &str) -> ChatResult<()> {
             *self.model.lock().unwrap() = Some(model_id.to_string());
