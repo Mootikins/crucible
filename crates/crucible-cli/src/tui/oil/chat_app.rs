@@ -324,6 +324,7 @@ pub struct InkChatApp {
     available_models: Vec<String>,
     model_list_state: ModelListState,
     in_progress_thinking: String,
+    thinking_token_count: usize,
     show_thinking: bool,
 }
 
@@ -361,6 +362,7 @@ impl Default for InkChatApp {
             available_models: Vec::new(),
             model_list_state: ModelListState::NotLoaded,
             in_progress_thinking: String::new(),
+            thinking_token_count: 0,
             show_thinking: false,
         }
     }
@@ -419,9 +421,8 @@ impl App for InkChatApp {
                 Action::Continue
             }
             ChatAppMsg::ThinkingDelta(delta) => {
-                if self.show_thinking {
-                    self.in_progress_thinking.push_str(&delta);
-                }
+                self.thinking_token_count += delta.split_whitespace().count();
+                self.in_progress_thinking.push_str(&delta);
                 Action::Continue
             }
             ChatAppMsg::ToolCall { name, args } => {
@@ -878,6 +879,15 @@ impl InkChatApp {
             KeyCode::Char('c') if ctrl => {
                 tracing::info!("Stream cancel requested via Ctrl+C");
                 Action::Send(ChatAppMsg::StreamCancelled)
+            }
+            KeyCode::Char('t') if ctrl => {
+                self.show_thinking = !self.show_thinking;
+                let state = if self.show_thinking { "on" } else { "off" };
+                self.notification = Some((
+                    format!("Thinking display: {}", state),
+                    std::time::Instant::now(),
+                ));
+                Action::Continue
             }
             KeyCode::Enter if ctrl => {
                 let content = self.input.content().to_string();
@@ -1782,6 +1792,7 @@ impl InkChatApp {
             self.cache.cancel_streaming();
         }
         self.in_progress_thinking.clear();
+        self.thinking_token_count = 0;
         self.status = "Ready".to_string();
     }
 
@@ -1968,12 +1979,17 @@ impl InkChatApp {
                         } else {
                             text("")
                         };
+                    let spinner_text = if self.thinking_token_count > 0 {
+                        format!("Thinking... ({} tokens)", self.thinking_token_count)
+                    } else {
+                        "Thinking...".to_string()
+                    };
                     col([
                         text(""),
                         thinking_node,
                         row([
                             text(spinner_indent),
-                            spinner(Some("Thinking...".into()), self.spinner_frame),
+                            spinner(Some(spinner_text), self.spinner_frame),
                         ]),
                     ])
                 } else {
