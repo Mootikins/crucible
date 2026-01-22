@@ -11,6 +11,7 @@ use crate::tui::oil::viewport_cache::{
 use crossterm::event::KeyCode;
 use crossterm::terminal::{EnterAlternateScreen, LeaveAlternateScreen};
 use crossterm::{cursor, execute};
+use std::borrow::Cow;
 use std::collections::VecDeque;
 use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
@@ -100,6 +101,13 @@ pub enum Role {
     User,
     Assistant,
     System,
+}
+
+#[derive(Debug, Clone)]
+pub struct ThinkingBlock {
+    pub message_id: String,
+    pub content: String,
+    pub token_count: usize,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -325,8 +333,7 @@ pub struct InkChatApp {
     model_list_state: ModelListState,
     in_progress_thinking: String,
     thinking_token_count: usize,
-    /// (message_id, thinking_content, token_count)
-    last_thinking: Option<(String, String, usize)>,
+    last_thinking: Option<ThinkingBlock>,
     show_thinking: bool,
 }
 
@@ -1780,35 +1787,34 @@ impl InkChatApp {
 
     fn finalize_streaming(&mut self) {
         let streaming_content = self.cache.streaming_content().map(|s| s.to_string());
-        let mut finalized_msg_id: Option<String> = None;
-        if let Some(content) = streaming_content {
-            if !content.is_empty() {
+        self.cache.cancel_streaming();
+
+        let finalized_msg_id = match streaming_content {
+            Some(content) if !content.is_empty() => {
                 self.message_counter += 1;
                 let msg_id = format!("assistant-{}", self.message_counter);
-                finalized_msg_id = Some(msg_id.clone());
-                self.cache.cancel_streaming();
-                self.cache
-                    .push_message(CachedMessage::new(msg_id, Role::Assistant, content));
-            } else {
-                self.cache.cancel_streaming();
-            }
-        } else {
-            self.cache.cancel_streaming();
-        }
-        if self.show_thinking && !self.in_progress_thinking.is_empty() {
-            if let Some(msg_id) = finalized_msg_id {
-                self.last_thinking = Some((
-                    msg_id,
-                    std::mem::take(&mut self.in_progress_thinking),
-                    self.thinking_token_count,
+                self.cache.push_message(CachedMessage::new(
+                    msg_id.clone(),
+                    Role::Assistant,
+                    content,
                 ));
-            } else {
-                self.in_progress_thinking.clear();
+                Some(msg_id)
             }
-        } else {
-            self.in_progress_thinking.clear();
-            self.last_thinking = None;
-        }
+            _ => None,
+        };
+
+        self.last_thinking = match (self.show_thinking, finalized_msg_id) {
+            (true, Some(msg_id)) if !self.in_progress_thinking.is_empty() => Some(ThinkingBlock {
+                message_id: msg_id,
+                content: std::mem::take(&mut self.in_progress_thinking),
+                token_count: self.thinking_token_count,
+            }),
+            _ => {
+                self.in_progress_thinking.clear();
+                None
+            }
+        };
+
         self.thinking_token_count = 0;
         self.status = "Ready".to_string();
     }
@@ -1844,17 +1850,18 @@ impl InkChatApp {
                 let style = RenderStyle::natural_with_margins(term_width, Margins::assistant());
                 let md_node = markdown_to_node_styled(msg.content(), style);
 
-                if let Some((thinking_msg_id, thinking_content, token_count)) = &self.last_thinking
-                {
-                    if thinking_msg_id == &msg.id {
+                let thinking_for_this_msg = self
+                    .last_thinking
+                    .as_ref()
+                    .filter(|tb| tb.message_id == msg.id);
+
+                match thinking_for_this_msg {
+                    Some(tb) => {
                         let thinking_node =
-                            self.render_thinking_block(thinking_content, *token_count, term_width);
+                            self.render_thinking_block(&tb.content, tb.token_count, term_width);
                         col([text(""), thinking_node, md_node, text("")])
-                    } else {
-                        col([text(""), md_node, text("")])
                     }
-                } else {
-                    col([text(""), md_node, text("")])
+                    None => col([text(""), md_node, text("")]),
                 }
             }
             Role::System => col([
@@ -1881,28 +1888,24 @@ impl InkChatApp {
             ),
         ]);
 
-        let display_content = if content.len() > 1200 {
+        let display_content: Cow<'_, str> = if content.len() > 1200 {
             let start = content.len() - 1200;
             let boundary = content[start..]
                 .find(char::is_whitespace)
                 .map(|i| start + i + 1)
                 .unwrap_or(start);
-            format!("…{}", &content[boundary..])
+            Cow::Owned(format!("…{}", &content[boundary..]))
         } else {
-            content.to_string()
+            Cow::Borrowed(content)
         };
 
         let lines: Vec<Node> = display_content
             .lines()
             .flat_map(|line| {
-                if line.len() <= content_width {
-                    vec![line.to_string()]
-                } else {
-                    textwrap::wrap(line, content_width)
-                        .into_iter()
-                        .map(|s| s.to_string())
-                        .collect()
-                }
+                textwrap::wrap(line, content_width)
+                    .into_iter()
+                    .map(|s| s.to_string())
+                    .collect::<Vec<_>>()
             })
             .map(|line| {
                 row([
