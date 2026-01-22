@@ -76,7 +76,7 @@ impl ConfigValue {
         }
 
         // Auto-detect type: bool -> int -> float -> string
-        if let Ok(b) = Self::try_parse_bool(s) {
+        if let Some(b) = Self::try_parse_bool(s) {
             return ConfigValue::Bool(b);
         }
 
@@ -94,7 +94,7 @@ impl ConfigValue {
     /// Try to parse `s` as the same type as `hint`.
     fn try_parse_as_type(s: &str, hint: &ConfigValue) -> Option<Self> {
         match hint {
-            ConfigValue::Bool(_) => Self::try_parse_bool(s).ok().map(ConfigValue::Bool),
+            ConfigValue::Bool(_) => Self::try_parse_bool(s).map(ConfigValue::Bool),
             ConfigValue::Int(_) => s.parse::<i64>().ok().map(ConfigValue::Int),
             ConfigValue::Float(_) => s.parse::<f64>().ok().map(ConfigValue::Float),
             ConfigValue::String(_) => Some(ConfigValue::String(s.to_string())),
@@ -135,24 +135,25 @@ impl ConfigValue {
     ///
     /// # Returns
     ///
-    /// - `Ok(true)` for truthy values
-    /// - `Ok(false)` for falsy values
-    /// - `Err(())` if the string is not a recognized boolean
+    /// - `Some(true)` for truthy values
+    /// - `Some(false)` for falsy values
+    /// - `None` if the string is not a recognized boolean
     ///
     /// # Examples
     ///
     /// ```
     /// use crucible_cli::tui::oil::config::ConfigValue;
     ///
-    /// assert_eq!(ConfigValue::try_parse_bool("yes"), Ok(true));
-    /// assert_eq!(ConfigValue::try_parse_bool("no"), Ok(false));
-    /// assert!(ConfigValue::try_parse_bool("maybe").is_err());
+    /// assert_eq!(ConfigValue::try_parse_bool("yes"), Some(true));
+    /// assert_eq!(ConfigValue::try_parse_bool("no"), Some(false));
+    /// assert_eq!(ConfigValue::try_parse_bool("maybe"), None);
     /// ```
-    pub fn try_parse_bool(s: &str) -> Result<bool, ()> {
+    #[must_use]
+    pub fn try_parse_bool(s: &str) -> Option<bool> {
         match s.to_lowercase().as_str() {
-            "true" | "1" | "yes" | "on" | "y" => Ok(true),
-            "false" | "0" | "no" | "off" | "n" => Ok(false),
-            _ => Err(()),
+            "true" | "1" | "yes" | "on" | "y" => Some(true),
+            "false" | "0" | "no" | "off" | "n" => Some(false),
+            _ => None,
         }
     }
 
@@ -180,7 +181,7 @@ impl ConfigValue {
             ConfigValue::Bool(b) => Some(*b),
             ConfigValue::Int(i) => Some(*i != 0),
             ConfigValue::Float(f) => Some(*f != 0.0),
-            ConfigValue::String(s) => Self::try_parse_bool(s).ok(),
+            ConfigValue::String(s) => Self::try_parse_bool(s),
             ConfigValue::Json(_) => None,
         }
     }
@@ -257,7 +258,7 @@ impl ConfigValue {
     /// ```
     /// use crucible_cli::tui::oil::config::ConfigValue;
     ///
-    /// assert_eq!(ConfigValue::Float(3.14).as_float(), Some(3.14));
+    /// assert_eq!(ConfigValue::Float(3.15).as_float(), Some(3.15));
     /// assert_eq!(ConfigValue::Int(42).as_float(), Some(42.0));
     /// assert_eq!(ConfigValue::Bool(true).as_float(), Some(1.0));
     /// assert_eq!(ConfigValue::String("2.5".into()).as_float(), Some(2.5));
@@ -306,7 +307,7 @@ impl ConfigValue {
     ///
     /// assert_eq!(ConfigValue::String("hello".into()).type_name(), "string");
     /// assert_eq!(ConfigValue::Int(42).type_name(), "integer");
-    /// assert_eq!(ConfigValue::Float(3.14).type_name(), "float");
+    /// assert_eq!(ConfigValue::Float(3.15).type_name(), "float");
     /// assert_eq!(ConfigValue::Bool(true).type_name(), "boolean");
     /// ```
     #[must_use]
@@ -428,8 +429,8 @@ mod tests {
     fn parse_bool_invalid_values() {
         for input in &["maybe", "2", "yep", "nope", "", "truee", "fals"] {
             assert!(
-                ConfigValue::try_parse_bool(input).is_err(),
-                "Expected error for: {input}"
+                ConfigValue::try_parse_bool(input).is_none(),
+                "Expected None for: {input}"
             );
         }
     }
@@ -462,7 +463,7 @@ mod tests {
 
     #[test]
     fn parse_auto_detects_float() {
-        assert_eq!(ConfigValue::parse("3.14", None), ConfigValue::Float(3.14));
+        assert_eq!(ConfigValue::parse("3.15", None), ConfigValue::Float(3.15));
         assert_eq!(ConfigValue::parse("-2.5", None), ConfigValue::Float(-2.5));
         assert_eq!(ConfigValue::parse("1e10", None), ConfigValue::Float(1e10));
     }
@@ -505,8 +506,8 @@ mod tests {
             ConfigValue::Float(42.0)
         );
         assert_eq!(
-            ConfigValue::parse("3.14", Some(&hint)),
-            ConfigValue::Float(3.14)
+            ConfigValue::parse("3.15", Some(&hint)),
+            ConfigValue::Float(3.15)
         );
     }
 
@@ -595,7 +596,7 @@ mod tests {
 
     #[test]
     fn as_float_coercion() {
-        assert_eq!(ConfigValue::Float(3.14).as_float(), Some(3.14));
+        assert_eq!(ConfigValue::Float(3.15).as_float(), Some(3.15));
 
         assert_eq!(ConfigValue::Int(42).as_float(), Some(42.0));
         assert_eq!(ConfigValue::Int(-100).as_float(), Some(-100.0));
@@ -617,7 +618,7 @@ mod tests {
             Some("hello")
         );
         assert_eq!(ConfigValue::Int(42).as_string(), None);
-        assert_eq!(ConfigValue::Float(3.14).as_string(), None);
+        assert_eq!(ConfigValue::Float(3.15).as_string(), None);
         assert_eq!(ConfigValue::Bool(true).as_string(), None);
         assert_eq!(ConfigValue::Json(json!({})).as_string(), None);
     }
@@ -650,7 +651,7 @@ mod tests {
     fn display_formats_correctly() {
         assert_eq!(ConfigValue::String("hello".into()).to_string(), "hello");
         assert_eq!(ConfigValue::Int(42).to_string(), "42");
-        assert_eq!(ConfigValue::Float(3.14).to_string(), "3.14");
+        assert_eq!(ConfigValue::Float(3.15).to_string(), "3.15");
         assert_eq!(ConfigValue::Bool(true).to_string(), "true");
         assert_eq!(ConfigValue::Bool(false).to_string(), "false");
         assert_eq!(ConfigValue::Json(json!({"a": 1})).to_string(), r#"{"a":1}"#);
@@ -666,7 +667,7 @@ mod tests {
         );
         assert_eq!(ConfigValue::from(json!(true)), ConfigValue::Bool(true));
         assert_eq!(ConfigValue::from(json!(42)), ConfigValue::Int(42));
-        assert_eq!(ConfigValue::from(json!(3.14)), ConfigValue::Float(3.14));
+        assert_eq!(ConfigValue::from(json!(3.15)), ConfigValue::Float(3.15));
         assert_eq!(
             ConfigValue::from(json!("hello")),
             ConfigValue::String("hello".into())
@@ -693,7 +694,7 @@ mod tests {
         );
         assert_eq!(ConfigValue::from(42i64), ConfigValue::Int(42));
         assert_eq!(ConfigValue::from(42i32), ConfigValue::Int(42));
-        assert_eq!(ConfigValue::from(3.14f64), ConfigValue::Float(3.14));
+        assert_eq!(ConfigValue::from(3.15f64), ConfigValue::Float(3.15));
         assert_eq!(ConfigValue::from(true), ConfigValue::Bool(true));
     }
 

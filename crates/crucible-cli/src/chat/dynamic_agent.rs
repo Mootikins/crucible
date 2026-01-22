@@ -217,7 +217,7 @@ mod switch_model_tests {
         assert!(result.is_ok(), "switch_model should succeed");
 
         // Verify the inner mock received the call
-        if let DynamicAgent::Local(handle) = &agent {
+        if let DynamicAgent::Local(_handle) = &agent {
             // Can't easily check inner state without downcasting
             // But if we got Ok(()), the call went through
         }

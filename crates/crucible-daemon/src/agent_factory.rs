@@ -64,7 +64,7 @@ pub async fn create_agent_from_session_config(
     );
 
     let provider_type = LlmProviderType::from_str(&agent_config.provider)
-        .map_err(|e| AgentFactoryError::ClientCreation(e))?;
+        .map_err(AgentFactoryError::ClientCreation)?;
 
     let llm_config = LlmProviderConfig::builder(provider_type.clone())
         .maybe_endpoint(agent_config.endpoint.clone())
