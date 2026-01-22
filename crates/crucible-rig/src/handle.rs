@@ -29,6 +29,10 @@ use tokio::sync::RwLock;
 use tracing::{debug, info, warn};
 
 use crate::agent::{build_agent_from_components_generic, AgentComponents};
+
+/// Type alias for agent rebuild functions (reduces type complexity).
+type RebuildFn<M> =
+    Arc<dyn Fn(&AgentComponents, &str) -> Result<Agent<M>, ChatError> + Send + Sync>;
 use crate::openai_reasoning::{self, ReasoningChunk};
 use crate::providers::RigClient;
 use crate::xml_tool_parser;
@@ -114,8 +118,7 @@ where
     needs_rebuild: AtomicBool,
 
     /// Type-erased rebuild function (set when components are provided)
-    rebuild_fn:
-        Option<Arc<dyn Fn(&AgentComponents, &str) -> Result<Agent<M>, ChatError> + Send + Sync>>,
+    rebuild_fn: Option<RebuildFn<M>>,
 }
 
 impl<M> RigAgentHandle<M>
@@ -244,29 +247,22 @@ impl RigAgentHandle<rig::providers::ollama::CompletionModel> {
         self.thinking_budget = components.thinking_budget;
         self.model_name = Some(components.config.model.clone());
 
-        let rebuild_fn: Arc<
-            dyn Fn(
-                    &AgentComponents,
-                    &str,
-                )
-                    -> Result<rig::agent::Agent<rig::providers::ollama::CompletionModel>, ChatError>
-                + Send
-                + Sync,
-        > = Arc::new(|comp, model| {
-            let client = match &comp.client {
-                RigClient::Ollama(c) => c,
-                _ => {
-                    return Err(ChatError::NotSupported(
-                        "Ollama handle received non-Ollama client".into(),
-                    ))
-                }
-            };
+        let rebuild_fn: RebuildFn<rig::providers::ollama::CompletionModel> =
+            Arc::new(|comp, model| {
+                let client = match &comp.client {
+                    RigClient::Ollama(c) => c,
+                    _ => {
+                        return Err(ChatError::NotSupported(
+                            "Ollama handle received non-Ollama client".into(),
+                        ))
+                    }
+                };
 
-            let built = build_agent_from_components_generic(comp, model, client)
-                .map_err(|e| ChatError::Internal(format!("Agent rebuild failed: {}", e)))?;
+                let built = build_agent_from_components_generic(comp, model, client)
+                    .map_err(|e| ChatError::Internal(format!("Agent rebuild failed: {}", e)))?;
 
-            Ok(built.agent)
-        });
+                Ok(built.agent)
+            });
 
         self.rebuild_fn = Some(rebuild_fn);
         self.components = Some(components);
