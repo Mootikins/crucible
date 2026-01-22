@@ -9,8 +9,8 @@ use crucible_core::prompts::ModelSize;
 use crucible_core::session::SessionAgent;
 use crucible_core::traits::chat::AgentHandle;
 use crucible_rig::{
-    build_agent_with_model_size, create_client, AgentConfig, RigAgentHandle, RigClient,
-    WorkspaceContext,
+    build_agent_with_model_size, create_client, AgentComponents, AgentConfig, RigAgentHandle,
+    RigClient, WorkspaceContext,
 };
 use std::path::Path;
 use std::str::FromStr;
@@ -94,22 +94,27 @@ pub async fn create_agent_from_session_config(
     let model_size = ModelSize::from_model_name(&agent_config.model);
 
     let handle: Box<dyn AgentHandle + Send + Sync> = match client {
-        RigClient::Ollama(ollama_client) => {
+        RigClient::Ollama(ref ollama_client) => {
             let agent = build_agent_with_model_size(
                 &rig_agent_config,
-                &ollama_client,
+                ollama_client,
                 workspace,
                 model_size,
             )
             .map_err(|e| AgentFactoryError::AgentBuild(e.to_string()))?;
             let ws_ctx = WorkspaceContext::new(workspace);
-            let mut handle = RigAgentHandle::new(agent)
-                .with_workspace_context(ws_ctx)
+            let mut components = AgentComponents::new(rig_agent_config.clone(), client, ws_ctx)
+                .with_model_size(model_size);
+            if let Some(budget) = thinking_budget {
+                components = components.with_thinking_budget(budget);
+            }
+            if let Some(ref endpoint) = ollama_endpoint {
+                components = components.with_ollama_endpoint(endpoint.clone());
+            }
+            let handle = RigAgentHandle::new(agent)
+                .with_ollama_components(components)
                 .with_model(agent_config.model.clone())
                 .with_thinking_budget(thinking_budget);
-            if let Some(endpoint) = &ollama_endpoint {
-                handle = handle.with_ollama_endpoint(endpoint.clone());
-            }
             Box::new(handle)
         }
         RigClient::OpenAI(openai_client) => {

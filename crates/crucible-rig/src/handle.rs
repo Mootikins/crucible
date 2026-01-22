@@ -1068,11 +1068,21 @@ where
             )));
         }
 
+        let mode_changed = self.current_mode_id != mode_id;
+
         self.current_mode_id = mode_id.to_string();
         self.mode_context_sent.store(false, Ordering::SeqCst);
 
         if let Some(ref ctx) = self.workspace_ctx {
             ctx.set_mode(mode_id);
+        }
+
+        if mode_changed {
+            if let Some(ref mut comp) = self.components {
+                comp.mode_id = mode_id.to_string();
+                self.needs_rebuild.store(true, Ordering::SeqCst);
+                info!(mode = %mode_id, "Mode changed, agent will rebuild with new tool set");
+            }
         }
 
         Ok(())

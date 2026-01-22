@@ -77,12 +77,19 @@ where
     builder
 }
 
+fn is_read_only_mode(mode_id: &str, model_size: ModelSize) -> bool {
+    mode_id == "plan" || model_size.is_read_only()
+}
+
 fn attach_tools<M: CompletionModel>(
     builder: AgentBuilder<M>,
     ctx: &WorkspaceContext,
     kiln_ctx: Option<&KilnContext>,
-    read_only: bool,
+    mode_id: &str,
+    model_size: ModelSize,
 ) -> Agent<M> {
+    let read_only = is_read_only_mode(mode_id, model_size);
+
     match (read_only, kiln_ctx) {
         (true, None) => builder
             .tool(ReadFileTool::new(ctx.clone()))
@@ -232,6 +239,8 @@ pub struct AgentComponents {
     pub kiln_ctx: Option<KilnContext>,
     /// Model size classification for tool selection
     pub model_size: ModelSize,
+    /// Current mode (plan/normal/auto) for tool selection
+    pub mode_id: String,
     /// Ollama endpoint for custom streaming (enables model switching)
     pub ollama_endpoint: Option<String>,
     /// Thinking budget for reasoning models
@@ -247,6 +256,7 @@ impl AgentComponents {
             workspace_ctx,
             kiln_ctx: None,
             model_size: ModelSize::Medium,
+            mode_id: "normal".to_string(),
             ollama_endpoint: None,
             thinking_budget: None,
         }
@@ -261,6 +271,12 @@ impl AgentComponents {
     /// Set the model size for tool selection.
     pub fn with_model_size(mut self, size: ModelSize) -> Self {
         self.model_size = size;
+        self
+    }
+
+    /// Set the current mode for tool selection.
+    pub fn with_mode(mut self, mode_id: impl Into<String>) -> Self {
+        self.mode_id = mode_id.into();
         self
     }
 
@@ -317,7 +333,8 @@ where
         builder,
         &ctx,
         kiln_ctx.as_ref(),
-        components.model_size.is_read_only(),
+        &components.mode_id,
+        components.model_size,
     );
 
     Ok(BuiltAgent {
@@ -414,7 +431,7 @@ where
 {
     let ctx = WorkspaceContext::new(workspace_root.as_ref());
     let builder = configure_builder(client, config);
-    let agent = attach_tools(builder, &ctx, None, false);
+    let agent = attach_tools(builder, &ctx, None, "normal", ModelSize::Large);
     Ok((agent, ctx))
 }
 
@@ -434,7 +451,7 @@ where
 {
     let ctx = WorkspaceContext::new(workspace_root.as_ref());
     let builder = configure_builder(client, config);
-    let agent = attach_tools(builder, &ctx, kiln_ctx.as_ref(), model_size.is_read_only());
+    let agent = attach_tools(builder, &ctx, kiln_ctx.as_ref(), "normal", model_size);
     Ok((agent, ctx))
 }
 
@@ -476,7 +493,7 @@ where
 {
     let ctx = WorkspaceContext::new(workspace_root.as_ref());
     let builder = configure_builder(client, config);
-    Ok(attach_tools(builder, &ctx, None, model_size.is_read_only()))
+    Ok(attach_tools(builder, &ctx, None, "normal", model_size))
 }
 
 #[cfg(test)]
