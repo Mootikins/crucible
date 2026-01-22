@@ -73,6 +73,39 @@ Crucible uses a **separate daemon binary** (`cru-server`) for multi-session supp
 - Agents: `session.configure_agent`, `session.send_message`, `session.cancel`
 - Events: `session.subscribe`, `session.unsubscribe`
 
+### Cross-Layer Feature Checklist
+
+When implementing features that affect agent/session behavior (not just UI display), use this checklist to ensure proper CLI↔daemon integration.
+
+**Scope Classification:**
+| Scope | Examples | Where State Lives |
+|-------|----------|-------------------|
+| Session-scoped | model, thinking_budget, temperature | Daemon `SessionAgent`, synced via RPC |
+| TUI-local | theme, show_thinking, verbose | `InkChatApp` fields, no RPC needed |
+
+**Before Implementing:**
+- [ ] Check if daemon already has RPC for this (`crucible-daemon-client/src/client.rs`)
+- [ ] Check if `SessionAgent` has a field for this (`crucible-core/src/session/types.rs`)
+- [ ] Determine scope: Does this need multi-client consistency? If yes → session-scoped
+
+**Implementation (for session-scoped features):**
+- [ ] Add method to `AgentHandle` trait (`crucible-core/src/traits/chat.rs`)
+- [ ] Implement in `DaemonAgentHandle` to call RPC (`crucible-daemon-client/src/agent.rs`)
+- [ ] Add `ChatAppMsg` variant for the action (`crucible-cli/src/tui/oil/chat_app.rs`)
+- [ ] Handle message in `chat_runner` by calling `agent.method()` (`crucible-cli/src/tui/oil/chat_runner.rs`)
+- [ ] Wire TUI command (`:set`, etc.) to emit the `ChatAppMsg`
+
+**Validation:**
+- [ ] Verify RPC field names match between client and server (common bug: `"budget"` vs `"thinking_budget"`)
+- [ ] Test with daemon running (`cru-server`)
+- [ ] Verify `session.get_*` returns what `session.set_*` stored
+- [ ] Check state persists across TUI restart (resume session)
+
+**Common Mistakes:**
+- Implementing in TUI only (RuntimeConfig) without daemon RPC → breaks multi-client
+- Different JSON field names in client vs server → silent failures
+- Soft-prompt injection in TUI instead of daemon-side handling → inconsistent behavior
+
 ### Type Ownership
 
 **Parser Types** are canonically defined in `crucible-core/src/parser/types/` (split into submodules).
