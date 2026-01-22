@@ -111,6 +111,33 @@ impl WorkspaceContext {
             self.all_tools()
         }
     }
+
+    /// Get tools based on mode
+    ///
+    /// - `plan` mode: read-only tools (read_file, glob, grep)
+    /// - `normal`/`auto` mode: all tools
+    pub fn tools_for_mode(&self, mode_id: &str) -> Vec<Box<dyn rig::tool::ToolDyn>> {
+        match mode_id {
+            "plan" => self.read_only_tools(),
+            _ => self.all_tools(),
+        }
+    }
+
+    /// Get tools based on both model size and mode
+    ///
+    /// Returns the intersection - if either model size OR mode restricts tools,
+    /// returns the restricted set.
+    pub fn tools_for_size_and_mode(
+        &self,
+        size: crucible_core::prompts::ModelSize,
+        mode_id: &str,
+    ) -> Vec<Box<dyn rig::tool::ToolDyn>> {
+        if size.is_read_only() || mode_id == "plan" {
+            self.read_only_tools()
+        } else {
+            self.all_tools()
+        }
+    }
 }
 
 // =============================================================================
