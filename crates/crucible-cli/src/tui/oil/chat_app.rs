@@ -431,7 +431,7 @@ impl App for InkChatApp {
                 Action::Continue
             }
             ChatAppMsg::ThinkingDelta(delta) => {
-                self.thinking_token_count += delta.split_whitespace().count();
+                self.thinking_token_count += 1;
                 self.in_progress_thinking.push_str(&delta);
                 Action::Continue
             }
@@ -1876,17 +1876,12 @@ impl InkChatApp {
     }
 
     fn render_thinking_block(&self, content: &str, token_count: usize, width: usize) -> Node {
-        let bar_color = Color::Rgb(80, 80, 80);
-        let text_color = Color::Rgb(140, 140, 140);
-        let content_width = width.saturating_sub(6);
+        let header_color = Color::Rgb(100, 100, 100);
 
-        let header = row([
-            styled("  │ ", Style::new().fg(bar_color)),
-            styled(
-                format!("thinking ({} tokens)", token_count),
-                Style::new().fg(bar_color).italic(),
-            ),
-        ]);
+        let header = styled(
+            format!("  ┌─ thinking ({} tokens)", token_count),
+            Style::new().fg(header_color).italic(),
+        );
 
         let display_content: Cow<'_, str> = if content.len() > 1200 {
             let start = content.len() - 1200;
@@ -1899,25 +1894,17 @@ impl InkChatApp {
             Cow::Borrowed(content)
         };
 
-        let lines: Vec<Node> = display_content
-            .lines()
-            .flat_map(|line| {
-                textwrap::wrap(line, content_width)
-                    .into_iter()
-                    .map(|s| s.to_string())
-                    .collect::<Vec<_>>()
-            })
-            .map(|line| {
-                row([
-                    styled("  │ ", Style::new().fg(bar_color)),
-                    styled(line, Style::new().fg(text_color)),
-                ])
-            })
-            .collect();
+        let md_style = RenderStyle::viewport_with_margins(
+            width.saturating_sub(4),
+            Margins {
+                left: 4,
+                right: 0,
+                show_bullet: false,
+            },
+        );
+        let content_node = markdown_to_node_styled(&display_content, md_style);
 
-        col(std::iter::once(header)
-            .chain(lines)
-            .chain(std::iter::once(text(""))))
+        col([header, content_node, text("")])
     }
 
     fn render_tool_call(&self, tool: &CachedToolCall) -> Node {
@@ -2039,17 +2026,18 @@ impl InkChatApp {
                         row([text(spinner_indent), spinner(None, self.spinner_frame)]),
                     ])
                 } else if !has_graduated {
-                    let thinking_node =
-                        if self.show_thinking && !self.in_progress_thinking.is_empty() {
-                            self.render_thinking_block(
-                                &self.in_progress_thinking,
-                                self.thinking_token_count,
-                                term_width,
-                            )
-                        } else {
-                            text("")
-                        };
-                    let spinner_text = if self.thinking_token_count > 0 {
+                    let thinking_visible =
+                        self.show_thinking && !self.in_progress_thinking.is_empty();
+                    let thinking_node = if thinking_visible {
+                        self.render_thinking_block(
+                            &self.in_progress_thinking,
+                            self.thinking_token_count,
+                            term_width,
+                        )
+                    } else {
+                        text("")
+                    };
+                    let spinner_text = if !thinking_visible && self.thinking_token_count > 0 {
                         format!("Thinking... ({} tokens)", self.thinking_token_count)
                     } else {
                         "Thinking...".to_string()
