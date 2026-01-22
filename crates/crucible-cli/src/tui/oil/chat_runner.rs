@@ -447,6 +447,17 @@ impl InkChatRunner {
                             let _ = app.on_message(ChatAppMsg::ModelsLoaded(models));
                         }
                     }
+                    ChatAppMsg::SetThinkingBudget(budget) => {
+                        tracing::info!(budget = budget, "Setting thinking budget");
+                        match agent.set_thinking_budget(*budget).await {
+                            Ok(()) => {
+                                tracing::info!(budget = budget, "Thinking budget set successfully");
+                            }
+                            Err(e) => {
+                                tracing::warn!(budget = budget, error = %e, "Thinking budget not supported by this agent");
+                            }
+                        }
+                    }
                     _ => {}
                 }
                 let action = app.on_message(msg);

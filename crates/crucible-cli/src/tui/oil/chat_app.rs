@@ -1,4 +1,6 @@
 use crate::tui::oil::app::{Action, App, ViewContext};
+use crate::tui::oil::commands::SetCommand;
+use crate::tui::oil::config::{ConfigValue, ModSource, RuntimeConfig};
 use crate::tui::oil::event::{Event, InputAction, InputBuffer};
 use crate::tui::oil::markdown::{
     markdown_to_node_styled, markdown_to_node_with_width, Margins, RenderStyle,
@@ -70,6 +72,7 @@ pub enum ChatAppMsg {
     FetchModels,
     ModelsLoaded(Vec<String>),
     ModelsFetchFailed(String),
+    SetThinkingBudget(i64),
 }
 
 #[derive(Debug, Clone)]
@@ -183,6 +186,9 @@ pub enum AutocompleteKind {
     CommandArg {
         command: String,
         arg_index: usize,
+    },
+    SetOption {
+        option: Option<String>,
     },
 }
 
@@ -335,6 +341,8 @@ pub struct InkChatApp {
     thinking_token_count: usize,
     last_thinking: Option<ThinkingBlock>,
     show_thinking: bool,
+    runtime_config: RuntimeConfig,
+    current_provider: String,
 }
 
 impl Default for InkChatApp {
@@ -373,7 +381,9 @@ impl Default for InkChatApp {
             in_progress_thinking: String::new(),
             thinking_token_count: 0,
             last_thinking: None,
-            show_thinking: false,
+            show_thinking: true,
+            runtime_config: RuntimeConfig::empty(),
+            current_provider: "local".to_string(),
         }
     }
 }
@@ -523,6 +533,7 @@ impl App for InkChatApp {
                 self.error = Some(format!("Failed to fetch models: {}", reason));
                 Action::Continue
             }
+            ChatAppMsg::SetThinkingBudget(_) => Action::Continue,
         }
     }
 
@@ -852,9 +863,16 @@ impl InkChatApp {
                         .to_string();
                     let trigger_pos = cursor - filter.len();
 
-                    // Special case: :model triggers Model popup for fuzzy model search
                     if command == "model" {
                         return Some((AutocompleteKind::Model, trigger_pos, filter));
+                    }
+
+                    if command == "set" {
+                        return Some((
+                            AutocompleteKind::SetOption { option: None },
+                            trigger_pos,
+                            filter,
+                        ));
                     }
 
                     let arg_index = args_part.split_whitespace().count();
@@ -1055,11 +1073,16 @@ impl InkChatApp {
 
     fn handle_repl_command(&mut self, cmd: &str) -> Action<ChatAppMsg> {
         let command = &cmd[1..];
+
+        if command == "set" || command.starts_with("set ") {
+            return self.handle_set_command(command);
+        }
+
         match command {
             "q" | "quit" => Action::Quit,
             "help" | "h" => {
                 self.add_system_message(
-                    "[core] :quit :help :clear :palette :model :export <path>\n[mcp] :mcp"
+                    "[core] :quit :help :clear :palette :model :set :export <path>\n[mcp] :mcp"
                         .to_string(),
                 );
                 Action::Continue
@@ -1140,6 +1163,155 @@ impl InkChatApp {
             Err(e) => {
                 self.error = Some(format!("Export failed: {}", e));
             }
+        }
+    }
+
+    fn handle_set_command(&mut self, command: &str) -> Action<ChatAppMsg> {
+        let input = command.strip_prefix("set").unwrap_or(command).trim();
+
+        match SetCommand::parse(input) {
+            Ok(cmd) => {
+                match cmd {
+                    SetCommand::ShowModified => {
+                        let output = self.runtime_config.format_modified();
+                        self.add_system_message(output);
+                    }
+                    SetCommand::ShowAll => {
+                        let output = self.runtime_config.format_all();
+                        self.add_system_message(output);
+                    }
+                    SetCommand::Query { key } => {
+                        let output = self.runtime_config.format_query(&key);
+                        self.add_system_message(output);
+                    }
+                    SetCommand::QueryHistory { key } => {
+                        let output = self.runtime_config.format_history(&key);
+                        self.add_system_message(output);
+                    }
+                    SetCommand::Enable { key } => {
+                        if let Some(current) = self.runtime_config.get(&key) {
+                            if current.as_bool().is_some() {
+                                self.runtime_config.set(
+                                    &key,
+                                    ConfigValue::Bool(true),
+                                    ModSource::Command,
+                                );
+                                self.sync_runtime_to_fields(&key);
+                                self.add_system_message(format!("  {}=true", key));
+                            } else {
+                                let output = self.runtime_config.format_query(&key);
+                                self.add_system_message(output);
+                            }
+                        } else {
+                            self.runtime_config.set(
+                                &key,
+                                ConfigValue::Bool(true),
+                                ModSource::Command,
+                            );
+                            self.sync_runtime_to_fields(&key);
+                            self.add_system_message(format!("  {}=true", key));
+                        }
+                    }
+                    SetCommand::Disable { key } => {
+                        match self.runtime_config.disable(&key, ModSource::Command) {
+                            Ok(()) => {
+                                self.sync_runtime_to_fields(&key);
+                                self.add_system_message(format!("  {}=false", key));
+                            }
+                            Err(e) => {
+                                self.error = Some(e.to_string());
+                            }
+                        }
+                    }
+                    SetCommand::Toggle { key } => {
+                        match self.runtime_config.toggle(&key, ModSource::Command) {
+                            Ok(new_val) => {
+                                self.sync_runtime_to_fields(&key);
+                                self.add_system_message(format!("  {}={}", key, new_val));
+                            }
+                            Err(e) => {
+                                self.error = Some(e.to_string());
+                            }
+                        }
+                    }
+                    SetCommand::Reset { key } => {
+                        self.runtime_config.reset(&key);
+                        self.sync_runtime_to_fields(&key);
+                        let output = self.runtime_config.format_query(&key);
+                        self.add_system_message(format!("Reset: {}", output.trim()));
+                    }
+                    SetCommand::Pop { key } => {
+                        if self.runtime_config.pop(&key).is_some() {
+                            self.sync_runtime_to_fields(&key);
+                            let output = self.runtime_config.format_query(&key);
+                            self.add_system_message(output);
+                        } else {
+                            self.add_system_message(format!("  {} is at base value", key));
+                        }
+                    }
+                    SetCommand::Set { key, value } => {
+                        if key == "model" {
+                            self.model = value.clone();
+                            self.runtime_config.set_dynamic(
+                                &key,
+                                ConfigValue::String(value.clone()),
+                                ModSource::Command,
+                                &self.current_provider.clone(),
+                            );
+                            self.add_system_message(format!("  model={}", value));
+                            return Action::Send(ChatAppMsg::SwitchModel(value));
+                        }
+
+                        if key == "thinkingbudget" {
+                            use crate::tui::oil::config::ThinkingPreset;
+                            if let Some(preset) = ThinkingPreset::by_name(&value) {
+                                let budget = preset.to_budget();
+                                self.runtime_config
+                                    .set_str(&key, &value, ModSource::Command);
+                                self.add_system_message(format!(
+                                    "  thinkingbudget={} ({})",
+                                    value, budget
+                                ));
+                                return Action::Send(ChatAppMsg::SetThinkingBudget(budget));
+                            } else {
+                                let valid = ThinkingPreset::names().collect::<Vec<_>>().join(", ");
+                                self.error =
+                                    Some(format!("Unknown preset '{}'. Valid: {}", value, valid));
+                                return Action::Continue;
+                            }
+                        }
+
+                        self.runtime_config
+                            .set_str(&key, &value, ModSource::Command);
+                        self.sync_runtime_to_fields(&key);
+                        self.add_system_message(format!("  {}={}", key, value));
+                    }
+                }
+                Action::Continue
+            }
+            Err(e) => {
+                self.error = Some(format!("Parse error: {}", e));
+                Action::Continue
+            }
+        }
+    }
+
+    fn sync_runtime_to_fields(&mut self, key: &str) {
+        match key {
+            "thinking" => {
+                if let Some(val) = self.runtime_config.get("thinking") {
+                    self.show_thinking = val.as_bool().unwrap_or(true);
+                }
+            }
+            "model" => {
+                if let Some(ConfigValue::String(m)) = self
+                    .runtime_config
+                    .get_dynamic("model", &self.current_provider.clone())
+                {
+                    self.model = m;
+                }
+            }
+            _ => {}
         }
     }
 
@@ -2394,6 +2566,11 @@ impl InkChatApp {
                     description: Some("Export session to file".to_string()),
                     kind: Some("core".to_string()),
                 },
+                PopupItemNode {
+                    label: ":set".to_string(),
+                    description: Some("View/modify runtime options".to_string()),
+                    kind: Some("core".to_string()),
+                },
             ]
             .into_iter()
             .filter(|c| filter.is_empty() || c.label.to_lowercase().contains(&filter))
@@ -2413,7 +2590,90 @@ impl InkChatApp {
                 ref command,
                 arg_index,
             } => self.get_command_arg_completions(command, arg_index, &filter),
+            AutocompleteKind::SetOption { ref option } => {
+                self.get_set_option_completions(option.as_deref(), &filter)
+            }
             AutocompleteKind::None => vec![],
+        }
+    }
+
+    fn get_set_option_completions(&self, option: Option<&str>, filter: &str) -> Vec<PopupItemNode> {
+        use crate::tui::oil::config::{CompletionSource, SHORTCUTS, THINKING_PRESETS};
+
+        match option {
+            None => SHORTCUTS
+                .iter()
+                .filter(|s| filter.is_empty() || s.short.to_lowercase().contains(filter))
+                .map(|s| {
+                    let current_value = self.runtime_config.get(s.short);
+                    let value_str = current_value.map(|v| format!("={}", v)).unwrap_or_default();
+                    PopupItemNode {
+                        label: s.short.to_string(),
+                        description: Some(format!("{}{}", s.description, value_str)),
+                        kind: Some("option".to_string()),
+                    }
+                })
+                .collect(),
+            Some(opt) => {
+                let source = self.runtime_config.completions_for(opt);
+                match source {
+                    CompletionSource::Models => self
+                        .available_models
+                        .iter()
+                        .filter(|m| filter.is_empty() || m.to_lowercase().contains(filter))
+                        .take(15)
+                        .map(|m| PopupItemNode {
+                            label: m.clone(),
+                            description: None,
+                            kind: Some("model".to_string()),
+                        })
+                        .collect(),
+                    CompletionSource::ThinkingPresets => THINKING_PRESETS
+                        .iter()
+                        .filter(|p| filter.is_empty() || p.name.to_lowercase().contains(filter))
+                        .map(|p| PopupItemNode {
+                            label: p.name.to_string(),
+                            description: p.tokens.map(|t| format!("~{} tokens", t)),
+                            kind: Some("preset".to_string()),
+                        })
+                        .collect(),
+                    CompletionSource::Themes => vec![
+                        PopupItemNode {
+                            label: "base16-ocean.dark".to_string(),
+                            description: None,
+                            kind: Some("theme".to_string()),
+                        },
+                        PopupItemNode {
+                            label: "Solarized (dark)".to_string(),
+                            description: None,
+                            kind: Some("theme".to_string()),
+                        },
+                        PopupItemNode {
+                            label: "Solarized (light)".to_string(),
+                            description: None,
+                            kind: Some("theme".to_string()),
+                        },
+                        PopupItemNode {
+                            label: "InspiredGitHub".to_string(),
+                            description: None,
+                            kind: Some("theme".to_string()),
+                        },
+                    ]
+                    .into_iter()
+                    .filter(|t| filter.is_empty() || t.label.to_lowercase().contains(filter))
+                    .collect(),
+                    CompletionSource::Static(values) => values
+                        .iter()
+                        .filter(|v| filter.is_empty() || v.to_lowercase().contains(filter))
+                        .map(|v| PopupItemNode {
+                            label: v.to_string(),
+                            description: None,
+                            kind: Some("value".to_string()),
+                        })
+                        .collect(),
+                    CompletionSource::None => vec![],
+                }
+            }
         }
     }
 
@@ -2569,6 +2829,16 @@ impl InkChatApp {
                 }
                 while self.input.cursor() > new_cursor {
                     self.input.handle(InputAction::Left);
+                }
+            }
+            AutocompleteKind::SetOption { ref option } => {
+                self.input.handle(InputAction::Clear);
+                let cmd = match option {
+                    None => format!(":set {}", label),
+                    Some(opt) => format!(":set {}={}", opt, label),
+                };
+                for ch in cmd.chars() {
+                    self.input.handle(InputAction::Insert(ch));
                 }
             }
             AutocompleteKind::None => {}
