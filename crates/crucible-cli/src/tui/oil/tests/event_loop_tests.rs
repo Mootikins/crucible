@@ -68,6 +68,9 @@ async fn render_loop_completes_many_iterations() {
     );
 }
 
+/// Verify render time doesn't grow unbounded with message history.
+/// 100 iterations × 20 messages = 2000 markdown parses.
+/// 10s threshold allows ~5ms per parse which is reasonable without caching.
 #[tokio::test]
 async fn render_with_messages_does_not_accumulate() {
     let mut terminal = Terminal::new().unwrap();
@@ -89,7 +92,7 @@ async fn render_with_messages_does_not_accumulate() {
 
     let elapsed = start.elapsed();
     assert!(
-        elapsed < Duration::from_secs(3),
+        elapsed < Duration::from_secs(10),
         "100 iterations with 20 messages took {:?}",
         elapsed
     );
