@@ -10,6 +10,41 @@ use crate::tui::oil::render::render_to_string;
 use crate::tui::oil::test_harness::AppHarness;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
+fn assert_contains(output: &str, needle: &str, context: &str) {
+    assert!(
+        output.contains(needle),
+        "Expected to find '{}' in output. Context: {}\nOutput:\n{}",
+        needle,
+        context,
+        output
+    );
+}
+
+fn assert_appears_before(output: &str, first: &str, second: &str, context: &str) {
+    let first_pos = output.find(first).unwrap_or_else(|| {
+        panic!(
+            "Expected to find '{}' in output. Context: {}\nOutput:\n{}",
+            first, context, output
+        )
+    });
+    let second_pos = output.find(second).unwrap_or_else(|| {
+        panic!(
+            "Expected to find '{}' in output. Context: {}\nOutput:\n{}",
+            second, context, output
+        )
+    });
+    assert!(
+        first_pos < second_pos,
+        "'{}' (pos {}) should appear before '{}' (pos {}). Context: {}\nOutput:\n{}",
+        first,
+        first_pos,
+        second,
+        second_pos,
+        context,
+        output
+    );
+}
+
 fn key(code: KeyCode) -> KeyEvent {
     KeyEvent::new(code, KeyModifiers::NONE)
 }
@@ -1385,35 +1420,14 @@ fn thinking_block_appears_before_assistant_response() {
     let tree = view_with_default_ctx(&app);
     let output = render_to_string(&tree, 80);
 
-    let thinking_pos = output.find("thinking (");
-    let whale_info_pos = output.find("User wants whale info");
-    let response_pos = output.find("Whales are marine mammals");
-
-    assert!(
-        thinking_pos.is_some(),
-        "Should find thinking header in output:\n{}",
-        output
-    );
-    assert!(
-        whale_info_pos.is_some(),
-        "Should find thinking content in output:\n{}",
-        output
-    );
-    assert!(
-        response_pos.is_some(),
-        "Should find assistant response in output:\n{}",
-        output
-    );
-
-    let thinking_pos = thinking_pos.unwrap();
-    let response_pos = response_pos.unwrap();
-
-    assert!(
-        thinking_pos < response_pos,
-        "Thinking block (pos {}) should appear BEFORE assistant response (pos {})\nOutput:\n{}",
-        thinking_pos,
-        response_pos,
-        output
+    assert_contains(&output, "thinking (", "thinking header");
+    assert_contains(&output, "User wants whale info", "thinking content");
+    assert_contains(&output, "Whales are marine mammals", "assistant response");
+    assert_appears_before(
+        &output,
+        "thinking (",
+        "Whales are marine mammals",
+        "thinking block should precede response",
     );
 }
 
@@ -1443,20 +1457,16 @@ fn thinking_block_not_duplicated_across_multiple_messages() {
         output
     );
 
-    let first_answer_pos = output
-        .find("first answer")
-        .expect("Should find first answer");
-    let thinking_pos = output.find("thinking (").expect("Should find thinking");
-    let second_answer_pos = output
-        .find("second answer")
-        .expect("Should find second answer");
-
-    assert!(
-        first_answer_pos < thinking_pos,
-        "First answer should come before thinking block"
+    assert_appears_before(
+        &output,
+        "first answer",
+        "thinking (",
+        "first answer before thinking",
     );
-    assert!(
-        thinking_pos < second_answer_pos,
-        "Thinking block should come before second answer"
+    assert_appears_before(
+        &output,
+        "thinking (",
+        "second answer",
+        "thinking before second answer",
     );
 }
