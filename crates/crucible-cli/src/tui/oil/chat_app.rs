@@ -1960,22 +1960,33 @@ impl InkChatApp {
                 } else if !has_graduated {
                     let thinking_node =
                         if self.show_thinking && !self.in_progress_thinking.is_empty() {
-                            let thinking_lines: Vec<Node> = self
-                                .in_progress_thinking
-                                .lines()
-                                .rev()
-                                .take(6)
-                                .collect::<Vec<_>>()
-                                .into_iter()
-                                .rev()
-                                .map(|line| {
-                                    styled(
-                                        format!("  > {}", line),
-                                        Style::new().fg(Color::DarkGray).italic(),
-                                    )
-                                })
-                                .collect();
-                            col(thinking_lines)
+                            let thinking_content = &self.in_progress_thinking;
+                            let display_content = if thinking_content.len() > 800 {
+                                let start = thinking_content.len() - 800;
+                                let boundary = thinking_content[start..]
+                                    .find(char::is_whitespace)
+                                    .map(|i| start + i + 1)
+                                    .unwrap_or(start);
+                                format!("…{}", &thinking_content[boundary..])
+                            } else {
+                                thinking_content.clone()
+                            };
+                            let md_style = RenderStyle::viewport_with_margins(
+                                term_width.saturating_sub(4),
+                                Margins {
+                                    left: 4,
+                                    right: 0,
+                                    show_bullet: false,
+                                },
+                            );
+                            let content_node = markdown_to_node_styled(&display_content, md_style);
+                            col([
+                                styled(
+                                    "  ┌─ thinking",
+                                    Style::new().fg(Color::Rgb(100, 100, 100)).italic(),
+                                ),
+                                content_node,
+                            ])
                         } else {
                             text("")
                         };
