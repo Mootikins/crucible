@@ -1360,3 +1360,103 @@ fn model_repl_command_in_popup_list() {
         "REPL command popup should include :model"
     );
 }
+
+// =============================================================================
+// Thinking Display Tests
+// =============================================================================
+
+#[test]
+fn thinking_block_appears_before_assistant_response() {
+    let mut app = InkChatApp::default();
+    app.set_show_thinking(true);
+
+    app.on_message(ChatAppMsg::UserMessage("tell me about whales".to_string()));
+    app.on_message(ChatAppMsg::ThinkingDelta(
+        "User wants whale info.".to_string(),
+    ));
+    app.on_message(ChatAppMsg::ThinkingDelta(
+        " Should cover types and facts.".to_string(),
+    ));
+    app.on_message(ChatAppMsg::TextDelta(
+        "Whales are marine mammals.".to_string(),
+    ));
+    app.on_message(ChatAppMsg::StreamComplete);
+
+    let tree = view_with_default_ctx(&app);
+    let output = render_to_string(&tree, 80);
+
+    let thinking_pos = output.find("thinking (");
+    let whale_info_pos = output.find("User wants whale info");
+    let response_pos = output.find("Whales are marine mammals");
+
+    assert!(
+        thinking_pos.is_some(),
+        "Should find thinking header in output:\n{}",
+        output
+    );
+    assert!(
+        whale_info_pos.is_some(),
+        "Should find thinking content in output:\n{}",
+        output
+    );
+    assert!(
+        response_pos.is_some(),
+        "Should find assistant response in output:\n{}",
+        output
+    );
+
+    let thinking_pos = thinking_pos.unwrap();
+    let response_pos = response_pos.unwrap();
+
+    assert!(
+        thinking_pos < response_pos,
+        "Thinking block (pos {}) should appear BEFORE assistant response (pos {})\nOutput:\n{}",
+        thinking_pos,
+        response_pos,
+        output
+    );
+}
+
+#[test]
+fn thinking_block_not_duplicated_across_multiple_messages() {
+    let mut app = InkChatApp::default();
+    app.set_show_thinking(true);
+
+    app.on_message(ChatAppMsg::UserMessage("first question".to_string()));
+    app.on_message(ChatAppMsg::TextDelta("first answer".to_string()));
+    app.on_message(ChatAppMsg::StreamComplete);
+
+    app.on_message(ChatAppMsg::UserMessage("second question".to_string()));
+    app.on_message(ChatAppMsg::ThinkingDelta(
+        "Processing second question.".to_string(),
+    ));
+    app.on_message(ChatAppMsg::TextDelta("second answer".to_string()));
+    app.on_message(ChatAppMsg::StreamComplete);
+
+    let tree = view_with_default_ctx(&app);
+    let output = render_to_string(&tree, 80);
+
+    let thinking_count = output.matches("thinking (").count();
+    assert_eq!(
+        thinking_count, 1,
+        "Thinking block should appear exactly once, not on every assistant message.\nOutput:\n{}",
+        output
+    );
+
+    let first_answer_pos = output
+        .find("first answer")
+        .expect("Should find first answer");
+    let thinking_pos = output.find("thinking (").expect("Should find thinking");
+    let second_answer_pos = output
+        .find("second answer")
+        .expect("Should find second answer");
+
+    assert!(
+        first_answer_pos < thinking_pos,
+        "First answer should come before thinking block"
+    );
+    assert!(
+        thinking_pos < second_answer_pos,
+        "Thinking block should come before second answer"
+    );
+}
