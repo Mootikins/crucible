@@ -1909,7 +1909,8 @@ impl InkChatApp {
         if let Some(summary) = Self::summarize_tool_result(name, result) {
             return styled(format!("   {}", summary), Style::new().fg(Color::DarkGray));
         }
-        Self::format_output_tail(result, "   ", 77)
+        let inner = Self::unwrap_json_result(result);
+        Self::format_output_tail(&inner, "   ", 77)
     }
 
     fn summarize_tool_result(name: &str, result: &str) -> Option<String> {
