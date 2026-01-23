@@ -510,3 +510,197 @@ mod realistic_scenarios {
         assert_order(&output, "read_file", "empty");
     }
 }
+
+/// Tests that track tool call positioning during text graduation.
+/// These simulate real RPC message flows and capture snapshots at each step.
+mod graduation_tracking {
+    use super::*;
+
+    fn positions<'a>(output: &str, markers: &[&'a str]) -> Vec<(&'a str, Option<usize>)> {
+        markers.iter().map(|m| (*m, output.find(m))).collect()
+    }
+
+    /// Simulates a realistic tool use session with large text blocks that trigger graduation.
+    /// Captures snapshots at each message to track how tool calls move relative to text.
+    #[test]
+    fn tool_call_position_during_graduation() {
+        let mut app = InkChatApp::default();
+        app.on_message(ChatAppMsg::UserMessage("Analyze the file".to_string()));
+
+        // Step 1: Initial text (short, won't graduate)
+        app.on_message(ChatAppMsg::TextDelta("BEFORE_TOOL_TEXT\n\n".to_string()));
+        let snap1 = render_app(&app);
+        assert!(
+            snap1.contains("BEFORE_TOOL_TEXT"),
+            "Step 1: Should have initial text\n{}",
+            snap1
+        );
+
+        // Step 2: Tool call arrives
+        app.on_message(ChatAppMsg::ToolCall {
+            name: "read_file".to_string(),
+            args: r#"{"path":"test.rs"}"#.to_string(),
+        });
+        let snap2 = render_app(&app);
+        let pos2 = positions(&snap2, &["BEFORE_TOOL_TEXT", "read_file"]);
+        assert!(
+            pos2[0].1.unwrap() < pos2[1].1.unwrap(),
+            "Step 2: Text should appear before tool call\nPositions: {:?}\n{}",
+            pos2,
+            snap2
+        );
+
+        // Step 3: Tool result arrives
+        app.on_message(ChatAppMsg::ToolResultDelta {
+            name: "read_file".to_string(),
+            delta: "TOOL_OUTPUT_CONTENT".to_string(),
+        });
+        app.on_message(ChatAppMsg::ToolResultComplete {
+            name: "read_file".to_string(),
+        });
+        let snap3 = render_app(&app);
+        assert!(
+            snap3.contains("✓") || snap3.contains("\u{2713}"),
+            "Step 3: Tool should be marked complete\n{}",
+            snap3
+        );
+
+        // Step 4: Post-tool text (short)
+        app.on_message(ChatAppMsg::TextDelta("AFTER_TOOL_TEXT\n\n".to_string()));
+        let snap4 = render_app(&app);
+        let pos4 = positions(
+            &snap4,
+            &["BEFORE_TOOL_TEXT", "read_file", "AFTER_TOOL_TEXT"],
+        );
+        assert!(
+            pos4[0].1.unwrap() < pos4[1].1.unwrap() && pos4[1].1.unwrap() < pos4[2].1.unwrap(),
+            "Step 4: Order should be text -> tool -> text\nPositions: {:?}\n{}",
+            pos4,
+            snap4
+        );
+
+        // Step 5: Add lots of text to trigger graduation (>15 lines)
+        let long_text = (1..=20)
+            .map(|i| format!("LINE_{:02}\n", i))
+            .collect::<String>();
+        app.on_message(ChatAppMsg::TextDelta(long_text));
+        let snap5 = render_app(&app);
+
+        // Check that tool call is still in correct position relative to markers
+        let pos5 = positions(
+            &snap5,
+            &["BEFORE_TOOL_TEXT", "read_file", "AFTER_TOOL_TEXT"],
+        );
+        eprintln!("Step 5 positions: {:?}", pos5);
+        eprintln!("Step 5 output:\n{}", snap5);
+
+        // The tool should still be between BEFORE and AFTER markers
+        if let (Some(before), Some(tool), Some(after)) = (pos5[0].1, pos5[1].1, pos5[2].1) {
+            assert!(
+                before < tool && tool < after,
+                "Step 5: Tool should remain between text markers after graduation\n\
+                 Positions: before={}, tool={}, after={}\n{}",
+                before,
+                tool,
+                after,
+                snap5
+            );
+        } else {
+            panic!(
+                "Step 5: Missing markers in output\nPositions: {:?}\n{}",
+                pos5, snap5
+            );
+        }
+
+        // Step 6: Complete streaming
+        app.on_message(ChatAppMsg::StreamComplete);
+        let snap6 = render_app(&app);
+        let pos6 = positions(
+            &snap6,
+            &["BEFORE_TOOL_TEXT", "read_file", "AFTER_TOOL_TEXT"],
+        );
+
+        if let (Some(before), Some(tool), Some(after)) = (pos6[0].1, pos6[1].1, pos6[2].1) {
+            assert!(
+                before < tool && tool < after,
+                "Step 6 (final): Tool should remain between text markers\n\
+                 Positions: before={}, tool={}, after={}\n{}",
+                before,
+                tool,
+                after,
+                snap6
+            );
+        } else {
+            panic!(
+                "Step 6 (final): Missing markers in output\nPositions: {:?}\n{}",
+                pos6, snap6
+            );
+        }
+    }
+
+    /// Test specifically for the overflow graduation scenario.
+    /// When text overflows 15 lines, older lines should graduate to scrollback
+    /// but tool calls should maintain their chronological position.
+    #[test]
+    fn tool_position_stable_through_overflow_graduation() {
+        let mut app = InkChatApp::default();
+        app.on_message(ChatAppMsg::UserMessage("test".to_string()));
+
+        // Add initial text that will be visible
+        app.on_message(ChatAppMsg::TextDelta("HEADER\n\n".to_string()));
+
+        // Add tool call
+        app.on_message(ChatAppMsg::ToolCall {
+            name: "test_tool".to_string(),
+            args: "{}".to_string(),
+        });
+        app.on_message(ChatAppMsg::ToolResultComplete {
+            name: "test_tool".to_string(),
+        });
+
+        // Add text after tool
+        app.on_message(ChatAppMsg::TextDelta("MIDDLE\n\n".to_string()));
+
+        // Now add enough lines to trigger overflow graduation
+        for i in 1..=25 {
+            app.on_message(ChatAppMsg::TextDelta(format!("overflow_line_{:02}\n", i)));
+        }
+
+        let output = render_app(&app);
+        eprintln!("Overflow test output:\n{}", output);
+
+        // The order should still be: HEADER -> tool -> MIDDLE -> overflow lines
+        // Even if some content has graduated, relative order must be preserved
+        let header_pos = output.find("HEADER");
+        let tool_pos = output.find("test_tool");
+        let middle_pos = output.find("MIDDLE");
+
+        eprintln!(
+            "Positions: header={:?}, tool={:?}, middle={:?}",
+            header_pos, tool_pos, middle_pos
+        );
+
+        // All markers should exist
+        assert!(header_pos.is_some(), "HEADER should be in output");
+        assert!(tool_pos.is_some(), "test_tool should be in output");
+        assert!(middle_pos.is_some(), "MIDDLE should be in output");
+
+        // Order should be preserved
+        let header = header_pos.unwrap();
+        let tool = tool_pos.unwrap();
+        let middle = middle_pos.unwrap();
+
+        assert!(
+            header < tool,
+            "HEADER ({}) should come before tool ({})",
+            header,
+            tool
+        );
+        assert!(
+            tool < middle,
+            "tool ({}) should come before MIDDLE ({})",
+            tool,
+            middle
+        );
+    }
+}
