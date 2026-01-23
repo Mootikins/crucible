@@ -74,3 +74,4 @@ WORKTREE.md
 
 # Local thoughts/plans (not committed)
 thoughts/
+crates/crucible-cli/proptest-regressions/
