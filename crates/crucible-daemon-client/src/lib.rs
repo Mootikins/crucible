@@ -15,7 +15,7 @@ pub mod lifecycle;
 mod storage;
 
 pub use agent::DaemonAgentHandle;
-pub use client::{DaemonClient, SessionEvent};
+pub use client::{DaemonCapabilities, DaemonClient, SessionEvent, VersionCheck};
 pub use storage::{DaemonNoteStore, DaemonStorageClient};
 
 // Re-export canonical socket path
