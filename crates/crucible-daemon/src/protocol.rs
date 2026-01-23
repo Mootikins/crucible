@@ -164,6 +164,7 @@ impl SessionEventMessage {
     pub fn tool_result(
         session_id: impl Into<String>,
         call_id: impl Into<String>,
+        tool: impl Into<String>,
         result: Value,
     ) -> Self {
         Self::new(
@@ -171,6 +172,7 @@ impl SessionEventMessage {
             "tool_result",
             serde_json::json!({
                 "call_id": call_id.into(),
+                "tool": tool.into(),
                 "result": result,
             }),
         )
@@ -397,12 +399,14 @@ mod tests {
         let event = SessionEventMessage::tool_result(
             "chat-test",
             "tc-123",
+            "read_file",
             serde_json::json!({ "count": 5 }),
         );
         let json = serde_json::to_string(&event).unwrap();
 
         assert!(json.contains("\"event\":\"tool_result\""));
         assert!(json.contains("\"call_id\":\"tc-123\""));
+        assert!(json.contains("\"tool\":\"read_file\""));
         assert!(json.contains("\"count\":5"));
     }
 
