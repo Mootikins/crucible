@@ -1,5 +1,6 @@
 [workspace]
 resolver = "2"
+exclude = ["vendor/markdown-it"]
 members = [
     "crates/crucible-core",
     "crates/crucible-parser",
@@ -199,3 +200,8 @@ strip = false
 
 [profile.bench]
 debug = true
+
+# Local patches for upstream crates with bugs
+# See vendor/README.md for details
+[patch.crates-io]
+markdown-it = { path = "vendor/markdown-it" }

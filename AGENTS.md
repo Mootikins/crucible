@@ -25,12 +25,12 @@ This file provides essential information for AI agents to understand and contrib
 | Crate | Purpose | Key Traits/Types |
 |-------|---------|------------------|
 | `crucible-core` | Domain logic, traits, parser types | `Provider`, `CanEmbed`, `CanChat`, `ParsedNote` |
-| `crucible-cli` | Terminal UI, REPL, commands | `TuiRunner`, `ChatSession` |
+| `crucible-cli` | Terminal UI, REPL, commands | `InkChatApp`, `ChatAppMsg` |
 | `crucible-web` | Browser chat UI (SolidJS + Axum) | HTTP/SSE endpoints |
 | `crucible-tools` | MCP server and tools | Tool implementations |
 | `crucible-surrealdb` | SurrealDB storage with EAV schema | `SurrealStorage`, `EavGraph` |
 | `crucible-lua` | Lua/Luau with Fennel support | `LuaExecutor`, `FennelCompiler` |
-| `crucible-rune` | Rune scripting runtime (legacy) | `RuneExecutor`, `RuneToolRegistry` |
+| `crucible-rune` | Rune scripting (legacy, use crucible-lua) | — |
 | `crucible-llm` | Embedding backends | `EmbeddingBackend` (FastEmbed, Burn, LlamaCpp) |
 | `crucible-rig` | LLM chat via Rig | Ollama, OpenAI, Anthropic adapters |
 | `crucible-parser` | Markdown parsing implementation | `MarkdownParser` |
@@ -39,6 +39,9 @@ This file provides essential information for AI agents to understand and contrib
 | `crucible-acp` | Agent Context Protocol | Protocol types |
 | `crucible-daemon` | Daemon server (cru-server) | `Server`, `SessionManager`, `AgentManager` |
 | `crucible-daemon-client` | Daemon client library | `DaemonClient`, `DaemonStorageClient` |
+| `crucible-oil` | Terminal rendering primitives | `Node`, `render_to_string` |
+
+*See `crates/` for additional crates (lance, query, sqlite, skills, etc.)*
 
 ### Daemon Architecture
 
@@ -214,6 +217,9 @@ crucible/
 │   ├── crucible-config/         # Configuration types
 │   ├── crucible-watch/          # File watching
 │   └── ...                      # Other crates
+├── vendor/                      # Patched upstream dependencies
+│   ├── markdown-it/             # Patched markdown-it (panic fixes)
+│   └── README.md                # Documents patches and update process
 ├── docs/                        # Documentation kiln (user guides + test fixture)
 ├── justfile                     # Development recipes
 ├── AGENTS.md                    # This file (CLAUDE.md symlinks here)
@@ -228,6 +234,7 @@ crucible/
 - `README.md`, `AGENTS.md` - documentation
 - `Cargo.toml`, `package.json` - build configuration
 - `LICENSE`, `.gitignore` - project metadata
+- `vendor/` - patched upstream crates
 
 **Do NOT create in root:**
 - Documentation files (use `docs/`)
@@ -237,6 +244,7 @@ crucible/
 **Where things belong:**
 - **Feature docs**: `docs/Help/` - user-facing reference
 - **Architecture docs**: `docs/Meta/` - contributor docs
+- **Vendored deps**: `vendor/` - patched upstream crates
 - **Examples**: `examples/`
 - **Scripts**: `scripts/`
 - **Tests**: `tests/` or `crates/*/tests/`
@@ -301,6 +309,31 @@ llama-cpp = ["dep:llama-cpp-2"]    # GGUF model support
 burn = ["dep:burn"]                # Burn ML framework
 test-utils = []                    # Mock providers for testing
 ```
+
+### Vendored Dependencies
+
+Some upstream crates have bugs or are abandoned. We maintain local patches in `vendor/`.
+
+**Currently vendored:**
+
+| Crate | Reason | Patches |
+|-------|--------|---------|
+| `markdown-it` | Semi-abandoned, panic bugs | Underflow fixes in `emph_pair.rs` |
+
+**How it works:**
+- `Cargo.toml` has `[patch.crates-io]` pointing to local path
+- `vendor/markdown-it` is excluded from workspace via `workspace.exclude`
+- See `vendor/README.md` for patch details and update instructions
+
+**Adding patches:**
+1. Edit files in `vendor/<crate>/src/`
+2. Add `NOTE(crucible):` comments explaining the fix
+3. Update `vendor/README.md` with the patch description
+4. Add regression tests when possible
+
+**When to vendor vs. fork:**
+- **Vendor** (in-repo): Small fixes, abandoned upstreams, want git history together
+- **Fork** (separate repo): Major changes, want to publish to crates.io, multiple consumers
 
 ### Testing
 
@@ -578,6 +611,7 @@ Before submitting changes:
 - **[docs/Meta/Roadmap.md](./docs/Meta/Roadmap.md)** - Development roadmap
 - **[Documentation](./docs/)** - Reference kiln (user guides + test fixture)
 - **[justfile](./justfile)** - Development recipes
+- **[vendor/README.md](./vendor/README.md)** - Patched upstream dependencies
 
 ---
 
