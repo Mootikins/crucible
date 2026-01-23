@@ -1401,7 +1401,7 @@ fn model_repl_command_in_popup_list() {
 // =============================================================================
 
 #[test]
-fn thinking_block_appears_before_assistant_response() {
+fn thinking_block_appears_during_streaming() {
     let mut app = InkChatApp::default();
     app.set_show_thinking(true);
 
@@ -1412,61 +1412,61 @@ fn thinking_block_appears_before_assistant_response() {
     app.on_message(ChatAppMsg::ThinkingDelta(
         " Should cover types and facts.".to_string(),
     ));
+
+    let tree = view_with_default_ctx(&app);
+    let output = render_to_string(&tree, 80);
+
+    assert_contains(&output, "thinking (", "thinking header during streaming");
+    assert_contains(
+        &output,
+        "User wants whale info",
+        "thinking content during streaming",
+    );
+}
+
+#[test]
+fn thinking_then_text_shows_interleaved_during_streaming() {
+    let mut app = InkChatApp::default();
+    app.set_show_thinking(true);
+
+    app.on_message(ChatAppMsg::UserMessage("tell me about whales".to_string()));
+    app.on_message(ChatAppMsg::ThinkingDelta("Planning response.".to_string()));
     app.on_message(ChatAppMsg::TextDelta(
         "Whales are marine mammals.".to_string(),
     ));
-    app.on_message(ChatAppMsg::StreamComplete);
 
     let tree = view_with_default_ctx(&app);
     let output = render_to_string(&tree, 80);
 
     assert_contains(&output, "thinking (", "thinking header");
-    assert_contains(&output, "User wants whale info", "thinking content");
-    assert_contains(&output, "Whales are marine mammals", "assistant response");
+    assert_contains(&output, "Planning response", "thinking content");
+    assert_contains(&output, "Whales are marine mammals", "text content");
     assert_appears_before(
         &output,
         "thinking (",
         "Whales are marine mammals",
-        "thinking block should precede response",
+        "thinking should appear before text in interleaved stream",
     );
 }
 
 #[test]
-fn thinking_block_not_duplicated_across_multiple_messages() {
+fn finalized_message_contains_text_only() {
     let mut app = InkChatApp::default();
     app.set_show_thinking(true);
 
-    app.on_message(ChatAppMsg::UserMessage("first question".to_string()));
-    app.on_message(ChatAppMsg::TextDelta("first answer".to_string()));
-    app.on_message(ChatAppMsg::StreamComplete);
-
-    app.on_message(ChatAppMsg::UserMessage("second question".to_string()));
-    app.on_message(ChatAppMsg::ThinkingDelta(
-        "Processing second question.".to_string(),
-    ));
-    app.on_message(ChatAppMsg::TextDelta("second answer".to_string()));
+    app.on_message(ChatAppMsg::UserMessage("tell me about whales".to_string()));
+    app.on_message(ChatAppMsg::ThinkingDelta("Planning.".to_string()));
+    app.on_message(ChatAppMsg::TextDelta("Whales are mammals.".to_string()));
     app.on_message(ChatAppMsg::StreamComplete);
 
     let tree = view_with_default_ctx(&app);
     let output = render_to_string(&tree, 80);
 
+    assert_contains(&output, "Whales are mammals", "finalized text");
     let thinking_count = output.matches("thinking (").count();
     assert_eq!(
-        thinking_count, 1,
-        "Thinking block should appear exactly once, not on every assistant message.\nOutput:\n{}",
+        thinking_count, 0,
+        "Thinking should not appear in finalized messages (it was shown during streaming).\nOutput:\n{}",
         output
-    );
-
-    assert_appears_before(
-        &output,
-        "first answer",
-        "thinking (",
-        "first answer before thinking",
-    );
-    assert_appears_before(
-        &output,
-        "thinking (",
-        "second answer",
-        "thinking before second answer",
     );
 }

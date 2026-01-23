@@ -166,6 +166,7 @@ pub struct ViewportCache {
     items: VecDeque<CachedChatItem>,
     max_items: usize,
     streaming: Option<StreamingBuffer>,
+    streaming_start_index: usize,
     anchor: Option<ViewportAnchor>,
 }
 
@@ -191,6 +192,7 @@ impl ViewportCache {
             items: VecDeque::with_capacity(max_items),
             max_items,
             streaming: None,
+            streaming_start_index: 0,
             anchor: None,
         }
     }
@@ -235,6 +237,14 @@ impl ViewportCache {
 
     pub fn items(&self) -> impl Iterator<Item = &CachedChatItem> {
         self.items.iter()
+    }
+
+    pub fn items_before_streaming(&self) -> impl Iterator<Item = &CachedChatItem> {
+        self.items.iter().take(self.streaming_start_index)
+    }
+
+    pub fn items_during_streaming(&self) -> impl Iterator<Item = &CachedChatItem> {
+        self.items.iter().skip(self.streaming_start_index)
     }
 
     pub fn item_count(&self) -> usize {
@@ -299,6 +309,7 @@ impl ViewportCache {
     }
 
     pub fn start_streaming(&mut self) {
+        self.streaming_start_index = self.items.len();
         self.streaming = Some(StreamingBuffer::new());
     }
 
@@ -308,8 +319,35 @@ impl ViewportCache {
         }
     }
 
+    pub fn append_streaming_thinking(&mut self, delta: &str) {
+        if let Some(ref mut buf) = self.streaming {
+            buf.append_thinking(delta);
+        }
+    }
+
+    pub fn push_streaming_tool_call(&mut self, tool_id: String) {
+        if let Some(ref mut buf) = self.streaming {
+            buf.push_tool_call(tool_id);
+        }
+    }
+
     pub fn streaming_content(&self) -> Option<&str> {
         self.streaming.as_ref().map(|b| b.content())
+    }
+
+    pub fn streaming_segments(&self) -> Option<&[StreamSegment]> {
+        self.streaming.as_ref().map(|b| b.segments())
+    }
+
+    pub fn streaming_current_thinking(&self) -> Option<&str> {
+        self.streaming.as_ref().map(|b| b.current_thinking())
+    }
+
+    pub fn streaming_thinking_token_count(&self) -> usize {
+        self.streaming
+            .as_ref()
+            .map(|b| b.thinking_token_count())
+            .unwrap_or(0)
     }
 
     pub fn streaming_graduated_content(&self) -> Option<&str> {
@@ -343,8 +381,9 @@ impl ViewportCache {
     }
 
     pub fn complete_streaming(&mut self, id: String, role: Role) {
-        if let Some(buf) = self.streaming.take() {
-            let content = buf.into_content();
+        if let Some(mut buf) = self.streaming.take() {
+            buf.finalize_segments();
+            let content = buf.text_only_content();
             self.push_message(CachedMessage::new(id, role, content));
         }
     }
@@ -389,9 +428,50 @@ impl ContentSource for ViewportCache {
     }
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub enum StreamSegment {
+    Text(String),
+    Thinking(String),
+    ToolCall(String),
+}
+
+impl StreamSegment {
+    pub fn as_text(&self) -> Option<&str> {
+        match self {
+            StreamSegment::Text(s) => Some(s),
+            _ => None,
+        }
+    }
+
+    pub fn as_thinking(&self) -> Option<&str> {
+        match self {
+            StreamSegment::Thinking(s) => Some(s),
+            _ => None,
+        }
+    }
+
+    pub fn is_text(&self) -> bool {
+        matches!(self, StreamSegment::Text(_))
+    }
+
+    pub fn is_thinking(&self) -> bool {
+        matches!(self, StreamSegment::Thinking(_))
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum SegmentType {
+    Text,
+    Thinking,
+}
+
 pub struct StreamingBuffer {
     graduated_blocks: Vec<String>,
     in_progress: String,
+    segments: Vec<StreamSegment>,
+    current_thinking: String,
+    thinking_token_count: usize,
+    last_segment_type: Option<SegmentType>,
 }
 
 impl StreamingBuffer {
@@ -399,12 +479,96 @@ impl StreamingBuffer {
         Self {
             graduated_blocks: Vec::new(),
             in_progress: String::new(),
+            segments: Vec::new(),
+            current_thinking: String::new(),
+            thinking_token_count: 0,
+            last_segment_type: None,
         }
     }
 
     pub fn append(&mut self, delta: &str) {
+        self.flush_thinking_if_needed();
         self.in_progress.push_str(delta);
+        self.last_segment_type = Some(SegmentType::Text);
         self.try_graduate_blocks();
+    }
+
+    pub fn append_thinking(&mut self, delta: &str) {
+        self.flush_text_if_needed();
+        self.current_thinking.push_str(delta);
+        self.thinking_token_count += 1;
+        self.last_segment_type = Some(SegmentType::Thinking);
+    }
+
+    pub fn push_tool_call(&mut self, tool_id: String) {
+        self.flush_thinking_if_needed();
+        self.flush_text_if_needed();
+        self.segments.push(StreamSegment::ToolCall(tool_id));
+        self.last_segment_type = None;
+    }
+
+    fn flush_thinking_if_needed(&mut self) {
+        if !self.current_thinking.is_empty()
+            && self.last_segment_type == Some(SegmentType::Thinking)
+        {
+            self.segments.push(StreamSegment::Thinking(std::mem::take(
+                &mut self.current_thinking,
+            )));
+        }
+    }
+
+    fn flush_text_if_needed(&mut self) {
+        if !self.in_progress.is_empty() && self.last_segment_type == Some(SegmentType::Text) {
+            let text = std::mem::take(&mut self.in_progress);
+            self.graduated_blocks.clear();
+            self.segments.push(StreamSegment::Text(text));
+        }
+    }
+
+    pub fn finalize_segments(&mut self) {
+        match self.last_segment_type {
+            Some(SegmentType::Thinking) if !self.current_thinking.is_empty() => {
+                self.segments.push(StreamSegment::Thinking(std::mem::take(
+                    &mut self.current_thinking,
+                )));
+            }
+            Some(SegmentType::Text) if !self.in_progress.is_empty() => {
+                let all_text = self.all_content();
+                self.graduated_blocks.clear();
+                self.in_progress.clear();
+                if !all_text.is_empty() {
+                    self.segments.push(StreamSegment::Text(all_text));
+                }
+            }
+            _ => {
+                if !self.in_progress.is_empty() || !self.graduated_blocks.is_empty() {
+                    let all_text = self.all_content();
+                    self.graduated_blocks.clear();
+                    self.in_progress.clear();
+                    if !all_text.is_empty() {
+                        self.segments.push(StreamSegment::Text(all_text));
+                    }
+                }
+                if !self.current_thinking.is_empty() {
+                    self.segments.push(StreamSegment::Thinking(std::mem::take(
+                        &mut self.current_thinking,
+                    )));
+                }
+            }
+        }
+        self.last_segment_type = None;
+    }
+
+    pub fn segments(&self) -> &[StreamSegment] {
+        &self.segments
+    }
+
+    pub fn current_thinking(&self) -> &str {
+        &self.current_thinking
+    }
+
+    pub fn thinking_token_count(&self) -> usize {
+        self.thinking_token_count
     }
 
     pub fn content(&self) -> &str {
@@ -420,6 +584,20 @@ impl StreamingBuffer {
         } else {
             format!("{}{}", graduated, self.in_progress)
         }
+    }
+
+    pub fn text_only_content(&self) -> String {
+        let mut result = String::new();
+        for seg in &self.segments {
+            if let StreamSegment::Text(t) = seg {
+                result.push_str(t);
+            }
+        }
+        let current = self.all_content();
+        if !current.is_empty() {
+            result.push_str(&current);
+        }
+        result
     }
 
     pub fn graduated_content(&self) -> &str {
@@ -448,8 +626,9 @@ impl StreamingBuffer {
         !self.graduated_blocks.is_empty()
     }
 
-    pub fn into_content(self) -> String {
-        self.all_content()
+    pub fn into_content(mut self) -> String {
+        self.finalize_segments();
+        self.text_only_content()
     }
 
     pub fn len(&self) -> usize {
@@ -457,7 +636,7 @@ impl StreamingBuffer {
     }
 
     pub fn is_empty(&self) -> bool {
-        self.graduated_blocks.is_empty() && self.in_progress.is_empty()
+        self.graduated_blocks.is_empty() && self.in_progress.is_empty() && self.segments.is_empty()
     }
 
     fn try_graduate_blocks(&mut self) {
@@ -472,8 +651,6 @@ impl StreamingBuffer {
         }
     }
 
-    /// Finds byte offset where content can graduate. Graduates at blank lines (\n\n)
-    /// but never inside unclosed code blocks (```)
     fn find_graduation_point(&self) -> Option<usize> {
         let content = &self.in_progress;
 

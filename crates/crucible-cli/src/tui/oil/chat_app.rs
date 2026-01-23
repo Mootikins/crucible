@@ -8,7 +8,8 @@ use crate::tui::oil::markdown::{
 use crate::tui::oil::node::*;
 use crate::tui::oil::style::{Color, Gap, Style};
 use crate::tui::oil::viewport_cache::{
-    CachedChatItem, CachedMessage, CachedShellExecution, CachedToolCall, ViewportCache,
+    CachedChatItem, CachedMessage, CachedShellExecution, CachedToolCall, StreamSegment,
+    ViewportCache,
 };
 use crossterm::event::KeyCode;
 use crossterm::terminal::{EnterAlternateScreen, LeaveAlternateScreen};
@@ -337,8 +338,6 @@ pub struct InkChatApp {
     deferred_messages: VecDeque<String>,
     available_models: Vec<String>,
     model_list_state: ModelListState,
-    in_progress_thinking: String,
-    thinking_token_count: usize,
     last_thinking: Option<ThinkingBlock>,
     show_thinking: bool,
     runtime_config: RuntimeConfig,
@@ -378,8 +377,6 @@ impl Default for InkChatApp {
             deferred_messages: VecDeque::new(),
             available_models: Vec::new(),
             model_list_state: ModelListState::NotLoaded,
-            in_progress_thinking: String::new(),
-            thinking_token_count: 0,
             last_thinking: None,
             show_thinking: true,
             runtime_config: RuntimeConfig::empty(),
@@ -441,20 +438,26 @@ impl App for InkChatApp {
                 Action::Continue
             }
             ChatAppMsg::ThinkingDelta(delta) => {
-                self.thinking_token_count += 1;
-                self.in_progress_thinking.push_str(&delta);
+                if !self.cache.is_streaming() {
+                    self.cache.start_streaming();
+                }
+                self.cache.append_streaming_thinking(&delta);
                 Action::Continue
             }
             ChatAppMsg::ToolCall { name, args } => {
+                if !self.cache.is_streaming() {
+                    self.cache.start_streaming();
+                }
                 self.message_counter += 1;
+                let tool_id = format!("tool-{}", self.message_counter);
                 tracing::debug!(
                     tool_name = %name,
                     args_len = args.len(),
                     counter = self.message_counter,
                     "Adding ToolCall to cache"
                 );
-                self.cache
-                    .push_tool_call(format!("tool-{}", self.message_counter), &name, &args);
+                self.cache.push_streaming_tool_call(tool_id.clone());
+                self.cache.push_tool_call(tool_id, &name, &args);
                 Action::Continue
             }
             ChatAppMsg::ToolResultDelta { name, delta } => {
@@ -1958,36 +1961,15 @@ impl InkChatApp {
     }
 
     fn finalize_streaming(&mut self) {
-        let streaming_content = self.cache.streaming_content().map(|s| s.to_string());
-        self.cache.cancel_streaming();
+        if self.cache.is_streaming() {
+            self.message_counter += 1;
+            let msg_id = format!("assistant-{}", self.message_counter);
+            self.cache
+                .complete_streaming(msg_id.clone(), Role::Assistant);
 
-        let finalized_msg_id = match streaming_content {
-            Some(content) if !content.is_empty() => {
-                self.message_counter += 1;
-                let msg_id = format!("assistant-{}", self.message_counter);
-                self.cache.push_message(CachedMessage::new(
-                    msg_id.clone(),
-                    Role::Assistant,
-                    content,
-                ));
-                Some(msg_id)
-            }
-            _ => None,
-        };
+            self.last_thinking = None;
+        }
 
-        self.last_thinking = match (self.show_thinking, finalized_msg_id) {
-            (true, Some(msg_id)) if !self.in_progress_thinking.is_empty() => Some(ThinkingBlock {
-                message_id: msg_id,
-                content: std::mem::take(&mut self.in_progress_thinking),
-                token_count: self.thinking_token_count,
-            }),
-            _ => {
-                self.in_progress_thinking.clear();
-                None
-            }
-        };
-
-        self.thinking_token_count = 0;
         self.status = "Ready".to_string();
     }
 
@@ -2003,7 +1985,14 @@ impl InkChatApp {
     }
 
     fn render_items(&self) -> Node {
-        col(self.cache.items().map(|item| self.render_cached_item(item)))
+        if self.cache.is_streaming() {
+            col(self
+                .cache
+                .items_before_streaming()
+                .map(|item| self.render_cached_item(item)))
+        } else {
+            col(self.cache.items().map(|item| self.render_cached_item(item)))
+        }
     }
 
     fn render_cached_item(&self, item: &CachedChatItem) -> Node {
@@ -2159,27 +2148,69 @@ impl InkChatApp {
             let term_width = terminal_width();
             let spinner_indent = " ";
 
+            let segments = self.cache.streaming_segments().unwrap_or(&[]);
             let graduated_blocks = self.cache.streaming_graduated_blocks().unwrap_or(&[]);
             let in_progress_content = self.cache.streaming_in_progress_content().unwrap_or("");
-            let has_graduated = !graduated_blocks.is_empty();
+            let current_thinking = self.cache.streaming_current_thinking().unwrap_or("");
+            let thinking_tokens = self.cache.streaming_thinking_token_count();
 
-            let graduated_nodes: Vec<Node> = graduated_blocks
-                .iter()
-                .enumerate()
-                .map(|(i, block_content)| {
-                    let margins = if i == 0 {
-                        Margins::assistant()
-                    } else {
-                        Margins::assistant_continuation()
-                    };
-                    let style = RenderStyle::natural_with_margins(term_width, margins);
-                    let md_node = markdown_to_node_styled(block_content, style);
-                    scrollback(
-                        format!("streaming-graduated-{}", i),
-                        [col([text(""), md_node, text("")])],
-                    )
-                })
-                .collect();
+            let mut nodes: Vec<Node> = Vec::new();
+            let mut text_block_count = 0;
+            let mut has_tool_calls = false;
+
+            for (seg_idx, segment) in segments.iter().enumerate() {
+                match segment {
+                    StreamSegment::Text(content) => {
+                        let margins = if text_block_count == 0 {
+                            Margins::assistant()
+                        } else {
+                            Margins::assistant_continuation()
+                        };
+                        let style = RenderStyle::natural_with_margins(term_width, margins);
+                        let md_node = markdown_to_node_styled(content, style);
+                        nodes.push(scrollback(
+                            format!("streaming-seg-{}", seg_idx),
+                            [col([text(""), md_node, text("")])],
+                        ));
+                        text_block_count += 1;
+                    }
+                    StreamSegment::Thinking(content) if self.show_thinking => {
+                        let thinking_node = self.render_thinking_block(
+                            content,
+                            content.split_whitespace().count(),
+                            term_width,
+                        );
+                        nodes.push(scrollback(
+                            format!("streaming-think-{}", seg_idx),
+                            [col([text(""), thinking_node])],
+                        ));
+                    }
+                    StreamSegment::ToolCall(tool_id) => {
+                        if let Some(CachedChatItem::ToolCall(tool)) = self.cache.get_item(tool_id) {
+                            nodes.push(self.render_tool_call(tool));
+                            has_tool_calls = true;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+
+            for (i, block_content) in graduated_blocks.iter().enumerate() {
+                let margins = if text_block_count == 0 && i == 0 {
+                    Margins::assistant()
+                } else {
+                    Margins::assistant_continuation()
+                };
+                let style = RenderStyle::natural_with_margins(term_width, margins);
+                let md_node = markdown_to_node_styled(block_content, style);
+                nodes.push(scrollback(
+                    format!("streaming-graduated-{}", i),
+                    [col([text(""), md_node, text("")])],
+                ));
+                text_block_count += 1;
+            }
+
+            let has_graduated = text_block_count > 0 || has_tool_calls;
 
             let in_progress_node = {
                 let margins = if has_graduated {
@@ -2188,35 +2219,37 @@ impl InkChatApp {
                     Margins::assistant()
                 };
                 let style = RenderStyle::viewport_with_margins(term_width, margins);
-                let content_node = markdown_to_node_styled(in_progress_content, style);
 
-                if !in_progress_content.is_empty() {
+                let thinking_visible = self.show_thinking && !current_thinking.is_empty();
+                let text_visible = !in_progress_content.is_empty();
+
+                if text_visible {
+                    let content_node = markdown_to_node_styled(in_progress_content, style);
                     col([
                         text(""),
                         content_node,
                         text(""),
                         row([text(spinner_indent), spinner(None, self.spinner_frame)]),
                     ])
+                } else if thinking_visible {
+                    let thinking_node =
+                        self.render_thinking_block(current_thinking, thinking_tokens, term_width);
+                    col([
+                        text(""),
+                        thinking_node,
+                        row([
+                            text(spinner_indent),
+                            spinner(Some("Thinking...".to_string()), self.spinner_frame),
+                        ]),
+                    ])
                 } else if !has_graduated {
-                    let thinking_visible =
-                        self.show_thinking && !self.in_progress_thinking.is_empty();
-                    let thinking_node = if thinking_visible {
-                        self.render_thinking_block(
-                            &self.in_progress_thinking,
-                            self.thinking_token_count,
-                            term_width,
-                        )
-                    } else {
-                        text("")
-                    };
-                    let spinner_text = if !thinking_visible && self.thinking_token_count > 0 {
-                        format!("Thinking... ({} tokens)", self.thinking_token_count)
+                    let spinner_text = if thinking_tokens > 0 {
+                        format!("Thinking... ({} tokens)", thinking_tokens)
                     } else {
                         "Thinking...".to_string()
                     };
                     col([
                         text(""),
-                        thinking_node,
                         row([
                             text(spinner_indent),
                             spinner(Some(spinner_text), self.spinner_frame),
@@ -2227,7 +2260,6 @@ impl InkChatApp {
                 }
             };
 
-            let mut nodes = graduated_nodes;
             nodes.push(in_progress_node);
             col(nodes)
         })
