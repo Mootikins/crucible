@@ -383,8 +383,41 @@ impl ViewportCache {
     pub fn complete_streaming(&mut self, id: String, role: Role) {
         if let Some(mut buf) = self.streaming.take() {
             buf.finalize_segments();
-            let content = buf.text_only_content();
-            self.push_message(CachedMessage::new(id, role, content));
+
+            let streaming_items: Vec<CachedChatItem> =
+                self.items.drain(self.streaming_start_index..).collect();
+
+            let mut msg_counter = 0;
+            for segment in buf.segments() {
+                match segment {
+                    StreamSegment::Text(text) => {
+                        let msg_id = if msg_counter == 0 {
+                            id.clone()
+                        } else {
+                            format!("{}-{}", id, msg_counter)
+                        };
+                        self.push_message(CachedMessage::new(msg_id, role, text.clone()));
+                        msg_counter += 1;
+                    }
+                    StreamSegment::ToolCall(tool_id) => {
+                        if let Some(tool_item) = streaming_items
+                            .iter()
+                            .find(|item| item.id() == tool_id)
+                            .cloned()
+                        {
+                            self.push_item(tool_item);
+                        }
+                    }
+                    StreamSegment::Thinking(_) => {}
+                }
+            }
+
+            if msg_counter == 0 {
+                let remaining_text = buf.all_content();
+                if !remaining_text.is_empty() {
+                    self.push_message(CachedMessage::new(id, role, remaining_text));
+                }
+            }
         }
     }
 

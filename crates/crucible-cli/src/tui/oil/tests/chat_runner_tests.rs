@@ -390,6 +390,7 @@ fn app_handles_context_usage_update() {
 
 mod daemon_event_to_tui_tests {
     use super::*;
+    use crate::tui::oil::ansi::strip_ansi;
     use crucible_core::traits::llm::TokenUsage;
 
     const TEST_CONTEXT_LIMIT: usize = 128000;
@@ -683,6 +684,84 @@ mod daemon_event_to_tui_tests {
         assert!(
             output.contains("2k tok") || output.contains("tok"),
             "Should show token count when total is unknown: {}",
+            output
+        );
+    }
+
+    #[test]
+    fn interleaved_text_and_tool_calls_maintain_order_after_completion() {
+        let mut app = InkChatApp::default();
+        app.on_message(ChatAppMsg::UserMessage("Find files".to_string()));
+
+        app.on_message(ChatAppMsg::TextDelta("Let me search".to_string()));
+        app.on_message(ChatAppMsg::ToolCall {
+            name: "glob".to_string(),
+            args: r#"{"pattern":"*.rs"}"#.to_string(),
+        });
+        app.on_message(ChatAppMsg::ToolResultDelta {
+            name: "glob".to_string(),
+            delta: "main.rs, lib.rs".to_string(),
+        });
+        app.on_message(ChatAppMsg::ToolResultComplete {
+            name: "glob".to_string(),
+        });
+        app.on_message(ChatAppMsg::TextDelta(" Found 2 files.".to_string()));
+        app.on_message(ChatAppMsg::StreamComplete);
+
+        assert!(!app.is_streaming());
+
+        let focus = FocusContext::new();
+        let ctx = ViewContext::new(&focus);
+        let tree = app.view(&ctx);
+        let output = render_to_string(&tree, 120);
+        let stripped = strip_ansi(&output);
+
+        let text_pos = stripped.find("search").unwrap_or(usize::MAX);
+        let tool_pos = stripped.find("glob").unwrap_or(usize::MAX);
+        let result_pos = stripped.find("Found").unwrap_or(usize::MAX);
+
+        assert!(
+            text_pos < tool_pos,
+            "Initial text should appear before tool call.\ntext_pos={}, tool_pos={}\nOutput:\n{}",
+            text_pos,
+            tool_pos,
+            stripped
+        );
+        assert!(
+            tool_pos < result_pos,
+            "Tool call should appear before result text.\ntool_pos={}, result_pos={}\nOutput:\n{}",
+            tool_pos,
+            result_pos,
+            stripped
+        );
+    }
+
+    #[test]
+    fn tool_call_shows_checkmark_after_completion() {
+        let mut app = InkChatApp::default();
+        app.on_message(ChatAppMsg::UserMessage("Read".to_string()));
+
+        app.on_message(ChatAppMsg::ToolCall {
+            name: "read_file".to_string(),
+            args: r#"{"path":"test.rs"}"#.to_string(),
+        });
+        app.on_message(ChatAppMsg::ToolResultDelta {
+            name: "read_file".to_string(),
+            delta: "content".to_string(),
+        });
+        app.on_message(ChatAppMsg::ToolResultComplete {
+            name: "read_file".to_string(),
+        });
+        app.on_message(ChatAppMsg::StreamComplete);
+
+        let focus = FocusContext::new();
+        let ctx = ViewContext::new(&focus);
+        let tree = app.view(&ctx);
+        let output = render_to_string(&tree, 80);
+
+        assert!(
+            output.contains('\u{2713}') || output.contains("✓"),
+            "Completed tool should show checkmark.\nOutput:\n{}",
             output
         );
     }
