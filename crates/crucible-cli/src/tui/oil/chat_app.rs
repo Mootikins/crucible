@@ -1906,14 +1906,71 @@ impl InkChatApp {
     }
 
     fn format_tool_result(name: &str, result: &str) -> Node {
-        if name == "read_file" {
-            let summary = result
-                .rfind('[')
-                .map(|i| result[i..].trim_end_matches(']').to_string())
-                .unwrap_or_else(|| format!("{} lines", result.lines().count()));
+        if let Some(summary) = Self::summarize_tool_result(name, result) {
             return styled(format!("   {}", summary), Style::new().fg(Color::DarkGray));
         }
         Self::format_output_tail(result, "   ", 77)
+    }
+
+    fn summarize_tool_result(name: &str, result: &str) -> Option<String> {
+        let inner = Self::unwrap_json_result(result);
+        match name {
+            "read_file" | "mcp_read" => inner
+                .rfind('[')
+                .map(|i| inner[i..].trim_end_matches(']').to_string())
+                .or_else(|| Some(format!("{} lines", inner.lines().count()))),
+            "glob" | "mcp_glob" => {
+                Self::count_newline_items(&inner).map(|n| format!("{} files", n))
+            }
+            "grep" | "mcp_grep" => {
+                Self::count_grep_matches(&inner).map(|n| format!("{} matches", n))
+            }
+            "edit" | "mcp_edit" if inner.contains("success") || inner.contains("applied") => {
+                Some("applied".to_string())
+            }
+            "write" | "mcp_write" if inner.contains("success") || inner.contains("written") => {
+                Some("written".to_string())
+            }
+            "bash" | "mcp_bash" => {
+                let lines: Vec<&str> = inner.lines().collect();
+                if lines.len() <= 1 && inner.len() < 60 {
+                    Some(inner.trim().to_string())
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        }
+    }
+
+    fn unwrap_json_result(result: &str) -> String {
+        if let Ok(v) = serde_json::from_str::<serde_json::Value>(result) {
+            if let Some(inner) = v.get("result").and_then(|r| r.as_str()) {
+                return inner.to_string();
+            }
+        }
+        result.to_string()
+    }
+
+    fn count_newline_items(result: &str) -> Option<usize> {
+        let count = result.lines().filter(|l| !l.trim().is_empty()).count();
+        if count > 0 {
+            Some(count)
+        } else {
+            None
+        }
+    }
+
+    fn count_grep_matches(result: &str) -> Option<usize> {
+        let count = result
+            .lines()
+            .filter(|l| l.contains(':') && !l.trim().is_empty())
+            .count();
+        if count > 0 {
+            Some(count)
+        } else {
+            None
+        }
     }
 
     fn format_streaming_output(output: &str) -> Node {
@@ -2076,17 +2133,35 @@ impl InkChatApp {
         };
 
         let args_formatted = Self::format_tool_args(&tool.args);
+        let result_summary = if tool.complete && !tool.result.is_empty() {
+            Self::summarize_tool_result(&tool.name, &tool.result)
+        } else {
+            None
+        };
 
-        let header = row([
-            styled(format!(" {} ", status_icon), Style::new().fg(status_color)),
-            styled(tool.name.as_ref(), Style::new().fg(Color::White)),
-            styled(
-                format!("({})", args_formatted),
-                Style::new().fg(Color::DarkGray),
-            ),
-        ]);
+        let has_summary = result_summary.is_some();
+        let header = if let Some(summary) = result_summary {
+            row([
+                styled(format!(" {} ", status_icon), Style::new().fg(status_color)),
+                styled(tool.name.as_ref(), Style::new().fg(Color::White)),
+                styled(
+                    format!("({}) ", args_formatted),
+                    Style::new().fg(Color::DarkGray),
+                ),
+                styled(format!("→ {}", summary), Style::new().fg(Color::DarkGray)),
+            ])
+        } else {
+            row([
+                styled(format!(" {} ", status_icon), Style::new().fg(status_color)),
+                styled(tool.name.as_ref(), Style::new().fg(Color::White)),
+                styled(
+                    format!("({})", args_formatted),
+                    Style::new().fg(Color::DarkGray),
+                ),
+            ])
+        };
 
-        let result_node = if tool.result.is_empty() {
+        let result_node = if tool.result.is_empty() || has_summary {
             Node::Empty
         } else if tool.complete {
             Self::format_tool_result(&tool.name, &tool.result)
@@ -2098,7 +2173,7 @@ impl InkChatApp {
         if tool.complete {
             scrollback(&tool.id, [content])
         } else {
-            col([text(""), content])
+            content
         }
     }
 
@@ -2205,7 +2280,7 @@ impl InkChatApp {
                 let md_node = markdown_to_node_styled(block_content, style);
                 nodes.push(scrollback(
                     format!("streaming-graduated-{}", i),
-                    [col([text(""), md_node, text("")])],
+                    [col([text(""), md_node])],
                 ));
                 text_block_count += 1;
             }
