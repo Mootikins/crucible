@@ -473,3 +473,35 @@ fn stdout_delta_matches_accumulated_stdout() {
         "Accumulated stdout should equal sum of deltas"
     );
 }
+
+#[test]
+fn large_non_scrollback_content_remains_in_viewport() {
+    let mut runtime = TestRuntime::new(80, 10);
+
+    let mut lines = vec!["FIRST_LINE"];
+    lines.extend(std::iter::repeat("streaming line").take(15));
+    let streaming_content = lines.join("\n");
+
+    let tree = col([
+        scrollback("msg-1", [text("GRADUATED_HEADER")]),
+        text(&streaming_content),
+    ]);
+
+    runtime.render(&tree);
+
+    let viewport = runtime.viewport_content();
+    let stdout = runtime.stdout_content();
+
+    assert!(
+        stdout.contains("GRADUATED_HEADER"),
+        "Graduated content should be in stdout"
+    );
+    assert!(
+        !viewport.contains("GRADUATED_HEADER"),
+        "Graduated content should NOT be in viewport"
+    );
+    assert!(
+        viewport.contains("FIRST_LINE"),
+        "Non-scrollback content should remain in viewport (not yet graduated)"
+    );
+}
