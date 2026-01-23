@@ -1953,8 +1953,10 @@ impl InkChatApp {
     }
 
     fn count_newline_items(result: &str) -> Option<usize> {
-        let count = result.lines().filter(|l| !l.trim().is_empty()).count();
-        if count > 0 {
+        let newline_count = result.matches('\n').count();
+        let escaped_newline_count = result.matches("\\n").count();
+        let count = newline_count.max(escaped_newline_count) + 1;
+        if count > 1 {
             Some(count)
         } else {
             None
@@ -2042,22 +2044,30 @@ impl InkChatApp {
     }
 
     fn render_items(&self) -> Node {
-        if self.cache.is_streaming() {
-            col(self
-                .cache
-                .items_before_streaming()
-                .map(|item| self.render_cached_item(item)))
+        let items: Vec<_> = if self.cache.is_streaming() {
+            self.cache.items_before_streaming().collect()
         } else {
-            col(self.cache.items().map(|item| self.render_cached_item(item)))
-        }
+            self.cache.items().collect()
+        };
+        self.render_item_sequence(&items)
     }
 
-    fn render_cached_item(&self, item: &CachedChatItem) -> Node {
-        match item {
-            CachedChatItem::Message(msg) => self.render_message(msg),
-            CachedChatItem::ToolCall(tool) => self.render_tool_call(tool),
-            CachedChatItem::ShellExecution(shell) => self.render_shell_execution(shell),
+    fn render_item_sequence(&self, items: &[&CachedChatItem]) -> Node {
+        let mut nodes = Vec::with_capacity(items.len());
+        let mut prev_was_tool = false;
+
+        for item in items {
+            let is_tool = matches!(item, CachedChatItem::ToolCall(_));
+            let node = match item {
+                CachedChatItem::Message(msg) => self.render_message(msg),
+                CachedChatItem::ToolCall(tool) => self.render_tool_call(tool, !prev_was_tool),
+                CachedChatItem::ShellExecution(shell) => self.render_shell_execution(shell),
+            };
+            nodes.push(node);
+            prev_was_tool = is_tool;
         }
+
+        col(nodes)
     }
 
     fn render_message(&self, msg: &CachedMessage) -> Node {
@@ -2125,7 +2135,7 @@ impl InkChatApp {
         col([header, content_node, text("")])
     }
 
-    fn render_tool_call(&self, tool: &CachedToolCall) -> Node {
+    fn render_tool_call(&self, tool: &CachedToolCall, first_in_sequence: bool) -> Node {
         let (status_icon, status_color) = if tool.complete {
             ("✓", Color::Green)
         } else {
@@ -2169,7 +2179,12 @@ impl InkChatApp {
             Self::format_streaming_output(&tool.result)
         };
 
-        let content = col([header, result_node]);
+        let content = if first_in_sequence {
+            col([text(""), header, result_node])
+        } else {
+            col([header, result_node])
+        };
+
         if tool.complete {
             scrollback(&tool.id, [content])
         } else {
@@ -2232,6 +2247,7 @@ impl InkChatApp {
             let mut nodes: Vec<Node> = Vec::new();
             let mut text_block_count = 0;
             let mut has_tool_calls = false;
+            let mut prev_was_tool = false;
 
             for (seg_idx, segment) in segments.iter().enumerate() {
                 match segment {
@@ -2248,6 +2264,7 @@ impl InkChatApp {
                             [col([text(""), md_node, text("")])],
                         ));
                         text_block_count += 1;
+                        prev_was_tool = false;
                     }
                     StreamSegment::Thinking(content) if self.show_thinking => {
                         let thinking_node = self.render_thinking_block(
@@ -2259,11 +2276,13 @@ impl InkChatApp {
                             format!("streaming-think-{}", seg_idx),
                             [col([text(""), thinking_node])],
                         ));
+                        prev_was_tool = false;
                     }
                     StreamSegment::ToolCall(tool_id) => {
                         if let Some(CachedChatItem::ToolCall(tool)) = self.cache.get_item(tool_id) {
-                            nodes.push(self.render_tool_call(tool));
+                            nodes.push(self.render_tool_call(tool, !prev_was_tool));
                             has_tool_calls = true;
+                            prev_was_tool = true;
                         }
                     }
                     _ => {}
