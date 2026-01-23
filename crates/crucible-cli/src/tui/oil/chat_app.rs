@@ -2224,13 +2224,37 @@ impl InkChatApp {
                 let text_visible = !in_progress_content.is_empty();
 
                 if text_visible {
-                    let content_node = markdown_to_node_styled(in_progress_content, style);
-                    col([
-                        text(""),
-                        content_node,
-                        text(""),
-                        row([text(spinner_indent), spinner(None, self.spinner_frame)]),
-                    ])
+                    let in_progress_lines: Vec<&str> = in_progress_content.lines().collect();
+                    let max_viewport_lines = 15;
+
+                    if in_progress_lines.len() > max_viewport_lines {
+                        let graduate_count = in_progress_lines.len() - max_viewport_lines;
+                        let to_graduate = in_progress_lines[..graduate_count].join("\n");
+                        let to_show = in_progress_lines[graduate_count..].join("\n");
+
+                        let grad_style = RenderStyle::natural_with_margins(term_width, margins);
+                        let grad_node = markdown_to_node_styled(&to_graduate, grad_style);
+                        let show_node = markdown_to_node_styled(&to_show, style);
+
+                        col([
+                            scrollback(
+                                format!("streaming-overflow-{}", graduate_count),
+                                [col([text(""), grad_node, text("")])],
+                            ),
+                            text(""),
+                            show_node,
+                            text(""),
+                            row([text(spinner_indent), spinner(None, self.spinner_frame)]),
+                        ])
+                    } else {
+                        let content_node = markdown_to_node_styled(in_progress_content, style);
+                        col([
+                            text(""),
+                            content_node,
+                            text(""),
+                            row([text(spinner_indent), spinner(None, self.spinner_frame)]),
+                        ])
+                    }
                 } else if thinking_visible {
                     let thinking_node =
                         self.render_thinking_block(current_thinking, thinking_tokens, term_width);
