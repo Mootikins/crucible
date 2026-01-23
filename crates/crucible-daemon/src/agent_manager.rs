@@ -285,7 +285,7 @@ impl AgentManager {
                             };
                             if event_tx
                                 .send(SessionEventMessage::tool_result(
-                                    session_id, &call_id, result,
+                                    session_id, &call_id, &tr.name, result,
                                 ))
                                 .is_err()
                             {

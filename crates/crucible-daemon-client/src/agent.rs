@@ -129,10 +129,11 @@ fn session_event_to_chat_chunk(event: &SessionEvent) -> Option<ChatChunk> {
             })
         }
         "tool_result" => {
+            let tool_name = event.data.get("tool").and_then(|v| v.as_str());
             let call_id = event.data.get("call_id").and_then(|v| v.as_str());
             let result = event.data.get("result")?;
 
-            let name = call_id.unwrap_or("tool").to_string();
+            let name = tool_name.or(call_id).unwrap_or("tool").to_string();
             let result_str = if result.is_string() {
                 result.as_str().unwrap_or("").to_string()
             } else {
@@ -574,6 +575,47 @@ mod tests {
         assert!(
             chunk.is_none(),
             "model_switched events should not produce chunks"
+        );
+    }
+
+    #[test]
+    fn test_tool_result_includes_tool_name() {
+        let event = SessionEvent {
+            session_id: "test".to_string(),
+            event_type: "tool_result".to_string(),
+            data: json!({
+                "call_id": "tc-123",
+                "tool": "read_file",
+                "result": "file contents here"
+            }),
+        };
+
+        let chunk = session_event_to_chat_chunk(&event).unwrap();
+        let results = chunk.tool_results.unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(
+            results[0].name, "read_file",
+            "tool_result should use tool name, not call_id"
+        );
+        assert_eq!(results[0].result, "file contents here");
+    }
+
+    #[test]
+    fn test_tool_result_falls_back_to_call_id_when_no_tool_name() {
+        let event = SessionEvent {
+            session_id: "test".to_string(),
+            event_type: "tool_result".to_string(),
+            data: json!({
+                "call_id": "tc-456",
+                "result": "some result"
+            }),
+        };
+
+        let chunk = session_event_to_chat_chunk(&event).unwrap();
+        let results = chunk.tool_results.unwrap();
+        assert_eq!(
+            results[0].name, "tc-456",
+            "Should fall back to call_id when tool name not provided"
         );
     }
 }
