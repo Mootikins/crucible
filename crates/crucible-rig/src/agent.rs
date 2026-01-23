@@ -77,8 +77,8 @@ where
     builder
 }
 
-fn is_read_only_mode(mode_id: &str, model_size: ModelSize) -> bool {
-    mode_id == "plan" || model_size.is_read_only()
+fn is_read_only_mode(mode_id: &str) -> bool {
+    mode_id == "plan"
 }
 
 fn attach_tools<M: CompletionModel>(
@@ -86,9 +86,8 @@ fn attach_tools<M: CompletionModel>(
     ctx: &WorkspaceContext,
     kiln_ctx: Option<&KilnContext>,
     mode_id: &str,
-    model_size: ModelSize,
 ) -> Agent<M> {
-    let read_only = is_read_only_mode(mode_id, model_size);
+    let read_only = is_read_only_mode(mode_id);
 
     match (read_only, kiln_ctx) {
         (true, None) => builder
@@ -329,13 +328,7 @@ where
     let kiln_ctx = components.kiln_ctx.clone();
 
     let builder = configure_builder(client, &config);
-    let agent = attach_tools(
-        builder,
-        &ctx,
-        kiln_ctx.as_ref(),
-        &components.mode_id,
-        components.model_size,
-    );
+    let agent = attach_tools(builder, &ctx, kiln_ctx.as_ref(), &components.mode_id);
 
     Ok(BuiltAgent {
         agent,
@@ -431,13 +424,15 @@ where
 {
     let ctx = WorkspaceContext::new(workspace_root.as_ref());
     let builder = configure_builder(client, config);
-    let agent = attach_tools(builder, &ctx, None, "normal", ModelSize::Large);
+    let agent = attach_tools(builder, &ctx, None, "normal");
     Ok((agent, ctx))
 }
 
-/// Build a Rig agent with size-appropriate tools plus optional kiln tools.
+/// Build a Rig agent with workspace tools plus optional kiln tools.
 ///
 /// Returns (agent, workspace_context) - caller should use context to sync mode state.
+/// The `model_size` parameter is accepted for backward compatibility but ignored.
+#[allow(unused_variables)]
 pub fn build_agent_with_kiln_tools<C>(
     config: &AgentConfig,
     client: &C,
@@ -451,36 +446,15 @@ where
 {
     let ctx = WorkspaceContext::new(workspace_root.as_ref());
     let builder = configure_builder(client, config);
-    let agent = attach_tools(builder, &ctx, kiln_ctx.as_ref(), "normal", model_size);
+    let agent = attach_tools(builder, &ctx, kiln_ctx.as_ref(), "normal");
     Ok((agent, ctx))
 }
 
-/// Build a Rig agent with size-appropriate tools.
+/// Build a Rig agent with workspace tools.
+/// Backward-compatible alias that ignores model_size parameter.
 ///
-/// This creates an agent with tools selected based on model size:
-/// - Small models (< 4B): read-only tools (read_file, glob, grep)
-/// - Medium/Large models: all tools including write operations
-///
-/// For agents with kiln/knowledge base access, use `build_agent_with_kiln_tools` instead.
-///
-/// # Arguments
-///
-/// * `config` - Agent configuration (model, system prompt, etc.)
-/// * `client` - A Rig client implementing CompletionClient
-/// * `workspace_root` - Root directory for workspace operations
-/// * `model_size` - Model size category for tool selection
-///
-/// # Example
-///
-/// ```rust,ignore
-/// use crucible_rig::agent::{build_agent_with_model_size, AgentConfig};
-/// use crucible_core::prompts::ModelSize;
-/// use rig::providers::ollama;
-///
-/// let config = AgentConfig::new("granite-3b", "You are a helpful assistant.");
-/// let client = ollama::Client::new();
-/// let agent = build_agent_with_model_size(&config, &client, "/path/to/project", ModelSize::Small)?;
-/// ```
+/// Tool availability is now controlled only by mode, not model size.
+#[allow(unused_variables)]
 pub fn build_agent_with_model_size<C>(
     config: &AgentConfig,
     client: &C,
@@ -493,7 +467,7 @@ where
 {
     let ctx = WorkspaceContext::new(workspace_root.as_ref());
     let builder = configure_builder(client, config);
-    Ok(attach_tools(builder, &ctx, None, "normal", model_size))
+    Ok(attach_tools(builder, &ctx, None, "normal"))
 }
 
 #[cfg(test)]
