@@ -668,3 +668,179 @@ fn stream_cancel_graduates_existing_content() {
         post_cancel
     );
 }
+
+#[test]
+fn interleaved_thinking_text_graduates_during_streaming() {
+    let mut runtime = TestRuntime::new(80, 24);
+    let mut app = InkChatApp::default();
+    app.set_show_thinking(true);
+
+    app.on_message(ChatAppMsg::UserMessage("Question".to_string()));
+
+    let tree = view_with_default_ctx(&app);
+    runtime.render(&tree);
+
+    app.on_message(ChatAppMsg::ThinkingDelta("Planning response.".to_string()));
+    app.on_message(ChatAppMsg::TextDelta("First paragraph.\n\n".to_string()));
+
+    let tree = view_with_default_ctx(&app);
+    runtime.render(&tree);
+
+    app.on_message(ChatAppMsg::TextDelta("Second paragraph.\n\n".to_string()));
+
+    let tree = view_with_default_ctx(&app);
+    runtime.render(&tree);
+
+    app.on_message(ChatAppMsg::TextDelta("Third in progress".to_string()));
+
+    let tree = view_with_default_ctx(&app);
+    runtime.render(&tree);
+
+    let stdout = strip_ansi(runtime.stdout_content());
+    let viewport = strip_ansi(runtime.viewport_content());
+
+    assert!(
+        stdout.contains("Question"),
+        "User message should be graduated:\n{}",
+        stdout
+    );
+
+    assert!(
+        stdout.contains("thinking ("),
+        "Thinking block should be graduated:\n{}",
+        stdout
+    );
+
+    assert!(
+        stdout.contains("First paragraph"),
+        "First paragraph should be graduated:\n{}",
+        stdout
+    );
+
+    assert!(
+        viewport.contains("Third in progress"),
+        "In-progress content should be in viewport:\n{}",
+        viewport
+    );
+}
+
+#[test]
+fn tool_call_appears_in_chronological_order_during_streaming() {
+    let mut runtime = TestRuntime::new(80, 24);
+    let mut app = InkChatApp::default();
+
+    app.on_message(ChatAppMsg::UserMessage("Question".to_string()));
+
+    let tree = view_with_default_ctx(&app);
+    runtime.render(&tree);
+
+    app.on_message(ChatAppMsg::TextDelta(
+        "First response text.\n\n".to_string(),
+    ));
+
+    let tree = view_with_default_ctx(&app);
+    runtime.render(&tree);
+
+    app.on_message(ChatAppMsg::ToolCall {
+        name: "search".to_string(),
+        args: r#"{"query": "test"}"#.to_string(),
+    });
+
+    let tree = view_with_default_ctx(&app);
+    runtime.render(&tree);
+
+    app.on_message(ChatAppMsg::TextDelta("Text after tool call.".to_string()));
+
+    let tree = view_with_default_ctx(&app);
+    runtime.render(&tree);
+
+    let stdout = strip_ansi(runtime.stdout_content());
+    let viewport = strip_ansi(runtime.viewport_content());
+    let combined = format!("{}{}", stdout, viewport);
+
+    let first_text_pos = combined
+        .find("First response text")
+        .expect("First text not found");
+    let tool_pos = combined.find("search").expect("Tool call not found");
+    let after_text_pos = combined
+        .find("Text after tool call")
+        .expect("After text not found");
+
+    assert!(
+        first_text_pos < tool_pos,
+        "First text should appear before tool call.\nFirst text pos: {}, Tool pos: {}\nCombined:\n{}",
+        first_text_pos,
+        tool_pos,
+        combined
+    );
+
+    assert!(
+        tool_pos < after_text_pos,
+        "Tool call should appear before text after it.\nTool pos: {}, After text pos: {}\nCombined:\n{}",
+        tool_pos,
+        after_text_pos,
+        combined
+    );
+}
+
+#[test]
+fn tool_call_before_text_appears_in_correct_order() {
+    let mut runtime = TestRuntime::new(80, 24);
+    let mut app = InkChatApp::default();
+
+    app.on_message(ChatAppMsg::UserMessage("Question".to_string()));
+
+    let tree = view_with_default_ctx(&app);
+    runtime.render(&tree);
+
+    app.on_message(ChatAppMsg::ToolCall {
+        name: "glob".to_string(),
+        args: r#"{"pattern": "*.rs"}"#.to_string(),
+    });
+
+    let tree = view_with_default_ctx(&app);
+    runtime.render(&tree);
+
+    app.on_message(ChatAppMsg::ToolResultDelta {
+        name: "glob".to_string(),
+        delta: "Found 5 files".to_string(),
+    });
+
+    app.on_message(ChatAppMsg::ToolResultComplete {
+        name: "glob".to_string(),
+    });
+
+    let tree = view_with_default_ctx(&app);
+    runtime.render(&tree);
+
+    app.on_message(ChatAppMsg::TextDelta(
+        "Based on the files found...".to_string(),
+    ));
+
+    let tree = view_with_default_ctx(&app);
+    runtime.render(&tree);
+
+    let stdout = strip_ansi(runtime.stdout_content());
+    let viewport = strip_ansi(runtime.viewport_content());
+    let combined = format!("{}{}", stdout, viewport);
+
+    eprintln!("=== STDOUT ===\n{}", stdout);
+    eprintln!("=== VIEWPORT ===\n{}", viewport);
+
+    let tool_pos = combined.find("glob").expect("Tool call not found");
+    let text_pos = combined.find("Based on").expect("Text not found");
+
+    assert!(
+        tool_pos < text_pos,
+        "Tool call should appear before text.\nTool pos: {}, Text pos: {}\nCombined:\n{}",
+        tool_pos,
+        text_pos,
+        combined
+    );
+
+    assert!(
+        combined.contains("✓") || combined.contains("Found 5 files"),
+        "Tool should show completion or result.\nCombined:\n{}",
+        combined
+    );
+}
