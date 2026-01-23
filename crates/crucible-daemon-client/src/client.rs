@@ -28,6 +28,8 @@ pub struct SessionEvent {
 #[derive(Debug, Clone, serde::Deserialize)]
 pub struct DaemonCapabilities {
     pub version: String,
+    #[serde(default)]
+    pub build_sha: Option<String>,
     pub protocol_version: String,
     pub capabilities: CapabilityFlags,
     pub methods: Vec<String>,
@@ -41,6 +43,18 @@ pub struct CapabilityFlags {
     pub events: bool,
     pub thinking_budget: bool,
     pub model_switching: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum VersionCheck {
+    Match,
+    Mismatch { client: String, daemon: String },
+}
+
+impl VersionCheck {
+    pub fn is_match(&self) -> bool {
+        matches!(self, Self::Match)
+    }
 }
 
 type PendingRequests = Arc<Mutex<HashMap<u64, oneshot::Sender<serde_json::Value>>>>;
@@ -402,6 +416,21 @@ impl DaemonClient {
             .await?;
         let caps: DaemonCapabilities = serde_json::from_value(result)?;
         Ok(caps)
+    }
+
+    pub async fn check_version(&self) -> Result<VersionCheck> {
+        let caps = self.capabilities().await?;
+        let client_sha = env!("CRUCIBLE_BUILD_SHA");
+        let daemon_sha = caps.build_sha.as_deref().unwrap_or("unknown");
+
+        if client_sha == daemon_sha {
+            Ok(VersionCheck::Match)
+        } else {
+            Ok(VersionCheck::Mismatch {
+                client: client_sha.to_string(),
+                daemon: daemon_sha.to_string(),
+            })
+        }
     }
 
     // =========================================================================
@@ -976,6 +1005,16 @@ mod tests {
         assert!(caps
             .methods
             .contains(&"session.set_thinking_budget".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_client_version_check_matches() {
+        let (_tmp, sock_path, _handle) = setup_test_server().await;
+
+        let client = DaemonClient::connect_to(&sock_path).await.unwrap();
+        let check = client.check_version().await.unwrap();
+
+        assert!(check.is_match());
     }
 
     #[tokio::test]
