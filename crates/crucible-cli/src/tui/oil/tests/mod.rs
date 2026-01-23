@@ -1,5 +1,11 @@
+mod generators;
+mod helpers;
+
 mod chat_app_interaction_tests;
 mod chat_app_snapshot_tests;
+mod chat_e2e_property_tests;
+mod chat_ordering_property_tests;
+mod chat_rendering_property_tests;
 mod chat_runner_tests;
 mod error_boundary_tests;
 mod event_loop_tests;

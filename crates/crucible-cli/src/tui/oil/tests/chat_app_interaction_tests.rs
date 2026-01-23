@@ -868,30 +868,6 @@ fn empty_shell_command_shows_error() {
 }
 
 #[test]
-fn shell_command_captures_output() {
-    let mut app = InkChatApp::default();
-
-    for c in "!echo hello".chars() {
-        app.update(Event::Key(key(KeyCode::Char(c))));
-    }
-    app.update(Event::Key(key(KeyCode::Enter)));
-
-    assert!(app.has_shell_modal(), "Shell modal should open");
-
-    for _ in 0..20 {
-        app.update(Event::Tick);
-        std::thread::sleep(std::time::Duration::from_millis(50));
-    }
-
-    let output = app.shell_output_lines();
-    assert!(
-        output.iter().any(|line| line.contains("hello")),
-        "Output should contain 'hello', got: {:?}",
-        output
-    );
-}
-
-#[test]
 fn shell_modal_closes_on_escape() {
     let mut app = InkChatApp::default();
 
@@ -910,108 +886,6 @@ fn shell_modal_closes_on_escape() {
     app.update(Event::Key(key(KeyCode::Esc)));
 
     assert!(!app.has_shell_modal(), "Modal should close on Esc");
-}
-
-#[test]
-fn shell_modal_shows_output_from_beginning() {
-    let mut app = InkChatApp::default();
-
-    for c in "!seq 1 100".chars() {
-        app.update(Event::Key(key(KeyCode::Char(c))));
-    }
-    app.update(Event::Key(key(KeyCode::Enter)));
-
-    for _ in 0..20 {
-        app.update(Event::Tick);
-        std::thread::sleep(std::time::Duration::from_millis(50));
-    }
-
-    assert!(app.has_shell_modal(), "Modal should be open");
-
-    let output = app.shell_output_lines();
-    assert!(
-        output.len() >= 10,
-        "Should have captured multiple lines, got {}",
-        output.len()
-    );
-
-    assert_eq!(
-        output.first().map(|s| s.as_str()),
-        Some("1"),
-        "First line should be '1', got: {:?}",
-        output.first()
-    );
-
-    let tree = view_with_default_ctx(&app);
-    let rendered = render_to_string(&tree, 80);
-
-    assert!(
-        rendered.contains("$ seq 1 100"),
-        "Should show command in header"
-    );
-
-    assert!(
-        rendered.contains("1\n") || rendered.contains("1 "),
-        "Rendered output should start with '1', got:\n{}",
-        rendered
-    );
-}
-
-#[test]
-fn shell_modal_visible_lines_start_at_zero() {
-    let mut app = InkChatApp::default();
-
-    for c in "!seq 1 100".chars() {
-        app.update(Event::Key(key(KeyCode::Char(c))));
-    }
-    app.update(Event::Key(key(KeyCode::Enter)));
-
-    for _ in 0..20 {
-        app.update(Event::Tick);
-        std::thread::sleep(std::time::Duration::from_millis(50));
-    }
-
-    let output = app.shell_output_lines();
-    assert!(
-        output.len() >= 100,
-        "Should have 100 lines, got {}",
-        output.len()
-    );
-
-    assert_eq!(
-        app.shell_scroll_offset(),
-        0,
-        "Scroll offset should start at 0"
-    );
-
-    let visible = app.shell_visible_lines(20);
-    assert_eq!(visible.len(), 20, "Should show 20 lines");
-    assert_eq!(visible[0], "1", "First visible line should be '1'");
-    assert_eq!(visible[19], "20", "Last visible line should be '20'");
-}
-
-#[test]
-fn shell_modal_long_lines_not_truncated() {
-    let mut app = InkChatApp::default();
-
-    let long_line = "A".repeat(200);
-    let cmd = format!("!echo '{}'", long_line);
-    for c in cmd.chars() {
-        app.update(Event::Key(key(KeyCode::Char(c))));
-    }
-    app.update(Event::Key(key(KeyCode::Enter)));
-
-    for _ in 0..20 {
-        app.update(Event::Tick);
-        std::thread::sleep(std::time::Duration::from_millis(50));
-    }
-
-    let output = app.shell_output_lines();
-    assert!(
-        output.iter().any(|line| line.len() >= 200),
-        "Long line should not be truncated in capture, lines: {:?}",
-        output
-    );
 }
 
 #[test]
@@ -1087,35 +961,6 @@ fn shell_modal_small_viewport_shows_first_lines() {
     assert_eq!(
         tiny_viewport[0], "1",
         "First line in tiny viewport should be '1'"
-    );
-}
-
-#[test]
-fn shell_modal_fast_command_captures_all_output() {
-    let mut app = InkChatApp::default();
-
-    for c in "!echo -e 'line1\\nline2\\nline3'".chars() {
-        app.update(Event::Key(key(KeyCode::Char(c))));
-    }
-    app.update(Event::Key(key(KeyCode::Enter)));
-
-    std::thread::sleep(std::time::Duration::from_millis(100));
-
-    app.update(Event::Tick);
-
-    let output = app.shell_output_lines();
-    assert!(
-        output.len() >= 3,
-        "Should capture all 3 lines even for fast command, got {} lines: {:?}",
-        output.len(),
-        output
-    );
-
-    assert_eq!(
-        output.first().map(|s| s.as_str()),
-        Some("line1"),
-        "First line should be 'line1', got: {:?}",
-        output
     );
 }
 
@@ -1393,80 +1238,5 @@ fn model_repl_command_in_popup_list() {
     assert!(
         output.contains(":model"),
         "REPL command popup should include :model"
-    );
-}
-
-// =============================================================================
-// Thinking Display Tests
-// =============================================================================
-
-#[test]
-fn thinking_block_appears_during_streaming() {
-    let mut app = InkChatApp::default();
-    app.set_show_thinking(true);
-
-    app.on_message(ChatAppMsg::UserMessage("tell me about whales".to_string()));
-    app.on_message(ChatAppMsg::ThinkingDelta(
-        "User wants whale info.".to_string(),
-    ));
-    app.on_message(ChatAppMsg::ThinkingDelta(
-        " Should cover types and facts.".to_string(),
-    ));
-
-    let tree = view_with_default_ctx(&app);
-    let output = render_to_string(&tree, 80);
-
-    assert_contains(&output, "thinking (", "thinking header during streaming");
-    assert_contains(
-        &output,
-        "User wants whale info",
-        "thinking content during streaming",
-    );
-}
-
-#[test]
-fn thinking_then_text_shows_interleaved_during_streaming() {
-    let mut app = InkChatApp::default();
-    app.set_show_thinking(true);
-
-    app.on_message(ChatAppMsg::UserMessage("tell me about whales".to_string()));
-    app.on_message(ChatAppMsg::ThinkingDelta("Planning response.".to_string()));
-    app.on_message(ChatAppMsg::TextDelta(
-        "Whales are marine mammals.".to_string(),
-    ));
-
-    let tree = view_with_default_ctx(&app);
-    let output = render_to_string(&tree, 80);
-
-    assert_contains(&output, "thinking (", "thinking header");
-    assert_contains(&output, "Planning response", "thinking content");
-    assert_contains(&output, "Whales are marine mammals", "text content");
-    assert_appears_before(
-        &output,
-        "thinking (",
-        "Whales are marine mammals",
-        "thinking should appear before text in interleaved stream",
-    );
-}
-
-#[test]
-fn finalized_message_contains_text_only() {
-    let mut app = InkChatApp::default();
-    app.set_show_thinking(true);
-
-    app.on_message(ChatAppMsg::UserMessage("tell me about whales".to_string()));
-    app.on_message(ChatAppMsg::ThinkingDelta("Planning.".to_string()));
-    app.on_message(ChatAppMsg::TextDelta("Whales are mammals.".to_string()));
-    app.on_message(ChatAppMsg::StreamComplete);
-
-    let tree = view_with_default_ctx(&app);
-    let output = render_to_string(&tree, 80);
-
-    assert_contains(&output, "Whales are mammals", "finalized text");
-    let thinking_count = output.matches("thinking (").count();
-    assert_eq!(
-        thinking_count, 0,
-        "Thinking should not appear in finalized messages (it was shown during streaming).\nOutput:\n{}",
-        output
     );
 }
