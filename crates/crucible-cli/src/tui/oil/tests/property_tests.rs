@@ -250,7 +250,10 @@ mod graduation_properties {
         }
 
         #[test]
-        fn graduation_preserves_insertion_order(keys in prop::collection::vec("[a-z]{3,8}", 2..10)) {
+        fn graduation_preserves_insertion_order(
+            key_set in prop::collection::hash_set("[a-z]{3,8}", 2..10)
+        ) {
+            let keys: Vec<_> = key_set.into_iter().collect();
             let mut state = GraduationState::new();
 
             let nodes: Vec<Node> = keys
