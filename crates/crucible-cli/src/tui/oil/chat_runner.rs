@@ -255,14 +255,7 @@ impl InkChatRunner {
                             }
 
                             if let Some(ref tool_results) = chunk.tool_results {
-                                tracing::info!(count = tool_results.len(), "Received tool_results in chunk");
                                 for tr in tool_results {
-                                    tracing::info!(
-                                        name = %tr.name,
-                                        result_len = tr.result.len(),
-                                        error = ?tr.error,
-                                        "Processing tool result"
-                                    );
                                     if !tr.result.is_empty()
                                         && msg_tx
                                             .send(ChatAppMsg::ToolResultDelta {
