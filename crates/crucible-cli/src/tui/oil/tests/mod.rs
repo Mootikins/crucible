@@ -19,3 +19,4 @@ mod popup_tests;
 mod property_tests;
 mod render_tests;
 mod streaming_tests;
+mod tool_ordering_tests;

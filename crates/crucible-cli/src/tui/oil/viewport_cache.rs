@@ -551,10 +551,14 @@ impl StreamingBuffer {
     }
 
     fn flush_text_if_needed(&mut self) {
-        if !self.in_progress.is_empty() && self.last_segment_type == Some(SegmentType::Text) {
-            let text = std::mem::take(&mut self.in_progress);
+        let has_text = !self.in_progress.is_empty() || !self.graduated_blocks.is_empty();
+        if has_text && self.last_segment_type == Some(SegmentType::Text) {
+            let text = self.all_content();
+            self.in_progress.clear();
             self.graduated_blocks.clear();
-            self.segments.push(StreamSegment::Text(text));
+            if !text.is_empty() {
+                self.segments.push(StreamSegment::Text(text));
+            }
         }
     }
 
