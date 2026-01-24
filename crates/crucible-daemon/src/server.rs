@@ -78,6 +78,7 @@ pub struct Server {
     kiln_manager: Arc<KilnManager>,
     session_manager: Arc<SessionManager>,
     agent_manager: Arc<AgentManager>,
+    #[allow(dead_code)] // Stored for Arc lifetime; accessed via AgentManager
     background_manager: Arc<BackgroundJobManager>,
     subscription_manager: Arc<SubscriptionManager>,
     event_tx: broadcast::Sender<SessionEventMessage>,
