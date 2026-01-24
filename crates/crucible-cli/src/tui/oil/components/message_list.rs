@@ -244,24 +244,30 @@ fn render_tool_complete(
     };
 
     let collapsed = collapse_result(&tool.name, result_str, result_summary.as_deref());
-    let is_collapsed = collapsed.is_some();
+    let has_arrow_suffix = tool.output_path.is_some() || collapsed.is_some();
+
+    let arrow_suffix = if let Some(ref path) = tool.output_path {
+        styled(format!("→ {}", path.display()), styles::muted())
+    } else if let Some(ref s) = collapsed {
+        styled(format!("→ {}", s), styles::muted())
+    } else {
+        Node::Empty
+    };
 
     let header = row([
         styled(" ✓ ", Style::new().fg(colors::SUCCESS)),
         styled(display_name, Style::new().fg(colors::TEXT_PRIMARY)),
         if args_formatted.is_empty() {
             Node::Empty
-        } else if is_collapsed {
+        } else if has_arrow_suffix {
             styled(format!("({}) ", args_formatted), styles::muted())
         } else {
             styled(format!("({})", args_formatted), styles::muted())
         },
-        collapsed
-            .map(|s| styled(format!("→ {}", s), styles::muted()))
-            .unwrap_or(Node::Empty),
+        arrow_suffix,
     ]);
 
-    let result_node = if is_collapsed || result_str.is_empty() {
+    let result_node = if has_arrow_suffix || result_str.is_empty() {
         Node::Empty
     } else {
         format_tool_result(&tool.name, result_str)

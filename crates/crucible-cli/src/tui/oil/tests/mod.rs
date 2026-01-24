@@ -2,6 +2,7 @@ mod generators;
 mod helpers;
 
 mod chat_app_interaction_tests;
+mod graduation_invariant_tests;
 mod chat_app_snapshot_tests;
 mod chat_e2e_property_tests;
 mod chat_ordering_property_tests;

@@ -1,4 +1,4 @@
-use std::collections::VecDeque;
+use std::collections::{HashSet, VecDeque};
 use std::path::PathBuf;
 use std::sync::Arc;
 use textwrap::{wrap, Options, WordSplitter};
@@ -279,6 +279,7 @@ pub struct ViewportCache {
     streaming: Option<StreamingBuffer>,
     streaming_start_index: usize,
     anchor: Option<ViewportAnchor>,
+    graduated_ids: HashSet<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -305,6 +306,7 @@ impl ViewportCache {
             streaming: None,
             streaming_start_index: 0,
             anchor: None,
+            graduated_ids: HashSet::new(),
         }
     }
 
@@ -350,12 +352,37 @@ impl ViewportCache {
         self.items.iter()
     }
 
+    pub fn ungraduated_items(&self) -> impl Iterator<Item = &CachedChatItem> {
+        self.items
+            .iter()
+            .filter(|item| !self.graduated_ids.contains(item.id()))
+    }
+
     pub fn items_before_streaming(&self) -> impl Iterator<Item = &CachedChatItem> {
         self.items.iter().take(self.streaming_start_index)
     }
 
+    pub fn ungraduated_items_before_streaming(&self) -> impl Iterator<Item = &CachedChatItem> {
+        self.items
+            .iter()
+            .take(self.streaming_start_index)
+            .filter(|item| !self.graduated_ids.contains(item.id()))
+    }
+
     pub fn items_during_streaming(&self) -> impl Iterator<Item = &CachedChatItem> {
         self.items.iter().skip(self.streaming_start_index)
+    }
+
+    pub fn mark_graduated(&mut self, ids: impl IntoIterator<Item = String>) {
+        self.graduated_ids.extend(ids);
+    }
+
+    pub fn is_graduated(&self, id: &str) -> bool {
+        self.graduated_ids.contains(id)
+    }
+
+    pub fn graduated_count(&self) -> usize {
+        self.graduated_ids.len()
     }
 
     pub fn item_count(&self) -> usize {

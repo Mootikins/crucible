@@ -246,6 +246,11 @@ proptest! {
         }
     }
 
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(50))]
+
     #[test]
     fn many_messages_render_stable(message_count in 10usize..50) {
         let mut runtime = TestRuntime::new(80, 24);
@@ -258,6 +263,11 @@ proptest! {
 
             let tree = view_with_default_ctx(&app);
             runtime.render(&tree);
+
+            let graduated = runtime.last_graduated_keys();
+            if !graduated.is_empty() {
+                app.mark_graduated(graduated.iter().cloned());
+            }
         }
 
         let stdout = strip_ansi(runtime.stdout_content());
@@ -265,6 +275,11 @@ proptest! {
             !stdout.is_empty(),
             "Should have some output after {} messages",
             message_count
+        );
+
+        prop_assert!(
+            runtime.graduated_count() > 0,
+            "Should have graduated some messages"
         );
     }
 }

@@ -41,7 +41,7 @@ impl<A: App> InkRunner<A> {
         loop {
             let ctx = ViewContext::new(&self.focus);
             let tree = self.app.view(&ctx);
-            self.terminal.render(&tree)?;
+            let _ = self.terminal.render(&tree)?;
 
             if let Some(rx) = &mut self.msg_rx {
                 while let Ok(msg) = rx.try_recv() {
@@ -133,7 +133,7 @@ pub fn run_sync<A: App>(app: A) -> io::Result<()> {
     loop {
         let ctx = ViewContext::new(&focus);
         let tree = app.view(&ctx);
-        terminal.render(&tree)?;
+        let _ = terminal.render(&tree)?;
 
         let event = if let Some(ct_event) = terminal.poll_event(tick_rate)? {
             match ct_event {
