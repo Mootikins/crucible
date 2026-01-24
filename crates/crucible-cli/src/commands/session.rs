@@ -469,6 +469,20 @@ async fn daemon_execute(config: CliConfig, cmd: DaemonSessionCommands) -> Result
         DaemonSessionCommands::Pause { session_id } => daemon_pause(&client, &session_id).await,
         DaemonSessionCommands::Resume { session_id } => daemon_resume(&client, &session_id).await,
         DaemonSessionCommands::End { session_id } => daemon_end(&client, &session_id).await,
+        DaemonSessionCommands::Send {
+            session_id,
+            message,
+            raw,
+        } => daemon_send(&client, &session_id, &message, raw).await,
+        DaemonSessionCommands::Configure {
+            session_id,
+            provider,
+            model,
+            endpoint,
+        } => daemon_configure(&client, &session_id, &provider, &model, endpoint).await,
+        DaemonSessionCommands::Subscribe { session_ids } => {
+            daemon_subscribe(&session_ids).await
+        }
     }
 }
 
@@ -575,6 +589,164 @@ async fn daemon_resume(client: &DaemonClient, session_id: &str) -> Result<()> {
 async fn daemon_end(client: &DaemonClient, session_id: &str) -> Result<()> {
     client.session_end(session_id).await?;
     println!("Ended session: {}", session_id);
+    Ok(())
+}
+
+/// Send a message and stream the response
+async fn daemon_send(
+    _client: &DaemonClient,
+    session_id: &str,
+    message: &str,
+    raw: bool,
+) -> Result<()> {
+    use crucible_daemon_client::DaemonClient;
+    use std::io::Write;
+
+    // Need a fresh client with event channel for streaming
+    let (client, mut event_rx) = DaemonClient::connect_or_start_with_events().await?;
+
+    client.session_subscribe(&[session_id]).await?;
+
+    let message_id = client.session_send_message(session_id, message).await?;
+
+    if !raw {
+        eprintln!("--- Message {} ---", message_id);
+    }
+
+    loop {
+        match event_rx.recv().await {
+            Some(event) => {
+                if event.session_id != session_id {
+                    continue;
+                }
+
+                if raw {
+                    println!(
+                        "{}",
+                        serde_json::json!({
+                            "session_id": event.session_id,
+                            "event_type": event.event_type,
+                            "data": event.data,
+                        })
+                    );
+                } else {
+                    match event.event_type.as_str() {
+                        "text_delta" => {
+                            if let Some(content) = event.data.get("content").and_then(|v| v.as_str())
+                            {
+                                print!("{}", content);
+                                std::io::stdout().flush().ok();
+                            }
+                        }
+                        "thinking" => {
+                            if let Some(content) = event.data.get("content").and_then(|v| v.as_str())
+                            {
+                                eprintln!("[thinking] {}", content);
+                            }
+                        }
+                        "tool_call" => {
+                            let tool = event.data.get("tool").and_then(|v| v.as_str()).unwrap_or("?");
+                            eprintln!("[tool_call] {}", tool);
+                        }
+                        "tool_result" => {
+                            let tool = event.data.get("tool").and_then(|v| v.as_str()).unwrap_or("?");
+                            eprintln!("[tool_result] {}", tool);
+                        }
+                        "message_complete" => {
+                            println!();
+                            eprintln!("[complete]");
+                        }
+                        "ended" => {
+                            let reason = event
+                                .data
+                                .get("reason")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("unknown");
+                            eprintln!("[ended] {}", reason);
+                        }
+                        other => {
+                            eprintln!("[{}] {:?}", other, event.data);
+                        }
+                    }
+                }
+
+                if event.event_type == "message_complete" || event.event_type == "ended" {
+                    break;
+                }
+            }
+            None => {
+                eprintln!("Event channel closed");
+                break;
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// Configure agent for a session
+async fn daemon_configure(
+    client: &DaemonClient,
+    session_id: &str,
+    provider: &str,
+    model: &str,
+    endpoint: Option<String>,
+) -> Result<()> {
+    let agent = crucible_core::session::SessionAgent {
+        agent_type: "internal".to_string(),
+        agent_name: None,
+        provider_key: Some(provider.to_string()),
+        provider: provider.to_string(),
+        model: model.to_string(),
+        system_prompt: String::new(),
+        temperature: None,
+        max_tokens: None,
+        max_context_tokens: None,
+        thinking_budget: None,
+        endpoint,
+        env_overrides: std::collections::HashMap::new(),
+        mcp_servers: vec![],
+        agent_card_name: None,
+    };
+
+    client.session_configure_agent(session_id, &agent).await?;
+
+    println!("Configured agent: {} / {}", provider, model);
+
+    Ok(())
+}
+
+/// Subscribe to session events
+async fn daemon_subscribe(session_ids: &[String]) -> Result<()> {
+    use crucible_daemon_client::DaemonClient;
+
+    let (client, mut event_rx) = DaemonClient::connect_or_start_with_events().await?;
+
+    let refs: Vec<&str> = session_ids.iter().map(|s| s.as_str()).collect();
+    client.session_subscribe(&refs).await?;
+
+    println!(
+        "Subscribed to {} session(s). Press Ctrl+C to exit.",
+        session_ids.len()
+    );
+
+    loop {
+        match event_rx.recv().await {
+            Some(event) => {
+                println!(
+                    "[{}] {} {}",
+                    event.session_id,
+                    event.event_type,
+                    serde_json::to_string(&event.data)?
+                );
+            }
+            None => {
+                eprintln!("Event channel closed");
+                break;
+            }
+        }
+    }
+
     Ok(())
 }
 
