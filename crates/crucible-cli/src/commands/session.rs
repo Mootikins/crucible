@@ -473,7 +473,7 @@ async fn daemon_execute(config: CliConfig, cmd: DaemonSessionCommands) -> Result
             session_id,
             message,
             raw,
-        } => daemon_send(&client, &session_id, &message, raw).await,
+        } => daemon_send(&client, &config, &session_id, &message, raw).await,
         DaemonSessionCommands::Configure {
             session_id,
             provider,
@@ -482,6 +482,9 @@ async fn daemon_execute(config: CliConfig, cmd: DaemonSessionCommands) -> Result
         } => daemon_configure(&client, &session_id, &provider, &model, endpoint).await,
         DaemonSessionCommands::Subscribe { session_ids } => {
             daemon_subscribe(&session_ids).await
+        }
+        DaemonSessionCommands::Load { session_id } => {
+            daemon_load(&client, &config, &session_id).await
         }
     }
 }
@@ -592,9 +595,9 @@ async fn daemon_end(client: &DaemonClient, session_id: &str) -> Result<()> {
     Ok(())
 }
 
-/// Send a message and stream the response
 async fn daemon_send(
     _client: &DaemonClient,
+    config: &CliConfig,
     session_id: &str,
     message: &str,
     raw: bool,
@@ -602,12 +605,22 @@ async fn daemon_send(
     use crucible_daemon_client::DaemonClient;
     use std::io::Write;
 
-    // Need a fresh client with event channel for streaming
     let (client, mut event_rx) = DaemonClient::connect_or_start_with_events().await?;
 
     client.session_subscribe(&[session_id]).await?;
 
-    let message_id = client.session_send_message(session_id, message).await?;
+    // Try to send - if session not found, load from storage and retry
+    let message_id = match client.session_send_message(session_id, message).await {
+        Ok(id) => id,
+        Err(e) if e.to_string().contains("not found") => {
+            eprintln!("Session not in memory, loading from storage...");
+            client
+                .session_resume_from_storage(session_id, &config.kiln_path, None, None)
+                .await?;
+            client.session_send_message(session_id, message).await?
+        }
+        Err(e) => return Err(e.into()),
+    };
 
     if !raw {
         eprintln!("--- Message {} ---", message_id);
@@ -716,7 +729,6 @@ async fn daemon_configure(
     Ok(())
 }
 
-/// Subscribe to session events
 async fn daemon_subscribe(session_ids: &[String]) -> Result<()> {
     use crucible_daemon_client::DaemonClient;
 
@@ -745,6 +757,26 @@ async fn daemon_subscribe(session_ids: &[String]) -> Result<()> {
                 break;
             }
         }
+    }
+
+    Ok(())
+}
+
+async fn daemon_load(
+    client: &DaemonClient,
+    config: &CliConfig,
+    session_id: &str,
+) -> Result<()> {
+    let result = client
+        .session_resume_from_storage(session_id, &config.kiln_path, None, None)
+        .await?;
+
+    println!("Loaded session: {}", session_id);
+    if let Some(events) = result.get("events_loaded").and_then(|v| v.as_u64()) {
+        println!("Events loaded: {}", events);
+    }
+    if let Some(state) = result.get("state").and_then(|v| v.as_str()) {
+        println!("State: {}", state);
     }
 
     Ok(())
