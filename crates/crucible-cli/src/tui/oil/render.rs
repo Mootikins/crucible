@@ -1,4 +1,5 @@
 use crate::tui::oil::ansi::{visible_width, visual_rows};
+use crate::tui::oil::layout::{calculate_row_widths, ChildMeasurement, FlexLayoutInput};
 use crate::tui::oil::node::{
     BoxNode, Direction, InputNode, Node, PopupNode, Size, SpinnerNode, TextNode,
 };
@@ -291,12 +292,13 @@ fn render_row_children_filtered(
         return;
     }
 
-    let mut fixed_width_used = 0usize;
-    let mut total_flex_weight = 0u16;
+    // Phase 1: measure
+    let mut measurements: Vec<ChildMeasurement> = Vec::with_capacity(children.len());
     let mut child_infos: Vec<RowChildInfo> = Vec::with_capacity(children.len());
 
     for child in children {
         if matches!(child, Node::Empty) {
+            measurements.push(ChildMeasurement::Fixed(0));
             child_infos.push(RowChildInfo::Skip);
             continue;
         }
@@ -304,27 +306,33 @@ fn render_row_children_filtered(
         let size = get_node_size(child);
         match size {
             Size::Fixed(w) => {
-                fixed_width_used += w as usize;
-                child_infos.push(RowChildInfo::Fixed(w as usize));
+                measurements.push(ChildMeasurement::Fixed(w as usize));
+                child_infos.push(RowChildInfo::Fixed);
             }
             Size::Flex(weight) => {
-                total_flex_weight += weight;
-                child_infos.push(RowChildInfo::Flex(weight));
+                measurements.push(ChildMeasurement::Flex(weight));
+                child_infos.push(RowChildInfo::Flex);
             }
             Size::Content => {
                 let mut temp = String::new();
                 let mut temp_cursor = CursorInfo::default();
                 render_node_filtered(child, width, filter, &mut temp, &mut temp_cursor);
                 let content_width = temp.lines().next().map(visible_width).unwrap_or(0);
-                fixed_width_used += content_width;
+                measurements.push(ChildMeasurement::Content(content_width));
                 child_infos.push(RowChildInfo::Content(temp, temp_cursor));
             }
         }
     }
 
-    let remaining = width.saturating_sub(fixed_width_used);
+    let layout_result = calculate_row_widths(&FlexLayoutInput {
+        available: width,
+        children: measurements,
+    });
 
-    for (child, child_info) in children.iter().zip(child_infos.into_iter()) {
+    // Phase 2: render with calculated widths
+    for (i, (child, child_info)) in children.iter().zip(child_infos.into_iter()).enumerate() {
+        let child_width = layout_result.widths.get(i).copied().unwrap_or(0);
+
         match child_info {
             RowChildInfo::Skip => {}
             RowChildInfo::Content(rendered, child_cursor) => {
@@ -339,17 +347,12 @@ fn render_row_children_filtered(
                     output.push_str(&rendered);
                 }
             }
-            RowChildInfo::Fixed(w) => {
-                render_node_filtered(child, w, filter, output, cursor_info);
+            RowChildInfo::Fixed => {
+                render_node_filtered(child, child_width, filter, output, cursor_info);
             }
-            RowChildInfo::Flex(weight) => {
-                let flex_width = if total_flex_weight > 0 {
-                    (remaining as u32 * weight as u32 / total_flex_weight as u32) as usize
-                } else {
-                    0
-                };
-                if flex_width > 0 {
-                    output.push_str(&" ".repeat(flex_width));
+            RowChildInfo::Flex => {
+                if child_width > 0 {
+                    output.push_str(&" ".repeat(child_width));
                 }
             }
         }
@@ -358,8 +361,8 @@ fn render_row_children_filtered(
 
 enum RowChildInfo {
     Skip,
-    Fixed(usize),
-    Flex(u16),
+    Fixed,
+    Flex,
     Content(String, CursorInfo),
 }
 
@@ -746,6 +749,11 @@ pub fn render_popup_standalone(popup: &PopupNode, width: usize) -> String {
     let mut output = String::new();
     render_popup(popup, width, &mut output);
     output
+}
+
+pub fn render_to_plain_text(node: &Node, width: usize) -> String {
+    use crate::tui::oil::ansi::strip_ansi;
+    strip_ansi(&render_to_string(node, width))
 }
 
 fn apply_style(content: &str, style: &Style) -> String {

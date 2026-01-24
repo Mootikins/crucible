@@ -1,5 +1,9 @@
 use crate::tui::oil::app::{Action, App, ViewContext};
 use crate::tui::oil::commands::SetCommand;
+use crate::tui::oil::components::{
+    format_streaming_output, format_tool_args, format_tool_result, render_shell_execution,
+    render_thinking_block, render_tool_call, render_user_prompt, summarize_tool_result,
+};
 use crate::tui::oil::config::{ConfigValue, ModSource, RuntimeConfig};
 use crate::tui::oil::event::{Event, InputAction, InputBuffer};
 use crate::tui::oil::markdown::{
@@ -7,6 +11,7 @@ use crate::tui::oil::markdown::{
 };
 use crate::tui::oil::node::*;
 use crate::tui::oil::style::{Color, Gap, Style};
+use crate::tui::oil::theme::{colors, styles};
 use crate::tui::oil::viewport_cache::{
     CachedChatItem, CachedMessage, CachedShellExecution, CachedToolCall, StreamSegment,
     ViewportCache,
@@ -14,7 +19,6 @@ use crate::tui::oil::viewport_cache::{
 use crossterm::event::KeyCode;
 use crossterm::terminal::{EnterAlternateScreen, LeaveAlternateScreen};
 use crossterm::{cursor, execute};
-use std::borrow::Cow;
 use std::collections::VecDeque;
 use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
@@ -22,7 +26,6 @@ use std::process::{Child, Command, Stdio};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::time::{Duration, Instant};
 
-const INPUT_BG: Color = Color::Rgb(40, 44, 52);
 const FOCUS_INPUT: &str = "input";
 const FOCUS_POPUP: &str = "popup";
 const POPUP_HEIGHT: usize = 10;
@@ -159,9 +162,9 @@ pub enum InputMode {
 impl InputMode {
     pub fn bg_color(&self) -> Color {
         match self {
-            InputMode::Normal => INPUT_BG,
-            InputMode::Command => Color::Rgb(60, 50, 20),
-            InputMode::Shell => Color::Rgb(60, 30, 30),
+            InputMode::Normal => colors::INPUT_BG,
+            InputMode::Command => colors::COMMAND_BG,
+            InputMode::Shell => colors::SHELL_BG,
         }
     }
 
@@ -1801,8 +1804,8 @@ impl InkChatApp {
 
         let content_height = term_height.saturating_sub(2);
 
-        let header_bg = Color::Rgb(50, 55, 65);
-        let footer_bg = Color::Rgb(40, 44, 52);
+        let header_bg = colors::POPUP_BG;
+        let footer_bg = colors::INPUT_BG;
 
         let header_text = format!(" {} ", modal.format_header());
         let header_padding = " ".repeat(term_width.saturating_sub(header_text.len()));
@@ -1823,9 +1826,9 @@ impl InkChatApp {
 
     fn render_shell_footer(&self, modal: &ShellModal, width: usize, bg: Color) -> Node {
         let line_info = format!("({} lines)", modal.output_lines.len());
-        let key_style = Style::new().bg(bg).fg(Color::Cyan);
-        let sep_style = Style::new().bg(bg).fg(Color::DarkGray);
-        let text_style = Style::new().bg(bg).fg(Color::White).dim();
+        let key_style = Style::new().bg(bg).fg(colors::TEXT_ACCENT);
+        let sep_style = Style::new().bg(bg).fg(colors::TEXT_MUTED);
+        let text_style = Style::new().bg(bg).fg(colors::TEXT_PRIMARY).dim();
 
         let content = if modal.is_running() {
             row([
@@ -1860,145 +1863,6 @@ impl InkChatApp {
         let padding = styled(" ".repeat(padding_len), Style::new().bg(bg));
 
         row([content, padding])
-    }
-
-    fn format_tool_args(args: &str) -> String {
-        if args.is_empty() || args == "{}" {
-            return String::new();
-        }
-
-        if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(args) {
-            if let Some(obj) = parsed.as_object() {
-                let pairs: Vec<String> = obj
-                    .iter()
-                    .map(|(k, v)| {
-                        let val = match v {
-                            serde_json::Value::String(s) => {
-                                let collapsed = s.replace('\n', "↵").replace('\r', "");
-                                if collapsed.len() > 30 {
-                                    format!("\"{}…\"", &collapsed[..27])
-                                } else {
-                                    format!("\"{}\"", collapsed)
-                                }
-                            }
-                            other => {
-                                let s = other.to_string();
-                                if s.len() > 30 {
-                                    format!("{}…", &s[..27])
-                                } else {
-                                    s
-                                }
-                            }
-                        };
-                        format!("{}={}", k, val)
-                    })
-                    .collect();
-                return pairs.join(", ");
-            }
-        }
-
-        let oneline = args.replace('\n', " ").replace("  ", " ");
-        if oneline.len() <= 60 {
-            oneline
-        } else {
-            format!("{}…", &oneline[..57])
-        }
-    }
-
-    fn format_tool_result(name: &str, result: &str) -> Node {
-        if let Some(summary) = Self::summarize_tool_result(name, result) {
-            return styled(format!("   {}", summary), Style::new().fg(Color::DarkGray));
-        }
-        let inner = Self::unwrap_json_result(result);
-        Self::format_output_tail(&inner, "   ", 77)
-    }
-
-    fn summarize_tool_result(name: &str, result: &str) -> Option<String> {
-        let inner = Self::unwrap_json_result(result);
-        match name {
-            "read_file" | "mcp_read" => inner
-                .rfind('[')
-                .map(|i| inner[i..].trim_end_matches(']').to_string())
-                .or_else(|| Some(format!("{} lines", inner.lines().count()))),
-            "glob" | "mcp_glob" => {
-                Self::count_newline_items(&inner).map(|n| format!("{} files", n))
-            }
-            "grep" | "mcp_grep" => {
-                Self::count_grep_matches(&inner).map(|n| format!("{} matches", n))
-            }
-            "edit" | "mcp_edit" if inner.contains("success") || inner.contains("applied") => {
-                Some("applied".to_string())
-            }
-            "write" | "mcp_write" if inner.contains("success") || inner.contains("written") => {
-                Some("written".to_string())
-            }
-            "bash" | "mcp_bash" => {
-                let lines: Vec<&str> = inner.lines().collect();
-                if lines.len() <= 1 && inner.len() < 60 {
-                    Some(inner.trim().to_string())
-                } else {
-                    None
-                }
-            }
-            _ => None,
-        }
-    }
-
-    fn unwrap_json_result(result: &str) -> String {
-        if let Ok(v) = serde_json::from_str::<serde_json::Value>(result) {
-            if let Some(inner) = v.get("result").and_then(|r| r.as_str()) {
-                return inner.to_string();
-            }
-        }
-        result.to_string()
-    }
-
-    fn count_newline_items(result: &str) -> Option<usize> {
-        let newline_count = result.matches('\n').count();
-        let escaped_newline_count = result.matches("\\n").count();
-        let count = newline_count.max(escaped_newline_count) + 1;
-        if count > 1 {
-            Some(count)
-        } else {
-            None
-        }
-    }
-
-    fn count_grep_matches(result: &str) -> Option<usize> {
-        let count = result
-            .lines()
-            .filter(|l| l.contains(':') && !l.trim().is_empty())
-            .count();
-        if count > 0 {
-            Some(count)
-        } else {
-            None
-        }
-    }
-
-    fn format_streaming_output(output: &str) -> Node {
-        Self::format_output_tail(output, "     ", 72)
-    }
-
-    fn format_output_tail(output: &str, prefix: &str, max_line_len: usize) -> Node {
-        let all_lines: Vec<&str> = output.lines().collect();
-        let lines: Vec<&str> = all_lines.iter().rev().take(3).rev().copied().collect();
-        let truncated = all_lines.len() > 3;
-        let truncate_at = max_line_len.saturating_sub(prefix.len() + 1);
-
-        col(std::iter::once(if truncated {
-            styled(format!("{}…", prefix), Style::new().fg(Color::DarkGray))
-        } else {
-            Node::Empty
-        })
-        .chain(lines.iter().map(|line| {
-            let display = if line.len() > truncate_at {
-                format!("{}{}…", prefix, &line[..truncate_at])
-            } else {
-                format!("{}{}", prefix, line)
-            };
-            styled(display, Style::new().fg(Color::DarkGray))
-        })))
     }
 
     fn add_user_message(&mut self, content: String) {
@@ -2061,8 +1925,8 @@ impl InkChatApp {
             let is_tool = matches!(item, CachedChatItem::ToolCall(_));
             let node = match item {
                 CachedChatItem::Message(msg) => self.render_message(msg),
-                CachedChatItem::ToolCall(tool) => self.render_tool_call(tool, !prev_was_tool),
-                CachedChatItem::ShellExecution(shell) => self.render_shell_execution(shell),
+                CachedChatItem::ToolCall(tool) => render_tool_call(tool, !prev_was_tool),
+                CachedChatItem::ShellExecution(shell) => render_shell_execution(shell),
             };
             nodes.push(node);
             prev_was_tool = is_tool;
@@ -2072,10 +1936,10 @@ impl InkChatApp {
     }
 
     fn render_message(&self, msg: &CachedMessage) -> Node {
+        let term_width = terminal_width();
         let content_node = match msg.role {
-            Role::User => self.render_user_prompt(msg.content()),
+            Role::User => render_user_prompt(msg.content(), term_width),
             Role::Assistant => {
-                let term_width = terminal_width();
                 let style = RenderStyle::natural_with_margins(term_width, Margins::assistant());
                 let md_node = markdown_to_node_styled(msg.content(), style);
 
@@ -2087,7 +1951,7 @@ impl InkChatApp {
                 match thinking_for_this_msg {
                     Some(tb) => {
                         let thinking_node =
-                            self.render_thinking_block(&tb.content, tb.token_count, term_width);
+                            render_thinking_block(&tb.content, tb.token_count, term_width);
                         col([text(""), thinking_node, md_node, text("")])
                     }
                     None => col([text(""), md_node, text("")]),
@@ -2095,143 +1959,10 @@ impl InkChatApp {
             }
             Role::System => col([
                 text(""),
-                styled(
-                    format!(" * {} ", msg.content()),
-                    Style::new().fg(Color::Yellow).dim(),
-                ),
+                styled(format!(" * {} ", msg.content()), styles::system_message()),
             ]),
         };
         scrollback(&msg.id, [content_node])
-    }
-
-    fn render_thinking_block(&self, content: &str, token_count: usize, width: usize) -> Node {
-        let header_color = Color::Rgb(100, 100, 100);
-
-        let header = styled(
-            format!("  ┌─ thinking ({} tokens)", token_count),
-            Style::new().fg(header_color).italic(),
-        );
-
-        let display_content: Cow<'_, str> = if content.len() > 1200 {
-            let start = content.len() - 1200;
-            let boundary = content[start..]
-                .find(char::is_whitespace)
-                .map(|i| start + i + 1)
-                .unwrap_or(start);
-            Cow::Owned(format!("…{}", &content[boundary..]))
-        } else {
-            Cow::Borrowed(content)
-        };
-
-        let md_style = RenderStyle::viewport_with_margins(
-            width.saturating_sub(4),
-            Margins {
-                left: 4,
-                right: 0,
-                show_bullet: false,
-            },
-        );
-        let content_node = markdown_to_node_styled(&display_content, md_style);
-
-        col([header, content_node, text("")])
-    }
-
-    fn render_tool_call(&self, tool: &CachedToolCall, first_in_sequence: bool) -> Node {
-        let (status_icon, status_color) = if tool.complete {
-            ("✓", Color::Green)
-        } else {
-            ("…", Color::White)
-        };
-
-        let args_formatted = Self::format_tool_args(&tool.args);
-        let result_summary = if tool.complete && !tool.result.is_empty() {
-            Self::summarize_tool_result(&tool.name, &tool.result)
-        } else {
-            None
-        };
-
-        let has_summary = result_summary.is_some();
-        let header = if let Some(summary) = result_summary {
-            row([
-                styled(format!(" {} ", status_icon), Style::new().fg(status_color)),
-                styled(tool.name.as_ref(), Style::new().fg(Color::White)),
-                styled(
-                    format!("({}) ", args_formatted),
-                    Style::new().fg(Color::DarkGray),
-                ),
-                styled(format!("→ {}", summary), Style::new().fg(Color::DarkGray)),
-            ])
-        } else {
-            row([
-                styled(format!(" {} ", status_icon), Style::new().fg(status_color)),
-                styled(tool.name.as_ref(), Style::new().fg(Color::White)),
-                styled(
-                    format!("({})", args_formatted),
-                    Style::new().fg(Color::DarkGray),
-                ),
-            ])
-        };
-
-        let result_node = if tool.result.is_empty() || has_summary {
-            Node::Empty
-        } else if tool.complete {
-            Self::format_tool_result(&tool.name, &tool.result)
-        } else {
-            Self::format_streaming_output(&tool.result)
-        };
-
-        let content = if first_in_sequence {
-            col([text(""), header, result_node])
-        } else {
-            col([header, result_node])
-        };
-
-        if tool.complete {
-            scrollback(&tool.id, [content])
-        } else {
-            content
-        }
-    }
-
-    fn render_shell_execution(&self, shell: &CachedShellExecution) -> Node {
-        let exit_style = if shell.exit_code == 0 {
-            Style::new().fg(Color::Green)
-        } else {
-            Style::new().fg(Color::Red)
-        };
-
-        let header = row([
-            styled(" $ ", Style::new().fg(Color::DarkGray)),
-            styled(shell.command.as_ref(), Style::new().fg(Color::White)),
-            styled(format!("  exit {}", shell.exit_code), exit_style.dim()),
-        ]);
-
-        let tail_nodes: Vec<Node> = shell
-            .output_tail
-            .iter()
-            .map(|line| {
-                styled(
-                    format!("   {}", line),
-                    Style::new().fg(Color::Rgb(180, 180, 180)),
-                )
-            })
-            .collect();
-
-        let path_node = shell
-            .output_path
-            .as_ref()
-            .map(|p| {
-                styled(
-                    format!("   → {}", p.display()),
-                    Style::new().fg(Color::Rgb(140, 140, 140)),
-                )
-            })
-            .unwrap_or(Node::Empty);
-
-        let content = col(std::iter::once(header)
-            .chain(tail_nodes)
-            .chain(std::iter::once(path_node)));
-        scrollback(&shell.id, [content])
     }
 
     fn render_streaming(&self) -> Node {
@@ -2268,7 +1999,7 @@ impl InkChatApp {
                         prev_was_tool = false;
                     }
                     StreamSegment::Thinking(content) if self.show_thinking => {
-                        let thinking_node = self.render_thinking_block(
+                        let thinking_node = render_thinking_block(
                             content,
                             content.split_whitespace().count(),
                             term_width,
@@ -2281,7 +2012,7 @@ impl InkChatApp {
                     }
                     StreamSegment::ToolCall(tool_id) => {
                         if let Some(CachedChatItem::ToolCall(tool)) = self.cache.get_item(tool_id) {
-                            nodes.push(self.render_tool_call(tool, !prev_was_tool));
+                            nodes.push(render_tool_call(tool, !prev_was_tool));
                             has_tool_calls = true;
                             prev_was_tool = true;
                         }
@@ -2352,7 +2083,7 @@ impl InkChatApp {
                     }
                 } else if thinking_visible {
                     let thinking_node =
-                        self.render_thinking_block(current_thinking, thinking_tokens, term_width);
+                        render_thinking_block(current_thinking, thinking_tokens, term_width);
                     col([
                         text(""),
                         thinking_node,
@@ -2386,15 +2117,20 @@ impl InkChatApp {
 
     fn render_error(&self) -> Node {
         maybe(self.error.clone(), |err| {
-            styled(format!("Error: {}", err), Style::new().fg(Color::Red))
+            styled(format!("Error: {}", err), styles::error())
         })
     }
 
     fn render_status(&self) -> Node {
-        let (mode_bg, mode_str) = match self.mode {
-            ChatMode::Normal => (Color::Green, " NORMAL "),
-            ChatMode::Plan => (Color::Blue, " PLAN "),
-            ChatMode::Auto => (Color::Yellow, " AUTO "),
+        let mode_style = match self.mode {
+            ChatMode::Normal => styles::mode_normal(),
+            ChatMode::Plan => styles::mode_plan(),
+            ChatMode::Auto => styles::mode_auto(),
+        };
+        let mode_str = match self.mode {
+            ChatMode::Normal => " NORMAL ",
+            ChatMode::Plan => " PLAN ",
+            ChatMode::Auto => " AUTO ",
         };
 
         let ctx_str = if self.context_total > 0 {
@@ -2419,29 +2155,23 @@ impl InkChatApp {
             .filter(|(_, set_at)| set_at.elapsed() < NOTIFICATION_TIMEOUT)
             .map(|(msg, _)| msg.as_str());
 
-        let dark_gray = Style::new().fg(Color::DarkGray);
+        let muted = styles::muted();
         let mut items = vec![
-            styled(
-                mode_str.to_string(),
-                Style::new().bg(mode_bg).fg(Color::Black).bold(),
-            ),
-            styled(" ".to_string(), dark_gray),
-            styled(model_str, Style::new().fg(Color::Cyan)),
-            styled(" ".to_string(), dark_gray),
-            styled(ctx_str, dark_gray),
+            styled(mode_str.to_string(), mode_style),
+            styled(" ".to_string(), muted),
+            styled(model_str, styles::model_name()),
+            styled(" ".to_string(), muted),
+            styled(ctx_str, muted),
         ];
 
         if !self.status.is_empty() {
-            items.push(styled(" ".to_string(), dark_gray));
-            items.push(styled(self.status.clone(), dark_gray));
+            items.push(styled(" ".to_string(), muted));
+            items.push(styled(self.status.clone(), muted));
         }
 
         if let Some(notif) = active_notification {
             items.push(spacer());
-            items.push(styled(
-                format!(" {} ", notif),
-                Style::new().fg(Color::Yellow),
-            ));
+            items.push(styled(format!(" {} ", notif), styles::notification()));
         }
 
         row(items)
@@ -2453,35 +2183,6 @@ impl InkChatApp {
         } else {
             format!("{}…", &name[..max_len - 1])
         }
-    }
-
-    fn render_user_prompt(&self, content: &str) -> Node {
-        let width = terminal_width();
-        let top_edge = styled("▄".repeat(width), Style::new().fg(INPUT_BG));
-        let bottom_edge = styled("▀".repeat(width), Style::new().fg(INPUT_BG));
-
-        let prefix = " > ";
-        let continuation_prefix = "   ";
-        let content_width = width.saturating_sub(prefix.len() + 1);
-        let lines = wrap_content(content, content_width);
-
-        let mut rows: Vec<Node> = Vec::with_capacity(lines.len() + 3);
-        rows.push(text(""));
-        rows.push(top_edge);
-
-        for (i, line) in lines.iter().enumerate() {
-            let line_len = line.chars().count();
-            let line_padding = " ".repeat(content_width.saturating_sub(line_len) + 1);
-            let line_prefix = if i == 0 { prefix } else { continuation_prefix };
-            rows.push(styled(
-                format!("{}{}{}", line_prefix, line, line_padding),
-                Style::new().bg(INPUT_BG),
-            ));
-        }
-
-        rows.push(bottom_edge);
-        rows.push(text(""));
-        col(rows)
     }
 
     fn detect_input_mode(&self) -> InputMode {
@@ -3187,44 +2888,6 @@ mod tests {
         assert!(
             output.contains("2 lines"),
             "should show line count for read_file when complete"
-        );
-    }
-
-    #[test]
-    fn test_format_tool_args() {
-        let args = r#"{"path":"file.md","offset":10}"#;
-        let formatted = InkChatApp::format_tool_args(args);
-        assert!(formatted.contains("path="));
-        assert!(formatted.contains("offset="));
-    }
-
-    #[test]
-    fn test_format_tool_args_with_newlines() {
-        let args = r#"{"content":"line1\nline2\nline3"}"#;
-        let formatted = InkChatApp::format_tool_args(args);
-        assert!(formatted.contains("↵"), "newlines should be collapsed to ↵");
-        assert!(
-            !formatted.contains('\n'),
-            "should not contain literal newlines"
-        );
-    }
-
-    #[test]
-    fn test_format_tool_args_empty_object() {
-        let formatted = InkChatApp::format_tool_args("{}");
-        assert!(formatted.is_empty());
-    }
-
-    #[test]
-    fn test_format_tool_args_truncates_long_values() {
-        let long_val = "a".repeat(100);
-        let args = format!(r#"{{"content":"{}"}}"#, long_val);
-        let formatted = InkChatApp::format_tool_args(&args);
-
-        assert!(formatted.contains("…"), "Long values should be truncated");
-        assert!(
-            formatted.len() < 100,
-            "Formatted output should be shorter than input"
         );
     }
 
