@@ -629,7 +629,8 @@ impl ToolExecutor for WorkspaceTools {
                 if background {
                     return Err(ToolError::ExecutionFailed(
                         "Background execution requires BackgroundSpawner context. \
-                         Use the agent layer for background bash tasks.".into()
+                         Use the agent layer for background bash tasks."
+                            .into(),
                     ));
                 }
                 convert_result(self.bash(command, timeout_ms).await)

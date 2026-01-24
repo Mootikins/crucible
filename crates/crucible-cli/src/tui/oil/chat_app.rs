@@ -2002,11 +2002,18 @@ impl InkChatApp {
     fn render_item_sequence(&self, items: &[&CachedChatItem]) -> Node {
         let mut nodes = Vec::with_capacity(items.len());
         let mut prev_was_tool = false;
+        let mut had_assistant_message = false;
 
         for item in items {
             let is_tool = matches!(item, CachedChatItem::ToolCall(_));
             let node = match item {
-                CachedChatItem::Message(msg) => self.render_message(msg),
+                CachedChatItem::Message(msg) => {
+                    let is_continuation = msg.role == Role::Assistant && had_assistant_message;
+                    if msg.role == Role::Assistant {
+                        had_assistant_message = true;
+                    }
+                    self.render_message_with_continuation(msg, is_continuation)
+                }
                 CachedChatItem::ToolCall(tool) => render_tool_call(tool, !prev_was_tool),
                 CachedChatItem::ShellExecution(shell) => render_shell_execution(shell),
                 CachedChatItem::Subagent(subagent) => render_subagent(subagent, self.spinner_frame),
@@ -2019,11 +2026,20 @@ impl InkChatApp {
     }
 
     fn render_message(&self, msg: &CachedMessage) -> Node {
+        self.render_message_with_continuation(msg, false)
+    }
+
+    fn render_message_with_continuation(&self, msg: &CachedMessage, is_continuation: bool) -> Node {
         let term_width = terminal_width();
         let content_node = match msg.role {
             Role::User => render_user_prompt(msg.content(), term_width),
             Role::Assistant => {
-                let style = RenderStyle::natural_with_margins(term_width, Margins::assistant());
+                let margins = if is_continuation {
+                    Margins::assistant_continuation()
+                } else {
+                    Margins::assistant()
+                };
+                let style = RenderStyle::natural_with_margins(term_width, margins);
                 let md_node = markdown_to_node_styled(msg.content(), style);
 
                 let thinking_for_this_msg = self
@@ -2141,37 +2157,13 @@ impl InkChatApp {
                 let text_visible = !in_progress_content.is_empty();
 
                 if text_visible {
-                    let in_progress_lines: Vec<&str> = in_progress_content.lines().collect();
-                    let max_viewport_lines = 15;
-
-                    if in_progress_lines.len() > max_viewport_lines {
-                        let graduate_count = in_progress_lines.len() - max_viewport_lines;
-                        let to_graduate = in_progress_lines[..graduate_count].join("\n");
-                        let to_show = in_progress_lines[graduate_count..].join("\n");
-
-                        let grad_style = RenderStyle::natural_with_margins(term_width, margins);
-                        let grad_node = markdown_to_node_styled(&to_graduate, grad_style);
-                        let show_node = markdown_to_node_styled(&to_show, style);
-
-                        col([
-                            scrollback(
-                                format!("streaming-overflow-{}", graduate_count),
-                                [col([text(""), grad_node, text("")])],
-                            ),
-                            text(""),
-                            show_node,
-                            text(""),
-                            row([text(spinner_indent), spinner(None, self.spinner_frame)]),
-                        ])
-                    } else {
-                        let content_node = markdown_to_node_styled(in_progress_content, style);
-                        col([
-                            text(""),
-                            content_node,
-                            text(""),
-                            row([text(spinner_indent), spinner(None, self.spinner_frame)]),
-                        ])
-                    }
+                    let content_node = markdown_to_node_styled(in_progress_content, style);
+                    col([
+                        text(""),
+                        content_node,
+                        text(""),
+                        row([text(spinner_indent), spinner(None, self.spinner_frame)]),
+                    ])
                 } else if thinking_visible {
                     let thinking_node =
                         render_thinking_block(current_thinking, thinking_tokens, term_width);

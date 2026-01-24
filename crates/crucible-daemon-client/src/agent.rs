@@ -7,8 +7,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use crucible_core::traits::chat::{
-    AgentHandle, ChatChunk, ChatError, ChatResult, ChatToolCall, ChatToolResult,
-    CommandDescriptor,
+    AgentHandle, ChatChunk, ChatError, ChatResult, ChatToolCall, ChatToolResult, CommandDescriptor,
 };
 use crucible_core::types::acp::schema::{AvailableCommand, SessionModeState};
 use futures::stream::BoxStream;

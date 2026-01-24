@@ -23,6 +23,7 @@
 //!
 pub mod agent_factory;
 pub mod agent_manager;
+pub mod background_manager;
 pub mod kiln_manager;
 pub mod lifecycle;
 pub mod protocol;
@@ -32,11 +33,12 @@ pub mod server;
 pub mod session_manager;
 pub mod session_storage;
 pub mod subscription;
-pub mod background_manager;
 
 pub use agent_factory::{create_agent_from_session_config, AgentFactoryError};
 pub use agent_manager::{AgentError, AgentManager};
-pub use background_manager::{BackgroundTaskManager, SubagentContext, SubagentFactory, BackgroundError};
+pub use background_manager::{
+    BackgroundError, BackgroundTaskManager, SubagentContext, SubagentFactory,
+};
 pub use kiln_manager::KilnManager;
 pub use lifecycle::{remove_socket, socket_path, wait_for_shutdown};
 pub use protocol::{Request, Response, RpcError, SessionEventMessage};

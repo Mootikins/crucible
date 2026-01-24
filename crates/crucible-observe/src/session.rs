@@ -98,7 +98,10 @@ impl SessionWriter {
 
         fs::create_dir_all(&session_dir).await?;
 
-        debug!("created subagent session directory: {}", session_dir.display());
+        debug!(
+            "created subagent session directory: {}",
+            session_dir.display()
+        );
 
         let wikilink = format!("[[.subagents/{}/session]]", id.as_str());
 
@@ -433,9 +436,7 @@ mod tests {
             .unwrap();
         let parent_dir = parent.session_dir().to_path_buf();
 
-        let (mut subagent, wikilink) = SessionWriter::create_subagent(&parent_dir)
-            .await
-            .unwrap();
+        let (mut subagent, wikilink) = SessionWriter::create_subagent(&parent_dir).await.unwrap();
 
         assert!(subagent.id().as_str().starts_with("sub-"));
         assert!(subagent.session_dir().exists());
@@ -472,8 +473,6 @@ mod tests {
 
         let subagent_path = subagent.session_dir();
         assert!(subagent_path.starts_with(&parent_dir));
-        assert!(subagent_path
-            .to_string_lossy()
-            .contains("subagents"));
+        assert!(subagent_path.to_string_lossy().contains("subagents"));
     }
 }
