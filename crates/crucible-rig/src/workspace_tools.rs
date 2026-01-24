@@ -96,6 +96,11 @@ impl WorkspaceContext {
             .unwrap_or(false)
     }
 
+    /// Check if a background task spawner is configured
+    pub fn has_background_spawner(&self) -> bool {
+        self.background_spawner.is_some()
+    }
+
     /// Get all available workspace tools.
     pub fn all_tools(&self) -> Vec<Box<dyn rig::tool::ToolDyn>> {
         let mut tools: Vec<Box<dyn rig::tool::ToolDyn>> = vec![
