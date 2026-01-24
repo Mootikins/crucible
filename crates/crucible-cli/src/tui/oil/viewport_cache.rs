@@ -44,12 +44,19 @@ impl CachedMessage {
     }
 }
 
+pub const TOOL_OUTPUT_MAX_TAIL_LINES: usize = 50;
+pub const TOOL_OUTPUT_FILE_THRESHOLD_BYTES: usize = 10 * 1024;
+
 #[derive(Debug, Clone)]
 pub struct CachedToolCall {
     pub id: String,
     pub name: Arc<str>,
     pub args: Arc<str>,
-    pub result: String,
+    pub output_tail: VecDeque<Arc<str>>,
+    pub output_path: Option<PathBuf>,
+    pub output_total_bytes: usize,
+    pub error: Option<String>,
+    pub started_at: std::time::Instant,
     pub complete: bool,
 }
 
@@ -59,17 +66,61 @@ impl CachedToolCall {
             id: id.into(),
             name: Arc::from(name.as_ref()),
             args: Arc::from(args.as_ref()),
-            result: String::new(),
+            output_tail: VecDeque::new(),
+            output_path: None,
+            output_total_bytes: 0,
+            error: None,
+            started_at: std::time::Instant::now(),
             complete: false,
         }
     }
 
-    pub fn append_result(&mut self, delta: &str) {
-        self.result.push_str(delta);
+    pub fn append_output(&mut self, delta: &str) {
+        self.output_total_bytes += delta.len();
+        for line in delta.lines() {
+            self.output_tail.push_back(Arc::from(line));
+            if self.output_tail.len() > TOOL_OUTPUT_MAX_TAIL_LINES {
+                self.output_tail.pop_front();
+            }
+        }
+    }
+
+    pub fn set_error(&mut self, error: String) {
+        self.error = Some(error);
+        self.complete = true;
     }
 
     pub fn mark_complete(&mut self) {
         self.complete = true;
+    }
+
+    pub fn set_output_path(&mut self, path: PathBuf) {
+        self.output_path = Some(path);
+    }
+
+    pub fn should_spill_to_file(&self) -> bool {
+        self.output_path.is_none() && self.output_total_bytes >= TOOL_OUTPUT_FILE_THRESHOLD_BYTES
+    }
+
+    pub fn elapsed(&self) -> std::time::Duration {
+        self.started_at.elapsed()
+    }
+
+    pub fn last_n_lines(&self, n: usize) -> Vec<&str> {
+        let skip = self.output_tail.len().saturating_sub(n);
+        self.output_tail
+            .iter()
+            .skip(skip)
+            .map(|s| s.as_ref())
+            .collect()
+    }
+
+    pub fn result(&self) -> String {
+        self.output_tail
+            .iter()
+            .map(|s| s.as_ref())
+            .collect::<Vec<_>>()
+            .join("\n")
     }
 }
 
@@ -266,9 +317,9 @@ impl ViewportCache {
         })
     }
 
-    pub fn append_tool_result(&mut self, name: &str, delta: &str) {
+    pub fn append_tool_output(&mut self, name: &str, delta: &str) {
         if let Some(tool) = self.find_tool_mut(name) {
-            tool.append_result(delta);
+            tool.append_output(delta);
         }
     }
 
@@ -276,6 +327,37 @@ impl ViewportCache {
         if let Some(tool) = self.find_tool_mut(name) {
             tool.mark_complete();
         }
+    }
+
+    pub fn set_tool_error(&mut self, name: &str, error: String) {
+        if let Some(tool) = self.find_tool_mut(name) {
+            tool.set_error(error);
+        }
+    }
+
+    pub fn set_tool_output_path(&mut self, name: &str, path: PathBuf) {
+        if let Some(tool) = self.find_tool_mut(name) {
+            tool.set_output_path(path);
+        }
+    }
+
+    pub fn tool_should_spill(&self, name: &str) -> bool {
+        self.items
+            .iter()
+            .rev()
+            .find_map(|item| match item {
+                CachedChatItem::ToolCall(t) if t.name.as_ref() == name => Some(t),
+                _ => None,
+            })
+            .map(|t| t.should_spill_to_file())
+            .unwrap_or(false)
+    }
+
+    pub fn get_tool_output(&self, name: &str) -> Option<String> {
+        self.items.iter().rev().find_map(|item| match item {
+            CachedChatItem::ToolCall(t) if t.name.as_ref() == name => Some(t.result()),
+            _ => None,
+        })
     }
 
     pub fn get_content(&self, id: &str) -> Option<&str> {
@@ -1059,13 +1141,13 @@ mod tests {
 
         let tool = cache.find_tool_mut("read_file").unwrap();
         assert!(!tool.complete);
-        assert!(tool.result.is_empty());
+        assert!(tool.output_tail.is_empty());
 
-        cache.append_tool_result("read_file", "line 1\n");
-        cache.append_tool_result("read_file", "line 2\n");
+        cache.append_tool_output("read_file", "line 1\n");
+        cache.append_tool_output("read_file", "line 2\n");
 
         let tool = cache.find_tool_mut("read_file").unwrap();
-        assert_eq!(tool.result, "line 1\nline 2\n");
+        assert_eq!(tool.result(), "line 1\nline 2");
 
         cache.complete_tool("read_file");
         let tool = cache.find_tool_mut("read_file").unwrap();
@@ -1164,13 +1246,13 @@ mod tests {
         cache.push_tool_call("tool-1".to_string(), "read", "{}");
         cache.push_tool_call("tool-2".to_string(), "read", "{}");
 
-        cache.append_tool_result("read", "result");
+        cache.append_tool_output("read", "result");
 
         let tool1 = cache.get_item("tool-1").unwrap().as_tool_call().unwrap();
         let tool2 = cache.get_item("tool-2").unwrap().as_tool_call().unwrap();
 
-        assert!(tool1.result.is_empty());
-        assert_eq!(tool2.result, "result");
+        assert!(tool1.output_tail.is_empty());
+        assert_eq!(tool2.result(), "result");
     }
 
     #[test]

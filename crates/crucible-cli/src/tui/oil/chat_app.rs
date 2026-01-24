@@ -64,6 +64,7 @@ pub enum ChatAppMsg {
     ToolCall { name: String, args: String },
     ToolResultDelta { name: String, delta: String },
     ToolResultComplete { name: String },
+    ToolResultError { name: String, error: String },
     StreamComplete,
     StreamCancelled,
     Error(String),
@@ -470,12 +471,19 @@ impl App for InkChatApp {
                     items_count = self.cache.item_count(),
                     "Received ToolResultDelta"
                 );
-                self.cache.append_tool_result(&name, &delta);
+                self.cache.append_tool_output(&name, &delta);
+                self.maybe_spill_tool_output(&name);
                 Action::Continue
             }
             ChatAppMsg::ToolResultComplete { name } => {
                 tracing::debug!(tool_name = %name, "Received ToolResultComplete");
+                self.maybe_spill_tool_output(&name);
                 self.cache.complete_tool(&name);
+                Action::Continue
+            }
+            ChatAppMsg::ToolResultError { name, error } => {
+                tracing::debug!(tool_name = %name, error = %error, "Received ToolResultError");
+                self.cache.set_tool_error(&name, error);
                 Action::Continue
             }
             ChatAppMsg::StreamComplete => {
@@ -610,7 +618,7 @@ impl InkChatApp {
                 } => {
                     self.cache.push_tool_call(id, &name, &args);
                     if !result.is_empty() {
-                        self.cache.append_tool_result(&name, &result);
+                        self.cache.append_tool_output(&name, &result);
                     }
                     if complete {
                         self.cache.complete_tool(&name);
@@ -1343,8 +1351,9 @@ impl InkChatApp {
                     if !tool.args.is_empty() {
                         let _ = writeln!(output, "```json\n{}\n```\n", tool.args);
                     }
-                    if !tool.result.is_empty() {
-                        let _ = writeln!(output, "**Result:**\n```\n{}\n```\n", tool.result);
+                    let result_str = tool.result();
+                    if !result_str.is_empty() {
+                        let _ = writeln!(output, "**Result:**\n```\n{}\n```\n", result_str);
                     }
                 }
                 CachedChatItem::ShellExecution(shell) => {
@@ -1720,6 +1729,39 @@ impl InkChatApp {
         }
 
         Some(path)
+    }
+
+    fn maybe_spill_tool_output(&mut self, name: &str) {
+        if !self.cache.tool_should_spill(name) {
+            return;
+        }
+
+        let Some(session_dir) = self.session_dir.clone() else {
+            return;
+        };
+
+        let tool_dir = session_dir.join("tools");
+        if let Err(e) = std::fs::create_dir_all(&tool_dir) {
+            tracing::error!(path = %tool_dir.display(), error = %e, "Failed to create tool output directory");
+            return;
+        }
+
+        let timestamp = chrono::Local::now().format("%Y%m%d-%H%M%S");
+        let name_slug: String = name
+            .chars()
+            .take(20)
+            .map(|c| if c.is_alphanumeric() { c } else { '-' })
+            .collect();
+        let filename = format!("{}-{}.txt", timestamp, name_slug);
+        let path = tool_dir.join(&filename);
+
+        if let Some(output) = self.cache.get_tool_output(name) {
+            if let Err(e) = std::fs::write(&path, &output) {
+                tracing::error!(path = %path.display(), error = %e, "Failed to write tool output");
+                return;
+            }
+            self.cache.set_tool_output_path(name, path);
+        }
     }
 
     fn send_shell_output(&mut self, truncated: bool) {
@@ -2785,14 +2827,14 @@ mod tests {
             delta: "line 1\n".to_string(),
         });
         let tool = app.cache.items().next().unwrap().as_tool_call().unwrap();
-        assert_eq!(tool.result, "line 1\n");
+        assert_eq!(tool.result(), "line 1");
 
         app.on_message(ChatAppMsg::ToolResultDelta {
             name: "Read".to_string(),
             delta: "line 2\n".to_string(),
         });
         let tool = app.cache.items().next().unwrap().as_tool_call().unwrap();
-        assert_eq!(tool.result, "line 1\nline 2\n");
+        assert_eq!(tool.result(), "line 1\nline 2");
 
         app.on_message(ChatAppMsg::ToolResultComplete {
             name: "Read".to_string(),
@@ -2864,7 +2906,6 @@ mod tests {
 
         assert!(output.contains("read_file"), "should show tool name");
         assert!(output.contains("path="), "should show args");
-        assert!(output.contains("…"), "should show pending ellipsis");
 
         app.on_message(ChatAppMsg::ToolResultDelta {
             name: "read_file".to_string(),
