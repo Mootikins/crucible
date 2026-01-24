@@ -165,7 +165,6 @@ impl NoteTools {
         Ok(CallToolResult::success(vec![rmcp::model::Content::json(
             serde_json::json!({
                 "path": path,
-                "full_path": full_path.to_string_lossy(),
                 "status": "created"
             }),
         )?]))
@@ -402,7 +401,6 @@ impl NoteTools {
         Ok(CallToolResult::success(vec![rmcp::model::Content::json(
             serde_json::json!({
                 "path": path,
-                "full_path": full_path.to_string_lossy(),
                 "status": "updated",
                 "updated_fields": updated_fields
             }),
@@ -436,7 +434,6 @@ impl NoteTools {
         Ok(CallToolResult::success(vec![rmcp::model::Content::json(
             serde_json::json!({
                 "path": path,
-                "full_path": full_path.to_string_lossy(),
                 "status": "deleted"
             }),
         )?]))
@@ -743,13 +740,11 @@ mod tests {
         let call_result = result.unwrap();
         assert!(!call_result.content.is_empty());
 
-        // Check that the response is JSON with expected structure
         if let Some(content) = call_result.content.first() {
             if let Some(raw_text) = content.as_text() {
                 let parsed: serde_json::Value = serde_json::from_str(&raw_text.text).unwrap();
                 assert_eq!(parsed["path"], "test.md");
                 assert_eq!(parsed["status"], "created");
-                assert!(parsed["full_path"].as_str().unwrap().contains("test.md"));
             }
         }
     }
