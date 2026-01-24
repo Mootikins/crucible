@@ -1,8 +1,8 @@
 use crate::tui::oil::ansi::visual_rows;
+use crate::tui::oil::graduation::{GraduatedContent, GraduationState};
 use crate::tui::oil::node::{Node, OverlayNode};
 use crate::tui::oil::overlay::{extract_overlays, filter_overlays, OverlayAnchor};
 use crate::tui::oil::render::{render_to_string, render_with_cursor_filtered, RenderResult};
-use crate::tui::oil::runtime::{GraduatedContent, GraduationState};
 
 #[derive(Debug, Clone)]
 pub struct FrameTrace {
@@ -75,6 +75,16 @@ impl FrameSnapshot {
     }
 }
 
+/// Orchestrates frame rendering with graduation-first ordering.
+///
+/// # Execution Order (critical for no-duplication invariant)
+///
+/// 1. `plan_graduation()` - identify content to graduate
+/// 2. `format_stdout_delta()` - build stdout output
+/// 3. `commit_graduation()` - mark keys as graduated
+/// 4. `render_with_filter()` - render viewport (skips graduated keys)
+///
+/// This order ensures content is written to stdout BEFORE being filtered from viewport.
 pub struct FramePlanner {
     width: u16,
     height: u16,

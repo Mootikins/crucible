@@ -139,7 +139,7 @@ impl InkChatRunner {
 
         let ctx = ViewContext::new(&self.focus);
         let tree = app.view(&ctx);
-        self.terminal.render(&tree)?;
+        let _ = self.terminal.render(&tree)?;
 
         let selection = self.discover_agent().await;
         let mut agent = create_agent(selection).await?;
@@ -175,10 +175,13 @@ impl InkChatRunner {
             let ctx = ViewContext::new(&self.focus);
             let tree = app.view(&ctx);
 
-            if app.has_shell_modal() {
-                self.terminal.render_fullscreen(&tree)?;
+            let graduated_keys = if app.has_shell_modal() {
+                self.terminal.render_fullscreen(&tree)?
             } else {
-                self.terminal.render(&tree)?;
+                self.terminal.render(&tree)?
+            };
+            if !graduated_keys.is_empty() {
+                app.mark_graduated(graduated_keys);
             }
 
             while let Ok(msg) = msg_rx.try_recv() {
