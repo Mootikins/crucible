@@ -66,6 +66,7 @@ impl RpcDispatcher {
         Self { ctx }
     }
 
+    #[allow(dead_code)]
     pub fn context(&self) -> &RpcContext {
         &self.ctx
     }

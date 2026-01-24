@@ -239,16 +239,13 @@ macro_rules! optional_bool_param {
 }
 
 // Re-export macros for use in sibling modules via `use crate::rpc_helpers::*`
-pub use crate::optional_bool_param;
-pub use crate::optional_f64_param;
-pub use crate::optional_i64_param;
-pub use crate::optional_str_param;
-pub use crate::optional_u64_param;
-pub use crate::require_array_param;
-pub use crate::require_bool_param;
-pub use crate::require_f64_param;
-pub use crate::require_i64_param;
-pub use crate::require_str_param;
+// These are preemptive exports - not all are used yet but will be as handlers grow
+#[allow(unused_imports)]
+pub use crate::{
+    optional_bool_param, optional_f64_param, optional_i64_param, optional_str_param,
+    optional_u64_param, require_array_param, require_bool_param, require_f64_param,
+    require_i64_param, require_str_param,
+};
 
 #[cfg(test)]
 mod tests {

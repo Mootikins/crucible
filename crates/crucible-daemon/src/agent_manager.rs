@@ -76,6 +76,7 @@ impl AgentManager {
         Ok((session, agent))
     }
 
+    #[allow(dead_code)] // Future: concurrency guard for multi-client scenarios
     pub fn get_session_if_idle(
         &self,
         session_id: &str,
