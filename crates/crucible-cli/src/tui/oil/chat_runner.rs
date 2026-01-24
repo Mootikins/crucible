@@ -8,7 +8,7 @@ use crate::tui::oil::terminal::Terminal;
 use anyhow::Result;
 use crossterm::event::{Event as CtEvent, EventStream, KeyCode, KeyModifiers};
 use crucible_core::events::SessionEvent;
-use crucible_core::traits::chat::{AgentHandle, ChatChunk, ChatResult};
+use crucible_core::traits::chat::{AgentHandle, ChatChunk, ChatResult, SubagentEventType};
 use futures::stream::BoxStream;
 use futures::StreamExt;
 use std::io;
@@ -271,6 +271,32 @@ impl InkChatRunner {
                                         let _ = msg_tx.send(ChatAppMsg::ToolResultComplete {
                                             name: tr.name.clone(),
                                         });
+                                    }
+                                }
+                            }
+
+                            if let Some(ref subagent_events) = chunk.subagent_events {
+                                for event in subagent_events {
+                                    let msg = match event.event_type {
+                                        SubagentEventType::Spawned => ChatAppMsg::SubagentSpawned {
+                                            id: event.id.clone(),
+                                            prompt: event.prompt.clone().unwrap_or_default(),
+                                        },
+                                        SubagentEventType::Completed => ChatAppMsg::SubagentCompleted {
+                                            id: event.id.clone(),
+                                            summary: event.summary.clone().unwrap_or_default(),
+                                        },
+                                        SubagentEventType::Failed => ChatAppMsg::SubagentFailed {
+                                            id: event.id.clone(),
+                                            error: event.error.clone().unwrap_or_else(|| "Unknown error".to_string()),
+                                        },
+                                    };
+                                    if msg_tx.send(msg).is_err() {
+                                        tracing::warn!(
+                                            id = %event.id,
+                                            event_type = ?event.event_type,
+                                            "UI channel closed, SubagentEvent dropped"
+                                        );
                                     }
                                 }
                             }

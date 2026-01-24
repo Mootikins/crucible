@@ -150,9 +150,7 @@ async fn test_tool_call_persistence() {
             serde_json::json!({"path": "test.rs"}),
         )
         .await;
-    logger
-        .log_tool_result("tc_001", "fn main() {}", false)
-        .await;
+    logger.log_tool_result("tc_001", "fn main() {}").await;
     logger.accumulate_assistant_chunk("Done!").await;
     logger.flush_assistant_message(Some("test-model")).await;
     let session_id = logger.session_id().await.unwrap();

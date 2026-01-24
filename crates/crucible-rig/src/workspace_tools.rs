@@ -12,6 +12,7 @@
 //! - `GlobTool` - Find files by pattern
 //! - `GrepTool` - Search file contents with regex
 
+use crucible_core::background::BackgroundSpawner;
 use crucible_tools::WorkspaceTools;
 use rig::completion::ToolDefinition;
 use rig::tool::Tool;
@@ -47,6 +48,8 @@ pub enum WorkspaceToolError {
 pub struct WorkspaceContext {
     tools: Arc<WorkspaceTools>,
     mode_id: Arc<RwLock<String>>,
+    session_id: Arc<RwLock<Option<String>>>,
+    background_spawner: Option<Arc<dyn BackgroundSpawner>>,
 }
 
 impl WorkspaceContext {
@@ -55,7 +58,27 @@ impl WorkspaceContext {
         Self {
             tools: Arc::new(WorkspaceTools::new(workspace_root)),
             mode_id: Arc::new(RwLock::new("auto".to_string())),
+            session_id: Arc::new(RwLock::new(None)),
+            background_spawner: None,
         }
+    }
+
+    /// Set the background task spawner
+    pub fn with_background_spawner(mut self, spawner: Arc<dyn BackgroundSpawner>) -> Self {
+        self.background_spawner = Some(spawner);
+        self
+    }
+
+    /// Set the session ID for background task tracking
+    pub fn set_session_id(&self, session_id: &str) {
+        if let Ok(mut guard) = self.session_id.write() {
+            *guard = Some(session_id.to_string());
+        }
+    }
+
+    /// Get the current session ID
+    pub fn session_id(&self) -> Option<String> {
+        self.session_id.read().ok().and_then(|g| g.clone())
     }
 
     /// Set the current mode (plan/act/auto)
@@ -73,16 +96,24 @@ impl WorkspaceContext {
             .unwrap_or(false)
     }
 
-    /// Get all workspace tools as a vector for agent building
     pub fn all_tools(&self) -> Vec<Box<dyn rig::tool::ToolDyn>> {
-        vec![
+        let mut tools: Vec<Box<dyn rig::tool::ToolDyn>> = vec![
             Box::new(ReadFileTool::new(self.clone())),
             Box::new(EditFileTool::new(self.clone())),
             Box::new(WriteFileTool::new(self.clone())),
             Box::new(BashTool::new(self.clone())),
             Box::new(GlobTool::new(self.clone())),
             Box::new(GrepTool::new(self.clone())),
-        ]
+        ];
+
+        if self.background_spawner.is_some() {
+            tools.push(Box::new(ListBackgroundTasksTool::new(self.clone())));
+            tools.push(Box::new(GetTaskResultTool::new(self.clone())));
+            tools.push(Box::new(CancelTaskTool::new(self.clone())));
+            tools.push(Box::new(SpawnSubagentTool::new(self.clone())));
+        }
+
+        tools
     }
 
     /// Get read-only tools for small models
@@ -387,13 +418,13 @@ impl Tool for WriteFileTool {
 // BashTool
 // =============================================================================
 
-/// Arguments for executing a bash command
+/// Arguments for `bash` tool.
 #[derive(Debug, Deserialize)]
 pub struct BashArgs {
-    /// Command to execute
     command: String,
-    /// Timeout in milliseconds
     timeout_ms: Option<u64>,
+    #[serde(default)]
+    background: bool,
 }
 
 /// Tool for executing bash commands
@@ -419,7 +450,7 @@ impl Tool for BashTool {
     async fn definition(&self, _prompt: String) -> ToolDefinition {
         ToolDefinition {
             name: Self::NAME.to_string(),
-            description: "Execute bash command. Use for git, npm, cargo, etc.".to_string(),
+            description: "Execute bash command. Use for git, npm, cargo, etc. Set background=true for long-running commands.".to_string(),
             parameters: json!({
                 "type": "object",
                 "properties": {
@@ -430,6 +461,10 @@ impl Tool for BashTool {
                     "timeout_ms": {
                         "type": "integer",
                         "description": "Timeout in milliseconds (default: 120000)"
+                    },
+                    "background": {
+                        "type": "boolean",
+                        "description": "Run in background (returns task_id immediately)"
                     }
                 },
                 "required": ["command"]
@@ -445,6 +480,32 @@ impl Tool for BashTool {
         if ctx.is_write_blocked() {
             return Err(WorkspaceToolError::Blocked(
                 "bash is blocked in plan mode".to_string(),
+            ));
+        }
+
+        if args.background {
+            let spawner = ctx.background_spawner.as_ref().ok_or_else(|| {
+                WorkspaceToolError::Command(
+                    "Background execution not available (no spawner configured)".to_string(),
+                )
+            })?;
+
+            let session_id = ctx.session_id().ok_or_else(|| {
+                WorkspaceToolError::Command(
+                    "Background execution requires session_id".to_string(),
+                )
+            })?;
+
+            let timeout = args.timeout_ms.map(std::time::Duration::from_millis);
+
+            let task_id = spawner
+                .spawn_bash(&session_id, args.command.clone(), None, timeout)
+                .await
+                .map_err(|e| WorkspaceToolError::Command(format!("Failed to spawn background task: {}", e)))?;
+
+            return Ok(format!(
+                "Task spawned in background. task_id: {}\nUse list_background_tasks to check status.",
+                task_id
             ));
         }
 
@@ -614,21 +675,336 @@ impl Tool for GrepTool {
 }
 
 // =============================================================================
+// ListBackgroundTasksTool
+// =============================================================================
+
+#[derive(Debug, Deserialize)]
+pub struct ListBackgroundTasksArgs {
+    #[serde(default)]
+    filter: Option<String>,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+pub struct ListBackgroundTasksTool {
+    #[serde(skip)]
+    ctx: Option<WorkspaceContext>,
+}
+
+impl ListBackgroundTasksTool {
+    pub fn new(ctx: WorkspaceContext) -> Self {
+        Self { ctx: Some(ctx) }
+    }
+}
+
+impl Tool for ListBackgroundTasksTool {
+    const NAME: &'static str = "list_background_tasks";
+    type Error = WorkspaceToolError;
+    type Args = ListBackgroundTasksArgs;
+    type Output = String;
+
+    async fn definition(&self, _prompt: String) -> ToolDefinition {
+        ToolDefinition {
+            name: Self::NAME.to_string(),
+            description: "List background tasks (running and completed) for this session.".to_string(),
+            parameters: json!({
+                "type": "object",
+                "properties": {
+                    "filter": {
+                        "type": "string",
+                        "description": "Filter: 'all' (default), 'running', or 'completed'",
+                        "enum": ["all", "running", "completed"]
+                    }
+                },
+                "required": []
+            }),
+        }
+    }
+
+    async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
+        let ctx = self.ctx.as_ref().ok_or_else(|| {
+            WorkspaceToolError::Command("Tool not initialized with context".to_string())
+        })?;
+
+        let spawner = ctx.background_spawner.as_ref().ok_or_else(|| {
+            WorkspaceToolError::Command("Background task manager not available".to_string())
+        })?;
+
+        let session_id = ctx.session_id().ok_or_else(|| {
+            WorkspaceToolError::Command("No session ID available".to_string())
+        })?;
+
+        let tasks = spawner.list_tasks(&session_id);
+        let filter = args.filter.as_deref().unwrap_or("all");
+
+        let filtered: Vec<_> = tasks
+            .into_iter()
+            .filter(|t| match filter {
+                "running" => !t.status.is_terminal(),
+                "completed" => t.status.is_terminal(),
+                _ => true,
+            })
+            .collect();
+
+        if filtered.is_empty() {
+            return Ok("No background tasks found.".to_string());
+        }
+
+        let mut output = String::new();
+        for task in filtered {
+            let duration = task
+                .duration()
+                .map(|d| format!(" ({}s)", d.num_seconds()))
+                .unwrap_or_default();
+            output.push_str(&format!(
+                "- {} [{}] {}{}\n",
+                task.id,
+                task.status,
+                task.kind.summary(),
+                duration
+            ));
+        }
+
+        Ok(output)
+    }
+}
+
+// =============================================================================
+// GetTaskResultTool
+// =============================================================================
+
+#[derive(Debug, Deserialize)]
+pub struct GetTaskResultArgs {
+    task_id: String,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+pub struct GetTaskResultTool {
+    #[serde(skip)]
+    ctx: Option<WorkspaceContext>,
+}
+
+impl GetTaskResultTool {
+    pub fn new(ctx: WorkspaceContext) -> Self {
+        Self { ctx: Some(ctx) }
+    }
+}
+
+impl Tool for GetTaskResultTool {
+    const NAME: &'static str = "get_task_result";
+    type Error = WorkspaceToolError;
+    type Args = GetTaskResultArgs;
+    type Output = String;
+
+    async fn definition(&self, _prompt: String) -> ToolDefinition {
+        ToolDefinition {
+            name: Self::NAME.to_string(),
+            description: "Get the result of a background task.".to_string(),
+            parameters: json!({
+                "type": "object",
+                "properties": {
+                    "task_id": {
+                        "type": "string",
+                        "description": "The task ID to get results for"
+                    }
+                },
+                "required": ["task_id"]
+            }),
+        }
+    }
+
+    async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
+        let ctx = self.ctx.as_ref().ok_or_else(|| {
+            WorkspaceToolError::Command("Tool not initialized with context".to_string())
+        })?;
+
+        let spawner = ctx.background_spawner.as_ref().ok_or_else(|| {
+            WorkspaceToolError::Command("Background task manager not available".to_string())
+        })?;
+
+        let result = spawner.get_task_result(&args.task_id).ok_or_else(|| {
+            WorkspaceToolError::Command(format!("Task not found: {}", args.task_id))
+        })?;
+
+        let mut output = format!("Task: {}\nStatus: {}\nKind: {}\n", 
+            result.info.id, 
+            result.info.status, 
+            result.info.kind.name()
+        );
+
+        if let Some(duration) = result.info.duration() {
+            output.push_str(&format!("Duration: {}s\n", duration.num_seconds()));
+        }
+
+        if let Some(ref out) = result.output {
+            output.push_str(&format!("\nOutput:\n{}\n", out));
+        }
+
+        if let Some(ref err) = result.error {
+            output.push_str(&format!("\nError:\n{}\n", err));
+        }
+
+        if let Some(code) = result.exit_code {
+            output.push_str(&format!("\nExit code: {}\n", code));
+        }
+
+        Ok(output)
+    }
+}
+
+// =============================================================================
+// CancelTaskTool
+// =============================================================================
+
+#[derive(Debug, Deserialize)]
+pub struct CancelTaskArgs {
+    task_id: String,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+pub struct CancelTaskTool {
+    #[serde(skip)]
+    ctx: Option<WorkspaceContext>,
+}
+
+impl CancelTaskTool {
+    pub fn new(ctx: WorkspaceContext) -> Self {
+        Self { ctx: Some(ctx) }
+    }
+}
+
+impl Tool for CancelTaskTool {
+    const NAME: &'static str = "cancel_task";
+    type Error = WorkspaceToolError;
+    type Args = CancelTaskArgs;
+    type Output = String;
+
+    async fn definition(&self, _prompt: String) -> ToolDefinition {
+        ToolDefinition {
+            name: Self::NAME.to_string(),
+            description: "Cancel a running background task.".to_string(),
+            parameters: json!({
+                "type": "object",
+                "properties": {
+                    "task_id": {
+                        "type": "string",
+                        "description": "The task ID to cancel"
+                    }
+                },
+                "required": ["task_id"]
+            }),
+        }
+    }
+
+    async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
+        let ctx = self.ctx.as_ref().ok_or_else(|| {
+            WorkspaceToolError::Command("Tool not initialized with context".to_string())
+        })?;
+
+        let spawner = ctx.background_spawner.as_ref().ok_or_else(|| {
+            WorkspaceToolError::Command("Background task manager not available".to_string())
+        })?;
+
+        let cancelled = spawner.cancel_task(&args.task_id).await;
+
+        if cancelled {
+            Ok(format!("Task {} cancelled successfully.", args.task_id))
+        } else {
+            Err(WorkspaceToolError::Command(format!(
+                "Task {} not found or already completed.",
+                args.task_id
+            )))
+        }
+    }
+}
+
+// =============================================================================
+// SpawnSubagentTool
+// =============================================================================
+
+#[derive(Debug, Deserialize)]
+pub struct SpawnSubagentArgs {
+    prompt: String,
+    #[serde(default)]
+    context: Option<String>,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+pub struct SpawnSubagentTool {
+    #[serde(skip)]
+    ctx: Option<WorkspaceContext>,
+}
+
+impl SpawnSubagentTool {
+    pub fn new(ctx: WorkspaceContext) -> Self {
+        Self { ctx: Some(ctx) }
+    }
+}
+
+impl Tool for SpawnSubagentTool {
+    const NAME: &'static str = "spawn_subagent";
+    type Error = WorkspaceToolError;
+    type Args = SpawnSubagentArgs;
+    type Output = String;
+
+    async fn definition(&self, _prompt: String) -> ToolDefinition {
+        ToolDefinition {
+            name: Self::NAME.to_string(),
+            description: "Spawn a background subagent to work on a task autonomously.".to_string(),
+            parameters: json!({
+                "type": "object",
+                "properties": {
+                    "prompt": {
+                        "type": "string",
+                        "description": "The task for the subagent to complete"
+                    },
+                    "context": {
+                        "type": "string",
+                        "description": "Additional context to provide to the subagent"
+                    }
+                },
+                "required": ["prompt"]
+            }),
+        }
+    }
+
+    async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
+        let ctx = self.ctx.as_ref().ok_or_else(|| {
+            WorkspaceToolError::Command("Tool not initialized with context".to_string())
+        })?;
+
+        let spawner = ctx.background_spawner.as_ref().ok_or_else(|| {
+            WorkspaceToolError::Command("Background task spawning not available".to_string())
+        })?;
+
+        let session_id = ctx.session_id().ok_or_else(|| {
+            WorkspaceToolError::Command("No session ID available".to_string())
+        })?;
+
+        let task_id = spawner
+            .spawn_subagent(&session_id, args.prompt.clone(), args.context)
+            .await
+            .map_err(|e| WorkspaceToolError::Command(format!("Failed to spawn subagent: {}", e)))?;
+
+        Ok(format!(
+            "Subagent spawned in background. task_id: {}\nUse list_background_tasks to check status, get_task_result to get output.",
+            task_id
+        ))
+    }
+}
+
+// =============================================================================
 // Helper functions
 // =============================================================================
 
-/// Extract text content from a CallToolResult
 fn extract_text_content(
     result: &rmcp::model::CallToolResult,
 ) -> Result<String, WorkspaceToolError> {
-    // Get first text content from the result
     for content in &result.content {
         if let Some(text) = content.as_text() {
             return Ok(text.text.to_string());
         }
     }
 
-    // If no text content, return empty string
     Ok(String::new())
 }
 
@@ -729,11 +1105,29 @@ mod tests {
         let args = BashArgs {
             command: "echo hello".to_string(),
             timeout_ms: None,
+            background: false,
         };
 
         let result = tool.call(args).await;
         assert!(result.is_ok());
         assert!(result.unwrap().contains("hello"));
+    }
+
+    #[tokio::test]
+    async fn test_bash_background_requires_spawner() {
+        let (_temp, ctx) = create_test_context();
+        let tool = BashTool::new(ctx);
+
+        let args = BashArgs {
+            command: "echo hello".to_string(),
+            timeout_ms: None,
+            background: true,
+        };
+
+        let result = tool.call(args).await;
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(matches!(err, WorkspaceToolError::Command(_)));
     }
 
     #[tokio::test]

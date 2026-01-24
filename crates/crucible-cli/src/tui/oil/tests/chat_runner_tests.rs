@@ -49,6 +49,7 @@ impl MockAgent {
             tool_results: None,
             reasoning: None,
             usage: None,
+            subagent_events: None,
         }])
     }
 
@@ -62,6 +63,7 @@ impl MockAgent {
                 tool_results: None,
                 reasoning: None,
                 usage: None,
+                subagent_events: None,
             })
             .collect();
 
@@ -454,6 +456,7 @@ mod daemon_event_to_tui_tests {
             tool_results: None,
             reasoning: None,
             usage: None,
+            subagent_events: None,
         };
 
         for msg in chunk_to_app_msgs(chunk) {
@@ -489,6 +492,7 @@ mod daemon_event_to_tui_tests {
             tool_results: None,
             reasoning: None,
             usage: None,
+            subagent_events: None,
         };
 
         for msg in chunk_to_app_msgs(chunk) {
@@ -527,6 +531,7 @@ mod daemon_event_to_tui_tests {
             }]),
             reasoning: None,
             usage: None,
+            subagent_events: None,
         };
 
         for msg in chunk_to_app_msgs(chunk) {
@@ -559,6 +564,7 @@ mod daemon_event_to_tui_tests {
             tool_results: None,
             reasoning: None,
             usage: None,
+            subagent_events: None,
         };
 
         for msg in chunk_to_app_msgs(chunk) {
@@ -581,6 +587,7 @@ mod daemon_event_to_tui_tests {
                 tool_results: None,
                 reasoning: None,
                 usage: None,
+                subagent_events: None,
             },
             ChatChunk {
                 delta: "am ".to_string(),
@@ -589,6 +596,7 @@ mod daemon_event_to_tui_tests {
                 tool_results: None,
                 reasoning: None,
                 usage: None,
+                subagent_events: None,
             },
             ChatChunk {
                 delta: "Claude!".to_string(),
@@ -597,6 +605,7 @@ mod daemon_event_to_tui_tests {
                 tool_results: None,
                 reasoning: None,
                 usage: None,
+                subagent_events: None,
             },
         ];
 
@@ -636,6 +645,7 @@ mod daemon_event_to_tui_tests {
                 completion_tokens: 50,
                 total_tokens: 150,
             }),
+            subagent_events: None,
         };
 
         for msg in chunk_to_app_msgs_with_limit(chunk, 1000) {
@@ -670,6 +680,7 @@ mod daemon_event_to_tui_tests {
                 completion_tokens: 500,
                 total_tokens: 2500,
             }),
+            subagent_events: None,
         };
 
         for msg in chunk_to_app_msgs_with_limit(chunk, 0) {
@@ -762,6 +773,130 @@ mod daemon_event_to_tui_tests {
         assert!(
             output.contains('\u{2713}') || output.contains("✓"),
             "Completed tool should show checkmark.\nOutput:\n{}",
+            output
+        );
+    }
+
+    #[test]
+    fn subagent_spawned_shows_in_ui() {
+        let mut app = InkChatApp::default();
+        app.on_message(ChatAppMsg::UserMessage("Research topic".to_string()));
+
+        app.on_message(ChatAppMsg::SubagentSpawned {
+            id: "agent-1".to_string(),
+            prompt: "Research the codebase for patterns".to_string(),
+        });
+
+        let focus = FocusContext::new();
+        let ctx = ViewContext::new(&focus);
+        let tree = app.view(&ctx);
+        let output = render_to_string(&tree, 100);
+
+        assert!(
+            output.contains("subagent"),
+            "Subagent should appear in UI.\nOutput:\n{}",
+            output
+        );
+        assert!(
+            output.contains("Research"),
+            "Subagent prompt should be visible.\nOutput:\n{}",
+            output
+        );
+    }
+
+    #[test]
+    fn subagent_completed_shows_checkmark() {
+        let mut app = InkChatApp::default();
+        app.on_message(ChatAppMsg::UserMessage("Research".to_string()));
+
+        app.on_message(ChatAppMsg::SubagentSpawned {
+            id: "agent-1".to_string(),
+            prompt: "Find patterns".to_string(),
+        });
+        app.on_message(ChatAppMsg::SubagentCompleted {
+            id: "agent-1".to_string(),
+            summary: "Found 3 patterns in codebase".to_string(),
+        });
+
+        let focus = FocusContext::new();
+        let ctx = ViewContext::new(&focus);
+        let tree = app.view(&ctx);
+        let output = render_to_string(&tree, 100);
+
+        assert!(
+            output.contains('\u{2713}') || output.contains("✓"),
+            "Completed subagent should show checkmark.\nOutput:\n{}",
+            output
+        );
+        assert!(
+            output.contains("Found 3"),
+            "Summary should be visible.\nOutput:\n{}",
+            output
+        );
+    }
+
+    #[test]
+    fn subagent_failed_shows_error() {
+        let mut app = InkChatApp::default();
+        app.on_message(ChatAppMsg::UserMessage("Research".to_string()));
+
+        app.on_message(ChatAppMsg::SubagentSpawned {
+            id: "agent-1".to_string(),
+            prompt: "Find patterns".to_string(),
+        });
+        app.on_message(ChatAppMsg::SubagentFailed {
+            id: "agent-1".to_string(),
+            error: "Connection timeout".to_string(),
+        });
+
+        let focus = FocusContext::new();
+        let ctx = ViewContext::new(&focus);
+        let tree = app.view(&ctx);
+        let output = render_to_string(&tree, 100);
+
+        assert!(
+            output.contains('\u{2717}') || output.contains("✗"),
+            "Failed subagent should show X mark.\nOutput:\n{}",
+            output
+        );
+        assert!(
+            output.contains("timeout"),
+            "Error should be visible.\nOutput:\n{}",
+            output
+        );
+    }
+
+    #[test]
+    fn multiple_subagents_displayed_correctly() {
+        let mut app = InkChatApp::default();
+        app.on_message(ChatAppMsg::UserMessage("Research".to_string()));
+
+        app.on_message(ChatAppMsg::SubagentSpawned {
+            id: "agent-1".to_string(),
+            prompt: "First task".to_string(),
+        });
+        app.on_message(ChatAppMsg::SubagentSpawned {
+            id: "agent-2".to_string(),
+            prompt: "Second task".to_string(),
+        });
+        app.on_message(ChatAppMsg::SubagentCompleted {
+            id: "agent-1".to_string(),
+            summary: "Done".to_string(),
+        });
+
+        let focus = FocusContext::new();
+        let ctx = ViewContext::new(&focus);
+        let tree = app.view(&ctx);
+        let output = render_to_string(&tree, 100);
+
+        assert!(
+            output.contains("First task"),
+            "First subagent should appear.\nOutput:\n{}",
+            output
+        );
+        assert!(
+            output.contains("Second task"),
+            "Second subagent should appear.\nOutput:\n{}",
             output
         );
     }

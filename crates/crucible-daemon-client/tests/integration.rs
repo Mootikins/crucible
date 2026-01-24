@@ -1189,6 +1189,7 @@ mod event_flow_tests {
                     tool_results: None,
                     reasoning: None,
                     usage: None,
+                    subagent_events: None,
                 })
             }
             "thinking" => {
@@ -1200,6 +1201,7 @@ mod event_flow_tests {
                     tool_results: None,
                     reasoning: Some(content.to_string()),
                     usage: None,
+                    subagent_events: None,
                 })
             }
             "tool_call" => {
@@ -1217,6 +1219,7 @@ mod event_flow_tests {
                     tool_results: None,
                     reasoning: None,
                     usage: None,
+                    subagent_events: None,
                 })
             }
             "tool_result" => {
@@ -1238,6 +1241,7 @@ mod event_flow_tests {
                     }]),
                     reasoning: None,
                     usage: None,
+                    subagent_events: None,
                 })
             }
             "message_complete" | "ended" => Some(crucible_core::traits::chat::ChatChunk {
@@ -1247,6 +1251,7 @@ mod event_flow_tests {
                 tool_results: None,
                 reasoning: None,
                 usage: None,
+                subagent_events: None,
             }),
             _ => None,
         }

@@ -419,7 +419,8 @@ where
                                     tool_calls: None,
                                     tool_results: None,
                                     reasoning: None,
-                                usage: None,
+                                    usage: None,
+                                    subagent_events: None,
                                 });
                             }
                             ReasoningChunk::Reasoning(reasoning) => {
@@ -430,7 +431,8 @@ where
                                     tool_calls: None,
                                     tool_results: None,
                                     reasoning: Some(reasoning),
-                                usage: None,
+                                    usage: None,
+                                    subagent_events: None,
                                 });
                             }
                             ReasoningChunk::ToolCall { id, name, arguments } => {
@@ -450,7 +452,8 @@ where
                                     }]),
                                     tool_results: None,
                                     reasoning: None,
-                                usage: None,
+                                    usage: None,
+                                    subagent_events: None,
                                 });
                             }
                             ReasoningChunk::Done => {
@@ -474,7 +477,8 @@ where
                                     tool_calls: None,
                                     tool_results: None,
                                     reasoning: None,
-                                usage: None,
+                                    usage: None,
+                                    subagent_events: None,
                                 });
                                 return;
                             }
@@ -495,7 +499,8 @@ where
                 tool_calls: None,
                 tool_results: None,
                 reasoning: None,
-                                usage: None,
+                usage: None,
+                subagent_events: None,
             });
         })
     }
@@ -654,7 +659,8 @@ where
                                                     tool_calls: Some(vec![chat_tc]),
                                                     tool_results: None,
                                                     reasoning: None,
-                                usage: None,
+                                                    usage: None,
+                                                    subagent_events: None,
                                                 });
                                                 // Immediately emit error result (shows as red failed tool)
                                                 yield Ok(ChatChunk {
@@ -667,7 +673,8 @@ where
                                                         error: Some("Blocked in plan mode".to_string()),
                                                     }]),
                                                     reasoning: None,
-                                usage: None,
+                                                    usage: None,
+                                                    subagent_events: None,
                                                 });
                                             } else {
                                                 yield Ok(ChatChunk {
@@ -676,7 +683,8 @@ where
                                                     tool_calls: Some(vec![chat_tc]),
                                                     tool_results: None,
                                                     reasoning: None,
-                                usage: None,
+                                                    usage: None,
+                                                    subagent_events: None,
                                                 });
                                             }
                                         }
@@ -693,7 +701,8 @@ where
                                                 tool_calls: None,
                                                 tool_results: None,
                                                 reasoning: None,
-                                usage: None,
+                                                usage: None,
+                                                subagent_events: None,
                                             });
                                             emitted_text_len = parse_result.cleaned_text.len();
                                         }
@@ -727,7 +736,8 @@ where
                                                     tool_calls: None,
                                                     tool_results: None,
                                                     reasoning: None,
-                                usage: None,
+                                                    usage: None,
+                                                    subagent_events: None,
                                                 });
                                             }
                                             emitted_text_len = accumulated_text.len();
@@ -740,7 +750,8 @@ where
                                             tool_calls: None,
                                             tool_results: None,
                                             reasoning: None,
-                                usage: None,
+                                            usage: None,
+                                            subagent_events: None,
                                         });
                                         emitted_text_len = accumulated_text.len();
                                     }
@@ -780,7 +791,8 @@ where
                                         tool_calls: Some(vec![chat_tc]),
                                         tool_results: None,
                                         reasoning: None,
-                                usage: None,
+                                        usage: None,
+                                        subagent_events: None,
                                     });
                                     // Immediately emit error result (shows as red failed tool)
                                     yield Ok(ChatChunk {
@@ -793,7 +805,8 @@ where
                                             error: Some("Blocked in plan mode".to_string()),
                                         }]),
                                         reasoning: None,
-                                usage: None,
+                                        usage: None,
+                                        subagent_events: None,
                                     });
                                 } else {
                                     // Emit tool call immediately via tool_calls field
@@ -804,7 +817,8 @@ where
                                         tool_calls: Some(vec![chat_tc]),
                                         tool_results: None,
                                         reasoning: None,
-                                usage: None,
+                                        usage: None,
+                                        subagent_events: None,
                                     });
                                 }
                             }
@@ -819,6 +833,7 @@ where
                                         tool_results: None,
                                         reasoning: Some(reasoning_text),
                                         usage: None,
+                                        subagent_events: None,
                                     });
                                 }
                             }
@@ -831,7 +846,8 @@ where
                                         tool_calls: None,
                                         tool_results: None,
                                         reasoning: Some(reasoning),
-                                usage: None,
+                                        usage: None,
+                                        subagent_events: None,
                                     });
                                 }
                             }
@@ -883,7 +899,8 @@ where
                                 error: None, // Rig doesn't distinguish error results
                             }]),
                             reasoning: None,
-                                usage: None,
+                            usage: None,
+                            subagent_events: None,
                         });
 
                         tool_results.push(tr);
@@ -911,7 +928,8 @@ where
                                     tool_calls: None,
                                     tool_results: None,
                                     reasoning: None,
-                                usage: None,
+                                    usage: None,
+                                    subagent_events: None,
                                 });
                             }
                         }
@@ -980,6 +998,7 @@ where
                             tool_results: None,
                             reasoning: None,
                             usage,
+                            subagent_events: None,
                         });
                     }
                     Err(e) => {
@@ -1025,7 +1044,8 @@ where
                     tool_calls: None,
                     tool_results: None,
                     reasoning: None,
-                                usage: None,
+                    usage: None,
+                    subagent_events: None,
                 });
             }
         })

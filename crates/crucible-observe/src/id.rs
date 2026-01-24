@@ -17,6 +17,8 @@ pub enum SessionType {
     Workflow,
     /// MCP server session
     Mcp,
+    /// Background subagent session (child of a parent session)
+    Subagent,
 }
 
 impl fmt::Display for SessionType {
@@ -25,6 +27,7 @@ impl fmt::Display for SessionType {
             SessionType::Chat => write!(f, "chat"),
             SessionType::Workflow => write!(f, "workflow"),
             SessionType::Mcp => write!(f, "mcp"),
+            SessionType::Subagent => write!(f, "sub"),
         }
     }
 }
@@ -37,6 +40,7 @@ impl std::str::FromStr for SessionType {
             "chat" => Ok(SessionType::Chat),
             "workflow" => Ok(SessionType::Workflow),
             "mcp" => Ok(SessionType::Mcp),
+            "sub" => Ok(SessionType::Subagent),
             other => Err(format!("unknown session type: {other}")),
         }
     }

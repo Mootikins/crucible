@@ -170,6 +170,7 @@ mod viewport_cache_ordering {
                 CachedChatItem::Message(m) => format!("Msg({})", m.content()),
                 CachedChatItem::ToolCall(t) => format!("Tool({})", t.name),
                 CachedChatItem::ShellExecution(s) => format!("Shell({})", s.command),
+                CachedChatItem::Subagent(s) => format!("Subagent({})", s.id),
             })
             .collect();
 

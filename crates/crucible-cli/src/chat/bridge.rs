@@ -147,6 +147,7 @@ mod tests {
                         tool_results: None,
                         reasoning: None,
                         usage: None,
+                        subagent_events: None,
                     })
                 },
             )))
@@ -335,6 +336,7 @@ mod tests {
                         tool_results: None,
                         reasoning: None,
                         usage: None,
+                        subagent_events: None,
                     })
                 },
             )))
