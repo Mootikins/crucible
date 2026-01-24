@@ -148,7 +148,9 @@ end
 
 ## cru.oil: Building Views (Obvious Interface Language)
 
-The `cru.oil` module provides a declarative API for building TUI nodes in Lua:
+The `cru.oil` module provides a **functional, React-like API** for building TUI nodes. Components are functions that return node trees, and composition happens via function calls.
+
+### Basic Usage (Lua)
 
 ```lua
 local oil = cru.oil
@@ -156,27 +158,72 @@ local oil = cru.oil
 -- Text with styling
 local heading = oil.text("Tasks", { bold = true, fg = "blue" })
 
--- Box containers
-local container = oil.box({
-    direction = "column",
-    padding = 1,
-    border = "rounded",
-    children = {
-        oil.text("Header"),
-        oil.divider(),
-        oil.text("Content"),
-    }
-})
+-- Layout containers (col = vertical, row = horizontal)
+local view = oil.col({ gap = 1, padding = 1, border = "rounded" },
+    oil.text("Header", { bold = true }),
+    oil.row(
+        oil.badge("OK", { fg = "green" }),
+        oil.spacer(),
+        oil.text("Status")
+    ),
+    oil.divider()
+)
 
 -- Lists
-local bullets = oil.bullet_list({
-    oil.text("First item"),
-    oil.text("Second item"),
-})
+local bullets = oil.bullet_list({ "First item", "Second item" })
 
 -- Progress indicators
-local progress = oil.progress_bar(0.75)
-local loading = oil.spinner()
+local progress = oil.progress(0.75)
+local loading = oil.spinner("Loading...")
+```
+
+### Control Flow
+
+Use control flow functions for conditional and iterative rendering:
+
+```lua
+-- Conditional rendering
+oil.when(is_loading, oil.spinner("Loading..."))
+
+-- Conditional with else branch
+oil.if_else(is_online,
+    oil.text("Online", { fg = "green" }),
+    oil.text("Offline", { fg = "red" })
+)
+
+-- Iterate over items
+oil.each(items, function(item)
+    return oil.text(item.name)
+end)
+```
+
+### Reusable Components
+
+Create reusable components with the `component` factory:
+
+```lua
+-- Create a Card component with default props
+local Card = oil.component(oil.col, { padding = 2, border = "rounded" })
+
+-- Use with additional props (merged with defaults)
+local view = Card({ gap = 1 },
+    oil.text("Card Title", { bold = true }),
+    oil.text("Card body content")
+)
+```
+
+Or define components as regular functions:
+
+```lua
+local function StatusBar(props)
+    return oil.row({ justify = "space_between" },
+        oil.text(props.title, { bold = true }),
+        oil.badge(props.status, { fg = props.color })
+    )
+end
+
+-- Usage
+StatusBar({ title = "Dashboard", status = "OK", color = "green" })
 ```
 
 ### Available Components
@@ -184,22 +231,36 @@ local loading = oil.spinner()
 | Function | Description |
 |----------|-------------|
 | `oil.text(content, style?)` | Styled text |
-| `oil.box(opts)` | Container with direction, padding, border |
-| `oil.divider()` | Horizontal line |
-| `oil.spacer()` | Flexible space |
-| `oil.bullet_list(children)` | Bulleted list |
-| `oil.numbered_list(children)` | Numbered list |
-| `oil.key_value(key, value)` | Key: value pair |
-| `oil.badge(text, color)` | Colored badge |
-| `oil.progress_bar(percent)` | Progress indicator |
-| `oil.spinner()` | Loading spinner |
-| `oil.horizontal_rule()` | Full-width divider |
+| `oil.col(props?, children...)` | Vertical flex container |
+| `oil.row(props?, children...)` | Horizontal flex container |
+| `oil.fragment(children...)` | Invisible wrapper |
+| `oil.spacer()` | Flexible space filler |
+| `oil.divider(char?, width?)` | Horizontal line |
+| `oil.hr()` | Full-width horizontal rule |
+| `oil.badge(label, style?)` | Colored badge |
+| `oil.spinner(label?)` | Loading spinner |
+| `oil.progress(value, width?)` | Progress bar (value 0-1) |
+| `oil.input(opts)` | Text input field |
+| `oil.popup(items, selected?, max?)` | Popup menu |
+| `oil.bullet_list(items)` | Bulleted list |
+| `oil.numbered_list(items)` | Numbered list |
+| `oil.kv(key, value)` | Key-value pair row |
+| `oil.scrollback(key, children...)` | Scrollable container |
+
+### Control Flow Functions
+
+| Function | Description |
+|----------|-------------|
+| `oil.when(cond, node)` | Show node if condition is truthy |
+| `oil.if_else(cond, t, f)` | Show t if true, f if false (alias: `either`) |
+| `oil.each(items, fn)` | Map items to nodes |
+| `oil.component(base, defaults)` | Create component with default props |
 
 ### Style Options
 
 ```lua
 local style = {
-    fg = "red",        -- Foreground color
+    fg = "red",        -- Foreground: red, green, blue, yellow, etc. or "#hex"
     bg = "blue",       -- Background color
     bold = true,       -- Bold text
     dim = true,        -- Dimmed text
@@ -208,52 +269,72 @@ local style = {
 }
 ```
 
-### Box Options
+### Container Options
 
 ```lua
 local opts = {
-    direction = "row",      -- "row" or "column"
+    gap = 1,                -- Space between children
+    padding = 2,            -- Inner padding (all sides)
+    margin = 1,             -- Outer margin (all sides)
+    border = "rounded",     -- single, double, rounded, heavy
     justify = "center",     -- start, end, center, space_between, space_around, space_evenly
     align = "stretch",      -- start, end, center, stretch
-    padding = 2,            -- All sides
-    margin = 1,             -- All sides
-    gap = 1,                -- Between children
-    border = "single",      -- single, double, rounded, heavy
-    children = {},          -- Child nodes
 }
 ```
 
-### Node Spec Syntax
+### Markup Syntax
 
-For concise UI definitions, use node spec syntax (array-based markup):
+For template-driven UI, parse XML-like markup:
 
 ```lua
-local view = oil.build({
-    "box", { direction = "column", border = "rounded" },
-    {"text", { bold = true }, "Header"},
-    {"divider"},
-    {"text", "Content here"},
-})
+local view = oil.markup([[
+    <col border="rounded" gap="1">
+        <text bold="true">Header</text>
+        <divider />
+        <text>Content here</text>
+    </col>
+]])
 ```
 
 ## Fennel Support
 
-The same API is available in Fennel:
+The `lib/oil.fnl` module provides idiomatic Fennel wrappers:
 
 ```fennel
-;; database_selector.fnl
-(local ui (require "crucible.ui"))
+;; Load the oil module
+(local oil (require :oil))
 
-(fn choose-database []
-  (let [items [(ui.panel_item "PostgreSQL" "Full-featured RDBMS")
-               (ui.panel_item "SQLite" "Embedded, single-file")]
-        panel (ui.panel "Select database" items)
-        result (crucible.show_panel panel)]
-    (if result.cancelled
-        {:message "Cancelled"}
-        {:message (.. "You chose: " (. (. items (. result.selected 1)) :label))})))
+;; Define a reusable component
+(oil.defui status-bar [{: title : status : color}]
+  (oil.row {:justify :space-between}
+    (oil.text title {:bold true})
+    (oil.badge status {:fg color})))
 
-{:choose_database choose-database}
+;; Build a view
+(oil.col {:gap 1 :padding 1 :border :rounded}
+  (status-bar {:title "Dashboard" :status "OK" :color :green})
+  (oil.text "Welcome back!")
+  (oil.when loading (oil.spinner "Loading..."))
+  (oil.map-each items (fn [item]
+    (oil.text item.name))))
+```
+
+### Fennel-Specific Features
+
+| Macro/Function | Description |
+|----------------|-------------|
+| `(oil.defui name [props] body)` | Define a component function |
+| `(oil.cond-ui ...)` | Multi-branch conditional |
+| `(oil.when cond node)` | Conditional rendering |
+| `(oil.map-each items fn)` | Iterate items (named to avoid shadowing) |
+
+### Multi-Branch Conditional
+
+```fennel
+(oil.cond-ui
+  loading (oil.spinner "Loading...")
+  error   (oil.text error {:fg :red})
+  :else   (oil.text "Ready" {:fg :green}))
 ```
 
 ## See Also

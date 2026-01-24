@@ -83,10 +83,33 @@ Crucible also loads configuration from `~/.config/crucible/init.lua`. This allow
 
 See [[Help/Lua/Configuration]] for details.
 
+## Oil UI DSL
+
+Both Lua and Fennel can build TUI components using the **Oil** (Obvious Interface Language) API. Oil provides a functional, React-like model where components are functions that return node trees.
+
+```lua
+-- Lua
+local view = cru.oil.col({ gap = 1 },
+    cru.oil.text("Hello", { bold = true }),
+    cru.oil.when(loading, cru.oil.spinner())
+)
+```
+
+```fennel
+;; Fennel
+(local oil (require :oil))
+(oil.col {:gap 1}
+  (oil.text "Hello" {:bold true})
+  (oil.when loading (oil.spinner)))
+```
+
+See [[Help/Extending/Scripted UI]] for the full Oil component reference.
+
 ## See Also
 
 - [[Help/Lua/Language Basics]] — Lua reference
 - [[Help/Lua/Configuration]] — Lua configuration
+- [[Help/Extending/Scripted UI]] — Oil UI DSL reference
 - [[Help/Extending/Creating Plugins]] — Plugin development guide
 - [[Help/Extending/Custom Tools]] — Adding MCP tools
 - [[Help/Extending/Event Hooks]] — Reacting to events
