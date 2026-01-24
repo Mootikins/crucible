@@ -93,9 +93,23 @@ impl DaemonClient {
     }
 
     /// Connect to daemon or start it if not running (simple mode)
+    ///
+    /// Checks daemon version after connecting. If version mismatches (stale daemon),
+    /// shuts down the old daemon and starts a fresh one.
     pub async fn connect_or_start() -> Result<Self> {
         if let Ok(client) = Self::connect().await {
-            return Ok(client);
+            match client.check_version().await {
+                Ok(VersionCheck::Match) => return Ok(client),
+                Ok(VersionCheck::Mismatch { client: c, daemon: d }) => {
+                    warn!(client_sha = %c, daemon_sha = %d, "Daemon version mismatch, restarting");
+                    let _ = client.shutdown().await;
+                    tokio::time::sleep(Duration::from_millis(100)).await;
+                }
+                Err(e) => {
+                    debug!("Version check failed, assuming ok: {}", e);
+                    return Ok(client);
+                }
+            }
         }
 
         Self::start_daemon().await?;
@@ -116,11 +130,25 @@ impl DaemonClient {
     }
 
     /// Connect to daemon or start it if not running (event mode).
+    ///
     /// Returns event-mode client with receiver for streaming session events.
+    /// Checks daemon version after connecting. If version mismatches (stale daemon),
+    /// shuts down the old daemon and starts a fresh one.
     pub async fn connect_or_start_with_events(
     ) -> Result<(Self, mpsc::UnboundedReceiver<SessionEvent>)> {
-        if let Ok(result) = Self::connect_with_events().await {
-            return Ok(result);
+        if let Ok((client, rx)) = Self::connect_with_events().await {
+            match client.check_version().await {
+                Ok(VersionCheck::Match) => return Ok((client, rx)),
+                Ok(VersionCheck::Mismatch { client: c, daemon: d }) => {
+                    warn!(client_sha = %c, daemon_sha = %d, "Daemon version mismatch, restarting");
+                    let _ = client.shutdown().await;
+                    tokio::time::sleep(Duration::from_millis(100)).await;
+                }
+                Err(e) => {
+                    debug!("Version check failed, assuming ok: {}", e);
+                    return Ok((client, rx));
+                }
+            }
         }
 
         Self::start_daemon().await?;
