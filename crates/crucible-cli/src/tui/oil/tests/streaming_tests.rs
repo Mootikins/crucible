@@ -235,3 +235,152 @@ fn stream_cancel_graduates_existing_content() {
         post_cancel
     );
 }
+
+#[test]
+fn overflow_graduation_does_not_duplicate_content() {
+    let mut runtime = TestRuntime::new(80, 24);
+    let mut app = InkChatApp::default();
+
+    app.on_message(ChatAppMsg::UserMessage("run ls".to_string()));
+    let tree = view_with_default_ctx(&app);
+    runtime.render(&tree);
+
+    app.on_message(ChatAppMsg::ToolCall {
+        name: "bash".to_string(),
+        args: r#"{"command":"ls -la"}"#.to_string(),
+    });
+    let tree = view_with_default_ctx(&app);
+    runtime.render(&tree);
+
+    app.on_message(ChatAppMsg::ToolResultDelta {
+        name: "bash".to_string(),
+        delta: "total 100\n".to_string(),
+    });
+    let tree = view_with_default_ctx(&app);
+    runtime.render(&tree);
+
+    app.on_message(ChatAppMsg::ToolResultComplete {
+        name: "bash".to_string(),
+    });
+    let tree = view_with_default_ctx(&app);
+    runtime.render(&tree);
+
+    let mut long_response = String::new();
+    for i in 1..=25 {
+        long_response.push_str(&format!("Line {} of the response\n", i));
+        app.on_message(ChatAppMsg::TextDelta(format!(
+            "Line {} of the response\n",
+            i
+        )));
+        let tree = view_with_default_ctx(&app);
+        runtime.render(&tree);
+    }
+
+    app.on_message(ChatAppMsg::StreamComplete);
+    let tree = view_with_default_ctx(&app);
+    runtime.render(&tree);
+
+    let stdout = strip_ansi(runtime.stdout_content());
+
+    for i in 1..=25 {
+        let marker = format!("Line {} of the response", i);
+        let count = stdout.matches(&marker).count();
+        assert!(
+            count <= 1,
+            "Line {} appears {} times in stdout (should be 0 or 1):\n{}",
+            i,
+            count,
+            stdout
+        );
+    }
+
+    let bullet_count = stdout.matches('●').count();
+    assert!(
+        bullet_count <= 2,
+        "Too many bullets in stdout: {} (expected at most 2 - one for user, one for assistant):\n{}",
+        bullet_count, stdout
+    );
+}
+
+#[test]
+fn incremental_text_after_tool_no_duplication() {
+    let mut runtime = TestRuntime::new(80, 24);
+    let mut app = InkChatApp::default();
+
+    app.on_message(ChatAppMsg::UserMessage("test".to_string()));
+    let tree = view_with_default_ctx(&app);
+    runtime.render(&tree);
+
+    app.on_message(ChatAppMsg::ToolCall {
+        name: "bash".to_string(),
+        args: "{}".to_string(),
+    });
+    let tree = view_with_default_ctx(&app);
+    runtime.render(&tree);
+
+    app.on_message(ChatAppMsg::ToolResultDelta {
+        name: "bash".to_string(),
+        delta: "output line 1\n".to_string(),
+    });
+    app.on_message(ChatAppMsg::ToolResultDelta {
+        name: "bash".to_string(),
+        delta: "output line 2\n".to_string(),
+    });
+    app.on_message(ChatAppMsg::ToolResultComplete {
+        name: "bash".to_string(),
+    });
+    let tree = view_with_default_ctx(&app);
+    runtime.render(&tree);
+
+    app.on_message(ChatAppMsg::TextDelta("```\n".to_string()));
+    let tree = view_with_default_ctx(&app);
+    runtime.render(&tree);
+
+    app.on_message(ChatAppMsg::TextDelta("total 100\n".to_string()));
+    let tree = view_with_default_ctx(&app);
+    runtime.render(&tree);
+
+    app.on_message(ChatAppMsg::TextDelta("drwxr-xr-x file1\n".to_string()));
+    let tree = view_with_default_ctx(&app);
+    runtime.render(&tree);
+
+    app.on_message(ChatAppMsg::TextDelta("```\n".to_string()));
+    let tree = view_with_default_ctx(&app);
+    runtime.render(&tree);
+
+    app.on_message(ChatAppMsg::TextDelta("```\n".to_string()));
+    let tree = view_with_default_ctx(&app);
+    runtime.render(&tree);
+
+    app.on_message(ChatAppMsg::TextDelta("total 100\n".to_string()));
+    let tree = view_with_default_ctx(&app);
+    runtime.render(&tree);
+
+    app.on_message(ChatAppMsg::TextDelta("drwxr-xr-x file1\n".to_string()));
+    let tree = view_with_default_ctx(&app);
+    runtime.render(&tree);
+
+    app.on_message(ChatAppMsg::TextDelta("drwxr-xr-x file2\n".to_string()));
+    let tree = view_with_default_ctx(&app);
+    runtime.render(&tree);
+
+    app.on_message(ChatAppMsg::TextDelta("```\n".to_string()));
+    let tree = view_with_default_ctx(&app);
+    runtime.render(&tree);
+
+    app.on_message(ChatAppMsg::StreamComplete);
+    let tree = view_with_default_ctx(&app);
+    runtime.render(&tree);
+
+    let stdout = strip_ansi(runtime.stdout_content());
+    let viewport = strip_ansi(runtime.viewport_content());
+    let combined = format!("{}\n---VIEWPORT---\n{}", stdout, viewport);
+
+    let total_count = combined.matches("total 100").count();
+    assert!(
+        total_count <= 4,
+        "'total 100' appears {} times (expected at most 4 - two code blocks):\n{}",
+        total_count,
+        combined
+    );
+}

@@ -705,3 +705,289 @@ mod graduation_tracking {
         );
     }
 }
+
+/// Tests specifically for content duplication bugs.
+/// Ensures that content is never rendered twice in the output.
+mod duplicate_content_prevention {
+    use super::*;
+
+    /// Helper to count occurrences of a substring
+    fn count_occurrences(haystack: &str, needle: &str) -> usize {
+        haystack.matches(needle).count()
+    }
+
+    /// Test that text before a tool call is not duplicated
+    /// when more text comes after the tool call.
+    #[test]
+    fn text_before_tool_not_duplicated() {
+        let mut app = InkChatApp::default();
+        app.on_message(ChatAppMsg::UserMessage("test".to_string()));
+
+        // Send text, then tool call, then more text
+        app.on_message(ChatAppMsg::TextDelta("UNIQUE_MARKER_XYZ ".to_string()));
+        app.on_message(ChatAppMsg::ToolCall {
+            name: "my_tool".to_string(),
+            args: "{}".to_string(),
+        });
+        app.on_message(ChatAppMsg::ToolResultComplete {
+            name: "my_tool".to_string(),
+        });
+        app.on_message(ChatAppMsg::TextDelta("AFTER_TOOL".to_string()));
+
+        let output = render_app(&app);
+        let count = count_occurrences(&output, "UNIQUE_MARKER_XYZ");
+        assert_eq!(
+            count, 1,
+            "UNIQUE_MARKER_XYZ should appear exactly once, but found {} times.\nOutput:\n{}",
+            count, output
+        );
+    }
+
+    #[test]
+    fn no_duplicate_content_during_streaming() {
+        let mut app = InkChatApp::default();
+        app.on_message(ChatAppMsg::UserMessage("test".to_string()));
+
+        app.on_message(ChatAppMsg::TextDelta(
+            "Here are the tools I can use:\n\n".to_string(),
+        ));
+        app.on_message(ChatAppMsg::TextDelta(
+            "| Tool | Description |\n".to_string(),
+        ));
+        app.on_message(ChatAppMsg::TextDelta(
+            "|------|-------------|\n".to_string(),
+        ));
+        app.on_message(ChatAppMsg::TextDelta(
+            "| read | Read files  |\n\n".to_string(),
+        ));
+
+        app.on_message(ChatAppMsg::ToolCall {
+            name: "example_tool".to_string(),
+            args: "{}".to_string(),
+        });
+        app.on_message(ChatAppMsg::ToolResultComplete {
+            name: "example_tool".to_string(),
+        });
+
+        app.on_message(ChatAppMsg::TextDelta(
+            "Let me know what you'd like to do next!".to_string(),
+        ));
+
+        let output = render_app(&app);
+
+        let table_count = count_occurrences(&output, "Here are the tools");
+        assert_eq!(
+            table_count, 1,
+            "Table intro should appear exactly once, but found {} times.\nOutput:\n{}",
+            table_count, output
+        );
+
+        let tool_count = count_occurrences(&output, "Tool");
+        assert!(
+            tool_count >= 1,
+            "Tool column header should appear at least once.\nOutput:\n{}",
+            output
+        );
+
+        let desc_count = count_occurrences(&output, "Description");
+        assert_eq!(
+            desc_count, 1,
+            "Description should appear exactly once.\nOutput:\n{}",
+            output
+        );
+    }
+
+    /// Test that content is not duplicated after stream completion.
+    #[test]
+    fn no_duplicate_content_after_completion() {
+        let mut app = InkChatApp::default();
+        app.on_message(ChatAppMsg::UserMessage("test".to_string()));
+
+        app.on_message(ChatAppMsg::TextDelta("FIRST_BLOCK\n\n".to_string()));
+        app.on_message(ChatAppMsg::ToolCall {
+            name: "tool1".to_string(),
+            args: "{}".to_string(),
+        });
+        app.on_message(ChatAppMsg::ToolResultComplete {
+            name: "tool1".to_string(),
+        });
+        app.on_message(ChatAppMsg::TextDelta("SECOND_BLOCK".to_string()));
+        app.on_message(ChatAppMsg::StreamComplete);
+
+        let output = render_app(&app);
+
+        assert_eq!(
+            count_occurrences(&output, "FIRST_BLOCK"),
+            1,
+            "FIRST_BLOCK should appear exactly once.\nOutput:\n{}",
+            output
+        );
+        assert_eq!(
+            count_occurrences(&output, "SECOND_BLOCK"),
+            1,
+            "SECOND_BLOCK should appear exactly once.\nOutput:\n{}",
+            output
+        );
+    }
+
+    /// Test with subagent events to ensure they don't cause duplication.
+    #[test]
+    fn subagent_events_dont_cause_duplication() {
+        let mut app = InkChatApp::default();
+        app.on_message(ChatAppMsg::UserMessage("test".to_string()));
+
+        app.on_message(ChatAppMsg::TextDelta("INTRO_TEXT\n\n".to_string()));
+        app.on_message(ChatAppMsg::SubagentSpawned {
+            id: "sub-1".to_string(),
+            prompt: "test subagent".to_string(),
+        });
+        app.on_message(ChatAppMsg::TextDelta("MIDDLE_TEXT\n\n".to_string()));
+        app.on_message(ChatAppMsg::SubagentCompleted {
+            id: "sub-1".to_string(),
+            summary: "Completed successfully".to_string(),
+        });
+        app.on_message(ChatAppMsg::TextDelta("FINAL_TEXT".to_string()));
+
+        let output = render_app(&app);
+
+        assert_eq!(
+            count_occurrences(&output, "INTRO_TEXT"),
+            1,
+            "INTRO_TEXT should appear exactly once.\nOutput:\n{}",
+            output
+        );
+        assert_eq!(
+            count_occurrences(&output, "MIDDLE_TEXT"),
+            1,
+            "MIDDLE_TEXT should appear exactly once.\nOutput:\n{}",
+            output
+        );
+        assert_eq!(
+            count_occurrences(&output, "FINAL_TEXT"),
+            1,
+            "FINAL_TEXT should appear exactly once.\nOutput:\n{}",
+            output
+        );
+    }
+
+    /// Test with longer content that triggers graduation.
+    #[test]
+    fn graduation_doesnt_cause_duplication() {
+        let mut app = InkChatApp::default();
+        app.on_message(ChatAppMsg::UserMessage("test".to_string()));
+
+        // Add text that will graduate (multiple paragraphs)
+        app.on_message(ChatAppMsg::TextDelta("PARA_ONE\n\n".to_string()));
+        app.on_message(ChatAppMsg::TextDelta("PARA_TWO\n\n".to_string()));
+        app.on_message(ChatAppMsg::TextDelta("PARA_THREE\n\n".to_string()));
+
+        // Tool call
+        app.on_message(ChatAppMsg::ToolCall {
+            name: "test_tool".to_string(),
+            args: "{}".to_string(),
+        });
+        app.on_message(ChatAppMsg::ToolResultComplete {
+            name: "test_tool".to_string(),
+        });
+
+        // More text after
+        app.on_message(ChatAppMsg::TextDelta("PARA_FOUR\n\n".to_string()));
+        app.on_message(ChatAppMsg::TextDelta("PARA_FIVE".to_string()));
+
+        let output = render_app(&app);
+
+        for marker in &[
+            "PARA_ONE",
+            "PARA_TWO",
+            "PARA_THREE",
+            "PARA_FOUR",
+            "PARA_FIVE",
+        ] {
+            let count = count_occurrences(&output, marker);
+            assert_eq!(
+                count, 1,
+                "{} should appear exactly once, but found {} times.\nOutput:\n{}",
+                marker, count, output
+            );
+        }
+    }
+
+    #[test]
+    fn only_one_bullet_per_assistant_response() {
+        let mut app = InkChatApp::default();
+        app.on_message(ChatAppMsg::UserMessage("test".to_string()));
+
+        app.on_message(ChatAppMsg::TextDelta(
+            "First part of response\n\n".to_string(),
+        ));
+        app.on_message(ChatAppMsg::ToolCall {
+            name: "tool1".to_string(),
+            args: "{}".to_string(),
+        });
+        app.on_message(ChatAppMsg::ToolResultComplete {
+            name: "tool1".to_string(),
+        });
+        app.on_message(ChatAppMsg::TextDelta("Second part of response".to_string()));
+
+        let output = render_app(&app);
+
+        let bullet_count = count_occurrences(&output, "●");
+        assert_eq!(
+            bullet_count, 1,
+            "Should have exactly one bullet for assistant response, found {}.\nOutput:\n{}",
+            bullet_count, output
+        );
+    }
+
+    #[test]
+    fn only_one_bullet_after_stream_complete() {
+        let mut app = InkChatApp::default();
+        app.on_message(ChatAppMsg::UserMessage("test".to_string()));
+
+        app.on_message(ChatAppMsg::TextDelta("First part\n\n".to_string()));
+        app.on_message(ChatAppMsg::ToolCall {
+            name: "tool1".to_string(),
+            args: "{}".to_string(),
+        });
+        app.on_message(ChatAppMsg::ToolResultComplete {
+            name: "tool1".to_string(),
+        });
+        app.on_message(ChatAppMsg::TextDelta("Second part".to_string()));
+        app.on_message(ChatAppMsg::StreamComplete);
+
+        let output = render_app(&app);
+
+        let bullet_count = count_occurrences(&output, "●");
+        assert_eq!(
+            bullet_count, 1,
+            "Should have exactly one bullet for assistant response after completion, found {}.\nOutput:\n{}",
+            bullet_count, output
+        );
+    }
+
+    #[test]
+    fn only_one_bullet_with_subagent() {
+        let mut app = InkChatApp::default();
+        app.on_message(ChatAppMsg::UserMessage("test".to_string()));
+
+        app.on_message(ChatAppMsg::TextDelta("Before subagent\n\n".to_string()));
+        app.on_message(ChatAppMsg::SubagentSpawned {
+            id: "sub-1".to_string(),
+            prompt: "test".to_string(),
+        });
+        app.on_message(ChatAppMsg::SubagentCompleted {
+            id: "sub-1".to_string(),
+            summary: "done".to_string(),
+        });
+        app.on_message(ChatAppMsg::TextDelta("After subagent".to_string()));
+
+        let output = render_app(&app);
+
+        let bullet_count = count_occurrences(&output, "●");
+        assert_eq!(
+            bullet_count, 1,
+            "Should have exactly one bullet with subagent, found {}.\nOutput:\n{}",
+            bullet_count, output
+        );
+    }
+}

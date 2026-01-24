@@ -278,7 +278,12 @@ async fn show(config: CliConfig, id: String, format: String) -> Result<()> {
                         session_link,
                         ..
                     } => {
-                        println!("[subagent:{}] {} -> {}", id, session_link, truncate(summary, 60));
+                        println!(
+                            "[subagent:{}] {} -> {}",
+                            id,
+                            session_link,
+                            truncate(summary, 60)
+                        );
                     }
                     LogEvent::SubagentFailed {
                         id,

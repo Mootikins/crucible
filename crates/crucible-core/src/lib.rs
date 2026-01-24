@@ -204,7 +204,9 @@ pub use interaction_registry::InteractionRegistry;
 // Re-export session types (daemon session management)
 pub use session::{Session, SessionState, SessionSummary, SessionType};
 
-pub use background::{generate_task_id, TaskError, TaskId, TaskInfo, TaskKind, TaskResult, TaskStatus};
+pub use background::{
+    generate_task_id, TaskError, TaskId, TaskInfo, TaskKind, TaskResult, TaskStatus,
+};
 
 // Re-export event system types
 pub use events::{
