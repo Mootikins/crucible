@@ -219,6 +219,7 @@ mod tests {
                     tool_results: None,
                     reasoning: None,
                     usage: None,
+                    subagent_events: None,
                 }),
                 Ok(crucible_core::traits::chat::ChatChunk {
                     delta: String::new(),
@@ -227,6 +228,7 @@ mod tests {
                     tool_results: None,
                     reasoning: None,
                     usage: None,
+                    subagent_events: None,
                 }),
             ]))
         }

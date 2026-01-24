@@ -154,11 +154,56 @@ impl CachedShellExecution {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SubagentStatus {
+    Running,
+    Completed,
+    Failed,
+}
+
+#[derive(Debug, Clone)]
+pub struct CachedSubagent {
+    pub id: Arc<str>,
+    pub prompt: Arc<str>,
+    pub status: SubagentStatus,
+    pub summary: Option<Arc<str>>,
+    pub error: Option<Arc<str>>,
+    pub started_at: std::time::Instant,
+}
+
+impl CachedSubagent {
+    pub fn new(id: impl Into<String>, prompt: impl AsRef<str>) -> Self {
+        Self {
+            id: Arc::from(id.into().as_str()),
+            prompt: Arc::from(prompt.as_ref()),
+            status: SubagentStatus::Running,
+            summary: None,
+            error: None,
+            started_at: std::time::Instant::now(),
+        }
+    }
+
+    pub fn mark_completed(&mut self, summary: &str) {
+        self.status = SubagentStatus::Completed;
+        self.summary = Some(Arc::from(summary));
+    }
+
+    pub fn mark_failed(&mut self, error: &str) {
+        self.status = SubagentStatus::Failed;
+        self.error = Some(Arc::from(error));
+    }
+
+    pub fn elapsed(&self) -> std::time::Duration {
+        self.started_at.elapsed()
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum CachedChatItem {
     Message(CachedMessage),
     ToolCall(CachedToolCall),
     ShellExecution(CachedShellExecution),
+    Subagent(CachedSubagent),
 }
 
 impl CachedChatItem {
@@ -167,6 +212,7 @@ impl CachedChatItem {
             CachedChatItem::Message(m) => &m.id,
             CachedChatItem::ToolCall(t) => &t.id,
             CachedChatItem::ShellExecution(s) => &s.id,
+            CachedChatItem::Subagent(s) => &s.id,
         }
     }
 
@@ -208,6 +254,20 @@ impl CachedChatItem {
     pub fn as_shell_execution(&self) -> Option<&CachedShellExecution> {
         match self {
             CachedChatItem::ShellExecution(s) => Some(s),
+            _ => None,
+        }
+    }
+
+    pub fn as_subagent(&self) -> Option<&CachedSubagent> {
+        match self {
+            CachedChatItem::Subagent(s) => Some(s),
+            _ => None,
+        }
+    }
+
+    pub fn as_subagent_mut(&mut self) -> Option<&mut CachedSubagent> {
+        match self {
+            CachedChatItem::Subagent(s) => Some(s),
             _ => None,
         }
     }
@@ -360,6 +420,35 @@ impl ViewportCache {
         })
     }
 
+    pub fn push_subagent(&mut self, id: impl Into<String>, prompt: &str) {
+        let id_string: String = id.into();
+        if let Some(ref mut buf) = self.streaming {
+            buf.push_subagent_segment(id_string.clone());
+        }
+        self.push_item(CachedChatItem::Subagent(CachedSubagent::new(
+            id_string, prompt,
+        )));
+    }
+
+    pub fn find_subagent_mut(&mut self, id: &str) -> Option<&mut CachedSubagent> {
+        self.items.iter_mut().rev().find_map(|item| match item {
+            CachedChatItem::Subagent(s) if s.id.as_ref() == id => Some(s),
+            _ => None,
+        })
+    }
+
+    pub fn complete_subagent(&mut self, id: &str, summary: &str) {
+        if let Some(subagent) = self.find_subagent_mut(id) {
+            subagent.mark_completed(summary);
+        }
+    }
+
+    pub fn fail_subagent(&mut self, id: &str, error: &str) {
+        if let Some(subagent) = self.find_subagent_mut(id) {
+            subagent.mark_failed(error);
+        }
+    }
+
     pub fn get_content(&self, id: &str) -> Option<&str> {
         self.items
             .iter()
@@ -490,6 +579,15 @@ impl ViewportCache {
                             self.push_item(tool_item);
                         }
                     }
+                    StreamSegment::Subagent(subagent_id) => {
+                        if let Some(subagent_item) = streaming_items
+                            .iter()
+                            .find(|item| item.id() == subagent_id)
+                            .cloned()
+                        {
+                            self.push_item(subagent_item);
+                        }
+                    }
                     StreamSegment::Thinking(_) => {}
                 }
             }
@@ -548,6 +646,7 @@ pub enum StreamSegment {
     Text(String),
     Thinking(String),
     ToolCall(String),
+    Subagent(String),
 }
 
 impl StreamSegment {
@@ -619,6 +718,13 @@ impl StreamingBuffer {
         self.flush_thinking_if_needed();
         self.flush_text_if_needed();
         self.segments.push(StreamSegment::ToolCall(tool_id));
+        self.last_segment_type = None;
+    }
+
+    pub fn push_subagent_segment(&mut self, subagent_id: String) {
+        self.flush_thinking_if_needed();
+        self.flush_text_if_needed();
+        self.segments.push(StreamSegment::Subagent(subagent_id));
         self.last_segment_type = None;
     }
 

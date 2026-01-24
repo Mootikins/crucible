@@ -258,6 +258,41 @@ async fn show(config: CliConfig, id: String, format: String) -> Result<()> {
                             .unwrap_or_default();
                         println!("[summary{}] {}", count, truncate(content, 100));
                     }
+                    LogEvent::BashSpawned { id, command, .. } => {
+                        println!("[bash:{}] {}", id, truncate(command, 80));
+                    }
+                    LogEvent::BashCompleted { id, exit_code, .. } => {
+                        println!("[bash:{}] exit={}", id, exit_code);
+                    }
+                    LogEvent::BashFailed { id, error, .. } => {
+                        println!("[bash:{}] FAILED: {}", id, truncate(error, 80));
+                    }
+                    LogEvent::SubagentSpawned {
+                        id, session_link, ..
+                    } => {
+                        println!("[subagent:{}] {}", id, session_link);
+                    }
+                    LogEvent::SubagentCompleted {
+                        id,
+                        summary,
+                        session_link,
+                        ..
+                    } => {
+                        println!("[subagent:{}] {} -> {}", id, session_link, truncate(summary, 60));
+                    }
+                    LogEvent::SubagentFailed {
+                        id,
+                        error,
+                        session_link,
+                        ..
+                    } => {
+                        println!(
+                            "[subagent:{}] {} FAILED: {}",
+                            id,
+                            session_link,
+                            truncate(error, 60)
+                        );
+                    }
                 }
             }
         }

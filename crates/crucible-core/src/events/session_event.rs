@@ -292,6 +292,47 @@ pub enum SessionEvent {
     },
 
     // ─────────────────────────────────────────────────────────────────────
+    // Background bash task events
+    // ─────────────────────────────────────────────────────────────────────
+    /// Background bash task was spawned.
+    BashTaskSpawned {
+        /// Unique task identifier.
+        id: String,
+        /// Shell command being executed.
+        command: String,
+    },
+
+    /// Background bash task completed successfully.
+    BashTaskCompleted {
+        /// Task identifier.
+        id: String,
+        /// Command output (stdout).
+        output: String,
+        /// Process exit code.
+        exit_code: i32,
+    },
+
+    /// Background bash task failed.
+    BashTaskFailed {
+        /// Task identifier.
+        id: String,
+        /// Error message.
+        error: String,
+        /// Process exit code if available.
+        exit_code: Option<i32>,
+    },
+
+    /// Background task completed (for injection into conversation context).
+    BackgroundTaskCompleted {
+        /// Task identifier.
+        id: String,
+        /// Task kind ("subagent" or "bash").
+        kind: String,
+        /// Truncated summary of the result.
+        summary: String,
+    },
+
+    // ─────────────────────────────────────────────────────────────────────
     // Streaming events
     // ─────────────────────────────────────────────────────────────────────
     /// Incremental text delta from agent (for streaming responses).
@@ -570,6 +611,10 @@ impl SessionEvent {
             Self::SubagentSpawned { .. } => "subagent_spawned",
             Self::SubagentCompleted { .. } => "subagent_completed",
             Self::SubagentFailed { .. } => "subagent_failed",
+            Self::BashTaskSpawned { .. } => "bash_task_spawned",
+            Self::BashTaskCompleted { .. } => "bash_task_completed",
+            Self::BashTaskFailed { .. } => "bash_task_failed",
+            Self::BackgroundTaskCompleted { .. } => "background_task_completed",
             Self::TextDelta { .. } => "text_delta",
             Self::TerminalOutput { .. } => "terminal_output",
             Self::FileChanged { .. } => "file_changed",
@@ -629,6 +674,10 @@ impl SessionEvent {
             Self::SubagentSpawned { id, .. } => format!("subagent:spawned:{}", id),
             Self::SubagentCompleted { id, .. } => format!("subagent:completed:{}", id),
             Self::SubagentFailed { id, .. } => format!("subagent:failed:{}", id),
+            Self::BashTaskSpawned { id, .. } => format!("bash:spawned:{}", id),
+            Self::BashTaskCompleted { id, .. } => format!("bash:completed:{}", id),
+            Self::BashTaskFailed { id, .. } => format!("bash:failed:{}", id),
+            Self::BackgroundTaskCompleted { id, kind, .. } => format!("background:{}:{}", kind, id),
             Self::TextDelta { seq, .. } => format!("streaming:delta:{}", seq),
             Self::TerminalOutput {
                 session_id, stream, ..
@@ -754,6 +803,17 @@ impl SessionEvent {
             Self::SubagentSpawned { .. }
                 | Self::SubagentCompleted { .. }
                 | Self::SubagentFailed { .. }
+        )
+    }
+
+    /// Check if this is a background task event (bash tasks or completion notifications).
+    pub fn is_background_task_event(&self) -> bool {
+        matches!(
+            self,
+            Self::BashTaskSpawned { .. }
+                | Self::BashTaskCompleted { .. }
+                | Self::BashTaskFailed { .. }
+                | Self::BackgroundTaskCompleted { .. }
         )
     }
 
@@ -893,6 +953,10 @@ impl SessionEvent {
             Self::SubagentSpawned { .. } => "SubagentSpawned",
             Self::SubagentCompleted { .. } => "SubagentCompleted",
             Self::SubagentFailed { .. } => "SubagentFailed",
+            Self::BashTaskSpawned { .. } => "BashTaskSpawned",
+            Self::BashTaskCompleted { .. } => "BashTaskCompleted",
+            Self::BashTaskFailed { .. } => "BashTaskFailed",
+            Self::BackgroundTaskCompleted { .. } => "BackgroundTaskCompleted",
             Self::TextDelta { .. } => "TextDelta",
             Self::NoteParsed { .. } => "NoteParsed",
             Self::NoteCreated { .. } => "NoteCreated",
@@ -1006,6 +1070,42 @@ impl SessionEvent {
             }
             Self::SubagentFailed { id, error } => {
                 format!("id={}, error={}", id, truncate(error, max_len))
+            }
+            Self::BashTaskSpawned { id, command } => {
+                format!("id={}, command={}", id, truncate(command, max_len))
+            }
+            Self::BashTaskCompleted {
+                id,
+                output,
+                exit_code,
+            } => {
+                format!(
+                    "id={}, exit_code={}, output_len={}",
+                    id,
+                    exit_code,
+                    output.len()
+                )
+            }
+            Self::BashTaskFailed {
+                id,
+                error,
+                exit_code,
+            } => {
+                let code_str = exit_code.map_or("none".to_string(), |c| c.to_string());
+                format!(
+                    "id={}, exit_code={}, error={}",
+                    id,
+                    code_str,
+                    truncate(error, max_len)
+                )
+            }
+            Self::BackgroundTaskCompleted { id, kind, summary } => {
+                format!(
+                    "id={}, kind={}, summary={}",
+                    id,
+                    kind,
+                    truncate(summary, max_len)
+                )
             }
             Self::TextDelta { delta, seq } => {
                 format!("seq={}, delta_len={}", seq, delta.len())
@@ -1221,6 +1321,10 @@ impl SessionEvent {
             Self::SubagentSpawned { prompt, .. } => Some(prompt.clone()),
             Self::SubagentCompleted { result, .. } => Some(result.clone()),
             Self::SubagentFailed { error, .. } => Some(error.clone()),
+            Self::BashTaskSpawned { command, .. } => Some(command.clone()),
+            Self::BashTaskCompleted { output, .. } => Some(output.clone()),
+            Self::BashTaskFailed { error, .. } => Some(error.clone()),
+            Self::BackgroundTaskCompleted { summary, .. } => Some(summary.clone()),
             Self::Custom { payload, .. } => Some(payload.to_string()),
             Self::SessionStarted { .. } => None,
             Self::TextDelta { delta, .. } => Some(delta.clone()),
@@ -1357,6 +1461,10 @@ impl SessionEvent {
             Self::SubagentSpawned { prompt, .. } => prompt.len(),
             Self::SubagentCompleted { result, .. } => result.len(),
             Self::SubagentFailed { error, .. } => error.len(),
+            Self::BashTaskSpawned { command, .. } => command.len(),
+            Self::BashTaskCompleted { output, .. } => output.len(),
+            Self::BashTaskFailed { error, .. } => error.len(),
+            Self::BackgroundTaskCompleted { summary, .. } => summary.len(),
             Self::Custom { payload, .. } => payload.to_string().len(),
             Self::SessionStarted { .. } => 100, // Fixed overhead
             // Streaming events

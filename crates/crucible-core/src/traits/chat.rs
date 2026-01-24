@@ -88,6 +88,9 @@ pub struct ChatChunk {
     /// Token usage (typically only present in final chunk when done=true)
     #[serde(default)]
     pub usage: Option<TokenUsage>,
+    /// Subagent lifecycle events (spawned, completed, failed)
+    #[serde(default)]
+    pub subagent_events: Option<Vec<ChatSubagentEvent>>,
 }
 
 /// Result from a completed tool execution
@@ -98,6 +101,25 @@ pub struct ChatToolResult {
     /// Result content (may be truncated for display)
     pub result: String,
     /// Error message if tool failed
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum SubagentEventType {
+    Spawned,
+    Completed,
+    Failed,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChatSubagentEvent {
+    pub id: String,
+    pub event_type: SubagentEventType,
+    #[serde(default)]
+    pub prompt: Option<String>,
+    #[serde(default)]
+    pub summary: Option<String>,
+    #[serde(default)]
     pub error: Option<String>,
 }
 
@@ -499,6 +521,7 @@ mod tests {
                         tool_results: None,
                         reasoning: None,
                         usage: None,
+                        subagent_events: None,
                     })
                 },
             )))

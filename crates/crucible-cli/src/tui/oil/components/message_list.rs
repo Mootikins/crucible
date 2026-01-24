@@ -9,7 +9,8 @@ use crate::tui::oil::node::{
 use crate::tui::oil::style::Style;
 use crate::tui::oil::theme::{colors, styles};
 use crate::tui::oil::viewport_cache::{
-    CachedChatItem, CachedMessage, CachedShellExecution, CachedToolCall,
+    CachedChatItem, CachedMessage, CachedShellExecution, CachedSubagent, CachedToolCall,
+    SubagentStatus,
 };
 use crate::tui::oil::ViewContext;
 use std::time::Duration;
@@ -50,6 +51,7 @@ impl<'a> MessageList<'a> {
                 CachedChatItem::Message(msg) => self.render_message(msg),
                 CachedChatItem::ToolCall(tool) => render_tool_call(tool, !prev_was_tool),
                 CachedChatItem::ShellExecution(shell) => render_shell_execution(shell),
+                CachedChatItem::Subagent(subagent) => render_subagent(subagent, 0),
             };
             nodes.push(node);
             prev_was_tool = is_tool;
@@ -383,6 +385,51 @@ pub fn render_shell_execution(shell: &CachedShellExecution) -> Node {
         .chain(tail_nodes)
         .chain(std::iter::once(path_node)));
     scrollback(&shell.id, [content])
+}
+
+pub fn render_subagent(subagent: &CachedSubagent, spinner_frame: usize) -> Node {
+    let (icon, icon_style) = match subagent.status {
+        SubagentStatus::Running => {
+            let frame = BRAILLE_SPINNER_FRAMES[spinner_frame % BRAILLE_SPINNER_FRAMES.len()];
+            (format!(" {} ", frame), Style::new().fg(colors::TEXT_ACCENT))
+        }
+        SubagentStatus::Completed => (" ✓ ".to_string(), Style::new().fg(colors::SUCCESS)),
+        SubagentStatus::Failed => (" ✗ ".to_string(), Style::new().fg(colors::ERROR)),
+    };
+
+    let prompt_preview = truncate_line(&subagent.prompt, 60);
+
+    let status_text = match subagent.status {
+        SubagentStatus::Running => {
+            let elapsed = subagent.elapsed();
+            format!("  {}", format_elapsed(elapsed))
+        }
+        SubagentStatus::Completed => subagent
+            .summary
+            .as_ref()
+            .map(|s| format!(" → {}", truncate_line(s, 50)))
+            .unwrap_or_default(),
+        SubagentStatus::Failed => subagent
+            .error
+            .as_ref()
+            .map(|e| format!(" → {}", truncate_line(e, 50)))
+            .unwrap_or_default(),
+    };
+
+    let status_style = match subagent.status {
+        SubagentStatus::Running => styles::dim(),
+        SubagentStatus::Completed => styles::muted(),
+        SubagentStatus::Failed => styles::error(),
+    };
+
+    let header = row([
+        styled(icon, icon_style),
+        styled("subagent", Style::new().fg(colors::TEXT_PRIMARY)),
+        styled(format!(" {}", prompt_preview), styles::muted()),
+        styled(status_text, status_style),
+    ]);
+
+    scrollback(subagent.id.to_string(), [col([text(""), header])])
 }
 
 pub fn format_tool_args(args: &str) -> String {

@@ -4,7 +4,7 @@
 //! `{kiln}/.crucible/sessions/{session_id}/`
 //!
 //! Contents:
-//! - `session.json` - Session metadata
+//! - `meta.json` - Session metadata
 //! - `session.jsonl` - Event log (append-only)
 //! - `session.md` - Human-readable markdown conversation log
 
@@ -109,7 +109,7 @@ impl SessionStorage for FileSessionStorage {
             .map_err(|e| SessionError::IoError(e.to_string()))?;
 
         // Save session metadata as JSON
-        let meta_path = dir.join("session.json");
+        let meta_path = dir.join("meta.json");
         let json = serde_json::to_string_pretty(session)
             .map_err(|e| SessionError::IoError(e.to_string()))?;
         fs::write(&meta_path, json)
@@ -121,9 +121,16 @@ impl SessionStorage for FileSessionStorage {
 
     async fn load(&self, session_id: &str, kiln: &Path) -> Result<Session, SessionError> {
         let dir = Self::session_dir_by_id(session_id, kiln);
-        let meta_path = dir.join("session.json");
+        // Try meta.json first, fall back to legacy session.json for backward compatibility
+        let meta_path = dir.join("meta.json");
+        let legacy_path = dir.join("session.json");
+        let path = if meta_path.exists() {
+            meta_path
+        } else {
+            legacy_path
+        };
 
-        let json = fs::read_to_string(&meta_path).await.map_err(|e| {
+        let json = fs::read_to_string(&path).await.map_err(|e| {
             // Distinguish between "not found" and other IO errors
             if e.kind() == std::io::ErrorKind::NotFound {
                 SessionError::NotFound(session_id.to_string())
@@ -131,7 +138,7 @@ impl SessionStorage for FileSessionStorage {
                 SessionError::IoError(format!(
                     "Failed to load session '{}' from {}: {}",
                     session_id,
-                    meta_path.display(),
+                    path.display(),
                     e
                 ))
             }

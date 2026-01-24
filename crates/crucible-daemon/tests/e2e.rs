@@ -539,19 +539,19 @@ async fn test_e2e_session_persistence() {
     let response = rpc_call(&mut stream, &session_create_request(1, &kiln_path)).await;
     let session_id = get_str(get_result(&response), "session_id");
 
-    // Check that session.json was created
+    // Check that meta.json was created
     let session_dir = kiln_dir.join(".crucible").join("sessions").join(session_id);
 
     // Poll for file to exist with timeout (avoids flaky sleep)
-    let session_file = session_dir.join("session.json");
+    let meta_file = session_dir.join("meta.json");
     let deadline = std::time::Instant::now() + Duration::from_secs(5);
-    while !session_file.exists() && std::time::Instant::now() < deadline {
+    while !meta_file.exists() && std::time::Instant::now() < deadline {
         tokio::time::sleep(Duration::from_millis(50)).await;
     }
 
     assert!(
-        session_file.exists(),
-        "session.json should exist at {:?}",
+        meta_file.exists(),
+        "meta.json should exist at {:?}",
         session_dir
     );
 

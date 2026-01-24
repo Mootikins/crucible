@@ -471,6 +471,7 @@ impl AgentHandle for CrucibleAcpClient {
                                         tool_results: None,
                                         reasoning: None,
                                         usage: None,
+                                        subagent_events: None,
                                     },
                                     StreamingChunk::Thinking(text) => ChatChunk {
                                         delta: String::new(),
@@ -479,6 +480,7 @@ impl AgentHandle for CrucibleAcpClient {
                                         tool_results: None,
                                         reasoning: Some(text),
                                         usage: None,
+                                        subagent_events: None,
                                     },
                                     StreamingChunk::ToolStart { name, id } => {
                                         tool_calls.push(ChatToolCall {
@@ -497,6 +499,7 @@ impl AgentHandle for CrucibleAcpClient {
                                             tool_results: None,
                                             reasoning: None,
                                             usage: None,
+                                            subagent_events: None,
                                         }
                                     }
                                     StreamingChunk::ToolEnd { id: _ } => ChatChunk {
@@ -506,6 +509,7 @@ impl AgentHandle for CrucibleAcpClient {
                                         tool_results: None,
                                         reasoning: None,
                                         usage: None,
+                                        subagent_events: None,
                                     },
                                 };
                                 Some((Ok(chat_chunk), Some((rx, result_rx, tool_calls, false))))
@@ -547,6 +551,7 @@ impl AgentHandle for CrucibleAcpClient {
                                                 tool_results: None,
                                                 reasoning: None,
                                                 usage: None,
+                                                subagent_events: None,
                                             }),
                                             None,
                                         ))

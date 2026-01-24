@@ -50,12 +50,14 @@ pub mod markdown;
 pub mod serde_md;
 pub mod session;
 pub mod storage;
+pub mod truncate;
 
 // Re-exports for convenience
 pub use events::{LogEvent, PermissionDecision, TokenUsage};
 pub use id::{SessionId, SessionIdError, SessionType};
 pub use markdown::{render_to_markdown, RenderOptions};
 pub use session::{list_sessions, load_events, SessionError, SessionMetadata, SessionWriter};
+pub use truncate::{truncate_for_log, TruncateResult, DEFAULT_TRUNCATE_THRESHOLD};
 
 #[cfg(feature = "sqlite")]
 pub use storage::SessionIndex;

@@ -67,7 +67,8 @@ pub use tools::{attach_mcp_tools, discover_crucible_tools, McpToolError, McpTool
 
 // Re-export workspace tools (always available)
 pub use workspace_tools::{
-    BashTool, EditFileTool, GlobTool, GrepTool, ReadFileTool, WorkspaceContext, WorkspaceToolError,
+    BashTool, CancelTaskTool, EditFileTool, GetTaskResultTool, GlobTool, GrepTool,
+    ListBackgroundTasksTool, ReadFileTool, SpawnSubagentTool, WorkspaceContext, WorkspaceToolError,
     WriteFileTool,
 };
 
