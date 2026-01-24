@@ -205,7 +205,7 @@ pub use interaction_registry::InteractionRegistry;
 pub use session::{Session, SessionState, SessionSummary, SessionType};
 
 pub use background::{
-    generate_task_id, TaskError, TaskId, TaskInfo, TaskKind, TaskResult, TaskStatus,
+    generate_job_id, JobError, JobId, JobInfo, JobKind, JobResult, JobStatus,
 };
 
 // Re-export event system types

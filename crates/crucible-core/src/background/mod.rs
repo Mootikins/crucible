@@ -1,65 +1,63 @@
-//! Background task types for session-scoped async work (subagents, long-running bash).
+//! Background job types for session-scoped async work (subagents, long-running bash).
 //!
-//! TODO: Rename "task" -> "job" throughout this module for Unix-familiar terminology
-//! (matches bg/fg/jobs). Affects: TaskId->JobId, TaskInfo->JobInfo, TaskResult->JobResult,
-//! TaskStatus->JobStatus, TaskError->JobError, spawn_*->spawn_*, list_tasks->list_jobs, etc.
+//! Uses Unix-familiar terminology (bg/fg/jobs).
 
 mod types;
 
 pub use types::{
-    generate_task_id, truncate, TaskError, TaskId, TaskInfo, TaskKind, TaskResult, TaskStatus,
+    generate_job_id, truncate, JobError, JobId, JobInfo, JobKind, JobResult, JobStatus,
 };
 
 use async_trait::async_trait;
 use std::path::PathBuf;
 use std::time::Duration;
 
-/// Trait for spawning and managing background tasks.
+/// Trait for spawning and managing background jobs.
 ///
-/// Implementations handle the actual execution of tasks in the background,
+/// Implementations handle the actual execution of jobs in the background,
 /// tracking their status and storing results for later retrieval.
 #[async_trait]
 pub trait BackgroundSpawner: Send + Sync {
     /// Spawn a bash command in the background.
     ///
-    /// Returns the task ID immediately. The command runs asynchronously.
+    /// Returns the job ID immediately. The command runs asynchronously.
     async fn spawn_bash(
         &self,
         session_id: &str,
         command: String,
         workdir: Option<PathBuf>,
         timeout: Option<Duration>,
-    ) -> Result<TaskId, TaskError>;
+    ) -> Result<JobId, JobError>;
 
     /// Spawn a subagent in the background.
     ///
     /// The subagent runs with inherited tools (minus spawn_subagent to prevent recursion)
     /// and executes up to `max_turns` conversation turns.
     ///
-    /// Returns the task ID immediately. The subagent runs asynchronously.
+    /// Returns the job ID immediately. The subagent runs asynchronously.
     async fn spawn_subagent(
         &self,
         session_id: &str,
         prompt: String,
         context: Option<String>,
-    ) -> Result<TaskId, TaskError>;
+    ) -> Result<JobId, JobError>;
 
-    /// List all tasks (running + completed) for a session.
+    /// List all jobs (running + completed) for a session.
     ///
-    /// Returns tasks sorted by start time (newest first).
-    fn list_tasks(&self, session_id: &str) -> Vec<TaskInfo>;
+    /// Returns jobs sorted by start time (newest first).
+    fn list_jobs(&self, session_id: &str) -> Vec<JobInfo>;
 
-    /// Get the result of a specific task.
+    /// Get the result of a specific job.
     ///
-    /// Returns `None` if the task doesn't exist.
-    /// For running tasks, returns a result with `Running` status and no output.
-    fn get_task_result(&self, task_id: &TaskId) -> Option<TaskResult>;
+    /// Returns `None` if the job doesn't exist.
+    /// For running jobs, returns a result with `Running` status and no output.
+    fn get_job_result(&self, job_id: &JobId) -> Option<JobResult>;
 
-    /// Cancel a running task.
+    /// Cancel a running job.
     ///
-    /// Returns `true` if the task was found and cancellation was requested.
-    /// Returns `false` if the task was not found or already completed.
-    async fn cancel_task(&self, task_id: &TaskId) -> bool;
+    /// Returns `true` if the job was found and cancellation was requested.
+    /// Returns `false` if the job was not found or already completed.
+    async fn cancel_job(&self, job_id: &JobId) -> bool;
 }
 
 #[cfg(test)]
@@ -67,17 +65,17 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_task_id_format() {
-        let id = generate_task_id();
+    fn test_job_id_format() {
+        let id = generate_job_id();
         assert!(
-            id.starts_with("task-"),
-            "ID should start with 'task-': {}",
+            id.starts_with("job-"),
+            "ID should start with 'job-': {}",
             id
         );
 
         let parts: Vec<&str> = id.split('-').collect();
         assert_eq!(parts.len(), 4, "ID should have 4 parts: {}", id);
-        assert_eq!(parts[0], "task");
+        assert_eq!(parts[0], "job");
         assert_eq!(
             parts[1].len(),
             8,
@@ -99,8 +97,8 @@ mod tests {
     }
 
     #[test]
-    fn test_task_id_uniqueness() {
-        let ids: Vec<TaskId> = (0..100).map(|_| generate_task_id()).collect();
+    fn test_job_id_uniqueness() {
+        let ids: Vec<JobId> = (0..100).map(|_| generate_job_id()).collect();
         let unique: std::collections::HashSet<_> = ids.iter().collect();
         assert_eq!(ids.len(), unique.len(), "All IDs should be unique");
     }

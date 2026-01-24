@@ -1,7 +1,7 @@
 //! Unix socket server for JSON-RPC
 
 use crate::agent_manager::AgentManager;
-use crate::background_manager::BackgroundTaskManager;
+use crate::background_manager::BackgroundJobManager;
 use crate::kiln_manager::KilnManager;
 use crate::protocol::{
     Request, Response, SessionEventMessage, INTERNAL_ERROR, INVALID_PARAMS, METHOD_NOT_FOUND,
@@ -78,7 +78,7 @@ pub struct Server {
     kiln_manager: Arc<KilnManager>,
     session_manager: Arc<SessionManager>,
     agent_manager: Arc<AgentManager>,
-    background_manager: Arc<BackgroundTaskManager>,
+    background_manager: Arc<BackgroundJobManager>,
     subscription_manager: Arc<SubscriptionManager>,
     event_tx: broadcast::Sender<SessionEventMessage>,
     dispatcher: Arc<RpcDispatcher>,
@@ -103,7 +103,7 @@ impl Server {
 
         let kiln_manager = Arc::new(KilnManager::new());
         let session_manager = Arc::new(SessionManager::new());
-        let background_manager = Arc::new(BackgroundTaskManager::new(event_tx.clone()));
+        let background_manager = Arc::new(BackgroundJobManager::new(event_tx.clone()));
         let agent_manager = Arc::new(AgentManager::new(
             session_manager.clone(),
             background_manager.clone(),

@@ -3,9 +3,9 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::path::PathBuf;
 
-pub type TaskId = String;
+pub type JobId = String;
 
-pub fn generate_task_id() -> TaskId {
+pub fn generate_job_id() -> JobId {
     use rand::Rng;
     let timestamp = Utc::now().format("%Y%m%d-%H%M");
     let mut rng = rand::rng();
@@ -19,12 +19,12 @@ pub fn generate_task_id() -> TaskId {
             }
         })
         .collect();
-    format!("task-{}-{}", timestamp, random)
+    format!("job-{}-{}", timestamp, random)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "type", rename_all = "snake_case")]
-pub enum TaskKind {
+pub enum JobKind {
     Subagent {
         prompt: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -37,34 +37,34 @@ pub enum TaskKind {
     },
 }
 
-impl TaskKind {
+impl JobKind {
     pub fn name(&self) -> &'static str {
         match self {
-            TaskKind::Subagent { .. } => "subagent",
-            TaskKind::Bash { .. } => "bash",
+            JobKind::Subagent { .. } => "subagent",
+            JobKind::Bash { .. } => "bash",
         }
     }
 
     pub fn summary(&self) -> String {
         match self {
-            TaskKind::Subagent { prompt, .. } => truncate(prompt, 80),
-            TaskKind::Bash { command, .. } => truncate(command, 80),
+            JobKind::Subagent { prompt, .. } => truncate(prompt, 80),
+            JobKind::Bash { command, .. } => truncate(command, 80),
         }
     }
 }
 
-impl fmt::Display for TaskKind {
+impl fmt::Display for JobKind {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            TaskKind::Subagent { prompt, .. } => write!(f, "subagent: {}", truncate(prompt, 50)),
-            TaskKind::Bash { command, .. } => write!(f, "bash: {}", truncate(command, 50)),
+            JobKind::Subagent { prompt, .. } => write!(f, "subagent: {}", truncate(prompt, 50)),
+            JobKind::Bash { command, .. } => write!(f, "bash: {}", truncate(command, 50)),
         }
     }
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "snake_case")]
-pub enum TaskStatus {
+pub enum JobStatus {
     #[default]
     Running,
     Completed,
@@ -72,32 +72,32 @@ pub enum TaskStatus {
     Cancelled,
 }
 
-impl TaskStatus {
+impl JobStatus {
     pub fn is_terminal(&self) -> bool {
         matches!(
             self,
-            TaskStatus::Completed | TaskStatus::Failed | TaskStatus::Cancelled
+            JobStatus::Completed | JobStatus::Failed | JobStatus::Cancelled
         )
     }
 }
 
-impl fmt::Display for TaskStatus {
+impl fmt::Display for JobStatus {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            TaskStatus::Running => write!(f, "running"),
-            TaskStatus::Completed => write!(f, "completed"),
-            TaskStatus::Failed => write!(f, "failed"),
-            TaskStatus::Cancelled => write!(f, "cancelled"),
+            JobStatus::Running => write!(f, "running"),
+            JobStatus::Completed => write!(f, "completed"),
+            JobStatus::Failed => write!(f, "failed"),
+            JobStatus::Cancelled => write!(f, "cancelled"),
         }
     }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TaskInfo {
-    pub id: TaskId,
+pub struct JobInfo {
+    pub id: JobId,
     pub session_id: String,
-    pub kind: TaskKind,
-    pub status: TaskStatus,
+    pub kind: JobKind,
+    pub status: JobStatus,
     pub started_at: DateTime<Utc>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub completed_at: Option<DateTime<Utc>>,
@@ -105,13 +105,13 @@ pub struct TaskInfo {
     pub session_path: Option<PathBuf>,
 }
 
-impl TaskInfo {
-    pub fn new(session_id: String, kind: TaskKind) -> Self {
+impl JobInfo {
+    pub fn new(session_id: String, kind: JobKind) -> Self {
         Self {
-            id: generate_task_id(),
+            id: generate_job_id(),
             session_id,
             kind,
-            status: TaskStatus::Running,
+            status: JobStatus::Running,
             started_at: Utc::now(),
             completed_at: None,
             session_path: None,
@@ -143,24 +143,24 @@ impl TaskInfo {
     }
 
     pub fn mark_completed(&mut self) {
-        self.status = TaskStatus::Completed;
+        self.status = JobStatus::Completed;
         self.completed_at = Some(Utc::now());
     }
 
     pub fn mark_failed(&mut self) {
-        self.status = TaskStatus::Failed;
+        self.status = JobStatus::Failed;
         self.completed_at = Some(Utc::now());
     }
 
     pub fn mark_cancelled(&mut self) {
-        self.status = TaskStatus::Cancelled;
+        self.status = JobStatus::Cancelled;
         self.completed_at = Some(Utc::now());
     }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TaskResult {
-    pub info: TaskInfo,
+pub struct JobResult {
+    pub info: JobInfo,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub output: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -169,8 +169,8 @@ pub struct TaskResult {
     pub exit_code: Option<i32>,
 }
 
-impl TaskResult {
-    pub fn success(info: TaskInfo, output: String) -> Self {
+impl JobResult {
+    pub fn success(info: JobInfo, output: String) -> Self {
         Self {
             info,
             output: Some(output),
@@ -179,7 +179,7 @@ impl TaskResult {
         }
     }
 
-    pub fn success_with_exit_code(info: TaskInfo, output: String, exit_code: i32) -> Self {
+    pub fn success_with_exit_code(info: JobInfo, output: String, exit_code: i32) -> Self {
         Self {
             info,
             output: Some(output),
@@ -188,7 +188,7 @@ impl TaskResult {
         }
     }
 
-    pub fn failure(info: TaskInfo, error: String) -> Self {
+    pub fn failure(info: JobInfo, error: String) -> Self {
         Self {
             info,
             output: None,
@@ -197,7 +197,7 @@ impl TaskResult {
         }
     }
 
-    pub fn failure_with_exit_code(info: TaskInfo, error: String, exit_code: i32) -> Self {
+    pub fn failure_with_exit_code(info: JobInfo, error: String, exit_code: i32) -> Self {
         Self {
             info,
             output: None,
@@ -207,7 +207,7 @@ impl TaskResult {
     }
 
     pub fn is_success(&self) -> bool {
-        self.info.status == TaskStatus::Completed && self.error.is_none()
+        self.info.status == JobStatus::Completed && self.error.is_none()
     }
 
     pub fn truncated_output(&self, max_len: usize) -> String {
@@ -219,23 +219,23 @@ impl TaskResult {
 }
 
 #[derive(Debug, Clone, thiserror::Error)]
-pub enum TaskError {
-    #[error("Task not found: {0}")]
-    NotFound(TaskId),
+pub enum JobError {
+    #[error("Job not found: {0}")]
+    NotFound(JobId),
 
-    #[error("Task already completed: {0}")]
-    AlreadyCompleted(TaskId),
+    #[error("Job already completed: {0}")]
+    AlreadyCompleted(JobId),
 
     #[error("Session not found: {0}")]
     SessionNotFound(String),
 
-    #[error("Failed to spawn task: {0}")]
+    #[error("Failed to spawn job: {0}")]
     SpawnFailed(String),
 
-    #[error("Task timed out")]
+    #[error("Job timed out")]
     Timeout,
 
-    #[error("Task limit exceeded for session")]
+    #[error("Job limit exceeded for session")]
     LimitExceeded,
 }
 
@@ -259,12 +259,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn task_kind_name_returns_correct_values() {
-        let subagent = TaskKind::Subagent {
+    fn job_kind_name_returns_correct_values() {
+        let subagent = JobKind::Subagent {
             prompt: "test".to_string(),
             context: None,
         };
-        let bash = TaskKind::Bash {
+        let bash = JobKind::Bash {
             command: "ls".to_string(),
             workdir: None,
         };
@@ -274,9 +274,9 @@ mod tests {
     }
 
     #[test]
-    fn task_kind_summary_truncates_long_content() {
+    fn job_kind_summary_truncates_long_content() {
         let long_prompt = "a".repeat(200);
-        let subagent = TaskKind::Subagent {
+        let subagent = JobKind::Subagent {
             prompt: long_prompt.clone(),
             context: None,
         };
@@ -290,34 +290,34 @@ mod tests {
     }
 
     #[test]
-    fn task_status_is_terminal() {
-        assert!(!TaskStatus::Running.is_terminal());
-        assert!(TaskStatus::Completed.is_terminal());
-        assert!(TaskStatus::Failed.is_terminal());
-        assert!(TaskStatus::Cancelled.is_terminal());
+    fn job_status_is_terminal() {
+        assert!(!JobStatus::Running.is_terminal());
+        assert!(JobStatus::Completed.is_terminal());
+        assert!(JobStatus::Failed.is_terminal());
+        assert!(JobStatus::Cancelled.is_terminal());
     }
 
     #[test]
-    fn task_info_new_creates_running_task() {
-        let info = TaskInfo::new(
+    fn job_info_new_creates_running_job() {
+        let info = JobInfo::new(
             "session-123".to_string(),
-            TaskKind::Bash {
+            JobKind::Bash {
                 command: "sleep 10".to_string(),
                 workdir: None,
             },
         );
 
-        assert!(info.id.starts_with("task-"));
+        assert!(info.id.starts_with("job-"));
         assert_eq!(info.session_id, "session-123");
-        assert_eq!(info.status, TaskStatus::Running);
+        assert_eq!(info.status, JobStatus::Running);
         assert!(info.completed_at.is_none());
     }
 
     #[test]
-    fn task_info_mark_completed_sets_timestamp() {
-        let mut info = TaskInfo::new(
+    fn job_info_mark_completed_sets_timestamp() {
+        let mut info = JobInfo::new(
             "session-123".to_string(),
-            TaskKind::Subagent {
+            JobKind::Subagent {
                 prompt: "test".to_string(),
                 context: None,
             },
@@ -325,15 +325,15 @@ mod tests {
 
         assert!(info.completed_at.is_none());
         info.mark_completed();
-        assert_eq!(info.status, TaskStatus::Completed);
+        assert_eq!(info.status, JobStatus::Completed);
         assert!(info.completed_at.is_some());
     }
 
     #[test]
-    fn task_info_duration_calculates_correctly() {
-        let mut info = TaskInfo::new(
+    fn job_info_duration_calculates_correctly() {
+        let mut info = JobInfo::new(
             "session-123".to_string(),
-            TaskKind::Subagent {
+            JobKind::Subagent {
                 prompt: "test".to_string(),
                 context: None,
             },
@@ -348,40 +348,40 @@ mod tests {
     }
 
     #[test]
-    fn task_result_success_is_success() {
-        let mut info = TaskInfo::new(
+    fn job_result_success_is_success() {
+        let mut info = JobInfo::new(
             "session-123".to_string(),
-            TaskKind::Bash {
+            JobKind::Bash {
                 command: "echo hello".to_string(),
                 workdir: None,
             },
         );
         info.mark_completed();
 
-        let result = TaskResult::success(info, "hello\n".to_string());
+        let result = JobResult::success(info, "hello\n".to_string());
         assert!(result.is_success());
     }
 
     #[test]
-    fn task_result_failure_is_not_success() {
-        let mut info = TaskInfo::new(
+    fn job_result_failure_is_not_success() {
+        let mut info = JobInfo::new(
             "session-123".to_string(),
-            TaskKind::Bash {
+            JobKind::Bash {
                 command: "false".to_string(),
                 workdir: None,
             },
         );
         info.mark_failed();
 
-        let result = TaskResult::failure(info, "command failed".to_string());
+        let result = JobResult::failure(info, "command failed".to_string());
         assert!(!result.is_success());
     }
 
     #[test]
-    fn task_result_truncated_output_respects_max_len() {
-        let mut info = TaskInfo::new(
+    fn job_result_truncated_output_respects_max_len() {
+        let mut info = JobInfo::new(
             "session-123".to_string(),
-            TaskKind::Subagent {
+            JobKind::Subagent {
                 prompt: "test".to_string(),
                 context: None,
             },
@@ -389,7 +389,7 @@ mod tests {
         info.mark_completed();
 
         let long_output = "a".repeat(1000);
-        let result = TaskResult::success(info, long_output);
+        let result = JobResult::success(info, long_output);
 
         let truncated = result.truncated_output(100);
         assert!(truncated.len() <= 100);
@@ -397,36 +397,36 @@ mod tests {
     }
 
     #[test]
-    fn task_kind_serde_roundtrip() {
-        let subagent = TaskKind::Subagent {
+    fn job_kind_serde_roundtrip() {
+        let subagent = JobKind::Subagent {
             prompt: "Research topic X".to_string(),
             context: Some("Additional context".to_string()),
         };
 
         let json = serde_json::to_string(&subagent).unwrap();
-        let parsed: TaskKind = serde_json::from_str(&json).unwrap();
+        let parsed: JobKind = serde_json::from_str(&json).unwrap();
         assert_eq!(subagent, parsed);
 
-        let bash = TaskKind::Bash {
+        let bash = JobKind::Bash {
             command: "cargo build".to_string(),
             workdir: Some(PathBuf::from("/home/user/project")),
         };
 
         let json = serde_json::to_string(&bash).unwrap();
-        let parsed: TaskKind = serde_json::from_str(&json).unwrap();
+        let parsed: JobKind = serde_json::from_str(&json).unwrap();
         assert_eq!(bash, parsed);
     }
 
     #[test]
-    fn task_status_serde_roundtrip() {
+    fn job_status_serde_roundtrip() {
         for status in [
-            TaskStatus::Running,
-            TaskStatus::Completed,
-            TaskStatus::Failed,
-            TaskStatus::Cancelled,
+            JobStatus::Running,
+            JobStatus::Completed,
+            JobStatus::Failed,
+            JobStatus::Cancelled,
         ] {
             let json = serde_json::to_string(&status).unwrap();
-            let parsed: TaskStatus = serde_json::from_str(&json).unwrap();
+            let parsed: JobStatus = serde_json::from_str(&json).unwrap();
             assert_eq!(status, parsed);
         }
     }
