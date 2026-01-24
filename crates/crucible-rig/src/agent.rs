@@ -25,8 +25,8 @@
 use crate::kiln_tools::{KilnContext, ListNotesTool, ReadNoteTool, SemanticSearchTool};
 use crate::providers::RigClient;
 use crate::workspace_tools::{
-    BashTool, CancelTaskTool, EditFileTool, GetTaskResultTool, GlobTool, GrepTool,
-    ListBackgroundTasksTool, ReadFileTool, SpawnSubagentTool, WorkspaceContext, WriteFileTool,
+    BashTool, CancelJobTool, EditFileTool, GetJobResultTool, GlobTool, GrepTool, ListJobsTool,
+    ReadFileTool, SpawnSubagentTool, WorkspaceContext, WriteFileTool,
 };
 use crucible_core::agent::AgentCard;
 use crucible_core::prompts::ModelSize;
@@ -120,9 +120,9 @@ fn attach_tools<M: CompletionModel>(
             .tool(BashTool::new(ctx.clone()))
             .tool(GlobTool::new(ctx.clone()))
             .tool(GrepTool::new(ctx.clone()))
-            .tool(ListBackgroundTasksTool::new(ctx.clone()))
-            .tool(GetTaskResultTool::new(ctx.clone()))
-            .tool(CancelTaskTool::new(ctx.clone()))
+            .tool(ListJobsTool::new(ctx.clone()))
+            .tool(GetJobResultTool::new(ctx.clone()))
+            .tool(CancelJobTool::new(ctx.clone()))
             .tool(SpawnSubagentTool::new(ctx.clone()))
             .build(),
         (false, Some(kiln), false) => builder
@@ -143,9 +143,9 @@ fn attach_tools<M: CompletionModel>(
             .tool(BashTool::new(ctx.clone()))
             .tool(GlobTool::new(ctx.clone()))
             .tool(GrepTool::new(ctx.clone()))
-            .tool(ListBackgroundTasksTool::new(ctx.clone()))
-            .tool(GetTaskResultTool::new(ctx.clone()))
-            .tool(CancelTaskTool::new(ctx.clone()))
+            .tool(ListJobsTool::new(ctx.clone()))
+            .tool(GetJobResultTool::new(ctx.clone()))
+            .tool(CancelJobTool::new(ctx.clone()))
             .tool(SpawnSubagentTool::new(ctx.clone()))
             .tool(SemanticSearchTool::new(kiln.clone()))
             .tool(ReadNoteTool::new(kiln.clone()))
@@ -669,7 +669,7 @@ mod tests {
     #[test]
     fn workspace_context_with_background_spawner_includes_background_tools() {
         use async_trait::async_trait;
-        use crucible_core::background::{BackgroundSpawner, TaskError, TaskId, TaskInfo, TaskResult};
+        use crucible_core::background::{BackgroundSpawner, JobError, JobId, JobInfo, JobResult};
         use std::path::PathBuf;
         use std::sync::Arc;
         use std::time::Duration;
@@ -678,15 +678,15 @@ mod tests {
 
         #[async_trait]
         impl BackgroundSpawner for MockSpawner {
-            async fn spawn_bash(&self, _: &str, _: String, _: Option<PathBuf>, _: Option<Duration>) -> Result<TaskId, TaskError> {
+            async fn spawn_bash(&self, _: &str, _: String, _: Option<PathBuf>, _: Option<Duration>) -> Result<JobId, JobError> {
                 Ok("id".into())
             }
-            async fn spawn_subagent(&self, _: &str, _: String, _: Option<String>) -> Result<TaskId, TaskError> {
+            async fn spawn_subagent(&self, _: &str, _: String, _: Option<String>) -> Result<JobId, JobError> {
                 Ok("id".into())
             }
-            fn list_tasks(&self, _: &str) -> Vec<TaskInfo> { vec![] }
-            fn get_task_result(&self, _: &TaskId) -> Option<TaskResult> { None }
-            async fn cancel_task(&self, _: &TaskId) -> bool { false }
+            fn list_jobs(&self, _: &str) -> Vec<JobInfo> { vec![] }
+            fn get_job_result(&self, _: &JobId) -> Option<JobResult> { None }
+            async fn cancel_job(&self, _: &JobId) -> bool { false }
         }
 
         let ctx = WorkspaceContext::new("/tmp/test")
@@ -694,9 +694,9 @@ mod tests {
         let tools = ctx.tools_for_mode("auto");
         let names = tool_names(&tools);
 
-        assert!(names.contains("list_background_tasks"), "should have list_background_tasks");
-        assert!(names.contains("get_task_result"), "should have get_task_result");
-        assert!(names.contains("cancel_task"), "should have cancel_task");
+        assert!(names.contains("list_jobs"), "should have list_jobs");
+        assert!(names.contains("get_job_result"), "should have get_job_result");
+        assert!(names.contains("cancel_job"), "should have cancel_job");
         assert!(names.contains("spawn_subagent"), "should have spawn_subagent");
         assert_eq!(names.len(), 10, "auto mode with background spawner should have 10 tools (6 + 4)");
     }
@@ -707,16 +707,16 @@ mod tests {
         let tools = ctx.tools_for_mode("auto");
         let names = tool_names(&tools);
 
-        assert!(!names.contains("list_background_tasks"));
-        assert!(!names.contains("get_task_result"));
-        assert!(!names.contains("cancel_task"));
+        assert!(!names.contains("list_jobs"));
+        assert!(!names.contains("get_job_result"));
+        assert!(!names.contains("cancel_job"));
         assert!(!names.contains("spawn_subagent"));
     }
 
     #[test]
     fn has_background_spawner_returns_correct_value() {
         use async_trait::async_trait;
-        use crucible_core::background::{BackgroundSpawner, TaskError, TaskId, TaskInfo, TaskResult};
+        use crucible_core::background::{BackgroundSpawner, JobError, JobId, JobInfo, JobResult};
         use std::path::PathBuf;
         use std::sync::Arc;
         use std::time::Duration;
@@ -725,15 +725,15 @@ mod tests {
 
         #[async_trait]
         impl BackgroundSpawner for MockSpawner {
-            async fn spawn_bash(&self, _: &str, _: String, _: Option<PathBuf>, _: Option<Duration>) -> Result<TaskId, TaskError> {
+            async fn spawn_bash(&self, _: &str, _: String, _: Option<PathBuf>, _: Option<Duration>) -> Result<JobId, JobError> {
                 Ok("id".into())
             }
-            async fn spawn_subagent(&self, _: &str, _: String, _: Option<String>) -> Result<TaskId, TaskError> {
+            async fn spawn_subagent(&self, _: &str, _: String, _: Option<String>) -> Result<JobId, JobError> {
                 Ok("id".into())
             }
-            fn list_tasks(&self, _: &str) -> Vec<TaskInfo> { vec![] }
-            fn get_task_result(&self, _: &TaskId) -> Option<TaskResult> { None }
-            async fn cancel_task(&self, _: &TaskId) -> bool { false }
+            fn list_jobs(&self, _: &str) -> Vec<JobInfo> { vec![] }
+            fn get_job_result(&self, _: &JobId) -> Option<JobResult> { None }
+            async fn cancel_job(&self, _: &JobId) -> bool { false }
         }
 
         let ctx_without = WorkspaceContext::new("/tmp/test");

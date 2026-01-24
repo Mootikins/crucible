@@ -1,7 +1,7 @@
 //! Agent lifecycle management for the daemon.
 
 use crate::agent_factory::{create_agent_from_session_config, AgentFactoryError};
-use crate::background_manager::BackgroundTaskManager;
+use crate::background_manager::BackgroundJobManager;
 use crate::protocol::SessionEventMessage;
 use crate::session_manager::{SessionError, SessionManager};
 use crucible_core::session::SessionAgent;
@@ -49,13 +49,13 @@ pub struct AgentManager {
     request_state: Arc<DashMap<String, RequestState>>,
     agent_cache: Arc<DashMap<String, Arc<Mutex<BoxedAgentHandle>>>>,
     session_manager: Arc<SessionManager>,
-    background_manager: Arc<BackgroundTaskManager>,
+    background_manager: Arc<BackgroundJobManager>,
 }
 
 impl AgentManager {
     pub fn new(
         session_manager: Arc<SessionManager>,
-        background_manager: Arc<BackgroundTaskManager>,
+        background_manager: Arc<BackgroundJobManager>,
     ) -> Self {
         Self {
             request_state: Arc::new(DashMap::new()),
@@ -570,7 +570,7 @@ mod tests {
 
     fn create_test_agent_manager(session_manager: Arc<SessionManager>) -> AgentManager {
         let (event_tx, _) = broadcast::channel(16);
-        let background_manager = Arc::new(BackgroundTaskManager::new(event_tx));
+        let background_manager = Arc::new(BackgroundJobManager::new(event_tx));
         AgentManager::new(session_manager, background_manager)
     }
 

@@ -1,8 +1,8 @@
-//! Background task management for the daemon.
+//! Background job management for the daemon.
 //!
-//! Provides session-scoped, ephemeral task management (tasks don't survive daemon restart).
+//! Provides session-scoped, ephemeral job management (jobs don't survive daemon restart).
 //!
-//! # Supported Task Types
+//! # Supported Job Types
 //!
 //! - **Bash**: Background shell command execution with timeout
 //! - **Subagent**: Multi-turn LLM execution with inherited tools
@@ -10,26 +10,26 @@
 //! # Example
 //!
 //! ```ignore
-//! let manager = BackgroundTaskManager::new(event_tx);
+//! let manager = BackgroundJobManager::new(event_tx);
 //!
-//! let task_id = manager.spawn_bash(
+//! let job_id = manager.spawn_bash(
 //!     "session-123",
 //!     "cargo build --release",
 //!     None,
 //!     None,
 //! ).await?;
 //!
-//! let tasks = manager.list_tasks("session-123");
+//! let jobs = manager.list_jobs("session-123");
 //!
-//! if let Some(result) = manager.get_task_result(&task_id) {
-//!     println!("Task completed: {:?}", result);
+//! if let Some(result) = manager.get_job_result(&job_id) {
+//!     println!("Job completed: {:?}", result);
 //! }
 //! ```
 
 use crate::protocol::SessionEventMessage;
 use async_trait::async_trait;
 use crucible_core::background::{
-    truncate, BackgroundSpawner, TaskError, TaskId, TaskInfo, TaskKind, TaskResult,
+    truncate, BackgroundSpawner, JobError, JobId, JobInfo, JobKind, JobResult,
 };
 use crucible_core::session::SessionAgent;
 use crucible_core::traits::chat::AgentHandle;
@@ -55,21 +55,21 @@ const DEFAULT_SUBAGENT_MAX_TURNS: usize = 10;
 const MAX_SUBAGENT_OUTPUT: usize = 10 * 1024 * 1024;
 
 mod events {
-    pub const BASH_SPAWNED: &str = "bash_task_spawned";
-    pub const BASH_COMPLETED: &str = "bash_task_completed";
-    pub const BASH_FAILED: &str = "bash_task_failed";
+    pub const BASH_SPAWNED: &str = "bash_job_spawned";
+    pub const BASH_COMPLETED: &str = "bash_job_completed";
+    pub const BASH_FAILED: &str = "bash_job_failed";
     pub const SUBAGENT_SPAWNED: &str = "subagent_spawned";
     pub const SUBAGENT_COMPLETED: &str = "subagent_completed";
     pub const SUBAGENT_FAILED: &str = "subagent_failed";
-    pub const BACKGROUND_COMPLETED: &str = "background_task_completed";
+    pub const BACKGROUND_COMPLETED: &str = "background_job_completed";
 }
 
 #[derive(Error, Debug)]
 pub enum BackgroundError {
-    #[error("Task error: {0}")]
-    Task(#[from] TaskError),
+    #[error("Job error: {0}")]
+    Job(#[from] JobError),
 
-    #[error("Failed to spawn task: {0}")]
+    #[error("Failed to spawn job: {0}")]
     SpawnFailed(String),
 
     #[error("No subagent factory configured")]
@@ -86,8 +86,8 @@ pub type SubagentFactory = Box<
         + Sync,
 >;
 
-struct RunningTask {
-    info: TaskInfo,
+struct RunningJob {
+    info: JobInfo,
     cancel_tx: oneshot::Sender<()>,
     #[allow(dead_code)]
     task_handle: JoinHandle<()>,
@@ -100,16 +100,16 @@ pub struct SubagentContext {
     pub parent_session_dir: Option<PathBuf>,
 }
 
-pub struct BackgroundTaskManager {
-    running: Arc<DashMap<TaskId, RunningTask>>,
-    history: Arc<DashMap<String, std::collections::VecDeque<TaskResult>>>,
+pub struct BackgroundJobManager {
+    running: Arc<DashMap<JobId, RunningJob>>,
+    history: Arc<DashMap<String, std::collections::VecDeque<JobResult>>>,
     event_tx: broadcast::Sender<SessionEventMessage>,
     max_history: usize,
     subagent_factory: Option<Arc<SubagentFactory>>,
     subagent_contexts: Arc<DashMap<String, SubagentContext>>,
 }
 
-impl BackgroundTaskManager {
+impl BackgroundJobManager {
     pub fn new(event_tx: broadcast::Sender<SessionEventMessage>) -> Self {
         Self {
             running: Arc::new(DashMap::new()),
@@ -141,13 +141,13 @@ impl BackgroundTaskManager {
         command: String,
         workdir: Option<PathBuf>,
         timeout: Option<Duration>,
-    ) -> Result<TaskId, BackgroundError> {
-        let kind = TaskKind::Bash {
+    ) -> Result<JobId, BackgroundError> {
+        let kind = JobKind::Bash {
             command: command.clone(),
             workdir: workdir.clone(),
         };
-        let info = TaskInfo::new(session_id.to_string(), kind);
-        let task_id = info.id.clone();
+        let info = JobInfo::new(session_id.to_string(), kind);
+        let job_id = info.id.clone();
         let timeout = timeout.unwrap_or(DEFAULT_BASH_TIMEOUT);
         let (cancel_tx, cancel_rx) = oneshot::channel();
 
@@ -155,23 +155,23 @@ impl BackgroundTaskManager {
             session_id,
             events::BASH_SPAWNED,
             serde_json::json!({
-                "task_id": task_id,
+                "job_id": job_id,
                 "command": command,
             }),
         ));
 
         info!(
-            task_id = %task_id,
+            job_id = %job_id,
             session_id = %session_id,
             command = %command,
-            "Spawning background bash task"
+            "Spawning background bash job"
         );
 
         let task_handle = {
             let running = self.running.clone();
             let history = self.history.clone();
             let event_tx = self.event_tx.clone();
-            let task_id = task_id.clone();
+            let job_id = job_id.clone();
             let session_id = session_id.to_string();
             let max_history = self.max_history;
             let command = command.clone();
@@ -185,68 +185,68 @@ impl BackgroundTaskManager {
                 )
                 .await;
 
-                // Extract original TaskInfo to preserve started_at timestamp
+                // Extract original JobInfo to preserve started_at timestamp
                 let info = running
-                    .remove(&task_id)
+                    .remove(&job_id)
                     .map(|(_, rt)| rt.info)
                     .unwrap_or_else(|| {
-                        // Fallback: task was already removed (shouldn't happen)
-                        TaskInfo::new(
+                        // Fallback: job was already removed (shouldn't happen)
+                        JobInfo::new(
                             session_id.clone(),
-                            TaskKind::Bash {
+                            JobKind::Bash {
                                 command: command.clone(),
                                 workdir: None,
                             },
                         )
                     });
 
-                let task_result = Self::build_task_result(info, result);
+                let job_result = Self::build_job_result(info, result);
                 Self::emit_completion_events(
                     &event_tx,
                     &session_id,
-                    &task_result.info.id.clone(),
-                    &task_result,
+                    &job_result.info.id.clone(),
+                    &job_result,
                 );
-                Self::add_to_history(&history, &session_id, task_result, max_history);
+                Self::add_to_history(&history, &session_id, job_result, max_history);
 
-                debug!(task_id = %task_id, "Background bash task completed");
+                debug!(job_id = %job_id, "Background bash job completed");
             })
         };
 
         self.running.insert(
-            task_id.clone(),
-            RunningTask {
+            job_id.clone(),
+            RunningJob {
                 info,
                 cancel_tx,
                 task_handle,
             },
         );
 
-        Ok(task_id)
+        Ok(job_id)
     }
 
-    fn build_task_result(
-        mut info: TaskInfo,
+    fn build_job_result(
+        mut info: JobInfo,
         result: Result<(String, i32), BashError>,
-    ) -> TaskResult {
+    ) -> JobResult {
         match result {
             Ok((output, exit_code)) => {
                 info.mark_completed();
-                TaskResult::success_with_exit_code(info, output, exit_code)
+                JobResult::success_with_exit_code(info, output, exit_code)
             }
             Err(BashError::Cancelled) => {
                 info.mark_cancelled();
-                TaskResult::failure(info, "Task cancelled".to_string())
+                JobResult::failure(info, "Job cancelled".to_string())
             }
             Err(BashError::Timeout) => {
                 info.mark_failed();
-                TaskResult::failure(info, "Task timed out".to_string())
+                JobResult::failure(info, "Job timed out".to_string())
             }
             Err(BashError::Failed { message, exit_code }) => {
                 info.mark_failed();
                 match exit_code {
-                    Some(code) => TaskResult::failure_with_exit_code(info, message, code),
-                    None => TaskResult::failure(info, message),
+                    Some(code) => JobResult::failure_with_exit_code(info, message, code),
+                    None => JobResult::failure(info, message),
                 }
             }
         }
@@ -255,15 +255,15 @@ impl BackgroundTaskManager {
     fn emit_completion_events(
         event_tx: &broadcast::Sender<SessionEventMessage>,
         session_id: &str,
-        task_id: &TaskId,
-        result: &TaskResult,
+        job_id: &JobId,
+        result: &JobResult,
     ) {
         let (event_type, event_data) = if result.is_success() {
             let output = result.output.as_deref().unwrap_or("");
             (
                 events::BASH_COMPLETED,
                 serde_json::json!({
-                    "task_id": task_id,
+                    "job_id": job_id,
                     "output": truncate(output, 1000),
                     "exit_code": result.exit_code,
                 }),
@@ -273,7 +273,7 @@ impl BackgroundTaskManager {
             (
                 events::BASH_FAILED,
                 serde_json::json!({
-                    "task_id": task_id,
+                    "job_id": job_id,
                     "error": error,
                     "exit_code": result.exit_code,
                 }),
@@ -284,16 +284,16 @@ impl BackgroundTaskManager {
             .send(SessionEventMessage::new(session_id, event_type, event_data))
             .is_err()
         {
-            warn!(task_id = %task_id, "No subscribers for bash completion event");
+            warn!(job_id = %job_id, "No subscribers for bash completion event");
         }
-        Self::emit_background_completed(event_tx, session_id, task_id, result, "bash");
+        Self::emit_background_completed(event_tx, session_id, job_id, result, "bash");
     }
 
     fn emit_background_completed(
         event_tx: &broadcast::Sender<SessionEventMessage>,
         session_id: &str,
-        task_id: &TaskId,
-        result: &TaskResult,
+        job_id: &JobId,
+        result: &JobResult,
         kind: &str,
     ) {
         let summary = result.truncated_output(500);
@@ -311,14 +311,14 @@ impl BackgroundTaskManager {
                 session_id,
                 events::BACKGROUND_COMPLETED,
                 serde_json::json!({
-                    "task_id": task_id,
+                    "job_id": job_id,
                     "kind": kind,
                     "summary": summary,
                 }),
             ))
             .is_err()
         {
-            warn!(task_id = %task_id, kind = %kind, "No subscribers for background completion event");
+            warn!(job_id = %job_id, kind = %kind, "No subscribers for background completion event");
         }
     }
 
@@ -404,9 +404,9 @@ impl BackgroundTaskManager {
     }
 
     fn add_to_history(
-        history: &DashMap<String, std::collections::VecDeque<TaskResult>>,
+        history: &DashMap<String, std::collections::VecDeque<JobResult>>,
         session_id: &str,
-        result: TaskResult,
+        result: JobResult,
         max_history: usize,
     ) {
         let mut entry = history.entry(session_id.to_string()).or_default();
@@ -417,45 +417,42 @@ impl BackgroundTaskManager {
         }
     }
 
-    pub fn list_tasks(&self, session_id: &str) -> Vec<TaskInfo> {
-        let mut tasks = Vec::new();
+    pub fn list_jobs(&self, session_id: &str) -> Vec<JobInfo> {
+        let mut jobs = Vec::new();
 
-        // Add running tasks
         for entry in self.running.iter() {
             if entry.value().info.session_id == session_id {
-                tasks.push(entry.value().info.clone());
+                jobs.push(entry.value().info.clone());
             }
         }
 
-        // Add completed tasks from history
         if let Some(history) = self.history.get(session_id) {
             for result in history.iter() {
-                tasks.push(result.info.clone());
+                jobs.push(result.info.clone());
             }
         }
 
-        // Sort by started_at descending (newest first)
-        tasks.sort_by(|a, b| b.started_at.cmp(&a.started_at));
+        jobs.sort_by(|a, b| b.started_at.cmp(&a.started_at));
 
-        tasks
+        jobs
     }
 
-    pub fn get_task_result(&self, task_id: &TaskId) -> Option<TaskResult> {
-        self.get_task_result_for_session(task_id, None)
+    pub fn get_job_result(&self, job_id: &JobId) -> Option<JobResult> {
+        self.get_job_result_for_session(job_id, None)
     }
 
-    pub fn get_task_result_for_session(
+    pub fn get_job_result_for_session(
         &self,
-        task_id: &TaskId,
+        job_id: &JobId,
         session_id: Option<&str>,
-    ) -> Option<TaskResult> {
-        if let Some(entry) = self.running.get(task_id) {
+    ) -> Option<JobResult> {
+        if let Some(entry) = self.running.get(job_id) {
             if let Some(sid) = session_id {
                 if entry.info.session_id != sid {
                     return None;
                 }
             }
-            return Some(TaskResult {
+            return Some(JobResult {
                 info: entry.info.clone(),
                 output: None,
                 error: None,
@@ -470,7 +467,7 @@ impl BackgroundTaskManager {
                 }
             }
             for result in entry.value().iter() {
-                if result.info.id == *task_id {
+                if result.info.id == *job_id {
                     return Some(result.clone());
                 }
             }
@@ -479,73 +476,73 @@ impl BackgroundTaskManager {
         None
     }
 
-    pub async fn cancel_task(&self, task_id: &TaskId) -> bool {
-        self.cancel_task_for_session(task_id, None).await
+    pub async fn cancel_job(&self, job_id: &JobId) -> bool {
+        self.cancel_job_for_session(job_id, None).await
     }
 
-    pub async fn cancel_task_for_session(
+    pub async fn cancel_job_for_session(
         &self,
-        task_id: &TaskId,
+        job_id: &JobId,
         caller_session_id: Option<&str>,
     ) -> bool {
         if let Some(sid) = caller_session_id {
-            if let Some(entry) = self.running.get(task_id) {
+            if let Some(entry) = self.running.get(job_id) {
                 if entry.info.session_id != sid {
                     warn!(
-                        task_id = %task_id,
+                        job_id = %job_id,
                         owner = %entry.info.session_id,
                         caller = %sid,
-                        "Session tried to cancel task owned by another session"
+                        "Session tried to cancel job owned by another session"
                     );
                     return false;
                 }
             }
         }
 
-        let Some((_, running_task)) = self.running.remove(task_id) else {
-            warn!(task_id = %task_id, "Task not found for cancellation");
+        let Some((_, running_job)) = self.running.remove(job_id) else {
+            warn!(job_id = %job_id, "Job not found for cancellation");
             return false;
         };
 
-        let _ = running_task.cancel_tx.send(());
+        let _ = running_job.cancel_tx.send(());
 
-        let mut info = running_task.info;
+        let mut info = running_job.info;
         info.mark_cancelled();
-        let task_session_id = info.session_id.clone();
-        let task_result = TaskResult::failure(info, "Task cancelled".to_string());
+        let job_session_id = info.session_id.clone();
+        let job_result = JobResult::failure(info, "Job cancelled".to_string());
 
-        let kind = match &task_result.info.kind {
-            TaskKind::Bash { .. } => "bash",
-            TaskKind::Subagent { .. } => "subagent",
+        let kind = match &job_result.info.kind {
+            JobKind::Bash { .. } => "bash",
+            JobKind::Subagent { .. } => "subagent",
         };
         Self::emit_background_completed(
             &self.event_tx,
-            &task_session_id,
-            task_id,
-            &task_result,
+            &job_session_id,
+            job_id,
+            &job_result,
             kind,
         );
         Self::add_to_history(
             &self.history,
-            &task_session_id,
-            task_result,
+            &job_session_id,
+            job_result,
             self.max_history,
         );
 
-        info!(task_id = %task_id, "Task cancelled");
+        info!(job_id = %job_id, "Job cancelled");
         true
     }
 
     pub async fn cleanup_session(&self, session_id: &str, clear_history: bool) {
-        let task_ids: Vec<TaskId> = self
+        let job_ids: Vec<JobId> = self
             .running
             .iter()
             .filter(|entry| entry.value().info.session_id == session_id)
             .map(|entry| entry.key().clone())
             .collect();
 
-        for task_id in task_ids {
-            self.cancel_task(&task_id).await;
+        for job_id in job_ids {
+            self.cancel_job(&job_id).await;
         }
 
         if clear_history {
@@ -571,7 +568,7 @@ impl BackgroundTaskManager {
         session_id: &str,
         prompt: String,
         context: Option<String>,
-    ) -> Result<TaskId, BackgroundError> {
+    ) -> Result<JobId, BackgroundError> {
         let factory = self
             .subagent_factory
             .as_ref()
@@ -588,12 +585,12 @@ impl BackgroundTaskManager {
             )
         };
 
-        let kind = TaskKind::Subagent {
+        let kind = JobKind::Subagent {
             prompt: prompt.clone(),
             context: context.clone(),
         };
-        let mut info = TaskInfo::new(session_id.to_string(), kind);
-        let task_id = info.id.clone();
+        let mut info = JobInfo::new(session_id.to_string(), kind);
+        let job_id = info.id.clone();
         let (cancel_tx, cancel_rx) = oneshot::channel();
 
         let (subagent_writer, session_link) = if let Some(ref parent_dir) = parent_session_dir {
@@ -604,25 +601,25 @@ impl BackgroundTaskManager {
                 }
                 Err(e) => {
                     warn!(error = %e, "Failed to create subagent session, continuing without persistence");
-                    (None, format!("[[subagent:{}]]", task_id))
+                    (None, format!("[[subagent:{}]]", job_id))
                 }
             }
         } else {
-            (None, format!("[[subagent:{}]]", task_id))
+            (None, format!("[[subagent:{}]]", job_id))
         };
 
         let _ = self.event_tx.send(SessionEventMessage::new(
             session_id,
             events::SUBAGENT_SPAWNED,
             serde_json::json!({
-                "task_id": task_id,
+                "job_id": job_id,
                 "session_link": session_link,
                 "prompt": truncate(&prompt, 100),
             }),
         ));
 
         info!(
-            task_id = %task_id,
+            job_id = %job_id,
             session_id = %session_id,
             session_link = %session_link,
             prompt_len = prompt.len(),
@@ -637,7 +634,7 @@ impl BackgroundTaskManager {
             let running = self.running.clone();
             let history = self.history.clone();
             let event_tx = self.event_tx.clone();
-            let task_id = task_id.clone();
+            let job_id = job_id.clone();
             let session_id = session_id.to_string();
             let max_history = self.max_history;
             let session_link = session_link.clone();
@@ -653,44 +650,44 @@ impl BackgroundTaskManager {
                 )
                 .await;
 
-                // Extract original TaskInfo to preserve started_at timestamp
+                // Extract original JobInfo to preserve started_at timestamp
                 let info = running
-                    .remove(&task_id)
+                    .remove(&job_id)
                     .map(|(_, rt)| rt.info)
                     .unwrap_or_else(|| {
-                        TaskInfo::new(
+                        JobInfo::new(
                             session_id.clone(),
-                            TaskKind::Subagent {
+                            JobKind::Subagent {
                                 prompt,
                                 context: None,
                             },
                         )
                     });
 
-                let task_result = Self::build_subagent_result(info, result);
+                let job_result = Self::build_subagent_result(info, result);
                 Self::emit_subagent_completion_events(
                     &event_tx,
                     &session_id,
-                    &task_result.info.id.clone(),
-                    &task_result,
+                    &job_result.info.id.clone(),
+                    &job_result,
                     &session_link,
                 );
-                Self::add_to_history(&history, &session_id, task_result, max_history);
+                Self::add_to_history(&history, &session_id, job_result, max_history);
 
-                debug!(task_id = %task_id, "Background subagent completed");
+                debug!(job_id = %job_id, "Background subagent completed");
             })
         };
 
         self.running.insert(
-            task_id.clone(),
-            RunningTask {
+            job_id.clone(),
+            RunningJob {
                 info,
                 cancel_tx,
                 task_handle,
             },
         );
 
-        Ok(task_id)
+        Ok(job_id)
     }
 
     async fn execute_subagent(
@@ -778,21 +775,21 @@ impl BackgroundTaskManager {
     }
 
     fn build_subagent_result(
-        mut info: TaskInfo,
+        mut info: JobInfo,
         result: Result<String, SubagentError>,
-    ) -> TaskResult {
+    ) -> JobResult {
         match result {
             Ok(output) => {
                 info.mark_completed();
-                TaskResult::success(info, output)
+                JobResult::success(info, output)
             }
             Err(SubagentError::Cancelled) => {
                 info.mark_cancelled();
-                TaskResult::failure(info, "Subagent cancelled".to_string())
+                JobResult::failure(info, "Subagent cancelled".to_string())
             }
             Err(SubagentError::Failed(msg)) => {
                 info.mark_failed();
-                TaskResult::failure(info, msg)
+                JobResult::failure(info, msg)
             }
         }
     }
@@ -800,8 +797,8 @@ impl BackgroundTaskManager {
     fn emit_subagent_completion_events(
         event_tx: &broadcast::Sender<SessionEventMessage>,
         session_id: &str,
-        task_id: &TaskId,
-        result: &TaskResult,
+        job_id: &JobId,
+        result: &JobResult,
         session_link: &str,
     ) {
         let (event_type, event_data) = if result.is_success() {
@@ -809,7 +806,7 @@ impl BackgroundTaskManager {
             (
                 events::SUBAGENT_COMPLETED,
                 serde_json::json!({
-                    "task_id": task_id,
+                    "job_id": job_id,
                     "session_link": session_link,
                     "summary": truncate(output, 500),
                 }),
@@ -819,7 +816,7 @@ impl BackgroundTaskManager {
             (
                 events::SUBAGENT_FAILED,
                 serde_json::json!({
-                    "task_id": task_id,
+                    "job_id": job_id,
                     "session_link": session_link,
                     "error": error,
                 }),
@@ -830,9 +827,9 @@ impl BackgroundTaskManager {
             .send(SessionEventMessage::new(session_id, event_type, event_data))
             .is_err()
         {
-            warn!(task_id = %task_id, "No subscribers for subagent completion event");
+            warn!(job_id = %job_id, "No subscribers for subagent completion event");
         }
-        Self::emit_background_completed(event_tx, session_id, task_id, result, "subagent");
+        Self::emit_background_completed(event_tx, session_id, job_id, result, "subagent");
     }
 }
 
@@ -842,29 +839,29 @@ enum SubagentError {
 }
 
 #[async_trait]
-impl BackgroundSpawner for BackgroundTaskManager {
+impl BackgroundSpawner for BackgroundJobManager {
     async fn spawn_bash(
         &self,
         session_id: &str,
         command: String,
         workdir: Option<PathBuf>,
         timeout: Option<Duration>,
-    ) -> Result<TaskId, TaskError> {
+    ) -> Result<JobId, JobError> {
         self.spawn_bash(session_id, command, workdir, timeout)
             .await
-            .map_err(|e| TaskError::SpawnFailed(e.to_string()))
+            .map_err(|e| JobError::SpawnFailed(e.to_string()))
     }
 
-    fn list_tasks(&self, session_id: &str) -> Vec<TaskInfo> {
-        BackgroundTaskManager::list_tasks(self, session_id)
+    fn list_jobs(&self, session_id: &str) -> Vec<JobInfo> {
+        BackgroundJobManager::list_jobs(self, session_id)
     }
 
-    fn get_task_result(&self, task_id: &TaskId) -> Option<TaskResult> {
-        BackgroundTaskManager::get_task_result(self, task_id)
+    fn get_job_result(&self, job_id: &JobId) -> Option<JobResult> {
+        BackgroundJobManager::get_job_result(self, job_id)
     }
 
-    async fn cancel_task(&self, task_id: &TaskId) -> bool {
-        BackgroundTaskManager::cancel_task(self, task_id).await
+    async fn cancel_job(&self, job_id: &JobId) -> bool {
+        BackgroundJobManager::cancel_job(self, job_id).await
     }
 
     async fn spawn_subagent(
@@ -872,10 +869,10 @@ impl BackgroundSpawner for BackgroundTaskManager {
         session_id: &str,
         prompt: String,
         context: Option<String>,
-    ) -> Result<TaskId, TaskError> {
-        BackgroundTaskManager::spawn_subagent(self, session_id, prompt, context)
+    ) -> Result<JobId, JobError> {
+        BackgroundJobManager::spawn_subagent(self, session_id, prompt, context)
             .await
-            .map_err(|e| TaskError::SpawnFailed(e.to_string()))
+            .map_err(|e| JobError::SpawnFailed(e.to_string()))
     }
 }
 
@@ -891,61 +888,57 @@ enum BashError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crucible_core::background::TaskStatus;
+    use crucible_core::background::JobStatus;
     use tokio::sync::broadcast;
 
-    fn create_manager() -> BackgroundTaskManager {
+    fn create_manager() -> BackgroundJobManager {
         let (tx, _) = broadcast::channel(16);
-        BackgroundTaskManager::new(tx)
+        BackgroundJobManager::new(tx)
     }
 
     #[tokio::test]
-    async fn spawn_bash_returns_task_id_immediately() {
+    async fn spawn_bash_returns_job_id_immediately() {
         let manager = create_manager();
 
-        let task_id = manager
+        let job_id = manager
             .spawn_bash("session-1", "echo hello".to_string(), None, None)
             .await
             .unwrap();
 
-        assert!(task_id.starts_with("task-"));
+        assert!(job_id.starts_with("job-"));
     }
 
     #[tokio::test]
-    async fn task_appears_in_list_while_running() {
+    async fn job_appears_in_list_while_running() {
         let manager = create_manager();
 
-        let task_id = manager
+        let job_id = manager
             .spawn_bash("session-1", "sleep 5".to_string(), None, None)
             .await
             .unwrap();
 
-        // Give task time to start
         tokio::time::sleep(Duration::from_millis(50)).await;
 
-        let tasks = manager.list_tasks("session-1");
-        assert_eq!(tasks.len(), 1);
-        assert_eq!(tasks[0].id, task_id);
-        assert_eq!(tasks[0].status, TaskStatus::Running);
+        let jobs = manager.list_jobs("session-1");
+        assert_eq!(jobs.len(), 1);
+        assert_eq!(jobs[0].id, job_id);
+        assert_eq!(jobs[0].status, JobStatus::Running);
 
-        // Cancel to clean up
-        manager.cancel_task(&task_id).await;
+        manager.cancel_job(&job_id).await;
     }
 
     #[tokio::test]
-    async fn completed_task_moves_to_history() {
+    async fn completed_job_moves_to_history() {
         let manager = create_manager();
 
-        let task_id = manager
+        let job_id = manager
             .spawn_bash("session-1", "echo done".to_string(), None, None)
             .await
             .unwrap();
 
-        // Wait for completion
         tokio::time::sleep(Duration::from_millis(200)).await;
 
-        // Should be in history now
-        let result = manager.get_task_result(&task_id);
+        let result = manager.get_job_result(&job_id);
         assert!(result.is_some());
 
         let result = result.unwrap();
@@ -953,80 +946,70 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn cancel_task_stops_running_task() {
+    async fn cancel_job_stops_running_job() {
         let manager = create_manager();
 
-        let task_id = manager
+        let job_id = manager
             .spawn_bash("session-1", "sleep 60".to_string(), None, None)
             .await
             .unwrap();
 
-        // Give task time to start
         tokio::time::sleep(Duration::from_millis(50)).await;
 
-        // Verify it's running
-        assert!(manager.running.contains_key(&task_id));
+        assert!(manager.running.contains_key(&job_id));
 
-        // Cancel
-        let cancelled = manager.cancel_task(&task_id).await;
+        let cancelled = manager.cancel_job(&job_id).await;
         assert!(cancelled);
 
-        // Should no longer be running
-        assert!(!manager.running.contains_key(&task_id));
+        assert!(!manager.running.contains_key(&job_id));
     }
 
     #[tokio::test]
     async fn history_eviction_at_limit() {
         let (tx, _) = broadcast::channel(16);
-        let mut manager = BackgroundTaskManager::new(tx);
-        manager.max_history = 3; // Small limit for testing
+        let mut manager = BackgroundJobManager::new(tx);
+        manager.max_history = 3;
 
-        // Spawn 5 quick tasks
         for i in 0..5 {
             let _ = manager
-                .spawn_bash("session-1", format!("echo task-{i}"), None, None)
+                .spawn_bash("session-1", format!("echo job-{i}"), None, None)
                 .await
                 .unwrap();
             tokio::time::sleep(Duration::from_millis(100)).await;
         }
 
-        // Wait for all to complete
         tokio::time::sleep(Duration::from_millis(500)).await;
 
-        // Should only have 3 in history (the newest 3)
-        let tasks = manager.list_tasks("session-1");
+        let jobs = manager.list_jobs("session-1");
         assert!(
-            tasks.len() <= 3,
-            "Should have at most 3 tasks, got {}",
-            tasks.len()
+            jobs.len() <= 3,
+            "Should have at most 3 jobs, got {}",
+            jobs.len()
         );
     }
 
     #[tokio::test]
-    async fn get_task_result_for_running_task() {
+    async fn get_job_result_for_running_job() {
         let manager = create_manager();
 
-        let task_id = manager
+        let job_id = manager
             .spawn_bash("session-1", "sleep 5".to_string(), None, None)
             .await
             .unwrap();
 
-        // Give task time to start
         tokio::time::sleep(Duration::from_millis(50)).await;
 
-        let result = manager.get_task_result(&task_id);
+        let result = manager.get_job_result(&job_id);
         assert!(result.is_some());
-        assert_eq!(result.unwrap().info.status, TaskStatus::Running);
+        assert_eq!(result.unwrap().info.status, JobStatus::Running);
 
-        // Clean up
-        manager.cancel_task(&task_id).await;
+        manager.cancel_job(&job_id).await;
     }
 
     #[tokio::test]
-    async fn cleanup_session_cancels_all_tasks() {
+    async fn cleanup_session_cancels_all_jobs() {
         let manager = create_manager();
 
-        // Spawn multiple tasks
         for i in 0..3 {
             let _ = manager
                 .spawn_bash("session-1", format!("sleep {}", 10 + i), None, None)
@@ -1034,7 +1017,6 @@ mod tests {
                 .unwrap();
         }
 
-        // Also spawn for different session
         let _ = manager
             .spawn_bash("session-2", "sleep 10".to_string(), None, None)
             .await
@@ -1045,38 +1027,35 @@ mod tests {
         assert_eq!(manager.running_count("session-1"), 3);
         assert_eq!(manager.running_count("session-2"), 1);
 
-        // Cleanup session-1
         manager.cleanup_session("session-1", true).await;
 
         assert_eq!(manager.running_count("session-1"), 0);
         assert_eq!(manager.running_count("session-2"), 1);
 
-        // Clean up session-2
         manager.cleanup_session("session-2", false).await;
     }
 
     #[tokio::test]
-    async fn task_timeout() {
+    async fn job_timeout() {
         let manager = create_manager();
 
-        let task_id = manager
+        let job_id = manager
             .spawn_bash(
                 "session-1",
                 "sleep 10".to_string(),
                 None,
-                Some(Duration::from_millis(100)), // Very short timeout
+                Some(Duration::from_millis(100)),
             )
             .await
             .unwrap();
 
-        // Wait for timeout
         tokio::time::sleep(Duration::from_millis(300)).await;
 
-        let result = manager.get_task_result(&task_id);
+        let result = manager.get_job_result(&job_id);
         assert!(result.is_some());
 
         let result = result.unwrap();
-        assert_eq!(result.info.status, TaskStatus::Failed);
+        assert_eq!(result.info.status, JobStatus::Failed);
         assert!(result
             .error
             .as_ref()
@@ -1098,35 +1077,35 @@ mod tests {
 
         tokio::time::sleep(Duration::from_millis(200)).await;
 
-        let tasks_1 = manager.list_tasks("session-1");
-        let tasks_2 = manager.list_tasks("session-2");
+        let jobs_1 = manager.list_jobs("session-1");
+        let jobs_2 = manager.list_jobs("session-2");
 
-        assert_eq!(tasks_1.len(), 1);
-        assert_eq!(tasks_2.len(), 1);
-        assert_ne!(tasks_1[0].id, tasks_2[0].id);
+        assert_eq!(jobs_1.len(), 1);
+        assert_eq!(jobs_2.len(), 1);
+        assert_ne!(jobs_1[0].id, jobs_2[0].id);
     }
 
     #[tokio::test]
-    async fn completed_task_preserves_started_at_for_duration() {
+    async fn completed_job_preserves_started_at_for_duration() {
         let manager = create_manager();
 
-        let task_id = manager
+        let job_id = manager
             .spawn_bash("session-1", "sleep 0.1".to_string(), None, None)
             .await
             .unwrap();
 
         tokio::time::sleep(Duration::from_millis(200)).await;
 
-        let result = manager.get_task_result(&task_id).unwrap();
+        let result = manager.get_job_result(&job_id).unwrap();
         let duration = result
             .info
             .duration()
-            .expect("completed task should have duration");
+            .expect("completed job should have duration");
         let millis = duration.num_milliseconds();
 
         assert!(
             millis >= 100,
-            "Duration {}ms should be >= 100ms (task ran sleep 0.1)",
+            "Duration {}ms should be >= 100ms (job ran sleep 0.1)",
             millis
         );
         assert!(
