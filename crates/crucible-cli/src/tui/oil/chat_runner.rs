@@ -256,20 +256,21 @@ impl InkChatRunner {
 
                             if let Some(ref tool_results) = chunk.tool_results {
                                 for tr in tool_results {
-                                    if !tr.result.is_empty()
-                                        && msg_tx
-                                            .send(ChatAppMsg::ToolResultDelta {
+                                    if let Some(ref error) = tr.error {
+                                        let _ = msg_tx.send(ChatAppMsg::ToolResultError {
+                                            name: tr.name.clone(),
+                                            error: error.clone(),
+                                        });
+                                    } else {
+                                        if !tr.result.is_empty() {
+                                            let _ = msg_tx.send(ChatAppMsg::ToolResultDelta {
                                                 name: tr.name.clone(),
                                                 delta: tr.result.clone(),
-                                            })
-                                            .is_err()
-                                    {
-                                        tracing::warn!(tool = %tr.name, "UI channel closed, ToolResultDelta dropped");
-                                    }
-                                    if msg_tx.send(ChatAppMsg::ToolResultComplete {
-                                        name: tr.name.clone(),
-                                    }).is_err() {
-                                        tracing::warn!(tool = %tr.name, "UI channel closed, ToolResultComplete dropped");
+                                            });
+                                        }
+                                        let _ = msg_tx.send(ChatAppMsg::ToolResultComplete {
+                                            name: tr.name.clone(),
+                                        });
                                     }
                                 }
                             }

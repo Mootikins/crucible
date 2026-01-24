@@ -3,13 +3,16 @@ use std::borrow::Cow;
 use crate::tui::oil::chat_app::Role;
 use crate::tui::oil::component::Component;
 use crate::tui::oil::markdown::{markdown_to_node_styled, Margins, RenderStyle};
-use crate::tui::oil::node::{col, row, scrollback, styled, text, Node};
+use crate::tui::oil::node::{
+    col, row, scrollback, spinner_with_frames, styled, text, Node, BRAILLE_SPINNER_FRAMES,
+};
 use crate::tui::oil::style::Style;
 use crate::tui::oil::theme::{colors, styles};
 use crate::tui::oil::viewport_cache::{
     CachedChatItem, CachedMessage, CachedShellExecution, CachedToolCall,
 };
 use crate::tui::oil::ViewContext;
+use std::time::Duration;
 
 pub struct MessageList<'a> {
     items: &'a [&'a CachedChatItem],
@@ -146,54 +149,205 @@ pub fn render_thinking_block(content: &str, token_count: usize, width: usize) ->
     col([header, content_node, text("")])
 }
 
-pub fn render_tool_call(tool: &CachedToolCall, first_in_sequence: bool) -> Node {
-    let (status_icon, status_color) = if tool.complete {
-        ("✓", colors::SUCCESS)
+fn display_tool_name(name: &str) -> &str {
+    name.strip_prefix("mcp_").unwrap_or(name)
+}
+
+fn format_elapsed(duration: Duration) -> String {
+    let secs = duration.as_secs();
+    if secs < 60 {
+        format!("{}s", secs)
     } else {
-        ("…", colors::TEXT_PRIMARY)
+        format!("{}m{}s", secs / 60, secs % 60)
+    }
+}
+
+pub fn render_tool_call(tool: &CachedToolCall, first_in_sequence: bool) -> Node {
+    render_tool_call_with_frame(tool, first_in_sequence, 0)
+}
+
+pub fn render_tool_call_with_frame(
+    tool: &CachedToolCall,
+    first_in_sequence: bool,
+    spinner_frame: usize,
+) -> Node {
+    let display_name = display_tool_name(&tool.name);
+    let args_formatted = format_tool_args(&tool.args);
+    let result_str = tool.result();
+
+    if let Some(ref error) = tool.error {
+        return render_tool_error(
+            tool,
+            display_name,
+            &args_formatted,
+            error,
+            first_in_sequence,
+        );
+    }
+
+    if tool.complete {
+        return render_tool_complete(
+            tool,
+            display_name,
+            &args_formatted,
+            &result_str,
+            first_in_sequence,
+        );
+    }
+
+    render_tool_running(
+        tool,
+        display_name,
+        &args_formatted,
+        &result_str,
+        first_in_sequence,
+        spinner_frame,
+    )
+}
+
+fn render_tool_error(
+    tool: &CachedToolCall,
+    display_name: &str,
+    args_formatted: &str,
+    error: &str,
+    first_in_sequence: bool,
+) -> Node {
+    let header = row([
+        styled(" ✗ ", Style::new().fg(colors::ERROR)),
+        styled(display_name, Style::new().fg(colors::TEXT_PRIMARY)),
+        styled(format!("({}) ", args_formatted), styles::muted()),
+        styled(format!("→ {}", truncate_line(error, 50)), styles::error()),
+    ]);
+
+    let content = if first_in_sequence {
+        col([text(""), header])
+    } else {
+        header
     };
 
-    let args_formatted = format_tool_args(&tool.args);
-    let result_summary = if tool.complete && !tool.result.is_empty() {
-        summarize_tool_result(&tool.name, &tool.result)
+    scrollback(&tool.id, [content])
+}
+
+fn render_tool_complete(
+    tool: &CachedToolCall,
+    display_name: &str,
+    args_formatted: &str,
+    result_str: &str,
+    first_in_sequence: bool,
+) -> Node {
+    let result_summary = if !result_str.is_empty() {
+        summarize_tool_result(&tool.name, result_str)
     } else {
         None
     };
 
-    let has_summary = result_summary.is_some();
-    let header = if let Some(summary) = result_summary {
-        row([
-            styled(format!(" {} ", status_icon), Style::new().fg(status_color)),
-            styled(tool.name.as_ref(), Style::new().fg(colors::TEXT_PRIMARY)),
-            styled(format!("({}) ", args_formatted), styles::muted()),
-            styled(format!("→ {}", summary), styles::muted()),
-        ])
+    let collapsed = collapse_result(&tool.name, result_str, result_summary.as_deref());
+    let is_collapsed = collapsed.is_some();
+
+    let header = row([
+        styled(" ✓ ", Style::new().fg(colors::SUCCESS)),
+        styled(display_name, Style::new().fg(colors::TEXT_PRIMARY)),
+        if args_formatted.is_empty() {
+            Node::Empty
+        } else if is_collapsed {
+            styled(format!("({}) ", args_formatted), styles::muted())
+        } else {
+            styled(format!("({})", args_formatted), styles::muted())
+        },
+        collapsed
+            .map(|s| styled(format!("→ {}", s), styles::muted()))
+            .unwrap_or(Node::Empty),
+    ]);
+
+    let result_node = if is_collapsed || result_str.is_empty() {
+        Node::Empty
     } else {
-        row([
-            styled(format!(" {} ", status_icon), Style::new().fg(status_color)),
-            styled(tool.name.as_ref(), Style::new().fg(colors::TEXT_PRIMARY)),
-            styled(format!("({})", args_formatted), styles::muted()),
-        ])
+        format_tool_result(&tool.name, result_str)
     };
 
-    let result_node = if tool.result.is_empty() || has_summary {
-        Node::Empty
-    } else if tool.complete {
-        format_tool_result(&tool.name, &tool.result)
-    } else {
-        format_streaming_output(&tool.result)
-    };
+    let path_node = tool
+        .output_path
+        .as_ref()
+        .map(|p| styled(format!("   → {}", p.display()), styles::dim()))
+        .unwrap_or(Node::Empty);
 
     let content = if first_in_sequence {
+        col([text(""), header, result_node, path_node])
+    } else {
+        col([header, result_node, path_node])
+    };
+
+    scrollback(&tool.id, [content])
+}
+
+fn render_tool_running(
+    tool: &CachedToolCall,
+    display_name: &str,
+    args_formatted: &str,
+    result_str: &str,
+    first_in_sequence: bool,
+    spinner_frame: usize,
+) -> Node {
+    let elapsed = tool.elapsed();
+    let show_elapsed = elapsed >= Duration::from_secs(2);
+
+    let header = row([
+        styled(" ", Style::new()),
+        spinner_with_frames(
+            spinner_frame,
+            Style::new().fg(colors::TEXT_PRIMARY),
+            BRAILLE_SPINNER_FRAMES,
+        ),
+        styled(" ", Style::new()),
+        styled(display_name, Style::new().fg(colors::TEXT_PRIMARY)),
+        styled(format!("({})", args_formatted), styles::muted()),
+        if show_elapsed {
+            styled(format!("  {}", format_elapsed(elapsed)), styles::dim())
+        } else {
+            Node::Empty
+        },
+    ]);
+
+    let result_node = if result_str.is_empty() {
+        Node::Empty
+    } else {
+        format_streaming_output(result_str)
+    };
+
+    if first_in_sequence {
         col([text(""), header, result_node])
     } else {
         col([header, result_node])
-    };
+    }
+}
 
-    if tool.complete {
-        scrollback(&tool.id, [content])
+fn collapse_result(name: &str, result: &str, summary: Option<&str>) -> Option<String> {
+    if let Some(s) = summary {
+        return Some(s.to_string());
+    }
+
+    if result.is_empty() {
+        return None;
+    }
+
+    let lines: Vec<&str> = result.lines().collect();
+    if lines.len() == 1 && result.len() <= 60 {
+        return Some(result.trim().to_string());
+    }
+
+    match name {
+        "write" | "mcp_write" => Some("written".to_string()),
+        "edit" | "mcp_edit" => Some("applied".to_string()),
+        _ => None,
+    }
+}
+
+fn truncate_line(s: &str, max: usize) -> String {
+    let first_line = s.lines().next().unwrap_or(s);
+    if first_line.len() <= max {
+        first_line.to_string()
     } else {
-        content
+        format!("{}…", &first_line[..max.saturating_sub(1)])
     }
 }
 
@@ -390,6 +544,28 @@ mod tests {
     use crate::tui::oil::component::ComponentHarness;
     use crate::tui::oil::render::render_to_plain_text;
 
+    fn test_tool(name: &str, args: &str, complete: bool) -> CachedToolCall {
+        let mut tool = CachedToolCall::new("tool-1", name, args);
+        if complete {
+            tool.mark_complete();
+        }
+        tool
+    }
+
+    fn test_tool_with_output(
+        name: &str,
+        args: &str,
+        output: &str,
+        complete: bool,
+    ) -> CachedToolCall {
+        let mut tool = CachedToolCall::new("tool-1", name, args);
+        tool.append_output(output);
+        if complete {
+            tool.mark_complete();
+        }
+        tool
+    }
+
     #[test]
     fn format_tool_args_empty() {
         assert_eq!(format_tool_args(""), "");
@@ -468,32 +644,53 @@ mod tests {
 
     #[test]
     fn render_tool_call_complete() {
-        let tool = CachedToolCall {
-            id: "tool-1".to_string(),
-            name: "mcp_read".into(),
-            args: r#"{"path": "test.rs"}"#.into(),
-            result: "content".to_string(),
-            complete: true,
-        };
+        let tool = test_tool_with_output("mcp_read", r#"{"path": "test.rs"}"#, "content", true);
         let node = render_tool_call(&tool, true);
         let plain = render_to_plain_text(&node, 80);
-        assert!(plain.contains("✓"));
-        assert!(plain.contains("mcp_read"));
+        assert!(plain.contains("✓"), "Should show checkmark: {:?}", plain);
+        assert!(
+            plain.contains("read"),
+            "Should show tool name (without mcp_ prefix): {:?}",
+            plain
+        );
     }
 
     #[test]
     fn render_tool_call_in_progress() {
-        let tool = CachedToolCall {
-            id: "tool-1".to_string(),
-            name: "mcp_bash".into(),
-            args: r#"{"command": "ls"}"#.into(),
-            result: String::new(),
-            complete: false,
-        };
+        let tool = test_tool("mcp_bash", r#"{"command": "ls"}"#, false);
         let node = render_tool_call(&tool, true);
         let plain = render_to_plain_text(&node, 80);
-        assert!(plain.contains("…"));
-        assert!(plain.contains("mcp_bash"));
+        assert!(
+            plain.contains("bash"),
+            "Should show tool name (without mcp_ prefix): {:?}",
+            plain
+        );
+    }
+
+    #[test]
+    fn render_tool_call_with_error() {
+        let mut tool = test_tool("mcp_bash", r#"{"command": "false"}"#, false);
+        tool.set_error("Command failed with exit code 1".to_string());
+        let node = render_tool_call(&tool, true);
+        let plain = render_to_plain_text(&node, 80);
+        assert!(plain.contains("✗"), "Should show error icon: {:?}", plain);
+        assert!(
+            plain.contains("Command failed"),
+            "Should show error message: {:?}",
+            plain
+        );
+    }
+
+    #[test]
+    fn render_tool_call_collapses_short_result() {
+        let tool = test_tool_with_output("unknown_tool", "{}", "OK", true);
+        let node = render_tool_call(&tool, true);
+        let plain = render_to_plain_text(&node, 80);
+        assert!(
+            plain.contains("→ OK"),
+            "Short result should collapse to one line: {:?}",
+            plain
+        );
     }
 
     #[test]
@@ -546,13 +743,7 @@ mod tests {
 
     #[test]
     fn message_list_renders_tool_calls() {
-        let tool = CachedToolCall {
-            id: "tool-1".to_string(),
-            name: "test_tool".into(),
-            args: "{}".into(),
-            result: String::new(),
-            complete: false,
-        };
+        let tool = test_tool("test_tool", "{}", false);
         let items: Vec<CachedChatItem> = vec![CachedChatItem::ToolCall(tool)];
         let refs: Vec<&CachedChatItem> = items.iter().collect();
 
