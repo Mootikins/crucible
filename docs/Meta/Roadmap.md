@@ -73,6 +73,10 @@ A knowledge management system where:
 
 ### High Priority
 
+- [ ] **Oil UI DSL** - React-like functional UI for Lua/Fennel plugins
+  - [ ] `cru.ui` module with cleaner API (`ui.col`, `ui.text`, etc.)
+  - [ ] Fennel macros for native Lisp feel (`(col {:gap 1} (text "Hi"))`)
+  - [ ] Component composition via function calls
 - [ ] **Lua Integration (full)** - Complete scripting API for custom workflows, agent behaviors, callout handlers
 - [ ] **Internal Agent System** - Direct LLM usage (Ollama, OpenAI) without ACP dependency
 - [ ] **Grammar + Lua integration** - Constrained generation for specific flows
@@ -108,7 +112,10 @@ A knowledge management system where:
 
 ### Web/Desktop UI (Tauri + Web)
 
-- [ ] **Browser UI** - Svelte-based chat interface via `cru serve`
+- [ ] **Browser UI** - SolidJS chat interface via `cru serve`
+  - [ ] Oil Node → JSON serialization
+  - [ ] SolidJS `<OilNode>` renderer component
+  - [ ] Shared component model with TUI
 - [ ] **Tauri Desktop** - Native app wrapping web UI
 - [ ] **Canvas/Flowcharts** - WebGL-based visual workflows
 - [ ] **Rich rendering** - Mermaid diagrams, LaTeX, image OCR
@@ -164,6 +171,8 @@ A knowledge management system where:
 | 2024-12-13 | Event hooks = Tool + Note lifecycle | Focused scope vs. 317-task proposal |
 | 2024-12-13 | Keep grammar crate | Integrate with Lua for constrained generation |
 | 2024-12-13 | CLI is chat-focused | Other commands for testing, primary UX is conversation |
+| 2025-01-23 | Oil UI DSL: Lua + Fennel | React-like functional UI, web deferred to Phase 3 |
+| 2025-01-23 | Web is SolidJS, not Svelte | Corrected docs; SolidJS already in use |
 
 ---
 
