@@ -284,6 +284,7 @@ fn convert_ink_node(ink_node: crucible_oil::Node) -> Node {
             label: s.label,
             style: convert_style(s.style),
             frame: s.frame,
+            frames: None,
         }),
         crucible_oil::Node::Popup(p) => Node::Popup(cli_node::PopupNode {
             items: p

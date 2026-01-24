@@ -78,6 +78,8 @@ pub struct SpinnerNode {
     pub label: Option<String>,
     pub style: Style,
     pub frame: usize,
+    /// Custom spinner frames. If None, uses default SPINNER_FRAMES.
+    pub frames: Option<&'static [char]>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -111,6 +113,7 @@ pub enum Size {
 }
 
 pub const SPINNER_FRAMES: &[char] = &['◐', '◓', '◑', '◒'];
+pub const BRAILLE_SPINNER_FRAMES: &[char] = &['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 
 pub fn text(content: impl Into<String>) -> Node {
     Node::Text(TextNode {
@@ -176,6 +179,25 @@ pub fn spinner(label: Option<String>, frame: usize) -> Node {
         label,
         style: Style::default(),
         frame,
+        frames: None,
+    })
+}
+
+pub fn spinner_styled(frame: usize, style: Style) -> Node {
+    Node::Spinner(SpinnerNode {
+        label: None,
+        style,
+        frame,
+        frames: None,
+    })
+}
+
+pub fn spinner_with_frames(frame: usize, style: Style, frames: &'static [char]) -> Node {
+    Node::Spinner(SpinnerNode {
+        label: None,
+        style,
+        frame,
+        frames: Some(frames),
     })
 }
 
@@ -503,7 +525,9 @@ impl InputNode {
 
 impl SpinnerNode {
     pub fn current_char(&self) -> char {
-        SPINNER_FRAMES[self.frame % SPINNER_FRAMES.len()]
+        let frames = self.frames.unwrap_or(SPINNER_FRAMES);
+        debug_assert!(!frames.is_empty(), "spinner frames must not be empty");
+        frames[self.frame % frames.len()]
     }
 }
 
@@ -608,6 +632,7 @@ mod tests {
             label: None,
             style: Style::default(),
             frame: 0,
+            frames: None,
         };
         assert_eq!(spinner.current_char(), SPINNER_FRAMES[0]);
 
@@ -615,6 +640,7 @@ mod tests {
             label: None,
             style: Style::default(),
             frame: 4,
+            frames: None,
         };
         assert_eq!(spinner_4.current_char(), SPINNER_FRAMES[0]);
     }
