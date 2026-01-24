@@ -49,3 +49,4 @@ oq = { workspace = true }
 [dev-dependencies]
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 tempfile = "3"
+proptest = "1"

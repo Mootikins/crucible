@@ -853,4 +853,133 @@ mod fennel_tests {
             Err(e) => panic!("Test failed: {}", e),
         }
     }
+
+    #[tokio::test]
+    async fn test_fennel_oil_basic_components() {
+        let executor = LuaExecutor::new().unwrap();
+
+        let source = r#"
+;; Test Oil component wrappers directly (inline since require isn't set up)
+(fn text [content ?style]
+  (cru.oil.text content ?style))
+
+(fn col [...]
+  (cru.oil.col ...))
+
+(fn row [...]
+  (cru.oil.row ...))
+
+(fn badge [label ?style]
+  (cru.oil.badge label ?style))
+
+(fn spacer []
+  (cru.oil.spacer))
+
+(fn when* [condition node]
+  (cru.oil.when condition node))
+
+(fn if-else [condition true-node false-node]
+  (cru.oil.if_else condition true-node false-node))
+
+(global handler (fn [args]
+  ;; Build a simple UI tree
+  (let [view (col {:gap 1 :padding 1}
+               (text "Title" {:bold true})
+               (row
+                 (badge "OK" {:fg :green})
+                 (spacer)
+                 (text "Status"))
+               (when* args.show_extra
+                 (text "Extra content"))
+               (if-else args.is_online
+                 (text "Online" {:fg :green})
+                 (text "Offline" {:fg :red})))]
+    ;; Return success - the view is a LuaNode userdata
+    {:built true
+     :has_view (not= view nil)})))
+"#;
+
+        let result = executor
+            .execute_source(source, true, json!({"show_extra": true, "is_online": true}))
+            .await;
+
+        match result {
+            Ok(res) => {
+                if res.success {
+                    let content = res.content.unwrap();
+                    assert_eq!(content["built"], true);
+                    assert_eq!(content["has_view"], true);
+                } else {
+                    panic!("Fennel oil test failed: {:?}", res.error);
+                }
+            }
+            Err(e) => panic!("Test failed: {}", e),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_fennel_oil_component_factory() {
+        let executor = LuaExecutor::new().unwrap();
+
+        let source = r#"
+;; Test component factory
+(fn component [base-fn default-props]
+  (cru.oil.component base-fn default-props))
+
+(global handler (fn [args]
+  ;; Create a Card component with default props
+  (let [Card (component cru.oil.col {:padding 2 :border "rounded"})
+        ;; Use the Card with additional props
+        view (Card {:gap 1}
+               (cru.oil.text "Card Title")
+               (cru.oil.text "Card Body"))]
+    {:component_created true
+     :has_view (not= view nil)})))
+"#;
+
+        let result = executor.execute_source(source, true, json!({})).await;
+
+        match result {
+            Ok(res) => {
+                if res.success {
+                    let content = res.content.unwrap();
+                    assert_eq!(content["component_created"], true);
+                    assert_eq!(content["has_view"], true);
+                } else {
+                    panic!("Fennel component factory test failed: {:?}", res.error);
+                }
+            }
+            Err(e) => panic!("Test failed: {}", e),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_fennel_oil_each_iteration() {
+        let executor = LuaExecutor::new().unwrap();
+
+        let source = r#"
+(global handler (fn [args]
+  ;; Test each iteration
+  (let [items [{:name "Item 1"} {:name "Item 2"} {:name "Item 3"}]
+        list-view (cru.oil.each items (fn [item]
+                    (cru.oil.text item.name)))]
+    {:items_count (length items)
+     :has_list (not= list-view nil)})))
+"#;
+
+        let result = executor.execute_source(source, true, json!({})).await;
+
+        match result {
+            Ok(res) => {
+                if res.success {
+                    let content = res.content.unwrap();
+                    assert_eq!(content["items_count"], 3);
+                    assert_eq!(content["has_list"], true);
+                } else {
+                    panic!("Fennel each test failed: {:?}", res.error);
+                }
+            }
+            Err(e) => panic!("Test failed: {}", e),
+        }
+    }
 }

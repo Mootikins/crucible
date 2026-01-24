@@ -163,4 +163,15 @@ mod tests {
             compiled
         );
     }
+
+    #[test]
+    fn test_compile_oil_fnl_module() {
+        let oil_source = include_str!("../lib/oil.fnl");
+        let result = compile_fennel(oil_source);
+        assert!(
+            result.is_ok(),
+            "lib/oil.fnl should compile: {:?}",
+            result.err()
+        );
+    }
 }
