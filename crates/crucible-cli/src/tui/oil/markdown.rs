@@ -16,6 +16,7 @@
 use crate::tui::oil::ansi::{visible_width, wrap_styled_text};
 use crate::tui::oil::node::*;
 use crate::tui::oil::style::{Color, Style};
+use crate::tui::oil::theme::styles;
 use markdown_it::parser::inline::Text;
 use markdown_it::plugins::cmark::block::blockquote::Blockquote;
 use markdown_it::plugins::cmark::block::code::CodeBlock as MdCodeBlock;
@@ -341,10 +342,9 @@ fn render_node(node: &markdown_it::Node, ctx: &mut RenderContext) {
         } else {
             let heading_text = extract_all_text(node);
             let show_bullet = margins.show_bullet && ctx.is_first_paragraph;
-            let bullet_style = Style::new().fg(Color::DarkGray);
 
             let prefix = if show_bullet {
-                styled(ASSISTANT_BULLET, bullet_style)
+                styled(ASSISTANT_BULLET, styles::bullet_prefix())
             } else {
                 text(" ".repeat(margins.left))
             };
@@ -428,8 +428,8 @@ fn render_node(node: &markdown_it::Node, ctx: &mut RenderContext) {
 
     if node.cast::<CodeInline>().is_some() {
         let code_text = extract_all_text(node);
-        let style = Style::new().fg(Color::Yellow);
-        ctx.current_spans.push((format!("`{}`", code_text), style));
+        ctx.current_spans
+            .push((format!("`{}`", code_text), styles::inline_code()));
         return;
     }
 
@@ -473,11 +473,10 @@ fn render_paragraph(node: &markdown_it::Node, ctx: &mut RenderContext) {
 
     let show_bullet = margins.show_bullet && ctx.is_first_paragraph;
     let indent = " ".repeat(margins.left);
-    let bullet_style = Style::new().fg(Color::DarkGray);
 
     for (i, line) in wrapped.iter().enumerate() {
         let prefix = if i == 0 && show_bullet {
-            styled(ASSISTANT_BULLET, bullet_style)
+            styled(ASSISTANT_BULLET, styles::bullet_prefix())
         } else {
             text(&indent)
         };
@@ -512,17 +511,9 @@ fn render_code_block(node: &markdown_it::Node, ctx: &mut RenderContext) {
         "```".to_string()
     };
 
-    push_indented_block(
-        ctx,
-        styled(&fence_marker, Style::new().fg(Color::DarkGray)),
-        &indent,
-    );
+    push_indented_block(ctx, styled(&fence_marker, styles::fence_marker()), &indent);
     render_highlighted_code(&content, lang_str, ctx, &indent);
-    push_indented_block(
-        ctx,
-        styled("```", Style::new().fg(Color::DarkGray)),
-        &indent,
-    );
+    push_indented_block(ctx, styled("```", styles::fence_marker()), &indent);
 
     ctx.mark_block_end();
 }
@@ -541,9 +532,9 @@ fn render_highlighted_code(content: &str, lang: &str, ctx: &mut RenderContext, i
     use crate::tui::oil::ansi::wrap_styled_text;
 
     if lang.is_empty() || !SyntaxHighlighter::supports_language(lang) {
-        let fallback_style = Style::new().fg(Color::Green);
+        let fallback = styles::code_fallback();
         for line in content.lines() {
-            let spans = vec![(line.to_string(), fallback_style.to_ansi_codes())];
+            let spans = vec![(line.to_string(), fallback.to_ansi_codes())];
             for wrapped in wrap_styled_text(&spans, ctx.width) {
                 push_indented_block(ctx, text_node(&wrapped), indent);
             }
@@ -650,8 +641,8 @@ fn render_blockquote(node: &markdown_it::Node, ctx: &mut RenderContext) {
         let wrapped = wrap_text(&child_text, content_width);
         for line in wrapped {
             let quote_row = row([
-                styled(prefix, Style::new().fg(Color::DarkGray)),
-                styled(line, Style::new().fg(Color::Gray).italic()),
+                styled(prefix, styles::blockquote_prefix()),
+                styled(line, styles::blockquote_text()),
             ]);
             if margins.left > 0 {
                 ctx.push_block(row([text(&margin_indent), quote_row]));
@@ -955,15 +946,14 @@ fn render_link(node: &markdown_it::Node, link: &Link, ctx: &mut RenderContext) {
     } else {
         link_text
     };
-    ctx.current_spans
-        .push((display, Style::new().fg(Color::Blue).underline()));
+    ctx.current_spans.push((display, styles::link()));
 }
 
 fn heading_style(level: u8) -> Style {
     match level {
-        1 => Style::new().fg(Color::Cyan).bold(),
-        2 => Style::new().fg(Color::Blue).bold(),
-        3 => Style::new().fg(Color::Magenta).bold(),
+        1 => styles::heading_1(),
+        2 => styles::heading_2(),
+        3 => styles::heading_3(),
         _ => Style::new().bold(),
     }
 }

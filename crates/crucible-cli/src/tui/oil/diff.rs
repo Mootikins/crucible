@@ -1,5 +1,6 @@
 use crate::tui::oil::node::{col, row, styled, Node};
-use crate::tui::oil::style::{Color, Style};
+use crate::tui::oil::style::Style;
+use crate::tui::oil::theme::styles;
 use similar::{ChangeTag, TextDiff};
 
 pub fn diff_to_node(old: &str, new: &str, context_lines: usize) -> Node {
@@ -10,10 +11,10 @@ pub fn diff_to_node(old: &str, new: &str, context_lines: usize) -> Node {
     let diff = TextDiff::from_lines(old, new);
     let mut nodes: Vec<Node> = Vec::new();
 
-    let delete_style = Style::new().fg(Color::Red);
-    let insert_style = Style::new().fg(Color::Green);
-    let context_style = Style::new().fg(Color::DarkGray);
-    let hunk_header_style = Style::new().fg(Color::Cyan);
+    let delete_style = styles::diff_delete();
+    let insert_style = styles::diff_insert();
+    let context_style = styles::diff_context();
+    let hunk_header_style = styles::diff_hunk_header();
 
     let mut in_hunk = false;
     let mut hunk_lines: Vec<Node> = Vec::new();
@@ -90,8 +91,8 @@ pub fn diff_to_node_with_word_highlight(old: &str, new: &str) -> Node {
     let line_diff = TextDiff::from_lines(old, new);
     let mut nodes: Vec<Node> = Vec::new();
 
-    let delete_style = Style::new().fg(Color::Red);
-    let insert_style = Style::new().fg(Color::Green);
+    let delete_style = styles::diff_delete();
+    let insert_style = styles::diff_insert();
 
     for change in line_diff.iter_all_changes() {
         let line_content = change.value().trim_end_matches('\n');
