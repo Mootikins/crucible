@@ -96,6 +96,7 @@ impl WorkspaceContext {
             .unwrap_or(false)
     }
 
+    /// Get all available workspace tools.
     pub fn all_tools(&self) -> Vec<Box<dyn rig::tool::ToolDyn>> {
         let mut tools: Vec<Box<dyn rig::tool::ToolDyn>> = vec![
             Box::new(ReadFileTool::new(self.clone())),
@@ -491,9 +492,7 @@ impl Tool for BashTool {
             })?;
 
             let session_id = ctx.session_id().ok_or_else(|| {
-                WorkspaceToolError::Command(
-                    "Background execution requires session_id".to_string(),
-                )
+                WorkspaceToolError::Command("Background execution requires session_id".to_string())
             })?;
 
             let timeout = args.timeout_ms.map(std::time::Duration::from_millis);
@@ -501,7 +500,9 @@ impl Tool for BashTool {
             let task_id = spawner
                 .spawn_bash(&session_id, args.command.clone(), None, timeout)
                 .await
-                .map_err(|e| WorkspaceToolError::Command(format!("Failed to spawn background task: {}", e)))?;
+                .map_err(|e| {
+                    WorkspaceToolError::Command(format!("Failed to spawn background task: {}", e))
+                })?;
 
             return Ok(format!(
                 "Task spawned in background. task_id: {}\nUse list_background_tasks to check status.",
@@ -678,12 +679,14 @@ impl Tool for GrepTool {
 // ListBackgroundTasksTool
 // =============================================================================
 
+/// Arguments for listing background tasks.
 #[derive(Debug, Deserialize)]
 pub struct ListBackgroundTasksArgs {
     #[serde(default)]
     filter: Option<String>,
 }
 
+/// Tool for listing background tasks.
 #[derive(Clone, Serialize, Deserialize)]
 pub struct ListBackgroundTasksTool {
     #[serde(skip)]
@@ -691,6 +694,7 @@ pub struct ListBackgroundTasksTool {
 }
 
 impl ListBackgroundTasksTool {
+    /// Create a new list background tasks tool with the given context.
     pub fn new(ctx: WorkspaceContext) -> Self {
         Self { ctx: Some(ctx) }
     }
@@ -705,7 +709,8 @@ impl Tool for ListBackgroundTasksTool {
     async fn definition(&self, _prompt: String) -> ToolDefinition {
         ToolDefinition {
             name: Self::NAME.to_string(),
-            description: "List background tasks (running and completed) for this session.".to_string(),
+            description: "List background tasks (running and completed) for this session."
+                .to_string(),
             parameters: json!({
                 "type": "object",
                 "properties": {
@@ -729,9 +734,9 @@ impl Tool for ListBackgroundTasksTool {
             WorkspaceToolError::Command("Background task manager not available".to_string())
         })?;
 
-        let session_id = ctx.session_id().ok_or_else(|| {
-            WorkspaceToolError::Command("No session ID available".to_string())
-        })?;
+        let session_id = ctx
+            .session_id()
+            .ok_or_else(|| WorkspaceToolError::Command("No session ID available".to_string()))?;
 
         let tasks = spawner.list_tasks(&session_id);
         let filter = args.filter.as_deref().unwrap_or("all");
@@ -772,11 +777,13 @@ impl Tool for ListBackgroundTasksTool {
 // GetTaskResultTool
 // =============================================================================
 
+/// Arguments for getting a background task result.
 #[derive(Debug, Deserialize)]
 pub struct GetTaskResultArgs {
     task_id: String,
 }
 
+/// Tool for getting the result of a background task.
 #[derive(Clone, Serialize, Deserialize)]
 pub struct GetTaskResultTool {
     #[serde(skip)]
@@ -784,6 +791,7 @@ pub struct GetTaskResultTool {
 }
 
 impl GetTaskResultTool {
+    /// Create a new get task result tool with the given context.
     pub fn new(ctx: WorkspaceContext) -> Self {
         Self { ctx: Some(ctx) }
     }
@@ -825,9 +833,10 @@ impl Tool for GetTaskResultTool {
             WorkspaceToolError::Command(format!("Task not found: {}", args.task_id))
         })?;
 
-        let mut output = format!("Task: {}\nStatus: {}\nKind: {}\n", 
-            result.info.id, 
-            result.info.status, 
+        let mut output = format!(
+            "Task: {}\nStatus: {}\nKind: {}\n",
+            result.info.id,
+            result.info.status,
             result.info.kind.name()
         );
 
@@ -855,11 +864,13 @@ impl Tool for GetTaskResultTool {
 // CancelTaskTool
 // =============================================================================
 
+/// Arguments for cancelling a background task.
 #[derive(Debug, Deserialize)]
 pub struct CancelTaskArgs {
     task_id: String,
 }
 
+/// Tool for cancelling a running background task.
 #[derive(Clone, Serialize, Deserialize)]
 pub struct CancelTaskTool {
     #[serde(skip)]
@@ -867,6 +878,7 @@ pub struct CancelTaskTool {
 }
 
 impl CancelTaskTool {
+    /// Create a new cancel task tool with the given context.
     pub fn new(ctx: WorkspaceContext) -> Self {
         Self { ctx: Some(ctx) }
     }
@@ -921,6 +933,7 @@ impl Tool for CancelTaskTool {
 // SpawnSubagentTool
 // =============================================================================
 
+/// Arguments for spawning a subagent.
 #[derive(Debug, Deserialize)]
 pub struct SpawnSubagentArgs {
     prompt: String,
@@ -928,6 +941,7 @@ pub struct SpawnSubagentArgs {
     context: Option<String>,
 }
 
+/// Tool for spawning a subagent to handle a subtask.
 #[derive(Clone, Serialize, Deserialize)]
 pub struct SpawnSubagentTool {
     #[serde(skip)]
@@ -935,6 +949,7 @@ pub struct SpawnSubagentTool {
 }
 
 impl SpawnSubagentTool {
+    /// Create a new spawn subagent tool with the given context.
     pub fn new(ctx: WorkspaceContext) -> Self {
         Self { ctx: Some(ctx) }
     }
@@ -976,9 +991,9 @@ impl Tool for SpawnSubagentTool {
             WorkspaceToolError::Command("Background task spawning not available".to_string())
         })?;
 
-        let session_id = ctx.session_id().ok_or_else(|| {
-            WorkspaceToolError::Command("No session ID available".to_string())
-        })?;
+        let session_id = ctx
+            .session_id()
+            .ok_or_else(|| WorkspaceToolError::Command("No session ID available".to_string()))?;
 
         let task_id = spawner
             .spawn_subagent(&session_id, args.prompt.clone(), args.context)

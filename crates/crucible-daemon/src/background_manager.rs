@@ -127,7 +127,8 @@ impl BackgroundTaskManager {
     }
 
     pub fn register_subagent_context(&self, session_id: &str, config: SubagentContext) {
-        self.subagent_contexts.insert(session_id.to_string(), config);
+        self.subagent_contexts
+            .insert(session_id.to_string(), config);
     }
 
     pub fn unregister_subagent_context(&self, session_id: &str) {
@@ -176,9 +177,13 @@ impl BackgroundTaskManager {
             let command = command.clone();
 
             tokio::spawn(async move {
-                let result =
-                    Self::execute_bash_with_cancellation(command.clone(), workdir, timeout, cancel_rx)
-                        .await;
+                let result = Self::execute_bash_with_cancellation(
+                    command.clone(),
+                    workdir,
+                    timeout,
+                    cancel_rx,
+                )
+                .await;
 
                 // Extract original TaskInfo to preserve started_at timestamp
                 let info = running
@@ -196,7 +201,12 @@ impl BackgroundTaskManager {
                     });
 
                 let task_result = Self::build_task_result(info, result);
-                Self::emit_completion_events(&event_tx, &session_id, &task_result.info.id.clone(), &task_result);
+                Self::emit_completion_events(
+                    &event_tx,
+                    &session_id,
+                    &task_result.info.id.clone(),
+                    &task_result,
+                );
                 Self::add_to_history(&history, &session_id, task_result, max_history);
 
                 debug!(task_id = %task_id, "Background bash task completed");
@@ -215,7 +225,10 @@ impl BackgroundTaskManager {
         Ok(task_id)
     }
 
-    fn build_task_result(mut info: TaskInfo, result: Result<(String, i32), BashError>) -> TaskResult {
+    fn build_task_result(
+        mut info: TaskInfo,
+        result: Result<(String, i32), BashError>,
+    ) -> TaskResult {
         match result {
             Ok((output, exit_code)) => {
                 info.mark_completed();
@@ -505,8 +518,19 @@ impl BackgroundTaskManager {
             TaskKind::Bash { .. } => "bash",
             TaskKind::Subagent { .. } => "subagent",
         };
-        Self::emit_background_completed(&self.event_tx, &task_session_id, task_id, &task_result, kind);
-        Self::add_to_history(&self.history, &task_session_id, task_result, self.max_history);
+        Self::emit_background_completed(
+            &self.event_tx,
+            &task_session_id,
+            task_id,
+            &task_result,
+            kind,
+        );
+        Self::add_to_history(
+            &self.history,
+            &task_session_id,
+            task_result,
+            self.max_history,
+        );
 
         info!(task_id = %task_id, "Task cancelled");
         true
@@ -554,11 +578,14 @@ impl BackgroundTaskManager {
             .ok_or(BackgroundError::NoSubagentFactory)?;
 
         let (agent_config, workspace, parent_session_dir) = {
-            let ctx = self
-                .subagent_contexts
-                .get(session_id)
-                .ok_or_else(|| BackgroundError::SpawnFailed("Subagent context not registered".into()))?;
-            (ctx.agent.clone(), ctx.workspace.clone(), ctx.parent_session_dir.clone())
+            let ctx = self.subagent_contexts.get(session_id).ok_or_else(|| {
+                BackgroundError::SpawnFailed("Subagent context not registered".into())
+            })?;
+            (
+                ctx.agent.clone(),
+                ctx.workspace.clone(),
+                ctx.parent_session_dir.clone(),
+            )
         };
 
         let kind = TaskKind::Subagent {
@@ -750,7 +777,10 @@ impl BackgroundTaskManager {
         Ok(accumulated_output.trim().to_string())
     }
 
-    fn build_subagent_result(mut info: TaskInfo, result: Result<String, SubagentError>) -> TaskResult {
+    fn build_subagent_result(
+        mut info: TaskInfo,
+        result: Result<String, SubagentError>,
+    ) -> TaskResult {
         match result {
             Ok(output) => {
                 info.mark_completed();
@@ -852,7 +882,10 @@ impl BackgroundSpawner for BackgroundTaskManager {
 enum BashError {
     Cancelled,
     Timeout,
-    Failed { message: String, exit_code: Option<i32> },
+    Failed {
+        message: String,
+        exit_code: Option<i32>,
+    },
 }
 
 #[cfg(test)]
@@ -962,7 +995,11 @@ mod tests {
 
         // Should only have 3 in history (the newest 3)
         let tasks = manager.list_tasks("session-1");
-        assert!(tasks.len() <= 3, "Should have at most 3 tasks, got {}", tasks.len());
+        assert!(
+            tasks.len() <= 3,
+            "Should have at most 3 tasks, got {}",
+            tasks.len()
+        );
     }
 
     #[tokio::test]
@@ -1040,7 +1077,10 @@ mod tests {
 
         let result = result.unwrap();
         assert_eq!(result.info.status, TaskStatus::Failed);
-        assert!(result.error.as_ref().map_or(false, |e| e.contains("timed out")));
+        assert!(result
+            .error
+            .as_ref()
+            .map_or(false, |e| e.contains("timed out")));
     }
 
     #[tokio::test]
@@ -1078,7 +1118,10 @@ mod tests {
         tokio::time::sleep(Duration::from_millis(200)).await;
 
         let result = manager.get_task_result(&task_id).unwrap();
-        let duration = result.info.duration().expect("completed task should have duration");
+        let duration = result
+            .info
+            .duration()
+            .expect("completed task should have duration");
         let millis = duration.num_milliseconds();
 
         assert!(

@@ -2,7 +2,9 @@
 
 mod types;
 
-pub use types::{generate_task_id, truncate, TaskError, TaskId, TaskInfo, TaskKind, TaskResult, TaskStatus};
+pub use types::{
+    generate_task_id, truncate, TaskError, TaskId, TaskInfo, TaskKind, TaskResult, TaskStatus,
+};
 
 use async_trait::async_trait;
 use std::path::PathBuf;
