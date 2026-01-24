@@ -38,8 +38,8 @@
 //! For now, it provides multi-turn verification with pattern matching.
 
 use expectrl::{session::OsSession, spawn, Eof, Expect, Regex};
-use std::path::PathBuf;
-use std::time::Duration;
+use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
 
 /// Configuration for TUI test sessions
 #[derive(Debug, Clone)]
@@ -139,17 +139,46 @@ impl TuiTestConfig {
 pub struct TuiTestSession {
     session: OsSession,
     config: TuiTestConfig,
-    /// Captured output chunks with timestamps (for future flicker detection)
-    #[allow(dead_code)]
+    /// Captured output chunks with timestamps for flicker detection and replay
     output_log: Vec<OutputChunk>,
+    /// When recording started (for relative timestamps)
+    start_time: Instant,
+    /// Whether to record output
+    recording: bool,
 }
 
-/// A timestamped chunk of output (for future granular analysis)
-#[derive(Debug, Clone)]
-#[allow(dead_code)]
+/// A timestamped chunk of output for granular analysis and replay
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct OutputChunk {
+    /// Milliseconds since session start
     pub timestamp_ms: u64,
+    /// Raw terminal output bytes
     pub data: Vec<u8>,
+}
+
+/// Input event recorded for replay
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct InputEvent {
+    /// Milliseconds since session start
+    pub timestamp_ms: u64,
+    /// The input sent (text or escape sequence)
+    pub input: String,
+}
+
+/// A complete recording of a PTY session
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct PtyRecording {
+    /// Session configuration
+    pub command: String,
+    pub cols: u16,
+    pub rows: u16,
+    pub env: Vec<(String, String)>,
+    /// Total duration in milliseconds
+    pub duration_ms: u64,
+    /// Output chunks (what the terminal displayed)
+    pub output: Vec<OutputChunk>,
+    /// Input events (what was sent to the terminal)
+    pub input: Vec<InputEvent>,
 }
 
 impl TuiTestSession {
@@ -174,6 +203,8 @@ impl TuiTestSession {
             session,
             config,
             output_log: Vec::new(),
+            start_time: Instant::now(),
+            recording: false,
         })
     }
 
@@ -250,6 +281,74 @@ impl TuiTestSession {
     /// Wait a fixed duration (for timing-sensitive tests)
     pub fn wait(&self, duration: Duration) {
         std::thread::sleep(duration);
+    }
+
+    /// Enable recording of terminal output
+    pub fn start_recording(&mut self) {
+        self.recording = true;
+        self.output_log.clear();
+        self.start_time = Instant::now();
+    }
+
+    /// Stop recording and return collected output
+    pub fn stop_recording(&mut self) -> Vec<OutputChunk> {
+        self.recording = false;
+        std::mem::take(&mut self.output_log)
+    }
+
+    /// Capture and record current screen content
+    pub fn capture_and_record(&mut self) -> Result<String, std::io::Error> {
+        let mut buffer = [0u8; 65536];
+        let n = self.session.try_read(&mut buffer)?;
+        let data = buffer[..n].to_vec();
+        let text = String::from_utf8_lossy(&data).to_string();
+
+        if self.recording && n > 0 {
+            self.output_log.push(OutputChunk {
+                timestamp_ms: self.start_time.elapsed().as_millis() as u64,
+                data,
+            });
+        }
+
+        Ok(text)
+    }
+
+    /// Get all recorded output chunks
+    pub fn get_recording(&self) -> &[OutputChunk] {
+        &self.output_log
+    }
+
+    /// Save recording to file in JSON format
+    pub fn save_recording(&self, path: &Path) -> Result<(), std::io::Error> {
+        let recording = PtyRecording {
+            command: format!("{} {}", self.config.subcommand, self.config.args.join(" ")),
+            cols: self.config.cols,
+            rows: self.config.rows,
+            env: self.config.env.clone(),
+            duration_ms: self.start_time.elapsed().as_millis() as u64,
+            output: self.output_log.clone(),
+            input: Vec::new(), // TODO: track input events too
+        };
+
+        let json = serde_json::to_string_pretty(&recording)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+
+        std::fs::write(path, json)
+    }
+
+    /// Load a recording from file
+    pub fn load_recording(path: &Path) -> Result<PtyRecording, std::io::Error> {
+        let json = std::fs::read_to_string(path)?;
+        serde_json::from_str(&json).map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))
+    }
+
+    /// Concatenate all recorded output into a single string
+    pub fn recorded_output_as_string(&self) -> String {
+        self.output_log
+            .iter()
+            .map(|chunk| String::from_utf8_lossy(&chunk.data))
+            .collect::<Vec<_>>()
+            .join("")
     }
 
     /// Get the underlying session for advanced operations
