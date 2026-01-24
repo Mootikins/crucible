@@ -1,6 +1,7 @@
 //! Agent lifecycle management for the daemon.
 
 use crate::agent_factory::{create_agent_from_session_config, AgentFactoryError};
+use crate::background_manager::BackgroundTaskManager;
 use crate::protocol::SessionEventMessage;
 use crate::session_manager::{SessionError, SessionManager};
 use crucible_core::session::SessionAgent;
@@ -48,14 +49,19 @@ pub struct AgentManager {
     request_state: Arc<DashMap<String, RequestState>>,
     agent_cache: Arc<DashMap<String, Arc<Mutex<BoxedAgentHandle>>>>,
     session_manager: Arc<SessionManager>,
+    background_manager: Arc<BackgroundTaskManager>,
 }
 
 impl AgentManager {
-    pub fn new(session_manager: Arc<SessionManager>) -> Self {
+    pub fn new(
+        session_manager: Arc<SessionManager>,
+        background_manager: Arc<BackgroundTaskManager>,
+    ) -> Self {
         Self {
             request_state: Arc::new(DashMap::new()),
             agent_cache: Arc::new(DashMap::new()),
             session_manager,
+            background_manager,
         }
     }
 
@@ -212,7 +218,12 @@ impl AgentManager {
             "Creating new agent"
         );
 
-        let agent = create_agent_from_session_config(agent_config, workspace).await?;
+        let agent = create_agent_from_session_config(
+            agent_config,
+            workspace,
+            Some(self.background_manager.clone()),
+        )
+        .await?;
         let agent = Arc::new(Mutex::new(agent));
         self.agent_cache
             .insert(session_id.to_string(), agent.clone());
@@ -557,6 +568,12 @@ mod tests {
         }
     }
 
+    fn create_test_agent_manager(session_manager: Arc<SessionManager>) -> AgentManager {
+        let (event_tx, _) = broadcast::channel(16);
+        let background_manager = Arc::new(BackgroundTaskManager::new(event_tx));
+        AgentManager::new(session_manager, background_manager)
+    }
+
     #[tokio::test]
     async fn test_configure_agent() {
         let tmp = TempDir::new().unwrap();
@@ -568,7 +585,7 @@ mod tests {
             .await
             .unwrap();
 
-        let agent_manager = AgentManager::new(session_manager.clone());
+        let agent_manager = create_test_agent_manager(session_manager.clone());
 
         agent_manager
             .configure_agent(&session.id, test_agent())
@@ -584,7 +601,7 @@ mod tests {
     async fn test_configure_agent_not_found() {
         let storage = Arc::new(FileSessionStorage::new());
         let session_manager = Arc::new(SessionManager::with_storage(storage));
-        let agent_manager = AgentManager::new(session_manager);
+        let agent_manager = create_test_agent_manager(session_manager);
 
         let result = agent_manager
             .configure_agent("nonexistent", test_agent())
@@ -604,7 +621,7 @@ mod tests {
             .await
             .unwrap();
 
-        let agent_manager = AgentManager::new(session_manager);
+        let agent_manager = create_test_agent_manager(session_manager);
         let (event_tx, _) = broadcast::channel(16);
 
         let result = agent_manager
@@ -618,7 +635,7 @@ mod tests {
     async fn test_cancel_nonexistent() {
         let storage = Arc::new(FileSessionStorage::new());
         let session_manager = Arc::new(SessionManager::with_storage(storage));
-        let agent_manager = AgentManager::new(session_manager);
+        let agent_manager = create_test_agent_manager(session_manager);
 
         let cancelled = agent_manager.cancel("nonexistent").await;
         assert!(!cancelled);
@@ -635,7 +652,7 @@ mod tests {
             .await
             .unwrap();
 
-        let agent_manager = AgentManager::new(session_manager.clone());
+        let agent_manager = create_test_agent_manager(session_manager.clone());
 
         agent_manager
             .configure_agent(&session.id, test_agent())
@@ -665,7 +682,7 @@ mod tests {
             .await
             .unwrap();
 
-        let agent_manager = AgentManager::new(session_manager);
+        let agent_manager = create_test_agent_manager(session_manager);
 
         let result = agent_manager.switch_model(&session.id, "gpt-4", None).await;
 
@@ -676,7 +693,7 @@ mod tests {
     async fn test_switch_model_session_not_found() {
         let storage = Arc::new(FileSessionStorage::new());
         let session_manager = Arc::new(SessionManager::with_storage(storage));
-        let agent_manager = AgentManager::new(session_manager);
+        let agent_manager = create_test_agent_manager(session_manager);
 
         let result = agent_manager
             .switch_model("nonexistent", "gpt-4", None)
@@ -689,7 +706,7 @@ mod tests {
     async fn test_switch_model_rejects_empty_model_id() {
         let storage = Arc::new(FileSessionStorage::new());
         let session_manager = Arc::new(SessionManager::with_storage(storage));
-        let agent_manager = AgentManager::new(session_manager);
+        let agent_manager = create_test_agent_manager(session_manager);
 
         let result = agent_manager.switch_model("any-session", "", None).await;
         assert!(matches!(result, Err(AgentError::InvalidModelId(_))));
@@ -709,7 +726,7 @@ mod tests {
             .await
             .unwrap();
 
-        let agent_manager = AgentManager::new(session_manager.clone());
+        let agent_manager = create_test_agent_manager(session_manager.clone());
 
         agent_manager
             .configure_agent(&session.id, test_agent())
@@ -748,7 +765,7 @@ mod tests {
             .await
             .unwrap();
 
-        let agent_manager = AgentManager::new(session_manager.clone());
+        let agent_manager = create_test_agent_manager(session_manager.clone());
 
         agent_manager
             .configure_agent(&session.id, test_agent())
@@ -814,7 +831,7 @@ mod tests {
             .await
             .unwrap();
 
-        let agent_manager = AgentManager::new(session_manager.clone());
+        let agent_manager = create_test_agent_manager(session_manager.clone());
 
         agent_manager
             .configure_agent(&session.id, test_agent())
@@ -853,7 +870,7 @@ mod tests {
             .await
             .unwrap();
 
-        let agent_manager = AgentManager::new(session_manager.clone());
+        let agent_manager = create_test_agent_manager(session_manager.clone());
 
         let mut agent = test_agent();
         agent.temperature = Some(0.9);
@@ -890,7 +907,7 @@ mod tests {
             .await
             .unwrap();
 
-        let agent_manager = AgentManager::new(session_manager.clone());
+        let agent_manager = create_test_agent_manager(session_manager.clone());
 
         agent_manager
             .configure_agent(&session.id, test_agent())

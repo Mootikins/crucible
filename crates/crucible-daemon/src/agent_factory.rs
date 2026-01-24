@@ -5,6 +5,7 @@
 //! `SessionAgent` contains fully-resolved configuration.
 
 use crucible_config::{LlmProviderConfig, LlmProviderType};
+use crucible_core::background::BackgroundSpawner;
 use crucible_core::prompts::ModelSize;
 use crucible_core::session::SessionAgent;
 use crucible_core::traits::chat::AgentHandle;
@@ -14,6 +15,7 @@ use crucible_rig::{
 };
 use std::path::Path;
 use std::str::FromStr;
+use std::sync::Arc;
 use thiserror::Error;
 use tracing::{debug, info};
 
@@ -41,6 +43,7 @@ pub enum AgentFactoryError {
 ///
 /// * `agent_config` - The session agent configuration
 /// * `workspace` - Working directory for the agent (for workspace tools)
+/// * `background_spawner` - Optional spawner for background tasks (subagents, long bash)
 ///
 /// # Returns
 ///
@@ -48,6 +51,7 @@ pub enum AgentFactoryError {
 pub async fn create_agent_from_session_config(
     agent_config: &SessionAgent,
     workspace: &Path,
+    background_spawner: Option<Arc<dyn BackgroundSpawner>>,
 ) -> Result<Box<dyn AgentHandle + Send + Sync>, AgentFactoryError> {
     if agent_config.agent_type != "internal" {
         return Err(AgentFactoryError::UnsupportedAgentType(format!(
@@ -93,6 +97,14 @@ pub async fn create_agent_from_session_config(
     let thinking_budget = agent_config.thinking_budget;
     let model_size = ModelSize::from_model_name(&agent_config.model);
 
+    let make_ws_ctx = || {
+        let mut ctx = WorkspaceContext::new(workspace);
+        if let Some(ref spawner) = background_spawner {
+            ctx = ctx.with_background_spawner(spawner.clone());
+        }
+        ctx
+    };
+
     let handle: Box<dyn AgentHandle + Send + Sync> = match client {
         RigClient::Ollama(ref ollama_client) => {
             let agent = build_agent_with_model_size(
@@ -102,8 +114,7 @@ pub async fn create_agent_from_session_config(
                 model_size,
             )
             .map_err(|e| AgentFactoryError::AgentBuild(e.to_string()))?;
-            let ws_ctx = WorkspaceContext::new(workspace);
-            let mut components = AgentComponents::new(rig_agent_config.clone(), client, ws_ctx)
+            let mut components = AgentComponents::new(rig_agent_config.clone(), client, make_ws_ctx())
                 .with_model_size(model_size);
             if let Some(budget) = thinking_budget {
                 components = components.with_thinking_budget(budget);
@@ -125,9 +136,8 @@ pub async fn create_agent_from_session_config(
                 model_size,
             )
             .map_err(|e| AgentFactoryError::AgentBuild(e.to_string()))?;
-            let ws_ctx = WorkspaceContext::new(workspace);
             let mut handle = RigAgentHandle::new(agent)
-                .with_workspace_context(ws_ctx)
+                .with_workspace_context(make_ws_ctx())
                 .with_model(agent_config.model.clone())
                 .with_thinking_budget(thinking_budget);
             if let Some(endpoint) = &ollama_endpoint {
@@ -143,9 +153,8 @@ pub async fn create_agent_from_session_config(
                 model_size,
             )
             .map_err(|e| AgentFactoryError::AgentBuild(e.to_string()))?;
-            let ws_ctx = WorkspaceContext::new(workspace);
             let mut handle = RigAgentHandle::new(agent)
-                .with_workspace_context(ws_ctx)
+                .with_workspace_context(make_ws_ctx())
                 .with_model(agent_config.model.clone())
                 .with_thinking_budget(thinking_budget);
             if let Some(endpoint) = &ollama_endpoint {
@@ -161,10 +170,9 @@ pub async fn create_agent_from_session_config(
                 model_size,
             )
             .map_err(|e| AgentFactoryError::AgentBuild(e.to_string()))?;
-            let ws_ctx = WorkspaceContext::new(workspace);
             Box::new(
                 RigAgentHandle::new(agent)
-                    .with_workspace_context(ws_ctx)
+                    .with_workspace_context(make_ws_ctx())
                     .with_model(agent_config.model.clone())
                     .with_thinking_budget(thinking_budget),
             )
@@ -189,10 +197,9 @@ pub async fn create_agent_from_session_config(
                 model_size,
             )
             .map_err(|e| AgentFactoryError::AgentBuild(e.to_string()))?;
-            let ws_ctx = WorkspaceContext::new(workspace);
             Box::new(
                 RigAgentHandle::new(agent)
-                    .with_workspace_context(ws_ctx)
+                    .with_workspace_context(make_ws_ctx())
                     .with_model(agent_config.model.clone())
                     .with_thinking_budget(thinking_budget),
             )
@@ -239,7 +246,7 @@ mod tests {
 
         let result = tokio::runtime::Runtime::new()
             .unwrap()
-            .block_on(create_agent_from_session_config(&config, Path::new("/tmp")));
+            .block_on(create_agent_from_session_config(&config, Path::new("/tmp"), None));
 
         assert!(matches!(
             result,
@@ -251,7 +258,7 @@ mod tests {
     #[ignore = "Requires Ollama to be running"]
     async fn test_create_ollama_agent() {
         let config = test_agent_config();
-        let result = create_agent_from_session_config(&config, Path::new("/tmp")).await;
+        let result = create_agent_from_session_config(&config, Path::new("/tmp"), None).await;
         assert!(result.is_ok());
     }
 }
