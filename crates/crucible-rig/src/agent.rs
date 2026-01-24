@@ -25,7 +25,8 @@
 use crate::kiln_tools::{KilnContext, ListNotesTool, ReadNoteTool, SemanticSearchTool};
 use crate::providers::RigClient;
 use crate::workspace_tools::{
-    BashTool, EditFileTool, GlobTool, GrepTool, ReadFileTool, WorkspaceContext, WriteFileTool,
+    BashTool, CancelTaskTool, EditFileTool, GetTaskResultTool, GlobTool, GrepTool,
+    ListBackgroundTasksTool, ReadFileTool, SpawnSubagentTool, WorkspaceContext, WriteFileTool,
 };
 use crucible_core::agent::AgentCard;
 use crucible_core::prompts::ModelSize;
@@ -88,14 +89,15 @@ fn attach_tools<M: CompletionModel>(
     mode_id: &str,
 ) -> Agent<M> {
     let read_only = is_read_only_mode(mode_id);
+    let has_background = ctx.has_background_spawner();
 
-    match (read_only, kiln_ctx) {
-        (true, None) => builder
+    match (read_only, kiln_ctx, has_background) {
+        (true, None, _) => builder
             .tool(ReadFileTool::new(ctx.clone()))
             .tool(GlobTool::new(ctx.clone()))
             .tool(GrepTool::new(ctx.clone()))
             .build(),
-        (true, Some(kiln)) => builder
+        (true, Some(kiln), _) => builder
             .tool(ReadFileTool::new(ctx.clone()))
             .tool(GlobTool::new(ctx.clone()))
             .tool(GrepTool::new(ctx.clone()))
@@ -103,7 +105,7 @@ fn attach_tools<M: CompletionModel>(
             .tool(ReadNoteTool::new(kiln.clone()))
             .tool(ListNotesTool::new(kiln.clone()))
             .build(),
-        (false, None) => builder
+        (false, None, false) => builder
             .tool(ReadFileTool::new(ctx.clone()))
             .tool(EditFileTool::new(ctx.clone()))
             .tool(WriteFileTool::new(ctx.clone()))
@@ -111,13 +113,40 @@ fn attach_tools<M: CompletionModel>(
             .tool(GlobTool::new(ctx.clone()))
             .tool(GrepTool::new(ctx.clone()))
             .build(),
-        (false, Some(kiln)) => builder
+        (false, None, true) => builder
             .tool(ReadFileTool::new(ctx.clone()))
             .tool(EditFileTool::new(ctx.clone()))
             .tool(WriteFileTool::new(ctx.clone()))
             .tool(BashTool::new(ctx.clone()))
             .tool(GlobTool::new(ctx.clone()))
             .tool(GrepTool::new(ctx.clone()))
+            .tool(ListBackgroundTasksTool::new(ctx.clone()))
+            .tool(GetTaskResultTool::new(ctx.clone()))
+            .tool(CancelTaskTool::new(ctx.clone()))
+            .tool(SpawnSubagentTool::new(ctx.clone()))
+            .build(),
+        (false, Some(kiln), false) => builder
+            .tool(ReadFileTool::new(ctx.clone()))
+            .tool(EditFileTool::new(ctx.clone()))
+            .tool(WriteFileTool::new(ctx.clone()))
+            .tool(BashTool::new(ctx.clone()))
+            .tool(GlobTool::new(ctx.clone()))
+            .tool(GrepTool::new(ctx.clone()))
+            .tool(SemanticSearchTool::new(kiln.clone()))
+            .tool(ReadNoteTool::new(kiln.clone()))
+            .tool(ListNotesTool::new(kiln.clone()))
+            .build(),
+        (false, Some(kiln), true) => builder
+            .tool(ReadFileTool::new(ctx.clone()))
+            .tool(EditFileTool::new(ctx.clone()))
+            .tool(WriteFileTool::new(ctx.clone()))
+            .tool(BashTool::new(ctx.clone()))
+            .tool(GlobTool::new(ctx.clone()))
+            .tool(GrepTool::new(ctx.clone()))
+            .tool(ListBackgroundTasksTool::new(ctx.clone()))
+            .tool(GetTaskResultTool::new(ctx.clone()))
+            .tool(CancelTaskTool::new(ctx.clone()))
+            .tool(SpawnSubagentTool::new(ctx.clone()))
             .tool(SemanticSearchTool::new(kiln.clone()))
             .tool(ReadNoteTool::new(kiln.clone()))
             .tool(ListNotesTool::new(kiln.clone()))
