@@ -684,12 +684,14 @@ impl Tool for GrepTool {
 // ListJobsTool
 // =============================================================================
 
+/// Arguments for listing background jobs.
 #[derive(Debug, Deserialize)]
 pub struct ListJobsArgs {
     #[serde(default)]
     filter: Option<String>,
 }
 
+/// Tool for listing background jobs in a session.
 #[derive(Clone, Serialize, Deserialize)]
 pub struct ListJobsTool {
     #[serde(skip)]
@@ -697,6 +699,7 @@ pub struct ListJobsTool {
 }
 
 impl ListJobsTool {
+    /// Creates a new ListJobsTool with the given workspace context.
     pub fn new(ctx: WorkspaceContext) -> Self {
         Self { ctx: Some(ctx) }
     }
@@ -779,11 +782,13 @@ impl Tool for ListJobsTool {
 // GetJobResultTool
 // =============================================================================
 
+/// Arguments for retrieving a background job result.
 #[derive(Debug, Deserialize)]
 pub struct GetJobResultArgs {
     job_id: String,
 }
 
+/// Tool for retrieving the result of a background job.
 #[derive(Clone, Serialize, Deserialize)]
 pub struct GetJobResultTool {
     #[serde(skip)]
@@ -791,6 +796,7 @@ pub struct GetJobResultTool {
 }
 
 impl GetJobResultTool {
+    /// Creates a new GetJobResultTool with the given workspace context.
     pub fn new(ctx: WorkspaceContext) -> Self {
         Self { ctx: Some(ctx) }
     }
@@ -863,11 +869,13 @@ impl Tool for GetJobResultTool {
 // CancelJobTool
 // =============================================================================
 
+/// Arguments for cancelling a background job.
 #[derive(Debug, Deserialize)]
 pub struct CancelJobArgs {
     job_id: String,
 }
 
+/// Tool for cancelling a running background job.
 #[derive(Clone, Serialize, Deserialize)]
 pub struct CancelJobTool {
     #[serde(skip)]
@@ -875,6 +883,7 @@ pub struct CancelJobTool {
 }
 
 impl CancelJobTool {
+    /// Creates a new CancelJobTool with the given workspace context.
     pub fn new(ctx: WorkspaceContext) -> Self {
         Self { ctx: Some(ctx) }
     }

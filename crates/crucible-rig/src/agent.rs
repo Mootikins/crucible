@@ -479,24 +479,40 @@ where
     Ok((agent, ctx))
 }
 
-/// Build a Rig agent with workspace tools.
-/// Backward-compatible alias that ignores model_size parameter.
+/// Build a Rig agent with a pre-configured WorkspaceContext.
 ///
-/// Tool availability is now controlled only by mode, not model size.
+/// Use this when you need to inject a background spawner or other context.
 #[allow(unused_variables)]
 pub fn build_agent_with_model_size<C>(
     config: &AgentConfig,
     client: &C,
-    workspace_root: impl AsRef<Path>,
+    ctx: &WorkspaceContext,
     model_size: crucible_core::prompts::ModelSize,
 ) -> AgentBuildResult<Agent<C::CompletionModel>>
 where
     C: CompletionClient,
     C::CompletionModel: CompletionModel<Client = C>,
 {
-    let ctx = WorkspaceContext::new(workspace_root.as_ref());
     let builder = configure_builder(client, config);
-    Ok(attach_tools(builder, &ctx, None, "normal"))
+    Ok(attach_tools(builder, ctx, None, "normal"))
+}
+
+/// Build a Rig agent with a pre-configured WorkspaceContext.
+///
+/// Use this when you need to inject a background spawner or other context.
+#[allow(unused_variables)]
+pub fn build_agent_with_context<C>(
+    config: &AgentConfig,
+    client: &C,
+    ctx: &WorkspaceContext,
+    model_size: crucible_core::prompts::ModelSize,
+) -> AgentBuildResult<Agent<C::CompletionModel>>
+where
+    C: CompletionClient,
+    C::CompletionModel: CompletionModel<Client = C>,
+{
+    let builder = configure_builder(client, config);
+    Ok(attach_tools(builder, ctx, None, "normal"))
 }
 
 #[cfg(test)]
@@ -648,7 +664,11 @@ mod tests {
         assert!(names.contains("bash"));
         assert!(names.contains("glob"));
         assert!(names.contains("grep"));
-        assert_eq!(names.len(), 6, "auto mode without background spawner should have 6 tools");
+        assert_eq!(
+            names.len(),
+            6,
+            "auto mode without background spawner should have 6 tools"
+        );
     }
 
     #[test]
@@ -660,8 +680,14 @@ mod tests {
         assert!(names.contains("read_file"));
         assert!(names.contains("glob"));
         assert!(names.contains("grep"));
-        assert!(!names.contains("edit_file"), "plan mode should not have edit_file");
-        assert!(!names.contains("write_file"), "plan mode should not have write_file");
+        assert!(
+            !names.contains("edit_file"),
+            "plan mode should not have edit_file"
+        );
+        assert!(
+            !names.contains("write_file"),
+            "plan mode should not have write_file"
+        );
         assert!(!names.contains("bash"), "plan mode should not have bash");
         assert_eq!(names.len(), 3, "plan mode should have 3 read-only tools");
     }
@@ -678,27 +704,53 @@ mod tests {
 
         #[async_trait]
         impl BackgroundSpawner for MockSpawner {
-            async fn spawn_bash(&self, _: &str, _: String, _: Option<PathBuf>, _: Option<Duration>) -> Result<JobId, JobError> {
+            async fn spawn_bash(
+                &self,
+                _: &str,
+                _: String,
+                _: Option<PathBuf>,
+                _: Option<Duration>,
+            ) -> Result<JobId, JobError> {
                 Ok("id".into())
             }
-            async fn spawn_subagent(&self, _: &str, _: String, _: Option<String>) -> Result<JobId, JobError> {
+            async fn spawn_subagent(
+                &self,
+                _: &str,
+                _: String,
+                _: Option<String>,
+            ) -> Result<JobId, JobError> {
                 Ok("id".into())
             }
-            fn list_jobs(&self, _: &str) -> Vec<JobInfo> { vec![] }
-            fn get_job_result(&self, _: &JobId) -> Option<JobResult> { None }
-            async fn cancel_job(&self, _: &JobId) -> bool { false }
+            fn list_jobs(&self, _: &str) -> Vec<JobInfo> {
+                vec![]
+            }
+            fn get_job_result(&self, _: &JobId) -> Option<JobResult> {
+                None
+            }
+            async fn cancel_job(&self, _: &JobId) -> bool {
+                false
+            }
         }
 
-        let ctx = WorkspaceContext::new("/tmp/test")
-            .with_background_spawner(Arc::new(MockSpawner));
+        let ctx = WorkspaceContext::new("/tmp/test").with_background_spawner(Arc::new(MockSpawner));
         let tools = ctx.tools_for_mode("auto");
         let names = tool_names(&tools);
 
         assert!(names.contains("list_jobs"), "should have list_jobs");
-        assert!(names.contains("get_job_result"), "should have get_job_result");
+        assert!(
+            names.contains("get_job_result"),
+            "should have get_job_result"
+        );
         assert!(names.contains("cancel_job"), "should have cancel_job");
-        assert!(names.contains("spawn_subagent"), "should have spawn_subagent");
-        assert_eq!(names.len(), 10, "auto mode with background spawner should have 10 tools (6 + 4)");
+        assert!(
+            names.contains("spawn_subagent"),
+            "should have spawn_subagent"
+        );
+        assert_eq!(
+            names.len(),
+            10,
+            "auto mode with background spawner should have 10 tools (6 + 4)"
+        );
     }
 
     #[test]
@@ -725,22 +777,39 @@ mod tests {
 
         #[async_trait]
         impl BackgroundSpawner for MockSpawner {
-            async fn spawn_bash(&self, _: &str, _: String, _: Option<PathBuf>, _: Option<Duration>) -> Result<JobId, JobError> {
+            async fn spawn_bash(
+                &self,
+                _: &str,
+                _: String,
+                _: Option<PathBuf>,
+                _: Option<Duration>,
+            ) -> Result<JobId, JobError> {
                 Ok("id".into())
             }
-            async fn spawn_subagent(&self, _: &str, _: String, _: Option<String>) -> Result<JobId, JobError> {
+            async fn spawn_subagent(
+                &self,
+                _: &str,
+                _: String,
+                _: Option<String>,
+            ) -> Result<JobId, JobError> {
                 Ok("id".into())
             }
-            fn list_jobs(&self, _: &str) -> Vec<JobInfo> { vec![] }
-            fn get_job_result(&self, _: &JobId) -> Option<JobResult> { None }
-            async fn cancel_job(&self, _: &JobId) -> bool { false }
+            fn list_jobs(&self, _: &str) -> Vec<JobInfo> {
+                vec![]
+            }
+            fn get_job_result(&self, _: &JobId) -> Option<JobResult> {
+                None
+            }
+            async fn cancel_job(&self, _: &JobId) -> bool {
+                false
+            }
         }
 
         let ctx_without = WorkspaceContext::new("/tmp/test");
         assert!(!ctx_without.has_background_spawner());
 
-        let ctx_with = WorkspaceContext::new("/tmp/test")
-            .with_background_spawner(Arc::new(MockSpawner));
+        let ctx_with =
+            WorkspaceContext::new("/tmp/test").with_background_spawner(Arc::new(MockSpawner));
         assert!(ctx_with.has_background_spawner());
     }
 }

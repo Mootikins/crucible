@@ -225,10 +225,7 @@ impl BackgroundJobManager {
         Ok(job_id)
     }
 
-    fn build_job_result(
-        mut info: JobInfo,
-        result: Result<(String, i32), BashError>,
-    ) -> JobResult {
+    fn build_job_result(mut info: JobInfo, result: Result<(String, i32), BashError>) -> JobResult {
         match result {
             Ok((output, exit_code)) => {
                 info.mark_completed();
@@ -515,19 +512,8 @@ impl BackgroundJobManager {
             JobKind::Bash { .. } => "bash",
             JobKind::Subagent { .. } => "subagent",
         };
-        Self::emit_background_completed(
-            &self.event_tx,
-            &job_session_id,
-            job_id,
-            &job_result,
-            kind,
-        );
-        Self::add_to_history(
-            &self.history,
-            &job_session_id,
-            job_result,
-            self.max_history,
-        );
+        Self::emit_background_completed(&self.event_tx, &job_session_id, job_id, &job_result, kind);
+        Self::add_to_history(&self.history, &job_session_id, job_result, self.max_history);
 
         info!(job_id = %job_id, "Job cancelled");
         true

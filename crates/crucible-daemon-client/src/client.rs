@@ -100,7 +100,10 @@ impl DaemonClient {
         if let Ok(client) = Self::connect().await {
             match client.check_version().await {
                 Ok(VersionCheck::Match) => return Ok(client),
-                Ok(VersionCheck::Mismatch { client: c, daemon: d }) => {
+                Ok(VersionCheck::Mismatch {
+                    client: c,
+                    daemon: d,
+                }) => {
                     warn!(client_sha = %c, daemon_sha = %d, "Daemon version mismatch, restarting");
                     let _ = client.shutdown().await;
                     tokio::time::sleep(Duration::from_millis(100)).await;
@@ -139,7 +142,10 @@ impl DaemonClient {
         if let Ok((client, rx)) = Self::connect_with_events().await {
             match client.check_version().await {
                 Ok(VersionCheck::Match) => return Ok((client, rx)),
-                Ok(VersionCheck::Mismatch { client: c, daemon: d }) => {
+                Ok(VersionCheck::Mismatch {
+                    client: c,
+                    daemon: d,
+                }) => {
                     warn!(client_sha = %c, daemon_sha = %d, "Daemon version mismatch, restarting");
                     let _ = client.shutdown().await;
                     tokio::time::sleep(Duration::from_millis(100)).await;
