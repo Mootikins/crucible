@@ -382,6 +382,43 @@ pub enum DaemonSessionCommands {
         /// Session ID
         session_id: String,
     },
+
+    /// Send a message to a session and stream response
+    Send {
+        /// Session ID
+        session_id: String,
+
+        /// Message to send
+        message: String,
+
+        /// Show raw events instead of formatted output
+        #[arg(long)]
+        raw: bool,
+    },
+
+    /// Configure agent for a session
+    Configure {
+        /// Session ID
+        session_id: String,
+
+        /// Provider (ollama, openai, anthropic)
+        #[arg(short, long)]
+        provider: String,
+
+        /// Model name
+        #[arg(short, long)]
+        model: String,
+
+        /// Custom endpoint URL
+        #[arg(short, long)]
+        endpoint: Option<String>,
+    },
+
+    /// Subscribe to session events (for debugging)
+    Subscribe {
+        /// Session IDs to subscribe to
+        session_ids: Vec<String>,
+    },
 }
 
 /// Agent card management subcommands
