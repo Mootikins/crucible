@@ -9,7 +9,7 @@ description = "Rig LLM framework integration for Crucible"
 
 [dependencies]
 # Rig framework
-rig-core = { version = "0.27", features = [] }
+rig-core = { version = "0.29", features = [] }
 
 # Crucible dependencies
 crucible-config = { path = "../crucible-config" }

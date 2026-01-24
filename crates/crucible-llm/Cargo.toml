@@ -63,11 +63,11 @@ crucible-config = { path = "../crucible-config", features = ["toml"] }
 # Burn ML framework dependency for GPU-accelerated embeddings
 # Main burn crate with optional features (pinned to 0.19.1 for consistency)
 burn = { version = "0.19.1", optional = true }
-burn-tensor = { version = "0.19.1", optional = true }
-burn-ndarray = { version = "0.19.1", optional = true }  # For CPU fallback
+burn-tensor = { version = "0.20.1", optional = true }
+burn-ndarray = { version = "0.20.1", optional = true }  # For CPU fallback
 
 # GPU backends (each optional, selected via features)
-burn-wgpu = { version = "0.19.1", optional = true }   # Vulkan/Metal/WebGPU via wgpu
+burn-wgpu = { version = "0.20.1", optional = true }   # Vulkan/Metal/WebGPU via wgpu
 burn-hip = { version = "0.16", optional = true }    # AMD ROCm/HIP backend (0.16 is latest stable)
 
 # Import safetensors directly into Burn models
