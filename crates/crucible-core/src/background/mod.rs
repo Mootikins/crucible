@@ -1,4 +1,8 @@
 //! Background task types for session-scoped async work (subagents, long-running bash).
+//!
+//! TODO: Rename "task" -> "job" throughout this module for Unix-familiar terminology
+//! (matches bg/fg/jobs). Affects: TaskId->JobId, TaskInfo->JobInfo, TaskResult->JobResult,
+//! TaskStatus->JobStatus, TaskError->JobError, spawn_*->spawn_*, list_tasks->list_jobs, etc.
 
 mod types;
 

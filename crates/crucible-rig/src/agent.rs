@@ -505,7 +505,8 @@ mod tests {
     use chrono::Utc;
     use rig::client::Nothing;
     use rig::providers::ollama;
-    use std::collections::HashMap;
+    use rig::tool::ToolDyn;
+    use std::collections::{HashMap, HashSet};
     use uuid::Uuid;
 
     // Helper to create a test Ollama client (with explicit type)
@@ -629,5 +630,117 @@ mod tests {
         assert_eq!(config.system_prompt, "You are helpful.");
         assert_eq!(config.temperature, Some(0.7));
         assert_eq!(config.max_tokens, Some(1000));
+    }
+
+    fn tool_names(tools: &[Box<dyn ToolDyn>]) -> HashSet<String> {
+        tools.iter().map(|t| t.name()).collect()
+    }
+
+    #[test]
+    fn workspace_context_tools_for_mode_auto_includes_write_tools() {
+        let ctx = WorkspaceContext::new("/tmp/test");
+        let tools = ctx.tools_for_mode("auto");
+        let names = tool_names(&tools);
+
+        assert!(names.contains("read_file"));
+        assert!(names.contains("edit_file"));
+        assert!(names.contains("write_file"));
+        assert!(names.contains("bash"));
+        assert!(names.contains("glob"));
+        assert!(names.contains("grep"));
+        assert_eq!(names.len(), 6, "auto mode without background spawner should have 6 tools");
+    }
+
+    #[test]
+    fn workspace_context_tools_for_mode_plan_excludes_write_tools() {
+        let ctx = WorkspaceContext::new("/tmp/test");
+        let tools = ctx.tools_for_mode("plan");
+        let names = tool_names(&tools);
+
+        assert!(names.contains("read_file"));
+        assert!(names.contains("glob"));
+        assert!(names.contains("grep"));
+        assert!(!names.contains("edit_file"), "plan mode should not have edit_file");
+        assert!(!names.contains("write_file"), "plan mode should not have write_file");
+        assert!(!names.contains("bash"), "plan mode should not have bash");
+        assert_eq!(names.len(), 3, "plan mode should have 3 read-only tools");
+    }
+
+    #[test]
+    fn workspace_context_with_background_spawner_includes_background_tools() {
+        use async_trait::async_trait;
+        use crucible_core::background::{BackgroundSpawner, TaskError, TaskId, TaskInfo, TaskResult};
+        use std::path::PathBuf;
+        use std::sync::Arc;
+        use std::time::Duration;
+
+        struct MockSpawner;
+
+        #[async_trait]
+        impl BackgroundSpawner for MockSpawner {
+            async fn spawn_bash(&self, _: &str, _: String, _: Option<PathBuf>, _: Option<Duration>) -> Result<TaskId, TaskError> {
+                Ok("id".into())
+            }
+            async fn spawn_subagent(&self, _: &str, _: String, _: Option<String>) -> Result<TaskId, TaskError> {
+                Ok("id".into())
+            }
+            fn list_tasks(&self, _: &str) -> Vec<TaskInfo> { vec![] }
+            fn get_task_result(&self, _: &TaskId) -> Option<TaskResult> { None }
+            async fn cancel_task(&self, _: &TaskId) -> bool { false }
+        }
+
+        let ctx = WorkspaceContext::new("/tmp/test")
+            .with_background_spawner(Arc::new(MockSpawner));
+        let tools = ctx.tools_for_mode("auto");
+        let names = tool_names(&tools);
+
+        assert!(names.contains("list_background_tasks"), "should have list_background_tasks");
+        assert!(names.contains("get_task_result"), "should have get_task_result");
+        assert!(names.contains("cancel_task"), "should have cancel_task");
+        assert!(names.contains("spawn_subagent"), "should have spawn_subagent");
+        assert_eq!(names.len(), 10, "auto mode with background spawner should have 10 tools (6 + 4)");
+    }
+
+    #[test]
+    fn workspace_context_without_background_spawner_excludes_background_tools() {
+        let ctx = WorkspaceContext::new("/tmp/test");
+        let tools = ctx.tools_for_mode("auto");
+        let names = tool_names(&tools);
+
+        assert!(!names.contains("list_background_tasks"));
+        assert!(!names.contains("get_task_result"));
+        assert!(!names.contains("cancel_task"));
+        assert!(!names.contains("spawn_subagent"));
+    }
+
+    #[test]
+    fn has_background_spawner_returns_correct_value() {
+        use async_trait::async_trait;
+        use crucible_core::background::{BackgroundSpawner, TaskError, TaskId, TaskInfo, TaskResult};
+        use std::path::PathBuf;
+        use std::sync::Arc;
+        use std::time::Duration;
+
+        struct MockSpawner;
+
+        #[async_trait]
+        impl BackgroundSpawner for MockSpawner {
+            async fn spawn_bash(&self, _: &str, _: String, _: Option<PathBuf>, _: Option<Duration>) -> Result<TaskId, TaskError> {
+                Ok("id".into())
+            }
+            async fn spawn_subagent(&self, _: &str, _: String, _: Option<String>) -> Result<TaskId, TaskError> {
+                Ok("id".into())
+            }
+            fn list_tasks(&self, _: &str) -> Vec<TaskInfo> { vec![] }
+            fn get_task_result(&self, _: &TaskId) -> Option<TaskResult> { None }
+            async fn cancel_task(&self, _: &TaskId) -> bool { false }
+        }
+
+        let ctx_without = WorkspaceContext::new("/tmp/test");
+        assert!(!ctx_without.has_background_spawner());
+
+        let ctx_with = WorkspaceContext::new("/tmp/test")
+            .with_background_spawner(Arc::new(MockSpawner));
+        assert!(ctx_with.has_background_spawner());
     }
 }
