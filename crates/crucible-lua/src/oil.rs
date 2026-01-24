@@ -4,7 +4,7 @@
 
 use crate::error::LuaError;
 use crate::lua_util::register_in_namespaces;
-use crucible_oil::template::{html_to_node, parse_color, spec_to_node, NodeSpec};
+use crucible_oil::template::{html_to_node, parse_color};
 use crucible_oil::{
     badge, bullet_list, divider, fragment, horizontal_rule, if_else, key_value, numbered_list,
     popup, popup_item, progress_bar, scrollback, spacer, spinner, styled, text, text_input, when,
@@ -14,7 +14,6 @@ use mlua::{
     FromLua, Function, Lua, MultiValue, Result as LuaResult, Table, UserData, UserDataMethods,
     Value,
 };
-use std::collections::HashMap;
 
 fn parse_border(s: &str) -> Border {
     match s {
@@ -23,6 +22,55 @@ fn parse_border(s: &str) -> Border {
         "heavy" => Border::Heavy,
         _ => Border::Single,
     }
+}
+
+fn extract_node_from_value(v: Value) -> Option<Node> {
+    match v {
+        Value::UserData(ud) => ud.borrow::<LuaNode>().ok().map(|n| n.0.clone()),
+        Value::String(s) => s.to_str().ok().map(|s| text(s.to_string())),
+        _ => None,
+    }
+}
+
+fn collect_child_nodes(values: impl Iterator<Item = Value>) -> Vec<Node> {
+    values.filter_map(extract_node_from_value).collect()
+}
+
+fn table_to_string_list(items: &Table) -> Vec<String> {
+    items
+        .pairs::<i64, String>()
+        .filter_map(|r| r.ok().map(|(_, v)| v))
+        .collect()
+}
+
+fn parse_color_with_error(value: &str, prop_name: &str) -> LuaResult<crucible_oil::Color> {
+    parse_color(value).map_err(|_| {
+        mlua::Error::RuntimeError(format!(
+            "invalid color '{}' for '{}'. Use named colors (red, green, blue, yellow, \
+             cyan, magenta, white, black) or hex (#ff0000)",
+            value, prop_name
+        ))
+    })
+}
+
+const PROP_KEYS: &[&str] = &[
+    "gap", "padding", "border", "justify", "align", "fg", "bg", "bold", "margin",
+];
+
+fn is_props_table(t: &Table) -> LuaResult<bool> {
+    for key in PROP_KEYS {
+        if t.contains_key(*key)? {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+fn child_type_error(position: usize, type_name: &str, hint: &str) -> mlua::Error {
+    mlua::Error::RuntimeError(format!(
+        "child at position {} has type '{}'. {}",
+        position, type_name, hint
+    ))
 }
 
 fn parse_justify(s: &str) -> JustifyContent {
@@ -158,19 +206,7 @@ pub fn register_oil_module(lua: &Lua) -> Result<(), LuaError> {
 
     // cru.oil.fragment(children...)
     let fragment_fn = lua.create_function(|_, children: MultiValue| {
-        let child_nodes: Vec<Node> = children
-            .into_iter()
-            .filter_map(|v| {
-                if let Value::UserData(ud) = v {
-                    ud.borrow::<LuaNode>().ok().map(|n| n.0.clone())
-                } else if let Value::String(s) = v {
-                    s.to_str().ok().map(|s| text(s.to_string()))
-                } else {
-                    None
-                }
-            })
-            .collect();
-        Ok(LuaNode(fragment(child_nodes)))
+        Ok(LuaNode(fragment(collect_child_nodes(children.into_iter()))))
     })?;
     oil.set("fragment", fragment_fn)?;
 
@@ -180,11 +216,12 @@ pub fn register_oil_module(lua: &Lua) -> Result<(), LuaError> {
     })?;
     oil.set("when", when_fn)?;
 
-    // cru.oil.either(condition, true_node, false_node)
+    // cru.oil.either(condition, true_node, false_node) - also aliased as if_else
     let either_fn = lua.create_function(|_, (cond, t, f): (bool, LuaNode, LuaNode)| {
         Ok(LuaNode(if_else(cond, t.0, f.0)))
     })?;
-    oil.set("either", either_fn)?;
+    oil.set("either", either_fn.clone())?;
+    oil.set("if_else", either_fn)?;
 
     // cru.oil.each(items, fn)
     let each_fn = lua.create_function(|_, (items, func): (Table, Function)| {
@@ -291,21 +328,13 @@ pub fn register_oil_module(lua: &Lua) -> Result<(), LuaError> {
 
     // cru.oil.bullet_list(items)
     let bullet_list_fn = lua.create_function(|_, items: Table| {
-        let list: Vec<String> = items
-            .pairs::<i64, String>()
-            .filter_map(|r| r.ok().map(|(_, v)| v))
-            .collect();
-        Ok(LuaNode(bullet_list(list)))
+        Ok(LuaNode(bullet_list(table_to_string_list(&items))))
     })?;
     oil.set("bullet_list", bullet_list_fn)?;
 
     // cru.oil.numbered_list(items)
     let numbered_list_fn = lua.create_function(|_, items: Table| {
-        let list: Vec<String> = items
-            .pairs::<i64, String>()
-            .filter_map(|r| r.ok().map(|(_, v)| v))
-            .collect();
-        Ok(LuaNode(numbered_list(list)))
+        Ok(LuaNode(numbered_list(table_to_string_list(&items))))
     })?;
     oil.set("numbered_list", numbered_list_fn)?;
 
@@ -314,21 +343,44 @@ pub fn register_oil_module(lua: &Lua) -> Result<(), LuaError> {
         .create_function(|_, (key, value): (String, String)| Ok(LuaNode(key_value(key, value))))?;
     oil.set("kv", kv_fn)?;
 
-    // cru.oil.build(table) - Build a node from a spec table
-    let build_fn = lua.create_function(|lua, table: Table| {
-        let spec_value = lua_table_to_spec(lua, &table)?;
-        let node =
-            spec_to_node(&spec_value).map_err(|e| mlua::Error::RuntimeError(e.to_string()))?;
+    // cru.oil.markup(markup_string) - Parse XML-like markup into nodes
+    let markup_fn = lua.create_function(|_, markup: String| {
+        let node = html_to_node(&markup).map_err(|e| mlua::Error::RuntimeError(e.to_string()))?;
         Ok(LuaNode(node))
     })?;
-    oil.set("build", build_fn)?;
+    oil.set("markup", markup_fn)?;
 
-    // cru.oil.html(html_string)
-    let html_fn = lua.create_function(|_, html: String| {
-        let node = html_to_node(&html).map_err(|e| mlua::Error::RuntimeError(e.to_string()))?;
-        Ok(LuaNode(node))
+    // cru.oil.component(base_fn, default_props) -> callable that merges props
+    let component_fn = lua.create_function(|lua, (base_fn, defaults): (Function, Table)| {
+        let wrapper = lua.create_function(move |lua, args: MultiValue| {
+            let args_vec: Vec<Value> = args.into_iter().collect();
+            let mut merged_args = Vec::new();
+
+            let (user_props, rest) = if let Some(Value::Table(t)) = args_vec.first() {
+                let merged = lua.create_table()?;
+                for pair in defaults.pairs::<Value, Value>() {
+                    let (k, v) = pair?;
+                    merged.set(k, v)?;
+                }
+                for pair in t.pairs::<Value, Value>() {
+                    let (k, v) = pair?;
+                    merged.set(k, v)?;
+                }
+                (Some(merged), &args_vec[1..])
+            } else {
+                (Some(defaults.clone()), args_vec.as_slice())
+            };
+
+            if let Some(props) = user_props {
+                merged_args.push(Value::Table(props));
+            }
+            merged_args.extend(rest.iter().cloned());
+
+            base_fn.call::<LuaNode>(MultiValue::from_iter(merged_args))
+        })?;
+        Ok(wrapper)
     })?;
-    oil.set("html", html_fn)?;
+    oil.set("component", component_fn)?;
 
     // cru.oil.scrollback(key, children...)
     let scrollback_fn = lua.create_function(|_, args: MultiValue| {
@@ -341,20 +393,7 @@ pub fn register_oil_module(lua: &Lua) -> Result<(), LuaError> {
                 ))
             }
         };
-
-        let children: Vec<Node> = args_iter
-            .filter_map(|v| {
-                if let Value::UserData(ud) = v {
-                    ud.borrow::<LuaNode>().ok().map(|n| n.0.clone())
-                } else if let Value::String(s) = v {
-                    s.to_str().ok().map(|s| text(s.to_string()))
-                } else {
-                    None
-                }
-            })
-            .collect();
-
-        Ok(LuaNode(scrollback(key, children)))
+        Ok(LuaNode(scrollback(key, collect_child_nodes(args_iter))))
     })?;
     oil.set("scrollback", scrollback_fn)?;
 
@@ -363,73 +402,88 @@ pub fn register_oil_module(lua: &Lua) -> Result<(), LuaError> {
     Ok(())
 }
 
+fn get_bool_prop(table: &Table, key: &str) -> LuaResult<bool> {
+    match table.get::<Value>(key) {
+        Ok(Value::Boolean(b)) => Ok(b),
+        Ok(Value::Nil) | Err(_) => Ok(false),
+        Ok(other) => Err(mlua::Error::RuntimeError(format!(
+            "style property '{}' must be a boolean, got {}",
+            key,
+            other.type_name()
+        ))),
+    }
+}
+
 fn parse_style_from_table(table: &Table) -> LuaResult<Style> {
     let mut style = Style::default();
 
     if let Ok(fg) = table.get::<String>("fg") {
-        style.fg = Some(parse_color(&fg).map_err(|e| mlua::Error::RuntimeError(e.to_string()))?);
+        style.fg = Some(parse_color_with_error(&fg, "fg")?);
     }
     if let Ok(bg) = table.get::<String>("bg") {
-        style.bg = Some(parse_color(&bg).map_err(|e| mlua::Error::RuntimeError(e.to_string()))?);
+        style.bg = Some(parse_color_with_error(&bg, "bg")?);
     }
-    if table.get::<bool>("bold").unwrap_or(false) {
-        style.bold = true;
-    }
-    if table.get::<bool>("dim").unwrap_or(false) {
-        style.dim = true;
-    }
-    if table.get::<bool>("italic").unwrap_or(false) {
-        style.italic = true;
-    }
-    if table.get::<bool>("underline").unwrap_or(false) {
-        style.underline = true;
-    }
+
+    style.bold = get_bool_prop(table, "bold")?;
+    style.dim = get_bool_prop(table, "dim")?;
+    style.italic = get_bool_prop(table, "italic")?;
+    style.underline = get_bool_prop(table, "underline")?;
 
     Ok(style)
 }
 
-fn parse_container_args(lua: &Lua, args: MultiValue) -> LuaResult<(Option<Table>, Vec<Node>)> {
+fn parse_container_args(_lua: &Lua, args: MultiValue) -> LuaResult<(Option<Table>, Vec<Node>)> {
     let args_vec: Vec<Value> = args.into_iter().collect();
     let mut children = Vec::new();
     let mut opts = None;
 
     for (i, arg) in args_vec.into_iter().enumerate() {
         match arg {
-            Value::Table(t) if i == 0 => {
-                // First table might be opts if it has style-like keys
-                if t.contains_key("gap")?
-                    || t.contains_key("padding")?
-                    || t.contains_key("border")?
-                    || t.contains_key("justify")?
-                    || t.contains_key("align")?
-                    || t.contains_key("fg")?
-                    || t.contains_key("bg")?
-                    || t.contains_key("bold")?
-                {
-                    opts = Some(t);
-                } else {
-                    // It's a spec-style array, convert to node
-                    let spec_value = lua_table_to_spec(lua, &t)?;
-                    let node = spec_to_node(&spec_value)
-                        .map_err(|e| mlua::Error::RuntimeError(e.to_string()))?;
-                    children.push(node);
-                }
+            Value::Table(t) if i == 0 && is_props_table(&t)? => {
+                opts = Some(t);
             }
-            Value::Table(t) => {
-                let spec_value = lua_table_to_spec(lua, &t)?;
-                let node = spec_to_node(&spec_value)
-                    .map_err(|e| mlua::Error::RuntimeError(e.to_string()))?;
-                children.push(node);
+            Value::Table(_) => {
+                return Err(child_type_error(
+                    i + 1,
+                    "table",
+                    "Use oil.col(), oil.row(), etc. to create child nodes",
+                ));
             }
             Value::UserData(ud) => {
-                if let Ok(n) = ud.borrow::<LuaNode>() {
-                    children.push(n.0.clone());
-                }
+                children.push(
+                    ud.borrow::<LuaNode>()
+                        .map_err(|_| {
+                            child_type_error(
+                                i + 1,
+                                "userdata",
+                                "Use oil.text(), oil.col(), etc. to create nodes",
+                            )
+                        })?
+                        .0
+                        .clone(),
+                );
             }
             Value::String(s) => {
                 children.push(text(s.to_str()?.to_string()));
             }
-            _ => {}
+            Value::Nil => {}
+            Value::Boolean(_) | Value::Integer(_) | Value::Number(_) => {
+                return Err(child_type_error(
+                    i + 1,
+                    arg.type_name(),
+                    "Wrap primitives with oil.text() to display them",
+                ));
+            }
+            Value::Function(_) => {
+                return Err(child_type_error(
+                    i + 1,
+                    "function",
+                    "Did you forget to call it? Use fn() instead of fn",
+                ));
+            }
+            _ => {
+                return Err(child_type_error(i + 1, arg.type_name(), "Unsupported type"));
+            }
         }
     }
 
@@ -472,38 +526,6 @@ fn create_box_node(direction: Direction, opts: Option<Table>, children: Vec<Node
     Node::Box(node)
 }
 
-fn lua_table_to_spec(lua: &Lua, table: &Table) -> LuaResult<NodeSpec> {
-    let len = table.raw_len();
-
-    if len > 0 {
-        let mut arr = Vec::new();
-        for i in 1..=len {
-            let val: Value = table.get(i)?;
-            arr.push(lua_value_to_spec(lua, val)?);
-        }
-        Ok(NodeSpec::Array(arr))
-    } else {
-        let mut map = HashMap::new();
-        for pair in table.pairs::<String, Value>() {
-            let (k, v) = pair?;
-            map.insert(k, lua_value_to_spec(lua, v)?);
-        }
-        Ok(NodeSpec::Object(map))
-    }
-}
-
-fn lua_value_to_spec(lua: &Lua, value: Value) -> LuaResult<NodeSpec> {
-    match value {
-        Value::Nil => Ok(NodeSpec::Null),
-        Value::Boolean(b) => Ok(NodeSpec::Bool(b)),
-        Value::Integer(i) => Ok(NodeSpec::Int(i)),
-        Value::Number(n) => Ok(NodeSpec::Float(n)),
-        Value::String(s) => Ok(NodeSpec::String(s.to_str()?.to_string())),
-        Value::Table(t) => lua_table_to_spec(lua, &t),
-        _ => Ok(NodeSpec::Null),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -534,8 +556,10 @@ mod tests {
         assert!(oil.contains_key("spinner").unwrap());
         assert!(oil.contains_key("when").unwrap());
         assert!(oil.contains_key("either").unwrap());
+        assert!(oil.contains_key("if_else").unwrap());
         assert!(oil.contains_key("each").unwrap());
-        assert!(oil.contains_key("build").unwrap());
+        assert!(oil.contains_key("markup").unwrap());
+        assert!(oil.contains_key("component").unwrap());
     }
 
     #[test]
@@ -723,47 +747,6 @@ mod tests {
     }
 
     #[test]
-    fn test_oil_build_simple() {
-        let lua = setup_lua();
-
-        let result: LuaNode = lua
-            .load(r#"return cru.oil.build({"text", "Hello"})"#)
-            .eval()
-            .unwrap();
-
-        if let Node::Text(t) = result.0 {
-            assert_eq!(t.content, "Hello");
-        } else {
-            panic!("Expected Text node, got {:?}", result.0);
-        }
-    }
-
-    #[test]
-    fn test_oil_build_col_with_children() {
-        let lua = setup_lua();
-
-        let result: LuaNode = lua
-            .load(
-                r#"
-                return cru.oil.build({"col", {gap = 1},
-                    {"text", "a"},
-                    {"text", "b"}
-                })
-            "#,
-            )
-            .eval()
-            .unwrap();
-
-        if let Node::Box(b) = result.0 {
-            assert_eq!(b.direction, Direction::Column);
-            assert_eq!(b.gap, Gap::all(1));
-            assert_eq!(b.children.len(), 2);
-        } else {
-            panic!("Expected Box node, got {:?}", result.0);
-        }
-    }
-
-    #[test]
     fn test_oil_progress() {
         let lua = setup_lua();
 
@@ -899,11 +882,11 @@ mod tests {
     }
 
     #[test]
-    fn test_oil_html() {
+    fn test_oil_markup() {
         let lua = setup_lua();
 
         let result: LuaNode = lua
-            .load(r#"return cru.oil.html('<div gap="2"><p>Hello</p><p>World</p></div>')"#)
+            .load(r#"return cru.oil.markup('<div gap="2"><p>Hello</p><p>World</p></div>')"#)
             .eval()
             .unwrap();
 
@@ -913,6 +896,252 @@ mod tests {
             assert_eq!(b.children.len(), 2);
         } else {
             panic!("Expected Box node from div, got {:?}", result.0);
+        }
+    }
+
+    #[test]
+    fn test_oil_if_else_alias() {
+        let lua = setup_lua();
+
+        let result_true: LuaNode = lua
+            .load(r#"return cru.oil.if_else(true, cru.oil.text("yes"), cru.oil.text("no"))"#)
+            .eval()
+            .unwrap();
+
+        if let Node::Text(t) = result_true.0 {
+            assert_eq!(t.content, "yes");
+        } else {
+            panic!("Expected Text node");
+        }
+
+        let result_false: LuaNode = lua
+            .load(r#"return cru.oil.if_else(false, cru.oil.text("yes"), cru.oil.text("no"))"#)
+            .eval()
+            .unwrap();
+
+        if let Node::Text(t) = result_false.0 {
+            assert_eq!(t.content, "no");
+        } else {
+            panic!("Expected Text node");
+        }
+    }
+
+    #[test]
+    fn test_oil_component_with_defaults() {
+        let lua = setup_lua();
+
+        let result: LuaNode = lua
+            .load(
+                r#"
+                local Card = cru.oil.component(cru.oil.col, {padding = 2, border = "rounded"})
+                return Card({gap = 1}, cru.oil.text("Title"), cru.oil.text("Body"))
+            "#,
+            )
+            .eval()
+            .unwrap();
+
+        if let Node::Box(b) = result.0 {
+            assert_eq!(b.padding, Padding::all(2));
+            assert_eq!(b.border, Some(Border::Rounded));
+            assert_eq!(b.gap, Gap::all(1));
+            assert_eq!(b.children.len(), 2);
+        } else {
+            panic!("Expected Box node");
+        }
+    }
+
+    #[test]
+    fn test_oil_component_without_user_props() {
+        let lua = setup_lua();
+
+        let result: LuaNode = lua
+            .load(
+                r#"
+                local Card = cru.oil.component(cru.oil.col, {padding = 1, gap = 2})
+                return Card(cru.oil.text("Child"))
+            "#,
+            )
+            .eval()
+            .unwrap();
+
+        if let Node::Box(b) = result.0 {
+            assert_eq!(b.padding, Padding::all(1));
+            assert_eq!(b.gap, Gap::all(2));
+            assert_eq!(b.children.len(), 1);
+        } else {
+            panic!("Expected Box node");
+        }
+    }
+
+    #[test]
+    fn test_oil_error_invalid_color() {
+        let lua = setup_lua();
+
+        let result = lua
+            .load(r#"return cru.oil.text("hello", {fg = "invalid_color"})"#)
+            .eval::<LuaNode>();
+
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.contains("invalid color"),
+            "Error should mention invalid color: {}",
+            err
+        );
+        assert!(
+            err.contains("invalid_color"),
+            "Error should include the bad value: {}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_oil_error_primitive_child() {
+        let lua = setup_lua();
+
+        let result = lua.load(r#"return cru.oil.col(42)"#).eval::<LuaNode>();
+
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.contains("oil.text()"),
+            "Error should suggest wrapping: {}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_oil_error_function_child() {
+        let lua = setup_lua();
+
+        let result = lua
+            .load(r#"return cru.oil.col(function() end)"#)
+            .eval::<LuaNode>();
+
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.contains("function"),
+            "Error should mention function: {}",
+            err
+        );
+        assert!(
+            err.contains("call"),
+            "Error should suggest calling it: {}",
+            err
+        );
+    }
+}
+
+#[cfg(test)]
+mod proptest_tests {
+    use super::*;
+    use crucible_oil::render_to_string;
+    use proptest::prelude::*;
+
+    fn setup_lua() -> Lua {
+        let lua = Lua::new();
+        let crucible = lua.create_table().unwrap();
+        lua.globals().set("crucible", crucible).unwrap();
+        register_oil_module(&lua).expect("Should register oil module");
+        lua
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(50))]
+
+        #[test]
+        fn lua_text_nodes_render_without_panic(
+            content in "[a-zA-Z0-9 ]{0,50}",
+            bold in any::<bool>(),
+            width in 20usize..120,
+        ) {
+            let lua = setup_lua();
+            let bold_str = if bold { "true" } else { "false" };
+            let script = format!(
+                r#"return cru.oil.text("{}", {{bold = {}}})"#,
+                content.replace('\\', "\\\\").replace('"', "\\\""),
+                bold_str
+            );
+
+            if let Ok(node) = lua.load(&script).eval::<LuaNode>() {
+                let _ = render_to_string(&node.0, width);
+            }
+        }
+
+        #[test]
+        fn lua_col_nodes_render_without_panic(
+            texts in prop::collection::vec("[a-zA-Z0-9]{0,20}", 0..5),
+            gap in 0u16..4,
+            width in 20usize..120,
+        ) {
+            let lua = setup_lua();
+            let children: Vec<String> = texts
+                .iter()
+                .map(|t| format!(r#"cru.oil.text("{}")"#, t))
+                .collect();
+            let script = format!(
+                r#"return cru.oil.col({{gap = {}}}, {})"#,
+                gap,
+                children.join(", ")
+            );
+
+            if let Ok(node) = lua.load(&script).eval::<LuaNode>() {
+                let _ = render_to_string(&node.0, width);
+            }
+        }
+
+        #[test]
+        fn lua_row_with_spacer_renders_without_panic(
+            left in "[a-zA-Z]{0,10}",
+            right in "[a-zA-Z]{0,10}",
+            width in 20usize..120,
+        ) {
+            let lua = setup_lua();
+            let script = format!(
+                r#"return cru.oil.row(cru.oil.text("{}"), cru.oil.spacer(), cru.oil.text("{}"))"#,
+                left, right
+            );
+
+            if let Ok(node) = lua.load(&script).eval::<LuaNode>() {
+                let _ = render_to_string(&node.0, width);
+            }
+        }
+
+        #[test]
+        fn lua_nested_layout_renders_without_panic(
+            depth in 1usize..4,
+            width in 40usize..120,
+        ) {
+            let lua = setup_lua();
+
+            let mut script = String::from(r#"cru.oil.text("leaf")"#);
+            for i in 0..depth {
+                let container = if i % 2 == 0 { "col" } else { "row" };
+                script = format!(r#"cru.oil.{}({{gap = 1}}, {})"#, container, script);
+            }
+            script = format!("return {}", script);
+
+            if let Ok(node) = lua.load(&script).eval::<LuaNode>() {
+                let _ = render_to_string(&node.0, width);
+            }
+        }
+
+        #[test]
+        fn lua_conditional_nodes_render_without_panic(
+            condition in any::<bool>(),
+            text in "[a-zA-Z]{0,20}",
+            width in 20usize..80,
+        ) {
+            let lua = setup_lua();
+            let script = format!(
+                r#"return cru.oil.when({}, cru.oil.text("{}"))"#,
+                condition, text
+            );
+
+            if let Ok(node) = lua.load(&script).eval::<LuaNode>() {
+                let _ = render_to_string(&node.0, width);
+            }
         }
     }
 }
