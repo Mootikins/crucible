@@ -1,6 +1,10 @@
 // for bragging rights
 #![forbid(unsafe_code)]
 //
+// NOTE(crucible): Suppress warnings in vendored code - we patch bugs, not style
+#![allow(unused_assignments)]
+#![allow(mismatched_lifetime_syntaxes)]
+//
 // useful asserts that's off by default
 #![warn(clippy::manual_assert)]
 #![warn(clippy::semicolon_if_nothing_returned)]

@@ -97,25 +97,19 @@ pub async fn create_agent_from_session_config(
     let thinking_budget = agent_config.thinking_budget;
     let model_size = ModelSize::from_model_name(&agent_config.model);
 
-    let make_ws_ctx = || {
-        let mut ctx = WorkspaceContext::new(workspace);
-        if let Some(ref spawner) = background_spawner {
-            ctx = ctx.with_background_spawner(spawner.clone());
-        }
-        ctx
-    };
+    let mut ws_ctx = WorkspaceContext::new(workspace);
+    if let Some(ref spawner) = background_spawner {
+        ws_ctx = ws_ctx.with_background_spawner(spawner.clone());
+    }
 
     let handle: Box<dyn AgentHandle + Send + Sync> = match client {
         RigClient::Ollama(ref ollama_client) => {
-            let agent = build_agent_with_model_size(
-                &rig_agent_config,
-                ollama_client,
-                workspace,
-                model_size,
-            )
-            .map_err(|e| AgentFactoryError::AgentBuild(e.to_string()))?;
-            let mut components = AgentComponents::new(rig_agent_config.clone(), client, make_ws_ctx())
-                .with_model_size(model_size);
+            let agent =
+                build_agent_with_model_size(&rig_agent_config, ollama_client, &ws_ctx, model_size)
+                    .map_err(|e| AgentFactoryError::AgentBuild(e.to_string()))?;
+            let mut components =
+                AgentComponents::new(rig_agent_config.clone(), client, ws_ctx.clone())
+                    .with_model_size(model_size);
             if let Some(budget) = thinking_budget {
                 components = components.with_thinking_budget(budget);
             }
@@ -129,15 +123,11 @@ pub async fn create_agent_from_session_config(
             Box::new(handle)
         }
         RigClient::OpenAI(openai_client) => {
-            let agent = build_agent_with_model_size(
-                &rig_agent_config,
-                &openai_client,
-                workspace,
-                model_size,
-            )
-            .map_err(|e| AgentFactoryError::AgentBuild(e.to_string()))?;
+            let agent =
+                build_agent_with_model_size(&rig_agent_config, &openai_client, &ws_ctx, model_size)
+                    .map_err(|e| AgentFactoryError::AgentBuild(e.to_string()))?;
             let mut handle = RigAgentHandle::new(agent)
-                .with_workspace_context(make_ws_ctx())
+                .with_workspace_context(ws_ctx)
                 .with_model(agent_config.model.clone())
                 .with_thinking_budget(thinking_budget);
             if let Some(endpoint) = &ollama_endpoint {
@@ -146,15 +136,11 @@ pub async fn create_agent_from_session_config(
             Box::new(handle)
         }
         RigClient::OpenAICompat(compat_client) => {
-            let agent = build_agent_with_model_size(
-                &rig_agent_config,
-                &compat_client,
-                workspace,
-                model_size,
-            )
-            .map_err(|e| AgentFactoryError::AgentBuild(e.to_string()))?;
+            let agent =
+                build_agent_with_model_size(&rig_agent_config, &compat_client, &ws_ctx, model_size)
+                    .map_err(|e| AgentFactoryError::AgentBuild(e.to_string()))?;
             let mut handle = RigAgentHandle::new(agent)
-                .with_workspace_context(make_ws_ctx())
+                .with_workspace_context(ws_ctx)
                 .with_model(agent_config.model.clone())
                 .with_thinking_budget(thinking_budget);
             if let Some(endpoint) = &ollama_endpoint {
@@ -166,13 +152,13 @@ pub async fn create_agent_from_session_config(
             let agent = build_agent_with_model_size(
                 &rig_agent_config,
                 &anthropic_client,
-                workspace,
+                &ws_ctx,
                 model_size,
             )
             .map_err(|e| AgentFactoryError::AgentBuild(e.to_string()))?;
             Box::new(
                 RigAgentHandle::new(agent)
-                    .with_workspace_context(make_ws_ctx())
+                    .with_workspace_context(ws_ctx)
                     .with_model(agent_config.model.clone())
                     .with_thinking_budget(thinking_budget),
             )
@@ -190,16 +176,12 @@ pub async fn create_agent_from_session_config(
             let compat_client = crucible_rig::create_openai_compat_client(&api_token, &api_base)
                 .map_err(|e| AgentFactoryError::ClientCreation(e.to_string()))?;
 
-            let agent = build_agent_with_model_size(
-                &rig_agent_config,
-                &compat_client,
-                workspace,
-                model_size,
-            )
-            .map_err(|e| AgentFactoryError::AgentBuild(e.to_string()))?;
+            let agent =
+                build_agent_with_model_size(&rig_agent_config, &compat_client, &ws_ctx, model_size)
+                    .map_err(|e| AgentFactoryError::AgentBuild(e.to_string()))?;
             Box::new(
                 RigAgentHandle::new(agent)
-                    .with_workspace_context(make_ws_ctx())
+                    .with_workspace_context(ws_ctx)
                     .with_model(agent_config.model.clone())
                     .with_thinking_budget(thinking_budget),
             )
@@ -244,9 +226,14 @@ mod tests {
         let mut config = test_agent_config();
         config.agent_type = "acp".to_string();
 
-        let result = tokio::runtime::Runtime::new()
-            .unwrap()
-            .block_on(create_agent_from_session_config(&config, Path::new("/tmp"), None));
+        let result =
+            tokio::runtime::Runtime::new()
+                .unwrap()
+                .block_on(create_agent_from_session_config(
+                    &config,
+                    Path::new("/tmp"),
+                    None,
+                ));
 
         assert!(matches!(
             result,
