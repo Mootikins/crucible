@@ -189,6 +189,7 @@ mod tests {
 
     fn test_context() -> RpcContext {
         use crate::agent_manager::AgentManager;
+        use crate::background_manager::BackgroundTaskManager;
         use crate::kiln_manager::KilnManager;
         use crate::session_manager::SessionManager;
         use crate::subscription::SubscriptionManager;
@@ -196,11 +197,14 @@ mod tests {
 
         let (event_tx, _) = broadcast::channel(16);
         let (shutdown_tx, _) = broadcast::channel(1);
+        let session_manager = Arc::new(SessionManager::new());
+        let background_manager = Arc::new(BackgroundTaskManager::new(event_tx.clone()));
+        let agent_manager = Arc::new(AgentManager::new(session_manager.clone(), background_manager));
 
         RpcContext::new(
             Arc::new(KilnManager::new()),
-            Arc::new(SessionManager::new()),
-            Arc::new(AgentManager::new(Arc::new(SessionManager::new()))),
+            session_manager,
+            agent_manager,
             Arc::new(SubscriptionManager::new()),
             event_tx,
             shutdown_tx,
