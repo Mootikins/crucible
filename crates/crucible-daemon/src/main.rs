@@ -1,5 +1,6 @@
 mod agent_factory;
 mod agent_manager;
+mod background_manager;
 mod kiln_manager;
 mod lifecycle;
 mod protocol;
