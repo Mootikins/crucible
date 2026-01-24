@@ -419,6 +419,12 @@ pub enum DaemonSessionCommands {
         /// Session IDs to subscribe to
         session_ids: Vec<String>,
     },
+
+    /// Load a persisted session from storage into daemon memory
+    Load {
+        /// Session ID to load
+        session_id: String,
+    },
 }
 
 /// Agent card management subcommands
