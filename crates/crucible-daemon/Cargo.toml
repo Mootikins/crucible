@@ -47,3 +47,5 @@ test-slow = []           # Performance benchmarks and timing tests
 
 [dev-dependencies]
 tempfile = { workspace = true }
+futures = { workspace = true }
+rand = { workspace = true }

@@ -8,6 +8,7 @@ use crate::subscription::SubscriptionManager;
 use std::sync::Arc;
 use tokio::sync::broadcast;
 
+#[allow(dead_code)]
 pub struct RpcContext {
     pub kiln: Arc<KilnManager>,
     pub sessions: Arc<SessionManager>,
