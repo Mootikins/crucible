@@ -103,9 +103,10 @@ impl Terminal {
         }
     }
 
-    pub fn render(&mut self, tree: &Node) -> io::Result<()> {
+    pub fn render(&mut self, tree: &Node) -> io::Result<Vec<String>> {
         let snapshot = self.planner.plan(tree);
-        self.apply(&snapshot)
+        self.apply(&snapshot)?;
+        Ok(snapshot.plan.trace.graduated_keys)
     }
 
     fn apply(&mut self, snapshot: &FrameSnapshot) -> io::Result<()> {
@@ -194,10 +195,10 @@ impl Terminal {
         Ok(())
     }
 
-    pub fn render_fullscreen(&mut self, tree: &Node) -> io::Result<()> {
+    pub fn render_fullscreen(&mut self, tree: &Node) -> io::Result<Vec<String>> {
         let content = render_to_string(tree, self.width as usize);
         self.output.render_fullscreen(&content)?;
-        Ok(())
+        Ok(Vec::new())
     }
 
     pub fn show_cursor_at(&mut self, x: u16, y: u16) -> io::Result<()> {

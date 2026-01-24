@@ -620,6 +620,10 @@ impl InkChatApp {
         self.show_thinking = show;
     }
 
+    pub fn mark_graduated(&mut self, ids: impl IntoIterator<Item = String>) {
+        self.cache.mark_graduated(ids);
+    }
+
     pub fn load_previous_messages(&mut self, items: Vec<ChatItem>) {
         self.cache.clear();
         for item in items {
@@ -1992,9 +1996,9 @@ impl InkChatApp {
 
     fn render_items(&self) -> Node {
         let items: Vec<_> = if self.cache.is_streaming() {
-            self.cache.items_before_streaming().collect()
+            self.cache.ungraduated_items_before_streaming().collect()
         } else {
-            self.cache.items().collect()
+            self.cache.ungraduated_items().collect()
         };
         self.render_item_sequence(&items)
     }
