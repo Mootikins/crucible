@@ -454,7 +454,12 @@ impl WorkspaceTools {
             .map_err(|e| rmcp::ErrorData::internal_error(format!("Glob error: {e}"), None))?
             .filter_map(std::result::Result::ok)
             .take(max_results + 1)
-            .map(|p| p.display().to_string())
+            .map(|p| {
+                p.strip_prefix(&self.workspace_root)
+                    .unwrap_or(&p)
+                    .display()
+                    .to_string()
+            })
             .collect();
 
         let truncated = paths.len() > max_results;
