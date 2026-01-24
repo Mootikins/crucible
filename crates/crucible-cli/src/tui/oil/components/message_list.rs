@@ -267,16 +267,10 @@ fn render_tool_complete(
         format_tool_result(&tool.name, result_str)
     };
 
-    let path_node = tool
-        .output_path
-        .as_ref()
-        .map(|p| styled(format!("   → {}", p.display()), styles::dim()))
-        .unwrap_or(Node::Empty);
-
     let content = if first_in_sequence {
-        col([text(""), header, result_node, path_node])
+        col([text(""), header, result_node])
     } else {
-        col([header, result_node, path_node])
+        col([header, result_node])
     };
 
     scrollback(&tool.id, [content])
