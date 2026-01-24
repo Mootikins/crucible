@@ -28,7 +28,7 @@ impl ClientId {
         Self(CLIENT_ID_COUNTER.fetch_add(1, Ordering::Relaxed))
     }
 
-    /// Get the raw ID value.
+    #[allow(dead_code)]
     pub fn as_u64(&self) -> u64 {
         self.0
     }
