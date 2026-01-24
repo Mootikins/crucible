@@ -144,6 +144,7 @@ A knowledge management system where:
 
 | Item | Notes |
 |------|-------|
+| Session compaction with cache purge | When compacting, purge ViewportCache graduated_ids for pre-compaction content. Memory scales with model context length, not full session history. A compacted session behaves like multiple smaller sessions joined. Also consider context graph traversal (reusing response parents). |
 | Remove remaining unused deps | `cargo machete` shows unused deps in other crates (core, surrealdb, tools, etc.) |
 
 ---
