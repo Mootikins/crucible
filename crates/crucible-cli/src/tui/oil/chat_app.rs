@@ -2,7 +2,8 @@ use crate::tui::oil::app::{Action, App, ViewContext};
 use crate::tui::oil::commands::SetCommand;
 use crate::tui::oil::components::{
     format_streaming_output, format_tool_args, format_tool_result, render_shell_execution,
-    render_thinking_block, render_tool_call, render_user_prompt, summarize_tool_result,
+    render_subagent, render_thinking_block, render_tool_call, render_user_prompt,
+    summarize_tool_result,
 };
 use crate::tui::oil::config::{ConfigValue, ModSource, RuntimeConfig};
 use crate::tui::oil::event::{Event, InputAction, InputBuffer};
@@ -78,6 +79,9 @@ pub enum ChatAppMsg {
     ModelsLoaded(Vec<String>),
     ModelsFetchFailed(String),
     SetThinkingBudget(i64),
+    SubagentSpawned { id: String, prompt: String },
+    SubagentCompleted { id: String, summary: String },
+    SubagentFailed { id: String, error: String },
 }
 
 #[derive(Debug, Clone)]
@@ -548,6 +552,21 @@ impl App for InkChatApp {
                 Action::Continue
             }
             ChatAppMsg::SetThinkingBudget(_) => Action::Continue,
+            ChatAppMsg::SubagentSpawned { id, prompt } => {
+                if !self.cache.is_streaming() {
+                    self.cache.start_streaming();
+                }
+                self.cache.push_subagent(id, &prompt);
+                Action::Continue
+            }
+            ChatAppMsg::SubagentCompleted { id, summary } => {
+                self.cache.complete_subagent(&id, &summary);
+                Action::Continue
+            }
+            ChatAppMsg::SubagentFailed { id, error } => {
+                self.cache.fail_subagent(&id, &error);
+                Action::Continue
+            }
         }
     }
 
@@ -1371,6 +1390,27 @@ impl InkChatApp {
                         output.push_str("```\n\n");
                     }
                 }
+                CachedChatItem::Subagent(subagent) => {
+                    use crate::tui::oil::viewport_cache::SubagentStatus;
+                    let status = match subagent.status {
+                        SubagentStatus::Running => "running",
+                        SubagentStatus::Completed => "completed",
+                        SubagentStatus::Failed => "failed",
+                    };
+                    let _ = writeln!(output, "### Subagent: {} ({})\n", subagent.id, status);
+                    let prompt_preview = if subagent.prompt.len() > 100 {
+                        format!("{}...", &subagent.prompt[..100])
+                    } else {
+                        subagent.prompt.to_string()
+                    };
+                    let _ = writeln!(output, "Prompt: {}\n", prompt_preview);
+                    if let Some(ref summary) = subagent.summary {
+                        let _ = writeln!(output, "Result: {}\n", summary);
+                    }
+                    if let Some(ref error) = subagent.error {
+                        let _ = writeln!(output, "Error: {}\n", error);
+                    }
+                }
             }
         }
 
@@ -1969,6 +2009,7 @@ impl InkChatApp {
                 CachedChatItem::Message(msg) => self.render_message(msg),
                 CachedChatItem::ToolCall(tool) => render_tool_call(tool, !prev_was_tool),
                 CachedChatItem::ShellExecution(shell) => render_shell_execution(shell),
+                CachedChatItem::Subagent(subagent) => render_subagent(subagent, self.spinner_frame),
             };
             nodes.push(node);
             prev_was_tool = is_tool;
@@ -2057,6 +2098,14 @@ impl InkChatApp {
                             nodes.push(render_tool_call(tool, !prev_was_tool));
                             has_tool_calls = true;
                             prev_was_tool = true;
+                        }
+                    }
+                    StreamSegment::Subagent(subagent_id) => {
+                        if let Some(CachedChatItem::Subagent(subagent)) =
+                            self.cache.get_item(subagent_id)
+                        {
+                            nodes.push(render_subagent(subagent, self.spinner_frame));
+                            prev_was_tool = false;
                         }
                     }
                     _ => {}

@@ -85,6 +85,34 @@ impl SessionWriter {
         })
     }
 
+    /// Create a subagent session under a parent session
+    ///
+    /// The subagent session is created in `{parent_session_dir}/subagents/{subagent_id}/`
+    /// Returns the writer and the relative wikilink path.
+    pub async fn create_subagent(
+        parent_session_dir: impl AsRef<Path>,
+    ) -> Result<(Self, String), SessionError> {
+        let id = SessionId::new(SessionType::Subagent, Utc::now());
+        let subagents_dir = parent_session_dir.as_ref().join("subagents");
+        let session_dir = subagents_dir.join(id.as_str());
+
+        fs::create_dir_all(&session_dir).await?;
+
+        debug!("created subagent session directory: {}", session_dir.display());
+
+        let wikilink = format!("[[.subagents/{}/session]]", id.as_str());
+
+        Ok((
+            Self {
+                id,
+                session_dir,
+                file: None,
+                event_count: 0,
+            },
+            wikilink,
+        ))
+    }
+
     /// Open an existing session for appending
     pub async fn open(sessions_dir: impl AsRef<Path>, id: SessionId) -> Result<Self, SessionError> {
         let session_dir = sessions_dir.as_ref().join(id.as_str());
@@ -393,5 +421,59 @@ mod tests {
         let result = SessionWriter::open(&sessions_dir, id).await;
 
         assert!(matches!(result, Err(SessionError::NotFound(_))));
+    }
+
+    #[tokio::test]
+    async fn test_create_subagent_session() {
+        let dir = setup().await;
+        let sessions_dir = dir.path().join("sessions");
+
+        let parent = SessionWriter::create(&sessions_dir, SessionType::Chat)
+            .await
+            .unwrap();
+        let parent_dir = parent.session_dir().to_path_buf();
+
+        let (mut subagent, wikilink) = SessionWriter::create_subagent(&parent_dir)
+            .await
+            .unwrap();
+
+        assert!(subagent.id().as_str().starts_with("sub-"));
+        assert!(subagent.session_dir().exists());
+        assert!(wikilink.starts_with("[[.subagents/sub-"));
+        assert!(wikilink.ends_with("/session]]"));
+
+        subagent
+            .append(LogEvent::user("Subagent prompt"))
+            .await
+            .unwrap();
+        subagent
+            .append(LogEvent::assistant("Subagent response"))
+            .await
+            .unwrap();
+
+        assert_eq!(subagent.event_count(), 2);
+        assert!(subagent.jsonl_path().exists());
+
+        let events = load_events(subagent.session_dir()).await.unwrap();
+        assert_eq!(events.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_subagent_nested_under_parent() {
+        let dir = setup().await;
+        let sessions_dir = dir.path().join("sessions");
+
+        let parent = SessionWriter::create(&sessions_dir, SessionType::Chat)
+            .await
+            .unwrap();
+        let parent_dir = parent.session_dir().to_path_buf();
+
+        let (subagent, _) = SessionWriter::create_subagent(&parent_dir).await.unwrap();
+
+        let subagent_path = subagent.session_dir();
+        assert!(subagent_path.starts_with(&parent_dir));
+        assert!(subagent_path
+            .to_string_lossy()
+            .contains("subagents"));
     }
 }

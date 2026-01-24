@@ -69,6 +69,10 @@ impl EventToMarkdown for SessionEvent {
             SessionEvent::SubagentSpawned { .. } => "SubagentSpawned",
             SessionEvent::SubagentCompleted { .. } => "SubagentCompleted",
             SessionEvent::SubagentFailed { .. } => "SubagentFailed",
+            SessionEvent::BashTaskSpawned { .. } => "BashTaskSpawned",
+            SessionEvent::BashTaskCompleted { .. } => "BashTaskCompleted",
+            SessionEvent::BashTaskFailed { .. } => "BashTaskFailed",
+            SessionEvent::BackgroundTaskCompleted { .. } => "BackgroundTaskCompleted",
             SessionEvent::TextDelta { .. } => "TextDelta",
             SessionEvent::NoteParsed { .. } => "NoteParsed",
             SessionEvent::NoteCreated { .. } => "NoteCreated",
@@ -151,6 +155,24 @@ impl EventToMarkdown for SessionEvent {
             SessionEvent::SubagentCompleted { id, result } => format_subagent_completed(id, result),
 
             SessionEvent::SubagentFailed { id, error } => format_subagent_failed(id, error),
+
+            SessionEvent::BashTaskSpawned { id, command } => format_bash_task_spawned(id, command),
+
+            SessionEvent::BashTaskCompleted {
+                id,
+                output,
+                exit_code,
+            } => format_bash_task_completed(id, output, *exit_code),
+
+            SessionEvent::BashTaskFailed {
+                id,
+                error,
+                exit_code,
+            } => format_bash_task_failed(id, error, *exit_code),
+
+            SessionEvent::BackgroundTaskCompleted { id, kind, summary } => {
+                format_background_task_completed(id, kind, summary)
+            }
 
             SessionEvent::TextDelta { delta, seq } => {
                 format!("**Seq:** {}\n\n```\n{}\n```\n", seq, delta)
@@ -618,6 +640,37 @@ fn format_subagent_failed(id: &str, error: &str) -> String {
     format!("**Subagent ID:** `{}`\n\n**Error:** {}\n", id, error)
 }
 
+fn format_bash_task_spawned(id: &str, command: &str) -> String {
+    format!(
+        "**Task ID:** `{}`\n\n**Command:**\n```bash\n{}\n```\n",
+        id, command
+    )
+}
+
+fn format_bash_task_completed(id: &str, output: &str, exit_code: i32) -> String {
+    format!(
+        "**Task ID:** `{}`\n**Exit Code:** {}\n\n**Output:**\n```\n{}\n```\n",
+        id, exit_code, output
+    )
+}
+
+fn format_bash_task_failed(id: &str, error: &str, exit_code: Option<i32>) -> String {
+    let code_str = exit_code.map_or("none".to_string(), |c| c.to_string());
+    format!(
+        "**Task ID:** `{}`\n**Exit Code:** {}\n\n**Error:** {}\n",
+        id, code_str, error
+    )
+}
+
+fn format_background_task_completed(id: &str, kind: &str, summary: &str) -> String {
+    format!(
+        "**Task ID:** `{}`\n**Kind:** {}\n\n**Summary:**\n{}\n",
+        id,
+        kind,
+        quote_content(summary)
+    )
+}
+
 /// Format Custom event body.
 fn format_custom_event(name: &str, payload: &serde_json::Value) -> String {
     let payload_pretty = serde_json::to_string_pretty(payload).unwrap_or_default();
@@ -869,6 +922,10 @@ impl MarkdownToEvent for SessionEvent {
             "SubagentSpawned" => parse_subagent_spawned(&body)?,
             "SubagentCompleted" => parse_subagent_completed(&body)?,
             "SubagentFailed" => parse_subagent_failed(&body)?,
+            "BashTaskSpawned" => parse_bash_task_spawned(&body)?,
+            "BashTaskCompleted" => parse_bash_task_completed(&body)?,
+            "BashTaskFailed" => parse_bash_task_failed(&body)?,
+            "BackgroundTaskCompleted" => parse_background_task_completed(&body)?,
             "Custom" => parse_custom_event(&body)?,
             other => return Err(MarkdownParseError::UnknownEventType(other.to_string())),
         };
@@ -1027,6 +1084,69 @@ fn parse_subagent_failed(body: &str) -> MarkdownParseResult<SessionEvent> {
     Ok(SessionEvent::SubagentFailed { id, error })
 }
 
+fn parse_bash_task_spawned(body: &str) -> MarkdownParseResult<SessionEvent> {
+    let id = extract_inline_code_field(body, "**Task ID:**")?;
+    let command = extract_code_block(body, "**Command:**")?;
+
+    Ok(SessionEvent::BashTaskSpawned { id, command })
+}
+
+fn parse_bash_task_completed(body: &str) -> MarkdownParseResult<SessionEvent> {
+    let id = extract_inline_code_field(body, "**Task ID:**")?;
+    let exit_code_str = extract_field(body, "**Exit Code:**")?;
+    let exit_code: i32 =
+        exit_code_str
+            .parse()
+            .map_err(|_| MarkdownParseError::InvalidFieldValue {
+                field: "Exit Code".to_string(),
+                message: format!("Invalid integer: {}", exit_code_str),
+            })?;
+    let output = extract_code_block(body, "**Output:**").unwrap_or_default();
+
+    Ok(SessionEvent::BashTaskCompleted {
+        id,
+        output,
+        exit_code,
+    })
+}
+
+fn parse_bash_task_failed(body: &str) -> MarkdownParseResult<SessionEvent> {
+    let id = extract_inline_code_field(body, "**Task ID:**")?;
+    let exit_code_str = extract_field(body, "**Exit Code:**")?;
+    let exit_code = if exit_code_str == "none" {
+        None
+    } else {
+        Some(
+            exit_code_str
+                .parse()
+                .map_err(|_| MarkdownParseError::InvalidFieldValue {
+                    field: "Exit Code".to_string(),
+                    message: format!("Invalid integer: {}", exit_code_str),
+                })?,
+        )
+    };
+    let error = extract_field(body, "**Error:**")?;
+
+    Ok(SessionEvent::BashTaskFailed {
+        id,
+        error,
+        exit_code,
+    })
+}
+
+fn parse_background_task_completed(body: &str) -> MarkdownParseResult<SessionEvent> {
+    let id = extract_inline_code_field(body, "**Task ID:**")?;
+    let kind = extract_field(body, "**Kind:**")?;
+    let summary = if body.contains("**Summary:**") {
+        let summary_section = body.split("**Summary:**").nth(1).unwrap_or("").trim();
+        extract_quoted_content(summary_section)
+    } else {
+        String::new()
+    };
+
+    Ok(SessionEvent::BackgroundTaskCompleted { id, kind, summary })
+}
+
 /// Parse Custom event from body.
 fn parse_custom_event(body: &str) -> MarkdownParseResult<SessionEvent> {
     let name = extract_inline_code_field(body, "**Event Name:**")?;
@@ -1111,6 +1231,23 @@ fn extract_section_content(body: &str, label: &str) -> String {
     // Trim leading/trailing empty lines
     let content = content_lines.join("\n");
     content.trim().to_string()
+}
+
+fn extract_code_block(body: &str, label: &str) -> MarkdownParseResult<String> {
+    let after_label = body
+        .split(label)
+        .nth(1)
+        .ok_or_else(|| MarkdownParseError::MissingField(label.to_string()))?;
+
+    let content = after_label
+        .lines()
+        .skip_while(|line| !line.trim().starts_with("```"))
+        .skip(1)
+        .take_while(|line| !line.trim().starts_with("```"))
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    Ok(content)
 }
 
 /// Extract result content (may be inline or in code block).
@@ -1557,6 +1694,84 @@ mod tests {
     }
 
     #[test]
+    fn bash_task_spawned_to_markdown() {
+        let event = SessionEvent::BashTaskSpawned {
+            id: "task-20250123-1830-abc123".into(),
+            command: "cargo build --release".into(),
+        };
+
+        let md = event.to_markdown_block(Some(TEST_TIMESTAMP_MS));
+
+        assert!(md.contains("## 2025-12-14T15:30:45.123 - BashTaskSpawned"));
+        assert!(md.contains("**Task ID:** `task-20250123-1830-abc123`"));
+        assert!(md.contains("**Command:**"));
+        assert!(md.contains("cargo build --release"));
+    }
+
+    #[test]
+    fn bash_task_completed_to_markdown() {
+        let event = SessionEvent::BashTaskCompleted {
+            id: "task-20250123-1830-abc123".into(),
+            output: "Build succeeded\n".into(),
+            exit_code: 0,
+        };
+
+        let md = event.to_markdown_block(Some(TEST_TIMESTAMP_MS));
+
+        assert!(md.contains("## 2025-12-14T15:30:45.123 - BashTaskCompleted"));
+        assert!(md.contains("**Task ID:** `task-20250123-1830-abc123`"));
+        assert!(md.contains("**Exit Code:** 0"));
+        assert!(md.contains("**Output:**"));
+        assert!(md.contains("Build succeeded"));
+    }
+
+    #[test]
+    fn bash_task_failed_to_markdown() {
+        let event = SessionEvent::BashTaskFailed {
+            id: "task-20250123-1830-abc123".into(),
+            error: "Command not found".into(),
+            exit_code: Some(127),
+        };
+
+        let md = event.to_markdown_block(Some(TEST_TIMESTAMP_MS));
+
+        assert!(md.contains("## 2025-12-14T15:30:45.123 - BashTaskFailed"));
+        assert!(md.contains("**Task ID:** `task-20250123-1830-abc123`"));
+        assert!(md.contains("**Exit Code:** 127"));
+        assert!(md.contains("**Error:** Command not found"));
+    }
+
+    #[test]
+    fn bash_task_failed_no_exit_code_to_markdown() {
+        let event = SessionEvent::BashTaskFailed {
+            id: "task-20250123-1830-abc123".into(),
+            error: "Timeout".into(),
+            exit_code: None,
+        };
+
+        let md = event.to_markdown_block(Some(TEST_TIMESTAMP_MS));
+
+        assert!(md.contains("**Exit Code:** none"));
+    }
+
+    #[test]
+    fn background_task_completed_to_markdown() {
+        let event = SessionEvent::BackgroundTaskCompleted {
+            id: "task-20250123-1830-abc123".into(),
+            kind: "bash".into(),
+            summary: "Build completed successfully".into(),
+        };
+
+        let md = event.to_markdown_block(Some(TEST_TIMESTAMP_MS));
+
+        assert!(md.contains("## 2025-12-14T15:30:45.123 - BackgroundTaskCompleted"));
+        assert!(md.contains("**Task ID:** `task-20250123-1830-abc123`"));
+        assert!(md.contains("**Kind:** bash"));
+        assert!(md.contains("**Summary:**"));
+        assert!(md.contains("> Build completed successfully"));
+    }
+
+    #[test]
     fn custom_event_to_markdown() {
         let event = SessionEvent::Custom {
             name: "my_custom_event".into(),
@@ -1990,6 +2205,121 @@ mod tests {
             SessionEvent::SubagentFailed { id, error } => {
                 assert_eq!(id, "sub_abc123");
                 assert_eq!(error, "Timeout exceeded");
+            }
+            _ => panic!("Wrong event type"),
+        }
+    }
+
+    #[test]
+    fn roundtrip_bash_task_spawned() {
+        let original = SessionEvent::BashTaskSpawned {
+            id: "task-20250123-1830-abc123".into(),
+            command: "cargo build --release".into(),
+        };
+
+        let md = original.to_markdown_block(Some(TEST_TIMESTAMP_MS));
+        let (parsed, _) = SessionEvent::from_markdown_block(&md).unwrap();
+
+        match parsed {
+            SessionEvent::BashTaskSpawned { id, command } => {
+                assert_eq!(id, "task-20250123-1830-abc123");
+                assert_eq!(command, "cargo build --release");
+            }
+            _ => panic!("Wrong event type"),
+        }
+    }
+
+    #[test]
+    fn roundtrip_bash_task_completed() {
+        let original = SessionEvent::BashTaskCompleted {
+            id: "task-20250123-1830-abc123".into(),
+            output: "Build succeeded\n".into(),
+            exit_code: 0,
+        };
+
+        let md = original.to_markdown_block(Some(TEST_TIMESTAMP_MS));
+        let (parsed, _) = SessionEvent::from_markdown_block(&md).unwrap();
+
+        match parsed {
+            SessionEvent::BashTaskCompleted {
+                id,
+                output,
+                exit_code,
+            } => {
+                assert_eq!(id, "task-20250123-1830-abc123");
+                assert_eq!(output, "Build succeeded\n");
+                assert_eq!(exit_code, 0);
+            }
+            _ => panic!("Wrong event type"),
+        }
+    }
+
+    #[test]
+    fn roundtrip_bash_task_failed() {
+        let original = SessionEvent::BashTaskFailed {
+            id: "task-20250123-1830-abc123".into(),
+            error: "Command not found".into(),
+            exit_code: Some(127),
+        };
+
+        let md = original.to_markdown_block(Some(TEST_TIMESTAMP_MS));
+        let (parsed, _) = SessionEvent::from_markdown_block(&md).unwrap();
+
+        match parsed {
+            SessionEvent::BashTaskFailed {
+                id,
+                error,
+                exit_code,
+            } => {
+                assert_eq!(id, "task-20250123-1830-abc123");
+                assert_eq!(error, "Command not found");
+                assert_eq!(exit_code, Some(127));
+            }
+            _ => panic!("Wrong event type"),
+        }
+    }
+
+    #[test]
+    fn roundtrip_bash_task_failed_no_exit_code() {
+        let original = SessionEvent::BashTaskFailed {
+            id: "task-20250123-1830-abc123".into(),
+            error: "Timeout".into(),
+            exit_code: None,
+        };
+
+        let md = original.to_markdown_block(Some(TEST_TIMESTAMP_MS));
+        let (parsed, _) = SessionEvent::from_markdown_block(&md).unwrap();
+
+        match parsed {
+            SessionEvent::BashTaskFailed {
+                id,
+                error,
+                exit_code,
+            } => {
+                assert_eq!(id, "task-20250123-1830-abc123");
+                assert_eq!(error, "Timeout");
+                assert_eq!(exit_code, None);
+            }
+            _ => panic!("Wrong event type"),
+        }
+    }
+
+    #[test]
+    fn roundtrip_background_task_completed() {
+        let original = SessionEvent::BackgroundTaskCompleted {
+            id: "task-20250123-1830-abc123".into(),
+            kind: "bash".into(),
+            summary: "Build completed successfully".into(),
+        };
+
+        let md = original.to_markdown_block(Some(TEST_TIMESTAMP_MS));
+        let (parsed, _) = SessionEvent::from_markdown_block(&md).unwrap();
+
+        match parsed {
+            SessionEvent::BackgroundTaskCompleted { id, kind, summary } => {
+                assert_eq!(id, "task-20250123-1830-abc123");
+                assert_eq!(kind, "bash");
+                assert_eq!(summary, "Build completed successfully");
             }
             _ => panic!("Wrong event type"),
         }

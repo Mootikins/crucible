@@ -30,6 +30,7 @@ crucible-surrealdb = { workspace = true, optional = true }
 crucible-sqlite = { path = "../crucible-sqlite", optional = true }
 crucible-pipeline = { path = "../crucible-pipeline" }
 crucible-enrichment = { path = "../crucible-enrichment" }
+crucible-observe = { path = "../crucible-observe" }
 scopeguard = "1"
 reqwest = { workspace = true }
 

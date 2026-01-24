@@ -256,7 +256,7 @@ async fn test_tool_truncated_roundtrip() {
         .append(LogEvent::tool_result_truncated(
             "tc_002",
             "...partial content...",
-            true,
+            50000,
         ))
         .await
         .unwrap();

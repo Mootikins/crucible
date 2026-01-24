@@ -188,7 +188,7 @@ impl WorkspaceTools {
             name: Cow::Borrowed("bash"),
             title: None,
             description: Some(Cow::Borrowed(
-                "Execute bash command. Use for git, npm, cargo, etc.",
+                "Execute bash command. Use for git, npm, cargo, etc. Set background=true for long-running commands.",
             )),
             input_schema: Arc::new(
                 serde_json::json!({
@@ -201,6 +201,10 @@ impl WorkspaceTools {
                         "timeout_ms": {
                             "type": "integer",
                             "description": "Timeout in milliseconds (default: 120000)"
+                        },
+                        "background": {
+                            "type": "boolean",
+                            "description": "Run in background (returns task_id immediately)"
                         }
                     },
                     "required": ["command"]
@@ -620,6 +624,14 @@ impl ToolExecutor for WorkspaceTools {
                 let command = get_str("command")
                     .ok_or_else(|| ToolError::InvalidParameters("command is required".into()))?;
                 let timeout_ms = get_optional_u64("timeout_ms");
+                let background = get_optional_bool("background").unwrap_or(false);
+
+                if background {
+                    return Err(ToolError::ExecutionFailed(
+                        "Background execution requires BackgroundSpawner context. \
+                         Use the agent layer for background bash tasks.".into()
+                    ));
+                }
                 convert_result(self.bash(command, timeout_ms).await)
             }
             "glob" => {

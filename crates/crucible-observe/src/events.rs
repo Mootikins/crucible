@@ -100,6 +100,9 @@ pub enum LogEvent {
         /// Whether the result was truncated
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         truncated: bool,
+        /// Original size in bytes (only set if truncated)
+        #[serde(skip_serializing_if = "Option::is_none")]
+        full_size: Option<usize>,
         /// Error message if tool failed
         #[serde(skip_serializing_if = "Option::is_none")]
         error: Option<String>,
@@ -122,6 +125,71 @@ pub enum LogEvent {
         /// Whether the error is recoverable
         #[serde(default)]
         recoverable: bool,
+    },
+
+    /// Background bash task spawned
+    BashSpawned {
+        ts: DateTime<Utc>,
+        /// Task identifier
+        id: String,
+        /// Shell command being executed
+        command: String,
+    },
+
+    /// Background bash task completed
+    BashCompleted {
+        ts: DateTime<Utc>,
+        /// Task identifier
+        id: String,
+        /// Command output (stdout)
+        output: String,
+        /// Process exit code
+        exit_code: i32,
+    },
+
+    /// Background bash task failed
+    BashFailed {
+        ts: DateTime<Utc>,
+        /// Task identifier
+        id: String,
+        /// Error message
+        error: String,
+        /// Process exit code if available
+        #[serde(skip_serializing_if = "Option::is_none")]
+        exit_code: Option<i32>,
+    },
+
+    /// Subagent spawned - links to subagent's own session file
+    SubagentSpawned {
+        ts: DateTime<Utc>,
+        /// Task identifier (also the subagent session ID)
+        id: String,
+        /// Wikilink to subagent session (e.g., "[[.subagents/sub-20260124-1432-beef/session]]")
+        session_link: String,
+        /// Brief description/prompt summary for display
+        description: String,
+    },
+
+    /// Subagent completed - summary only, full output in linked session
+    SubagentCompleted {
+        ts: DateTime<Utc>,
+        /// Task identifier
+        id: String,
+        /// Wikilink to subagent session
+        session_link: String,
+        /// Brief summary of result (full output in subagent session)
+        summary: String,
+    },
+
+    /// Subagent failed
+    SubagentFailed {
+        ts: DateTime<Utc>,
+        /// Task identifier
+        id: String,
+        /// Wikilink to subagent session
+        session_link: String,
+        /// Error message
+        error: String,
     },
 }
 
@@ -208,28 +276,30 @@ impl LogEvent {
         }
     }
 
-    /// Create a tool result event
+    /// Create a tool result event (not truncated)
     pub fn tool_result(id: impl Into<String>, result: impl Into<String>) -> Self {
         LogEvent::ToolResult {
             ts: Utc::now(),
             id: id.into(),
             result: result.into(),
             truncated: false,
+            full_size: None,
             error: None,
         }
     }
 
-    /// Create a tool result event with truncation
+    /// Create a tool result event with truncation info
     pub fn tool_result_truncated(
         id: impl Into<String>,
         result: impl Into<String>,
-        truncated: bool,
+        full_size: usize,
     ) -> Self {
         LogEvent::ToolResult {
             ts: Utc::now(),
             id: id.into(),
             result: result.into(),
-            truncated,
+            truncated: true,
+            full_size: Some(full_size),
             error: None,
         }
     }
@@ -241,6 +311,7 @@ impl LogEvent {
             id: id.into(),
             result: String::new(),
             truncated: false,
+            full_size: None,
             error: Some(error.into()),
         }
     }
@@ -303,6 +374,79 @@ impl LogEvent {
         }
     }
 
+    pub fn bash_spawned(id: impl Into<String>, command: impl Into<String>) -> Self {
+        LogEvent::BashSpawned {
+            ts: Utc::now(),
+            id: id.into(),
+            command: command.into(),
+        }
+    }
+
+    pub fn bash_completed(
+        id: impl Into<String>,
+        output: impl Into<String>,
+        exit_code: i32,
+    ) -> Self {
+        LogEvent::BashCompleted {
+            ts: Utc::now(),
+            id: id.into(),
+            output: output.into(),
+            exit_code,
+        }
+    }
+
+    pub fn bash_failed(
+        id: impl Into<String>,
+        error: impl Into<String>,
+        exit_code: Option<i32>,
+    ) -> Self {
+        LogEvent::BashFailed {
+            ts: Utc::now(),
+            id: id.into(),
+            error: error.into(),
+            exit_code,
+        }
+    }
+
+    pub fn subagent_spawned(
+        id: impl Into<String>,
+        session_link: impl Into<String>,
+        description: impl Into<String>,
+    ) -> Self {
+        LogEvent::SubagentSpawned {
+            ts: Utc::now(),
+            id: id.into(),
+            session_link: session_link.into(),
+            description: description.into(),
+        }
+    }
+
+    pub fn subagent_completed(
+        id: impl Into<String>,
+        session_link: impl Into<String>,
+        summary: impl Into<String>,
+    ) -> Self {
+        LogEvent::SubagentCompleted {
+            ts: Utc::now(),
+            id: id.into(),
+            session_link: session_link.into(),
+            summary: summary.into(),
+        }
+    }
+
+    pub fn subagent_failed(
+        id: impl Into<String>,
+        session_link: impl Into<String>,
+        error: impl Into<String>,
+    ) -> Self {
+        LogEvent::SubagentFailed {
+            ts: Utc::now(),
+            id: id.into(),
+            session_link: session_link.into(),
+            error: error.into(),
+        }
+    }
+
     /// Get the timestamp of this event
     pub fn timestamp(&self) -> DateTime<Utc> {
         match self {
@@ -315,7 +459,13 @@ impl LogEvent {
             | LogEvent::Permission { ts, .. }
             | LogEvent::ToolResult { ts, .. }
             | LogEvent::Summary { ts, .. }
-            | LogEvent::Error { ts, .. } => *ts,
+            | LogEvent::Error { ts, .. }
+            | LogEvent::BashSpawned { ts, .. }
+            | LogEvent::BashCompleted { ts, .. }
+            | LogEvent::BashFailed { ts, .. }
+            | LogEvent::SubagentSpawned { ts, .. }
+            | LogEvent::SubagentCompleted { ts, .. }
+            | LogEvent::SubagentFailed { ts, .. } => *ts,
         }
     }
 
@@ -416,10 +566,11 @@ mod tests {
 
     #[test]
     fn test_tool_result_truncated_json() {
-        let event = LogEvent::tool_result_truncated("tc_001", "...", true);
+        let event = LogEvent::tool_result_truncated("tc_001", "...", 50000);
         let json = event.to_jsonl().unwrap();
 
         assert!(json.contains("\"truncated\":true"));
+        assert!(json.contains("\"full_size\":50000"));
     }
 
     #[test]
@@ -474,6 +625,93 @@ mod tests {
         for line in lines {
             let event = LogEvent::from_jsonl(line).unwrap();
             assert!(event.timestamp().year() == 2026);
+        }
+    }
+
+    #[test]
+    fn test_bash_spawned_json() {
+        let event = LogEvent::bash_spawned("task-001", "cargo build");
+        let json = event.to_jsonl().unwrap();
+
+        assert!(json.contains("\"type\":\"bash_spawned\""));
+        assert!(json.contains("\"id\":\"task-001\""));
+        assert!(json.contains("\"command\":\"cargo build\""));
+    }
+
+    #[test]
+    fn test_bash_completed_json() {
+        let event = LogEvent::bash_completed("task-001", "Build succeeded", 0);
+        let json = event.to_jsonl().unwrap();
+
+        assert!(json.contains("\"type\":\"bash_completed\""));
+        assert!(json.contains("\"exit_code\":0"));
+    }
+
+    #[test]
+    fn test_bash_failed_json() {
+        let event = LogEvent::bash_failed("task-001", "Command failed", Some(1));
+        let json = event.to_jsonl().unwrap();
+
+        assert!(json.contains("\"type\":\"bash_failed\""));
+        assert!(json.contains("\"exit_code\":1"));
+    }
+
+    #[test]
+    fn test_subagent_spawned_json() {
+        let event = LogEvent::subagent_spawned(
+            "sub-20260124-1432-beef",
+            "[[.subagents/sub-20260124-1432-beef/session]]",
+            "Research topic X",
+        );
+        let json = event.to_jsonl().unwrap();
+
+        assert!(json.contains("\"type\":\"subagent_spawned\""));
+        assert!(json.contains("\"session_link\":\"[[.subagents/sub-20260124-1432-beef/session]]\""));
+        assert!(json.contains("\"description\":\"Research topic X\""));
+    }
+
+    #[test]
+    fn test_subagent_completed_json() {
+        let event = LogEvent::subagent_completed(
+            "sub-20260124-1432-beef",
+            "[[.subagents/sub-20260124-1432-beef/session]]",
+            "Found 5 relevant files",
+        );
+        let json = event.to_jsonl().unwrap();
+
+        assert!(json.contains("\"type\":\"subagent_completed\""));
+        assert!(json.contains("\"summary\":\"Found 5 relevant files\""));
+    }
+
+    #[test]
+    fn test_subagent_failed_json() {
+        let event = LogEvent::subagent_failed(
+            "sub-20260124-1432-beef",
+            "[[.subagents/sub-20260124-1432-beef/session]]",
+            "Timeout",
+        );
+        let json = event.to_jsonl().unwrap();
+
+        assert!(json.contains("\"type\":\"subagent_failed\""));
+        assert!(json.contains("\"error\":\"Timeout\""));
+    }
+
+    #[test]
+    fn test_background_events_roundtrip() {
+        let events = vec![
+            LogEvent::bash_spawned("t1", "ls -la"),
+            LogEvent::bash_completed("t1", "output", 0),
+            LogEvent::bash_failed("t2", "error", Some(1)),
+            LogEvent::subagent_spawned("t3", "[[.subagents/t3/session]]", "prompt"),
+            LogEvent::subagent_completed("t3", "[[.subagents/t3/session]]", "result"),
+            LogEvent::subagent_failed("t4", "[[.subagents/t4/session]]", "failed"),
+        ];
+
+        for event in events {
+            let json = event.to_jsonl().unwrap();
+            let parsed = LogEvent::from_jsonl(&json).unwrap();
+            let json2 = parsed.to_jsonl().unwrap();
+            assert_eq!(json, json2);
         }
     }
 }

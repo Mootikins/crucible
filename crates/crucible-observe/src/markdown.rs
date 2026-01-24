@@ -182,6 +182,7 @@ fn render_event(output: &mut String, event: &LogEvent, options: &RenderOptions) 
             id,
             result,
             truncated,
+            full_size: _,
             error,
         } => {
             if !options.include_tools {
@@ -237,6 +238,108 @@ fn render_event(output: &mut String, event: &LogEvent, options: &RenderOptions) 
             }
             let severity = if *recoverable { "Warning" } else { "Error" };
             writeln!(output, "> **{severity}:** {message}\n").unwrap();
+        }
+
+        LogEvent::BashSpawned { ts, id, command } => {
+            if options.include_timestamps {
+                writeln!(output, "<!-- {} -->", ts.format("%H:%M:%S")).unwrap();
+            }
+            writeln!(output, "### Background Task: `{id}`\n").unwrap();
+            writeln!(output, "```bash").unwrap();
+            writeln!(output, "{}", truncate(command, options.max_content_length)).unwrap();
+            writeln!(output, "```\n").unwrap();
+        }
+
+        LogEvent::BashCompleted {
+            ts,
+            id,
+            output: cmd_output,
+            exit_code,
+        } => {
+            if options.include_timestamps {
+                writeln!(output, "<!-- {} -->", ts.format("%H:%M:%S")).unwrap();
+            }
+            writeln!(output, "#### Bash Result (id: {id}, exit: {exit_code})\n").unwrap();
+            writeln!(output, "```").unwrap();
+            writeln!(
+                output,
+                "{}",
+                truncate(cmd_output, options.max_content_length)
+            )
+            .unwrap();
+            writeln!(output, "```\n").unwrap();
+        }
+
+        LogEvent::BashFailed {
+            ts,
+            id,
+            error,
+            exit_code,
+        } => {
+            if options.include_timestamps {
+                writeln!(output, "<!-- {} -->", ts.format("%H:%M:%S")).unwrap();
+            }
+            let exit_str = exit_code
+                .map(|c| format!(", exit: {c}"))
+                .unwrap_or_default();
+            writeln!(output, "#### Bash Failed (id: {id}{exit_str})\n").unwrap();
+            writeln!(output, "```").unwrap();
+            writeln!(output, "{}", truncate(error, options.max_content_length)).unwrap();
+            writeln!(output, "```\n").unwrap();
+        }
+
+        LogEvent::SubagentSpawned {
+            ts,
+            id,
+            session_link,
+            description,
+        } => {
+            if options.include_timestamps {
+                writeln!(output, "<!-- {} -->", ts.format("%H:%M:%S")).unwrap();
+            }
+            writeln!(output, "### Subagent: {session_link}\n").unwrap();
+            writeln!(
+                output,
+                "> **Task** (`{id}`): {}\n",
+                truncate(description, options.max_content_length)
+            )
+            .unwrap();
+        }
+
+        LogEvent::SubagentCompleted {
+            ts,
+            id,
+            session_link,
+            summary,
+        } => {
+            if options.include_timestamps {
+                writeln!(output, "<!-- {} -->", ts.format("%H:%M:%S")).unwrap();
+            }
+            writeln!(output, "#### Subagent Completed: {session_link}\n").unwrap();
+            writeln!(
+                output,
+                "> (`{id}`) {}\n",
+                truncate(summary, options.max_content_length)
+            )
+            .unwrap();
+        }
+
+        LogEvent::SubagentFailed {
+            ts,
+            id,
+            session_link,
+            error,
+        } => {
+            if options.include_timestamps {
+                writeln!(output, "<!-- {} -->", ts.format("%H:%M:%S")).unwrap();
+            }
+            writeln!(output, "#### Subagent Failed: {session_link}\n").unwrap();
+            writeln!(
+                output,
+                "> **Error** (`{id}`): {}\n",
+                truncate(error, options.max_content_length)
+            )
+            .unwrap();
         }
     }
 }
@@ -425,5 +528,44 @@ mod tests {
         assert!(md.contains("## User"));
         assert!(md.contains("## Assistant (gpt-4)"));
         assert!(md.contains("2+2 equals 4"));
+    }
+
+    #[test]
+    fn test_render_subagent_with_wikilink() {
+        let events = vec![
+            LogEvent::subagent_spawned(
+                "sub-20260124-1432-beef",
+                "[[.subagents/sub-20260124-1432-beef/session]]",
+                "Research topic X",
+            ),
+            LogEvent::subagent_completed(
+                "sub-20260124-1432-beef",
+                "[[.subagents/sub-20260124-1432-beef/session]]",
+                "Found 5 relevant files",
+            ),
+        ];
+
+        let md = render_to_markdown(&events, &RenderOptions::default());
+
+        assert!(md.contains("### Subagent: [[.subagents/sub-20260124-1432-beef/session]]"));
+        assert!(md.contains("Research topic X"));
+        assert!(
+            md.contains("#### Subagent Completed: [[.subagents/sub-20260124-1432-beef/session]]")
+        );
+        assert!(md.contains("Found 5 relevant files"));
+    }
+
+    #[test]
+    fn test_render_subagent_failed_with_wikilink() {
+        let events = vec![LogEvent::subagent_failed(
+            "sub-20260124-1432-beef",
+            "[[.subagents/sub-20260124-1432-beef/session]]",
+            "Timeout after 5 minutes",
+        )];
+
+        let md = render_to_markdown(&events, &RenderOptions::default());
+
+        assert!(md.contains("#### Subagent Failed: [[.subagents/sub-20260124-1432-beef/session]]"));
+        assert!(md.contains("Timeout after 5 minutes"));
     }
 }

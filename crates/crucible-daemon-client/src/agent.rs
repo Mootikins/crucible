@@ -7,7 +7,8 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use crucible_core::traits::chat::{
-    AgentHandle, ChatChunk, ChatError, ChatResult, ChatToolCall, ChatToolResult, CommandDescriptor,
+    AgentHandle, ChatChunk, ChatError, ChatResult, ChatToolCall, ChatToolResult,
+    CommandDescriptor,
 };
 use crucible_core::types::acp::schema::{AvailableCommand, SessionModeState};
 use futures::stream::BoxStream;
@@ -97,6 +98,7 @@ fn session_event_to_chat_chunk(event: &SessionEvent) -> Option<ChatChunk> {
                 tool_results: None,
                 reasoning: None,
                 usage: None,
+                subagent_events: None,
             })
         }
         "thinking" => {
@@ -108,6 +110,7 @@ fn session_event_to_chat_chunk(event: &SessionEvent) -> Option<ChatChunk> {
                 tool_results: None,
                 reasoning: Some(content.to_string()),
                 usage: None,
+                subagent_events: None,
             })
         }
         "tool_call" => {
@@ -126,6 +129,7 @@ fn session_event_to_chat_chunk(event: &SessionEvent) -> Option<ChatChunk> {
                 tool_results: None,
                 reasoning: None,
                 usage: None,
+                subagent_events: None,
             })
         }
         "tool_result" => {
@@ -151,6 +155,7 @@ fn session_event_to_chat_chunk(event: &SessionEvent) -> Option<ChatChunk> {
                 }]),
                 reasoning: None,
                 usage: None,
+                subagent_events: None,
             })
         }
         "message_complete" => Some(ChatChunk {
@@ -160,6 +165,7 @@ fn session_event_to_chat_chunk(event: &SessionEvent) -> Option<ChatChunk> {
             tool_results: None,
             reasoning: None,
             usage: None,
+            subagent_events: None,
         }),
         "ended" => Some(ChatChunk {
             delta: String::new(),
@@ -168,6 +174,7 @@ fn session_event_to_chat_chunk(event: &SessionEvent) -> Option<ChatChunk> {
             tool_results: None,
             reasoning: None,
             usage: None,
+            subagent_events: None,
         }),
         _ => {
             tracing::debug!("Unknown session event type: {}", event.event_type);

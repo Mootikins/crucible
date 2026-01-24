@@ -3,7 +3,10 @@
 //! Provides optional session logging for the TUI chat interface.
 //! Sessions are logged as JSONL files in `.crucible/sessions/<id>/`.
 
-use crucible_observe::{load_events, LogEvent, SessionId, SessionType, SessionWriter};
+use crucible_observe::{
+    load_events, truncate_for_log, LogEvent, SessionId, SessionType, SessionWriter,
+    DEFAULT_TRUNCATE_THRESHOLD,
+};
 use std::path::PathBuf;
 use tokio::sync::Mutex;
 use tracing::{debug, warn};
@@ -145,15 +148,20 @@ impl SessionLogger {
         }
     }
 
-    /// Log a tool result
-    pub async fn log_tool_result(&self, id: &str, result: &str, truncated: bool) {
+    /// Log a tool result (automatically truncated if too large)
+    pub async fn log_tool_result(&self, id: &str, result: &str) {
         if self.ensure_writer().await.is_none() {
             return;
         }
 
         let mut writer_guard = self.writer.lock().await;
         if let Some(writer) = writer_guard.as_mut() {
-            let event = LogEvent::tool_result_truncated(id, result, truncated);
+            let truncated = truncate_for_log(result, DEFAULT_TRUNCATE_THRESHOLD);
+            let event = if truncated.truncated {
+                LogEvent::tool_result_truncated(id, truncated.content, truncated.original_size)
+            } else {
+                LogEvent::tool_result(id, truncated.content)
+            };
             if let Err(e) = writer.append(event).await {
                 warn!("Failed to log tool result: {}", e);
             }
@@ -261,7 +269,7 @@ mod tests {
         logger
             .log_tool_call("tc1", "read_file", serde_json::json!({"path": "test.rs"}))
             .await;
-        logger.log_tool_result("tc1", "fn main() {}", false).await;
+        logger.log_tool_result("tc1", "fn main() {}").await;
         logger.finish().await;
 
         let id = logger.session_id().await.unwrap();
