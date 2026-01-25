@@ -105,6 +105,12 @@ where
     /// Thinking budget for reasoning models (-1=unlimited, 0=disabled, >0=max tokens)
     thinking_budget: Option<i64>,
 
+    /// Temperature for response generation (0.0-2.0)
+    temperature: Option<f64>,
+
+    /// Maximum tokens for response generation
+    max_tokens: Option<u32>,
+
     /// HTTP client for custom streaming
     http_client: reqwest::Client,
 
@@ -146,6 +152,8 @@ where
             ollama_endpoint: None,
             model_name: None,
             thinking_budget: None,
+            temperature: None,
+            max_tokens: None,
             http_client: reqwest::Client::new(),
             workspace_ctx: None,
             components: None,
@@ -1129,6 +1137,34 @@ where
 
     fn current_model(&self) -> Option<&str> {
         self.model_name.as_deref()
+    }
+
+    async fn set_temperature(&mut self, temperature: f64) -> ChatResult<()> {
+        info!(temperature = %temperature, "Setting temperature");
+        self.temperature = Some(temperature);
+        if let Some(ref mut comp) = self.components {
+            comp.config.temperature = Some(temperature);
+            self.needs_rebuild.store(true, Ordering::SeqCst);
+        }
+        Ok(())
+    }
+
+    fn get_temperature(&self) -> Option<f64> {
+        self.temperature
+    }
+
+    async fn set_max_tokens(&mut self, max_tokens: Option<u32>) -> ChatResult<()> {
+        info!(max_tokens = ?max_tokens, "Setting max tokens");
+        self.max_tokens = max_tokens;
+        if let Some(ref mut comp) = self.components {
+            comp.config.max_tokens = max_tokens;
+            self.needs_rebuild.store(true, Ordering::SeqCst);
+        }
+        Ok(())
+    }
+
+    fn get_max_tokens(&self) -> Option<u32> {
+        self.max_tokens
     }
 
     async fn fetch_available_models(&mut self) -> Vec<String> {
