@@ -2459,8 +2459,9 @@ impl InkChatApp {
             .map(|(w, h)| (w as usize, h as usize))
             .unwrap_or((80, 24));
 
-        let header_bg = colors::POPUP_BG;
+        let header_bg = colors::INPUT_BG;
         let footer_bg = colors::INPUT_BG;
+        let top_border = styled("▄".repeat(term_width), Style::new().fg(colors::INPUT_BG));
 
         // Header with question
         let header_text = format!(" {} ", ask_request.question);
