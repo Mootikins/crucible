@@ -4,9 +4,6 @@ use crate::tui::oil::node::{row, spacer, styled, Node};
 use crate::tui::oil::style::{Color, Style};
 use crate::tui::oil::theme::{colors, styles};
 use crate::tui::oil::ViewContext;
-use std::time::{Duration, Instant};
-
-const NOTIFICATION_TIMEOUT: Duration = Duration::from_secs(5);
 
 #[derive(Debug, Clone, Default)]
 pub struct StatusBar {
@@ -15,7 +12,7 @@ pub struct StatusBar {
     pub context_used: usize,
     pub context_total: usize,
     pub status: String,
-    pub notification: Option<(String, Instant)>,
+    pub notification_count: usize,
 }
 
 impl StatusBar {
@@ -44,17 +41,9 @@ impl StatusBar {
         self
     }
 
-    pub fn notification(mut self, msg: impl Into<String>) -> Self {
-        self.notification = Some((msg.into(), Instant::now()));
+    pub fn notification_count(mut self, count: usize) -> Self {
+        self.notification_count = count;
         self
-    }
-
-    pub fn set_notification(&mut self, msg: impl Into<String>) {
-        self.notification = Some((msg.into(), Instant::now()));
-    }
-
-    pub fn clear_notification(&mut self) {
-        self.notification = None;
     }
 
     fn mode_style(&self) -> Style {
@@ -92,13 +81,6 @@ impl StatusBar {
             truncate_string(&self.model, 20)
         }
     }
-
-    fn active_notification(&self) -> Option<&str> {
-        self.notification
-            .as_ref()
-            .filter(|(_, set_at)| set_at.elapsed() < NOTIFICATION_TIMEOUT)
-            .map(|(msg, _)| msg.as_str())
-    }
 }
 
 impl Component for StatusBar {
@@ -116,9 +98,12 @@ impl Component for StatusBar {
             items.push(styled(self.status.clone(), styles::muted()));
         }
 
-        if let Some(notif) = self.active_notification() {
+        if self.notification_count > 0 {
             items.push(spacer());
-            items.push(styled(format!(" {} ", notif), styles::notification()));
+            items.push(styled(
+                format!(" [{}] ", self.notification_count),
+                styles::notification(),
+            ));
         }
 
         row(items)
@@ -204,8 +189,18 @@ mod tests {
     }
 
     #[test]
-    fn notification_appears_when_fresh() {
-        let bar = StatusBar::new().notification("Copied to clipboard");
-        assert!(bar.active_notification().is_some());
+    fn notification_badge_shows_count() {
+        let bar = StatusBar::new().notification_count(3);
+        let h = ComponentHarness::new(80, 1);
+        let plain = render_to_plain_text(&bar.view(&ViewContext::new(h.focus())), 80);
+        assert!(plain.contains("[3]"));
+    }
+
+    #[test]
+    fn no_notification_badge_when_zero() {
+        let bar = StatusBar::new().notification_count(0);
+        let h = ComponentHarness::new(80, 1);
+        let plain = render_to_plain_text(&bar.view(&ViewContext::new(h.focus())), 80);
+        assert!(!plain.contains('['));
     }
 }
