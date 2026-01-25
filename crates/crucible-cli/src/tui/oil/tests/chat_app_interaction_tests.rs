@@ -1240,3 +1240,51 @@ fn model_repl_command_in_popup_list() {
         "REPL command popup should include :model"
     );
 }
+
+// =============================================================================
+// Config Command Tests
+// =============================================================================
+
+#[test]
+fn config_show_command_displays_values() {
+    let mut harness: AppHarness<InkChatApp> = AppHarness::new(80, 24);
+    harness.render();
+
+    // Type :config show command
+    harness.send_text(":config show");
+    harness.send_enter();
+
+    let output = harness.screen();
+
+    // Should display temperature value
+    assert!(
+        output.contains("temperature:") || output.contains("temperature ="),
+        "Should display temperature value. Got: {}",
+        output
+    );
+
+    // Should display max_tokens value
+    assert!(
+        output.contains("max_tokens:")
+            || output.contains("max_tokens =")
+            || output.contains("maxtokens"),
+        "Should display max_tokens value. Got: {}",
+        output
+    );
+
+    // Should display thinking_budget value
+    assert!(
+        output.contains("thinking_budget:")
+            || output.contains("thinking_budget =")
+            || output.contains("thinkingbudget"),
+        "Should display thinking_budget value. Got: {}",
+        output
+    );
+
+    // Should display mode value
+    assert!(
+        output.contains("mode:") || output.contains("mode ="),
+        "Should display mode value. Got: {}",
+        output
+    );
+}
