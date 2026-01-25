@@ -9,8 +9,8 @@ use crate::protocol::{
 };
 use crate::rpc::{RpcContext, RpcDispatcher};
 use crate::rpc_helpers::{
-    optional_str_param, optional_u64_param, require_array_param, require_i64_param,
-    require_str_param,
+    optional_str_param, optional_u64_param, require_array_param, require_f64_param,
+    require_i64_param, require_str_param,
 };
 use crate::session_manager::SessionManager;
 use crate::session_storage::{FileSessionStorage, SessionStorage};
@@ -404,6 +404,14 @@ async fn handle_legacy_request(
         "session.get_thinking_budget" => {
             handle_session_get_thinking_budget(req, agent_manager).await
         }
+        "session.set_temperature" => {
+            handle_session_set_temperature(req, agent_manager, event_tx).await
+        }
+        "session.get_temperature" => handle_session_get_temperature(req, agent_manager).await,
+        "session.set_max_tokens" => {
+            handle_session_set_max_tokens(req, agent_manager, event_tx).await
+        }
+        "session.get_max_tokens" => handle_session_get_max_tokens(req, agent_manager).await,
         _ => {
             tracing::warn!("Unknown RPC method: {:?}", req.method);
             Response::error(
@@ -1109,6 +1117,113 @@ async fn handle_session_get_thinking_budget(req: Request, am: &Arc<AgentManager>
             serde_json::json!({
                 "session_id": session_id,
                 "thinking_budget": budget,
+            }),
+        ),
+        Err(crate::agent_manager::AgentError::SessionNotFound(id)) => {
+            session_not_found(req.id, &id)
+        }
+        Err(crate::agent_manager::AgentError::NoAgentConfigured(id)) => {
+            agent_not_configured(req.id, &id)
+        }
+        Err(e) => internal_error(req.id, e),
+    }
+}
+
+async fn handle_session_set_temperature(
+    req: Request,
+    am: &Arc<AgentManager>,
+    event_tx: &broadcast::Sender<SessionEventMessage>,
+) -> Response {
+    let session_id = require_str_param!(req, "session_id");
+    let temperature = require_f64_param!(req, "temperature");
+
+    match am
+        .set_temperature(session_id, temperature, Some(event_tx))
+        .await
+    {
+        Ok(()) => Response::success(
+            req.id,
+            serde_json::json!({
+                "session_id": session_id,
+                "temperature": temperature,
+            }),
+        ),
+        Err(crate::agent_manager::AgentError::SessionNotFound(id)) => {
+            session_not_found(req.id, &id)
+        }
+        Err(crate::agent_manager::AgentError::NoAgentConfigured(id)) => {
+            agent_not_configured(req.id, &id)
+        }
+        Err(crate::agent_manager::AgentError::ConcurrentRequest(id)) => {
+            concurrent_request(req.id, &id)
+        }
+        Err(e) => internal_error(req.id, e),
+    }
+}
+
+async fn handle_session_get_temperature(req: Request, am: &Arc<AgentManager>) -> Response {
+    let session_id = require_str_param!(req, "session_id");
+
+    match am.get_temperature(session_id) {
+        Ok(temperature) => Response::success(
+            req.id,
+            serde_json::json!({
+                "session_id": session_id,
+                "temperature": temperature,
+            }),
+        ),
+        Err(crate::agent_manager::AgentError::SessionNotFound(id)) => {
+            session_not_found(req.id, &id)
+        }
+        Err(crate::agent_manager::AgentError::NoAgentConfigured(id)) => {
+            agent_not_configured(req.id, &id)
+        }
+        Err(e) => internal_error(req.id, e),
+    }
+}
+
+async fn handle_session_set_max_tokens(
+    req: Request,
+    am: &Arc<AgentManager>,
+    event_tx: &broadcast::Sender<SessionEventMessage>,
+) -> Response {
+    let session_id = require_str_param!(req, "session_id");
+    // max_tokens can be null to clear the limit, so we use optional
+    let max_tokens = optional_u64_param!(req, "max_tokens").map(|v| v as u32);
+
+    match am
+        .set_max_tokens(session_id, max_tokens, Some(event_tx))
+        .await
+    {
+        Ok(()) => Response::success(
+            req.id,
+            serde_json::json!({
+                "session_id": session_id,
+                "max_tokens": max_tokens,
+            }),
+        ),
+        Err(crate::agent_manager::AgentError::SessionNotFound(id)) => {
+            session_not_found(req.id, &id)
+        }
+        Err(crate::agent_manager::AgentError::NoAgentConfigured(id)) => {
+            agent_not_configured(req.id, &id)
+        }
+        Err(crate::agent_manager::AgentError::ConcurrentRequest(id)) => {
+            concurrent_request(req.id, &id)
+        }
+        Err(e) => internal_error(req.id, e),
+    }
+}
+
+async fn handle_session_get_max_tokens(req: Request, am: &Arc<AgentManager>) -> Response {
+    let session_id = require_str_param!(req, "session_id");
+
+    match am.get_max_tokens(session_id) {
+        Ok(max_tokens) => Response::success(
+            req.id,
+            serde_json::json!({
+                "session_id": session_id,
+                "max_tokens": max_tokens,
             }),
         ),
         Err(crate::agent_manager::AgentError::SessionNotFound(id)) => {
