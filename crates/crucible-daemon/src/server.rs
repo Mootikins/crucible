@@ -1094,23 +1094,23 @@ async fn handle_session_test_interaction(
             let question = get_str("question")
                 .unwrap_or("Test question: Which option do you prefer?");
 
+            // InteractionRequest uses #[serde(tag = "kind")] internally-tagged format
             serde_json::json!({
-                "Ask": {
-                    "question": question,
-                    "choices": ["Option A", "Option B", "Option C"],
-                    "allow_other": true,
-                    "multi_select": false
-                }
+                "kind": "ask",
+                "question": question,
+                "choices": ["Option A", "Option B", "Option C"],
+                "allow_other": true,
+                "multi_select": false
             })
         }
         "permission" => {
             let action = get_str("action").unwrap_or("rm -rf /tmp/test");
 
+            // PermRequest uses externally-tagged format for its inner Bash/Read/Write/Tool
             serde_json::json!({
-                "Permission": {
-                    "Bash": {
-                        "command": action
-                    }
+                "kind": "permission",
+                "Bash": {
+                    "command": action
                 }
             })
         }
