@@ -1,5 +1,6 @@
 mod input_area;
 mod message_list;
+mod notification_area;
 mod popup_overlay;
 mod status_bar;
 
@@ -10,6 +11,7 @@ pub use message_list::{
     render_tool_call_with_frame, render_user_prompt, summarize_tool_result, MessageList,
     ThinkingBlock,
 };
+pub use notification_area::{NotificationArea, MAX_VISIBLE_NOTIFICATIONS};
 pub use popup_overlay::{
     popup_item, popup_item_full, popup_item_with_desc, PopupOverlay, FOCUS_POPUP, POPUP_MAX_VISIBLE,
 };
