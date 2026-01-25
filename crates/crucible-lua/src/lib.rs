@@ -86,6 +86,7 @@ mod popup;
 mod registry;
 pub mod schema;
 pub mod session;
+mod session_api;
 mod shell;
 pub mod statusline;
 mod types;
@@ -162,4 +163,8 @@ pub use mcp::{
 };
 pub use session::{
     LuaSession, LuaSessionBuilder, LuaSessionConfig, LuaSessionHandle, SessionState,
+};
+pub use session_api::{
+    register_session_module, ChannelSessionRpc, Session, SessionCommand, SessionConfigRpc,
+    SessionManager,
 };
