@@ -9,6 +9,7 @@ use anyhow::Result;
 use crossterm::event::{Event as CtEvent, EventStream, KeyCode, KeyModifiers};
 use crucible_core::events::SessionEvent;
 use crucible_core::traits::chat::{AgentHandle, ChatChunk, ChatResult, SubagentEventType};
+use crucible_lua::SessionCommand;
 use futures::stream::BoxStream;
 use futures::StreamExt;
 use std::io;
@@ -30,6 +31,7 @@ pub struct InkChatRunner {
     mcp_servers: Vec<McpServerDisplay>,
     available_models: Vec<String>,
     show_thinking: bool,
+    session_cmd_rx: Option<mpsc::UnboundedReceiver<SessionCommand>>,
 }
 
 impl InkChatRunner {
@@ -48,7 +50,16 @@ impl InkChatRunner {
             mcp_servers: Vec::new(),
             available_models: Vec::new(),
             show_thinking: false,
+            session_cmd_rx: None,
         })
+    }
+
+    pub fn with_session_command_receiver(
+        mut self,
+        rx: mpsc::UnboundedReceiver<SessionCommand>,
+    ) -> Self {
+        self.session_cmd_rx = Some(rx);
+        self
     }
 
     pub fn with_context_limit(mut self, limit: usize) -> Self {
@@ -166,6 +177,7 @@ impl InkChatRunner {
         let mut active_stream: Option<BoxStream<'static, ChatResult<ChatChunk>>> = None;
         let mut event_stream = EventStream::new();
         let mut tick_interval = tokio::time::interval(self.tick_rate);
+        let mut session_cmd_rx = self.session_cmd_rx.take();
 
         loop {
             if app.take_needs_full_redraw() {
@@ -334,6 +346,16 @@ impl InkChatRunner {
                     tracing::trace!("tick");
                     Some(Event::Tick)
                 }
+
+                Some(cmd) = async {
+                    match &mut session_cmd_rx {
+                        Some(rx) => rx.recv().await,
+                        None => std::future::pending().await,
+                    }
+                } => {
+                    Self::handle_session_command(cmd, agent).await;
+                    None
+                }
             };
 
             if let Some(ev) = event {
@@ -481,6 +503,28 @@ impl InkChatRunner {
                             }
                         }
                     }
+                    ChatAppMsg::SetTemperature(temp) => {
+                        tracing::info!(temperature = temp, "Setting temperature");
+                        match agent.set_temperature(*temp).await {
+                            Ok(()) => {
+                                tracing::info!(temperature = temp, "Temperature set successfully");
+                            }
+                            Err(e) => {
+                                tracing::warn!(temperature = temp, error = %e, "Temperature not supported by this agent");
+                            }
+                        }
+                    }
+                    ChatAppMsg::SetMaxTokens(max_tokens) => {
+                        tracing::info!(max_tokens = ?max_tokens, "Setting max_tokens");
+                        match agent.set_max_tokens(*max_tokens).await {
+                            Ok(()) => {
+                                tracing::info!(max_tokens = ?max_tokens, "Max tokens set successfully");
+                            }
+                            Err(e) => {
+                                tracing::warn!(max_tokens = ?max_tokens, error = %e, "Max tokens not supported by this agent");
+                            }
+                        }
+                    }
                     _ => {}
                 }
                 let action = app.on_message(msg);
@@ -493,6 +537,58 @@ impl InkChatRunner {
                     }
                 }
                 Ok(false)
+            }
+        }
+    }
+
+    async fn handle_session_command<A: AgentHandle>(cmd: SessionCommand, agent: &mut A) {
+        match cmd {
+            SessionCommand::GetTemperature(reply) => {
+                let _ = reply.send(agent.get_temperature());
+            }
+            SessionCommand::SetTemperature(temp, reply) => {
+                let result = agent
+                    .set_temperature(temp)
+                    .await
+                    .map_err(|e| e.to_string());
+                let _ = reply.send(result);
+            }
+            SessionCommand::GetMaxTokens(reply) => {
+                let _ = reply.send(agent.get_max_tokens());
+            }
+            SessionCommand::SetMaxTokens(tokens, reply) => {
+                let result = agent
+                    .set_max_tokens(tokens)
+                    .await
+                    .map_err(|e| e.to_string());
+                let _ = reply.send(result);
+            }
+            SessionCommand::GetThinkingBudget(reply) => {
+                let _ = reply.send(agent.get_thinking_budget());
+            }
+            SessionCommand::SetThinkingBudget(budget, reply) => {
+                let result = agent
+                    .set_thinking_budget(budget)
+                    .await
+                    .map_err(|e| e.to_string());
+                let _ = reply.send(result);
+            }
+            SessionCommand::GetModel(reply) => {
+                let _ = reply.send(agent.current_model().map(|s| s.to_string()));
+            }
+            SessionCommand::SwitchModel(model, reply) => {
+                let result = agent.switch_model(&model).await.map_err(|e| e.to_string());
+                let _ = reply.send(result);
+            }
+            SessionCommand::ListModels(reply) => {
+                let _ = reply.send(agent.available_models());
+            }
+            SessionCommand::GetMode(reply) => {
+                let _ = reply.send(agent.get_mode_id().to_string());
+            }
+            SessionCommand::SetMode(mode, reply) => {
+                let result = agent.set_mode_str(&mode).await.map_err(|e| e.to_string());
+                let _ = reply.send(result);
             }
         }
     }
