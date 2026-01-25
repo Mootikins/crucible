@@ -109,6 +109,25 @@ impl AgentManager {
         self.agent_cache.remove(session_id);
     }
 
+    /// Clean up session-specific state when session ends.
+    /// Removes Lua state, agent cache, and cancels any pending requests.
+    pub fn cleanup_session(&self, session_id: &str) {
+        // Remove Lua state (handlers, functions, registry keys)
+        if self.lua_states.remove(session_id).is_some() {
+            debug!(session_id = %session_id, "Cleaned up Lua state for session");
+        }
+
+        // Also clean up agent cache if present
+        self.agent_cache.remove(session_id);
+
+        // Cancel any pending requests
+        if let Some((_, mut state)) = self.request_state.remove(session_id) {
+            if let Some(cancel_tx) = state.cancel_tx.take() {
+                let _ = cancel_tx.send(());
+            }
+        }
+    }
+
     fn get_or_create_lua_state(&self, session_id: &str) -> Arc<Mutex<SessionLuaState>> {
         if let Some(state) = self.lua_states.get(session_id) {
             return state.clone();
@@ -1740,5 +1759,89 @@ mod tests {
 
             assert!(injection.is_none(), "No injection when handler returns nil");
         }
+    }
+
+    #[tokio::test]
+    async fn cleanup_session_removes_lua_state() {
+        let storage = Arc::new(FileSessionStorage::new());
+        let session_manager = Arc::new(SessionManager::with_storage(storage));
+        let agent_manager = create_test_agent_manager(session_manager);
+
+        let session_id = "test-session";
+
+        let _ = agent_manager.get_or_create_lua_state(session_id);
+        assert!(
+            agent_manager.lua_states.contains_key(session_id),
+            "Lua state should exist after creation"
+        );
+
+        agent_manager.cleanup_session(session_id);
+
+        assert!(
+            !agent_manager.lua_states.contains_key(session_id),
+            "Lua state should be removed after cleanup"
+        );
+    }
+
+    #[tokio::test]
+    async fn cleanup_session_removes_agent_cache() {
+        let storage = Arc::new(FileSessionStorage::new());
+        let session_manager = Arc::new(SessionManager::with_storage(storage));
+        let agent_manager = create_test_agent_manager(session_manager);
+
+        let session_id = "test-session";
+
+        agent_manager.agent_cache.insert(
+            session_id.to_string(),
+            Arc::new(Mutex::new(Box::new(MockAgent))),
+        );
+        assert!(
+            agent_manager.agent_cache.contains_key(session_id),
+            "Agent cache should exist after insertion"
+        );
+
+        agent_manager.cleanup_session(session_id);
+
+        assert!(
+            !agent_manager.agent_cache.contains_key(session_id),
+            "Agent cache should be removed after cleanup"
+        );
+    }
+
+    #[tokio::test]
+    async fn cleanup_session_cancels_pending_requests() {
+        let storage = Arc::new(FileSessionStorage::new());
+        let session_manager = Arc::new(SessionManager::with_storage(storage));
+        let agent_manager = create_test_agent_manager(session_manager);
+
+        let session_id = "test-session";
+        let (cancel_tx, mut cancel_rx) = oneshot::channel();
+
+        agent_manager.request_state.insert(
+            session_id.to_string(),
+            RequestState {
+                cancel_tx: Some(cancel_tx),
+                task_handle: None,
+                started_at: Instant::now(),
+            },
+        );
+
+        assert!(
+            agent_manager.request_state.contains_key(session_id),
+            "Request state should exist after insertion"
+        );
+
+        agent_manager.cleanup_session(session_id);
+
+        assert!(
+            !agent_manager.request_state.contains_key(session_id),
+            "Request state should be removed after cleanup"
+        );
+
+        let result = cancel_rx.try_recv();
+        assert!(
+            result.is_ok(),
+            "Cancel signal should have been sent during cleanup"
+        );
     }
 }
