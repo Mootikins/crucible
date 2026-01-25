@@ -1933,7 +1933,6 @@ impl InkChatApp {
                         });
                     } else if ask_request.allow_other && modal.selected == choices_count {
                         modal.mode = InteractionMode::TextInput;
-                        modal.other_text.clear();
                         Action::Continue
                     } else {
                         Action::Continue
@@ -1941,7 +1940,6 @@ impl InkChatApp {
                 }
                 KeyCode::Tab if ask_request.allow_other => {
                     modal.mode = InteractionMode::TextInput;
-                    modal.other_text.clear();
                     Action::Continue
                 }
                 KeyCode::Char(' ') if ask_request.multi_select => {
@@ -1974,7 +1972,6 @@ impl InkChatApp {
                 }
                 KeyCode::Esc => {
                     modal.mode = InteractionMode::Selecting;
-                    modal.other_text.clear();
                     Action::Continue
                 }
                 KeyCode::Backspace => {
