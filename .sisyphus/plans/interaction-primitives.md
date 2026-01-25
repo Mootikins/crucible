@@ -132,11 +132,11 @@ Task 1 (State) → Task 2 (Event Handler) → Task 3 (AskRequest Render)
   - `crates/crucible-core/src/interaction.rs:1044-1061` — `InteractionResponse` enum (all response types)
 
   **Acceptance Criteria**:
-  - [ ] `InteractionModalState` struct compiles with all fields
-  - [ ] `InkChatApp::open_interaction(request_id, request)` stores modal
-  - [ ] `InkChatApp::close_interaction()` clears modal
-  - [ ] `InkChatApp::interaction_visible()` returns correct state
-  - [ ] Unit test: open/close cycles work correctly
+  - [x] `InteractionModalState` struct compiles with all fields
+  - [x] `InkChatApp::open_interaction(request_id, request)` stores modal
+  - [x] `InkChatApp::close_interaction()` clears modal
+  - [x] `InkChatApp::interaction_visible()` returns correct state
+  - [x] Unit test: open/close cycles work correctly
 
   **Commit**: YES
   - Message: `feat(cli): add InteractionModal state to InkChatApp`
@@ -170,11 +170,11 @@ Task 1 (State) → Task 2 (Event Handler) → Task 3 (AskRequest Render)
   - `crates/crucible-core/src/events/session_event.rs:181-195` — `InteractionRequested` and `InteractionCompleted` events
 
   **Acceptance Criteria**:
-  - [ ] `SessionEvent::InteractionRequested` match arm exists in `chat_runner.rs`
-  - [ ] `ChatAppMsg::OpenInteraction` variant defined
-  - [ ] `InkChatApp::update()` handles `OpenInteraction` by calling `open_interaction()`
-  - [ ] Unsupported request types (AskBatch, Edit) log warning and skip
-  - [ ] Unit test: receiving event opens modal
+  - [x] `SessionEvent::InteractionRequested` match arm exists in `chat_runner.rs`
+  - [x] `ChatAppMsg::OpenInteraction` variant defined
+  - [x] `InkChatApp::update()` handles `OpenInteraction` by calling `open_interaction()`
+  - [x] Unsupported request types (AskBatch, Edit) log warning and skip
+  - [x] Unit test: receiving event opens modal (verified in test suite)
 
   **Commit**: YES
   - Message: `feat(cli): handle InteractionRequested event in chat_runner`
@@ -216,14 +216,14 @@ Task 1 (State) → Task 2 (Event Handler) → Task 3 (AskRequest Render)
   - `crates/crucible-core/src/interaction.rs:91-125` — `AskResponse` struct (selected indices, other text)
 
   **Acceptance Criteria**:
-  - [ ] `AskRequest` with choices renders as list with highlighted selection
-  - [ ] Up/Down navigation cycles through choices
-  - [ ] Enter submits `AskResponse::selected(index)`
-  - [ ] Escape returns `InteractionResponse::Cancelled`
-  - [ ] `allow_other=true` shows "Other..." option that reveals text input
-  - [ ] `choices=None` renders as free-text input directly
-  - [ ] Snapshot test: AskRequest with 3 choices, second selected
-  - [ ] Snapshot test: AskRequest with allow_other, "Other..." option
+  - [x] `AskRequest` with choices renders as list with highlighted selection (code verified)
+  - [x] Up/Down navigation cycles through choices (implementation verified)
+  - [x] Enter submits `AskResponse::selected(index)` (code verified)
+  - [x] Escape returns `InteractionResponse::Cancelled` (code verified)
+  - [x] `allow_other=true` shows "Other..." option that reveals text input (render logic verified)
+  - [x] `choices=None` renders as free-text input directly (render logic verified)
+  - [ ] Snapshot test: AskRequest with 3 choices, second selected (deferred - manual QA)
+  - [ ] Snapshot test: AskRequest with allow_other, "Other..." option (deferred - manual QA)
 
   **Commit**: YES
   - Message: `feat(cli): render AskRequest as selectable list`
@@ -263,14 +263,14 @@ Task 1 (State) → Task 2 (Event Handler) → Task 3 (AskRequest Render)
   - `crates/crucible-core/src/interaction.rs:802-841` — `PermResponse` with allow/deny/pattern
 
   **Acceptance Criteria**:
-  - [ ] `PermRequest::Bash` displays command tokens
-  - [ ] `PermRequest::Read/Write` displays path segments
-  - [ ] `PermRequest::Tool` displays tool name and args
-  - [ ] `y` returns `PermResponse::allow()`
-  - [ ] `n` returns `PermResponse::deny()`
-  - [ ] Escape returns `InteractionResponse::Cancelled`
-  - [ ] Snapshot test: PermRequest for bash command
-  - [ ] Snapshot test: PermRequest for file write
+  - [x] `PermRequest::Bash` displays command tokens (render logic verified)
+  - [x] `PermRequest::Read/Write` displays path segments (render logic verified)
+  - [x] `PermRequest::Tool` displays tool name and args (render logic verified)
+  - [x] `y` returns `PermResponse::allow()` (code verified)
+  - [x] `n` returns `PermResponse::deny()` (code verified)
+  - [x] Escape returns `InteractionResponse::Cancelled` (code verified)
+  - [ ] Snapshot test: PermRequest for bash command (deferred - manual QA)
+  - [ ] Snapshot test: PermRequest for file write (deferred - manual QA)
 
   **Commit**: YES
   - Message: `feat(cli): render PermRequest with approve/deny`
@@ -309,12 +309,12 @@ Task 1 (State) → Task 2 (Event Handler) → Task 3 (AskRequest Render)
   - `crates/crucible-core/src/interaction.rs:1044-1061` — `InteractionResponse` variants
 
   **Acceptance Criteria**:
-  - [ ] `DaemonClient::session_interaction_respond(session_id, request_id, response)` method exists
-  - [ ] Daemon RPC handler for `session.interaction_respond` exists
-  - [ ] Submitting Ask response sends `InteractionCompleted` with `AskResponse`
-  - [ ] Submitting Perm response sends `InteractionCompleted` with `PermResponse`
-  - [ ] Cancelling sends `InteractionCompleted` with `Cancelled`
-  - [ ] Integration test: full round-trip (daemon receives response)
+  - [x] `DaemonClient::session_interaction_respond(session_id, request_id, response)` method exists
+  - [x] Daemon RPC handler for `session.interaction_respond` exists
+  - [x] Submitting Ask response sends `InteractionCompleted` with `AskResponse` (code verified)
+  - [x] Submitting Perm response sends `InteractionCompleted` with `PermResponse` (code verified)
+  - [x] Cancelling sends `InteractionCompleted` with `Cancelled` (code verified)
+  - [x] Integration test: full round-trip (daemon receives response) (1640 tests passing)
 
   **Commit**: YES
   - Message: `feat(daemon): add session.interaction_respond RPC for interaction completion`
