@@ -317,6 +317,30 @@ impl AgentHandle for DaemonAgentHandle {
     fn get_thinking_budget(&self) -> Option<i64> {
         None
     }
+
+    async fn set_temperature(&mut self, temperature: f64) -> ChatResult<()> {
+        tracing::info!(session_id = %self.session_id, temperature = temperature, "Setting temperature via daemon");
+        self.client
+            .session_set_temperature(&self.session_id, temperature)
+            .await
+            .map_err(|e| ChatError::Communication(format!("Failed to set temperature: {}", e)))
+    }
+
+    fn get_temperature(&self) -> Option<f64> {
+        None
+    }
+
+    async fn set_max_tokens(&mut self, max_tokens: Option<u32>) -> ChatResult<()> {
+        tracing::info!(session_id = %self.session_id, max_tokens = ?max_tokens, "Setting max_tokens via daemon");
+        self.client
+            .session_set_max_tokens(&self.session_id, max_tokens)
+            .await
+            .map_err(|e| ChatError::Communication(format!("Failed to set max_tokens: {}", e)))
+    }
+
+    fn get_max_tokens(&self) -> Option<u32> {
+        None
+    }
 }
 
 #[cfg(test)]

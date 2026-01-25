@@ -988,6 +988,68 @@ impl DaemonClient {
 
         Ok(budget)
     }
+
+    pub async fn session_set_temperature(
+        &self,
+        session_id: &str,
+        temperature: f64,
+    ) -> Result<()> {
+        self.call(
+            "session.set_temperature",
+            serde_json::json!({
+                "session_id": session_id,
+                "temperature": temperature,
+            }),
+        )
+        .await?;
+        Ok(())
+    }
+
+    pub async fn session_get_temperature(&self, session_id: &str) -> Result<Option<f64>> {
+        let result = self
+            .call(
+                "session.get_temperature",
+                serde_json::json!({ "session_id": session_id }),
+            )
+            .await?;
+
+        let temperature =
+            result
+                .get("temperature")
+                .and_then(|v| if v.is_null() { None } else { v.as_f64() });
+
+        Ok(temperature)
+    }
+
+    pub async fn session_set_max_tokens(
+        &self,
+        session_id: &str,
+        max_tokens: Option<u32>,
+    ) -> Result<()> {
+        let mut params = serde_json::json!({ "session_id": session_id });
+        if let Some(mt) = max_tokens {
+            params["max_tokens"] = serde_json::json!(mt);
+        }
+
+        self.call("session.set_max_tokens", params).await?;
+        Ok(())
+    }
+
+    pub async fn session_get_max_tokens(&self, session_id: &str) -> Result<Option<u32>> {
+        let result = self
+            .call(
+                "session.get_max_tokens",
+                serde_json::json!({ "session_id": session_id }),
+            )
+            .await?;
+
+        let max_tokens = result
+            .get("max_tokens")
+            .and_then(|v| if v.is_null() { None } else { v.as_u64() })
+            .map(|v| v as u32);
+
+        Ok(max_tokens)
+    }
 }
 
 #[cfg(test)]
