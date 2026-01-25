@@ -471,7 +471,12 @@ Task 7 (Modal state) → Task 8 (Single-select render) → Task 9 (Multi-select)
 
 ---
 
-- [ ] 11. Implement multi-question tab bar (BLOCKED - requires AskBatch refactoring)
+- [ ] 11. Implement multi-question support (AskBatch)
+  - [ ] 11a. Add `answers: Vec<HashSet<usize>>` to InteractionModalState
+  - [ ] 11b. Handle AskBatch in render_ask_interaction (extract current question)
+  - [ ] 11c. Render "Question N/M" indicator when batch.questions.len() > 1
+  - [ ] 11d. Add Tab key to advance to next question (save current selections)
+  - [ ] 11e. Update Enter on last question to submit AskBatchResponse
 
   **What to do**:
   - Detect multiple questions in AskBatch
