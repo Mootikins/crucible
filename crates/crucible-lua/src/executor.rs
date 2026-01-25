@@ -7,6 +7,7 @@ use crate::ask::register_ask_module;
 use crate::error::LuaError;
 #[cfg(feature = "fennel")]
 use crate::fennel::FennelCompiler;
+use crate::hooks::register_hooks_module;
 use crate::oil::register_oil_module;
 use crate::session_api::{register_session_module, SessionManager};
 use crate::types::{LuaExecutionResult, LuaTool, ToolResult};
@@ -92,6 +93,14 @@ impl LuaExecutor {
         &self.on_session_start_hooks
     }
 
+    /// Sync session start hooks from Lua environment
+    pub fn sync_session_start_hooks(&mut self) -> Result<(), LuaError> {
+        use crate::hooks::get_session_start_hooks;
+        let hooks = get_session_start_hooks(&self.lua)?;
+        self.on_session_start_hooks = hooks;
+        Ok(())
+    }
+
     /// Load user configuration from init.lua
     ///
     /// This registers crucible.statusline and other config modules,
@@ -135,6 +144,9 @@ impl LuaExecutor {
             json_to_lua(lua, json)
         })?;
         crucible.set("json_decode", json_decode)?;
+
+        // Register hooks module for session lifecycle hooks
+        register_hooks_module(lua, &crucible)?;
 
         globals.set("crucible", crucible)?;
 
@@ -422,5 +434,21 @@ mod tests {
     fn test_hook_storage_empty_by_default() {
         let executor = LuaExecutor::new().unwrap();
         assert!(executor.session_start_hooks().is_empty());
+    }
+
+    #[test]
+    fn test_on_session_start_registers_hook() {
+        let mut executor = LuaExecutor::new().unwrap();
+        executor
+            .lua()
+            .load(
+                r#"
+            crucible.on_session_start(function(s) end)
+        "#,
+            )
+            .exec()
+            .unwrap();
+        executor.sync_session_start_hooks().unwrap();
+        assert_eq!(executor.session_start_hooks().len(), 1);
     }
 }
