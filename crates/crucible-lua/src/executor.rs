@@ -165,8 +165,8 @@ impl LuaExecutor {
         })?;
         crucible.set("json_decode", json_decode)?;
 
-        // Register hooks module for session lifecycle hooks
         register_hooks_module(lua, &crucible)?;
+        crate::notify::register_notify_module(lua, &crucible)?;
 
         globals.set("crucible", crucible)?;
 
