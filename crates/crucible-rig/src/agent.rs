@@ -25,8 +25,8 @@
 use crate::kiln_tools::{KilnContext, ListNotesTool, ReadNoteTool, SemanticSearchTool};
 use crate::providers::RigClient;
 use crate::workspace_tools::{
-    BashTool, CancelJobTool, EditFileTool, GetJobResultTool, GlobTool, GrepTool, ListJobsTool,
-    ReadFileTool, SpawnSubagentTool, WorkspaceContext, WriteFileTool,
+    AskUserTool, BashTool, CancelJobTool, EditFileTool, GetJobResultTool, GlobTool, GrepTool,
+    ListJobsTool, ReadFileTool, SpawnSubagentTool, WorkspaceContext, WriteFileTool,
 };
 use crucible_core::agent::AgentCard;
 use crucible_core::prompts::ModelSize;
@@ -90,14 +90,15 @@ fn attach_tools<M: CompletionModel>(
 ) -> Agent<M> {
     let read_only = is_read_only_mode(mode_id);
     let has_background = ctx.has_background_spawner();
+    let has_interaction = ctx.has_interaction_context();
 
-    match (read_only, kiln_ctx, has_background) {
-        (true, None, _) => builder
+    match (read_only, kiln_ctx, has_background, has_interaction) {
+        (true, None, _, _) => builder
             .tool(ReadFileTool::new(ctx.clone()))
             .tool(GlobTool::new(ctx.clone()))
             .tool(GrepTool::new(ctx.clone()))
             .build(),
-        (true, Some(kiln), _) => builder
+        (true, Some(kiln), _, _) => builder
             .tool(ReadFileTool::new(ctx.clone()))
             .tool(GlobTool::new(ctx.clone()))
             .tool(GrepTool::new(ctx.clone()))
@@ -105,7 +106,7 @@ fn attach_tools<M: CompletionModel>(
             .tool(ReadNoteTool::new(kiln.clone()))
             .tool(ListNotesTool::new(kiln.clone()))
             .build(),
-        (false, None, false) => builder
+        (false, None, false, false) => builder
             .tool(ReadFileTool::new(ctx.clone()))
             .tool(EditFileTool::new(ctx.clone()))
             .tool(WriteFileTool::new(ctx.clone()))
@@ -113,7 +114,16 @@ fn attach_tools<M: CompletionModel>(
             .tool(GlobTool::new(ctx.clone()))
             .tool(GrepTool::new(ctx.clone()))
             .build(),
-        (false, None, true) => builder
+        (false, None, false, true) => builder
+            .tool(ReadFileTool::new(ctx.clone()))
+            .tool(EditFileTool::new(ctx.clone()))
+            .tool(WriteFileTool::new(ctx.clone()))
+            .tool(BashTool::new(ctx.clone()))
+            .tool(GlobTool::new(ctx.clone()))
+            .tool(GrepTool::new(ctx.clone()))
+            .tool(AskUserTool::new((*ctx.interaction_context().unwrap()).clone()))
+            .build(),
+        (false, None, true, false) => builder
             .tool(ReadFileTool::new(ctx.clone()))
             .tool(EditFileTool::new(ctx.clone()))
             .tool(WriteFileTool::new(ctx.clone()))
@@ -125,7 +135,20 @@ fn attach_tools<M: CompletionModel>(
             .tool(CancelJobTool::new(ctx.clone()))
             .tool(SpawnSubagentTool::new(ctx.clone()))
             .build(),
-        (false, Some(kiln), false) => builder
+        (false, None, true, true) => builder
+            .tool(ReadFileTool::new(ctx.clone()))
+            .tool(EditFileTool::new(ctx.clone()))
+            .tool(WriteFileTool::new(ctx.clone()))
+            .tool(BashTool::new(ctx.clone()))
+            .tool(GlobTool::new(ctx.clone()))
+            .tool(GrepTool::new(ctx.clone()))
+            .tool(ListJobsTool::new(ctx.clone()))
+            .tool(GetJobResultTool::new(ctx.clone()))
+            .tool(CancelJobTool::new(ctx.clone()))
+            .tool(SpawnSubagentTool::new(ctx.clone()))
+            .tool(AskUserTool::new((*ctx.interaction_context().unwrap()).clone()))
+            .build(),
+        (false, Some(kiln), false, false) => builder
             .tool(ReadFileTool::new(ctx.clone()))
             .tool(EditFileTool::new(ctx.clone()))
             .tool(WriteFileTool::new(ctx.clone()))
@@ -136,7 +159,19 @@ fn attach_tools<M: CompletionModel>(
             .tool(ReadNoteTool::new(kiln.clone()))
             .tool(ListNotesTool::new(kiln.clone()))
             .build(),
-        (false, Some(kiln), true) => builder
+        (false, Some(kiln), false, true) => builder
+            .tool(ReadFileTool::new(ctx.clone()))
+            .tool(EditFileTool::new(ctx.clone()))
+            .tool(WriteFileTool::new(ctx.clone()))
+            .tool(BashTool::new(ctx.clone()))
+            .tool(GlobTool::new(ctx.clone()))
+            .tool(GrepTool::new(ctx.clone()))
+            .tool(SemanticSearchTool::new(kiln.clone()))
+            .tool(ReadNoteTool::new(kiln.clone()))
+            .tool(ListNotesTool::new(kiln.clone()))
+            .tool(AskUserTool::new((*ctx.interaction_context().unwrap()).clone()))
+            .build(),
+        (false, Some(kiln), true, false) => builder
             .tool(ReadFileTool::new(ctx.clone()))
             .tool(EditFileTool::new(ctx.clone()))
             .tool(WriteFileTool::new(ctx.clone()))
@@ -150,6 +185,22 @@ fn attach_tools<M: CompletionModel>(
             .tool(SemanticSearchTool::new(kiln.clone()))
             .tool(ReadNoteTool::new(kiln.clone()))
             .tool(ListNotesTool::new(kiln.clone()))
+            .build(),
+        (false, Some(kiln), true, true) => builder
+            .tool(ReadFileTool::new(ctx.clone()))
+            .tool(EditFileTool::new(ctx.clone()))
+            .tool(WriteFileTool::new(ctx.clone()))
+            .tool(BashTool::new(ctx.clone()))
+            .tool(GlobTool::new(ctx.clone()))
+            .tool(GrepTool::new(ctx.clone()))
+            .tool(ListJobsTool::new(ctx.clone()))
+            .tool(GetJobResultTool::new(ctx.clone()))
+            .tool(CancelJobTool::new(ctx.clone()))
+            .tool(SpawnSubagentTool::new(ctx.clone()))
+            .tool(SemanticSearchTool::new(kiln.clone()))
+            .tool(ReadNoteTool::new(kiln.clone()))
+            .tool(ListNotesTool::new(kiln.clone()))
+            .tool(AskUserTool::new((*ctx.interaction_context().unwrap()).clone()))
             .build(),
     }
 }
