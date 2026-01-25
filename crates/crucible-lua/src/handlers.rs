@@ -300,6 +300,7 @@ pub fn interpret_handler_result(result: &Value) -> LuaResult<ScriptHandlerResult
         Value::Table(t) => {
             // Check for inject convention: {inject={content="...", position="..."}}
             if let Ok(inject_table) = t.get::<Table>("inject") {
+                // CRITICAL: content field is required. Missing content is a handler bug.
                 let content = inject_table.get::<String>("content")?;
                 let position = inject_table
                     .get::<String>("position")
@@ -2027,6 +2028,40 @@ end
             result.unwrap().is_none(),
             "Inject result returns None (processed by daemon)"
         );
+    }
+
+    #[test]
+    fn test_inject_without_content_field_errors() {
+        let lua = Lua::new();
+        let table = lua.create_table().unwrap();
+        let inject_table = lua.create_table().unwrap();
+        inject_table.set("position", "user_prefix").unwrap();
+        table.set("inject", inject_table).unwrap();
+
+        let result = interpret_handler_result(&Value::Table(table));
+        assert!(
+            result.is_err(),
+            "Missing content field should error gracefully, got: {:?}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_inject_with_empty_content_is_valid() {
+        let lua = Lua::new();
+        let table = lua.create_table().unwrap();
+        let inject_table = lua.create_table().unwrap();
+        inject_table.set("content", "").unwrap();
+        table.set("inject", inject_table).unwrap();
+
+        let result = interpret_handler_result(&Value::Table(table)).unwrap();
+        match result {
+            ScriptHandlerResult::Inject { content, position } => {
+                assert_eq!(content, "");
+                assert_eq!(position, "user_prefix");
+            }
+            _ => panic!("Expected Inject variant"),
+        }
     }
 
     // ============================================================================
