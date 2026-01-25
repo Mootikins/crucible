@@ -417,7 +417,7 @@ Task 7 (Modal state) → Task 8 (Single-select render) → Task 9 (Multi-select)
 
 ---
 
-- [ ] 9. Implement multi-select checkbox rendering and toggle
+- [x] 9. Implement multi-select checkbox rendering and toggle
 
   **What to do**:
   - Detect `multi_select: true` in AskRequest
