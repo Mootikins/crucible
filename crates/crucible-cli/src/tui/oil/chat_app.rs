@@ -1119,6 +1119,10 @@ impl InkChatApp {
             return self.handle_set_command(command);
         }
 
+        if command == "config show" || command == "config" {
+            return self.handle_config_show_command();
+        }
+
         match command {
             "q" | "quit" => Action::Quit,
             "help" | "h" => {
@@ -1378,6 +1382,37 @@ impl InkChatApp {
                 Action::Continue
             }
         }
+    }
+
+    fn handle_config_show_command(&mut self) -> Action<ChatAppMsg> {
+        let mut output = String::from("Configuration:\n");
+
+        let temp = self
+            .runtime_config
+            .get("temperature")
+            .unwrap_or(ConfigValue::String("0.7".to_string()));
+        output.push_str(&format!("  temperature: {}\n", temp));
+
+        let tokens = self
+            .runtime_config
+            .get("maxtokens")
+            .unwrap_or(ConfigValue::String("none".to_string()));
+        output.push_str(&format!("  max_tokens: {}\n", tokens));
+
+        let budget = self
+            .runtime_config
+            .get("thinkingbudget")
+            .unwrap_or(ConfigValue::String("none".to_string()));
+        output.push_str(&format!("  thinking_budget: {}\n", budget));
+
+        let mode = self
+            .runtime_config
+            .get("mode")
+            .unwrap_or(ConfigValue::String("normal".to_string()));
+        output.push_str(&format!("  mode: {}\n", mode));
+
+        self.add_system_message(output);
+        Action::Continue
     }
 
     fn sync_runtime_to_fields(&mut self, key: &str) {
