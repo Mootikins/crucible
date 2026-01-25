@@ -1888,6 +1888,9 @@ impl InkChatApp {
 
         match &modal.request {
             InteractionRequest::Ask(ask) => self.handle_ask_key(key, ask.clone(), request_id),
+            InteractionRequest::AskBatch(batch) => {
+                self.handle_ask_batch_key(key, batch.clone(), request_id)
+            }
             InteractionRequest::Permission(perm) => {
                 self.handle_perm_key(key, perm.clone(), request_id)
             }
@@ -2002,6 +2005,106 @@ impl InkChatApp {
                 }
                 _ => Action::Continue,
             },
+        }
+    }
+
+    fn handle_ask_batch_key(
+        &mut self,
+        key: crossterm::event::KeyEvent,
+        batch: crucible_core::interaction::AskBatch,
+        request_id: String,
+    ) -> Action<ChatAppMsg> {
+        let modal = match &mut self.interaction_modal {
+            Some(m) => m,
+            None => return Action::Continue,
+        };
+
+        if modal.current_question >= batch.questions.len() {
+            return Action::Continue;
+        }
+
+        let current_q = &batch.questions[modal.current_question];
+        let choices_count = current_q.choices.len();
+        let total_items = choices_count + if current_q.allow_other { 1 } else { 0 };
+
+        match modal.mode {
+            InteractionMode::Selecting => match key.code {
+                KeyCode::Up | KeyCode::Char('k') | KeyCode::Char('K') => {
+                    if modal.selected == 0 {
+                        modal.selected = total_items.saturating_sub(1);
+                    } else {
+                        modal.selected = modal.selected.saturating_sub(1);
+                    }
+                    Action::Continue
+                }
+                KeyCode::Down | KeyCode::Char('j') | KeyCode::Char('J') => {
+                    modal.selected = (modal.selected + 1) % total_items.max(1);
+                    Action::Continue
+                }
+                KeyCode::Char(' ') if current_q.multi_select => {
+                    if modal.checked.contains(&modal.selected) {
+                        modal.checked.remove(&modal.selected);
+                    } else {
+                        modal.checked.insert(modal.selected);
+                    }
+                    Action::Continue
+                }
+                KeyCode::Tab => {
+                    if modal.current_question < batch.questions.len() - 1 {
+                        modal.current_question += 1;
+                        modal.selected = 0;
+                        modal.checked.clear();
+                    }
+                    Action::Continue
+                }
+                KeyCode::BackTab => {
+                    if modal.current_question > 0 {
+                        modal.current_question -= 1;
+                        modal.selected = 0;
+                        modal.checked.clear();
+                    }
+                    Action::Continue
+                }
+                KeyCode::Enter => {
+                    if modal.current_question == batch.questions.len() - 1 {
+                        let response = InteractionResponse::AskBatch(
+                            crucible_core::interaction::AskBatchResponse::new(batch.id),
+                        );
+                        self.close_interaction();
+                        return Action::Send(ChatAppMsg::CloseInteraction {
+                            request_id,
+                            response,
+                        });
+                    } else {
+                        modal.current_question += 1;
+                        modal.selected = 0;
+                        modal.checked.clear();
+                        Action::Continue
+                    }
+                }
+                KeyCode::Esc => {
+                    let response = InteractionResponse::Cancelled;
+                    self.close_interaction();
+                    return Action::Send(ChatAppMsg::CloseInteraction {
+                        request_id,
+                        response,
+                    });
+                }
+                KeyCode::Char('c')
+                    if key
+                        .modifiers
+                        .contains(crossterm::event::KeyModifiers::CONTROL) =>
+                {
+                    let response = InteractionResponse::Cancelled;
+                    self.close_interaction();
+                    return Action::Send(ChatAppMsg::CloseInteraction {
+                        request_id,
+                        response,
+                    });
+                }
+                _ => Action::Continue,
+            },
+            InteractionMode::TextInput => Action::Continue,
         }
     }
 
