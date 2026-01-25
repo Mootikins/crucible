@@ -2028,4 +2028,95 @@ end
             "Inject result returns None (processed by daemon)"
         );
     }
+
+    // ============================================================================
+    // FSM Handler Pattern Integration Test
+    // ============================================================================
+
+    #[test]
+    fn todo_enforcer_pattern_integration() {
+        // This test demonstrates the full FSM handler pattern:
+        // 1. Register handler with crucible.on("turn:complete", fn)
+        // 2. Handler checks event for incomplete todos pattern
+        // 3. Handler returns {inject={content="Continue..."}} if pattern found
+        // 4. Verify result is ScriptHandlerResult::Inject
+
+        let lua = Lua::new();
+        let registry = LuaScriptHandlerRegistry::new();
+
+        // Step 1: Register the crucible.on API
+        register_crucible_on_api(
+            &lua,
+            registry.runtime_handlers.clone(),
+            registry.handler_functions.clone(),
+        )
+        .unwrap();
+
+        // Step 2: Register todo enforcer handler via crucible.on
+        lua.load(
+            r#"
+            crucible.on("turn:complete", function(ctx, event)
+                -- Check if response contains incomplete todos
+                local response = event.payload.response or ""
+                if response:find("%[ %]") then  -- Finds "[ ]" pattern
+                    return {
+                        inject = {
+                            content = "You have incomplete tasks. Please continue working on them.",
+                            position = "user_prefix"
+                        }
+                    }
+                end
+                return nil  -- PassThrough if no incomplete todos
+            end)
+        "#,
+        )
+        .exec()
+        .unwrap();
+
+        // Step 3: Test with incomplete todo - should trigger injection
+        let event_with_todo = SessionEvent::Custom {
+            name: "turn:complete".to_string(),
+            payload: serde_json::json!({
+                "response": "Here are the tasks:\n- [x] Done task\n- [ ] Incomplete task"
+            }),
+        };
+
+        let result = registry
+            .execute_runtime_handler(&lua, "runtime_handler_0", &event_with_todo)
+            .unwrap();
+
+        // Verify result is Inject with expected content
+        match result {
+            ScriptHandlerResult::Inject { content, position } => {
+                assert!(
+                    content.contains("incomplete tasks"),
+                    "Inject content should mention incomplete tasks"
+                );
+                assert_eq!(
+                    position, "user_prefix",
+                    "Position should be user_prefix by default"
+                );
+            }
+            _ => panic!("Expected ScriptHandlerResult::Inject, got {:?}", result),
+        }
+
+        // Step 4: Test without incomplete todo - should pass through
+        let event_complete = SessionEvent::Custom {
+            name: "turn:complete".to_string(),
+            payload: serde_json::json!({
+                "response": "All tasks done:\n- [x] Task 1\n- [x] Task 2"
+            }),
+        };
+
+        let result = registry
+            .execute_runtime_handler(&lua, "runtime_handler_0", &event_complete)
+            .unwrap();
+
+        // Verify result is PassThrough (no injection)
+        assert!(
+            matches!(result, ScriptHandlerResult::PassThrough),
+            "Expected PassThrough for complete todos, got {:?}",
+            result
+        );
+    }
 }
