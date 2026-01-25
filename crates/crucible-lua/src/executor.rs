@@ -135,6 +135,27 @@ impl LuaExecutor {
     fn setup_globals(lua: &Lua) -> Result<(), LuaError> {
         let globals = lua.globals();
 
+        // Create cru namespace and define fmt function
+        lua.load(
+            r#"
+cru = cru or {}
+function cru.fmt(template, vars)
+    vars = vars or {}
+    return (template:gsub("{(%w+)}", function(key)
+        local val = vars[key]
+        if val ~= nil then
+            return tostring(val)
+        end
+        return "{" .. key .. "}"
+    end))
+end
+"#,
+        )
+        .exec()?;
+
+        // Get the cru table that was just created
+        let _cru: mlua::Table = globals.get("cru")?;
+
         // Create crucible namespace
         let crucible = lua.create_table()?;
 
@@ -497,5 +518,70 @@ mod tests {
 
         let called: bool = executor.lua().load("return test_called").eval().unwrap();
         assert!(called);
+    }
+
+    #[test]
+    fn test_cru_fmt_basic_substitution() {
+        let executor = LuaExecutor::new().unwrap();
+
+        let result: String = executor
+            .lua()
+            .load(r#"return cru.fmt("Hello {name}", {name="world"})"#)
+            .eval()
+            .unwrap();
+
+        assert_eq!(result, "Hello world");
+    }
+
+    #[test]
+    fn test_cru_fmt_missing_key_preserved() {
+        let executor = LuaExecutor::new().unwrap();
+
+        let result: String = executor
+            .lua()
+            .load(r#"return cru.fmt("Missing {key}", {})"#)
+            .eval()
+            .unwrap();
+
+        assert_eq!(result, "Missing {key}");
+    }
+
+    #[test]
+    fn test_cru_fmt_number_conversion() {
+        let executor = LuaExecutor::new().unwrap();
+
+        let result: String = executor
+            .lua()
+            .load(r#"return cru.fmt("Count: {n}", {n=42})"#)
+            .eval()
+            .unwrap();
+
+        assert_eq!(result, "Count: 42");
+    }
+
+    #[test]
+    fn test_cru_fmt_multiple_placeholders() {
+        let executor = LuaExecutor::new().unwrap();
+
+        let result: String = executor
+            .lua()
+            .load(r#"return cru.fmt("{greeting} {name}!", {greeting="Hello", name="Alice"})"#)
+            .eval()
+            .unwrap();
+
+        assert_eq!(result, "Hello Alice!");
+    }
+
+    #[test]
+    fn test_cru_fmt_empty_vars() {
+        let executor = LuaExecutor::new().unwrap();
+
+        let result: String = executor
+            .lua()
+            .load(r#"return cru.fmt("No placeholders", {})"#)
+            .eval()
+            .unwrap();
+
+        assert_eq!(result, "No placeholders");
     }
 }
