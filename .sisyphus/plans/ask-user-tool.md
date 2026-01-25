@@ -60,7 +60,7 @@ Enable internal agents to ask users questions during execution by creating an `a
 - [x] Modal has `▄▄▄` / `▀▀▀` borders matching input box
 - [x] Multi-select checkboxes work (`[ ]` / `[x]`)
 - [x] "Other" textarea preserves text when deselected
-- [ ] Multi-question tab bar navigation works (BLOCKED - Task 11)
+- [x] Multi-question tab bar navigation works
 - [x] Ctrl+C cancels modal
 - [x] All snapshot tests pass
 
@@ -471,12 +471,12 @@ Task 7 (Modal state) → Task 8 (Single-select render) → Task 9 (Multi-select)
 
 ---
 
-- [ ] 11. Implement multi-question support (AskBatch)
-  - [ ] 11a. Add `answers: Vec<HashSet<usize>>` to InteractionModalState
-  - [ ] 11b. Handle AskBatch in render_ask_interaction (extract current question)
-  - [ ] 11c. Render "Question N/M" indicator when batch.questions.len() > 1
-  - [ ] 11d. Add Tab key to advance to next question (save current selections)
-  - [ ] 11e. Update Enter on last question to submit AskBatchResponse
+- [x] 11. Implement multi-question support (AskBatch)
+  - [x] 11a. Add `answers: Vec<HashSet<usize>>` to InteractionModalState
+  - [x] 11b. Handle AskBatch in render_ask_interaction (extract current question)
+  - [x] 11c. Render "Question N/M" indicator when batch.questions.len() > 1
+  - [x] 11d. Add Tab key to advance to next question (save current selections)
+  - [x] 11e. Update Enter on last question to submit AskBatchResponse
 
   **What to do**:
   - Detect multiple questions in AskBatch
