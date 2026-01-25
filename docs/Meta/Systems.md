@@ -23,6 +23,7 @@ This document defines the orthogonal systems that make up Crucible. Each system 
 | **plugins** | Extension points, hooks, scripting (Lua) | `crucible-lua` |
 | **apis** | HTTP REST, WebSocket, events | `crucible-web` |
 | **cli** | Commands, REPL, TUI, configuration | `crucible-cli`, `crucible-config` |
+| **daemon** | Multi-session server, RPC, agent management | `crucible-daemon`, `crucible-daemon-client` |
 
 ## System Descriptions
 
@@ -108,11 +109,23 @@ See: [[Help/Extending/MCP Gateway]]
 Command-line user interface.
 
 - Subcommands (search, process, chat, agents, etc.)
-- TUI chat interface
+- TUI chat interface with Oil renderer
 - Configuration management
 - Output formatting (table, JSON)
 
-See: [[Help/CLI/Commands]]
+See: [[Help/CLI/Index]], [[Help/TUI/Index]]
+
+### daemon
+
+Multi-session server for concurrent agent access.
+
+- Unix socket RPC (`cru-server`)
+- Session management (create, load, pause, resume)
+- Agent lifecycle (model switching, thinking budget)
+- Event streaming via subscriptions
+- Kiln management
+
+See: [[Help/Core/Sessions]], AGENTS.md Daemon Architecture section
 
 ## Cross-Cutting Concerns
 

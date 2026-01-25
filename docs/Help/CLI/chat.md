@@ -85,6 +85,8 @@ Enable for workflows that require changes. The agent will confirm before destruc
 
 ## In-Chat Commands
 
+### Slash Commands
+
 | Command | Description |
 |---------|-------------|
 | `/help` | Show available commands |
@@ -92,7 +94,28 @@ Enable for workflows that require changes. The agent will confirm before destruc
 | `/act` | Enable write mode |
 | `/clear` | Clear conversation history |
 | `/agent <name>` | Switch to a different agent |
-| `Ctrl+C` | Exit chat |
+
+### REPL Commands
+
+| Command | Description |
+|---------|-------------|
+| `:model` | Open model picker popup |
+| `:model <name>` | Switch to specific model |
+| `:set option=value` | Set runtime config option |
+| `:set thinkingbudget=high` | Enable extended thinking |
+| `:session list` | List available sessions |
+| `:session load <id>` | Resume existing session |
+| `:quit` / `:q` | Exit chat |
+
+See [[Help/TUI/Commands]] for complete REPL command reference.
+
+### Keyboard Shortcuts
+
+| Key | Action |
+|-----|--------|
+| `Ctrl+C` | Cancel / Exit |
+| `Alt+T` | Toggle thinking display |
+| `Shift+Tab` | Cycle mode |
 
 ## Statusline Notifications
 
@@ -245,9 +268,52 @@ Ask the agent to cite sources:
 - `crates/crucible-agents/` - Agent system
 - `crates/crucible-llm/` - LLM provider integration
 
+## Model Switching
+
+Change models at runtime without restarting:
+
+```
+:model                      # Opens model picker
+:model claude-3-5-sonnet    # Switch directly
+:model gpt-4o
+```
+
+Model changes persist for the session and sync to the daemon.
+
+## Extended Thinking
+
+For models that support reasoning tokens (Claude with thinking budget, DeepSeek-R1, etc.):
+
+```
+:set thinkingbudget=high    # Enable extended thinking (8192 tokens)
+:set thinkingbudget=off     # Disable thinking
+:set thinking               # Show thinking in UI
+:set nothinking             # Hide thinking display
+```
+
+Toggle thinking display with `Alt+T`.
+
+**Presets:** `off`, `minimal` (512), `low` (1024), `medium` (4096), `high` (8192), `max` (unlimited)
+
+## Session Resume
+
+Sessions auto-save and can be resumed:
+
+```bash
+cru session list            # See available sessions
+cru session load ses_abc123 # Resume specific session
+```
+
+Or from within chat:
+```
+:session list
+:session load ses_abc123
+```
+
 ## See Also
 
-- `:h search` - Search tools reference
-- `:h config.llm` - LLM configuration
-- [[Agents/Researcher]] - Example research agent
+- [[Help/TUI/Commands]] - REPL command reference
+- [[Help/TUI/Keybindings]] - Keyboard shortcuts
+- [[Help/Core/Sessions]] - Session management
+- [[Help/Config/llm]] - LLM configuration
 - [[Help/Config/agents]] - Agent configuration
