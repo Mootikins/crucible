@@ -135,3 +135,51 @@ All 2 `runtime_handlers_for` tests pass in crucible-lua.
 
 ### Next Steps
 Task 3.5 will process `Inject` results from handlers to inject messages into the conversation.
+
+## Task 3: ScriptHandlerResult::Inject Variant
+
+### Problem
+Handlers needed a way to inject follow-up messages into the conversation. The `ScriptHandlerResult` enum only had Transform, PassThrough, and Cancel variants. We needed to add an Inject variant that handlers could return via `{inject={content="...", position="..."}}` convention.
+
+### Solution Approach
+1. Added `Inject` variant to `ScriptHandlerResult` enum with:
+   - `content: String` - The message content to inject
+   - `position: String` - Where to inject: "user_prefix" (default) or "user_suffix"
+
+2. Updated `interpret_handler_result()` to check for inject convention BEFORE cancel check:
+   - Parses `{inject={content="...", position="..."}}` table structure
+   - Defaults position to "user_prefix" if not specified
+   - Returns early with `ScriptHandlerResult::Inject { content, position }`
+
+3. Added placeholder handling in `execute()` and `execute_json()` methods:
+   - Both return `Ok(None)` for Inject results (actual injection happens in daemon, Task 3.5)
+   - Added debug logging to track Inject results
+
+### Implementation Details
+- Inject check happens FIRST in the table match arm (before cancel check)
+- This ensures `{inject={...}, cancel=true}` is treated as Inject, not Cancel
+- Position defaults to "user_prefix" via `unwrap_or_else(|_| "user_prefix".to_string())`
+- Both `execute()` and `execute_json()` handle Inject by returning None (fire-and-forget)
+
+### Test Results
+All 6 new tests pass:
+- `test_interpret_handler_result_inject_with_default_position` - Parses inject with default position
+- `test_interpret_handler_result_inject_with_custom_position` - Parses inject with custom position
+- `test_inject_takes_precedence_over_transform` - Inject checked before Transform
+- `test_inject_checked_before_cancel` - Inject checked before Cancel
+- `test_handler_returns_inject_with_default_position` - Handler execution with default position
+- `test_handler_returns_inject_with_custom_position` - Handler execution with custom position
+
+All 47 handler tests pass (41 existing + 6 new).
+
+### Key Learnings
+- Parsing order matters: inject must be checked BEFORE cancel to avoid conflicts
+- Default position "user_prefix" is sensible (prepend to user's next message)
+- Placeholder handling (returning None) is correct - actual injection is daemon responsibility
+- The convention `{inject={content="...", position="..."}}` is clean and Lua-idiomatic
+
+### Files Modified
+- `crates/crucible-lua/src/handlers.rs` - Added Inject variant, updated parsing, added tests
+
+### Next Steps
+Task 3.5 will implement the actual message injection in the daemon's `execute_agent_stream()` function.

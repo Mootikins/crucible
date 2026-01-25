@@ -59,10 +59,11 @@ use walkdir::WalkDir;
 
 /// Result of script handler execution
 ///
-/// Represents the three possible outcomes from a Lua handler function:
+/// Represents the possible outcomes from a Lua handler function:
 /// - Transform: Handler returned a modified event table (as JSON for cross-boundary safety)
 /// - PassThrough: Handler returned nil (no changes)
 /// - Cancel: Handler returned `{cancel=true, reason="..."}` to abort
+/// - Inject: Handler wants to inject a follow-up message
 #[derive(Debug, Clone)]
 pub enum ScriptHandlerResult {
     /// Handler returned modified event - continue with changes
@@ -72,6 +73,13 @@ pub enum ScriptHandlerResult {
     PassThrough,
     /// Handler returned cancel object - abort pipeline
     Cancel { reason: String },
+    /// Handler wants to inject a follow-up message
+    Inject {
+        /// Content to inject
+        content: String,
+        /// Where to inject: "user_prefix" (default), "user_suffix"
+        position: String,
+    },
 }
 
 /// Handler for Lua script execution
@@ -212,6 +220,10 @@ impl LuaScriptHandler {
                 "Handler cancelled: {}",
                 reason
             ))),
+            ScriptHandlerResult::Inject { .. } => {
+                debug!("Handler returned Inject result (will be processed by daemon)");
+                Ok(None)
+            }
         }
     }
 
@@ -245,6 +257,13 @@ impl LuaScriptHandler {
                 "Handler cancelled: {}",
                 reason
             ))),
+            ScriptHandlerResult::Inject { content, position } => {
+                debug!(
+                    "Handler returned Inject result: content={}, position={}",
+                    content, position
+                );
+                Ok(event)
+            }
         }
     }
 }
@@ -271,13 +290,22 @@ impl Clone for LuaScriptHandler {
 ///
 /// Implements the neovim-style return conventions:
 /// - nil → PassThrough
+/// - table with `inject={content="...", position="..."}` → Inject
 /// - table with `cancel=true` → Cancel
-/// - table without `cancel` → Transform
+/// - table without `cancel` or `inject` → Transform
 /// - other → Transform (treat as modified value)
 pub fn interpret_handler_result(result: &Value) -> LuaResult<ScriptHandlerResult> {
     match result {
         Value::Nil => Ok(ScriptHandlerResult::PassThrough),
         Value::Table(t) => {
+            // Check for inject convention: {inject={content="...", position="..."}}
+            if let Ok(inject_table) = t.get::<Table>("inject") {
+                let content = inject_table.get::<String>("content")?;
+                let position = inject_table
+                    .get::<String>("position")
+                    .unwrap_or_else(|_| "user_prefix".to_string());
+                return Ok(ScriptHandlerResult::Inject { content, position });
+            }
             // Check for cancel convention: {cancel=true, reason="..."}
             if let Ok(cancel) = t.get::<bool>("cancel") {
                 if cancel {
@@ -287,7 +315,7 @@ pub fn interpret_handler_result(result: &Value) -> LuaResult<ScriptHandlerResult
                     return Ok(ScriptHandlerResult::Cancel { reason });
                 }
             }
-            // Not a cancel, treat as transform - convert to JSON for safety
+            // Not a cancel or inject, treat as transform - convert to JSON for safety
             let json = lua_table_to_json(t)?;
             Ok(ScriptHandlerResult::Transform(json))
         }
@@ -1878,5 +1906,126 @@ end
         assert_eq!(handlers[1].priority, 100);
         assert_eq!(handlers[2].name, "low_priority");
         assert_eq!(handlers[2].priority, 200);
+    }
+
+    #[test]
+    fn test_interpret_handler_result_inject_with_default_position() {
+        let lua = Lua::new();
+        let table = lua.create_table().unwrap();
+        let inject_table = lua.create_table().unwrap();
+        inject_table.set("content", "Continue with task").unwrap();
+        table.set("inject", inject_table).unwrap();
+
+        let result = interpret_handler_result(&Value::Table(table)).unwrap();
+        match result {
+            ScriptHandlerResult::Inject { content, position } => {
+                assert_eq!(content, "Continue with task");
+                assert_eq!(position, "user_prefix");
+            }
+            _ => panic!("Expected Inject variant"),
+        }
+    }
+
+    #[test]
+    fn test_interpret_handler_result_inject_with_custom_position() {
+        let lua = Lua::new();
+        let table = lua.create_table().unwrap();
+        let inject_table = lua.create_table().unwrap();
+        inject_table.set("content", "Follow-up message").unwrap();
+        inject_table.set("position", "user_suffix").unwrap();
+        table.set("inject", inject_table).unwrap();
+
+        let result = interpret_handler_result(&Value::Table(table)).unwrap();
+        match result {
+            ScriptHandlerResult::Inject { content, position } => {
+                assert_eq!(content, "Follow-up message");
+                assert_eq!(position, "user_suffix");
+            }
+            _ => panic!("Expected Inject variant"),
+        }
+    }
+
+    #[test]
+    fn test_inject_takes_precedence_over_transform() {
+        let lua = Lua::new();
+        let table = lua.create_table().unwrap();
+        let inject_table = lua.create_table().unwrap();
+        inject_table.set("content", "injected").unwrap();
+        table.set("inject", inject_table).unwrap();
+        table.set("other_field", "should_be_ignored").unwrap();
+
+        let result = interpret_handler_result(&Value::Table(table)).unwrap();
+        match result {
+            ScriptHandlerResult::Inject { content, position } => {
+                assert_eq!(content, "injected");
+                assert_eq!(position, "user_prefix");
+            }
+            _ => panic!("Expected Inject variant, not Transform"),
+        }
+    }
+
+    #[test]
+    fn test_inject_checked_before_cancel() {
+        let lua = Lua::new();
+        let table = lua.create_table().unwrap();
+        let inject_table = lua.create_table().unwrap();
+        inject_table.set("content", "injected message").unwrap();
+        table.set("inject", inject_table).unwrap();
+        table.set("cancel", false).unwrap();
+
+        let result = interpret_handler_result(&Value::Table(table)).unwrap();
+        match result {
+            ScriptHandlerResult::Inject { content, position } => {
+                assert_eq!(content, "injected message");
+                assert_eq!(position, "user_prefix");
+            }
+            _ => panic!("Expected Inject variant, not Cancel"),
+        }
+    }
+
+    #[test]
+    fn test_handler_returns_inject_with_default_position() {
+        let source = r#"
+            function test_handler(ctx, event)
+                return {inject={content="Continue with task"}}
+            end
+        "#;
+
+        let handler = create_test_handler(source);
+        let lua = Lua::new();
+        let event = SessionEvent::ToolCalled {
+            name: "test".to_string(),
+            args: serde_json::json!({}),
+        };
+
+        let result = handler.execute(&lua, &event);
+        assert!(result.is_ok(), "handler should execute successfully");
+        assert!(
+            result.unwrap().is_none(),
+            "Inject result returns None (processed by daemon)"
+        );
+    }
+
+    #[test]
+    fn test_handler_returns_inject_with_custom_position() {
+        let source = r#"
+            function test_handler(ctx, event)
+                return {inject={content="Follow-up", position="user_suffix"}}
+            end
+        "#;
+
+        let handler = create_test_handler(source);
+        let lua = Lua::new();
+        let event = SessionEvent::ToolCalled {
+            name: "test".to_string(),
+            args: serde_json::json!({}),
+        };
+
+        let result = handler.execute(&lua, &event);
+        assert!(result.is_ok(), "handler should execute successfully");
+        assert!(
+            result.unwrap().is_none(),
+            "Inject result returns None (processed by daemon)"
+        );
     }
 }
