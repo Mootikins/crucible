@@ -526,6 +526,21 @@ impl InkChatRunner {
                             }
                         }
                     }
+                    ChatAppMsg::CloseInteraction {
+                        request_id,
+                        response,
+                    } => {
+                        tracing::info!(request_id = %request_id, "Sending interaction response");
+                        match agent.interaction_respond(request_id.clone(), response.clone()).await
+                        {
+                            Ok(()) => {
+                                tracing::info!(request_id = %request_id, "Interaction response sent successfully");
+                            }
+                            Err(e) => {
+                                tracing::warn!(request_id = %request_id, error = %e, "Failed to send interaction response");
+                            }
+                        }
+                    }
                     _ => {}
                 }
                 let action = app.on_message(msg);

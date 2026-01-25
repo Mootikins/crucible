@@ -903,6 +903,25 @@ impl DaemonClient {
         Ok(result["message_id"].as_str().unwrap_or("").to_string())
     }
 
+    pub async fn session_interaction_respond(
+        &self,
+        session_id: &str,
+        request_id: &str,
+        response: crucible_core::interaction::InteractionResponse,
+    ) -> Result<()> {
+        self.call(
+            "session.interaction_respond",
+            serde_json::json!({
+                "session_id": session_id,
+                "request_id": request_id,
+                "response": response
+            }),
+        )
+        .await?;
+
+        Ok(())
+    }
+
     pub async fn session_cancel(&self, session_id: &str) -> Result<bool> {
         let result = self
             .call(
