@@ -8,6 +8,7 @@ use crate::tui::oil::terminal::Terminal;
 use anyhow::Result;
 use crossterm::event::{Event as CtEvent, EventStream, KeyCode, KeyModifiers};
 use crucible_core::events::SessionEvent;
+use crucible_core::interaction::InteractionRequest;
 use crucible_core::traits::chat::{AgentHandle, ChatChunk, ChatResult, SubagentEventType};
 use crucible_lua::SessionCommand;
 use futures::stream::BoxStream;
@@ -600,6 +601,43 @@ impl InkChatRunner {
             SessionCommand::ShowMessages => app.show_messages(),
             SessionCommand::HideMessages => app.hide_messages(),
             SessionCommand::ClearMessages => app.clear_messages(),
+        }
+    }
+
+    /// Handle a SessionEvent, dispatching to appropriate ChatAppMsg.
+    ///
+    /// Returns Some(ChatAppMsg) if the event should be forwarded to the app,
+    /// or None if the event was handled internally or should be skipped.
+    pub fn handle_session_event(event: SessionEvent) -> Option<ChatAppMsg> {
+        match event {
+            SessionEvent::InteractionRequested { request_id, request } => {
+                match &request {
+                    InteractionRequest::Ask(_) | InteractionRequest::Permission(_) => {
+                        Some(ChatAppMsg::OpenInteraction { request_id, request })
+                    }
+                    InteractionRequest::AskBatch(_) => {
+                        tracing::warn!("AskBatch interaction not yet implemented, skipping");
+                        None
+                    }
+                    InteractionRequest::Edit(_) => {
+                        tracing::warn!("Edit interaction not yet implemented, skipping");
+                        None
+                    }
+                    InteractionRequest::Show(_) => {
+                        tracing::warn!("Show interaction not yet implemented, skipping");
+                        None
+                    }
+                    InteractionRequest::Popup(_) => {
+                        tracing::warn!("Popup interaction not yet implemented, skipping");
+                        None
+                    }
+                    InteractionRequest::Panel(_) => {
+                        tracing::warn!("Panel interaction not yet implemented, skipping");
+                        None
+                    }
+                }
+            }
+            _ => None,
         }
     }
 }
