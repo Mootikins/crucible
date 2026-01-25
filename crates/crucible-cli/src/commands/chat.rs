@@ -5,7 +5,7 @@
 //! Supports toggleable plan (read-only) and act (write-enabled) modes.
 
 use anyhow::Result;
-use crucible_lua::LuaExecutor;
+use crucible_lua::{ChannelSessionRpc, LuaExecutor, Session, SessionCommand};
 use std::path::PathBuf;
 use std::sync::Arc;
 use tracing::{debug, info, warn};
@@ -206,13 +206,25 @@ async fn run_interactive_chat(
     });
     let kiln_root = config.kiln_path.clone();
 
-    if let Ok(executor) = LuaExecutor::new() {
+    let (session_cmd_tx, session_cmd_rx) =
+        tokio::sync::mpsc::unbounded_channel::<SessionCommand>();
+
+    let _lua_executor = if let Ok(executor) = LuaExecutor::new() {
         if let Err(e) = executor.load_config(Some(&kiln_root)) {
             warn!("Failed to load Lua config: {}", e);
         } else {
             debug!("Lua configuration loaded");
         }
-    }
+
+        let session = Session::new("chat".to_string());
+        session.bind(Box::new(ChannelSessionRpc::new(session_cmd_tx)));
+        executor.session_manager().set_current(session);
+        Some(executor)
+    } else {
+        None
+    };
+
+    runner = runner.with_session_command_receiver(session_cmd_rx);
 
     let provider = config.chat.provider.clone();
     let model_endpoint = config.chat.llm_endpoint();
