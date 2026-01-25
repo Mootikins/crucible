@@ -45,3 +45,41 @@ Since `RuntimeHandler` derives `Clone` and `Debug`, we can't add `RegistryKey` d
 
 ### Next Steps
 Task 2 will implement the execution method to retrieve and call stored functions.
+
+## Task 2: Runtime Handler Execution
+
+### Problem
+Runtime-registered handlers (via `crucible.on()`) had their functions stored in the registry (Task 1), but there was no way to execute them. The `LuaScriptHandlerRegistry` needed an `execute_runtime_handler()` method.
+
+### Solution Approach
+Implemented `execute_runtime_handler()` method that:
+1. Retrieves the stored function from `handler_functions` HashMap using the handler name
+2. Creates an empty context table (following pattern from `LuaScriptHandler::execute()`)
+3. Converts the event to Lua table using `session_event_to_lua()`
+4. Calls the handler function with (ctx, event) parameters
+5. Parses the result using `interpret_handler_result()`
+
+### Implementation Details
+- Method signature: `pub fn execute_runtime_handler(&self, lua: &Lua, name: &str, event: &SessionEvent) -> LuaResult<ScriptHandlerResult>`
+- Returns `LuaError::RuntimeError` if handler name not found
+- Reuses existing helper functions to avoid duplication:
+  - `session_event_to_lua()` for event conversion
+  - `interpret_handler_result()` for result parsing
+- Follows the exact pattern from `LuaScriptHandler::execute()` (lines 167-215)
+
+### Test Results
+All 3 new tests pass:
+- `execute_runtime_handler_receives_event` - Verifies handler receives event with correct fields
+- `execute_runtime_handler_returns_cancel` - Verifies `{cancel=true, reason="..."}` produces `ScriptHandlerResult::Cancel`
+- `execute_runtime_handler_not_found` - Verifies error when handler name doesn't exist
+
+All 39 handler tests pass (36 existing + 3 new).
+
+### Key Learnings
+- `interpret_handler_result()` returns `Ok(ScriptHandlerResult::Cancel)`, not an error
+- Empty context table is correct (ctx is just metadata container)
+- Handler name lookup must be done with lock on `handler_functions` HashMap
+- Method is non-blocking and doesn't require mutable self
+
+### Next Steps
+Task 2.5 (event dispatch) will use this method to execute runtime handlers when events are fired.
