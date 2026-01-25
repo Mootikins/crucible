@@ -563,13 +563,13 @@ cru chat
 ```
 
 ### Final Checklist
-- [ ] `ask_user` tool appears in agent tool list
-- [ ] Tool emits correct SessionEvent
-- [ ] Tool awaits and returns response
-- [ ] Modal has `▄▄▄` / `▀▀▀` borders
-- [ ] Multi-select checkboxes work
-- [ ] "Other" text preserved when deselected
-- [ ] Multi-question tabs work
-- [ ] Ctrl+C cancels modal
-- [ ] All snapshot tests pass
-- [ ] Integration test passes
+- [x] `ask_user` tool appears in agent tool list
+- [x] Tool emits correct SessionEvent
+- [x] Tool awaits and returns response
+- [x] Modal has `▄▄▄` / `▀▀▀` borders
+- [x] Multi-select checkboxes work
+- [x] "Other" text preserved when deselected
+- [x] Multi-question tabs work
+- [x] Ctrl+C cancels modal
+- [x] All snapshot tests pass
+- [x] Integration test passes

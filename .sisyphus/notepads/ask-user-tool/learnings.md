@@ -324,3 +324,60 @@ Task 8 is too large for single-task enforcement. Breaking into micro-commits:
 ---
 
 _Updated: 2026-01-25T22:50:00Z_
+
+## Task 11 Completion - Multi-Question Support
+
+### Implementation Approach
+Instead of complex refactoring, used simple extraction pattern:
+- Extract `(question, choices, multi_select, allow_other, total_questions)` from either `Ask` or `AskBatch`
+- Render "Question N/M" indicator when `total_questions > 1`
+- Created `handle_ask_batch_key` function for batch-specific navigation
+
+### Key Changes
+1. **AskQuestion**: Added `allow_other: bool` field
+2. **InteractionModalState**: Added `batch_answers` and `batch_other_texts` fields
+3. **render_ask_interaction**: Extract current question from both variants
+4. **handle_ask_batch_key**: New function with Tab/Shift+Tab navigation
+
+### Navigation Pattern
+- **Tab**: Advance to next question
+- **Shift+Tab**: Go to previous question  
+- **Enter**: Submit on last question, advance on others
+- **Space**: Toggle checkboxes (multi-select)
+- **Esc/Ctrl+C**: Cancel entire batch
+
+### Test Results
+- ✅ 5/5 ask_user integration tests passing
+- ✅ 1587/1587 TUI tests passing
+- ✅ All snapshot tests updated and passing
+
+---
+
+## Final Implementation Summary
+
+### Completed (12/12 Tasks)
+1. ✅ InteractionContext type
+2. ✅ AskUserTool with async await
+3. ✅ WorkspaceContext extension
+4. ✅ Daemon wiring
+5. ✅ Tool attachment
+6. ✅ Integration tests
+7. ✅ Modal state extension
+8. ✅ Border redesign (▄/▀)
+9. ✅ Multi-select checkboxes
+10. ✅ "Other" text preservation
+11. ✅ Multi-question AskBatch
+12. ✅ Ctrl+C cancel
+
+### Production Ready
+The `ask_user` tool is fully functional:
+- Single questions with choices
+- Multi-select with Space toggle
+- Free-text "Other" input with preservation
+- Multi-question batches with Tab navigation
+- Proper cancellation (Esc/Ctrl+C)
+- All tests passing
+
+---
+
+_Final Update: 2026-01-25T23:30:00Z_
