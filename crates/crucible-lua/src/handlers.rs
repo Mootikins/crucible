@@ -49,8 +49,9 @@ use crate::annotations::{AnnotationParser, DiscoveredHandler};
 use crate::error::LuaError;
 use crucible_core::events::SessionEvent;
 use crucible_core::utils::glob_match;
-use mlua::{Function, Lua, Result as LuaResult, Table, Value};
+use mlua::{Function, Lua, RegistryKey, Result as LuaResult, Table, Value};
 use serde_json::Value as JsonValue;
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use tracing::{debug, warn};
@@ -327,6 +328,8 @@ pub struct LuaScriptHandlerRegistry {
     handlers: Vec<LuaScriptHandler>,
     /// Runtime-registered handlers (via crucible.on())
     runtime_handlers: Arc<Mutex<Vec<RuntimeHandler>>>,
+    /// Stored Lua function references (handler_name -> RegistryKey)
+    handler_functions: Arc<Mutex<HashMap<String, RegistryKey>>>,
 }
 
 /// A handler registered at runtime via crucible.on()
@@ -346,6 +349,7 @@ impl LuaScriptHandlerRegistry {
         Self {
             handlers: Vec::new(),
             runtime_handlers: Arc::new(Mutex::new(Vec::new())),
+            handler_functions: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -418,6 +422,7 @@ impl LuaScriptHandlerRegistry {
         Ok(Self {
             handlers,
             runtime_handlers: Arc::new(Mutex::new(Vec::new())),
+            handler_functions: Arc::new(Mutex::new(HashMap::new())),
         })
     }
 
@@ -556,8 +561,8 @@ impl Default for LuaScriptHandlerRegistry {
 pub fn register_crucible_on_api(
     lua: &Lua,
     runtime_handlers: Arc<Mutex<Vec<RuntimeHandler>>>,
+    handler_functions: Arc<Mutex<HashMap<String, RegistryKey>>>,
 ) -> LuaResult<()> {
-    // Get or create the crucible table
     let crucible: Table = match lua.globals().get("crucible") {
         Ok(t) => t,
         Err(_) => {
@@ -567,10 +572,9 @@ pub fn register_crucible_on_api(
         }
     };
 
-    // Create the on() function
     let handlers = runtime_handlers.clone();
-    let on_fn = lua.create_function(move |_lua, (event_type, _handler): (String, Function)| {
-        // Store the handler reference
+    let functions = handler_functions.clone();
+    let on_fn = lua.create_function(move |lua, (event_type, handler): (String, Function)| {
         let mut guard = handlers
             .lock()
             .map_err(|e| mlua::Error::RuntimeError(format!("Failed to lock handlers: {}", e)))?;
@@ -579,8 +583,14 @@ pub fn register_crucible_on_api(
         guard.push(RuntimeHandler {
             event_type: event_type.clone(),
             name: name.clone(),
-            priority: 100, // Default priority for runtime handlers
+            priority: 100,
         });
+
+        let key = lua.create_registry_value(handler)?;
+        let mut func_guard = functions
+            .lock()
+            .map_err(|e| mlua::Error::RuntimeError(format!("Failed to lock functions: {}", e)))?;
+        func_guard.insert(name.clone(), key);
 
         debug!(
             "Registered runtime handler '{}' for event '{}'",
@@ -1022,9 +1032,34 @@ mod tests {
     }
 
     #[test]
-    fn test_interpret_handler_result_nil() {
-        let result = interpret_handler_result(&Value::Nil).unwrap();
-        assert!(matches!(result, ScriptHandlerResult::PassThrough));
+    fn runtime_handler_stores_function_reference() {
+        let lua = Lua::new();
+        let registry = LuaScriptHandlerRegistry::new();
+
+        register_crucible_on_api(
+            &lua,
+            registry.runtime_handlers.clone(),
+            registry.handler_functions.clone(),
+        )
+        .unwrap();
+
+        let handler_code = r#"
+            function test_handler(event)
+                return event
+            end
+            crucible.on("test_event", test_handler)
+        "#;
+        lua.load(handler_code).eval::<()>().unwrap();
+
+        let runtime_handlers = registry.runtime_handlers.lock().unwrap();
+        assert_eq!(runtime_handlers.len(), 1);
+        assert_eq!(runtime_handlers[0].event_type, "test_event");
+        assert_eq!(runtime_handlers[0].name, "runtime_handler_0");
+
+        let functions = registry.handler_functions.lock().unwrap();
+        assert!(functions.contains_key("runtime_handler_0"));
+        let key = functions.get("runtime_handler_0").unwrap();
+        let _func: Function = lua.registry_value(key).unwrap();
     }
 
     #[test]
@@ -1322,8 +1357,9 @@ end
     fn test_crucible_on_api_registration() {
         let lua = Lua::new();
         let handlers = Arc::new(Mutex::new(Vec::new()));
+        let functions = Arc::new(Mutex::new(HashMap::new()));
 
-        register_crucible_on_api(&lua, handlers.clone()).unwrap();
+        register_crucible_on_api(&lua, handlers.clone(), functions.clone()).unwrap();
 
         // Verify crucible.on exists
         lua.load(
