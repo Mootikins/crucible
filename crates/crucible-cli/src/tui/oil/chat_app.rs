@@ -2482,7 +2482,20 @@ impl InkChatApp {
 
         for (i, choice) in choices.iter().enumerate() {
             let is_selected = i == modal.selected;
-            let prefix = if is_selected { " > " } else { "   " };
+            let prefix = if ask_request.multi_select {
+                let is_checked = modal.checked.contains(&i);
+                if is_checked {
+                    "[x]"
+                } else {
+                    "[ ]"
+                }
+            } else {
+                if is_selected {
+                    " > "
+                } else {
+                    "   "
+                }
+            };
             let style = if is_selected {
                 Style::new().fg(colors::TEXT_ACCENT).bold()
             } else {
