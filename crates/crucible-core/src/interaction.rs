@@ -1096,6 +1096,19 @@ impl From<PanelResult> for InteractionResponse {
     }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Interaction Event (for out-of-band delivery)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Event carrying an interaction request with its correlation ID.
+///
+/// Used for delivering interactions through channels outside of streaming.
+#[derive(Debug, Clone)]
+pub struct InteractionEvent {
+    pub request_id: String,
+    pub request: InteractionRequest,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

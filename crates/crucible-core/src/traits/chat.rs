@@ -273,6 +273,24 @@ pub trait AgentHandle: Send + Sync {
     ) -> ChatResult<()> {
         Err(ChatError::NotSupported("interaction_respond".into()))
     }
+
+    /// Take the interaction event receiver (if available)
+    ///
+    /// Returns a receiver for out-of-band interaction events. This receiver
+    /// delivers `InteractionRequested` events that arrive outside of message
+    /// streaming (e.g., from Lua handlers, daemon triggers).
+    ///
+    /// This method should be called once at startup. Subsequent calls return `None`.
+    /// The caller should poll this receiver in their event loop to handle interactions.
+    ///
+    /// # Returns
+    /// * `Some(receiver)` - On first call, if interactions are supported
+    /// * `None` - On subsequent calls or if interactions are not supported
+    fn take_interaction_receiver(
+        &mut self,
+    ) -> Option<tokio::sync::mpsc::UnboundedReceiver<crate::interaction::InteractionEvent>> {
+        None
+    }
 }
 
 /// Blanket implementation for boxed trait objects
@@ -367,6 +385,12 @@ impl AgentHandle for Box<dyn AgentHandle + Send + Sync> {
         response: crate::interaction::InteractionResponse,
     ) -> ChatResult<()> {
         (**self).interaction_respond(request_id, response).await
+    }
+
+    fn take_interaction_receiver(
+        &mut self,
+    ) -> Option<tokio::sync::mpsc::UnboundedReceiver<crate::interaction::InteractionEvent>> {
+        (**self).take_interaction_receiver()
     }
 }
 

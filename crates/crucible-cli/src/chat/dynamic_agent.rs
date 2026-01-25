@@ -142,6 +142,16 @@ impl AgentHandle for DynamicAgent {
             Self::Local(handle) => handle.current_model(),
         }
     }
+
+    fn take_interaction_receiver(
+        &mut self,
+    ) -> Option<tokio::sync::mpsc::UnboundedReceiver<crucible_core::interaction::InteractionEvent>>
+    {
+        match self {
+            Self::Acp(client) => client.take_interaction_receiver(),
+            Self::Local(handle) => handle.take_interaction_receiver(),
+        }
+    }
 }
 
 impl std::fmt::Debug for DynamicAgent {
@@ -209,17 +219,119 @@ mod switch_model_tests {
         let mock = MockAgentHandle::new();
         let mut agent = DynamicAgent::local_from(mock);
 
-        // Should start with no model
         assert!(agent.current_model().is_none());
 
-        // Switch model
         let result = agent.switch_model("test-model").await;
         assert!(result.is_ok(), "switch_model should succeed");
+    }
 
-        // Verify the inner mock received the call
-        if let DynamicAgent::Local(_handle) = &agent {
-            // Can't easily check inner state without downcasting
-            // But if we got Ok(()), the call went through
+    struct MockWithInteraction {
+        interaction_rx:
+            std::sync::Mutex<Option<tokio::sync::mpsc::UnboundedReceiver<crucible_core::interaction::InteractionEvent>>>,
+    }
+
+    impl MockWithInteraction {
+        fn new() -> (Self, tokio::sync::mpsc::UnboundedSender<crucible_core::interaction::InteractionEvent>) {
+            let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+            (
+                Self {
+                    interaction_rx: std::sync::Mutex::new(Some(rx)),
+                },
+                tx,
+            )
         }
+    }
+
+    #[async_trait]
+    impl AgentHandle for MockWithInteraction {
+        fn send_message_stream(&mut self, _: String) -> BoxStream<'static, ChatResult<ChatChunk>> {
+            Box::pin(futures::stream::empty())
+        }
+        fn is_connected(&self) -> bool {
+            true
+        }
+        fn supports_streaming(&self) -> bool {
+            true
+        }
+        fn get_modes(&self) -> Option<&SessionModeState> {
+            None
+        }
+        fn get_mode_id(&self) -> &str {
+            "normal"
+        }
+        async fn set_mode_str(&mut self, _: &str) -> ChatResult<()> {
+            Ok(())
+        }
+        fn get_commands(&self) -> &[AvailableCommand] {
+            &[]
+        }
+        async fn switch_model(&mut self, _: &str) -> ChatResult<()> {
+            Ok(())
+        }
+        fn current_model(&self) -> Option<&str> {
+            None
+        }
+        fn take_interaction_receiver(
+            &mut self,
+        ) -> Option<tokio::sync::mpsc::UnboundedReceiver<crucible_core::interaction::InteractionEvent>>
+        {
+            self.interaction_rx.lock().unwrap().take()
+        }
+    }
+
+    #[tokio::test]
+    async fn test_dynamic_agent_take_interaction_receiver_delegates() {
+        let (mock, tx) = MockWithInteraction::new();
+        let mut agent = DynamicAgent::local_from(mock);
+
+        let rx = agent.take_interaction_receiver();
+        assert!(rx.is_some(), "First call should return Some");
+
+        let rx2 = agent.take_interaction_receiver();
+        assert!(rx2.is_none(), "Second call should return None");
+
+        let mut rx = rx.unwrap();
+        let event = crucible_core::interaction::InteractionEvent {
+            request_id: "test-123".to_string(),
+            request: crucible_core::interaction::InteractionRequest::Ask(
+                crucible_core::interaction::AskRequest {
+                    question: "Test?".to_string(),
+                    choices: None,
+                    allow_other: false,
+                    multi_select: false,
+                },
+            ),
+        };
+        tx.send(event).expect("send failed");
+
+        let received = rx.recv().await.expect("recv failed");
+        assert_eq!(received.request_id, "test-123");
+    }
+
+    #[tokio::test]
+    async fn test_dynamic_agent_boxed_trait_object_delegates() {
+        let (mock, tx) = MockWithInteraction::new();
+        let boxed: Box<dyn AgentHandle + Send + Sync> = Box::new(mock);
+        let mut agent = DynamicAgent::local(boxed);
+
+        let rx = agent.take_interaction_receiver();
+        assert!(rx.is_some(), "Boxed trait object should delegate take_interaction_receiver");
+
+        let mut rx = rx.unwrap();
+        let event = crucible_core::interaction::InteractionEvent {
+            request_id: "boxed-test".to_string(),
+            request: crucible_core::interaction::InteractionRequest::Ask(
+                crucible_core::interaction::AskRequest {
+                    question: "Test?".to_string(),
+                    choices: None,
+                    allow_other: false,
+                    multi_select: false,
+                },
+            ),
+        };
+        tx.send(event).expect("send failed");
+
+        let received = rx.recv().await.expect("recv failed");
+        assert_eq!(received.request_id, "boxed-test");
     }
 }
