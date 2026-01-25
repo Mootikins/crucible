@@ -10,7 +10,7 @@ use crate::fennel::FennelCompiler;
 use crate::oil::register_oil_module;
 use crate::session_api::{register_session_module, SessionManager};
 use crate::types::{LuaExecutionResult, LuaTool, ToolResult};
-use mlua::{Function, Lua, LuaOptions, Result as LuaResult, StdLib, Value};
+use mlua::{Function, Lua, LuaOptions, RegistryKey, Result as LuaResult, StdLib, Value};
 use serde_json::Value as JsonValue;
 use std::path::Path;
 use std::time::Instant;
@@ -25,6 +25,7 @@ pub struct LuaExecutor {
     #[cfg(feature = "fennel")]
     fennel: Option<FennelCompiler>,
     session_manager: SessionManager,
+    on_session_start_hooks: Vec<RegistryKey>,
 }
 
 impl LuaExecutor {
@@ -61,6 +62,7 @@ impl LuaExecutor {
             #[cfg(feature = "fennel")]
             fennel,
             session_manager,
+            on_session_start_hooks: Vec::new(),
         })
     }
 
@@ -78,6 +80,16 @@ impl LuaExecutor {
 
     pub fn session_manager(&self) -> &SessionManager {
         &self.session_manager
+    }
+
+    /// Add a session start hook
+    pub fn add_session_start_hook(&mut self, key: RegistryKey) {
+        self.on_session_start_hooks.push(key);
+    }
+
+    /// Get all session start hooks
+    pub fn session_start_hooks(&self) -> &[RegistryKey] {
+        &self.on_session_start_hooks
     }
 
     /// Load user configuration from init.lua
@@ -404,5 +416,11 @@ mod tests {
         );
         #[cfg(not(feature = "fennel"))]
         assert!(!executor.fennel_available());
+    }
+
+    #[test]
+    fn test_hook_storage_empty_by_default() {
+        let executor = LuaExecutor::new().unwrap();
+        assert!(executor.session_start_hooks().is_empty());
     }
 }
