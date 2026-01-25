@@ -1,0 +1,16 @@
+---
+source: crates/crucible-cli/src/tui/oil/tests/chat_app_snapshot_tests.rs
+expression: render_app(&app)
+---
+ Select an option:                                                              
+
+ > First option
+   Second option
+   Third option
+   Fourth option
+   Fifth option
+   Sixth option
+   Seventh option
+   Eighth option
+
+ ↑/↓ navigate │ Enter select │ Esc cancel
