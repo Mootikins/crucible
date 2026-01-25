@@ -29,7 +29,7 @@ pub fn register_hooks_module(lua: &Lua, crucible: &Table) -> LuaResult<()> {
             .get("on_session_start")
             .unwrap_or_else(|_| lua.create_table().unwrap());
 
-        let len = session_start_hooks.raw_len() as usize;
+        let len = session_start_hooks.raw_len();
         session_start_hooks.raw_set(len + 1, key)?;
 
         hooks_table.set("on_session_start", session_start_hooks)?;

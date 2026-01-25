@@ -36,9 +36,9 @@ pub fn register_notify_module(lua: &Lua, crucible: &Table) -> LuaResult<()> {
 }
 
 fn register_log_levels(lua: &Lua, crucible: &Table) -> LuaResult<()> {
-    let log_table: Table = crucible
-        .get("log")
-        .unwrap_or_else(|_| lua.create_table().unwrap());
+    let log_fn: Option<mlua::Function> = crucible.get("log").ok();
+
+    let log_table = lua.create_table()?;
 
     let levels = lua.create_table()?;
     levels.set("TRACE", 0)?;
@@ -49,6 +49,27 @@ fn register_log_levels(lua: &Lua, crucible: &Table) -> LuaResult<()> {
     levels.set("OFF", 5)?;
 
     log_table.set("levels", levels)?;
+
+    if let Some(fn_ref) = log_fn {
+        let wrapped_fn = lua.create_function(move |_, args: mlua::Variadic<mlua::Value>| {
+            if args.len() < 3 {
+                return Err(mlua::Error::external("log requires 2 arguments"));
+            }
+            let level = match &args[1] {
+                mlua::Value::String(s) => s.to_str()?.to_string(),
+                _ => return Err(mlua::Error::external("log level must be a string")),
+            };
+            let msg = match &args[2] {
+                mlua::Value::String(s) => s.to_str()?.to_string(),
+                _ => return Err(mlua::Error::external("log message must be a string")),
+            };
+            fn_ref.call::<()>((level, msg))
+        })?;
+        let metatable = lua.create_table()?;
+        metatable.set("__call", wrapped_fn)?;
+        log_table.set_metatable(Some(metatable))?;
+    }
+
     crucible.set("log", log_table)?;
 
     Ok(())
