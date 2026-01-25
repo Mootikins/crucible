@@ -1958,6 +1958,18 @@ impl InkChatApp {
                         response,
                     });
                 }
+                KeyCode::Char('c')
+                    if key
+                        .modifiers
+                        .contains(crossterm::event::KeyModifiers::CONTROL) =>
+                {
+                    let response = InteractionResponse::Cancelled;
+                    self.close_interaction();
+                    return Action::Send(ChatAppMsg::CloseInteraction {
+                        request_id,
+                        response,
+                    });
+                }
                 _ => Action::Continue,
             },
             InteractionMode::TextInput => match key.code {
