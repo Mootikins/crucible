@@ -6,6 +6,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use crucible_core::interaction::InteractionEvent;
 use crucible_core::traits::chat::{
     AgentHandle, ChatChunk, ChatError, ChatResult, ChatToolCall, ChatToolResult, CommandDescriptor,
 };
@@ -22,39 +23,46 @@ use crate::{DaemonClient, SessionEvent};
 /// 1. Sending messages via `session.send_message` RPC
 /// 2. Subscribing to session events for streaming responses
 /// 3. Converting `SessionEvent` back to `ChatChunk` for the TUI
+/// 4. Routing interaction events to a separate channel for the TUI event loop
 pub struct DaemonAgentHandle {
     client: Arc<DaemonClient>,
     session_id: String,
-    event_rx: Arc<Mutex<mpsc::UnboundedReceiver<SessionEvent>>>,
+    streaming_rx: Arc<Mutex<mpsc::UnboundedReceiver<SessionEvent>>>,
+    interaction_rx: Option<mpsc::UnboundedReceiver<InteractionEvent>>,
     mode_id: String,
     connected: bool,
 }
 
 impl DaemonAgentHandle {
-    /// Create a new daemon agent handle
+    /// Create a new daemon agent handle with event routing
     ///
-    /// The client should have been created with `connect_with_events()` so that
-    /// the event receiver is properly set up.
+    /// Spawns a background task that routes incoming events:
+    /// - Streaming events (text_delta, tool_call, etc.) go to the streaming channel
+    /// - Interaction events (interaction_requested) go to the interaction channel
     pub fn new(
         client: Arc<DaemonClient>,
         session_id: String,
         event_rx: mpsc::UnboundedReceiver<SessionEvent>,
     ) -> Self {
+        let (streaming_tx, streaming_rx) = mpsc::unbounded_channel();
+        let (interaction_tx, interaction_rx) = mpsc::unbounded_channel();
+
+        let session_id_clone = session_id.clone();
+        tokio::spawn(async move {
+            event_router(event_rx, streaming_tx, interaction_tx, session_id_clone).await;
+        });
+
         Self {
             client,
             session_id,
-            event_rx: Arc::new(Mutex::new(event_rx)),
+            streaming_rx: Arc::new(Mutex::new(streaming_rx)),
+            interaction_rx: Some(interaction_rx),
             mode_id: "normal".to_string(),
             connected: true,
         }
     }
 
     /// Create a daemon agent handle and subscribe to its session
-    ///
-    /// This is a convenience constructor that:
-    /// 1. Takes an existing client with event channel
-    /// 2. Subscribes to the session for events
-    /// 3. Returns the configured handle
     pub async fn new_and_subscribe(
         client: Arc<DaemonClient>,
         session_id: String,
@@ -72,10 +80,60 @@ impl DaemonAgentHandle {
         Ok(Self::new(client, session_id, event_rx))
     }
 
-    /// Get the session ID
     pub fn session_id(&self) -> &str {
         &self.session_id
     }
+}
+
+/// Background task that routes events from daemon to appropriate channels
+async fn event_router(
+    mut event_rx: mpsc::UnboundedReceiver<SessionEvent>,
+    streaming_tx: mpsc::UnboundedSender<SessionEvent>,
+    interaction_tx: mpsc::UnboundedSender<InteractionEvent>,
+    session_id: String,
+) {
+    while let Some(event) = event_rx.recv().await {
+        if event.session_id != session_id {
+            tracing::trace!(
+                event_session = %event.session_id,
+                expected_session = %session_id,
+                "Filtering event from different session in router"
+            );
+            continue;
+        }
+
+        if event.event_type == "interaction_requested" {
+            if let (Some(request_id), Some(request_data)) = (
+                event.data.get("request_id").and_then(|v| v.as_str()),
+                event.data.get("request"),
+            ) {
+                match serde_json::from_value(request_data.clone()) {
+                    Ok(request) => {
+                        let interaction_event = InteractionEvent {
+                            request_id: request_id.to_string(),
+                            request,
+                        };
+                        if interaction_tx.send(interaction_event).is_err() {
+                            tracing::debug!("Interaction channel closed");
+                            break;
+                        }
+                        tracing::debug!(request_id = %request_id, "Routed interaction event");
+                    }
+                    Err(e) => {
+                        tracing::warn!(error = %e, "Failed to deserialize interaction request");
+                    }
+                }
+            } else {
+                tracing::warn!("Interaction event missing request_id or request data");
+            }
+        } else {
+            if streaming_tx.send(event).is_err() {
+                tracing::debug!("Streaming channel closed");
+                break;
+            }
+        }
+    }
+    tracing::debug!("Event router task ended");
 }
 
 /// Convert a SessionEvent to a ChatChunk
@@ -190,7 +248,7 @@ impl AgentHandle for DaemonAgentHandle {
     ) -> BoxStream<'static, ChatResult<ChatChunk>> {
         let client = Arc::clone(&self.client);
         let session_id = self.session_id.clone();
-        let event_rx = Arc::clone(&self.event_rx);
+        let streaming_rx = Arc::clone(&self.streaming_rx);
 
         Box::pin(async_stream::stream! {
             tracing::debug!(session_id = %session_id, "Sending message to daemon");
@@ -202,27 +260,16 @@ impl AgentHandle for DaemonAgentHandle {
                 return;
             }
 
-            tracing::debug!(session_id = %session_id, "Message sent, waiting for events");
+            tracing::debug!(session_id = %session_id, "Message sent, waiting for streaming events");
 
-            let mut rx = event_rx.lock().await;
+            let mut rx = streaming_rx.lock().await;
             loop {
                 match rx.recv().await {
                     Some(event) => {
                         tracing::trace!(
-                            event_session = %event.session_id,
-                            expected_session = %session_id,
                             event_type = %event.event_type,
-                            "Received event from daemon"
+                            "Received streaming event"
                         );
-
-                        if event.session_id != session_id {
-                            tracing::debug!(
-                                event_session = %event.session_id,
-                                expected_session = %session_id,
-                                "Filtering out event from different session"
-                            );
-                            continue;
-                        }
 
                         if let Some(chunk) = session_event_to_chat_chunk(&event) {
                             tracing::debug!(
@@ -242,13 +289,19 @@ impl AgentHandle for DaemonAgentHandle {
                         }
                     }
                     None => {
-                        tracing::warn!("Event channel closed unexpectedly");
+                        tracing::warn!("Streaming channel closed unexpectedly");
                         yield Err(ChatError::Connection("Event channel closed".to_string()));
                         break;
                     }
                 }
             }
         })
+    }
+
+    fn take_interaction_receiver(
+        &mut self,
+    ) -> Option<mpsc::UnboundedReceiver<InteractionEvent>> {
+        self.interaction_rx.take()
     }
 
     fn is_connected(&self) -> bool {

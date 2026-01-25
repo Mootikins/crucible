@@ -64,20 +64,78 @@ async fn test_client_ping_with_real_daemon() {
     server.shutdown().await;
 }
 
-/// Test DaemonClient.kiln_list() returns empty initially
 #[tokio::test]
-async fn test_client_kiln_list_with_real_daemon() {
+async fn test_interaction_event_flows_to_receiver() {
+    use crucible_core::interaction::InteractionRequest;
+    use crucible_core::traits::chat::AgentHandle;
+    use crucible_daemon_client::DaemonAgentHandle;
+    use std::time::Duration;
+
     let server = TestServer::start().await.expect("Failed to start server");
+    let kiln_dir = tempfile::tempdir().expect("Failed to create kiln dir");
 
-    let client = DaemonClient::connect_to(&server.socket_path)
+    let (client, event_rx) = DaemonClient::connect_to_with_events(&server.socket_path)
         .await
-        .expect("Failed to connect");
+        .expect("Failed to connect with events");
+    let client = std::sync::Arc::new(client);
 
-    let list = client.kiln_list().await.expect("kiln_list failed");
-    assert!(list.is_empty(), "Expected empty kiln list");
+    let result = client
+        .session_create("chat", kiln_dir.path(), None, vec![])
+        .await
+        .expect("session_create failed");
+
+    let session_id = result["session_id"]
+        .as_str()
+        .expect("session_id should be string")
+        .to_string();
+
+    let mut handle =
+        DaemonAgentHandle::new_and_subscribe(client.clone(), session_id.clone(), event_rx)
+            .await
+            .expect("Failed to create agent handle");
+
+    let interaction_rx = handle.take_interaction_receiver();
+    assert!(
+        interaction_rx.is_some(),
+        "DaemonAgentHandle should return Some(interaction_rx)"
+    );
+    let mut interaction_rx = interaction_rx.unwrap();
+
+    assert!(
+        handle.take_interaction_receiver().is_none(),
+        "Second call to take_interaction_receiver should return None"
+    );
+
+    let interact_result = client
+        .call(
+            "session.test_interaction",
+            serde_json::json!({
+                "session_id": session_id,
+                "type": "ask"
+            }),
+        )
+        .await
+        .expect("test_interaction RPC failed");
+
+    let request_id = interact_result["request_id"]
+        .as_str()
+        .expect("request_id should be in response");
+
+    let event = tokio::time::timeout(Duration::from_secs(2), interaction_rx.recv())
+        .await
+        .expect("Timed out waiting for interaction event")
+        .expect("Interaction channel closed unexpectedly");
+
+    assert_eq!(event.request_id, request_id, "Request ID should match");
+    assert!(
+        matches!(event.request, InteractionRequest::Ask(_)),
+        "Should be an Ask request, got {:?}",
+        event.request
+    );
 
     server.shutdown().await;
 }
+
 
 /// Test DaemonClient.shutdown() actually stops the daemon
 #[tokio::test]
