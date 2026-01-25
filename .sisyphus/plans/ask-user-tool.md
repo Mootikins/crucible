@@ -471,7 +471,7 @@ Task 7 (Modal state) → Task 8 (Single-select render) → Task 9 (Multi-select)
 
 ---
 
-- [ ] 11. Implement multi-question tab bar
+- [ ] 11. Implement multi-question tab bar (BLOCKED - requires AskBatch refactoring)
 
   **What to do**:
   - Detect multiple questions in AskBatch
@@ -497,7 +497,7 @@ Task 7 (Modal state) → Task 8 (Single-select render) → Task 9 (Multi-select)
 
 ---
 
-- [ ] 12. Add Ctrl+C cancel handler
+- [x] 12. Add Ctrl+C cancel handler
 
   **What to do**:
   - Handle Ctrl+C in `handle_ask_key` and `handle_perm_key`
