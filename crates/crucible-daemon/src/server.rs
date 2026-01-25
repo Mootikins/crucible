@@ -424,6 +424,9 @@ async fn handle_legacy_request(
             handle_session_set_max_tokens(req, agent_manager, event_tx).await
         }
         "session.get_max_tokens" => handle_session_get_max_tokens(req, agent_manager).await,
+        "session.test_interaction" => {
+            handle_session_test_interaction(req, event_tx).await
+        }
         _ => {
             tracing::warn!("Unknown RPC method: {:?}", req.method);
             Response::error(
@@ -1069,6 +1072,72 @@ async fn handle_session_interaction_respond(
         serde_json::json!({
             "session_id": session_id,
             "request_id": request_id,
+        }),
+    )
+}
+
+async fn handle_session_test_interaction(
+    req: Request,
+    event_tx: &broadcast::Sender<SessionEventMessage>,
+) -> Response {
+    let session_id = require_str_param!(req, "session_id");
+
+    let get_str = |key: &str| -> Option<&str> {
+        req.params.get(key)?.as_str()
+    };
+
+    let interaction_type = get_str("type").unwrap_or("ask");
+    let request_id = format!("test-{}", uuid::Uuid::new_v4());
+
+    let request = match interaction_type {
+        "ask" => {
+            let question = get_str("question")
+                .unwrap_or("Test question: Which option do you prefer?");
+
+            serde_json::json!({
+                "Ask": {
+                    "question": question,
+                    "choices": ["Option A", "Option B", "Option C"],
+                    "allow_other": true,
+                    "multi_select": false
+                }
+            })
+        }
+        "permission" => {
+            let action = get_str("action").unwrap_or("rm -rf /tmp/test");
+
+            serde_json::json!({
+                "Permission": {
+                    "Bash": {
+                        "command": action
+                    }
+                }
+            })
+        }
+        _ => {
+            return Response::error(
+                req.id,
+                INVALID_PARAMS,
+                format!("Unknown interaction type: {}. Use 'ask' or 'permission'", interaction_type),
+            )
+        }
+    };
+
+    let _ = event_tx.send(SessionEventMessage::new(
+        session_id.clone(),
+        "interaction_requested",
+        serde_json::json!({
+            "request_id": request_id,
+            "request": request,
+        }),
+    ));
+
+    Response::success(
+        req.id,
+        serde_json::json!({
+            "session_id": session_id,
+            "request_id": request_id,
+            "type": interaction_type,
         }),
     )
 }
