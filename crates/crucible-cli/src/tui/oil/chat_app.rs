@@ -20,6 +20,9 @@ use crate::tui::oil::viewport_cache::{
 use crossterm::event::KeyCode;
 use crossterm::terminal::{EnterAlternateScreen, LeaveAlternateScreen};
 use crossterm::{cursor, execute};
+use crucible_core::interaction::{
+    InteractionRequest, InteractionResponse, PermAction, PermRequest, PermResponse,
+};
 use std::collections::VecDeque;
 use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
@@ -62,16 +65,30 @@ pub enum ChatAppMsg {
     UserMessage(String),
     TextDelta(String),
     ThinkingDelta(String),
-    ToolCall { name: String, args: String },
-    ToolResultDelta { name: String, delta: String },
-    ToolResultComplete { name: String },
-    ToolResultError { name: String, error: String },
+    ToolCall {
+        name: String,
+        args: String,
+    },
+    ToolResultDelta {
+        name: String,
+        delta: String,
+    },
+    ToolResultComplete {
+        name: String,
+    },
+    ToolResultError {
+        name: String,
+        error: String,
+    },
     StreamComplete,
     StreamCancelled,
     Error(String),
     Status(String),
     ModeChanged(String),
-    ContextUsage { used: usize, total: usize },
+    ContextUsage {
+        used: usize,
+        total: usize,
+    },
     ClearHistory,
     QueueMessage(String),
     SwitchModel(String),
@@ -81,10 +98,27 @@ pub enum ChatAppMsg {
     SetThinkingBudget(i64),
     SetTemperature(f64),
     SetMaxTokens(Option<u32>),
-    SubagentSpawned { id: String, prompt: String },
-    SubagentCompleted { id: String, summary: String },
-    SubagentFailed { id: String, error: String },
+    SubagentSpawned {
+        id: String,
+        prompt: String,
+    },
+    SubagentCompleted {
+        id: String,
+        summary: String,
+    },
+    SubagentFailed {
+        id: String,
+        error: String,
+    },
     ToggleMessages,
+    OpenInteraction {
+        request_id: String,
+        request: InteractionRequest,
+    },
+    CloseInteraction {
+        request_id: String,
+        response: InteractionResponse,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -220,6 +254,32 @@ pub enum ModelListState {
     Failed(String),
 }
 
+/// Mode for interaction modal input handling.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum InteractionMode {
+    /// Navigating/selecting from choices.
+    #[default]
+    Selecting,
+    /// Free-text input (for "Other" option).
+    TextInput,
+}
+
+/// State for the interaction modal (Ask, AskBatch, Edit, Permission, etc.).
+pub struct InteractionModalState {
+    /// Correlates with response sent back to daemon.
+    pub request_id: String,
+    /// The request being displayed.
+    pub request: InteractionRequest,
+    /// Current selection index for choice-based requests.
+    pub selected: usize,
+    /// Filter text for filterable panels (future use).
+    pub filter: String,
+    /// Free-text input buffer for "Other" option.
+    pub other_text: String,
+    /// Current input mode.
+    pub mode: InteractionMode,
+}
+
 pub struct ShellModal {
     command: String,
     output_lines: Vec<String>,
@@ -353,6 +413,7 @@ pub struct InkChatApp {
     runtime_config: RuntimeConfig,
     current_provider: String,
     notification_area: NotificationArea,
+    interaction_modal: Option<InteractionModalState>,
 }
 
 impl Default for InkChatApp {
@@ -392,6 +453,7 @@ impl Default for InkChatApp {
             runtime_config: RuntimeConfig::empty(),
             current_provider: "local".to_string(),
             notification_area: NotificationArea::new(),
+            interaction_modal: None,
         }
     }
 }
@@ -406,6 +468,14 @@ impl App for InkChatApp {
     fn view(&self, ctx: &ViewContext<'_>) -> Node {
         if self.shell_modal.is_some() {
             return self.render_shell_modal();
+        }
+
+        if self.interaction_modal.is_some() {
+            if let Some(modal) = &self.interaction_modal {
+                if matches!(modal.request, InteractionRequest::Permission(_)) {
+                    return self.render_perm_interaction();
+                }
+            }
         }
 
         col([
@@ -575,6 +645,21 @@ impl App for InkChatApp {
                 self.notification_area.toggle();
                 Action::Continue
             }
+            ChatAppMsg::OpenInteraction {
+                request_id,
+                request,
+            } => {
+                self.open_interaction(request_id, request);
+                Action::Continue
+            }
+            ChatAppMsg::CloseInteraction {
+                request_id: _,
+                response: _,
+            } => {
+                // Response handling will be implemented in a later task
+                self.close_interaction();
+                Action::Continue
+            }
         }
     }
 
@@ -730,6 +815,25 @@ impl InkChatApp {
         self.shell_modal.is_some()
     }
 
+    pub fn open_interaction(&mut self, request_id: String, request: InteractionRequest) {
+        self.interaction_modal = Some(InteractionModalState {
+            request_id,
+            request,
+            selected: 0,
+            filter: String::new(),
+            other_text: String::new(),
+            mode: InteractionMode::Selecting,
+        });
+    }
+
+    pub fn close_interaction(&mut self) {
+        self.interaction_modal = None;
+    }
+
+    pub fn interaction_visible(&self) -> bool {
+        self.interaction_modal.is_some()
+    }
+
     #[cfg(test)]
     pub fn shell_output_lines(&self) -> Vec<String> {
         self.shell_modal
@@ -776,6 +880,10 @@ impl InkChatApp {
 
         if self.shell_modal.is_some() {
             return self.handle_shell_modal_key(key);
+        }
+
+        if self.interaction_modal.is_some() {
+            return self.handle_interaction_key(key);
         }
 
         if self.is_streaming() {
@@ -1750,6 +1858,61 @@ impl InkChatApp {
         Action::Continue
     }
 
+    fn handle_interaction_key(&mut self, key: crossterm::event::KeyEvent) -> Action<ChatAppMsg> {
+        let modal = match &self.interaction_modal {
+            Some(m) => m,
+            None => return Action::Continue,
+        };
+
+        let perm_request = match &modal.request {
+            InteractionRequest::Permission(req) => req,
+            _ => return Action::Continue,
+        };
+
+        let request_id = modal.request_id.clone();
+
+        match key.code {
+            KeyCode::Char('y') | KeyCode::Char('Y') => {
+                let response = InteractionResponse::Permission(PermResponse::allow());
+                self.close_interaction();
+                return Action::Send(ChatAppMsg::CloseInteraction {
+                    request_id,
+                    response,
+                });
+            }
+            KeyCode::Char('n') | KeyCode::Char('N') => {
+                let response = InteractionResponse::Permission(PermResponse::deny());
+                self.close_interaction();
+                return Action::Send(ChatAppMsg::CloseInteraction {
+                    request_id,
+                    response,
+                });
+            }
+            KeyCode::Char('p') | KeyCode::Char('P') => {
+                let pattern = perm_request.pattern_at(perm_request.tokens().len());
+                let response = InteractionResponse::Permission(PermResponse::allow_pattern(
+                    pattern,
+                    crucible_core::interaction::PermissionScope::Session,
+                ));
+                self.close_interaction();
+                return Action::Send(ChatAppMsg::CloseInteraction {
+                    request_id,
+                    response,
+                });
+            }
+            KeyCode::Esc => {
+                let response = InteractionResponse::Cancelled;
+                self.close_interaction();
+                return Action::Send(ChatAppMsg::CloseInteraction {
+                    request_id,
+                    response,
+                });
+            }
+            _ => {}
+        }
+        Action::Continue
+    }
+
     fn modal_visible_lines(&self) -> usize {
         let term_height = crossterm::terminal::size()
             .map(|(_, h)| h as usize)
@@ -2066,6 +2229,107 @@ impl InkChatApp {
         let padding = styled(" ".repeat(padding_len), Style::new().bg(bg));
 
         row([content, padding])
+    }
+
+    fn render_perm_interaction(&self) -> Node {
+        let modal = match &self.interaction_modal {
+            Some(m) => m,
+            None => return Node::Empty,
+        };
+
+        let perm_request = match &modal.request {
+            InteractionRequest::Permission(req) => req,
+            _ => return Node::Empty,
+        };
+
+        let (term_width, _term_height) = crossterm::terminal::size()
+            .map(|(w, h)| (w as usize, h as usize))
+            .unwrap_or((80, 24));
+
+        let header_bg = colors::POPUP_BG;
+        let footer_bg = colors::INPUT_BG;
+
+        let (type_label, action_detail) = match &perm_request.action {
+            PermAction::Bash { tokens } => ("Bash", tokens.join(" ")),
+            PermAction::Read { segments } => ("Read", format!("/{}", segments.join("/"))),
+            PermAction::Write { segments } => ("Write", format!("/{}", segments.join("/"))),
+            PermAction::Tool { name, args } => {
+                let args_str = Self::prettify_tool_args(args);
+                ("Tool", format!("{} {}", name, args_str))
+            }
+        };
+
+        let header_text = format!(" Permission: {} ", type_label);
+        let header_padding = " ".repeat(term_width.saturating_sub(header_text.len()));
+        let header = styled(
+            format!("{}{}", header_text, header_padding),
+            Style::new().bg(header_bg).bold(),
+        );
+
+        let action_line = styled(
+            format!("  {}", action_detail),
+            Style::new().fg(colors::TEXT_PRIMARY),
+        );
+
+        let key_style = Style::new().bg(footer_bg).fg(colors::TEXT_ACCENT);
+        let sep_style = Style::new().bg(footer_bg).fg(colors::TEXT_MUTED);
+        let text_style = Style::new().bg(footer_bg).fg(colors::TEXT_PRIMARY).dim();
+
+        let footer_content = row([
+            styled(" ", text_style),
+            styled("y", key_style),
+            styled(" Allow ", text_style),
+            styled("│", sep_style),
+            styled(" ", text_style),
+            styled("n", key_style),
+            styled(" Deny ", text_style),
+            styled("│", sep_style),
+            styled(" ", text_style),
+            styled("p", key_style),
+            styled(" Pattern... ", text_style),
+            styled("│", sep_style),
+            styled(" ", text_style),
+            styled("Esc", key_style),
+            styled(" Cancel ", text_style),
+        ]);
+
+        let footer_padding = styled(
+            " ".repeat(term_width.saturating_sub(50)),
+            Style::new().bg(footer_bg),
+        );
+        let footer = row([footer_content, footer_padding]);
+
+        col([header, text(""), action_line, text(""), spacer(), footer])
+    }
+
+    fn prettify_tool_args(args: &serde_json::Value) -> String {
+        match args {
+            serde_json::Value::Object(map) => {
+                let pairs: Vec<String> = map
+                    .iter()
+                    .take(3)
+                    .map(|(k, v)| {
+                        let v_str = match v {
+                            serde_json::Value::String(s) => {
+                                if s.len() > 30 {
+                                    format!("\"{}...\"", &s[..27])
+                                } else {
+                                    format!("\"{}\"", s)
+                                }
+                            }
+                            _ => v.to_string(),
+                        };
+                        format!("{}={}", k, v_str)
+                    })
+                    .collect();
+                if map.len() > 3 {
+                    format!("({}, ...)", pairs.join(", "))
+                } else {
+                    format!("({})", pairs.join(", "))
+                }
+            }
+            _ => args.to_string(),
+        }
     }
 
     fn add_user_message(&mut self, content: String) {
@@ -3237,5 +3501,180 @@ mod tests {
             app.shell_history.back().unwrap(),
             &format!("cmd {}", MAX_SHELL_HISTORY + 4)
         );
+    }
+
+    #[test]
+    fn test_interaction_modal_open_close_cycle() {
+        use crucible_core::interaction::AskRequest;
+
+        let mut app = InkChatApp::init();
+        assert!(!app.interaction_visible());
+
+        let request = InteractionRequest::Ask(AskRequest::new("Choose an option"));
+        app.open_interaction("req-123".to_string(), request);
+
+        assert!(app.interaction_visible());
+        let modal = app.interaction_modal.as_ref().unwrap();
+        assert_eq!(modal.request_id, "req-123");
+        assert_eq!(modal.selected, 0);
+        assert!(modal.filter.is_empty());
+        assert!(modal.other_text.is_empty());
+        assert_eq!(modal.mode, InteractionMode::Selecting);
+
+        app.close_interaction();
+        assert!(!app.interaction_visible());
+        assert!(app.interaction_modal.is_none());
+    }
+
+    #[test]
+    fn test_interaction_modal_replaces_previous() {
+        use crucible_core::interaction::AskRequest;
+
+        let mut app = InkChatApp::init();
+
+        let request1 = InteractionRequest::Ask(AskRequest::new("First question"));
+        app.open_interaction("req-1".to_string(), request1);
+        assert_eq!(app.interaction_modal.as_ref().unwrap().request_id, "req-1");
+
+        let request2 = InteractionRequest::Ask(AskRequest::new("Second question"));
+        app.open_interaction("req-2".to_string(), request2);
+        assert_eq!(app.interaction_modal.as_ref().unwrap().request_id, "req-2");
+        assert!(app.interaction_visible());
+    }
+
+    #[test]
+    fn test_interaction_modal_close_when_none_is_noop() {
+        let mut app = InkChatApp::init();
+        assert!(!app.interaction_visible());
+
+        app.close_interaction();
+        assert!(!app.interaction_visible());
+    }
+
+    #[test]
+    fn test_perm_request_bash_renders() {
+        use crucible_core::interaction::PermRequest;
+
+        let mut app = InkChatApp::init();
+        let request =
+            InteractionRequest::Permission(PermRequest::bash(["npm", "install", "lodash"]));
+        app.open_interaction("perm-1".to_string(), request);
+
+        let focus = FocusContext::new();
+        let ctx = ViewContext::new(&focus);
+        let tree = app.view(&ctx);
+        let output = render_to_string(&tree, 80);
+
+        assert!(
+            output.contains("Permission: Bash"),
+            "Should show Bash permission type"
+        );
+        assert!(
+            output.contains("npm install lodash"),
+            "Should show command tokens"
+        );
+        assert!(output.contains("y"), "Should show allow key");
+        assert!(output.contains("n"), "Should show deny key");
+        assert!(output.contains("Esc"), "Should show cancel key");
+    }
+
+    #[test]
+    fn test_perm_request_write_renders() {
+        use crucible_core::interaction::PermRequest;
+
+        let mut app = InkChatApp::init();
+        let request = InteractionRequest::Permission(PermRequest::write([
+            "home", "user", "project", "src", "main.rs",
+        ]));
+        app.open_interaction("perm-2".to_string(), request);
+
+        let focus = FocusContext::new();
+        let ctx = ViewContext::new(&focus);
+        let tree = app.view(&ctx);
+        let output = render_to_string(&tree, 80);
+
+        assert!(
+            output.contains("Permission: Write"),
+            "Should show Write permission type"
+        );
+        assert!(
+            output.contains("/home/user/project/src/main.rs"),
+            "Should show path segments"
+        );
+    }
+
+    #[test]
+    fn test_perm_request_y_allows() {
+        use crossterm::event::{KeyEvent, KeyModifiers};
+        use crucible_core::interaction::PermRequest;
+
+        let mut app = InkChatApp::init();
+        let request = InteractionRequest::Permission(PermRequest::bash(["ls", "-la"]));
+        app.open_interaction("perm-3".to_string(), request);
+
+        let key = KeyEvent::new(KeyCode::Char('y'), KeyModifiers::NONE);
+        let action = app.handle_key(key);
+
+        assert!(!app.interaction_visible(), "Modal should close after y");
+        match action {
+            Action::Send(ChatAppMsg::CloseInteraction { response, .. }) => match response {
+                InteractionResponse::Permission(perm) => {
+                    assert!(perm.allowed, "Should be allowed");
+                }
+                _ => panic!("Expected Permission response"),
+            },
+            _ => panic!("Expected CloseInteraction action"),
+        }
+    }
+
+    #[test]
+    fn test_perm_request_n_denies() {
+        use crossterm::event::{KeyEvent, KeyModifiers};
+        use crucible_core::interaction::PermRequest;
+
+        let mut app = InkChatApp::init();
+        let request = InteractionRequest::Permission(PermRequest::bash(["rm", "-rf", "/"]));
+        app.open_interaction("perm-4".to_string(), request);
+
+        let key = KeyEvent::new(KeyCode::Char('n'), KeyModifiers::NONE);
+        let action = app.handle_key(key);
+
+        assert!(!app.interaction_visible(), "Modal should close after n");
+        match action {
+            Action::Send(ChatAppMsg::CloseInteraction { response, .. }) => match response {
+                InteractionResponse::Permission(perm) => {
+                    assert!(!perm.allowed, "Should be denied");
+                }
+                _ => panic!("Expected Permission response"),
+            },
+            _ => panic!("Expected CloseInteraction action"),
+        }
+    }
+
+    #[test]
+    fn test_perm_request_escape_cancels() {
+        use crossterm::event::{KeyEvent, KeyModifiers};
+        use crucible_core::interaction::PermRequest;
+
+        let mut app = InkChatApp::init();
+        let request = InteractionRequest::Permission(PermRequest::read(["etc", "passwd"]));
+        app.open_interaction("perm-5".to_string(), request);
+
+        let key = KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE);
+        let action = app.handle_key(key);
+
+        assert!(
+            !app.interaction_visible(),
+            "Modal should close after Escape"
+        );
+        match action {
+            Action::Send(ChatAppMsg::CloseInteraction { response, .. }) => {
+                assert!(
+                    matches!(response, InteractionResponse::Cancelled),
+                    "Should be cancelled"
+                );
+            }
+            _ => panic!("Expected CloseInteraction action"),
+        }
     }
 }
