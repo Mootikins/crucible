@@ -2462,6 +2462,7 @@ impl InkChatApp {
         let header_bg = colors::INPUT_BG;
         let footer_bg = colors::INPUT_BG;
         let top_border = styled("▄".repeat(term_width), Style::new().fg(colors::INPUT_BG));
+        let bottom_border = styled("▀".repeat(term_width), Style::new().fg(colors::INPUT_BG));
 
         // Header with question
         let header_text = format!(" {} ", ask_request.question);
@@ -2540,7 +2541,15 @@ impl InkChatApp {
 
         let choices_col = col(choice_nodes);
 
-        col([header, text(""), choices_col, spacer(), footer])
+        col([
+            text(""),
+            top_border,
+            header,
+            choices_col,
+            bottom_border,
+            footer,
+            text(""),
+        ])
     }
 
     fn add_user_message(&mut self, content: String) {
