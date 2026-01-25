@@ -346,16 +346,16 @@ pub fn register_session_module(lua: &Lua) -> Result<SessionManager, LuaError> {
 }
 
 #[cfg(test)]
-mod tests {
+pub mod tests {
     use super::*;
 
-    struct MockRpc {
+    pub struct MockRpc {
         temperature: std::sync::RwLock<Option<f64>>,
         model: std::sync::RwLock<Option<String>>,
     }
 
     impl MockRpc {
-        fn new() -> Self {
+        pub fn new() -> Self {
             Self {
                 temperature: std::sync::RwLock::new(Some(0.7)),
                 model: std::sync::RwLock::new(Some("test-model".to_string())),
