@@ -34,10 +34,10 @@ Enable Lua plugins to implement FSM workflow discipline (Ralph loops, todo enfor
 - Example todo enforcer plugin demonstrating the full pattern end-to-end
 
 ### Definition of Done
-- [ ] `cargo test -p crucible-lua` passes
-- [ ] `cargo clippy -p crucible-lua` has no warnings
-- [ ] Can register a handler with `cru.on("turn:complete", fn)` and have it execute
-- [ ] Handler can return `{ inject = { content = "..." } }` and it's recognized
+- [x] `cargo test -p crucible-lua` passes (FSM-related tests pass; pre-existing test_crucible_log failure unrelated)
+- [~] `cargo clippy -p crucible-lua` has no warnings (pre-existing issues in notify.rs unrelated to FSM work)
+- [x] Can register a handler with `cru.on("turn:complete", fn)` and have it execute
+- [x] Handler can return `{ inject = { content = "..." } }` and it's recognized
 
 ### Must Have
 - Function storage for runtime handlers (RegistryKey)
@@ -122,7 +122,7 @@ Task 5 (Integration test - full E2E pattern)
 
 ## TODOs
 
-- [ ] P. Rename InkChatApp to OilChatTui (Prep Task)
+- [x] P. Rename InkChatApp to OilChatTui (Prep Task)
 
   **What to do**:
   - Use LSP rename: `InkChatApp` → `OilChatTui`
@@ -154,7 +154,7 @@ Task 5 (Integration test - full E2E pattern)
 
 ---
 
-- [ ] 0. Add CLI Architecture Documentation
+- [x] 0. Add CLI Architecture Documentation
 
   **What to do**:
   - Move `.sisyphus/drafts/cli-agents-md.md` to `crates/crucible-cli/AGENTS.md`
@@ -452,17 +452,17 @@ cargo doc -p crucible-lua --no-deps           # Docs build
 ```
 
 ### Final Checklist
-- [ ] `InkChatApp` renamed to `OilChatTui` (no legacy references)
-- [ ] CLI architecture documented in `crates/crucible-cli/AGENTS.md`
-- [ ] `cru.on()` stores function reference (not just metadata)
-- [ ] Runtime handlers can be executed and return results
-- [ ] Event dispatch routes `turn:complete` events to handlers (in daemon)
-- [ ] `ScriptHandlerResult::Inject` variant exists and is parsed
-- [ ] Inject flow sends injected messages to agent after response (in daemon)
-- [ ] `cru.fmt()` works for string interpolation
-- [ ] Integration test demonstrates full E2E pattern (register → event → inject → agent)
-- [ ] No clippy warnings
-- [ ] All tests pass
+- [x] `InkChatApp` renamed to `OilChatTui` (no legacy references)
+- [x] CLI architecture documented in `crates/crucible-cli/AGENTS.md`
+- [x] `cru.on()` stores function reference (not just metadata)
+- [x] Runtime handlers can be executed and return results
+- [x] Event dispatch routes `turn:complete` events to handlers (in daemon)
+- [x] `ScriptHandlerResult::Inject` variant exists and is parsed
+- [x] Inject flow sends injected messages to agent after response (in daemon)
+- [~] `cru.fmt()` works for string interpolation (DEFERRED - integrate with kiln templates)
+- [x] Integration test demonstrates full E2E pattern (register → event → inject → agent)
+- [~] No clippy warnings (pre-existing issues in notify.rs, not from FSM work)
+- [~] All tests pass (pre-existing test_crucible_log failure, not from FSM work)
 
 ---
 
