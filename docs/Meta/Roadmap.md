@@ -63,7 +63,12 @@ A knowledge management system where:
 - [x] Embeddings - Semantic search working
 - [x] Query System - Context enrichment for agents (see [[Help/Query/Query System]])
 - [x] TUI E2E Testing - expectrl-based test harness for PTY testing (see [[Help/TUI/E2E Testing]])
-- [x] **Ink TUI Migration** - Removed ratatui, ink is now the sole TUI renderer
+- [x] **Oil TUI Renderer** - Removed ratatui, oil is now the sole TUI renderer
+- [x] **Vim-style :set Command** - Runtime config overlay with presets (see [[Help/TUI/Commands]])
+- [x] **Model Switching** - Runtime model changes via `:model` command
+- [x] **Extended Thinking** - Thinking budget control and display toggle (`Alt+T`)
+- [x] **Session Management** - Load/resume sessions via daemon RPC
+- [x] **Streaming Graduation** - Content transitions from viewport to stdout
 
 ---
 
@@ -73,10 +78,11 @@ A knowledge management system where:
 
 ### High Priority
 
-- [ ] **Oil UI DSL** - React-like functional UI for Lua/Fennel plugins
-  - [ ] `cru.ui` module with cleaner API (`ui.col`, `ui.text`, etc.)
-  - [ ] Fennel macros for native Lisp feel (`(col {:gap 1} (text "Hi"))`)
-  - [ ] Component composition via function calls
+- [x] **Oil UI DSL** - React-like functional UI for Lua/Fennel plugins
+  - [x] `cru.oil` module with clean API (`oil.col`, `oil.text`, etc.)
+  - [x] Fennel macros for native Lisp feel (`(oil.col {:gap 1} (oil.text "Hi"))`)
+  - [x] Component composition via function calls
+  - See [[Help/Extending/Scripted UI]] for documentation
 - [ ] **Lua Integration (full)** - Complete scripting API for custom workflows, agent behaviors, callout handlers
 - [ ] **Internal Agent System** - Direct LLM usage (Ollama, OpenAI) without ACP dependency
 - [ ] **Grammar + Lua integration** - Constrained generation for specific flows
@@ -159,7 +165,7 @@ A knowledge management system where:
 | `add-advanced-tool-architecture` | Overlaps with working MCP bridge |
 | `add-quick-prompt-features` | Nice UX, not core - revisit in Phase 3 |
 | `refactor-clustering-plugins` | Nice feature, not core |
-| Ratatui TUI | Removed - migrated to ink-only TUI (2025-01-17) |
+| Ratatui TUI | Removed - migrated to oil-only TUI (2025-01-17) |
 
 ---
 
@@ -174,6 +180,8 @@ A knowledge management system where:
 | 2024-12-13 | CLI is chat-focused | Other commands for testing, primary UX is conversation |
 | 2025-01-23 | Oil UI DSL: Lua + Fennel | React-like functional UI, web deferred to Phase 3 |
 | 2025-01-23 | Web is SolidJS, not Svelte | Corrected docs; SolidJS already in use |
+| 2025-01-24 | Vim-style :set command | Runtime config overlay with modification tracking |
+| 2025-01-24 | Model switching | Runtime model changes via :model command and daemon RPC |
 
 ---
 

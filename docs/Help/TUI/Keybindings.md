@@ -49,7 +49,14 @@ See [[Help/TUI/Modes]] for details on what each mode does.
 
 ### Reasoning Panel
 
-When using models that emit reasoning/thinking tokens (Qwen3-thinking, DeepSeek-R1, etc.), press `Alt+T` to show or hide the reasoning panel. This displays the model's internal thought process.
+When using models that support extended thinking (Claude with thinking budget, Qwen3-thinking, DeepSeek-R1, etc.), press `Alt+T` to show or hide the reasoning panel. This displays the model's internal thought process.
+
+**Thinking Budget:** Configure via `:set thinkingbudget=<value>` or use presets like `high`, `medium`, `low`. See [[Help/TUI/Commands]] for details.
+
+When thinking is visible:
+- Reasoning tokens appear in a bordered panel above the response
+- Token count displays in the status bar
+- Thinking content is styled with dimmed text
 
 ### Mouse Capture
 
@@ -86,7 +93,7 @@ When a popup menu is open (commands, agents, files):
 | `/` | Slash commands | `/commit`, `/search` |
 | `@` | Context references | `@agent-name`, `@file.md` |
 | `[[` | Note references | `[[My Note]]`, `[[Help/Config]]` |
-| `:` | REPL commands | `:quit`, `:help`, `:palette` |
+| `:` | REPL commands | `:set`, `:model`, `:quit`, `:help` |
 | `!` | Shell execution | `!ls -la`, `!git status` |
 
 - `/` triggers after whitespace or at line start
@@ -97,6 +104,7 @@ When a popup menu is open (commands, agents, files):
 
 ## See Also
 
-- [[TUI/Shell Execution|Shell Execution]]
-- [[TUI/Index|TUI Overview]]
-- [[Configuration|Configuration Options]]
+- [[Help/TUI/Commands]] - REPL commands (`:set`, `:model`, etc.)
+- [[Help/TUI/Shell Execution]] - Shell Execution
+- [[Help/TUI/Index]] - TUI Overview
+- [[Help/Configuration]] - Configuration Options

@@ -1,156 +1,190 @@
 ---
 description: Track conversation and execution history
-status: planned
+status: implemented
 tags:
   - sessions
   - logging
+  - daemon
 ---
 
 # Sessions
 
-> [!warning] Sessions are not yet implemented.
-
-A session is a continuous sequence of events — a conversation, an agent's internal monologue, or a workflow execution. Sessions provide audit trails and enable resumption.
+A session is a continuous sequence of events — a conversation with an AI agent, including tool calls, thinking, and responses. Sessions provide audit trails, enable resumption, and persist as markdown files.
 
 ## Architecture
 
 Sessions follow Crucible's "plaintext first" philosophy:
 
-- **Markdown is truth** — Each session is a folder with markdown logs
-- **DB is index** — SurrealDB indexes sessions for fast queries
-- **Dual write** — Events append to both simultaneously
-- **Rebuild on demand** — If DB corrupts, reindex from markdown
+- **Markdown is truth** — Each session saves as a markdown file
+- **Daemon manages state** — `cru-server` tracks active sessions via RPC
+- **Resume on restart** — Load previous sessions with `cru session load`
 
-This means you can always `grep` your session logs, and DB corruption doesn't lose history.
+### Daemon Integration
 
-## Session Types
+Sessions are managed by the daemon (`cru-server`):
 
-Sessions capture different kinds of activity:
+```
+┌─────────────────┐         ┌─────────────────────┐
+│ cru chat        │◄───────►│ cru-server          │
+│                 │ JSON-RPC│                     │
+│ TUI/CLI client  │         │ SessionManager      │
+│                 │         │ AgentManager        │
+└─────────────────┘         └─────────────────────┘
+```
 
-| Type | What it logs |
-|------|--------------|
-| **Chat** | User/assistant conversation with tool calls |
-| **Agent** | Internal agent reasoning and actions |
-| **Workflow** | Workflow execution steps and results |
-| **Plugin** | Plugin-initiated activity |
+**RPC Methods:**
+- `session.create` — Start new session
+- `session.list` — List all sessions
+- `session.get` — Get session details
+- `session.load` — Load/resume existing session
+- `session.pause` / `session.resume` — Pause/resume session
+- `session.end` — End session
+- `session.subscribe` / `session.unsubscribe` — Event streaming
 
 ## Session Storage
 
-Each session is a folder containing markdown logs:
+Sessions are saved to your workspace sessions directory:
 
 ```
-.crucible/sessions/
-├── chat-abc123/
-│   ├── 2024-01-15-1030.md     # Session log (conversation-style)
-│   ├── 2024-01-15-1045.md     # Continuation after compaction
-│   └── artifacts/              # Attachments (fetched pages, exports)
-│       ├── research-page.md
-│       └── generated-summary.md
-├── agent-def456/
+~/your-workspace/sessions/
+├── project-name/
+│   ├── 2025-01-20_1430.md    # Session log
+│   ├── 2025-01-21_0900.md    # Another session
 │   └── ...
 ```
 
 ### Session Log Format
 
-Session logs read like a conversation or narrative, not structured event data:
+Sessions are readable markdown:
 
 ```markdown
 ---
-session_id: chat-abc123
-type: chat
-started: 2024-01-15T10:30:00Z
-continued_from: null
+session_id: ses_abc123
+workspace: /home/user/project
+model: claude-3-5-sonnet
+started: 2025-01-20T14:30:00Z
 ---
 
 # Chat Session
 
-## 2024-01-15T10:30:00Z
+## User
+Find all notes tagged #project and summarize them
 
-**User:** Find all notes tagged #project and summarize them
+## Assistant
+I'll search for notes with the project tag.
 
-**Assistant:** I'll search for notes with the project tag.
+### Tool Call: search_by_tags
+```json
+{"tags": ["project"]}
+```
 
-[Tool: search_by_tags tags=["project"]]
+### Tool Result
 Found 12 notes matching #project.
 
 Let me read through these and create a summary...
 
-## 2024-01-15T10:31:15Z
-
-**Assistant:** Here's a summary of your project notes:
-
-- **Project Alpha**: 5 notes, last updated yesterday
-- **Project Beta**: 4 notes, blocked on review
-- **Project Gamma**: 3 notes, completed
-
-Created summary at [[artifacts/project-summary.md]]
+## User
+Tell me more about Project Beta
 ```
 
-### Linking Sessions
+## CLI Commands
 
-When a session is compacted or branches:
-
-```markdown
----
-session_id: chat-abc123-2
-continued_from: [[2024-01-15-1030.md]]
----
-
-# Chat Session (continued)
-
-*Compacted from previous session. Context: discussing project notes.*
-
-## 2024-01-15T10:45:00Z
-
-**User:** Tell me more about Project Beta
-```
-
-### Artifacts
-
-Attachments (fetched pages, generated files, exports) live in `artifacts/` and are linked from the session log:
-
-```markdown
-Fetched the documentation page and saved to [[artifacts/api-docs.md]]
-```
-
-## Searching Sessions
-
-Because sessions are indexed in the DB, you can query across all history:
+### List Sessions
 
 ```bash
-# Find sessions mentioning a term
-cru session search "Project Alpha"
-
-# Find sessions by type
-cru session search --type agent
-
-# Find sessions from a date range
-cru session search --since 2024-01-01 --until 2024-01-15
+cru session list
 ```
 
-## Reindexing
+Shows all sessions with ID, workspace, and timestamp.
 
-If the database needs rebuilding:
+### Load/Resume Session
 
 ```bash
-# Reindex all sessions from markdown
-cru session reindex
+cru session load <session-id>
 ```
 
-## Cleanup
+Resumes an existing session. The conversation history is loaded and you can continue chatting.
 
-Remove old sessions:
+### Start New Session
 
 ```bash
-# Remove sessions older than 30 days
-cru session cleanup --older-than 30d
+cru chat                     # Auto-creates session
+cru chat --session new       # Explicit new session
+```
 
-# Archive instead of deleting
-cru session cleanup --older-than 90d --archive ~/session-archive
+## In-TUI Session Management
+
+### Resume on Send
+
+When you start `cru chat`, if there's a recent session for the current workspace, it auto-resumes. Your first message continues the previous conversation.
+
+### Switch Sessions
+
+Use the `:session` command:
+
+```
+:session list              # Show available sessions
+:session load ses_abc123   # Switch to session
+:session new               # Start fresh session
+```
+
+## Session Configuration
+
+Configure session behavior in `~/.config/crucible/config.toml`:
+
+```toml
+[chat]
+# Auto-save sessions (default: true)
+auto_save = true
+
+# Session save directory (default: workspace/sessions/)
+session_dir = "sessions"
+
+# Auto-resume recent sessions (default: true)
+auto_resume = true
+```
+
+## Agent Configuration per Session
+
+Each session tracks agent configuration:
+
+- **Model** — LLM model (e.g., `claude-3-5-sonnet`, `gpt-4o`)
+- **Thinking Budget** — Token budget for extended thinking
+- **Temperature** — Response randomness
+- **Tools** — Available MCP tools
+
+Change mid-session via `:set` or `:model`:
+
+```
+:set model claude-3-5-sonnet
+:set thinkingbudget 8000
+:model gpt-4o                   # Opens model picker
+```
+
+Changes persist for the session and sync across connected clients.
+
+## Events
+
+Sessions emit events that can be subscribed to via RPC:
+
+| Event | Description |
+|-------|-------------|
+| `stream_start` | Response streaming begins |
+| `stream_chunk` | Text chunk received |
+| `stream_end` | Response complete |
+| `tool_call` | Tool invocation |
+| `tool_result` | Tool completed |
+| `thinking` | Thinking/reasoning tokens |
+| `error` | Error occurred |
+
+Subscribe from external tools:
+
+```bash
+cru session subscribe <session-id>
 ```
 
 ## See Also
 
-- [[Help/Workflows/Index]] — Workflow definitions (programmed automation, orthogonal to sessions)
-- [[Help/CLI/chat]] — Interactive chat sessions
-- [[Help/Skills/Index]] — Skills (prompted automation, also orthogonal to sessions)
+- [[Help/CLI/chat]] — Interactive chat command
+- [[Help/TUI/Commands]] — TUI REPL commands
+- [[Help/Config/agents]] — Agent configuration

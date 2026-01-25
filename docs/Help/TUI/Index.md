@@ -13,7 +13,7 @@ Crucible's Terminal User Interface (TUI) provides an interactive chat experience
 
 ## Architecture
 
-The TUI uses an ink-based renderer with flexbox layout (taffy):
+The TUI uses the **Oil** renderer — a React-like immediate-mode UI with flexbox layout (taffy):
 
 - **ChatApp** - Main application state and event handling
 - **InputBox** - Text input with cursor
@@ -73,8 +73,25 @@ Readline-style editing (`Ctrl+A/E/W/U/K`, `Alt+B/F`) is supported in the input b
 
 For developers contributing to the TUI, see [[Help/TUI/E2E Testing]] for information on the expectrl-based test harness that enables PTY-based end-to-end testing.
 
+## REPL Commands
+
+The TUI supports vim-style `:` commands for runtime configuration:
+
+| Command | Description |
+|---------|-------------|
+| `:set option=value` | Set configuration option |
+| `:set option?` | Query current value |
+| `:set option!` | Toggle boolean option |
+| `:model` | Open model picker popup |
+| `:model <name>` | Switch to specific model |
+| `:quit` / `:q` | Exit chat |
+| `:help` | Show help |
+
+See [[Help/TUI/Commands]] for the complete command reference.
+
 ## See Also
 
+- [[Help/TUI/Commands]] - REPL commands (`:set`, `:model`, etc.)
 - [[Help/TUI/Keybindings]] - Complete keyboard shortcuts
 - [[Help/TUI/Modes]] - Permission modes (normal/plan/auto)
 - [[Help/TUI/Shell Execution]] - Running shell commands
