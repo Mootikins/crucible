@@ -9,7 +9,7 @@ use crate::error::LuaError;
 use crate::fennel::FennelCompiler;
 use crate::hooks::register_hooks_module;
 use crate::oil::register_oil_module;
-use crate::session_api::{register_session_module, SessionManager};
+use crate::session_api::{register_session_module, Session, SessionManager};
 use crate::types::{LuaExecutionResult, LuaTool, ToolResult};
 use mlua::{Function, Lua, LuaOptions, RegistryKey, Result as LuaResult, StdLib, Value};
 use serde_json::Value as JsonValue;
@@ -98,6 +98,26 @@ impl LuaExecutor {
         use crate::hooks::get_session_start_hooks;
         let hooks = get_session_start_hooks(&self.lua)?;
         self.on_session_start_hooks = hooks;
+        Ok(())
+    }
+
+    /// Fire all registered session start hooks
+    ///
+    /// Calls each hook with the session object. Logs errors but continues
+    /// to next hook (error isolation). Returns Ok even if some hooks fail.
+    pub fn fire_session_start_hooks(&self, session: &Session) -> Result<(), LuaError> {
+        for key in &self.on_session_start_hooks {
+            match self.lua.registry_value::<Function>(key) {
+                Ok(func) => {
+                    if let Err(e) = func.call::<()>(session.clone()) {
+                        tracing::error!("Session start hook failed: {}", e);
+                    }
+                }
+                Err(e) => {
+                    tracing::error!("Failed to retrieve session start hook from registry: {}", e);
+                }
+            }
+        }
         Ok(())
     }
 
@@ -450,5 +470,32 @@ mod tests {
             .unwrap();
         executor.sync_session_start_hooks().unwrap();
         assert_eq!(executor.session_start_hooks().len(), 1);
+    }
+
+    #[test]
+    fn test_fire_hooks_calls_registered_hooks() {
+        use crate::session_api::Session;
+
+        let mut executor = LuaExecutor::new().unwrap();
+        executor
+            .lua()
+            .load(
+                r#"
+            test_called = false
+            crucible.on_session_start(function(s) 
+                test_called = true
+            end)
+        "#,
+            )
+            .exec()
+            .unwrap();
+        executor.sync_session_start_hooks().unwrap();
+
+        let session = Session::new("test".to_string());
+        session.bind(Box::new(crate::session_api::tests::MockRpc::new()));
+        executor.fire_session_start_hooks(&session).unwrap();
+
+        let called: bool = executor.lua().load("return test_called").eval().unwrap();
+        assert!(called);
     }
 }
