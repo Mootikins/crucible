@@ -253,6 +253,26 @@ pub trait AgentHandle: Send + Sync {
     fn get_max_tokens(&self) -> Option<u32> {
         None
     }
+
+    /// Respond to an interaction request
+    ///
+    /// Sends the user's response to an interaction request (Ask, Permission, etc.)
+    /// back to the agent/daemon for processing.
+    ///
+    /// # Arguments
+    /// * `request_id` - The ID of the interaction request being responded to
+    /// * `response` - The user's response
+    ///
+    /// # Returns
+    /// * `Ok(())` if the response was sent successfully
+    /// * `Err(ChatError::NotSupported)` if the agent doesn't support interactions
+    async fn interaction_respond(
+        &mut self,
+        _request_id: String,
+        _response: crate::interaction::InteractionResponse,
+    ) -> ChatResult<()> {
+        Err(ChatError::NotSupported("interaction_respond".into()))
+    }
 }
 
 /// Blanket implementation for boxed trait objects
@@ -339,6 +359,14 @@ impl AgentHandle for Box<dyn AgentHandle + Send + Sync> {
 
     fn get_max_tokens(&self) -> Option<u32> {
         (**self).get_max_tokens()
+    }
+
+    async fn interaction_respond(
+        &mut self,
+        request_id: String,
+        response: crate::interaction::InteractionResponse,
+    ) -> ChatResult<()> {
+        (**self).interaction_respond(request_id, response).await
     }
 }
 

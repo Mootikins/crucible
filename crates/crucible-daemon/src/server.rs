@@ -396,6 +396,9 @@ async fn handle_legacy_request(
         "session.configure_agent" => handle_session_configure_agent(req, agent_manager).await,
         "session.send_message" => handle_session_send_message(req, agent_manager, event_tx).await,
         "session.cancel" => handle_session_cancel(req, agent_manager).await,
+        "session.interaction_respond" => {
+            handle_session_interaction_respond(req, agent_manager, event_tx).await
+        }
         "session.switch_model" => handle_session_switch_model(req, agent_manager, event_tx).await,
         "session.list_models" => handle_session_list_models(req, agent_manager).await,
         "session.set_thinking_budget" => {
@@ -1027,6 +1030,45 @@ async fn handle_session_cancel(req: Request, am: &Arc<AgentManager>) -> Response
         serde_json::json!({
             "session_id": session_id,
             "cancelled": cancelled,
+        }),
+    )
+}
+
+async fn handle_session_interaction_respond(
+    req: Request,
+    _am: &Arc<AgentManager>,
+    event_tx: &broadcast::Sender<SessionEventMessage>,
+) -> Response {
+    let session_id = require_str_param!(req, "session_id");
+    let request_id = require_str_param!(req, "request_id");
+    let response_obj = require_obj_param!(req, "response");
+
+    let response: crucible_core::interaction::InteractionResponse =
+        match serde_json::from_value(serde_json::Value::Object(response_obj.clone())) {
+            Ok(r) => r,
+            Err(e) => {
+                return Response::error(
+                    req.id,
+                    INVALID_PARAMS,
+                    format!("Invalid interaction response: {}", e),
+                )
+            }
+        };
+
+    let _ = event_tx.send(SessionEventMessage::new(
+        session_id,
+        "interaction_completed",
+        serde_json::json!({
+            "request_id": request_id,
+            "response": response,
+        }),
+    ));
+
+    Response::success(
+        req.id,
+        serde_json::json!({
+            "session_id": session_id,
+            "request_id": request_id,
         }),
     )
 }
