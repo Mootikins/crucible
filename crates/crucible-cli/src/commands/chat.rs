@@ -209,7 +209,7 @@ async fn run_interactive_chat(
     let (session_cmd_tx, session_cmd_rx) =
         tokio::sync::mpsc::unbounded_channel::<SessionCommand>();
 
-    let _lua_executor = if let Ok(executor) = LuaExecutor::new() {
+    let _lua_executor = if let Ok(mut executor) = LuaExecutor::new() {
         if let Err(e) = executor.load_config(Some(&kiln_root)) {
             warn!("Failed to load Lua config: {}", e);
         } else {
@@ -218,7 +218,20 @@ async fn run_interactive_chat(
 
         let session = Session::new("chat".to_string());
         session.bind(Box::new(ChannelSessionRpc::new(session_cmd_tx)));
-        executor.session_manager().set_current(session);
+        executor.session_manager().set_current(session.clone());
+
+        // Sync hooks from Lua and fire session_start hooks
+        if let Err(e) = executor.sync_session_start_hooks() {
+            warn!("Failed to sync session_start hooks: {}", e);
+        } else {
+            let hook_count = executor.session_start_hooks().len();
+            if let Err(e) = executor.fire_session_start_hooks(&session) {
+                warn!("Error firing session_start hooks: {}", e);
+            } else {
+                debug!("Fired {} session_start hooks", hook_count);
+            }
+        }
+
         Some(executor)
     } else {
         None
