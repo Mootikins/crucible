@@ -100,7 +100,7 @@ pub enum NotificationKind {
 ///
 /// Manages a collection of notifications with FIFO ordering and provides
 /// methods for adding, dismissing, and expiring old notifications.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone, PartialEq, Serialize, Deserialize)]
 pub struct NotificationQueue {
     notifications: VecDeque<Notification>,
 }
@@ -146,6 +146,11 @@ impl NotificationQueue {
     /// Get all current notifications.
     pub fn notifications(&self) -> &VecDeque<Notification> {
         &self.notifications
+    }
+
+    /// Get all notifications as a Vec (for serialization).
+    pub fn list(&self) -> Vec<Notification> {
+        self.notifications.iter().cloned().collect()
     }
 
     /// Get the number of notifications in the queue.

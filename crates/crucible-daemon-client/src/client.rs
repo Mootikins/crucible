@@ -1050,6 +1050,69 @@ impl DaemonClient {
 
         Ok(max_tokens)
     }
+
+    pub async fn session_add_notification(
+        &self,
+        session_id: &str,
+        notification: crucible_core::types::Notification,
+    ) -> Result<()> {
+        self.call(
+            "session.add_notification",
+            serde_json::json!({
+                "session_id": session_id,
+                "notification": notification,
+            }),
+        )
+        .await?;
+        Ok(())
+    }
+
+    pub async fn session_list_notifications(
+        &self,
+        session_id: &str,
+    ) -> Result<Vec<crucible_core::types::Notification>> {
+        let result = self
+            .call(
+                "session.list_notifications",
+                serde_json::json!({ "session_id": session_id }),
+            )
+            .await?;
+
+        let notifications = result
+            .get("notifications")
+            .and_then(|v| v.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|item| serde_json::from_value(item.clone()).ok())
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        Ok(notifications)
+    }
+
+    pub async fn session_dismiss_notification(
+        &self,
+        session_id: &str,
+        notification_id: &str,
+    ) -> Result<bool> {
+        let result = self
+            .call(
+                "session.dismiss_notification",
+                serde_json::json!({
+                    "session_id": session_id,
+                    "notification_id": notification_id,
+                }),
+            )
+            .await?;
+
+        let success = result
+            .get("success")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+
+        Ok(success)
+    }
 }
 
 #[cfg(test)]

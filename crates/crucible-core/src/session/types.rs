@@ -137,6 +137,13 @@ pub struct Session {
     /// Agent configuration for this session (persisted for resume)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub agent: Option<SessionAgent>,
+
+    /// Notification queue for this session
+    #[serde(
+        default,
+        skip_serializing_if = "crate::types::NotificationQueue::is_empty"
+    )]
+    pub notifications: crate::types::NotificationQueue,
 }
 
 impl Session {
@@ -158,6 +165,7 @@ impl Session {
             continued_from: None,
             title: None,
             agent: None,
+            notifications: crate::types::NotificationQueue::new(),
         }
     }
 
@@ -482,6 +490,7 @@ mod tests {
             env_overrides: HashMap::new(),
             mcp_servers: Vec::new(),
             agent_card_name: None,
+            notifications: crate::types::NotificationQueue::new(),
         };
 
         let kiln = PathBuf::from("/home/user/notes");
@@ -531,6 +540,7 @@ mod tests {
             env_overrides: HashMap::new(),
             mcp_servers: Vec::new(),
             agent_card_name: None,
+            notifications: crate::types::NotificationQueue::new(),
         };
 
         let kiln = PathBuf::from("/home/user/notes");
