@@ -14,6 +14,7 @@ pub mod events;
 pub mod hashing;
 pub mod http;
 pub mod interaction;
+pub mod interaction_context;
 pub mod interaction_registry;
 pub mod merkle;
 pub mod note;
@@ -37,6 +38,7 @@ pub use canvas::{CanvasEdge, CanvasNode};
 pub use content_category::{ContentCategory, ContentCategoryError};
 pub use crucible_core::CrucibleCore;
 pub use discovery::{DiscoveryConfig, DiscoveryPaths};
+pub use interaction_context::{EventPushCallback, InteractionContext};
 
 // Re-export enrichment traits and types (implementations in crucible-enrichment crate)
 pub use enrichment::{
