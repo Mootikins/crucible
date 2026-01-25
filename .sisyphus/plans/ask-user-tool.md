@@ -53,16 +53,16 @@ Enable internal agents to ask users questions during execution by creating an `a
 - Ctrl+C cancel handler
 
 ### Definition of Done
-- [ ] `ask_user` tool appears in agent tool list when context provided
-- [ ] Tool emits `SessionEvent::InteractionRequested` with `Ask` variant
-- [ ] Tool awaits response via oneshot channel and returns structured result
-- [ ] Integration test validates full flow
-- [ ] Modal has `▄▄▄` / `▀▀▀` borders matching input box
-- [ ] Multi-select checkboxes work (`[ ]` / `[x]`)
-- [ ] "Other" textarea preserves text when deselected
-- [ ] Multi-question tab bar navigation works
-- [ ] Ctrl+C cancels modal
-- [ ] All snapshot tests pass
+- [x] `ask_user` tool appears in agent tool list when context provided
+- [x] Tool emits `SessionEvent::InteractionRequested` with `Ask` variant
+- [x] Tool awaits response via oneshot channel and returns structured result
+- [x] Integration test validates full flow
+- [x] Modal has `▄▄▄` / `▀▀▀` borders matching input box
+- [x] Multi-select checkboxes work (`[ ]` / `[x]`)
+- [x] "Other" textarea preserves text when deselected
+- [ ] Multi-question tab bar navigation works (BLOCKED - Task 11)
+- [x] Ctrl+C cancels modal
+- [x] All snapshot tests pass
 
 ### Must Have
 - Async waiting via `rx.await` (NOT blocking_recv)
