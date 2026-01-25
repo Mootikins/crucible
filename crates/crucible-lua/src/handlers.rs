@@ -491,6 +491,33 @@ impl LuaScriptHandlerRegistry {
         self.runtime_handlers.clone()
     }
 
+    pub fn handler_functions(&self) -> Arc<Mutex<HashMap<String, RegistryKey>>> {
+        self.handler_functions.clone()
+    }
+
+    /// Get runtime handlers matching an event type, sorted by priority
+    ///
+    /// Returns handlers registered via `crucible.on()` that match the given event type,
+    /// sorted by priority (lower priority values execute first).
+    ///
+    /// # Arguments
+    ///
+    /// * `event_type` - The event type to match (e.g., "turn:complete", "pre_tool_call")
+    ///
+    /// # Returns
+    ///
+    /// A vector of `RuntimeHandler` clones matching the event type, sorted by priority.
+    pub fn runtime_handlers_for(&self, event_type: &str) -> Vec<RuntimeHandler> {
+        let handlers = self.runtime_handlers.lock().unwrap();
+        let mut matching: Vec<RuntimeHandler> = handlers
+            .iter()
+            .filter(|h| h.event_type == event_type)
+            .cloned()
+            .collect();
+        matching.sort_by_key(|h| h.priority);
+        matching
+    }
+
     /// Execute a runtime-registered handler by name
     ///
     /// Retrieves the stored function from the registry and executes it with the event.
@@ -1782,5 +1809,74 @@ end
 
         let result = registry.execute_runtime_handler(&lua, "nonexistent", &event);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn runtime_handlers_for_returns_matching_handlers() {
+        let registry = LuaScriptHandlerRegistry::new();
+
+        {
+            let mut handlers = registry.runtime_handlers.lock().unwrap();
+            handlers.push(RuntimeHandler {
+                event_type: "turn:complete".to_string(),
+                name: "handler_a".to_string(),
+                priority: 100,
+            });
+            handlers.push(RuntimeHandler {
+                event_type: "pre_tool_call".to_string(),
+                name: "handler_b".to_string(),
+                priority: 50,
+            });
+            handlers.push(RuntimeHandler {
+                event_type: "turn:complete".to_string(),
+                name: "handler_c".to_string(),
+                priority: 200,
+            });
+        }
+
+        let matching = registry.runtime_handlers_for("turn:complete");
+        assert_eq!(matching.len(), 2);
+        assert_eq!(matching[0].name, "handler_a");
+        assert_eq!(matching[1].name, "handler_c");
+
+        let other = registry.runtime_handlers_for("pre_tool_call");
+        assert_eq!(other.len(), 1);
+        assert_eq!(other[0].name, "handler_b");
+
+        let none = registry.runtime_handlers_for("nonexistent");
+        assert!(none.is_empty());
+    }
+
+    #[test]
+    fn runtime_handlers_for_returns_sorted_by_priority() {
+        let registry = LuaScriptHandlerRegistry::new();
+
+        {
+            let mut handlers = registry.runtime_handlers.lock().unwrap();
+            handlers.push(RuntimeHandler {
+                event_type: "turn:complete".to_string(),
+                name: "low_priority".to_string(),
+                priority: 200,
+            });
+            handlers.push(RuntimeHandler {
+                event_type: "turn:complete".to_string(),
+                name: "high_priority".to_string(),
+                priority: 10,
+            });
+            handlers.push(RuntimeHandler {
+                event_type: "turn:complete".to_string(),
+                name: "medium_priority".to_string(),
+                priority: 100,
+            });
+        }
+
+        let handlers = registry.runtime_handlers_for("turn:complete");
+        assert_eq!(handlers.len(), 3);
+        assert_eq!(handlers[0].name, "high_priority");
+        assert_eq!(handlers[0].priority, 10);
+        assert_eq!(handlers[1].name, "medium_priority");
+        assert_eq!(handlers[1].priority, 100);
+        assert_eq!(handlers[2].name, "low_priority");
+        assert_eq!(handlers[2].priority, 200);
     }
 }
