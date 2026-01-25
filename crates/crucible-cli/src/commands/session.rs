@@ -619,7 +619,7 @@ async fn daemon_send(
                 .await?;
             client.session_send_message(session_id, message).await?
         }
-        Err(e) => return Err(e.into()),
+        Err(e) => return Err(e),
     };
 
     if !raw {

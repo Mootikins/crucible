@@ -330,8 +330,7 @@ impl TuiTestSession {
             input: Vec::new(), // TODO: track input events too
         };
 
-        let json = serde_json::to_string_pretty(&recording)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+        let json = serde_json::to_string_pretty(&recording).map_err(std::io::Error::other)?;
 
         std::fs::write(path, json)
     }
@@ -339,7 +338,7 @@ impl TuiTestSession {
     /// Load a recording from file
     pub fn load_recording(path: &Path) -> Result<PtyRecording, std::io::Error> {
         let json = std::fs::read_to_string(path)?;
-        serde_json::from_str(&json).map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))
+        serde_json::from_str(&json).map_err(std::io::Error::other)
     }
 
     /// Concatenate all recorded output into a single string
