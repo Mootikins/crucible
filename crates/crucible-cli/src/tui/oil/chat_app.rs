@@ -628,6 +628,27 @@ impl InkChatApp {
         self.show_thinking = show;
     }
 
+    pub fn add_notification(&mut self, notification: crucible_core::types::Notification) {
+        self.notification_area.add(notification);
+        self.notification_area.show();
+    }
+
+    pub fn toggle_messages(&mut self) {
+        self.notification_area.toggle();
+    }
+
+    pub fn show_messages(&mut self) {
+        self.notification_area.show();
+    }
+
+    pub fn hide_messages(&mut self) {
+        self.notification_area.hide();
+    }
+
+    pub fn clear_messages(&mut self) {
+        self.notification_area.clear();
+    }
+
     pub fn mark_graduated(&mut self, ids: impl IntoIterator<Item = String>) {
         self.cache.mark_graduated(ids);
     }

@@ -46,6 +46,11 @@ pub trait SessionConfigRpc: Send + Sync {
     fn list_models(&self) -> Vec<String>;
     fn get_mode(&self) -> String;
     fn set_mode(&self, mode: &str) -> Result<(), String>;
+    fn notify(&self, notification: crucible_core::types::Notification);
+    fn toggle_messages(&self);
+    fn show_messages(&self);
+    fn hide_messages(&self);
+    fn clear_messages(&self);
 }
 
 /// Commands sent from Lua to the event loop for async execution.
@@ -62,6 +67,11 @@ pub enum SessionCommand {
     ListModels(oneshot::Sender<Vec<String>>),
     SetMode(String, oneshot::Sender<Result<(), String>>),
     GetMode(oneshot::Sender<String>),
+    Notify(crucible_core::types::Notification),
+    ToggleMessages,
+    ShowMessages,
+    HideMessages,
+    ClearMessages,
 }
 
 /// Channel-based adapter that sends commands to the event loop.
@@ -186,6 +196,26 @@ impl SessionConfigRpc for ChannelSessionRpc {
         reply_rx
             .blocking_recv()
             .map_err(|_| "Reply channel closed".to_string())?
+    }
+
+    fn notify(&self, notification: crucible_core::types::Notification) {
+        let _ = self.tx.send(SessionCommand::Notify(notification));
+    }
+
+    fn toggle_messages(&self) {
+        let _ = self.tx.send(SessionCommand::ToggleMessages);
+    }
+
+    fn show_messages(&self) {
+        let _ = self.tx.send(SessionCommand::ShowMessages);
+    }
+
+    fn hide_messages(&self) {
+        let _ = self.tx.send(SessionCommand::HideMessages);
+    }
+
+    fn clear_messages(&self) {
+        let _ = self.tx.send(SessionCommand::ClearMessages);
     }
 }
 
@@ -399,6 +429,11 @@ pub mod tests {
         fn set_mode(&self, _: &str) -> Result<(), String> {
             Ok(())
         }
+        fn notify(&self, _: crucible_core::types::Notification) {}
+        fn toggle_messages(&self) {}
+        fn show_messages(&self) {}
+        fn hide_messages(&self) {}
+        fn clear_messages(&self) {}
     }
 
     fn setup_lua() -> (Lua, SessionManager) {
