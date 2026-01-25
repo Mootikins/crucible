@@ -1,8 +1,8 @@
 {
-  "active_plan": "/home/moot/crucible/.sisyphus/plans/fsm-plugin-infra.md",
-  "started_at": "2026-01-25T06:21:22.273Z",
+  "active_plan": "/home/moot/crucible/.sisyphus/plans/interaction-primitives.md",
+  "started_at": "2026-01-25T09:04:05.112Z",
   "session_ids": [
-    "ses_40c5d40e5ffe04Fkffxe9OCSas"
+    "ses_40beb0c58ffehpTxAsULW3nkRS"
   ],
-  "plan_name": "fsm-plugin-infra"
+  "plan_name": "interaction-primitives"
 }
