@@ -404,6 +404,15 @@ async fn handle_legacy_request(
         "session.get_thinking_budget" => {
             handle_session_get_thinking_budget(req, agent_manager).await
         }
+        "session.add_notification" => {
+            handle_session_add_notification(req, agent_manager, event_tx).await
+        }
+        "session.list_notifications" => {
+            handle_session_list_notifications(req, agent_manager).await
+        }
+        "session.dismiss_notification" => {
+            handle_session_dismiss_notification(req, agent_manager, event_tx).await
+        }
         "session.set_temperature" => {
             handle_session_set_temperature(req, agent_manager, event_tx).await
         }
@@ -1124,6 +1133,90 @@ async fn handle_session_get_thinking_budget(req: Request, am: &Arc<AgentManager>
         }
         Err(crate::agent_manager::AgentError::NoAgentConfigured(id)) => {
             agent_not_configured(req.id, &id)
+        }
+        Err(e) => internal_error(req.id, e),
+    }
+}
+
+async fn handle_session_add_notification(
+    req: Request,
+    am: &Arc<AgentManager>,
+    event_tx: &broadcast::Sender<SessionEventMessage>,
+) -> Response {
+    let session_id = require_str_param!(req, "session_id");
+    let notification_obj = require_obj_param!(req, "notification");
+
+    // Parse notification from JSON object
+    let notification = match serde_json::from_value::<crucible_core::types::Notification>(
+        notification_obj.clone(),
+    ) {
+        Ok(n) => n,
+        Err(e) => {
+            return Response::error(req.id, -32602, format!("Invalid notification: {}", e))
+        }
+    };
+
+    match am
+        .add_notification(session_id, notification, Some(event_tx))
+        .await
+    {
+        Ok(()) => Response::success(
+            req.id,
+            serde_json::json!({
+                "session_id": session_id,
+                "success": true,
+            }),
+        ),
+        Err(crate::agent_manager::AgentError::SessionNotFound(id)) => {
+            session_not_found(req.id, &id)
+        }
+        Err(e) => internal_error(req.id, e),
+    }
+}
+
+async fn handle_session_list_notifications(
+    req: Request,
+    am: &Arc<AgentManager>,
+) -> Response {
+    let session_id = require_str_param!(req, "session_id");
+
+    match am.list_notifications(session_id).await {
+        Ok(notifications) => Response::success(
+            req.id,
+            serde_json::json!({
+                "session_id": session_id,
+                "notifications": notifications,
+            }),
+        ),
+        Err(crate::agent_manager::AgentError::SessionNotFound(id)) => {
+            session_not_found(req.id, &id)
+        }
+        Err(e) => internal_error(req.id, e),
+    }
+}
+
+async fn handle_session_dismiss_notification(
+    req: Request,
+    am: &Arc<AgentManager>,
+    event_tx: &broadcast::Sender<SessionEventMessage>,
+) -> Response {
+    let session_id = require_str_param!(req, "session_id");
+    let notification_id = require_str_param!(req, "notification_id");
+
+    match am
+        .dismiss_notification(session_id, notification_id, Some(event_tx))
+        .await
+    {
+        Ok(success) => Response::success(
+            req.id,
+            serde_json::json!({
+                "session_id": session_id,
+                "notification_id": notification_id,
+                "success": success,
+            }),
+        ),
+        Err(crate::agent_manager::AgentError::SessionNotFound(id)) => {
+            session_not_found(req.id, &id)
         }
         Err(e) => internal_error(req.id, e),
     }
