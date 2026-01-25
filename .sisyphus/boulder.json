@@ -1,19 +1,13 @@
 {
-  "active_plan": "/home/moot/crucible/.sisyphus/plans/interaction-primitives.md",
-  "started_at": "2026-01-25T09:04:05.112Z",
-  "completed_at": "2026-01-25T18:30:00.000Z",
+  "active_plan": "/home/moot/crucible/.sisyphus/plans/ask-user-tool.md",
+  "started_at": "2026-01-25T22:12:13.505Z",
+  "completed_at": "2026-01-25T22:30:00.000Z",
   "session_ids": [
     "ses_40beb0c58ffehpTxAsULW3nkRS"
   ],
-  "plan_name": "interaction-primitives",
-  "status": "complete",
-  "tasks_completed": 5,
-  "tasks_total": 5,
-  "acceptance_criteria_met": 28,
-  "acceptance_criteria_total": 32,
-  "deferred_items": [
-    "Snapshot tests for Ask modal",
-    "Snapshot tests for Permission modal",
-    "Manual QA verification"
-  ]
+  "plan_name": "ask-user-tool",
+  "status": "partial",
+  "tasks_completed": 7,
+  "tasks_total": 12,
+  "notes": "Backend infrastructure complete (Tasks 1-7). Frontend visual tasks (8-12) deferred for manual completion."
 }
