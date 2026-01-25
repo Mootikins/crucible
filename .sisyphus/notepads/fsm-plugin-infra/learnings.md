@@ -183,3 +183,72 @@ All 47 handler tests pass (41 existing + 6 new).
 
 ### Next Steps
 Task 3.5 will implement the actual message injection in the daemon's `execute_agent_stream()` function.
+## Task 3.5: Inject Message Flow in Daemon
+
+### Problem
+When handlers return `ScriptHandlerResult::Inject`, the daemon needed to:
+1. Collect the injection from dispatch
+2. Auto-send the injected content to the LLM after response completes
+3. Mark injected messages with `is_continuation: true` to prevent infinite loops
+4. Emit events for CLI feedback
+
+### Solution Approach
+1. Modified `dispatch_turn_complete_handlers()` to return `Option<(String, String)>`:
+   - Returns `(content, position)` tuple when handler returns Inject
+   - Last inject wins (no queue buildup) - subsequent handlers overwrite previous
+   - Returns `None` if no handler returns Inject
+
+2. Added `is_continuation: bool` parameter to both functions:
+   - `execute_agent_stream()` - tracks whether this is an injected message
+   - `dispatch_turn_complete_handlers()` - passes flag to handlers via event payload
+   - Handlers can check `event.payload.is_continuation` to skip injection on continuations
+
+3. Recursive injection handling in `execute_agent_stream()`:
+   - After dispatch returns injection, emits `injection_pending` event
+   - Drops stream and agent guard to release locks
+   - Recursively calls `execute_agent_stream` with `is_continuation=true`
+   - Uses `Box::pin()` for async recursion
+
+### Implementation Details
+- Event payload includes `is_continuation` flag for handlers to check
+- `injection_pending` event emitted with content, position, and is_continuation
+- New message_id generated for injected message (`msg-{uuid}`)
+- Accumulated response cleared before injection to track new response
+
+### Test Results
+All 5 new tests pass:
+- `handler_returns_inject_collected_by_dispatch` - Basic inject collection
+- `second_inject_replaces_first` - Last inject wins behavior
+- `inject_includes_position` - Position field preserved
+- `continuation_flag_passed_to_handlers` - is_continuation flag works
+- `no_inject_when_handler_returns_nil` - No injection on nil return
+
+All 11 event_dispatch tests pass (6 existing + 5 new).
+
+### Key Learnings
+- Async recursion requires `Box::pin()` for the recursive call
+- Must drop stream and agent_guard before recursive call to avoid deadlock
+- `is_continuation` flag is critical for infinite loop prevention
+- Handlers should check `if event.payload.is_continuation then return nil end`
+- Event emission pattern: `SessionEventMessage::new(session_id, "event_name", json!({...}))`
+
+### Files Modified
+- `crates/crucible-daemon/src/agent_manager.rs`:
+  - `dispatch_turn_complete_handlers()` - returns `Option<(String, String)>`, accepts `is_continuation`
+  - `execute_agent_stream()` - accepts `is_continuation`, handles injection recursively
+  - Added 5 new tests in `event_dispatch` module
+
+### Infinite Loop Prevention Pattern
+Handlers should implement this pattern:
+```lua
+crucible.on("turn:complete", function(ctx, event)
+    if event.payload.is_continuation then
+        return nil  -- Skip injection on continuation
+    end
+    return { inject = { content = "Continue" } }
+end)
+```
+
+### Next Steps
+- Task 4: `cru.fmt()` utility (can be done in parallel)
+- Task 5: E2E integration test (depends on this task)

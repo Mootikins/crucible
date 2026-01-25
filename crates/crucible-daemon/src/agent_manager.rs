@@ -221,6 +221,7 @@ impl AgentManager {
                     &event_tx_clone,
                     &mut accumulated_response,
                     lua_state,
+                    false,
                 ) => {}
             }
 
@@ -273,6 +274,7 @@ impl AgentManager {
         event_tx: &broadcast::Sender<SessionEventMessage>,
         accumulated_response: &mut String,
         lua_state: Arc<Mutex<SessionLuaState>>,
+        is_continuation: bool,
     ) {
         let mut agent_guard = agent.lock().await;
         let mut stream = agent_guard.send_message_stream(content);
@@ -359,13 +361,56 @@ impl AgentManager {
                             warn!(session_id = %session_id, "No subscribers for message_complete event");
                         }
 
-                        Self::dispatch_turn_complete_handlers(
+                        let injection = Self::dispatch_turn_complete_handlers(
                             session_id,
                             message_id,
                             accumulated_response,
                             &lua_state,
+                            is_continuation,
                         )
                         .await;
+
+                        if let Some((injected_content, position)) = injection {
+                            info!(
+                                session_id = %session_id,
+                                content_len = injected_content.len(),
+                                position = %position,
+                                "Processing handler injection"
+                            );
+
+                            if event_tx
+                                .send(SessionEventMessage::new(
+                                    session_id,
+                                    "injection_pending",
+                                    serde_json::json!({
+                                        "content": &injected_content,
+                                        "position": &position,
+                                        "is_continuation": true,
+                                    }),
+                                ))
+                                .is_err()
+                            {
+                                warn!(session_id = %session_id, "No subscribers for injection_pending event");
+                            }
+
+                            drop(stream);
+                            drop(agent_guard);
+
+                            accumulated_response.clear();
+                            let injection_message_id = format!("msg-{}", uuid::Uuid::new_v4());
+
+                            Box::pin(Self::execute_agent_stream(
+                                agent,
+                                injected_content,
+                                session_id,
+                                &injection_message_id,
+                                event_tx,
+                                accumulated_response,
+                                lua_state,
+                                true,
+                            ))
+                            .await;
+                        }
 
                         break;
                     }
@@ -392,17 +437,21 @@ impl AgentManager {
         message_id: &str,
         response: &str,
         lua_state: &Arc<Mutex<SessionLuaState>>,
-    ) {
+        is_continuation: bool,
+    ) -> Option<(String, String)> {
+        use crucible_lua::ScriptHandlerResult;
+
         let state = lua_state.lock().await;
         let handlers = state.registry.runtime_handlers_for("turn:complete");
 
         if handlers.is_empty() {
-            return;
+            return None;
         }
 
         debug!(
             session_id = %session_id,
             handler_count = handlers.len(),
+            is_continuation = is_continuation,
             "Dispatching turn:complete handlers"
         );
 
@@ -412,8 +461,11 @@ impl AgentManager {
                 "session_id": session_id,
                 "message_id": message_id,
                 "response_length": response.len(),
+                "is_continuation": is_continuation,
             }),
         };
+
+        let mut pending_injection: Option<(String, String)> = None;
 
         for handler in handlers {
             match state
@@ -427,6 +479,17 @@ impl AgentManager {
                         result = ?result,
                         "Handler executed"
                     );
+
+                    if let ScriptHandlerResult::Inject { content, position } = result {
+                        debug!(
+                            session_id = %session_id,
+                            handler = %handler.name,
+                            content_len = content.len(),
+                            position = %position,
+                            "Handler returned inject"
+                        );
+                        pending_injection = Some((content, position));
+                    }
                 }
                 Err(e) => {
                     error!(
@@ -438,6 +501,8 @@ impl AgentManager {
                 }
             }
         }
+
+        pending_injection
     }
 
     pub async fn cancel(&self, session_id: &str) -> bool {
@@ -1468,6 +1533,212 @@ mod tests {
                 }
                 _ => panic!("Expected Cancel result"),
             }
+        }
+
+        #[tokio::test]
+        async fn handler_returns_inject_collected_by_dispatch() {
+            let storage = Arc::new(FileSessionStorage::new());
+            let session_manager = Arc::new(SessionManager::with_storage(storage));
+            let agent_manager = create_test_agent_manager(session_manager);
+
+            let lua_state = agent_manager.get_or_create_lua_state("test-session");
+
+            // Register handler that returns inject
+            {
+                let state = lua_state.lock().await;
+                state
+                    .lua
+                    .load(
+                        r#"
+                    crucible.on("turn:complete", function(ctx, event)
+                        return { inject = { content = "Continue working" } }
+                    end)
+                "#,
+                    )
+                    .exec()
+                    .unwrap();
+            }
+
+            // Dispatch handlers and check for injection
+            let injection = AgentManager::dispatch_turn_complete_handlers(
+                "test-session",
+                "msg-123",
+                "Some response",
+                &lua_state,
+                false, // is_continuation
+            )
+            .await;
+
+            assert!(injection.is_some(), "Expected injection to be returned");
+            let (content, _position) = injection.unwrap();
+            assert_eq!(content, "Continue working");
+        }
+
+        #[tokio::test]
+        async fn second_inject_replaces_first() {
+            let storage = Arc::new(FileSessionStorage::new());
+            let session_manager = Arc::new(SessionManager::with_storage(storage));
+            let agent_manager = create_test_agent_manager(session_manager);
+
+            let lua_state = agent_manager.get_or_create_lua_state("test-session");
+
+            // Register two handlers that both return inject
+            {
+                let state = lua_state.lock().await;
+                state
+                    .lua
+                    .load(
+                        r#"
+                    crucible.on("turn:complete", function(ctx, event)
+                        return { inject = { content = "First injection" } }
+                    end)
+                    crucible.on("turn:complete", function(ctx, event)
+                        return { inject = { content = "Second injection" } }
+                    end)
+                "#,
+                    )
+                    .exec()
+                    .unwrap();
+            }
+
+            // Dispatch handlers - last one should win
+            let injection = AgentManager::dispatch_turn_complete_handlers(
+                "test-session",
+                "msg-123",
+                "Some response",
+                &lua_state,
+                false,
+            )
+            .await;
+
+            assert!(injection.is_some(), "Expected injection to be returned");
+            let (content, _position) = injection.unwrap();
+            assert_eq!(content, "Second injection", "Last inject should win");
+        }
+
+        #[tokio::test]
+        async fn inject_includes_position() {
+            let storage = Arc::new(FileSessionStorage::new());
+            let session_manager = Arc::new(SessionManager::with_storage(storage));
+            let agent_manager = create_test_agent_manager(session_manager);
+
+            let lua_state = agent_manager.get_or_create_lua_state("test-session");
+
+            {
+                let state = lua_state.lock().await;
+                state
+                    .lua
+                    .load(
+                        r#"
+                    crucible.on("turn:complete", function(ctx, event)
+                        return { inject = { content = "Suffix content", position = "user_suffix" } }
+                    end)
+                "#,
+                    )
+                    .exec()
+                    .unwrap();
+            }
+
+            let injection = AgentManager::dispatch_turn_complete_handlers(
+                "test-session",
+                "msg-123",
+                "Some response",
+                &lua_state,
+                false,
+            )
+            .await;
+
+            assert!(injection.is_some());
+            let (content, position) = injection.unwrap();
+            assert_eq!(content, "Suffix content");
+            assert_eq!(position, "user_suffix");
+        }
+
+        #[tokio::test]
+        async fn continuation_flag_passed_to_handlers() {
+            let storage = Arc::new(FileSessionStorage::new());
+            let session_manager = Arc::new(SessionManager::with_storage(storage));
+            let agent_manager = create_test_agent_manager(session_manager);
+
+            let lua_state = agent_manager.get_or_create_lua_state("test-session");
+
+            // Register handler that checks is_continuation and skips if true
+            {
+                let state = lua_state.lock().await;
+                state
+                    .lua
+                    .load(
+                        r#"
+                    received_continuation = nil
+                    crucible.on("turn:complete", function(ctx, event)
+                        received_continuation = event.payload.is_continuation
+                        if event.payload.is_continuation then
+                            return nil  -- Skip injection on continuation
+                        end
+                        return { inject = { content = "Should not inject" } }
+                    end)
+                "#,
+                    )
+                    .exec()
+                    .unwrap();
+            }
+
+            // Dispatch with is_continuation = true
+            let injection = AgentManager::dispatch_turn_complete_handlers(
+                "test-session",
+                "msg-123",
+                "Some response",
+                &lua_state,
+                true, // is_continuation
+            )
+            .await;
+
+            // Handler should have returned nil, so no injection
+            assert!(injection.is_none(), "Handler should skip injection on continuation");
+
+            // Verify the flag was received
+            let state = lua_state.lock().await;
+            let received: bool = state
+                .lua
+                .load("return received_continuation")
+                .eval()
+                .unwrap();
+            assert!(received, "Handler should have received is_continuation=true");
+        }
+
+        #[tokio::test]
+        async fn no_inject_when_handler_returns_nil() {
+            let storage = Arc::new(FileSessionStorage::new());
+            let session_manager = Arc::new(SessionManager::with_storage(storage));
+            let agent_manager = create_test_agent_manager(session_manager);
+
+            let lua_state = agent_manager.get_or_create_lua_state("test-session");
+
+            {
+                let state = lua_state.lock().await;
+                state
+                    .lua
+                    .load(
+                        r#"
+                    crucible.on("turn:complete", function(ctx, event)
+                        return nil
+                    end)
+                "#,
+                    )
+                    .exec()
+                    .unwrap();
+            }
+
+            let injection = AgentManager::dispatch_turn_complete_handlers(
+                "test-session",
+                "msg-123",
+                "Some response",
+                &lua_state,
+                false,
+            )
+            .await;
+
+            assert!(injection.is_none(), "No injection when handler returns nil");
         }
     }
 }
