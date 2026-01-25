@@ -339,7 +339,6 @@ pub struct InkChatApp {
     context_used: usize,
     context_total: usize,
     last_ctrl_c: Option<std::time::Instant>,
-    notification: Option<(String, std::time::Instant)>,
     shell_modal: Option<ShellModal>,
     shell_history: VecDeque<String>,
     shell_history_index: Option<usize>,
@@ -379,7 +378,6 @@ impl Default for InkChatApp {
             context_used: 0,
             context_total: 0,
             last_ctrl_c: None,
-            notification: None,
             shell_modal: None,
             shell_history: VecDeque::with_capacity(MAX_SHELL_HISTORY),
             shell_history_index: None,
@@ -397,8 +395,6 @@ impl Default for InkChatApp {
         }
     }
 }
-
-const NOTIFICATION_TIMEOUT: Duration = Duration::from_secs(2);
 
 impl App for InkChatApp {
     type Msg = ChatAppMsg;
@@ -801,7 +797,11 @@ impl InkChatApp {
                 }
             }
             self.last_ctrl_c = Some(now);
-            self.notification = Some(("Ctrl+C again to quit".to_string(), now));
+            self.notification_area
+                .add(crucible_core::types::Notification::toast(
+                    "Ctrl+C again to quit",
+                ));
+            self.notification_area.show();
             return Action::Continue;
         } else {
             self.last_ctrl_c = None;
@@ -960,10 +960,12 @@ impl InkChatApp {
             KeyCode::Char('t') if ctrl => {
                 self.show_thinking = !self.show_thinking;
                 let state = if self.show_thinking { "on" } else { "off" };
-                self.notification = Some((
-                    format!("Thinking display: {}", state),
-                    std::time::Instant::now(),
-                ));
+                self.notification_area
+                    .add(crucible_core::types::Notification::toast(format!(
+                        "Thinking display: {}",
+                        state
+                    )));
+                self.notification_area.show();
                 Action::Continue
             }
             KeyCode::Enter if ctrl => {
@@ -2330,12 +2332,6 @@ impl InkChatApp {
             self.truncate_model_name(&self.model, 20)
         };
 
-        let active_notification = self
-            .notification
-            .as_ref()
-            .filter(|(_, set_at)| set_at.elapsed() < NOTIFICATION_TIMEOUT)
-            .map(|(msg, _)| msg.as_str());
-
         let muted = styles::muted();
         let mut items = vec![
             styled(mode_str.to_string(), mode_style),
@@ -2350,9 +2346,10 @@ impl InkChatApp {
             items.push(styled(self.status.clone(), muted));
         }
 
-        if let Some(notif) = active_notification {
+        let unread = self.notification_area.unread_count();
+        if unread > 0 {
             items.push(spacer());
-            items.push(styled(format!(" {} ", notif), styles::notification()));
+            items.push(styled(format!(" [{}] ", unread), styles::notification()));
         }
 
         row(items)
