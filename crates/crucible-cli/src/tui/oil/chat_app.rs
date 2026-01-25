@@ -279,6 +279,12 @@ pub struct InteractionModalState {
     pub other_text: String,
     /// Current input mode.
     pub mode: InteractionMode,
+    /// Checked items for multi-select mode.
+    pub checked: std::collections::HashSet<usize>,
+    /// Current question index for multi-question batches.
+    pub current_question: usize,
+    /// Track if "Other" text was previously entered (for dim rendering when deselected).
+    pub other_text_preserved: bool,
 }
 
 pub struct ShellModal {
@@ -828,6 +834,9 @@ impl InkChatApp {
             filter: String::new(),
             other_text: String::new(),
             mode: InteractionMode::Selecting,
+            checked: std::collections::HashSet::new(),
+            current_question: 0,
+            other_text_preserved: false,
         });
     }
 
