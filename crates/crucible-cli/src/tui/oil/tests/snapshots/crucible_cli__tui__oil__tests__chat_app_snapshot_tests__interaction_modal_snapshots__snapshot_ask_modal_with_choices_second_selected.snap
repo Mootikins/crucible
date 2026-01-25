@@ -1,0 +1,11 @@
+---
+source: crates/crucible-cli/src/tui/oil/tests/chat_app_snapshot_tests.rs
+expression: render_app(&app)
+---
+ Which programming language do you prefer?                                      
+
+   Rust
+ > Python
+   TypeScript
+
+ ↑/↓ navigate │ Enter select │ Esc cancel

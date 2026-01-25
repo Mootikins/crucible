@@ -322,3 +322,158 @@ mod composer_stability_snapshots {
         );
     }
 }
+
+// =============================================================================
+// Interaction Modal Snapshot Tests
+// =============================================================================
+
+mod interaction_modal_snapshots {
+    use super::*;
+    use crucible_core::interaction::{AskRequest, InteractionRequest, PermRequest};
+
+    fn key(code: KeyCode) -> KeyEvent {
+        KeyEvent::new(code, KeyModifiers::NONE)
+    }
+
+    /// Snapshot test: AskRequest with 3 choices, first selected (default)
+    #[test]
+    fn snapshot_ask_modal_with_choices_first_selected() {
+        let mut app = InkChatApp::default();
+        let request = InteractionRequest::Ask(
+            AskRequest::new("Which programming language do you prefer?").choices([
+                "Rust",
+                "Python",
+                "TypeScript",
+            ]),
+        );
+        app.open_interaction("ask-1".to_string(), request);
+
+        assert_snapshot!(render_app(&app));
+    }
+
+    /// Snapshot test: AskRequest with 3 choices, second selected
+    #[test]
+    fn snapshot_ask_modal_with_choices_second_selected() {
+        let mut app = InkChatApp::default();
+        let request = InteractionRequest::Ask(
+            AskRequest::new("Which programming language do you prefer?").choices([
+                "Rust",
+                "Python",
+                "TypeScript",
+            ]),
+        );
+        app.open_interaction("ask-2".to_string(), request);
+
+        // Navigate down to select second option
+        app.update(crate::tui::oil::event::Event::Key(key(KeyCode::Down)));
+
+        assert_snapshot!(render_app(&app));
+    }
+
+    /// Snapshot test: AskRequest with allow_other showing "Other..." option
+    #[test]
+    fn snapshot_ask_modal_with_allow_other() {
+        let mut app = InkChatApp::default();
+        let request = InteractionRequest::Ask(
+            AskRequest::new("Select your favorite or enter custom:")
+                .choices(["Option A", "Option B"])
+                .allow_other(),
+        );
+        app.open_interaction("ask-3".to_string(), request);
+
+        assert_snapshot!(render_app(&app));
+    }
+
+    /// Snapshot test: AskRequest free-text only (no choices)
+    #[test]
+    fn snapshot_ask_modal_free_text_only() {
+        let mut app = InkChatApp::default();
+        let request =
+            InteractionRequest::Ask(AskRequest::new("Enter your custom value:").allow_other());
+        app.open_interaction("ask-4".to_string(), request);
+
+        assert_snapshot!(render_app(&app));
+    }
+
+    /// Snapshot test: PermRequest for bash command
+    #[test]
+    fn snapshot_perm_modal_bash_command() {
+        let mut app = InkChatApp::default();
+        let request =
+            InteractionRequest::Permission(PermRequest::bash(["npm", "install", "lodash"]));
+        app.open_interaction("perm-bash".to_string(), request);
+
+        assert_snapshot!(render_app(&app));
+    }
+
+    /// Snapshot test: PermRequest for file write
+    #[test]
+    fn snapshot_perm_modal_file_write() {
+        let mut app = InkChatApp::default();
+        let request = InteractionRequest::Permission(PermRequest::write([
+            "home", "user", "project", "src", "main.rs",
+        ]));
+        app.open_interaction("perm-write".to_string(), request);
+
+        assert_snapshot!(render_app(&app));
+    }
+
+    /// Snapshot test: PermRequest for file read
+    #[test]
+    fn snapshot_perm_modal_file_read() {
+        let mut app = InkChatApp::default();
+        let request = InteractionRequest::Permission(PermRequest::read(["etc", "hosts"]));
+        app.open_interaction("perm-read".to_string(), request);
+
+        assert_snapshot!(render_app(&app));
+    }
+
+    /// Snapshot test: PermRequest for tool execution
+    #[test]
+    fn snapshot_perm_modal_tool() {
+        let mut app = InkChatApp::default();
+        let request = InteractionRequest::Permission(PermRequest::tool(
+            "semantic_search",
+            serde_json::json!({"query": "rust memory safety", "limit": 10}),
+        ));
+        app.open_interaction("perm-tool".to_string(), request);
+
+        assert_snapshot!(render_app(&app));
+    }
+
+    /// Snapshot test: AskRequest with many choices (scrolling)
+    #[test]
+    fn snapshot_ask_modal_many_choices() {
+        let mut app = InkChatApp::default();
+        let request = InteractionRequest::Ask(AskRequest::new("Select an option:").choices([
+            "First option",
+            "Second option",
+            "Third option",
+            "Fourth option",
+            "Fifth option",
+            "Sixth option",
+            "Seventh option",
+            "Eighth option",
+        ]));
+        app.open_interaction("ask-many".to_string(), request);
+
+        assert_snapshot!(render_app(&app));
+    }
+
+    /// Snapshot test: AskRequest after navigating to last choice
+    #[test]
+    fn snapshot_ask_modal_last_selected() {
+        let mut app = InkChatApp::default();
+        let request = InteractionRequest::Ask(
+            AskRequest::new("Pick one:").choices(["Alpha", "Beta", "Gamma", "Delta"]),
+        );
+        app.open_interaction("ask-last".to_string(), request);
+
+        // Navigate to last option
+        for _ in 0..3 {
+            app.update(crate::tui::oil::event::Event::Key(key(KeyCode::Down)));
+        }
+
+        assert_snapshot!(render_app(&app));
+    }
+}
