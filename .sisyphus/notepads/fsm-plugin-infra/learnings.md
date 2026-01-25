@@ -83,3 +83,55 @@ All 39 handler tests pass (36 existing + 3 new).
 
 ### Next Steps
 Task 2.5 (event dispatch) will use this method to execute runtime handlers when events are fired.
+
+## Task 2.5: Event Dispatch Loop
+
+### Problem
+After `message_complete` event fires in the daemon, we need to dispatch `turn:complete` events to session-scoped Lua handlers registered via `crucible.on()`.
+
+### Solution Approach
+1. Added `runtime_handlers_for(event_type: &str)` method to `LuaScriptHandlerRegistry`
+   - Returns handlers matching the event type, sorted by priority (lower = earlier)
+   - Thread-safe via Arc<Mutex<>>
+
+2. Added session-scoped Lua state to `AgentManager`:
+   - `SessionLuaState` struct holds `Lua` instance and `LuaScriptHandlerRegistry`
+   - `lua_states: DashMap<String, Arc<Mutex<SessionLuaState>>>` for session isolation
+   - `get_or_create_lua_state()` creates Lua state with `crucible.on()` API registered
+
+3. Modified `execute_agent_stream()` to dispatch handlers:
+   - Added `lua_state` parameter
+   - After `message_complete` event, calls `dispatch_turn_complete_handlers()`
+   - Creates `SessionEvent::Custom { name: "turn:complete", payload }` with session/message info
+   - Executes each handler in priority order
+   - Logs results (debug) and errors (error) but continues chain on failure
+
+### Implementation Details
+- Added `handler_functions()` getter to `LuaScriptHandlerRegistry` (was private)
+- Added `crucible-lua` and `mlua` dependencies to `crucible-daemon`
+- Used re-exports from `crucible_lua` (not private `handlers` module)
+
+### Test Results
+All 6 new tests pass:
+- `handler_executes_when_event_fires` - Basic handler execution
+- `multiple_handlers_run_in_priority_order` - Priority ordering verified
+- `handler_errors_dont_break_chain` - Error isolation confirmed
+- `handlers_are_session_scoped` - Different sessions have different handlers
+- `handler_receives_event_payload` - Event data passed correctly
+- `handler_can_return_cancel` - Cancel result works
+
+All 2 `runtime_handlers_for` tests pass in crucible-lua.
+
+### Key Learnings
+- Session-scoped Lua state requires `Arc<Mutex<>>` for async compatibility
+- `mlua::Lua` is not `Send` by default, but works in async context with proper locking
+- Handler dispatch should be fire-and-forget (log results, don't block on them)
+- Error isolation is critical - one handler failure shouldn't break the chain
+
+### Files Modified
+- `crates/crucible-lua/src/handlers.rs` - Added `runtime_handlers_for()` and `handler_functions()` methods
+- `crates/crucible-daemon/src/agent_manager.rs` - Added session Lua state and dispatch loop
+- `crates/crucible-daemon/Cargo.toml` - Added `crucible-lua` and `mlua` dependencies
+
+### Next Steps
+Task 3.5 will process `Inject` results from handlers to inject messages into the conversation.
