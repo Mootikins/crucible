@@ -241,7 +241,7 @@ Task 5 (Integration test - full E2E pattern)
 
 ---
 
-- [ ] 2.5. Add Event Dispatch Loop in Daemon (CRITICAL - Routes Events to Handlers)
+- [x] 2.5. Add Event Dispatch Loop in Daemon (CRITICAL - Routes Events to Handlers)
 
   **What to do**:
   - In daemon's `agent_manager.rs`, after emitting `message_complete`:
