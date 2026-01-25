@@ -80,6 +80,7 @@ pub mod lifecycle;
 mod lua_util;
 pub mod manifest;
 mod mcp;
+pub mod notify;
 mod oil;
 mod panel;
 mod paths;
