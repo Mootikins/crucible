@@ -490,7 +490,6 @@ mod tests {
             env_overrides: HashMap::new(),
             mcp_servers: Vec::new(),
             agent_card_name: None,
-            notifications: crate::types::NotificationQueue::new(),
         };
 
         let kiln = PathBuf::from("/home/user/notes");
@@ -540,7 +539,6 @@ mod tests {
             env_overrides: HashMap::new(),
             mcp_servers: Vec::new(),
             agent_card_name: None,
-            notifications: crate::types::NotificationQueue::new(),
         };
 
         let kiln = PathBuf::from("/home/user/notes");

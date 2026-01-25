@@ -21,7 +21,8 @@ use crossterm::event::KeyCode;
 use crossterm::terminal::{EnterAlternateScreen, LeaveAlternateScreen};
 use crossterm::{cursor, execute};
 use crucible_core::interaction::{
-    InteractionRequest, InteractionResponse, PermAction, PermRequest, PermResponse,
+    AskRequest, AskResponse, InteractionRequest, InteractionResponse, PermAction, PermRequest,
+    PermResponse,
 };
 use std::collections::VecDeque;
 use std::io::{BufRead, BufReader, Write};
@@ -470,11 +471,15 @@ impl App for InkChatApp {
             return self.render_shell_modal();
         }
 
-        if self.interaction_modal.is_some() {
-            if let Some(modal) = &self.interaction_modal {
-                if matches!(modal.request, InteractionRequest::Permission(_)) {
+        if let Some(modal) = &self.interaction_modal {
+            match &modal.request {
+                InteractionRequest::Ask(_) => {
+                    return self.render_ask_interaction();
+                }
+                InteractionRequest::Permission(_) => {
                     return self.render_perm_interaction();
                 }
+                _ => {} // Other types not yet supported
             }
         }
 
@@ -1864,13 +1869,111 @@ impl InkChatApp {
             None => return Action::Continue,
         };
 
-        let perm_request = match &modal.request {
-            InteractionRequest::Permission(req) => req,
-            _ => return Action::Continue,
-        };
-
         let request_id = modal.request_id.clone();
 
+        match &modal.request {
+            InteractionRequest::Ask(ask) => self.handle_ask_key(key, ask.clone(), request_id),
+            InteractionRequest::Permission(perm) => {
+                self.handle_perm_key(key, perm.clone(), request_id)
+            }
+            _ => Action::Continue,
+        }
+    }
+
+    fn handle_ask_key(
+        &mut self,
+        key: crossterm::event::KeyEvent,
+        ask_request: AskRequest,
+        request_id: String,
+    ) -> Action<ChatAppMsg> {
+        let modal = match &mut self.interaction_modal {
+            Some(m) => m,
+            None => return Action::Continue,
+        };
+
+        let choices_count = ask_request.choices.as_ref().map(|c| c.len()).unwrap_or(0);
+        let total_items = choices_count + if ask_request.allow_other { 1 } else { 0 };
+
+        match modal.mode {
+            InteractionMode::Selecting => match key.code {
+                KeyCode::Up | KeyCode::Char('k') | KeyCode::Char('K') => {
+                    if modal.selected == 0 {
+                        modal.selected = total_items.saturating_sub(1);
+                    } else {
+                        modal.selected = modal.selected.saturating_sub(1);
+                    }
+                    Action::Continue
+                }
+                KeyCode::Down | KeyCode::Char('j') | KeyCode::Char('J') => {
+                    modal.selected = (modal.selected + 1) % total_items.max(1);
+                    Action::Continue
+                }
+                KeyCode::Enter => {
+                    if modal.selected < choices_count {
+                        let response =
+                            InteractionResponse::Ask(AskResponse::selected(modal.selected));
+                        self.close_interaction();
+                        return Action::Send(ChatAppMsg::CloseInteraction {
+                            request_id,
+                            response,
+                        });
+                    } else if ask_request.allow_other && modal.selected == choices_count {
+                        modal.mode = InteractionMode::TextInput;
+                        modal.other_text.clear();
+                        Action::Continue
+                    } else {
+                        Action::Continue
+                    }
+                }
+                KeyCode::Tab if ask_request.allow_other => {
+                    modal.mode = InteractionMode::TextInput;
+                    modal.other_text.clear();
+                    Action::Continue
+                }
+                KeyCode::Esc => {
+                    let response = InteractionResponse::Cancelled;
+                    self.close_interaction();
+                    return Action::Send(ChatAppMsg::CloseInteraction {
+                        request_id,
+                        response,
+                    });
+                }
+                _ => Action::Continue,
+            },
+            InteractionMode::TextInput => match key.code {
+                KeyCode::Enter => {
+                    let response =
+                        InteractionResponse::Ask(AskResponse::other(modal.other_text.clone()));
+                    self.close_interaction();
+                    return Action::Send(ChatAppMsg::CloseInteraction {
+                        request_id,
+                        response,
+                    });
+                }
+                KeyCode::Esc => {
+                    modal.mode = InteractionMode::Selecting;
+                    modal.other_text.clear();
+                    Action::Continue
+                }
+                KeyCode::Backspace => {
+                    modal.other_text.pop();
+                    Action::Continue
+                }
+                KeyCode::Char(c) => {
+                    modal.other_text.push(c);
+                    Action::Continue
+                }
+                _ => Action::Continue,
+            },
+        }
+    }
+
+    fn handle_perm_key(
+        &mut self,
+        key: crossterm::event::KeyEvent,
+        perm_request: PermRequest,
+        request_id: String,
+    ) -> Action<ChatAppMsg> {
         match key.code {
             KeyCode::Char('y') | KeyCode::Char('Y') => {
                 let response = InteractionResponse::Permission(PermResponse::allow());
@@ -2330,6 +2433,104 @@ impl InkChatApp {
             }
             _ => args.to_string(),
         }
+    }
+
+    fn render_ask_interaction(&self) -> Node {
+        let modal = match &self.interaction_modal {
+            Some(m) => m,
+            None => return Node::Empty,
+        };
+
+        let ask_request = match &modal.request {
+            InteractionRequest::Ask(req) => req,
+            _ => return Node::Empty,
+        };
+
+        let (term_width, _term_height) = crossterm::terminal::size()
+            .map(|(w, h)| (w as usize, h as usize))
+            .unwrap_or((80, 24));
+
+        let header_bg = colors::POPUP_BG;
+        let footer_bg = colors::INPUT_BG;
+
+        // Header with question
+        let header_text = format!(" {} ", ask_request.question);
+        let header_padding = " ".repeat(term_width.saturating_sub(header_text.len()));
+        let header = styled(
+            format!("{}{}", header_text, header_padding),
+            Style::new().bg(header_bg).bold(),
+        );
+
+        // Build choices list
+        let choices = ask_request
+            .choices
+            .as_ref()
+            .map(|c| c.as_slice())
+            .unwrap_or(&[]);
+        let mut choice_nodes: Vec<Node> = Vec::new();
+
+        for (i, choice) in choices.iter().enumerate() {
+            let is_selected = i == modal.selected;
+            let prefix = if is_selected { " > " } else { "   " };
+            let style = if is_selected {
+                Style::new().fg(colors::TEXT_ACCENT).bold()
+            } else {
+                Style::new().fg(colors::TEXT_PRIMARY)
+            };
+            choice_nodes.push(styled(format!("{}{}", prefix, choice), style));
+        }
+
+        // Add "Other..." option if allow_other
+        if ask_request.allow_other {
+            let other_idx = choices.len();
+            let is_selected = modal.selected == other_idx;
+            let prefix = if is_selected { " > " } else { "   " };
+            let style = if is_selected {
+                Style::new().fg(colors::TEXT_ACCENT).bold()
+            } else {
+                Style::new().fg(colors::TEXT_MUTED).italic()
+            };
+            choice_nodes.push(styled(format!("{}Other...", prefix), style));
+        }
+
+        // Footer with key hints
+        let key_style = Style::new().bg(footer_bg).fg(colors::TEXT_ACCENT);
+        let sep_style = Style::new().bg(footer_bg).fg(colors::TEXT_MUTED);
+        let text_style = Style::new().bg(footer_bg).fg(colors::TEXT_PRIMARY).dim();
+
+        let footer_content = row([
+            styled(" ", text_style),
+            styled("↑/↓", key_style),
+            styled(" navigate ", text_style),
+            styled("│", sep_style),
+            styled(" ", text_style),
+            styled("Enter", key_style),
+            styled(" select ", text_style),
+            styled("│", sep_style),
+            styled(" ", text_style),
+            styled("Esc", key_style),
+            styled(" cancel ", text_style),
+        ]);
+
+        let footer_padding = styled(
+            " ".repeat(term_width.saturating_sub(45)),
+            Style::new().bg(footer_bg),
+        );
+        let footer = row([footer_content, footer_padding]);
+
+        // If in TextInput mode and selected "Other...", show text input
+        if modal.mode == InteractionMode::TextInput {
+            let input_line = row([
+                styled("   Enter text: ", Style::new().fg(colors::TEXT_MUTED)),
+                styled(&modal.other_text, Style::new().fg(colors::TEXT_PRIMARY)),
+                styled("_", Style::new().fg(colors::TEXT_ACCENT)),
+            ]);
+            choice_nodes.push(input_line);
+        }
+
+        let choices_col = col(choice_nodes);
+
+        col([header, text(""), choices_col, spacer(), footer])
     }
 
     fn add_user_message(&mut self, content: String) {
