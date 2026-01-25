@@ -336,7 +336,7 @@ Task 5 (Integration test - full E2E pattern)
 
 ---
 
-- [ ] 3.5. Implement Inject Message Flow in Daemon (CRITICAL - Processes Inject Results)
+- [x] 3.5. Implement Inject Message Flow in Daemon (CRITICAL - Processes Inject Results)
 
   **What to do**:
   - When event dispatch (Task 2.5) returns `ScriptHandlerResult::Inject`:
