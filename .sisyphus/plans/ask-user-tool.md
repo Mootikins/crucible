@@ -443,7 +443,7 @@ Task 7 (Modal state) → Task 8 (Single-select render) → Task 9 (Multi-select)
 
 ---
 
-- [ ] 10. Implement "Other" inline textarea
+- [x] 10. Implement "Other" inline textarea
 
   **What to do**:
   - Detect `allow_other: true` in AskRequest
