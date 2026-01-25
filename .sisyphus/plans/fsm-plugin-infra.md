@@ -177,7 +177,7 @@ Task 5 (Integration test - full E2E pattern)
 
 ---
 
-- [ ] 1. Fix RuntimeHandler to Store Function Reference
+- [x] 1. Fix RuntimeHandler to Store Function Reference
 
   **What to do**:
   - Add `RegistryKey` to mlua imports in `handlers.rs`
@@ -210,7 +210,7 @@ Task 5 (Integration test - full E2E pattern)
 
 ---
 
-- [ ] 2. Add Runtime Handler Execution Method
+- [x] 2. Add Runtime Handler Execution Method
 
   **What to do**:
   - Add method `execute_runtime_handler(&self, lua: &Lua, name: &str, event: &SessionEvent) -> LuaResult<ScriptHandlerResult>`
