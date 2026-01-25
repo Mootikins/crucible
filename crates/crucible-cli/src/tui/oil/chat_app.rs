@@ -1919,8 +1919,13 @@ impl InkChatApp {
                 }
                 KeyCode::Enter => {
                     if modal.selected < choices_count {
-                        let response =
-                            InteractionResponse::Ask(AskResponse::selected(modal.selected));
+                        let response = if ask_request.multi_select {
+                            InteractionResponse::Ask(AskResponse::selected_many(
+                                modal.checked.iter().copied().collect::<Vec<_>>(),
+                            ))
+                        } else {
+                            InteractionResponse::Ask(AskResponse::selected(modal.selected))
+                        };
                         self.close_interaction();
                         return Action::Send(ChatAppMsg::CloseInteraction {
                             request_id,
@@ -1937,6 +1942,14 @@ impl InkChatApp {
                 KeyCode::Tab if ask_request.allow_other => {
                     modal.mode = InteractionMode::TextInput;
                     modal.other_text.clear();
+                    Action::Continue
+                }
+                KeyCode::Char(' ') if ask_request.multi_select => {
+                    if modal.checked.contains(&modal.selected) {
+                        modal.checked.remove(&modal.selected);
+                    } else {
+                        modal.checked.insert(modal.selected);
+                    }
                     Action::Continue
                 }
                 KeyCode::Esc => {
