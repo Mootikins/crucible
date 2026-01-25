@@ -182,6 +182,9 @@ pub struct AskQuestion {
     /// Allow multiple selections.
     #[serde(default)]
     pub multi_select: bool,
+    /// Allow free-text "other" input.
+    #[serde(default)]
+    pub allow_other: bool,
 }
 
 impl AskQuestion {
@@ -192,6 +195,7 @@ impl AskQuestion {
             question: question.into(),
             choices: Vec::new(),
             multi_select: false,
+            allow_other: false,
         }
     }
 
