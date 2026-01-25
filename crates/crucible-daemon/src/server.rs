@@ -391,7 +391,7 @@ async fn handle_legacy_request(
         "session.resume_from_storage" => {
             handle_session_resume_from_storage(req, session_manager).await
         }
-        "session.end" => handle_session_end(req, session_manager).await,
+        "session.end" => handle_session_end(req, session_manager, agent_manager).await,
         "session.compact" => handle_session_compact(req, session_manager).await,
         "session.configure_agent" => handle_session_configure_agent(req, agent_manager).await,
         "session.send_message" => handle_session_send_message(req, agent_manager, event_tx).await,
@@ -922,18 +922,25 @@ async fn handle_session_resume_from_storage(req: Request, sm: &Arc<SessionManage
     )
 }
 
-async fn handle_session_end(req: Request, sm: &Arc<SessionManager>) -> Response {
+async fn handle_session_end(
+    req: Request,
+    sm: &Arc<SessionManager>,
+    am: &Arc<AgentManager>,
+) -> Response {
     let session_id = require_str_param!(req, "session_id");
 
     match sm.end_session(session_id).await {
-        Ok(session) => Response::success(
-            req.id,
-            serde_json::json!({
-                "session_id": session.id,
-                "state": "ended",
-                "kiln": session.kiln,
-            }),
-        ),
+        Ok(session) => {
+            am.cleanup_session(session_id);
+            Response::success(
+                req.id,
+                serde_json::json!({
+                    "session_id": session.id,
+                    "state": "ended",
+                    "kiln": session.kiln,
+                }),
+            )
+        }
         Err(e) => invalid_state_error(req.id, "end", e),
     }
 }
