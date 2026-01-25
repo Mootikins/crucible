@@ -254,7 +254,7 @@ proptest! {
 
         for i in 0..6 {
             if empty_positions.contains(&i) {
-                nodes.push(scrollback(&format!("empty-{}", i), [Node::Empty]));
+                nodes.push(scrollback(format!("empty-{}", i), [Node::Empty]));
             }
             if let Some(msg) = msg_iter.next() {
                 nodes.push(scrollback(&msg.key, [text(&msg.content)]));
@@ -474,7 +474,7 @@ proptest! {
                 .enumerate()
                 .map(|(j, m)| {
                     let c = format!("{} message content", m);
-                    scrollback(&format!("msg-{}", j), [text(&c)])
+                    scrollback(format!("msg-{}", j), [text(&c)])
                 })
                 .collect();
             let mut tree_nodes = nodes;
