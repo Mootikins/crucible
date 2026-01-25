@@ -4,10 +4,13 @@ use crate::agent_factory::{create_agent_from_session_config, AgentFactoryError};
 use crate::background_manager::BackgroundJobManager;
 use crate::protocol::SessionEventMessage;
 use crate::session_manager::{SessionError, SessionManager};
+use crucible_core::events::SessionEvent;
 use crucible_core::session::SessionAgent;
 use crucible_core::traits::chat::AgentHandle;
+use crucible_lua::{register_crucible_on_api, LuaScriptHandlerRegistry};
 use dashmap::DashMap;
 use futures::StreamExt;
+use mlua::Lua;
 use std::sync::Arc;
 use std::time::Instant;
 use thiserror::Error;
@@ -45,11 +48,17 @@ struct RequestState {
 
 type BoxedAgentHandle = Box<dyn AgentHandle + Send + Sync>;
 
+struct SessionLuaState {
+    lua: Lua,
+    registry: LuaScriptHandlerRegistry,
+}
+
 pub struct AgentManager {
     request_state: Arc<DashMap<String, RequestState>>,
     agent_cache: Arc<DashMap<String, Arc<Mutex<BoxedAgentHandle>>>>,
     session_manager: Arc<SessionManager>,
     background_manager: Arc<BackgroundJobManager>,
+    lua_states: Arc<DashMap<String, Arc<Mutex<SessionLuaState>>>>,
 }
 
 impl AgentManager {
@@ -62,6 +71,7 @@ impl AgentManager {
             agent_cache: Arc::new(DashMap::new()),
             session_manager,
             background_manager,
+            lua_states: Arc::new(DashMap::new()),
         }
     }
 
@@ -97,6 +107,22 @@ impl AgentManager {
 
     pub fn invalidate_agent_cache(&self, session_id: &str) {
         self.agent_cache.remove(session_id);
+    }
+
+    fn get_or_create_lua_state(&self, session_id: &str) -> Arc<Mutex<SessionLuaState>> {
+        if let Some(state) = self.lua_states.get(session_id) {
+            return state.clone();
+        }
+
+        let lua = Lua::new();
+        let registry = LuaScriptHandlerRegistry::new();
+
+        register_crucible_on_api(&lua, registry.runtime_handlers(), registry.handler_functions())
+            .expect("Failed to register crucible.on API");
+
+        let state = Arc::new(Mutex::new(SessionLuaState { lua, registry }));
+        self.lua_states.insert(session_id.to_string(), state.clone());
+        state
     }
 
     fn get_session(&self, session_id: &str) -> Result<crucible_core::session::Session, AgentError> {
@@ -172,6 +198,7 @@ impl AgentManager {
         let message_id_clone = message_id.clone();
         let event_tx_clone = event_tx.clone();
         let request_state = self.request_state.clone();
+        let lua_state = self.get_or_create_lua_state(session_id);
 
         let task = tokio::spawn(async move {
             let mut accumulated_response = String::new();
@@ -193,6 +220,7 @@ impl AgentManager {
                     &message_id_clone,
                     &event_tx_clone,
                     &mut accumulated_response,
+                    lua_state,
                 ) => {}
             }
 
@@ -244,6 +272,7 @@ impl AgentManager {
         message_id: &str,
         event_tx: &broadcast::Sender<SessionEventMessage>,
         accumulated_response: &mut String,
+        lua_state: Arc<Mutex<SessionLuaState>>,
     ) {
         let mut agent_guard = agent.lock().await;
         let mut stream = agent_guard.send_message_stream(content);
@@ -329,6 +358,15 @@ impl AgentManager {
                         {
                             warn!(session_id = %session_id, "No subscribers for message_complete event");
                         }
+
+                        Self::dispatch_turn_complete_handlers(
+                            session_id,
+                            message_id,
+                            accumulated_response,
+                            &lua_state,
+                        )
+                        .await;
+
                         break;
                     }
                 }
@@ -344,6 +382,59 @@ impl AgentManager {
                         warn!(session_id = %session_id, "No subscribers for error event");
                     }
                     break;
+                }
+            }
+        }
+    }
+
+    async fn dispatch_turn_complete_handlers(
+        session_id: &str,
+        message_id: &str,
+        response: &str,
+        lua_state: &Arc<Mutex<SessionLuaState>>,
+    ) {
+        let state = lua_state.lock().await;
+        let handlers = state.registry.runtime_handlers_for("turn:complete");
+
+        if handlers.is_empty() {
+            return;
+        }
+
+        debug!(
+            session_id = %session_id,
+            handler_count = handlers.len(),
+            "Dispatching turn:complete handlers"
+        );
+
+        let event = SessionEvent::Custom {
+            name: "turn:complete".to_string(),
+            payload: serde_json::json!({
+                "session_id": session_id,
+                "message_id": message_id,
+                "response_length": response.len(),
+            }),
+        };
+
+        for handler in handlers {
+            match state
+                .registry
+                .execute_runtime_handler(&state.lua, &handler.name, &event)
+            {
+                Ok(result) => {
+                    debug!(
+                        session_id = %session_id,
+                        handler = %handler.name,
+                        result = ?result,
+                        "Handler executed"
+                    );
+                }
+                Err(e) => {
+                    error!(
+                        session_id = %session_id,
+                        handler = %handler.name,
+                        error = %e,
+                        "Handler failed"
+                    );
                 }
             }
         }
@@ -1094,5 +1185,289 @@ mod tests {
         assert_eq!(event.event, "model_switched");
         assert_eq!(event.data["model_id"], "gpt-4");
         assert_eq!(event.data["provider"], "ollama");
+    }
+
+    mod event_dispatch {
+        use super::*;
+        use crucible_lua::ScriptHandlerResult;
+
+        #[tokio::test]
+        async fn handler_executes_when_event_fires() {
+            let storage = Arc::new(FileSessionStorage::new());
+            let session_manager = Arc::new(SessionManager::with_storage(storage));
+            let agent_manager = create_test_agent_manager(session_manager);
+
+            let lua_state = agent_manager.get_or_create_lua_state("test-session");
+            let state = lua_state.lock().await;
+
+            state
+                .lua
+                .load(
+                    r#"
+                crucible.on("turn:complete", function(ctx, event)
+                    return nil
+                end)
+            "#,
+                )
+                .exec()
+                .unwrap();
+
+            let handlers = state.registry.runtime_handlers_for("turn:complete");
+            assert_eq!(handlers.len(), 1);
+
+            let event = SessionEvent::Custom {
+                name: "turn:complete".to_string(),
+                payload: serde_json::json!({}),
+            };
+
+            let result = state
+                .registry
+                .execute_runtime_handler(&state.lua, &handlers[0].name, &event);
+            assert!(result.is_ok());
+        }
+
+        #[tokio::test]
+        async fn multiple_handlers_run_in_priority_order() {
+            let storage = Arc::new(FileSessionStorage::new());
+            let session_manager = Arc::new(SessionManager::with_storage(storage));
+            let agent_manager = create_test_agent_manager(session_manager);
+
+            let lua_state = agent_manager.get_or_create_lua_state("test-session");
+            let state = lua_state.lock().await;
+
+            state
+                .lua
+                .load(
+                    r#"
+                execution_order = {}
+                crucible.on("turn:complete", function(ctx, event)
+                    table.insert(execution_order, "first")
+                    return nil
+                end)
+                crucible.on("turn:complete", function(ctx, event)
+                    table.insert(execution_order, "second")
+                    return nil
+                end)
+            "#,
+                )
+                .exec()
+                .unwrap();
+
+            let handlers = state.registry.runtime_handlers_for("turn:complete");
+            assert_eq!(handlers.len(), 2);
+
+            let event = SessionEvent::Custom {
+                name: "turn:complete".to_string(),
+                payload: serde_json::json!({}),
+            };
+
+            for handler in &handlers {
+                let _ = state
+                    .registry
+                    .execute_runtime_handler(&state.lua, &handler.name, &event);
+            }
+
+            let order: Vec<String> = state
+                .lua
+                .load("return execution_order")
+                .eval()
+                .unwrap();
+            assert_eq!(order, vec!["first", "second"]);
+        }
+
+        #[tokio::test]
+        async fn handler_errors_dont_break_chain() {
+            let storage = Arc::new(FileSessionStorage::new());
+            let session_manager = Arc::new(SessionManager::with_storage(storage));
+            let agent_manager = create_test_agent_manager(session_manager);
+
+            let lua_state = agent_manager.get_or_create_lua_state("test-session");
+            let state = lua_state.lock().await;
+
+            state
+                .lua
+                .load(
+                    r#"
+                execution_order = {}
+                crucible.on("turn:complete", function(ctx, event)
+                    table.insert(execution_order, "first")
+                    error("intentional error")
+                end)
+                crucible.on("turn:complete", function(ctx, event)
+                    table.insert(execution_order, "second")
+                    return nil
+                end)
+            "#,
+                )
+                .exec()
+                .unwrap();
+
+            let handlers = state.registry.runtime_handlers_for("turn:complete");
+            let event = SessionEvent::Custom {
+                name: "turn:complete".to_string(),
+                payload: serde_json::json!({}),
+            };
+
+            for handler in &handlers {
+                let result = state
+                    .registry
+                    .execute_runtime_handler(&state.lua, &handler.name, &event);
+                match result {
+                    Ok(_) => {}
+                    Err(_) => {}
+                }
+            }
+
+            let order: Vec<String> = state
+                .lua
+                .load("return execution_order")
+                .eval()
+                .unwrap();
+            assert_eq!(order, vec!["first", "second"]);
+        }
+
+        #[tokio::test]
+        async fn handlers_are_session_scoped() {
+            let storage = Arc::new(FileSessionStorage::new());
+            let session_manager = Arc::new(SessionManager::with_storage(storage));
+            let agent_manager = create_test_agent_manager(session_manager);
+
+            let lua_state_1 = agent_manager.get_or_create_lua_state("session-1");
+            let lua_state_2 = agent_manager.get_or_create_lua_state("session-2");
+
+            {
+                let state = lua_state_1.lock().await;
+                state
+                    .lua
+                    .load(
+                        r#"
+                    crucible.on("turn:complete", function(ctx, event)
+                        return nil
+                    end)
+                "#,
+                    )
+                    .exec()
+                    .unwrap();
+            }
+
+            {
+                let state = lua_state_2.lock().await;
+                state
+                    .lua
+                    .load(
+                        r#"
+                    crucible.on("turn:complete", function(ctx, event)
+                        return nil
+                    end)
+                    crucible.on("turn:complete", function(ctx, event)
+                        return nil
+                    end)
+                "#,
+                    )
+                    .exec()
+                    .unwrap();
+            }
+
+            let state_1 = lua_state_1.lock().await;
+            let state_2 = lua_state_2.lock().await;
+
+            let handlers_1 = state_1.registry.runtime_handlers_for("turn:complete");
+            let handlers_2 = state_2.registry.runtime_handlers_for("turn:complete");
+
+            assert_eq!(handlers_1.len(), 1, "Session 1 should have 1 handler");
+            assert_eq!(handlers_2.len(), 2, "Session 2 should have 2 handlers");
+        }
+
+        #[tokio::test]
+        async fn handler_receives_event_payload() {
+            let storage = Arc::new(FileSessionStorage::new());
+            let session_manager = Arc::new(SessionManager::with_storage(storage));
+            let agent_manager = create_test_agent_manager(session_manager);
+
+            let lua_state = agent_manager.get_or_create_lua_state("test-session");
+            let state = lua_state.lock().await;
+
+            state
+                .lua
+                .load(
+                    r#"
+                received_session_id = nil
+                received_message_id = nil
+                crucible.on("turn:complete", function(ctx, event)
+                    received_session_id = event.payload.session_id
+                    received_message_id = event.payload.message_id
+                    return nil
+                end)
+            "#,
+                )
+                .exec()
+                .unwrap();
+
+            let handlers = state.registry.runtime_handlers_for("turn:complete");
+            let event = SessionEvent::Custom {
+                name: "turn:complete".to_string(),
+                payload: serde_json::json!({
+                    "session_id": "test-123",
+                    "message_id": "msg-456",
+                }),
+            };
+
+            let _ = state
+                .registry
+                .execute_runtime_handler(&state.lua, &handlers[0].name, &event);
+
+            let session_id: String = state
+                .lua
+                .load("return received_session_id")
+                .eval()
+                .unwrap();
+            let message_id: String = state
+                .lua
+                .load("return received_message_id")
+                .eval()
+                .unwrap();
+            assert_eq!(session_id, "test-123");
+            assert_eq!(message_id, "msg-456");
+        }
+
+        #[tokio::test]
+        async fn handler_can_return_cancel() {
+            let storage = Arc::new(FileSessionStorage::new());
+            let session_manager = Arc::new(SessionManager::with_storage(storage));
+            let agent_manager = create_test_agent_manager(session_manager);
+
+            let lua_state = agent_manager.get_or_create_lua_state("test-session");
+            let state = lua_state.lock().await;
+
+            state
+                .lua
+                .load(
+                    r#"
+                crucible.on("turn:complete", function(ctx, event)
+                    return { cancel = true, reason = "test cancel" }
+                end)
+            "#,
+                )
+                .exec()
+                .unwrap();
+
+            let handlers = state.registry.runtime_handlers_for("turn:complete");
+            let event = SessionEvent::Custom {
+                name: "turn:complete".to_string(),
+                payload: serde_json::json!({}),
+            };
+
+            let result = state
+                .registry
+                .execute_runtime_handler(&state.lua, &handlers[0].name, &event)
+                .unwrap();
+
+            match result {
+                ScriptHandlerResult::Cancel { reason } => {
+                    assert_eq!(reason, "test cancel");
+                }
+                _ => panic!("Expected Cancel result"),
+            }
+        }
     }
 }
