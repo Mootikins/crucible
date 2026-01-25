@@ -229,6 +229,30 @@ pub trait AgentHandle: Send + Sync {
     fn get_thinking_budget(&self) -> Option<i64> {
         None
     }
+
+    /// Set the temperature for response generation.
+    ///
+    /// Values: 0.0 = deterministic, 1.0 = balanced, 2.0 = maximum randomness
+    async fn set_temperature(&mut self, _temperature: f64) -> ChatResult<()> {
+        Err(ChatError::NotSupported("set_temperature".into()))
+    }
+
+    /// Get the current temperature setting.
+    fn get_temperature(&self) -> Option<f64> {
+        None
+    }
+
+    /// Set the maximum tokens for response generation.
+    ///
+    /// Values: None = provider default, Some(n) = limit to n tokens
+    async fn set_max_tokens(&mut self, _max_tokens: Option<u32>) -> ChatResult<()> {
+        Err(ChatError::NotSupported("set_max_tokens".into()))
+    }
+
+    /// Get the current max tokens setting.
+    fn get_max_tokens(&self) -> Option<u32> {
+        None
+    }
 }
 
 /// Blanket implementation for boxed trait objects
@@ -299,6 +323,22 @@ impl AgentHandle for Box<dyn AgentHandle + Send + Sync> {
 
     fn get_thinking_budget(&self) -> Option<i64> {
         (**self).get_thinking_budget()
+    }
+
+    async fn set_temperature(&mut self, temperature: f64) -> ChatResult<()> {
+        (**self).set_temperature(temperature).await
+    }
+
+    fn get_temperature(&self) -> Option<f64> {
+        (**self).get_temperature()
+    }
+
+    async fn set_max_tokens(&mut self, max_tokens: Option<u32>) -> ChatResult<()> {
+        (**self).set_max_tokens(max_tokens).await
+    }
+
+    fn get_max_tokens(&self) -> Option<u32> {
+        (**self).get_max_tokens()
     }
 }
 
