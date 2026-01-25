@@ -922,6 +922,29 @@ impl DaemonClient {
         Ok(())
     }
 
+    pub async fn session_test_interaction(
+        &self,
+        session_id: &str,
+        interaction_type: &str,
+        custom_params: Option<serde_json::Value>,
+    ) -> Result<String> {
+        let mut params = serde_json::json!({
+            "session_id": session_id,
+            "type": interaction_type
+        });
+
+        if let Some(extra) = custom_params {
+            if let (Some(base), Some(extra_obj)) = (params.as_object_mut(), extra.as_object()) {
+                for (k, v) in extra_obj {
+                    base.insert(k.clone(), v.clone());
+                }
+            }
+        }
+
+        let result = self.call("session.test_interaction", params).await?;
+        Ok(result["request_id"].as_str().unwrap_or("").to_string())
+    }
+
     pub async fn session_cancel(&self, session_id: &str) -> Result<bool> {
         let result = self
             .call(
