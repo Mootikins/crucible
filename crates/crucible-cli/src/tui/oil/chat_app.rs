@@ -79,6 +79,8 @@ pub enum ChatAppMsg {
     ModelsLoaded(Vec<String>),
     ModelsFetchFailed(String),
     SetThinkingBudget(i64),
+    SetTemperature(f64),
+    SetMaxTokens(Option<u32>),
     SubagentSpawned { id: String, prompt: String },
     SubagentCompleted { id: String, summary: String },
     SubagentFailed { id: String, error: String },
@@ -552,6 +554,8 @@ impl App for InkChatApp {
                 Action::Continue
             }
             ChatAppMsg::SetThinkingBudget(_) => Action::Continue,
+            ChatAppMsg::SetTemperature(_) => Action::Continue,
+            ChatAppMsg::SetMaxTokens(_) => Action::Continue,
             ChatAppMsg::SubagentSpawned { id, prompt } => {
                 if !self.cache.is_streaming() {
                     self.cache.start_streaming();
@@ -1316,6 +1320,49 @@ impl InkChatApp {
                                     Some(format!("Unknown preset '{}'. Valid: {}", value, valid));
                                 return Action::Continue;
                             }
+                        }
+
+                        if key == "temperature" {
+                            match value.parse::<f64>() {
+                                Ok(temp) if (0.0..=2.0).contains(&temp) => {
+                                    self.runtime_config
+                                        .set_str(&key, &value, ModSource::Command);
+                                    self.add_system_message(format!("  temperature={}", temp));
+                                    return Action::Send(ChatAppMsg::SetTemperature(temp));
+                                }
+                                Ok(_) => {
+                                    self.error =
+                                        Some("Temperature must be between 0.0 and 2.0".to_string());
+                                    return Action::Continue;
+                                }
+                                Err(_) => {
+                                    self.error =
+                                        Some(format!("Invalid temperature value: {}", value));
+                                    return Action::Continue;
+                                }
+                            }
+                        }
+
+                        if key == "maxtokens" {
+                            let max_tokens = if value == "none" || value == "null" {
+                                None
+                            } else {
+                                match value.parse::<u32>() {
+                                    Ok(n) => Some(n),
+                                    Err(_) => {
+                                        self.error = Some(format!(
+                                            "Invalid max_tokens value: {} (use a number or 'none')",
+                                            value
+                                        ));
+                                        return Action::Continue;
+                                    }
+                                }
+                            };
+                            self.runtime_config
+                                .set_str(&key, &value, ModSource::Command);
+                            let display = max_tokens.map_or("none".to_string(), |n| n.to_string());
+                            self.add_system_message(format!("  maxtokens={}", display));
+                            return Action::Send(ChatAppMsg::SetMaxTokens(max_tokens));
                         }
 
                         self.runtime_config
