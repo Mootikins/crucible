@@ -384,49 +384,17 @@ Task 5 (Integration test - full E2E pattern)
 
 ---
 
-- [ ] 4. Add cru.fmt() String Formatting Utility
+- [~] 4. Add cru.fmt() String Formatting Utility (DEFERRED)
 
-  **What to do**:
+  **DEFERRED**: Skip for now. Should be part of a larger templating system that integrates with kiln note templates (type: template, template_type: <generated type>). Will create a separate, more detailed plan for this feature.
+
+  **Original scope** (for reference):
   - Add Lua code that implements `cru.fmt(template, vars)` for string interpolation
-  - Can be added via `lua.load()` in the initialization, or in a Lua stdlib file
-  - Implementation:
-    ```lua
-    function cru.fmt(template, vars)
-      vars = vars or {}
-      return (template:gsub("{(%w+)}", function(key)
-        local val = vars[key]
-        if val ~= nil then
-          return tostring(val)
-        end
-        return "{" .. key .. "}"
-      end))
-    end
-    ```
-  - Register on the `cru` table (or `crucible` table, but prefer `cru`)
-
-  **Must NOT do**:
-  - Don't add complex template features (conditionals, loops) - keep it simple
-
-  **Parallelizable**: YES (with Task 3)
-
-  **References**:
-  - `crates/crucible-lua/src/executor.rs` - Where Lua globals are set up
-  - `.sisyphus/drafts/lua-api-conventions.md:42-64` - cru.fmt() spec
-
-  **Acceptance Criteria**:
-  - [ ] Test: `cru.fmt("Hello {name}", {name="world"})` → "Hello world"
-  - [ ] Test: `cru.fmt("Missing {key}", {})` → "Missing {key}" (preserves missing)
-  - [ ] Test: `cru.fmt("Count: {n}", {n=42})` → "Count: 42" (numbers work)
-  - [ ] `cargo test -p crucible-lua fmt` → PASS
-
-  **Commit**: YES
-  - Message: `feat(lua): add cru.fmt() string interpolation utility`
-  - Files: `crates/crucible-lua/src/executor.rs` or new Lua stdlib file
-  - Pre-commit: `cargo test -p crucible-lua`
+  - Register on the `cru` table
 
 ---
 
-- [ ] 5. Integration Test: Todo Enforcer Pattern
+- [x] 5. Integration Test: Todo Enforcer Pattern
 
   **What to do**:
   - Create test that demonstrates the full pattern:
@@ -448,7 +416,7 @@ Task 5 (Integration test - full E2E pattern)
 
   **Acceptance Criteria**:
   - [ ] Test demonstrates: register → execute → inject return
-  - [ ] Test uses `cru.fmt()` for message formatting
+  - [ ] Test uses plain Lua string concatenation (cru.fmt deferred)
   - [ ] `cargo test -p crucible-lua todo_enforcer_pattern` → PASS
 
   **Commit**: YES
