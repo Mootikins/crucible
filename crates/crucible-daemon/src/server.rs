@@ -10,7 +10,7 @@ use crate::protocol::{
 use crate::rpc::{RpcContext, RpcDispatcher};
 use crate::rpc_helpers::{
     optional_str_param, optional_u64_param, require_array_param, require_f64_param,
-    require_i64_param, require_str_param,
+    require_i64_param, require_obj_param, require_str_param,
 };
 use crate::session_manager::SessionManager;
 use crate::session_storage::{FileSessionStorage, SessionStorage};
@@ -1146,9 +1146,8 @@ async fn handle_session_add_notification(
     let session_id = require_str_param!(req, "session_id");
     let notification_obj = require_obj_param!(req, "notification");
 
-    // Parse notification from JSON object
     let notification = match serde_json::from_value::<crucible_core::types::Notification>(
-        notification_obj.clone(),
+        serde_json::Value::Object(notification_obj.clone()),
     ) {
         Ok(n) => n,
         Err(e) => {
