@@ -289,7 +289,7 @@ Task 5 (Integration test - full E2E pattern)
 
 ---
 
-- [ ] 3. Add ScriptHandlerResult::Inject Variant
+- [x] 3. Add ScriptHandlerResult::Inject Variant
 
   **What to do**:
   - Add new variant to `ScriptHandlerResult` enum at line 66:
