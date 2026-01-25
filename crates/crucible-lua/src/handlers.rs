@@ -491,6 +491,41 @@ impl LuaScriptHandlerRegistry {
         self.runtime_handlers.clone()
     }
 
+    /// Execute a runtime-registered handler by name
+    ///
+    /// Retrieves the stored function from the registry and executes it with the event.
+    /// The handler receives (ctx, event) as parameters where ctx is an empty table.
+    ///
+    /// # Arguments
+    ///
+    /// * `lua` - The Lua context
+    /// * `name` - Handler name (e.g., "runtime_handler_0")
+    /// * `event` - The session event to pass to the handler
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(ScriptHandlerResult)` on success, or `Err` if handler not found or execution fails.
+    pub fn execute_runtime_handler(
+        &self,
+        lua: &Lua,
+        name: &str,
+        event: &SessionEvent,
+    ) -> LuaResult<ScriptHandlerResult> {
+        let handler_functions = self.handler_functions.lock().unwrap();
+        let key = handler_functions
+            .get(name)
+            .ok_or_else(|| mlua::Error::RuntimeError(format!("Handler not found: {}", name)))?;
+
+        let handler: Function = lua.registry_value(key)?;
+
+        let ctx_table = lua.create_table()?;
+        let event_table = session_event_to_lua(lua, event)?;
+
+        let result: Value = handler.call((ctx_table, event_table))?;
+
+        interpret_handler_result(&result)
+    }
+
     /// Convert discovered handlers to core `Handler` trait objects.
     ///
     /// This enables Lua handlers to be registered with the core `Reactor`
@@ -1663,5 +1698,89 @@ end
 
         assert!(result.is_some());
         // Both transformations should be applied
+    }
+
+    #[test]
+    fn execute_runtime_handler_receives_event() {
+        let lua = Lua::new();
+        let registry = LuaScriptHandlerRegistry::new();
+
+        // Register a handler that captures the event
+        let handler_fn = lua
+            .create_function(|_, (ctx, event): (mlua::Table, mlua::Table)| {
+                // Verify ctx is a table (may be empty)
+                let _ctx_type = ctx.raw_len();
+                // Verify event has expected fields
+                let event_type: String = event.get("event_type").unwrap();
+                assert_eq!(event_type, "custom");
+                Ok(mlua::Value::Nil)
+            })
+            .unwrap();
+
+        let key = lua.create_registry_value(handler_fn).unwrap();
+        registry
+            .handler_functions
+            .lock()
+            .unwrap()
+            .insert("test_handler".to_string(), key);
+
+        let event = SessionEvent::Custom {
+            name: "test".to_string(),
+            payload: serde_json::json!({}),
+        };
+
+        let result = registry.execute_runtime_handler(&lua, "test_handler", &event);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn execute_runtime_handler_returns_cancel() {
+        let lua = Lua::new();
+        let registry = LuaScriptHandlerRegistry::new();
+
+        // Register a handler that returns cancel
+        let handler_fn = lua
+            .create_function(|lua, _: (mlua::Table, mlua::Table)| {
+                let result = lua.create_table().unwrap();
+                result.set("cancel", true).unwrap();
+                result.set("reason", "test cancel").unwrap();
+                Ok(mlua::Value::Table(result))
+            })
+            .unwrap();
+
+        let key = lua.create_registry_value(handler_fn).unwrap();
+        registry
+            .handler_functions
+            .lock()
+            .unwrap()
+            .insert("cancel_handler".to_string(), key);
+
+        let event = SessionEvent::Custom {
+            name: "test".to_string(),
+            payload: serde_json::json!({}),
+        };
+
+        let result = registry.execute_runtime_handler(&lua, "cancel_handler", &event);
+        assert!(result.is_ok());
+        match result.unwrap() {
+            ScriptHandlerResult::Cancel { reason } => {
+                assert_eq!(reason, "test cancel");
+            }
+            _ => panic!("Expected Cancel result"),
+        }
+    }
+
+    #[test]
+    fn execute_runtime_handler_not_found() {
+        let lua = Lua::new();
+        let registry = LuaScriptHandlerRegistry::new();
+
+        let event = SessionEvent::Custom {
+            name: "test".to_string(),
+            payload: serde_json::json!({}),
+        };
+
+        let result = registry.execute_runtime_handler(&lua, "nonexistent", &event);
+        assert!(result.is_err());
     }
 }
