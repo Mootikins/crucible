@@ -37,7 +37,7 @@ hex = "0.4"
 
 [dev-dependencies]
 tokio-test = "0.4"
-criterion = { workspace = true }
+criterion = { workspace = true, features = ["async_tokio"] }
 proptest = { workspace = true }
 
 [[bench]]
