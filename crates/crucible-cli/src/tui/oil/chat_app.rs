@@ -3,7 +3,7 @@ use crate::tui::oil::commands::SetCommand;
 use crate::tui::oil::components::{
     format_streaming_output, format_tool_args, format_tool_result, render_shell_execution,
     render_subagent, render_thinking_block, render_tool_call, render_user_prompt,
-    summarize_tool_result,
+    summarize_tool_result, NotificationArea,
 };
 use crate::tui::oil::config::{ConfigValue, ModSource, RuntimeConfig};
 use crate::tui::oil::event::{Event, InputAction, InputBuffer};
@@ -84,6 +84,7 @@ pub enum ChatAppMsg {
     SubagentSpawned { id: String, prompt: String },
     SubagentCompleted { id: String, summary: String },
     SubagentFailed { id: String, error: String },
+    ToggleMessages,
 }
 
 #[derive(Debug, Clone)]
@@ -352,6 +353,7 @@ pub struct InkChatApp {
     show_thinking: bool,
     runtime_config: RuntimeConfig,
     current_provider: String,
+    notification_area: NotificationArea,
 }
 
 impl Default for InkChatApp {
@@ -391,6 +393,7 @@ impl Default for InkChatApp {
             show_thinking: true,
             runtime_config: RuntimeConfig::empty(),
             current_provider: "local".to_string(),
+            notification_area: NotificationArea::new(),
         }
     }
 }
@@ -417,6 +420,7 @@ impl App for InkChatApp {
             self.render_input(ctx),
             self.render_status(),
             self.render_popup_overlay(),
+            self.render_notification_area(ctx),
         ])
         .gap(Gap::row(0))
     }
@@ -569,6 +573,10 @@ impl App for InkChatApp {
             }
             ChatAppMsg::SubagentFailed { id, error } => {
                 self.cache.fail_subagent(&id, &error);
+                Action::Continue
+            }
+            ChatAppMsg::ToggleMessages => {
+                self.notification_area.toggle();
                 Action::Continue
             }
         }
@@ -1127,9 +1135,13 @@ impl InkChatApp {
             "q" | "quit" => Action::Quit,
             "help" | "h" => {
                 self.add_system_message(
-                    "[core] :quit :help :clear :palette :model :set :export <path>\n[mcp] :mcp"
+                    "[core] :quit :help :clear :palette :model :set :export <path> :messages\n[mcp] :mcp"
                         .to_string(),
                 );
+                Action::Continue
+            }
+            "messages" | "msgs" => {
+                self.notification_area.toggle();
                 Action::Continue
             }
             "palette" | "commands" => {
@@ -2753,6 +2765,11 @@ impl InkChatApp {
         }
     }
 
+    fn render_notification_area(&self, ctx: &ViewContext<'_>) -> Node {
+        use crate::tui::oil::component::Component;
+        self.notification_area.view(ctx)
+    }
+
     fn calculate_input_height(&self) -> usize {
         let width = terminal_width();
         let content = self.input.content();
@@ -2992,6 +3009,33 @@ mod tests {
         let action = app.handle_repl_command(":clear");
         assert_eq!(app.cache.item_count(), 0);
         assert!(matches!(action, Action::Send(ChatAppMsg::ClearHistory)));
+    }
+
+    #[test]
+    fn test_messages_command_toggles_notification_area() {
+        let mut app = InkChatApp::init();
+        assert!(!app.notification_area.is_visible());
+
+        app.handle_repl_command(":messages");
+        assert!(app.notification_area.is_visible());
+
+        app.handle_repl_command(":messages");
+        assert!(!app.notification_area.is_visible());
+
+        app.handle_repl_command(":msgs");
+        assert!(app.notification_area.is_visible());
+    }
+
+    #[test]
+    fn test_toggle_messages_msg() {
+        let mut app = InkChatApp::init();
+        assert!(!app.notification_area.is_visible());
+
+        app.on_message(ChatAppMsg::ToggleMessages);
+        assert!(app.notification_area.is_visible());
+
+        app.on_message(ChatAppMsg::ToggleMessages);
+        assert!(!app.notification_area.is_visible());
     }
 
     #[test]
