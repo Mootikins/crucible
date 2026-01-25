@@ -1,0 +1,11 @@
+---
+source: crates/crucible-cli/src/tui/oil/tests/chat_app_snapshot_tests.rs
+expression: render_app(&app)
+---
+ Select your favorite or enter custom:                                          
+
+ > Option A
+   Option B
+   Other...
+
+ ↑/↓ navigate │ Enter select │ Esc cancel
