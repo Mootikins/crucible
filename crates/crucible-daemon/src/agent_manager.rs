@@ -486,6 +486,94 @@ impl AgentManager {
         Ok(agent_config.thinking_budget)
     }
 
+    pub async fn set_temperature(
+        &self,
+        session_id: &str,
+        temperature: f64,
+        event_tx: Option<&broadcast::Sender<SessionEventMessage>>,
+    ) -> Result<(), AgentError> {
+        if self.request_state.contains_key(session_id) {
+            return Err(AgentError::ConcurrentRequest(session_id.to_string()));
+        }
+
+        let (mut session, mut agent_config) = self.get_session_with_agent(session_id)?;
+
+        agent_config.temperature = Some(temperature);
+        session.agent = Some(agent_config.clone());
+
+        self.session_manager
+            .update_session(&session)
+            .await
+            .map_err(AgentError::Session)?;
+
+        self.invalidate_agent_cache(session_id);
+
+        info!(
+            session_id = %session_id,
+            temperature = temperature,
+            "Temperature updated (agent cache invalidated)"
+        );
+
+        if let Some(tx) = event_tx {
+            let _ = tx.send(SessionEventMessage::new(
+                session_id,
+                "temperature_changed",
+                serde_json::json!({ "temperature": temperature }),
+            ));
+        }
+
+        Ok(())
+    }
+
+    pub fn get_temperature(&self, session_id: &str) -> Result<Option<f64>, AgentError> {
+        let (_, agent_config) = self.get_session_with_agent(session_id)?;
+        Ok(agent_config.temperature)
+    }
+
+    pub async fn set_max_tokens(
+        &self,
+        session_id: &str,
+        max_tokens: Option<u32>,
+        event_tx: Option<&broadcast::Sender<SessionEventMessage>>,
+    ) -> Result<(), AgentError> {
+        if self.request_state.contains_key(session_id) {
+            return Err(AgentError::ConcurrentRequest(session_id.to_string()));
+        }
+
+        let (mut session, mut agent_config) = self.get_session_with_agent(session_id)?;
+
+        agent_config.max_tokens = max_tokens;
+        session.agent = Some(agent_config.clone());
+
+        self.session_manager
+            .update_session(&session)
+            .await
+            .map_err(AgentError::Session)?;
+
+        self.invalidate_agent_cache(session_id);
+
+        info!(
+            session_id = %session_id,
+            max_tokens = ?max_tokens,
+            "Max tokens updated (agent cache invalidated)"
+        );
+
+        if let Some(tx) = event_tx {
+            let _ = tx.send(SessionEventMessage::new(
+                session_id,
+                "max_tokens_changed",
+                serde_json::json!({ "max_tokens": max_tokens }),
+            ));
+        }
+
+        Ok(())
+    }
+
+    pub fn get_max_tokens(&self, session_id: &str) -> Result<Option<u32>, AgentError> {
+        let (_, agent_config) = self.get_session_with_agent(session_id)?;
+        Ok(agent_config.max_tokens)
+    }
+
     async fn list_ollama_models(&self, endpoint: &str) -> Result<Vec<String>, AgentError> {
         let client = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(5))
