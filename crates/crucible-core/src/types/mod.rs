@@ -19,6 +19,7 @@ pub mod acp;
 pub mod grammar;
 pub mod hashing;
 pub mod mode;
+pub mod notification;
 pub mod popup;
 pub mod tool_ref;
 pub mod undo_tree;
@@ -101,3 +102,6 @@ pub use crate::types::popup::PopupEntry;
 pub use crate::types::undo_tree::{
     NodeId as UndoNodeId, TreeNode, TreeNodeLabel, TreeSummary, UndoTree,
 };
+
+// Re-export notification types
+pub use crate::types::notification::{Notification, NotificationKind, NotificationQueue};
