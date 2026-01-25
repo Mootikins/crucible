@@ -341,6 +341,22 @@ impl AgentHandle for DaemonAgentHandle {
     fn get_max_tokens(&self) -> Option<u32> {
         None
     }
+
+    async fn interaction_respond(
+        &mut self,
+        request_id: String,
+        response: crucible_core::interaction::InteractionResponse,
+    ) -> ChatResult<()> {
+        tracing::info!(
+            session_id = %self.session_id,
+            request_id = %request_id,
+            "Sending interaction response via daemon"
+        );
+        self.client
+            .session_interaction_respond(&self.session_id, &request_id, response)
+            .await
+            .map_err(|e| ChatError::Communication(format!("Failed to send interaction response: {}", e)))
+    }
 }
 
 #[cfg(test)]
