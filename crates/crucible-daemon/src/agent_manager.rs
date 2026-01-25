@@ -197,8 +197,9 @@ impl AgentManager {
             return Err(AgentError::ConcurrentRequest(session_id.to_string()));
         }
 
+        let event_tx_clone = event_tx.clone();
         let agent = self
-            .get_or_create_agent(session_id, &agent_config, &session.workspace)
+            .get_or_create_agent(session_id, &agent_config, &session.workspace, &event_tx_clone)
             .await?;
 
         let (cancel_tx, cancel_rx) = oneshot::channel();
@@ -215,7 +216,6 @@ impl AgentManager {
         let message_id = format!("msg-{}", uuid::Uuid::new_v4());
         let session_id_owned = session_id.to_string();
         let message_id_clone = message_id.clone();
-        let event_tx_clone = event_tx.clone();
         let request_state = self.request_state.clone();
         let lua_state = self.get_or_create_lua_state(session_id);
 
@@ -259,6 +259,7 @@ impl AgentManager {
         session_id: &str,
         agent_config: &SessionAgent,
         workspace: &std::path::Path,
+        event_tx: &broadcast::Sender<SessionEventMessage>,
     ) -> Result<Arc<Mutex<BoxedAgentHandle>>, AgentError> {
         if let Some(cached) = self.agent_cache.get(session_id) {
             debug!(session_id = %session_id, "Using cached agent");
@@ -276,6 +277,7 @@ impl AgentManager {
             agent_config,
             workspace,
             Some(self.background_manager.clone()),
+            event_tx,
         )
         .await?;
         let agent = Arc::new(Mutex::new(agent));
