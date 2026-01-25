@@ -4,11 +4,14 @@
 //! This is a simplified version of the CLI's agent factory since
 //! `SessionAgent` contains fully-resolved configuration.
 
+use crate::protocol::SessionEventMessage;
 use crucible_config::{LlmProviderConfig, LlmProviderType};
 use crucible_core::background::BackgroundSpawner;
+use crucible_core::interaction_registry::InteractionRegistry;
 use crucible_core::prompts::ModelSize;
 use crucible_core::session::SessionAgent;
 use crucible_core::traits::chat::AgentHandle;
+use crucible_core::{InteractionContext, EventPushCallback};
 use crucible_rig::{
     build_agent_with_model_size, create_client, AgentComponents, AgentConfig, RigAgentHandle,
     RigClient, WorkspaceContext,
@@ -17,6 +20,7 @@ use std::path::Path;
 use std::str::FromStr;
 use std::sync::Arc;
 use thiserror::Error;
+use tokio::sync::broadcast;
 use tracing::{debug, info};
 
 #[derive(Error, Debug)]
@@ -44,6 +48,7 @@ pub enum AgentFactoryError {
 /// * `agent_config` - The session agent configuration
 /// * `workspace` - Working directory for the agent (for workspace tools)
 /// * `background_spawner` - Optional spawner for background tasks (subagents, long bash)
+/// * `event_tx` - Broadcast sender for session events (used for InteractionContext)
 ///
 /// # Returns
 ///
@@ -52,6 +57,7 @@ pub async fn create_agent_from_session_config(
     agent_config: &SessionAgent,
     workspace: &Path,
     background_spawner: Option<Arc<dyn BackgroundSpawner>>,
+    event_tx: &broadcast::Sender<SessionEventMessage>,
 ) -> Result<Box<dyn AgentHandle + Send + Sync>, AgentFactoryError> {
     if agent_config.agent_type != "internal" {
         return Err(AgentFactoryError::UnsupportedAgentType(format!(
@@ -97,7 +103,22 @@ pub async fn create_agent_from_session_config(
     let thinking_budget = agent_config.thinking_budget;
     let model_size = ModelSize::from_model_name(&agent_config.model);
 
-    let mut ws_ctx = WorkspaceContext::new(workspace);
+    // Create InteractionContext for ask_user tool support
+    let registry = Arc::new(tokio::sync::Mutex::new(InteractionRegistry::new()));
+    let event_tx_clone = event_tx.clone();
+    let push_event: EventPushCallback = Arc::new(move |_event| {
+        // TODO: Convert SessionEvent to SessionEventMessage and send
+        // For now, events are handled through the agent's event stream
+        let _ = event_tx_clone.send(SessionEventMessage::new(
+            "session",
+            "interaction_event",
+            serde_json::json!({}),
+        ));
+    });
+    let interaction_ctx = Arc::new(InteractionContext::new(registry, push_event));
+
+    let mut ws_ctx = WorkspaceContext::new(workspace)
+        .with_interaction_context(interaction_ctx);
     if let Some(ref spawner) = background_spawner {
         ws_ctx = ws_ctx.with_background_spawner(spawner.clone());
     }
@@ -229,11 +250,16 @@ mod tests {
         let result =
             tokio::runtime::Runtime::new()
                 .unwrap()
-                .block_on(create_agent_from_session_config(
-                    &config,
-                    Path::new("/tmp"),
-                    None,
-                ));
+                .block_on(async {
+                    let (event_tx, _) = broadcast::channel(16);
+                    create_agent_from_session_config(
+                        &config,
+                        Path::new("/tmp"),
+                        None,
+                        &event_tx,
+                    )
+                    .await
+                });
 
         assert!(matches!(
             result,
@@ -245,7 +271,8 @@ mod tests {
     #[ignore = "Requires Ollama to be running"]
     async fn test_create_ollama_agent() {
         let config = test_agent_config();
-        let result = create_agent_from_session_config(&config, Path::new("/tmp"), None).await;
+        let (event_tx, _) = broadcast::channel(16);
+        let result = create_agent_from_session_config(&config, Path::new("/tmp"), None, &event_tx).await;
         assert!(result.is_ok());
     }
 }
