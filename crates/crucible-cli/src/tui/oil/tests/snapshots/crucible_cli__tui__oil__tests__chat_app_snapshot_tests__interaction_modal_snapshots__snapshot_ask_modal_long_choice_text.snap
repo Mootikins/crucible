@@ -1,0 +1,12 @@
+---
+source: crates/crucible-cli/src/tui/oil/tests/chat_app_snapshot_tests.rs
+expression: render_app(&app)
+---
+ Select option:                                                                 
+
+ > Short
+   This is a much longer choice that might need to be truncated or wrapped
+depending on the terminal width
+   Medium length option here
+
+ ↑/↓ navigate │ Enter select │ Esc cancel

@@ -476,4 +476,188 @@ mod interaction_modal_snapshots {
 
         assert_snapshot!(render_app(&app));
     }
+
+    // =========================================================================
+    // Multi-select Mode Tests
+    // =========================================================================
+
+    #[test]
+    fn snapshot_ask_modal_multi_select() {
+        let mut app = InkChatApp::default();
+        let request = InteractionRequest::Ask(
+            AskRequest::new("Select all languages you know:")
+                .choices(["Rust", "Python", "Go", "TypeScript"])
+                .multi_select(),
+        );
+        app.open_interaction("ask-multi".to_string(), request);
+
+        assert_snapshot!(render_app(&app));
+    }
+
+    #[test]
+    fn snapshot_ask_modal_multi_select_with_selection() {
+        let mut app = InkChatApp::default();
+        let request = InteractionRequest::Ask(
+            AskRequest::new("Select frameworks:")
+                .choices(["React", "Vue", "Angular", "Svelte"])
+                .multi_select(),
+        );
+        app.open_interaction("ask-multi-sel".to_string(), request);
+
+        // Toggle first item with Space
+        app.update(crate::tui::oil::event::Event::Key(KeyEvent::new(
+            KeyCode::Char(' '),
+            KeyModifiers::NONE,
+        )));
+        // Move down and toggle second
+        app.update(crate::tui::oil::event::Event::Key(key(KeyCode::Down)));
+        app.update(crate::tui::oil::event::Event::Key(KeyEvent::new(
+            KeyCode::Char(' '),
+            KeyModifiers::NONE,
+        )));
+
+        assert_snapshot!(render_app(&app));
+    }
+
+    // =========================================================================
+    // Completion Flow Tests
+    // =========================================================================
+
+    #[test]
+    fn snapshot_ask_modal_after_escape() {
+        let mut app = InkChatApp::default();
+        let request = InteractionRequest::Ask(AskRequest::new("Choose:").choices(["Yes", "No"]));
+        app.open_interaction("ask-esc".to_string(), request);
+
+        // Verify modal is visible
+        assert!(app.interaction_visible());
+
+        // Press Escape to cancel
+        app.update(crate::tui::oil::event::Event::Key(key(KeyCode::Esc)));
+
+        // Modal should be closed - snapshot shows regular view
+        assert_snapshot!(render_app(&app));
+    }
+
+    #[test]
+    fn snapshot_perm_modal_after_allow() {
+        let mut app = InkChatApp::default();
+        let request = InteractionRequest::Permission(PermRequest::bash(["ls"]));
+        app.open_interaction("perm-allow".to_string(), request);
+
+        // Press 'y' to allow
+        app.update(crate::tui::oil::event::Event::Key(KeyEvent::new(
+            KeyCode::Char('y'),
+            KeyModifiers::NONE,
+        )));
+
+        // Modal should be closed
+        assert_snapshot!(render_app(&app));
+    }
+
+    #[test]
+    fn snapshot_perm_modal_after_deny() {
+        let mut app = InkChatApp::default();
+        let request = InteractionRequest::Permission(PermRequest::bash(["rm", "-rf", "/"]));
+        app.open_interaction("perm-deny".to_string(), request);
+
+        // Press 'n' to deny
+        app.update(crate::tui::oil::event::Event::Key(KeyEvent::new(
+            KeyCode::Char('n'),
+            KeyModifiers::NONE,
+        )));
+
+        // Modal should be closed
+        assert_snapshot!(render_app(&app));
+    }
+
+    // =========================================================================
+    // Edge Case Tests
+    // =========================================================================
+
+    #[test]
+    fn snapshot_ask_modal_long_question_text() {
+        let mut app = InkChatApp::default();
+        let long_question = "This is a very long question that should test how the modal handles text overflow. It contains multiple sentences to ensure we're testing a realistic scenario where the agent asks a detailed question that might wrap across multiple lines in the terminal.";
+        let request = InteractionRequest::Ask(
+            AskRequest::new(long_question).choices(["Accept", "Reject", "Skip"]),
+        );
+        app.open_interaction("ask-long".to_string(), request);
+
+        assert_snapshot!(render_app(&app));
+    }
+
+    #[test]
+    fn snapshot_ask_modal_long_choice_text() {
+        let mut app = InkChatApp::default();
+        let request = InteractionRequest::Ask(
+            AskRequest::new("Select option:").choices([
+                "Short",
+                "This is a much longer choice that might need to be truncated or wrapped depending on the terminal width",
+                "Medium length option here",
+            ]),
+        );
+        app.open_interaction("ask-long-choice".to_string(), request);
+
+        assert_snapshot!(render_app(&app));
+    }
+
+    #[test]
+    fn snapshot_ask_modal_unicode_content() {
+        let mut app = InkChatApp::default();
+        let request = InteractionRequest::Ask(
+            AskRequest::new("Select your preferred emoji reaction:").choices([
+                "👍 Thumbs up",
+                "❤️ Heart",
+                "🎉 Party",
+                "🚀 Rocket",
+                "🤔 Thinking",
+            ]),
+        );
+        app.open_interaction("ask-unicode".to_string(), request);
+
+        assert_snapshot!(render_app(&app));
+    }
+
+    #[test]
+    fn snapshot_perm_modal_long_command() {
+        let mut app = InkChatApp::default();
+        let request = InteractionRequest::Permission(PermRequest::bash([
+            "docker",
+            "run",
+            "--rm",
+            "-it",
+            "-v",
+            "/home/user/project:/app",
+            "-e",
+            "DATABASE_URL=postgres://localhost/db",
+            "-p",
+            "8080:8080",
+            "myimage:latest",
+        ]));
+        app.open_interaction("perm-long-cmd".to_string(), request);
+
+        assert_snapshot!(render_app(&app));
+    }
+
+    #[test]
+    fn snapshot_perm_modal_deeply_nested_path() {
+        let mut app = InkChatApp::default();
+        let request = InteractionRequest::Permission(PermRequest::write([
+            "home",
+            "user",
+            "projects",
+            "company",
+            "team",
+            "repository",
+            "packages",
+            "core",
+            "src",
+            "components",
+            "Button.tsx",
+        ]));
+        app.open_interaction("perm-deep-path".to_string(), request);
+
+        assert_snapshot!(render_app(&app));
+    }
 }

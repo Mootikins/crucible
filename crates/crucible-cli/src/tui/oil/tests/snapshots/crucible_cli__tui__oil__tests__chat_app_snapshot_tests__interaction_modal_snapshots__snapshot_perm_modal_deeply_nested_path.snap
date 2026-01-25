@@ -1,0 +1,11 @@
+---
+source: crates/crucible-cli/src/tui/oil/tests/chat_app_snapshot_tests.rs
+expression: render_app(&app)
+---
+ Permission: Write                                                              
+
+  /home/user/projects/company/team/repository/packages/core/src/components/
+Button.tsx
+
+
+ y Allow │ n Deny │ p Pattern... │ Esc Cancel
