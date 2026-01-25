@@ -285,6 +285,10 @@ pub struct InteractionModalState {
     pub current_question: usize,
     /// Track if "Other" text was previously entered (for dim rendering when deselected).
     pub other_text_preserved: bool,
+    /// Answers per question for AskBatch (Vec of selected indices per question).
+    pub batch_answers: Vec<std::collections::HashSet<usize>>,
+    /// Other text per question for AskBatch.
+    pub batch_other_texts: Vec<String>,
 }
 
 pub struct ShellModal {
@@ -837,6 +841,8 @@ impl InkChatApp {
             checked: std::collections::HashSet::new(),
             current_question: 0,
             other_text_preserved: false,
+            batch_answers: Vec::new(),
+            batch_other_texts: Vec::new(),
         });
     }
 
@@ -2472,8 +2478,27 @@ impl InkChatApp {
             None => return Node::Empty,
         };
 
-        let ask_request = match &modal.request {
-            InteractionRequest::Ask(req) => req,
+        let (question, choices, multi_select, allow_other, total_questions) = match &modal.request {
+            InteractionRequest::Ask(req) => (
+                &req.question,
+                req.choices.as_ref().map(|c| c.as_slice()).unwrap_or(&[]),
+                req.multi_select,
+                req.allow_other,
+                1,
+            ),
+            InteractionRequest::AskBatch(batch) => {
+                if modal.current_question >= batch.questions.len() {
+                    return Node::Empty;
+                }
+                let q = &batch.questions[modal.current_question];
+                (
+                    &q.question,
+                    q.choices.as_slice(),
+                    q.multi_select,
+                    q.allow_other,
+                    batch.questions.len(),
+                )
+            }
             _ => return Node::Empty,
         };
 
@@ -2486,8 +2511,17 @@ impl InkChatApp {
         let top_border = styled("▄".repeat(term_width), Style::new().fg(colors::INPUT_BG));
         let bottom_border = styled("▀".repeat(term_width), Style::new().fg(colors::INPUT_BG));
 
-        // Header with question
-        let header_text = format!(" {} ", ask_request.question);
+        // Header with question (and question indicator if batch)
+        let header_text = if total_questions > 1 {
+            format!(
+                " {} (Question {}/{}) ",
+                question,
+                modal.current_question + 1,
+                total_questions
+            )
+        } else {
+            format!(" {} ", question)
+        };
         let header_padding = " ".repeat(term_width.saturating_sub(header_text.len()));
         let header = styled(
             format!("{}{}", header_text, header_padding),
@@ -2495,16 +2529,11 @@ impl InkChatApp {
         );
 
         // Build choices list
-        let choices = ask_request
-            .choices
-            .as_ref()
-            .map(|c| c.as_slice())
-            .unwrap_or(&[]);
         let mut choice_nodes: Vec<Node> = Vec::new();
 
         for (i, choice) in choices.iter().enumerate() {
             let is_selected = i == modal.selected;
-            let prefix = if ask_request.multi_select {
+            let prefix = if multi_select {
                 let is_checked = modal.checked.contains(&i);
                 if is_checked {
                     "[x]"
@@ -2527,7 +2556,7 @@ impl InkChatApp {
         }
 
         // Add "Other..." option if allow_other
-        if ask_request.allow_other {
+        if allow_other {
             let other_idx = choices.len();
             let is_selected = modal.selected == other_idx;
             let prefix = if is_selected { " > " } else { "   " };
