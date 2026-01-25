@@ -8,6 +8,7 @@ use crate::error::LuaError;
 #[cfg(feature = "fennel")]
 use crate::fennel::FennelCompiler;
 use crate::oil::register_oil_module;
+use crate::session_api::{register_session_module, SessionManager};
 use crate::types::{LuaExecutionResult, LuaTool, ToolResult};
 use mlua::{Function, Lua, LuaOptions, Result as LuaResult, StdLib, Value};
 use serde_json::Value as JsonValue;
@@ -23,6 +24,7 @@ pub struct LuaExecutor {
     lua: Lua,
     #[cfg(feature = "fennel")]
     fennel: Option<FennelCompiler>,
+    session_manager: SessionManager,
 }
 
 impl LuaExecutor {
@@ -52,10 +54,13 @@ impl LuaExecutor {
             }
         };
 
+        let session_manager = register_session_module(&lua)?;
+
         Ok(Self {
             lua,
             #[cfg(feature = "fennel")]
             fennel,
+            session_manager,
         })
     }
 
@@ -69,6 +74,10 @@ impl LuaExecutor {
         {
             false
         }
+    }
+
+    pub fn session_manager(&self) -> &SessionManager {
+        &self.session_manager
     }
 
     /// Load user configuration from init.lua
