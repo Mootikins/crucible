@@ -25,7 +25,7 @@ This file provides essential information for AI agents to understand and contrib
 | Crate | Purpose | Key Traits/Types |
 |-------|---------|------------------|
 | `crucible-core` | Domain logic, traits, parser types | `Provider`, `CanEmbed`, `CanChat`, `ParsedNote` |
-| `crucible-cli` | Terminal UI, REPL, commands | `InkChatApp`, `ChatAppMsg` |
+| `crucible-cli` | Terminal UI, REPL, commands | `InkChatApp`, `ChatAppMsg`, oil renderer |
 | `crucible-web` | Browser chat UI (SolidJS + Axum) | HTTP/SSE endpoints |
 | `crucible-tools` | MCP server and tools | Tool implementations |
 | `crucible-surrealdb` | SurrealDB storage with EAV schema | `SurrealStorage`, `EavGraph` |
@@ -72,8 +72,9 @@ Crucible uses a **separate daemon binary** (`cru-server`) for multi-session supp
 
 **Daemon RPC methods:**
 - Kiln: `kiln.open`, `kiln.close`, `kiln.list`, `search_vectors`, `list_notes`, `get_note_by_name`
-- Sessions: `session.create`, `session.list`, `session.get`, `session.pause`, `session.resume`, `session.end`
-- Agents: `session.configure_agent`, `session.send_message`, `session.cancel`
+- Sessions: `session.create`, `session.list`, `session.get`, `session.load`, `session.pause`, `session.resume`, `session.end`
+- Agents: `session.configure_agent`, `session.send_message`, `session.cancel`, `session.switch_model`, `session.list_models`
+- Config: `session.set_thinking_budget`, `session.get_thinking_budget`
 - Events: `session.subscribe`, `session.unsubscribe`
 
 ### Cross-Layer Feature Checklist
