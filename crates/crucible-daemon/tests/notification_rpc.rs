@@ -1,8 +1,7 @@
 //! RPC contract tests for notification methods.
 //!
 //! These tests define the expected request/response shapes for notification
-//! RPC methods. They are written in RED phase (TDD) and will FAIL until the
-//! actual handlers are implemented in task 2.
+//! RPC methods.
 //!
 //! Contract methods:
 //! - `session.add_notification` - Add notification to session queue
@@ -61,7 +60,7 @@ async fn create_test_session(stream: &mut UnixStream, daemon: &TestDaemon) -> St
     std::fs::create_dir_all(&kiln_dir).expect("Failed to create kiln dir");
 
     let response = rpc_call(
-        client,
+        stream,
         "session.create",
         json!({
             "type": "chat",
@@ -78,10 +77,10 @@ async fn create_test_session(stream: &mut UnixStream, daemon: &TestDaemon) -> St
 }
 
 #[tokio::test]
-#[ignore = "RED phase - method not implemented yet"]
+
 async fn test_add_notification_contract() {
-    let (mut daemon, mut client) = setup_daemon().await;
-    let session_id = create_test_session(&mut client, &daemon).await;
+    let (mut daemon, mut stream) = setup_daemon().await;
+    let session_id = create_test_session(&mut stream, &daemon).await;
 
     let notification = Notification::toast("Test notification");
 
@@ -94,7 +93,7 @@ async fn test_add_notification_contract() {
         }
     });
 
-    let response = rpc_call(&mut client, "session.add_notification", params, 2).await;
+    let response = rpc_call(&mut stream, "session.add_notification", params, 2).await;
 
     assert_eq!(response["jsonrpc"], "2.0");
     assert_eq!(response["id"], 2);
@@ -109,7 +108,7 @@ async fn test_add_notification_contract() {
 }
 
 #[tokio::test]
-#[ignore = "RED phase - method not implemented yet"]
+
 async fn test_list_notifications_contract() {
     let (mut daemon, mut stream) = setup_daemon().await;
     let session_id = create_test_session(&mut stream, &daemon).await;
@@ -141,7 +140,7 @@ async fn test_list_notifications_contract() {
 }
 
 #[tokio::test]
-#[ignore = "RED phase - method not implemented yet"]
+
 async fn test_dismiss_notification_contract() {
     let (mut daemon, mut stream) = setup_daemon().await;
     let session_id = create_test_session(&mut stream, &daemon).await;
@@ -173,7 +172,7 @@ async fn test_dismiss_notification_contract() {
 }
 
 #[tokio::test]
-#[ignore = "RED phase - method not implemented yet"]
+
 async fn test_add_notification_with_progress_kind() {
     let (mut daemon, mut stream) = setup_daemon().await;
     let session_id = create_test_session(&mut stream, &daemon).await;
@@ -204,7 +203,7 @@ async fn test_add_notification_with_progress_kind() {
 }
 
 #[tokio::test]
-#[ignore = "RED phase - method not implemented yet"]
+
 async fn test_add_notification_with_warning_kind() {
     let (mut daemon, mut stream) = setup_daemon().await;
     let session_id = create_test_session(&mut stream, &daemon).await;
@@ -230,7 +229,7 @@ async fn test_add_notification_with_warning_kind() {
 }
 
 #[tokio::test]
-#[ignore = "RED phase - method not implemented yet"]
+
 async fn test_list_notifications_after_adding() {
     let (mut daemon, mut stream) = setup_daemon().await;
     let session_id = create_test_session(&mut stream, &daemon).await;
@@ -267,7 +266,7 @@ async fn test_list_notifications_after_adding() {
 }
 
 #[tokio::test]
-#[ignore = "RED phase - method not implemented yet"]
+
 async fn test_dismiss_notification_removes_from_list() {
     let (mut daemon, mut stream) = setup_daemon().await;
     let session_id = create_test_session(&mut stream, &daemon).await;
@@ -317,7 +316,7 @@ async fn test_dismiss_notification_removes_from_list() {
 }
 
 #[tokio::test]
-#[ignore = "RED phase - method not implemented yet"]
+
 async fn test_dismiss_nonexistent_notification_returns_false() {
     let (mut daemon, mut stream) = setup_daemon().await;
     let session_id = create_test_session(&mut stream, &daemon).await;
@@ -340,7 +339,7 @@ async fn test_dismiss_nonexistent_notification_returns_false() {
 }
 
 #[tokio::test]
-#[ignore = "RED phase - method not implemented yet"]
+
 async fn test_session_not_found_error() {
     let (mut daemon, mut stream) = setup_daemon().await;
 

@@ -99,6 +99,12 @@ impl AgentManager {
         self.agent_cache.remove(session_id);
     }
 
+    fn get_session(&self, session_id: &str) -> Result<crucible_core::session::Session, AgentError> {
+        self.session_manager
+            .get_session(session_id)
+            .ok_or_else(|| AgentError::SessionNotFound(session_id.to_string()))
+    }
+
     pub async fn configure_agent(
         &self,
         session_id: &str,
@@ -528,6 +534,80 @@ impl AgentManager {
     pub fn get_temperature(&self, session_id: &str) -> Result<Option<f64>, AgentError> {
         let (_, agent_config) = self.get_session_with_agent(session_id)?;
         Ok(agent_config.temperature)
+    }
+
+    pub async fn add_notification(
+        &self,
+        session_id: &str,
+        notification: crucible_core::types::Notification,
+        event_tx: Option<&broadcast::Sender<SessionEventMessage>>,
+    ) -> Result<(), AgentError> {
+        let mut session = self.get_session(session_id)?;
+
+        session.notifications.add(notification.clone());
+
+        self.session_manager
+            .update_session(&session)
+            .await
+            .map_err(AgentError::Session)?;
+
+        info!(
+            session_id = %session_id,
+            notification_id = %notification.id,
+            "Notification added"
+        );
+
+        if let Some(tx) = event_tx {
+            let _ = tx.send(SessionEventMessage::new(
+                session_id,
+                "notification_added",
+                serde_json::json!({ "notification_id": notification.id }),
+            ));
+        }
+
+        Ok(())
+    }
+
+    pub async fn list_notifications(
+        &self,
+        session_id: &str,
+    ) -> Result<Vec<crucible_core::types::Notification>, AgentError> {
+        let session = self.get_session(session_id)?;
+        Ok(session.notifications.list())
+    }
+
+    pub async fn dismiss_notification(
+        &self,
+        session_id: &str,
+        notification_id: &str,
+        event_tx: Option<&broadcast::Sender<SessionEventMessage>>,
+    ) -> Result<bool, AgentError> {
+        let mut session = self.get_session(session_id)?;
+
+        let success = session.notifications.dismiss(notification_id);
+
+        if success {
+            self.session_manager
+                .update_session(&session)
+                .await
+                .map_err(AgentError::Session)?;
+
+            info!(
+                session_id = %session_id,
+                notification_id = %notification_id,
+                "Notification dismissed"
+            );
+
+            if let Some(tx) = event_tx {
+                let _ = tx.send(SessionEventMessage::new(
+                    session_id,
+                    "notification_dismissed",
+                    serde_json::json!({ "notification_id": notification_id }),
+                ));
+            }
+        }
+
+        Ok(success)
     }
 
     pub async fn set_max_tokens(

@@ -94,6 +94,33 @@ macro_rules! require_array_param {
     };
 }
 
+/// Extract a required object parameter from a request.
+///
+/// Returns the parameter value as `&serde_json::Map<String, serde_json::Value>`, or returns early
+/// with an error Response if the parameter is missing or not an object.
+///
+/// # Example
+///
+/// ```ignore
+/// let obj = require_obj_param!(req, "config");
+/// // `obj` is &Map<String, Value>, or function returned early with error
+/// ```
+#[macro_export]
+macro_rules! require_obj_param {
+    ($req:expr, $name:literal) => {
+        match $req.params.get($name).and_then(|v| v.as_object()) {
+            Some(v) => v,
+            None => {
+                return $crate::protocol::Response::error(
+                    $req.id.clone(),
+                    $crate::protocol::INVALID_PARAMS,
+                    concat!("Missing or invalid '", $name, "' parameter"),
+                )
+            }
+        }
+    };
+}
+
 /// Extract a required f64 parameter from a request.
 ///
 /// Returns the parameter value as `f64`, or returns early with an error Response
@@ -244,7 +271,7 @@ macro_rules! optional_bool_param {
 pub use crate::{
     optional_bool_param, optional_f64_param, optional_i64_param, optional_str_param,
     optional_u64_param, require_array_param, require_bool_param, require_f64_param,
-    require_i64_param, require_str_param,
+    require_i64_param, require_obj_param, require_str_param,
 };
 
 #[cfg(test)]
