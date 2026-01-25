@@ -56,7 +56,7 @@ fn register_log_levels(lua: &Lua, crucible: &Table) -> LuaResult<()> {
 
 fn register_notify_function(lua: &Lua, crucible: &Table) -> LuaResult<()> {
     let notify_fn = lua.create_function(|lua, args: mlua::Variadic<Value>| {
-        let msg = match args.get(0) {
+        let msg = match args.first() {
             Some(Value::String(s)) => s.to_str()?.to_string(),
             _ => {
                 return Err(mlua::Error::external(
@@ -88,7 +88,7 @@ fn register_notify_function(lua: &Lua, crucible: &Table) -> LuaResult<()> {
 
 fn register_notify_once_function(lua: &Lua, crucible: &Table) -> LuaResult<()> {
     let notify_once_fn = lua.create_function(|lua, args: mlua::Variadic<Value>| {
-        let msg = match args.get(0) {
+        let msg = match args.first() {
             Some(Value::String(s)) => s.to_str()?.to_string(),
             _ => {
                 return Err(mlua::Error::external(
