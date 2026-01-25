@@ -353,7 +353,7 @@ impl InkChatRunner {
                         None => std::future::pending().await,
                     }
                 } => {
-                    Self::handle_session_command(cmd, agent).await;
+                    Self::handle_session_command(cmd, agent, app).await;
                     None
                 }
             };
@@ -541,7 +541,11 @@ impl InkChatRunner {
         }
     }
 
-    async fn handle_session_command<A: AgentHandle>(cmd: SessionCommand, agent: &mut A) {
+    async fn handle_session_command<A: AgentHandle>(
+        cmd: SessionCommand,
+        agent: &mut A,
+        app: &mut InkChatApp,
+    ) {
         match cmd {
             SessionCommand::GetTemperature(reply) => {
                 let _ = reply.send(agent.get_temperature());
@@ -590,6 +594,12 @@ impl InkChatRunner {
                 let result = agent.set_mode_str(&mode).await.map_err(|e| e.to_string());
                 let _ = reply.send(result);
             }
+            // Notification commands - route to InkChatApp
+            SessionCommand::Notify(notification) => app.add_notification(notification),
+            SessionCommand::ToggleMessages => app.toggle_messages(),
+            SessionCommand::ShowMessages => app.show_messages(),
+            SessionCommand::HideMessages => app.hide_messages(),
+            SessionCommand::ClearMessages => app.clear_messages(),
         }
     }
 }
