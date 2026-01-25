@@ -143,18 +143,18 @@ mod status_bar_tests {
     }
 
     #[test]
-    fn notification_appears_on_right() {
+    fn notification_badge_appears_on_right() {
         let bar = StatusBar::new()
             .mode(ChatMode::Normal)
-            .notification("Copied!");
+            .notification_count(5);
         let plain = render_plain(&bar, 80);
 
         let mode_pos = plain.find("NORMAL").expect("mode should exist");
-        let notif_pos = plain.find("Copied!").expect("notification should exist");
+        let badge_pos = plain.find("[5]").expect("notification badge should exist");
 
         assert!(
-            notif_pos > mode_pos,
-            "Notification should appear after mode (on right side)"
+            badge_pos > mode_pos,
+            "Notification badge should appear after mode (on right side)"
         );
     }
 
@@ -165,7 +165,7 @@ mod status_bar_tests {
             .model("claude-3-opus-very-long-name")
             .context(64000, 128000)
             .status("Streaming...")
-            .notification("Test notification");
+            .notification_count(3);
         let plain = render_plain(&bar, 80);
 
         assert_fits_width(&plain, 80);
