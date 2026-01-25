@@ -13,6 +13,10 @@
 //! - `GrepTool` - Search file contents with regex
 
 use crucible_core::background::BackgroundSpawner;
+use crucible_core::interaction::AskRequest;
+use crucible_core::interaction_context::InteractionContext;
+use crucible_core::events::SessionEvent;
+use crucible_core::interaction::InteractionRequest;
 use crucible_tools::WorkspaceTools;
 use rig::completion::ToolDefinition;
 use rig::tool::Tool;
@@ -22,6 +26,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::RwLock;
 use thiserror::Error;
+use uuid::Uuid;
 
 /// Error type for workspace tool operations
 #[derive(Debug, Error)]
@@ -50,6 +55,7 @@ pub struct WorkspaceContext {
     mode_id: Arc<RwLock<String>>,
     session_id: Arc<RwLock<Option<String>>>,
     background_spawner: Option<Arc<dyn BackgroundSpawner>>,
+    interaction_context: Option<Arc<InteractionContext>>,
 }
 
 impl WorkspaceContext {
@@ -60,12 +66,19 @@ impl WorkspaceContext {
             mode_id: Arc::new(RwLock::new("auto".to_string())),
             session_id: Arc::new(RwLock::new(None)),
             background_spawner: None,
+            interaction_context: None,
         }
     }
 
     /// Set the background task spawner
     pub fn with_background_spawner(mut self, spawner: Arc<dyn BackgroundSpawner>) -> Self {
         self.background_spawner = Some(spawner);
+        self
+    }
+
+    /// Set the interaction context for user interactions
+    pub fn with_interaction_context(mut self, ctx: Arc<InteractionContext>) -> Self {
+        self.interaction_context = Some(ctx);
         self
     }
 
@@ -99,6 +112,16 @@ impl WorkspaceContext {
     /// Check if a background task spawner is configured
     pub fn has_background_spawner(&self) -> bool {
         self.background_spawner.is_some()
+    }
+
+    /// Check if an interaction context is configured
+    pub fn has_interaction_context(&self) -> bool {
+        self.interaction_context.is_some()
+    }
+
+    /// Get the interaction context if configured
+    pub fn interaction_context(&self) -> Option<Arc<InteractionContext>> {
+        self.interaction_context.clone()
     }
 
     /// Get all available workspace tools.
@@ -1009,12 +1032,137 @@ impl Tool for SpawnSubagentTool {
             "Subagent spawned in background. job_id: {}\nUse list_jobs to check status, get_job_result to get output.",
             job_id
         ))
-    }
-}
-
-// =============================================================================
-// Helper functions
-// =============================================================================
+     }
+ }
+ 
+ // =============================================================================
+ // AskUserTool
+ // =============================================================================
+ 
+ /// Arguments for asking the user a question
+ #[derive(Debug, Deserialize)]
+ pub struct AskUserArgs {
+     /// The question to ask
+     question: String,
+     /// Optional list of choices
+     #[serde(default)]
+     choices: Option<Vec<String>>,
+     /// Allow multiple selections
+     #[serde(default)]
+     multi_select: bool,
+     /// Allow free-text input
+     #[serde(default)]
+     allow_other: bool,
+ }
+ 
+ /// Tool for asking the user a question and waiting for their response
+ #[derive(Clone, Serialize, Deserialize)]
+ pub struct AskUserTool {
+     #[serde(skip)]
+     ctx: Option<InteractionContext>,
+ }
+ 
+ impl AskUserTool {
+     /// Create a new AskUserTool
+     pub fn new(ctx: InteractionContext) -> Self {
+         Self { ctx: Some(ctx) }
+     }
+ }
+ 
+ impl Tool for AskUserTool {
+     const NAME: &'static str = "ask_user";
+     type Error = WorkspaceToolError;
+     type Args = AskUserArgs;
+     type Output = String;
+ 
+     async fn definition(&self, _prompt: String) -> ToolDefinition {
+         ToolDefinition {
+             name: Self::NAME.to_string(),
+             description: "Ask the user a question and wait for their response".to_string(),
+             parameters: json!({
+                 "type": "object",
+                 "properties": {
+                     "question": {
+                         "type": "string",
+                         "description": "The question to ask"
+                     },
+                     "choices": {
+                         "type": "array",
+                         "items": { "type": "string" },
+                         "description": "Optional list of choices"
+                     },
+                     "multi_select": {
+                         "type": "boolean",
+                         "description": "Allow multiple selections"
+                     },
+                     "allow_other": {
+                         "type": "boolean",
+                         "description": "Allow free-text input"
+                     }
+                 },
+                 "required": ["question"]
+             }),
+         }
+     }
+ 
+     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
+         let ctx = self.ctx.as_ref().ok_or_else(|| {
+             WorkspaceToolError::Blocked("Tool not initialized with context".to_string())
+         })?;
+ 
+         // Generate request ID
+         let id = Uuid::new_v4();
+ 
+         // Register receiver with the registry
+         let rx = {
+             let mut registry = ctx
+                 .registry
+                 .lock()
+                 .await;
+             registry.register(id)
+         };
+ 
+         // Build AskRequest
+         let mut request = AskRequest::new(args.question);
+         if let Some(choices) = args.choices {
+             request = request.choices(choices);
+         }
+         if args.multi_select {
+             request = request.multi_select();
+         }
+         if args.allow_other {
+             request = request.allow_other();
+         }
+ 
+         // Emit InteractionRequested event
+         (ctx.push_event)(SessionEvent::InteractionRequested {
+             request_id: id.to_string(),
+             request: InteractionRequest::Ask(request),
+         });
+ 
+         // Await response from user
+         let response = rx
+             .await
+             .map_err(|_| WorkspaceToolError::Blocked("Interaction was cancelled or dropped".to_string()))?;
+ 
+         // Convert response to JSON
+         match response {
+             crucible_core::interaction::InteractionResponse::Ask(ask_response) => {
+                 let json = serde_json::to_string(&ask_response)
+                     .map_err(|e| WorkspaceToolError::Blocked(format!("Failed to serialize response: {}", e)))?;
+                 Ok(json)
+             }
+             crucible_core::interaction::InteractionResponse::Cancelled => {
+                 Err(WorkspaceToolError::Blocked("User cancelled the interaction".to_string()))
+             }
+             _ => Err(WorkspaceToolError::Blocked("Unexpected response type".to_string())),
+         }
+     }
+ }
+ 
+ // =============================================================================
+ // Helper functions
+ // =============================================================================
 
 fn extract_text_content(
     result: &rmcp::model::CallToolResult,
