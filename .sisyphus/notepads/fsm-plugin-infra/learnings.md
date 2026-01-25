@@ -252,3 +252,46 @@ end)
 ### Next Steps
 - Task 4: `cru.fmt()` utility (can be done in parallel)
 - Task 5: E2E integration test (depends on this task)
+
+## Task 5: FSM Handler Pattern Integration Test
+
+### Problem
+Need to demonstrate the full FSM handler pattern works end-to-end:
+1. Register handler with `crucible.on("turn:complete", fn)`
+2. Handler checks event for incomplete todos pattern
+3. Handler returns `{inject={content="Continue..."}}` if pattern found
+4. Verify result is `ScriptHandlerResult::Inject`
+
+### Solution Approach
+Created integration test `todo_enforcer_pattern_integration` that:
+1. Creates Lua instance and LuaScriptHandlerRegistry
+2. Registers crucible.on API via `register_crucible_on_api()`
+3. Executes Lua code that registers a handler checking for "[ ]" pattern
+4. Tests two scenarios:
+   - Event WITH incomplete todo → verifies `ScriptHandlerResult::Inject` returned
+   - Event WITHOUT incomplete todo → verifies `ScriptHandlerResult::PassThrough` returned
+
+### Implementation Details
+- Test uses plain Lua string concatenation (no cru.fmt - deferred)
+- Handler checks `event.payload.response` for "[ ]" pattern using Lua's `:find()` method
+- Returns `{inject={content="...", position="user_prefix"}}` when pattern found
+- Returns `nil` when no pattern found (PassThrough)
+- Test is self-contained (no external files)
+
+### Test Results
+- `todo_enforcer_pattern_integration` passes
+- All 48 handler tests pass (47 existing + 1 new)
+- No LSP diagnostics errors
+
+### Key Learnings
+- Integration test validates the entire chain: register → execute → inject return
+- The pattern `{inject={content="...", position="..."}}` works correctly
+- `execute_runtime_handler()` properly interprets Inject results
+- Test demonstrates practical use case (todo enforcer) that could be real plugin
+
+### Files Modified
+- `crates/crucible-lua/src/handlers.rs` - Added `todo_enforcer_pattern_integration` test
+
+### Next Steps
+- Task 5 complete ✓
+- Ready for Phase 2: Daemon integration (event dispatch, message injection)
