@@ -540,6 +540,25 @@ mod interaction_modal_snapshots {
     }
 
     #[test]
+    fn snapshot_ask_modal_after_ctrl_c() {
+        let mut app = InkChatApp::default();
+        let request = InteractionRequest::Ask(AskRequest::new("Choose:").choices(["Yes", "No"]));
+        app.open_interaction("ask-ctrl-c".to_string(), request);
+
+        // Verify modal is visible
+        assert!(app.interaction_visible());
+
+        // Press Ctrl+C to cancel
+        app.update(crate::tui::oil::event::Event::Key(KeyEvent::new(
+            KeyCode::Char('c'),
+            KeyModifiers::CONTROL,
+        )));
+
+        // Modal should be closed - snapshot shows regular view
+        assert_snapshot!(render_app(&app));
+    }
+
+    #[test]
     fn snapshot_perm_modal_after_allow() {
         let mut app = InkChatApp::default();
         let request = InteractionRequest::Permission(PermRequest::bash(["ls"]));
