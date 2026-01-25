@@ -234,3 +234,158 @@ ChatAppMsg::CloseInteraction { request_id, response } => {
 - Add `Session::respond_to_interaction()` method for state tracking
 - Persist interaction responses in session history
 - Add validation (e.g., request_id must match pending interaction)
+
+## [2026-01-25] QA Blocker: Event Subscription Gap
+
+### Problem Discovered
+
+The TUI's `handle_session_event()` function in `chat_runner.rs` is **never called** because:
+
+1. The TUI only listens for events DURING active message streaming via `DaemonAgentHandle.send_message_stream()`
+2. The `send_message_stream()` function only converts streaming events (text_delta, thinking, tool_call, etc.) to `ChatChunk`
+3. `interaction_requested` events are logged as "Unknown session event type" and ignored
+4. There is NO background event listener for out-of-band events like interactions
+
+### Current Architecture (Broken for Interactions)
+
+```
+TUI sends message → starts listening → receives streaming events → stops listening
+                    ↑ ONLY listens here ↑
+```
+
+When daemon emits `interaction_requested`:
+1. If TUI is streaming → event received but ignored (not a ChatChunk type)
+2. If TUI is idle → event received by no one
+
+### Required Architecture
+
+```
+TUI connects → subscribes to ALL session events → handles streaming + interactions in parallel
+              ↑ ALWAYS listening ↑
+```
+
+### Root Cause Locations
+
+**`crucible-daemon-client/src/agent.rs:89-182`** - `session_event_to_chat_chunk()`:
+- Only handles: `text_delta`, `thinking`, `tool_call`, `tool_result`, `message_complete`, `ended`
+- Returns `None` for `interaction_requested` → event discarded
+
+**`crucible-cli/src/tui/oil/chat_runner.rs:626-660`** - `handle_session_event()`:
+- Correctly handles `SessionEvent::InteractionRequested`
+- But `crucible_core::events::SessionEvent` ≠ `crucible_daemon_client::SessionEvent`
+- Function is NEVER CALLED
+
+### Fix Options
+
+**Option A: Add background event subscription in TUI**
+- Add `event_rx` channel to `InkChatRunner` 
+- Subscribe to session events when TUI starts
+- Process events in parallel with terminal events in `event_loop()`
+
+**Option B: Extend DaemonAgentHandle to emit interaction events**
+- Add callback/channel for non-streaming events
+- Convert `interaction_requested` to `ChatAppMsg::OpenInteraction`
+- Less architectural change but couples agent handle to TUI
+
+**Option C: Use AgentHandle trait for event subscription**
+- Add `subscribe_events()` method to `AgentHandle` trait
+- Return stream of `SessionEvent` (core type)
+- TUI calls this separately from message streaming
+
+**Recommended**: Option A (cleanest separation, TUI owns event loop)
+
+### Workaround for QA
+
+Manual QA cannot be performed until the event subscription gap is fixed. The test RPC `session.test_interaction` works correctly (verified via nc), but the TUI never sees the event.
+
+**Verification that daemon emits correctly**:
+```bash
+echo '{"jsonrpc":"2.0","id":2,"method":"session.test_interaction","params":{"session_id":"...", "type":"ask"}}' | nc -U /run/user/1000/crucible.sock
+# Returns: {"jsonrpc":"2.0","id":2,"result":{"session_id":"...","request_id":"test-...","type":"ask"}}
+```
+
+**Verification that TUI doesn't receive**:
+- No modal appears
+- No logs about InteractionRequested in TUI
+- Event goes to void because TUI isn't subscribed
+
+## [2026-01-25] Event Subscription Gap FIXED
+
+### Solution Implemented
+
+**Option chosen**: Modified Option A - Add event routing in `DaemonAgentHandle` with separate interaction channel
+
+### Changes Made
+
+1. **`crucible-core/src/traits/chat.rs`**:
+   - Added `take_interaction_receiver()` method to `AgentHandle` trait
+   - Returns `Option<mpsc::UnboundedReceiver<InteractionEvent>>`
+   - Added blanket implementation for `Box<dyn AgentHandle>`
+
+2. **`crucible-core/src/interaction.rs`**:
+   - Added `InteractionEvent` struct: `{ request_id: String, request: InteractionRequest }`
+   - Used for out-of-band delivery through channels
+
+3. **`crucible-daemon-client/src/agent.rs`**:
+   - Refactored `DaemonAgentHandle::new()` to spawn background event router task
+   - Event router (`event_router()`) splits incoming events:
+     - `interaction_requested` → parsed to `InteractionEvent` → sent to `interaction_tx`
+     - All other events → forwarded to `streaming_tx`
+   - `take_interaction_receiver()` returns the interaction channel (once)
+   - `send_message_stream()` now uses `streaming_rx` instead of `event_rx`
+
+4. **`crucible-cli/src/tui/oil/chat_runner.rs`**:
+   - `run_with_factory()` calls `agent.take_interaction_receiver()` before event loop
+   - `event_loop()` now takes optional `interaction_rx` parameter
+   - Added new branch in `tokio::select!`:
+     ```rust
+     Some(interaction_event) = async { ... } => {
+         let session_event = SessionEvent::InteractionRequested { ... };
+         if let Some(msg) = Self::handle_session_event(session_event) {
+             let _ = app.on_message(msg);
+         }
+     }
+     ```
+
+### Architecture After Fix
+
+```
+Daemon → event_rx → event_router task → interaction_tx → TUI event loop → OpenInteraction
+                                      ↘ streaming_tx → send_message_stream() → ChatChunk
+```
+
+### Key Patterns
+
+**Event Router** (background task):
+- Runs continuously while handle exists
+- Filters events by session_id
+- Deserializes `interaction_requested` to `InteractionEvent`
+- Non-interaction events pass through to streaming channel
+
+**Interaction Channel Extraction**:
+- `take_interaction_receiver()` returns `Option<T>` (once)
+- Caller must store the receiver for the lifetime of the event loop
+- Subsequent calls return `None`
+
+### Testing
+
+- All 2431 tests pass
+- No test failures introduced
+- Integration tests verify event routing works
+
+### Manual QA Ready
+
+The TUI should now receive interaction events. Test with:
+
+1. Start daemon: `cargo run -p crucible-daemon --bin cru-server`
+2. Start TUI: `RUST_LOG=crucible_cli=info cargo run --bin cru -- chat`
+3. In another terminal, get session ID and send test interaction:
+   ```bash
+   # Get session ID from TUI logs or session.list RPC
+   echo '{"jsonrpc":"2.0","id":1,"method":"session.test_interaction","params":{"session_id":"<SESSION_ID>","type":"ask"}}' | nc -U /run/user/1000/crucible.sock
+   ```
+4. Verify:
+   - TUI logs show "Received interaction event"
+   - Modal appears with Ask question
+   - Keyboard navigation works (Up/Down/Enter/Esc)
+   - Response sends back to daemon

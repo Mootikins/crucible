@@ -160,7 +160,10 @@ impl InkChatRunner {
 
         let (msg_tx, msg_rx) = mpsc::unbounded_channel::<ChatAppMsg>();
 
-        self.event_loop(&mut app, &mut agent, bridge, msg_tx, msg_rx)
+        let interaction_rx = agent.take_interaction_receiver();
+        tracing::debug!(has_rx = interaction_rx.is_some(), "take_interaction_receiver");
+
+        self.event_loop(&mut app, &mut agent, bridge, msg_tx, msg_rx, interaction_rx)
             .await?;
 
         self.terminal.exit()?;
@@ -174,6 +177,7 @@ impl InkChatRunner {
         bridge: &AgentEventBridge,
         msg_tx: mpsc::UnboundedSender<ChatAppMsg>,
         mut msg_rx: mpsc::UnboundedReceiver<ChatAppMsg>,
+        mut interaction_rx: Option<mpsc::UnboundedReceiver<crucible_core::interaction::InteractionEvent>>,
     ) -> Result<()> {
         let mut active_stream: Option<BoxStream<'static, ChatResult<ChatChunk>>> = None;
         let mut event_stream = EventStream::new();
@@ -355,6 +359,27 @@ impl InkChatRunner {
                     }
                 } => {
                     Self::handle_session_command(cmd, agent, app).await;
+                    None
+                }
+
+                Some(interaction_event) = async {
+                    match &mut interaction_rx {
+                        Some(rx) => rx.recv().await,
+                        None => std::future::pending().await,
+                    }
+                } => {
+                    tracing::info!(
+                        request_id = %interaction_event.request_id,
+                        kind = %interaction_event.request.kind(),
+                        "Received interaction event"
+                    );
+                    let session_event = SessionEvent::InteractionRequested {
+                        request_id: interaction_event.request_id,
+                        request: interaction_event.request,
+                    };
+                    if let Some(msg) = Self::handle_session_event(session_event) {
+                        let _ = app.on_message(msg);
+                    }
                     None
                 }
             };
