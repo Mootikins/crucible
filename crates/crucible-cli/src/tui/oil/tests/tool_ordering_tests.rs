@@ -990,4 +990,71 @@ mod duplicate_content_prevention {
             bullet_count, output
         );
     }
+
+    #[test]
+    fn streaming_to_final_no_stdout_duplication() {
+        use crate::tui::oil::app::{App, ViewContext};
+        use crate::tui::oil::focus::FocusContext;
+
+        let mut app = InkChatApp::default();
+        let mut runtime = TestRuntime::new(120, 40);
+
+        app.on_message(ChatAppMsg::UserMessage("test".to_string()));
+
+        app.on_message(ChatAppMsg::TextDelta(
+            "MARKER_PARA_ONE first paragraph content.\n\n".to_string(),
+        ));
+        app.on_message(ChatAppMsg::TextDelta(
+            "MARKER_PARA_TWO second paragraph content.\n\n".to_string(),
+        ));
+        app.on_message(ChatAppMsg::TextDelta(
+            "MARKER_PARA_THREE third paragraph content.\n\n".to_string(),
+        ));
+
+        let focus = FocusContext::new();
+        let ctx = ViewContext::new(&focus);
+        let tree = app.view(&ctx);
+        runtime.render(&tree);
+
+        let stdout_during_streaming = runtime.stdout_content().to_string();
+        assert!(
+            stdout_during_streaming.contains("MARKER_PARA_ONE"),
+            "Graduated content should be in stdout during streaming"
+        );
+
+        app.on_message(ChatAppMsg::TextDelta(
+            "MARKER_FINAL_PARA final paragraph.".to_string(),
+        ));
+        app.on_message(ChatAppMsg::StreamComplete);
+
+        let pre_grad_keys = app.take_pending_pre_graduate_keys();
+        assert!(
+            !pre_grad_keys.is_empty(),
+            "Should have pre-graduate keys after streaming completes"
+        );
+        runtime.pre_graduate_keys(pre_grad_keys);
+
+        let tree2 = app.view(&ctx);
+        runtime.render(&tree2);
+
+        let final_stdout = runtime.stdout_content();
+
+        for marker in &["MARKER_PARA_ONE", "MARKER_PARA_TWO", "MARKER_PARA_THREE"] {
+            let count = count_occurrences(final_stdout, marker);
+            assert_eq!(
+                count, 1,
+                "{} should appear exactly once in stdout (was graduated during streaming, \
+                 should be skipped after completion). Found {} times.\n\
+                 stdout:\n{}",
+                marker, count, final_stdout
+            );
+        }
+
+        let final_para_count = count_occurrences(final_stdout, "MARKER_FINAL_PARA");
+        assert_eq!(
+            final_para_count, 1,
+            "Final paragraph should appear exactly once. Found {} times.\nstdout:\n{}",
+            final_para_count, final_stdout
+        );
+    }
 }
