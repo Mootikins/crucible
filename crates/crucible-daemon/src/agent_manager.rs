@@ -227,7 +227,11 @@ impl AgentManager {
         Ok(())
     }
 
-    pub fn get_pending_permission(&self, session_id: &str, permission_id: &str) -> Option<PermRequest> {
+    pub fn get_pending_permission(
+        &self,
+        session_id: &str,
+        permission_id: &str,
+    ) -> Option<PermRequest> {
         self.pending_permissions
             .get(session_id)
             .and_then(|perms| perms.get(permission_id).map(|p| p.request.clone()))
@@ -483,14 +487,11 @@ impl AgentManager {
                             if is_destructive(&tc.name) {
                                 // Check if tool call matches a whitelisted pattern
                                 let project_path = workspace_path.to_string_lossy();
-                                let pattern_store = PatternStore::load_sync(&project_path)
-                                    .unwrap_or_default();
+                                let pattern_store =
+                                    PatternStore::load_sync(&project_path).unwrap_or_default();
 
-                                let pattern_matched = Self::check_pattern_match(
-                                    &tc.name,
-                                    &args,
-                                    &pattern_store,
-                                );
+                                let pattern_matched =
+                                    Self::check_pattern_match(&tc.name, &args, &pattern_store);
 
                                 if pattern_matched {
                                     debug!(
@@ -501,10 +502,7 @@ impl AgentManager {
                                 } else {
                                     // Check Lua permission hooks (with 1-second timeout)
                                     let hook_result = Self::execute_permission_hooks_with_timeout(
-                                        &lua_state,
-                                        &tc.name,
-                                        &args,
-                                        session_id,
+                                        &lua_state, &tc.name, &args, session_id,
                                     )
                                     .await;
 
@@ -522,7 +520,8 @@ impl AgentManager {
                                                 tool = %tc.name,
                                                 "Lua hook denied tool"
                                             );
-                                            let resource_desc = Self::brief_resource_description(&args);
+                                            let resource_desc =
+                                                Self::brief_resource_description(&args);
                                             let error_msg = format!(
                                                 "Lua hook denied permission to {} {}",
                                                 tc.name, resource_desc
@@ -546,145 +545,153 @@ impl AgentManager {
                                             continue;
                                         }
                                         PermissionHookResult::Prompt => {
-                                    // No pattern match, no hook decision - emit permission request
-                                    let perm_request = PermRequest::tool(&tc.name, args.clone());
-                                    let interaction_request =
-                                        InteractionRequest::Permission(perm_request.clone());
+                                            // No pattern match, no hook decision - emit permission request
+                                            let perm_request =
+                                                PermRequest::tool(&tc.name, args.clone());
+                                            let interaction_request =
+                                                InteractionRequest::Permission(
+                                                    perm_request.clone(),
+                                                );
 
-                                    // Register pending permission and get receiver
-                                    let permission_id = format!("perm-{}", uuid::Uuid::new_v4());
-                                    let (response_tx, response_rx) = oneshot::channel();
+                                            // Register pending permission and get receiver
+                                            let permission_id =
+                                                format!("perm-{}", uuid::Uuid::new_v4());
+                                            let (response_tx, response_rx) = oneshot::channel();
 
-                                    let pending = PendingPermission {
-                                        request: perm_request,
-                                        response_tx,
-                                    };
+                                            let pending = PendingPermission {
+                                                request: perm_request,
+                                                response_tx,
+                                            };
 
-                                    pending_permissions
-                                        .entry(session_id.to_string())
-                                        .or_default()
-                                        .insert(permission_id.clone(), pending);
+                                            pending_permissions
+                                                .entry(session_id.to_string())
+                                                .or_default()
+                                                .insert(permission_id.clone(), pending);
 
-                                    debug!(
-                                        session_id = %session_id,
-                                        tool = %tc.name,
-                                        permission_id = %permission_id,
-                                        "Emitting permission request for destructive tool"
-                                    );
-
-                                    // Emit the interaction request event
-                                    if event_tx
-                                        .send(SessionEventMessage::interaction_requested(
-                                            session_id,
-                                            &permission_id,
-                                            &interaction_request,
-                                        ))
-                                        .is_err()
-                                    {
-                                        warn!(
-                                            session_id = %session_id,
-                                            tool = %tc.name,
-                                            "No subscribers for permission request event"
-                                        );
-                                    }
-
-                                    // Block until user responds to permission request
-                                    debug!(
-                                        session_id = %session_id,
-                                        tool = %tc.name,
-                                        permission_id = %permission_id,
-                                        "Waiting for permission response"
-                                    );
-
-                                    let permission_granted = match response_rx.await {
-                                        Ok(response) => {
                                             debug!(
                                                 session_id = %session_id,
                                                 tool = %tc.name,
                                                 permission_id = %permission_id,
-                                                allowed = response.allowed,
-                                                pattern = ?response.pattern,
-                                                "Permission response received"
+                                                "Emitting permission request for destructive tool"
                                             );
 
-                                            if response.allowed {
-                                                // AllowPattern: store pattern if provided
-                                                if let Some(ref pattern) = response.pattern {
-                                                    if response.scope == PermissionScope::Project {
-                                                        if let Err(e) = Self::store_pattern(
-                                                            &tc.name,
-                                                            pattern,
-                                                            &project_path,
-                                                        ) {
-                                                            warn!(
-                                                                session_id = %session_id,
-                                                                tool = %tc.name,
-                                                                pattern = %pattern,
-                                                                error = %e,
-                                                                "Failed to store pattern"
-                                                            );
-                                                        } else {
-                                                            info!(
-                                                                session_id = %session_id,
-                                                                tool = %tc.name,
-                                                                pattern = %pattern,
-                                                                "Pattern stored for future use"
-                                                            );
-                                                        }
-                                                    }
-                                                }
-                                                true
-                                            } else {
-                                                // Deny: skip tool execution
-                                                false
+                                            // Emit the interaction request event
+                                            if event_tx
+                                                .send(SessionEventMessage::interaction_requested(
+                                                    session_id,
+                                                    &permission_id,
+                                                    &interaction_request,
+                                                ))
+                                                .is_err()
+                                            {
+                                                warn!(
+                                                    session_id = %session_id,
+                                                    tool = %tc.name,
+                                                    "No subscribers for permission request event"
+                                                );
                                             }
-                                        }
-                                        Err(_) => {
-                                            // Channel dropped - treat as deny for safety
-                                            warn!(
+
+                                            // Block until user responds to permission request
+                                            debug!(
                                                 session_id = %session_id,
                                                 tool = %tc.name,
                                                 permission_id = %permission_id,
-                                                "Permission channel dropped, treating as deny"
+                                                "Waiting for permission response"
                                             );
-                                            false
-                                        }
-                                    };
 
-                                    if !permission_granted {
-                                        // Create a brief resource description from args
-                                        let resource_desc = Self::brief_resource_description(&args);
-                                        let error_msg = format!(
-                                            "User denied permission to {} {}",
-                                            tc.name, resource_desc
-                                        );
+                                            let permission_granted = match response_rx.await {
+                                                Ok(response) => {
+                                                    debug!(
+                                                        session_id = %session_id,
+                                                        tool = %tc.name,
+                                                        permission_id = %permission_id,
+                                                        allowed = response.allowed,
+                                                        pattern = ?response.pattern,
+                                                        "Permission response received"
+                                                    );
 
-                                        debug!(
-                                            session_id = %session_id,
-                                            tool = %tc.name,
-                                            error = %error_msg,
-                                            "Permission denied, emitting error result"
-                                        );
+                                                    if response.allowed {
+                                                        // AllowPattern: store pattern if provided
+                                                        if let Some(ref pattern) = response.pattern
+                                                        {
+                                                            if response.scope
+                                                                == PermissionScope::Project
+                                                            {
+                                                                if let Err(e) = Self::store_pattern(
+                                                                    &tc.name,
+                                                                    pattern,
+                                                                    &project_path,
+                                                                ) {
+                                                                    warn!(
+                                                                        session_id = %session_id,
+                                                                        tool = %tc.name,
+                                                                        pattern = %pattern,
+                                                                        error = %e,
+                                                                        "Failed to store pattern"
+                                                                    );
+                                                                } else {
+                                                                    info!(
+                                                                        session_id = %session_id,
+                                                                        tool = %tc.name,
+                                                                        pattern = %pattern,
+                                                                        "Pattern stored for future use"
+                                                                    );
+                                                                }
+                                                            }
+                                                        }
+                                                        true
+                                                    } else {
+                                                        // Deny: skip tool execution
+                                                        false
+                                                    }
+                                                }
+                                                Err(_) => {
+                                                    // Channel dropped - treat as deny for safety
+                                                    warn!(
+                                                        session_id = %session_id,
+                                                        tool = %tc.name,
+                                                        permission_id = %permission_id,
+                                                        "Permission channel dropped, treating as deny"
+                                                    );
+                                                    false
+                                                }
+                                            };
 
-                                        // Emit tool_result with error so LLM sees the denial
-                                        if event_tx
-                                            .send(SessionEventMessage::tool_result(
-                                                session_id,
-                                                &call_id,
-                                                &tc.name,
-                                                serde_json::json!({ "error": error_msg }),
-                                            ))
-                                            .is_err()
-                                        {
-                                            warn!(
-                                                session_id = %session_id,
-                                                tool = %tc.name,
-                                                "No subscribers for permission denied tool_result event"
-                                            );
-                                        }
+                                            if !permission_granted {
+                                                // Create a brief resource description from args
+                                                let resource_desc =
+                                                    Self::brief_resource_description(&args);
+                                                let error_msg = format!(
+                                                    "User denied permission to {} {}",
+                                                    tc.name, resource_desc
+                                                );
 
-                                        continue;
-                                    }
+                                                debug!(
+                                                    session_id = %session_id,
+                                                    tool = %tc.name,
+                                                    error = %error_msg,
+                                                    "Permission denied, emitting error result"
+                                                );
+
+                                                // Emit tool_result with error so LLM sees the denial
+                                                if event_tx
+                                                    .send(SessionEventMessage::tool_result(
+                                                        session_id,
+                                                        &call_id,
+                                                        &tc.name,
+                                                        serde_json::json!({ "error": error_msg }),
+                                                    ))
+                                                    .is_err()
+                                                {
+                                                    warn!(
+                                                        session_id = %session_id,
+                                                        tool = %tc.name,
+                                                        "No subscribers for permission denied tool_result event"
+                                                    );
+                                                }
+
+                                                continue;
+                                            }
                                         }
                                     }
                                 }
@@ -981,8 +988,7 @@ impl AgentManager {
         let start = std::time::Instant::now();
         let timeout = std::time::Duration::from_secs(1);
 
-        let result =
-            execute_permission_hooks(&state.lua, &hooks_guard, &functions_guard, &request);
+        let result = execute_permission_hooks(&state.lua, &hooks_guard, &functions_guard, &request);
 
         if start.elapsed() > timeout {
             warn!(
@@ -2395,10 +2401,7 @@ mod tests {
         #[test]
         fn extracts_name_field() {
             let args = serde_json::json!({"name": "my-note"});
-            assert_eq!(
-                AgentManager::brief_resource_description(&args),
-                "my-note"
-            );
+            assert_eq!(AgentManager::brief_resource_description(&args), "my-note");
         }
 
         #[test]
@@ -2474,9 +2477,21 @@ mod tests {
 
             let args = serde_json::json!({"name": "notes/my-note.md"});
 
-            assert!(AgentManager::check_pattern_match("create_note", &args, &store));
-            assert!(AgentManager::check_pattern_match("update_note", &args, &store));
-            assert!(AgentManager::check_pattern_match("delete_note", &args, &store));
+            assert!(AgentManager::check_pattern_match(
+                "create_note",
+                &args,
+                &store
+            ));
+            assert!(AgentManager::check_pattern_match(
+                "update_note",
+                &args,
+                &store
+            ));
+            assert!(AgentManager::check_pattern_match(
+                "delete_note",
+                &args,
+                &store
+            ));
         }
 
         #[test]
@@ -2485,14 +2500,22 @@ mod tests {
             store.add_tool_pattern("custom_tool").unwrap();
 
             let args = serde_json::json!({});
-            assert!(AgentManager::check_pattern_match("custom_tool", &args, &store));
+            assert!(AgentManager::check_pattern_match(
+                "custom_tool",
+                &args,
+                &store
+            ));
         }
 
         #[test]
         fn tool_no_match() {
             let store = PatternStore::new();
             let args = serde_json::json!({});
-            assert!(!AgentManager::check_pattern_match("unknown_tool", &args, &store));
+            assert!(!AgentManager::check_pattern_match(
+                "unknown_tool",
+                &args,
+                &store
+            ));
         }
 
         #[test]
@@ -2500,13 +2523,21 @@ mod tests {
             let store = PatternStore::new();
 
             let bash_args = serde_json::json!({"command": "npm install"});
-            assert!(!AgentManager::check_pattern_match("bash", &bash_args, &store));
+            assert!(!AgentManager::check_pattern_match(
+                "bash", &bash_args, &store
+            ));
 
             let file_args = serde_json::json!({"path": "src/lib.rs"});
-            assert!(!AgentManager::check_pattern_match("write", &file_args, &store));
+            assert!(!AgentManager::check_pattern_match(
+                "write", &file_args, &store
+            ));
 
             let tool_args = serde_json::json!({});
-            assert!(!AgentManager::check_pattern_match("custom_tool", &tool_args, &store));
+            assert!(!AgentManager::check_pattern_match(
+                "custom_tool",
+                &tool_args,
+                &store
+            ));
         }
 
         #[test]
@@ -2588,8 +2619,11 @@ mod tests {
             let (permission_id, rx) = agent_manager.await_permission(session_id, request);
 
             // Respond with allow
-            let result =
-                agent_manager.respond_to_permission(session_id, &permission_id, PermResponse::allow());
+            let result = agent_manager.respond_to_permission(
+                session_id,
+                &permission_id,
+                PermResponse::allow(),
+            );
             assert!(result.is_ok(), "respond_to_permission should succeed");
 
             // Verify response received
@@ -2609,8 +2643,11 @@ mod tests {
             let (permission_id, rx) = agent_manager.await_permission(session_id, request);
 
             // Respond with deny
-            let result =
-                agent_manager.respond_to_permission(session_id, &permission_id, PermResponse::deny());
+            let result = agent_manager.respond_to_permission(
+                session_id,
+                &permission_id,
+                PermResponse::deny(),
+            );
             assert!(result.is_ok(), "respond_to_permission should succeed");
 
             // Verify response received
@@ -2720,7 +2757,10 @@ mod tests {
             let agent_manager = create_test_agent_manager(session_manager);
 
             let pending = agent_manager.list_pending_permissions("unknown-session");
-            assert!(pending.is_empty(), "Should return empty list for unknown session");
+            assert!(
+                pending.is_empty(),
+                "Should return empty list for unknown session"
+            );
         }
 
         #[tokio::test]
@@ -2776,8 +2816,14 @@ mod tests {
             assert_eq!(pending1.len(), 1, "Session 1 should have 1 permission");
             assert_eq!(pending2.len(), 1, "Session 2 should have 1 permission");
 
-            assert_eq!(pending1[0].0, id1, "Session 1 should have its own permission");
-            assert_eq!(pending2[0].0, id2, "Session 2 should have its own permission");
+            assert_eq!(
+                pending1[0].0, id1,
+                "Session 1 should have its own permission"
+            );
+            assert_eq!(
+                pending2[0].0, id2,
+                "Session 2 should have its own permission"
+            );
 
             // Cleanup session 1 should not affect session 2
             agent_manager.cleanup_session(session1);

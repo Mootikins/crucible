@@ -434,8 +434,14 @@ mod tests {
         store.add_bash_pattern("npm install").unwrap();
 
         assert_eq!(store.bash_commands.allowed_prefixes.len(), 2);
-        assert!(store.bash_commands.allowed_prefixes.contains(&"cargo build".to_string()));
-        assert!(store.bash_commands.allowed_prefixes.contains(&"npm install".to_string()));
+        assert!(store
+            .bash_commands
+            .allowed_prefixes
+            .contains(&"cargo build".to_string()));
+        assert!(store
+            .bash_commands
+            .allowed_prefixes
+            .contains(&"npm install".to_string()));
     }
 
     #[test]
@@ -445,8 +451,14 @@ mod tests {
         store.add_file_pattern("tests/").unwrap();
 
         assert_eq!(store.file_paths.allowed_prefixes.len(), 2);
-        assert!(store.file_paths.allowed_prefixes.contains(&"src/".to_string()));
-        assert!(store.file_paths.allowed_prefixes.contains(&"tests/".to_string()));
+        assert!(store
+            .file_paths
+            .allowed_prefixes
+            .contains(&"src/".to_string()));
+        assert!(store
+            .file_paths
+            .allowed_prefixes
+            .contains(&"tests/".to_string()));
     }
 
     #[test]
@@ -457,7 +469,10 @@ mod tests {
 
         assert_eq!(store.tools.always_allow.len(), 2);
         assert!(store.tools.always_allow.contains(&"read_note".to_string()));
-        assert!(store.tools.always_allow.contains(&"text_search".to_string()));
+        assert!(store
+            .tools
+            .always_allow
+            .contains(&"text_search".to_string()));
     }
 
     #[test]
