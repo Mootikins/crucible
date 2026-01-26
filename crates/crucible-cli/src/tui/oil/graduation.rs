@@ -15,7 +15,7 @@
 //! 3. **Atomic**: Graduation commits before viewport filtering (no "flash" of missing content)
 //! 4. **Stable**: Resize operations preserve content (no loss during height changes)
 
-use crate::tui::oil::node::Node;
+use crate::tui::oil::node::{ElementKind, Node};
 use crate::tui::oil::render::{render_children_to_string, RenderFilter};
 use std::collections::VecDeque;
 use std::io;
@@ -66,6 +66,23 @@ impl GraduationState {
         self.graduated_keys.clear();
     }
 
+    /// Pre-register keys as already graduated.
+    ///
+    /// This is used when content has already been written to stdout under different keys
+    /// (e.g., streaming keys like `streaming-graduated-0`) and we're about to render
+    /// the same content under new keys (e.g., `assistant-2`). By pre-registering the
+    /// new keys, we prevent the content from being written to stdout twice.
+    pub fn pre_graduate_keys(&mut self, keys: impl IntoIterator<Item = String>) {
+        for key in keys {
+            if !self.is_graduated(&key) {
+                if self.graduated_keys.len() >= MAX_GRADUATED_KEYS {
+                    self.graduated_keys.pop_front();
+                }
+                self.graduated_keys.push_back(key);
+            }
+        }
+    }
+
     pub fn plan_graduation(&self, node: &Node) -> Vec<GraduatedContent> {
         let mut graduated = Vec::new();
         self.collect_static_nodes_readonly(node, &mut graduated);
@@ -73,14 +90,7 @@ impl GraduationState {
     }
 
     pub fn commit_graduation(&mut self, graduated: &[GraduatedContent]) {
-        for item in graduated {
-            if !self.is_graduated(&item.key) {
-                if self.graduated_keys.len() >= MAX_GRADUATED_KEYS {
-                    self.graduated_keys.pop_front();
-                }
-                self.graduated_keys.push_back(item.key.clone());
-            }
-        }
+        self.pre_graduate_keys(graduated.iter().map(|g| g.key.clone()));
     }
 
     pub fn format_stdout_delta(
@@ -93,14 +103,18 @@ impl GraduationState {
         }
 
         let mut output = String::new();
-        let mut current_pending = pending_newline;
+        let mut prev_kind: Option<ElementKind> = if pending_newline {
+            Some(ElementKind::Block)
+        } else {
+            None
+        };
 
         for item in graduated {
-            if current_pending && item.newline {
+            if item.kind.wants_blank_line_before(prev_kind) {
                 output.push_str("\r\n");
             }
             output.push_str(&item.content);
-            current_pending = item.newline;
+            prev_kind = Some(item.kind);
         }
 
         for _ in 0..boundary_lines {
@@ -110,7 +124,7 @@ impl GraduationState {
         let final_pending = if boundary_lines > 0 {
             false
         } else {
-            current_pending
+            prev_kind.map(|k| k.wants_newline_after()).unwrap_or(false)
         };
         (output, final_pending)
     }
@@ -134,6 +148,7 @@ impl GraduationState {
                         graduated.push(GraduatedContent {
                             key: static_node.key.clone(),
                             content,
+                            kind: static_node.kind,
                             newline: static_node.newline,
                         });
                     }
@@ -168,6 +183,7 @@ impl RenderFilter for GraduationState {
 pub struct GraduatedContent {
     pub key: String,
     pub content: String,
+    pub kind: ElementKind,
     pub newline: bool,
 }
 
@@ -246,11 +262,13 @@ mod tests {
             GraduatedContent {
                 key: "k1".to_string(),
                 content: "Hello".to_string(),
+                kind: ElementKind::Block,
                 newline: true,
             },
             GraduatedContent {
                 key: "k2".to_string(),
                 content: "World".to_string(),
+                kind: ElementKind::Block,
                 newline: true,
             },
         ];
@@ -270,6 +288,7 @@ mod tests {
         let graduated = vec![GraduatedContent {
             key: "k1".to_string(),
             content: "Content".to_string(),
+            kind: ElementKind::Block,
             newline: true,
         }];
 
@@ -286,5 +305,49 @@ mod tests {
         let (delta2, pending2) = GraduationState::format_stdout_delta(&[], false, 1);
         assert!(delta2.is_empty());
         assert!(!pending2);
+    }
+
+    #[test]
+    fn pre_graduate_keys_marks_keys_without_content() {
+        use crate::tui::oil::node::{scrollback, text};
+
+        let mut state = GraduationState::new();
+
+        state.pre_graduate_keys(["assistant-1".to_string(), "assistant-2".to_string()]);
+
+        assert!(state.is_graduated("assistant-1"));
+        assert!(state.is_graduated("assistant-2"));
+        assert_eq!(state.graduated_count(), 2);
+
+        let tree = scrollback("assistant-1", [text("Content")]);
+        let graduated = state.plan_graduation(&tree);
+        assert!(
+            graduated.is_empty(),
+            "pre-graduated key should not graduate again"
+        );
+    }
+
+    #[test]
+    fn pre_graduate_keys_prevents_double_graduation() {
+        use crate::tui::oil::node::{col, scrollback, text};
+
+        let mut state = GraduationState::new();
+
+        let streaming_tree = scrollback("streaming-graduated-0", [text("Hello world")]);
+        let graduated = state.plan_graduation(&streaming_tree);
+        assert_eq!(graduated.len(), 1);
+        state.commit_graduation(&graduated);
+
+        state.pre_graduate_keys(["assistant-1".to_string()]);
+
+        let final_tree = col([
+            scrollback("streaming-graduated-0", [text("Hello world")]),
+            scrollback("assistant-1", [text("Hello world")]),
+        ]);
+        let graduated_final = state.plan_graduation(&final_tree);
+        assert!(
+            graduated_final.is_empty(),
+            "both streaming key and pre-graduated final key should be skipped"
+        );
     }
 }

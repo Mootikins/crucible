@@ -6,15 +6,16 @@ use crate::tui::oil::ansi::strip_ansi;
 use crate::tui::oil::app::{App, ViewContext};
 use crate::tui::oil::chat_app::{ChatAppMsg, InkChatApp};
 use crate::tui::oil::focus::FocusContext;
-use crate::tui::oil::render::render_to_string;
+use crate::tui::oil::planning::FramePlanner;
 use insta::assert_snapshot;
 
 fn render_app(app: &InkChatApp) -> String {
     let focus = FocusContext::new();
     let ctx = ViewContext::new(&focus);
     let tree = app.view(&ctx);
-    let rendered = render_to_string(&tree, 80);
-    strip_ansi(&rendered)
+    let mut planner = FramePlanner::new(80, 24);
+    let snapshot = planner.plan(&tree);
+    strip_ansi(&snapshot.screen())
 }
 
 /// Issue: Table content duplicated after graduation
@@ -206,4 +207,41 @@ Why it matters
     );
 
     assert_snapshot!("complex_markdown_table", rendered);
+}
+
+#[test]
+fn heading_after_paragraph_has_spacing() {
+    let mut app = InkChatApp::default();
+
+    let md_with_heading = r#"Here's what I can do:
+
+## File Operations
+
+- read_file: Read files
+- write_file: Write files"#;
+
+    app.on_message(ChatAppMsg::UserMessage(
+        "Tell me about your tools".to_string(),
+    ));
+    app.on_message(ChatAppMsg::TextDelta(md_with_heading.to_string()));
+    app.on_message(ChatAppMsg::StreamComplete);
+
+    let rendered = render_app(&app);
+    let lines: Vec<&str> = rendered.lines().collect();
+
+    let para_idx = lines.iter().position(|l| l.contains("can do")).unwrap();
+    let heading_idx = lines
+        .iter()
+        .position(|l| l.contains("File Operations"))
+        .unwrap();
+
+    assert!(
+        heading_idx > para_idx + 1,
+        "Should have blank line between paragraph and heading.\nPara at line {}: {:?}\nHeading at line {}: {:?}\n\nAll lines:\n{}",
+        para_idx, lines.get(para_idx),
+        heading_idx, lines.get(heading_idx),
+        lines.iter().enumerate().map(|(i, l)| format!("{:02}: {:?}", i, l)).collect::<Vec<_>>().join("\n")
+    );
+
+    assert_snapshot!("heading_after_paragraph", rendered);
 }

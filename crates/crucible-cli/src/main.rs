@@ -116,8 +116,9 @@ async fn main() -> Result<()> {
     // Check if the command uses stdio for communication (needs file logging)
     // MCP and Chat use stdio (stdin/stdout) for JSON-RPC, so we must avoid stderr output
     let uses_stdio = match &cli.command {
+        // None defaults to chat mode
         Some(Commands::Mcp { stdio, .. }) => *stdio,
-        Some(Commands::Chat { .. }) => true,
+        Some(Commands::Chat { .. }) | None => true,
         _ => false,
     };
 
@@ -153,7 +154,7 @@ async fn main() -> Result<()> {
             // Default to ~/.crucible/<command>.log, override with CRUCIBLE_LOG_FILE
             let log_file_name = match &cli.command {
                 Some(Commands::Mcp { .. }) => "mcp.log",
-                Some(Commands::Chat { .. }) => "chat.log",
+                Some(Commands::Chat { .. }) | None => "chat.log",
                 _ => "crucible.log",
             };
 

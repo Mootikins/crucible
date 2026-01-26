@@ -425,6 +425,7 @@ pub struct InkChatApp {
     current_provider: String,
     notification_area: NotificationArea,
     interaction_modal: Option<InteractionModalState>,
+    pending_pre_graduate_keys: Vec<String>,
 }
 
 impl Default for InkChatApp {
@@ -465,6 +466,7 @@ impl Default for InkChatApp {
             current_provider: "local".to_string(),
             notification_area: NotificationArea::new(),
             interaction_modal: None,
+            pending_pre_graduate_keys: Vec::new(),
         }
     }
 }
@@ -893,6 +895,10 @@ impl InkChatApp {
 
     pub fn take_needs_full_redraw(&mut self) -> bool {
         std::mem::take(&mut self.needs_full_redraw)
+    }
+
+    pub fn take_pending_pre_graduate_keys(&mut self) -> Vec<String> {
+        std::mem::take(&mut self.pending_pre_graduate_keys)
     }
 
     fn handle_key(&mut self, key: crossterm::event::KeyEvent) -> Action<ChatAppMsg> {
@@ -2742,9 +2748,12 @@ impl InkChatApp {
         if self.cache.is_streaming() {
             self.message_counter += 1;
             let msg_id = format!("assistant-{}", self.message_counter);
-            self.cache
+            let result = self
+                .cache
                 .complete_streaming(msg_id.clone(), Role::Assistant);
 
+            self.pending_pre_graduate_keys
+                .extend(result.pre_graduate_keys);
             self.last_thinking = None;
         }
 
@@ -2910,7 +2919,7 @@ impl InkChatApp {
                 let md_node = markdown_to_node_styled(block_content, style);
                 nodes.push(scrollback(
                     format!("streaming-graduated-{}", i),
-                    [col([text(""), md_node])],
+                    [col([text(""), md_node, text("")])],
                 ));
                 text_block_count += 1;
             }
