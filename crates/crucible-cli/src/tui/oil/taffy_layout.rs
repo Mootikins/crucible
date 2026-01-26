@@ -1,6 +1,6 @@
-use crate::tui::oil::node::{BoxNode, Direction, Node, Size as InkSize};
+use crate::tui::oil::node::{BoxNode, Direction, Node, Size as OilSize};
 use crate::tui::oil::render::render_to_string;
-use crate::tui::oil::style::{AlignItems as InkAlignItems, JustifyContent as InkJustifyContent};
+use crate::tui::oil::style::{AlignItems as OilAlignItems, JustifyContent as OilJustifyContent};
 use std::collections::HashMap;
 use taffy::prelude::*;
 
@@ -185,9 +185,9 @@ impl LayoutEngine {
         let align_items = convert_align_items(boxnode.align);
 
         let (width, height, flex_grow) = match boxnode.size {
-            InkSize::Fixed(h) => (length(available_width), length(h as f32), 0.0),
-            InkSize::Flex(weight) => (length(available_width), auto(), weight as f32),
-            InkSize::Content => (length(available_width), auto(), 0.0),
+            OilSize::Fixed(h) => (length(available_width), length(h as f32), 0.0),
+            OilSize::Flex(weight) => (length(available_width), auto(), weight as f32),
+            OilSize::Content => (length(available_width), auto(), 0.0),
         };
 
         self.tree
@@ -262,23 +262,23 @@ impl LayoutEngine {
     }
 }
 
-fn convert_justify_content(justify: InkJustifyContent) -> JustifyContent {
+fn convert_justify_content(justify: OilJustifyContent) -> JustifyContent {
     match justify {
-        InkJustifyContent::Start => JustifyContent::Start,
-        InkJustifyContent::End => JustifyContent::End,
-        InkJustifyContent::Center => JustifyContent::Center,
-        InkJustifyContent::SpaceBetween => JustifyContent::SpaceBetween,
-        InkJustifyContent::SpaceAround => JustifyContent::SpaceAround,
-        InkJustifyContent::SpaceEvenly => JustifyContent::SpaceEvenly,
+        OilJustifyContent::Start => JustifyContent::Start,
+        OilJustifyContent::End => JustifyContent::End,
+        OilJustifyContent::Center => JustifyContent::Center,
+        OilJustifyContent::SpaceBetween => JustifyContent::SpaceBetween,
+        OilJustifyContent::SpaceAround => JustifyContent::SpaceAround,
+        OilJustifyContent::SpaceEvenly => JustifyContent::SpaceEvenly,
     }
 }
 
-fn convert_align_items(align: InkAlignItems) -> AlignItems {
+fn convert_align_items(align: OilAlignItems) -> AlignItems {
     match align {
-        InkAlignItems::Start => AlignItems::Start,
-        InkAlignItems::End => AlignItems::End,
-        InkAlignItems::Center => AlignItems::Center,
-        InkAlignItems::Stretch => AlignItems::Stretch,
+        OilAlignItems::Start => AlignItems::Start,
+        OilAlignItems::End => AlignItems::End,
+        OilAlignItems::Center => AlignItems::Center,
+        OilAlignItems::Stretch => AlignItems::Stretch,
     }
 }
 
@@ -305,7 +305,7 @@ fn measure_text_lines(content: &str, width: usize) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tui::oil::node::flex as ink_flex;
+    use crate::tui::oil::node::flex as oil_flex;
     use crate::tui::oil::node::{col, row, text};
 
     #[test]
@@ -324,7 +324,7 @@ mod tests {
 
         let tree = col([
             text("Fixed header"),
-            ink_flex(1, col([text("Expanding body")])),
+            oil_flex(1, col([text("Expanding body")])),
             text("Fixed footer"),
         ]);
 

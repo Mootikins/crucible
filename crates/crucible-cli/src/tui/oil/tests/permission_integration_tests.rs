@@ -7,7 +7,7 @@
 //! 4. Response sent back to daemon
 
 use crate::tui::oil::app::{App, ViewContext};
-use crate::tui::oil::chat_app::{ChatAppMsg, InkChatApp};
+use crate::tui::oil::chat_app::{ChatAppMsg, OilChatApp};
 use crate::tui::oil::event::Event;
 use crate::tui::oil::focus::FocusContext;
 use crate::tui::oil::render::render_to_string;
@@ -18,7 +18,7 @@ fn key(code: KeyCode) -> KeyEvent {
     KeyEvent::new(code, KeyModifiers::NONE)
 }
 
-fn render_app(app: &InkChatApp) -> String {
+fn render_app(app: &OilChatApp) -> String {
     let focus = FocusContext::new();
     let ctx = ViewContext::new(&focus);
     let tree = app.view(&ctx);
@@ -51,7 +51,7 @@ fn assert_not_contains(output: &str, needle: &str, context: &str) {
 
 #[test]
 fn test_permission_modal_opens_on_interaction_request() {
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
 
     // Initially no modal
     let _output = render_app(&app);
@@ -75,7 +75,7 @@ fn test_permission_modal_opens_on_interaction_request() {
 
 #[test]
 fn test_permission_modal_displays_bash_command() {
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
     let request = InteractionRequest::Permission(PermRequest::bash(["npm", "install", "lodash"]));
     app.open_interaction("perm-bash".to_string(), request);
 
@@ -87,7 +87,7 @@ fn test_permission_modal_displays_bash_command() {
 
 #[test]
 fn test_permission_modal_shows_keybinding_hints() {
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
     let request = InteractionRequest::Permission(PermRequest::bash(["rm", "-rf", "/"]));
     app.open_interaction("perm-dangerous".to_string(), request);
 
@@ -103,7 +103,7 @@ fn test_permission_modal_shows_keybinding_hints() {
 
 #[test]
 fn test_permission_y_key_allows_and_closes() {
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
     let request = InteractionRequest::Permission(PermRequest::bash(["npm", "install"]));
     app.open_interaction("perm-1".to_string(), request);
 
@@ -121,7 +121,7 @@ fn test_permission_y_key_allows_and_closes() {
 
 #[test]
 fn test_permission_y_key_uppercase_allows_and_closes() {
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
     let request = InteractionRequest::Permission(PermRequest::bash(["npm", "install"]));
     app.open_interaction("perm-1".to_string(), request);
 
@@ -139,7 +139,7 @@ fn test_permission_y_key_uppercase_allows_and_closes() {
 
 #[test]
 fn test_permission_n_key_denies_and_closes() {
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
     let request = InteractionRequest::Permission(PermRequest::bash(["npm", "install"]));
     app.open_interaction("perm-1".to_string(), request);
 
@@ -157,7 +157,7 @@ fn test_permission_n_key_denies_and_closes() {
 
 #[test]
 fn test_permission_n_key_uppercase_denies_and_closes() {
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
     let request = InteractionRequest::Permission(PermRequest::bash(["npm", "install"]));
     app.open_interaction("perm-1".to_string(), request);
 
@@ -175,7 +175,7 @@ fn test_permission_n_key_uppercase_denies_and_closes() {
 
 #[test]
 fn test_permission_escape_denies_and_closes() {
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
     let request = InteractionRequest::Permission(PermRequest::bash(["npm", "install"]));
     app.open_interaction("perm-1".to_string(), request);
 
@@ -193,7 +193,7 @@ fn test_permission_escape_denies_and_closes() {
 
 #[test]
 fn test_permission_h_key_toggles_diff_visibility() {
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
     let request = InteractionRequest::Permission(PermRequest::bash(["npm", "install"]));
     app.open_interaction("perm-1".to_string(), request);
 
@@ -217,7 +217,7 @@ fn test_permission_h_key_toggles_diff_visibility() {
 
 #[test]
 fn test_permission_h_key_uppercase_toggles_diff_visibility() {
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
     let request = InteractionRequest::Permission(PermRequest::bash(["npm", "install"]));
     app.open_interaction("perm-1".to_string(), request);
 
@@ -236,7 +236,7 @@ fn test_permission_h_key_uppercase_toggles_diff_visibility() {
 
 #[test]
 fn test_permission_other_keys_ignored() {
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
     let request = InteractionRequest::Permission(PermRequest::bash(["npm", "install"]));
     app.open_interaction("perm-1".to_string(), request);
 
@@ -268,7 +268,7 @@ fn test_permission_other_keys_ignored() {
 
 #[test]
 fn test_permission_queue_shows_first() {
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
 
     // Queue multiple permission requests
     let req1 = InteractionRequest::Permission(PermRequest::bash(["npm", "install"]));
@@ -286,7 +286,7 @@ fn test_permission_queue_shows_first() {
 
 #[test]
 fn test_permission_queue_shows_indicator() {
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
 
     // Queue multiple permission requests
     let req1 = InteractionRequest::Permission(PermRequest::bash(["npm", "install"]));
@@ -306,7 +306,7 @@ fn test_permission_queue_shows_indicator() {
 
 #[test]
 fn test_permission_queue_advances_after_response() {
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
 
     // Queue multiple permission requests
     let req1 = InteractionRequest::Permission(PermRequest::bash(["npm", "install"]));
@@ -337,7 +337,7 @@ fn test_permission_queue_advances_after_response() {
 
 #[test]
 fn test_permission_response_callback_called() {
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
     let request = InteractionRequest::Permission(PermRequest::bash(["npm", "install"]));
     app.open_interaction("perm-1".to_string(), request);
 
@@ -368,7 +368,7 @@ fn test_permission_response_callback_called() {
 
 #[test]
 fn test_permission_deny_response_callback_called() {
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
     let request = InteractionRequest::Permission(PermRequest::bash(["npm", "install"]));
     app.open_interaction("perm-1".to_string(), request);
 
@@ -398,7 +398,7 @@ fn test_permission_deny_response_callback_called() {
 
 #[test]
 fn test_permission_multiple_denials_all_callback() {
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
 
     // Queue multiple permission requests
     let req1 = InteractionRequest::Permission(PermRequest::bash(["npm", "install"]));
@@ -450,7 +450,7 @@ fn test_permission_multiple_denials_all_callback() {
 
 #[test]
 fn test_permission_read_scope_displayed() {
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
     let request = InteractionRequest::Permission(PermRequest::read(["etc", "hosts"]));
     app.open_interaction("perm-read".to_string(), request);
 
@@ -461,7 +461,7 @@ fn test_permission_read_scope_displayed() {
 
 #[test]
 fn test_permission_tool_scope_displayed() {
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
     let request = InteractionRequest::Permission(PermRequest::tool(
         "semantic_search",
         serde_json::json!({"query": "rust memory safety"}),
@@ -478,7 +478,7 @@ fn test_permission_tool_scope_displayed() {
 
 #[test]
 fn test_permission_down_arrow_navigates() {
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
     let request = InteractionRequest::Permission(PermRequest::bash(["npm", "install"]));
     app.open_interaction("perm-1".to_string(), request);
 
@@ -497,7 +497,7 @@ fn test_permission_down_arrow_navigates() {
 
 #[test]
 fn test_permission_up_arrow_navigates() {
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
     let request = InteractionRequest::Permission(PermRequest::bash(["npm", "install"]));
     app.open_interaction("perm-1".to_string(), request);
 
@@ -511,7 +511,7 @@ fn test_permission_up_arrow_navigates() {
 
 #[test]
 fn test_permission_j_key_navigates_down() {
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
     let request = InteractionRequest::Permission(PermRequest::bash(["npm", "install"]));
     app.open_interaction("perm-1".to_string(), request);
 
@@ -525,7 +525,7 @@ fn test_permission_j_key_navigates_down() {
 
 #[test]
 fn test_permission_k_key_navigates_up() {
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
     let request = InteractionRequest::Permission(PermRequest::bash(["npm", "install"]));
     app.open_interaction("perm-1".to_string(), request);
 
@@ -539,7 +539,7 @@ fn test_permission_k_key_navigates_up() {
 
 #[test]
 fn test_permission_enter_confirms_selection() {
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
     let request = InteractionRequest::Permission(PermRequest::bash(["npm", "install"]));
     app.open_interaction("perm-1".to_string(), request);
 
@@ -565,7 +565,7 @@ fn test_permission_enter_confirms_selection() {
 
 #[test]
 fn test_permission_navigate_to_deny_then_enter() {
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
     let request = InteractionRequest::Permission(PermRequest::bash(["npm", "install"]));
     app.open_interaction("perm-1".to_string(), request);
 
@@ -595,7 +595,7 @@ fn test_permission_navigate_to_deny_then_enter() {
 
 #[test]
 fn test_permission_navigate_to_pattern_then_enter() {
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
     let request = InteractionRequest::Permission(PermRequest::bash(["npm", "install"]));
     app.open_interaction("perm-1".to_string(), request);
 
@@ -627,7 +627,7 @@ fn test_permission_navigate_to_pattern_then_enter() {
 
 #[test]
 fn test_permission_navigation_wraps_around_bottom() {
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
     let request = InteractionRequest::Permission(PermRequest::bash(["npm", "install"]));
     app.open_interaction("perm-1".to_string(), request);
 
@@ -652,7 +652,7 @@ fn test_permission_navigation_wraps_around_bottom() {
 
 #[test]
 fn test_permission_navigation_wraps_around_top() {
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
     let request = InteractionRequest::Permission(PermRequest::bash(["npm", "install"]));
     app.open_interaction("perm-1".to_string(), request);
 
@@ -675,7 +675,7 @@ fn test_permission_navigation_wraps_around_top() {
 
 #[test]
 fn test_permission_ctrl_c_denies_and_closes() {
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
     let request = InteractionRequest::Permission(PermRequest::bash(["npm", "install"]));
     app.open_interaction("perm-1".to_string(), request);
 
@@ -703,7 +703,7 @@ fn test_permission_ctrl_c_denies_and_closes() {
 
 #[test]
 fn test_permission_shows_selectable_options() {
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
     let request = InteractionRequest::Permission(PermRequest::bash(["npm", "install"]));
     app.open_interaction("perm-1".to_string(), request);
 
@@ -721,7 +721,7 @@ fn test_permission_shows_selectable_options() {
 
 #[test]
 fn test_permission_long_command_displayed() {
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
     let long_cmd = vec![
         "npm",
         "install",
@@ -739,7 +739,7 @@ fn test_permission_long_command_displayed() {
 
 #[test]
 fn test_permission_empty_queue_after_all_responses() {
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
 
     let req1 = InteractionRequest::Permission(PermRequest::bash(["npm", "install"]));
     let req2 = InteractionRequest::Permission(PermRequest::bash(["cargo", "build"]));

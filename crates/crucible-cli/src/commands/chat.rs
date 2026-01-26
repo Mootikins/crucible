@@ -165,7 +165,7 @@ async fn run_interactive_chat(
 ) -> Result<()> {
     use crate::chat::bridge::AgentEventBridge;
     use crate::chat::session::{index_kiln_notes, index_workspace_files};
-    use crate::tui::oil::{ChatMode, InkChatRunner};
+    use crate::tui::oil::{ChatMode, OilChatRunner};
     use crucible_core::events::EventRing;
     use crucible_core::traits::chat::is_read_only;
 
@@ -188,7 +188,7 @@ async fn run_interactive_chat(
         );
     }
 
-    let mut runner = InkChatRunner::new()?
+    let mut runner = OilChatRunner::new()?
         .with_mode(mode)
         .with_model(&model_name)
         .with_context_limit(context_limit)

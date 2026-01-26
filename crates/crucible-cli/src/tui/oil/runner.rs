@@ -7,7 +7,7 @@ use std::io;
 use std::time::Duration;
 use tokio::sync::mpsc;
 
-pub struct InkRunner<A: App> {
+pub struct OilRunner<A: App> {
     app: A,
     terminal: Terminal,
     tick_rate: Duration,
@@ -15,7 +15,7 @@ pub struct InkRunner<A: App> {
     focus: FocusContext,
 }
 
-impl<A: App> InkRunner<A> {
+impl<A: App> OilRunner<A> {
     pub fn new() -> io::Result<Self> {
         let app = A::init();
         let tick_rate = app.tick_rate().unwrap_or(Duration::from_millis(100));

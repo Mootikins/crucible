@@ -1,5 +1,5 @@
 use crate::tui::oil::app::{App, ViewContext};
-use crate::tui::oil::chat_app::{ChatAppMsg, InkChatApp};
+use crate::tui::oil::chat_app::{ChatAppMsg, OilChatApp};
 use crate::tui::oil::event::Event;
 use crate::tui::oil::focus::FocusContext;
 use crate::tui::oil::node::Node;
@@ -9,7 +9,7 @@ use futures::StreamExt;
 use std::time::{Duration, Instant};
 use tokio::sync::mpsc;
 
-fn view_with_default_ctx(app: &InkChatApp) -> Node {
+fn view_with_default_ctx(app: &OilChatApp) -> Node {
     let focus = FocusContext::new();
     let ctx = ViewContext::new(&focus);
     app.view(&ctx)
@@ -18,7 +18,7 @@ fn view_with_default_ctx(app: &InkChatApp) -> Node {
 #[tokio::test]
 async fn event_loop_does_not_freeze_without_input() {
     let mut terminal = Terminal::new().unwrap();
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
     let (_msg_tx, mut msg_rx) = mpsc::unbounded_channel::<ChatAppMsg>();
 
     let start = Instant::now();
@@ -50,7 +50,7 @@ async fn event_loop_does_not_freeze_without_input() {
 #[tokio::test]
 async fn render_loop_completes_many_iterations() {
     let mut terminal = Terminal::new().unwrap();
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
 
     let start = Instant::now();
 
@@ -74,7 +74,7 @@ async fn render_loop_completes_many_iterations() {
 #[tokio::test]
 async fn render_with_messages_does_not_accumulate() {
     let mut terminal = Terminal::new().unwrap();
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
 
     for i in 0..20 {
         app.on_message(ChatAppMsg::UserMessage(format!("Message {}", i)));
@@ -151,10 +151,10 @@ async fn event_stream_with_timeout_does_not_block() {
 #[tokio::test]
 async fn escape_key_closes_popup() {
     use crate::tui::oil::app::{Action, App};
-    use crate::tui::oil::chat_app::InkChatApp;
+    use crate::tui::oil::chat_app::OilChatApp;
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
 
     // ESC should continue (used for closing popup), not quit
     let esc_event = Event::Key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
@@ -170,10 +170,10 @@ async fn escape_key_closes_popup() {
 #[tokio::test]
 async fn double_ctrl_c_triggers_quit_action() {
     use crate::tui::oil::app::{Action, App};
-    use crate::tui::oil::chat_app::InkChatApp;
+    use crate::tui::oil::chat_app::OilChatApp;
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
 
     // First Ctrl+C shows notification
     let ctrl_c_event = Event::Key(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL));
@@ -195,10 +195,10 @@ async fn double_ctrl_c_triggers_quit_action() {
 #[tokio::test]
 async fn ctrl_c_clears_input_first() {
     use crate::tui::oil::app::{Action, App};
-    use crate::tui::oil::chat_app::InkChatApp;
+    use crate::tui::oil::chat_app::OilChatApp;
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
 
     // Type some input
     let key_event = Event::Key(KeyEvent::new(KeyCode::Char('t'), KeyModifiers::NONE));
