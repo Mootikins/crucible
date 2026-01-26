@@ -227,6 +227,7 @@ fn truncate_content(content: &str, max_lines: usize) -> String {
 mod tests {
     use super::*;
     use crate::tui::oil::render::render_to_string;
+    use insta::assert_snapshot;
 
     #[test]
     fn new_file_shows_all_green() {
@@ -238,6 +239,7 @@ mod tests {
         assert!(output.contains("+"), "should contain + prefix");
         assert!(output.contains("line1"), "should contain line1");
         assert!(output.contains("line2"), "should contain line2");
+        assert_snapshot!(output);
     }
 
     #[test]
@@ -250,6 +252,7 @@ mod tests {
         assert!(output.contains("-"), "should contain - prefix");
         assert!(output.contains("line1"), "should contain line1");
         assert!(output.contains("line2"), "should contain line2");
+        assert_snapshot!(output);
     }
 
     #[test]
@@ -267,6 +270,7 @@ mod tests {
         assert!(output.contains("test.rs"));
         assert!(output.contains("-old line"));
         assert!(output.contains("+new line"));
+        assert_snapshot!(output);
     }
 
     #[test]
@@ -284,6 +288,7 @@ mod tests {
         assert!(output.contains("test.rs"));
         assert!(!output.contains("-old"));
         assert!(!output.contains("+new"));
+        assert_snapshot!(output);
     }
 
     #[test]
@@ -293,6 +298,7 @@ mod tests {
         let output = render_to_string(&node, 80);
 
         assert!(output.contains("... 100 more lines"));
+        assert_snapshot!(output);
     }
 
     #[test]
@@ -302,6 +308,7 @@ mod tests {
 
         assert!(output.contains("+"), "should contain + prefix");
         assert!(output.contains("content"), "should contain content");
+        assert_snapshot!(output);
     }
 
     #[test]
@@ -313,6 +320,7 @@ mod tests {
         assert!(output.contains("fn"), "should contain fn keyword");
         assert!(output.contains("main"), "should contain main");
         assert!(output.contains("println"), "should contain println");
+        assert_snapshot!(output);
     }
 
     #[test]
@@ -323,6 +331,7 @@ mod tests {
 
         assert!(output.contains("const"), "should contain const keyword");
         assert!(output.contains("42"), "should contain number");
+        assert_snapshot!(output);
     }
 
     #[test]
@@ -333,6 +342,7 @@ mod tests {
 
         assert!(output.contains("+"), "should contain + prefix");
         assert!(output.contains("some plain text"), "should contain content");
+        assert_snapshot!(output);
     }
 
     #[test]
@@ -343,5 +353,116 @@ mod tests {
 
         assert!(output.contains("+"), "should contain + prefix");
         assert!(output.contains("binary content"), "should contain content");
+        assert_snapshot!(output);
+    }
+
+    #[test]
+    fn snapshot_diff_preview_new_rust_file() {
+        let rust_code = r#"fn main() {
+    println!("Hello, world!");
+}
+"#;
+        let node = render_diff_preview("src/main.rs", "create", None, Some(rust_code), false);
+        let output = render_to_string(&node, 80);
+
+        assert!(output.contains("[new file]"));
+        assert!(output.contains("src/main.rs"));
+        assert!(output.contains("+"));
+        assert_snapshot!(output);
+    }
+
+    #[test]
+    fn snapshot_diff_preview_modification() {
+        let old_content = "fn greet() {\n    println!(\"Hi\");\n}";
+        let new_content = "fn greet() {\n    println!(\"Hello, world!\");\n}";
+        let node = render_diff_preview(
+            "src/lib.rs",
+            "write",
+            Some(old_content),
+            Some(new_content),
+            false,
+        );
+        let output = render_to_string(&node, 80);
+
+        assert!(output.contains("[write]"));
+        assert!(output.contains("src/lib.rs"));
+        assert!(output.contains("-"));
+        assert!(output.contains("+"));
+        assert_snapshot!(output);
+    }
+
+    #[test]
+    fn snapshot_diff_preview_deletion() {
+        let content = "fn deprecated() {\n    // This function is no longer used\n}";
+        let node = render_diff_preview("src/old.rs", "delete", Some(content), None, false);
+        let output = render_to_string(&node, 80);
+
+        assert!(output.contains("[deleting file]"));
+        assert!(output.contains("src/old.rs"));
+        assert!(output.contains("-"));
+        assert_snapshot!(output);
+    }
+
+    #[test]
+    fn snapshot_diff_preview_collapsed() {
+        let old_content = "line 1\nline 2\nline 3\nline 4\nline 5";
+        let new_content = "line 1\nline 2 modified\nline 3\nline 4\nline 5";
+        let node = render_diff_preview(
+            "config.toml",
+            "write",
+            Some(old_content),
+            Some(new_content),
+            true,
+        );
+        let output = render_to_string(&node, 80);
+
+        assert!(output.contains("[write]"));
+        assert!(output.contains("config.toml"));
+        assert!(!output.contains("-"));
+        assert!(!output.contains("+"));
+        assert_snapshot!(output);
+    }
+
+    #[test]
+    fn snapshot_diff_preview_truncated() {
+        let large_content: String = (0..600).map(|i| format!("line {}\n", i)).collect();
+        let node =
+            render_diff_preview("large_file.rs", "create", None, Some(&large_content), false);
+        let output = render_to_string(&node, 80);
+
+        assert!(output.contains("[new file]"));
+        assert!(output.contains("large_file.rs"));
+        assert!(output.contains("... 100 more lines"));
+        assert_snapshot!(output);
+    }
+
+    #[test]
+    fn snapshot_diff_preview_typescript() {
+        let ts_code = r#"interface User {
+    id: number;
+    name: string;
+}
+
+const user: User = { id: 1, name: "Alice" };
+"#;
+        let node = render_diff_preview("src/types.ts", "create", None, Some(ts_code), false);
+        let output = render_to_string(&node, 80);
+
+        assert!(output.contains("[new file]"));
+        assert!(output.contains("src/types.ts"));
+        assert!(output.contains("+"));
+        assert_snapshot!(output);
+    }
+
+    #[test]
+    fn snapshot_diff_preview_unknown_extension() {
+        let content = "This is a custom format file\nWith multiple lines\nNo syntax highlighting";
+        let node = render_diff_preview("data.custom", "create", None, Some(content), false);
+        let output = render_to_string(&node, 80);
+
+        assert!(output.contains("[new file]"));
+        assert!(output.contains("data.custom"));
+        assert!(output.contains("+"));
+        assert_snapshot!(output);
     }
 }
