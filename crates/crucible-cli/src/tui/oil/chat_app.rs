@@ -958,6 +958,22 @@ impl OilChatApp {
         }
         self.last_ctrl_c = None;
 
+        // Handle Ctrl+T to toggle thinking display (works anytime, not just during streaming)
+        let ctrl = key
+            .modifiers
+            .contains(crossterm::event::KeyModifiers::CONTROL);
+        if key.code == KeyCode::Char('t') && ctrl {
+            self.show_thinking = !self.show_thinking;
+            let state = if self.show_thinking { "on" } else { "off" };
+            self.notification_area
+                .add(crucible_core::types::Notification::toast(format!(
+                    "Thinking display: {}",
+                    state
+                )));
+            self.notification_area.show();
+            return Action::Continue;
+        }
+
         if key.code == KeyCode::BackTab {
             self.mode = self.mode.cycle();
             self.status = format!("Mode: {}", self.mode.as_str());
@@ -1150,17 +1166,6 @@ impl OilChatApp {
             KeyCode::Char('c') if ctrl => {
                 tracing::info!("Stream cancel requested via Ctrl+C");
                 Action::Send(ChatAppMsg::StreamCancelled)
-            }
-            KeyCode::Char('t') if ctrl => {
-                self.show_thinking = !self.show_thinking;
-                let state = if self.show_thinking { "on" } else { "off" };
-                self.notification_area
-                    .add(crucible_core::types::Notification::toast(format!(
-                        "Thinking display: {}",
-                        state
-                    )));
-                self.notification_area.show();
-                Action::Continue
             }
             KeyCode::Enter if ctrl => {
                 let content = self.input.content().to_string();
