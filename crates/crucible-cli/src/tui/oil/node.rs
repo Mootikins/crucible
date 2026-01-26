@@ -276,6 +276,13 @@ pub fn overlay_from_bottom(child: Node, offset: usize) -> Node {
     })
 }
 
+pub fn overlay_from_bottom_right(child: Node, offset: usize) -> Node {
+    Node::Overlay(OverlayNode {
+        child: Box::new(child),
+        anchor: OverlayAnchor::FromBottomRight(offset),
+    })
+}
+
 pub fn spacer() -> Node {
     Node::Box(BoxNode {
         size: Size::Flex(1),

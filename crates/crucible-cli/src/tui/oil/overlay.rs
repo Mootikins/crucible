@@ -4,6 +4,7 @@ use crate::tui::oil::node::{BoxNode, Node, OverlayNode};
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OverlayAnchor {
     FromBottom(usize),
+    FromBottomRight(usize),
 }
 
 pub fn extract_overlays(node: &Node) -> Vec<OverlayNode> {
@@ -98,6 +99,27 @@ pub fn composite_overlays(base: &[String], overlays: &[Overlay], width: usize) -
                     }
                 }
             }
+            OverlayAnchor::FromBottomRight(preserve_bottom) => {
+                let needed_height = overlay.lines.len() + preserve_bottom;
+                if result.len() < needed_height {
+                    let blank_line = " ".repeat(width);
+                    let lines_to_add = needed_height - result.len();
+                    let mut expanded = vec![blank_line; lines_to_add];
+                    expanded.extend(result);
+                    result = expanded;
+                }
+
+                let start_line = result
+                    .len()
+                    .saturating_sub(preserve_bottom + overlay.lines.len());
+
+                for (i, overlay_line) in overlay.lines.iter().enumerate() {
+                    let target_line = start_line + i;
+                    if target_line < result.len().saturating_sub(preserve_bottom) {
+                        result[target_line] = pad_or_truncate_right(overlay_line, width);
+                    }
+                }
+            }
         }
     }
 
@@ -109,6 +131,17 @@ fn pad_or_truncate(line: &str, width: usize) -> String {
     match vis_width.cmp(&width) {
         std::cmp::Ordering::Greater => truncate_to_width(line, width),
         std::cmp::Ordering::Less => format!("{}{}", line, " ".repeat(width - vis_width)),
+        std::cmp::Ordering::Equal => line.to_string(),
+    }
+}
+
+/// Pad or truncate a line to the given width, right-aligning the content.
+/// Padding is added on the LEFT to push content to the right.
+fn pad_or_truncate_right(line: &str, width: usize) -> String {
+    let vis_width = visible_width(line);
+    match vis_width.cmp(&width) {
+        std::cmp::Ordering::Greater => truncate_to_width(line, width),
+        std::cmp::Ordering::Less => format!("{}{}", " ".repeat(width - vis_width), line),
         std::cmp::Ordering::Equal => line.to_string(),
     }
 }
@@ -233,6 +266,39 @@ mod tests {
     fn pad_or_truncate_truncates_long_lines() {
         assert_eq!(pad_or_truncate("hello world", 5), "hello");
         assert_eq!(pad_or_truncate("abcdefghij", 3), "abc");
+    }
+
+    #[test]
+    fn pad_or_truncate_right_pads_on_left() {
+        assert_eq!(pad_or_truncate_right("hello", 10), "     hello");
+        assert_eq!(pad_or_truncate_right("", 5), "     ");
+    }
+
+    #[test]
+    fn pad_or_truncate_right_exact_width_unchanged() {
+        assert_eq!(pad_or_truncate_right("12345", 5), "12345");
+    }
+
+    #[test]
+    fn pad_or_truncate_right_truncates_long_lines() {
+        assert_eq!(pad_or_truncate_right("hello world", 5), "hello");
+    }
+
+    #[test]
+    fn overlay_from_bottom_right_aligns_content() {
+        let base = vec![
+            "line1".to_string(),
+            "line2".to_string(),
+            "line3".to_string(),
+        ];
+        let overlay = Overlay {
+            lines: vec!["X".to_string()],
+            anchor: OverlayAnchor::FromBottomRight(0),
+        };
+
+        let result = composite_overlays(&base, &[overlay], 10);
+
+        assert_eq!(result[2], "         X");
     }
 
     #[test]

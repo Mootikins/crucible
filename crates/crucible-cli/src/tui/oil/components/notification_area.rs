@@ -14,7 +14,7 @@
 //! ```
 
 use crate::tui::oil::component::Component;
-use crate::tui::oil::node::{col, overlay_from_bottom, row, styled, text, Node};
+use crate::tui::oil::node::{col, overlay_from_bottom_right, row, styled, text, Node};
 use crate::tui::oil::style::Style;
 use crate::tui::oil::theme::{colors, styles};
 use crate::tui::oil::ViewContext;
@@ -255,8 +255,8 @@ impl Component for NotificationArea {
 
         let card = col(rows);
 
-        // Position from bottom (offset = 1, above statusline)
-        overlay_from_bottom(card, 1)
+        // Position from bottom-right (offset = 1, above statusline)
+        overlay_from_bottom_right(card, 1)
     }
 }
 
@@ -422,5 +422,26 @@ mod tests {
         assert!(area.is_visible());
         assert_eq!(area.max_visible, 3);
         assert_eq!(area.width, 40);
+    }
+
+    #[test]
+    fn notification_uses_right_aligned_overlay() {
+        use crate::tui::oil::node::Node;
+        use crate::tui::oil::overlay::OverlayAnchor;
+
+        let mut area = NotificationArea::new().visible(true).width(25);
+        area.add(Notification::toast("Test"));
+        let h = ComponentHarness::new(80, 24);
+        let node = area.view(&ViewContext::new(h.focus()));
+
+        match node {
+            Node::Overlay(overlay) => {
+                assert!(
+                    matches!(overlay.anchor, OverlayAnchor::FromBottomRight(_)),
+                    "Notification should use FromBottomRight anchor"
+                );
+            }
+            _ => panic!("Expected Overlay node"),
+        }
     }
 }
