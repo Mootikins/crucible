@@ -3,7 +3,7 @@
 //! Tests popup behavior, Ctrl+C handling, command processing, and error states.
 
 use crate::tui::oil::app::{Action, App, ViewContext};
-use crate::tui::oil::chat_app::{ChatAppMsg, ChatMode, InkChatApp};
+use crate::tui::oil::chat_app::{ChatAppMsg, ChatMode, OilChatApp};
 use crate::tui::oil::event::Event;
 use crate::tui::oil::focus::FocusContext;
 use crate::tui::oil::render::render_to_string;
@@ -53,7 +53,7 @@ fn ctrl(c: char) -> KeyEvent {
     KeyEvent::new(KeyCode::Char(c), KeyModifiers::CONTROL)
 }
 
-fn view_with_default_ctx(app: &InkChatApp) -> crate::tui::oil::node::Node {
+fn view_with_default_ctx(app: &OilChatApp) -> crate::tui::oil::node::Node {
     let focus = FocusContext::new();
     let ctx = ViewContext::new(&focus);
     app.view(&ctx)
@@ -65,7 +65,7 @@ fn view_with_default_ctx(app: &InkChatApp) -> crate::tui::oil::node::Node {
 
 #[test]
 fn popup_opens_on_f1() {
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
 
     // Initially popup is closed
     let tree = view_with_default_ctx(&app);
@@ -88,7 +88,7 @@ fn popup_opens_on_f1() {
 
 #[test]
 fn popup_closes_on_f1_toggle() {
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
 
     // Open popup
     app.update(Event::Key(KeyEvent::new(KeyCode::F(1), KeyModifiers::NONE)));
@@ -110,7 +110,7 @@ fn popup_closes_on_f1_toggle() {
 
 #[test]
 fn popup_closes_on_escape() {
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
 
     // Open popup
     app.update(Event::Key(KeyEvent::new(KeyCode::F(1), KeyModifiers::NONE)));
@@ -132,7 +132,7 @@ fn popup_closes_on_escape() {
 
 #[test]
 fn popup_navigates_down() {
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
 
     // Open popup
     app.update(Event::Key(KeyEvent::new(KeyCode::F(1), KeyModifiers::NONE)));
@@ -159,7 +159,7 @@ fn popup_navigates_down() {
 
 #[test]
 fn popup_navigates_up() {
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
 
     // Open popup and move down first
     app.update(Event::Key(KeyEvent::new(KeyCode::F(1), KeyModifiers::NONE)));
@@ -186,7 +186,7 @@ fn popup_navigates_up() {
 
 #[test]
 fn popup_up_at_top_stays_at_top() {
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
 
     // Open popup (selection at top)
     app.update(Event::Key(KeyEvent::new(KeyCode::F(1), KeyModifiers::NONE)));
@@ -211,7 +211,7 @@ fn popup_up_at_top_stays_at_top() {
 
 #[test]
 fn popup_down_at_bottom_stays_at_bottom() {
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
 
     // Open popup and navigate to bottom
     app.update(Event::Key(KeyEvent::new(KeyCode::F(1), KeyModifiers::NONE)));
@@ -241,7 +241,7 @@ fn popup_down_at_bottom_stays_at_bottom() {
 
 #[test]
 fn popup_enter_selects_and_closes() {
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
 
     // Open popup
     app.update(Event::Key(KeyEvent::new(KeyCode::F(1), KeyModifiers::NONE)));
@@ -265,7 +265,7 @@ fn popup_enter_selects_and_closes() {
 
 #[test]
 fn ctrl_c_clears_non_empty_input() {
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
 
     // Type some text
     app.update(Event::Key(key(KeyCode::Char('h'))));
@@ -292,7 +292,7 @@ fn ctrl_c_clears_non_empty_input() {
 
 #[test]
 fn ctrl_c_shows_notification_when_empty() {
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
 
     // Input is empty
     assert!(app.input_content().is_empty());
@@ -316,7 +316,7 @@ fn ctrl_c_shows_notification_when_empty() {
 
 #[test]
 fn double_ctrl_c_within_timeout_quits() {
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
 
     // First Ctrl+C
     let action1 = app.update(Event::Key(ctrl('c')));
@@ -329,7 +329,7 @@ fn double_ctrl_c_within_timeout_quits() {
 
 #[test]
 fn ctrl_c_after_timeout_shows_notification_again() {
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
 
     // First Ctrl+C
     app.update(Event::Key(ctrl('c')));
@@ -354,7 +354,7 @@ fn ctrl_c_after_timeout_shows_notification_again() {
 
 #[test]
 fn notification_persists_until_timeout() {
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
 
     // Show notification
     app.update(Event::Key(ctrl('c')));
@@ -376,7 +376,7 @@ fn notification_persists_until_timeout() {
 
 #[test]
 fn ctrl_c_resets_on_any_other_key() {
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
 
     // First Ctrl+C
     app.update(Event::Key(ctrl('c')));
@@ -404,7 +404,7 @@ fn ctrl_c_resets_on_any_other_key() {
 
 #[test]
 fn error_clears_on_next_keypress() {
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
 
     // Trigger an error via unknown command
     app.on_message(ChatAppMsg::Error("Test error".to_string()));
@@ -426,7 +426,7 @@ fn error_clears_on_next_keypress() {
 
 #[test]
 fn unknown_slash_command_shows_error() {
-    let mut harness: AppHarness<InkChatApp> = AppHarness::new(80, 24);
+    let mut harness: AppHarness<OilChatApp> = AppHarness::new(80, 24);
     harness.render();
 
     // Type unknown command
@@ -443,7 +443,7 @@ fn unknown_slash_command_shows_error() {
 
 #[test]
 fn unknown_repl_command_shows_error() {
-    let mut harness: AppHarness<InkChatApp> = AppHarness::new(80, 24);
+    let mut harness: AppHarness<OilChatApp> = AppHarness::new(80, 24);
     harness.render();
 
     // Type unknown REPL command
@@ -460,7 +460,7 @@ fn unknown_repl_command_shows_error() {
 
 #[test]
 fn error_renders_in_red() {
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
 
     app.on_message(ChatAppMsg::Error("Test error".to_string()));
 
@@ -476,7 +476,7 @@ fn error_renders_in_red() {
 
 #[test]
 fn multiple_errors_replace_previous() {
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
 
     app.on_message(ChatAppMsg::Error("First error".to_string()));
 
@@ -501,7 +501,7 @@ fn multiple_errors_replace_previous() {
 
 #[test]
 fn slash_default_sets_mode_to_default() {
-    let mut harness: AppHarness<InkChatApp> = AppHarness::new(80, 24);
+    let mut harness: AppHarness<OilChatApp> = AppHarness::new(80, 24);
     harness.render();
 
     harness.send_text("/normal");
@@ -517,7 +517,7 @@ fn slash_default_sets_mode_to_default() {
 
 #[test]
 fn slash_auto_sets_mode_to_auto() {
-    let mut harness: AppHarness<InkChatApp> = AppHarness::new(80, 24);
+    let mut harness: AppHarness<OilChatApp> = AppHarness::new(80, 24);
     harness.render();
 
     harness.send_text("/auto");
@@ -533,7 +533,7 @@ fn slash_auto_sets_mode_to_auto() {
 
 #[test]
 fn slash_help_adds_system_message() {
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
 
     // Type /help and submit
     for c in "/help".chars() {
@@ -553,7 +553,7 @@ fn slash_help_adds_system_message() {
 
 #[test]
 fn repl_quit_returns_quit_action() {
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
 
     // Type :q and submit
     for c in ":q".chars() {
@@ -569,7 +569,7 @@ fn repl_quit_returns_quit_action() {
 
 #[test]
 fn repl_help_adds_system_message() {
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
 
     // Type :help and submit
     for c in ":help".chars() {
@@ -589,7 +589,7 @@ fn repl_help_adds_system_message() {
 
 #[test]
 fn slash_mode_cycles_through_modes() {
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
 
     // Start in Normal mode
     let tree = view_with_default_ctx(&app);
@@ -636,7 +636,7 @@ fn slash_mode_cycles_through_modes() {
 
 #[test]
 fn at_symbol_triggers_file_autocomplete() {
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
     app.set_workspace_files(vec![
         "src/main.rs".to_string(),
         "src/lib.rs".to_string(),
@@ -657,7 +657,7 @@ fn at_symbol_triggers_file_autocomplete() {
 
 #[test]
 fn double_bracket_triggers_note_autocomplete() {
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
     app.set_kiln_notes(vec![
         "Projects/README.md".to_string(),
         "Notes/Ideas.md".to_string(),
@@ -677,7 +677,7 @@ fn double_bracket_triggers_note_autocomplete() {
 
 #[test]
 fn autocomplete_closes_on_space_after_at() {
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
     app.set_workspace_files(vec!["src/main.rs".to_string()]);
 
     for c in "@main ".chars() {
@@ -691,7 +691,7 @@ fn autocomplete_closes_on_space_after_at() {
 
 #[test]
 fn autocomplete_selection_inserts_file_mention() {
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
     app.set_workspace_files(vec!["src/main.rs".to_string()]);
 
     for c in "@m".chars() {
@@ -705,7 +705,7 @@ fn autocomplete_selection_inserts_file_mention() {
 
 #[test]
 fn autocomplete_selection_inserts_note_mention() {
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
     app.set_kiln_notes(vec!["Projects/README.md".to_string()]);
 
     for c in "[[p".chars() {
@@ -723,7 +723,7 @@ fn autocomplete_selection_inserts_note_mention() {
 
 #[test]
 fn palette_command_opens_command_popup() {
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
 
     for c in ":palette".chars() {
         app.update(Event::Key(key(KeyCode::Char(c))));
@@ -740,7 +740,7 @@ fn palette_command_opens_command_popup() {
 
 #[test]
 fn commands_command_opens_command_popup() {
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
 
     for c in ":commands".chars() {
         app.update(Event::Key(key(KeyCode::Char(c))));
@@ -761,7 +761,7 @@ fn commands_command_opens_command_popup() {
 
 #[test]
 fn ctrl_c_closes_popup_instead_of_inserting_c() {
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
     app.set_workspace_files(vec!["test.rs".to_string()]);
 
     app.update(Event::Key(key(KeyCode::Char('@'))));
@@ -778,7 +778,7 @@ fn ctrl_c_closes_popup_instead_of_inserting_c() {
 
 #[test]
 fn slash_command_triggers_after_whitespace() {
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
 
     for c in "hello /hel".chars() {
         app.update(Event::Key(key(KeyCode::Char(c))));
@@ -797,7 +797,7 @@ fn slash_command_triggers_after_whitespace() {
 
 #[test]
 fn slash_command_does_not_trigger_mid_word() {
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
 
     for c in "http://example".chars() {
         app.update(Event::Key(key(KeyCode::Char(c))));
@@ -811,7 +811,7 @@ fn slash_command_does_not_trigger_mid_word() {
 
 #[test]
 fn empty_workspace_files_does_not_show_popup() {
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
 
     app.update(Event::Key(key(KeyCode::Char('@'))));
 
@@ -823,7 +823,7 @@ fn empty_workspace_files_does_not_show_popup() {
 
 #[test]
 fn empty_kiln_notes_does_not_show_popup() {
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
 
     for c in "[[".chars() {
         app.update(Event::Key(key(KeyCode::Char(c))));
@@ -841,7 +841,7 @@ fn empty_kiln_notes_does_not_show_popup() {
 
 #[test]
 fn shell_command_opens_modal() {
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
 
     for c in "!echo hello".chars() {
         app.update(Event::Key(key(KeyCode::Char(c))));
@@ -856,7 +856,7 @@ fn shell_command_opens_modal() {
 
 #[test]
 fn empty_shell_command_shows_error() {
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
 
     app.update(Event::Key(key(KeyCode::Char('!'))));
     app.update(Event::Key(key(KeyCode::Enter)));
@@ -869,7 +869,7 @@ fn empty_shell_command_shows_error() {
 
 #[test]
 fn shell_modal_closes_on_escape() {
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
 
     for c in "!echo test".chars() {
         app.update(Event::Key(key(KeyCode::Char(c))));
@@ -890,7 +890,7 @@ fn shell_modal_closes_on_escape() {
 
 #[test]
 fn shell_modal_cat_readme_starts_at_top() {
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
 
     for c in "!cat README.md".chars() {
         app.update(Event::Key(key(KeyCode::Char(c))));
@@ -933,7 +933,7 @@ fn shell_modal_cat_readme_starts_at_top() {
 
 #[test]
 fn shell_modal_small_viewport_shows_first_lines() {
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
 
     for c in "!seq 1 50".chars() {
         app.update(Event::Key(key(KeyCode::Char(c))));
@@ -966,7 +966,7 @@ fn shell_modal_small_viewport_shows_first_lines() {
 
 #[test]
 fn shell_modal_immediate_render_then_poll() {
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
 
     for c in "!seq 1 20".chars() {
         app.update(Event::Key(key(KeyCode::Char(c))));
@@ -1012,7 +1012,7 @@ fn shell_modal_immediate_render_then_poll() {
 fn shell_modal_render_shows_first_line_in_small_viewport() {
     use crate::tui::oil::render::render_to_string;
 
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
 
     for c in "!seq 1 100".chars() {
         app.update(Event::Key(key(KeyCode::Char(c))));
@@ -1062,7 +1062,7 @@ fn shell_modal_render_shows_first_line_in_small_viewport() {
 
 #[test]
 fn model_command_opens_popup_with_available_models() {
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
     app.set_available_models(vec![
         "ollama/llama3".to_string(),
         "anthropic/claude-3".to_string(),
@@ -1090,7 +1090,7 @@ fn model_command_opens_popup_with_available_models() {
 
 #[test]
 fn model_command_filters_models() {
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
     app.set_available_models(vec![
         "ollama/llama3".to_string(),
         "anthropic/claude-3".to_string(),
@@ -1119,7 +1119,7 @@ fn model_command_filters_models() {
 
 #[test]
 fn model_command_selection_fills_input() {
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
     app.set_available_models(vec![
         "ollama/llama3".to_string(),
         "anthropic/claude-3".to_string(),
@@ -1146,7 +1146,7 @@ fn model_command_selection_fills_input() {
 
 #[test]
 fn model_command_popup_select_updates_model() {
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
     app.set_available_models(vec!["ollama/llama3".to_string()]);
 
     for c in ":model ".chars() {
@@ -1192,7 +1192,7 @@ fn model_command_popup_select_updates_model() {
 fn model_command_no_models_shows_message() {
     use crate::tui::oil::chat_app::ChatAppMsg;
 
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
 
     // First :model triggers lazy fetch (state is NotLoaded)
     for c in ":model".chars() {
@@ -1224,7 +1224,7 @@ fn model_command_no_models_shows_message() {
 
 #[test]
 fn model_repl_command_in_popup_list() {
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
 
     for c in ":".chars() {
         app.update(Event::Key(key(KeyCode::Char(c))));
@@ -1247,7 +1247,7 @@ fn model_repl_command_in_popup_list() {
 
 #[test]
 fn config_show_command_displays_values() {
-    let mut harness: AppHarness<InkChatApp> = AppHarness::new(80, 24);
+    let mut harness: AppHarness<OilChatApp> = AppHarness::new(80, 24);
     harness.render();
 
     // Type :config show command

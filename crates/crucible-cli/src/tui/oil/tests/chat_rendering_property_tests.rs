@@ -1,6 +1,6 @@
 use crate::tui::oil::ansi::{strip_ansi, visible_width};
 use crate::tui::oil::app::App;
-use crate::tui::oil::chat_app::{ChatAppMsg, InkChatApp};
+use crate::tui::oil::chat_app::{ChatAppMsg, OilChatApp};
 use crate::tui::oil::render::render_to_string;
 use crate::tui::oil::TestRuntime;
 use proptest::prelude::*;
@@ -16,7 +16,7 @@ proptest! {
         content in arb_text_content(),
         width in 60usize..120
     ) {
-        let mut app = InkChatApp::default();
+        let mut app = OilChatApp::default();
         app.on_message(ChatAppMsg::UserMessage("Question".to_string()));
         app.on_message(ChatAppMsg::TextDelta(content));
         app.on_message(ChatAppMsg::StreamComplete);
@@ -40,7 +40,7 @@ proptest! {
         chunks in prop::collection::vec(arb_text_content(), 2..5)
     ) {
         let mut runtime = TestRuntime::new(80, 24);
-        let mut app = InkChatApp::default();
+        let mut app = OilChatApp::default();
 
         app.on_message(ChatAppMsg::UserMessage("Question".to_string()));
 
@@ -74,7 +74,7 @@ proptest! {
         chunks in prop::collection::vec(arb_text_content(), 2..6)
     ) {
         let mut runtime = TestRuntime::new(80, 24);
-        let mut app = InkChatApp::default();
+        let mut app = OilChatApp::default();
 
         app.on_message(ChatAppMsg::UserMessage("Question".to_string()));
 
@@ -112,8 +112,8 @@ proptest! {
         content in arb_text_content(),
         width in 60usize..120
     ) {
-        let mut app1 = InkChatApp::default();
-        let mut app2 = InkChatApp::default();
+        let mut app1 = OilChatApp::default();
+        let mut app2 = OilChatApp::default();
 
         app1.on_message(ChatAppMsg::UserMessage("Q".to_string()));
         app1.on_message(ChatAppMsg::TextDelta(content.clone()));
@@ -141,7 +141,7 @@ proptest! {
         content in arb_markdown_content(),
         width in 20usize..120
     ) {
-        let mut app = InkChatApp::default();
+        let mut app = OilChatApp::default();
         app.on_message(ChatAppMsg::UserMessage("Q".to_string()));
         app.on_message(ChatAppMsg::TextDelta(content));
         app.on_message(ChatAppMsg::StreamComplete);
@@ -161,7 +161,7 @@ proptest! {
         width in 60u16..100u16
     ) {
         let mut runtime = TestRuntime::new(width, 24);
-        let mut app = InkChatApp::default();
+        let mut app = OilChatApp::default();
 
         let table = format!(
             "| {} | {} |\n|---|---|\n| {} | {} |",
@@ -191,7 +191,7 @@ proptest! {
         chunk_count in 10usize..50
     ) {
         let mut runtime = TestRuntime::new(80, 24);
-        let mut app = InkChatApp::default();
+        let mut app = OilChatApp::default();
 
         app.on_message(ChatAppMsg::UserMessage("Generate".to_string()));
 
@@ -229,7 +229,7 @@ proptest! {
         response in arb_text_content()
     ) {
         let mut runtime = TestRuntime::new(80, 24);
-        let mut app = InkChatApp::default();
+        let mut app = OilChatApp::default();
         app.set_show_thinking(false);
 
         app.on_message(ChatAppMsg::UserMessage("Q".to_string()));
@@ -262,7 +262,7 @@ proptest! {
         response in "[a-zA-Z]{10,30}"
     ) {
         let mut runtime = TestRuntime::new(80, 24);
-        let mut app = InkChatApp::default();
+        let mut app = OilChatApp::default();
         app.set_show_thinking(true);
 
         app.on_message(ChatAppMsg::UserMessage("Q".to_string()));
@@ -287,7 +287,7 @@ proptest! {
     #[test]
     fn user_prompt_borders_balanced(message in arb_text_content()) {
         let mut runtime = TestRuntime::new(80, 24);
-        let mut app = InkChatApp::default();
+        let mut app = OilChatApp::default();
 
         app.on_message(ChatAppMsg::UserMessage(message));
 
@@ -312,7 +312,7 @@ proptest! {
     #[test]
     fn graduated_items_leave_viewport(chunk_count in 3usize..10) {
         let mut runtime = TestRuntime::new(80, 24);
-        let mut app = InkChatApp::default();
+        let mut app = OilChatApp::default();
 
         app.on_message(ChatAppMsg::UserMessage("Question".to_string()));
 
@@ -361,7 +361,7 @@ mod rendering_edge_cases {
     #[test]
     fn empty_streaming_completes_cleanly() {
         let mut runtime = TestRuntime::new(80, 24);
-        let mut app = InkChatApp::default();
+        let mut app = OilChatApp::default();
 
         app.on_message(ChatAppMsg::UserMessage("Q".to_string()));
         app.on_message(ChatAppMsg::StreamComplete);
@@ -375,7 +375,7 @@ mod rendering_edge_cases {
 
     #[test]
     fn very_narrow_width_does_not_panic() {
-        let mut app = InkChatApp::default();
+        let mut app = OilChatApp::default();
         app.on_message(ChatAppMsg::UserMessage("Test message".to_string()));
         app.on_message(ChatAppMsg::TextDelta("Response text".to_string()));
         app.on_message(ChatAppMsg::StreamComplete);
@@ -391,7 +391,7 @@ mod rendering_edge_cases {
     #[test]
     fn unicode_content_renders_correctly() {
         let mut runtime = TestRuntime::new(80, 24);
-        let mut app = InkChatApp::default();
+        let mut app = OilChatApp::default();
 
         app.on_message(ChatAppMsg::UserMessage("Test".to_string()));
         app.on_message(ChatAppMsg::TextDelta("Hello world".to_string()));

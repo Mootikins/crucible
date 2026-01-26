@@ -5,7 +5,7 @@
 
 use crate::tui::oil::ansi::strip_ansi;
 use crate::tui::oil::app::App;
-use crate::tui::oil::chat_app::{ChatAppMsg, InkChatApp};
+use crate::tui::oil::chat_app::{ChatAppMsg, OilChatApp};
 use crate::tui::oil::TestRuntime;
 use proptest::prelude::*;
 
@@ -24,7 +24,7 @@ proptest! {
         turns in arb_multi_turn_conversation()
     ) {
         let mut runtime = TestRuntime::new(80, 24);
-        let mut app = InkChatApp::default();
+        let mut app = OilChatApp::default();
         app.set_show_thinking(true);
 
         let mut expected_user_queries: Vec<String> = Vec::new();
@@ -81,7 +81,7 @@ proptest! {
         sequence in arb_rpc_sequence_with_tools()
     ) {
         let mut runtime = TestRuntime::new(80, 24);
-        let mut app = InkChatApp::default();
+        let mut app = OilChatApp::default();
 
         app.on_message(ChatAppMsg::UserMessage("Query with tools".to_string()));
 
@@ -132,7 +132,7 @@ proptest! {
         )
     ) {
         let mut runtime = TestRuntime::new(80, 24);
-        let mut app = InkChatApp::default();
+        let mut app = OilChatApp::default();
         app.set_show_thinking(true);
 
         app.on_message(ChatAppMsg::UserMessage("Q".to_string()));
@@ -166,7 +166,7 @@ proptest! {
         text_chunks in prop::collection::vec("[a-zA-Z]{5,20}", 1..5)
     ) {
         let mut runtime = TestRuntime::new(80, 24);
-        let mut app = InkChatApp::default();
+        let mut app = OilChatApp::default();
         app.set_show_thinking(true);
 
         app.on_message(ChatAppMsg::UserMessage("Q".to_string()));
@@ -207,7 +207,7 @@ proptest! {
     ) {
         let tools: Vec<_> = tool_names.into_iter().collect();
         let mut runtime = TestRuntime::new(80, 24);
-        let mut app = InkChatApp::default();
+        let mut app = OilChatApp::default();
 
         app.on_message(ChatAppMsg::UserMessage("Multi-tool query".to_string()));
 
@@ -257,7 +257,7 @@ proptest! {
         total in 100000usize..200000
     ) {
         let mut runtime = TestRuntime::new(80, 24);
-        let mut app = InkChatApp::default();
+        let mut app = OilChatApp::default();
 
         app.on_message(ChatAppMsg::UserMessage("Q".to_string()));
         app.on_message(ChatAppMsg::TextDelta("Response".to_string()));
@@ -284,7 +284,7 @@ proptest! {
         error_msg in "[a-zA-Z ]{10,50}"
     ) {
         let mut runtime = TestRuntime::new(80, 24);
-        let mut app = InkChatApp::default();
+        let mut app = OilChatApp::default();
 
         app.on_message(ChatAppMsg::UserMessage("Q1".to_string()));
         app.on_message(ChatAppMsg::TextDelta("R1".to_string()));
@@ -321,7 +321,7 @@ mod e2e_edge_cases {
     #[test]
     fn empty_tool_result_completes() {
         let mut runtime = TestRuntime::new(80, 24);
-        let mut app = InkChatApp::default();
+        let mut app = OilChatApp::default();
 
         app.on_message(ChatAppMsg::UserMessage("Q".to_string()));
         app.on_message(ChatAppMsg::ToolCall {
@@ -346,7 +346,7 @@ mod e2e_edge_cases {
     #[test]
     fn mode_change_during_streaming() {
         let mut runtime = TestRuntime::new(80, 24);
-        let mut app = InkChatApp::default();
+        let mut app = OilChatApp::default();
 
         app.on_message(ChatAppMsg::UserMessage("Q".to_string()));
         app.on_message(ChatAppMsg::TextDelta("Part 1".to_string()));

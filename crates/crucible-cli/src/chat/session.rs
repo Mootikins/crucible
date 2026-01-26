@@ -19,7 +19,7 @@ use crate::chat::mode_registry::ModeRegistry;
 use crate::chat::slash_registry::{SlashCommandRegistry, SlashCommandRegistryBuilder};
 use crate::chat::{AgentHandle, ChatError, ChatResult};
 use crate::core_facade::KilnContext;
-use crate::tui::oil::{AgentSelection, ChatMode, InkChatRunner};
+use crate::tui::oil::{AgentSelection, ChatMode, OilChatRunner};
 use crucible_core::events::EventRing;
 use crucible_core::traits::registry::{Registry, RegistryBuilder};
 use walkdir::WalkDir;
@@ -378,7 +378,7 @@ impl ChatSession {
             tokio::task::spawn_blocking(move || index_kiln_notes(&kiln_root)),
         );
 
-        let mut runner = InkChatRunner::new()?.with_mode(mode);
+        let mut runner = OilChatRunner::new()?.with_mode(mode);
         if let Ok(files) = files {
             runner = runner.with_workspace_files(files);
         }
