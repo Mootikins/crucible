@@ -639,3 +639,177 @@ mod composer_stability_properties {
         }
     }
 }
+
+mod markdown_block_spacing_properties {
+    use crate::tui::oil::markdown::{
+        markdown_to_node, markdown_to_node_styled, Margins, RenderStyle,
+    };
+    use crate::tui::oil::render::render_to_string;
+    use proptest::prelude::*;
+
+    fn render_md(md: &str, width: usize) -> String {
+        let node = markdown_to_node(md);
+        render_to_string(&node, width)
+    }
+
+    fn render_md_with_margins(md: &str, width: usize) -> String {
+        let style = RenderStyle::natural_with_margins(width, Margins::assistant());
+        let node = markdown_to_node_styled(md, style);
+        render_to_string(&node, width)
+    }
+
+    fn has_blank_line_between(output: &str, content_a: &str, content_b: &str) -> bool {
+        let lines: Vec<&str> = output.split("\r\n").collect();
+        let pos_a = lines.iter().position(|l| l.contains(content_a));
+        let pos_b = lines.iter().position(|l| l.contains(content_b));
+
+        match (pos_a, pos_b) {
+            (Some(a), Some(b)) if b > a => {
+                (a + 1..b).any(|i| lines.get(i).map_or(false, |l| l.trim().is_empty()))
+            }
+            _ => true,
+        }
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(100))]
+
+        #[test]
+        fn paragraph_then_heading_has_blank_line(
+            para in "[A-Za-z]{5,20}",
+            heading in "[A-Za-z]{5,20}",
+            level in 1usize..=3,
+            width in 40usize..100
+        ) {
+            let hashes = "#".repeat(level);
+            let md = format!("{}\n\n{} {}", para, hashes, heading);
+            let output = render_md(&md, width);
+
+            prop_assert!(
+                has_blank_line_between(&output, &para, &heading),
+                "Should have blank line between paragraph and heading.\nMD:\n{}\nOutput:\n{}",
+                md, output
+            );
+        }
+
+        #[test]
+        fn heading_then_paragraph_has_blank_line(
+            heading in "[A-Za-z]{5,20}",
+            para in "[A-Za-z]{5,20}",
+            level in 1usize..=3,
+            width in 40usize..100
+        ) {
+            let hashes = "#".repeat(level);
+            let md = format!("{} {}\n\n{}", hashes, heading, para);
+            let output = render_md(&md, width);
+
+            prop_assert!(
+                has_blank_line_between(&output, &heading, &para),
+                "Should have blank line between heading and paragraph.\nMD:\n{}\nOutput:\n{}",
+                md, output
+            );
+        }
+
+        #[test]
+        fn paragraph_then_code_block_has_blank_line(
+            para in "[A-Za-z]{5,20}",
+            code in "[a-z_]+",
+            width in 40usize..100
+        ) {
+            let md = format!("{}\n\n```\n{}\n```", para, code);
+            let output = render_md(&md, width);
+
+            prop_assert!(
+                has_blank_line_between(&output, &para, &code),
+                "Should have blank line between paragraph and code block.\nMD:\n{}\nOutput:\n{}",
+                md, output
+            );
+        }
+
+        #[test]
+        fn consecutive_paragraphs_have_blank_line(
+            para1 in "[A-Za-z]{5,20}",
+            para2 in "[A-Za-z]{5,20}",
+            width in 40usize..100
+        ) {
+            prop_assume!(para1 != para2);
+            let md = format!("{}\n\n{}", para1, para2);
+            let output = render_md(&md, width);
+
+            prop_assert!(
+                has_blank_line_between(&output, &para1, &para2),
+                "Should have blank line between consecutive paragraphs.\nMD:\n{}\nOutput:\n{}",
+                md, output
+            );
+        }
+
+        #[test]
+        fn paragraph_then_list_has_blank_line(
+            para in "[A-Za-z]{5,20}",
+            item in "[A-Za-z]{5,20}",
+            width in 40usize..100
+        ) {
+            let md = format!("{}\n\n- {}", para, item);
+            let output = render_md(&md, width);
+
+            prop_assert!(
+                has_blank_line_between(&output, &para, &item),
+                "Should have blank line between paragraph and list.\nMD:\n{}\nOutput:\n{}",
+                md, output
+            );
+        }
+
+        #[test]
+        fn with_margins_paragraph_then_heading_has_blank_line(
+            para in "[A-Za-z]{5,20}",
+            heading in "[A-Za-z]{5,20}",
+            level in 1usize..=3,
+            width in 40usize..100
+        ) {
+            let hashes = "#".repeat(level);
+            let md = format!("{}\n\n{} {}", para, hashes, heading);
+            let output = render_md_with_margins(&md, width);
+
+            prop_assert!(
+                has_blank_line_between(&output, &para, &heading),
+                "With margins: should have blank line between paragraph and heading.\nMD:\n{}\nOutput:\n{}",
+                md, output
+            );
+        }
+
+        #[test]
+        fn with_margins_consecutive_paragraphs_have_blank_line(
+            para1 in "[A-Za-z]{5,20}",
+            para2 in "[A-Za-z]{5,20}",
+            width in 40usize..100
+        ) {
+            prop_assume!(para1 != para2);
+            let md = format!("{}\n\n{}", para1, para2);
+            let output = render_md_with_margins(&md, width);
+
+            prop_assert!(
+                has_blank_line_between(&output, &para1, &para2),
+                "With margins: should have blank line between consecutive paragraphs.\nMD:\n{}\nOutput:\n{}",
+                md, output
+            );
+        }
+
+        #[test]
+        fn with_margins_heading_then_paragraph_has_blank_line(
+            heading in "[A-Za-z]{5,20}",
+            para in "[A-Za-z]{5,20}",
+            level in 1usize..=3,
+            width in 40usize..100
+        ) {
+            let hashes = "#".repeat(level);
+            let md = format!("{} {}\n\n{}", hashes, heading, para);
+            let output = render_md_with_margins(&md, width);
+
+            prop_assert!(
+                has_blank_line_between(&output, &heading, &para),
+                "With margins: should have blank line between heading and paragraph.\nMD:\n{}\nOutput:\n{}",
+                md, output
+            );
+        }
+    }
+}

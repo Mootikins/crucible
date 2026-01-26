@@ -2,8 +2,39 @@ use crate::tui::oil::focus::FocusId;
 use crate::tui::oil::overlay::OverlayAnchor;
 use crate::tui::oil::style::{AlignItems, Border, Color, Gap, JustifyContent, Padding, Style};
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ElementKind {
+    #[default]
+    Block,
+    Continuation,
+    ToolCall,
+}
+
+impl ElementKind {
+    pub fn wants_blank_line_before(self, prev: Option<ElementKind>) -> bool {
+        match (prev, self) {
+            (None, _) => false,
+            (_, ElementKind::Continuation) => false,
+            (Some(ElementKind::Continuation), _) => false,
+            (Some(ElementKind::Block), ElementKind::Block) => true,
+            (Some(ElementKind::ToolCall), ElementKind::Block) => true,
+            (Some(ElementKind::Block), ElementKind::ToolCall) => false,
+            (Some(ElementKind::ToolCall), ElementKind::ToolCall) => false,
+        }
+    }
+
+    pub fn wants_newline_after(self) -> bool {
+        match self {
+            ElementKind::Block => true,
+            ElementKind::Continuation => false,
+            ElementKind::ToolCall => true,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Default)]
 pub enum Node {
+
     #[default]
     Empty,
     Text(TextNode),
@@ -61,6 +92,7 @@ pub struct BoxNode {
 pub struct StaticNode {
     pub key: String,
     pub children: Vec<Node>,
+    pub kind: ElementKind,
     pub newline: bool,
 }
 
@@ -146,21 +178,30 @@ pub fn row(children: impl IntoIterator<Item = Node>) -> Node {
 }
 
 pub fn scrollback(key: impl Into<String>, children: impl IntoIterator<Item = Node>) -> Node {
-    Node::Static(StaticNode {
-        key: key.into(),
-        children: children.into_iter().collect(),
-        newline: true,
-    })
+    scrollback_with_kind(key, ElementKind::Block, children)
 }
 
 pub fn scrollback_continuation(
     key: impl Into<String>,
     children: impl IntoIterator<Item = Node>,
 ) -> Node {
+    scrollback_with_kind(key, ElementKind::Continuation, children)
+}
+
+pub fn scrollback_tool(key: impl Into<String>, children: impl IntoIterator<Item = Node>) -> Node {
+    scrollback_with_kind(key, ElementKind::ToolCall, children)
+}
+
+pub fn scrollback_with_kind(
+    key: impl Into<String>,
+    kind: ElementKind,
+    children: impl IntoIterator<Item = Node>,
+) -> Node {
     Node::Static(StaticNode {
         key: key.into(),
         children: children.into_iter().collect(),
-        newline: false,
+        kind,
+        newline: kind.wants_newline_after(),
     })
 }
 

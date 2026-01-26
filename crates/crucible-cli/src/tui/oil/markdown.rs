@@ -299,13 +299,11 @@ impl RenderContext {
         self.blocks.push(node);
     }
 
-    fn push_block_with_spacing(&mut self, node: Node) {
-        self.flush_line();
-        if self.needs_blank_line && !self.blocks.is_empty() {
+    fn ensure_block_spacing(&mut self) {
+        if self.needs_blank_line && !self.blocks.is_empty() && self.list_depth == 0 {
             self.blocks.push(text(""));
         }
-        self.blocks.push(node);
-        self.needs_blank_line = true;
+        self.needs_blank_line = false;
     }
 
     fn mark_block_end(&mut self) {
@@ -331,9 +329,7 @@ fn render_node(node: &markdown_it::Node, ctx: &mut RenderContext) {
     }
 
     if let Some(heading) = node.cast::<ATXHeading>() {
-        if ctx.needs_blank_line && !ctx.blocks.is_empty() {
-            ctx.blocks.push(text(""));
-        }
+        ctx.ensure_block_spacing();
         let style = heading_style(heading.level);
         let margins = ctx.margins;
         let has_margins = margins.left > 0 || margins.show_bullet;
@@ -365,27 +361,29 @@ fn render_node(node: &markdown_it::Node, ctx: &mut RenderContext) {
     }
 
     if node.cast::<BulletList>().is_some() {
-        if ctx.needs_blank_line && !ctx.blocks.is_empty() {
-            ctx.blocks.push(text(""));
-        }
+        let is_nested = ctx.list_depth > 0;
+        ctx.ensure_block_spacing();
         ctx.list_depth += 1;
         ctx.list_counter = None;
         render_children(node, ctx);
         ctx.list_depth -= 1;
-        ctx.mark_block_end();
+        if !is_nested {
+            ctx.mark_block_end();
+        }
         return;
     }
 
     if node.cast::<OrderedList>().is_some() {
-        if ctx.needs_blank_line && !ctx.blocks.is_empty() {
-            ctx.blocks.push(text(""));
-        }
+        let is_nested = ctx.list_depth > 0;
+        ctx.ensure_block_spacing();
         ctx.list_depth += 1;
         ctx.list_counter = Some(1);
         render_children(node, ctx);
         ctx.list_depth -= 1;
         ctx.list_counter = None;
-        ctx.mark_block_end();
+        if !is_nested {
+            ctx.mark_block_end();
+        }
         return;
     }
 
@@ -470,10 +468,7 @@ fn render_children(node: &markdown_it::Node, ctx: &mut RenderContext) {
 }
 
 fn render_paragraph(node: &markdown_it::Node, ctx: &mut RenderContext) {
-    let in_list = ctx.list_depth > 0;
-    if ctx.needs_blank_line && !ctx.blocks.is_empty() && !in_list {
-        ctx.blocks.push(text(""));
-    }
+    ctx.ensure_block_spacing();
 
     let margins = ctx.margins;
     let has_margins = margins.left > 0 || margins.show_bullet;
@@ -514,9 +509,7 @@ fn render_code_block(node: &markdown_it::Node, ctx: &mut RenderContext) {
         (extract_all_text(node), None)
     };
 
-    if ctx.needs_blank_line && !ctx.blocks.is_empty() {
-        ctx.blocks.push(text(""));
-    }
+    ctx.ensure_block_spacing();
 
     let lang_str = lang.as_deref().unwrap_or("");
     let margins = ctx.margins;
@@ -595,7 +588,7 @@ fn render_list_item(node: &markdown_it::Node, ctx: &mut RenderContext) {
         ("• ".to_string(), 2)
     };
 
-    let item_text = extract_all_text(node);
+    let item_text = extract_list_item_text(node);
     let content_width = ctx.width.saturating_sub(bullet_width);
     let wrapped = wrap_text(&item_text, content_width);
 
@@ -638,12 +631,31 @@ fn render_list_item(node: &markdown_it::Node, ctx: &mut RenderContext) {
     }
 }
 
+fn extract_list_item_text(node: &markdown_it::Node) -> String {
+    let mut result = String::new();
+    extract_list_item_text_recursive(node, &mut result);
+    result
+}
+
+fn extract_list_item_text_recursive(node: &markdown_it::Node, result: &mut String) {
+    if node.cast::<BulletList>().is_some() || node.cast::<OrderedList>().is_some() {
+        return;
+    }
+    if let Some(text) = node.cast::<Text>() {
+        let content = BR_TAG_REGEX.replace_all(&text.content, "\n");
+        result.push_str(&content);
+    }
+    if node.cast::<Softbreak>().is_some() || node.cast::<Hardbreak>().is_some() {
+        result.push('\n');
+    }
+    for child in node.children.iter() {
+        extract_list_item_text_recursive(child, result);
+    }
+}
+
 fn render_blockquote(node: &markdown_it::Node, ctx: &mut RenderContext) {
     ctx.flush_line();
-
-    if ctx.needs_blank_line && !ctx.blocks.is_empty() {
-        ctx.blocks.push(text(""));
-    }
+    ctx.ensure_block_spacing();
 
     let margins = ctx.margins;
     let margin_indent = " ".repeat(margins.left);
@@ -687,10 +699,7 @@ mod box_chars {
 
 fn render_table(node: &markdown_it::Node, ctx: &mut RenderContext) {
     ctx.flush_line();
-
-    if ctx.needs_blank_line && !ctx.blocks.is_empty() {
-        ctx.blocks.push(text(""));
-    }
+    ctx.ensure_block_spacing();
 
     let mut header_rows: Vec<Vec<String>> = Vec::new();
     let mut body_rows: Vec<Vec<String>> = Vec::new();
@@ -1109,6 +1118,73 @@ mod tests {
         let node = markdown_to_node("[click here](https://example.com)");
         let output = render_to_string(&node, 80);
         assert!(output.contains("click here"));
+    }
+
+    #[test]
+    fn test_nested_list_not_duplicated() {
+        let md = "- Parent item\n  - Nested item one\n  - Nested item two";
+        let node = markdown_to_node(md);
+        let output = render_to_string(&node, 80);
+
+        let count = output.matches("Nested item one").count();
+        assert_eq!(
+            count, 1,
+            "Nested item should appear exactly once, but appeared {} times.\nOutput:\n{}",
+            count, output
+        );
+    }
+
+    #[test]
+    fn test_nested_list_no_blank_line_after_parent() {
+        let md = "- Parent item\n  - Nested item";
+        let node = markdown_to_node(md);
+        let output = render_to_string(&node, 80);
+        let lines: Vec<&str> = output.split("\r\n").collect();
+
+        let parent_idx = lines.iter().position(|l| l.contains("Parent")).unwrap();
+        let nested_idx = lines.iter().position(|l| l.contains("Nested")).unwrap();
+
+        assert_eq!(
+            nested_idx,
+            parent_idx + 1,
+            "Nested list should immediately follow parent item (no blank line).\nLines: {:?}",
+            lines
+        );
+    }
+
+    #[test]
+    fn test_paragraph_then_heading_has_blank_line() {
+        let md = "Some paragraph.\n\n## A Heading";
+        let node = markdown_to_node(md);
+        let output = render_to_string(&node, 80);
+        let lines: Vec<&str> = output.split("\r\n").collect();
+
+        let para_idx = lines.iter().position(|l| l.contains("paragraph")).unwrap();
+        let heading_idx = lines.iter().position(|l| l.contains("Heading")).unwrap();
+
+        assert!(
+            heading_idx > para_idx + 1,
+            "Should have blank line between paragraph and heading.\nLines: {:?}",
+            lines
+        );
+    }
+
+    #[test]
+    fn test_paragraph_then_heading_with_margins() {
+        let md = "Some paragraph.\n\n## A Heading";
+        let style = RenderStyle::natural_with_margins(80, Margins::assistant());
+        let node = markdown_to_node_styled(md, style);
+        let output = render_to_string(&node, 80);
+        let lines: Vec<&str> = output.split("\r\n").collect();
+
+        let para_idx = lines.iter().position(|l| l.contains("paragraph")).unwrap();
+        let heading_idx = lines.iter().position(|l| l.contains("Heading")).unwrap();
+
+        assert!(
+            heading_idx > para_idx + 1,
+            "With margins: should have blank line between paragraph and heading.\nLines: {:?}",
+            lines
+        );
     }
 
     fn assert_lines_fit_width(output: &str, max_width: usize) {

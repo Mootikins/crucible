@@ -325,4 +325,25 @@ mod tests {
         assert_eq!(viewport[0], "this is a very long line that wraps");
         assert_eq!(viewport[1], "another short");
     }
+
+    #[test]
+    fn collapse_blank_lines_preserves_single_blanks() {
+        let content = "line1\n\nline2\n\nline3";
+        let result = collapse_blank_lines(content);
+        assert_eq!(result, vec!["line1", "", "line2", "", "line3"]);
+    }
+
+    #[test]
+    fn collapse_blank_lines_collapses_consecutive() {
+        let content = "line1\n\n\n\nline2";
+        let result = collapse_blank_lines(content);
+        assert_eq!(result, vec!["line1", "", "line2"]);
+    }
+
+    #[test]
+    fn collapse_blank_lines_no_leading_blank() {
+        let content = "\n\nline1\nline2";
+        let result = collapse_blank_lines(content);
+        assert_eq!(result, vec!["", "line1", "line2"]);
+    }
 }
