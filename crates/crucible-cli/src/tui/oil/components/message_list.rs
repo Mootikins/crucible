@@ -4,7 +4,8 @@ use crate::tui::oil::chat_app::Role;
 use crate::tui::oil::component::Component;
 use crate::tui::oil::markdown::{markdown_to_node_styled, Margins, RenderStyle};
 use crate::tui::oil::node::{
-    col, row, scrollback, spinner_with_frames, styled, text, Node, BRAILLE_SPINNER_FRAMES,
+    col, row, scrollback, scrollback_tool, spinner_with_frames, styled, text, Node,
+    BRAILLE_SPINNER_FRAMES,
 };
 use crate::tui::oil::style::Style;
 use crate::tui::oil::theme::{colors, styles};
@@ -43,18 +44,15 @@ impl<'a> MessageList<'a> {
 
     fn render_item_sequence(&self) -> Node {
         let mut nodes = Vec::with_capacity(self.items.len());
-        let mut prev_was_tool = false;
 
         for item in self.items {
-            let is_tool = matches!(item, CachedChatItem::ToolCall(_));
             let node = match item {
                 CachedChatItem::Message(msg) => self.render_message(msg),
-                CachedChatItem::ToolCall(tool) => render_tool_call(tool, !prev_was_tool),
+                CachedChatItem::ToolCall(tool) => render_tool_call(tool),
                 CachedChatItem::ShellExecution(shell) => render_shell_execution(shell),
                 CachedChatItem::Subagent(subagent) => render_subagent(subagent, 0),
             };
             nodes.push(node);
-            prev_was_tool = is_tool;
         }
 
         col(nodes)
@@ -164,37 +162,21 @@ fn format_elapsed(duration: Duration) -> String {
     }
 }
 
-pub fn render_tool_call(tool: &CachedToolCall, first_in_sequence: bool) -> Node {
-    render_tool_call_with_frame(tool, first_in_sequence, 0)
+pub fn render_tool_call(tool: &CachedToolCall) -> Node {
+    render_tool_call_with_frame(tool, 0)
 }
 
-pub fn render_tool_call_with_frame(
-    tool: &CachedToolCall,
-    first_in_sequence: bool,
-    spinner_frame: usize,
-) -> Node {
+pub fn render_tool_call_with_frame(tool: &CachedToolCall, spinner_frame: usize) -> Node {
     let display_name = display_tool_name(&tool.name);
     let args_formatted = format_tool_args(&tool.args);
     let result_str = tool.result();
 
     if let Some(ref error) = tool.error {
-        return render_tool_error(
-            tool,
-            display_name,
-            &args_formatted,
-            error,
-            first_in_sequence,
-        );
+        return render_tool_error(tool, display_name, &args_formatted, error);
     }
 
     if tool.complete {
-        return render_tool_complete(
-            tool,
-            display_name,
-            &args_formatted,
-            &result_str,
-            first_in_sequence,
-        );
+        return render_tool_complete(tool, display_name, &args_formatted, &result_str);
     }
 
     render_tool_running(
@@ -202,7 +184,6 @@ pub fn render_tool_call_with_frame(
         display_name,
         &args_formatted,
         &result_str,
-        first_in_sequence,
         spinner_frame,
     )
 }
@@ -212,22 +193,15 @@ fn render_tool_error(
     display_name: &str,
     args_formatted: &str,
     error: &str,
-    first_in_sequence: bool,
 ) -> Node {
     let header = row([
         styled(" ✗ ", Style::new().fg(colors::ERROR)),
-        styled(display_name, Style::new().fg(colors::TEXT_PRIMARY)),
-        styled(format!("({}) ", args_formatted), styles::muted()),
+        styled(display_name, Style::new().fg(colors::TEXT_DIM)),
+        styled(format!("({}) ", args_formatted), styles::dim()),
         styled(format!("→ {}", truncate_line(error, 50)), styles::error()),
     ]);
 
-    let content = if first_in_sequence {
-        col([text(""), header])
-    } else {
-        header
-    };
-
-    scrollback(&tool.id, [content])
+    scrollback_tool(&tool.id, [header])
 }
 
 fn render_tool_complete(
@@ -235,7 +209,6 @@ fn render_tool_complete(
     display_name: &str,
     args_formatted: &str,
     result_str: &str,
-    first_in_sequence: bool,
 ) -> Node {
     let result_summary = if !result_str.is_empty() {
         summarize_tool_result(&tool.name, result_str)
@@ -256,13 +229,13 @@ fn render_tool_complete(
 
     let header = row([
         styled(" ✓ ", Style::new().fg(colors::SUCCESS)),
-        styled(display_name, Style::new().fg(colors::TEXT_PRIMARY)),
+        styled(display_name, Style::new().fg(colors::TEXT_DIM)),
         if args_formatted.is_empty() {
             Node::Empty
         } else if has_arrow_suffix {
-            styled(format!("({}) ", args_formatted), styles::muted())
+            styled(format!("({}) ", args_formatted), styles::dim())
         } else {
-            styled(format!("({})", args_formatted), styles::muted())
+            styled(format!("({})", args_formatted), styles::dim())
         },
         arrow_suffix,
     ]);
@@ -273,13 +246,13 @@ fn render_tool_complete(
         format_tool_result(&tool.name, result_str)
     };
 
-    let content = if first_in_sequence {
-        col([text(""), header, result_node])
+    let content = if matches!(result_node, Node::Empty) {
+        header
     } else {
         col([header, result_node])
     };
 
-    scrollback(&tool.id, [content])
+    scrollback_tool(&tool.id, [content])
 }
 
 fn render_tool_running(
@@ -287,7 +260,6 @@ fn render_tool_running(
     display_name: &str,
     args_formatted: &str,
     result_str: &str,
-    first_in_sequence: bool,
     spinner_frame: usize,
 ) -> Node {
     let elapsed = tool.elapsed();
@@ -297,12 +269,12 @@ fn render_tool_running(
         styled(" ", Style::new()),
         spinner_with_frames(
             spinner_frame,
-            Style::new().fg(colors::TEXT_PRIMARY),
+            Style::new().fg(colors::TEXT_DIM),
             BRAILLE_SPINNER_FRAMES,
         ),
         styled(" ", Style::new()),
-        styled(display_name, Style::new().fg(colors::TEXT_PRIMARY)),
-        styled(format!("({})", args_formatted), styles::muted()),
+        styled(display_name, Style::new().fg(colors::TEXT_DIM)),
+        styled(format!("({})", args_formatted), styles::dim()),
         if show_elapsed {
             styled(format!("  {}", format_elapsed(elapsed)), styles::dim())
         } else {
@@ -316,8 +288,8 @@ fn render_tool_running(
         format_streaming_output(result_str)
     };
 
-    if first_in_sequence {
-        col([text(""), header, result_node])
+    if matches!(result_node, Node::Empty) {
+        header
     } else {
         col([header, result_node])
     }
@@ -332,9 +304,10 @@ fn collapse_result(name: &str, result: &str, summary: Option<&str>) -> Option<St
         return None;
     }
 
-    let lines: Vec<&str> = result.lines().collect();
-    if lines.len() == 1 && result.len() <= 60 {
-        return Some(result.trim().to_string());
+    let inner = unwrap_json_result(result);
+    let lines: Vec<&str> = inner.lines().collect();
+    if lines.len() == 1 && inner.len() <= 60 {
+        return Some(inner.trim().to_string());
     }
 
     match name {
@@ -515,32 +488,39 @@ pub fn summarize_tool_result(name: &str, result: &str) -> Option<String> {
 }
 
 pub fn format_streaming_output(output: &str) -> Node {
-    format_output_tail(output, "     ", 72)
+    let unwrapped = unwrap_json_result(output);
+    format_output_tail(&unwrapped, "     ", 72)
 }
 
 pub fn format_output_tail(output: &str, prefix: &str, max_line_len: usize) -> Node {
     let all_lines: Vec<&str> = output.lines().collect();
     let lines: Vec<&str> = all_lines.iter().rev().take(3).rev().copied().collect();
     let truncated = all_lines.len() > 3;
-    let truncate_at = max_line_len.saturating_sub(prefix.len() + 1);
+    let bar_prefix = format!("{}│ ", prefix);
+    let truncate_at = max_line_len.saturating_sub(bar_prefix.len() + 1);
 
     col(std::iter::once(if truncated {
-        styled(format!("{}…", prefix), styles::muted())
+        styled(format!("{}…", prefix), styles::tool_result())
     } else {
         Node::Empty
     })
     .chain(lines.iter().map(|line| {
         let display = if line.len() > truncate_at {
-            format!("{}{}…", prefix, &line[..truncate_at])
+            format!("{}{}…", bar_prefix, &line[..truncate_at])
         } else {
-            format!("{}{}", prefix, line)
+            format!("{}{}", bar_prefix, line)
         };
-        styled(display, styles::muted())
+        styled(display, styles::tool_result())
     })))
 }
 
 fn unwrap_json_result(result: &str) -> String {
     if let Ok(v) = serde_json::from_str::<serde_json::Value>(result) {
+        // Handle plain JSON string: "content with \n newlines"
+        if let Some(s) = v.as_str() {
+            return s.to_string();
+        }
+        // Handle wrapped result: {"result": "content"}
         if let Some(inner) = v.get("result").and_then(|r| r.as_str()) {
             return inner.to_string();
         }
@@ -692,7 +672,7 @@ mod tests {
     #[test]
     fn render_tool_call_complete() {
         let tool = test_tool_with_output("mcp_read", r#"{"path": "test.rs"}"#, "content", true);
-        let node = render_tool_call(&tool, true);
+        let node = render_tool_call(&tool);
         let plain = render_to_plain_text(&node, 80);
         assert!(plain.contains("✓"), "Should show checkmark: {:?}", plain);
         assert!(
@@ -705,7 +685,7 @@ mod tests {
     #[test]
     fn render_tool_call_in_progress() {
         let tool = test_tool("mcp_bash", r#"{"command": "ls"}"#, false);
-        let node = render_tool_call(&tool, true);
+        let node = render_tool_call(&tool);
         let plain = render_to_plain_text(&node, 80);
         assert!(
             plain.contains("bash"),
@@ -718,7 +698,7 @@ mod tests {
     fn render_tool_call_with_error() {
         let mut tool = test_tool("mcp_bash", r#"{"command": "false"}"#, false);
         tool.set_error("Command failed with exit code 1".to_string());
-        let node = render_tool_call(&tool, true);
+        let node = render_tool_call(&tool);
         let plain = render_to_plain_text(&node, 80);
         assert!(plain.contains("✗"), "Should show error icon: {:?}", plain);
         assert!(
@@ -731,7 +711,7 @@ mod tests {
     #[test]
     fn render_tool_call_collapses_short_result() {
         let tool = test_tool_with_output("unknown_tool", "{}", "OK", true);
-        let node = render_tool_call(&tool, true);
+        let node = render_tool_call(&tool);
         let plain = render_to_plain_text(&node, 80);
         assert!(
             plain.contains("→ OK"),
@@ -826,5 +806,130 @@ mod tests {
         let result = format_tool_args(&args);
         assert!(result.contains("…"), "Should truncate: {}", result);
         assert!(!result.is_empty());
+    }
+
+    #[test]
+    fn unwrap_json_result_plain_json_string() {
+        let json_string = r#""total 528\ndrwxr-xr-x""#;
+        let result = unwrap_json_result(json_string);
+        assert_eq!(result, "total 528\ndrwxr-xr-x");
+        assert!(!result.starts_with('"'));
+    }
+
+    #[test]
+    fn unwrap_json_result_wrapped_object() {
+        let json_obj = r#"{"result": "file contents"}"#;
+        let result = unwrap_json_result(json_obj);
+        assert_eq!(result, "file contents");
+    }
+
+    #[test]
+    fn unwrap_json_result_plain_text() {
+        let plain = "just plain text";
+        let result = unwrap_json_result(plain);
+        assert_eq!(result, "just plain text");
+    }
+
+    #[test]
+    fn tool_result_with_json_encoded_newlines() {
+        let json_result = r#""line1\nline2\nline3""#;
+        let tool = test_tool_with_output("mcp_bash", r#"{"command": "ls"}"#, json_result, true);
+        let node = render_tool_call(&tool);
+        let plain = render_to_plain_text(&node, 80);
+        assert!(
+            plain.contains("│ line1") || plain.contains("→"),
+            "Should decode escaped newlines and show lines: {:?}",
+            plain
+        );
+        assert!(
+            !plain.contains(r#"\n"#),
+            "Should not show literal backslash-n: {:?}",
+            plain
+        );
+    }
+
+    #[test]
+    fn tool_with_multiline_output_no_blank_line() {
+        let tool = test_tool_with_output(
+            "mcp_bash",
+            r#"{"command": "ls"}"#,
+            "line1\nline2\nline3",
+            true,
+        );
+        let node = render_tool_call(&tool);
+        let plain = render_to_plain_text(&node, 80);
+        let lines: Vec<&str> = plain.lines().collect();
+
+        assert!(lines[0].contains("✓"), "First line should have checkmark");
+        if lines.len() > 1 {
+            assert!(
+                !lines[1].trim().is_empty(),
+                "No blank line between header and output: {:?}",
+                lines
+            );
+        }
+    }
+
+    #[test]
+    fn format_output_tail_no_leading_blank() {
+        let node = format_output_tail("line1\nline2\nline3", "   ", 77);
+        let plain = render_to_plain_text(&node, 80);
+        let lines: Vec<&str> = plain.lines().collect();
+        assert!(
+            !lines.is_empty() && !lines[0].trim().is_empty(),
+            "First line should not be blank: {:?}",
+            lines
+        );
+    }
+
+    #[test]
+    fn format_tool_result_no_leading_blank() {
+        let node = format_tool_result("mcp_bash", "line1\nline2\nline3");
+        let plain = render_to_plain_text(&node, 80);
+        let lines: Vec<&str> = plain.lines().collect();
+        assert!(
+            !lines.is_empty() && !lines[0].trim().is_empty(),
+            "First line should not be blank: {:?}",
+            lines
+        );
+    }
+
+    #[test]
+    fn col_of_row_and_col_no_blank_between() {
+        use crate::tui::oil::node::{col, row, styled};
+        use crate::tui::oil::style::Style;
+
+        let header = row([styled("header", Style::default())]);
+        let result = col([
+            styled("line1", Style::default()),
+            styled("line2", Style::default()),
+        ]);
+        let combined = col([header, result]);
+
+        let plain = render_to_plain_text(&combined, 80);
+        let lines: Vec<&str> = plain.lines().collect();
+        assert_eq!(
+            lines,
+            vec!["header", "line1", "line2"],
+            "Should have no blank line"
+        );
+    }
+
+    #[test]
+    fn nested_col_with_empty_first_no_blank_line() {
+        use crate::tui::oil::node::{col, row, text, Node};
+        use crate::tui::oil::render::render_to_string;
+
+        let inner_row = row([text("header")]);
+        let inner_col = col([Node::Empty, text("line1"), text("line2")]);
+        let outer = col([inner_row, inner_col]);
+        let outer_raw = render_to_string(&outer, 80);
+        let plain = crate::tui::oil::ansi::strip_ansi(&outer_raw);
+        let lines: Vec<&str> = plain.lines().collect();
+        assert_eq!(
+            lines,
+            vec!["header", "line1", "line2"],
+            "Nested col starting with Node::Empty should not add blank line"
+        );
     }
 }

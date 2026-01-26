@@ -410,9 +410,7 @@ async fn handle_legacy_request(
         "session.add_notification" => {
             handle_session_add_notification(req, agent_manager, event_tx).await
         }
-        "session.list_notifications" => {
-            handle_session_list_notifications(req, agent_manager).await
-        }
+        "session.list_notifications" => handle_session_list_notifications(req, agent_manager).await,
         "session.dismiss_notification" => {
             handle_session_dismiss_notification(req, agent_manager, event_tx).await
         }
@@ -424,9 +422,7 @@ async fn handle_legacy_request(
             handle_session_set_max_tokens(req, agent_manager, event_tx).await
         }
         "session.get_max_tokens" => handle_session_get_max_tokens(req, agent_manager).await,
-        "session.test_interaction" => {
-            handle_session_test_interaction(req, event_tx).await
-        }
+        "session.test_interaction" => handle_session_test_interaction(req, event_tx).await,
         _ => {
             tracing::warn!("Unknown RPC method: {:?}", req.method);
             Response::error(
@@ -1082,17 +1078,15 @@ async fn handle_session_test_interaction(
 ) -> Response {
     let session_id = require_str_param!(req, "session_id");
 
-    let get_str = |key: &str| -> Option<&str> {
-        req.params.get(key)?.as_str()
-    };
+    let get_str = |key: &str| -> Option<&str> { req.params.get(key)?.as_str() };
 
     let interaction_type = get_str("type").unwrap_or("ask");
     let request_id = format!("test-{}", uuid::Uuid::new_v4());
 
     let request = match interaction_type {
         "ask" => {
-            let question = get_str("question")
-                .unwrap_or("Test question: Which option do you prefer?");
+            let question =
+                get_str("question").unwrap_or("Test question: Which option do you prefer?");
 
             // InteractionRequest uses #[serde(tag = "kind")] internally-tagged format
             serde_json::json!({
@@ -1118,13 +1112,16 @@ async fn handle_session_test_interaction(
             return Response::error(
                 req.id,
                 INVALID_PARAMS,
-                format!("Unknown interaction type: {}. Use 'ask' or 'permission'", interaction_type),
+                format!(
+                    "Unknown interaction type: {}. Use 'ask' or 'permission'",
+                    interaction_type
+                ),
             )
         }
     };
 
     let _ = event_tx.send(SessionEventMessage::new(
-        session_id.clone(),
+        session_id.to_string(),
         "interaction_requested",
         serde_json::json!({
             "request_id": request_id,
@@ -1268,9 +1265,7 @@ async fn handle_session_add_notification(
         serde_json::Value::Object(notification_obj.clone()),
     ) {
         Ok(n) => n,
-        Err(e) => {
-            return Response::error(req.id, -32602, format!("Invalid notification: {}", e))
-        }
+        Err(e) => return Response::error(req.id, -32602, format!("Invalid notification: {}", e)),
     };
 
     match am
@@ -1291,10 +1286,7 @@ async fn handle_session_add_notification(
     }
 }
 
-async fn handle_session_list_notifications(
-    req: Request,
-    am: &Arc<AgentManager>,
-) -> Response {
+async fn handle_session_list_notifications(req: Request, am: &Arc<AgentManager>) -> Response {
     let session_id = require_str_param!(req, "session_id");
 
     match am.list_notifications(session_id).await {

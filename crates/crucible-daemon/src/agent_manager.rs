@@ -136,11 +136,16 @@ impl AgentManager {
         let lua = Lua::new();
         let registry = LuaScriptHandlerRegistry::new();
 
-        register_crucible_on_api(&lua, registry.runtime_handlers(), registry.handler_functions())
-            .expect("Failed to register crucible.on API");
+        register_crucible_on_api(
+            &lua,
+            registry.runtime_handlers(),
+            registry.handler_functions(),
+        )
+        .expect("Failed to register crucible.on API");
 
         let state = Arc::new(Mutex::new(SessionLuaState { lua, registry }));
-        self.lua_states.insert(session_id.to_string(), state.clone());
+        self.lua_states
+            .insert(session_id.to_string(), state.clone());
         state
     }
 
@@ -199,7 +204,12 @@ impl AgentManager {
 
         let event_tx_clone = event_tx.clone();
         let agent = self
-            .get_or_create_agent(session_id, &agent_config, &session.workspace, &event_tx_clone)
+            .get_or_create_agent(
+                session_id,
+                &agent_config,
+                &session.workspace,
+                &event_tx_clone,
+            )
             .await?;
 
         let (cancel_tx, cancel_rx) = oneshot::channel();
@@ -287,6 +297,7 @@ impl AgentManager {
         Ok(agent)
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn execute_agent_stream(
         agent: Arc<Mutex<BoxedAgentHandle>>,
         content: String,
@@ -1306,9 +1317,10 @@ mod tests {
                 payload: serde_json::json!({}),
             };
 
-            let result = state
-                .registry
-                .execute_runtime_handler(&state.lua, &handlers[0].name, &event);
+            let result =
+                state
+                    .registry
+                    .execute_runtime_handler(&state.lua, &handlers[0].name, &event);
             assert!(result.is_ok());
         }
 
@@ -1353,11 +1365,7 @@ mod tests {
                     .execute_runtime_handler(&state.lua, &handler.name, &event);
             }
 
-            let order: Vec<String> = state
-                .lua
-                .load("return execution_order")
-                .eval()
-                .unwrap();
+            let order: Vec<String> = state.lua.load("return execution_order").eval().unwrap();
             assert_eq!(order, vec!["first", "second"]);
         }
 
@@ -1395,20 +1403,17 @@ mod tests {
             };
 
             for handler in &handlers {
-                let result = state
-                    .registry
-                    .execute_runtime_handler(&state.lua, &handler.name, &event);
+                let result =
+                    state
+                        .registry
+                        .execute_runtime_handler(&state.lua, &handler.name, &event);
                 match result {
                     Ok(_) => {}
                     Err(_) => {}
                 }
             }
 
-            let order: Vec<String> = state
-                .lua
-                .load("return execution_order")
-                .eval()
-                .unwrap();
+            let order: Vec<String> = state.lua.load("return execution_order").eval().unwrap();
             assert_eq!(order, vec!["first", "second"]);
         }
 
@@ -1502,16 +1507,8 @@ mod tests {
                 .registry
                 .execute_runtime_handler(&state.lua, &handlers[0].name, &event);
 
-            let session_id: String = state
-                .lua
-                .load("return received_session_id")
-                .eval()
-                .unwrap();
-            let message_id: String = state
-                .lua
-                .load("return received_message_id")
-                .eval()
-                .unwrap();
+            let session_id: String = state.lua.load("return received_session_id").eval().unwrap();
+            let message_id: String = state.lua.load("return received_message_id").eval().unwrap();
             assert_eq!(session_id, "test-123");
             assert_eq!(message_id, "msg-456");
         }
@@ -1715,7 +1712,10 @@ mod tests {
             .await;
 
             // Handler should have returned nil, so no injection
-            assert!(injection.is_none(), "Handler should skip injection on continuation");
+            assert!(
+                injection.is_none(),
+                "Handler should skip injection on continuation"
+            );
 
             // Verify the flag was received
             let state = lua_state.lock().await;
@@ -1724,7 +1724,10 @@ mod tests {
                 .load("return received_continuation")
                 .eval()
                 .unwrap();
-            assert!(received, "Handler should have received is_continuation=true");
+            assert!(
+                received,
+                "Handler should have received is_continuation=true"
+            );
         }
 
         #[tokio::test]
