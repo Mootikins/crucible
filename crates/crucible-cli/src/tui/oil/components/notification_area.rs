@@ -217,7 +217,7 @@ impl NotificationArea {
 
         let mut items = vec![
             styled(
-                format!("{} ", block_chars::LEFT_BORDER),
+                format!("{}", block_chars::LEFT_BORDER),
                 Style::new().fg(colors::BORDER),
             ),
             styled(padded_icon, icon_style),
