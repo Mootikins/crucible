@@ -161,7 +161,10 @@ impl InkChatRunner {
         let (msg_tx, msg_rx) = mpsc::unbounded_channel::<ChatAppMsg>();
 
         let interaction_rx = agent.take_interaction_receiver();
-        tracing::debug!(has_rx = interaction_rx.is_some(), "take_interaction_receiver");
+        tracing::debug!(
+            has_rx = interaction_rx.is_some(),
+            "take_interaction_receiver"
+        );
 
         self.event_loop(&mut app, &mut agent, bridge, msg_tx, msg_rx, interaction_rx)
             .await?;
@@ -177,7 +180,9 @@ impl InkChatRunner {
         bridge: &AgentEventBridge,
         msg_tx: mpsc::UnboundedSender<ChatAppMsg>,
         mut msg_rx: mpsc::UnboundedReceiver<ChatAppMsg>,
-        mut interaction_rx: Option<mpsc::UnboundedReceiver<crucible_core::interaction::InteractionEvent>>,
+        mut interaction_rx: Option<
+            mpsc::UnboundedReceiver<crucible_core::interaction::InteractionEvent>,
+        >,
     ) -> Result<()> {
         let mut active_stream: Option<BoxStream<'static, ChatResult<ChatChunk>>> = None;
         let mut event_stream = EventStream::new();
@@ -562,7 +567,9 @@ impl InkChatRunner {
                         response,
                     } => {
                         tracing::info!(request_id = %request_id, "Sending interaction response");
-                        match agent.interaction_respond(request_id.clone(), response.clone()).await
+                        match agent
+                            .interaction_respond(request_id.clone(), response.clone())
+                            .await
                         {
                             Ok(()) => {
                                 tracing::info!(request_id = %request_id, "Interaction response sent successfully");
@@ -598,10 +605,7 @@ impl InkChatRunner {
                 let _ = reply.send(agent.get_temperature());
             }
             SessionCommand::SetTemperature(temp, reply) => {
-                let result = agent
-                    .set_temperature(temp)
-                    .await
-                    .map_err(|e| e.to_string());
+                let result = agent.set_temperature(temp).await.map_err(|e| e.to_string());
                 let _ = reply.send(result);
             }
             SessionCommand::GetMaxTokens(reply) => {
@@ -656,33 +660,37 @@ impl InkChatRunner {
     /// or None if the event was handled internally or should be skipped.
     pub fn handle_session_event(event: SessionEvent) -> Option<ChatAppMsg> {
         match event {
-            SessionEvent::InteractionRequested { request_id, request } => {
-                match &request {
-                    InteractionRequest::Ask(_) | InteractionRequest::Permission(_) => {
-                        Some(ChatAppMsg::OpenInteraction { request_id, request })
-                    }
-                    InteractionRequest::AskBatch(_) => {
-                        tracing::warn!("AskBatch interaction not yet implemented, skipping");
-                        None
-                    }
-                    InteractionRequest::Edit(_) => {
-                        tracing::warn!("Edit interaction not yet implemented, skipping");
-                        None
-                    }
-                    InteractionRequest::Show(_) => {
-                        tracing::warn!("Show interaction not yet implemented, skipping");
-                        None
-                    }
-                    InteractionRequest::Popup(_) => {
-                        tracing::warn!("Popup interaction not yet implemented, skipping");
-                        None
-                    }
-                    InteractionRequest::Panel(_) => {
-                        tracing::warn!("Panel interaction not yet implemented, skipping");
-                        None
-                    }
+            SessionEvent::InteractionRequested {
+                request_id,
+                request,
+            } => match &request {
+                InteractionRequest::Ask(_) | InteractionRequest::Permission(_) => {
+                    Some(ChatAppMsg::OpenInteraction {
+                        request_id,
+                        request,
+                    })
                 }
-            }
+                InteractionRequest::AskBatch(_) => {
+                    tracing::warn!("AskBatch interaction not yet implemented, skipping");
+                    None
+                }
+                InteractionRequest::Edit(_) => {
+                    tracing::warn!("Edit interaction not yet implemented, skipping");
+                    None
+                }
+                InteractionRequest::Show(_) => {
+                    tracing::warn!("Show interaction not yet implemented, skipping");
+                    None
+                }
+                InteractionRequest::Popup(_) => {
+                    tracing::warn!("Popup interaction not yet implemented, skipping");
+                    None
+                }
+                InteractionRequest::Panel(_) => {
+                    tracing::warn!("Panel interaction not yet implemented, skipping");
+                    None
+                }
+            },
             _ => None,
         }
     }

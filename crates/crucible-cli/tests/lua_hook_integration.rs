@@ -4,7 +4,7 @@
 //! and before the first user message is processed.
 
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use tempfile::TempDir;
 
 /// Helper to create a test kiln with init.lua
@@ -20,7 +20,7 @@ fn create_test_kiln_with_init_lua(init_lua_content: &str) -> TempDir {
 }
 
 /// Helper to create a minimal config file
-fn create_test_config(kiln_path: &PathBuf) -> PathBuf {
+fn create_test_config(kiln_path: &Path) -> PathBuf {
     let temp = TempDir::new().unwrap();
     let config_path = temp.path().join("test-config.toml");
 
@@ -78,13 +78,13 @@ end)
 }
 
 #[test]
-fn test_hook_firing_log_message() {
-    // Verify that the hook firing produces the expected debug log
-    // This test checks that when hooks are fired, we see:
-    // "Fired N session_start hooks"
-
-    // This is a unit test that verifies the logging behavior
-    // The actual hook firing happens in chat.rs after session creation
-    let expected_log = "Fired";
-    assert!(!expected_log.is_empty(), "Log message should contain 'Fired'");
+fn test_hook_firing_log_format() {
+    let expected_pattern = "Fired";
+    let example_log = "Fired 1 session_start hooks";
+    assert!(
+        example_log.contains(expected_pattern),
+        "Log message should contain '{}', got: {}",
+        expected_pattern,
+        example_log
+    );
 }

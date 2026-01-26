@@ -631,7 +631,7 @@ mod tool_call_tests {
     #[test]
     fn running_tool_shows_spinner() {
         let tool = test_tool("mcp_read", r#"{"path": "test.rs"}"#);
-        let node = render_tool_call_with_frame(&tool, true, 0);
+        let node = render_tool_call_with_frame(&tool, 0);
         let plain = render_to_plain_text(&node, 80);
 
         assert!(
@@ -648,7 +648,7 @@ mod tool_call_tests {
     #[test]
     fn complete_tool_shows_checkmark() {
         let tool = test_tool_complete("mcp_glob", r#"{"pattern": "*.rs"}"#, "file1.rs\nfile2.rs");
-        let node = render_tool_call_with_frame(&tool, true, 0);
+        let node = render_tool_call_with_frame(&tool, 0);
         let plain = render_to_plain_text(&node, 80);
 
         assert!(plain.contains("✓"), "Complete tool should show checkmark");
@@ -663,7 +663,7 @@ mod tool_call_tests {
         let mut tool = test_tool("mcp_bash", r#"{"command": "false"}"#);
         tool.set_error("Command failed with exit code 1".to_string());
 
-        let node = render_tool_call_with_frame(&tool, true, 0);
+        let node = render_tool_call_with_frame(&tool, 0);
         let plain = render_to_plain_text(&node, 80);
 
         assert!(plain.contains("✗"), "Error tool should show X: {:?}", plain);
@@ -676,7 +676,7 @@ mod tool_call_tests {
     #[test]
     fn short_result_collapses_to_one_line() {
         let tool = test_tool_complete("custom_tool", "{}", "OK");
-        let node = render_tool_call_with_frame(&tool, true, 0);
+        let node = render_tool_call_with_frame(&tool, 0);
         let plain = render_to_plain_text(&node, 80);
 
         assert!(
@@ -691,7 +691,7 @@ mod tool_call_tests {
     #[test]
     fn known_tool_shows_summary() {
         let tool = test_tool_complete("mcp_glob", r#"{"pattern": "*.rs"}"#, "a.rs\nb.rs\nc.rs");
-        let node = render_tool_call_with_frame(&tool, true, 0);
+        let node = render_tool_call_with_frame(&tool, 0);
         let plain = render_to_plain_text(&node, 80);
 
         assert!(
@@ -708,7 +708,7 @@ mod tool_call_tests {
             r#"{"path": "test.rs"}"#,
             "Edit applied successfully",
         );
-        let node = render_tool_call_with_frame(&tool, true, 0);
+        let node = render_tool_call_with_frame(&tool, 0);
         let plain = render_to_plain_text(&node, 80);
 
         assert!(
@@ -724,7 +724,7 @@ mod tool_call_tests {
             test_tool_complete("mcp_bash", r#"{"command": "ls"}"#, "file1\nfile2\nfile3");
         tool.set_output_path(PathBuf::from("/tmp/output.txt"));
 
-        let node = render_tool_call_with_frame(&tool, true, 0);
+        let node = render_tool_call_with_frame(&tool, 0);
         let plain = render_to_plain_text(&node, 80);
 
         assert!(
@@ -738,8 +738,8 @@ mod tool_call_tests {
     fn spinner_frame_changes_icon() {
         let tool = test_tool("mcp_read", "{}");
 
-        let node0 = render_tool_call_with_frame(&tool, true, 0);
-        let node1 = render_tool_call_with_frame(&tool, true, 1);
+        let node0 = render_tool_call_with_frame(&tool, 0);
+        let node1 = render_tool_call_with_frame(&tool, 1);
 
         let plain0 = render_to_plain_text(&node0, 80);
         let plain1 = render_to_plain_text(&node1, 80);
@@ -751,7 +751,7 @@ mod tool_call_tests {
     #[test]
     fn strips_mcp_prefix_from_name() {
         let tool = test_tool_complete("mcp_read", "{}", "content");
-        let node = render_tool_call_with_frame(&tool, true, 0);
+        let node = render_tool_call_with_frame(&tool, 0);
         let plain = render_to_plain_text(&node, 80);
 
         assert!(

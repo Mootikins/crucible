@@ -1031,11 +1031,7 @@ impl DaemonClient {
         Ok(budget)
     }
 
-    pub async fn session_set_temperature(
-        &self,
-        session_id: &str,
-        temperature: f64,
-    ) -> Result<()> {
+    pub async fn session_set_temperature(&self, session_id: &str, temperature: f64) -> Result<()> {
         self.call(
             "session.set_temperature",
             serde_json::json!({

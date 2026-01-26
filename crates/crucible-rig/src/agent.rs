@@ -121,7 +121,9 @@ fn attach_tools<M: CompletionModel>(
             .tool(BashTool::new(ctx.clone()))
             .tool(GlobTool::new(ctx.clone()))
             .tool(GrepTool::new(ctx.clone()))
-            .tool(AskUserTool::new((*ctx.interaction_context().unwrap()).clone()))
+            .tool(AskUserTool::new(
+                (*ctx.interaction_context().unwrap()).clone(),
+            ))
             .build(),
         (false, None, true, false) => builder
             .tool(ReadFileTool::new(ctx.clone()))
@@ -146,7 +148,9 @@ fn attach_tools<M: CompletionModel>(
             .tool(GetJobResultTool::new(ctx.clone()))
             .tool(CancelJobTool::new(ctx.clone()))
             .tool(SpawnSubagentTool::new(ctx.clone()))
-            .tool(AskUserTool::new((*ctx.interaction_context().unwrap()).clone()))
+            .tool(AskUserTool::new(
+                (*ctx.interaction_context().unwrap()).clone(),
+            ))
             .build(),
         (false, Some(kiln), false, false) => builder
             .tool(ReadFileTool::new(ctx.clone()))
@@ -169,7 +173,9 @@ fn attach_tools<M: CompletionModel>(
             .tool(SemanticSearchTool::new(kiln.clone()))
             .tool(ReadNoteTool::new(kiln.clone()))
             .tool(ListNotesTool::new(kiln.clone()))
-            .tool(AskUserTool::new((*ctx.interaction_context().unwrap()).clone()))
+            .tool(AskUserTool::new(
+                (*ctx.interaction_context().unwrap()).clone(),
+            ))
             .build(),
         (false, Some(kiln), true, false) => builder
             .tool(ReadFileTool::new(ctx.clone()))
@@ -200,7 +206,9 @@ fn attach_tools<M: CompletionModel>(
             .tool(SemanticSearchTool::new(kiln.clone()))
             .tool(ReadNoteTool::new(kiln.clone()))
             .tool(ListNotesTool::new(kiln.clone()))
-            .tool(AskUserTool::new((*ctx.interaction_context().unwrap()).clone()))
+            .tool(AskUserTool::new(
+                (*ctx.interaction_context().unwrap()).clone(),
+            ))
             .build(),
     }
 }

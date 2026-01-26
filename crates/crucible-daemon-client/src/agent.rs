@@ -126,11 +126,9 @@ async fn event_router(
             } else {
                 tracing::warn!("Interaction event missing request_id or request data");
             }
-        } else {
-            if streaming_tx.send(event).is_err() {
-                tracing::debug!("Streaming channel closed");
-                break;
-            }
+        } else if streaming_tx.send(event).is_err() {
+            tracing::debug!("Streaming channel closed");
+            break;
         }
     }
     tracing::debug!("Event router task ended");
@@ -298,9 +296,7 @@ impl AgentHandle for DaemonAgentHandle {
         })
     }
 
-    fn take_interaction_receiver(
-        &mut self,
-    ) -> Option<mpsc::UnboundedReceiver<InteractionEvent>> {
+    fn take_interaction_receiver(&mut self) -> Option<mpsc::UnboundedReceiver<InteractionEvent>> {
         self.interaction_rx.take()
     }
 
@@ -408,7 +404,9 @@ impl AgentHandle for DaemonAgentHandle {
         self.client
             .session_interaction_respond(&self.session_id, &request_id, response)
             .await
-            .map_err(|e| ChatError::Communication(format!("Failed to send interaction response: {}", e)))
+            .map_err(|e| {
+                ChatError::Communication(format!("Failed to send interaction response: {}", e))
+            })
     }
 }
 

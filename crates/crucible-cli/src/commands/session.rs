@@ -480,9 +480,7 @@ async fn daemon_execute(config: CliConfig, cmd: DaemonSessionCommands) -> Result
             model,
             endpoint,
         } => daemon_configure(&client, &session_id, &provider, &model, endpoint).await,
-        DaemonSessionCommands::Subscribe { session_ids } => {
-            daemon_subscribe(&session_ids).await
-        }
+        DaemonSessionCommands::Subscribe { session_ids } => daemon_subscribe(&session_ids).await,
         DaemonSessionCommands::Load { session_id } => {
             daemon_load(&client, &config, &session_id).await
         }
@@ -645,24 +643,34 @@ async fn daemon_send(
                 } else {
                     match event.event_type.as_str() {
                         "text_delta" => {
-                            if let Some(content) = event.data.get("content").and_then(|v| v.as_str())
+                            if let Some(content) =
+                                event.data.get("content").and_then(|v| v.as_str())
                             {
                                 print!("{}", content);
                                 std::io::stdout().flush().ok();
                             }
                         }
                         "thinking" => {
-                            if let Some(content) = event.data.get("content").and_then(|v| v.as_str())
+                            if let Some(content) =
+                                event.data.get("content").and_then(|v| v.as_str())
                             {
                                 eprintln!("[thinking] {}", content);
                             }
                         }
                         "tool_call" => {
-                            let tool = event.data.get("tool").and_then(|v| v.as_str()).unwrap_or("?");
+                            let tool = event
+                                .data
+                                .get("tool")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("?");
                             eprintln!("[tool_call] {}", tool);
                         }
                         "tool_result" => {
-                            let tool = event.data.get("tool").and_then(|v| v.as_str()).unwrap_or("?");
+                            let tool = event
+                                .data
+                                .get("tool")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("?");
                             eprintln!("[tool_result] {}", tool);
                         }
                         "message_complete" => {
@@ -762,11 +770,7 @@ async fn daemon_subscribe(session_ids: &[String]) -> Result<()> {
     Ok(())
 }
 
-async fn daemon_load(
-    client: &DaemonClient,
-    config: &CliConfig,
-    session_id: &str,
-) -> Result<()> {
+async fn daemon_load(client: &DaemonClient, config: &CliConfig, session_id: &str) -> Result<()> {
     let result = client
         .session_resume_from_storage(session_id, &config.kiln_path, None, None)
         .await?;

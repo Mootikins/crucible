@@ -20,10 +20,6 @@ use crate::tui::oil::render::{render_children_to_string, RenderFilter};
 use std::collections::VecDeque;
 use std::io;
 
-/// Width used for rendering graduated content. Large value lets terminal handle wrapping.
-/// This matches `NATURAL_TEXT_WIDTH` in markdown.rs - graduated content uses "natural" style.
-pub const GRADUATION_WIDTH: usize = 10000;
-
 /// Maximum number of graduated keys to track. Once full, oldest keys are evicted.
 /// This bounds memory usage and provides natural cleanup for long sessions.
 /// 256 messages is ~10 screens of typical chat content.
@@ -83,9 +79,9 @@ impl GraduationState {
         }
     }
 
-    pub fn plan_graduation(&self, node: &Node) -> Vec<GraduatedContent> {
+    pub fn plan_graduation(&self, node: &Node, width: usize) -> Vec<GraduatedContent> {
         let mut graduated = Vec::new();
-        self.collect_static_nodes_readonly(node, &mut graduated);
+        self.collect_static_nodes_readonly(node, width, &mut graduated);
         graduated
     }
 
@@ -131,18 +127,22 @@ impl GraduationState {
 
     /// Legacy method that both collects AND commits in one step.
     /// Prefer plan_graduation() + commit_graduation() for testability.
-    pub fn graduate(&mut self, node: &Node, _width: usize) -> io::Result<Vec<GraduatedContent>> {
-        let graduated = self.plan_graduation(node);
+    pub fn graduate(&mut self, node: &Node, width: usize) -> io::Result<Vec<GraduatedContent>> {
+        let graduated = self.plan_graduation(node, width);
         self.commit_graduation(&graduated);
         Ok(graduated)
     }
 
-    fn collect_static_nodes_readonly(&self, node: &Node, graduated: &mut Vec<GraduatedContent>) {
+    fn collect_static_nodes_readonly(
+        &self,
+        node: &Node,
+        width: usize,
+        graduated: &mut Vec<GraduatedContent>,
+    ) {
         match node {
             Node::Static(static_node) => {
                 if !self.graduated_keys.contains(&static_node.key) {
-                    let content =
-                        render_children_to_string(&static_node.children, GRADUATION_WIDTH);
+                    let content = render_children_to_string(&static_node.children, width);
 
                     if !content.is_empty() {
                         graduated.push(GraduatedContent {
@@ -157,13 +157,13 @@ impl GraduationState {
 
             Node::Box(boxnode) => {
                 for child in &boxnode.children {
-                    self.collect_static_nodes_readonly(child, graduated);
+                    self.collect_static_nodes_readonly(child, width, graduated);
                 }
             }
 
             Node::Fragment(children) => {
                 for child in children {
-                    self.collect_static_nodes_readonly(child, graduated);
+                    self.collect_static_nodes_readonly(child, width, graduated);
                 }
             }
 
@@ -230,8 +230,8 @@ mod tests {
         let state = GraduationState::new();
         let tree = scrollback("key-1", [text("Content")]);
 
-        let graduated1 = state.plan_graduation(&tree);
-        let graduated2 = state.plan_graduation(&tree);
+        let graduated1 = state.plan_graduation(&tree, 80);
+        let graduated2 = state.plan_graduation(&tree, 80);
 
         assert_eq!(graduated1.len(), 1);
         assert_eq!(graduated2.len(), 1);
@@ -246,13 +246,13 @@ mod tests {
         let mut state = GraduationState::new();
         let tree = scrollback("key-1", [text("Content")]);
 
-        let graduated = state.plan_graduation(&tree);
+        let graduated = state.plan_graduation(&tree, 80);
         assert!(!state.is_graduated("key-1"));
 
         state.commit_graduation(&graduated);
         assert!(state.is_graduated("key-1"));
 
-        let graduated_again = state.plan_graduation(&tree);
+        let graduated_again = state.plan_graduation(&tree, 80);
         assert!(graduated_again.is_empty());
     }
 
@@ -320,7 +320,7 @@ mod tests {
         assert_eq!(state.graduated_count(), 2);
 
         let tree = scrollback("assistant-1", [text("Content")]);
-        let graduated = state.plan_graduation(&tree);
+        let graduated = state.plan_graduation(&tree, 80);
         assert!(
             graduated.is_empty(),
             "pre-graduated key should not graduate again"
@@ -334,7 +334,7 @@ mod tests {
         let mut state = GraduationState::new();
 
         let streaming_tree = scrollback("streaming-graduated-0", [text("Hello world")]);
-        let graduated = state.plan_graduation(&streaming_tree);
+        let graduated = state.plan_graduation(&streaming_tree, 80);
         assert_eq!(graduated.len(), 1);
         state.commit_graduation(&graduated);
 
@@ -344,7 +344,7 @@ mod tests {
             scrollback("streaming-graduated-0", [text("Hello world")]),
             scrollback("assistant-1", [text("Hello world")]),
         ]);
-        let graduated_final = state.plan_graduation(&final_tree);
+        let graduated_final = state.plan_graduation(&final_tree, 80);
         assert!(
             graduated_final.is_empty(),
             "both streaming key and pre-graduated final key should be skipped"

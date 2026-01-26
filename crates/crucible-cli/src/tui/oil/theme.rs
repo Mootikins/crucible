@@ -208,9 +208,9 @@ pub mod styles {
         Style::new().fg(colors::ROLE_TOOL).dim()
     }
 
-    /// Style for tool results
+    /// Style for tool results (lighter than muted for readability)
     pub fn tool_result() -> Style {
-        Style::new().fg(colors::TEXT_MUTED)
+        Style::new().fg(colors::TEXT_DIM)
     }
 
     // ─────────────────────────────────────────────────────────────────────────

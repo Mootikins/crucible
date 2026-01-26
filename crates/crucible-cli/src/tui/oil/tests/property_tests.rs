@@ -230,7 +230,10 @@ mod graduation_properties {
         #![proptest_config(ProptestConfig::with_cases(100))]
 
         #[test]
-        fn graduation_keys_always_unique(keys in prop::collection::vec("[a-z]{3,10}", 1..20)) {
+        fn graduation_keys_always_unique(
+            key_set in prop::collection::hash_set("[a-z]{3,10}", 1..20)
+        ) {
+            let keys: Vec<_> = key_set.into_iter().collect();
             let mut state = GraduationState::new();
 
             let nodes: Vec<Node> = keys
@@ -665,7 +668,7 @@ mod markdown_block_spacing_properties {
 
         match (pos_a, pos_b) {
             (Some(a), Some(b)) if b > a => {
-                (a + 1..b).any(|i| lines.get(i).map_or(false, |l| l.trim().is_empty()))
+                (a + 1..b).any(|i| lines.get(i).is_some_and(|l| l.trim().is_empty()))
             }
             _ => true,
         }

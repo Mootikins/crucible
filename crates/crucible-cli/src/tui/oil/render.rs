@@ -261,14 +261,16 @@ fn render_column_children_filtered(
     output: &mut String,
     cursor_info: &mut CursorInfo,
 ) {
-    for (i, child) in children.iter().enumerate() {
+    let mut rendered_any = false;
+    for child in children.iter() {
         if matches!(child, Node::Empty) {
             continue;
         }
-        if i > 0 && !output.is_empty() {
+        if rendered_any && !output.is_empty() {
             output.push_str("\r\n");
         }
         render_node_filtered(child, width, filter, output, cursor_info);
+        rendered_any = true;
     }
 }
 

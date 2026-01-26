@@ -226,12 +226,18 @@ mod switch_model_tests {
     }
 
     struct MockWithInteraction {
-        interaction_rx:
-            std::sync::Mutex<Option<tokio::sync::mpsc::UnboundedReceiver<crucible_core::interaction::InteractionEvent>>>,
+        interaction_rx: std::sync::Mutex<
+            Option<
+                tokio::sync::mpsc::UnboundedReceiver<crucible_core::interaction::InteractionEvent>,
+            >,
+        >,
     }
 
     impl MockWithInteraction {
-        fn new() -> (Self, tokio::sync::mpsc::UnboundedSender<crucible_core::interaction::InteractionEvent>) {
+        fn new() -> (
+            Self,
+            tokio::sync::mpsc::UnboundedSender<crucible_core::interaction::InteractionEvent>,
+        ) {
             let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
             (
                 Self {
@@ -273,8 +279,9 @@ mod switch_model_tests {
         }
         fn take_interaction_receiver(
             &mut self,
-        ) -> Option<tokio::sync::mpsc::UnboundedReceiver<crucible_core::interaction::InteractionEvent>>
-        {
+        ) -> Option<
+            tokio::sync::mpsc::UnboundedReceiver<crucible_core::interaction::InteractionEvent>,
+        > {
             self.interaction_rx.lock().unwrap().take()
         }
     }
@@ -315,7 +322,10 @@ mod switch_model_tests {
         let mut agent = DynamicAgent::local(boxed);
 
         let rx = agent.take_interaction_receiver();
-        assert!(rx.is_some(), "Boxed trait object should delegate take_interaction_receiver");
+        assert!(
+            rx.is_some(),
+            "Boxed trait object should delegate take_interaction_receiver"
+        );
 
         let mut rx = rx.unwrap();
         let event = crucible_core::interaction::InteractionEvent {
