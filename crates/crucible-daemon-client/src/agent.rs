@@ -193,8 +193,12 @@ fn session_event_to_chat_chunk(event: &SessionEvent) -> Option<ChatChunk> {
             let result = event.data.get("result")?;
 
             let name = tool_name.or(call_id).unwrap_or("tool").to_string();
-            // Daemon wraps results as {"result": "text"}, so unwrap if present
-            let result_str = if result.is_string() {
+
+            let error = result.get("error").and_then(|e| e.as_str()).map(String::from);
+
+            let result_str = if error.is_some() {
+                String::new()
+            } else if result.is_string() {
                 result.as_str().unwrap_or("").to_string()
             } else if let Some(inner) = result.get("result").and_then(|r| r.as_str()) {
                 inner.to_string()
@@ -209,7 +213,7 @@ fn session_event_to_chat_chunk(event: &SessionEvent) -> Option<ChatChunk> {
                 tool_results: Some(vec![ChatToolResult {
                     name,
                     result: result_str,
-                    error: None,
+                    error,
                 }]),
                 reasoning: None,
                 usage: None,
@@ -736,5 +740,47 @@ mod tests {
         assert_eq!(results[0].name, "bash");
         assert_eq!(results[0].result, "line1\nline2\nline3");
         assert!(results[0].result.contains('\n'));
+    }
+
+    #[test]
+    fn test_tool_result_with_error_extracts_error_field() {
+        let event = SessionEvent {
+            session_id: "test".to_string(),
+            event_type: "tool_result".to_string(),
+            data: json!({
+                "call_id": "tc-denied",
+                "tool": "bash",
+                "result": { "error": "User denied permission to bash echo hello" }
+            }),
+        };
+
+        let chunk = session_event_to_chat_chunk(&event).unwrap();
+        let results = chunk.tool_results.unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].name, "bash");
+        assert!(results[0].result.is_empty(), "Result should be empty when error is present");
+        assert_eq!(
+            results[0].error,
+            Some("User denied permission to bash echo hello".to_string())
+        );
+    }
+
+    #[test]
+    fn test_tool_result_without_error_has_none_error_field() {
+        let event = SessionEvent {
+            session_id: "test".to_string(),
+            event_type: "tool_result".to_string(),
+            data: json!({
+                "call_id": "tc-ok",
+                "tool": "read_file",
+                "result": "file contents"
+            }),
+        };
+
+        let chunk = session_event_to_chat_chunk(&event).unwrap();
+        let results = chunk.tool_results.unwrap();
+        assert_eq!(results[0].name, "read_file");
+        assert_eq!(results[0].result, "file contents");
+        assert!(results[0].error.is_none(), "Error should be None for successful results");
     }
 }
