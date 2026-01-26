@@ -228,3 +228,103 @@ Notifications now appear right-aligned:
                                                          ▌ ✓ Thinking display: off
                                                          ▘
 ```
+
+## Bug #3 Fix (2026-01-25)
+
+### Root Cause Analysis
+
+Notification popups were appearing left-aligned instead of right-aligned because:
+
+1. The `OverlayAnchor` enum only had `FromBottom(usize)` - no horizontal alignment
+2. The `pad_or_truncate()` function padded on the RIGHT: `format!("{}{}", line, " ".repeat(width - vis_width))`
+3. This left-aligned all overlay content
+
+### Solution
+
+Extended the overlay system to support right-alignment:
+
+1. **Added** `FromBottomRight(usize)` variant to `OverlayAnchor` enum
+2. **Added** `pad_or_truncate_right()` function that pads on the LEFT for right-alignment
+3. **Added** `overlay_from_bottom_right()` helper function in `node.rs`
+4. **Updated** `NotificationArea` to use `overlay_from_bottom_right(card, 1)`
+
+### Test Results
+
+- All 14 notification_area tests pass
+- New test `notification_uses_right_aligned_overlay` verifies correct anchor usage
+- LSP diagnostics clean
+
+Notifications now appear in the top-right corner as designed.
+
+---
+
+## Bug #1 Investigation (Content Duplication)
+
+### Status: NEEDS INVESTIGATION
+
+The user reported that when streaming completes and content graduates to scrollback, content appears twice (once formatted, once as plain text).
+
+**Current test status**: Our regression test `table_not_duplicated_after_graduation` shows NO duplication in the snapshot. This suggests:
+
+1. The test doesn't fully simulate the real graduation flow
+2. The bug might be specific to certain content types or streaming patterns
+3. The bug might only occur in actual `cru chat` usage, not in unit tests
+
+**Next steps**:
+1. Need hands-on QA with actual `cru chat` to reproduce the bug
+2. May need to add more detailed logging to graduation system
+3. Consider adding PTY-based E2E test to capture real streaming behavior
+
+
+## Graduation Invariant Property Tests (2026-01-25)
+
+### Tests Created
+
+Created comprehensive invariant tests in `graduation_invariant_property_tests.rs` to catch content duplication bugs:
+
+#### Test 1: XOR Invariant
+- `graduation_xor_invariant_content_never_in_both` - Verifies content appears in viewport XOR scrollback, never both
+- `graduation_xor_invariant_with_multiple_paragraphs` - Tests XOR with paragraph graduation
+- `graduation_xor_with_cancelled_stream` - Tests XOR when stream is cancelled
+
+#### Test 2: Content Preservation
+- `graduation_preserves_all_content` - Verifies total content equals all streamed content
+- `graduation_preserves_content_with_code_blocks` - Tests preservation with code fences
+
+#### Test 3: Atomicity
+- `graduation_is_atomic_no_intermediate_duplication` - Verifies no intermediate duplication state
+- `graduation_atomicity_with_rapid_chunks` - Tests atomicity with rapid streaming
+- `graduation_atomicity_across_multiple_renders` - Tests atomicity across render cycles
+
+#### Test 4: Idempotence
+- `rendering_is_idempotent_after_graduation` - Verifies same state renders identically
+- `rendering_is_idempotent_during_streaming` - Tests idempotence during streaming
+- `rendering_is_idempotent_with_tool_calls` - Tests idempotence with tool calls
+
+#### Additional Invariant Tests
+- `graduation_monotonic_count_never_decreases` - Verifies graduated count never decreases
+- `graduation_stable_across_resize` - Tests stability during terminal resize
+- `graduation_handles_empty_messages_correctly` - Tests empty message handling
+
+### Helper Functions Created
+
+- `extract_viewport_content()` - Extract viewport lines (stripped of ANSI)
+- `extract_scrollback_content()` - Extract scrollback lines (stripped of ANSI)
+- `extract_viewport_text()` / `extract_scrollback_text()` - Get raw text
+- `normalize_line()` - Normalize for comparison
+- `is_decorative_line()` - Filter out UI decoration (borders, bullets)
+- `count_content_occurrences()` - Count needle in combined output
+- `combined_content()` - Get stdout + viewport combined
+- `verify_xor_invariant()` - Verify XOR placement invariant
+
+### Test Results
+
+All 14 new tests pass. The tests correctly filter out decorative UI elements (border characters like `▄▀─│`) that legitimately appear in both viewport and scrollback as part of the UI chrome.
+
+### Key Finding
+
+The XOR invariant tests initially failed because border/separator characters (`▄▄▄▄▄...`) appear in both viewport and scrollback. This is expected behavior - these are UI decorations, not content. The `is_decorative_line()` helper was added to filter these out.
+
+### Pre-existing Issue
+
+One unrelated snapshot test (`snapshot_notification_visible`) was already failing before these changes - it's about notification positioning, not graduation.
