@@ -29,14 +29,16 @@ pub const MAX_VISIBLE_NOTIFICATIONS: usize = 5;
 
 /// Block characters for the floating card effect.
 mod block_chars {
-    /// Top-left corner (rounded effect)
-    pub const TOP_LEFT: char = '▗';
+    /// Top-left corner (three quadrants filled - missing lower-right)
+    pub const TOP_LEFT: char = '▛';
     /// Top edge
-    pub const TOP_EDGE: char = '▄';
+    pub const TOP_EDGE: char = '▀';
     /// Left border
     pub const LEFT_BORDER: char = '▌';
     /// Notch where input meets popup (bottom-left of popup area)
     pub const NOTCH: char = '▘';
+    /// Connection point on input box (three quadrants filled - missing upper-right)
+    pub const CONNECTION: char = '▙';
 }
 
 /// Icons for different notification types.
@@ -166,11 +168,51 @@ impl NotificationArea {
         self.notifications.len()
     }
 
+    /// Calculate the column where the notification card ends (for input connection point).
+    /// Returns None if no notifications are visible.
+    pub fn card_end_column(&self, terminal_width: usize) -> Option<usize> {
+        if !self.visible || self.notifications.is_empty() {
+            return None;
+        }
+
+        let display_notifications: Vec<_> = self
+            .notifications
+            .iter()
+            .rev()
+            .take(self.max_visible)
+            .collect();
+
+        if display_notifications.is_empty() {
+            return None;
+        }
+
+        let max_msg_len = display_notifications
+            .iter()
+            .map(|(n, _)| n.message.len())
+            .max()
+            .unwrap_or(0);
+
+        let card_width = max_msg_len + 5;
+        Some(terminal_width.saturating_sub(card_width))
+    }
+
     fn render_notification(&self, notification: &Notification) -> Node {
+        use unicode_width::UnicodeWidthStr;
+
         let (icon, icon_style) = match &notification.kind {
             NotificationKind::Toast => (icons::TOAST, styles::success()),
             NotificationKind::Progress { .. } => (icons::PROGRESS, styles::info()),
             NotificationKind::Warning => (icons::WARNING, styles::warning()),
+        };
+
+        // Detect icon width and add padding for single-width icons
+        let icon_width = UnicodeWidthStr::width(icon);
+        let padded_icon = if icon_width == 1 {
+            // Single-width icon (✓, ⚠) → add space padding: " ✓ "
+            format!(" {} ", icon)
+        } else {
+            // Double-width icon (⏳) → single space: "⏳ "
+            format!("{} ", icon)
         };
 
         let mut items = vec![
@@ -178,7 +220,7 @@ impl NotificationArea {
                 format!("{} ", block_chars::LEFT_BORDER),
                 Style::new().fg(colors::BORDER),
             ),
-            styled(format!("{} ", icon), icon_style),
+            styled(padded_icon, icon_style),
             styled(
                 notification.message.clone(),
                 Style::new().fg(colors::TEXT_PRIMARY),
@@ -255,8 +297,9 @@ impl Component for NotificationArea {
 
         let card = col(rows);
 
-        // Position from bottom-right (offset = 1, above statusline)
-        overlay_from_bottom_right(card, 1)
+        // Position from bottom-right (offset = 3: 2 blank lines + 1 statusline)
+        // This places notification 2 lines above the input box
+        overlay_from_bottom_right(card, 3)
     }
 }
 
