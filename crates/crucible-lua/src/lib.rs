@@ -149,9 +149,10 @@ pub use vault::{
 pub use views::discover_views_from;
 // Handler system
 pub use handlers::{
-    execute_handler, interpret_handler_result, register_crucible_on_api, run_handler_chain,
-    HandlerExecutionResult, LuaScriptHandler, LuaScriptHandlerRegistry, RuntimeHandler,
-    ScriptHandlerResult,
+    execute_handler, execute_permission_hooks, interpret_handler_result, register_crucible_on_api,
+    register_permission_hook_api, run_handler_chain, HandlerExecutionResult, LuaScriptHandler,
+    LuaScriptHandlerRegistry, PermissionHook, PermissionHookResult, PermissionRequest,
+    RuntimeHandler, ScriptHandlerResult,
 };
 pub use lifecycle::{
     CommandBuilder, HandlerBuilder, LifecycleError, LifecycleResult, PluginManager,
