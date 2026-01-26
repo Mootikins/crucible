@@ -463,7 +463,7 @@ mod chat_mode_properties {
 
 mod composer_stability_properties {
     use crate::tui::oil::app::App;
-    use crate::tui::oil::chat_app::{InkChatApp, INPUT_MAX_CONTENT_LINES};
+    use crate::tui::oil::chat_app::{OilChatApp, INPUT_MAX_CONTENT_LINES};
     use crate::tui::oil::event::{Event, InputAction};
     use crate::tui::oil::focus::FocusContext;
     use crate::tui::oil::render::render_to_string;
@@ -494,21 +494,21 @@ mod composer_stability_properties {
         input_lines
     }
 
-    fn render_app(app: &InkChatApp) -> String {
+    fn render_app(app: &OilChatApp) -> String {
         let focus = FocusContext::new();
         let ctx = ViewContext::new(&focus);
         let node = app.view(&ctx);
         render_to_string(&node, 80)
     }
 
-    fn measure_input_height(app: &InkChatApp) -> usize {
+    fn measure_input_height(app: &OilChatApp) -> usize {
         let output = render_app(app);
         extract_input_region(&output).len()
     }
 
     #[test]
     fn input_region_has_expected_height_when_empty() {
-        let app = InkChatApp::default();
+        let app = OilChatApp::default();
         let height = measure_input_height(&app);
         assert_eq!(
             height, 3,
@@ -522,7 +522,7 @@ mod composer_stability_properties {
 
         #[test]
         fn input_height_bounded_by_max_content_lines(text in "[a-zA-Z0-9 ]{0,500}") {
-            let mut app = InkChatApp::default();
+            let mut app = OilChatApp::default();
             app.set_input_content(&text);
 
             let height = measure_input_height(&app);
@@ -544,7 +544,7 @@ mod composer_stability_properties {
         fn input_height_bounded_after_typing(
             chars in prop::collection::vec(any::<char>().prop_filter("printable", |c| c.is_ascii_graphic() || *c == ' '), 1..100)
         ) {
-            let mut app = InkChatApp::default();
+            let mut app = OilChatApp::default();
 
             for c in chars {
                 app.handle_input_action(InputAction::Insert(c));
@@ -576,7 +576,7 @@ mod composer_stability_properties {
                 1..50
             )
         ) {
-            let mut app = InkChatApp::default();
+            let mut app = OilChatApp::default();
             let max_height = INPUT_MAX_CONTENT_LINES + 2;
 
             for action in actions {
@@ -594,7 +594,7 @@ mod composer_stability_properties {
 
         #[test]
         fn long_text_clamped_to_max_lines(word_count in 5usize..50, word_len in 3usize..15) {
-            let mut app = InkChatApp::default();
+            let mut app = OilChatApp::default();
 
             let text: String = (0..word_count)
                 .map(|_| "x".repeat(word_len))
@@ -626,7 +626,7 @@ mod composer_stability_properties {
                 5..30
             )
         ) {
-            let mut app = InkChatApp::default();
+            let mut app = OilChatApp::default();
             app.set_input_content(&text);
             let max_height = INPUT_MAX_CONTENT_LINES + 2;
 

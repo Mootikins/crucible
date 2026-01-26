@@ -11,12 +11,12 @@
 //!
 //! # Test Strategy
 //!
-//! Uses the `InkChatApp` directly with `ChatAppMsg` events to simulate real streaming scenarios,
+//! Uses the `OilChatApp` directly with `ChatAppMsg` events to simulate real streaming scenarios,
 //! then verifies invariants at each step using helper functions to extract and compare content.
 
 use crate::tui::oil::ansi::strip_ansi;
 use crate::tui::oil::app::{App, ViewContext};
-use crate::tui::oil::chat_app::{ChatAppMsg, InkChatApp};
+use crate::tui::oil::chat_app::{ChatAppMsg, OilChatApp};
 use crate::tui::oil::focus::FocusContext;
 use crate::tui::oil::render::render_to_string;
 use crate::tui::oil::Node;
@@ -27,20 +27,20 @@ use crate::tui::oil::TestRuntime;
 // ============================================================================
 
 /// Render the app to a Node tree using default context.
-fn view_with_default_ctx(app: &InkChatApp) -> Node {
+fn view_with_default_ctx(app: &OilChatApp) -> Node {
     let focus = FocusContext::new();
     let ctx = ViewContext::new(&focus);
     app.view(&ctx)
 }
 
 /// Render app and return the raw string output.
-fn render_app(app: &InkChatApp, width: usize) -> String {
+fn render_app(app: &OilChatApp, width: usize) -> String {
     let tree = view_with_default_ctx(app);
     render_to_string(&tree, width)
 }
 
 /// Render app and strip ANSI codes for content comparison.
-fn render_and_strip(app: &InkChatApp, width: usize) -> String {
+fn render_and_strip(app: &OilChatApp, width: usize) -> String {
     strip_ansi(&render_app(app, width))
 }
 
@@ -148,7 +148,7 @@ fn verify_xor_invariant(runtime: &TestRuntime, phase: &str) {
 #[test]
 fn graduation_xor_invariant_content_never_in_both() {
     let mut runtime = TestRuntime::new(80, 24);
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
 
     // Stream content in chunks
     app.on_message(ChatAppMsg::UserMessage("Test question".to_string()));
@@ -186,7 +186,7 @@ fn graduation_xor_invariant_content_never_in_both() {
 #[test]
 fn graduation_xor_invariant_with_multiple_paragraphs() {
     let mut runtime = TestRuntime::new(80, 24);
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
 
     app.on_message(ChatAppMsg::UserMessage("Multi-paragraph test".to_string()));
 
@@ -232,7 +232,7 @@ fn graduation_xor_invariant_with_multiple_paragraphs() {
 #[test]
 fn graduation_preserves_all_content() {
     let mut runtime = TestRuntime::new(80, 24);
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
 
     let chunks = vec!["First. ", "Second. ", "Third."];
     let expected_total: String = chunks.iter().copied().collect();
@@ -274,7 +274,7 @@ fn graduation_preserves_all_content() {
 #[test]
 fn graduation_preserves_content_with_code_blocks() {
     let mut runtime = TestRuntime::new(80, 24);
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
 
     app.on_message(ChatAppMsg::UserMessage("Show code".to_string()));
 
@@ -346,7 +346,7 @@ fn graduation_preserves_content_with_code_blocks() {
 #[test]
 fn graduation_is_atomic_no_intermediate_duplication() {
     let mut runtime = TestRuntime::new(80, 24);
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
 
     let unique_marker = "[UNIQUE_MARKER_12345]";
 
@@ -389,7 +389,7 @@ fn graduation_is_atomic_no_intermediate_duplication() {
 #[test]
 fn graduation_atomicity_with_rapid_chunks() {
     let mut runtime = TestRuntime::new(80, 24);
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
 
     app.on_message(ChatAppMsg::UserMessage("Rapid test".to_string()));
 
@@ -433,7 +433,7 @@ fn graduation_atomicity_with_rapid_chunks() {
 #[test]
 fn graduation_atomicity_across_multiple_renders() {
     let mut runtime = TestRuntime::new(80, 24);
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
 
     let marker = "[ATOMIC_TEST_MARKER]";
 
@@ -461,7 +461,7 @@ fn graduation_atomicity_across_multiple_renders() {
 
 #[test]
 fn rendering_is_idempotent_after_graduation() {
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
 
     app.on_message(ChatAppMsg::UserMessage("Test".to_string()));
     app.on_message(ChatAppMsg::TextDelta("Content to render".to_string()));
@@ -477,7 +477,7 @@ fn rendering_is_idempotent_after_graduation() {
 
 #[test]
 fn rendering_is_idempotent_during_streaming() {
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
 
     app.on_message(ChatAppMsg::UserMessage("Test".to_string()));
     app.on_message(ChatAppMsg::TextDelta("Streaming content".to_string()));
@@ -499,7 +499,7 @@ fn rendering_is_idempotent_during_streaming() {
 
 #[test]
 fn rendering_is_idempotent_with_tool_calls() {
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
 
     app.on_message(ChatAppMsg::UserMessage("Run a tool".to_string()));
     app.on_message(ChatAppMsg::ToolCall {
@@ -541,7 +541,7 @@ fn rendering_is_idempotent_with_tool_calls() {
 #[test]
 fn graduation_monotonic_count_never_decreases() {
     let mut runtime = TestRuntime::new(80, 24);
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
     let mut prev_count = 0;
 
     // First message
@@ -598,7 +598,7 @@ fn graduation_monotonic_count_never_decreases() {
 #[test]
 fn graduation_stable_across_resize() {
     let mut runtime = TestRuntime::new(80, 24);
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
 
     app.on_message(ChatAppMsg::UserMessage("Resize test".to_string()));
     app.on_message(ChatAppMsg::TextDelta("Content before resize".to_string()));
@@ -641,7 +641,7 @@ fn graduation_stable_across_resize() {
 #[test]
 fn graduation_xor_with_cancelled_stream() {
     let mut runtime = TestRuntime::new(80, 24);
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
 
     app.on_message(ChatAppMsg::UserMessage("Cancel test".to_string()));
 
@@ -677,7 +677,7 @@ fn graduation_xor_with_cancelled_stream() {
 #[test]
 fn graduation_handles_empty_messages_correctly() {
     let mut runtime = TestRuntime::new(80, 24);
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
 
     app.on_message(ChatAppMsg::UserMessage("Empty test".to_string()));
 
@@ -736,7 +736,7 @@ proptest! {
         chunks in prop::collection::vec("[a-zA-Z0-9 ]{1,50}", 1..20)
     ) {
         let mut runtime = TestRuntime::new(80, 24);
-        let mut app = InkChatApp::default();
+        let mut app = OilChatApp::default();
 
         app.on_message(ChatAppMsg::UserMessage("Property test".to_string()));
 
@@ -768,7 +768,7 @@ proptest! {
         chunks in prop::collection::vec("[a-zA-Z0-9]{5,20}", 1..15)
     ) {
         let mut runtime = TestRuntime::new(80, 24);
-        let mut app = InkChatApp::default();
+        let mut app = OilChatApp::default();
 
         app.on_message(ChatAppMsg::UserMessage("Content preservation test".to_string()));
 
@@ -810,7 +810,7 @@ proptest! {
         chunk_content in "[A-Z]{10,15}"
     ) {
         let mut runtime = TestRuntime::new(80, 24);
-        let mut app = InkChatApp::default();
+        let mut app = OilChatApp::default();
 
         // Use a unique marker to track this specific content
         let marker = format!("[MARKER_{}]", chunk_content);
@@ -864,7 +864,7 @@ proptest! {
     fn prop_rendering_idempotent_for_random_content(
         content in "[a-zA-Z0-9 .,!?]{10,100}"
     ) {
-        let mut app = InkChatApp::default();
+        let mut app = OilChatApp::default();
 
         app.on_message(ChatAppMsg::UserMessage("Idempotence test".to_string()));
         app.on_message(ChatAppMsg::TextDelta(content));
@@ -887,7 +887,7 @@ proptest! {
         chunks in prop::collection::vec("[a-zA-Z0-9 ]{5,30}", 1..10)
     ) {
         let mut runtime = TestRuntime::new(80, 24);
-        let mut app = InkChatApp::default();
+        let mut app = OilChatApp::default();
 
         app.on_message(ChatAppMsg::UserMessage("Paragraph test".to_string()));
 
@@ -925,7 +925,7 @@ proptest! {
         response_lengths in prop::collection::vec(1usize..10, 1..5)
     ) {
         let mut runtime = TestRuntime::new(80, 24);
-        let mut app = InkChatApp::default();
+        let mut app = OilChatApp::default();
         let mut prev_count = 0;
 
         for (msg_idx, &resp_len) in response_lengths.iter().take(message_count).enumerate() {

@@ -127,7 +127,7 @@ impl LuaView {
             .call(ctx)
             .map_err(|e| format!("View call error: {}", e))?;
 
-        Ok(convert_ink_node(result.0))
+        Ok(convert_oil_node(result.0))
     }
 
     fn compile_fennel(&self, source: &str) -> Result<String, String> {
@@ -249,15 +249,15 @@ impl Component for LuaView {
     }
 }
 
-fn convert_ink_node(ink_node: crucible_oil::Node) -> Node {
-    match ink_node {
+fn convert_oil_node(oil_node: crucible_oil::Node) -> Node {
+    match oil_node {
         crucible_oil::Node::Empty => Node::Empty,
         crucible_oil::Node::Text(t) => Node::Text(cli_node::TextNode {
             content: t.content,
             style: convert_style(t.style),
         }),
         crucible_oil::Node::Box(b) => Node::Box(cli_node::BoxNode {
-            children: b.children.into_iter().map(convert_ink_node).collect(),
+            children: b.children.into_iter().map(convert_oil_node).collect(),
             direction: convert_direction(b.direction),
             size: convert_size(b.size),
             padding: convert_padding(b.padding),
@@ -270,7 +270,7 @@ fn convert_ink_node(ink_node: crucible_oil::Node) -> Node {
         }),
         crucible_oil::Node::Static(s) => Node::Static(cli_node::StaticNode {
             key: s.key,
-            children: s.children.into_iter().map(convert_ink_node).collect(),
+            children: s.children.into_iter().map(convert_oil_node).collect(),
             kind: if s.newline {
                 cli_node::ElementKind::Block
             } else {
@@ -306,19 +306,19 @@ fn convert_ink_node(ink_node: crucible_oil::Node) -> Node {
             max_visible: p.max_visible,
         }),
         crucible_oil::Node::Fragment(f) => {
-            Node::Fragment(f.into_iter().map(convert_ink_node).collect())
+            Node::Fragment(f.into_iter().map(convert_oil_node).collect())
         }
         crucible_oil::Node::Focusable(f) => Node::Focusable(cli_node::FocusableNode {
             id: crate::tui::oil::focus::FocusId(f.id.0),
-            child: Box::new(convert_ink_node(*f.child)),
+            child: Box::new(convert_oil_node(*f.child)),
             auto_focus: f.auto_focus,
         }),
         crucible_oil::Node::ErrorBoundary(e) => Node::ErrorBoundary(cli_node::ErrorBoundaryNode {
-            child: Box::new(convert_ink_node(*e.child)),
-            fallback: Box::new(convert_ink_node(*e.fallback)),
+            child: Box::new(convert_oil_node(*e.child)),
+            fallback: Box::new(convert_oil_node(*e.fallback)),
         }),
         crucible_oil::Node::Overlay(o) => Node::Overlay(cli_node::OverlayNode {
-            child: Box::new(convert_ink_node(*o.child)),
+            child: Box::new(convert_oil_node(*o.child)),
             anchor: convert_overlay_anchor(o.anchor),
         }),
     }

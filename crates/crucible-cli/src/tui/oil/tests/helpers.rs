@@ -1,6 +1,6 @@
 use crate::tui::oil::ansi::strip_ansi;
 use crate::tui::oil::app::{App, ViewContext};
-use crate::tui::oil::chat_app::{ChatAppMsg, InkChatApp};
+use crate::tui::oil::chat_app::{ChatAppMsg, OilChatApp};
 use crate::tui::oil::focus::FocusContext;
 use crate::tui::oil::render::render_to_string;
 use crate::tui::oil::Node;
@@ -8,18 +8,18 @@ use crate::tui::oil::TestRuntime;
 
 use super::generators::RpcEvent;
 
-pub fn view_with_default_ctx(app: &InkChatApp) -> Node {
+pub fn view_with_default_ctx(app: &OilChatApp) -> Node {
     let focus = FocusContext::new();
     let ctx = ViewContext::new(&focus);
     app.view(&ctx)
 }
 
-pub fn render_app(app: &InkChatApp, width: usize) -> String {
+pub fn render_app(app: &OilChatApp, width: usize) -> String {
     let tree = view_with_default_ctx(app);
     render_to_string(&tree, width)
 }
 
-pub fn render_and_strip(app: &InkChatApp, width: usize) -> String {
+pub fn render_and_strip(app: &OilChatApp, width: usize) -> String {
     strip_ansi(&render_app(app, width))
 }
 
@@ -29,7 +29,7 @@ pub fn combined_output(runtime: &TestRuntime) -> String {
     format!("{}{}", stdout, viewport)
 }
 
-pub fn apply_rpc_event(app: &mut InkChatApp, event: &RpcEvent) {
+pub fn apply_rpc_event(app: &mut OilChatApp, event: &RpcEvent) {
     match event {
         RpcEvent::TextDelta(text) => {
             app.on_message(ChatAppMsg::TextDelta(text.clone()));
