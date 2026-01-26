@@ -336,6 +336,8 @@ impl AgentManager {
         let request_state = self.request_state.clone();
         let lua_state = self.get_or_create_lua_state(session_id);
 
+        let pending_permissions = self.pending_permissions.clone();
+
         let task = tokio::spawn(async move {
             let mut accumulated_response = String::new();
 
@@ -358,6 +360,7 @@ impl AgentManager {
                     &mut accumulated_response,
                     lua_state,
                     false,
+                    pending_permissions,
                 ) => {}
             }
 
@@ -414,6 +417,7 @@ impl AgentManager {
         accumulated_response: &mut String,
         lua_state: Arc<Mutex<SessionLuaState>>,
         is_continuation: bool,
+        pending_permissions: Arc<DashMap<String, HashMap<PermissionId, PendingPermission>>>,
     ) {
         let mut agent_guard = agent.lock().await;
         let mut stream = agent_guard.send_message_stream(content);
@@ -455,20 +459,35 @@ impl AgentManager {
 
                             if is_destructive(&tc.name) {
                                 let perm_request = PermRequest::tool(&tc.name, args.clone());
-                                let interaction_request = InteractionRequest::Permission(perm_request);
-                                let request_id = format!("perm-{}", uuid::Uuid::new_v4());
+                                let interaction_request =
+                                    InteractionRequest::Permission(perm_request.clone());
+
+                                // Register pending permission and get receiver
+                                let permission_id = format!("perm-{}", uuid::Uuid::new_v4());
+                                let (response_tx, response_rx) = oneshot::channel();
+
+                                let pending = PendingPermission {
+                                    request: perm_request,
+                                    response_tx,
+                                };
+
+                                pending_permissions
+                                    .entry(session_id.to_string())
+                                    .or_default()
+                                    .insert(permission_id.clone(), pending);
 
                                 debug!(
                                     session_id = %session_id,
                                     tool = %tc.name,
-                                    request_id = %request_id,
+                                    permission_id = %permission_id,
                                     "Emitting permission request for destructive tool"
                                 );
 
+                                // Emit the interaction request event
                                 if event_tx
                                     .send(SessionEventMessage::interaction_requested(
                                         session_id,
-                                        &request_id,
+                                        &permission_id,
                                         &interaction_request,
                                     ))
                                     .is_err()
@@ -478,6 +497,63 @@ impl AgentManager {
                                         tool = %tc.name,
                                         "No subscribers for permission request event"
                                     );
+                                }
+
+                                // Block until user responds to permission request
+                                debug!(
+                                    session_id = %session_id,
+                                    tool = %tc.name,
+                                    permission_id = %permission_id,
+                                    "Waiting for permission response"
+                                );
+
+                                let permission_granted = match response_rx.await {
+                                    Ok(response) => {
+                                        debug!(
+                                            session_id = %session_id,
+                                            tool = %tc.name,
+                                            permission_id = %permission_id,
+                                            allowed = response.allowed,
+                                            pattern = ?response.pattern,
+                                            "Permission response received"
+                                        );
+
+                                        if response.allowed {
+                                            // AllowPattern: TODO store pattern for Task 9
+                                            if let Some(ref _pattern) = response.pattern {
+                                                debug!(
+                                                    session_id = %session_id,
+                                                    tool = %tc.name,
+                                                    "AllowPattern received (pattern storage TBD)"
+                                                );
+                                            }
+                                            true
+                                        } else {
+                                            // Deny: skip tool execution
+                                            false
+                                        }
+                                    }
+                                    Err(_) => {
+                                        // Channel dropped - treat as deny for safety
+                                        warn!(
+                                            session_id = %session_id,
+                                            tool = %tc.name,
+                                            permission_id = %permission_id,
+                                            "Permission channel dropped, treating as deny"
+                                        );
+                                        false
+                                    }
+                                };
+
+                                if !permission_granted {
+                                    debug!(
+                                        session_id = %session_id,
+                                        tool = %tc.name,
+                                        "Permission denied, skipping tool execution notification"
+                                    );
+                                    // Skip emitting tool_call event for denied tools
+                                    // Error handling will be added in Task 4
+                                    continue;
                                 }
                             }
 
@@ -576,6 +652,7 @@ impl AgentManager {
                                 accumulated_response,
                                 lua_state,
                                 true,
+                                pending_permissions,
                             ))
                             .await;
                         }
