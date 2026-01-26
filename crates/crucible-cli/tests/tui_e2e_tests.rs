@@ -1138,6 +1138,129 @@ fn oil_popup_arrow_navigation() {
 }
 
 // =============================================================================
+// Permission Workflow Tests
+// =============================================================================
+
+/// Test that permission prompt appears for destructive operations
+///
+/// This test is marked as ignored because:
+/// - Requires built binary
+/// - Requires agent that triggers permission prompts
+/// - May need mock agent setup
+#[test]
+#[ignore = "requires built binary and agent that triggers permission prompts"]
+fn permission_prompt_appears() {
+    let mut session = TuiTestBuilder::new()
+        .command("chat")
+        .timeout(30)
+        .spawn()
+        .expect("Failed to spawn chat");
+
+    session.wait(Duration::from_secs(2));
+
+    // This would require an agent that triggers a permission prompt
+    // For now, we document the test but can't trigger it without mock agent
+
+    // Clean exit
+    session.send_control('c').expect("Failed to send Ctrl+C");
+    session.wait(Duration::from_millis(500));
+}
+
+/// Test that 'y' key allows and continues
+#[test]
+#[ignore = "requires built binary and agent that triggers permission prompts"]
+fn permission_y_allows() {
+    let mut session = TuiTestBuilder::new()
+        .command("chat")
+        .timeout(30)
+        .spawn()
+        .expect("Failed to spawn chat");
+
+    session.wait(Duration::from_secs(2));
+
+    // Would need to trigger permission prompt, then:
+    // session.send_key(Key::Char('y')).expect("Failed to send y");
+
+    session.send_control('c').expect("Failed to send Ctrl+C");
+}
+
+/// Test that 'n' key denies and shows error to LLM
+#[test]
+#[ignore = "requires built binary and agent that triggers permission prompts"]
+fn permission_n_denies() {
+    let mut session = TuiTestBuilder::new()
+        .command("chat")
+        .timeout(30)
+        .spawn()
+        .expect("Failed to spawn chat");
+
+    session.wait(Duration::from_secs(2));
+
+    // Would need to trigger permission prompt, then:
+    // session.send_key(Key::Char('n')).expect("Failed to send n");
+    // Verify error message appears in output
+
+    session.send_control('c').expect("Failed to send Ctrl+C");
+}
+
+/// Test that Escape key denies
+#[test]
+#[ignore = "requires built binary and agent that triggers permission prompts"]
+fn permission_escape_denies() {
+    let mut session = TuiTestBuilder::new()
+        .command("chat")
+        .timeout(30)
+        .spawn()
+        .expect("Failed to spawn chat");
+
+    session.wait(Duration::from_secs(2));
+
+    // Would need to trigger permission prompt, then:
+    // session.send_key(Key::Escape).expect("Failed to send Escape");
+    // Verify denial is communicated to agent
+
+    session.send_control('c').expect("Failed to send Ctrl+C");
+}
+
+/// Test that 'h' key toggles diff visibility
+#[test]
+#[ignore = "requires built binary and agent that triggers permission prompts"]
+fn permission_h_toggles_diff() {
+    let mut session = TuiTestBuilder::new()
+        .command("chat")
+        .timeout(30)
+        .spawn()
+        .expect("Failed to spawn chat");
+
+    session.wait(Duration::from_secs(2));
+
+    // Would need to trigger permission prompt with diff, then:
+    // session.send_key(Key::Char('h')).expect("Failed to send h");
+    // Verify diff appears/disappears in terminal output
+
+    session.send_control('c').expect("Failed to send Ctrl+C");
+}
+
+/// Test permission queue indicator shows correctly
+#[test]
+#[ignore = "requires built binary and agent that triggers multiple permission prompts"]
+fn permission_queue_indicator_visible() {
+    let mut session = TuiTestBuilder::new()
+        .command("chat")
+        .timeout(30)
+        .spawn()
+        .expect("Failed to spawn chat");
+
+    session.wait(Duration::from_secs(2));
+
+    // Would need to trigger multiple permission prompts, then:
+    // Verify "[1/3]" style indicator appears in prompt
+    // Verify indicator updates as permissions are processed
+
+    session.send_control('c').expect("Failed to send Ctrl+C");
+}
+
+// =============================================================================
 // Oil Runner Stress Tests
 // =============================================================================
 
