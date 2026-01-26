@@ -934,26 +934,15 @@ impl InkChatApp {
         if self.shell_modal.is_some() {
             return self.handle_shell_modal_key(key);
         }
-
         if self.interaction_modal.is_some() {
             return self.handle_interaction_key(key);
         }
-
         if self.is_streaming() {
             return self.handle_streaming_key(key);
         }
 
         if key.code == KeyCode::F(1) {
-            if self.show_popup {
-                self.show_popup = false;
-                self.popup_kind = AutocompleteKind::None;
-                self.popup_filter.clear();
-            } else {
-                self.show_popup = true;
-                self.popup_kind = AutocompleteKind::Command;
-                self.popup_filter.clear();
-            }
-            self.popup_selected = 0;
+            self.toggle_command_palette();
             return Action::Continue;
         }
 
@@ -961,33 +950,10 @@ impl InkChatApp {
             return self.handle_popup_key(key);
         }
 
-        if key.code == KeyCode::Char('c')
-            && key
-                .modifiers
-                .contains(crossterm::event::KeyModifiers::CONTROL)
-        {
-            if !self.input.content().is_empty() {
-                self.input.handle(InputAction::Clear);
-                self.last_ctrl_c = None;
-                return Action::Continue;
-            }
-
-            let now = std::time::Instant::now();
-            if let Some(last) = self.last_ctrl_c {
-                if now.duration_since(last) < Duration::from_millis(300) {
-                    return Action::Quit;
-                }
-            }
-            self.last_ctrl_c = Some(now);
-            self.notification_area
-                .add(crucible_core::types::Notification::toast(
-                    "Ctrl+C again to quit",
-                ));
-            self.notification_area.show();
-            return Action::Continue;
-        } else {
-            self.last_ctrl_c = None;
+        if self.is_ctrl_c(key) {
+            return self.handle_ctrl_c();
         }
+        self.last_ctrl_c = None;
 
         if key.code == KeyCode::BackTab {
             self.mode = self.mode.cycle();
@@ -1000,11 +966,54 @@ impl InkChatApp {
             return self.handle_submit(submitted);
         }
 
-        if let Some(fetch_action) = self.check_autocomplete_trigger() {
-            return fetch_action;
+        self.check_autocomplete_trigger()
+            .unwrap_or(Action::Continue)
+    }
+
+    fn is_ctrl_c(&self, key: crossterm::event::KeyEvent) -> bool {
+        key.code == KeyCode::Char('c')
+            && key
+                .modifiers
+                .contains(crossterm::event::KeyModifiers::CONTROL)
+    }
+
+    fn handle_ctrl_c(&mut self) -> Action<ChatAppMsg> {
+        if !self.input.content().is_empty() {
+            self.input.handle(InputAction::Clear);
+            self.last_ctrl_c = None;
+            return Action::Continue;
         }
 
+        let now = std::time::Instant::now();
+        if let Some(last) = self.last_ctrl_c {
+            if now.duration_since(last) < Duration::from_millis(300) {
+                return Action::Quit;
+            }
+        }
+        self.last_ctrl_c = Some(now);
+        self.notification_area
+            .add(crucible_core::types::Notification::toast(
+                "Ctrl+C again to quit",
+            ));
+        self.notification_area.show();
         Action::Continue
+    }
+
+    fn toggle_command_palette(&mut self) {
+        if self.show_popup {
+            self.close_popup();
+        } else {
+            self.show_popup = true;
+            self.popup_kind = AutocompleteKind::Command;
+            self.popup_filter.clear();
+        }
+        self.popup_selected = 0;
+    }
+
+    fn close_popup(&mut self) {
+        self.show_popup = false;
+        self.popup_kind = AutocompleteKind::None;
+        self.popup_filter.clear();
     }
 
     fn check_autocomplete_trigger(&mut self) -> Option<Action<ChatAppMsg>> {
@@ -1180,9 +1189,7 @@ impl InkChatApp {
     fn handle_popup_key(&mut self, key: crossterm::event::KeyEvent) -> Action<ChatAppMsg> {
         match key.code {
             KeyCode::Esc => {
-                self.show_popup = false;
-                self.popup_kind = AutocompleteKind::None;
-                self.popup_filter.clear();
+                self.close_popup();
             }
             KeyCode::Up => {
                 self.popup_selected = self.popup_selected.saturating_sub(1);
@@ -1192,47 +1199,48 @@ impl InkChatApp {
                 self.popup_selected = (self.popup_selected + 1).min(max);
             }
             KeyCode::Enter | KeyCode::Tab => {
-                let items = self.get_popup_items();
-                if let Some(item) = items.get(self.popup_selected) {
-                    let label = item.label.clone();
-                    let kind = self.popup_kind.clone();
-                    self.insert_autocomplete_selection(&label);
-                    if kind == AutocompleteKind::SlashCommand {
-                        self.input.handle(InputAction::Clear);
-                        return self.handle_slash_command(&label);
-                    }
-                    if kind == AutocompleteKind::ReplCommand {
-                        self.input.handle(InputAction::Clear);
-                        return self.handle_repl_command(&label);
-                    }
-                }
+                return self.select_popup_item();
             }
             KeyCode::Backspace => {
                 if self.popup_filter.is_empty() {
-                    self.show_popup = false;
-                    self.popup_kind = AutocompleteKind::None;
+                    self.close_popup();
                 }
                 self.input.handle(InputAction::Backspace);
                 self.check_autocomplete_trigger();
             }
+            KeyCode::Char(c) if self.is_ctrl_c(key) => {
+                self.close_popup();
+            }
             KeyCode::Char(c) => {
-                // Ctrl+C closes popup instead of inserting 'c'
-                if key
-                    .modifiers
-                    .contains(crossterm::event::KeyModifiers::CONTROL)
-                    && c == 'c'
-                {
-                    self.show_popup = false;
-                    self.popup_kind = AutocompleteKind::None;
-                    self.popup_filter.clear();
-                    return Action::Continue;
-                }
                 self.input.handle(InputAction::Insert(c));
                 self.check_autocomplete_trigger();
             }
             _ => {}
         }
         Action::Continue
+    }
+
+    fn select_popup_item(&mut self) -> Action<ChatAppMsg> {
+        let items = self.get_popup_items();
+        let Some(item) = items.get(self.popup_selected) else {
+            return Action::Continue;
+        };
+
+        let label = item.label.clone();
+        let kind = self.popup_kind.clone();
+        self.insert_autocomplete_selection(&label);
+
+        match kind {
+            AutocompleteKind::SlashCommand => {
+                self.input.handle(InputAction::Clear);
+                self.handle_slash_command(&label)
+            }
+            AutocompleteKind::ReplCommand => {
+                self.input.handle(InputAction::Clear);
+                self.handle_repl_command(&label)
+            }
+            _ => Action::Continue,
+        }
     }
 
     fn handle_submit(&mut self, content: String) -> Action<ChatAppMsg> {
@@ -1267,28 +1275,23 @@ impl InkChatApp {
     fn handle_slash_command(&mut self, cmd: &str) -> Action<ChatAppMsg> {
         let parts: Vec<&str> = cmd[1..].splitn(2, ' ').collect();
         let command = parts[0].to_lowercase();
-        let _args = parts.get(1).map(|s| s.trim()).unwrap_or("");
 
         match command.as_str() {
             "quit" | "exit" | "q" => Action::Quit,
             "mode" => {
-                self.mode = self.mode.cycle();
-                self.status = format!("Mode: {}", self.mode.as_str());
+                self.set_mode_with_status(self.mode.cycle());
                 Action::Continue
             }
             "default" | "normal" => {
-                self.mode = ChatMode::Normal;
-                self.status = "Mode: normal".to_string();
+                self.set_mode_with_status(ChatMode::Normal);
                 Action::Continue
             }
             "plan" => {
-                self.mode = ChatMode::Plan;
-                self.status = "Mode: plan".to_string();
+                self.set_mode_with_status(ChatMode::Plan);
                 Action::Continue
             }
             "auto" => {
-                self.mode = ChatMode::Auto;
-                self.status = "Mode: auto".to_string();
+                self.set_mode_with_status(ChatMode::Auto);
                 Action::Continue
             }
             "help" => {
@@ -1302,6 +1305,11 @@ impl InkChatApp {
                 Action::Continue
             }
         }
+    }
+
+    fn set_mode_with_status(&mut self, mode: ChatMode) {
+        self.mode = mode;
+        self.status = format!("Mode: {}", mode.as_str());
     }
 
     fn handle_repl_command(&mut self, cmd: &str) -> Action<ChatAppMsg> {
@@ -2000,15 +2008,11 @@ impl InkChatApp {
         match modal.mode {
             InteractionMode::Selecting => match key.code {
                 KeyCode::Up | KeyCode::Char('k') | KeyCode::Char('K') => {
-                    if modal.selected == 0 {
-                        modal.selected = total_items.saturating_sub(1);
-                    } else {
-                        modal.selected = modal.selected.saturating_sub(1);
-                    }
+                    modal.selected = Self::wrap_selection(modal.selected, -1, total_items.max(1));
                     Action::Continue
                 }
                 KeyCode::Down | KeyCode::Char('j') | KeyCode::Char('J') => {
-                    modal.selected = (modal.selected + 1) % total_items.max(1);
+                    modal.selected = Self::wrap_selection(modal.selected, 1, total_items.max(1));
                     Action::Continue
                 }
                 KeyCode::Enter => {
@@ -2020,11 +2024,7 @@ impl InkChatApp {
                         } else {
                             InteractionResponse::Ask(AskResponse::selected(modal.selected))
                         };
-                        self.close_interaction();
-                        Action::Send(ChatAppMsg::CloseInteraction {
-                            request_id,
-                            response,
-                        })
+                        self.send_ask_response(request_id, response)
                     } else if ask_request.allow_other && modal.selected == choices_count {
                         modal.mode = InteractionMode::TextInput;
                         Action::Continue
@@ -2037,32 +2037,12 @@ impl InkChatApp {
                     Action::Continue
                 }
                 KeyCode::Char(' ') if ask_request.multi_select => {
-                    if modal.checked.contains(&modal.selected) {
-                        modal.checked.remove(&modal.selected);
-                    } else {
-                        modal.checked.insert(modal.selected);
-                    }
+                    Self::toggle_checked(&mut modal.checked, modal.selected);
                     Action::Continue
                 }
-                KeyCode::Esc => {
-                    let response = InteractionResponse::Cancelled;
-                    self.close_interaction();
-                    Action::Send(ChatAppMsg::CloseInteraction {
-                        request_id,
-                        response,
-                    })
-                }
-                KeyCode::Char('c')
-                    if key
-                        .modifiers
-                        .contains(crossterm::event::KeyModifiers::CONTROL) =>
-                {
-                    let response = InteractionResponse::Cancelled;
-                    self.close_interaction();
-                    Action::Send(ChatAppMsg::CloseInteraction {
-                        request_id,
-                        response,
-                    })
+                KeyCode::Esc => self.send_ask_response(request_id, InteractionResponse::Cancelled),
+                KeyCode::Char('c') if self.is_ctrl_c(key) => {
+                    self.send_ask_response(request_id, InteractionResponse::Cancelled)
                 }
                 _ => Action::Continue,
             },
@@ -2070,11 +2050,7 @@ impl InkChatApp {
                 KeyCode::Enter => {
                     let response =
                         InteractionResponse::Ask(AskResponse::other(modal.other_text.clone()));
-                    self.close_interaction();
-                    Action::Send(ChatAppMsg::CloseInteraction {
-                        request_id,
-                        response,
-                    })
+                    self.send_ask_response(request_id, response)
                 }
                 KeyCode::Esc => {
                     modal.mode = InteractionMode::Selecting;
@@ -2091,6 +2067,18 @@ impl InkChatApp {
                 _ => Action::Continue,
             },
         }
+    }
+
+    fn send_ask_response(
+        &mut self,
+        request_id: String,
+        response: InteractionResponse,
+    ) -> Action<ChatAppMsg> {
+        self.close_interaction();
+        Action::Send(ChatAppMsg::CloseInteraction {
+            request_id,
+            response,
+        })
     }
 
     fn handle_ask_batch_key(
@@ -2115,77 +2103,46 @@ impl InkChatApp {
         match modal.mode {
             InteractionMode::Selecting => match key.code {
                 KeyCode::Up | KeyCode::Char('k') | KeyCode::Char('K') => {
-                    if modal.selected == 0 {
-                        modal.selected = total_items.saturating_sub(1);
-                    } else {
-                        modal.selected = modal.selected.saturating_sub(1);
-                    }
+                    modal.selected = Self::wrap_selection(modal.selected, -1, total_items.max(1));
                     Action::Continue
                 }
                 KeyCode::Down | KeyCode::Char('j') | KeyCode::Char('J') => {
-                    modal.selected = (modal.selected + 1) % total_items.max(1);
+                    modal.selected = Self::wrap_selection(modal.selected, 1, total_items.max(1));
                     Action::Continue
                 }
                 KeyCode::Char(' ') if current_q.multi_select => {
-                    if modal.checked.contains(&modal.selected) {
-                        modal.checked.remove(&modal.selected);
-                    } else {
-                        modal.checked.insert(modal.selected);
-                    }
+                    Self::toggle_checked(&mut modal.checked, modal.selected);
                     Action::Continue
                 }
                 KeyCode::Tab => {
-                    if modal.current_question < batch.questions.len() - 1 {
-                        modal.current_question += 1;
-                        modal.selected = 0;
-                        modal.checked.clear();
-                    }
+                    self.advance_batch_question(&batch);
                     Action::Continue
                 }
                 KeyCode::BackTab => {
-                    if modal.current_question > 0 {
-                        modal.current_question -= 1;
-                        modal.selected = 0;
-                        modal.checked.clear();
+                    if let Some(m) = &mut self.interaction_modal {
+                        if m.current_question > 0 {
+                            m.current_question -= 1;
+                            m.selected = 0;
+                            m.checked.clear();
+                        }
                     }
                     Action::Continue
                 }
                 KeyCode::Enter => {
-                    if modal.current_question == batch.questions.len() - 1 {
+                    let is_last = modal.current_question == batch.questions.len() - 1;
+                    if is_last {
                         let response = InteractionResponse::AskBatch(
                             crucible_core::interaction::AskBatchResponse::new(batch.id),
                         );
-                        self.close_interaction();
-                        Action::Send(ChatAppMsg::CloseInteraction {
-                            request_id,
-                            response,
-                        })
+                        self.send_ask_response(request_id, response)
                     } else {
-                        modal.current_question += 1;
-                        modal.selected = 0;
-                        modal.checked.clear();
+                        self.advance_batch_question(&batch);
                         Action::Continue
                     }
                 }
-                KeyCode::Esc => {
-                    let response = InteractionResponse::Cancelled;
-                    self.close_interaction();
-                    Action::Send(ChatAppMsg::CloseInteraction {
-                        request_id,
-                        response,
-                    })
-                }
-                KeyCode::Char('c')
-                    if key
-                        .modifiers
-                        .contains(crossterm::event::KeyModifiers::CONTROL) =>
-                {
-                    let response = InteractionResponse::Cancelled;
-                    self.close_interaction();
-                    Action::Send(ChatAppMsg::CloseInteraction {
-                        request_id,
-                        response,
-                    })
+                KeyCode::Esc => self.send_ask_response(request_id, InteractionResponse::Cancelled),
+                KeyCode::Char('c') if self.is_ctrl_c(key) => {
+                    self.send_ask_response(request_id, InteractionResponse::Cancelled)
                 }
                 _ => Action::Continue,
             },
@@ -2193,73 +2150,139 @@ impl InkChatApp {
         }
     }
 
+    fn advance_batch_question(&mut self, batch: &crucible_core::interaction::AskBatch) {
+        if let Some(m) = &mut self.interaction_modal {
+            if m.current_question < batch.questions.len() - 1 {
+                m.current_question += 1;
+                m.selected = 0;
+                m.checked.clear();
+            }
+        }
+    }
+
     fn handle_perm_key(
         &mut self,
         key: crossterm::event::KeyEvent,
-        _perm_request: PermRequest,
+        perm_request: PermRequest,
         request_id: String,
     ) -> Action<ChatAppMsg> {
+        let modal = match &mut self.interaction_modal {
+            Some(m) => m,
+            None => return Action::Continue,
+        };
+
+        let has_pattern_option = !perm_request.tokens().is_empty();
+        let total_options = if has_pattern_option { 3 } else { 2 };
+
         match key.code {
-            KeyCode::Char('y') | KeyCode::Char('Y') => {
-                let response = InteractionResponse::Permission(PermResponse::allow());
-                self.close_interaction_and_show_next();
-                return Action::Send(ChatAppMsg::CloseInteraction {
-                    request_id,
-                    response,
-                });
+            KeyCode::Up | KeyCode::Char('k') | KeyCode::Char('K') => {
+                modal.selected = Self::wrap_selection(modal.selected, -1, total_options);
+                Action::Continue
             }
-            KeyCode::Char('n') | KeyCode::Char('N') => {
-                let response = InteractionResponse::Permission(PermResponse::deny());
-                self.close_interaction_and_show_next();
-                return Action::Send(ChatAppMsg::CloseInteraction {
-                    request_id,
-                    response,
-                });
+            KeyCode::Down | KeyCode::Char('j') | KeyCode::Char('J') => {
+                modal.selected = Self::wrap_selection(modal.selected, 1, total_options);
+                Action::Continue
+            }
+            KeyCode::Enter => {
+                self.handle_perm_enter_key(&perm_request, request_id, has_pattern_option)
+            }
+            KeyCode::Char('y') | KeyCode::Char('Y') => {
+                self.send_perm_response(request_id, PermResponse::allow())
+            }
+            KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc => {
+                self.send_perm_response(request_id, PermResponse::deny())
+            }
+            KeyCode::Char('c') if self.is_ctrl_c(key) => {
+                self.send_perm_response(request_id, PermResponse::deny())
             }
             KeyCode::Char('p') | KeyCode::Char('P') => {
-                let tokens = _perm_request.tokens();
-                if tokens.is_empty() {
-                    self.notification_area
-                        .add(crucible_core::types::Notification::toast(
-                            "Cannot create pattern for this request type",
-                        ));
-                    self.notification_area.show();
-                    return Action::Continue;
-                }
-                let pattern = _perm_request.pattern_at(tokens.len());
-                let response = InteractionResponse::Permission(PermResponse::allow_pattern(
-                    pattern.clone(),
-                    PermissionScope::Project,
-                ));
-                self.close_interaction_and_show_next();
-                self.notification_area
-                    .add(crucible_core::types::Notification::toast(format!(
-                        "Pattern saved: {}",
-                        pattern
-                    )));
-                self.notification_area.show();
-                return Action::Send(ChatAppMsg::CloseInteraction {
-                    request_id,
-                    response,
-                });
+                self.handle_perm_pattern_key(&perm_request, request_id)
             }
             KeyCode::Char('h') | KeyCode::Char('H') => {
                 if let Some(ref mut modal) = self.interaction_modal {
                     modal.diff_collapsed = !modal.diff_collapsed;
                 }
-                return Action::Continue;
+                Action::Continue
             }
-            KeyCode::Esc => {
-                let response = InteractionResponse::Permission(PermResponse::deny());
-                self.close_interaction_and_show_next();
-                return Action::Send(ChatAppMsg::CloseInteraction {
-                    request_id,
-                    response,
-                });
-            }
-            _ => {}
+            _ => Action::Continue,
         }
-        Action::Continue
+    }
+
+    fn wrap_selection(selected: usize, delta: isize, total: usize) -> usize {
+        if delta < 0 && selected == 0 {
+            total - 1
+        } else if delta < 0 {
+            selected - 1
+        } else {
+            (selected + 1) % total
+        }
+    }
+
+    fn toggle_checked(set: &mut std::collections::HashSet<usize>, value: usize) {
+        if set.contains(&value) {
+            set.remove(&value);
+        } else {
+            set.insert(value);
+        }
+    }
+
+    fn handle_perm_enter_key(
+        &mut self,
+        perm_request: &PermRequest,
+        request_id: String,
+        has_pattern_option: bool,
+    ) -> Action<ChatAppMsg> {
+        let selected = self
+            .interaction_modal
+            .as_ref()
+            .map(|m| m.selected)
+            .unwrap_or(0);
+
+        match selected {
+            0 => self.send_perm_response(request_id, PermResponse::allow()),
+            1 => self.send_perm_response(request_id, PermResponse::deny()),
+            2 if has_pattern_option => {
+                let pattern = perm_request.pattern_at(perm_request.tokens().len());
+                self.notify_toast(format!("Pattern saved: {}", pattern));
+                self.send_perm_response(
+                    request_id,
+                    PermResponse::allow_pattern(pattern, PermissionScope::Project),
+                )
+            }
+            _ => Action::Continue,
+        }
+    }
+
+    fn handle_perm_pattern_key(
+        &mut self,
+        perm_request: &PermRequest,
+        request_id: String,
+    ) -> Action<ChatAppMsg> {
+        let tokens = perm_request.tokens();
+        if tokens.is_empty() {
+            self.notify_toast("Cannot create pattern for this request type");
+            return Action::Continue;
+        }
+        let pattern = perm_request.pattern_at(tokens.len());
+        self.notify_toast(format!("Pattern saved: {}", pattern));
+        self.send_perm_response(
+            request_id,
+            PermResponse::allow_pattern(pattern, PermissionScope::Project),
+        )
+    }
+
+    fn send_perm_response(&mut self, request_id: String, perm: PermResponse) -> Action<ChatAppMsg> {
+        self.close_interaction_and_show_next();
+        Action::Send(ChatAppMsg::CloseInteraction {
+            request_id,
+            response: InteractionResponse::Permission(perm),
+        })
+    }
+
+    fn notify_toast(&mut self, msg: impl Into<String>) {
+        self.notification_area
+            .add(crucible_core::types::Notification::toast(msg));
+        self.notification_area.show();
     }
 
     fn close_interaction_and_show_next(&mut self) {
@@ -2645,35 +2668,76 @@ impl InkChatApp {
             Style::new().fg(colors::TEXT_PRIMARY),
         );
 
+        let has_pattern_option = !perm_request.tokens().is_empty();
+
+        let mut choice_nodes: Vec<Node> = Vec::new();
+
+        let options = if has_pattern_option {
+            vec![
+                ("y", "Allow once"),
+                ("n", "Deny"),
+                ("p", "Allow + Save pattern"),
+            ]
+        } else {
+            vec![("y", "Allow once"), ("n", "Deny")]
+        };
+
+        for (i, (key, label)) in options.iter().enumerate() {
+            let is_selected = i == modal.selected;
+            let prefix = if is_selected { " > " } else { "   " };
+            let style = if is_selected {
+                Style::new().fg(colors::TEXT_ACCENT).bold()
+            } else {
+                Style::new().fg(colors::TEXT_PRIMARY)
+            };
+            let key_hint = Style::new().fg(colors::TEXT_MUTED).dim();
+            choice_nodes.push(row([
+                styled(prefix.to_string(), style),
+                styled(format!("[{}] ", key), key_hint),
+                styled(label.to_string(), style),
+            ]));
+        }
+
+        let choices_col = col(choice_nodes);
+
         let key_style = Style::new().bg(footer_bg).fg(colors::TEXT_ACCENT);
         let sep_style = Style::new().bg(footer_bg).fg(colors::TEXT_MUTED);
         let text_style = Style::new().bg(footer_bg).fg(colors::TEXT_PRIMARY).dim();
 
         let footer_content = row([
             styled(" ", text_style),
-            styled("y", key_style),
-            styled(" Allow ", text_style),
+            styled("↑/↓", key_style),
+            styled(" navigate ", text_style),
             styled("│", sep_style),
             styled(" ", text_style),
-            styled("n", key_style),
-            styled(" Deny ", text_style),
+            styled("Enter", key_style),
+            styled(" select ", text_style),
             styled("│", sep_style),
             styled(" ", text_style),
-            styled("p", key_style),
-            styled(" Pattern... ", text_style),
+            styled("y/n/p", key_style),
+            styled(" shortcuts ", text_style),
             styled("│", sep_style),
             styled(" ", text_style),
             styled("Esc", key_style),
-            styled(" Cancel ", text_style),
+            styled(" cancel ", text_style),
         ]);
 
         let footer_padding = styled(
-            " ".repeat(term_width.saturating_sub(50)),
+            " ".repeat(term_width.saturating_sub(60)),
             Style::new().bg(footer_bg),
         );
         let footer = row([footer_content, footer_padding]);
 
-        col([header, text(""), action_line, text(""), spacer(), footer])
+        col([
+            header,
+            text(""),
+            action_line,
+            text(""),
+            choices_col,
+            text(""),
+            spacer(),
+            footer,
+        ])
     }
 
     fn prettify_tool_args(args: &serde_json::Value) -> String {
@@ -2745,7 +2809,6 @@ impl InkChatApp {
         let top_border = styled("▄".repeat(term_width), Style::new().fg(colors::INPUT_BG));
         let bottom_border = styled("▀".repeat(term_width), Style::new().fg(colors::INPUT_BG));
 
-        // Header with question (and question indicator if batch)
         let header_text = if total_questions > 1 {
             format!(
                 " {} (Question {}/{}) ",
@@ -2762,7 +2825,6 @@ impl InkChatApp {
             Style::new().bg(header_bg).bold(),
         );
 
-        // Build choices list
         let mut choice_nodes: Vec<Node> = Vec::new();
 
         for (i, choice) in choices.iter().enumerate() {
@@ -2787,7 +2849,6 @@ impl InkChatApp {
             choice_nodes.push(styled(format!("{}{}", prefix, choice), style));
         }
 
-        // Add "Other..." option if allow_other
         if allow_other {
             let other_idx = choices.len();
             let is_selected = modal.selected == other_idx;
@@ -2800,7 +2861,6 @@ impl InkChatApp {
             choice_nodes.push(styled(format!("{}Other...", prefix), style));
         }
 
-        // Footer with key hints
         let key_style = Style::new().bg(footer_bg).fg(colors::TEXT_ACCENT);
         let sep_style = Style::new().bg(footer_bg).fg(colors::TEXT_MUTED);
         let text_style = Style::new().bg(footer_bg).fg(colors::TEXT_PRIMARY).dim();
@@ -2825,7 +2885,6 @@ impl InkChatApp {
         );
         let footer = row([footer_content, footer_padding]);
 
-        // If in TextInput mode and selected "Other...", show text input
         if modal.mode == InteractionMode::TextInput {
             let input_line = row([
                 styled("   Enter text: ", Style::new().fg(colors::TEXT_MUTED)),
@@ -3274,144 +3333,48 @@ impl InkChatApp {
         let filter = self.popup_filter.to_lowercase();
 
         match self.popup_kind {
-            AutocompleteKind::File => self
-                .workspace_files
-                .iter()
-                .filter(|f| filter.is_empty() || f.to_lowercase().contains(&filter))
-                .take(15)
-                .map(|f| PopupItemNode {
-                    label: f.clone(),
-                    description: None,
-                    kind: Some("file".to_string()),
-                })
-                .collect(),
-            AutocompleteKind::Note => self
-                .kiln_notes
-                .iter()
-                .filter(|n| filter.is_empty() || n.to_lowercase().contains(&filter))
-                .take(15)
-                .map(|n| PopupItemNode {
-                    label: n.clone(),
-                    description: None,
-                    kind: Some("note".to_string()),
-                })
-                .collect(),
-            AutocompleteKind::Command => vec![
-                PopupItemNode {
-                    label: "semantic_search".to_string(),
-                    description: Some("Search notes by meaning".to_string()),
-                    kind: Some("tool".to_string()),
-                },
-                PopupItemNode {
-                    label: "create_note".to_string(),
-                    description: Some("Create a new note".to_string()),
-                    kind: Some("tool".to_string()),
-                },
-                PopupItemNode {
-                    label: "/mode".to_string(),
-                    description: Some("Cycle chat mode".to_string()),
-                    kind: Some("command".to_string()),
-                },
-                PopupItemNode {
-                    label: "/help".to_string(),
-                    description: Some("Show help".to_string()),
-                    kind: Some("command".to_string()),
-                },
-            ]
-            .into_iter()
-            .filter(|c| filter.is_empty() || c.label.to_lowercase().contains(&filter))
-            .collect(),
-            AutocompleteKind::SlashCommand => vec![
-                PopupItemNode {
-                    label: "/mode".to_string(),
-                    description: Some("Cycle chat mode".to_string()),
-                    kind: Some("command".to_string()),
-                },
-                PopupItemNode {
-                    label: "/default".to_string(),
-                    description: Some("Set default mode (ask permissions)".to_string()),
-                    kind: Some("command".to_string()),
-                },
-                PopupItemNode {
-                    label: "/plan".to_string(),
-                    description: Some("Set plan mode (read-only)".to_string()),
-                    kind: Some("command".to_string()),
-                },
-                PopupItemNode {
-                    label: "/auto".to_string(),
-                    description: Some("Set auto mode (full access)".to_string()),
-                    kind: Some("command".to_string()),
-                },
-                PopupItemNode {
-                    label: "/help".to_string(),
-                    description: Some("Show help".to_string()),
-                    kind: Some("command".to_string()),
-                },
-                PopupItemNode {
-                    label: "/quit".to_string(),
-                    description: Some("Exit chat".to_string()),
-                    kind: Some("command".to_string()),
-                },
-            ]
-            .into_iter()
-            .filter(|c| filter.is_empty() || c.label.to_lowercase().contains(&filter))
-            .collect(),
-            AutocompleteKind::ReplCommand => vec![
-                PopupItemNode {
-                    label: ":quit".to_string(),
-                    description: Some("Exit chat".to_string()),
-                    kind: Some("core".to_string()),
-                },
-                PopupItemNode {
-                    label: ":help".to_string(),
-                    description: Some("Show help".to_string()),
-                    kind: Some("core".to_string()),
-                },
-                PopupItemNode {
-                    label: ":clear".to_string(),
-                    description: Some("Clear conversation history".to_string()),
-                    kind: Some("core".to_string()),
-                },
-                PopupItemNode {
-                    label: ":palette".to_string(),
-                    description: Some("Open command palette".to_string()),
-                    kind: Some("core".to_string()),
-                },
-                PopupItemNode {
-                    label: ":model".to_string(),
-                    description: Some("Switch model".to_string()),
-                    kind: Some("core".to_string()),
-                },
-                PopupItemNode {
-                    label: ":mcp".to_string(),
-                    description: Some("List MCP servers".to_string()),
-                    kind: Some("mcp".to_string()),
-                },
-                PopupItemNode {
-                    label: ":export".to_string(),
-                    description: Some("Export session to file".to_string()),
-                    kind: Some("core".to_string()),
-                },
-                PopupItemNode {
-                    label: ":set".to_string(),
-                    description: Some("View/modify runtime options".to_string()),
-                    kind: Some("core".to_string()),
-                },
-            ]
-            .into_iter()
-            .filter(|c| filter.is_empty() || c.label.to_lowercase().contains(&filter))
-            .collect(),
-            AutocompleteKind::Model => self
-                .available_models
-                .iter()
-                .filter(|m| filter.is_empty() || m.to_lowercase().contains(&filter))
-                .take(15)
-                .map(|m| PopupItemNode {
-                    label: m.clone(),
-                    description: None,
-                    kind: Some("model".to_string()),
-                })
-                .collect(),
+            AutocompleteKind::File => {
+                Self::filter_to_popup_items(&self.workspace_files, &filter, "file", 15)
+            }
+            AutocompleteKind::Note => {
+                Self::filter_to_popup_items(&self.kiln_notes, &filter, "note", 15)
+            }
+            AutocompleteKind::Command => Self::filter_commands(
+                &[
+                    ("semantic_search", "Search notes by meaning", "tool"),
+                    ("create_note", "Create a new note", "tool"),
+                    ("/mode", "Cycle chat mode", "command"),
+                    ("/help", "Show help", "command"),
+                ],
+                &filter,
+            ),
+            AutocompleteKind::SlashCommand => Self::filter_commands(
+                &[
+                    ("/mode", "Cycle chat mode", "command"),
+                    ("/default", "Set default mode (ask permissions)", "command"),
+                    ("/plan", "Set plan mode (read-only)", "command"),
+                    ("/auto", "Set auto mode (full access)", "command"),
+                    ("/help", "Show help", "command"),
+                    ("/quit", "Exit chat", "command"),
+                ],
+                &filter,
+            ),
+            AutocompleteKind::ReplCommand => Self::filter_commands(
+                &[
+                    (":quit", "Exit chat", "core"),
+                    (":help", "Show help", "core"),
+                    (":clear", "Clear conversation history", "core"),
+                    (":palette", "Open command palette", "core"),
+                    (":model", "Switch model", "core"),
+                    (":mcp", "List MCP servers", "mcp"),
+                    (":export", "Export session to file", "core"),
+                    (":set", "View/modify runtime options", "core"),
+                ],
+                &filter,
+            ),
+            AutocompleteKind::Model => {
+                Self::filter_to_popup_items(&self.available_models, &filter, "model", 15)
+            }
             AutocompleteKind::CommandArg {
                 ref command,
                 arg_index,
@@ -3421,6 +3384,36 @@ impl InkChatApp {
             }
             AutocompleteKind::None => vec![],
         }
+    }
+
+    fn filter_to_popup_items(
+        items: &[String],
+        filter: &str,
+        kind: &str,
+        limit: usize,
+    ) -> Vec<PopupItemNode> {
+        items
+            .iter()
+            .filter(|s| filter.is_empty() || s.to_lowercase().contains(filter))
+            .take(limit)
+            .map(|s| PopupItemNode {
+                label: s.clone(),
+                description: None,
+                kind: Some(kind.to_string()),
+            })
+            .collect()
+    }
+
+    fn filter_commands(commands: &[(&str, &str, &str)], filter: &str) -> Vec<PopupItemNode> {
+        commands
+            .iter()
+            .filter(|(label, _, _)| filter.is_empty() || label.to_lowercase().contains(filter))
+            .map(|(label, desc, kind)| PopupItemNode {
+                label: label.to_string(),
+                description: Some(desc.to_string()),
+                kind: Some(kind.to_string()),
+            })
+            .collect()
     }
 
     fn get_set_option_completions(&self, option: Option<&str>, filter: &str) -> Vec<PopupItemNode> {
@@ -3443,17 +3436,9 @@ impl InkChatApp {
             Some(opt) => {
                 let source = self.runtime_config.completions_for(opt);
                 match source {
-                    CompletionSource::Models => self
-                        .available_models
-                        .iter()
-                        .filter(|m| filter.is_empty() || m.to_lowercase().contains(filter))
-                        .take(15)
-                        .map(|m| PopupItemNode {
-                            label: m.clone(),
-                            description: None,
-                            kind: Some("model".to_string()),
-                        })
-                        .collect(),
+                    CompletionSource::Models => {
+                        Self::filter_to_popup_items(&self.available_models, filter, "model", 15)
+                    }
                     CompletionSource::ThinkingPresets => THINKING_PRESETS
                         .iter()
                         .filter(|p| filter.is_empty() || p.name.to_lowercase().contains(filter))
@@ -3463,30 +3448,20 @@ impl InkChatApp {
                             kind: Some("preset".to_string()),
                         })
                         .collect(),
-                    CompletionSource::Themes => vec![
-                        PopupItemNode {
-                            label: "base16-ocean.dark".to_string(),
-                            description: None,
-                            kind: Some("theme".to_string()),
-                        },
-                        PopupItemNode {
-                            label: "Solarized (dark)".to_string(),
-                            description: None,
-                            kind: Some("theme".to_string()),
-                        },
-                        PopupItemNode {
-                            label: "Solarized (light)".to_string(),
-                            description: None,
-                            kind: Some("theme".to_string()),
-                        },
-                        PopupItemNode {
-                            label: "InspiredGitHub".to_string(),
-                            description: None,
-                            kind: Some("theme".to_string()),
-                        },
-                    ]
+                    CompletionSource::Themes => Self::filter_commands(
+                        &[
+                            ("base16-ocean.dark", "", "theme"),
+                            ("Solarized (dark)", "", "theme"),
+                            ("Solarized (light)", "", "theme"),
+                            ("InspiredGitHub", "", "theme"),
+                        ],
+                        filter,
+                    )
                     .into_iter()
-                    .filter(|t| filter.is_empty() || t.label.to_lowercase().contains(filter))
+                    .map(|mut p| {
+                        p.description = None;
+                        p
+                    })
                     .collect(),
                     CompletionSource::Static(values) => values
                         .iter()
@@ -3517,16 +3492,7 @@ impl InkChatApp {
     }
 
     fn complete_file_paths(&self, filter: &str) -> Vec<PopupItemNode> {
-        self.workspace_files
-            .iter()
-            .filter(|f| filter.is_empty() || f.to_lowercase().contains(filter))
-            .take(15)
-            .map(|f| PopupItemNode {
-                label: f.clone(),
-                description: None,
-                kind: Some("path".to_string()),
-            })
-            .collect()
+        Self::filter_to_popup_items(&self.workspace_files, filter, "path", 15)
     }
 
     fn complete_mcp_servers(&self, filter: &str) -> Vec<PopupItemNode> {
@@ -3578,106 +3544,69 @@ impl InkChatApp {
     }
 
     fn insert_autocomplete_selection(&mut self, label: &str) {
-        match self.popup_kind {
+        match &self.popup_kind {
             AutocompleteKind::File => {
-                let content = self.input.content().to_string();
-                let trigger_pos = self.popup_trigger_pos;
-                let prefix = &content[..trigger_pos];
-                let replacement = format!("@{} ", label);
-                let suffix = &content[self.input.cursor()..];
-                let new_content = format!("{}{}{}", prefix, replacement, suffix);
-                let new_cursor = prefix.len() + replacement.len();
-
-                self.input.handle(InputAction::Clear);
-                for ch in new_content.chars() {
-                    self.input.handle(InputAction::Insert(ch));
-                }
-                while self.input.cursor() > new_cursor {
-                    self.input.handle(InputAction::Left);
-                }
-
-                let context_item = format!("@{}", label);
-                if !self.attached_context.contains(&context_item) {
-                    self.attached_context.push(context_item);
-                }
+                self.replace_at_trigger(format!("@{} ", label));
+                self.add_context_if_new(format!("@{}", label));
             }
             AutocompleteKind::Note => {
-                let content = self.input.content().to_string();
-                let trigger_pos = self.popup_trigger_pos;
-                let prefix = &content[..trigger_pos];
-                let replacement = format!("[[{}]] ", label);
-                let suffix = &content[self.input.cursor()..];
-                let new_content = format!("{}{}{}", prefix, replacement, suffix);
-                let new_cursor = prefix.len() + replacement.len();
-
-                self.input.handle(InputAction::Clear);
-                for ch in new_content.chars() {
-                    self.input.handle(InputAction::Insert(ch));
-                }
-                while self.input.cursor() > new_cursor {
-                    self.input.handle(InputAction::Left);
-                }
-
-                let context_item = format!("[[{}]]", label);
-                if !self.attached_context.contains(&context_item) {
-                    self.attached_context.push(context_item);
-                }
+                self.replace_at_trigger(format!("[[{}]] ", label));
+                self.add_context_if_new(format!("[[{}]]", label));
             }
             AutocompleteKind::Command => {
                 self.status = format!("Selected: {}", label);
             }
-            AutocompleteKind::SlashCommand => {
-                self.input.handle(InputAction::Clear);
-                for ch in label.chars() {
-                    self.input.handle(InputAction::Insert(ch));
-                }
-            }
-            AutocompleteKind::ReplCommand => {
-                self.input.handle(InputAction::Clear);
-                for ch in label.chars() {
-                    self.input.handle(InputAction::Insert(ch));
-                }
+            AutocompleteKind::SlashCommand | AutocompleteKind::ReplCommand => {
+                self.set_input(label);
             }
             AutocompleteKind::Model => {
-                self.input.handle(InputAction::Clear);
-                let cmd = format!(":model {}", label);
-                for ch in cmd.chars() {
-                    self.input.handle(InputAction::Insert(ch));
-                }
+                self.set_input(&format!(":model {}", label));
             }
             AutocompleteKind::CommandArg { .. } => {
-                let content = self.input.content().to_string();
-                let trigger_pos = self.popup_trigger_pos;
-                let prefix = &content[..trigger_pos];
-                let replacement = format!("{} ", label);
-                let suffix = &content[self.input.cursor()..];
-                let new_content = format!("{}{}{}", prefix, replacement, suffix);
-                let new_cursor = prefix.len() + replacement.len();
-
-                self.input.handle(InputAction::Clear);
-                for ch in new_content.chars() {
-                    self.input.handle(InputAction::Insert(ch));
-                }
-                while self.input.cursor() > new_cursor {
-                    self.input.handle(InputAction::Left);
-                }
+                self.replace_at_trigger(format!("{} ", label));
             }
-            AutocompleteKind::SetOption { ref option } => {
-                self.input.handle(InputAction::Clear);
+            AutocompleteKind::SetOption { option } => {
                 let cmd = match option {
                     None => format!(":set {}", label),
                     Some(opt) => format!(":set {}={}", opt, label),
                 };
-                for ch in cmd.chars() {
-                    self.input.handle(InputAction::Insert(ch));
-                }
+                self.set_input(&cmd);
             }
             AutocompleteKind::None => {}
         }
 
-        self.popup_kind = AutocompleteKind::None;
-        self.show_popup = false;
-        self.popup_filter.clear();
+        self.close_popup();
+    }
+
+    fn replace_at_trigger(&mut self, replacement: String) {
+        let content = self.input.content().to_string();
+        let trigger_pos = self.popup_trigger_pos;
+        let prefix = &content[..trigger_pos];
+        let suffix = &content[self.input.cursor()..];
+        let new_content = format!("{}{}{}", prefix, replacement, suffix);
+        let new_cursor = prefix.len() + replacement.len();
+
+        self.set_input_and_cursor(&new_content, new_cursor);
+    }
+
+    fn set_input(&mut self, content: &str) {
+        self.input.handle(InputAction::Clear);
+        for ch in content.chars() {
+            self.input.handle(InputAction::Insert(ch));
+        }
+    }
+
+    fn set_input_and_cursor(&mut self, content: &str, cursor: usize) {
+        self.set_input(content);
+        while self.input.cursor() > cursor {
+            self.input.handle(InputAction::Left);
+        }
+    }
+
+    fn add_context_if_new(&mut self, item: String) {
+        if !self.attached_context.contains(&item) {
+            self.attached_context.push(item);
+        }
     }
 }
 

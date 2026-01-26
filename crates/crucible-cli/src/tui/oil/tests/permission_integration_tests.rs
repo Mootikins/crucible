@@ -473,6 +473,249 @@ fn test_permission_tool_scope_displayed() {
 }
 
 // =============================================================================
+// Cursor Navigation Tests
+// =============================================================================
+
+#[test]
+fn test_permission_down_arrow_navigates() {
+    let mut app = InkChatApp::default();
+    let request = InteractionRequest::Permission(PermRequest::bash(["npm", "install"]));
+    app.open_interaction("perm-1".to_string(), request);
+
+    let output_before = render_app(&app);
+    assert_contains(&output_before, "> ", "should show cursor on first option");
+
+    app.update(Event::Key(key(KeyCode::Down)));
+
+    let output_after = render_app(&app);
+    assert!(
+        app.interaction_visible(),
+        "Modal should remain open after navigation"
+    );
+    assert_contains(&output_after, "Deny", "should still show deny option");
+}
+
+#[test]
+fn test_permission_up_arrow_navigates() {
+    let mut app = InkChatApp::default();
+    let request = InteractionRequest::Permission(PermRequest::bash(["npm", "install"]));
+    app.open_interaction("perm-1".to_string(), request);
+
+    app.update(Event::Key(key(KeyCode::Up)));
+
+    assert!(
+        app.interaction_visible(),
+        "Modal should remain open after navigation"
+    );
+}
+
+#[test]
+fn test_permission_j_key_navigates_down() {
+    let mut app = InkChatApp::default();
+    let request = InteractionRequest::Permission(PermRequest::bash(["npm", "install"]));
+    app.open_interaction("perm-1".to_string(), request);
+
+    app.update(Event::Key(key(KeyCode::Char('j'))));
+
+    assert!(
+        app.interaction_visible(),
+        "Modal should remain open after 'j' navigation"
+    );
+}
+
+#[test]
+fn test_permission_k_key_navigates_up() {
+    let mut app = InkChatApp::default();
+    let request = InteractionRequest::Permission(PermRequest::bash(["npm", "install"]));
+    app.open_interaction("perm-1".to_string(), request);
+
+    app.update(Event::Key(key(KeyCode::Char('k'))));
+
+    assert!(
+        app.interaction_visible(),
+        "Modal should remain open after 'k' navigation"
+    );
+}
+
+#[test]
+fn test_permission_enter_confirms_selection() {
+    let mut app = InkChatApp::default();
+    let request = InteractionRequest::Permission(PermRequest::bash(["npm", "install"]));
+    app.open_interaction("perm-1".to_string(), request);
+
+    let action = app.update(Event::Key(key(KeyCode::Enter)));
+
+    assert!(!app.interaction_visible(), "Modal should close after Enter");
+    match action {
+        crate::tui::oil::app::Action::Send(ChatAppMsg::CloseInteraction {
+            request_id,
+            response,
+        }) => {
+            assert_eq!(request_id, "perm-1", "request_id should match");
+            match response {
+                crucible_core::interaction::InteractionResponse::Permission(perm_resp) => {
+                    assert!(perm_resp.allowed, "first option (Allow) should be allowed");
+                }
+                _ => panic!("response should be Permission type"),
+            }
+        }
+        _ => panic!("action should be CloseInteraction"),
+    }
+}
+
+#[test]
+fn test_permission_navigate_to_deny_then_enter() {
+    let mut app = InkChatApp::default();
+    let request = InteractionRequest::Permission(PermRequest::bash(["npm", "install"]));
+    app.open_interaction("perm-1".to_string(), request);
+
+    app.update(Event::Key(key(KeyCode::Down)));
+    let action = app.update(Event::Key(key(KeyCode::Enter)));
+
+    assert!(!app.interaction_visible(), "Modal should close after Enter");
+    match action {
+        crate::tui::oil::app::Action::Send(ChatAppMsg::CloseInteraction {
+            request_id,
+            response,
+        }) => {
+            assert_eq!(request_id, "perm-1", "request_id should match");
+            match response {
+                crucible_core::interaction::InteractionResponse::Permission(perm_resp) => {
+                    assert!(
+                        !perm_resp.allowed,
+                        "second option (Deny) should not be allowed"
+                    );
+                }
+                _ => panic!("response should be Permission type"),
+            }
+        }
+        _ => panic!("action should be CloseInteraction"),
+    }
+}
+
+#[test]
+fn test_permission_navigate_to_pattern_then_enter() {
+    let mut app = InkChatApp::default();
+    let request = InteractionRequest::Permission(PermRequest::bash(["npm", "install"]));
+    app.open_interaction("perm-1".to_string(), request);
+
+    app.update(Event::Key(key(KeyCode::Down)));
+    app.update(Event::Key(key(KeyCode::Down)));
+    let action = app.update(Event::Key(key(KeyCode::Enter)));
+
+    assert!(!app.interaction_visible(), "Modal should close after Enter");
+    match action {
+        crate::tui::oil::app::Action::Send(ChatAppMsg::CloseInteraction {
+            request_id,
+            response,
+        }) => {
+            assert_eq!(request_id, "perm-1", "request_id should match");
+            match response {
+                crucible_core::interaction::InteractionResponse::Permission(perm_resp) => {
+                    assert!(perm_resp.allowed, "pattern option should allow");
+                    assert!(
+                        perm_resp.pattern.is_some(),
+                        "pattern option should include pattern"
+                    );
+                }
+                _ => panic!("response should be Permission type"),
+            }
+        }
+        _ => panic!("action should be CloseInteraction"),
+    }
+}
+
+#[test]
+fn test_permission_navigation_wraps_around_bottom() {
+    let mut app = InkChatApp::default();
+    let request = InteractionRequest::Permission(PermRequest::bash(["npm", "install"]));
+    app.open_interaction("perm-1".to_string(), request);
+
+    app.update(Event::Key(key(KeyCode::Down)));
+    app.update(Event::Key(key(KeyCode::Down)));
+    app.update(Event::Key(key(KeyCode::Down)));
+    let action = app.update(Event::Key(key(KeyCode::Enter)));
+
+    match action {
+        crate::tui::oil::app::Action::Send(ChatAppMsg::CloseInteraction { response, .. }) => {
+            match response {
+                crucible_core::interaction::InteractionResponse::Permission(perm_resp) => {
+                    assert!(perm_resp.allowed, "should wrap to first option (Allow)");
+                    assert!(perm_resp.pattern.is_none(), "first option has no pattern");
+                }
+                _ => panic!("response should be Permission type"),
+            }
+        }
+        _ => panic!("action should be CloseInteraction"),
+    }
+}
+
+#[test]
+fn test_permission_navigation_wraps_around_top() {
+    let mut app = InkChatApp::default();
+    let request = InteractionRequest::Permission(PermRequest::bash(["npm", "install"]));
+    app.open_interaction("perm-1".to_string(), request);
+
+    app.update(Event::Key(key(KeyCode::Up)));
+    let action = app.update(Event::Key(key(KeyCode::Enter)));
+
+    match action {
+        crate::tui::oil::app::Action::Send(ChatAppMsg::CloseInteraction { response, .. }) => {
+            match response {
+                crucible_core::interaction::InteractionResponse::Permission(perm_resp) => {
+                    assert!(perm_resp.allowed, "should wrap to last option (Pattern)");
+                    assert!(perm_resp.pattern.is_some(), "last option has pattern");
+                }
+                _ => panic!("response should be Permission type"),
+            }
+        }
+        _ => panic!("action should be CloseInteraction"),
+    }
+}
+
+#[test]
+fn test_permission_ctrl_c_denies_and_closes() {
+    let mut app = InkChatApp::default();
+    let request = InteractionRequest::Permission(PermRequest::bash(["npm", "install"]));
+    app.open_interaction("perm-1".to_string(), request);
+
+    let action = app.update(Event::Key(KeyEvent::new(
+        KeyCode::Char('c'),
+        KeyModifiers::CONTROL,
+    )));
+
+    assert!(
+        !app.interaction_visible(),
+        "Modal should close after Ctrl+C"
+    );
+    match action {
+        crate::tui::oil::app::Action::Send(ChatAppMsg::CloseInteraction { response, .. }) => {
+            match response {
+                crucible_core::interaction::InteractionResponse::Permission(perm_resp) => {
+                    assert!(!perm_resp.allowed, "Ctrl+C should deny");
+                }
+                _ => panic!("response should be Permission type"),
+            }
+        }
+        _ => panic!("action should be CloseInteraction"),
+    }
+}
+
+#[test]
+fn test_permission_shows_selectable_options() {
+    let mut app = InkChatApp::default();
+    let request = InteractionRequest::Permission(PermRequest::bash(["npm", "install"]));
+    app.open_interaction("perm-1".to_string(), request);
+
+    let output = render_app(&app);
+    assert_contains(&output, "Allow once", "should show Allow once option");
+    assert_contains(&output, "Deny", "should show Deny option");
+    assert_contains(&output, "Save pattern", "should show Save pattern option");
+    assert_contains(&output, "navigate", "should show navigation hint");
+    assert_contains(&output, "Enter", "should show Enter hint");
+}
+
+// =============================================================================
 // Permission Edge Cases
 // =============================================================================
 

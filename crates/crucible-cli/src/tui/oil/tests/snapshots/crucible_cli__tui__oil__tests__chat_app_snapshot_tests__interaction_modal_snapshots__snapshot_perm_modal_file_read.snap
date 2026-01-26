@@ -6,5 +6,9 @@ expression: render_app(&app)
 
   /etc/hosts
 
+ > [y] Allow once
+   [n] Deny
+   [p] Allow + Save pattern
 
- y Allow │ n Deny │ p Pattern... │ Esc Cancel
+
+ ↑/↓ navigate │ Enter select │ y/n/p shortcuts │ Esc cancel
