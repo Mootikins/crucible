@@ -235,6 +235,21 @@ impl SessionEventMessage {
         )
     }
 
+    pub fn interaction_requested(
+        session_id: impl Into<String>,
+        request_id: impl Into<String>,
+        request: &crucible_core::interaction::InteractionRequest,
+    ) -> Self {
+        Self::new(
+            session_id,
+            "interaction_requested",
+            serde_json::json!({
+                "request_id": request_id.into(),
+                "request": request,
+            }),
+        )
+    }
+
     /// Serialize to JSON string with newline
     pub fn to_json_line(&self) -> Result<String, serde_json::Error> {
         let mut json = serde_json::to_string(self)?;
