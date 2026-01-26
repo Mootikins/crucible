@@ -546,13 +546,37 @@ impl AgentManager {
                                 };
 
                                 if !permission_granted {
+                                    // Create a brief resource description from args
+                                    let resource_desc = Self::brief_resource_description(&args);
+                                    let error_msg = format!(
+                                        "User denied permission to {} {}",
+                                        tc.name, resource_desc
+                                    );
+
                                     debug!(
                                         session_id = %session_id,
                                         tool = %tc.name,
-                                        "Permission denied, skipping tool execution notification"
+                                        error = %error_msg,
+                                        "Permission denied, emitting error result"
                                     );
-                                    // Skip emitting tool_call event for denied tools
-                                    // Error handling will be added in Task 4
+
+                                    // Emit tool_result with error so LLM sees the denial
+                                    if event_tx
+                                        .send(SessionEventMessage::tool_result(
+                                            session_id,
+                                            &call_id,
+                                            &tc.name,
+                                            serde_json::json!({ "error": error_msg }),
+                                        ))
+                                        .is_err()
+                                    {
+                                        warn!(
+                                            session_id = %session_id,
+                                            tool = %tc.name,
+                                            "No subscribers for permission denied tool_result event"
+                                        );
+                                    }
+
                                     continue;
                                 }
                             }
@@ -748,6 +772,26 @@ impl AgentManager {
         }
 
         pending_injection
+    }
+
+    fn brief_resource_description(args: &serde_json::Value) -> String {
+        if let Some(path) = args.get("path").and_then(|v| v.as_str()) {
+            return path.to_string();
+        }
+        if let Some(file) = args.get("file").and_then(|v| v.as_str()) {
+            return file.to_string();
+        }
+        if let Some(command) = args.get("command").and_then(|v| v.as_str()) {
+            let truncated: String = command.chars().take(50).collect();
+            if command.len() > 50 {
+                return format!("{}...", truncated);
+            }
+            return truncated;
+        }
+        if let Some(name) = args.get("name").and_then(|v| v.as_str()) {
+            return name.to_string();
+        }
+        String::new()
     }
 
     pub async fn cancel(&self, session_id: &str) -> bool {
@@ -2092,6 +2136,74 @@ mod tests {
             assert!(!is_destructive("unknown_tool"));
             assert!(!is_destructive(""));
             assert!(!is_destructive("some_custom_tool"));
+        }
+    }
+
+    mod brief_resource_description_tests {
+        use super::*;
+
+        #[test]
+        fn extracts_path_field() {
+            let args = serde_json::json!({"path": "/home/user/file.txt"});
+            assert_eq!(
+                AgentManager::brief_resource_description(&args),
+                "/home/user/file.txt"
+            );
+        }
+
+        #[test]
+        fn extracts_file_field() {
+            let args = serde_json::json!({"file": "config.toml"});
+            assert_eq!(
+                AgentManager::brief_resource_description(&args),
+                "config.toml"
+            );
+        }
+
+        #[test]
+        fn extracts_command_field() {
+            let args = serde_json::json!({"command": "echo hello"});
+            assert_eq!(
+                AgentManager::brief_resource_description(&args),
+                "echo hello"
+            );
+        }
+
+        #[test]
+        fn truncates_long_commands() {
+            let long_cmd = "a".repeat(100);
+            let args = serde_json::json!({"command": long_cmd});
+            let result = AgentManager::brief_resource_description(&args);
+            assert!(result.ends_with("..."));
+            assert!(result.len() <= 53); // 50 chars + "..."
+        }
+
+        #[test]
+        fn extracts_name_field() {
+            let args = serde_json::json!({"name": "my-note"});
+            assert_eq!(
+                AgentManager::brief_resource_description(&args),
+                "my-note"
+            );
+        }
+
+        #[test]
+        fn returns_empty_for_no_matching_fields() {
+            let args = serde_json::json!({"other": "value"});
+            assert_eq!(AgentManager::brief_resource_description(&args), "");
+        }
+
+        #[test]
+        fn path_takes_precedence_over_other_fields() {
+            let args = serde_json::json!({
+                "path": "/path/to/file",
+                "command": "some command",
+                "name": "some name"
+            });
+            assert_eq!(
+                AgentManager::brief_resource_description(&args),
+                "/path/to/file"
+            );
         }
     }
 }
