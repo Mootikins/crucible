@@ -1,14 +1,14 @@
 {
-  "active_plan": "/home/moot/crucible/.sisyphus/plans/ask-user-tool.md",
-  "started_at": "2026-01-25T22:12:13.505Z",
+  "active_plan": "/home/moot/crucible/.sisyphus/plans/graduation-spacing-refactor.md",
+  "started_at": "2026-01-26T04:44:00.000Z",
   "completed_at": null,
   "session_ids": [
-    "ses_40beb0c58ffehpTxAsULW3nkRS",
-    "ses_408ad901effen8IdT14NFvhP40"
+    "ses_407f4b10fffe36wLooPPFteWax",
+    "ses_407f4b10fffe36wLooPPFteWax"
   ],
-  "plan_name": "ask-user-tool",
+  "plan_name": "graduation-spacing-refactor",
   "status": "in_progress",
-  "tasks_completed": 8,
-  "tasks_total": 12,
-  "notes": "Backend complete (Tasks 1-7). Task 8 complete (modal borders). Continuing with Tasks 9-12."
+  "tasks_completed": 4,
+  "tasks_total": 8,
+  "notes": "Tasks 1-4 complete. Resuming at Task 5."
 }

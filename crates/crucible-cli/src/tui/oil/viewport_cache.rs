@@ -9,6 +9,12 @@ use crucible_oil::ContentSource;
 /// Default maximum cached items in viewport (can be overridden via `with_max_items`)
 pub const DEFAULT_MAX_CACHED_ITEMS: usize = 32;
 
+#[derive(Debug, Clone, Default)]
+pub struct StreamingCompleteResult {
+    pub pre_graduate_keys: Vec<String>,
+    pub all_keys: Vec<String>,
+}
+
 #[derive(Debug, Clone)]
 pub struct CachedMessage {
     pub id: String,
@@ -578,9 +584,17 @@ impl ViewportCache {
         self.streaming.is_some()
     }
 
-    pub fn complete_streaming(&mut self, id: String, role: Role) {
+    /// Complete streaming and return info about created message keys.
+    ///
+    /// Returns `StreamingCompleteResult` with:
+    /// - `pre_graduate_keys`: Keys for content already written to stdout during streaming
+    /// - `all_keys`: All message keys created (for reference)
+    pub fn complete_streaming(&mut self, id: String, role: Role) -> StreamingCompleteResult {
+        let mut result = StreamingCompleteResult::default();
+
         if let Some(mut buf) = self.streaming.take() {
             buf.finalize_segments();
+            let graduated_count = buf.text_segments_graduated_count;
 
             let streaming_items: Vec<CachedChatItem> =
                 self.items.drain(self.streaming_start_index..).collect();
@@ -594,6 +608,10 @@ impl ViewportCache {
                         } else {
                             format!("{}-{}", id, msg_counter)
                         };
+                        result.all_keys.push(msg_id.clone());
+                        if msg_counter < graduated_count {
+                            result.pre_graduate_keys.push(msg_id.clone());
+                        }
                         self.push_message(CachedMessage::new(msg_id, role, text.clone()));
                         msg_counter += 1;
                     }
@@ -622,10 +640,13 @@ impl ViewportCache {
             if msg_counter == 0 {
                 let remaining_text = buf.all_content();
                 if !remaining_text.is_empty() {
+                    result.all_keys.push(id.clone());
                     self.push_message(CachedMessage::new(id, role, remaining_text));
                 }
             }
         }
+
+        result
     }
 
     pub fn cancel_streaming(&mut self) {
@@ -713,6 +734,9 @@ pub struct StreamingBuffer {
     current_thinking: String,
     thinking_token_count: usize,
     last_segment_type: Option<SegmentType>,
+    /// Number of text segments that were graduated (written to stdout) during streaming.
+    /// Set by finalize_segments() before merging content.
+    text_segments_graduated_count: usize,
 }
 
 impl StreamingBuffer {
@@ -724,6 +748,7 @@ impl StreamingBuffer {
             current_thinking: String::new(),
             thinking_token_count: 0,
             last_segment_type: None,
+            text_segments_graduated_count: 0,
         }
     }
 
@@ -778,6 +803,8 @@ impl StreamingBuffer {
     }
 
     pub fn finalize_segments(&mut self) {
+        self.text_segments_graduated_count = self.graduated_blocks.len();
+
         match self.last_segment_type {
             Some(SegmentType::Thinking) if !self.current_thinking.is_empty() => {
                 self.segments.push(StreamSegment::Thinking(std::mem::take(
@@ -910,11 +937,6 @@ impl StreamingBuffer {
             return None;
         }
 
-        let fence_count = content.matches("```").count();
-        if fence_count % 2 != 0 {
-            return None;
-        }
-
         let mut last_valid_split = None;
         let mut in_code_block = false;
         let mut i = 0;
@@ -994,9 +1016,78 @@ mod tests {
         cache.start_streaming();
         cache.append_streaming("Hello ");
         cache.append_streaming("World");
-        cache.complete_streaming("msg-1".to_string(), Role::Assistant);
+        let result = cache.complete_streaming("msg-1".to_string(), Role::Assistant);
 
         assert_eq!(cache.get_content("msg-1"), Some("Hello World"));
+        assert_eq!(result.all_keys, vec!["msg-1".to_string()]);
+        assert!(
+            result.pre_graduate_keys.is_empty(),
+            "No content was graduated during streaming"
+        );
+    }
+
+    #[test]
+    fn complete_streaming_returns_all_message_keys() {
+        let mut cache = ViewportCache::new();
+
+        cache.start_streaming();
+        cache.append_streaming("First paragraph.\n\n");
+        cache.push_streaming_tool_call("tool-1".to_string());
+        cache.push_tool_call("tool-1".to_string(), "my_tool", "{}");
+        cache.complete_tool("my_tool");
+        cache.append_streaming("Second paragraph.");
+        let result = cache.complete_streaming("assistant-1".to_string(), Role::Assistant);
+
+        assert_eq!(result.all_keys.len(), 2);
+        assert_eq!(result.all_keys[0], "assistant-1");
+        assert_eq!(result.all_keys[1], "assistant-1-1");
+    }
+
+    #[test]
+    fn complete_streaming_separates_graduated_and_ungraduated_keys() {
+        // Regression test: when content never graduates during streaming
+        // (e.g. unclosed code fence), we should NOT pre-graduate those keys
+        let mut cache = ViewportCache::new();
+
+        cache.start_streaming();
+        // First paragraph graduates (has \n\n)
+        cache.append_streaming("First paragraph.\n\n");
+        // Second paragraph with unclosed fence - won't graduate
+        cache.append_streaming("```rust\nfn main() {");
+
+        let result = cache.complete_streaming("assistant-1".to_string(), Role::Assistant);
+
+        // Only the first block was graduated during streaming
+        assert_eq!(
+            result.pre_graduate_keys.len(),
+            1,
+            "Only graduated content should be pre-graduated"
+        );
+        assert_eq!(result.pre_graduate_keys[0], "assistant-1");
+
+        // But all content is captured
+        assert!(
+            result.all_keys.len() >= 1,
+            "Should have at least one key for the content"
+        );
+    }
+
+    #[test]
+    fn complete_streaming_no_pregrad_when_nothing_graduated() {
+        // When nothing graduates during streaming, no keys should be pre-graduated
+        let mut cache = ViewportCache::new();
+
+        cache.start_streaming();
+        // Content without any graduation points
+        cache.append_streaming("Single line without double newlines");
+
+        let result = cache.complete_streaming("msg-1".to_string(), Role::Assistant);
+
+        assert!(
+            result.pre_graduate_keys.is_empty(),
+            "Nothing was written to stdout, so nothing should be pre-graduated"
+        );
+        assert_eq!(result.all_keys, vec!["msg-1"]);
     }
 
     #[test]
@@ -1424,15 +1515,15 @@ mod tests {
     }
 
     #[test]
-    fn streaming_graduation_blocks_unclosed_code_fence() {
+    fn streaming_graduation_allows_content_before_unclosed_fence() {
         let mut buf = StreamingBuffer::new();
 
         buf.append("Text\n\n```rust\ncode here\n\nmore code");
-        assert!(!buf.has_graduated_content());
-        assert_eq!(
-            buf.in_progress_content(),
-            "Text\n\n```rust\ncode here\n\nmore code"
-        );
+        // Content BEFORE the unclosed fence should graduate
+        assert!(buf.has_graduated_content());
+        assert_eq!(buf.graduated_content(), "Text\n\n");
+        // The unclosed code block stays in progress
+        assert_eq!(buf.in_progress_content(), "```rust\ncode here\n\nmore code");
     }
 
     #[test]

@@ -271,6 +271,11 @@ fn convert_ink_node(ink_node: crucible_oil::Node) -> Node {
         crucible_oil::Node::Static(s) => Node::Static(cli_node::StaticNode {
             key: s.key,
             children: s.children.into_iter().map(convert_ink_node).collect(),
+            kind: if s.newline {
+                cli_node::ElementKind::Block
+            } else {
+                cli_node::ElementKind::Continuation
+            },
             newline: s.newline,
         }),
         crucible_oil::Node::Input(i) => Node::Input(cli_node::InputNode {
