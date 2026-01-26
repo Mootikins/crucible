@@ -506,12 +506,15 @@ impl App for OilChatApp {
             }
         }
 
+        let terminal_width = terminal_width();
+        let notif_end_col = self.notification_area.card_end_column(terminal_width);
+
         col([
             self.render_items(),
             self.render_streaming(),
             self.render_error(),
             spacer(),
-            self.render_input(ctx),
+            self.render_input(ctx, notif_end_col),
             self.render_status(),
             self.render_popup_overlay(),
             self.render_notification_area(ctx),
@@ -3229,7 +3232,7 @@ impl OilChatApp {
         }
     }
 
-    fn render_input(&self, ctx: &ViewContext<'_>) -> Node {
+    fn render_input(&self, ctx: &ViewContext<'_>, notif_end_col: Option<usize>) -> Node {
         let width = terminal_width();
         let is_focused = !self.show_popup || ctx.is_focused(FOCUS_INPUT);
         let input_mode = self.detect_input_mode();
@@ -3237,7 +3240,17 @@ impl OilChatApp {
         let prompt = input_mode.prompt();
         let bg = input_mode.bg_color();
 
-        let top_edge = styled("▄".repeat(width), Style::new().fg(bg));
+        let top_edge = if let Some(end_col) = notif_end_col {
+            let left_part = "▀".repeat(end_col);
+            let connection = "▙";
+            let right_part = "▄".repeat(width.saturating_sub(end_col + 1));
+            styled(
+                format!("{}{}{}", left_part, connection, right_part),
+                Style::new().fg(bg),
+            )
+        } else {
+            styled("▄".repeat(width), Style::new().fg(bg))
+        };
         let bottom_edge = styled("▀".repeat(width), Style::new().fg(bg));
 
         let content = self.input.content();
