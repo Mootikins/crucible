@@ -75,7 +75,7 @@ pub use components::{InputArea, InputMode, StatusBar, INPUT_MAX_CONTENT_LINES};
 pub use composer::{pad_popup_region, ComposerConfig};
 pub use event::*;
 pub use focus::*;
-pub use graduation::{GraduatedContent, GraduationState, GRADUATION_WIDTH};
+pub use graduation::{GraduatedContent, GraduationState};
 pub use layout::*;
 pub use lua_view::{LuaView, ViewAction};
 pub use node::*;

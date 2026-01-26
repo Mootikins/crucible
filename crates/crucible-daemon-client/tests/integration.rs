@@ -136,7 +136,6 @@ async fn test_interaction_event_flows_to_receiver() {
     server.shutdown().await;
 }
 
-
 /// Test DaemonClient.shutdown() actually stops the daemon
 #[tokio::test]
 async fn test_client_shutdown_with_real_daemon() {

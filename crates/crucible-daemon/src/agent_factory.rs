@@ -11,7 +11,7 @@ use crucible_core::interaction_registry::InteractionRegistry;
 use crucible_core::prompts::ModelSize;
 use crucible_core::session::SessionAgent;
 use crucible_core::traits::chat::AgentHandle;
-use crucible_core::{InteractionContext, EventPushCallback};
+use crucible_core::{EventPushCallback, InteractionContext};
 use crucible_rig::{
     build_agent_with_model_size, create_client, AgentComponents, AgentConfig, RigAgentHandle,
     RigClient, WorkspaceContext,
@@ -117,8 +117,7 @@ pub async fn create_agent_from_session_config(
     });
     let interaction_ctx = Arc::new(InteractionContext::new(registry, push_event));
 
-    let mut ws_ctx = WorkspaceContext::new(workspace)
-        .with_interaction_context(interaction_ctx);
+    let mut ws_ctx = WorkspaceContext::new(workspace).with_interaction_context(interaction_ctx);
     if let Some(ref spawner) = background_spawner {
         ws_ctx = ws_ctx.with_background_spawner(spawner.clone());
     }
@@ -247,19 +246,10 @@ mod tests {
         let mut config = test_agent_config();
         config.agent_type = "acp".to_string();
 
-        let result =
-            tokio::runtime::Runtime::new()
-                .unwrap()
-                .block_on(async {
-                    let (event_tx, _) = broadcast::channel(16);
-                    create_agent_from_session_config(
-                        &config,
-                        Path::new("/tmp"),
-                        None,
-                        &event_tx,
-                    )
-                    .await
-                });
+        let result = tokio::runtime::Runtime::new().unwrap().block_on(async {
+            let (event_tx, _) = broadcast::channel(16);
+            create_agent_from_session_config(&config, Path::new("/tmp"), None, &event_tx).await
+        });
 
         assert!(matches!(
             result,
@@ -272,7 +262,8 @@ mod tests {
     async fn test_create_ollama_agent() {
         let config = test_agent_config();
         let (event_tx, _) = broadcast::channel(16);
-        let result = create_agent_from_session_config(&config, Path::new("/tmp"), None, &event_tx).await;
+        let result =
+            create_agent_from_session_config(&config, Path::new("/tmp"), None, &event_tx).await;
         assert!(result.is_ok());
     }
 }

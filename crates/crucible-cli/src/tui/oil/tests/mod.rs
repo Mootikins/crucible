@@ -2,8 +2,6 @@ mod generators;
 mod helpers;
 
 mod chat_app_interaction_tests;
-mod graduation_invariant_property_tests;
-mod graduation_invariant_tests;
 mod chat_app_snapshot_tests;
 mod chat_e2e_property_tests;
 mod chat_ordering_property_tests;
@@ -14,6 +12,8 @@ mod error_boundary_tests;
 mod event_loop_tests;
 mod event_tests;
 mod focus_tests;
+mod graduation_invariant_property_tests;
+mod graduation_invariant_tests;
 mod graduation_tests;
 mod interrupt_tests;
 mod layout_tests;

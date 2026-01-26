@@ -72,7 +72,7 @@ impl Margins {
 pub enum RenderStyle {
     /// Pre-wrap all content to terminal width. For viewport/streaming content.
     Viewport { width: usize, margins: Margins },
-    /// Text uses natural width (terminal wraps), tables use terminal width.
+    /// Pre-wrap to terminal width for consistent left/right alignment.
     /// For graduated/scrollback content.
     Natural {
         terminal_width: usize,
@@ -108,12 +108,11 @@ impl RenderStyle {
 
     fn text_width(&self) -> usize {
         match self {
-            RenderStyle::Viewport { width, margins } => {
-                width.saturating_sub(margins.left + margins.right)
-            }
-            RenderStyle::Natural { margins, .. } => {
-                NATURAL_TEXT_WIDTH.saturating_sub(margins.left + margins.right)
-            }
+            RenderStyle::Viewport { width, margins }
+            | RenderStyle::Natural {
+                terminal_width: width,
+                margins,
+            } => width.saturating_sub(margins.left + margins.right),
         }
     }
 
@@ -1442,7 +1441,7 @@ mod tests {
         #[test]
         fn render_style_natural_widths() {
             let style = RenderStyle::natural(80);
-            assert_eq!(style.text_width(), NATURAL_TEXT_WIDTH);
+            assert_eq!(style.text_width(), 80);
             assert_eq!(style.table_width(), 80);
         }
 
@@ -1459,14 +1458,14 @@ mod tests {
         }
 
         #[test]
-        fn natural_style_does_not_wrap_text() {
-            let long_text = "This is a long paragraph that should not wrap when using natural style rendering because text width is large.";
+        fn natural_style_wraps_text_at_terminal_width() {
+            let long_text = "This is a long paragraph that should wrap when using natural style rendering for consistent left edge alignment.";
             let style = RenderStyle::natural(40);
             let node = markdown_to_node_styled(long_text, style);
-            let output = render_to_string(&node, 200);
+            let output = render_to_string(&node, 40);
 
             let lines: Vec<&str> = output.split("\r\n").collect();
-            assert_eq!(lines.len(), 1, "Natural style should not wrap text");
+            assert!(lines.len() > 1, "Natural style should now wrap text");
         }
 
         #[test]
@@ -1490,7 +1489,7 @@ mod tests {
         }
 
         #[test]
-        fn natural_style_mixed_content_text_unwrapped_table_fits() {
+        fn natural_style_mixed_content_table_fits() {
             let md = "This paragraph uses natural text width.\n\n| A | B |\n|---|---|\n| 1 | 2 |";
             let style = RenderStyle::natural(40);
             let node = markdown_to_node_styled(md, style);
@@ -1508,8 +1507,8 @@ mod tests {
             }
 
             assert!(
-                output.contains("This paragraph uses natural text width."),
-                "Paragraph should be intact"
+                output.contains("natural text width"),
+                "Paragraph content should be present"
             );
         }
 
