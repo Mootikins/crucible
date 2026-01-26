@@ -194,7 +194,10 @@ fn session_event_to_chat_chunk(event: &SessionEvent) -> Option<ChatChunk> {
 
             let name = tool_name.or(call_id).unwrap_or("tool").to_string();
 
-            let error = result.get("error").and_then(|e| e.as_str()).map(String::from);
+            let error = result
+                .get("error")
+                .and_then(|e| e.as_str())
+                .map(String::from);
 
             let result_str = if error.is_some() {
                 String::new()
@@ -758,7 +761,10 @@ mod tests {
         let results = chunk.tool_results.unwrap();
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].name, "bash");
-        assert!(results[0].result.is_empty(), "Result should be empty when error is present");
+        assert!(
+            results[0].result.is_empty(),
+            "Result should be empty when error is present"
+        );
         assert_eq!(
             results[0].error,
             Some("User denied permission to bash echo hello".to_string())
@@ -781,6 +787,9 @@ mod tests {
         let results = chunk.tool_results.unwrap();
         assert_eq!(results[0].name, "read_file");
         assert_eq!(results[0].result, "file contents");
-        assert!(results[0].error.is_none(), "Error should be None for successful results");
+        assert!(
+            results[0].error.is_none(),
+            "Error should be None for successful results"
+        );
     }
 }
