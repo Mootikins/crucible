@@ -5,18 +5,23 @@ use crate::background_manager::BackgroundJobManager;
 use crate::protocol::SessionEventMessage;
 use crate::session_manager::{SessionError, SessionManager};
 use crucible_core::events::SessionEvent;
+use crucible_core::interaction::{PermRequest, PermResponse};
 use crucible_core::session::SessionAgent;
 use crucible_core::traits::chat::AgentHandle;
 use crucible_lua::{register_crucible_on_api, LuaScriptHandlerRegistry};
 use dashmap::DashMap;
 use futures::StreamExt;
 use mlua::Lua;
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Instant;
 use thiserror::Error;
 use tokio::sync::{broadcast, oneshot, Mutex};
 use tokio::task::JoinHandle;
 use tracing::{debug, error, info, warn};
+
+/// Unique identifier for a pending permission request.
+pub type PermissionId = String;
 
 #[derive(Error, Debug)]
 pub enum AgentError {
@@ -31,6 +36,9 @@ pub enum AgentError {
 
     #[error("Invalid model ID: {0}")]
     InvalidModelId(String),
+
+    #[error("Permission not found: {0}")]
+    PermissionNotFound(String),
 
     #[error("Session error: {0}")]
     Session(#[from] SessionError),
@@ -53,12 +61,18 @@ struct SessionLuaState {
     registry: LuaScriptHandlerRegistry,
 }
 
+struct PendingPermission {
+    request: PermRequest,
+    response_tx: oneshot::Sender<PermResponse>,
+}
+
 pub struct AgentManager {
     request_state: Arc<DashMap<String, RequestState>>,
     agent_cache: Arc<DashMap<String, Arc<Mutex<BoxedAgentHandle>>>>,
     session_manager: Arc<SessionManager>,
     background_manager: Arc<BackgroundJobManager>,
     lua_states: Arc<DashMap<String, Arc<Mutex<SessionLuaState>>>>,
+    pending_permissions: Arc<DashMap<String, HashMap<PermissionId, PendingPermission>>>,
 }
 
 impl AgentManager {
@@ -72,6 +86,7 @@ impl AgentManager {
             session_manager,
             background_manager,
             lua_states: Arc::new(DashMap::new()),
+            pending_permissions: Arc::new(DashMap::new()),
         }
     }
 
@@ -109,23 +124,93 @@ impl AgentManager {
         self.agent_cache.remove(session_id);
     }
 
-    /// Clean up session-specific state when session ends.
-    /// Removes Lua state, agent cache, and cancels any pending requests.
     pub fn cleanup_session(&self, session_id: &str) {
-        // Remove Lua state (handlers, functions, registry keys)
         if self.lua_states.remove(session_id).is_some() {
             debug!(session_id = %session_id, "Cleaned up Lua state for session");
         }
 
-        // Also clean up agent cache if present
         self.agent_cache.remove(session_id);
 
-        // Cancel any pending requests
         if let Some((_, mut state)) = self.request_state.remove(session_id) {
             if let Some(cancel_tx) = state.cancel_tx.take() {
                 let _ = cancel_tx.send(());
             }
         }
+
+        if self.pending_permissions.remove(session_id).is_some() {
+            debug!(session_id = %session_id, "Cleaned up pending permissions for session");
+        }
+    }
+
+    pub fn await_permission(
+        &self,
+        session_id: &str,
+        request: PermRequest,
+    ) -> (PermissionId, oneshot::Receiver<PermResponse>) {
+        let permission_id = format!("perm-{}", uuid::Uuid::new_v4());
+        let (response_tx, response_rx) = oneshot::channel();
+
+        let pending = PendingPermission {
+            request,
+            response_tx,
+        };
+
+        self.pending_permissions
+            .entry(session_id.to_string())
+            .or_default()
+            .insert(permission_id.clone(), pending);
+
+        debug!(
+            session_id = %session_id,
+            permission_id = %permission_id,
+            "Created pending permission request"
+        );
+
+        (permission_id, response_rx)
+    }
+
+    pub fn respond_to_permission(
+        &self,
+        session_id: &str,
+        permission_id: &str,
+        response: PermResponse,
+    ) -> Result<(), AgentError> {
+        let mut session_permissions = self
+            .pending_permissions
+            .get_mut(session_id)
+            .ok_or_else(|| AgentError::SessionNotFound(session_id.to_string()))?;
+
+        let pending = session_permissions
+            .remove(permission_id)
+            .ok_or_else(|| AgentError::PermissionNotFound(permission_id.to_string()))?;
+
+        let _ = pending.response_tx.send(response);
+
+        debug!(
+            session_id = %session_id,
+            permission_id = %permission_id,
+            "Responded to permission request"
+        );
+
+        Ok(())
+    }
+
+    pub fn get_pending_permission(&self, session_id: &str, permission_id: &str) -> Option<PermRequest> {
+        self.pending_permissions
+            .get(session_id)
+            .and_then(|perms| perms.get(permission_id).map(|p| p.request.clone()))
+    }
+
+    pub fn list_pending_permissions(&self, session_id: &str) -> Vec<(PermissionId, PermRequest)> {
+        self.pending_permissions
+            .get(session_id)
+            .map(|perms| {
+                perms
+                    .iter()
+                    .map(|(id, p)| (id.clone(), p.request.clone()))
+                    .collect()
+            })
+            .unwrap_or_default()
     }
 
     fn get_or_create_lua_state(&self, session_id: &str) -> Arc<Mutex<SessionLuaState>> {
