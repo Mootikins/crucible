@@ -9,7 +9,10 @@ use crucible_core::events::SessionEvent;
 use crucible_core::interaction::{InteractionRequest, PermRequest, PermResponse, PermissionScope};
 use crucible_core::session::SessionAgent;
 use crucible_core::traits::chat::AgentHandle;
-use crucible_lua::{register_crucible_on_api, LuaScriptHandlerRegistry};
+use crucible_lua::{
+    execute_permission_hooks, register_crucible_on_api, register_permission_hook_api,
+    LuaScriptHandlerRegistry, PermissionHook, PermissionHookResult, PermissionRequest,
+};
 use dashmap::DashMap;
 use futures::StreamExt;
 use mlua::Lua;
@@ -80,9 +83,14 @@ struct RequestState {
 
 type BoxedAgentHandle = Box<dyn AgentHandle + Send + Sync>;
 
+use mlua::RegistryKey;
+use std::sync::Mutex as StdMutex;
+
 struct SessionLuaState {
     lua: Lua,
     registry: LuaScriptHandlerRegistry,
+    permission_hooks: Arc<StdMutex<Vec<PermissionHook>>>,
+    permission_functions: Arc<StdMutex<HashMap<String, RegistryKey>>>,
 }
 
 struct PendingPermission {
@@ -244,6 +252,8 @@ impl AgentManager {
 
         let lua = Lua::new();
         let registry = LuaScriptHandlerRegistry::new();
+        let permission_hooks = Arc::new(StdMutex::new(Vec::new()));
+        let permission_functions = Arc::new(StdMutex::new(HashMap::new()));
 
         register_crucible_on_api(
             &lua,
@@ -252,7 +262,15 @@ impl AgentManager {
         )
         .expect("Failed to register crucible.on API");
 
-        let state = Arc::new(Mutex::new(SessionLuaState { lua, registry }));
+        register_permission_hook_api(&lua, permission_hooks.clone(), permission_functions.clone())
+            .expect("Failed to register crucible.permissions API");
+
+        let state = Arc::new(Mutex::new(SessionLuaState {
+            lua,
+            registry,
+            permission_hooks,
+            permission_functions,
+        }));
         self.lua_states
             .insert(session_id.to_string(), state.clone());
         state
@@ -480,9 +498,55 @@ impl AgentManager {
                                         tool = %tc.name,
                                         "Tool call matches whitelisted pattern, skipping permission prompt"
                                     );
-                                    // Pattern matched - skip permission prompt, proceed to tool execution
                                 } else {
-                                    // No pattern match - emit permission request
+                                    // Check Lua permission hooks (with 1-second timeout)
+                                    let hook_result = Self::execute_permission_hooks_with_timeout(
+                                        &lua_state,
+                                        &tc.name,
+                                        &args,
+                                        session_id,
+                                    )
+                                    .await;
+
+                                    match hook_result {
+                                        PermissionHookResult::Allow => {
+                                            debug!(
+                                                session_id = %session_id,
+                                                tool = %tc.name,
+                                                "Lua hook allowed tool, skipping permission prompt"
+                                            );
+                                        }
+                                        PermissionHookResult::Deny => {
+                                            debug!(
+                                                session_id = %session_id,
+                                                tool = %tc.name,
+                                                "Lua hook denied tool"
+                                            );
+                                            let resource_desc = Self::brief_resource_description(&args);
+                                            let error_msg = format!(
+                                                "Lua hook denied permission to {} {}",
+                                                tc.name, resource_desc
+                                            );
+
+                                            if event_tx
+                                                .send(SessionEventMessage::tool_result(
+                                                    session_id,
+                                                    &call_id,
+                                                    &tc.name,
+                                                    serde_json::json!({ "error": error_msg }),
+                                                ))
+                                                .is_err()
+                                            {
+                                                warn!(
+                                                    session_id = %session_id,
+                                                    tool = %tc.name,
+                                                    "No subscribers for hook denied tool_result event"
+                                                );
+                                            }
+                                            continue;
+                                        }
+                                        PermissionHookResult::Prompt => {
+                                    // No pattern match, no hook decision - emit permission request
                                     let perm_request = PermRequest::tool(&tc.name, args.clone());
                                     let interaction_request =
                                         InteractionRequest::Permission(perm_request.clone());
@@ -620,6 +684,8 @@ impl AgentManager {
                                         }
 
                                         continue;
+                                    }
+                                        }
                                     }
                                 }
                             }
@@ -884,6 +950,62 @@ impl AgentManager {
 
         store.save_sync(project_path)?;
         Ok(())
+    }
+
+    async fn execute_permission_hooks_with_timeout(
+        lua_state: &Arc<Mutex<SessionLuaState>>,
+        tool_name: &str,
+        args: &serde_json::Value,
+        session_id: &str,
+    ) -> PermissionHookResult {
+        let file_path = args
+            .get("path")
+            .or_else(|| args.get("file"))
+            .and_then(|v| v.as_str())
+            .map(String::from);
+
+        let request = PermissionRequest {
+            tool_name: tool_name.to_string(),
+            args: args.clone(),
+            file_path,
+        };
+
+        let state = lua_state.lock().await;
+        let hooks_guard = state.permission_hooks.lock().unwrap();
+        let functions_guard = state.permission_functions.lock().unwrap();
+
+        if hooks_guard.is_empty() {
+            return PermissionHookResult::Prompt;
+        }
+
+        let start = std::time::Instant::now();
+        let timeout = std::time::Duration::from_secs(1);
+
+        let result =
+            execute_permission_hooks(&state.lua, &hooks_guard, &functions_guard, &request);
+
+        if start.elapsed() > timeout {
+            warn!(
+                session_id = %session_id,
+                tool = %tool_name,
+                elapsed_ms = start.elapsed().as_millis(),
+                "Permission hook exceeded 1 second timeout"
+            );
+            return PermissionHookResult::Prompt;
+        }
+
+        match result {
+            Ok(hook_result) => hook_result,
+            Err(e) => {
+                warn!(
+                    session_id = %session_id,
+                    tool = %tool_name,
+                    error = %e,
+                    "Permission hook execution failed"
+                );
+                PermissionHookResult::Prompt
+            }
+        }
     }
 
     pub async fn cancel(&self, session_id: &str) -> bool {
