@@ -152,6 +152,17 @@ impl AgentHandle for DynamicAgent {
             Self::Local(handle) => handle.take_interaction_receiver(),
         }
     }
+
+    async fn interaction_respond(
+        &mut self,
+        request_id: String,
+        response: crucible_core::interaction::InteractionResponse,
+    ) -> ChatResult<()> {
+        match self {
+            Self::Acp(client) => client.interaction_respond(request_id, response).await,
+            Self::Local(handle) => handle.interaction_respond(request_id, response).await,
+        }
+    }
 }
 
 impl std::fmt::Debug for DynamicAgent {
