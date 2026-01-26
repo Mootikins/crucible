@@ -103,6 +103,45 @@ fn snapshot_tool_call_complete() {
 }
 
 #[test]
+fn snapshot_tool_output_many_lines_shows_count() {
+    let mut app = InkChatApp::default();
+    app.on_message(ChatAppMsg::UserMessage("Run ls".to_string()));
+    app.on_message(ChatAppMsg::ToolCall {
+        name: "mcp_bash".to_string(),
+        args: r#"{"command":"ls -la"}"#.to_string(),
+    });
+    let output = "file1.txt\nfile2.txt\nfile3.txt\nfile4.txt\nfile5.txt\n\
+                  file6.txt\nfile7.txt\nfile8.txt\nfile9.txt\nfile10.txt";
+    app.on_message(ChatAppMsg::ToolResultDelta {
+        name: "mcp_bash".to_string(),
+        delta: output.to_string(),
+    });
+    app.on_message(ChatAppMsg::ToolResultComplete {
+        name: "mcp_bash".to_string(),
+    });
+    assert_snapshot!(render_app(&app));
+}
+
+#[test]
+fn snapshot_read_tool_preserves_closing_bracket() {
+    let mut app = InkChatApp::default();
+    app.on_message(ChatAppMsg::UserMessage("Read file".to_string()));
+    app.on_message(ChatAppMsg::ToolCall {
+        name: "mcp_read".to_string(),
+        args: r#"{"filePath":"/home/user/test.rs"}"#.to_string(),
+    });
+    let output = "<file>\n00001| fn main() {\n00002|     println!(\"hello\");\n00003| }\n</file>\n\n[Directory Context: /home/user/project]";
+    app.on_message(ChatAppMsg::ToolResultDelta {
+        name: "mcp_read".to_string(),
+        delta: output.to_string(),
+    });
+    app.on_message(ChatAppMsg::ToolResultComplete {
+        name: "mcp_read".to_string(),
+    });
+    assert_snapshot!(render_app(&app));
+}
+
+#[test]
 fn snapshot_error_displayed() {
     let mut app = InkChatApp::default();
     app.on_message(ChatAppMsg::UserMessage("Do something".to_string()));
