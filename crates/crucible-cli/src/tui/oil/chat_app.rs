@@ -22,7 +22,7 @@ use crossterm::terminal::{EnterAlternateScreen, LeaveAlternateScreen};
 use crossterm::{cursor, execute};
 use crucible_core::interaction::{
     AskRequest, AskResponse, InteractionRequest, InteractionResponse, PermAction, PermRequest,
-    PermResponse,
+    PermResponse, PermissionScope,
 };
 use std::collections::VecDeque;
 use std::io::{BufRead, BufReader, Write};
@@ -2217,12 +2217,31 @@ impl InkChatApp {
                 });
             }
             KeyCode::Char('p') | KeyCode::Char('P') => {
+                let tokens = _perm_request.tokens();
+                if tokens.is_empty() {
+                    self.notification_area
+                        .add(crucible_core::types::Notification::toast(
+                            "Cannot create pattern for this request type",
+                        ));
+                    self.notification_area.show();
+                    return Action::Continue;
+                }
+                let pattern = _perm_request.pattern_at(tokens.len());
+                let response = InteractionResponse::Permission(PermResponse::allow_pattern(
+                    pattern.clone(),
+                    PermissionScope::Project,
+                ));
+                self.close_interaction_and_show_next();
                 self.notification_area
-                    .add(crucible_core::types::Notification::toast(
-                        "Pattern mode not yet implemented",
-                    ));
+                    .add(crucible_core::types::Notification::toast(format!(
+                        "Pattern saved: {}",
+                        pattern
+                    )));
                 self.notification_area.show();
-                return Action::Continue;
+                return Action::Send(ChatAppMsg::CloseInteraction {
+                    request_id,
+                    response,
+                });
             }
             KeyCode::Char('h') | KeyCode::Char('H') => {
                 if let Some(ref mut modal) = self.interaction_modal {
@@ -4196,7 +4215,7 @@ mod tests {
     }
 
     #[test]
-    fn test_perm_request_p_shows_stub_message() {
+    fn test_perm_request_p_saves_pattern_and_allows() {
         use crossterm::event::{KeyEvent, KeyModifiers};
         use crucible_core::interaction::PermRequest;
 
@@ -4208,13 +4227,24 @@ mod tests {
         let action = app.handle_key(key);
 
         assert!(
-            app.interaction_visible(),
-            "Modal should remain visible after p (pattern mode stub)"
+            !app.interaction_visible(),
+            "Modal should close after p (pattern saved)"
         );
-        assert!(
-            matches!(action, Action::Continue),
-            "p should return Continue (stub mode)"
-        );
+        match action {
+            Action::Send(ChatAppMsg::CloseInteraction { response, .. }) => match response {
+                InteractionResponse::Permission(perm) => {
+                    assert!(perm.allowed, "p should allow");
+                    assert!(perm.pattern.is_some(), "p should set a pattern");
+                    assert_eq!(
+                        perm.pattern.as_deref(),
+                        Some("npm install"),
+                        "pattern should match command"
+                    );
+                }
+                _ => panic!("Expected Permission response"),
+            },
+            _ => panic!("Expected Send(CloseInteraction) action"),
+        }
     }
 
     #[test]
