@@ -1,6 +1,6 @@
 use crate::tui::oil::ansi::visual_rows;
 use crate::tui::oil::graduation::{GraduatedContent, GraduationState};
-use crate::tui::oil::node::{Node, OverlayNode};
+use crate::tui::oil::node::{ElementKind, Node, OverlayNode};
 use crate::tui::oil::overlay::{extract_overlays, filter_overlays, OverlayAnchor};
 use crate::tui::oil::render::{render_to_string, render_with_cursor_filtered, RenderResult};
 
@@ -91,7 +91,9 @@ pub struct FramePlanner {
     frame_no: u64,
     graduation: GraduationState,
     boundary_default: usize,
-    pending_newline: bool,
+    /// Tracks the ElementKind of the last graduated item for proper spacing across frames.
+    /// When a ToolCall is followed by a Block in a later frame, we need a blank line between them.
+    last_graduated_kind: Option<ElementKind>,
 }
 
 impl FramePlanner {
@@ -102,7 +104,7 @@ impl FramePlanner {
             frame_no: 0,
             graduation: GraduationState::new(),
             boundary_default: 1,
-            pending_newline: false,
+            last_graduated_kind: None,
         }
     }
 
@@ -122,9 +124,12 @@ impl FramePlanner {
             self.boundary_default
         };
 
-        let (stdout_delta, new_pending) =
-            GraduationState::format_stdout_delta(&graduated, self.pending_newline, boundary_lines);
-        self.pending_newline = new_pending;
+        let (stdout_delta, new_last_kind) = GraduationState::format_stdout_delta(
+            &graduated,
+            self.last_graduated_kind,
+            boundary_lines,
+        );
+        self.last_graduated_kind = new_last_kind;
 
         self.graduation.commit_graduation(&graduated);
 
@@ -173,7 +178,7 @@ impl FramePlanner {
 
     pub fn reset_graduation(&mut self) {
         self.graduation.clear();
-        self.pending_newline = false;
+        self.last_graduated_kind = None;
     }
 
     pub fn pre_graduate_keys(&mut self, keys: impl IntoIterator<Item = String>) {
