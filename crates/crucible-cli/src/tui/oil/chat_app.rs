@@ -428,6 +428,8 @@ pub struct InkChatApp {
     notification_area: NotificationArea,
     interaction_modal: Option<InteractionModalState>,
     pending_pre_graduate_keys: Vec<String>,
+    /// Queue of pending permission requests (request_id, request) when multiple arrive rapidly
+    permission_queue: VecDeque<(String, PermRequest)>,
 }
 
 impl Default for InkChatApp {
@@ -469,6 +471,7 @@ impl Default for InkChatApp {
             notification_area: NotificationArea::new(),
             interaction_modal: None,
             pending_pre_graduate_keys: Vec::new(),
+            permission_queue: VecDeque::new(),
         }
     }
 }
@@ -835,6 +838,13 @@ impl InkChatApp {
     }
 
     pub fn open_interaction(&mut self, request_id: String, request: InteractionRequest) {
+        if let InteractionRequest::Permission(perm) = &request {
+            if self.interaction_modal.is_some() {
+                self.permission_queue.push_back((request_id, perm.clone()));
+                return;
+            }
+        }
+
         self.interaction_modal = Some(InteractionModalState {
             request_id,
             request,
@@ -2126,7 +2136,7 @@ impl InkChatApp {
         match key.code {
             KeyCode::Char('y') | KeyCode::Char('Y') => {
                 let response = InteractionResponse::Permission(PermResponse::allow());
-                self.close_interaction();
+                self.close_interaction_and_show_next();
                 return Action::Send(ChatAppMsg::CloseInteraction {
                     request_id,
                     response,
@@ -2134,7 +2144,7 @@ impl InkChatApp {
             }
             KeyCode::Char('n') | KeyCode::Char('N') => {
                 let response = InteractionResponse::Permission(PermResponse::deny());
-                self.close_interaction();
+                self.close_interaction_and_show_next();
                 return Action::Send(ChatAppMsg::CloseInteraction {
                     request_id,
                     response,
@@ -2156,7 +2166,7 @@ impl InkChatApp {
             }
             KeyCode::Esc => {
                 let response = InteractionResponse::Permission(PermResponse::deny());
-                self.close_interaction();
+                self.close_interaction_and_show_next();
                 return Action::Send(ChatAppMsg::CloseInteraction {
                     request_id,
                     response,
@@ -2165,6 +2175,26 @@ impl InkChatApp {
             _ => {}
         }
         Action::Continue
+    }
+
+    fn close_interaction_and_show_next(&mut self) {
+        self.interaction_modal = None;
+        if let Some((next_id, next_perm)) = self.permission_queue.pop_front() {
+            self.interaction_modal = Some(InteractionModalState {
+                request_id: next_id,
+                request: InteractionRequest::Permission(next_perm),
+                selected: 0,
+                filter: String::new(),
+                other_text: String::new(),
+                mode: InteractionMode::Selecting,
+                checked: std::collections::HashSet::new(),
+                current_question: 0,
+                other_text_preserved: false,
+                batch_answers: Vec::new(),
+                batch_other_texts: Vec::new(),
+                diff_collapsed: false,
+            });
+        }
     }
 
     fn modal_visible_lines(&self) -> usize {
@@ -2513,7 +2543,12 @@ impl InkChatApp {
             }
         };
 
-        let header_text = format!(" Permission: {} ", type_label);
+        let queue_total = 1 + self.permission_queue.len();
+        let header_text = if queue_total > 1 {
+            format!(" [1/{}] Permission: {} ", queue_total, type_label)
+        } else {
+            format!(" Permission: {} ", type_label)
+        };
         let header_padding = " ".repeat(term_width.saturating_sub(header_text.len()));
         let header = styled(
             format!("{}{}", header_text, header_padding),
@@ -4140,5 +4175,114 @@ mod tests {
                 c
             );
         }
+    }
+
+    #[test]
+    fn test_perm_queue_second_request_queued_when_first_pending() {
+        use crucible_core::interaction::PermRequest;
+
+        let mut app = InkChatApp::init();
+
+        let request1 = InteractionRequest::Permission(PermRequest::bash(["ls"]));
+        app.open_interaction("perm-1".to_string(), request1);
+        assert!(app.interaction_visible());
+        assert_eq!(app.permission_queue.len(), 0);
+
+        let request2 = InteractionRequest::Permission(PermRequest::bash(["cat", "file.txt"]));
+        app.open_interaction("perm-2".to_string(), request2);
+
+        assert!(app.interaction_visible());
+        assert_eq!(app.interaction_modal.as_ref().unwrap().request_id, "perm-1");
+        assert_eq!(app.permission_queue.len(), 1);
+    }
+
+    #[test]
+    fn test_perm_queue_shows_next_after_response() {
+        use crossterm::event::{KeyEvent, KeyModifiers};
+        use crucible_core::interaction::PermRequest;
+
+        let mut app = InkChatApp::init();
+
+        let request1 = InteractionRequest::Permission(PermRequest::bash(["ls"]));
+        app.open_interaction("perm-1".to_string(), request1);
+
+        let request2 = InteractionRequest::Permission(PermRequest::bash(["cat"]));
+        app.open_interaction("perm-2".to_string(), request2);
+
+        let request3 = InteractionRequest::Permission(PermRequest::bash(["rm"]));
+        app.open_interaction("perm-3".to_string(), request3);
+
+        assert_eq!(app.permission_queue.len(), 2);
+
+        let key = KeyEvent::new(KeyCode::Char('y'), KeyModifiers::NONE);
+        app.handle_key(key);
+
+        assert!(app.interaction_visible());
+        assert_eq!(app.interaction_modal.as_ref().unwrap().request_id, "perm-2");
+        assert_eq!(app.permission_queue.len(), 1);
+
+        let key = KeyEvent::new(KeyCode::Char('n'), KeyModifiers::NONE);
+        app.handle_key(key);
+
+        assert!(app.interaction_visible());
+        assert_eq!(app.interaction_modal.as_ref().unwrap().request_id, "perm-3");
+        assert_eq!(app.permission_queue.len(), 0);
+
+        let key = KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE);
+        app.handle_key(key);
+
+        assert!(!app.interaction_visible());
+        assert_eq!(app.permission_queue.len(), 0);
+    }
+
+    #[test]
+    fn test_perm_queue_indicator_shows_in_header() {
+        use crucible_core::interaction::PermRequest;
+
+        let mut app = InkChatApp::init();
+
+        let request1 = InteractionRequest::Permission(PermRequest::bash(["ls"]));
+        app.open_interaction("perm-1".to_string(), request1);
+
+        let request2 = InteractionRequest::Permission(PermRequest::bash(["cat"]));
+        app.open_interaction("perm-2".to_string(), request2);
+
+        let request3 = InteractionRequest::Permission(PermRequest::bash(["rm"]));
+        app.open_interaction("perm-3".to_string(), request3);
+
+        let focus = FocusContext::new();
+        let ctx = ViewContext::new(&focus);
+        let tree = app.view(&ctx);
+        let output = render_to_string(&tree, 80);
+
+        assert!(
+            output.contains("[1/3]"),
+            "Should show queue indicator [1/3], got: {}",
+            output
+        );
+    }
+
+    #[test]
+    fn test_perm_queue_no_indicator_for_single_request() {
+        use crucible_core::interaction::PermRequest;
+
+        let mut app = InkChatApp::init();
+
+        let request = InteractionRequest::Permission(PermRequest::bash(["ls"]));
+        app.open_interaction("perm-1".to_string(), request);
+
+        let focus = FocusContext::new();
+        let ctx = ViewContext::new(&focus);
+        let tree = app.view(&ctx);
+        let output = render_to_string(&tree, 80);
+
+        assert!(
+            !output.contains("[1/1]"),
+            "Should not show queue indicator for single request"
+        );
+        assert!(
+            output.contains("Permission: Bash"),
+            "Should show permission type"
+        );
     }
 }
