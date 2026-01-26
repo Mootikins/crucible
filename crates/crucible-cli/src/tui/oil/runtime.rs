@@ -65,6 +65,10 @@ impl TestRuntime {
             .map(|s| s.trace().graduated_keys.clone())
             .unwrap_or_default()
     }
+
+    pub fn pre_graduate_keys(&mut self, keys: impl IntoIterator<Item = String>) {
+        self.planner.pre_graduate_keys(keys);
+    }
 }
 
 #[cfg(test)]
