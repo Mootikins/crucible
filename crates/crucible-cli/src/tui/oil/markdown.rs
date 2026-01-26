@@ -30,8 +30,14 @@ use markdown_it::plugins::cmark::inline::link::Link;
 use markdown_it::plugins::cmark::inline::newline::{Hardbreak, Softbreak};
 use markdown_it::plugins::extra::tables::{Table, TableBody, TableCell, TableHead, TableRow};
 use markdown_it::MarkdownIt;
+use once_cell::sync::Lazy;
+use regex::Regex;
 
 const NATURAL_TEXT_WIDTH: usize = 10000;
+
+/// Regex to match HTML <br> tags in various forms: <br>, <br/>, <br />, <BR>, etc.
+static BR_TAG_REGEX: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"(?i)<br\s*/?\s*>").expect("valid regex"));
 
 pub const ASSISTANT_BULLET: &str = " ● ";
 pub const ASSISTANT_BULLET_WIDTH: usize = 3;
@@ -161,10 +167,9 @@ pub fn markdown_to_node_with_width(markdown: &str, width: usize) -> Node {
 pub fn markdown_to_node_styled(markdown: &str, style: RenderStyle) -> Node {
     use std::panic::{catch_unwind, AssertUnwindSafe};
 
-    let markdown = normalize_br_tags(markdown);
     let result = catch_unwind(AssertUnwindSafe(|| {
         let md = create_parser();
-        let ast = md.parse(&markdown);
+        let ast = md.parse(markdown);
 
         let mut ctx = RenderContext::new(
             style.text_width(),
@@ -176,7 +181,7 @@ pub fn markdown_to_node_styled(markdown: &str, style: RenderStyle) -> Node {
         ctx.into_node()
     }));
 
-    result.unwrap_or_else(|_| text(&markdown))
+    result.unwrap_or_else(|_| text(markdown))
 }
 
 /// Convert markdown text to an oil Node tree with separate widths for text and tables.
@@ -184,17 +189,16 @@ pub fn markdown_to_node_styled(markdown: &str, style: RenderStyle) -> Node {
 pub fn markdown_to_node_with_widths(markdown: &str, text_width: usize, table_width: usize) -> Node {
     use std::panic::{catch_unwind, AssertUnwindSafe};
 
-    let markdown = normalize_br_tags(markdown);
     let result = catch_unwind(AssertUnwindSafe(|| {
         let md = create_parser();
-        let ast = md.parse(&markdown);
+        let ast = md.parse(markdown);
 
         let mut ctx = RenderContext::new(text_width, table_width, table_width, Margins::default());
         render_node(&ast, &mut ctx);
         ctx.into_node()
     }));
 
-    result.unwrap_or_else(|_| text(&markdown))
+    result.unwrap_or_else(|_| text(markdown))
 }
 
 fn create_parser() -> MarkdownIt {
@@ -405,8 +409,21 @@ fn render_node(node: &markdown_it::Node, ctx: &mut RenderContext) {
         return;
     }
 
-    if let Some(text) = node.cast::<Text>() {
-        ctx.push_text(&text.content);
+    if let Some(text_node) = node.cast::<Text>() {
+        // Handle <br> tags in text content by splitting and flushing lines
+        let content = &text_node.content;
+        let content_lower = content.to_lowercase();
+        if content_lower.contains("<br") {
+            let parts: Vec<&str> = BR_TAG_REGEX.split(content).collect();
+            for (i, part) in parts.iter().enumerate() {
+                ctx.push_text(part);
+                if i < parts.len() - 1 {
+                    ctx.flush_line();
+                }
+            }
+        } else {
+            ctx.push_text(content);
+        }
         return;
     }
 
@@ -933,10 +950,18 @@ fn wrap_text(text: &str, width: usize) -> Vec<String> {
     }
 
     let options = Options::new(width).word_splitter(WordSplitter::Custom(split_at_break_chars));
-    wrap(text, options)
-        .into_iter()
-        .map(|cow| cow.into_owned())
-        .collect()
+
+    // Handle explicit line breaks (from <br> tags) by splitting on newlines first,
+    // wrapping each segment, then combining the results. This preserves intentional
+    // line breaks within table cells.
+    let mut result = Vec::new();
+    for segment in text.split('\n') {
+        let wrapped = wrap(segment, &options);
+        for line in wrapped {
+            result.push(line.into_owned());
+        }
+    }
+    result
 }
 
 fn render_link(node: &markdown_it::Node, link: &Link, ctx: &mut RenderContext) {
@@ -961,7 +986,9 @@ fn heading_style(level: u8) -> Style {
 fn extract_all_text(node: &markdown_it::Node) -> String {
     let mut result = String::new();
     if let Some(text) = node.cast::<Text>() {
-        result.push_str(&text.content);
+        // Convert <br> tags to newlines within text content (for table cells)
+        let content = BR_TAG_REGEX.replace_all(&text.content, "\n");
+        result.push_str(&content);
     }
     if node.cast::<Softbreak>().is_some() || node.cast::<Hardbreak>().is_some() {
         result.push('\n');
@@ -977,15 +1004,8 @@ fn text_node(content: &str) -> Node {
 }
 
 fn normalize_br_tags(input: &str) -> String {
-    use once_cell::sync::Lazy;
-    use regex::Regex;
-
-    // (?i)<br\s*/?\s*> matches <br>, <br/>, <br />, <BR>, etc.
     // Replace with "  \n" (two trailing spaces = markdown Hardbreak)
-    static BR_REGEX: Lazy<Regex> =
-        Lazy::new(|| Regex::new(r"(?i)<br\s*/?\s*>").expect("valid regex"));
-
-    BR_REGEX.replace_all(input, "  \n").into_owned()
+    BR_TAG_REGEX.replace_all(input, "  \n").into_owned()
 }
 
 #[cfg(test)]
