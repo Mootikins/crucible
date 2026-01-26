@@ -1,7 +1,7 @@
 use crate::chat::bridge::AgentEventBridge;
 use crate::tui::oil::agent_selection::AgentSelection;
 use crate::tui::oil::app::{Action, App, ViewContext};
-use crate::tui::oil::chat_app::{ChatAppMsg, ChatMode, InkChatApp, McpServerDisplay};
+use crate::tui::oil::chat_app::{ChatAppMsg, ChatMode, McpServerDisplay, OilChatApp};
 use crate::tui::oil::event::Event;
 use crate::tui::oil::focus::FocusContext;
 use crate::tui::oil::terminal::Terminal;
@@ -18,7 +18,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 use tokio::sync::mpsc;
 
-pub struct InkChatRunner {
+pub struct OilChatRunner {
     terminal: Terminal,
     tick_rate: Duration,
     mode: ChatMode,
@@ -35,7 +35,7 @@ pub struct InkChatRunner {
     session_cmd_rx: Option<mpsc::UnboundedReceiver<SessionCommand>>,
 }
 
-impl InkChatRunner {
+impl OilChatRunner {
     pub fn new() -> io::Result<Self> {
         Ok(Self {
             terminal: Terminal::new()?,
@@ -125,7 +125,7 @@ impl InkChatRunner {
     {
         self.terminal.enter()?;
 
-        let mut app = InkChatApp::default();
+        let mut app = OilChatApp::default();
         app.set_mode(self.mode);
         if !self.model.is_empty() {
             app.set_model(std::mem::take(&mut self.model));
@@ -175,7 +175,7 @@ impl InkChatRunner {
 
     async fn event_loop<A: AgentHandle>(
         &mut self,
-        app: &mut InkChatApp,
+        app: &mut OilChatApp,
         agent: &mut A,
         bridge: &AgentEventBridge,
         msg_tx: mpsc::UnboundedSender<ChatAppMsg>,
@@ -451,7 +451,7 @@ impl InkChatRunner {
 
     fn process_message<A: AgentHandle>(
         msg: &ChatAppMsg,
-        app: &mut InkChatApp,
+        app: &mut OilChatApp,
         agent: &mut A,
         bridge: &AgentEventBridge,
         active_stream: &mut Option<BoxStream<'static, ChatResult<ChatChunk>>>,
@@ -485,7 +485,7 @@ impl InkChatRunner {
     async fn process_action<A: AgentHandle>(
         &mut self,
         action: Action<ChatAppMsg>,
-        app: &mut InkChatApp,
+        app: &mut OilChatApp,
         agent: &mut A,
         active_stream: &mut Option<BoxStream<'static, ChatResult<ChatChunk>>>,
     ) -> io::Result<bool> {
@@ -598,7 +598,7 @@ impl InkChatRunner {
     async fn handle_session_command<A: AgentHandle>(
         cmd: SessionCommand,
         agent: &mut A,
-        app: &mut InkChatApp,
+        app: &mut OilChatApp,
     ) {
         match cmd {
             SessionCommand::GetTemperature(reply) => {
@@ -645,7 +645,7 @@ impl InkChatRunner {
                 let result = agent.set_mode_str(&mode).await.map_err(|e| e.to_string());
                 let _ = reply.send(result);
             }
-            // Notification commands - route to InkChatApp
+            // Notification commands - route to OilChatApp
             SessionCommand::Notify(notification) => app.add_notification(notification),
             SessionCommand::ToggleMessages => app.toggle_messages(),
             SessionCommand::ShowMessages => app.show_messages(),

@@ -1,11 +1,11 @@
 use crate::tui::oil::ansi::strip_ansi;
 use crate::tui::oil::app::{App, ViewContext};
-use crate::tui::oil::chat_app::{ChatAppMsg, InkChatApp};
+use crate::tui::oil::chat_app::{ChatAppMsg, OilChatApp};
 use crate::tui::oil::focus::FocusContext;
 use crate::tui::oil::render::render_to_string;
 use crate::tui::oil::*;
 
-fn view_with_default_ctx(app: &InkChatApp) -> Node {
+fn view_with_default_ctx(app: &OilChatApp) -> Node {
     let focus = FocusContext::new();
     let ctx = ViewContext::new(&focus);
     app.view(&ctx)
@@ -13,7 +13,7 @@ fn view_with_default_ctx(app: &InkChatApp) -> Node {
 
 #[test]
 fn streaming_content_grows_incrementally() {
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
 
     app.on_message(ChatAppMsg::UserMessage("Hello".to_string()));
 
@@ -49,7 +49,7 @@ fn streaming_content_grows_incrementally() {
 #[test]
 fn multiline_streaming_renders_correctly() {
     let mut runtime = TestRuntime::new(80, 24);
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
 
     app.on_message(ChatAppMsg::UserMessage("Tell me about rust".to_string()));
 
@@ -83,7 +83,7 @@ fn graduated_table_fits_terminal_width() {
     use crate::tui::oil::ansi::visible_width;
 
     let mut runtime = TestRuntime::new(60, 24);
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
 
     let table = r#"| Header A | Header B | Header C |
 |----------|----------|----------|
@@ -114,7 +114,7 @@ fn graduated_table_fits_terminal_width() {
 #[test]
 fn live_graduation_does_not_duplicate_content() {
     let mut runtime = TestRuntime::new(80, 24);
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
 
     app.on_message(ChatAppMsg::UserMessage("Question".to_string()));
 
@@ -171,7 +171,7 @@ fn live_graduation_does_not_duplicate_content() {
 #[test]
 fn streaming_only_first_block_gets_bullet() {
     let mut runtime = TestRuntime::new(80, 24);
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
 
     app.on_message(ChatAppMsg::UserMessage("Question".to_string()));
 
@@ -203,7 +203,7 @@ fn streaming_only_first_block_gets_bullet() {
 #[test]
 fn stream_cancel_graduates_existing_content() {
     let mut runtime = TestRuntime::new(80, 24);
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
 
     app.on_message(ChatAppMsg::UserMessage("Question".to_string()));
 
@@ -239,7 +239,7 @@ fn stream_cancel_graduates_existing_content() {
 #[test]
 fn overflow_graduation_does_not_duplicate_content() {
     let mut runtime = TestRuntime::new(80, 24);
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
 
     app.on_message(ChatAppMsg::UserMessage("run ls".to_string()));
     let tree = view_with_default_ctx(&app);
@@ -305,7 +305,7 @@ fn overflow_graduation_does_not_duplicate_content() {
 #[test]
 fn incremental_text_after_tool_no_duplication() {
     let mut runtime = TestRuntime::new(80, 24);
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
 
     app.on_message(ChatAppMsg::UserMessage("test".to_string()));
     let tree = view_with_default_ctx(&app);

@@ -10,7 +10,7 @@
 //! a wide range of permission requests and key sequences.
 
 use crate::tui::oil::app::{Action, App, ViewContext};
-use crate::tui::oil::chat_app::{ChatAppMsg, InkChatApp};
+use crate::tui::oil::chat_app::{ChatAppMsg, OilChatApp};
 use crate::tui::oil::event::Event;
 use crate::tui::oil::focus::FocusContext;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
@@ -85,7 +85,7 @@ proptest! {
     fn invariant_escape_always_denies(
         command_parts in bash_command_strategy()
     ) {
-        let mut app = InkChatApp::default();
+        let mut app = OilChatApp::default();
         let request = InteractionRequest::Permission(
             PermRequest::bash(command_parts.iter().map(|s| s.as_str()))
         );
@@ -114,7 +114,7 @@ proptest! {
     fn invariant_y_key_always_allows(
         command_parts in bash_command_strategy()
     ) {
-        let mut app = InkChatApp::default();
+        let mut app = OilChatApp::default();
         let request = InteractionRequest::Permission(
             PermRequest::bash(command_parts.iter().map(|s| s.as_str()))
         );
@@ -138,7 +138,7 @@ proptest! {
     fn invariant_uppercase_y_key_always_allows(
         command_parts in bash_command_strategy()
     ) {
-        let mut app = InkChatApp::default();
+        let mut app = OilChatApp::default();
         let request = InteractionRequest::Permission(
             PermRequest::bash(command_parts.iter().map(|s| s.as_str()))
         );
@@ -169,7 +169,7 @@ proptest! {
     fn invariant_n_key_always_denies(
         command_parts in bash_command_strategy()
     ) {
-        let mut app = InkChatApp::default();
+        let mut app = OilChatApp::default();
         let request = InteractionRequest::Permission(
             PermRequest::bash(command_parts.iter().map(|s| s.as_str()))
         );
@@ -193,7 +193,7 @@ proptest! {
     fn invariant_uppercase_n_key_always_denies(
         command_parts in bash_command_strategy()
     ) {
-        let mut app = InkChatApp::default();
+        let mut app = OilChatApp::default();
         let request = InteractionRequest::Permission(
             PermRequest::bash(command_parts.iter().map(|s| s.as_str()))
         );
@@ -225,7 +225,7 @@ proptest! {
         command_parts in bash_command_strategy(),
         key_char in random_non_action_key_strategy()
     ) {
-        let mut app = InkChatApp::default();
+        let mut app = OilChatApp::default();
         let request = InteractionRequest::Permission(
             PermRequest::bash(command_parts.iter().map(|s| s.as_str()))
         );
@@ -257,7 +257,7 @@ proptest! {
     fn invariant_ctrl_c_closes_and_denies_permission_modal(
         command_parts in bash_command_strategy()
     ) {
-        let mut app = InkChatApp::default();
+        let mut app = OilChatApp::default();
         let request = InteractionRequest::Permission(
             PermRequest::bash(command_parts.iter().map(|s| s.as_str()))
         );
@@ -292,7 +292,7 @@ proptest! {
         command_parts in bash_command_strategy(),
         escape_count in 1usize..5
     ) {
-        let mut app = InkChatApp::default();
+        let mut app = OilChatApp::default();
         let request = InteractionRequest::Permission(
             PermRequest::bash(command_parts.iter().map(|s| s.as_str()))
         );
@@ -330,7 +330,7 @@ fn test_all_deny_keys_produce_denial() {
     ];
 
     for (key_name, deny_key) in deny_keys.iter() {
-        let mut app = InkChatApp::default();
+        let mut app = OilChatApp::default();
         let request = InteractionRequest::Permission(PermRequest::bash(["test"]));
         app.open_interaction(format!("perm-{}", key_name), request);
 
@@ -352,7 +352,7 @@ fn test_all_allow_keys_produce_allow() {
     ];
 
     for (idx, allow_key) in allow_keys.iter().enumerate() {
-        let mut app = InkChatApp::default();
+        let mut app = OilChatApp::default();
         let request = InteractionRequest::Permission(PermRequest::bash(["test"]));
         app.open_interaction(format!("perm-{}", idx), request);
 
@@ -368,7 +368,7 @@ fn test_all_allow_keys_produce_allow() {
 
 #[test]
 fn test_h_key_does_not_close_modal() {
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
     let request = InteractionRequest::Permission(PermRequest::bash(["test"]));
     app.open_interaction("perm-h".to_string(), request);
 
@@ -386,7 +386,7 @@ fn test_h_key_does_not_close_modal() {
 
 #[test]
 fn test_uppercase_h_key_does_not_close_modal() {
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
     let request = InteractionRequest::Permission(PermRequest::bash(["test"]));
     app.open_interaction("perm-H".to_string(), request);
 
@@ -407,7 +407,7 @@ fn test_uppercase_h_key_does_not_close_modal() {
 
 #[test]
 fn test_tab_key_does_not_close_modal() {
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
     let request = InteractionRequest::Permission(PermRequest::bash(["test"]));
     app.open_interaction("perm-tab".to_string(), request);
 
@@ -433,7 +433,7 @@ fn test_arrow_keys_do_not_close_modal() {
     ];
 
     for (idx, arrow_key) in arrow_keys.iter().enumerate() {
-        let mut app = InkChatApp::default();
+        let mut app = OilChatApp::default();
         let request = InteractionRequest::Permission(PermRequest::bash(["test"]));
         app.open_interaction(format!("perm-arrow-{}", idx), request);
 
@@ -449,7 +449,7 @@ fn test_arrow_keys_do_not_close_modal() {
 
 #[test]
 fn test_permission_modal_opens_and_closes_cleanly() {
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
 
     // Initially no modal
     assert!(
@@ -479,7 +479,7 @@ fn test_permission_modal_opens_and_closes_cleanly() {
 
 #[test]
 fn test_multiple_permission_requests_queue_correctly() {
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
 
     // Queue multiple permission requests
     let req1 = InteractionRequest::Permission(PermRequest::bash(["npm", "install"]));
@@ -513,7 +513,7 @@ fn test_multiple_permission_requests_queue_correctly() {
 
 #[test]
 fn test_escape_closes_modal_without_side_effects() {
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
     let request = InteractionRequest::Permission(PermRequest::bash(["dangerous", "command"]));
     app.open_interaction("perm-dangerous".to_string(), request);
 

@@ -1,6 +1,6 @@
 use crate::tui::oil::ansi::strip_ansi;
 use crate::tui::oil::app::App;
-use crate::tui::oil::chat_app::{ChatAppMsg, InkChatApp};
+use crate::tui::oil::chat_app::{ChatAppMsg, OilChatApp};
 use crate::tui::oil::TestRuntime;
 use proptest::prelude::*;
 
@@ -23,7 +23,7 @@ proptest! {
     fn user_messages_preserve_order(
         messages in prop::collection::vec(arb_text_content(), 2..10)
     ) {
-        let mut app = InkChatApp::default();
+        let mut app = OilChatApp::default();
 
         for (i, msg) in messages.iter().enumerate() {
             app.on_message(ChatAppMsg::UserMessage(format!("USER_{}: {}", i, msg)));
@@ -58,7 +58,7 @@ proptest! {
     fn streaming_segments_preserve_insertion_order(
         events in prop::collection::vec(arb_text_stream_event(), 2..15)
     ) {
-        let mut app = InkChatApp::default();
+        let mut app = OilChatApp::default();
         app.set_show_thinking(true);
 
         app.on_message(ChatAppMsg::UserMessage("Question".to_string()));
@@ -92,7 +92,7 @@ proptest! {
     fn tool_calls_maintain_chronological_order(
         sequence in arb_valid_stream_sequence()
     ) {
-        let mut app = InkChatApp::default();
+        let mut app = OilChatApp::default();
 
         app.on_message(ChatAppMsg::UserMessage("Question".to_string()));
 
@@ -151,7 +151,7 @@ proptest! {
 
     #[test]
     fn multiple_turns_maintain_order(turn_count in 2usize..8) {
-        let mut app = InkChatApp::default();
+        let mut app = OilChatApp::default();
 
         for i in 0..turn_count {
             app.on_message(ChatAppMsg::UserMessage(format!("TURN_{}_USER", i)));
@@ -211,7 +211,7 @@ proptest! {
         chunks in prop::collection::vec(arb_text_content(), 1..10),
         cancel_at in 0usize..10
     ) {
-        let mut app = InkChatApp::default();
+        let mut app = OilChatApp::default();
 
         app.on_message(ChatAppMsg::UserMessage("Question".to_string()));
 
@@ -253,7 +253,7 @@ proptest! {
     #[test]
     fn many_messages_render_stable(message_count in 10usize..50) {
         let mut runtime = TestRuntime::new(80, 24);
-        let mut app = InkChatApp::default();
+        let mut app = OilChatApp::default();
 
         for i in 0..message_count {
             app.on_message(ChatAppMsg::UserMessage(format!("Message {}", i)));
@@ -290,7 +290,7 @@ mod segment_ordering_tests {
     #[test]
     fn alternating_content_types_render_in_order() {
         let mut runtime = TestRuntime::new(80, 24);
-        let mut app = InkChatApp::default();
+        let mut app = OilChatApp::default();
         app.set_show_thinking(true);
 
         app.on_message(ChatAppMsg::UserMessage("Q".to_string()));
