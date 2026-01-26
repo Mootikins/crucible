@@ -289,6 +289,8 @@ pub struct InteractionModalState {
     pub batch_answers: Vec<std::collections::HashSet<usize>>,
     /// Other text per question for AskBatch.
     pub batch_other_texts: Vec<String>,
+    /// Whether the diff preview is collapsed (for permission requests with file changes).
+    pub diff_collapsed: bool,
 }
 
 pub struct ShellModal {
@@ -845,6 +847,7 @@ impl InkChatApp {
             other_text_preserved: false,
             batch_answers: Vec::new(),
             batch_other_texts: Vec::new(),
+            diff_collapsed: false,
         });
     }
 
@@ -2117,7 +2120,7 @@ impl InkChatApp {
     fn handle_perm_key(
         &mut self,
         key: crossterm::event::KeyEvent,
-        perm_request: PermRequest,
+        _perm_request: PermRequest,
         request_id: String,
     ) -> Action<ChatAppMsg> {
         match key.code {
@@ -2138,19 +2141,21 @@ impl InkChatApp {
                 });
             }
             KeyCode::Char('p') | KeyCode::Char('P') => {
-                let pattern = perm_request.pattern_at(perm_request.tokens().len());
-                let response = InteractionResponse::Permission(PermResponse::allow_pattern(
-                    pattern,
-                    crucible_core::interaction::PermissionScope::Session,
-                ));
-                self.close_interaction();
-                return Action::Send(ChatAppMsg::CloseInteraction {
-                    request_id,
-                    response,
-                });
+                self.notification_area
+                    .add(crucible_core::types::Notification::toast(
+                        "Pattern mode not yet implemented",
+                    ));
+                self.notification_area.show();
+                return Action::Continue;
+            }
+            KeyCode::Char('h') | KeyCode::Char('H') => {
+                if let Some(ref mut modal) = self.interaction_modal {
+                    modal.diff_collapsed = !modal.diff_collapsed;
+                }
+                return Action::Continue;
             }
             KeyCode::Esc => {
-                let response = InteractionResponse::Cancelled;
+                let response = InteractionResponse::Permission(PermResponse::deny());
                 self.close_interaction();
                 return Action::Send(ChatAppMsg::CloseInteraction {
                     request_id,
@@ -4038,7 +4043,7 @@ mod tests {
     }
 
     #[test]
-    fn test_perm_request_escape_cancels() {
+    fn test_perm_request_escape_denies() {
         use crossterm::event::{KeyEvent, KeyModifiers};
         use crucible_core::interaction::PermRequest;
 
@@ -4054,13 +4059,86 @@ mod tests {
             "Modal should close after Escape"
         );
         match action {
-            Action::Send(ChatAppMsg::CloseInteraction { response, .. }) => {
-                assert!(
-                    matches!(response, InteractionResponse::Cancelled),
-                    "Should be cancelled"
-                );
-            }
+            Action::Send(ChatAppMsg::CloseInteraction { response, .. }) => match response {
+                InteractionResponse::Permission(perm) => {
+                    assert!(!perm.allowed, "Escape should deny permission");
+                }
+                _ => panic!("Expected Permission response"),
+            },
             _ => panic!("Expected CloseInteraction action"),
+        }
+    }
+
+    #[test]
+    fn test_perm_request_h_toggles_diff_collapsed() {
+        use crossterm::event::{KeyEvent, KeyModifiers};
+        use crucible_core::interaction::PermRequest;
+
+        let mut app = InkChatApp::init();
+        let request =
+            InteractionRequest::Permission(PermRequest::write(["home", "user", "file.txt"]));
+        app.open_interaction("perm-6".to_string(), request);
+
+        assert!(app.interaction_visible(), "Modal should be visible");
+
+        let key = KeyEvent::new(KeyCode::Char('h'), KeyModifiers::NONE);
+        let action = app.handle_key(key);
+
+        assert!(
+            app.interaction_visible(),
+            "Modal should remain visible after h"
+        );
+        assert!(
+            matches!(action, Action::Continue),
+            "h should return Continue, not close modal"
+        );
+    }
+
+    #[test]
+    fn test_perm_request_p_shows_stub_message() {
+        use crossterm::event::{KeyEvent, KeyModifiers};
+        use crucible_core::interaction::PermRequest;
+
+        let mut app = InkChatApp::init();
+        let request = InteractionRequest::Permission(PermRequest::bash(["npm", "install"]));
+        app.open_interaction("perm-7".to_string(), request);
+
+        let key = KeyEvent::new(KeyCode::Char('p'), KeyModifiers::NONE);
+        let action = app.handle_key(key);
+
+        assert!(
+            app.interaction_visible(),
+            "Modal should remain visible after p (pattern mode stub)"
+        );
+        assert!(
+            matches!(action, Action::Continue),
+            "p should return Continue (stub mode)"
+        );
+    }
+
+    #[test]
+    fn test_perm_request_other_keys_ignored() {
+        use crossterm::event::{KeyEvent, KeyModifiers};
+        use crucible_core::interaction::PermRequest;
+
+        let mut app = InkChatApp::init();
+        let request = InteractionRequest::Permission(PermRequest::bash(["ls", "-la"]));
+        app.open_interaction("perm-8".to_string(), request);
+
+        for c in ['a', 'b', 'x', 'z', '1', '!'] {
+            let key = KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE);
+            let action = app.handle_key(key);
+
+            assert!(
+                app.interaction_visible(),
+                "Modal should remain visible after '{}'",
+                c
+            );
+            assert!(
+                matches!(action, Action::Continue),
+                "'{}' should be ignored and return Continue",
+                c
+            );
         }
     }
 }
