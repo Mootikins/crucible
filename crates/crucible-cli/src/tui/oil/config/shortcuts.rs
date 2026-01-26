@@ -97,6 +97,19 @@ pub static SHORTCUTS: &[ConfigShortcut] = &[
         completions: CompletionSource::None,
         description: "Verbose output",
     },
+    // Permission settings (session-scoped, TUI-only)
+    ConfigShortcut {
+        short: "perm.show_diff",
+        target: ShortcutTarget::Virtual,
+        completions: CompletionSource::None,
+        description: "Show diff by default in permission prompts",
+    },
+    ConfigShortcut {
+        short: "perm.autoconfirm_session",
+        target: ShortcutTarget::Virtual,
+        completions: CompletionSource::None,
+        description: "Auto-allow all permission prompts for session",
+    },
 ];
 
 /// Registry for looking up shortcuts by name.
@@ -274,7 +287,7 @@ mod tests {
 
         // Should have all defined shortcuts
         assert_eq!(all.len(), SHORTCUTS.len());
-        assert_eq!(all.len(), 5);
+        assert_eq!(all.len(), 7);
 
         // Verify we have expected shortcuts
         let shorts: Vec<_> = all.iter().map(|s| s.short).collect();
@@ -283,6 +296,8 @@ mod tests {
         assert!(shorts.contains(&"thinkingbudget"));
         assert!(shorts.contains(&"theme"));
         assert!(shorts.contains(&"verbose"));
+        assert!(shorts.contains(&"perm.show_diff"));
+        assert!(shorts.contains(&"perm.autoconfirm_session"));
     }
 
     #[test]

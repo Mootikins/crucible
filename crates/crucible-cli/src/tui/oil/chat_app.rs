@@ -430,6 +430,10 @@ pub struct InkChatApp {
     pending_pre_graduate_keys: Vec<String>,
     /// Queue of pending permission requests (request_id, request) when multiple arrive rapidly
     permission_queue: VecDeque<(String, PermRequest)>,
+    /// Whether to show diff by default in permission prompts (session-scoped)
+    perm_show_diff: bool,
+    /// Whether to auto-allow all permission prompts for this session
+    perm_autoconfirm_session: bool,
 }
 
 impl Default for InkChatApp {
@@ -472,6 +476,8 @@ impl Default for InkChatApp {
             interaction_modal: None,
             pending_pre_graduate_keys: Vec::new(),
             permission_queue: VecDeque::new(),
+            perm_show_diff: true,
+            perm_autoconfirm_session: false,
         }
     }
 }
@@ -733,6 +739,14 @@ impl InkChatApp {
 
     pub fn set_show_thinking(&mut self, show: bool) {
         self.show_thinking = show;
+    }
+
+    pub fn perm_show_diff(&self) -> bool {
+        self.perm_show_diff
+    }
+
+    pub fn perm_autoconfirm_session(&self) -> bool {
+        self.perm_autoconfirm_session
     }
 
     pub fn add_notification(&mut self, notification: crucible_core::types::Notification) {
@@ -1551,6 +1565,10 @@ impl InkChatApp {
                             return Action::Send(ChatAppMsg::SetMaxTokens(max_tokens));
                         }
 
+                        if key.starts_with("perm.") {
+                            return self.handle_perm_set(&key, &value);
+                        }
+
                         self.runtime_config
                             .set_str(&key, &value, ModSource::Command);
                         self.sync_runtime_to_fields(&key);
@@ -1597,6 +1615,44 @@ impl InkChatApp {
         Action::Continue
     }
 
+    fn handle_perm_set(&mut self, key: &str, value: &str) -> Action<ChatAppMsg> {
+        let valid_keys = ["perm.show_diff", "perm.autoconfirm_session"];
+
+        if !valid_keys.contains(&key) {
+            self.error = Some(format!(
+                "Unknown permission setting: {}. Valid: {}",
+                key,
+                valid_keys.join(", ")
+            ));
+            return Action::Continue;
+        }
+
+        let bool_value = match value.to_lowercase().as_str() {
+            "true" | "1" | "yes" | "on" => true,
+            "false" | "0" | "no" | "off" => false,
+            _ => {
+                self.error = Some(format!(
+                    "Invalid value for {}: '{}'. Use true/false",
+                    key, value
+                ));
+                return Action::Continue;
+            }
+        };
+
+        self.runtime_config
+            .set(key, ConfigValue::Bool(bool_value), ModSource::Command);
+        self.sync_runtime_to_fields(key);
+
+        self.notification_area
+            .add(crucible_core::types::Notification::toast(format!(
+                "Permission setting updated: {}={}",
+                key, bool_value
+            )));
+        self.notification_area.show();
+
+        Action::Continue
+    }
+
     fn sync_runtime_to_fields(&mut self, key: &str) {
         match key {
             "thinking" => {
@@ -1610,6 +1666,16 @@ impl InkChatApp {
                     .get_dynamic("model", &self.current_provider.clone())
                 {
                     self.model = m;
+                }
+            }
+            "perm.show_diff" => {
+                if let Some(val) = self.runtime_config.get("perm.show_diff") {
+                    self.perm_show_diff = val.as_bool().unwrap_or(true);
+                }
+            }
+            "perm.autoconfirm_session" => {
+                if let Some(val) = self.runtime_config.get("perm.autoconfirm_session") {
+                    self.perm_autoconfirm_session = val.as_bool().unwrap_or(false);
                 }
             }
             _ => {}
