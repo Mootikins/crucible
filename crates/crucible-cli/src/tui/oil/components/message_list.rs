@@ -457,7 +457,7 @@ pub fn format_tool_result(name: &str, result: &str) -> Node {
         return styled(format!("   {}", summary), styles::muted());
     }
     let inner = unwrap_json_result(result);
-    format_output_tail(&inner, "   ", 77)
+    format_output_tail(&inner, "   ")
 }
 
 pub fn summarize_tool_result(name: &str, result: &str) -> Option<String> {
@@ -489,18 +489,28 @@ pub fn summarize_tool_result(name: &str, result: &str) -> Option<String> {
 
 pub fn format_streaming_output(output: &str) -> Node {
     let unwrapped = unwrap_json_result(output);
-    format_output_tail(&unwrapped, "     ", 72)
+    format_output_tail(&unwrapped, "     ")
 }
 
-pub fn format_output_tail(output: &str, prefix: &str, max_line_len: usize) -> Node {
+fn term_width() -> usize {
+    crossterm::terminal::size()
+        .map(|(w, _)| w as usize)
+        .unwrap_or(80)
+}
+
+pub fn format_output_tail(output: &str, prefix: &str) -> Node {
+    let width = term_width();
     let all_lines: Vec<&str> = output.lines().collect();
     let lines: Vec<&str> = all_lines.iter().rev().take(3).rev().copied().collect();
-    let truncated = all_lines.len() > 3;
+    let hidden_count = all_lines.len().saturating_sub(3);
     let bar_prefix = format!("{}│ ", prefix);
-    let truncate_at = max_line_len.saturating_sub(bar_prefix.len() + 1);
+    let truncate_at = width.saturating_sub(bar_prefix.len() + 1);
 
-    col(std::iter::once(if truncated {
-        styled(format!("{}…", prefix), styles::tool_result())
+    col(std::iter::once(if hidden_count > 0 {
+        styled(
+            format!("{}…({} more lines)", prefix, hidden_count),
+            styles::tool_result(),
+        )
     } else {
         Node::Empty
     })
@@ -661,7 +671,7 @@ mod tests {
 
     #[test]
     fn format_output_tail_short_output() {
-        let node = format_output_tail("line1\nline2", "  ", 80);
+        let node = format_output_tail("line1\nline2", "  ");
         let plain = render_to_plain_text(&node, 80);
         assert!(plain.contains("line1"));
         assert!(plain.contains("line2"));
@@ -670,9 +680,13 @@ mod tests {
 
     #[test]
     fn format_output_tail_truncates_long_output() {
-        let node = format_output_tail("line1\nline2\nline3\nline4\nline5", "  ", 80);
+        let node = format_output_tail("line1\nline2\nline3\nline4\nline5", "  ");
         let plain = render_to_plain_text(&node, 80);
-        assert!(plain.contains("…"));
+        assert!(
+            plain.contains("…(2 more lines)"),
+            "Should show count: {:?}",
+            plain
+        );
         assert!(plain.contains("line5"));
     }
 
@@ -879,7 +893,7 @@ mod tests {
 
     #[test]
     fn format_output_tail_no_leading_blank() {
-        let node = format_output_tail("line1\nline2\nline3", "   ", 77);
+        let node = format_output_tail("line1\nline2\nline3", "   ");
         let plain = render_to_plain_text(&node, 80);
         let lines: Vec<&str> = plain.lines().collect();
         assert!(
