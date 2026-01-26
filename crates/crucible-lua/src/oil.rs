@@ -397,6 +397,18 @@ pub fn register_oil_module(lua: &Lua) -> Result<(), LuaError> {
     })?;
     oil.set("scrollback", scrollback_fn)?;
 
+    // cru.oil.decrypt(content, revealed, frame?)
+    // Renders text with a movie-style decrypt/scramble animation effect
+    let decrypt_fn = lua.create_function(
+        |_, (content, revealed, frame): (String, usize, Option<usize>)| {
+            let frame = frame.unwrap_or(0);
+            Ok(LuaNode(crucible_oil::decrypt_text(
+                &content, revealed, frame,
+            )))
+        },
+    )?;
+    oil.set("decrypt", decrypt_fn)?;
+
     register_in_namespaces(lua, "oil", oil)?;
 
     Ok(())
@@ -1030,6 +1042,50 @@ mod tests {
             "Error should suggest calling it: {}",
             err
         );
+    }
+
+    #[test]
+    fn test_oil_decrypt() {
+        let lua = setup_lua();
+
+        // Basic usage - partial reveal
+        let result: LuaNode = lua
+            .load(r#"return cru.oil.decrypt("hello", 2, 0)"#)
+            .eval()
+            .unwrap();
+
+        // Should return a row with children (mix of revealed and scrambled)
+        assert!(matches!(result.0, Node::Box(_)));
+    }
+
+    #[test]
+    fn test_oil_decrypt_fully_revealed() {
+        let lua = setup_lua();
+
+        // Fully revealed - should return plain text
+        let result: LuaNode = lua
+            .load(r#"return cru.oil.decrypt("hello", 10, 0)"#)
+            .eval()
+            .unwrap();
+
+        if let Node::Text(t) = result.0 {
+            assert_eq!(t.content, "hello");
+        } else {
+            panic!("Expected Text node for fully revealed content");
+        }
+    }
+
+    #[test]
+    fn test_oil_decrypt_default_frame() {
+        let lua = setup_lua();
+
+        // Frame parameter is optional, defaults to 0
+        let result: LuaNode = lua
+            .load(r#"return cru.oil.decrypt("test", 1)"#)
+            .eval()
+            .unwrap();
+
+        assert!(matches!(result.0, Node::Box(_)));
     }
 }
 
