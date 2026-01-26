@@ -193,8 +193,11 @@ fn session_event_to_chat_chunk(event: &SessionEvent) -> Option<ChatChunk> {
             let result = event.data.get("result")?;
 
             let name = tool_name.or(call_id).unwrap_or("tool").to_string();
+            // Daemon wraps results as {"result": "text"}, so unwrap if present
             let result_str = if result.is_string() {
                 result.as_str().unwrap_or("").to_string()
+            } else if let Some(inner) = result.get("result").and_then(|r| r.as_str()) {
+                inner.to_string()
             } else {
                 result.to_string()
             };
@@ -714,5 +717,24 @@ mod tests {
             results[0].name, "tc-456",
             "Should fall back to call_id when tool name not provided"
         );
+    }
+
+    #[test]
+    fn test_tool_result_unwraps_daemon_format() {
+        let event = SessionEvent {
+            session_id: "test".to_string(),
+            event_type: "tool_result".to_string(),
+            data: json!({
+                "call_id": "tc-789",
+                "tool": "bash",
+                "result": { "result": "line1\nline2\nline3" }
+            }),
+        };
+
+        let chunk = session_event_to_chat_chunk(&event).unwrap();
+        let results = chunk.tool_results.unwrap();
+        assert_eq!(results[0].name, "bash");
+        assert_eq!(results[0].result, "line1\nline2\nline3");
+        assert!(results[0].result.contains('\n'));
     }
 }
