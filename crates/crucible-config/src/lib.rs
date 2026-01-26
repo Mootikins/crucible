@@ -54,7 +54,9 @@ pub use enrichment::*;
 pub use global::GlobalConfig;
 pub use includes::{process_file_references, IncludeConfig, IncludeError};
 pub use loader::*;
-pub use patterns::{BashPatterns, FilePatterns, PatternError, PatternResult, PatternStore, ToolPatterns};
+pub use patterns::{
+    BashPatterns, FilePatterns, PatternError, PatternResult, PatternStore, ToolPatterns,
+};
 pub use profile::*;
 pub use resolver::ConfigResolver;
 pub use security::ShellPolicy;
