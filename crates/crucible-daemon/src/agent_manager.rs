@@ -2551,4 +2551,249 @@ mod tests {
             assert!(result.is_err());
         }
     }
+
+    mod permission_channel_tests {
+        use super::*;
+        use crucible_core::interaction::{PermRequest, PermResponse};
+
+        #[tokio::test]
+        async fn await_permission_creates_pending_request() {
+            let storage = Arc::new(FileSessionStorage::new());
+            let session_manager = Arc::new(SessionManager::with_storage(storage));
+            let agent_manager = create_test_agent_manager(session_manager);
+
+            let session_id = "test-session";
+            let request = PermRequest::bash(["npm", "install"]);
+
+            let (permission_id, _rx) = agent_manager.await_permission(session_id, request.clone());
+
+            assert!(
+                permission_id.starts_with("perm-"),
+                "Permission ID should have perm- prefix"
+            );
+
+            let pending = agent_manager.get_pending_permission(session_id, &permission_id);
+            assert!(pending.is_some(), "Pending permission should exist");
+        }
+
+        #[tokio::test]
+        async fn respond_to_permission_allow_sends_response() {
+            let storage = Arc::new(FileSessionStorage::new());
+            let session_manager = Arc::new(SessionManager::with_storage(storage));
+            let agent_manager = create_test_agent_manager(session_manager);
+
+            let session_id = "test-session";
+            let request = PermRequest::bash(["npm", "install"]);
+
+            let (permission_id, rx) = agent_manager.await_permission(session_id, request);
+
+            // Respond with allow
+            let result =
+                agent_manager.respond_to_permission(session_id, &permission_id, PermResponse::allow());
+            assert!(result.is_ok(), "respond_to_permission should succeed");
+
+            // Verify response received
+            let response = rx.await.expect("Should receive response");
+            assert!(response.allowed, "Response should be allowed");
+        }
+
+        #[tokio::test]
+        async fn respond_to_permission_deny_sends_response() {
+            let storage = Arc::new(FileSessionStorage::new());
+            let session_manager = Arc::new(SessionManager::with_storage(storage));
+            let agent_manager = create_test_agent_manager(session_manager);
+
+            let session_id = "test-session";
+            let request = PermRequest::bash(["rm", "-rf", "/"]);
+
+            let (permission_id, rx) = agent_manager.await_permission(session_id, request);
+
+            // Respond with deny
+            let result =
+                agent_manager.respond_to_permission(session_id, &permission_id, PermResponse::deny());
+            assert!(result.is_ok(), "respond_to_permission should succeed");
+
+            // Verify response received
+            let response = rx.await.expect("Should receive response");
+            assert!(!response.allowed, "Response should be denied");
+        }
+
+        #[tokio::test]
+        async fn channel_drop_results_in_recv_error() {
+            let storage = Arc::new(FileSessionStorage::new());
+            let session_manager = Arc::new(SessionManager::with_storage(storage));
+            let agent_manager = create_test_agent_manager(session_manager);
+
+            let session_id = "test-session";
+            let request = PermRequest::bash(["npm", "install"]);
+
+            let (permission_id, rx) = agent_manager.await_permission(session_id, request);
+
+            // Remove the pending permission without responding (simulates cleanup/drop)
+            agent_manager.pending_permissions.remove(session_id);
+
+            // Verify the permission was removed
+            let pending = agent_manager.get_pending_permission(session_id, &permission_id);
+            assert!(pending.is_none(), "Pending permission should be removed");
+
+            // The receiver should get an error when sender is dropped
+            let result = rx.await;
+            assert!(
+                result.is_err(),
+                "Receiver should error when sender is dropped"
+            );
+        }
+
+        #[tokio::test]
+        async fn respond_to_nonexistent_permission_returns_error() {
+            let storage = Arc::new(FileSessionStorage::new());
+            let session_manager = Arc::new(SessionManager::with_storage(storage));
+            let agent_manager = create_test_agent_manager(session_manager);
+
+            let result = agent_manager.respond_to_permission(
+                "nonexistent-session",
+                "nonexistent-perm",
+                PermResponse::allow(),
+            );
+
+            assert!(
+                matches!(result, Err(AgentError::SessionNotFound(_))),
+                "Should return SessionNotFound error"
+            );
+        }
+
+        #[tokio::test]
+        async fn respond_to_wrong_permission_id_returns_error() {
+            let storage = Arc::new(FileSessionStorage::new());
+            let session_manager = Arc::new(SessionManager::with_storage(storage));
+            let agent_manager = create_test_agent_manager(session_manager);
+
+            let session_id = "test-session";
+            let request = PermRequest::bash(["npm", "install"]);
+
+            // Create a pending permission
+            let (_permission_id, _rx) = agent_manager.await_permission(session_id, request);
+
+            // Try to respond with wrong permission ID
+            let result = agent_manager.respond_to_permission(
+                session_id,
+                "wrong-permission-id",
+                PermResponse::allow(),
+            );
+
+            assert!(
+                matches!(result, Err(AgentError::PermissionNotFound(_))),
+                "Should return PermissionNotFound error"
+            );
+        }
+
+        #[tokio::test]
+        async fn list_pending_permissions_returns_all() {
+            let storage = Arc::new(FileSessionStorage::new());
+            let session_manager = Arc::new(SessionManager::with_storage(storage));
+            let agent_manager = create_test_agent_manager(session_manager);
+
+            let session_id = "test-session";
+
+            // Create multiple pending permissions
+            let request1 = PermRequest::bash(["npm", "install"]);
+            let request2 = PermRequest::write(["src", "main.rs"]);
+            let request3 = PermRequest::tool("delete", serde_json::json!({"path": "/tmp/file"}));
+
+            let (id1, _rx1) = agent_manager.await_permission(session_id, request1);
+            let (id2, _rx2) = agent_manager.await_permission(session_id, request2);
+            let (id3, _rx3) = agent_manager.await_permission(session_id, request3);
+
+            let pending = agent_manager.list_pending_permissions(session_id);
+            assert_eq!(pending.len(), 3, "Should have 3 pending permissions");
+
+            let ids: Vec<_> = pending.iter().map(|(id, _)| id.clone()).collect();
+            assert!(ids.contains(&id1), "Should contain first permission");
+            assert!(ids.contains(&id2), "Should contain second permission");
+            assert!(ids.contains(&id3), "Should contain third permission");
+        }
+
+        #[tokio::test]
+        async fn list_pending_permissions_empty_for_unknown_session() {
+            let storage = Arc::new(FileSessionStorage::new());
+            let session_manager = Arc::new(SessionManager::with_storage(storage));
+            let agent_manager = create_test_agent_manager(session_manager);
+
+            let pending = agent_manager.list_pending_permissions("unknown-session");
+            assert!(pending.is_empty(), "Should return empty list for unknown session");
+        }
+
+        #[tokio::test]
+        async fn cleanup_session_removes_pending_permissions() {
+            let storage = Arc::new(FileSessionStorage::new());
+            let session_manager = Arc::new(SessionManager::with_storage(storage));
+            let agent_manager = create_test_agent_manager(session_manager);
+
+            let session_id = "test-session";
+            let request = PermRequest::bash(["npm", "install"]);
+
+            let (permission_id, _rx) = agent_manager.await_permission(session_id, request);
+
+            // Verify permission exists
+            assert!(
+                agent_manager
+                    .get_pending_permission(session_id, &permission_id)
+                    .is_some(),
+                "Permission should exist before cleanup"
+            );
+
+            // Cleanup session
+            agent_manager.cleanup_session(session_id);
+
+            // Verify permission is removed
+            assert!(
+                agent_manager
+                    .get_pending_permission(session_id, &permission_id)
+                    .is_none(),
+                "Permission should be removed after cleanup"
+            );
+        }
+
+        #[tokio::test]
+        async fn multiple_sessions_have_isolated_permissions() {
+            let storage = Arc::new(FileSessionStorage::new());
+            let session_manager = Arc::new(SessionManager::with_storage(storage));
+            let agent_manager = create_test_agent_manager(session_manager);
+
+            let session1 = "session-1";
+            let session2 = "session-2";
+
+            let request1 = PermRequest::bash(["npm", "install"]);
+            let request2 = PermRequest::bash(["cargo", "build"]);
+
+            let (id1, _rx1) = agent_manager.await_permission(session1, request1);
+            let (id2, _rx2) = agent_manager.await_permission(session2, request2);
+
+            // Each session should only see its own permissions
+            let pending1 = agent_manager.list_pending_permissions(session1);
+            let pending2 = agent_manager.list_pending_permissions(session2);
+
+            assert_eq!(pending1.len(), 1, "Session 1 should have 1 permission");
+            assert_eq!(pending2.len(), 1, "Session 2 should have 1 permission");
+
+            assert_eq!(pending1[0].0, id1, "Session 1 should have its own permission");
+            assert_eq!(pending2[0].0, id2, "Session 2 should have its own permission");
+
+            // Cleanup session 1 should not affect session 2
+            agent_manager.cleanup_session(session1);
+
+            let pending1_after = agent_manager.list_pending_permissions(session1);
+            let pending2_after = agent_manager.list_pending_permissions(session2);
+
+            assert!(
+                pending1_after.is_empty(),
+                "Session 1 should have no permissions after cleanup"
+            );
+            assert_eq!(
+                pending2_after.len(),
+                1,
+                "Session 2 should still have its permission"
+            );
+        }
+    }
 }
