@@ -112,7 +112,9 @@ impl FramePlanner {
         let overlay_nodes = extract_overlays(tree);
         let main_tree = filter_overlays(tree.clone());
 
-        let graduated = self.graduation.plan_graduation(&main_tree);
+        let graduated = self
+            .graduation
+            .plan_graduation(&main_tree, self.width as usize);
 
         let boundary_lines = if graduated.is_empty() {
             0

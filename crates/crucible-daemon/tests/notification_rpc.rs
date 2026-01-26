@@ -17,9 +17,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::UnixStream;
 
 async fn setup_daemon() -> (TestDaemon, UnixStream) {
-    let daemon = TestDaemon::start()
-        .await
-        .expect("Failed to start daemon");
+    let daemon = TestDaemon::start().await.expect("Failed to start daemon");
 
     let stream = UnixStream::connect(&daemon.socket_path)
         .await
@@ -49,7 +47,10 @@ async fn rpc_call(
         .expect("Failed to write request");
 
     let mut buf = vec![0u8; 4096];
-    let n = stream.read(&mut buf).await.expect("Failed to read response");
+    let n = stream
+        .read(&mut buf)
+        .await
+        .expect("Failed to read response");
 
     serde_json::from_slice(&buf[..n]).expect("Failed to parse response")
 }
@@ -288,8 +289,13 @@ async fn test_dismiss_notification_removes_from_list() {
         "notification_id": notification.id,
     });
 
-    let dismiss_response =
-        rpc_call(&mut stream, "session.dismiss_notification", dismiss_params, 3).await;
+    let dismiss_response = rpc_call(
+        &mut stream,
+        "session.dismiss_notification",
+        dismiss_params,
+        3,
+    )
+    .await;
 
     assert_eq!(
         dismiss_response["result"]["success"].as_bool().unwrap(),

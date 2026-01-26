@@ -122,7 +122,7 @@ pub use graph::{
     register_graph_module_with_executor, register_graph_view_functions,
     register_note_store_functions,
 };
-pub use hooks::{register_hooks_module, get_session_start_hooks};
+pub use hooks::{get_session_start_hooks, register_hooks_module};
 pub use http::register_http_module;
 pub use json_query::{
     detect_format, encode_to_format, json_to_lua, lua_to_json, parse_auto, parse_with_format,

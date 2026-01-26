@@ -206,8 +206,7 @@ async fn run_interactive_chat(
     });
     let kiln_root = config.kiln_path.clone();
 
-    let (session_cmd_tx, session_cmd_rx) =
-        tokio::sync::mpsc::unbounded_channel::<SessionCommand>();
+    let (session_cmd_tx, session_cmd_rx) = tokio::sync::mpsc::unbounded_channel::<SessionCommand>();
 
     let _lua_executor = if let Ok(mut executor) = LuaExecutor::new() {
         if let Err(e) = executor.load_config(Some(&kiln_root)) {
