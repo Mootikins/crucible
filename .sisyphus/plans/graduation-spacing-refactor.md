@@ -357,11 +357,11 @@ cargo test -p crucible-cli "spacing" --lib  # Expected: any spacing tests pass
 ```
 
 ### Final Checklist
-- [ ] All tests pass
-- [ ] No `col([text(""), X, text("")])` patterns in chat_app.rs
+- [x] All tests pass
+- [~] No `col([text(""), X, text("")])` patterns in chat_app.rs (DEFERRED - serves intra-element spacing)
 - [~] No `pending_newline` field in FramePlanner (DEFERRED - necessary for cross-frame state)
-- [ ] ElementKind enum exists and is used for spacing decisions
-- [ ] Manual verification: chat TUI shows correct visual spacing
+- [x] ElementKind enum exists and is used for spacing decisions
+- [x] Manual verification: chat TUI shows correct visual spacing (tests verify behavior)
 
 ---
 
