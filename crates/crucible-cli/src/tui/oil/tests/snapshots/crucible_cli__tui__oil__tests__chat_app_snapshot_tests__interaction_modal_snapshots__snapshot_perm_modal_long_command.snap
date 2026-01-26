@@ -7,5 +7,9 @@ expression: render_app(&app)
   docker run --rm -it -v /home/user/project:/app -e DATABASE_URL=postgres://
 localhost/db -p 8080:8080 myimage:latest
 
+ > [y] Allow once
+   [n] Deny
+   [p] Allow + Save pattern
 
- y Allow │ n Deny │ p Pattern... │ Esc Cancel
+
+ ↑/↓ navigate │ Enter select │ y/n/p shortcuts │ Esc cancel

@@ -9,8 +9,8 @@
 //! Uses property-based testing with proptest to verify invariants across
 //! a wide range of permission requests and key sequences.
 
-use crate::tui::oil::app::{App, ViewContext};
-use crate::tui::oil::chat_app::InkChatApp;
+use crate::tui::oil::app::{Action, App, ViewContext};
+use crate::tui::oil::chat_app::{ChatAppMsg, InkChatApp};
 use crate::tui::oil::event::Event;
 use crate::tui::oil::focus::FocusContext;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
@@ -249,14 +249,12 @@ proptest! {
 }
 
 // ============================================================================
-// INVARIANT 5: Ctrl+C Does Not Close Permission Modal
+// INVARIANT 5: Ctrl+C Closes Permission Modal (Denies)
 // ============================================================================
-// NOTE: Ctrl+C is not handled in permission modal - it's reserved for quit flow.
-// This test verifies that Ctrl+C does NOT accidentally close the modal.
 
 proptest! {
     #[test]
-    fn invariant_ctrl_c_does_not_close_permission_modal(
+    fn invariant_ctrl_c_closes_and_denies_permission_modal(
         command_parts in bash_command_strategy()
     ) {
         let mut app = InkChatApp::default();
@@ -267,14 +265,20 @@ proptest! {
 
         prop_assert!(app.interaction_visible(), "Modal should be open");
 
-        // Press Ctrl+C
-        app.update(Event::Key(ctrl_c()));
+        let action = app.update(Event::Key(ctrl_c()));
 
-        // Modal should remain open (Ctrl+C is not a permission action)
         prop_assert!(
-            app.interaction_visible(),
-            "Modal should remain open after Ctrl+C (not a permission action)"
+            !app.interaction_visible(),
+            "Modal should close after Ctrl+C"
         );
+
+        if let Action::Send(ChatAppMsg::CloseInteraction {
+            response: InteractionResponse::Permission(perm),
+            ..
+        }) = action
+        {
+            prop_assert!(!perm.allowed, "Ctrl+C should deny permission");
+        }
     }
 }
 
@@ -319,7 +323,7 @@ proptest! {
 
 #[test]
 fn test_all_deny_keys_produce_denial() {
-    let deny_keys = vec![
+    let deny_keys = [
         ("Esc", key(KeyCode::Esc)),
         ("n", key(KeyCode::Char('n'))),
         ("N", KeyEvent::new(KeyCode::Char('N'), KeyModifiers::NONE)),
@@ -342,7 +346,7 @@ fn test_all_deny_keys_produce_denial() {
 
 #[test]
 fn test_all_allow_keys_produce_allow() {
-    let allow_keys = vec![
+    let allow_keys = [
         key(KeyCode::Char('y')),
         KeyEvent::new(KeyCode::Char('Y'), KeyModifiers::NONE),
     ];
@@ -421,7 +425,7 @@ fn test_tab_key_does_not_close_modal() {
 
 #[test]
 fn test_arrow_keys_do_not_close_modal() {
-    let arrow_keys = vec![
+    let arrow_keys = [
         key(KeyCode::Up),
         key(KeyCode::Down),
         key(KeyCode::Left),
