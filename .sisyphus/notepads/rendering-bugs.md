@@ -180,3 +180,51 @@ Instead of normalizing `<br>` tags before parsing (which breaks table structure)
   ```
 
 Both bullet points now stay in the same cell, with the `<br>` creating a line break within the cell.
+
+## Bug #3 Fix: Notification Right-Alignment (2026-01-25)
+
+### Root Cause
+
+In `overlay.rs`, the `pad_or_truncate()` function pads content on the RIGHT:
+```rust
+format!("{}{}", line, " ".repeat(width - vis_width))
+```
+
+This left-aligns content. For notifications to appear in the top-right corner, padding must be on the LEFT.
+
+### Solution
+
+Extended the overlay system to support horizontal alignment:
+
+1. **Added `FromBottomRight(usize)` variant** to `OverlayAnchor` enum in `overlay.rs`
+2. **Added `pad_or_truncate_right()` function** that pads on the LEFT:
+   ```rust
+   format!("{}{}", " ".repeat(width - vis_width), line)
+   ```
+3. **Updated `composite_overlays()`** to handle `FromBottomRight` using `pad_or_truncate_right()`
+4. **Added `overlay_from_bottom_right()` helper** in `node.rs`
+5. **Changed `notification_area.rs`** to use `overlay_from_bottom_right()` instead of `overlay_from_bottom()`
+
+### Files Modified
+
+- `crates/crucible-cli/src/tui/oil/overlay.rs` - Added enum variant, padding function, and match arm
+- `crates/crucible-cli/src/tui/oil/node.rs` - Added helper function
+- `crates/crucible-cli/src/tui/oil/components/notification_area.rs` - Changed overlay anchor
+
+### Tests Added
+
+- `pad_or_truncate_right_pads_on_left` - Verifies left-padding behavior
+- `pad_or_truncate_right_exact_width_unchanged` - Verifies exact width passthrough
+- `pad_or_truncate_right_truncates_long_lines` - Verifies truncation still works
+- `overlay_from_bottom_right_aligns_content` - Verifies compositing produces right-aligned output
+- `notification_uses_right_aligned_overlay` - Verifies notification component uses correct anchor
+
+### Result
+
+Notifications now appear right-aligned:
+```
+                                                         ▗▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄
+                                                         ▌ ✓ Thinking display: on
+                                                         ▌ ✓ Thinking display: off
+                                                         ▘
+```
