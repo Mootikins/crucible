@@ -292,14 +292,11 @@ impl Component for NotificationArea {
             rows.push(self.render_notification(notification));
         }
 
-        // Add bottom notch where it meets the input area
-        rows.push(self.render_bottom_notch());
-
         let card = col(rows);
 
-        // Position from bottom-right (offset = 3: 2 blank lines + 1 statusline)
-        // This places notification 2 lines above the input box
-        overlay_from_bottom_right(card, 3)
+        // Position from bottom-right (offset = 4: 3 blank lines + 1 statusline)
+        // This places notification 3 lines above the input box to avoid overlap
+        overlay_from_bottom_right(card, 4)
     }
 }
 
