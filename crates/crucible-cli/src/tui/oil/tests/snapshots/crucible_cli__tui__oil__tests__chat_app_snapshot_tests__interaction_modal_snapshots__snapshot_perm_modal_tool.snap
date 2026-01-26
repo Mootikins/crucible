@@ -6,5 +6,8 @@ expression: render_app(&app)
 
   semantic_search (query="rust memory safety", limit=10)
 
+ > [y] Allow once
+   [n] Deny
 
- y Allow │ n Deny │ p Pattern... │ Esc Cancel
+
+ ↑/↓ navigate │ Enter select │ y/n/p shortcuts │ Esc cancel
