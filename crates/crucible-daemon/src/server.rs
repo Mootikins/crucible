@@ -1035,7 +1035,7 @@ async fn handle_session_cancel(req: Request, am: &Arc<AgentManager>) -> Response
 
 async fn handle_session_interaction_respond(
     req: Request,
-    _am: &Arc<AgentManager>,
+    am: &Arc<AgentManager>,
     event_tx: &broadcast::Sender<SessionEventMessage>,
 ) -> Response {
     let session_id = require_str_param!(req, "session_id");
@@ -1053,6 +1053,17 @@ async fn handle_session_interaction_respond(
                 )
             }
         };
+
+    if let crucible_core::interaction::InteractionResponse::Permission(perm_response) = &response {
+        if let Err(e) = am.respond_to_permission(session_id, request_id, perm_response.clone()) {
+            tracing::warn!(
+                session_id = %session_id,
+                request_id = %request_id,
+                error = %e,
+                "Failed to send permission response to channel (may have timed out)"
+            );
+        }
+    }
 
     let _ = event_tx.send(SessionEventMessage::new(
         session_id,
