@@ -195,6 +195,10 @@ impl Terminal {
         Ok(())
     }
 
+    pub fn pre_graduate_keys(&mut self, keys: impl IntoIterator<Item = String>) {
+        self.planner.pre_graduate_keys(keys);
+    }
+
     pub fn render_fullscreen(&mut self, tree: &Node) -> io::Result<Vec<String>> {
         let content = render_to_string(tree, self.width as usize);
         self.output.render_fullscreen(&content)?;

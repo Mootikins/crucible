@@ -174,6 +174,10 @@ impl FramePlanner {
         self.pending_newline = false;
     }
 
+    pub fn pre_graduate_keys(&mut self, keys: impl IntoIterator<Item = String>) {
+        self.graduation.pre_graduate_keys(keys);
+    }
+
     pub fn width(&self) -> u16 {
         self.width
     }
