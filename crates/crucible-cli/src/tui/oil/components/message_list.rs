@@ -514,6 +514,13 @@ pub fn format_output_tail(output: &str, prefix: &str, max_line_len: usize) -> No
     })))
 }
 
+/// Unwraps JSON-encoded strings and `{"result": "..."}` objects.
+///
+/// This is defense-in-depth: the daemon-client should already unwrap,
+/// but we handle it here too in case of:
+/// - Direct tool execution (bypassing daemon)
+/// - Future format changes
+/// - Data from cached/persisted sources
 fn unwrap_json_result(result: &str) -> String {
     if let Ok(v) = serde_json::from_str::<serde_json::Value>(result) {
         // Handle plain JSON string: "content with \n newlines"
