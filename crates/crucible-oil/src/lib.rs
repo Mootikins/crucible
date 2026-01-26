@@ -1,4 +1,4 @@
-//! Ink-style declarative TUI framework
+//! Oil-style declarative TUI framework
 //!
 //! A minimal Elm/Dioxus-inspired UI framework for terminal applications.
 //! Key concepts:
@@ -20,6 +20,7 @@
 
 mod ansi;
 mod compositor;
+pub mod decrypt;
 mod diff;
 mod focus;
 mod layout;
@@ -44,6 +45,9 @@ pub use overlay::{composite_overlays, Overlay, OverlayAnchor};
 pub use render::*;
 pub use span::{OwnedSpan, OwnedSpanLine, Span, SpanLine};
 pub use style::*;
+
+// Re-export commonly used decrypt functions
+pub use decrypt::{decrypt_text, DecryptConfig, CIPHER_CHARS};
 
 pub mod utils {
     pub use crate::ansi::{strip_ansi, visible_width, visual_rows};
