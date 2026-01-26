@@ -1,0 +1,6 @@
+---
+source: crates/crucible-cli/src/tui/oil/components/diff_preview.rs
+expression: output
+---
+[38;5;10m[new file] [39m[38;5;14mtest.ts[39m
+[38;5;10m+const x: number = 42;[39m
