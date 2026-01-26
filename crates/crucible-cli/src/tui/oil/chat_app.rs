@@ -3241,7 +3241,7 @@ impl OilChatApp {
         let bg = input_mode.bg_color();
 
         let top_edge = if let Some(end_col) = notif_end_col {
-            let left_part = "▀".repeat(end_col);
+            let left_part = "▄".repeat(end_col);
             let connection = "▙";
             let right_part = "▄".repeat(width.saturating_sub(end_col + 1));
             styled(
