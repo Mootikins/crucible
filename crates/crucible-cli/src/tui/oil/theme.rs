@@ -131,7 +131,7 @@ pub mod colors {
     pub const SELECTED: Color = Color::Cyan;
 
     /// Border color
-    pub const BORDER: Color = Color::DarkGray;
+    pub const BORDER: Color = INPUT_BG;
 
     /// Prompt character color
     pub const PROMPT: Color = Color::Cyan;
