@@ -4,12 +4,12 @@
 
 use crate::tui::oil::ansi::strip_ansi;
 use crate::tui::oil::app::{App, ViewContext};
-use crate::tui::oil::chat_app::{ChatAppMsg, InkChatApp};
+use crate::tui::oil::chat_app::{ChatAppMsg, OilChatApp};
 use crate::tui::oil::focus::FocusContext;
 use crate::tui::oil::planning::FramePlanner;
 use insta::assert_snapshot;
 
-fn render_app(app: &InkChatApp) -> String {
+fn render_app(app: &OilChatApp) -> String {
     let focus = FocusContext::new();
     let ctx = ViewContext::new(&focus);
     let tree = app.view(&ctx);
@@ -26,7 +26,7 @@ fn render_app(app: &InkChatApp) -> String {
 /// Expected: Table should appear exactly once in graduated output.
 #[test]
 fn table_not_duplicated_after_graduation() {
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
 
     // Simulate streaming a message with a table
     let markdown_with_table = r#"Here's a summary:
@@ -65,7 +65,7 @@ That's the overview."#;
 /// incorrectly, with spacing lost between wrapped lines.
 #[test]
 fn table_cell_wrapping_preserves_spacing() {
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
 
     let markdown_with_wrapped_cells = r#"
 | Section | Description |
@@ -107,7 +107,7 @@ fn table_cell_wrapping_preserves_spacing() {
 /// content may appear in both places or be duplicated.
 #[test]
 fn no_duplication_during_graduation_transition() {
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
 
     // Add a distinctive message
     let unique_content = "This is a unique test message with identifier XYZ123";
@@ -139,7 +139,7 @@ fn no_duplication_during_graduation_transition() {
 /// the spacing between them is sometimes lost.
 #[test]
 fn spacing_preserved_between_graduated_elements() {
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
 
     let markdown_with_spacing = r#"First paragraph here.
 
@@ -177,7 +177,7 @@ Final paragraph."#;
 /// Test the actual output from the user's example to see what's happening.
 #[test]
 fn complex_markdown_with_table() {
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
 
     // Simplified version of the user's actual output
     let complex_markdown = r#"Crucible – a local-first AI assistant
@@ -211,7 +211,7 @@ Why it matters
 
 #[test]
 fn heading_after_paragraph_has_spacing() {
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
 
     let md_with_heading = r#"Here's what I can do:
 

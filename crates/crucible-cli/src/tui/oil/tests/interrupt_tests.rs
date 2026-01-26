@@ -1,5 +1,5 @@
 use crate::tui::oil::app::{Action, App, ViewContext};
-use crate::tui::oil::chat_app::{ChatAppMsg, InkChatApp};
+use crate::tui::oil::chat_app::{ChatAppMsg, OilChatApp};
 use crate::tui::oil::event::Event;
 use crate::tui::oil::focus::FocusContext;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
@@ -16,7 +16,7 @@ fn ctrl_enter() -> KeyEvent {
     KeyEvent::new(KeyCode::Enter, KeyModifiers::CONTROL)
 }
 
-fn view_with_default_ctx(app: &InkChatApp) -> crate::tui::oil::node::Node {
+fn view_with_default_ctx(app: &OilChatApp) -> crate::tui::oil::node::Node {
     let focus = FocusContext::new();
     let ctx = ViewContext::new(&focus);
     app.view(&ctx)
@@ -24,7 +24,7 @@ fn view_with_default_ctx(app: &InkChatApp) -> crate::tui::oil::node::Node {
 
 #[test]
 fn ctrl_c_during_streaming_sends_stream_cancelled() {
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
 
     app.on_message(ChatAppMsg::UserMessage("Hello".to_string()));
     app.on_message(ChatAppMsg::TextDelta("Thinking...".to_string()));
@@ -42,7 +42,7 @@ fn ctrl_c_during_streaming_sends_stream_cancelled() {
 
 #[test]
 fn escape_during_streaming_sends_stream_cancelled() {
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
 
     app.on_message(ChatAppMsg::UserMessage("Hello".to_string()));
     app.on_message(ChatAppMsg::TextDelta("Working...".to_string()));
@@ -60,7 +60,7 @@ fn escape_during_streaming_sends_stream_cancelled() {
 
 #[test]
 fn enter_during_streaming_queues_message() {
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
 
     app.on_message(ChatAppMsg::UserMessage("First question".to_string()));
     app.on_message(ChatAppMsg::TextDelta("Responding...".to_string()));
@@ -83,7 +83,7 @@ fn enter_during_streaming_queues_message() {
 
 #[test]
 fn empty_enter_during_streaming_does_nothing() {
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
 
     app.on_message(ChatAppMsg::UserMessage("Question".to_string()));
     app.on_message(ChatAppMsg::TextDelta("Answer...".to_string()));
@@ -102,7 +102,7 @@ fn empty_enter_during_streaming_does_nothing() {
 
 #[test]
 fn stream_cancelled_message_clears_streaming() {
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
 
     app.on_message(ChatAppMsg::UserMessage("Question".to_string()));
     app.on_message(ChatAppMsg::TextDelta("Partial response...".to_string()));
@@ -116,7 +116,7 @@ fn stream_cancelled_message_clears_streaming() {
 
 #[test]
 fn queued_message_processed_after_stream_complete() {
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
 
     app.on_message(ChatAppMsg::QueueMessage("queued question".to_string()));
 
@@ -134,7 +134,7 @@ fn queued_message_processed_after_stream_complete() {
 
 #[test]
 fn queued_message_processed_after_stream_cancelled() {
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
 
     app.on_message(ChatAppMsg::QueueMessage("queued question".to_string()));
 
@@ -152,7 +152,7 @@ fn queued_message_processed_after_stream_cancelled() {
 
 #[test]
 fn multiple_queued_messages_processed_in_order() {
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
 
     app.on_message(ChatAppMsg::QueueMessage("first queued".to_string()));
     app.on_message(ChatAppMsg::QueueMessage("second queued".to_string()));
@@ -181,7 +181,7 @@ fn multiple_queued_messages_processed_in_order() {
 
 #[test]
 fn status_shows_queued_count() {
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
 
     app.on_message(ChatAppMsg::UserMessage("question".to_string()));
     app.on_message(ChatAppMsg::TextDelta("...".to_string()));
@@ -213,7 +213,7 @@ fn status_shows_queued_count() {
 
 #[test]
 fn typing_during_streaming_works() {
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
 
     app.on_message(ChatAppMsg::UserMessage("question".to_string()));
     app.on_message(ChatAppMsg::TextDelta("response...".to_string()));
@@ -233,7 +233,7 @@ fn typing_during_streaming_works() {
 
 #[test]
 fn ctrl_c_not_streaming_still_clears_input() {
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
 
     for c in "some text".chars() {
         app.update(Event::Key(key(KeyCode::Char(c))));
@@ -256,7 +256,7 @@ fn ctrl_c_not_streaming_still_clears_input() {
 
 #[test]
 fn escape_not_streaming_no_effect_on_input() {
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
 
     for c in "some text".chars() {
         app.update(Event::Key(key(KeyCode::Char(c))));
@@ -274,7 +274,7 @@ fn escape_not_streaming_no_effect_on_input() {
 
 #[test]
 fn cancelled_status_shows_after_cancel() {
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
 
     app.on_message(ChatAppMsg::UserMessage("question".to_string()));
     app.on_message(ChatAppMsg::TextDelta("partial...".to_string()));

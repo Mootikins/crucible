@@ -1,13 +1,13 @@
 use crate::tui::oil::ansi::strip_ansi;
 use crate::tui::oil::app::{App, ViewContext};
 use crate::tui::oil::chat_app::Role;
-use crate::tui::oil::chat_app::{ChatAppMsg, InkChatApp};
+use crate::tui::oil::chat_app::{ChatAppMsg, OilChatApp};
 use crate::tui::oil::focus::FocusContext;
 use crate::tui::oil::render::render_to_string;
 use crate::tui::oil::viewport_cache::{CachedChatItem, ViewportCache};
 use crate::tui::oil::TestRuntime;
 
-fn render_app(app: &InkChatApp) -> String {
+fn render_app(app: &OilChatApp) -> String {
     let focus = FocusContext::new();
     let ctx = ViewContext::new(&focus);
     let tree = app.view(&ctx);
@@ -204,7 +204,7 @@ mod chat_app_message_handling {
 
     #[test]
     fn tool_call_message_creates_tool_in_cache() {
-        let mut app = InkChatApp::default();
+        let mut app = OilChatApp::default();
         app.on_message(ChatAppMsg::UserMessage("test".to_string()));
         app.on_message(ChatAppMsg::ToolCall {
             name: "read_file".to_string(),
@@ -223,7 +223,7 @@ mod chat_app_message_handling {
 
     #[test]
     fn tool_result_complete_marks_tool_done() {
-        let mut app = InkChatApp::default();
+        let mut app = OilChatApp::default();
         app.on_message(ChatAppMsg::UserMessage("test".to_string()));
         app.on_message(ChatAppMsg::ToolCall {
             name: "read_file".to_string(),
@@ -248,7 +248,7 @@ mod chat_app_message_handling {
 
     #[test]
     fn interleaved_text_and_tool_maintains_order_during_streaming() {
-        let mut app = InkChatApp::default();
+        let mut app = OilChatApp::default();
         app.on_message(ChatAppMsg::UserMessage("test".to_string()));
 
         app.on_message(ChatAppMsg::TextDelta("BEFORE_TOOL ".to_string()));
@@ -264,7 +264,7 @@ mod chat_app_message_handling {
 
     #[test]
     fn interleaved_text_and_tool_maintains_order_after_completion() {
-        let mut app = InkChatApp::default();
+        let mut app = OilChatApp::default();
         app.on_message(ChatAppMsg::UserMessage("test".to_string()));
 
         app.on_message(ChatAppMsg::TextDelta("BEFORE_TOOL ".to_string()));
@@ -294,7 +294,7 @@ mod chat_app_message_handling {
 
     #[test]
     fn multiple_tool_calls_maintain_order() {
-        let mut app = InkChatApp::default();
+        let mut app = OilChatApp::default();
         app.on_message(ChatAppMsg::UserMessage("test".to_string()));
 
         app.on_message(ChatAppMsg::TextDelta("START ".to_string()));
@@ -334,7 +334,7 @@ mod tool_completion_visibility {
 
     #[test]
     fn incomplete_tool_shows_pending_indicator() {
-        let mut app = InkChatApp::default();
+        let mut app = OilChatApp::default();
         app.on_message(ChatAppMsg::UserMessage("test".to_string()));
         app.on_message(ChatAppMsg::ToolCall {
             name: "pending_tool".to_string(),
@@ -351,7 +351,7 @@ mod tool_completion_visibility {
 
     #[test]
     fn completed_tool_shows_checkmark() {
-        let mut app = InkChatApp::default();
+        let mut app = OilChatApp::default();
         app.on_message(ChatAppMsg::UserMessage("test".to_string()));
         app.on_message(ChatAppMsg::ToolCall {
             name: "completed_tool".to_string(),
@@ -372,7 +372,7 @@ mod tool_completion_visibility {
 
     #[test]
     fn tool_result_delta_followed_by_complete_shows_result() {
-        let mut app = InkChatApp::default();
+        let mut app = OilChatApp::default();
         app.on_message(ChatAppMsg::UserMessage("test".to_string()));
         app.on_message(ChatAppMsg::ToolCall {
             name: "result_tool".to_string(),
@@ -397,7 +397,7 @@ mod tool_completion_visibility {
 
     #[test]
     fn mismatched_tool_name_does_not_complete_wrong_tool() {
-        let mut app = InkChatApp::default();
+        let mut app = OilChatApp::default();
         app.on_message(ChatAppMsg::UserMessage("test".to_string()));
         app.on_message(ChatAppMsg::ToolCall {
             name: "actual_tool".to_string(),
@@ -424,7 +424,7 @@ mod realistic_scenarios {
 
     #[test]
     fn typical_tool_use_flow() {
-        let mut app = InkChatApp::default();
+        let mut app = OilChatApp::default();
 
         app.on_message(ChatAppMsg::UserMessage("Read the config file".to_string()));
 
@@ -465,7 +465,7 @@ mod realistic_scenarios {
 
     #[test]
     fn multiple_sequential_tool_calls() {
-        let mut app = InkChatApp::default();
+        let mut app = OilChatApp::default();
         app.on_message(ChatAppMsg::UserMessage("List and read files".to_string()));
 
         app.on_message(ChatAppMsg::TextDelta("Looking up files...\n\n".to_string()));
@@ -525,7 +525,7 @@ mod graduation_tracking {
     /// Captures snapshots at each message to track how tool calls move relative to text.
     #[test]
     fn tool_call_position_during_graduation() {
-        let mut app = InkChatApp::default();
+        let mut app = OilChatApp::default();
         app.on_message(ChatAppMsg::UserMessage("Analyze the file".to_string()));
 
         // Step 1: Initial text (short, won't graduate)
@@ -644,7 +644,7 @@ mod graduation_tracking {
     /// but tool calls should maintain their chronological position.
     #[test]
     fn tool_position_stable_through_overflow_graduation() {
-        let mut app = InkChatApp::default();
+        let mut app = OilChatApp::default();
         app.on_message(ChatAppMsg::UserMessage("test".to_string()));
 
         // Add initial text that will be visible
@@ -720,7 +720,7 @@ mod duplicate_content_prevention {
     /// when more text comes after the tool call.
     #[test]
     fn text_before_tool_not_duplicated() {
-        let mut app = InkChatApp::default();
+        let mut app = OilChatApp::default();
         app.on_message(ChatAppMsg::UserMessage("test".to_string()));
 
         // Send text, then tool call, then more text
@@ -745,7 +745,7 @@ mod duplicate_content_prevention {
 
     #[test]
     fn no_duplicate_content_during_streaming() {
-        let mut app = InkChatApp::default();
+        let mut app = OilChatApp::default();
         app.on_message(ChatAppMsg::UserMessage("test".to_string()));
 
         app.on_message(ChatAppMsg::TextDelta(
@@ -800,7 +800,7 @@ mod duplicate_content_prevention {
     /// Test that content is not duplicated after stream completion.
     #[test]
     fn no_duplicate_content_after_completion() {
-        let mut app = InkChatApp::default();
+        let mut app = OilChatApp::default();
         app.on_message(ChatAppMsg::UserMessage("test".to_string()));
 
         app.on_message(ChatAppMsg::TextDelta("FIRST_BLOCK\n\n".to_string()));
@@ -833,7 +833,7 @@ mod duplicate_content_prevention {
     /// Test with subagent events to ensure they don't cause duplication.
     #[test]
     fn subagent_events_dont_cause_duplication() {
-        let mut app = InkChatApp::default();
+        let mut app = OilChatApp::default();
         app.on_message(ChatAppMsg::UserMessage("test".to_string()));
 
         app.on_message(ChatAppMsg::TextDelta("INTRO_TEXT\n\n".to_string()));
@@ -873,7 +873,7 @@ mod duplicate_content_prevention {
     /// Test with longer content that triggers graduation.
     #[test]
     fn graduation_doesnt_cause_duplication() {
-        let mut app = InkChatApp::default();
+        let mut app = OilChatApp::default();
         app.on_message(ChatAppMsg::UserMessage("test".to_string()));
 
         // Add text that will graduate (multiple paragraphs)
@@ -914,7 +914,7 @@ mod duplicate_content_prevention {
 
     #[test]
     fn only_one_bullet_per_assistant_response() {
-        let mut app = InkChatApp::default();
+        let mut app = OilChatApp::default();
         app.on_message(ChatAppMsg::UserMessage("test".to_string()));
 
         app.on_message(ChatAppMsg::TextDelta(
@@ -941,7 +941,7 @@ mod duplicate_content_prevention {
 
     #[test]
     fn only_one_bullet_after_stream_complete() {
-        let mut app = InkChatApp::default();
+        let mut app = OilChatApp::default();
         app.on_message(ChatAppMsg::UserMessage("test".to_string()));
 
         app.on_message(ChatAppMsg::TextDelta("First part\n\n".to_string()));
@@ -967,7 +967,7 @@ mod duplicate_content_prevention {
 
     #[test]
     fn only_one_bullet_with_subagent() {
-        let mut app = InkChatApp::default();
+        let mut app = OilChatApp::default();
         app.on_message(ChatAppMsg::UserMessage("test".to_string()));
 
         app.on_message(ChatAppMsg::TextDelta("Before subagent\n\n".to_string()));
@@ -996,7 +996,7 @@ mod duplicate_content_prevention {
         use crate::tui::oil::app::{App, ViewContext};
         use crate::tui::oil::focus::FocusContext;
 
-        let mut app = InkChatApp::default();
+        let mut app = OilChatApp::default();
         let mut runtime = TestRuntime::new(120, 40);
 
         app.on_message(ChatAppMsg::UserMessage("test".to_string()));

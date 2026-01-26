@@ -1,8 +1,8 @@
-//! Tests for InkChatRunner event handling and action processing
+//! Tests for OilChatRunner event handling and action processing
 
 use crate::tui::oil::app::{Action, App, ViewContext};
-use crate::tui::oil::chat_app::{ChatAppMsg, ChatMode, InkChatApp};
-use crate::tui::oil::chat_runner::InkChatRunner;
+use crate::tui::oil::chat_app::{ChatAppMsg, ChatMode, OilChatApp};
+use crate::tui::oil::chat_runner::OilChatRunner;
 use crate::tui::oil::event::Event;
 use crate::tui::oil::focus::FocusContext;
 use crate::tui::oil::render::render_to_string;
@@ -127,7 +127,7 @@ impl AgentHandle for MockAgent {
 
 #[test]
 fn process_quit_action_returns_true() {
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
 
     let result = process_action_helper(Action::Quit, &mut app);
     assert!(result, "Quit action should return true");
@@ -135,7 +135,7 @@ fn process_quit_action_returns_true() {
 
 #[test]
 fn process_continue_action_returns_false() {
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
 
     let result = process_action_helper(Action::Continue, &mut app);
     assert!(!result, "Continue action should return false");
@@ -143,7 +143,7 @@ fn process_continue_action_returns_false() {
 
 #[test]
 fn process_send_action_calls_on_message() {
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
 
     let result = process_action_helper(
         Action::Send(ChatAppMsg::Status("Test status".to_string())),
@@ -155,7 +155,7 @@ fn process_send_action_calls_on_message() {
 
 #[test]
 fn process_batch_handles_multiple_actions() {
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
 
     let result = process_action_helper(
         Action::Batch(vec![
@@ -171,7 +171,7 @@ fn process_batch_handles_multiple_actions() {
 
 #[test]
 fn process_batch_stops_on_quit() {
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
 
     let result = process_action_helper(
         Action::Batch(vec![Action::Continue, Action::Quit, Action::Continue]),
@@ -183,7 +183,7 @@ fn process_batch_stops_on_quit() {
 
 #[test]
 fn process_nested_batch_flattens() {
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
 
     let result = process_action_helper(
         Action::Batch(vec![
@@ -196,7 +196,7 @@ fn process_nested_batch_flattens() {
     assert!(!result, "Nested batch without Quit should return false");
 }
 
-fn process_action_helper(action: Action<ChatAppMsg>, app: &mut InkChatApp) -> bool {
+fn process_action_helper(action: Action<ChatAppMsg>, app: &mut OilChatApp) -> bool {
     match action {
         Action::Quit => true,
         Action::Continue => false,
@@ -221,14 +221,14 @@ fn process_action_helper(action: Action<ChatAppMsg>, app: &mut InkChatApp) -> bo
 
 #[test]
 fn chat_runner_new_creates_with_defaults() {
-    let runner = InkChatRunner::new();
+    let runner = OilChatRunner::new();
     assert!(runner.is_ok(), "Should create runner successfully");
 }
 
 #[test]
 fn chat_runner_with_mode_sets_initial_mode() {
     // Just verifies with_mode chains without panicking
-    let _runner = InkChatRunner::new().unwrap().with_mode(ChatMode::Plan);
+    let _runner = OilChatRunner::new().unwrap().with_mode(ChatMode::Plan);
 }
 
 // =============================================================================
@@ -324,7 +324,7 @@ async fn mock_agent_mode_changes() {
 
 #[test]
 fn app_handles_text_delta_from_stream() {
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
 
     app.on_message(ChatAppMsg::UserMessage("Hello".to_string()));
     app.on_message(ChatAppMsg::TextDelta("Response ".to_string()));
@@ -336,7 +336,7 @@ fn app_handles_text_delta_from_stream() {
 
 #[test]
 fn app_handles_tool_call_from_stream() {
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
 
     app.on_message(ChatAppMsg::UserMessage("Read file".to_string()));
     app.on_message(ChatAppMsg::ToolCall {
@@ -357,7 +357,7 @@ fn app_handles_tool_call_from_stream() {
 
 #[test]
 fn app_handles_error_from_stream() {
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
 
     app.on_message(ChatAppMsg::UserMessage("Hello".to_string()));
     app.on_message(ChatAppMsg::Error("Connection lost".to_string()));
@@ -367,7 +367,7 @@ fn app_handles_error_from_stream() {
 
 #[test]
 fn app_handles_context_usage_update() {
-    let mut app = InkChatApp::default();
+    let mut app = OilChatApp::default();
 
     app.on_message(ChatAppMsg::ContextUsage {
         used: 50000,
@@ -446,7 +446,7 @@ mod daemon_event_to_tui_tests {
 
     #[test]
     fn text_delta_chunk_updates_ui_with_streaming_content() {
-        let mut app = InkChatApp::default();
+        let mut app = OilChatApp::default();
         app.on_message(ChatAppMsg::UserMessage("Hello".to_string()));
 
         let chunk = ChatChunk {
@@ -478,7 +478,7 @@ mod daemon_event_to_tui_tests {
 
     #[test]
     fn tool_call_chunk_shows_tool_in_ui() {
-        let mut app = InkChatApp::default();
+        let mut app = OilChatApp::default();
         app.on_message(ChatAppMsg::UserMessage("Read file".to_string()));
 
         let chunk = ChatChunk {
@@ -512,7 +512,7 @@ mod daemon_event_to_tui_tests {
 
     #[test]
     fn tool_result_chunk_shows_result_in_ui() {
-        let mut app = InkChatApp::default();
+        let mut app = OilChatApp::default();
         app.on_message(ChatAppMsg::UserMessage("Read file".to_string()));
 
         app.on_message(ChatAppMsg::ToolCall {
@@ -551,7 +551,7 @@ mod daemon_event_to_tui_tests {
 
     #[test]
     fn done_chunk_ends_streaming_state() {
-        let mut app = InkChatApp::default();
+        let mut app = OilChatApp::default();
         app.on_message(ChatAppMsg::UserMessage("Hello".to_string()));
         app.on_message(ChatAppMsg::TextDelta("Response".to_string()));
 
@@ -576,7 +576,7 @@ mod daemon_event_to_tui_tests {
 
     #[test]
     fn full_streaming_sequence_updates_ui_correctly() {
-        let mut app = InkChatApp::default();
+        let mut app = OilChatApp::default();
         app.on_message(ChatAppMsg::UserMessage("Hello".to_string()));
 
         let chunks = vec![
@@ -631,7 +631,7 @@ mod daemon_event_to_tui_tests {
 
     #[test]
     fn chunk_with_usage_updates_context_display() {
-        let mut app = InkChatApp::default();
+        let mut app = OilChatApp::default();
         app.on_message(ChatAppMsg::UserMessage("Hello".to_string()));
 
         let chunk = ChatChunk {
@@ -666,7 +666,7 @@ mod daemon_event_to_tui_tests {
 
     #[test]
     fn chunk_with_usage_unknown_total_shows_tokens() {
-        let mut app = InkChatApp::default();
+        let mut app = OilChatApp::default();
         app.on_message(ChatAppMsg::UserMessage("Hello".to_string()));
 
         let chunk = ChatChunk {
@@ -701,7 +701,7 @@ mod daemon_event_to_tui_tests {
 
     #[test]
     fn interleaved_text_and_tool_calls_maintain_order_after_completion() {
-        let mut app = InkChatApp::default();
+        let mut app = OilChatApp::default();
         app.on_message(ChatAppMsg::UserMessage("Find files".to_string()));
 
         app.on_message(ChatAppMsg::TextDelta("Let me search".to_string()));
@@ -749,7 +749,7 @@ mod daemon_event_to_tui_tests {
 
     #[test]
     fn tool_call_shows_checkmark_after_completion() {
-        let mut app = InkChatApp::default();
+        let mut app = OilChatApp::default();
         app.on_message(ChatAppMsg::UserMessage("Read".to_string()));
 
         app.on_message(ChatAppMsg::ToolCall {
@@ -779,7 +779,7 @@ mod daemon_event_to_tui_tests {
 
     #[test]
     fn subagent_spawned_shows_in_ui() {
-        let mut app = InkChatApp::default();
+        let mut app = OilChatApp::default();
         app.on_message(ChatAppMsg::UserMessage("Research topic".to_string()));
 
         app.on_message(ChatAppMsg::SubagentSpawned {
@@ -806,7 +806,7 @@ mod daemon_event_to_tui_tests {
 
     #[test]
     fn subagent_completed_shows_checkmark() {
-        let mut app = InkChatApp::default();
+        let mut app = OilChatApp::default();
         app.on_message(ChatAppMsg::UserMessage("Research".to_string()));
 
         app.on_message(ChatAppMsg::SubagentSpawned {
@@ -837,7 +837,7 @@ mod daemon_event_to_tui_tests {
 
     #[test]
     fn subagent_failed_shows_error() {
-        let mut app = InkChatApp::default();
+        let mut app = OilChatApp::default();
         app.on_message(ChatAppMsg::UserMessage("Research".to_string()));
 
         app.on_message(ChatAppMsg::SubagentSpawned {
@@ -868,7 +868,7 @@ mod daemon_event_to_tui_tests {
 
     #[test]
     fn multiple_subagents_displayed_correctly() {
-        let mut app = InkChatApp::default();
+        let mut app = OilChatApp::default();
         app.on_message(ChatAppMsg::UserMessage("Research".to_string()));
 
         app.on_message(ChatAppMsg::SubagentSpawned {

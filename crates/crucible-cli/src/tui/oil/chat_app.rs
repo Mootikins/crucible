@@ -391,7 +391,7 @@ pub struct McpServerDisplay {
     pub connected: bool,
 }
 
-pub struct InkChatApp {
+pub struct OilChatApp {
     cache: ViewportCache,
     input: InputBuffer,
     spinner_frame: usize,
@@ -436,7 +436,7 @@ pub struct InkChatApp {
     perm_autoconfirm_session: bool,
 }
 
-impl Default for InkChatApp {
+impl Default for OilChatApp {
     fn default() -> Self {
         Self {
             cache: ViewportCache::new(),
@@ -482,7 +482,7 @@ impl Default for InkChatApp {
     }
 }
 
-impl App for InkChatApp {
+impl App for OilChatApp {
     type Msg = ChatAppMsg;
 
     fn init() -> Self {
@@ -696,7 +696,7 @@ impl App for InkChatApp {
     }
 }
 
-impl InkChatApp {
+impl OilChatApp {
     pub fn with_on_submit<F>(mut self, callback: F) -> Self
     where
         F: Fn(String) + Send + Sync + 'static,
@@ -3640,7 +3640,7 @@ mod tests {
 
     #[test]
     fn test_app_init() {
-        let app = InkChatApp::init();
+        let app = OilChatApp::init();
         assert_eq!(app.cache.item_count(), 0);
         assert!(!app.is_streaming());
         assert_eq!(app.mode, ChatMode::Normal);
@@ -3648,7 +3648,7 @@ mod tests {
 
     #[test]
     fn test_user_message() {
-        let mut app = InkChatApp::init();
+        let mut app = OilChatApp::init();
         app.add_user_message("Hello".to_string());
 
         assert_eq!(app.cache.item_count(), 1);
@@ -3659,7 +3659,7 @@ mod tests {
 
     #[test]
     fn test_streaming_flow() {
-        let mut app = InkChatApp::init();
+        let mut app = OilChatApp::init();
 
         app.on_message(ChatAppMsg::TextDelta("Hello ".to_string()));
         assert!(app.cache.is_streaming());
@@ -3677,7 +3677,7 @@ mod tests {
 
     #[test]
     fn test_tool_call_flow() {
-        let mut app = InkChatApp::init();
+        let mut app = OilChatApp::init();
 
         app.on_message(ChatAppMsg::ToolCall {
             name: "Read".to_string(),
@@ -3711,7 +3711,7 @@ mod tests {
 
     #[test]
     fn test_slash_commands() {
-        let mut app = InkChatApp::init();
+        let mut app = OilChatApp::init();
 
         assert_eq!(app.mode, ChatMode::Normal);
         app.handle_slash_command("/mode");
@@ -3723,7 +3723,7 @@ mod tests {
 
     #[test]
     fn test_clear_repl_command() {
-        let mut app = InkChatApp::init();
+        let mut app = OilChatApp::init();
 
         app.add_user_message("test".to_string());
         assert_eq!(app.cache.item_count(), 1);
@@ -3735,7 +3735,7 @@ mod tests {
 
     #[test]
     fn test_messages_command_toggles_notification_area() {
-        let mut app = InkChatApp::init();
+        let mut app = OilChatApp::init();
         assert!(!app.notification_area.is_visible());
 
         app.handle_repl_command(":messages");
@@ -3750,7 +3750,7 @@ mod tests {
 
     #[test]
     fn test_toggle_messages_msg() {
-        let mut app = InkChatApp::init();
+        let mut app = OilChatApp::init();
         assert!(!app.notification_area.is_visible());
 
         app.on_message(ChatAppMsg::ToggleMessages);
@@ -3762,7 +3762,7 @@ mod tests {
 
     #[test]
     fn test_quit_command() {
-        let mut app = InkChatApp::init();
+        let mut app = OilChatApp::init();
         let action = app.handle_slash_command("/quit");
         assert!(action.is_quit());
     }
@@ -3771,7 +3771,7 @@ mod tests {
     fn test_view_renders() {
         use crate::tui::oil::focus::FocusContext;
 
-        let mut app = InkChatApp::init();
+        let mut app = OilChatApp::init();
         app.add_user_message("Hello".to_string());
         app.on_message(ChatAppMsg::TextDelta("Hi there".to_string()));
 
@@ -3785,7 +3785,7 @@ mod tests {
         use crate::tui::oil::focus::FocusContext;
         use crate::tui::oil::render::render_to_string;
 
-        let mut app = InkChatApp::init();
+        let mut app = OilChatApp::init();
 
         app.on_message(ChatAppMsg::ToolCall {
             name: "read_file".to_string(),
@@ -3827,7 +3827,7 @@ mod tests {
 
     #[test]
     fn test_context_usage_updates() {
-        let mut app = InkChatApp::init();
+        let mut app = OilChatApp::init();
 
         app.on_message(ChatAppMsg::ContextUsage {
             used: 64000,
@@ -3844,7 +3844,7 @@ mod tests {
 
     #[test]
     fn test_context_display_unknown_total() {
-        let mut app = InkChatApp::init();
+        let mut app = OilChatApp::init();
 
         app.on_message(ChatAppMsg::ContextUsage {
             used: 5000,
@@ -3869,7 +3869,7 @@ mod tests {
 
     #[test]
     fn test_context_display_no_usage() {
-        let app = InkChatApp::init();
+        let app = OilChatApp::init();
 
         let focus = FocusContext::new();
         let ctx = ViewContext::new(&focus);
@@ -3885,7 +3885,7 @@ mod tests {
 
     #[test]
     fn test_status_shows_mode_indicator() {
-        let mut app = InkChatApp::init();
+        let mut app = OilChatApp::init();
         app.set_mode(ChatMode::Plan);
 
         let focus = FocusContext::new();
@@ -3898,7 +3898,7 @@ mod tests {
 
     #[test]
     fn test_error_message_clears_streaming() {
-        let mut app = InkChatApp::init();
+        let mut app = OilChatApp::init();
 
         app.on_message(ChatAppMsg::TextDelta("partial response".to_string()));
         assert!(app.is_streaming());
@@ -3910,7 +3910,7 @@ mod tests {
     #[test]
     fn test_cache_ring_buffer_evicts_oldest() {
         use crate::tui::oil::viewport_cache::DEFAULT_MAX_CACHED_ITEMS;
-        let mut app = InkChatApp::init();
+        let mut app = OilChatApp::init();
         let max_items = app.cache.max_items();
 
         for i in 0..(max_items + 10) {
@@ -3929,7 +3929,7 @@ mod tests {
 
     #[test]
     fn test_shell_history_ring_buffer_evicts_oldest() {
-        let mut app = InkChatApp::init();
+        let mut app = OilChatApp::init();
 
         for i in 0..(MAX_SHELL_HISTORY + 5) {
             app.push_shell_history(format!("cmd {}", i));
@@ -3947,7 +3947,7 @@ mod tests {
     fn test_interaction_modal_open_close_cycle() {
         use crucible_core::interaction::AskRequest;
 
-        let mut app = InkChatApp::init();
+        let mut app = OilChatApp::init();
         assert!(!app.interaction_visible());
 
         let request = InteractionRequest::Ask(AskRequest::new("Choose an option"));
@@ -3970,7 +3970,7 @@ mod tests {
     fn test_interaction_modal_replaces_previous() {
         use crucible_core::interaction::AskRequest;
 
-        let mut app = InkChatApp::init();
+        let mut app = OilChatApp::init();
 
         let request1 = InteractionRequest::Ask(AskRequest::new("First question"));
         app.open_interaction("req-1".to_string(), request1);
@@ -3984,7 +3984,7 @@ mod tests {
 
     #[test]
     fn test_interaction_modal_close_when_none_is_noop() {
-        let mut app = InkChatApp::init();
+        let mut app = OilChatApp::init();
         assert!(!app.interaction_visible());
 
         app.close_interaction();
@@ -3995,7 +3995,7 @@ mod tests {
     fn test_perm_request_bash_renders() {
         use crucible_core::interaction::PermRequest;
 
-        let mut app = InkChatApp::init();
+        let mut app = OilChatApp::init();
         let request =
             InteractionRequest::Permission(PermRequest::bash(["npm", "install", "lodash"]));
         app.open_interaction("perm-1".to_string(), request);
@@ -4022,7 +4022,7 @@ mod tests {
     fn test_perm_request_write_renders() {
         use crucible_core::interaction::PermRequest;
 
-        let mut app = InkChatApp::init();
+        let mut app = OilChatApp::init();
         let request = InteractionRequest::Permission(PermRequest::write([
             "home", "user", "project", "src", "main.rs",
         ]));
@@ -4048,7 +4048,7 @@ mod tests {
         use crossterm::event::{KeyEvent, KeyModifiers};
         use crucible_core::interaction::PermRequest;
 
-        let mut app = InkChatApp::init();
+        let mut app = OilChatApp::init();
         let request = InteractionRequest::Permission(PermRequest::bash(["ls", "-la"]));
         app.open_interaction("perm-3".to_string(), request);
 
@@ -4072,7 +4072,7 @@ mod tests {
         use crossterm::event::{KeyEvent, KeyModifiers};
         use crucible_core::interaction::PermRequest;
 
-        let mut app = InkChatApp::init();
+        let mut app = OilChatApp::init();
         let request = InteractionRequest::Permission(PermRequest::bash(["rm", "-rf", "/"]));
         app.open_interaction("perm-4".to_string(), request);
 
@@ -4096,7 +4096,7 @@ mod tests {
         use crossterm::event::{KeyEvent, KeyModifiers};
         use crucible_core::interaction::PermRequest;
 
-        let mut app = InkChatApp::init();
+        let mut app = OilChatApp::init();
         let request = InteractionRequest::Permission(PermRequest::read(["etc", "passwd"]));
         app.open_interaction("perm-5".to_string(), request);
 
@@ -4123,7 +4123,7 @@ mod tests {
         use crossterm::event::{KeyEvent, KeyModifiers};
         use crucible_core::interaction::PermRequest;
 
-        let mut app = InkChatApp::init();
+        let mut app = OilChatApp::init();
         let request =
             InteractionRequest::Permission(PermRequest::write(["home", "user", "file.txt"]));
         app.open_interaction("perm-6".to_string(), request);
@@ -4148,7 +4148,7 @@ mod tests {
         use crossterm::event::{KeyEvent, KeyModifiers};
         use crucible_core::interaction::PermRequest;
 
-        let mut app = InkChatApp::init();
+        let mut app = OilChatApp::init();
         let request = InteractionRequest::Permission(PermRequest::bash(["npm", "install"]));
         app.open_interaction("perm-7".to_string(), request);
 
@@ -4181,7 +4181,7 @@ mod tests {
         use crossterm::event::{KeyEvent, KeyModifiers};
         use crucible_core::interaction::PermRequest;
 
-        let mut app = InkChatApp::init();
+        let mut app = OilChatApp::init();
         let request = InteractionRequest::Permission(PermRequest::bash(["ls", "-la"]));
         app.open_interaction("perm-8".to_string(), request);
 
@@ -4206,7 +4206,7 @@ mod tests {
     fn test_perm_queue_second_request_queued_when_first_pending() {
         use crucible_core::interaction::PermRequest;
 
-        let mut app = InkChatApp::init();
+        let mut app = OilChatApp::init();
 
         let request1 = InteractionRequest::Permission(PermRequest::bash(["ls"]));
         app.open_interaction("perm-1".to_string(), request1);
@@ -4226,7 +4226,7 @@ mod tests {
         use crossterm::event::{KeyEvent, KeyModifiers};
         use crucible_core::interaction::PermRequest;
 
-        let mut app = InkChatApp::init();
+        let mut app = OilChatApp::init();
 
         let request1 = InteractionRequest::Permission(PermRequest::bash(["ls"]));
         app.open_interaction("perm-1".to_string(), request1);
@@ -4264,7 +4264,7 @@ mod tests {
     fn test_perm_queue_indicator_shows_in_header() {
         use crucible_core::interaction::PermRequest;
 
-        let mut app = InkChatApp::init();
+        let mut app = OilChatApp::init();
 
         let request1 = InteractionRequest::Permission(PermRequest::bash(["ls"]));
         app.open_interaction("perm-1".to_string(), request1);
@@ -4291,7 +4291,7 @@ mod tests {
     fn test_perm_queue_no_indicator_for_single_request() {
         use crucible_core::interaction::PermRequest;
 
-        let mut app = InkChatApp::init();
+        let mut app = OilChatApp::init();
 
         let request = InteractionRequest::Permission(PermRequest::bash(["ls"]));
         app.open_interaction("perm-1".to_string(), request);

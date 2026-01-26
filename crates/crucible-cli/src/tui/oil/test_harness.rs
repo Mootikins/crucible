@@ -170,11 +170,11 @@ impl<A: App> AppHarness<A> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tui::oil::chat_app::InkChatApp;
+    use crate::tui::oil::chat_app::OilChatApp;
 
     #[test]
     fn harness_initializes_and_renders() {
-        let mut harness: AppHarness<InkChatApp> = AppHarness::new(80, 24);
+        let mut harness: AppHarness<OilChatApp> = AppHarness::new(80, 24);
         harness.render();
 
         assert!(!harness.viewport().is_empty());
@@ -182,7 +182,7 @@ mod tests {
 
     #[test]
     fn harness_sends_keys() {
-        let mut harness: AppHarness<InkChatApp> = AppHarness::new(80, 24);
+        let mut harness: AppHarness<OilChatApp> = AppHarness::new(80, 24);
         harness.render();
 
         harness.send_key(KeyCode::Char('h'));
@@ -191,7 +191,7 @@ mod tests {
 
     #[test]
     fn harness_sends_text() {
-        let mut harness: AppHarness<InkChatApp> = AppHarness::new(80, 24);
+        let mut harness: AppHarness<OilChatApp> = AppHarness::new(80, 24);
         harness.render();
 
         harness.send_text("hello");
@@ -199,7 +199,7 @@ mod tests {
 
     #[test]
     fn trace_available_after_render() {
-        let mut harness: AppHarness<InkChatApp> = AppHarness::new(80, 24);
+        let mut harness: AppHarness<OilChatApp> = AppHarness::new(80, 24);
 
         assert!(harness.trace().is_none());
 
@@ -211,7 +211,7 @@ mod tests {
 
     #[test]
     fn screen_combines_stdout_and_viewport() {
-        let mut harness: AppHarness<InkChatApp> = AppHarness::new(80, 24);
+        let mut harness: AppHarness<OilChatApp> = AppHarness::new(80, 24);
         harness.render();
 
         let screen = harness.screen();

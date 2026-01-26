@@ -233,7 +233,7 @@ mod overlay_graduation_tests {
     use super::*;
     use crate::tui::oil::ansi::strip_ansi;
     use crate::tui::oil::app::{App, ViewContext};
-    use crate::tui::oil::chat_app::InkChatApp;
+    use crate::tui::oil::chat_app::OilChatApp;
     use crate::tui::oil::event::Event;
     use crate::tui::oil::focus::FocusContext;
     use crate::tui::oil::planning::FramePlanner;
@@ -244,7 +244,7 @@ mod overlay_graduation_tests {
         KeyEvent::new(code, KeyModifiers::NONE)
     }
 
-    fn view_with_default_ctx(app: &InkChatApp) -> Node {
+    fn view_with_default_ctx(app: &OilChatApp) -> Node {
         let focus = FocusContext::new();
         let ctx = ViewContext::new(&focus);
         app.view(&ctx)
@@ -252,7 +252,7 @@ mod overlay_graduation_tests {
 
     #[test]
     fn slash_backspace_sequence_no_popup_duplication() {
-        let mut app = InkChatApp::default();
+        let mut app = OilChatApp::default();
         let mut planner = FramePlanner::new(80, 24);
 
         app.update(Event::Key(key(KeyCode::Char('/'))));
@@ -435,12 +435,12 @@ mod composer_stability_tests {
     use super::*;
     use crate::tui::oil::ansi::strip_ansi;
     use crate::tui::oil::app::{App, ViewContext};
-    use crate::tui::oil::chat_app::InkChatApp;
+    use crate::tui::oil::chat_app::OilChatApp;
     use crate::tui::oil::event::Event;
     use crate::tui::oil::focus::FocusContext;
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
-    fn view_with_default_ctx(app: &InkChatApp) -> Node {
+    fn view_with_default_ctx(app: &OilChatApp) -> Node {
         let focus = FocusContext::new();
         let ctx = ViewContext::new(&focus);
         app.view(&ctx)
@@ -454,7 +454,7 @@ mod composer_stability_tests {
     fn popup_overlay_does_not_affect_base_height() {
         use crate::tui::oil::planning::FramePlanner;
 
-        let mut app = InkChatApp::default();
+        let mut app = OilChatApp::default();
         app.set_workspace_files(vec![
             "file1.rs".to_string(),
             "file2.rs".to_string(),
@@ -492,7 +492,7 @@ mod composer_stability_tests {
     fn popup_overlay_preserves_input_status_at_bottom() {
         use crate::tui::oil::planning::FramePlanner;
 
-        let mut app = InkChatApp::default();
+        let mut app = OilChatApp::default();
         app.set_workspace_files(vec!["file1.rs".to_string()]);
 
         app.update(Event::Key(key(KeyCode::Char('@'))));
@@ -521,12 +521,12 @@ mod composer_stability_tests {
 
     #[test]
     fn input_height_stable_with_short_content() {
-        let app = InkChatApp::default();
+        let app = OilChatApp::default();
         let tree = view_with_default_ctx(&app);
         let output = render_to_string(&tree, 80);
         let height_empty = strip_ansi(&output).lines().count();
 
-        let mut app_with_text = InkChatApp::default();
+        let mut app_with_text = OilChatApp::default();
         app_with_text.update(Event::Key(key(KeyCode::Char('H'))));
         app_with_text.update(Event::Key(key(KeyCode::Char('i'))));
 
@@ -544,7 +544,7 @@ mod composer_stability_tests {
     fn input_height_bounded_with_long_content() {
         use crate::tui::oil::chat_app::INPUT_MAX_CONTENT_LINES;
 
-        let mut app = InkChatApp::default();
+        let mut app = OilChatApp::default();
         for _ in 0..200 {
             app.update(Event::Key(key(KeyCode::Char('x'))));
         }
@@ -553,7 +553,7 @@ mod composer_stability_tests {
         let output = render_to_string(&tree, 80);
         let height_long = strip_ansi(&output).lines().count();
 
-        let app_empty = InkChatApp::default();
+        let app_empty = OilChatApp::default();
         let tree_empty = view_with_default_ctx(&app_empty);
         let output_empty = render_to_string(&tree_empty, 80);
         let height_empty = strip_ansi(&output_empty).lines().count();

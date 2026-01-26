@@ -68,8 +68,8 @@ mod viewport_cache;
 
 pub use agent_selection::AgentSelection;
 pub use app::*;
-pub use chat_app::{ChatAppMsg, ChatItem, ChatMode, InkChatApp, McpServerDisplay, Role};
-pub use chat_runner::InkChatRunner;
+pub use chat_app::{ChatAppMsg, ChatItem, ChatMode, McpServerDisplay, OilChatApp, Role};
+pub use chat_runner::OilChatRunner;
 pub use component::{Component, ComponentHarness};
 pub use components::{InputArea, InputMode, StatusBar, INPUT_MAX_CONTENT_LINES};
 pub use composer::{pad_popup_region, ComposerConfig};
