@@ -9,19 +9,15 @@ expression: rendered
 
  ● Crucible – a local-first AI assistant
 
-   ┌─────────────────────┬─────────────────────────────────────────────────┐   
-   │ Section             │ What it covers                                  │   
-   ├─────────────────────┼─────────────────────────────────────────────────┤   
-   │ What it is          │ A Rust-powered AI agent that lives on your      │   
-   │                     │ machine. All conversations are stored as plain- │   
-   │                     │ text Markdown files.                            │   
-   ├─────────────────────┼─────────────────────────────────────────────────┤   
-   │ Core ideas          │ • Markdown sessions – every chat is a file      │   
-   ├─────────────────────┼─────────────────────────────────────────────────┤   
-   │ • Your notes =      │                                                 │   
-   │ memory – embed      │                                                 │   
-   │ every block         │                                                 │   
-   └─────────────────────┴─────────────────────────────────────────────────┘   
+   ┌──────────┬────────────────────────────────────────────────────────────┐   
+   │ Section  │ What it covers                                             │   
+   ├──────────┼────────────────────────────────────────────────────────────┤   
+   │ What it  │ A Rust-powered AI agent that lives on your machine. All    │   
+   │ is       │ conversations are stored as plain-text Markdown files.     │   
+   ├──────────┼────────────────────────────────────────────────────────────┤   
+   │ Core     │ • Markdown sessions – every chat is a file                 │   
+   │ ideas    │ • Your notes = memory – embed every block                  │   
+   └──────────┴────────────────────────────────────────────────────────────┘   
 
    Why it matters
 
