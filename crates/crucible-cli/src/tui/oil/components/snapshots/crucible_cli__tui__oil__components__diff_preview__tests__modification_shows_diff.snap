@@ -1,0 +1,7 @@
+---
+source: crates/crucible-cli/src/tui/oil/components/diff_preview.rs
+expression: output
+---
+[38;5;14m[write] [39m[38;5;14mtest.rs[39m
+[38;5;9m-old line[39m
+[38;5;10m+new line[39m
