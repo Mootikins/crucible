@@ -486,6 +486,54 @@ fn streaming_affects_status_and_history() {
 
 4. Review snapshots with `cargo insta review` before accepting.
 
+### Snapshot Verification (CRITICAL)
+
+**NEVER blindly accept snapshot tests passing. Always verify visual output.**
+
+When tests pass after TUI changes:
+
+1. **Read the actual snapshot files:**
+   ```bash
+   # Find changed snapshots
+   git diff --name-only | grep '\.snap$'
+   
+   # Read each one
+   cat crates/crucible-cli/src/tui/oil/tests/snapshots/[test_name].snap
+   ```
+
+2. **Verify visual correctness:**
+   - Does the output match the expected design?
+   - Are Unicode glyphs rendering correctly?
+   - Is spacing/alignment correct?
+   - Do colors appear in the right places (check ANSI codes)?
+
+3. **Compare with reference implementation:**
+   - If there's a Python/reference demo, run it side-by-side
+   - Check that Rust output matches reference exactly
+   - Look for subtle differences (wrong glyphs, missing connections, etc.)
+
+4. **Common snapshot pitfalls:**
+   - Tests pass but visual output is wrong (overlay positioning, alignment)
+   - Unicode glyphs look similar but are different characters
+   - ANSI escape codes present but colors not visible in snapshot
+   - Multi-line rendering issues not caught by single-line assertions
+
+**Example of proper verification:**
+```bash
+# After TUI notification changes
+python3 scripts/notif_styling_demo.py > /tmp/reference.txt
+cat crates/crucible-cli/src/tui/oil/tests/snapshots/*notification*.snap > /tmp/actual.txt
+diff /tmp/reference.txt /tmp/actual.txt
+```
+
+**If snapshot doesn't match expectations:**
+- DO NOT accept the snapshot
+- Investigate why the rendering is wrong
+- Fix the implementation, not the test
+- Re-run tests and verify again
+
+**Remember:** Passing tests ≠ correct implementation. Visual verification is mandatory for TUI changes.
+
 ### Bugfix Workflow (Test-First)
 
 When fixing bugs, **write failing tests before fixing code**. This ensures:
