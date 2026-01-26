@@ -713,3 +713,241 @@ fn graduation_handles_empty_messages_correctly() {
         "Real content should be preserved"
     );
 }
+
+// ============================================================================
+// PROPERTY-BASED TESTS (proptest)
+// ============================================================================
+
+use proptest::prelude::*;
+
+proptest! {
+    #![proptest_config(ProptestConfig {
+        cases: 100,
+        max_shrink_iters: 1000,
+        .. ProptestConfig::default()
+    })]
+
+    /// Property 1: XOR invariant holds for arbitrary random chunk sequences.
+    ///
+    /// Generates random strings as chunks and verifies that after streaming
+    /// and graduation, content never appears in both viewport and scrollback.
+    #[test]
+    fn prop_xor_invariant_holds_for_random_chunks(
+        chunks in prop::collection::vec("[a-zA-Z0-9 ]{1,50}", 1..20)
+    ) {
+        let mut runtime = TestRuntime::new(80, 24);
+        let mut app = InkChatApp::default();
+
+        app.on_message(ChatAppMsg::UserMessage("Property test".to_string()));
+
+        let tree = view_with_default_ctx(&app);
+        runtime.render(&tree);
+
+        for chunk in &chunks {
+            app.on_message(ChatAppMsg::TextDelta(chunk.clone()));
+
+            let tree = view_with_default_ctx(&app);
+            runtime.render(&tree);
+        }
+
+        app.on_message(ChatAppMsg::StreamComplete);
+
+        let tree = view_with_default_ctx(&app);
+        runtime.render(&tree);
+
+        // Verify XOR invariant - content in viewport XOR scrollback, never both
+        verify_xor_invariant(&runtime, "random chunks");
+    }
+
+    /// Property 2: Content is preserved for arbitrary random chunks.
+    ///
+    /// Generates random alphanumeric chunks and verifies that all content
+    /// appears in the combined output after graduation.
+    #[test]
+    fn prop_content_preserved_for_random_chunks(
+        chunks in prop::collection::vec("[a-zA-Z0-9]{5,20}", 1..15)
+    ) {
+        let mut runtime = TestRuntime::new(80, 24);
+        let mut app = InkChatApp::default();
+
+        app.on_message(ChatAppMsg::UserMessage("Content preservation test".to_string()));
+
+        let tree = view_with_default_ctx(&app);
+        runtime.render(&tree);
+
+        for chunk in &chunks {
+            app.on_message(ChatAppMsg::TextDelta(format!("{} ", chunk)));
+
+            let tree = view_with_default_ctx(&app);
+            runtime.render(&tree);
+        }
+
+        app.on_message(ChatAppMsg::StreamComplete);
+
+        let tree = view_with_default_ctx(&app);
+        runtime.render(&tree);
+
+        let combined = combined_content(&runtime);
+
+        // Verify each chunk appears in the combined output
+        for chunk in &chunks {
+            prop_assert!(
+                combined.contains(chunk),
+                "Content lost: chunk '{}' not found in combined output.\nCombined: '{}'",
+                chunk,
+                combined
+            );
+        }
+    }
+
+    /// Property 3: Atomicity holds for arbitrary chunk counts.
+    ///
+    /// Generates a random number of identical chunks and verifies that
+    /// the count of content occurrences remains stable through graduation.
+    #[test]
+    fn prop_atomicity_holds_for_random_chunk_count(
+        chunk_count in 1usize..30,
+        chunk_content in "[A-Z]{10,15}"
+    ) {
+        let mut runtime = TestRuntime::new(80, 24);
+        let mut app = InkChatApp::default();
+
+        // Use a unique marker to track this specific content
+        let marker = format!("[MARKER_{}]", chunk_content);
+
+        app.on_message(ChatAppMsg::UserMessage("Atomicity test".to_string()));
+
+        let tree = view_with_default_ctx(&app);
+        runtime.render(&tree);
+
+        // Send the marker once, then send chunk_count chunks
+        app.on_message(ChatAppMsg::TextDelta(marker.clone()));
+
+        let tree = view_with_default_ctx(&app);
+        runtime.render(&tree);
+
+        for _ in 0..chunk_count {
+            app.on_message(ChatAppMsg::TextDelta(" chunk".to_string()));
+
+            let tree = view_with_default_ctx(&app);
+            runtime.render(&tree);
+        }
+
+        let before_count = count_content_occurrences(&runtime, &marker);
+
+        app.on_message(ChatAppMsg::StreamComplete);
+
+        let tree = view_with_default_ctx(&app);
+        runtime.render(&tree);
+
+        let after_count = count_content_occurrences(&runtime, &marker);
+
+        prop_assert_eq!(
+            before_count, after_count,
+            "Content count changed during graduation (duplication or loss). Before: {}, After: {}",
+            before_count, after_count
+        );
+
+        // Also verify the marker appears exactly once
+        prop_assert_eq!(
+            after_count, 1,
+            "Marker should appear exactly once, got {}",
+            after_count
+        );
+    }
+
+    /// Property 4: Idempotence holds for arbitrary content.
+    ///
+    /// Generates random content and verifies that rendering the same
+    /// state multiple times produces identical output.
+    #[test]
+    fn prop_rendering_idempotent_for_random_content(
+        content in "[a-zA-Z0-9 .,!?]{10,100}"
+    ) {
+        let mut app = InkChatApp::default();
+
+        app.on_message(ChatAppMsg::UserMessage("Idempotence test".to_string()));
+        app.on_message(ChatAppMsg::TextDelta(content));
+        app.on_message(ChatAppMsg::StreamComplete);
+
+        let render1 = render_and_strip(&app, 80);
+        let render2 = render_and_strip(&app, 80);
+        let render3 = render_and_strip(&app, 80);
+
+        prop_assert_eq!(&render1, &render2, "First and second render differ");
+        prop_assert_eq!(&render2, &render3, "Second and third render differ");
+    }
+
+    /// Property 5: XOR invariant holds with paragraph breaks.
+    ///
+    /// Generates chunks with embedded newlines (paragraph breaks) and
+    /// verifies the XOR invariant still holds.
+    #[test]
+    fn prop_xor_invariant_with_paragraph_breaks(
+        chunks in prop::collection::vec("[a-zA-Z0-9 ]{5,30}", 1..10)
+    ) {
+        let mut runtime = TestRuntime::new(80, 24);
+        let mut app = InkChatApp::default();
+
+        app.on_message(ChatAppMsg::UserMessage("Paragraph test".to_string()));
+
+        let tree = view_with_default_ctx(&app);
+        runtime.render(&tree);
+
+        for (i, chunk) in chunks.iter().enumerate() {
+            // Add paragraph break every 3rd chunk
+            let content = if i % 3 == 2 {
+                format!("{}\n\n", chunk)
+            } else {
+                format!("{} ", chunk)
+            };
+            app.on_message(ChatAppMsg::TextDelta(content));
+
+            let tree = view_with_default_ctx(&app);
+            runtime.render(&tree);
+        }
+
+        app.on_message(ChatAppMsg::StreamComplete);
+
+        let tree = view_with_default_ctx(&app);
+        runtime.render(&tree);
+
+        verify_xor_invariant(&runtime, "paragraph breaks");
+    }
+
+    /// Property 6: Monotonic graduation count for arbitrary message sequences.
+    ///
+    /// Generates multiple message/response pairs and verifies the graduated
+    /// count never decreases.
+    #[test]
+    fn prop_graduation_count_monotonic(
+        message_count in 1usize..5,
+        response_lengths in prop::collection::vec(1usize..10, 1..5)
+    ) {
+        let mut runtime = TestRuntime::new(80, 24);
+        let mut app = InkChatApp::default();
+        let mut prev_count = 0;
+
+        for (msg_idx, &resp_len) in response_lengths.iter().take(message_count).enumerate() {
+            app.on_message(ChatAppMsg::UserMessage(format!("Message {}", msg_idx)));
+
+            for chunk_idx in 0..resp_len {
+                app.on_message(ChatAppMsg::TextDelta(format!("Chunk {} ", chunk_idx)));
+            }
+
+            app.on_message(ChatAppMsg::StreamComplete);
+
+            let tree = view_with_default_ctx(&app);
+            runtime.render(&tree);
+
+            let current_count = runtime.graduated_count();
+            prop_assert!(
+                current_count >= prev_count,
+                "Graduated count decreased: {} -> {}",
+                prev_count,
+                current_count
+            );
+            prev_count = current_count;
+        }
+    }
+}
