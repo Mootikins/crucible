@@ -717,7 +717,7 @@ mod tests {
         let result = "[Directory Context: /home/user/project]";
         let summary = summarize_tool_result("mcp_read", result);
         assert!(
-            summary.as_ref().map_or(false, |s| s.ends_with(']')),
+            summary.as_ref().is_some_and(|s| s.ends_with(']')),
             "Should preserve closing bracket: {:?}",
             summary
         );
