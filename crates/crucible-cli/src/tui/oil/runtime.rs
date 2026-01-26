@@ -1,7 +1,7 @@
 use crate::tui::oil::node::Node;
 
 // Re-export graduation types for backward compatibility
-pub use crate::tui::oil::graduation::{GraduatedContent, GraduationState, GRADUATION_WIDTH};
+pub use crate::tui::oil::graduation::{GraduatedContent, GraduationState};
 
 pub struct TestRuntime {
     planner: crate::tui::oil::planning::FramePlanner,

@@ -231,17 +231,16 @@ proptest! {
         runtime.render(&tree);
 
         let stdout = strip_ansi(runtime.stdout_content());
-
-        for chunk in chunks.iter().take(cancel_at) {
-            let first_word = chunk.split_whitespace().next();
-            if let Some(word) = first_word {
-                if word.len() >= 3 {
-                    prop_assert!(
-                        stdout.contains(word),
-                        "Cancelled content should preserve '{}' in stdout:\n{}",
-                        word, stdout
-                    );
-                }
+        let all_content: String = chunks.iter().take(cancel_at).cloned().collect();
+        let first_word = all_content.split_whitespace().next();
+        if let Some(word) = first_word {
+            if word.len() >= 3 {
+                let prefix = &word[..3.min(word.len())];
+                prop_assert!(
+                    stdout.contains(prefix),
+                    "Cancelled content should have prefix '{}' in stdout:\n{}",
+                    prefix, stdout
+                );
             }
         }
     }

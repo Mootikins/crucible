@@ -1942,10 +1942,10 @@ impl InkChatApp {
                             InteractionResponse::Ask(AskResponse::selected(modal.selected))
                         };
                         self.close_interaction();
-                        return Action::Send(ChatAppMsg::CloseInteraction {
+                        Action::Send(ChatAppMsg::CloseInteraction {
                             request_id,
                             response,
-                        });
+                        })
                     } else if ask_request.allow_other && modal.selected == choices_count {
                         modal.mode = InteractionMode::TextInput;
                         Action::Continue
@@ -1968,10 +1968,10 @@ impl InkChatApp {
                 KeyCode::Esc => {
                     let response = InteractionResponse::Cancelled;
                     self.close_interaction();
-                    return Action::Send(ChatAppMsg::CloseInteraction {
+                    Action::Send(ChatAppMsg::CloseInteraction {
                         request_id,
                         response,
-                    });
+                    })
                 }
                 KeyCode::Char('c')
                     if key
@@ -1980,10 +1980,10 @@ impl InkChatApp {
                 {
                     let response = InteractionResponse::Cancelled;
                     self.close_interaction();
-                    return Action::Send(ChatAppMsg::CloseInteraction {
+                    Action::Send(ChatAppMsg::CloseInteraction {
                         request_id,
                         response,
-                    });
+                    })
                 }
                 _ => Action::Continue,
             },
@@ -1992,10 +1992,10 @@ impl InkChatApp {
                     let response =
                         InteractionResponse::Ask(AskResponse::other(modal.other_text.clone()));
                     self.close_interaction();
-                    return Action::Send(ChatAppMsg::CloseInteraction {
+                    Action::Send(ChatAppMsg::CloseInteraction {
                         request_id,
                         response,
-                    });
+                    })
                 }
                 KeyCode::Esc => {
                     modal.mode = InteractionMode::Selecting;
@@ -2077,10 +2077,10 @@ impl InkChatApp {
                             crucible_core::interaction::AskBatchResponse::new(batch.id),
                         );
                         self.close_interaction();
-                        return Action::Send(ChatAppMsg::CloseInteraction {
+                        Action::Send(ChatAppMsg::CloseInteraction {
                             request_id,
                             response,
-                        });
+                        })
                     } else {
                         modal.current_question += 1;
                         modal.selected = 0;
@@ -2091,10 +2091,10 @@ impl InkChatApp {
                 KeyCode::Esc => {
                     let response = InteractionResponse::Cancelled;
                     self.close_interaction();
-                    return Action::Send(ChatAppMsg::CloseInteraction {
+                    Action::Send(ChatAppMsg::CloseInteraction {
                         request_id,
                         response,
-                    });
+                    })
                 }
                 KeyCode::Char('c')
                     if key
@@ -2103,10 +2103,10 @@ impl InkChatApp {
                 {
                     let response = InteractionResponse::Cancelled;
                     self.close_interaction();
-                    return Action::Send(ChatAppMsg::CloseInteraction {
+                    Action::Send(ChatAppMsg::CloseInteraction {
                         request_id,
                         response,
-                    });
+                    })
                 }
                 _ => Action::Continue,
             },
@@ -2590,7 +2590,7 @@ impl InkChatApp {
         let (question, choices, multi_select, allow_other, total_questions) = match &modal.request {
             InteractionRequest::Ask(req) => (
                 &req.question,
-                req.choices.as_ref().map(|c| c.as_slice()).unwrap_or(&[]),
+                req.choices.as_deref().unwrap_or(&[]),
                 req.multi_select,
                 req.allow_other,
                 1,
@@ -2649,12 +2649,10 @@ impl InkChatApp {
                 } else {
                     "[ ]"
                 }
+            } else if is_selected {
+                " > "
             } else {
-                if is_selected {
-                    " > "
-                } else {
-                    "   "
-                }
+                "   "
             };
             let style = if is_selected {
                 Style::new().fg(colors::TEXT_ACCENT).bold()
@@ -2782,11 +2780,9 @@ impl InkChatApp {
 
     fn render_item_sequence(&self, items: &[&CachedChatItem]) -> Node {
         let mut nodes = Vec::with_capacity(items.len());
-        let mut prev_was_tool = false;
         let mut had_assistant_message = false;
 
         for item in items {
-            let is_tool = matches!(item, CachedChatItem::ToolCall(_));
             let node = match item {
                 CachedChatItem::Message(msg) => {
                     let is_continuation = msg.role == Role::Assistant && had_assistant_message;
@@ -2795,12 +2791,11 @@ impl InkChatApp {
                     }
                     self.render_message_with_continuation(msg, is_continuation)
                 }
-                CachedChatItem::ToolCall(tool) => render_tool_call(tool, !prev_was_tool),
+                CachedChatItem::ToolCall(tool) => render_tool_call(tool),
                 CachedChatItem::ShellExecution(shell) => render_shell_execution(shell),
                 CachedChatItem::Subagent(subagent) => render_subagent(subagent, self.spinner_frame),
             };
             nodes.push(node);
-            prev_was_tool = is_tool;
         }
 
         col(nodes)
@@ -2859,7 +2854,6 @@ impl InkChatApp {
             let mut nodes: Vec<Node> = Vec::new();
             let mut text_block_count = 0;
             let mut has_tool_calls = false;
-            let mut prev_was_tool = false;
 
             for (seg_idx, segment) in segments.iter().enumerate() {
                 match segment {
@@ -2876,7 +2870,6 @@ impl InkChatApp {
                             [col([text(""), md_node, text("")])],
                         ));
                         text_block_count += 1;
-                        prev_was_tool = false;
                     }
                     StreamSegment::Thinking(content) if self.show_thinking => {
                         let thinking_node = render_thinking_block(
@@ -2888,13 +2881,11 @@ impl InkChatApp {
                             format!("streaming-think-{}", seg_idx),
                             [col([text(""), thinking_node])],
                         ));
-                        prev_was_tool = false;
                     }
                     StreamSegment::ToolCall(tool_id) => {
                         if let Some(CachedChatItem::ToolCall(tool)) = self.cache.get_item(tool_id) {
-                            nodes.push(render_tool_call(tool, !prev_was_tool));
+                            nodes.push(render_tool_call(tool));
                             has_tool_calls = true;
-                            prev_was_tool = true;
                         }
                     }
                     StreamSegment::Subagent(subagent_id) => {
@@ -2902,7 +2893,6 @@ impl InkChatApp {
                             self.cache.get_item(subagent_id)
                         {
                             nodes.push(render_subagent(subagent, self.spinner_frame));
-                            prev_was_tool = false;
                         }
                     }
                     _ => {}
