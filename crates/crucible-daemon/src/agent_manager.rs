@@ -5,7 +5,7 @@ use crate::background_manager::BackgroundJobManager;
 use crate::protocol::SessionEventMessage;
 use crate::session_manager::{SessionError, SessionManager};
 use crucible_core::events::SessionEvent;
-use crucible_core::interaction::{PermRequest, PermResponse};
+use crucible_core::interaction::{InteractionRequest, PermRequest, PermResponse};
 use crucible_core::session::SessionAgent;
 use crucible_core::traits::chat::AgentHandle;
 use crucible_lua::{register_crucible_on_api, LuaScriptHandlerRegistry};
@@ -22,6 +22,28 @@ use tracing::{debug, error, info, warn};
 
 /// Unique identifier for a pending permission request.
 pub type PermissionId = String;
+
+/// Check if a tool is destructive and requires permission before execution.
+///
+/// Destructive tools can modify files, execute commands, or change state.
+/// Read-only tools that only query data do not require permission.
+///
+/// # Returns
+///
+/// `true` for tools that modify state:
+/// - `write`, `bash`, `delete` - file/command operations
+/// - `create_note`, `update_note`, `delete_note` - note mutations
+///
+/// `false` for read-only tools:
+/// - `read_note`, `read_metadata` - reading content
+/// - `text_search`, `property_search`, `semantic_search` - search operations
+/// - `get_kiln_info`, `list_notes` - metadata queries
+pub fn is_destructive(tool_name: &str) -> bool {
+    matches!(
+        tool_name,
+        "write" | "bash" | "delete" | "create_note" | "update_note" | "delete_note"
+    )
+}
 
 #[derive(Error, Debug)]
 pub enum AgentError {
@@ -430,6 +452,35 @@ impl AgentManager {
                                 .clone()
                                 .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
                             let args = tc.arguments.clone().unwrap_or(serde_json::Value::Null);
+
+                            if is_destructive(&tc.name) {
+                                let perm_request = PermRequest::tool(&tc.name, args.clone());
+                                let interaction_request = InteractionRequest::Permission(perm_request);
+                                let request_id = format!("perm-{}", uuid::Uuid::new_v4());
+
+                                debug!(
+                                    session_id = %session_id,
+                                    tool = %tc.name,
+                                    request_id = %request_id,
+                                    "Emitting permission request for destructive tool"
+                                );
+
+                                if event_tx
+                                    .send(SessionEventMessage::interaction_requested(
+                                        session_id,
+                                        &request_id,
+                                        &interaction_request,
+                                    ))
+                                    .is_err()
+                                {
+                                    warn!(
+                                        session_id = %session_id,
+                                        tool = %tc.name,
+                                        "No subscribers for permission request event"
+                                    );
+                                }
+                            }
+
                             if event_tx
                                 .send(SessionEventMessage::tool_call(
                                     session_id, &call_id, &tc.name, args,
@@ -1933,5 +1984,37 @@ mod tests {
             result.is_ok(),
             "Cancel signal should have been sent during cleanup"
         );
+    }
+
+    mod is_destructive_tests {
+        use super::*;
+
+        #[test]
+        fn destructive_tools_return_true() {
+            assert!(is_destructive("write"));
+            assert!(is_destructive("bash"));
+            assert!(is_destructive("delete"));
+            assert!(is_destructive("create_note"));
+            assert!(is_destructive("update_note"));
+            assert!(is_destructive("delete_note"));
+        }
+
+        #[test]
+        fn read_only_tools_return_false() {
+            assert!(!is_destructive("read_note"));
+            assert!(!is_destructive("read_metadata"));
+            assert!(!is_destructive("text_search"));
+            assert!(!is_destructive("property_search"));
+            assert!(!is_destructive("semantic_search"));
+            assert!(!is_destructive("get_kiln_info"));
+            assert!(!is_destructive("list_notes"));
+        }
+
+        #[test]
+        fn unknown_tools_return_false() {
+            assert!(!is_destructive("unknown_tool"));
+            assert!(!is_destructive(""));
+            assert!(!is_destructive("some_custom_tool"));
+        }
     }
 }
