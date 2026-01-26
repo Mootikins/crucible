@@ -91,19 +91,15 @@ impl GraduationState {
 
     pub fn format_stdout_delta(
         graduated: &[GraduatedContent],
-        pending_newline: bool,
+        last_kind: Option<ElementKind>,
         boundary_lines: usize,
-    ) -> (String, bool) {
+    ) -> (String, Option<ElementKind>) {
         if graduated.is_empty() {
-            return (String::new(), pending_newline);
+            return (String::new(), last_kind);
         }
 
         let mut output = String::new();
-        let mut prev_kind: Option<ElementKind> = if pending_newline {
-            Some(ElementKind::Block)
-        } else {
-            None
-        };
+        let mut prev_kind = last_kind;
 
         for item in graduated {
             if item.kind.wants_blank_line_before(prev_kind) {
@@ -117,12 +113,7 @@ impl GraduationState {
             output.push_str("\r\n");
         }
 
-        let final_pending = if boundary_lines > 0 {
-            false
-        } else {
-            prev_kind.map(|k| k.wants_newline_after()).unwrap_or(false)
-        };
-        (output, final_pending)
+        (output, prev_kind)
     }
 
     /// Legacy method that both collects AND commits in one step.
@@ -273,14 +264,12 @@ mod tests {
             },
         ];
 
-        let (delta, new_pending) = GraduationState::format_stdout_delta(&graduated, false, 1);
+        let (delta, last_kind) = GraduationState::format_stdout_delta(&graduated, None, 1);
         assert!(delta.contains("Hello"));
         assert!(delta.contains("World"));
         assert!(delta.contains("\r\n"));
         assert!(delta.ends_with("\r\n"));
-        // With boundary_lines > 0, pending_newline resets to false
-        // because the boundary already provides the separator
-        assert!(!new_pending);
+        assert_eq!(last_kind, Some(ElementKind::Block));
     }
 
     #[test]
@@ -292,19 +281,49 @@ mod tests {
             newline: true,
         }];
 
-        let (delta, _) = GraduationState::format_stdout_delta(&graduated, false, 1);
+        let (delta, _) = GraduationState::format_stdout_delta(&graduated, None, 1);
         assert_eq!(delta, "Content\r\n");
     }
 
     #[test]
-    fn format_stdout_delta_empty_returns_unchanged_pending() {
-        let (delta, pending) = GraduationState::format_stdout_delta(&[], true, 1);
+    fn format_stdout_delta_empty_returns_unchanged_last_kind() {
+        let (delta, last_kind) =
+            GraduationState::format_stdout_delta(&[], Some(ElementKind::ToolCall), 1);
         assert!(delta.is_empty());
-        assert!(pending);
+        assert_eq!(last_kind, Some(ElementKind::ToolCall));
 
-        let (delta2, pending2) = GraduationState::format_stdout_delta(&[], false, 1);
+        let (delta2, last_kind2) = GraduationState::format_stdout_delta(&[], None, 1);
         assert!(delta2.is_empty());
-        assert!(!pending2);
+        assert_eq!(last_kind2, None);
+    }
+
+    #[test]
+    fn format_stdout_delta_toolcall_then_block_across_frames_adds_blank_line() {
+        let tool_graduated = vec![GraduatedContent {
+            key: "tool-1".to_string(),
+            content: "Tool output".to_string(),
+            kind: ElementKind::ToolCall,
+            newline: true,
+        }];
+
+        let (delta1, last_kind) = GraduationState::format_stdout_delta(&tool_graduated, None, 1);
+        assert_eq!(delta1, "Tool output\r\n");
+        assert_eq!(last_kind, Some(ElementKind::ToolCall));
+
+        let block_graduated = vec![GraduatedContent {
+            key: "msg-1".to_string(),
+            content: "Assistant text".to_string(),
+            kind: ElementKind::Block,
+            newline: true,
+        }];
+
+        let (delta2, _) = GraduationState::format_stdout_delta(&block_graduated, last_kind, 1);
+        assert!(
+            delta2.starts_with("\r\n"),
+            "Block after ToolCall should have blank line; got: {:?}",
+            delta2
+        );
+        assert!(delta2.contains("Assistant text"));
     }
 
     #[test]

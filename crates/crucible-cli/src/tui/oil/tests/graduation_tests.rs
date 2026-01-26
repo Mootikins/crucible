@@ -290,8 +290,8 @@ fn cross_frame_newline_handling() {
     assert!(stdout.contains("First"));
     assert!(stdout.contains("Second"));
     assert!(
-        stdout.contains("First\r\nSecond") || stdout.contains("First\nSecond"),
-        "Cross-frame graduation should have newline between messages, got: {:?}",
+        stdout.contains("First\r\n\r\nSecond") || stdout.contains("First\n\nSecond"),
+        "Cross-frame graduation should have blank line between Block messages, got: {:?}",
         stdout
     );
 }
