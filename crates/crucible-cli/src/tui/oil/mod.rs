@@ -36,6 +36,7 @@
 mod agent_selection;
 mod ansi;
 mod app;
+mod cell_grid;
 pub mod chat_app;
 pub mod chat_runner;
 mod commands;

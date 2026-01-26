@@ -294,9 +294,10 @@ fn render_row_children_filtered(
         return;
     }
 
-    // Phase 1: measure
+    // Phase 1: measure all children
     let mut measurements: Vec<ChildMeasurement> = Vec::with_capacity(children.len());
     let mut child_infos: Vec<RowChildInfo> = Vec::with_capacity(children.len());
+    let mut max_height: usize = 1;
 
     for child in children {
         if matches!(child, Node::Empty) {
@@ -319,6 +320,8 @@ fn render_row_children_filtered(
                 let mut temp = String::new();
                 let mut temp_cursor = CursorInfo::default();
                 render_node_filtered(child, width, filter, &mut temp, &mut temp_cursor);
+                let line_count = temp.lines().count().max(1);
+                max_height = max_height.max(line_count);
                 let content_width = temp.lines().next().map(visible_width).unwrap_or(0);
                 measurements.push(ChildMeasurement::Content(content_width));
                 child_infos.push(RowChildInfo::Content(temp, temp_cursor));
@@ -332,8 +335,38 @@ fn render_row_children_filtered(
     });
 
     // Phase 2: render with calculated widths
+    // Use CellGrid for multi-line rows, fast path for single-line
+    if max_height > 1 {
+        render_row_to_grid(
+            children,
+            &child_infos,
+            &layout_result.widths,
+            width,
+            max_height,
+            output,
+        );
+    } else {
+        render_row_single_line(
+            children,
+            child_infos,
+            &layout_result.widths,
+            filter,
+            output,
+            cursor_info,
+        );
+    }
+}
+
+fn render_row_single_line(
+    children: &[Node],
+    child_infos: Vec<RowChildInfo>,
+    widths: &[usize],
+    filter: &dyn RenderFilter,
+    output: &mut String,
+    cursor_info: &mut CursorInfo,
+) {
     for (i, (child, child_info)) in children.iter().zip(child_infos.into_iter()).enumerate() {
-        let child_width = layout_result.widths.get(i).copied().unwrap_or(0);
+        let child_width = widths.get(i).copied().unwrap_or(0);
 
         match child_info {
             RowChildInfo::Skip => {}
@@ -359,6 +392,42 @@ fn render_row_children_filtered(
             }
         }
     }
+}
+
+fn render_row_to_grid(
+    _children: &[Node],
+    child_infos: &[RowChildInfo],
+    widths: &[usize],
+    total_width: usize,
+    height: usize,
+    output: &mut String,
+) {
+    use crate::tui::oil::cell_grid::CellGrid;
+
+    let mut grid = CellGrid::new(total_width, height);
+    let mut x_offset: usize = 0;
+
+    for (i, child_info) in child_infos.iter().enumerate() {
+        let child_width = widths.get(i).copied().unwrap_or(0);
+
+        match child_info {
+            RowChildInfo::Skip => {}
+            RowChildInfo::Content(rendered, _cursor) => {
+                grid.blit_string(rendered, x_offset, 0);
+                x_offset += child_width;
+            }
+            RowChildInfo::Fixed => {
+                // Fixed children weren't pre-rendered, need to handle separately
+                // For now, skip - most fixed children are single-line
+                x_offset += child_width;
+            }
+            RowChildInfo::Flex => {
+                x_offset += child_width;
+            }
+        }
+    }
+
+    output.push_str(&grid.to_string_joined());
 }
 
 enum RowChildInfo {
