@@ -465,7 +465,7 @@ pub fn summarize_tool_result(name: &str, result: &str) -> Option<String> {
     match name {
         "read_file" | "mcp_read" => inner
             .rfind('[')
-            .map(|i| inner[i..].trim_end_matches(']').to_string())
+            .map(|i| inner[i..].to_string())
             .or_else(|| Some(format!("{} lines", inner.lines().count()))),
         "glob" | "mcp_glob" => count_newline_items(&inner).map(|n| format!("{} files", n)),
         "grep" | "mcp_grep" => count_grep_matches(&inner).map(|n| format!("{} matches", n)),
@@ -508,7 +508,7 @@ pub fn format_output_tail(output: &str, prefix: &str) -> Node {
 
     col(std::iter::once(if hidden_count > 0 {
         styled(
-            format!("{}…({} more lines)", prefix, hidden_count),
+            format!("{}({} more lines)", bar_prefix, hidden_count),
             styles::tool_result(),
         )
     } else {
@@ -683,11 +683,44 @@ mod tests {
         let node = format_output_tail("line1\nline2\nline3\nline4\nline5", "  ");
         let plain = render_to_plain_text(&node, 80);
         assert!(
-            plain.contains("…(2 more lines)"),
+            plain.contains("(2 more lines)"),
             "Should show count: {:?}",
             plain
         );
         assert!(plain.contains("line5"));
+    }
+
+    #[test]
+    fn format_output_tail_count_line_has_bar_prefix() {
+        let node = format_output_tail("a\nb\nc\nd\ne\nf", "  ");
+        let plain = render_to_plain_text(&node, 80);
+        let first_line = plain.lines().next().unwrap();
+        assert!(
+            first_line.contains("│"),
+            "Count line should have bar: {:?}",
+            first_line
+        );
+        assert!(
+            first_line.contains("(3 more lines)"),
+            "Should show count: {:?}",
+            first_line
+        );
+        assert!(
+            !first_line.contains("…"),
+            "Should not have ellipsis, just parenthetical: {:?}",
+            first_line
+        );
+    }
+
+    #[test]
+    fn summarize_read_tool_preserves_closing_bracket() {
+        let result = "[Directory Context: /home/user/project]";
+        let summary = summarize_tool_result("mcp_read", result);
+        assert!(
+            summary.as_ref().map_or(false, |s| s.ends_with(']')),
+            "Should preserve closing bracket: {:?}",
+            summary
+        );
     }
 
     #[test]
