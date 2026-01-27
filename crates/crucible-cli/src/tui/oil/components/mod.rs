@@ -1,4 +1,5 @@
 mod diff_preview;
+mod drawer;
 mod input_area;
 mod message_list;
 mod notification_area;
@@ -6,6 +7,7 @@ mod popup_overlay;
 mod status_bar;
 
 pub use diff_preview::render_diff_preview;
+pub use drawer::{Drawer, DrawerKind};
 pub use input_area::{InputArea, InputMode, INPUT_MAX_CONTENT_LINES};
 pub use message_list::{
     format_output_tail, format_streaming_output, format_tool_args, format_tool_result,
