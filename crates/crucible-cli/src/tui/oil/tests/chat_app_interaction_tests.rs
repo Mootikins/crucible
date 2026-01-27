@@ -490,9 +490,10 @@ fn error_renders_in_red() {
     let tree = view_with_default_ctx(&app);
     let output = render_to_string(&tree, 80);
 
-    // Check for red ANSI code (31 is red foreground)
     assert!(
-        output.contains("\x1b[31m") || output.contains("\x1b[38;5;9m"),
+        output.contains("\x1b[31m")
+            || output.contains("\x1b[38;5;9m")
+            || output.contains("\x1b[38;2;247;118;142m"),
         "Error should be rendered in red"
     );
 }
