@@ -13,7 +13,7 @@ pub enum NotificationToastKind {
 }
 
 impl NotificationToastKind {
-    fn color(&self) -> Color {
+    pub fn color(&self) -> Color {
         match self {
             NotificationToastKind::Info => colors::INFO,
             NotificationToastKind::Warning => colors::WARNING,
@@ -25,7 +25,7 @@ impl NotificationToastKind {
         match self {
             NotificationToastKind::Info => "INFO",
             NotificationToastKind::Warning => "WARN",
-            NotificationToastKind::Error => "ERRO",
+            NotificationToastKind::Error => "ERROR",
         }
     }
 }
@@ -129,25 +129,43 @@ impl Component for StatusBar {
             items.push(styled(self.status.clone(), styles::muted()));
         }
 
-        if let Some((text, kind)) = &self.notification_toast {
+        let has_toast = self.notification_toast.is_some();
+        let has_counts = !self.notification_counts.is_empty();
+
+        if has_toast || has_counts {
             items.push(spacer());
+        }
+
+        if let Some((text, kind)) = &self.notification_toast {
             items.push(styled(text.clone(), styles::overlay_bright()));
             items.push(styled(" ".to_string(), Style::new()));
             items.push(styled(
                 format!(" {} ", kind.label()),
                 styles::notification_badge(kind.color()),
             ));
-        } else if !self.notification_counts.is_empty() {
-            items.push(spacer());
-            for (kind, count) in &self.notification_counts {
-                items.push(styled(
-                    format!(" {} ", kind.label()),
-                    styles::notification_badge(kind.color()),
-                ));
-                items.push(styled(
-                    format!(" {} ", count),
-                    Style::new().fg(kind.color()).bold(),
-                ));
+        }
+
+        if has_counts {
+            let toast_kind = self.notification_toast.as_ref().map(|(_, k)| k);
+            let filtered_counts: Vec<_> = self
+                .notification_counts
+                .iter()
+                .filter(|(k, _)| toast_kind != Some(k))
+                .collect();
+            if !filtered_counts.is_empty() {
+                if has_toast {
+                    items.push(styled(" ".to_string(), Style::new()));
+                }
+                for (kind, count) in filtered_counts {
+                    items.push(styled(
+                        format!(" {} ", kind.label()),
+                        styles::notification_badge(kind.color()),
+                    ));
+                    items.push(styled(
+                        format!(" {} ", count),
+                        Style::new().fg(kind.color()).bold(),
+                    ));
+                }
             }
         }
 

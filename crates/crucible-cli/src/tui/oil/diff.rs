@@ -4,6 +4,15 @@ use crate::tui::oil::theme::styles;
 use similar::{ChangeTag, TextDiff};
 
 pub fn diff_to_node(old: &str, new: &str, context_lines: usize) -> Node {
+    diff_to_node_width(old, new, context_lines, None)
+}
+
+pub fn diff_to_node_width(
+    old: &str,
+    new: &str,
+    context_lines: usize,
+    max_width: Option<usize>,
+) -> Node {
     if old == new {
         return Node::Empty;
     }
@@ -47,11 +56,13 @@ pub fn diff_to_node(old: &str, new: &str, context_lines: usize) -> Node {
                 if !in_hunk {
                     in_hunk = true;
                     for (_, ctx_line) in &context_buffer {
-                        hunk_lines.push(styled(format!(" {}", ctx_line), context_style));
+                        let display = truncate_line(&format!(" {}", ctx_line), max_width);
+                        hunk_lines.push(styled(display, context_style));
                     }
                 } else {
                     for (_, ctx_line) in pending_context.drain(..) {
-                        hunk_lines.push(styled(format!(" {}", ctx_line), context_style));
+                        let display = truncate_line(&format!(" {}", ctx_line), max_width);
+                        hunk_lines.push(styled(display, context_style));
                     }
                 }
 
@@ -73,6 +84,16 @@ pub fn diff_to_node(old: &str, new: &str, context_lines: usize) -> Node {
         Node::Empty
     } else {
         col(nodes)
+    }
+}
+
+fn truncate_line(line: &str, max_width: Option<usize>) -> String {
+    match max_width {
+        Some(w) if line.len() > w.saturating_sub(1) => {
+            let limit = w.saturating_sub(2);
+            format!("{}…", &line[..limit])
+        }
+        _ => line.to_string(),
     }
 }
 

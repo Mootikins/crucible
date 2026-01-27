@@ -784,29 +784,67 @@ impl OilChatApp {
     }
 
     fn render_messages_drawer(&self) -> Node {
+        use crate::tui::oil::components::status_bar::NotificationToastKind;
+        use crate::tui::oil::node::{row, styled};
+        use crate::tui::oil::style::Style;
+        use crate::tui::oil::theme::{colors, styles};
+
         let (term_width, _) = crossterm::terminal::size()
             .map(|(w, h)| (w as usize, h as usize))
             .unwrap_or((80, 24));
 
-        let items: Vec<(String, String)> = self
+        let content_rows: Vec<Node> = self
             .notification_area
             .history()
             .iter()
-            .enumerate()
-            .map(|(i, (notif, _instant))| {
-                let label = format!("{:>3}", i + 1);
-                let kind_label = match &notif.kind {
-                    crucible_core::types::NotificationKind::Toast => "INFO",
-                    crucible_core::types::NotificationKind::Progress { .. } => "INFO",
-                    crucible_core::types::NotificationKind::Warning => "WARN",
+            .map(|(notif, instant)| {
+                let elapsed = instant.elapsed();
+                let secs_ago = elapsed.as_secs();
+                let timestamp = if secs_ago < 60 {
+                    format!("{:>2}s ago", secs_ago)
+                } else if secs_ago < 3600 {
+                    format!("{:>2}m ago", secs_ago / 60)
+                } else {
+                    format!("{:>2}h ago", secs_ago / 3600)
                 };
-                let content = format!("{} {}", kind_label, notif.message);
-                (label, content)
+
+                let (kind_label, badge_kind): (&str, NotificationToastKind) = match &notif.kind {
+                    crucible_core::types::NotificationKind::Toast => {
+                        ("INFO", NotificationToastKind::Info)
+                    }
+                    crucible_core::types::NotificationKind::Progress { .. } => {
+                        ("INFO", NotificationToastKind::Info)
+                    }
+                    crucible_core::types::NotificationKind::Warning => {
+                        ("WARN", NotificationToastKind::Warning)
+                    }
+                };
+
+                let bg = colors::INPUT_BG;
+                let text_style = Style::new().bg(bg).fg(colors::OVERLAY_TEXT);
+                let badge_style = styles::notification_badge(badge_kind.color());
+
+                let timestamp_part = format!(" {}: ", timestamp);
+                let message_part = format!(" {}", notif.message);
+                let badge_text = format!(" {} ", kind_label);
+                let used = timestamp_part.len() + badge_text.len() + message_part.len();
+                let padding = if term_width > used {
+                    " ".repeat(term_width - used)
+                } else {
+                    String::new()
+                };
+
+                row([
+                    styled(timestamp_part, text_style),
+                    styled(badge_text, badge_style),
+                    styled(message_part, text_style),
+                    styled(padding, Style::new().bg(bg)),
+                ])
             })
             .collect();
 
         Drawer::new(DrawerKind::Messages)
-            .items(items)
+            .content_rows(content_rows)
             .width(term_width)
             .view(&ViewContext::new(
                 &crate::tui::oil::focus::FocusContext::new(),
@@ -3267,11 +3305,10 @@ impl OilChatApp {
 
         if let Some((text, kind)) = self.notification_area.active_toast() {
             status_bar = status_bar.toast(text, kind);
-        } else {
-            let counts = self.notification_area.warning_error_counts();
-            if !counts.is_empty() {
-                status_bar = status_bar.counts(counts);
-            }
+        }
+        let counts = self.notification_area.warning_error_counts();
+        if !counts.is_empty() {
+            status_bar = status_bar.counts(counts);
         }
 
         let focus = crate::tui::oil::focus::FocusContext::default();
