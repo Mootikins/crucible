@@ -76,20 +76,20 @@ pub mod colors {
     pub const TEXT_DIM: Color = Color::Gray;
 
     // ─────────────────────────────────────────────────────────────────────────
-    // Semantic colors (status indicators)
+    // Semantic colors (status indicators) — RGB from golden reference demo
     // ─────────────────────────────────────────────────────────────────────────
 
-    /// Success indicator
-    pub const SUCCESS: Color = Color::Green;
+    /// Success indicator (green)
+    pub const SUCCESS: Color = Color::Rgb(158, 206, 106);
 
-    /// Error indicator
-    pub const ERROR: Color = Color::Red;
+    /// Error indicator (red/pink)
+    pub const ERROR: Color = Color::Rgb(247, 118, 142);
 
-    /// Warning indicator
-    pub const WARNING: Color = Color::Yellow;
+    /// Warning indicator (amber)
+    pub const WARNING: Color = Color::Rgb(224, 175, 104);
 
-    /// Info indicator
-    pub const INFO: Color = Color::Cyan;
+    /// Info indicator (cyan)
+    pub const INFO: Color = Color::Rgb(0, 206, 209);
 
     // ─────────────────────────────────────────────────────────────────────────
     // Chat roles
@@ -175,6 +175,44 @@ pub mod colors {
 
     /// Bullet prefix for assistant messages
     pub const BULLET_PREFIX: Color = Color::DarkGray;
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Overlay system — golden reference (scripts/oil_overlay_demo.py)
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /// Primary text for overlays
+    pub const OVERLAY_TEXT: Color = Color::Rgb(192, 202, 245);
+
+    /// Dimmed hint text in overlays
+    pub const OVERLAY_DIM: Color = Color::Rgb(100, 110, 130);
+
+    /// Bright white for action details
+    pub const OVERLAY_BRIGHT: Color = Color::Rgb(255, 255, 255);
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Diff panel — golden reference
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /// Diff panel background
+    pub const DIFF_BG: Color = Color::Rgb(28, 32, 40);
+
+    /// Diff foreground (used for inner borders against INPUT_BG)
+    pub const DIFF_FG: Color = Color::Rgb(28, 32, 40);
+
+    /// Diff added lines
+    pub const DIFF_ADD: Color = Color::Rgb(158, 206, 106);
+
+    /// Diff deleted lines
+    pub const DIFF_DEL: Color = Color::Rgb(247, 118, 142);
+
+    /// Diff context lines
+    pub const DIFF_CTX: Color = Color::Rgb(100, 110, 130);
+
+    /// Diff hunk headers
+    pub const DIFF_HUNK: Color = Color::Rgb(0, 206, 209);
+
+    /// Line number gutter
+    pub const GUTTER_FG: Color = Color::Rgb(70, 75, 90);
 }
 
 /// Pre-composed style presets for common UI patterns.
@@ -399,6 +437,61 @@ pub mod styles {
 
     pub fn bullet_prefix() -> Style {
         Style::new().fg(colors::BULLET_PREFIX)
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Overlay badges — reverse-video badges from golden reference
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /// Reverse-video badge for a notification (INFO/WARN/ERRO).
+    /// Pass the semantic color (e.g., `colors::INFO`, `colors::WARNING`).
+    pub fn notification_badge(color: Color) -> Style {
+        Style::new().fg(color).bold().reverse()
+    }
+
+    /// PERMISSION badge (red reverse-video)
+    pub fn permission_badge() -> Style {
+        Style::new().fg(colors::ERROR).bold().reverse()
+    }
+
+    /// Permission type label (red bold, no reverse)
+    pub fn permission_type() -> Style {
+        Style::new().fg(colors::ERROR).bold()
+    }
+
+    /// Key hint in overlay footers (colored key text)
+    pub fn overlay_key(color: Color) -> Style {
+        Style::new().fg(color)
+    }
+
+    /// Dim hint text in overlay footers
+    pub fn overlay_hint() -> Style {
+        Style::new().fg(colors::OVERLAY_DIM)
+    }
+
+    /// Overlay panel text
+    pub fn overlay_text() -> Style {
+        Style::new().fg(colors::OVERLAY_TEXT)
+    }
+
+    /// Bright text for action details in overlays
+    pub fn overlay_bright() -> Style {
+        Style::new().fg(colors::OVERLAY_BRIGHT)
+    }
+
+    /// Diff gutter (line numbers)
+    pub fn diff_gutter() -> Style {
+        Style::new().fg(colors::GUTTER_FG).bg(colors::DIFF_BG)
+    }
+
+    /// Diff panel background
+    pub fn diff_bg() -> Style {
+        Style::new().bg(colors::DIFF_BG)
+    }
+
+    /// Input/panel background
+    pub fn input_bg() -> Style {
+        Style::new().bg(colors::INPUT_BG)
     }
 }
 

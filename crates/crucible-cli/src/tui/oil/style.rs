@@ -8,6 +8,7 @@ pub struct Style {
     pub italic: bool,
     pub underline: bool,
     pub dim: bool,
+    pub reverse: bool,
 }
 
 impl Style {
@@ -45,6 +46,11 @@ impl Style {
         self
     }
 
+    pub fn reverse(mut self) -> Self {
+        self.reverse = true;
+        self
+    }
+
     pub fn to_crossterm(&self) -> ContentStyle {
         let mut style = ContentStyle::new();
 
@@ -66,6 +72,9 @@ impl Style {
         if self.dim {
             style = style.attribute(Attribute::Dim);
         }
+        if self.reverse {
+            style = style.attribute(Attribute::Reverse);
+        }
 
         style
     }
@@ -84,6 +93,9 @@ impl Style {
         }
         if self.underline {
             codes.push(4);
+        }
+        if self.reverse {
+            codes.push(7);
         }
         if let Some(fg) = self.fg {
             codes.extend(fg.to_ansi_fg());
@@ -344,6 +356,7 @@ mod tests {
         assert!(!style.italic);
         assert!(!style.underline);
         assert!(!style.dim);
+        assert!(!style.reverse);
     }
 
     #[test]
