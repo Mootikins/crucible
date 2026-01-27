@@ -17,4 +17,4 @@ pub use notification_area::{NotificationArea, MAX_VISIBLE_NOTIFICATIONS};
 pub use popup_overlay::{
     popup_item, popup_item_full, popup_item_with_desc, PopupOverlay, FOCUS_POPUP, POPUP_MAX_VISIBLE,
 };
-pub use status_bar::StatusBar;
+pub use status_bar::{NotificationToastKind, StatusBar};
