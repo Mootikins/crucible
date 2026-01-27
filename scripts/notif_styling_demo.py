@@ -138,7 +138,7 @@ def main():
     msgs2 = [
         (" ✓", SUCCESS, "Session saved"),
         ("⏳", INFO, "Indexing... 45%"),
-        ("⚠", WARNING, "Context at 85%"),
+        ("⚠ ", WARNING, "Context at 85%"),
     ]
     max_len2 = max(len(text) for _, _, text in msgs2)
     notif_end2 = w - (max_len2 + 5)
