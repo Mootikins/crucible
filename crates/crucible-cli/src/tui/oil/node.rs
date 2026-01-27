@@ -135,6 +135,25 @@ pub enum Direction {
     Row,
 }
 
+/// Sizing behavior for layout nodes.
+///
+/// Controls how a node's width/height is determined during layout:
+///
+/// - `Fixed(n)`: Exact size in characters/lines. Does not grow or shrink.
+/// - `Flex(weight)`: Proportional share of remaining space after fixed/content sizes.
+///   Higher weight = larger share. Use for "fill remaining space" behavior.
+/// - `Content`: Shrink-to-fit. Measures actual content and uses exactly that size.
+///   Does not expand to fill available space.
+///
+/// # Examples
+///
+/// ```ignore
+/// // Two-column layout: narrow label, wide content
+/// row([
+///     col([text("Label:")]),        // Content: shrinks to "Label:" width
+///     flex(1, col([text("...")])),  // Flex: fills remaining space
+/// ])
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum Size {
     Fixed(u16),
