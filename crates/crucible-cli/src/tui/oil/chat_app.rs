@@ -3,7 +3,7 @@ use crate::tui::oil::commands::SetCommand;
 use crate::tui::oil::components::{
     format_streaming_output, format_tool_args, format_tool_result, render_shell_execution,
     render_subagent, render_thinking_block, render_tool_call, render_user_prompt,
-    summarize_tool_result, NotificationArea,
+    summarize_tool_result, NotificationArea, StatusBar,
 };
 use crate::tui::oil::config::{ConfigValue, ModSource, RuntimeConfig};
 use crate::tui::oil::event::{Event, InputAction, InputBuffer};
@@ -506,18 +506,14 @@ impl App for OilChatApp {
             }
         }
 
-        let terminal_width = terminal_width();
-        let notif_end_col = self.notification_area.card_end_column(terminal_width);
-
         col([
             self.render_items(),
             self.render_streaming(),
             self.render_error(),
             spacer(),
-            self.render_input(ctx, notif_end_col),
+            self.render_input(ctx),
             self.render_status(),
             self.render_popup_overlay(),
-            self.render_notification_area(ctx),
         ])
         .gap(Gap::row(0))
     }
@@ -3187,62 +3183,26 @@ impl OilChatApp {
     }
 
     fn render_status(&self) -> Node {
-        let mode_style = match self.mode {
-            ChatMode::Normal => styles::mode_normal(),
-            ChatMode::Plan => styles::mode_plan(),
-            ChatMode::Auto => styles::mode_auto(),
-        };
-        let mode_str = match self.mode {
-            ChatMode::Normal => " NORMAL ",
-            ChatMode::Plan => " PLAN ",
-            ChatMode::Auto => " AUTO ",
-        };
+        use crate::tui::oil::component::Component;
 
-        let ctx_str = if self.context_total > 0 {
-            let percent =
-                (self.context_used as f64 / self.context_total as f64 * 100.0).round() as usize;
-            format!("{}% ctx", percent)
-        } else if self.context_used > 0 {
-            format!("{}k tok", self.context_used / 1000)
+        let mut status_bar = StatusBar::new()
+            .mode(self.mode)
+            .model(&self.model)
+            .context(self.context_used, self.context_total)
+            .status(&self.status);
+
+        if let Some((text, kind)) = self.notification_area.active_toast() {
+            status_bar = status_bar.toast(text, kind);
         } else {
-            String::new()
-        };
-
-        let model_str = if self.model.is_empty() {
-            "...".to_string()
-        } else {
-            self.truncate_model_name(&self.model, 20)
-        };
-
-        let muted = styles::muted();
-        let mut items = vec![
-            styled(mode_str.to_string(), mode_style),
-            styled(" ".to_string(), muted),
-            styled(model_str, styles::model_name()),
-            styled(" ".to_string(), muted),
-            styled(ctx_str, muted),
-        ];
-
-        if !self.status.is_empty() {
-            items.push(styled(" ".to_string(), muted));
-            items.push(styled(self.status.clone(), muted));
+            let counts = self.notification_area.warning_error_counts();
+            if !counts.is_empty() {
+                status_bar = status_bar.counts(counts);
+            }
         }
 
-        let unread = self.notification_area.unread_count();
-        if unread > 0 {
-            items.push(spacer());
-            items.push(styled(format!(" [{}] ", unread), styles::notification()));
-        }
-
-        row(items)
-    }
-
-    fn truncate_model_name(&self, name: &str, max_len: usize) -> String {
-        if name.len() <= max_len {
-            name.to_string()
-        } else {
-            format!("{}…", &name[..max_len - 1])
-        }
+        let focus = crate::tui::oil::focus::FocusContext::default();
+        let ctx = ViewContext::new(&focus);
+        status_bar.view(&ctx)
     }
 
     fn detect_input_mode(&self) -> InputMode {
@@ -3256,7 +3216,7 @@ impl OilChatApp {
         }
     }
 
-    fn render_input(&self, ctx: &ViewContext<'_>, notif_end_col: Option<usize>) -> Node {
+    fn render_input(&self, ctx: &ViewContext<'_>) -> Node {
         let width = terminal_width();
         let is_focused = !self.show_popup || ctx.is_focused(FOCUS_INPUT);
         let input_mode = self.detect_input_mode();
@@ -3264,17 +3224,7 @@ impl OilChatApp {
         let prompt = input_mode.prompt();
         let bg = input_mode.bg_color();
 
-        let top_edge = if let Some(end_col) = notif_end_col {
-            let left_part = "▄".repeat(end_col);
-            let connection = "▙";
-            let right_part = "▄".repeat(width.saturating_sub(end_col + 1));
-            styled(
-                format!("{}{}{}", left_part, connection, right_part),
-                Style::new().fg(bg),
-            )
-        } else {
-            styled("▄".repeat(width), Style::new().fg(bg))
-        };
+        let top_edge = styled("▄".repeat(width), Style::new().fg(bg));
         let bottom_edge = styled("▀".repeat(width), Style::new().fg(bg));
 
         let content = self.input.content();
@@ -3559,11 +3509,6 @@ impl OilChatApp {
         } else {
             Node::Empty
         }
-    }
-
-    fn render_notification_area(&self, ctx: &ViewContext<'_>) -> Node {
-        use crate::tui::oil::component::Component;
-        self.notification_area.view(ctx)
     }
 
     fn calculate_input_height(&self) -> usize {
