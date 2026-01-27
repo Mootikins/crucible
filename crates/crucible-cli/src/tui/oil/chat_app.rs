@@ -1,9 +1,10 @@
 use crate::tui::oil::app::{Action, App, ViewContext};
 use crate::tui::oil::commands::SetCommand;
+use crate::tui::oil::component::Component;
 use crate::tui::oil::components::{
     format_streaming_output, format_tool_args, format_tool_result, render_shell_execution,
     render_subagent, render_thinking_block, render_tool_call, render_user_prompt,
-    summarize_tool_result, NotificationArea, StatusBar,
+    summarize_tool_result, Drawer, DrawerKind, NotificationArea, StatusBar,
 };
 use crate::tui::oil::config::{ConfigValue, ModSource, RuntimeConfig};
 use crate::tui::oil::event::{Event, InputAction, InputBuffer};
@@ -506,13 +507,18 @@ impl App for OilChatApp {
             }
         }
 
+        let bottom = if self.notification_area.is_visible() {
+            self.render_messages_drawer()
+        } else {
+            col([self.render_input(ctx), self.render_status()])
+        };
+
         col([
             self.render_items(),
             self.render_streaming(),
             self.render_error(),
             spacer(),
-            self.render_input(ctx),
-            self.render_status(),
+            bottom,
             self.render_popup_overlay(),
         ])
         .gap(Gap::row(0))
@@ -773,6 +779,36 @@ impl OilChatApp {
         self.notification_area.clear();
     }
 
+    fn render_messages_drawer(&self) -> Node {
+        let (term_width, _) = crossterm::terminal::size()
+            .map(|(w, h)| (w as usize, h as usize))
+            .unwrap_or((80, 24));
+
+        let items: Vec<(String, String)> = self
+            .notification_area
+            .history()
+            .iter()
+            .enumerate()
+            .map(|(i, (notif, _instant))| {
+                let label = format!("{:>3}", i + 1);
+                let kind_label = match &notif.kind {
+                    crucible_core::types::NotificationKind::Toast => "INFO",
+                    crucible_core::types::NotificationKind::Progress { .. } => "INFO",
+                    crucible_core::types::NotificationKind::Warning => "WARN",
+                };
+                let content = format!("{} {}", kind_label, notif.message);
+                (label, content)
+            })
+            .collect();
+
+        Drawer::new(DrawerKind::Messages)
+            .items(items)
+            .width(term_width)
+            .view(&ViewContext::new(
+                &crate::tui::oil::focus::FocusContext::new(),
+            ))
+    }
+
     pub fn clear_messages(&mut self) {
         self.notification_area.clear();
     }
@@ -866,6 +902,8 @@ impl OilChatApp {
             }
         }
 
+        self.notification_area.hide();
+
         self.interaction_modal = Some(InteractionModalState {
             request_id,
             request,
@@ -946,6 +984,18 @@ impl OilChatApp {
         }
         if self.is_streaming() {
             return self.handle_streaming_key(key);
+        }
+
+        if self.notification_area.is_visible() {
+            match key.code {
+                KeyCode::Esc | KeyCode::Char('q') => {
+                    self.notification_area.hide();
+                    return Action::Continue;
+                }
+                _ => {
+                    self.notification_area.hide();
+                }
+            }
         }
 
         if key.code == KeyCode::F(1) {
@@ -4336,5 +4386,51 @@ mod tests {
             "Should not show queue indicator for single request"
         );
         assert!(output.contains("BASH"), "Should show BASH type label");
+    }
+
+    #[test]
+    fn messages_drawer_closes_on_escape() {
+        let mut app = OilChatApp::init();
+        app.notification_area
+            .add(crucible_core::types::Notification::toast("test"));
+        app.notification_area.show();
+        assert!(app.notification_area.is_visible());
+
+        app.update(Event::Key(crossterm::event::KeyEvent::new(
+            KeyCode::Esc,
+            crossterm::event::KeyModifiers::NONE,
+        )));
+        assert!(!app.notification_area.is_visible());
+    }
+
+    #[test]
+    fn messages_drawer_closes_on_q() {
+        let mut app = OilChatApp::init();
+        app.notification_area
+            .add(crucible_core::types::Notification::toast("test"));
+        app.notification_area.show();
+        assert!(app.notification_area.is_visible());
+
+        app.update(Event::Key(crossterm::event::KeyEvent::new(
+            KeyCode::Char('q'),
+            crossterm::event::KeyModifiers::NONE,
+        )));
+        assert!(!app.notification_area.is_visible());
+    }
+
+    #[test]
+    fn messages_drawer_closes_on_permission() {
+        let mut app = OilChatApp::init();
+        app.notification_area
+            .add(crucible_core::types::Notification::toast("test"));
+        app.notification_area.show();
+        assert!(app.notification_area.is_visible());
+
+        app.open_interaction(
+            "req-1".to_string(),
+            InteractionRequest::Permission(PermRequest::bash(["ls", "-la"])),
+        );
+        assert!(!app.notification_area.is_visible());
+        assert!(app.interaction_visible());
     }
 }
