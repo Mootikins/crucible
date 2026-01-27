@@ -3,7 +3,7 @@
 //! Displays file diffs above the input area when requesting write/create/delete permissions.
 
 use crate::formatting::{HighlightedLine, SyntaxHighlighter};
-use crate::tui::oil::diff::diff_to_node;
+use crate::tui::oil::diff::{diff_to_node, diff_to_node_width};
 use crate::tui::oil::node::{col, row, styled, Node};
 use crate::tui::oil::style::{Color, Style};
 use crate::tui::oil::theme::{colors, styles};
@@ -31,6 +31,17 @@ pub fn render_diff_preview(
     new_content: Option<&str>,
     collapsed: bool,
 ) -> Node {
+    render_diff_preview_width(file_path, action, old_content, new_content, collapsed, None)
+}
+
+pub fn render_diff_preview_width(
+    file_path: &str,
+    action: &str,
+    old_content: Option<&str>,
+    new_content: Option<&str>,
+    collapsed: bool,
+    max_width: Option<usize>,
+) -> Node {
     let header = render_header(file_path, action);
 
     if collapsed {
@@ -46,7 +57,7 @@ pub fn render_diff_preview(
         ("delete", Some(content), None) | ("delete", Some(content), _) => {
             render_all_lines_styled(content, false, extension.as_deref())
         }
-        ("write", Some(old), Some(new)) => render_modification_diff(old, new),
+        ("write", Some(old), Some(new)) => render_modification_diff(old, new, max_width),
         _ => Node::Empty,
     };
 
@@ -195,7 +206,7 @@ fn render_highlighted_diff_line(line: &HighlightedLine, prefix: &str, diff_bg: C
     row(children)
 }
 
-fn render_modification_diff(old: &str, new: &str) -> Node {
+fn render_modification_diff(old: &str, new: &str, max_width: Option<usize>) -> Node {
     let old_lines: Vec<&str> = old.lines().collect();
     let new_lines: Vec<&str> = new.lines().collect();
     let total_lines = old_lines.len().max(new_lines.len());
@@ -203,7 +214,7 @@ fn render_modification_diff(old: &str, new: &str) -> Node {
     if total_lines > MAX_LINES {
         let truncated_old = truncate_content(old, MAX_LINES);
         let truncated_new = truncate_content(new, MAX_LINES);
-        let diff_node = diff_to_node(&truncated_old, &truncated_new, 3);
+        let diff_node = diff_to_node_width(&truncated_old, &truncated_new, 3, max_width);
 
         let remaining = total_lines.saturating_sub(MAX_LINES);
         col([
@@ -211,7 +222,7 @@ fn render_modification_diff(old: &str, new: &str) -> Node {
             styled(format!("... {} more lines", remaining), styles::muted()),
         ])
     } else {
-        diff_to_node(old, new, 3)
+        diff_to_node_width(old, new, 3, max_width)
     }
 }
 

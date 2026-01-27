@@ -41,6 +41,7 @@ impl DrawerKind {
 pub struct Drawer {
     pub kind: DrawerKind,
     pub items: Vec<(String, String)>,
+    pub content_rows: Vec<Node>,
     pub max_items: usize,
     pub width: usize,
 }
@@ -50,6 +51,7 @@ impl Drawer {
         Self {
             kind,
             items: Vec::new(),
+            content_rows: Vec::new(),
             max_items: 10,
             width: 80,
         }
@@ -57,6 +59,11 @@ impl Drawer {
 
     pub fn items(mut self, items: Vec<(String, String)>) -> Self {
         self.items = items;
+        self
+    }
+
+    pub fn content_rows(mut self, rows: Vec<Node>) -> Self {
+        self.content_rows = rows;
         self
     }
 
@@ -121,8 +128,14 @@ impl Component for Drawer {
 
         rows.push(self.render_border_top());
 
-        for (label, content) in self.items.iter().take(self.max_items) {
-            rows.push(self.render_content_row(label, content));
+        if !self.content_rows.is_empty() {
+            for row_node in self.content_rows.iter().take(self.max_items) {
+                rows.push(row_node.clone());
+            }
+        } else {
+            for (label, content) in self.items.iter().take(self.max_items) {
+                rows.push(self.render_content_row(label, content));
+            }
         }
 
         rows.push(self.render_border_bottom());

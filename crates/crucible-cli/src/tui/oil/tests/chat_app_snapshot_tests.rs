@@ -836,4 +836,41 @@ mod overlay_snapshots {
         app.show_messages_drawer();
         assert_snapshot!(render_app(&app));
     }
+
+    #[test]
+    fn snapshot_raw_drawer_with_history() {
+        let mut app = OilChatApp::default();
+        app.add_notification(Notification::toast("Session saved"));
+        app.add_notification(Notification::toast("Thinking display: on"));
+        app.add_notification(Notification::progress(45, 100, "Indexing files"));
+        app.add_notification(Notification::warning("Context at 85%"));
+        app.show_messages_drawer();
+        assert_snapshot!(render_app_raw(&app));
+    }
+
+    #[test]
+    fn snapshot_raw_statusline_info_toast() {
+        let mut app = OilChatApp::default();
+        app.add_notification(Notification::toast("Session saved"));
+        app.hide_messages();
+        assert_snapshot!(render_app_raw(&app));
+    }
+
+    #[test]
+    fn snapshot_raw_statusline_warning_toast() {
+        let mut app = OilChatApp::default();
+        app.add_notification(Notification::warning("Context at 85%"));
+        app.hide_messages();
+        assert_snapshot!(render_app_raw(&app));
+    }
+
+    #[test]
+    fn snapshot_raw_perm_bash() {
+        let mut app = OilChatApp::default();
+        let request = crucible_core::interaction::InteractionRequest::Permission(
+            crucible_core::interaction::PermRequest::bash(["npm", "install", "lodash"]),
+        );
+        app.open_interaction("perm-bash".to_string(), request);
+        assert_snapshot!(render_app_raw(&app));
+    }
 }
