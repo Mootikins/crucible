@@ -779,6 +779,10 @@ impl OilChatApp {
         self.notification_area.clear();
     }
 
+    pub fn show_messages_drawer(&mut self) {
+        self.notification_area.show();
+    }
+
     fn render_messages_drawer(&self) -> Node {
         let (term_width, _) = crossterm::terminal::size()
             .map(|(w, h)| (w as usize, h as usize))
