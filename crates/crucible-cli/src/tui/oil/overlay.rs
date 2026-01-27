@@ -215,23 +215,29 @@ pub fn composite_overlays(base: &[String], overlays: &[Overlay], width: usize) -
                     }
                 }
             }
-            OverlayAnchor::FromBottomRight(preserve_bottom) => {
-                let needed_height = overlay.lines.len() + preserve_bottom;
-                if result.len() < needed_height {
-                    let blank_line = " ".repeat(width);
-                    let lines_to_add = needed_height - result.len();
-                    let mut expanded = vec![blank_line; lines_to_add];
-                    expanded.extend(result);
-                    result = expanded;
-                }
+            OverlayAnchor::FromBottomRight(protected_bottom_lines) => {
+                let viewport_height = result.len();
+                let overlay_height = overlay.lines.len();
 
-                let start_line = result
-                    .len()
-                    .saturating_sub(preserve_bottom + overlay.lines.len());
+                // Anchor notification bottom just above protected zone (input area).
+                // When protected zone fills viewport (no content above), fall back to
+                // overlapping into protected zone with anchor at viewport bottom.
+                let anchor_line = viewport_height.saturating_sub(protected_bottom_lines);
+                let zone_bottom = if anchor_line == 0 {
+                    viewport_height
+                } else {
+                    anchor_line
+                };
 
-                for (i, overlay_line) in overlay.lines.iter().enumerate() {
+                // Notification paints OVER content from line 0 to zone_bottom.
+                // Only clips at top of viewport if notification is very tall.
+                let lines_to_show = overlay_height.min(zone_bottom);
+                let overlay_start_idx = overlay_height.saturating_sub(lines_to_show);
+                let start_line = zone_bottom.saturating_sub(lines_to_show);
+
+                for (i, overlay_line) in overlay.lines[overlay_start_idx..].iter().enumerate() {
                     let target_line = start_line + i;
-                    if target_line < result.len().saturating_sub(preserve_bottom) {
+                    if target_line < zone_bottom {
                         let overlay_width = visible_width(overlay_line);
                         let start_col = width.saturating_sub(overlay_width);
                         result[target_line] =

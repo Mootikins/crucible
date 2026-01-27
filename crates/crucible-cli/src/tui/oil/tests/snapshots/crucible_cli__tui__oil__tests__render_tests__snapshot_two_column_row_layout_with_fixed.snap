@@ -1,0 +1,5 @@
+---
+source: crates/crucible-cli/src/tui/oil/tests/render_tests.rs
+expression: "render_to_string(&node, 80)"
+---
+Label:This is content that follows the label

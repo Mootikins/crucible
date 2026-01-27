@@ -528,6 +528,10 @@ impl App for OilChatApp {
             Event::Tick => {
                 self.spinner_frame = (self.spinner_frame + 1) % 4;
                 self.poll_shell_output();
+                self.notification_area.expire_toasts();
+                if self.notification_area.is_empty() {
+                    self.notification_area.hide();
+                }
                 Action::Continue
             }
             Event::Resize { .. } => Action::Continue,
@@ -767,6 +771,10 @@ impl OilChatApp {
 
     pub fn hide_messages(&mut self) {
         self.notification_area.hide();
+    }
+
+    pub fn clear_notifications(&mut self) {
+        self.notification_area.clear();
     }
 
     pub fn clear_messages(&mut self) {
@@ -1166,6 +1174,17 @@ impl OilChatApp {
             KeyCode::Char('c') if ctrl => {
                 tracing::info!("Stream cancel requested via Ctrl+C");
                 Action::Send(ChatAppMsg::StreamCancelled)
+            }
+            KeyCode::Char('t') if ctrl => {
+                self.show_thinking = !self.show_thinking;
+                let state = if self.show_thinking { "on" } else { "off" };
+                self.notification_area
+                    .add(crucible_core::types::Notification::toast(format!(
+                        "Thinking display: {}",
+                        state
+                    )));
+                self.notification_area.show();
+                Action::Continue
             }
             KeyCode::Enter if ctrl => {
                 let content = self.input.content().to_string();
@@ -3923,6 +3942,36 @@ mod tests {
 
         app.on_message(ChatAppMsg::Error("Connection lost".to_string()));
         assert!(!app.is_streaming(), "Error should stop streaming");
+    }
+
+    #[test]
+    fn test_ctrl_t_toggles_thinking_during_streaming() {
+        let mut app = OilChatApp::init();
+
+        app.on_message(ChatAppMsg::TextDelta("streaming...".to_string()));
+        assert!(app.is_streaming());
+
+        let initial_show_thinking = app.show_thinking;
+
+        let ctrl_t = crossterm::event::KeyEvent::new(
+            KeyCode::Char('t'),
+            crossterm::event::KeyModifiers::CONTROL,
+        );
+        let action = app.handle_key(ctrl_t);
+
+        assert!(
+            matches!(action, Action::Continue),
+            "Ctrl+T should return Continue, not cancel stream"
+        );
+        assert!(app.is_streaming(), "Stream should still be active");
+        assert_ne!(
+            app.show_thinking, initial_show_thinking,
+            "Ctrl+T should toggle show_thinking"
+        );
+        assert!(
+            app.notification_area.is_visible(),
+            "Notification should be shown"
+        );
     }
 
     #[test]

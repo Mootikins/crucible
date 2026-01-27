@@ -35,9 +35,18 @@ fn snapshot_empty_chat_view() {
 }
 
 #[test]
-fn snapshot_single_user_message() {
+fn snapshot_notification_overlays_content() {
     let mut app = OilChatApp::default();
-    app.on_message(ChatAppMsg::UserMessage("Hello, how are you?".to_string()));
+    app.on_message(ChatAppMsg::UserMessage("Hello".to_string()));
+    app.on_message(ChatAppMsg::TextDelta(
+        "Hi there! How can I help you today?".to_string(),
+    ));
+    app.on_message(ChatAppMsg::StreamComplete);
+
+    app.update(crate::tui::oil::event::Event::Key(KeyEvent::new(
+        KeyCode::Char('c'),
+        KeyModifiers::CONTROL,
+    )));
     assert_snapshot!(render_app(&app));
 }
 
@@ -219,15 +228,46 @@ fn snapshot_status_bar_auto_mode() {
 }
 
 #[test]
-fn snapshot_notification_visible() {
+fn snapshot_notification_no_content_above() {
     let mut app = OilChatApp::default();
-
-    // Press Ctrl+C to show notification
     app.update(crate::tui::oil::event::Event::Key(KeyEvent::new(
         KeyCode::Char('c'),
         KeyModifiers::CONTROL,
     )));
+    assert_snapshot!(render_app(&app));
+}
 
+#[test]
+fn snapshot_notification_overlays_streaming_content() {
+    use crucible_core::types::{Notification, NotificationKind};
+
+    let mut app = OilChatApp::default();
+    app.on_message(ChatAppMsg::UserMessage("Hello".to_string()));
+    app.on_message(ChatAppMsg::TextDelta(
+        "Hi there! How can I help you today?".to_string(),
+    ));
+
+    app.add_notification(Notification::new(
+        NotificationKind::Toast,
+        "Test notification",
+    ));
+    assert_snapshot!(render_app(&app));
+}
+
+#[test]
+fn snapshot_multiple_notifications_stacked() {
+    use crucible_core::types::{Notification, NotificationKind};
+
+    let mut app = OilChatApp::default();
+    app.on_message(ChatAppMsg::UserMessage("Hello".to_string()));
+    app.on_message(ChatAppMsg::TextDelta("Hi there!".to_string()));
+
+    app.add_notification(Notification::new(NotificationKind::Toast, "First toast"));
+    app.add_notification(Notification::new(NotificationKind::Toast, "Second toast"));
+    app.add_notification(Notification::new(
+        NotificationKind::Warning,
+        "Context at 85%",
+    ));
     assert_snapshot!(render_app(&app));
 }
 
