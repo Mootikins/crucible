@@ -2,12 +2,10 @@
 source: crates/crucible-cli/src/tui/oil/tests/chat_app_snapshot_tests.rs
 expression: render_app(&app)
 ---
- Permission: Tool                                                               
-
-  semantic_search (query="rust memory safety", limit=10)
-
- > [y] Allow once
-   [n] Deny
-
-
- ↑/↓ navigate │ Enter select │ y/n/p shortcuts │ Esc cancel
+▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄
+  semantic_search (query="rust memory safety", limit=10)                        
+                                                                                
+    > [y] Allow once                                                            
+      [n] Deny                                                                  
+▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+ PERMISSION  TOOL  ↑/↓ navigate  Enter select  y/n shortcuts  Esc cancel
