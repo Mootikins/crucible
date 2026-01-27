@@ -455,7 +455,7 @@ fn test_permission_read_scope_displayed() {
     app.open_interaction("perm-read".to_string(), request);
 
     let output = render_app(&app);
-    assert_contains(&output, "Read", "should indicate read operation");
+    assert_contains(&output, "READ", "should indicate read operation");
     assert_contains(&output, "hosts", "should show file path");
 }
 
