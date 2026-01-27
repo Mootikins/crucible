@@ -366,3 +366,17 @@ fn cursor_row_from_end_uses_visual_rows() {
         "30-char line at width 20 = 2 visual rows below cursor"
     );
 }
+
+#[test]
+fn row_with_fixed_child_renders_in_multiline() {
+    let node = row([fixed(10, text("Label")), text("Multi\nline\ncontent")]);
+    let output = render_to_string(&node, 80);
+    assert!(
+        output.contains("Label"),
+        "Fixed child 'Label' should be rendered"
+    );
+    assert!(
+        output.contains("Multi"),
+        "Multi-line content should be rendered"
+    );
+}
