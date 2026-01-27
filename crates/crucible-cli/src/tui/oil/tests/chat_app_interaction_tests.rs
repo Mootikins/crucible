@@ -375,6 +375,29 @@ fn notification_persists_until_timeout() {
 }
 
 #[test]
+fn tick_hides_notification_area_when_empty() {
+    let mut app = OilChatApp::default();
+
+    app.update(Event::Key(ctrl('c')));
+    let tree = view_with_default_ctx(&app);
+    let output = render_to_string(&tree, 80);
+    assert!(
+        output.contains("Ctrl+C again to quit"),
+        "Notification should be visible after Ctrl+C"
+    );
+
+    app.clear_notifications();
+    app.update(Event::Tick);
+
+    let tree_after = view_with_default_ctx(&app);
+    let output_after = render_to_string(&tree_after, 80);
+    assert!(
+        !output_after.contains("Ctrl+C again to quit"),
+        "Notification should be hidden after tick when empty"
+    );
+}
+
+#[test]
 fn ctrl_c_resets_on_any_other_key() {
     let mut app = OilChatApp::default();
 
