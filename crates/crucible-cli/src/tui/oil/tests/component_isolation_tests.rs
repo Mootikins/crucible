@@ -144,13 +144,14 @@ mod status_bar_tests {
 
     #[test]
     fn notification_badge_appears_on_right() {
+        use crate::tui::oil::components::NotificationToastKind;
         let bar = StatusBar::new()
             .mode(ChatMode::Normal)
-            .notification_count(5);
+            .toast("Processing", NotificationToastKind::Info);
         let plain = render_plain(&bar, 80);
 
         let mode_pos = plain.find("NORMAL").expect("mode should exist");
-        let badge_pos = plain.find("[5]").expect("notification badge should exist");
+        let badge_pos = plain.find("INFO").expect("notification badge should exist");
 
         assert!(
             badge_pos > mode_pos,
@@ -160,12 +161,16 @@ mod status_bar_tests {
 
     #[test]
     fn fits_width_80() {
+        use crate::tui::oil::components::NotificationToastKind;
         let bar = StatusBar::new()
             .mode(ChatMode::Normal)
             .model("claude-3-opus-very-long-name")
             .context(64000, 128000)
             .status("Streaming...")
-            .notification_count(3);
+            .counts(vec![
+                (NotificationToastKind::Warning, 3),
+                (NotificationToastKind::Error, 1),
+            ]);
         let plain = render_plain(&bar, 80);
 
         assert_fits_width(&plain, 80);
