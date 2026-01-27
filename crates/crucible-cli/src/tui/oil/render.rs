@@ -309,8 +309,13 @@ fn render_row_children_filtered(
         let size = get_node_size(child);
         match size {
             Size::Fixed(w) => {
+                let mut temp = String::new();
+                let mut temp_cursor = CursorInfo::default();
+                render_node_filtered(child, w as usize, filter, &mut temp, &mut temp_cursor);
+                let line_count = temp.lines().count().max(1);
+                max_height = max_height.max(line_count);
                 measurements.push(ChildMeasurement::Fixed(w as usize));
-                child_infos.push(RowChildInfo::Fixed);
+                child_infos.push(RowChildInfo::Fixed(temp));
             }
             Size::Flex(weight) => {
                 measurements.push(ChildMeasurement::Flex(weight));
@@ -382,8 +387,10 @@ fn render_row_single_line(
                     output.push_str(&rendered);
                 }
             }
-            RowChildInfo::Fixed => {
-                render_node_filtered(child, child_width, filter, output, cursor_info);
+            RowChildInfo::Fixed(rendered) => {
+                if !rendered.is_empty() {
+                    output.push_str(&rendered);
+                }
             }
             RowChildInfo::Flex => {
                 if child_width > 0 {
@@ -416,9 +423,8 @@ fn render_row_to_grid(
                 grid.blit_string(rendered, x_offset, 0);
                 x_offset += child_width;
             }
-            RowChildInfo::Fixed => {
-                // Fixed children weren't pre-rendered, need to handle separately
-                // For now, skip - most fixed children are single-line
+            RowChildInfo::Fixed(rendered) => {
+                grid.blit_string(rendered, x_offset, 0);
                 x_offset += child_width;
             }
             RowChildInfo::Flex => {
@@ -432,7 +438,7 @@ fn render_row_to_grid(
 
 enum RowChildInfo {
     Skip,
-    Fixed,
+    Fixed(String),
     Flex,
     Content(String, CursorInfo),
 }
