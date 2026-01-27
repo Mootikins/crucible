@@ -380,3 +380,15 @@ fn row_with_fixed_child_renders_in_multiline() {
         "Multi-line content should be rendered"
     );
 }
+
+#[test]
+fn row_with_multiline_fixed_child_affects_height() {
+    let node = row([fixed(10, text("Line1\nLine2")), text("A")]);
+    let output = render_to_string(&node, 80);
+    let lines: Vec<&str> = output.lines().collect();
+    assert_eq!(
+        lines.len(),
+        2,
+        "Row should have 2 lines (Fixed child has 2 lines)"
+    );
+}
