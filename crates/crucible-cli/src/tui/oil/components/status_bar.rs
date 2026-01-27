@@ -5,6 +5,31 @@ use crate::tui::oil::style::{Color, Style};
 use crate::tui::oil::theme::{colors, styles};
 use crate::tui::oil::ViewContext;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NotificationToastKind {
+    Info,
+    Warning,
+    Error,
+}
+
+impl NotificationToastKind {
+    fn color(&self) -> Color {
+        match self {
+            NotificationToastKind::Info => colors::INFO,
+            NotificationToastKind::Warning => colors::WARNING,
+            NotificationToastKind::Error => colors::ERROR,
+        }
+    }
+
+    fn label(&self) -> &'static str {
+        match self {
+            NotificationToastKind::Info => "INFO",
+            NotificationToastKind::Warning => "WARN",
+            NotificationToastKind::Error => "ERRO",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct StatusBar {
     pub mode: ChatMode,
@@ -12,7 +37,8 @@ pub struct StatusBar {
     pub context_used: usize,
     pub context_total: usize,
     pub status: String,
-    pub notification_count: usize,
+    pub notification_toast: Option<(String, NotificationToastKind)>,
+    pub notification_counts: Vec<(NotificationToastKind, usize)>,
 }
 
 impl StatusBar {
@@ -41,8 +67,13 @@ impl StatusBar {
         self
     }
 
-    pub fn notification_count(mut self, count: usize) -> Self {
-        self.notification_count = count;
+    pub fn toast(mut self, text: impl Into<String>, kind: NotificationToastKind) -> Self {
+        self.notification_toast = Some((text.into(), kind));
+        self
+    }
+
+    pub fn counts(mut self, counts: Vec<(NotificationToastKind, usize)>) -> Self {
+        self.notification_counts = counts;
         self
     }
 
@@ -98,12 +129,26 @@ impl Component for StatusBar {
             items.push(styled(self.status.clone(), styles::muted()));
         }
 
-        if self.notification_count > 0 {
+        if let Some((text, kind)) = &self.notification_toast {
             items.push(spacer());
+            items.push(styled(text.clone(), styles::overlay_bright()));
+            items.push(styled(" ".to_string(), Style::new()));
             items.push(styled(
-                format!(" [{}] ", self.notification_count),
-                styles::notification(),
+                format!(" {} ", kind.label()),
+                styles::notification_badge(kind.color()),
             ));
+        } else if !self.notification_counts.is_empty() {
+            items.push(spacer());
+            for (kind, count) in &self.notification_counts {
+                items.push(styled(
+                    format!(" {} ", kind.label()),
+                    styles::notification_badge(kind.color()),
+                ));
+                items.push(styled(
+                    format!(" {} ", count),
+                    Style::new().fg(kind.color()).bold(),
+                ));
+            }
         }
 
         row(items)
@@ -189,18 +234,35 @@ mod tests {
     }
 
     #[test]
-    fn notification_badge_shows_count() {
-        let bar = StatusBar::new().notification_count(3);
+    fn notification_toast_renders_text_and_badge() {
+        let bar = StatusBar::new().toast("Processing", NotificationToastKind::Info);
         let h = ComponentHarness::new(80, 1);
         let plain = render_to_plain_text(&bar.view(&ViewContext::new(h.focus())), 80);
-        assert!(plain.contains("[3]"));
+        assert!(plain.contains("Processing"));
+        assert!(plain.contains("INFO"));
     }
 
     #[test]
-    fn no_notification_badge_when_zero() {
-        let bar = StatusBar::new().notification_count(0);
+    fn notification_counts_render_badges_with_numbers() {
+        let bar = StatusBar::new().counts(vec![
+            (NotificationToastKind::Warning, 3),
+            (NotificationToastKind::Error, 1),
+        ]);
         let h = ComponentHarness::new(80, 1);
         let plain = render_to_plain_text(&bar.view(&ViewContext::new(h.focus())), 80);
-        assert!(!plain.contains('['));
+        assert!(plain.contains("WARN"));
+        assert!(plain.contains("3"));
+        assert!(plain.contains("ERRO"));
+        assert!(plain.contains("1"));
+    }
+
+    #[test]
+    fn no_notification_when_empty() {
+        let bar = StatusBar::new();
+        let h = ComponentHarness::new(80, 1);
+        let plain = render_to_plain_text(&bar.view(&ViewContext::new(h.focus())), 80);
+        assert!(!plain.contains("INFO"));
+        assert!(!plain.contains("WARN"));
+        assert!(!plain.contains("ERRO"));
     }
 }
