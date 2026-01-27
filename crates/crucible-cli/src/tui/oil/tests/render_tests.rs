@@ -1,5 +1,6 @@
 use crate::tui::oil::render::{render_with_cursor, CursorInfo};
 use crate::tui::oil::*;
+use insta::assert_snapshot;
 
 #[test]
 fn text_renders_content() {
@@ -391,4 +392,18 @@ fn row_with_multiline_fixed_child_affects_height() {
         2,
         "Row should have 2 lines (Fixed child has 2 lines)"
     );
+}
+
+#[test]
+fn snapshot_two_column_row_layout() {
+    let node = row([
+        col([text("Label:")]),
+        flex(
+            1,
+            col([text(
+                "This is a longer description that should fill the remaining space in the row",
+            )]),
+        ),
+    ]);
+    assert_snapshot!(render_to_string(&node, 80));
 }
