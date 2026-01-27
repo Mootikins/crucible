@@ -2,11 +2,11 @@
 source: crates/crucible-cli/src/tui/oil/tests/chat_app_snapshot_tests.rs
 expression: render_app(&app)
 ---
- ● Hi there!                                                 ▛▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
-                                                             ▌ ✓ First toast    
- ◐                                                           ▌ ✓ Second toast   
-                                                             ▌ ⚠ Context at 85% 
-▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▙▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄
+ ● Hi there!
+
+ ◐
+
+▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄
  >                                                                              
 ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
- NORMAL  ...                                                                [3]
+ NORMAL  ...                                               Context at 85%  WARN

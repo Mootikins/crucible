@@ -1,66 +1,24 @@
-//! Notification area component for displaying toast, progress, and warning notifications.
+//! Notification store for managing toast, progress, and warning notifications.
 //!
-//! The notification area renders as a popup overlay anchored to the bottom-right,
-//! using block characters to create a floating card effect above the statusline.
-//!
-//! Visual design:
-//! ```text
-//!                                                         ▗▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄
-//!                                                         ▌ ✓ Session saved
-//! ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▌ ⏳ Indexing... 45%
-//!  > input here                                           ▌ ⚠ Context at 85%
-//! ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▘ message 4
-//! NORMAL | model                                            message 5
-//! ```
+//! This module provides a data store for notifications. Rendering is handled
+//! by the StatusBar (toast/counts) and a future notification drawer.
 
-use crate::tui::oil::component::Component;
-use crate::tui::oil::node::{col, overlay_from_bottom_right, row, styled, text, Node};
-use crate::tui::oil::style::Style;
-use crate::tui::oil::theme::{colors, styles};
-use crate::tui::oil::ViewContext;
+use super::status_bar::NotificationToastKind;
 use crucible_core::types::{Notification, NotificationKind};
 use std::time::{Duration, Instant};
 
 /// Default auto-dismiss timeout for toast notifications (3 seconds).
 const TOAST_TIMEOUT: Duration = Duration::from_secs(3);
 
-/// Maximum number of notifications to display.
-pub const MAX_VISIBLE_NOTIFICATIONS: usize = 5;
-
-/// Block characters for the floating card effect.
-mod block_chars {
-    /// Top-left corner (three quadrants filled - missing lower-right)
-    pub const TOP_LEFT: char = '▛';
-    /// Top edge
-    pub const TOP_EDGE: char = '▀';
-    /// Left border
-    pub const LEFT_BORDER: char = '▌';
-    /// Notch where input meets popup (bottom-left of popup area)
-    pub const NOTCH: char = '▘';
-    /// Connection point on input box (three quadrants filled - missing upper-right)
-    pub const CONNECTION: char = '▙';
-}
-
-/// Icons for different notification types.
-mod icons {
-    /// Toast/success icon
-    pub const TOAST: &str = "✓";
-    /// Progress icon
-    pub const PROGRESS: &str = "⏳";
-    /// Warning icon
-    pub const WARNING: &str = "⚠";
-}
-
-/// A notification area that displays as a popup overlay.
+/// A notification store that manages notification lifecycle.
 ///
-/// Manages a collection of notifications with auto-dismiss for toasts
-/// and persistent display for progress/warning notifications.
+/// Stores notifications with auto-dismiss for toasts and persistent
+/// display for progress/warning notifications. Provides data for
+/// StatusBar toast/count display and future drawer UI.
 #[derive(Debug, Clone)]
 pub struct NotificationArea {
     notifications: Vec<(Notification, Instant)>,
     visible: bool,
-    max_visible: usize,
-    width: usize,
 }
 
 impl Default for NotificationArea {
@@ -70,58 +28,35 @@ impl Default for NotificationArea {
 }
 
 impl NotificationArea {
-    /// Create a new empty notification area.
+    /// Create a new empty notification store.
     pub fn new() -> Self {
         Self {
             notifications: Vec::new(),
             visible: false,
-            max_visible: MAX_VISIBLE_NOTIFICATIONS,
-            width: 30,
         }
     }
 
-    /// Set visibility of the notification area.
-    #[must_use]
-    pub fn visible(mut self, visible: bool) -> Self {
-        self.visible = visible;
-        self
-    }
-
-    /// Set the maximum number of visible notifications.
-    #[must_use]
-    pub fn max_visible(mut self, max: usize) -> Self {
-        self.max_visible = max;
-        self
-    }
-
-    /// Set the width of the notification area.
-    #[must_use]
-    pub fn width(mut self, width: usize) -> Self {
-        self.width = width;
-        self
-    }
-
-    /// Toggle visibility.
+    /// Toggle visibility (for future drawer).
     pub fn toggle(&mut self) {
         self.visible = !self.visible;
     }
 
-    /// Show the notification area.
+    /// Show the notification area (for future drawer).
     pub fn show(&mut self) {
         self.visible = true;
     }
 
-    /// Hide the notification area.
+    /// Hide the notification area (for future drawer).
     pub fn hide(&mut self) {
         self.visible = false;
     }
 
-    /// Check if the notification area is visible.
+    /// Check if the notification area is visible (for future drawer).
     pub fn is_visible(&self) -> bool {
         self.visible
     }
 
-    /// Add a notification to the area.
+    /// Add a notification to the store.
     pub fn add(&mut self, notification: Notification) {
         self.notifications.push((notification, Instant::now()));
     }
@@ -168,151 +103,46 @@ impl NotificationArea {
         self.notifications.len()
     }
 
-    /// Calculate the column where the notification card ends (for input connection point).
-    /// Returns None if no notifications are visible.
-    pub fn card_end_column(&self, terminal_width: usize) -> Option<usize> {
-        if !self.visible || self.notifications.is_empty() {
-            return None;
-        }
-
-        let display_notifications: Vec<_> = self
-            .notifications
-            .iter()
-            .rev()
-            .take(self.max_visible)
-            .collect();
-
-        if display_notifications.is_empty() {
-            return None;
-        }
-
-        let max_msg_len = display_notifications
-            .iter()
-            .map(|(n, _)| n.message.len())
-            .max()
-            .unwrap_or(0);
-
-        let card_width = max_msg_len + 5;
-        Some(terminal_width.saturating_sub(card_width))
-    }
-
-    fn render_notification(&self, notification: &Notification, max_message_len: usize) -> Node {
-        use unicode_width::UnicodeWidthStr;
-
-        let (icon, icon_style) = match &notification.kind {
-            NotificationKind::Toast => (icons::TOAST, styles::success()),
-            NotificationKind::Progress { .. } => (icons::PROGRESS, styles::info()),
-            NotificationKind::Warning => (icons::WARNING, styles::warning()),
-        };
-
-        // Detect icon width and add padding for single-width icons
-        let icon_width = UnicodeWidthStr::width(icon);
-        let padded_icon = if icon_width == 1 {
-            // Single-width icon (✓, ⚠) → add space padding: " ✓ "
-            format!(" {} ", icon)
-        } else {
-            // Double-width icon (⏳) → single space: "⏳ "
-            format!("{} ", icon)
-        };
-
-        // Pad message to max_message_len with trailing space for right-side padding
-        let padded_message = format!("{:width$} ", notification.message, width = max_message_len);
-
-        let mut items = vec![
-            styled(
-                format!("{}", block_chars::LEFT_BORDER),
-                Style::new().fg(colors::BORDER),
-            ),
-            styled(padded_icon, icon_style),
-            styled(padded_message, Style::new().fg(colors::TEXT_PRIMARY)),
-        ];
-
-        // Add progress bar for Progress notifications
-        if let NotificationKind::Progress { current, total } = notification.kind {
-            let percent = if total > 0 {
-                (current as f64 / total as f64 * 100.0).round() as usize
-            } else {
-                0
+    /// Get the most recent notification as a toast for StatusBar display.
+    ///
+    /// Returns the message text and mapped `NotificationToastKind`.
+    pub fn active_toast(&self) -> Option<(&str, NotificationToastKind)> {
+        self.notifications.last().map(|(n, _)| {
+            let kind = match &n.kind {
+                NotificationKind::Toast => NotificationToastKind::Info,
+                NotificationKind::Progress { .. } => NotificationToastKind::Info,
+                NotificationKind::Warning => NotificationToastKind::Warning,
             };
-            items.push(styled(format!(" {}%", percent), styles::muted()));
-        }
-
-        row(items)
+            (n.message.as_str(), kind)
+        })
     }
 
-    fn render_top_border(&self, content_width: usize) -> Node {
-        // Top border width must match message row width for alignment.
-        // Message row = border(1) + padded_icon(3) + message(max_msg_len) = 4 + max_msg_len
-        // content_width = 4 + max_msg_len
-        // Top border = TOP_LEFT(1) + TOP_EDGE × (content_width - 1) = content_width
-        let border_chars = format!(
-            "{}{}",
-            block_chars::TOP_LEFT,
-            block_chars::TOP_EDGE
-                .to_string()
-                .repeat(content_width.saturating_sub(1))
-        );
-        styled(border_chars, Style::new().fg(colors::BORDER))
+    /// Get counts of warnings and errors for StatusBar badge display.
+    ///
+    /// Returns non-zero counts only.
+    pub fn warning_error_counts(&self) -> Vec<(NotificationToastKind, usize)> {
+        let mut warn_count = 0usize;
+        for (n, _) in &self.notifications {
+            if matches!(n.kind, NotificationKind::Warning) {
+                warn_count += 1;
+            }
+        }
+        let mut counts = Vec::new();
+        if warn_count > 0 {
+            counts.push((NotificationToastKind::Warning, warn_count));
+        }
+        counts
     }
 
-    fn render_bottom_notch(&self) -> Node {
-        styled(
-            format!("{}", block_chars::NOTCH),
-            Style::new().fg(colors::BORDER),
-        )
-    }
-}
-
-impl Component for NotificationArea {
-    fn view(&self, _ctx: &ViewContext<'_>) -> Node {
-        // Don't render if not visible or no notifications
-        if !self.visible || self.notifications.is_empty() {
-            return Node::Empty;
-        }
-
-        // Get notifications to display (most recent first, limited)
-        let display_notifications: Vec<_> = self
-            .notifications
-            .iter()
-            .rev()
-            .take(self.max_visible)
-            .collect();
-
-        if display_notifications.is_empty() {
-            return Node::Empty;
-        }
-
-        // Calculate max message length for alignment
-        let max_message_len = display_notifications
-            .iter()
-            .map(|(n, _)| n.message.len())
-            .max()
-            .unwrap_or(0);
-
-        // Calculate content width based on longest message
-        // +5 = border(1) + icon_padding(3) + trailing_space(1)
-        let content_width = max_message_len.saturating_add(5).min(self.width).max(15);
-
-        // Build the notification card
-        let mut rows = vec![self.render_top_border(content_width)];
-
-        for (notification, _) in display_notifications.iter().rev() {
-            rows.push(self.render_notification(notification, max_message_len));
-        }
-
-        let card = col(rows);
-
-        // Position from bottom-right (offset = 4: 3 blank lines + 1 statusline)
-        // This places notification 3 lines above the input box to avoid overlap
-        overlay_from_bottom_right(card, 4)
+    /// Get notification history for future drawer use.
+    pub fn history(&self) -> &[(Notification, Instant)] {
+        &self.notifications
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tui::oil::component::ComponentHarness;
-    use crate::tui::oil::render::render_to_plain_text;
 
     fn sample_toast() -> Notification {
         Notification::toast("Session saved")
@@ -324,74 +154,6 @@ mod tests {
 
     fn sample_warning() -> Notification {
         Notification::warning("Context at 85%")
-    }
-
-    #[test]
-    fn empty_area_returns_empty_node() {
-        let area = NotificationArea::new().visible(true);
-        let h = ComponentHarness::new(80, 24);
-        let node = area.view(&ViewContext::new(h.focus()));
-        assert!(matches!(node, Node::Empty));
-    }
-
-    #[test]
-    fn hidden_area_returns_empty_node() {
-        let mut area = NotificationArea::new();
-        area.add(sample_toast());
-        // visible is false by default
-        let h = ComponentHarness::new(80, 24);
-        let node = area.view(&ViewContext::new(h.focus()));
-        assert!(matches!(node, Node::Empty));
-    }
-
-    #[test]
-    fn visible_area_with_toast_renders() {
-        let mut area = NotificationArea::new().visible(true);
-        area.add(sample_toast());
-        let h = ComponentHarness::new(80, 24);
-        let node = area.view(&ViewContext::new(h.focus()));
-        let plain = render_to_plain_text(&node, 80);
-        assert!(plain.contains("Session saved"));
-        assert!(plain.contains(icons::TOAST));
-    }
-
-    #[test]
-    fn progress_notification_shows_percentage() {
-        let mut area = NotificationArea::new().visible(true);
-        area.add(sample_progress());
-        let h = ComponentHarness::new(80, 24);
-        let node = area.view(&ViewContext::new(h.focus()));
-        let plain = render_to_plain_text(&node, 80);
-        assert!(plain.contains("Indexing files"));
-        assert!(plain.contains("45%"));
-        assert!(plain.contains(icons::PROGRESS));
-    }
-
-    #[test]
-    fn warning_notification_shows_icon() {
-        let mut area = NotificationArea::new().visible(true);
-        area.add(sample_warning());
-        let h = ComponentHarness::new(80, 24);
-        let node = area.view(&ViewContext::new(h.focus()));
-        let plain = render_to_plain_text(&node, 80);
-        assert!(plain.contains("Context at 85%"));
-        assert!(plain.contains(icons::WARNING));
-    }
-
-    #[test]
-    fn multiple_notifications_stack() {
-        let mut area = NotificationArea::new().visible(true);
-        area.add(sample_toast());
-        area.add(sample_progress());
-        area.add(sample_warning());
-
-        let h = ComponentHarness::new(80, 24);
-        let node = area.view(&ViewContext::new(h.focus()));
-        let plain = render_to_plain_text(&node, 80);
-
-        assert!(plain.contains("Session saved"));
-        assert!(plain.contains("Indexing files"));
-        assert!(plain.contains("Context at 85%"));
     }
 
     #[test]
@@ -434,23 +196,6 @@ mod tests {
     }
 
     #[test]
-    fn max_visible_limits_display() {
-        let mut area = NotificationArea::new().visible(true).max_visible(2);
-        area.add(Notification::toast("First"));
-        area.add(Notification::toast("Second"));
-        area.add(Notification::toast("Third"));
-
-        let h = ComponentHarness::new(80, 24);
-        let node = area.view(&ViewContext::new(h.focus()));
-        let plain = render_to_plain_text(&node, 80);
-
-        // Should only show the 2 most recent (Second and Third)
-        assert!(!plain.contains("First"));
-        assert!(plain.contains("Second"));
-        assert!(plain.contains("Third"));
-    }
-
-    #[test]
     fn unread_count_reflects_total() {
         let mut area = NotificationArea::new();
         assert_eq!(area.unread_count(), 0);
@@ -461,97 +206,50 @@ mod tests {
     }
 
     #[test]
-    fn builder_methods() {
-        let area = NotificationArea::new()
-            .visible(true)
-            .max_visible(3)
-            .width(40);
+    fn active_toast_returns_most_recent() {
+        let mut area = NotificationArea::new();
+        assert!(area.active_toast().is_none());
 
-        assert!(area.is_visible());
-        assert_eq!(area.max_visible, 3);
-        assert_eq!(area.width, 40);
+        area.add(sample_toast());
+        let (msg, kind) = area.active_toast().unwrap();
+        assert_eq!(msg, "Session saved");
+        assert_eq!(kind, NotificationToastKind::Info);
+
+        area.add(sample_warning());
+        let (msg, kind) = area.active_toast().unwrap();
+        assert_eq!(msg, "Context at 85%");
+        assert_eq!(kind, NotificationToastKind::Warning);
     }
 
     #[test]
-    fn notification_uses_right_aligned_overlay() {
-        use crate::tui::oil::node::Node;
-        use crate::tui::oil::overlay::OverlayAnchor;
-
-        let mut area = NotificationArea::new().visible(true).width(25);
-        area.add(Notification::toast("Test"));
-        let h = ComponentHarness::new(80, 24);
-        let node = area.view(&ViewContext::new(h.focus()));
-
-        match node {
-            Node::Overlay(overlay) => {
-                assert!(
-                    matches!(overlay.anchor, OverlayAnchor::FromBottomRight(_)),
-                    "Notification should use FromBottomRight anchor"
-                );
-            }
-            _ => panic!("Expected Overlay node"),
-        }
+    fn active_toast_maps_progress_to_info() {
+        let mut area = NotificationArea::new();
+        area.add(sample_progress());
+        let (_, kind) = area.active_toast().unwrap();
+        assert_eq!(kind, NotificationToastKind::Info);
     }
 
     #[test]
-    fn all_notification_rows_have_same_visible_width() {
-        // Given multiple notifications with different message lengths
-        let mut area = NotificationArea::new().visible(true);
-        area.add(Notification::toast("Short"));
-        area.add(Notification::toast("A much longer message here"));
-        area.add(Notification::toast("Medium text"));
+    fn warning_error_counts_returns_nonzero_only() {
+        let mut area = NotificationArea::new();
+        assert!(area.warning_error_counts().is_empty());
 
-        let h = ComponentHarness::new(80, 24);
-        let node = area.view(&ViewContext::new(h.focus()));
-        let rendered = render_to_plain_text(&node, 80);
+        area.add(sample_toast());
+        assert!(area.warning_error_counts().is_empty());
 
-        // When we render, all rows (excluding top border) should have same width
-        let lines: Vec<&str> = rendered.lines().collect();
-        let message_lines: Vec<&str> = lines.iter().filter(|l| l.contains('▌')).copied().collect();
-
-        // Then all message lines should have identical length
-        assert!(!message_lines.is_empty(), "Should have message lines");
-        let first_len = message_lines[0].len();
-        for (i, line) in message_lines.iter().enumerate() {
-            assert_eq!(
-                line.len(),
-                first_len,
-                "Line {} has length {}, expected {} (all should match)\nLine: '{}'",
-                i,
-                line.len(),
-                first_len,
-                line
-            );
-        }
+        area.add(sample_warning());
+        area.add(sample_warning());
+        let counts = area.warning_error_counts();
+        assert_eq!(counts.len(), 1);
+        assert_eq!(counts[0], (NotificationToastKind::Warning, 2));
     }
 
     #[test]
-    fn left_border_aligned_across_all_messages() {
-        // Given multiple notifications
-        let mut area = NotificationArea::new().visible(true);
-        area.add(Notification::toast("Short"));
-        area.add(Notification::toast("Much longer"));
-
-        let h = ComponentHarness::new(80, 24);
-        let node = area.view(&ViewContext::new(h.focus()));
-        let rendered = render_to_plain_text(&node, 80);
-
-        // When we find the position of ▌ in each line
-        let border_positions: Vec<usize> = rendered.lines().filter_map(|l| l.find('▌')).collect();
-
-        // Then all ▌ characters should be at the same column
-        assert!(
-            border_positions.len() >= 2,
-            "Should have multiple borders, got {}",
-            border_positions.len()
-        );
-        let first_pos = border_positions[0];
-        for (i, pos) in border_positions.iter().enumerate() {
-            assert_eq!(
-                *pos, first_pos,
-                "Border at line {} is at column {}, expected column {}",
-                i, pos, first_pos
-            );
-        }
+    fn history_returns_all_notifications() {
+        let mut area = NotificationArea::new();
+        area.add(sample_toast());
+        area.add(sample_progress());
+        area.add(sample_warning());
+        assert_eq!(area.history().len(), 3);
     }
 }
