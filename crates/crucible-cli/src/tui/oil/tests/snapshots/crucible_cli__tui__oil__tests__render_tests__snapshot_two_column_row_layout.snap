@@ -1,0 +1,6 @@
+---
+source: crates/crucible-cli/src/tui/oil/tests/render_tests.rs
+assertion_line: 396
+expression: "render_to_string(&node, 80)"
+---
+Label:
