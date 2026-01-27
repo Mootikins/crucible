@@ -196,7 +196,7 @@ impl NotificationArea {
         Some(terminal_width.saturating_sub(card_width))
     }
 
-    fn render_notification(&self, notification: &Notification) -> Node {
+    fn render_notification(&self, notification: &Notification, max_message_len: usize) -> Node {
         use unicode_width::UnicodeWidthStr;
 
         let (icon, icon_style) = match &notification.kind {
@@ -215,16 +215,16 @@ impl NotificationArea {
             format!("{} ", icon)
         };
 
+        // Pad message to max_message_len with trailing space for right-side padding
+        let padded_message = format!("{:width$} ", notification.message, width = max_message_len);
+
         let mut items = vec![
             styled(
                 format!("{}", block_chars::LEFT_BORDER),
                 Style::new().fg(colors::BORDER),
             ),
             styled(padded_icon, icon_style),
-            styled(
-                notification.message.clone(),
-                Style::new().fg(colors::TEXT_PRIMARY),
-            ),
+            styled(padded_message, Style::new().fg(colors::TEXT_PRIMARY)),
         ];
 
         // Add progress bar for Progress notifications
@@ -241,10 +241,16 @@ impl NotificationArea {
     }
 
     fn render_top_border(&self, content_width: usize) -> Node {
+        // Top border width must match message row width for alignment.
+        // Message row = border(1) + padded_icon(3) + message(max_msg_len) = 4 + max_msg_len
+        // content_width = 4 + max_msg_len
+        // Top border = TOP_LEFT(1) + TOP_EDGE × (content_width - 1) = content_width
         let border_chars = format!(
             "{}{}",
             block_chars::TOP_LEFT,
-            block_chars::TOP_EDGE.to_string().repeat(content_width)
+            block_chars::TOP_EDGE
+                .to_string()
+                .repeat(content_width.saturating_sub(1))
         );
         styled(border_chars, Style::new().fg(colors::BORDER))
     }
@@ -276,20 +282,22 @@ impl Component for NotificationArea {
             return Node::Empty;
         }
 
-        // Calculate content width based on longest message
-        let content_width = display_notifications
+        // Calculate max message length for alignment
+        let max_message_len = display_notifications
             .iter()
-            .map(|(n, _)| n.message.len() + 4) // +4 for icon and spacing
+            .map(|(n, _)| n.message.len())
             .max()
-            .unwrap_or(20)
-            .min(self.width)
-            .max(15);
+            .unwrap_or(0);
+
+        // Calculate content width based on longest message
+        // +5 = border(1) + icon_padding(3) + trailing_space(1)
+        let content_width = max_message_len.saturating_add(5).min(self.width).max(15);
 
         // Build the notification card
         let mut rows = vec![self.render_top_border(content_width)];
 
         for (notification, _) in display_notifications.iter().rev() {
-            rows.push(self.render_notification(notification));
+            rows.push(self.render_notification(notification, max_message_len));
         }
 
         let card = col(rows);
@@ -482,6 +490,68 @@ mod tests {
                 );
             }
             _ => panic!("Expected Overlay node"),
+        }
+    }
+
+    #[test]
+    fn all_notification_rows_have_same_visible_width() {
+        // Given multiple notifications with different message lengths
+        let mut area = NotificationArea::new().visible(true);
+        area.add(Notification::toast("Short"));
+        area.add(Notification::toast("A much longer message here"));
+        area.add(Notification::toast("Medium text"));
+
+        let h = ComponentHarness::new(80, 24);
+        let node = area.view(&ViewContext::new(h.focus()));
+        let rendered = render_to_plain_text(&node, 80);
+
+        // When we render, all rows (excluding top border) should have same width
+        let lines: Vec<&str> = rendered.lines().collect();
+        let message_lines: Vec<&str> = lines.iter().filter(|l| l.contains('▌')).copied().collect();
+
+        // Then all message lines should have identical length
+        assert!(!message_lines.is_empty(), "Should have message lines");
+        let first_len = message_lines[0].len();
+        for (i, line) in message_lines.iter().enumerate() {
+            assert_eq!(
+                line.len(),
+                first_len,
+                "Line {} has length {}, expected {} (all should match)\nLine: '{}'",
+                i,
+                line.len(),
+                first_len,
+                line
+            );
+        }
+    }
+
+    #[test]
+    fn left_border_aligned_across_all_messages() {
+        // Given multiple notifications
+        let mut area = NotificationArea::new().visible(true);
+        area.add(Notification::toast("Short"));
+        area.add(Notification::toast("Much longer"));
+
+        let h = ComponentHarness::new(80, 24);
+        let node = area.view(&ViewContext::new(h.focus()));
+        let rendered = render_to_plain_text(&node, 80);
+
+        // When we find the position of ▌ in each line
+        let border_positions: Vec<usize> = rendered.lines().filter_map(|l| l.find('▌')).collect();
+
+        // Then all ▌ characters should be at the same column
+        assert!(
+            border_positions.len() >= 2,
+            "Should have multiple borders, got {}",
+            border_positions.len()
+        );
+        let first_pos = border_positions[0];
+        for (i, pos) in border_positions.iter().enumerate() {
+            assert_eq!(
+                *pos, first_pos,
+                "Border at line {} is at column {}, expected column {}",
+                i, pos, first_pos
+            );
         }
     }
 }
