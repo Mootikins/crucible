@@ -2,14 +2,12 @@
 source: crates/crucible-cli/src/tui/oil/tests/chat_app_snapshot_tests.rs
 expression: render_app(&app)
 ---
- Permission: Write                                                              
-
+▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄
   /home/user/projects/company/team/repository/packages/core/src/components/
 Button.tsx
-
- > [y] Allow once
-   [n] Deny
-   [p] Allow + Save pattern
-
-
- ↑/↓ navigate │ Enter select │ y/n/p shortcuts │ Esc cancel
+                                                                                
+    > [y] Allow once                                                            
+      [n] Deny                                                                  
+      [p] Allow + Save pattern                                                  
+▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+ PERMISSION  WRITE  ↑/↓ navigate  Enter select  y/n/p shortcuts  h diff  Esc cancel

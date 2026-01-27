@@ -2661,41 +2661,53 @@ impl OilChatApp {
             .map(|(w, h)| (w as usize, h as usize))
             .unwrap_or((80, 24));
 
-        let header_bg = colors::POPUP_BG;
-        let footer_bg = colors::INPUT_BG;
+        let panel_bg = colors::INPUT_BG;
+        let border_fg = colors::BORDER;
 
-        let (type_label, action_detail) = match &perm_request.action {
-            PermAction::Bash { tokens } => ("Bash", tokens.join(" ")),
-            PermAction::Read { segments } => ("Read", format!("/{}", segments.join("/"))),
-            PermAction::Write { segments } => ("Write", format!("/{}", segments.join("/"))),
+        let (type_label, action_detail, is_write) = match &perm_request.action {
+            PermAction::Bash { tokens } => ("BASH", tokens.join(" "), false),
+            PermAction::Read { segments } => ("READ", format!("/{}", segments.join("/")), false),
+            PermAction::Write { segments } => ("WRITE", format!("/{}", segments.join("/")), true),
             PermAction::Tool { name, args } => {
                 let args_str = Self::prettify_tool_args(args);
-                ("Tool", format!("{} {}", name, args_str))
+                ("TOOL", format!("{} {}", name, args_str), false)
             }
         };
 
         let queue_total = 1 + self.permission_queue.len();
-        let header_text = if queue_total > 1 {
-            format!(" [1/{}] Permission: {} ", queue_total, type_label)
-        } else {
-            format!(" Permission: {} ", type_label)
-        };
-        let header_padding = " ".repeat(term_width.saturating_sub(header_text.len()));
-        let header = styled(
-            format!("{}{}", header_text, header_padding),
-            Style::new().bg(header_bg).bold(),
-        );
-
-        let action_line = styled(
-            format!("  {}", action_detail),
-            Style::new().fg(colors::TEXT_PRIMARY),
-        );
-
         let has_pattern_option = !perm_request.tokens().is_empty();
 
-        let mut choice_nodes: Vec<Node> = Vec::new();
+        // Helper: pad a content string to full width with INPUT_BG background
+        let pad_line = |content: &str, visible_len: usize| -> Node {
+            let pad = " ".repeat(term_width.saturating_sub(visible_len));
+            styled(
+                format!("{}{}", content, pad),
+                Style::new().bg(panel_bg).fg(colors::OVERLAY_BRIGHT),
+            )
+        };
 
-        let options = if has_pattern_option {
+        let mut lines: Vec<Node> = Vec::new();
+
+        // ── Top border: ▄ repeated ──
+        lines.push(styled(
+            "\u{2584}".repeat(term_width),
+            Style::new().fg(border_fg),
+        ));
+
+        // ── Action detail line ──
+        let action_text = if queue_total > 1 {
+            format!("  [{}/{}] {}", 1, queue_total, action_detail)
+        } else {
+            format!("  {}", action_detail)
+        };
+        let action_visible_len = action_text.len();
+        lines.push(pad_line(&action_text, action_visible_len));
+
+        // ── Blank line ──
+        lines.push(styled(" ".repeat(term_width), Style::new().bg(panel_bg)));
+
+        // ── Options ──
+        let options: Vec<(&str, &str)> = if has_pattern_option {
             vec![
                 ("y", "Allow once"),
                 ("n", "Deny"),
@@ -2707,60 +2719,68 @@ impl OilChatApp {
 
         for (i, (key, label)) in options.iter().enumerate() {
             let is_selected = i == modal.selected;
-            let prefix = if is_selected { " > " } else { "   " };
-            let style = if is_selected {
-                Style::new().fg(colors::TEXT_ACCENT).bold()
+            if is_selected {
+                let content = format!("    > [{}] {}", key, label);
+                let visible_len = content.len();
+                let pad = " ".repeat(term_width.saturating_sub(visible_len));
+                lines.push(styled(
+                    format!("{}{}", content, pad),
+                    Style::new().bg(panel_bg).fg(colors::TEXT_ACCENT).bold(),
+                ));
             } else {
-                Style::new().fg(colors::TEXT_PRIMARY)
-            };
-            let key_hint = Style::new().fg(colors::TEXT_MUTED).dim();
-            choice_nodes.push(row([
-                styled(prefix.to_string(), style),
-                styled(format!("[{}] ", key), key_hint),
-                styled(label.to_string(), style),
-            ]));
+                let key_part = format!("      [{}]", key);
+                let label_part = format!(" {}", label);
+                let visible_len = key_part.len() + label_part.len();
+                let pad = " ".repeat(term_width.saturating_sub(visible_len));
+                lines.push(row([
+                    styled(key_part, Style::new().bg(panel_bg).fg(colors::OVERLAY_TEXT)),
+                    styled(
+                        label_part,
+                        Style::new().bg(panel_bg).fg(colors::OVERLAY_BRIGHT),
+                    ),
+                    styled(pad, Style::new().bg(panel_bg)),
+                ]));
+            }
         }
 
-        let choices_col = col(choice_nodes);
+        // ── Bottom border: ▀ repeated ──
+        lines.push(styled(
+            "\u{2580}".repeat(term_width),
+            Style::new().fg(border_fg),
+        ));
 
-        let key_style = Style::new().bg(footer_bg).fg(colors::TEXT_ACCENT);
-        let sep_style = Style::new().bg(footer_bg).fg(colors::TEXT_MUTED);
-        let text_style = Style::new().bg(footer_bg).fg(colors::TEXT_PRIMARY).dim();
+        // ── Footer: PERMISSION badge + TYPE badge + key hints ──
+        let key_style = styles::overlay_key(colors::ERROR);
+        let hint_style = styles::overlay_hint();
 
-        let footer_content = row([
-            styled(" ", text_style),
-            styled("↑/↓", key_style),
-            styled(" navigate ", text_style),
-            styled("│", sep_style),
-            styled(" ", text_style),
-            styled("Enter", key_style),
-            styled(" select ", text_style),
-            styled("│", sep_style),
-            styled(" ", text_style),
-            styled("y/n/p", key_style),
-            styled(" shortcuts ", text_style),
-            styled("│", sep_style),
-            styled(" ", text_style),
-            styled("Esc", key_style),
-            styled(" cancel ", text_style),
-        ]);
+        let shortcut_keys = options
+            .iter()
+            .map(|(k, _)| *k)
+            .collect::<Vec<_>>()
+            .join("/");
 
-        let footer_padding = styled(
-            " ".repeat(term_width.saturating_sub(60)),
-            Style::new().bg(footer_bg),
-        );
-        let footer = row([footer_content, footer_padding]);
+        let mut footer_nodes: Vec<Node> = vec![
+            styled(" PERMISSION ", styles::permission_badge()),
+            styled(format!(" {} ", type_label), styles::permission_type()),
+            styled(" ↑/↓", key_style),
+            styled(" navigate", hint_style),
+            styled("  Enter", key_style),
+            styled(" select", hint_style),
+            styled(format!("  {}", shortcut_keys), key_style),
+            styled(" shortcuts", hint_style),
+        ];
 
-        col([
-            header,
-            text(""),
-            action_line,
-            text(""),
-            choices_col,
-            text(""),
-            spacer(),
-            footer,
-        ])
+        if is_write {
+            footer_nodes.push(styled("  h", key_style));
+            footer_nodes.push(styled(" diff", hint_style));
+        }
+
+        footer_nodes.push(styled("  Esc", key_style));
+        footer_nodes.push(styled(" cancel", hint_style));
+
+        lines.push(row(footer_nodes));
+
+        col(lines)
     }
 
     fn prettify_tool_args(args: &serde_json::Value) -> String {
@@ -4018,9 +4038,10 @@ mod tests {
         let output = render_to_string(&tree, 80);
 
         assert!(
-            output.contains("Permission: Bash"),
-            "Should show Bash permission type"
+            output.contains("PERMISSION"),
+            "Should show PERMISSION badge"
         );
+        assert!(output.contains("BASH"), "Should show BASH type label");
         assert!(
             output.contains("npm install lodash"),
             "Should show command tokens"
@@ -4045,10 +4066,7 @@ mod tests {
         let tree = app.view(&ctx);
         let output = render_to_string(&tree, 80);
 
-        assert!(
-            output.contains("Permission: Write"),
-            "Should show Write permission type"
-        );
+        assert!(output.contains("WRITE"), "Should show WRITE type label");
         assert!(
             output.contains("/home/user/project/src/main.rs"),
             "Should show path segments"
@@ -4317,9 +4335,6 @@ mod tests {
             !output.contains("[1/1]"),
             "Should not show queue indicator for single request"
         );
-        assert!(
-            output.contains("Permission: Bash"),
-            "Should show permission type"
-        );
+        assert!(output.contains("BASH"), "Should show BASH type label");
     }
 }
