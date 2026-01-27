@@ -4,7 +4,7 @@ mod input_area;
 mod message_list;
 mod notification_area;
 mod popup_overlay;
-mod status_bar;
+pub(crate) mod status_bar;
 
 pub use diff_preview::render_diff_preview;
 pub use drawer::{Drawer, DrawerKind};
