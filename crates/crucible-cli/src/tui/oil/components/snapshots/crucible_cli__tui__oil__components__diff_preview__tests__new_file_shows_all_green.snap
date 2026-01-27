@@ -2,6 +2,6 @@
 source: crates/crucible-cli/src/tui/oil/components/diff_preview.rs
 expression: output
 ---
-[38;5;10m[new file] [39m[38;5;14mtest.rs[39m
-[38;5;10m+[39m[38;2;192;197;206mline1[39m
-[38;5;10m+[39m[38;2;192;197;206mline2[39m
+[38;2;158;206;106m[new file] [39m[38;5;14mtest.rs[39m
+[38;2;158;206;106m+[39m[38;2;192;197;206mline1[39m
+[38;2;158;206;106m+[39m[38;2;192;197;206mline2[39m

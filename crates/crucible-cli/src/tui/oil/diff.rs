@@ -127,11 +127,13 @@ mod tests {
     use crate::tui::oil::render::render_to_string;
 
     fn has_red_ansi(s: &str) -> bool {
-        s.contains("\x1b[31m") || s.contains("\x1b[38;5;9m")
+        s.contains("\x1b[31m") || s.contains("\x1b[38;5;9m") || s.contains("\x1b[38;2;247;118;142m")
     }
 
     fn has_green_ansi(s: &str) -> bool {
-        s.contains("\x1b[32m") || s.contains("\x1b[38;5;10m")
+        s.contains("\x1b[32m")
+            || s.contains("\x1b[38;5;10m")
+            || s.contains("\x1b[38;2;158;206;106m")
     }
 
     #[test]

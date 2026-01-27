@@ -332,6 +332,7 @@ fn convert_style(s: crucible_oil::Style) -> Style {
         dim: s.dim,
         italic: s.italic,
         underline: s.underline,
+        reverse: false,
     }
 }
 
