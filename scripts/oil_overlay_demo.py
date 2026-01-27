@@ -34,6 +34,12 @@ CYAN = "\x1b[38;5;14m"
 BRIGHT_GREEN = "\x1b[38;5;10m"
 BRIGHT_WHITE = "\x1b[38;5;15m"
 BOLD = "\x1b[1m"
+DIM = "\x1b[2m"
+
+# Permission prompt colors — from theme.rs
+POPUP_BG = "\x1b[48;2;30;34;42m"
+TEXT_ACCENT = "\x1b[38;5;14m"
+TEXT_MUTED = "\x1b[38;5;8m"
 
 # Box drawing characters
 BOX_LIGHT_HORIZONTAL = "─"
@@ -226,7 +232,11 @@ def demo_scenario(
         drawer_label = (
             f"{drawer_bg}{MODE_FG}{BOLD} {drawer_name} {RESET}" if drawer_name else ""
         )
-        key_hints = f"{DIM_TEXT} ESC/q: close{RESET}"
+        drawer_fg = {
+            "MESSAGES": "\x1b[38;5;14m",
+            "TASKS": "\x1b[38;5;13m",
+        }.get(drawer_name, "")
+        key_hints = f" {drawer_fg}ESC/q{RESET} {DIM_TEXT}close{RESET}"
         lines.append(drawer_label + key_hints)
     else:
         lines.extend(input_box(width, input_prompt, input_content))
@@ -240,6 +250,131 @@ def demo_scenario(
                 counts=counts,
             )
         )
+
+    return lines
+
+
+PERM_BG = "\x1b[48;5;9m"
+
+
+DIFF_ADD = "\x1b[38;2;158;206;106m"
+DIFF_DEL = "\x1b[38;2;247;118;142m"
+DIFF_CTX = "\x1b[38;2;100;110;130m"
+DIFF_HUNK = "\x1b[38;2;0;206;209m"
+DIFF_BG = "\x1b[48;2;28;32;40m"
+DIFF_FG = "\x1b[38;2;28;32;40m"
+
+
+GUTTER_FG = "\x1b[38;2;70;75;90m"
+GUTTER_WIDTH = 4
+
+
+def _diff_line(width: int, prefix: str, text: str, color: str, lineno: str = "") -> str:
+    gutter = f"{GUTTER_FG}{lineno:>{GUTTER_WIDTH}} {RESET}{DIFF_BG}"
+    gutter_visible = GUTTER_WIDTH + 1
+    content = f"{prefix} {text}"
+    pad = " " * max(0, width - gutter_visible - len(content))
+    return f"{DIFF_BG}{gutter}{color}{content}{pad}{RESET}"
+
+
+def _collapsed_line(width: int, count: int) -> str:
+    gutter = " " * (GUTTER_WIDTH + 1)
+    label = f"  ··· {count} lines collapsed ···"
+    pad = " " * max(0, width - len(gutter) - len(label))
+    return f"{DIFF_BG}{GUTTER_FG}{gutter}{label}{pad}{RESET}"
+
+
+def diff_panel(
+    width: int, file_path: str, action: str, diff_lines: list, queue_label: str = ""
+) -> List[str]:
+    lines = []
+
+    lines.append(f"{INPUT_BG}{DIFF_FG}{LOWER_HALF * width}{RESET}")
+
+    for entry in diff_lines:
+        if entry[0] == "collapsed":
+            lines.append(_collapsed_line(width, entry[1]))
+            continue
+        kind, text, old_no, new_no = entry
+        if kind == "hunk":
+            lines.append(_diff_line(width, " ", text, DIFF_HUNK))
+        elif kind == "+":
+            lineno = str(new_no) if new_no else ""
+            lines.append(_diff_line(width, "+", text, DIFF_ADD, lineno))
+        elif kind == "-":
+            lineno = str(old_no) if old_no else ""
+            lines.append(_diff_line(width, "-", text, DIFF_DEL, lineno))
+        else:
+            lineno = str(new_no) if new_no else (str(old_no) if old_no else "")
+            lines.append(_diff_line(width, " ", text, DIFF_CTX, lineno))
+
+    lines.append(f"{INPUT_BG}{DIFF_FG}{UPPER_HALF * width}{RESET}")
+
+    prefix = f"  {queue_label}" if queue_label else "  "
+    file_label = f"{prefix}{file_path} [{action}]"
+    file_pad = " " * (width - len(file_label))
+    lines.append(f"{INPUT_BG}{BRIGHT_WHITE}{file_label}{file_pad}{RESET}")
+    lines.append(f"{INPUT_BG}{' ' * width}{RESET}")
+
+    return lines
+
+
+def perm_prompt(
+    width: int,
+    type_label: str,
+    action_detail: str,
+    options: List[Tuple[str, str]],
+    selected: int = 0,
+    queue_total: int = 1,
+    diff: Optional[List[str]] = None,
+):
+    lines = []
+
+    lines.append(BORDER_FG + LOWER_HALF * width + RESET)
+
+    blank = f"{INPUT_BG}{' ' * width}{RESET}"
+
+    if diff:
+        lines.extend(diff)
+    else:
+        action_text = f"  {action_detail}"
+        if queue_total > 1:
+            action_text = f"  [{1}/{queue_total}] {action_detail}"
+        action_pad = " " * (width - len(action_text))
+        lines.append(f"{INPUT_BG}{BRIGHT_WHITE}{action_text}{action_pad}{RESET}")
+        lines.append(blank)
+
+    for i, (key, label) in enumerate(options):
+        if i == selected:
+            text = f"    > [{key}] {label}"
+            pad = " " * (width - len(text))
+            lines.append(
+                f"{INPUT_BG}{TEXT_ACCENT}{BOLD}{text}{RESET}{INPUT_BG}{pad}{RESET}"
+            )
+        else:
+            text = f"      [{key}] {label}"
+            pad = " " * (width - len(text))
+            lines.append(
+                f"{INPUT_BG}{TEXT}      [{key}]{RESET}{INPUT_BG} {BRIGHT_WHITE}{label}{pad}{RESET}"
+            )
+
+    lines.append(BORDER_FG + UPPER_HALF * width + RESET)
+
+    shortcut_keys = "/".join(k for k, _ in options)
+    perm_color = "\x1b[38;2;247;118;142m"
+    badge_label = (
+        f"\x1b[0;1m{perm_color}\x1b[7m PERMISSION {RESET}"
+        f"\x1b[0;1m{perm_color} {type_label.upper()} {RESET}"
+    )
+    diff_hint = f"  {perm_color}h{RESET} {DIM_TEXT}diff{RESET}" if diff else ""
+    hints = (
+        f" {perm_color}↑/↓{RESET} {DIM_TEXT}navigate{RESET}"
+        f"  {perm_color}Enter{RESET} {DIM_TEXT}select{RESET}"
+        f"  {perm_color}{shortcut_keys}{RESET} {DIM_TEXT}shortcuts{RESET}"
+        f"{diff_hint}"
+        f"  {perm_color}Esc{RESET} {DIM_TEXT}cancel{RESET}"
+    )
+    lines.append(badge_label + hints)
 
     return lines
 
@@ -370,6 +505,117 @@ def main():
             NotificationKind.WARNING: 3,
             NotificationKind.ERROR: 1,
         },
+    ):
+        print(line)
+
+    # ========================================================================
+    # SCENARIO 8: Permission prompt — Bash command
+    # ========================================================================
+    print("\n" + BOX_HEAVY_HORIZONTAL * w)
+    print("8. PERMISSION PROMPT (Bash command, allow selected)")
+    print(BOX_HEAVY_HORIZONTAL * w + "\n")
+
+    for line in perm_prompt(
+        w,
+        type_label="Bash",
+        action_detail="npm install lodash",
+        options=[("y", "Allow once"), ("n", "Deny"), ("p", "Allow + Save pattern")],
+        selected=0,
+    ):
+        print(line)
+
+    # ========================================================================
+    # SCENARIO 9: Permission prompt — File write (queued)
+    # ========================================================================
+    print("\n" + BOX_HEAVY_HORIZONTAL * w)
+    print("9. PERMISSION PROMPT (File write, queue 1/3, deny selected)")
+    print(BOX_HEAVY_HORIZONTAL * w + "\n")
+
+    sample_diff = diff_panel(
+        w,
+        "src/main.rs",
+        "write",
+        [
+            ("hunk", "@@ -10,7 +10,8 @@ fn main() {", "", ""),
+            ("ctx", "    let config = Config::load()?;", 10, 10),
+            ("ctx", "    let db = Database::connect(&config.db_url).await?;", 11, 11),
+            ("-", "    let app = App::new(config, db);", 12, ""),
+            ("+", "    let cache = Cache::new(256);", "", 12),
+            ("+", "    let app = App::new(config, db, cache);", "", 13),
+            ("ctx", "    app.run().await", 13, 14),
+            ("ctx", "}", 14, 15),
+        ],
+        queue_label="[1/3] ",
+    )
+
+    for line in perm_prompt(
+        w,
+        type_label="Write",
+        action_detail="",
+        options=[("y", "Allow once"), ("n", "Deny"), ("p", "Allow + Save pattern")],
+        selected=1,
+        queue_total=3,
+        diff=sample_diff,
+    ):
+        print(line)
+
+    # ========================================================================
+    # SCENARIO 10: Permission prompt — Tool call (no pattern option)
+    # ========================================================================
+    print("\n" + BOX_HEAVY_HORIZONTAL * w)
+    print("10. PERMISSION PROMPT (Tool call, no pattern option)")
+    print(BOX_HEAVY_HORIZONTAL * w + "\n")
+
+    for line in perm_prompt(
+        w,
+        type_label="Tool",
+        action_detail='search_notes(query="auth", limit=10)',
+        options=[("y", "Allow once"), ("n", "Deny")],
+        selected=0,
+    ):
+        print(line)
+
+    # ========================================================================
+    # SCENARIO 11: Permission prompt — multi-hunk diff with collapsed regions
+    # ========================================================================
+    print("\n" + BOX_HEAVY_HORIZONTAL * w)
+    print("11. PERMISSION PROMPT (multi-hunk diff, collapsed regions)")
+    print(BOX_HEAVY_HORIZONTAL * w + "\n")
+
+    multi_diff = diff_panel(
+        w,
+        "src/lib.rs",
+        "write",
+        [
+            ("hunk", "@@ -3,6 +3,7 @@ use std::collections::HashMap;", "", ""),
+            ("ctx", "use std::io;", 3, 3),
+            ("+", "use std::sync::Arc;", "", 4),
+            ("ctx", "", 4, 5),
+            ("ctx", "pub struct Config {", 5, 6),
+            ("collapsed", 42),
+            ("hunk", "@@ -51,7 +52,9 @@ impl App {", "", ""),
+            ("ctx", "    pub fn run(&self) -> Result<()> {", 51, 52),
+            ("-", '        println!("starting");', 52, ""),
+            ("+", '        log::info!("starting app");', "", 53),
+            ("+", "        self.cache.warm_up()?;", "", 54),
+            ("ctx", "        self.server.listen()", 53, 55),
+            ("ctx", "    }", 54, 56),
+            ("collapsed", 18),
+            ("hunk", "@@ -75,4 +78,5 @@ impl Drop for App {", "", ""),
+            ("ctx", "    fn drop(&mut self) {", 75, 78),
+            ("ctx", "        self.server.shutdown();", 76, 79),
+            ("+", "        self.cache.flush();", "", 80),
+            ("ctx", "    }", 77, 81),
+        ],
+    )
+
+    for line in perm_prompt(
+        w,
+        type_label="Write",
+        action_detail="/src/lib.rs",
+        options=[("y", "Allow once"), ("n", "Deny"), ("p", "Allow + Save pattern")],
+        selected=0,
+        diff=multi_diff,
     ):
         print(line)
 
