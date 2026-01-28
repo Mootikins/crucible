@@ -506,3 +506,59 @@ fn gap_0_has_no_extra_blank_lines() {
     assert_eq!(lines[1], "B");
     assert_eq!(lines[2], "C");
 }
+
+/// Single child with gap should produce no extra newlines (gap only applies between children)
+#[test]
+fn gap_with_single_child_produces_no_extra_newlines() {
+    let node = col([text("Only child")]).gap(Gap::all(5));
+    let output = render_to_string(&node, 80);
+
+    // Gap of 5 with single child: no gaps between children (only 1 child)
+    // Expected: just 1 line with the content
+    let lines: Vec<&str> = output.lines().collect();
+    assert_eq!(
+        lines.len(),
+        1,
+        "Expected 1 line with single child (gap doesn't apply), got {}: {:?}",
+        lines.len(),
+        lines
+    );
+    assert_eq!(lines[0], "Only child");
+}
+
+/// Empty children list with gap should produce empty output
+#[test]
+fn gap_with_empty_children_produces_empty_output() {
+    let node = col([]).gap(Gap::all(5));
+    let output = render_to_string(&node, 80);
+
+    // Empty children list produces empty output regardless of gap
+    let lines: Vec<&str> = output.lines().collect();
+    assert_eq!(
+        lines.len(),
+        0,
+        "Expected 0 lines with empty children, got {}: {:?}",
+        lines.len(),
+        lines
+    );
+}
+
+/// No explicit gap() call should behave same as gap=0 (default)
+#[test]
+fn default_gap_has_no_extra_blank_lines() {
+    let node = col([text("X"), text("Y")]);
+    let output = render_to_string(&node, 80);
+
+    // Default gap (no .gap() call) should be 0, producing no blank lines
+    // Expected: 2 lines with no blanks between
+    let lines: Vec<&str> = output.lines().collect();
+    assert_eq!(
+        lines.len(),
+        2,
+        "Expected 2 lines with default gap (0), got {}: {:?}",
+        lines.len(),
+        lines
+    );
+    assert_eq!(lines[0], "X");
+    assert_eq!(lines[1], "Y");
+}

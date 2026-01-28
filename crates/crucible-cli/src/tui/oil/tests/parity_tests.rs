@@ -304,8 +304,11 @@ fn parity_column_with_gap() {
             legacy, layout_tree
         );
     }
-    // For now, just verify both produce output
-    assert!(!legacy.is_empty() || !layout_tree.is_empty());
+    assert!(
+        are_equal,
+        "Gap handling differs between legacy and LayoutTree:\nLegacy:\n{}\n\nLayoutTree:\n{}",
+        legacy, layout_tree
+    );
 }
 
 // =============================================================================
