@@ -174,10 +174,11 @@ impl Component for StatusBar {
 }
 
 fn truncate_string(s: &str, max_len: usize) -> String {
-    if s.len() <= max_len {
+    if s.chars().count() <= max_len {
         s.to_string()
     } else {
-        format!("{}…", &s[..max_len - 1])
+        let truncated: String = s.chars().take(max_len - 1).collect();
+        format!("{}…", truncated)
     }
 }
 
@@ -270,8 +271,15 @@ mod tests {
         let plain = render_to_plain_text(&bar.view(&ViewContext::new(h.focus())), 80);
         assert!(plain.contains("WARN"));
         assert!(plain.contains("3"));
-        assert!(plain.contains("ERRO"));
+        assert!(plain.contains("ERROR"));
         assert!(plain.contains("1"));
+    }
+
+    #[test]
+    fn truncate_string_handles_multibyte_utf8() {
+        let result = truncate_string("café☕model", 6);
+        assert!(result.ends_with('…'));
+        assert_eq!(result.chars().count(), 6);
     }
 
     #[test]
