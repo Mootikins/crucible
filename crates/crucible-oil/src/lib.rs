@@ -18,21 +18,21 @@
 
 #![allow(dead_code)]
 
-mod ansi;
-mod cell_grid;
+pub mod ansi;
+pub mod cell_grid;
 mod compositor;
 pub mod decrypt;
 mod diff;
-mod focus;
-mod layout;
+pub mod focus;
+pub mod layout;
 mod line_buffer;
-mod node;
-mod overlay;
+pub mod node;
+pub mod overlay;
 #[cfg(any(test, feature = "test-utils"))]
 pub mod proptest_strategies;
 mod render;
 mod span;
-mod style;
+pub mod style;
 mod taffy_layout;
 pub mod template;
 
