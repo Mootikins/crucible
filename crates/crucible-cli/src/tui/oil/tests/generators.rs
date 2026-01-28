@@ -3,7 +3,16 @@ use proptest::prelude::*;
 pub fn arb_text_content() -> impl Strategy<Value = String> {
     prop::string::string_regex("[a-zA-Z0-9 .,!?]{1,100}")
         .unwrap()
-        .prop_filter("non-empty", |s| !s.trim().is_empty())
+        .prop_filter("non-empty and not markdown syntax", |s| {
+            let t = s.trim();
+            !t.is_empty()
+                && !t.starts_with("- ")
+                && !t.starts_with("# ")
+                && !t
+                    .chars()
+                    .next()
+                    .map_or(false, |c| c.is_ascii_digit() && t.contains(". "))
+        })
 }
 
 pub fn arb_short_text() -> impl Strategy<Value = String> {
