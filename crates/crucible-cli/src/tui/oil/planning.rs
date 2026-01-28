@@ -8,7 +8,6 @@ use crate::tui::oil::render::{render_to_string, render_with_cursor_filtered, Ren
 pub struct FrameTrace {
     pub frame_no: u64,
     pub graduated_keys: Vec<String>,
-    pub boundary_lines: usize,
     pub viewport_visual_rows: usize,
 }
 
@@ -22,7 +21,6 @@ pub struct RenderedOverlay {
 pub struct FramePlan {
     pub frame_no: u64,
     pub graduated: Vec<GraduatedContent>,
-    pub boundary_lines: usize,
     pub viewport: RenderResult,
     pub overlays: Vec<RenderedOverlay>,
     pub trace: FrameTrace,
@@ -90,9 +88,6 @@ pub struct FramePlanner {
     height: u16,
     frame_no: u64,
     graduation: GraduationState,
-    boundary_default: usize,
-    /// Tracks the ElementKind of the last graduated item for proper spacing across frames.
-    /// When a ToolCall is followed by a Block in a later frame, we need a blank line between them.
     last_graduated_kind: Option<ElementKind>,
 }
 
@@ -103,7 +98,6 @@ impl FramePlanner {
             height,
             frame_no: 0,
             graduation: GraduationState::new(),
-            boundary_default: 1,
             last_graduated_kind: None,
         }
     }
@@ -118,17 +112,8 @@ impl FramePlanner {
             .graduation
             .plan_graduation(&main_tree, self.width as usize);
 
-        let boundary_lines = if graduated.is_empty() {
-            0
-        } else {
-            self.boundary_default
-        };
-
-        let (stdout_delta, new_last_kind) = GraduationState::format_stdout_delta(
-            &graduated,
-            self.last_graduated_kind,
-            boundary_lines,
-        );
+        let (stdout_delta, new_last_kind) =
+            GraduationState::format_stdout_delta(&graduated, self.last_graduated_kind);
         self.last_graduated_kind = new_last_kind;
 
         self.graduation.commit_graduation(&graduated);
@@ -141,7 +126,6 @@ impl FramePlanner {
         let trace = FrameTrace {
             frame_no: self.frame_no,
             graduated_keys: graduated.iter().map(|g| g.key.clone()).collect(),
-            boundary_lines,
             viewport_visual_rows: visual_rows(&viewport.content, self.width as usize),
         };
 
@@ -149,7 +133,6 @@ impl FramePlanner {
             plan: FramePlan {
                 frame_no: self.frame_no,
                 graduated,
-                boundary_lines,
                 viewport,
                 overlays: rendered_overlays,
                 trace,

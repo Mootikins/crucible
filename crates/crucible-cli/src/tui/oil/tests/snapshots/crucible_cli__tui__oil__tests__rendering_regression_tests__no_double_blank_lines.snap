@@ -3,15 +3,24 @@ source: crates/crucible-cli/src/tui/oil/tests/rendering_regression_tests.rs
 expression: rendered
 ---
 ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄
- > Explain the core ideas                                                       
+ > What is Crucible?                                                            
 ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
 
-   ┌──────────┬────────────────────────────────────────────────────────────┐   
-   │ Section  │ Description                                                │   
-   ├──────────┼────────────────────────────────────────────────────────────┤   
-   │ Core     │ • Markdown sessions – every chat is a file • Your notes =  │   
-   │ ideas    │ memory – embed every block                                 │   
-   └──────────┴────────────────────────────────────────────────────────────┘   
+ ● Crucible is a local-first AI knowledge management system built in Rust.
+   Here's a summary of what it does:
+
+   Core Concept
+
+   Crucible is an AI assistant where every conversation becomes a searchable
+   note you own.
+
+   Key Features
+
+   1. Sessions as Markdown — conversations saved to your kiln
+   2. Knowledge Graph — wikilinks with semantic search
+   3. Lua Plugins — write extensions in Lua or Fennel
+
+   That's the overview.
 ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄
  >                                                                              
 ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
