@@ -40,7 +40,8 @@ pub mod theme;
 
 pub use cell_grid::{CellGrid, StyledCell};
 pub use components::{
-    popup_item, popup_item_full, popup_item_with_desc, PopupOverlay, FOCUS_POPUP, POPUP_MAX_VISIBLE,
+    popup_item, popup_item_full, popup_item_with_desc, Drawer, DrawerKind, PopupOverlay,
+    FOCUS_POPUP, POPUP_MAX_VISIBLE,
 };
 pub use compositor::{Compositor, ContentSource, StaticCompositor};
 pub use diff::*;
