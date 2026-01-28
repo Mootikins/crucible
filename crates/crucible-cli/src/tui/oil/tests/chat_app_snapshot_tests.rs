@@ -783,6 +783,20 @@ mod overlay_snapshots {
         assert_snapshot!(render_app(&app));
     }
 
+    /// :messages command opens drawer during streaming
+    #[test]
+    fn snapshot_messages_drawer_during_streaming() {
+        let mut app = OilChatApp::default();
+        app.on_message(ChatAppMsg::UserMessage("Hello".to_string()));
+        app.on_message(ChatAppMsg::TextDelta("Hi there!".to_string()));
+
+        app.add_notification(Notification::toast("Session saved"));
+        app.add_notification(Notification::warning("Context at 85%"));
+
+        app.show_messages();
+        assert_snapshot!(render_app(&app));
+    }
+
     /// Scenario 7: Recent warnings show as toast; counts show after expiry
     #[test]
     fn snapshot_statusline_warning_counts() {
