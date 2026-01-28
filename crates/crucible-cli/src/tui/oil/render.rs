@@ -222,6 +222,7 @@ fn render_box_filtered(
             render_column_children_filtered(
                 &boxnode.children,
                 inner_width,
+                boxnode.gap.row,
                 filter,
                 output,
                 cursor_info,
@@ -251,12 +252,13 @@ fn render_column_children_tracking_cursor(
     output: &mut String,
     cursor_info: &mut CursorInfo,
 ) {
-    render_column_children_filtered(children, width, &NoFilter, output, cursor_info);
+    render_column_children_filtered(children, width, 0, &NoFilter, output, cursor_info);
 }
 
 fn render_column_children_filtered(
     children: &[Node],
     width: usize,
+    gap: u16,
     filter: &dyn RenderFilter,
     output: &mut String,
     cursor_info: &mut CursorInfo,
@@ -267,7 +269,10 @@ fn render_column_children_filtered(
             continue;
         }
         if rendered_any && !output.is_empty() {
-            output.push_str("\r\n");
+            // Insert 1 + gap newlines (1 for line break, gap for blank lines)
+            for _ in 0..=gap {
+                output.push_str("\r\n");
+            }
         }
         render_node_filtered(child, width, filter, output, cursor_info);
         rendered_any = true;
@@ -532,7 +537,11 @@ fn render_box(boxnode: &BoxNode, width: usize, output: &mut String) {
     };
 
     let content = match boxnode.direction {
-        Direction::Column => children_output.join("\r\n"),
+        Direction::Column => {
+            // Create separator with 1 + gap newlines
+            let separator = "\r\n".repeat(1 + boxnode.gap.row as usize);
+            children_output.join(&separator)
+        }
         Direction::Row => children_output.join(""),
     };
 

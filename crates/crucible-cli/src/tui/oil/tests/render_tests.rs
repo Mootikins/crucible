@@ -440,3 +440,69 @@ fn zero_width_fixed_still_renders_content() {
     let output = render_to_string(&node, 80);
     assert_eq!(output, "HiddenVisible");
 }
+
+/// Gap of 1 should add exactly one blank line between column children
+#[test]
+fn gap_1_adds_blank_line_between_children() {
+    let node = col([text("Line 1"), text("Line 2"), text("Line 3")]).gap(Gap::all(1));
+    let output = render_to_string(&node, 80);
+
+    // Gap of 1 means 1 extra blank line between each child
+    // So: "Line 1" + "\r\n\r\n" (base newline + 1 gap) + "Line 2" + "\r\n\r\n" + "Line 3"
+    let lines: Vec<&str> = output.lines().collect();
+    assert_eq!(
+        lines.len(),
+        5,
+        "Expected 5 lines (3 content + 2 blank), got {}: {:?}",
+        lines.len(),
+        lines
+    );
+    assert_eq!(lines[0], "Line 1");
+    assert!(lines[1].is_empty(), "Expected blank line after Line 1");
+    assert_eq!(lines[2], "Line 2");
+    assert!(lines[3].is_empty(), "Expected blank line after Line 2");
+    assert_eq!(lines[4], "Line 3");
+}
+
+/// Gap of 2 should add two blank lines between column children
+#[test]
+fn gap_2_adds_two_blank_lines_between_children() {
+    let node = col([text("First"), text("Second")]).gap(Gap::all(2));
+    let output = render_to_string(&node, 80);
+
+    // Gap of 2 means 2 extra blank lines between each child
+    // First\r\n\r\n\r\nSecond = ["First", "", "", "Second"] = 4 lines
+    let lines: Vec<&str> = output.lines().collect();
+    assert_eq!(
+        lines.len(),
+        4,
+        "Expected 4 lines (2 content + 2 blank), got {}: {:?}",
+        lines.len(),
+        lines
+    );
+    assert_eq!(lines[0], "First");
+    assert!(lines[1].is_empty());
+    assert!(lines[2].is_empty());
+    assert_eq!(lines[3], "Second");
+}
+
+/// Gap of 0 should not add any blank lines (regression test)
+#[test]
+fn gap_0_has_no_extra_blank_lines() {
+    let node = col([text("A"), text("B"), text("C")]).gap(Gap::all(0));
+    let output = render_to_string(&node, 80);
+
+    // Gap of 0 means just 1 newline between each (the base newline)
+    // No blank lines should appear
+    let lines: Vec<&str> = output.lines().collect();
+    assert_eq!(
+        lines.len(),
+        3,
+        "Expected 3 lines with no blanks, got {}: {:?}",
+        lines.len(),
+        lines
+    );
+    assert_eq!(lines[0], "A");
+    assert_eq!(lines[1], "B");
+    assert_eq!(lines[2], "C");
+}
