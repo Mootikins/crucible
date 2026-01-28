@@ -89,9 +89,10 @@ pub fn diff_to_node_width(
 
 fn truncate_line(line: &str, max_width: Option<usize>) -> String {
     match max_width {
-        Some(w) if line.len() > w.saturating_sub(1) => {
+        Some(w) if line.chars().count() > w.saturating_sub(1) => {
             let limit = w.saturating_sub(2);
-            format!("{}…", &line[..limit])
+            let truncated: String = line.chars().take(limit).collect();
+            format!("{}…", truncated)
         }
         _ => line.to_string(),
     }
@@ -219,6 +220,27 @@ mod tests {
         assert!(output.contains("-c"));
         assert!(output.contains("+B"));
         assert!(output.contains("+C"));
+    }
+
+    #[test]
+    fn truncate_line_handles_multibyte_utf8() {
+        let line = "héllo wörld café";
+        let result = truncate_line(line, Some(8));
+        assert_eq!(result, "héllo …");
+        assert_eq!(result.chars().count(), 7);
+    }
+
+    #[test]
+    fn truncate_line_no_panic_on_cjk() {
+        let line = "你好世界测试数据";
+        let result = truncate_line(line, Some(5));
+        assert!(result.ends_with('…'));
+    }
+
+    #[test]
+    fn truncate_line_none_returns_original() {
+        let result = truncate_line("hello", None);
+        assert_eq!(result, "hello");
     }
 
     #[test]

@@ -103,24 +103,29 @@ impl NotificationArea {
         self.notifications.len()
     }
 
-    /// Get the most recent notification as a toast for StatusBar display.
+    /// Get the most recent non-expired notification as a toast for StatusBar display.
     ///
     /// Returns the message text and mapped `NotificationToastKind`.
+    /// Toast/Progress notifications expire after `TOAST_TIMEOUT`; warnings are persistent.
     pub fn active_toast(&self) -> Option<(&str, NotificationToastKind)> {
-        self.notifications.last().map(|(n, _)| {
+        self.notifications.iter().rev().find_map(|(n, instant)| {
+            let is_expired = matches!(
+                n.kind,
+                NotificationKind::Toast | NotificationKind::Progress { .. }
+            ) && instant.elapsed() >= TOAST_TIMEOUT;
+            if is_expired {
+                return None;
+            }
             let kind = match &n.kind {
                 NotificationKind::Toast => NotificationToastKind::Info,
                 NotificationKind::Progress { .. } => NotificationToastKind::Info,
                 NotificationKind::Warning => NotificationToastKind::Warning,
             };
-            (n.message.as_str(), kind)
+            Some((n.message.as_str(), kind))
         })
     }
 
-    /// Get counts of warnings and errors for StatusBar badge display.
-    ///
-    /// Returns non-zero counts only.
-    pub fn warning_error_counts(&self) -> Vec<(NotificationToastKind, usize)> {
+    pub fn warning_counts(&self) -> Vec<(NotificationToastKind, usize)> {
         let mut warn_count = 0usize;
         for (n, _) in &self.notifications {
             if matches!(n.kind, NotificationKind::Warning) {
@@ -230,16 +235,16 @@ mod tests {
     }
 
     #[test]
-    fn warning_error_counts_returns_nonzero_only() {
+    fn warning_counts_returns_nonzero_only() {
         let mut area = NotificationArea::new();
-        assert!(area.warning_error_counts().is_empty());
+        assert!(area.warning_counts().is_empty());
 
         area.add(sample_toast());
-        assert!(area.warning_error_counts().is_empty());
+        assert!(area.warning_counts().is_empty());
 
         area.add(sample_warning());
         area.add(sample_warning());
-        let counts = area.warning_error_counts();
+        let counts = area.warning_counts();
         assert_eq!(counts.len(), 1);
         assert_eq!(counts[0], (NotificationToastKind::Warning, 2));
     }
