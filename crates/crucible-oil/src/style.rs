@@ -301,6 +301,16 @@ pub enum AlignItems {
     Stretch,
 }
 
+/// Spacing between children in a layout.
+///
+/// # Platform Support
+///
+/// - `row`: Vertical spacing (blank lines) between children in column layouts.
+///   Works in both legacy render path and Taffy layout.
+/// - `column`: Horizontal spacing (character columns) between children in row layouts.
+///   **Only supported in Taffy layout path.** Legacy render ignores this field.
+///
+/// If you need horizontal row gap, use Taffy-based rendering.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Gap {
     pub row: u16,
