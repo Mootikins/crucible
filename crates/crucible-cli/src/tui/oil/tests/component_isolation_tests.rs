@@ -329,7 +329,7 @@ mod input_area_tests {
 
     #[test]
     fn cursor_tracking_works() {
-        let input = InputArea::new("hello", 3, 80).focused(true);
+        let input = InputArea::new("hello", 3, 80).set_focused(true);
         let focus = FocusContext::new();
         let ctx = ViewContext::new(&focus);
         let node = input.view(&ctx);
