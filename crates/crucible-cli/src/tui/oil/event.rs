@@ -225,4 +225,9 @@ impl InputBuffer {
         self.content = content.into();
         self.cursor = self.content.len();
     }
+
+    pub fn insert_str(&mut self, s: &str) {
+        self.content.insert_str(self.cursor, s);
+        self.cursor += s.len();
+    }
 }
