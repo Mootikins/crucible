@@ -30,7 +30,7 @@ pub mod node;
 pub mod overlay;
 #[cfg(any(test, feature = "test-utils"))]
 pub mod proptest_strategies;
-mod render;
+pub mod render;
 mod span;
 pub mod style;
 mod taffy_layout;
