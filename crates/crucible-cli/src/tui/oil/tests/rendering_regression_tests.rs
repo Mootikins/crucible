@@ -245,3 +245,72 @@ fn heading_after_paragraph_has_spacing() {
 
     assert_snapshot!("heading_after_paragraph", rendered);
 }
+
+/// Issue: Double blank lines between paragraphs/headings in graduated output
+///
+/// The user reported seeing double blank lines between blocks in graduated
+/// scrollback output. This test checks that no two consecutive blank lines
+/// appear in the rendered output of a multi-block assistant message.
+#[test]
+fn no_double_blank_lines_in_graduated_output() {
+    let mut app = OilChatApp::default();
+
+    let md = r#"Crucible is a local-first AI knowledge management system built in Rust. Here's a summary of what it does:
+
+## Core Concept
+
+Crucible is an AI assistant where every conversation becomes a searchable note you own.
+
+## Key Features
+
+1. Sessions as Markdown — conversations saved to your kiln
+2. Knowledge Graph — wikilinks with semantic search
+3. Lua Plugins — write extensions in Lua or Fennel
+
+That's the overview."#;
+
+    app.on_message(ChatAppMsg::UserMessage("What is Crucible?".to_string()));
+    app.on_message(ChatAppMsg::TextDelta(md.to_string()));
+    app.on_message(ChatAppMsg::StreamComplete);
+
+    let rendered = render_app(&app);
+    let lines: Vec<&str> = rendered.lines().collect();
+
+    let fmt_lines = || {
+        lines
+            .iter()
+            .enumerate()
+            .map(|(j, l)| format!("{:02}: {:?}", j, l))
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+
+    for i in 0..lines.len().saturating_sub(1) {
+        let both_blank = lines[i].trim().is_empty() && lines[i + 1].trim().is_empty();
+        assert!(
+            !both_blank,
+            "Double blank line at lines {} and {}.\n\n{}",
+            i,
+            i + 1,
+            fmt_lines()
+        );
+    }
+
+    let list_end = lines
+        .iter()
+        .rposition(|l| l.contains("Lua Plugins"))
+        .expect("should have list item");
+    let final_para = lines
+        .iter()
+        .position(|l| l.contains("That's the overview"))
+        .expect("should have final paragraph");
+    assert!(
+        final_para > list_end + 1,
+        "Missing blank line between list and final paragraph (list at {}, para at {}).\n\n{}",
+        list_end,
+        final_para,
+        fmt_lines()
+    );
+
+    assert_snapshot!("no_double_blank_lines", rendered);
+}
