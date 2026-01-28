@@ -3,7 +3,43 @@
 //! This module provides utilities for searching and finding nodes in a layout tree,
 //! useful for testing, debugging, and graduation tracking verification.
 
-use super::types::{LayoutBox, LayoutTree};
+use super::types::{LayoutBox, LayoutContent, LayoutTree};
+
+impl LayoutBox {
+    /// Extract text content from this layout box for testing and assertions.
+    ///
+    /// Returns the text content for Text, Input, and Spinner nodes.
+    /// Returns `None` for Box, Fragment, Empty, and Popup nodes.
+    ///
+    /// # Returns
+    ///
+    /// `Some(String)` containing the text content, or `None` if the box
+    /// doesn't contain extractable text.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// let text_box = LayoutBox::new(
+    ///     Rect::new(0, 0, 10, 1),
+    ///     LayoutContent::Text {
+    ///         content: "Hello".to_string(),
+    ///         style: Style::default(),
+    ///     },
+    /// );
+    /// assert_eq!(text_box.content_text(), Some("Hello".to_string()));
+    /// ```
+    pub fn content_text(&self) -> Option<String> {
+        match &self.content {
+            LayoutContent::Text { content, .. } => Some(content.clone()),
+            LayoutContent::Input { value, .. } => Some(value.clone()),
+            LayoutContent::Spinner { label, .. } => label.clone(),
+            LayoutContent::Box { .. } => None,
+            LayoutContent::Fragment => None,
+            LayoutContent::Empty => None,
+            LayoutContent::Popup { .. } => None,
+        }
+    }
+}
 
 impl LayoutTree {
     /// Find a layout box by its Static key.
@@ -199,5 +235,116 @@ mod tests {
         assert!(tree.find_by_key("gc-1").is_some());
         assert!(tree.find_by_key("gc-2").is_some());
         assert!(tree.find_by_key("nonexistent").is_none());
+    }
+
+    #[test]
+    fn content_text_extracts_from_text_node() {
+        use crucible_oil::style::Style;
+
+        let box_node = LayoutBox::new(
+            Rect::new(0, 0, 10, 1),
+            LayoutContent::Text {
+                content: "Hello".to_string(),
+                style: Style::default(),
+            },
+        );
+
+        assert_eq!(box_node.content_text(), Some("Hello".to_string()));
+    }
+
+    #[test]
+    fn content_text_extracts_from_input_node() {
+        use crucible_oil::style::Style;
+
+        let box_node = LayoutBox::new(
+            Rect::new(0, 0, 20, 1),
+            LayoutContent::Input {
+                value: "user input".to_string(),
+                cursor: 5,
+                placeholder: Some("Enter text".to_string()),
+                focused: true,
+                style: Style::default(),
+            },
+        );
+
+        assert_eq!(box_node.content_text(), Some("user input".to_string()));
+    }
+
+    #[test]
+    fn content_text_extracts_from_spinner_with_label() {
+        use crucible_oil::style::Style;
+
+        let box_node = LayoutBox::new(
+            Rect::new(0, 0, 15, 1),
+            LayoutContent::Spinner {
+                label: Some("Loading".to_string()),
+                frame: 0,
+                frames: None,
+                style: Style::default(),
+            },
+        );
+
+        assert_eq!(box_node.content_text(), Some("Loading".to_string()));
+    }
+
+    #[test]
+    fn content_text_returns_none_for_spinner_without_label() {
+        use crucible_oil::style::Style;
+
+        let box_node = LayoutBox::new(
+            Rect::new(0, 0, 5, 1),
+            LayoutContent::Spinner {
+                label: None,
+                frame: 0,
+                frames: None,
+                style: Style::default(),
+            },
+        );
+
+        assert_eq!(box_node.content_text(), None);
+    }
+
+    #[test]
+    fn content_text_returns_none_for_box() {
+        use crucible_oil::style::Style;
+
+        let box_node = LayoutBox::new(
+            Rect::new(0, 0, 80, 24),
+            LayoutContent::Box {
+                border: None,
+                style: Style::default(),
+            },
+        );
+
+        assert_eq!(box_node.content_text(), None);
+    }
+
+    #[test]
+    fn content_text_returns_none_for_fragment() {
+        let box_node = LayoutBox::new(Rect::new(0, 0, 80, 24), LayoutContent::Fragment);
+
+        assert_eq!(box_node.content_text(), None);
+    }
+
+    #[test]
+    fn content_text_returns_none_for_empty() {
+        let box_node = LayoutBox::new(Rect::new(0, 0, 80, 24), LayoutContent::Empty);
+
+        assert_eq!(box_node.content_text(), None);
+    }
+
+    #[test]
+    fn content_text_returns_none_for_popup() {
+        let box_node = LayoutBox::new(
+            Rect::new(0, 0, 40, 10),
+            LayoutContent::Popup {
+                items: vec![],
+                selected: 0,
+                viewport_offset: 0,
+                max_visible: 5,
+            },
+        );
+
+        assert_eq!(box_node.content_text(), None);
     }
 }
