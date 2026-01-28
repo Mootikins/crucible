@@ -102,7 +102,7 @@ impl GraduationState {
         let mut prev_kind = last_kind;
 
         for item in graduated {
-            if item.kind.wants_blank_line_before(prev_kind) {
+            if item.kind.wants_blank_line_before(prev_kind) && !output.ends_with("\r\n") {
                 output.push_str("\r\n");
             }
             output.push_str(&item.content);
@@ -270,6 +270,61 @@ mod tests {
         assert!(delta.contains("\r\n"));
         assert!(delta.ends_with("\r\n"));
         assert_eq!(last_kind, Some(ElementKind::Block));
+    }
+
+    #[test]
+    fn format_stdout_delta_no_double_blank_when_content_has_trailing_newline() {
+        // Simulates user message → assistant message where both have trailing \r\n
+        // from text("") padding nodes in the col wrapper.
+        let graduated = vec![
+            GraduatedContent {
+                key: "user-0".to_string(),
+                content: "user content\r\n".to_string(),
+                kind: ElementKind::Block,
+                newline: true,
+            },
+            GraduatedContent {
+                key: "asst-0".to_string(),
+                content: "assistant content\r\n".to_string(),
+                kind: ElementKind::Block,
+                newline: true,
+            },
+        ];
+
+        let (delta, _) = GraduationState::format_stdout_delta(&graduated, None, 1);
+        // Between user and assistant there should be exactly 1 blank line,
+        // not 2. The trailing \r\n from user content already provides one
+        // line break; wants_blank_line_before should not add another.
+        assert_eq!(
+            delta, "user content\r\nassistant content\r\n\r\n",
+            "Should have exactly 1 blank line between messages, not 2"
+        );
+    }
+
+    #[test]
+    fn format_stdout_delta_adds_blank_line_when_no_trailing_newline() {
+        // Tool calls don't have trailing \r\n padding, so wants_blank_line_before
+        // should still add the blank line separator.
+        let graduated = vec![
+            GraduatedContent {
+                key: "tool-0".to_string(),
+                content: " ✓ bash(ls)".to_string(),
+                kind: ElementKind::ToolCall,
+                newline: true,
+            },
+            GraduatedContent {
+                key: "asst-0".to_string(),
+                content: "response".to_string(),
+                kind: ElementKind::Block,
+                newline: true,
+            },
+        ];
+
+        let (delta, _) = GraduationState::format_stdout_delta(&graduated, None, 1);
+        assert_eq!(
+            delta, " ✓ bash(ls)\r\nresponse\r\n",
+            "Tool→Block should have blank line separator"
+        );
     }
 
     #[test]
