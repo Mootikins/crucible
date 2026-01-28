@@ -1186,6 +1186,47 @@ mod tests {
         );
     }
 
+    #[test]
+    fn ordered_list_then_paragraph_has_blank_line() {
+        let md = "1. Item one\n2. Item two\n\nFinal paragraph.";
+        let node = markdown_to_node(md);
+        let output = render_to_string(&node, 80);
+        let lines: Vec<&str> = output.split("\r\n").collect();
+
+        let last_item = lines.iter().rposition(|l| l.contains("Item two")).unwrap();
+        let para = lines
+            .iter()
+            .position(|l| l.contains("Final paragraph"))
+            .unwrap();
+
+        assert!(
+            para > last_item + 1,
+            "Should have blank line between ordered list and paragraph.\nLines: {:?}",
+            lines
+        );
+    }
+
+    #[test]
+    fn ordered_list_then_paragraph_has_blank_line_with_margins() {
+        let md = "1. Item one\n2. Item two\n\nFinal paragraph.";
+        let style = RenderStyle::natural_with_margins(80, Margins::assistant());
+        let node = markdown_to_node_styled(md, style);
+        let output = render_to_string(&node, 80);
+        let lines: Vec<&str> = output.split("\r\n").collect();
+
+        let last_item = lines.iter().rposition(|l| l.contains("Item two")).unwrap();
+        let para = lines
+            .iter()
+            .position(|l| l.contains("Final paragraph"))
+            .unwrap();
+
+        assert!(
+            para > last_item + 1,
+            "With margins: should have blank line between ordered list and paragraph.\nLines: {:?}",
+            lines
+        );
+    }
+
     fn assert_lines_fit_width(output: &str, max_width: usize) {
         for (i, line) in output.split("\r\n").enumerate() {
             let width = visible_width(line);
