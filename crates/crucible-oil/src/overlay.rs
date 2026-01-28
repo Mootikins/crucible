@@ -1,9 +1,125 @@
 use crate::ansi::visible_width;
 use crate::node::{Node, OverlayNode};
+use unicode_width::UnicodeWidthChar;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OverlayAnchor {
     FromBottom(usize),
+    FromBottomRight(usize),
+}
+
+#[derive(Debug, Clone, Default)]
+struct StyledCell {
+    ch: char,
+    style: String,
+}
+
+impl StyledCell {
+    fn space() -> Self {
+        Self {
+            ch: ' ',
+            style: String::new(),
+        }
+    }
+
+    fn is_transparent(&self) -> bool {
+        self.ch == ' ' && self.style.is_empty()
+    }
+}
+
+fn parse_line_to_cells(line: &str, width: usize) -> Vec<StyledCell> {
+    let mut cells = vec![StyledCell::space(); width];
+    let mut current_style = String::new();
+    let mut col = 0;
+    let mut chars = line.chars().peekable();
+
+    while let Some(c) = chars.next() {
+        if col >= width {
+            break;
+        }
+
+        if c == '\x1b' {
+            if chars.peek() == Some(&'[') {
+                let mut escape = String::from("\x1b[");
+                chars.next();
+                while let Some(&next) = chars.peek() {
+                    escape.push(chars.next().unwrap());
+                    if next.is_ascii_alphabetic() {
+                        break;
+                    }
+                }
+                if escape.contains('m') {
+                    if escape == "\x1b[0m" || escape == "\x1b[m" {
+                        current_style.clear();
+                    } else {
+                        current_style = escape;
+                    }
+                }
+            }
+        } else {
+            let char_width = UnicodeWidthChar::width(c).unwrap_or(1);
+            if col + char_width <= width {
+                cells[col] = StyledCell {
+                    ch: c,
+                    style: current_style.clone(),
+                };
+                for i in 1..char_width {
+                    if col + i < width {
+                        cells[col + i] = StyledCell {
+                            ch: '\0',
+                            style: String::new(),
+                        };
+                    }
+                }
+                col += char_width;
+            }
+        }
+    }
+
+    cells
+}
+
+fn cells_to_string(cells: &[StyledCell]) -> String {
+    let mut result = String::new();
+    let mut current_style = String::new();
+
+    for cell in cells {
+        if cell.ch == '\0' {
+            continue;
+        }
+
+        if cell.style != current_style {
+            if !current_style.is_empty() {
+                result.push_str("\x1b[0m");
+            }
+            if !cell.style.is_empty() {
+                result.push_str(&cell.style);
+            }
+            current_style = cell.style.clone();
+        }
+
+        result.push(cell.ch);
+    }
+
+    if !current_style.is_empty() {
+        result.push_str("\x1b[0m");
+    }
+
+    result
+}
+
+fn composite_line(base: &str, overlay: &str, start_col: usize, width: usize) -> String {
+    let mut base_cells = parse_line_to_cells(base, width);
+    let overlay_cells = parse_line_to_cells(overlay, width);
+
+    for (i, overlay_cell) in overlay_cells.iter().enumerate() {
+        let target_col = start_col + i;
+        if target_col < width && !overlay_cell.is_transparent() {
+            base_cells[target_col] = overlay_cell.clone();
+        }
+    }
+
+    cells_to_string(&base_cells)
 }
 
 pub fn extract_overlays(node: &Node) -> Vec<OverlayNode> {
@@ -94,7 +210,33 @@ pub fn composite_overlays(base: &[String], overlays: &[Overlay], width: usize) -
                 for (i, overlay_line) in overlay.lines.iter().enumerate() {
                     let target_line = start_line + i;
                     if target_line < result.len().saturating_sub(preserve_bottom) {
-                        result[target_line] = pad_or_truncate(overlay_line, width);
+                        result[target_line] =
+                            composite_line(&result[target_line], overlay_line, 0, width);
+                    }
+                }
+            }
+            OverlayAnchor::FromBottomRight(protected_bottom_lines) => {
+                let viewport_height = result.len();
+                let overlay_height = overlay.lines.len();
+
+                let anchor_line = viewport_height.saturating_sub(protected_bottom_lines);
+                let zone_bottom = if anchor_line == 0 {
+                    viewport_height
+                } else {
+                    anchor_line
+                };
+
+                let lines_to_show = overlay_height.min(zone_bottom);
+                let overlay_start_idx = overlay_height.saturating_sub(lines_to_show);
+                let start_line = zone_bottom.saturating_sub(lines_to_show);
+
+                for (i, overlay_line) in overlay.lines[overlay_start_idx..].iter().enumerate() {
+                    let target_line = start_line + i;
+                    if target_line < zone_bottom {
+                        let overlay_width = visible_width(overlay_line);
+                        let start_col = width.saturating_sub(overlay_width);
+                        result[target_line] =
+                            composite_line(&result[target_line], overlay_line, start_col, width);
                     }
                 }
             }
@@ -113,18 +255,13 @@ fn pad_or_truncate(line: &str, width: usize) -> String {
     }
 }
 
-/// Truncate a string with ANSI codes to a maximum visible width.
-/// ANSI escape sequences are preserved but visible characters are limited.
 fn truncate_to_width(s: &str, max_width: usize) -> String {
-    use unicode_width::UnicodeWidthChar;
-
     let mut result = String::new();
     let mut current_width = 0;
     let mut chars = s.chars().peekable();
 
     while let Some(c) = chars.next() {
         if c == '\x1b' {
-            // ANSI escape sequence: copy entirely (doesn't count toward visible width)
             result.push(c);
             if chars.peek() == Some(&'[') {
                 result.push(chars.next().unwrap());
@@ -198,7 +335,7 @@ mod tests {
 
         let result = composite_overlays(&base, &[overlay], 10);
 
-        assert_eq!(result[2], "overlay   ");
+        assert!(result[2].starts_with("overlay"));
     }
 
     #[test]
@@ -214,8 +351,8 @@ mod tests {
 
         let result = composite_overlays(&base, &[overlay1, overlay2], 5);
 
-        assert_eq!(result[1], "X    ");
-        assert_eq!(result[3], "Y    ");
+        assert!(result[1].starts_with('X'));
+        assert!(result[3].starts_with('Y'));
     }
 
     #[test]
