@@ -1432,7 +1432,7 @@ impl OilChatApp {
                 );
                 Action::Continue
             }
-            "messages" | "msgs" => {
+            "messages" | "msgs" | "notifications" => {
                 self.notification_area.toggle();
                 Action::Continue
             }
