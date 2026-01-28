@@ -366,11 +366,11 @@ fn render_row_single_line(
     children: &[Node],
     child_infos: Vec<RowChildInfo>,
     widths: &[usize],
-    filter: &dyn RenderFilter,
+    _filter: &dyn RenderFilter,
     output: &mut String,
     cursor_info: &mut CursorInfo,
 ) {
-    for (i, (child, child_info)) in children.iter().zip(child_infos.into_iter()).enumerate() {
+    for (i, (_child, child_info)) in children.iter().zip(child_infos.into_iter()).enumerate() {
         let child_width = widths.get(i).copied().unwrap_or(0);
 
         match child_info {
