@@ -1013,6 +1013,11 @@ impl OilChatApp {
     fn handle_key(&mut self, key: crossterm::event::KeyEvent) -> Action<ChatAppMsg> {
         self.error = None;
 
+        if self.notification_area.is_visible() {
+            self.notification_area.hide();
+            return Action::Continue;
+        }
+
         if self.shell_modal.is_some() {
             return self.handle_shell_modal_key(key);
         }
@@ -1021,11 +1026,6 @@ impl OilChatApp {
         }
         if self.is_streaming() {
             return self.handle_streaming_key(key);
-        }
-
-        if self.notification_area.is_visible() {
-            self.notification_area.hide();
-            return Action::Continue;
         }
 
         if key.code == KeyCode::F(1) {
@@ -1259,6 +1259,11 @@ impl OilChatApp {
                     )));
                 Action::Continue
             }
+            KeyCode::BackTab => {
+                self.mode = self.mode.cycle();
+                self.status = format!("Mode: {}", self.mode.as_str());
+                Action::Continue
+            }
             KeyCode::Enter if ctrl => {
                 let content = self.input.content().to_string();
                 if !content.trim().is_empty() {
@@ -1271,7 +1276,12 @@ impl OilChatApp {
             }
             KeyCode::Enter => {
                 let content = self.input.content().to_string();
-                if !content.trim().is_empty() {
+                let trimmed = content.trim();
+                if trimmed.starts_with(':') || trimmed.starts_with('/') {
+                    self.input.handle(InputAction::Clear);
+                    return self.handle_submit(content);
+                }
+                if !trimmed.is_empty() {
                     self.input.handle(InputAction::Clear);
                     Action::Send(ChatAppMsg::QueueMessage(content))
                 } else {
@@ -4496,5 +4506,53 @@ mod tests {
         );
         assert!(!app.notification_area.is_visible());
         assert!(app.interaction_visible());
+    }
+
+    #[test]
+    fn messages_command_works_during_streaming() {
+        let mut app = OilChatApp::init();
+        app.on_message(ChatAppMsg::TextDelta("streaming...".to_string()));
+        assert!(app.is_streaming());
+
+        app.notification_area
+            .add(crucible_core::types::Notification::toast("test"));
+
+        // Type :messages and submit
+        for c in ":messages".chars() {
+            app.update(Event::Key(crossterm::event::KeyEvent::new(
+                KeyCode::Char(c),
+                crossterm::event::KeyModifiers::NONE,
+            )));
+        }
+        app.update(Event::Key(crossterm::event::KeyEvent::new(
+            KeyCode::Enter,
+            crossterm::event::KeyModifiers::NONE,
+        )));
+
+        assert!(
+            app.notification_area.is_visible(),
+            ":messages should open drawer even during streaming"
+        );
+        assert!(app.is_streaming(), "Stream should still be active");
+    }
+
+    #[test]
+    fn mode_cycling_works_during_streaming() {
+        let mut app = OilChatApp::init();
+        app.on_message(ChatAppMsg::TextDelta("streaming...".to_string()));
+        assert!(app.is_streaming());
+        assert_eq!(app.mode, ChatMode::Normal);
+
+        app.update(Event::Key(crossterm::event::KeyEvent::new(
+            KeyCode::BackTab,
+            crossterm::event::KeyModifiers::NONE,
+        )));
+
+        assert_ne!(
+            app.mode,
+            ChatMode::Normal,
+            "BackTab should cycle mode during streaming"
+        );
+        assert!(app.is_streaming(), "Stream should still be active");
     }
 }
