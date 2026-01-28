@@ -19,6 +19,7 @@
 #![allow(dead_code)]
 
 mod ansi;
+mod cell_grid;
 mod compositor;
 pub mod decrypt;
 mod diff;
@@ -35,6 +36,7 @@ mod style;
 mod taffy_layout;
 pub mod template;
 
+pub use cell_grid::{CellGrid, StyledCell};
 pub use compositor::{Compositor, ContentSource, StaticCompositor};
 pub use diff::*;
 pub use focus::*;
