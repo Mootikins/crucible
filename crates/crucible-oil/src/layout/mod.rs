@@ -1,3 +1,5 @@
+pub mod flex;
+
 use crate::node::{BoxNode, Direction, Node, Size};
 use crate::render::render_to_string;
 
