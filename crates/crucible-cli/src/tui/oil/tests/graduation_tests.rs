@@ -215,8 +215,8 @@ fn newline_between_separate_messages() {
 
     let stdout = runtime.stdout_content();
     assert!(
-        stdout.contains("First\nSecond") || stdout.contains("First\r\nSecond"),
-        "Should have newline between messages, got: {:?}",
+        stdout.contains("First\r\n\r\nSecond"),
+        "Should have blank line between Block messages, got: {:?}",
         stdout
     );
 }
