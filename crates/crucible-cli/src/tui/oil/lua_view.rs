@@ -4,8 +4,8 @@
 
 use crate::tui::oil::app::ViewContext;
 use crate::tui::oil::component::Component;
-use crate::tui::oil::node::{self as cli_node, text, Node};
-use crate::tui::oil::style::{self as cli_style, Style};
+use crate::tui::oil::node::{text, Node};
+use crate::tui::oil::style::{Color, Style};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use crucible_lua::{DiscoveredView, LuaExecutor};
 use std::path::PathBuf;
@@ -240,7 +240,7 @@ impl Component for LuaView {
             Ok(node) => node,
             Err(e) => {
                 let error_style = Style {
-                    fg: Some(cli_style::Color::Red),
+                    fg: Some(Color::Red),
                     ..Default::default()
                 };
                 text(format!("View error: {}", e)).with_style(error_style)
@@ -250,177 +250,8 @@ impl Component for LuaView {
 }
 
 fn convert_oil_node(oil_node: crucible_oil::Node) -> Node {
-    match oil_node {
-        crucible_oil::Node::Empty => Node::Empty,
-        crucible_oil::Node::Text(t) => Node::Text(cli_node::TextNode {
-            content: t.content,
-            style: convert_style(t.style),
-        }),
-        crucible_oil::Node::Box(b) => Node::Box(cli_node::BoxNode {
-            children: b.children.into_iter().map(convert_oil_node).collect(),
-            direction: convert_direction(b.direction),
-            size: convert_size(b.size),
-            padding: convert_padding(b.padding),
-            margin: convert_padding(b.margin),
-            border: b.border.map(convert_border),
-            style: convert_style(b.style),
-            justify: convert_justify(b.justify),
-            align: convert_align(b.align),
-            gap: convert_gap(b.gap),
-        }),
-        crucible_oil::Node::Static(s) => Node::Static(cli_node::StaticNode {
-            key: s.key,
-            children: s.children.into_iter().map(convert_oil_node).collect(),
-            kind: if s.newline {
-                cli_node::ElementKind::Block
-            } else {
-                cli_node::ElementKind::Continuation
-            },
-            newline: s.newline,
-        }),
-        crucible_oil::Node::Input(i) => Node::Input(cli_node::InputNode {
-            value: i.value,
-            cursor: i.cursor,
-            placeholder: i.placeholder,
-            style: convert_style(i.style),
-            focused: i.focused,
-        }),
-        crucible_oil::Node::Spinner(s) => Node::Spinner(cli_node::SpinnerNode {
-            label: s.label,
-            style: convert_style(s.style),
-            frame: s.frame,
-            frames: None,
-        }),
-        crucible_oil::Node::Popup(p) => Node::Popup(cli_node::PopupNode {
-            items: p
-                .items
-                .into_iter()
-                .map(|i| cli_node::PopupItemNode {
-                    label: i.label,
-                    description: i.description,
-                    kind: i.kind,
-                })
-                .collect(),
-            selected: p.selected,
-            viewport_offset: p.viewport_offset,
-            max_visible: p.max_visible,
-        }),
-        crucible_oil::Node::Fragment(f) => {
-            Node::Fragment(f.into_iter().map(convert_oil_node).collect())
-        }
-        crucible_oil::Node::Focusable(f) => Node::Focusable(cli_node::FocusableNode {
-            id: crate::tui::oil::focus::FocusId(f.id.0),
-            child: Box::new(convert_oil_node(*f.child)),
-            auto_focus: f.auto_focus,
-        }),
-        crucible_oil::Node::ErrorBoundary(e) => Node::ErrorBoundary(cli_node::ErrorBoundaryNode {
-            child: Box::new(convert_oil_node(*e.child)),
-            fallback: Box::new(convert_oil_node(*e.fallback)),
-        }),
-        crucible_oil::Node::Overlay(o) => Node::Overlay(cli_node::OverlayNode {
-            child: Box::new(convert_oil_node(*o.child)),
-            anchor: convert_overlay_anchor(o.anchor),
-        }),
-    }
-}
-
-fn convert_style(s: crucible_oil::Style) -> Style {
-    Style {
-        fg: s.fg.map(convert_color),
-        bg: s.bg.map(convert_color),
-        bold: s.bold,
-        dim: s.dim,
-        italic: s.italic,
-        underline: s.underline,
-        reverse: false,
-    }
-}
-
-fn convert_color(c: crucible_oil::Color) -> cli_style::Color {
-    match c {
-        crucible_oil::Color::Black => cli_style::Color::Black,
-        crucible_oil::Color::Red => cli_style::Color::Red,
-        crucible_oil::Color::Green => cli_style::Color::Green,
-        crucible_oil::Color::Yellow => cli_style::Color::Yellow,
-        crucible_oil::Color::Blue => cli_style::Color::Blue,
-        crucible_oil::Color::Magenta => cli_style::Color::Magenta,
-        crucible_oil::Color::Cyan => cli_style::Color::Cyan,
-        crucible_oil::Color::White => cli_style::Color::White,
-        crucible_oil::Color::Gray => cli_style::Color::Gray,
-        crucible_oil::Color::DarkGray => cli_style::Color::DarkGray,
-        crucible_oil::Color::Rgb(r, g, b) => cli_style::Color::Rgb(r, g, b),
-        crucible_oil::Color::Reset => cli_style::Color::Reset,
-    }
-}
-
-fn convert_direction(d: crucible_oil::Direction) -> cli_node::Direction {
-    match d {
-        crucible_oil::Direction::Row => cli_node::Direction::Row,
-        crucible_oil::Direction::Column => cli_node::Direction::Column,
-    }
-}
-
-fn convert_size(s: crucible_oil::Size) -> cli_node::Size {
-    match s {
-        crucible_oil::Size::Fixed(n) => cli_node::Size::Fixed(n),
-        crucible_oil::Size::Flex(f) => cli_node::Size::Flex(f),
-        crucible_oil::Size::Content => cli_node::Size::Content,
-    }
-}
-
-fn convert_padding(p: crucible_oil::Padding) -> cli_style::Padding {
-    cli_style::Padding {
-        top: p.top,
-        right: p.right,
-        bottom: p.bottom,
-        left: p.left,
-    }
-}
-
-fn convert_border(b: crucible_oil::Border) -> cli_style::Border {
-    match b {
-        crucible_oil::Border::Single => cli_style::Border::Single,
-        crucible_oil::Border::Double => cli_style::Border::Double,
-        crucible_oil::Border::Rounded => cli_style::Border::Rounded,
-        crucible_oil::Border::Heavy => cli_style::Border::Heavy,
-    }
-}
-
-fn convert_justify(j: crucible_oil::JustifyContent) -> cli_style::JustifyContent {
-    match j {
-        crucible_oil::JustifyContent::Start => cli_style::JustifyContent::Start,
-        crucible_oil::JustifyContent::End => cli_style::JustifyContent::End,
-        crucible_oil::JustifyContent::Center => cli_style::JustifyContent::Center,
-        crucible_oil::JustifyContent::SpaceBetween => cli_style::JustifyContent::SpaceBetween,
-        crucible_oil::JustifyContent::SpaceAround => cli_style::JustifyContent::SpaceAround,
-        crucible_oil::JustifyContent::SpaceEvenly => cli_style::JustifyContent::SpaceEvenly,
-    }
-}
-
-fn convert_align(a: crucible_oil::AlignItems) -> cli_style::AlignItems {
-    match a {
-        crucible_oil::AlignItems::Start => cli_style::AlignItems::Start,
-        crucible_oil::AlignItems::End => cli_style::AlignItems::End,
-        crucible_oil::AlignItems::Center => cli_style::AlignItems::Center,
-        crucible_oil::AlignItems::Stretch => cli_style::AlignItems::Stretch,
-    }
-}
-
-fn convert_gap(g: crucible_oil::Gap) -> cli_style::Gap {
-    cli_style::Gap {
-        row: g.row,
-        column: g.column,
-    }
-}
-
-fn convert_overlay_anchor(
-    a: crucible_oil::OverlayAnchor,
-) -> crate::tui::oil::overlay::OverlayAnchor {
-    match a {
-        crucible_oil::OverlayAnchor::FromBottom(n) => {
-            crate::tui::oil::overlay::OverlayAnchor::FromBottom(n)
-        }
-    }
+    // CLI types are now re-exports of Oil types — identity conversion
+    oil_node
 }
 
 #[derive(Debug, Clone, Default)]
