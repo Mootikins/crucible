@@ -760,7 +760,6 @@ impl OilChatApp {
 
     pub fn add_notification(&mut self, notification: crucible_core::types::Notification) {
         self.notification_area.add(notification);
-        self.notification_area.show();
     }
 
     pub fn toggle_messages(&mut self) {
@@ -779,19 +778,13 @@ impl OilChatApp {
         self.notification_area.clear();
     }
 
-    pub fn show_messages_drawer(&mut self) {
-        self.notification_area.show();
-    }
-
     fn render_messages_drawer(&self) -> Node {
         use crate::tui::oil::components::status_bar::NotificationToastKind;
         use crate::tui::oil::node::{row, styled};
         use crate::tui::oil::style::Style;
         use crate::tui::oil::theme::{colors, styles};
 
-        let (term_width, _) = crossterm::terminal::size()
-            .map(|(w, h)| (w as usize, h as usize))
-            .unwrap_or((80, 24));
+        let term_width = terminal_width();
 
         let content_rows: Vec<Node> = self
             .notification_area
@@ -827,7 +820,9 @@ impl OilChatApp {
                 let timestamp_part = format!(" {}: ", timestamp);
                 let message_part = format!(" {}", notif.message);
                 let badge_text = format!(" {} ", kind_label);
-                let used = timestamp_part.len() + badge_text.len() + message_part.len();
+                let used = timestamp_part.chars().count()
+                    + badge_text.chars().count()
+                    + message_part.chars().count();
                 let padding = if term_width > used {
                     " ".repeat(term_width - used)
                 } else {
@@ -1029,15 +1024,8 @@ impl OilChatApp {
         }
 
         if self.notification_area.is_visible() {
-            match key.code {
-                KeyCode::Esc | KeyCode::Char('q') => {
-                    self.notification_area.hide();
-                    return Action::Continue;
-                }
-                _ => {
-                    self.notification_area.hide();
-                }
-            }
+            self.notification_area.hide();
+            return Action::Continue;
         }
 
         if key.code == KeyCode::F(1) {
@@ -1066,7 +1054,6 @@ impl OilChatApp {
                     "Thinking display: {}",
                     state
                 )));
-            self.notification_area.show();
             return Action::Continue;
         }
 
@@ -1110,7 +1097,6 @@ impl OilChatApp {
             .add(crucible_core::types::Notification::toast(
                 "Ctrl+C again to quit",
             ));
-        self.notification_area.show();
         Action::Continue
     }
 
@@ -1271,7 +1257,6 @@ impl OilChatApp {
                         "Thinking display: {}",
                         state
                     )));
-                self.notification_area.show();
                 Action::Continue
             }
             KeyCode::Enter if ctrl => {
@@ -1771,7 +1756,6 @@ impl OilChatApp {
                 "Permission setting updated: {}={}",
                 key, bool_value
             )));
-        self.notification_area.show();
 
         Action::Continue
     }
@@ -2397,7 +2381,6 @@ impl OilChatApp {
     fn notify_toast(&mut self, msg: impl Into<String>) {
         self.notification_area
             .add(crucible_core::types::Notification::toast(msg));
-        self.notification_area.show();
     }
 
     fn close_interaction_and_show_next(&mut self) {
@@ -3306,7 +3289,7 @@ impl OilChatApp {
         if let Some((text, kind)) = self.notification_area.active_toast() {
             status_bar = status_bar.toast(text, kind);
         }
-        let counts = self.notification_area.warning_error_counts();
+        let counts = self.notification_area.warning_counts();
         if !counts.is_empty() {
             status_bar = status_bar.counts(counts);
         }
@@ -4025,8 +4008,8 @@ mod tests {
             "Ctrl+T should toggle show_thinking"
         );
         assert!(
-            app.notification_area.is_visible(),
-            "Notification should be shown"
+            !app.notification_area.is_empty(),
+            "Notification should be added to store"
         );
     }
 
@@ -4457,6 +4440,46 @@ mod tests {
             crossterm::event::KeyModifiers::NONE,
         )));
         assert!(!app.notification_area.is_visible());
+    }
+
+    #[test]
+    fn add_notification_does_not_open_drawer() {
+        let mut app = OilChatApp::init();
+        app.add_notification(crucible_core::types::Notification::toast("test"));
+        assert!(
+            !app.notification_area.is_visible(),
+            "Adding a notification should not open the drawer"
+        );
+    }
+
+    #[test]
+    fn notify_toast_does_not_open_drawer() {
+        let mut app = OilChatApp::init();
+        app.notify_toast("test toast");
+        assert!(
+            !app.notification_area.is_visible(),
+            "notify_toast should not open the drawer"
+        );
+    }
+
+    #[test]
+    fn drawer_any_key_dismisses_without_fallthrough() {
+        let mut app = OilChatApp::init();
+        app.notification_area
+            .add(crucible_core::types::Notification::toast("test"));
+        app.notification_area.show();
+        assert!(app.notification_area.is_visible());
+
+        // Press 'a' — should dismiss drawer but NOT insert 'a' into input
+        app.update(Event::Key(crossterm::event::KeyEvent::new(
+            KeyCode::Char('a'),
+            crossterm::event::KeyModifiers::NONE,
+        )));
+        assert!(!app.notification_area.is_visible());
+        assert!(
+            !app.input.content().contains('a'),
+            "Key should not fall through to input after dismissing drawer"
+        );
     }
 
     #[test]
