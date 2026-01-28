@@ -20,6 +20,7 @@
 
 pub mod ansi;
 pub mod cell_grid;
+pub mod components;
 mod compositor;
 pub mod decrypt;
 mod diff;
@@ -38,6 +39,9 @@ pub mod template;
 pub mod theme;
 
 pub use cell_grid::{CellGrid, StyledCell};
+pub use components::{
+    popup_item, popup_item_full, popup_item_with_desc, PopupOverlay, FOCUS_POPUP, POPUP_MAX_VISIBLE,
+};
 pub use compositor::{Compositor, ContentSource, StaticCompositor};
 pub use diff::*;
 pub use focus::*;
