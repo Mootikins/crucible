@@ -1,5 +1,5 @@
 use crate::tui::oil::component::Component;
-use crate::tui::oil::node::{col, row, styled, text, Node};
+use crate::tui::oil::node::{col, row, styled, Node};
 use crate::tui::oil::style::{Color, Style};
 use crate::tui::oil::theme::{colors, styles};
 use crate::tui::oil::ViewContext;
@@ -7,32 +7,24 @@ use crate::tui::oil::ViewContext;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DrawerKind {
     Messages,
-    Tasks,
-    Custom,
 }
 
 impl DrawerKind {
     pub fn name(&self) -> &'static str {
         match self {
             DrawerKind::Messages => "MESSAGES",
-            DrawerKind::Tasks => "TASKS",
-            DrawerKind::Custom => "CUSTOM",
         }
     }
 
     pub fn badge_bg(&self) -> Color {
         match self {
             DrawerKind::Messages => Color::Cyan,
-            DrawerKind::Tasks => Color::Magenta,
-            DrawerKind::Custom => colors::MODE_NORMAL,
         }
     }
 
     pub fn hint_fg(&self) -> Color {
         match self {
             DrawerKind::Messages => Color::Cyan,
-            DrawerKind::Tasks => Color::Magenta,
-            DrawerKind::Custom => colors::MODE_NORMAL,
         }
     }
 }
@@ -89,8 +81,8 @@ impl Drawer {
 
     fn render_content_row(&self, label: &str, content: &str) -> Node {
         let label_part = format!(" {}: ", label);
-        let content_len = content.len();
-        let used = label_part.len() + content_len;
+        let content_len = content.chars().count();
+        let used = label_part.chars().count() + content_len;
         let padding = if self.width > used {
             " ".repeat(self.width - used)
         } else {
@@ -189,7 +181,7 @@ mod tests {
         let items: Vec<(String, String)> = (0..20)
             .map(|i| (format!("label{}", i), format!("content{}", i)))
             .collect();
-        let drawer = Drawer::new(DrawerKind::Tasks)
+        let drawer = Drawer::new(DrawerKind::Messages)
             .width(60)
             .max_items(3)
             .items(items);
@@ -202,12 +194,11 @@ mod tests {
 
     #[test]
     fn drawer_empty_items() {
-        let drawer = Drawer::new(DrawerKind::Custom).width(40);
+        let drawer = Drawer::new(DrawerKind::Messages).width(40);
         let h = ComponentHarness::new(40, 10);
         let plain = render_to_plain_text(&drawer.view(&ViewContext::new(h.focus())), 40);
         assert!(plain.contains('▄'));
         assert!(plain.contains('▀'));
-        assert!(plain.contains("CUSTOM"));
-        assert!(!plain.contains(':'));
+        assert!(plain.contains("MESSAGES"));
     }
 }

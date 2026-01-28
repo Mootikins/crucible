@@ -778,14 +778,14 @@ mod overlay_snapshots {
         app.add_notification(Notification::progress(45, 100, "Indexing files"));
         app.add_notification(Notification::warning("Context at 85%"));
 
-        app.show_messages_drawer();
+        app.show_messages();
 
         assert_snapshot!(render_app(&app));
     }
 
     /// Scenario 7: Statusline with warning/error count badges (drawer closed)
     #[test]
-    fn snapshot_statusline_warning_error_counts() {
+    fn snapshot_statusline_warning_counts() {
         let mut app = OilChatApp::default();
 
         app.add_notification(Notification::warning("Context at 85%"));
@@ -825,7 +825,7 @@ mod overlay_snapshots {
         app.add_notification(Notification::toast("Session saved"));
         app.add_notification(Notification::warning("Context at 85%"));
 
-        app.show_messages_drawer();
+        app.show_messages();
         assert_snapshot!(render_app(&app));
     }
 
@@ -833,7 +833,7 @@ mod overlay_snapshots {
     #[test]
     fn snapshot_messages_drawer_empty() {
         let mut app = OilChatApp::default();
-        app.show_messages_drawer();
+        app.show_messages();
         assert_snapshot!(render_app(&app));
     }
 
@@ -844,7 +844,7 @@ mod overlay_snapshots {
         app.add_notification(Notification::toast("Thinking display: on"));
         app.add_notification(Notification::progress(45, 100, "Indexing files"));
         app.add_notification(Notification::warning("Context at 85%"));
-        app.show_messages_drawer();
+        app.show_messages();
         assert_snapshot!(render_app_raw(&app));
     }
 
