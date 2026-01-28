@@ -106,7 +106,11 @@ impl FramePlanner {
     }
 
     pub fn plan(&mut self, tree: &Node) -> FrameSnapshot {
-        self.plan_legacy(tree)
+        #[cfg(feature = "taffy-render")]
+        return self.plan_with_layout_tree(tree);
+
+        #[cfg(not(feature = "taffy-render"))]
+        return self.plan_legacy(tree);
     }
 
     pub fn plan_with_layout_tree(&mut self, tree: &Node) -> FrameSnapshot {

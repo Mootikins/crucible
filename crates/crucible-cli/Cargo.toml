@@ -17,6 +17,9 @@ default = ["storage-surrealdb"]
 storage-surrealdb = ["dep:crucible-surrealdb"]
 storage-sqlite = ["dep:crucible-sqlite"]
 
+# Rendering pipeline selection
+taffy-render = []  # Use new Taffy-based layout pipeline (experimental)
+
 # Test tier flags (see justfile for usage)
 test-fixtures = []       # Tests using docs/ kiln or examples/test-kiln
 test-infrastructure = [] # Tests requiring Ollama, ACP agents (opencode/claude)
