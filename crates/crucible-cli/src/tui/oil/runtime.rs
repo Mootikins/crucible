@@ -119,7 +119,7 @@ mod tests {
         let trace1 = runtime.trace().expect("should have trace after render");
         assert_eq!(trace1.frame_no, 1);
         assert_eq!(trace1.graduated_keys, vec!["msg-1", "msg-2"]);
-        assert!(trace1.boundary_lines > 0);
+        assert!(!trace1.graduated_keys.is_empty());
 
         // Frame 2: one new static node, previous two already graduated
         let tree2 = col([
@@ -146,6 +146,6 @@ mod tests {
         let trace3 = runtime.trace().expect("should have trace");
         assert_eq!(trace3.frame_no, 3);
         assert!(trace3.graduated_keys.is_empty());
-        assert_eq!(trace3.boundary_lines, 0);
+        assert!(trace3.graduated_keys.is_empty());
     }
 }

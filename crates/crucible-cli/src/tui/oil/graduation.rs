@@ -92,7 +92,6 @@ impl GraduationState {
     pub fn format_stdout_delta(
         graduated: &[GraduatedContent],
         last_kind: Option<ElementKind>,
-        boundary_lines: usize,
     ) -> (String, Option<ElementKind>) {
         if graduated.is_empty() {
             return (String::new(), last_kind);
@@ -101,16 +100,17 @@ impl GraduationState {
         let mut output = String::new();
         let mut prev_kind = last_kind;
 
-        for item in graduated {
-            if item.kind.wants_blank_line_before(prev_kind) && !output.ends_with("\r\n") {
+        for (i, item) in graduated.iter().enumerate() {
+            let next_kind = graduated.get(i + 1).map(|g| g.kind);
+
+            if item.kind.wants_blank_line_before(prev_kind) {
                 output.push_str("\r\n");
             }
             output.push_str(&item.content);
+            if needs_newline_after(item.kind, next_kind) {
+                output.push_str("\r\n");
+            }
             prev_kind = Some(item.kind);
-        }
-
-        for _ in 0..boundary_lines {
-            output.push_str("\r\n");
         }
 
         (output, prev_kind)
@@ -133,7 +133,8 @@ impl GraduationState {
         match node {
             Node::Static(static_node) => {
                 if !self.graduated_keys.contains(&static_node.key) {
-                    let content = render_children_to_string(&static_node.children, width);
+                    let raw = render_children_to_string(&static_node.children, width);
+                    let content = raw.trim_end_matches(['\r', '\n']).to_string();
 
                     if !content.is_empty() {
                         graduated.push(GraduatedContent {
@@ -163,6 +164,10 @@ impl GraduationState {
     }
 }
 
+fn needs_newline_after(current: ElementKind, next: Option<ElementKind>) -> bool {
+    current.wants_newline_after() && !matches!(next, Some(ElementKind::Continuation))
+}
+
 impl RenderFilter for GraduationState {
     fn skip_static(&self, key: &str) -> bool {
         self.is_graduated(key)
@@ -181,6 +186,40 @@ pub struct GraduatedContent {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn graduated_content_has_no_trailing_newlines() {
+        use crate::tui::oil::node::{col, scrollback, text};
+
+        let cases: Vec<(&str, Node)> = vec![
+            ("plain text", scrollback("a", [text("Hello")])),
+            (
+                "text with wrapper padding",
+                scrollback("b", [col([text(""), text("Content"), text("")])]),
+            ),
+            (
+                "multi-line content",
+                scrollback("c", [col([text("Line 1"), text("Line 2")])]),
+            ),
+            (
+                "content with trailing newlines",
+                scrollback("d", [text("Trailing\r\n\r\n")]),
+            ),
+        ];
+
+        for (label, tree) in cases {
+            let state = GraduationState::new();
+            let graduated = state.plan_graduation(&tree, 80);
+            assert_eq!(graduated.len(), 1, "{}: should produce 1 item", label);
+            let content = &graduated[0].content;
+            assert!(
+                !content.ends_with('\n') && !content.ends_with('\r'),
+                "{}: content should have no trailing newlines, got: {:?}",
+                label,
+                content
+            );
+        }
+    }
 
     #[test]
     fn graduation_state_new_is_empty() {
@@ -264,47 +303,37 @@ mod tests {
             },
         ];
 
-        let (delta, last_kind) = GraduationState::format_stdout_delta(&graduated, None, 1);
-        assert!(delta.contains("Hello"));
-        assert!(delta.contains("World"));
-        assert!(delta.contains("\r\n"));
-        assert!(delta.ends_with("\r\n"));
+        let (delta, last_kind) = GraduationState::format_stdout_delta(&graduated, None);
+        assert_eq!(delta, "Hello\r\n\r\nWorld\r\n");
         assert_eq!(last_kind, Some(ElementKind::Block));
     }
 
     #[test]
-    fn format_stdout_delta_no_double_blank_when_content_has_trailing_newline() {
-        // Simulates user message → assistant message where both have trailing \r\n
-        // from text("") padding nodes in the col wrapper.
+    fn format_stdout_delta_block_spacing() {
         let graduated = vec![
             GraduatedContent {
                 key: "user-0".to_string(),
-                content: "user content\r\n".to_string(),
+                content: "user content".to_string(),
                 kind: ElementKind::Block,
                 newline: true,
             },
             GraduatedContent {
                 key: "asst-0".to_string(),
-                content: "assistant content\r\n".to_string(),
+                content: "assistant content".to_string(),
                 kind: ElementKind::Block,
                 newline: true,
             },
         ];
 
-        let (delta, _) = GraduationState::format_stdout_delta(&graduated, None, 1);
-        // Between user and assistant there should be exactly 1 blank line,
-        // not 2. The trailing \r\n from user content already provides one
-        // line break; wants_blank_line_before should not add another.
+        let (delta, _) = GraduationState::format_stdout_delta(&graduated, None);
         assert_eq!(
-            delta, "user content\r\nassistant content\r\n\r\n",
-            "Should have exactly 1 blank line between messages, not 2"
+            delta, "user content\r\n\r\nassistant content\r\n",
+            "Block→Block: newline-after + blank-line-before = one blank line"
         );
     }
 
     #[test]
-    fn format_stdout_delta_adds_blank_line_when_no_trailing_newline() {
-        // Tool calls don't have trailing \r\n padding, so wants_blank_line_before
-        // should still add the blank line separator.
+    fn format_stdout_delta_tool_then_block() {
         let graduated = vec![
             GraduatedContent {
                 key: "tool-0".to_string(),
@@ -320,15 +349,15 @@ mod tests {
             },
         ];
 
-        let (delta, _) = GraduationState::format_stdout_delta(&graduated, None, 1);
+        let (delta, _) = GraduationState::format_stdout_delta(&graduated, None);
         assert_eq!(
-            delta, " ✓ bash(ls)\r\nresponse\r\n",
-            "Tool→Block should have blank line separator"
+            delta, " ✓ bash(ls)\r\n\r\nresponse\r\n",
+            "ToolCall→Block: newline-after + blank-line-before = one blank line"
         );
     }
 
     #[test]
-    fn format_stdout_delta_boundary_after_content() {
+    fn format_stdout_delta_single_block() {
         let graduated = vec![GraduatedContent {
             key: "k1".to_string(),
             content: "Content".to_string(),
@@ -336,24 +365,24 @@ mod tests {
             newline: true,
         }];
 
-        let (delta, _) = GraduationState::format_stdout_delta(&graduated, None, 1);
+        let (delta, _) = GraduationState::format_stdout_delta(&graduated, None);
         assert_eq!(delta, "Content\r\n");
     }
 
     #[test]
     fn format_stdout_delta_empty_returns_unchanged_last_kind() {
         let (delta, last_kind) =
-            GraduationState::format_stdout_delta(&[], Some(ElementKind::ToolCall), 1);
+            GraduationState::format_stdout_delta(&[], Some(ElementKind::ToolCall));
         assert!(delta.is_empty());
         assert_eq!(last_kind, Some(ElementKind::ToolCall));
 
-        let (delta2, last_kind2) = GraduationState::format_stdout_delta(&[], None, 1);
+        let (delta2, last_kind2) = GraduationState::format_stdout_delta(&[], None);
         assert!(delta2.is_empty());
         assert_eq!(last_kind2, None);
     }
 
     #[test]
-    fn format_stdout_delta_toolcall_then_block_across_frames_adds_blank_line() {
+    fn format_stdout_delta_toolcall_then_block_across_frames() {
         let tool_graduated = vec![GraduatedContent {
             key: "tool-1".to_string(),
             content: "Tool output".to_string(),
@@ -361,7 +390,7 @@ mod tests {
             newline: true,
         }];
 
-        let (delta1, last_kind) = GraduationState::format_stdout_delta(&tool_graduated, None, 1);
+        let (delta1, last_kind) = GraduationState::format_stdout_delta(&tool_graduated, None);
         assert_eq!(delta1, "Tool output\r\n");
         assert_eq!(last_kind, Some(ElementKind::ToolCall));
 
@@ -372,13 +401,11 @@ mod tests {
             newline: true,
         }];
 
-        let (delta2, _) = GraduationState::format_stdout_delta(&block_graduated, last_kind, 1);
-        assert!(
-            delta2.starts_with("\r\n"),
-            "Block after ToolCall should have blank line; got: {:?}",
-            delta2
+        let (delta2, _) = GraduationState::format_stdout_delta(&block_graduated, last_kind);
+        assert_eq!(
+            delta2, "\r\nAssistant text\r\n",
+            "Block after ToolCall across frames: blank-line-before + content + newline-after"
         );
-        assert!(delta2.contains("Assistant text"));
     }
 
     #[test]
