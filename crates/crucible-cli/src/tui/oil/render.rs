@@ -736,9 +736,6 @@ fn render_popup(popup: &PopupNode, width: usize, output: &mut String) {
         return;
     }
 
-    let popup_bg = Color::Rgb(45, 50, 60);
-    let selected_bg = Color::Rgb(60, 70, 90);
-
     let visible_end = (popup.viewport_offset + popup.max_visible).min(popup.items.len());
     let visible_items = &popup.items[popup.viewport_offset..visible_end];
     let item_count = visible_items.len();
@@ -755,7 +752,11 @@ fn render_popup(popup: &PopupNode, width: usize, output: &mut String) {
     for (i, item) in visible_items.iter().enumerate() {
         let actual_index = popup.viewport_offset + i;
         let is_selected = actual_index == popup.selected;
-        let bg = if is_selected { selected_bg } else { popup_bg };
+        let item_style = if is_selected {
+            popup.selected_style
+        } else {
+            popup.unselected_style
+        };
 
         let mut line = String::new();
         line.push(' ');
@@ -793,8 +794,8 @@ fn render_popup(popup: &PopupNode, width: usize, output: &mut String) {
                     desc.clone()
                 };
                 line.push_str("  ");
-                let desc_style = Style::new().bg(bg).dim();
-                output.push_str(&apply_style(&line, &Style::new().bg(bg)));
+                let desc_style = item_style.dim();
+                output.push_str(&apply_style(&line, &item_style));
                 line.clear();
                 line.push_str(&truncated);
                 let after_desc_width = label_width + 2 + visible_width(&truncated);
@@ -806,13 +807,13 @@ fn render_popup(popup: &PopupNode, width: usize, output: &mut String) {
                 let padding = popup_width.saturating_sub(label_width);
                 line.push_str(&" ".repeat(padding));
                 line.push(' ');
-                output.push_str(&apply_style(&line, &Style::new().bg(bg)));
+                output.push_str(&apply_style(&line, &item_style));
             }
         } else {
             let padding = popup_width.saturating_sub(label_width);
             line.push_str(&" ".repeat(padding));
             line.push(' ');
-            output.push_str(&apply_style(&line, &Style::new().bg(bg)));
+            output.push_str(&apply_style(&line, &item_style));
         }
 
         lines_rendered += 1;

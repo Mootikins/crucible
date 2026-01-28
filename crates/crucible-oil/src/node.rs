@@ -119,6 +119,9 @@ pub struct PopupNode {
     pub selected: usize,
     pub viewport_offset: usize,
     pub max_visible: usize,
+    pub bg_style: Style,
+    pub selected_style: Style,
+    pub unselected_style: Style,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -265,6 +268,28 @@ pub fn fragment(children: impl IntoIterator<Item = Node>) -> Node {
 }
 
 pub fn popup(items: Vec<PopupItemNode>, selected: usize, max_visible: usize) -> Node {
+    // Default styles with original hardcoded colors
+    let bg_style = Style::new().bg(Color::Rgb(45, 50, 60));
+    let selected_style = Style::new().bg(Color::Rgb(60, 70, 90));
+    let unselected_style = Style::new().bg(Color::Rgb(45, 50, 60));
+    popup_styled(
+        items,
+        selected,
+        max_visible,
+        bg_style,
+        selected_style,
+        unselected_style,
+    )
+}
+
+pub fn popup_styled(
+    items: Vec<PopupItemNode>,
+    selected: usize,
+    max_visible: usize,
+    bg_style: Style,
+    selected_style: Style,
+    unselected_style: Style,
+) -> Node {
     let viewport_offset = if selected >= max_visible {
         selected.saturating_sub(max_visible - 1)
     } else {
@@ -275,6 +300,9 @@ pub fn popup(items: Vec<PopupItemNode>, selected: usize, max_visible: usize) -> 
         selected,
         viewport_offset,
         max_visible,
+        bg_style,
+        selected_style,
+        unselected_style,
     })
 }
 
