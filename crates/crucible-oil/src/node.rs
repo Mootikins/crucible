@@ -2,6 +2,36 @@ use crate::focus::FocusId;
 use crate::overlay::OverlayAnchor;
 use crate::style::{AlignItems, Border, Color, Gap, JustifyContent, Padding, Style};
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ElementKind {
+    #[default]
+    Block,
+    Continuation,
+    ToolCall,
+}
+
+impl ElementKind {
+    pub fn wants_blank_line_before(self, prev: Option<ElementKind>) -> bool {
+        match (prev, self) {
+            (None, _) => false,
+            (_, ElementKind::Continuation) => false,
+            (Some(ElementKind::Continuation), _) => false,
+            (Some(ElementKind::Block), ElementKind::Block) => true,
+            (Some(ElementKind::ToolCall), ElementKind::Block) => true,
+            (Some(ElementKind::Block), ElementKind::ToolCall) => false,
+            (Some(ElementKind::ToolCall), ElementKind::ToolCall) => false,
+        }
+    }
+
+    pub fn wants_newline_after(self) -> bool {
+        match self {
+            ElementKind::Block => true,
+            ElementKind::Continuation => false,
+            ElementKind::ToolCall => true,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Default)]
 pub enum Node {
     #[default]
@@ -61,6 +91,7 @@ pub struct BoxNode {
 pub struct StaticNode {
     pub key: String,
     pub children: Vec<Node>,
+    pub kind: ElementKind,
     pub newline: bool,
 }
 
@@ -78,6 +109,7 @@ pub struct SpinnerNode {
     pub label: Option<String>,
     pub style: Style,
     pub frame: usize,
+    pub frames: Option<&'static [char]>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -111,6 +143,7 @@ pub enum Size {
 }
 
 pub const SPINNER_FRAMES: &[char] = &['◐', '◓', '◑', '◒'];
+pub const BRAILLE_SPINNER_FRAMES: &[char] = &['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 
 pub fn text(content: impl Into<String>) -> Node {
     Node::Text(TextNode {
@@ -143,21 +176,30 @@ pub fn row(children: impl IntoIterator<Item = Node>) -> Node {
 }
 
 pub fn scrollback(key: impl Into<String>, children: impl IntoIterator<Item = Node>) -> Node {
-    Node::Static(StaticNode {
-        key: key.into(),
-        children: children.into_iter().collect(),
-        newline: true,
-    })
+    scrollback_with_kind(key, ElementKind::Block, children)
 }
 
 pub fn scrollback_continuation(
     key: impl Into<String>,
     children: impl IntoIterator<Item = Node>,
 ) -> Node {
+    scrollback_with_kind(key, ElementKind::Continuation, children)
+}
+
+pub fn scrollback_tool(key: impl Into<String>, children: impl IntoIterator<Item = Node>) -> Node {
+    scrollback_with_kind(key, ElementKind::ToolCall, children)
+}
+
+pub fn scrollback_with_kind(
+    key: impl Into<String>,
+    kind: ElementKind,
+    children: impl IntoIterator<Item = Node>,
+) -> Node {
     Node::Static(StaticNode {
         key: key.into(),
         children: children.into_iter().collect(),
-        newline: false,
+        kind,
+        newline: kind.wants_newline_after(),
     })
 }
 
@@ -176,6 +218,25 @@ pub fn spinner(label: Option<String>, frame: usize) -> Node {
         label,
         style: Style::default(),
         frame,
+        frames: None,
+    })
+}
+
+pub fn spinner_styled(frame: usize, style: Style) -> Node {
+    Node::Spinner(SpinnerNode {
+        label: None,
+        style,
+        frame,
+        frames: None,
+    })
+}
+
+pub fn spinner_with_frames(frame: usize, style: Style, frames: &'static [char]) -> Node {
+    Node::Spinner(SpinnerNode {
+        label: None,
+        style,
+        frame,
+        frames: Some(frames),
     })
 }
 
@@ -503,7 +564,9 @@ impl InputNode {
 
 impl SpinnerNode {
     pub fn current_char(&self) -> char {
-        SPINNER_FRAMES[self.frame % SPINNER_FRAMES.len()]
+        let frames = self.frames.unwrap_or(SPINNER_FRAMES);
+        debug_assert!(!frames.is_empty(), "spinner frames must not be empty");
+        frames[self.frame % frames.len()]
     }
 }
 
@@ -608,6 +671,7 @@ mod tests {
             label: None,
             style: Style::default(),
             frame: 0,
+            frames: None,
         };
         assert_eq!(spinner.current_char(), SPINNER_FRAMES[0]);
 
@@ -615,6 +679,7 @@ mod tests {
             label: None,
             style: Style::default(),
             frame: 4,
+            frames: None,
         };
         assert_eq!(spinner_4.current_char(), SPINNER_FRAMES[0]);
     }

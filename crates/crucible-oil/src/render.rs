@@ -33,6 +33,10 @@ pub fn render_to_string(node: &Node, width: usize) -> String {
     render_with_cursor(node, width).content
 }
 
+pub fn render_to_plain_text(node: &Node, width: usize) -> String {
+    crate::ansi::strip_ansi(&render_to_string(node, width))
+}
+
 /// Render a slice of nodes without cloning them into a Fragment.
 pub fn render_children_to_string(children: &[Node], width: usize) -> String {
     let mut output = String::new();
