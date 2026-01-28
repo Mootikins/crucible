@@ -18,6 +18,7 @@ mod graduation_tests;
 mod interrupt_tests;
 mod layout_tests;
 mod node_tests;
+mod parity_tests;
 mod permission_integration_tests;
 mod permission_invariant_tests;
 mod popup_tests;
