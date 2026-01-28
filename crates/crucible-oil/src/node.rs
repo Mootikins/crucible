@@ -109,6 +109,7 @@ pub struct SpinnerNode {
     pub label: Option<String>,
     pub style: Style,
     pub frame: usize,
+    /// Custom spinner frames. If None, uses default SPINNER_FRAMES.
     pub frames: Option<&'static [char]>,
 }
 
@@ -134,6 +135,25 @@ pub enum Direction {
     Row,
 }
 
+/// Sizing behavior for layout nodes.
+///
+/// Controls how a node's width/height is determined during layout:
+///
+/// - `Fixed(n)`: Exact size in characters/lines. Does not grow or shrink.
+/// - `Flex(weight)`: Proportional share of remaining space after fixed/content sizes.
+///   Higher weight = larger share. Use for "fill remaining space" behavior.
+/// - `Content`: Shrink-to-fit. Measures actual content and uses exactly that size.
+///   Does not expand to fill available space.
+///
+/// # Examples
+///
+/// ```ignore
+/// // Two-column layout: narrow label, wide content
+/// row([
+///     col([text("Label:")]),        // Content: shrinks to "Label:" width
+///     flex(1, col([text("...")])),  // Flex: fills remaining space
+/// ])
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum Size {
     Fixed(u16),
@@ -312,6 +332,13 @@ pub fn overlay_from_bottom(child: Node, offset: usize) -> Node {
     Node::Overlay(OverlayNode {
         child: Box::new(child),
         anchor: OverlayAnchor::FromBottom(offset),
+    })
+}
+
+pub fn overlay_from_bottom_right(child: Node, offset: usize) -> Node {
+    Node::Overlay(OverlayNode {
+        child: Box::new(child),
+        anchor: OverlayAnchor::FromBottomRight(offset),
     })
 }
 
@@ -747,5 +774,48 @@ mod tests {
         } else {
             panic!("Expected Text");
         }
+    }
+}
+
+#[cfg(test)]
+mod element_kind_tests {
+    use super::ElementKind;
+
+    #[test]
+    fn block_to_block_wants_blank_line() {
+        assert!(ElementKind::Block.wants_blank_line_before(Some(ElementKind::Block)));
+    }
+
+    #[test]
+    fn block_after_tool_wants_blank_line() {
+        assert!(ElementKind::Block.wants_blank_line_before(Some(ElementKind::ToolCall)));
+        assert!(!ElementKind::ToolCall.wants_blank_line_before(Some(ElementKind::Block)));
+    }
+
+    #[test]
+    fn continuation_never_wants_blank_line() {
+        assert!(!ElementKind::Continuation.wants_blank_line_before(Some(ElementKind::Block)));
+        assert!(!ElementKind::Continuation.wants_blank_line_before(Some(ElementKind::ToolCall)));
+        assert!(!ElementKind::Continuation.wants_blank_line_before(Some(ElementKind::Continuation)));
+    }
+
+    #[test]
+    fn first_element_never_wants_blank_line() {
+        assert!(!ElementKind::Block.wants_blank_line_before(None));
+        assert!(!ElementKind::ToolCall.wants_blank_line_before(None));
+        assert!(!ElementKind::Continuation.wants_blank_line_before(None));
+    }
+
+    #[test]
+    fn tool_calls_are_compact() {
+        assert!(!ElementKind::ToolCall.wants_blank_line_before(Some(ElementKind::Block)));
+        assert!(!ElementKind::ToolCall.wants_blank_line_before(Some(ElementKind::ToolCall)));
+    }
+
+    #[test]
+    fn wants_newline_after_matches_kind() {
+        assert!(ElementKind::Block.wants_newline_after());
+        assert!(ElementKind::ToolCall.wants_newline_after());
+        assert!(!ElementKind::Continuation.wants_newline_after());
     }
 }
