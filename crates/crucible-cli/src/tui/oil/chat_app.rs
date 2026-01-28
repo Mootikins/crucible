@@ -4,7 +4,9 @@ use crate::tui::oil::component::Component;
 use crate::tui::oil::components::{
     format_streaming_output, format_tool_args, format_tool_result, render_shell_execution,
     render_subagent, render_thinking_block, render_tool_call, render_user_prompt,
-    summarize_tool_result, Drawer, DrawerKind, NotificationArea, StatusBar,
+    summarize_tool_result, Drawer, DrawerKind, InteractionModal, InteractionModalMsg,
+    InteractionModalOutput, InteractionMode, NotificationArea, ShellHistoryItem, ShellModal,
+    ShellModalMsg, ShellModalOutput, ShellStatus, StatusBar,
 };
 use crate::tui::oil::config::{ConfigValue, ModSource, RuntimeConfig};
 use crate::tui::oil::event::{Event, InputAction, InputBuffer};
@@ -26,10 +28,9 @@ use crucible_core::interaction::{
     PermResponse, PermissionScope,
 };
 use std::collections::VecDeque;
-use std::io::{BufRead, BufReader, Write};
+use std::io::Write;
 use std::path::PathBuf;
-use std::process::{Child, Command, Stdio};
-use std::sync::mpsc::{self, Receiver, Sender};
+use std::process::Command;
 use std::time::{Duration, Instant};
 
 const FOCUS_INPUT: &str = "input";
@@ -240,13 +241,6 @@ pub enum AutocompleteKind {
     },
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ShellStatus {
-    Running,
-    Completed { exit_code: i32 },
-    Cancelled,
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum ModelListState {
     #[default]
@@ -254,135 +248,6 @@ pub enum ModelListState {
     Loading,
     Loaded,
     Failed(String),
-}
-
-/// Mode for interaction modal input handling.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum InteractionMode {
-    /// Navigating/selecting from choices.
-    #[default]
-    Selecting,
-    /// Free-text input (for "Other" option).
-    TextInput,
-}
-
-/// State for the interaction modal (Ask, AskBatch, Edit, Permission, etc.).
-pub struct InteractionModalState {
-    /// Correlates with response sent back to daemon.
-    pub request_id: String,
-    /// The request being displayed.
-    pub request: InteractionRequest,
-    /// Current selection index for choice-based requests.
-    pub selected: usize,
-    /// Filter text for filterable panels (future use).
-    pub filter: String,
-    /// Free-text input buffer for "Other" option.
-    pub other_text: String,
-    /// Current input mode.
-    pub mode: InteractionMode,
-    /// Checked items for multi-select mode.
-    pub checked: std::collections::HashSet<usize>,
-    /// Current question index for multi-question batches.
-    pub current_question: usize,
-    /// Track if "Other" text was previously entered (for dim rendering when deselected).
-    pub other_text_preserved: bool,
-    /// Answers per question for AskBatch (Vec of selected indices per question).
-    pub batch_answers: Vec<std::collections::HashSet<usize>>,
-    /// Other text per question for AskBatch.
-    pub batch_other_texts: Vec<String>,
-    /// Whether the diff preview is collapsed (for permission requests with file changes).
-    pub diff_collapsed: bool,
-}
-
-pub struct ShellModal {
-    command: String,
-    output_lines: Vec<String>,
-    status: ShellStatus,
-    scroll_offset: usize,
-    user_scrolled: bool,
-    start_time: Instant,
-    duration: Option<Duration>,
-    output_path: Option<PathBuf>,
-    working_dir: PathBuf,
-    output_receiver: Option<Receiver<String>>,
-    child_pid: Option<u32>,
-}
-
-impl ShellModal {
-    fn new(command: String, working_dir: PathBuf) -> Self {
-        Self {
-            command,
-            output_lines: Vec::new(),
-            status: ShellStatus::Running,
-            scroll_offset: 0,
-            user_scrolled: false,
-            start_time: Instant::now(),
-            duration: None,
-            output_path: None,
-            working_dir,
-            output_receiver: None,
-            child_pid: None,
-        }
-    }
-
-    fn visible_lines(&self, max_lines: usize) -> &[String] {
-        let total = self.output_lines.len();
-        if total <= max_lines {
-            &self.output_lines
-        } else {
-            let start = self.scroll_offset.min(total.saturating_sub(max_lines));
-            let end = (start + max_lines).min(total);
-            &self.output_lines[start..end]
-        }
-    }
-
-    fn scroll_up(&mut self, lines: usize) {
-        self.scroll_offset = self.scroll_offset.saturating_sub(lines);
-    }
-
-    fn scroll_down(&mut self, lines: usize, max_visible: usize) {
-        let max_offset = self.output_lines.len().saturating_sub(max_visible);
-        self.scroll_offset = (self.scroll_offset + lines).min(max_offset);
-    }
-
-    fn scroll_to_top(&mut self) {
-        self.scroll_offset = 0;
-    }
-
-    fn scroll_to_bottom(&mut self, max_visible: usize) {
-        self.scroll_offset = self.output_lines.len().saturating_sub(max_visible);
-    }
-
-    fn is_running(&self) -> bool {
-        self.status == ShellStatus::Running
-    }
-
-    fn format_header(&self) -> String {
-        let status_str = match &self.status {
-            ShellStatus::Running => "● running".to_string(),
-            ShellStatus::Completed { exit_code } if *exit_code == 0 => {
-                format!("✓ exit 0 {:.1?}", self.duration.unwrap_or_default())
-            }
-            ShellStatus::Completed { exit_code } => {
-                format!(
-                    "✗ exit {} {:.1?}",
-                    exit_code,
-                    self.duration.unwrap_or_default()
-                )
-            }
-            ShellStatus::Cancelled => "⏹ cancelled".to_string(),
-        };
-        format!("$ {}  {}", self.command, status_str)
-    }
-
-    fn format_footer(&self) -> String {
-        let line_info = format!("({} lines)", self.output_lines.len());
-        if self.is_running() {
-            format!("Ctrl+C cancel  {}", line_info)
-        } else {
-            format!("i insert │ t truncated │ e edit │ q quit  {}", line_info)
-        }
-    }
 }
 
 pub struct McpServerDisplay {
@@ -427,7 +292,7 @@ pub struct OilChatApp {
     runtime_config: RuntimeConfig,
     current_provider: String,
     notification_area: NotificationArea,
-    interaction_modal: Option<InteractionModalState>,
+    interaction_modal: Option<InteractionModal>,
     pending_pre_graduate_keys: Vec<String>,
     /// Queue of pending permission requests (request_id, request) when multiple arrive rapidly
     permission_queue: VecDeque<(String, PermRequest)>,
@@ -497,11 +362,13 @@ impl App for OilChatApp {
 
         if let Some(modal) = &self.interaction_modal {
             match &modal.request {
-                InteractionRequest::Ask(_) => {
-                    return self.render_ask_interaction();
-                }
-                InteractionRequest::Permission(_) => {
-                    return self.render_perm_interaction();
+                InteractionRequest::Ask(_)
+                | InteractionRequest::AskBatch(_)
+                | InteractionRequest::Permission(_) => {
+                    let (term_width, _) = crossterm::terminal::size()
+                        .map(|(w, h)| (w as usize, h as usize))
+                        .unwrap_or((80, 24));
+                    return modal.view(term_width, self.permission_queue.len());
                 }
                 _ => {} // Other types not yet supported
             }
@@ -529,7 +396,7 @@ impl App for OilChatApp {
             Event::Key(key) => self.handle_key(key),
             Event::Tick => {
                 self.spinner_frame = (self.spinner_frame + 1) % 4;
-                self.poll_shell_output();
+                self.tick_shell_modal();
                 self.notification_area.expire_toasts();
                 if self.notification_area.is_empty() {
                     self.notification_area.hide();
@@ -841,9 +708,7 @@ impl OilChatApp {
         Drawer::new(DrawerKind::Messages)
             .content_rows(content_rows)
             .width(term_width)
-            .view(&ViewContext::new(
-                &crate::tui::oil::focus::FocusContext::new(),
-            ))
+            .view()
     }
 
     pub fn clear_messages(&mut self) {
@@ -941,20 +806,7 @@ impl OilChatApp {
 
         self.notification_area.hide();
 
-        self.interaction_modal = Some(InteractionModalState {
-            request_id,
-            request,
-            selected: 0,
-            filter: String::new(),
-            other_text: String::new(),
-            mode: InteractionMode::Selecting,
-            checked: std::collections::HashSet::new(),
-            current_question: 0,
-            other_text_preserved: false,
-            batch_answers: Vec::new(),
-            batch_other_texts: Vec::new(),
-            diff_collapsed: false,
-        });
+        self.interaction_modal = Some(InteractionModal::new(request_id, request));
     }
 
     pub fn close_interaction(&mut self) {
@@ -969,7 +821,7 @@ impl OilChatApp {
     pub fn shell_output_lines(&self) -> Vec<String> {
         self.shell_modal
             .as_ref()
-            .map(|m| m.output_lines.clone())
+            .map(|m| m.output_lines().to_vec())
             .unwrap_or_default()
     }
 
@@ -985,7 +837,7 @@ impl OilChatApp {
     pub fn shell_scroll_offset(&self) -> usize {
         self.shell_modal
             .as_ref()
-            .map(|m| m.scroll_offset)
+            .map(|m| m.scroll_offset())
             .unwrap_or(0)
     }
 
@@ -1902,490 +1754,106 @@ impl OilChatApp {
         self.shell_history_index = None;
 
         let working_dir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-        let mut modal = ShellModal::new(shell_cmd.clone(), working_dir.clone());
 
-        let (tx, rx): (Sender<String>, Receiver<String>) = mpsc::channel();
-        modal.output_receiver = Some(rx);
-
-        self.enter_alternate_screen();
-        self.shell_modal = Some(modal);
-
-        let shell = if cfg!(windows) { "cmd" } else { "sh" };
-        let shell_arg = if cfg!(windows) { "/C" } else { "-c" };
-
-        match Command::new(shell)
-            .arg(shell_arg)
-            .arg(&shell_cmd)
-            .current_dir(&working_dir)
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-        {
-            Ok(mut child) => {
-                if let Some(ref mut modal) = self.shell_modal {
-                    modal.child_pid = Some(child.id());
-                }
-
-                let stdout = child.stdout.take();
-                let stderr = child.stderr.take();
-
-                std::thread::spawn(move || {
-                    Self::stream_output(stdout, stderr, tx, child);
-                });
+        match ShellModal::spawn(shell_cmd.clone(), working_dir) {
+            Ok(modal) => {
+                self.enter_alternate_screen();
+                self.shell_modal = Some(modal);
             }
             Err(e) => {
-                self.close_shell_modal();
-                self.error = Some(format!("Failed to execute command: {}", e));
+                self.error = Some(e);
             }
         }
 
         Action::Continue
     }
 
-    fn stream_output(
-        stdout: Option<std::process::ChildStdout>,
-        stderr: Option<std::process::ChildStderr>,
-        tx: Sender<String>,
-        mut child: Child,
-    ) {
-        let tx_stdout = tx.clone();
-        let tx_stderr = tx.clone();
-
-        let stdout_handle = stdout.map(|out| {
-            std::thread::spawn(move || {
-                let reader = BufReader::new(out);
-                for line in reader.lines().map_while(Result::ok) {
-                    if tx_stdout.send(line).is_err() {
-                        break;
-                    }
-                }
-            })
-        });
-
-        let stderr_handle = stderr.map(|err| {
-            std::thread::spawn(move || {
-                let reader = BufReader::new(err);
-                for line in reader.lines().map_while(Result::ok) {
-                    if tx_stderr.send(format!("\x1b[31m{}\x1b[0m", line)).is_err() {
-                        break;
-                    }
-                }
-            })
-        });
-
-        if let Some(h) = stdout_handle {
-            let _ = h.join();
-        }
-        if let Some(h) = stderr_handle {
-            let _ = h.join();
-        }
-
-        let exit_code = child.wait().map(|s| s.code().unwrap_or(-1)).unwrap_or(-1);
-        let _ = tx.send(format!("\x00EXIT:{}", exit_code));
-    }
-
-    fn poll_shell_output(&mut self) {
-        let content_height = crossterm::terminal::size()
-            .map(|(_, h)| h as usize)
-            .unwrap_or(24)
-            .saturating_sub(2);
+    fn handle_shell_modal_tick(&mut self) {
+        let visible_lines = self.modal_visible_lines();
 
         if let Some(ref mut modal) = self.shell_modal {
-            let was_running = modal.is_running();
-
-            if let Some(ref rx) = modal.output_receiver {
-                while let Ok(line) = rx.try_recv() {
-                    if let Some(code_str) = line.strip_prefix("\x00EXIT:") {
-                        if let Ok(code) = code_str.parse::<i32>() {
-                            // Only transition to Completed if still Running (not Cancelled)
-                            if matches!(modal.status, ShellStatus::Running) {
-                                modal.status = ShellStatus::Completed { exit_code: code };
-                                modal.duration = Some(modal.start_time.elapsed());
-                            }
-                        }
-                    } else {
-                        modal.output_lines.push(line);
-                    }
-                }
-            }
-
-            if was_running && modal.is_running() && !modal.user_scrolled {
-                modal.scroll_to_bottom(content_height);
-            } else if was_running && !modal.is_running() {
-                modal.scroll_to_top();
-            }
+            let output = modal.update(ShellModalMsg::Tick, visible_lines);
+            self.handle_shell_modal_output(output);
         }
     }
 
     fn handle_shell_modal_key(&mut self, key: crossterm::event::KeyEvent) -> Action<ChatAppMsg> {
-        self.poll_shell_output();
-
-        let is_running = self
-            .shell_modal
-            .as_ref()
-            .map(|m| m.is_running())
-            .unwrap_or(false);
-
         let visible_lines = self.modal_visible_lines();
-        let half_page = visible_lines / 2;
 
-        match key.code {
-            KeyCode::Char('c')
-                if key
-                    .modifiers
-                    .contains(crossterm::event::KeyModifiers::CONTROL) =>
-            {
-                if is_running {
-                    self.cancel_shell();
-                }
-            }
-            KeyCode::Esc | KeyCode::Char('q') if !is_running => {
-                self.close_shell_modal();
-            }
-            KeyCode::Char('i') if !is_running => {
-                self.send_shell_output(false);
-                self.close_shell_modal();
-            }
-            KeyCode::Char('t') if !is_running => {
-                self.send_shell_output(true);
-                self.close_shell_modal();
-            }
-            KeyCode::Char('e') if !is_running => {
-                self.open_shell_output_in_editor();
-            }
-            KeyCode::Up | KeyCode::Char('k') => {
-                self.scroll_modal(|m, _| m.scroll_up(1), visible_lines)
-            }
-            KeyCode::Down | KeyCode::Char('j') => {
-                self.scroll_modal(|m, v| m.scroll_down(1, v), visible_lines)
-            }
-            KeyCode::Char('u') => self.scroll_modal(|m, _| m.scroll_up(half_page), visible_lines),
-            KeyCode::Char('d') => {
-                self.scroll_modal(|m, v| m.scroll_down(half_page, v), visible_lines)
-            }
-            KeyCode::PageUp => self.scroll_modal(|m, v| m.scroll_up(v), visible_lines),
-            KeyCode::PageDown => self.scroll_modal(|m, v| m.scroll_down(v, v), visible_lines),
-            KeyCode::Char('g') if !is_running => {
-                if let Some(ref mut modal) = self.shell_modal {
-                    modal.scroll_to_top();
-                }
-            }
-            KeyCode::Char('G') if !is_running => {
-                if let Some(ref mut modal) = self.shell_modal {
-                    modal.scroll_to_bottom(visible_lines);
-                }
-            }
-            _ => {}
+        if let Some(ref mut modal) = self.shell_modal {
+            let output = modal.update(ShellModalMsg::Key(key), visible_lines);
+            self.handle_shell_modal_output(output);
         }
+
         Action::Continue
     }
 
+    fn handle_shell_modal_output(&mut self, output: ShellModalOutput) {
+        match output {
+            ShellModalOutput::None => {}
+            ShellModalOutput::Close(history_item) => {
+                self.save_shell_output();
+
+                self.message_counter += 1;
+                self.cache.push_shell_execution(
+                    format!("shell-{}", self.message_counter),
+                    &history_item.command,
+                    history_item.exit_code,
+                    history_item.output_tail,
+                    history_item.output_path,
+                );
+
+                self.shell_modal = None;
+                self.leave_alternate_screen();
+            }
+            ShellModalOutput::InsertOutput { content, truncated } => {
+                let label = if truncated { " (truncated)" } else { "" };
+                self.input.insert_str(&format!(
+                    "Here is the output of a shell command I ran{}:\n\n```\n{}\n```\n",
+                    label, content
+                ));
+            }
+        }
+    }
+
     fn handle_interaction_key(&mut self, key: crossterm::event::KeyEvent) -> Action<ChatAppMsg> {
-        let modal = match &self.interaction_modal {
-            Some(m) => m,
-            None => return Action::Continue,
-        };
-
-        let request_id = modal.request_id.clone();
-
-        match &modal.request {
-            InteractionRequest::Ask(ask) => self.handle_ask_key(key, ask.clone(), request_id),
-            InteractionRequest::AskBatch(batch) => {
-                self.handle_ask_batch_key(key, batch.clone(), request_id)
-            }
-            InteractionRequest::Permission(perm) => {
-                self.handle_perm_key(key, perm.clone(), request_id)
-            }
-            _ => Action::Continue,
-        }
-    }
-
-    fn handle_ask_key(
-        &mut self,
-        key: crossterm::event::KeyEvent,
-        ask_request: AskRequest,
-        request_id: String,
-    ) -> Action<ChatAppMsg> {
         let modal = match &mut self.interaction_modal {
             Some(m) => m,
             None => return Action::Continue,
         };
 
-        let choices_count = ask_request.choices.as_ref().map(|c| c.len()).unwrap_or(0);
-        let total_items = choices_count + if ask_request.allow_other { 1 } else { 0 };
-
-        match modal.mode {
-            InteractionMode::Selecting => match key.code {
-                KeyCode::Up | KeyCode::Char('k') | KeyCode::Char('K') => {
-                    modal.selected = Self::wrap_selection(modal.selected, -1, total_items.max(1));
-                    Action::Continue
-                }
-                KeyCode::Down | KeyCode::Char('j') | KeyCode::Char('J') => {
-                    modal.selected = Self::wrap_selection(modal.selected, 1, total_items.max(1));
-                    Action::Continue
-                }
-                KeyCode::Enter => {
-                    if modal.selected < choices_count {
-                        let response = if ask_request.multi_select {
-                            InteractionResponse::Ask(AskResponse::selected_many(
-                                modal.checked.iter().copied().collect::<Vec<_>>(),
-                            ))
-                        } else {
-                            InteractionResponse::Ask(AskResponse::selected(modal.selected))
-                        };
-                        self.send_ask_response(request_id, response)
-                    } else if ask_request.allow_other && modal.selected == choices_count {
-                        modal.mode = InteractionMode::TextInput;
-                        Action::Continue
-                    } else {
-                        Action::Continue
-                    }
-                }
-                KeyCode::Tab if ask_request.allow_other => {
-                    modal.mode = InteractionMode::TextInput;
-                    Action::Continue
-                }
-                KeyCode::Char(' ') if ask_request.multi_select => {
-                    Self::toggle_checked(&mut modal.checked, modal.selected);
-                    Action::Continue
-                }
-                KeyCode::Esc => self.send_ask_response(request_id, InteractionResponse::Cancelled),
-                KeyCode::Char('c') if self.is_ctrl_c(key) => {
-                    self.send_ask_response(request_id, InteractionResponse::Cancelled)
-                }
-                _ => Action::Continue,
-            },
-            InteractionMode::TextInput => match key.code {
-                KeyCode::Enter => {
-                    let response =
-                        InteractionResponse::Ask(AskResponse::other(modal.other_text.clone()));
-                    self.send_ask_response(request_id, response)
-                }
-                KeyCode::Esc => {
-                    modal.mode = InteractionMode::Selecting;
-                    Action::Continue
-                }
-                KeyCode::Backspace => {
-                    modal.other_text.pop();
-                    Action::Continue
-                }
-                KeyCode::Char(c) => {
-                    modal.other_text.push(c);
-                    Action::Continue
-                }
-                _ => Action::Continue,
-            },
-        }
-    }
-
-    fn send_ask_response(
-        &mut self,
-        request_id: String,
-        response: InteractionResponse,
-    ) -> Action<ChatAppMsg> {
-        self.close_interaction();
-        Action::Send(ChatAppMsg::CloseInteraction {
-            request_id,
-            response,
-        })
-    }
-
-    fn handle_ask_batch_key(
-        &mut self,
-        key: crossterm::event::KeyEvent,
-        batch: crucible_core::interaction::AskBatch,
-        request_id: String,
-    ) -> Action<ChatAppMsg> {
-        let modal = match &mut self.interaction_modal {
-            Some(m) => m,
-            None => return Action::Continue,
-        };
-
-        if modal.current_question >= batch.questions.len() {
-            return Action::Continue;
-        }
-
-        let current_q = &batch.questions[modal.current_question];
-        let choices_count = current_q.choices.len();
-        let total_items = choices_count + if current_q.allow_other { 1 } else { 0 };
-
-        match modal.mode {
-            InteractionMode::Selecting => match key.code {
-                KeyCode::Up | KeyCode::Char('k') | KeyCode::Char('K') => {
-                    modal.selected = Self::wrap_selection(modal.selected, -1, total_items.max(1));
-                    Action::Continue
-                }
-                KeyCode::Down | KeyCode::Char('j') | KeyCode::Char('J') => {
-                    modal.selected = Self::wrap_selection(modal.selected, 1, total_items.max(1));
-                    Action::Continue
-                }
-                KeyCode::Char(' ') if current_q.multi_select => {
-                    Self::toggle_checked(&mut modal.checked, modal.selected);
-                    Action::Continue
-                }
-                KeyCode::Tab => {
-                    self.advance_batch_question(&batch);
-                    Action::Continue
-                }
-                KeyCode::BackTab => {
-                    if let Some(m) = &mut self.interaction_modal {
-                        if m.current_question > 0 {
-                            m.current_question -= 1;
-                            m.selected = 0;
-                            m.checked.clear();
-                        }
-                    }
-                    Action::Continue
-                }
-                KeyCode::Enter => {
-                    let is_last = modal.current_question == batch.questions.len() - 1;
-                    if is_last {
-                        let response = InteractionResponse::AskBatch(
-                            crucible_core::interaction::AskBatchResponse::new(batch.id),
-                        );
-                        self.send_ask_response(request_id, response)
-                    } else {
-                        self.advance_batch_question(&batch);
-                        Action::Continue
-                    }
-                }
-                KeyCode::Esc => self.send_ask_response(request_id, InteractionResponse::Cancelled),
-                KeyCode::Char('c') if self.is_ctrl_c(key) => {
-                    self.send_ask_response(request_id, InteractionResponse::Cancelled)
-                }
-                _ => Action::Continue,
-            },
-            InteractionMode::TextInput => Action::Continue,
-        }
-    }
-
-    fn advance_batch_question(&mut self, batch: &crucible_core::interaction::AskBatch) {
-        if let Some(m) = &mut self.interaction_modal {
-            if m.current_question < batch.questions.len() - 1 {
-                m.current_question += 1;
-                m.selected = 0;
-                m.checked.clear();
-            }
-        }
-    }
-
-    fn handle_perm_key(
-        &mut self,
-        key: crossterm::event::KeyEvent,
-        perm_request: PermRequest,
-        request_id: String,
-    ) -> Action<ChatAppMsg> {
-        let modal = match &mut self.interaction_modal {
-            Some(m) => m,
-            None => return Action::Continue,
-        };
-
-        let has_pattern_option = !perm_request.tokens().is_empty();
-        let total_options = if has_pattern_option { 3 } else { 2 };
-
-        match key.code {
-            KeyCode::Up | KeyCode::Char('k') | KeyCode::Char('K') => {
-                modal.selected = Self::wrap_selection(modal.selected, -1, total_options);
+        match modal.update(InteractionModalMsg::Key(key)) {
+            InteractionModalOutput::None => Action::Continue,
+            InteractionModalOutput::Close => {
+                self.close_interaction();
                 Action::Continue
             }
-            KeyCode::Down | KeyCode::Char('j') | KeyCode::Char('J') => {
-                modal.selected = Self::wrap_selection(modal.selected, 1, total_options);
-                Action::Continue
-            }
-            KeyCode::Enter => {
-                self.handle_perm_enter_key(&perm_request, request_id, has_pattern_option)
-            }
-            KeyCode::Char('y') | KeyCode::Char('Y') => {
-                self.send_perm_response(request_id, PermResponse::allow())
-            }
-            KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc => {
-                self.send_perm_response(request_id, PermResponse::deny())
-            }
-            KeyCode::Char('c') if self.is_ctrl_c(key) => {
-                self.send_perm_response(request_id, PermResponse::deny())
-            }
-            KeyCode::Char('p') | KeyCode::Char('P') => {
-                self.handle_perm_pattern_key(&perm_request, request_id)
-            }
-            KeyCode::Char('h') | KeyCode::Char('H') => {
-                if let Some(ref mut modal) = self.interaction_modal {
-                    modal.diff_collapsed = !modal.diff_collapsed;
-                }
-                Action::Continue
-            }
-            _ => Action::Continue,
-        }
-    }
-
-    fn wrap_selection(selected: usize, delta: isize, total: usize) -> usize {
-        if delta < 0 && selected == 0 {
-            total - 1
-        } else if delta < 0 {
-            selected - 1
-        } else {
-            (selected + 1) % total
-        }
-    }
-
-    fn toggle_checked(set: &mut std::collections::HashSet<usize>, value: usize) {
-        if set.contains(&value) {
-            set.remove(&value);
-        } else {
-            set.insert(value);
-        }
-    }
-
-    fn handle_perm_enter_key(
-        &mut self,
-        perm_request: &PermRequest,
-        request_id: String,
-        has_pattern_option: bool,
-    ) -> Action<ChatAppMsg> {
-        let selected = self
-            .interaction_modal
-            .as_ref()
-            .map(|m| m.selected)
-            .unwrap_or(0);
-
-        match selected {
-            0 => self.send_perm_response(request_id, PermResponse::allow()),
-            1 => self.send_perm_response(request_id, PermResponse::deny()),
-            2 if has_pattern_option => {
-                let pattern = perm_request.pattern_at(perm_request.tokens().len());
-                self.notify_toast(format!("Pattern saved: {}", pattern));
-                self.send_perm_response(
+            InteractionModalOutput::PermissionResponse {
+                request_id,
+                response,
+            } => {
+                self.close_interaction_and_show_next();
+                Action::Send(ChatAppMsg::CloseInteraction {
                     request_id,
-                    PermResponse::allow_pattern(pattern, PermissionScope::Project),
-                )
+                    response: InteractionResponse::Permission(response),
+                })
             }
-            _ => Action::Continue,
+            InteractionModalOutput::AskResponse {
+                request_id,
+                response,
+            } => {
+                self.close_interaction();
+                Action::Send(ChatAppMsg::CloseInteraction {
+                    request_id,
+                    response,
+                })
+            }
+            InteractionModalOutput::ToggleDiff => Action::Continue,
+            InteractionModalOutput::Notify(msg) => {
+                self.notify_toast(msg);
+                Action::Continue
+            }
         }
-    }
-
-    fn handle_perm_pattern_key(
-        &mut self,
-        perm_request: &PermRequest,
-        request_id: String,
-    ) -> Action<ChatAppMsg> {
-        let tokens = perm_request.tokens();
-        if tokens.is_empty() {
-            self.notify_toast("Cannot create pattern for this request type");
-            return Action::Continue;
-        }
-        let pattern = perm_request.pattern_at(tokens.len());
-        self.notify_toast(format!("Pattern saved: {}", pattern));
-        self.send_perm_response(
-            request_id,
-            PermResponse::allow_pattern(pattern, PermissionScope::Project),
-        )
-    }
-
-    fn send_perm_response(&mut self, request_id: String, perm: PermResponse) -> Action<ChatAppMsg> {
-        self.close_interaction_and_show_next();
-        Action::Send(ChatAppMsg::CloseInteraction {
-            request_id,
-            response: InteractionResponse::Permission(perm),
-        })
     }
 
     fn notify_toast(&mut self, msg: impl Into<String>) {
@@ -2396,20 +1864,10 @@ impl OilChatApp {
     fn close_interaction_and_show_next(&mut self) {
         self.interaction_modal = None;
         if let Some((next_id, next_perm)) = self.permission_queue.pop_front() {
-            self.interaction_modal = Some(InteractionModalState {
-                request_id: next_id,
-                request: InteractionRequest::Permission(next_perm),
-                selected: 0,
-                filter: String::new(),
-                other_text: String::new(),
-                mode: InteractionMode::Selecting,
-                checked: std::collections::HashSet::new(),
-                current_question: 0,
-                other_text_preserved: false,
-                batch_answers: Vec::new(),
-                batch_other_texts: Vec::new(),
-                diff_collapsed: false,
-            });
+            self.interaction_modal = Some(InteractionModal::new(
+                next_id,
+                InteractionRequest::Permission(next_perm),
+            ));
         }
     }
 
@@ -2420,71 +1878,30 @@ impl OilChatApp {
         term_height.saturating_sub(2)
     }
 
-    fn scroll_modal<F>(&mut self, scroll_fn: F, visible_lines: usize)
-    where
-        F: FnOnce(&mut ShellModal, usize),
-    {
+    fn tick_shell_modal(&mut self) {
+        let visible_lines = self.modal_visible_lines();
         if let Some(ref mut modal) = self.shell_modal {
-            scroll_fn(modal, visible_lines);
-            modal.user_scrolled = true;
+            let output = modal.update(ShellModalMsg::Tick, visible_lines);
+            self.handle_shell_modal_output(output);
         }
     }
 
     fn cancel_shell(&mut self) {
         if let Some(ref mut modal) = self.shell_modal {
-            // Set status FIRST to prevent race with EXIT marker
-            modal.status = ShellStatus::Cancelled;
-            modal.duration = Some(modal.start_time.elapsed());
-
-            // Drop the receiver to signal threads to stop (sender.send() will error)
-            modal.output_receiver = None;
-
-            // Then send SIGTERM to the process
-            if let Some(pid) = modal.child_pid {
-                #[cfg(unix)]
-                {
-                    let _ = Command::new("kill")
-                        .args(["-TERM", &pid.to_string()])
-                        .output();
-                }
-                #[cfg(windows)]
-                {
-                    let _ = Command::new("taskkill")
-                        .args(["/PID", &pid.to_string(), "/F"])
-                        .output();
-                }
-            }
+            modal.cancel();
         }
     }
 
-    fn close_shell_modal(&mut self) {
-        self.save_shell_output();
-
-        if let Some(modal) = self.shell_modal.take() {
-            let exit_code = match modal.status {
-                ShellStatus::Completed { exit_code } => exit_code,
-                ShellStatus::Cancelled => -1,
-                ShellStatus::Running => -1,
-            };
-
-            let output_tail: Vec<String> = modal
-                .output_lines
-                .iter()
-                .rev()
-                .take(5)
-                .rev()
-                .cloned()
-                .collect();
-
-            self.message_counter += 1;
-            self.cache.push_shell_execution(
-                format!("shell-{}", self.message_counter),
-                &modal.command,
-                exit_code,
-                output_tail,
-                modal.output_path,
-            );
-        }
+    fn close_shell_modal_with_history(&mut self, history_item: ShellHistoryItem) {
+        self.message_counter += 1;
+        self.cache.push_shell_execution(
+            format!("shell-{}", self.message_counter),
+            &history_item.command,
+            history_item.exit_code,
+            history_item.output_tail,
+            history_item.output_path,
+        );
+        self.shell_modal = None;
         self.leave_alternate_screen();
     }
 
@@ -2502,57 +1919,9 @@ impl OilChatApp {
     }
 
     fn save_shell_output(&mut self) -> Option<PathBuf> {
-        let modal = self.shell_modal.as_ref()?;
         let session_dir = self.session_dir.clone()?;
-
-        let shell_dir = session_dir.join("shell");
-        if let Err(e) = std::fs::create_dir_all(&shell_dir) {
-            tracing::error!(path = %shell_dir.display(), error = %e, "Failed to create shell output directory");
-            self.error = Some(format!("Failed to create shell output dir: {}", e));
-            return None;
-        }
-
-        let timestamp = chrono::Local::now().format("%Y%m%d-%H%M%S");
-        let cmd_slug: String = modal
-            .command
-            .chars()
-            .take(20)
-            .map(|c| if c.is_alphanumeric() { c } else { '-' })
-            .collect();
-        let filename = format!("{}-{}.output", timestamp, cmd_slug);
-        let path = shell_dir.join(&filename);
-
-        let mut content = String::new();
-        content.push_str(&format!("$ {}\n", modal.command));
-        content.push_str(&format!(
-            "Exit: {}\n",
-            match &modal.status {
-                ShellStatus::Completed { exit_code } => exit_code.to_string(),
-                ShellStatus::Cancelled => "cancelled".to_string(),
-                ShellStatus::Running => "running".to_string(),
-            }
-        ));
-        if let Some(duration) = modal.duration {
-            content.push_str(&format!("Duration: {:.2?}\n", duration));
-        }
-        content.push_str(&format!("Cwd: {}\n", modal.working_dir.display()));
-        content.push_str("---\n");
-        for line in &modal.output_lines {
-            content.push_str(line);
-            content.push('\n');
-        }
-
-        if let Err(e) = std::fs::write(&path, &content) {
-            tracing::error!(path = %path.display(), error = %e, "Failed to write shell output");
-            self.error = Some(format!("Failed to save shell output: {}", e));
-            return None;
-        }
-
-        if let Some(ref mut m) = self.shell_modal {
-            m.output_path = Some(path.clone());
-        }
-
-        Some(path)
+        let modal = self.shell_modal.as_mut()?;
+        modal.save_output(&session_dir)
     }
 
     fn maybe_spill_tool_output(&mut self, name: &str) {
@@ -2599,7 +1968,7 @@ impl OilChatApp {
                 .map(|n| format!("shell/{}", n))
                 .unwrap_or_else(|| "(not saved)".to_string());
 
-            let exit_str = match &modal.status {
+            let exit_str = match modal.status() {
                 ShellStatus::Completed { exit_code } => format!("exit {}", exit_code),
                 ShellStatus::Cancelled => "cancelled".to_string(),
                 ShellStatus::Running => "running".to_string(),
@@ -2607,11 +1976,14 @@ impl OilChatApp {
 
             let mut message = format!(
                 "[Shell: {}]\n$ {} ({})\n\n",
-                path_str, modal.command, exit_str
+                path_str,
+                modal.command(),
+                exit_str
             );
 
+            let output_lines = modal.output_lines();
             if truncated {
-                let total = modal.output_lines.len();
+                let total = output_lines.len();
                 let show_lines = 50.min(total);
                 if total > show_lines {
                     message.push_str(&format!(
@@ -2619,12 +1991,12 @@ impl OilChatApp {
                         show_lines, total
                     ));
                 }
-                for line in modal.output_lines.iter().rev().take(show_lines).rev() {
+                for line in output_lines.iter().rev().take(show_lines).rev() {
                     message.push_str(line);
                     message.push('\n');
                 }
             } else {
-                for line in &modal.output_lines {
+                for line in output_lines {
                     message.push_str(line);
                     message.push('\n');
                 }
@@ -2659,380 +2031,14 @@ impl OilChatApp {
     }
 
     fn render_shell_modal(&self) -> Node {
-        let modal = match &self.shell_modal {
-            Some(m) => m,
-            None => return Node::Empty,
-        };
-
         let (term_width, term_height) = crossterm::terminal::size()
             .map(|(w, h)| (w as usize, h as usize))
             .unwrap_or((80, 24));
 
-        let content_height = term_height.saturating_sub(2);
-
-        let header_bg = colors::POPUP_BG;
-        let footer_bg = colors::INPUT_BG;
-
-        let header_text = format!(" {} ", modal.format_header());
-        let header_padding = " ".repeat(term_width.saturating_sub(header_text.len()));
-        let header = styled(
-            format!("{}{}", header_text, header_padding),
-            Style::new().bg(header_bg).bold(),
-        );
-
-        let visible = modal.visible_lines(content_height);
-        let body_lines: Vec<Node> = visible.iter().map(|line| text(line.clone())).collect();
-
-        let body = col(body_lines);
-
-        let footer = self.render_shell_footer(modal, term_width, footer_bg);
-
-        col([header, body, spacer(), footer])
-    }
-
-    fn render_shell_footer(&self, modal: &ShellModal, width: usize, bg: Color) -> Node {
-        let line_info = format!("({} lines)", modal.output_lines.len());
-        let key_style = Style::new().bg(bg).fg(colors::TEXT_ACCENT);
-        let sep_style = Style::new().bg(bg).fg(colors::TEXT_MUTED);
-        let text_style = Style::new().bg(bg).fg(colors::TEXT_PRIMARY).dim();
-
-        let content = if modal.is_running() {
-            row([
-                styled(" ", text_style),
-                styled("Ctrl+C", key_style),
-                styled(" cancel  ", text_style),
-                styled(&line_info, sep_style),
-            ])
-        } else {
-            row([
-                styled(" ", text_style),
-                styled("i", key_style),
-                styled(" insert ", text_style),
-                styled("│", sep_style),
-                styled(" ", text_style),
-                styled("t", key_style),
-                styled(" truncated ", text_style),
-                styled("│", sep_style),
-                styled(" ", text_style),
-                styled("e", key_style),
-                styled(" edit ", text_style),
-                styled("│", sep_style),
-                styled(" ", text_style),
-                styled("q", key_style),
-                styled(" quit  ", text_style),
-                styled(&line_info, sep_style),
-            ])
-        };
-
-        let content_str = modal.format_footer();
-        let padding_len = width.saturating_sub(content_str.len() + 1);
-        let padding = styled(" ".repeat(padding_len), Style::new().bg(bg));
-
-        row([content, padding])
-    }
-
-    fn render_perm_interaction(&self) -> Node {
-        let modal = match &self.interaction_modal {
-            Some(m) => m,
-            None => return Node::Empty,
-        };
-
-        let perm_request = match &modal.request {
-            InteractionRequest::Permission(req) => req,
-            _ => return Node::Empty,
-        };
-
-        let (term_width, _term_height) = crossterm::terminal::size()
-            .map(|(w, h)| (w as usize, h as usize))
-            .unwrap_or((80, 24));
-
-        let panel_bg = colors::INPUT_BG;
-        let border_fg = colors::BORDER;
-
-        let (type_label, action_detail, is_write) = match &perm_request.action {
-            PermAction::Bash { tokens } => ("BASH", tokens.join(" "), false),
-            PermAction::Read { segments } => ("READ", format!("/{}", segments.join("/")), false),
-            PermAction::Write { segments } => ("WRITE", format!("/{}", segments.join("/")), true),
-            PermAction::Tool { name, args } => {
-                let args_str = Self::prettify_tool_args(args);
-                ("TOOL", format!("{} {}", name, args_str), false)
-            }
-        };
-
-        let queue_total = 1 + self.permission_queue.len();
-        let has_pattern_option = !perm_request.tokens().is_empty();
-
-        // Helper: pad a content string to full width with INPUT_BG background
-        let pad_line = |content: &str, visible_len: usize| -> Node {
-            let pad = " ".repeat(term_width.saturating_sub(visible_len));
-            styled(
-                format!("{}{}", content, pad),
-                Style::new().bg(panel_bg).fg(colors::OVERLAY_BRIGHT),
-            )
-        };
-
-        let mut lines: Vec<Node> = Vec::new();
-
-        // ── Top border: ▄ repeated ──
-        lines.push(styled(
-            "\u{2584}".repeat(term_width),
-            Style::new().fg(border_fg),
-        ));
-
-        // ── Action detail line ──
-        let action_text = if queue_total > 1 {
-            format!("  [{}/{}] {}", 1, queue_total, action_detail)
-        } else {
-            format!("  {}", action_detail)
-        };
-        let action_visible_len = action_text.len();
-        lines.push(pad_line(&action_text, action_visible_len));
-
-        // ── Blank line ──
-        lines.push(styled(" ".repeat(term_width), Style::new().bg(panel_bg)));
-
-        // ── Options ──
-        let options: Vec<(&str, &str)> = if has_pattern_option {
-            vec![
-                ("y", "Allow once"),
-                ("n", "Deny"),
-                ("p", "Allow + Save pattern"),
-            ]
-        } else {
-            vec![("y", "Allow once"), ("n", "Deny")]
-        };
-
-        for (i, (key, label)) in options.iter().enumerate() {
-            let is_selected = i == modal.selected;
-            if is_selected {
-                let content = format!("    > [{}] {}", key, label);
-                let visible_len = content.len();
-                let pad = " ".repeat(term_width.saturating_sub(visible_len));
-                lines.push(styled(
-                    format!("{}{}", content, pad),
-                    Style::new().bg(panel_bg).fg(colors::TEXT_ACCENT).bold(),
-                ));
-            } else {
-                let key_part = format!("      [{}]", key);
-                let label_part = format!(" {}", label);
-                let visible_len = key_part.len() + label_part.len();
-                let pad = " ".repeat(term_width.saturating_sub(visible_len));
-                lines.push(row([
-                    styled(key_part, Style::new().bg(panel_bg).fg(colors::OVERLAY_TEXT)),
-                    styled(
-                        label_part,
-                        Style::new().bg(panel_bg).fg(colors::OVERLAY_BRIGHT),
-                    ),
-                    styled(pad, Style::new().bg(panel_bg)),
-                ]));
-            }
-        }
-
-        // ── Bottom border: ▀ repeated ──
-        lines.push(styled(
-            "\u{2580}".repeat(term_width),
-            Style::new().fg(border_fg),
-        ));
-
-        // ── Footer: PERMISSION badge + TYPE badge + key hints ──
-        let key_style = styles::overlay_key(colors::ERROR);
-        let hint_style = styles::overlay_hint();
-
-        let shortcut_keys = options
-            .iter()
-            .map(|(k, _)| *k)
-            .collect::<Vec<_>>()
-            .join("/");
-
-        let mut footer_nodes: Vec<Node> = vec![
-            styled(" PERMISSION ", styles::permission_badge()),
-            styled(format!(" {} ", type_label), styles::permission_type()),
-            styled(" ↑/↓", key_style),
-            styled(" navigate", hint_style),
-            styled("  Enter", key_style),
-            styled(" select", hint_style),
-            styled(format!("  {}", shortcut_keys), key_style),
-            styled(" shortcuts", hint_style),
-        ];
-
-        if is_write {
-            footer_nodes.push(styled("  h", key_style));
-            footer_nodes.push(styled(" diff", hint_style));
-        }
-
-        footer_nodes.push(styled("  Esc", key_style));
-        footer_nodes.push(styled(" cancel", hint_style));
-
-        lines.push(row(footer_nodes));
-
-        col(lines)
-    }
-
-    fn prettify_tool_args(args: &serde_json::Value) -> String {
-        match args {
-            serde_json::Value::Object(map) => {
-                let pairs: Vec<String> = map
-                    .iter()
-                    .take(3)
-                    .map(|(k, v)| {
-                        let v_str = match v {
-                            serde_json::Value::String(s) => {
-                                if s.len() > 30 {
-                                    format!("\"{}...\"", &s[..27])
-                                } else {
-                                    format!("\"{}\"", s)
-                                }
-                            }
-                            _ => v.to_string(),
-                        };
-                        format!("{}={}", k, v_str)
-                    })
-                    .collect();
-                if map.len() > 3 {
-                    format!("({}, ...)", pairs.join(", "))
-                } else {
-                    format!("({})", pairs.join(", "))
-                }
-            }
-            _ => args.to_string(),
-        }
-    }
-
-    fn render_ask_interaction(&self) -> Node {
-        let modal = match &self.interaction_modal {
-            Some(m) => m,
-            None => return Node::Empty,
-        };
-
-        let (question, choices, multi_select, allow_other, total_questions) = match &modal.request {
-            InteractionRequest::Ask(req) => (
-                &req.question,
-                req.choices.as_deref().unwrap_or(&[]),
-                req.multi_select,
-                req.allow_other,
-                1,
-            ),
-            InteractionRequest::AskBatch(batch) => {
-                if modal.current_question >= batch.questions.len() {
-                    return Node::Empty;
-                }
-                let q = &batch.questions[modal.current_question];
-                (
-                    &q.question,
-                    q.choices.as_slice(),
-                    q.multi_select,
-                    q.allow_other,
-                    batch.questions.len(),
-                )
-            }
-            _ => return Node::Empty,
-        };
-
-        let (term_width, _term_height) = crossterm::terminal::size()
-            .map(|(w, h)| (w as usize, h as usize))
-            .unwrap_or((80, 24));
-
-        let header_bg = colors::INPUT_BG;
-        let footer_bg = colors::INPUT_BG;
-        let top_border = styled("▄".repeat(term_width), Style::new().fg(colors::INPUT_BG));
-        let bottom_border = styled("▀".repeat(term_width), Style::new().fg(colors::INPUT_BG));
-
-        let header_text = if total_questions > 1 {
-            format!(
-                " {} (Question {}/{}) ",
-                question,
-                modal.current_question + 1,
-                total_questions
-            )
-        } else {
-            format!(" {} ", question)
-        };
-        let header_padding = " ".repeat(term_width.saturating_sub(header_text.len()));
-        let header = styled(
-            format!("{}{}", header_text, header_padding),
-            Style::new().bg(header_bg).bold(),
-        );
-
-        let mut choice_nodes: Vec<Node> = Vec::new();
-
-        for (i, choice) in choices.iter().enumerate() {
-            let is_selected = i == modal.selected;
-            let prefix = if multi_select {
-                let is_checked = modal.checked.contains(&i);
-                if is_checked {
-                    "[x]"
-                } else {
-                    "[ ]"
-                }
-            } else if is_selected {
-                " > "
-            } else {
-                "   "
-            };
-            let style = if is_selected {
-                Style::new().fg(colors::TEXT_ACCENT).bold()
-            } else {
-                Style::new().fg(colors::TEXT_PRIMARY)
-            };
-            choice_nodes.push(styled(format!("{}{}", prefix, choice), style));
-        }
-
-        if allow_other {
-            let other_idx = choices.len();
-            let is_selected = modal.selected == other_idx;
-            let prefix = if is_selected { " > " } else { "   " };
-            let style = if is_selected {
-                Style::new().fg(colors::TEXT_ACCENT).bold()
-            } else {
-                Style::new().fg(colors::TEXT_MUTED).italic()
-            };
-            choice_nodes.push(styled(format!("{}Other...", prefix), style));
-        }
-
-        let key_style = Style::new().bg(footer_bg).fg(colors::TEXT_ACCENT);
-        let sep_style = Style::new().bg(footer_bg).fg(colors::TEXT_MUTED);
-        let text_style = Style::new().bg(footer_bg).fg(colors::TEXT_PRIMARY).dim();
-
-        let footer_content = row([
-            styled(" ", text_style),
-            styled("↑/↓", key_style),
-            styled(" navigate ", text_style),
-            styled("│", sep_style),
-            styled(" ", text_style),
-            styled("Enter", key_style),
-            styled(" select ", text_style),
-            styled("│", sep_style),
-            styled(" ", text_style),
-            styled("Esc", key_style),
-            styled(" cancel ", text_style),
-        ]);
-
-        let footer_padding = styled(
-            " ".repeat(term_width.saturating_sub(45)),
-            Style::new().bg(footer_bg),
-        );
-        let footer = row([footer_content, footer_padding]);
-
-        if modal.mode == InteractionMode::TextInput {
-            let input_line = row([
-                styled("   Enter text: ", Style::new().fg(colors::TEXT_MUTED)),
-                styled(&modal.other_text, Style::new().fg(colors::TEXT_PRIMARY)),
-                styled("_", Style::new().fg(colors::TEXT_ACCENT)),
-            ]);
-            choice_nodes.push(input_line);
-        }
-
-        let choices_col = col(choice_nodes);
-
-        col([
-            text(""),
-            top_border,
-            header,
-            choices_col,
-            bottom_border,
-            footer,
-            text(""),
-        ])
+        self.shell_modal
+            .as_ref()
+            .map(|m| m.view(term_width, term_height))
+            .unwrap_or(Node::Empty)
     }
 
     fn add_user_message(&mut self, content: String) {
