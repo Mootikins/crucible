@@ -196,15 +196,6 @@ fn render_input_tracking_cursor(
     }
 }
 
-fn render_box_tracking_cursor(
-    boxnode: &BoxNode,
-    width: usize,
-    output: &mut String,
-    cursor_info: &mut CursorInfo,
-) {
-    render_box_filtered(boxnode, width, &NoFilter, output, cursor_info);
-}
-
 fn render_box_filtered(
     boxnode: &BoxNode,
     width: usize,
@@ -246,15 +237,6 @@ fn render_box_filtered(
     }
 }
 
-fn render_column_children_tracking_cursor(
-    children: &[Node],
-    width: usize,
-    output: &mut String,
-    cursor_info: &mut CursorInfo,
-) {
-    render_column_children_filtered(children, width, 0, &NoFilter, output, cursor_info);
-}
-
 fn render_column_children_filtered(
     children: &[Node],
     width: usize,
@@ -269,7 +251,8 @@ fn render_column_children_filtered(
             continue;
         }
         if rendered_any && !output.is_empty() {
-            // Insert 1 + gap newlines (1 for line break, gap for blank lines)
+            // Separate children with newlines: 1 base + `gap` additional blank lines
+            // gap=0 → "A\r\nB", gap=1 → "A\r\n\r\nB", gap=2 → "A\r\n\r\n\r\nB"
             for _ in 0..=gap {
                 output.push_str("\r\n");
             }
@@ -277,15 +260,6 @@ fn render_column_children_filtered(
         render_node_filtered(child, width, filter, output, cursor_info);
         rendered_any = true;
     }
-}
-
-fn render_row_children_tracking_cursor(
-    children: &[Node],
-    width: usize,
-    output: &mut String,
-    cursor_info: &mut CursorInfo,
-) {
-    render_row_children_filtered(children, width, &NoFilter, output, cursor_info);
 }
 
 fn render_row_children_filtered(
@@ -538,7 +512,8 @@ fn render_box(boxnode: &BoxNode, width: usize, output: &mut String) {
 
     let content = match boxnode.direction {
         Direction::Column => {
-            // Create separator with 1 + gap newlines
+            // Separate children with newlines: 1 base + `gap` additional blank lines
+            // gap=0 → "A\r\nB", gap=1 → "A\r\n\r\nB", gap=2 → "A\r\n\r\n\r\nB"
             let separator = "\r\n".repeat(1 + boxnode.gap.row as usize);
             children_output.join(&separator)
         }
