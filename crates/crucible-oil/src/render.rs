@@ -1,6 +1,8 @@
 use crate::ansi::{visible_width, visual_rows};
+use crate::cell_grid::CellGrid;
+use crate::layout::flex::{calculate_row_widths, ChildMeasurement, FlexLayoutInput};
 use crate::node::{BoxNode, Direction, InputNode, Node, PopupNode, Size, SpinnerNode, TextNode};
-use crate::style::{Color, Style};
+use crate::style::Style;
 use std::io::{self, Write};
 use textwrap::{wrap, Options, WordSplitter};
 
@@ -196,15 +198,6 @@ fn render_input_tracking_cursor(
     }
 }
 
-fn render_box_tracking_cursor(
-    boxnode: &BoxNode,
-    width: usize,
-    output: &mut String,
-    cursor_info: &mut CursorInfo,
-) {
-    render_box_filtered(boxnode, width, &NoFilter, output, cursor_info);
-}
-
 fn render_box_filtered(
     boxnode: &BoxNode,
     width: usize,
@@ -222,6 +215,7 @@ fn render_box_filtered(
             render_column_children_filtered(
                 &boxnode.children,
                 inner_width,
+                boxnode.gap.row,
                 filter,
                 output,
                 cursor_info,
@@ -245,40 +239,29 @@ fn render_box_filtered(
     }
 }
 
-fn render_column_children_tracking_cursor(
-    children: &[Node],
-    width: usize,
-    output: &mut String,
-    cursor_info: &mut CursorInfo,
-) {
-    render_column_children_filtered(children, width, &NoFilter, output, cursor_info);
-}
-
 fn render_column_children_filtered(
     children: &[Node],
     width: usize,
+    gap: u16,
     filter: &dyn RenderFilter,
     output: &mut String,
     cursor_info: &mut CursorInfo,
 ) {
-    for (i, child) in children.iter().enumerate() {
+    let mut rendered_any = false;
+    for child in children.iter() {
         if matches!(child, Node::Empty) {
             continue;
         }
-        if i > 0 && !output.is_empty() {
-            output.push_str("\r\n");
+        if rendered_any && !output.is_empty() {
+            // Separate children with newlines: 1 base + `gap` additional blank lines
+            // gap=0 → "A\r\nB", gap=1 → "A\r\n\r\nB", gap=2 → "A\r\n\r\n\r\nB"
+            for _ in 0..=gap {
+                output.push_str("\r\n");
+            }
         }
         render_node_filtered(child, width, filter, output, cursor_info);
+        rendered_any = true;
     }
-}
-
-fn render_row_children_tracking_cursor(
-    children: &[Node],
-    width: usize,
-    output: &mut String,
-    cursor_info: &mut CursorInfo,
-) {
-    render_row_children_filtered(children, width, &NoFilter, output, cursor_info);
 }
 
 fn render_row_children_filtered(
@@ -292,12 +275,14 @@ fn render_row_children_filtered(
         return;
     }
 
-    let mut fixed_width_used = 0usize;
-    let mut total_flex_weight = 0u16;
+    // Phase 1: measure all children
+    let mut measurements: Vec<ChildMeasurement> = Vec::with_capacity(children.len());
     let mut child_infos: Vec<RowChildInfo> = Vec::with_capacity(children.len());
+    let mut max_height: usize = 1;
 
     for child in children {
         if matches!(child, Node::Empty) {
+            measurements.push(ChildMeasurement::Fixed(0));
             child_infos.push(RowChildInfo::Skip);
             continue;
         }
@@ -305,27 +290,70 @@ fn render_row_children_filtered(
         let size = get_node_size(child);
         match size {
             Size::Fixed(w) => {
-                fixed_width_used += w as usize;
-                child_infos.push(RowChildInfo::Fixed(w as usize));
+                let mut temp = String::new();
+                let mut temp_cursor = CursorInfo::default();
+                render_node_filtered(child, w as usize, filter, &mut temp, &mut temp_cursor);
+                let line_count = temp.lines().count().max(1);
+                max_height = max_height.max(line_count);
+                measurements.push(ChildMeasurement::Fixed(w as usize));
+                child_infos.push(RowChildInfo::Fixed(temp));
             }
             Size::Flex(weight) => {
-                total_flex_weight += weight;
-                child_infos.push(RowChildInfo::Flex(weight));
+                measurements.push(ChildMeasurement::Flex(weight));
+                child_infos.push(RowChildInfo::Flex);
             }
             Size::Content => {
                 let mut temp = String::new();
                 let mut temp_cursor = CursorInfo::default();
                 render_node_filtered(child, width, filter, &mut temp, &mut temp_cursor);
+                let line_count = temp.lines().count().max(1);
+                max_height = max_height.max(line_count);
                 let content_width = temp.lines().next().map(visible_width).unwrap_or(0);
-                fixed_width_used += content_width;
+                measurements.push(ChildMeasurement::Content(content_width));
                 child_infos.push(RowChildInfo::Content(temp, temp_cursor));
             }
         }
     }
 
-    let remaining = width.saturating_sub(fixed_width_used);
+    let layout_result = calculate_row_widths(&FlexLayoutInput {
+        available: width,
+        children: measurements,
+    });
 
-    for (child, child_info) in children.iter().zip(child_infos.into_iter()) {
+    // Phase 2: render with calculated widths
+    // Use CellGrid for multi-line rows, fast path for single-line
+    if max_height > 1 {
+        render_row_to_grid(
+            children,
+            &child_infos,
+            &layout_result.widths,
+            width,
+            max_height,
+            output,
+        );
+    } else {
+        render_row_single_line(
+            children,
+            child_infos,
+            &layout_result.widths,
+            filter,
+            output,
+            cursor_info,
+        );
+    }
+}
+
+fn render_row_single_line(
+    children: &[Node],
+    child_infos: Vec<RowChildInfo>,
+    widths: &[usize],
+    _filter: &dyn RenderFilter,
+    output: &mut String,
+    cursor_info: &mut CursorInfo,
+) {
+    for (i, (_child, child_info)) in children.iter().zip(child_infos.into_iter()).enumerate() {
+        let child_width = widths.get(i).copied().unwrap_or(0);
+
         match child_info {
             RowChildInfo::Skip => {}
             RowChildInfo::Content(rendered, child_cursor) => {
@@ -340,27 +368,57 @@ fn render_row_children_filtered(
                     output.push_str(&rendered);
                 }
             }
-            RowChildInfo::Fixed(w) => {
-                render_node_filtered(child, w, filter, output, cursor_info);
+            RowChildInfo::Fixed(rendered) => {
+                if !rendered.is_empty() {
+                    output.push_str(&rendered);
+                }
             }
-            RowChildInfo::Flex(weight) => {
-                let flex_width = if total_flex_weight > 0 {
-                    (remaining as u32 * weight as u32 / total_flex_weight as u32) as usize
-                } else {
-                    0
-                };
-                if flex_width > 0 {
-                    output.push_str(&" ".repeat(flex_width));
+            RowChildInfo::Flex => {
+                if child_width > 0 {
+                    output.push_str(&" ".repeat(child_width));
                 }
             }
         }
     }
 }
 
+fn render_row_to_grid(
+    _children: &[Node],
+    child_infos: &[RowChildInfo],
+    widths: &[usize],
+    total_width: usize,
+    height: usize,
+    output: &mut String,
+) {
+    let mut grid = CellGrid::new(total_width, height);
+    let mut x_offset: usize = 0;
+
+    for (i, child_info) in child_infos.iter().enumerate() {
+        let child_width = widths.get(i).copied().unwrap_or(0);
+
+        match child_info {
+            RowChildInfo::Skip => {}
+            RowChildInfo::Content(rendered, _cursor) => {
+                grid.blit_string(rendered, x_offset, 0);
+                x_offset += child_width;
+            }
+            RowChildInfo::Fixed(rendered) => {
+                grid.blit_string(rendered, x_offset, 0);
+                x_offset += child_width;
+            }
+            RowChildInfo::Flex => {
+                x_offset += child_width;
+            }
+        }
+    }
+
+    output.push_str(&grid.to_string_joined());
+}
+
 enum RowChildInfo {
     Skip,
-    Fixed(usize),
-    Flex(u16),
+    Fixed(String),
+    Flex,
     Content(String, CursorInfo),
 }
 
@@ -453,7 +511,12 @@ fn render_box(boxnode: &BoxNode, width: usize, output: &mut String) {
     };
 
     let content = match boxnode.direction {
-        Direction::Column => children_output.join("\r\n"),
+        Direction::Column => {
+            // Separate children with newlines: 1 base + `gap` additional blank lines
+            // gap=0 → "A\r\nB", gap=1 → "A\r\n\r\nB", gap=2 → "A\r\n\r\n\r\nB"
+            let separator = "\r\n".repeat(1 + boxnode.gap.row as usize);
+            children_output.join(&separator)
+        }
         Direction::Row => children_output.join(""),
     };
 
@@ -657,9 +720,6 @@ fn render_popup(popup: &PopupNode, width: usize, output: &mut String) {
         return;
     }
 
-    let popup_bg = Color::Rgb(45, 50, 60);
-    let selected_bg = Color::Rgb(60, 70, 90);
-
     let visible_end = (popup.viewport_offset + popup.max_visible).min(popup.items.len());
     let visible_items = &popup.items[popup.viewport_offset..visible_end];
     let item_count = visible_items.len();
@@ -676,7 +736,11 @@ fn render_popup(popup: &PopupNode, width: usize, output: &mut String) {
     for (i, item) in visible_items.iter().enumerate() {
         let actual_index = popup.viewport_offset + i;
         let is_selected = actual_index == popup.selected;
-        let bg = if is_selected { selected_bg } else { popup_bg };
+        let item_style = if is_selected {
+            popup.selected_style
+        } else {
+            popup.unselected_style
+        };
 
         let mut line = String::new();
         line.push(' ');
@@ -714,8 +778,8 @@ fn render_popup(popup: &PopupNode, width: usize, output: &mut String) {
                     desc.clone()
                 };
                 line.push_str("  ");
-                let desc_style = Style::new().bg(bg).dim();
-                output.push_str(&apply_style(&line, &Style::new().bg(bg)));
+                let desc_style = item_style.dim();
+                output.push_str(&apply_style(&line, &item_style));
                 line.clear();
                 line.push_str(&truncated);
                 let after_desc_width = label_width + 2 + visible_width(&truncated);
@@ -727,13 +791,13 @@ fn render_popup(popup: &PopupNode, width: usize, output: &mut String) {
                 let padding = popup_width.saturating_sub(label_width);
                 line.push_str(&" ".repeat(padding));
                 line.push(' ');
-                output.push_str(&apply_style(&line, &Style::new().bg(bg)));
+                output.push_str(&apply_style(&line, &item_style));
             }
         } else {
             let padding = popup_width.saturating_sub(label_width);
             line.push_str(&" ".repeat(padding));
             line.push(' ');
-            output.push_str(&apply_style(&line, &Style::new().bg(bg)));
+            output.push_str(&apply_style(&line, &item_style));
         }
 
         lines_rendered += 1;
