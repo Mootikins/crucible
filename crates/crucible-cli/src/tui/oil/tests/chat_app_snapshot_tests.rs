@@ -783,17 +783,25 @@ mod overlay_snapshots {
         assert_snapshot!(render_app(&app));
     }
 
-    /// Scenario 7: Statusline with warning/error count badges (drawer closed)
+    /// Scenario 7: Recent warnings show as toast; counts show after expiry
     #[test]
     fn snapshot_statusline_warning_counts() {
-        let mut app = OilChatApp::default();
+        use crate::tui::oil::component::Component;
+        use crate::tui::oil::components::status_bar::NotificationToastKind;
+        use crate::tui::oil::components::StatusBar;
 
-        app.add_notification(Notification::warning("Context at 85%"));
-        app.add_notification(Notification::warning("Rate limit approaching"));
-        app.add_notification(Notification::warning("Disk space low"));
-        app.hide_messages();
-
-        assert_snapshot!(render_app(&app));
+        let bar = StatusBar::new()
+            .mode(crate::tui::oil::chat_app::ChatMode::Normal)
+            .model("gpt-4o")
+            .counts(vec![
+                (NotificationToastKind::Warning, 3),
+                (NotificationToastKind::Error, 1),
+            ]);
+        let focus = crate::tui::oil::focus::FocusContext::default();
+        let ctx = crate::tui::oil::ViewContext::new(&focus);
+        let node = bar.view(&ctx);
+        let output = crate::tui::oil::render::render_to_plain_text(&node, 80);
+        assert_snapshot!(output);
     }
 
     /// Scenario 1: Simple info toast on statusline (drawer closed)
@@ -862,6 +870,26 @@ mod overlay_snapshots {
         app.add_notification(Notification::warning("Context at 85%"));
         app.hide_messages();
         assert_snapshot!(render_app_raw(&app));
+    }
+
+    #[test]
+    fn snapshot_raw_statusline_warning_counts() {
+        use crate::tui::oil::component::Component;
+        use crate::tui::oil::components::status_bar::NotificationToastKind;
+        use crate::tui::oil::components::StatusBar;
+
+        let bar = StatusBar::new()
+            .mode(crate::tui::oil::chat_app::ChatMode::Normal)
+            .model("gpt-4o")
+            .counts(vec![
+                (NotificationToastKind::Warning, 3),
+                (NotificationToastKind::Error, 1),
+            ]);
+        let focus = crate::tui::oil::focus::FocusContext::default();
+        let ctx = crate::tui::oil::ViewContext::new(&focus);
+        let node = bar.view(&ctx);
+        let output = crate::tui::oil::render::render_to_string(&node, 80);
+        assert_snapshot!(output);
     }
 
     #[test]
