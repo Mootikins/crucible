@@ -103,26 +103,22 @@ impl NotificationArea {
         self.notifications.len()
     }
 
-    /// Get the most recent non-expired notification as a toast for StatusBar display.
+    /// Get the most recent notification as a toast for StatusBar display,
+    /// only if it was added within `TOAST_TIMEOUT`.
     ///
-    /// Returns the message text and mapped `NotificationToastKind`.
-    /// Toast/Progress notifications expire after `TOAST_TIMEOUT`; warnings are persistent.
+    /// All notification types fade from the toast after the timeout.
+    /// Warnings remain in the store for count badges but stop showing as toast text.
     pub fn active_toast(&self) -> Option<(&str, NotificationToastKind)> {
-        self.notifications.iter().rev().find_map(|(n, instant)| {
-            let is_expired = matches!(
-                n.kind,
-                NotificationKind::Toast | NotificationKind::Progress { .. }
-            ) && instant.elapsed() >= TOAST_TIMEOUT;
-            if is_expired {
-                return None;
-            }
-            let kind = match &n.kind {
-                NotificationKind::Toast => NotificationToastKind::Info,
-                NotificationKind::Progress { .. } => NotificationToastKind::Info,
-                NotificationKind::Warning => NotificationToastKind::Warning,
-            };
-            Some((n.message.as_str(), kind))
-        })
+        let (n, instant) = self.notifications.last()?;
+        if instant.elapsed() >= TOAST_TIMEOUT {
+            return None;
+        }
+        let kind = match &n.kind {
+            NotificationKind::Toast => NotificationToastKind::Info,
+            NotificationKind::Progress { .. } => NotificationToastKind::Info,
+            NotificationKind::Warning => NotificationToastKind::Warning,
+        };
+        Some((n.message.as_str(), kind))
     }
 
     pub fn warning_counts(&self) -> Vec<(NotificationToastKind, usize)> {
