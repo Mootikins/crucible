@@ -58,6 +58,10 @@ impl GraduationState {
         self.graduated_keys.len()
     }
 
+    pub fn graduated_keys(&self) -> &VecDeque<String> {
+        &self.graduated_keys
+    }
+
     pub fn clear(&mut self) {
         self.graduated_keys.clear();
     }
