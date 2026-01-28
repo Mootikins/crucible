@@ -790,6 +790,12 @@ impl StreamingBuffer {
     pub fn finalize_segments(&mut self) {
         let had_graduated = !self.graduated_blocks.is_empty();
 
+        let pre_finalize_text_count = self
+            .segments
+            .iter()
+            .filter(|s| matches!(s, StreamSegment::Text(_)))
+            .count();
+
         if !self.current_thinking.is_empty()
             && self.last_segment_type == Some(SegmentType::Thinking)
         {
@@ -814,7 +820,8 @@ impl StreamingBuffer {
             )));
         }
 
-        self.text_segments_graduated_count = if had_graduated { 1 } else { 0 };
+        self.text_segments_graduated_count =
+            pre_finalize_text_count + if had_graduated { 1 } else { 0 };
         self.last_segment_type = None;
     }
 
@@ -1656,5 +1663,90 @@ mod tests {
 
         let ungrad_content = cache.get_content("msg-1");
         assert_eq!(ungrad_content, Some("Second"));
+    }
+
+    #[test]
+    fn pre_graduate_covers_text_after_tool_calls() {
+        let mut cache = ViewportCache::new();
+        cache.start_streaming();
+
+        cache.append_streaming("Intro text.\n\n");
+        cache.push_streaming_tool_call("tool-1".to_string());
+        cache.push_tool_call("tool-1".to_string(), "bash", "{}");
+        cache.append_streaming("Response paragraph one.\n\n");
+        cache.append_streaming("Response paragraph two.\n\n");
+        cache.append_streaming("Trailing unfinished");
+
+        let result = cache.complete_streaming("msg".to_string(), Role::Assistant);
+
+        assert!(
+            result.pre_graduate_keys.contains(&"msg".to_string()),
+            "Text before tool calls should be pre-graduated"
+        );
+        assert!(
+            result.pre_graduate_keys.contains(&"msg-1".to_string()),
+            "Graduated text after tool calls should be pre-graduated: {:?}",
+            result.pre_graduate_keys
+        );
+
+        let trailing = cache.get_content("msg-2");
+        assert_eq!(trailing, Some("Trailing unfinished"));
+        assert!(
+            !result.pre_graduate_keys.contains(&"msg-2".to_string()),
+            "In-progress text should NOT be pre-graduated"
+        );
+    }
+
+    /// Regression test: content that appeared in both stdout (graduated) and viewport
+    /// (non-graduated CachedMessage) caused visual duplication. Verify each piece of
+    /// text content exists in exactly one CachedMessage after complete_streaming.
+    #[test]
+    fn no_duplicate_content_after_streaming_with_tool_calls() {
+        let mut cache = ViewportCache::new();
+        cache.start_streaming();
+
+        // Simulate: text → tool call → more text → trailing
+        cache.append_streaming("Before tool call.\n\n");
+        cache.push_streaming_tool_call("tool-1".to_string());
+        cache.push_tool_call("tool-1".to_string(), "read_file", r#"{"path":"foo.rs"}"#);
+        cache.append_streaming("After tool call paragraph.\n\n");
+        cache.append_streaming("Still typing...");
+
+        cache.complete_streaming("resp".to_string(), Role::Assistant);
+
+        // Collect all text content from finalized messages
+        let all_contents: Vec<String> = cache.messages().map(|m| m.content.to_string()).collect();
+
+        // No two messages should contain overlapping content
+        for (i, content_a) in all_contents.iter().enumerate() {
+            for (j, content_b) in all_contents.iter().enumerate() {
+                if i != j {
+                    assert!(
+                        !content_a.contains(content_b) && !content_b.contains(content_a),
+                        "Duplicate content detected between message {} ({:?}) and message {} ({:?})",
+                        i, content_a, j, content_b
+                    );
+                }
+            }
+        }
+
+        // Verify all original text is present across messages
+        let combined: String = all_contents
+            .iter()
+            .map(|s| s.as_str())
+            .collect::<Vec<_>>()
+            .join("");
+        assert!(
+            combined.contains("Before tool call."),
+            "Missing pre-tool text"
+        );
+        assert!(
+            combined.contains("After tool call paragraph."),
+            "Missing post-tool text"
+        );
+        assert!(
+            combined.contains("Still typing..."),
+            "Missing trailing text"
+        );
     }
 }
