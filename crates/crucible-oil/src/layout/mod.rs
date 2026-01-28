@@ -1,7 +1,12 @@
 pub mod flex;
+pub mod tree;
+pub mod tree_render;
 
 use crate::node::{BoxNode, Direction, Node, Size};
 use crate::render::render_to_string;
+
+pub use tree::{build_layout_tree, LayoutBox, LayoutContent, LayoutRect, LayoutTree};
+pub use tree_render::{render_layout_tree, render_layout_tree_filtered};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Rect {
