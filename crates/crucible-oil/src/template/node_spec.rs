@@ -431,6 +431,7 @@ fn parse_scrollback(attrs: &NodeAttrs, children: &[NodeSpec]) -> NodeSpecResult<
     Ok(Node::Static(StaticNode {
         key: key.to_string(),
         children: child_nodes,
+        kind: ElementKind::default(),
         newline,
     }))
 }
