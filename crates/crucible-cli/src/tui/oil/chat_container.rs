@@ -186,10 +186,13 @@ impl ChatContainer {
 
             Self::ToolGroup { id, tools } => {
                 let content = render_tool_group(tools, params.spinner_frame);
-                // Only wrap in scrollback (allow graduation) when all tools are complete
-                // This prevents tools from graduating with spinners and then not updating
+                // Only wrap in scrollback (allow graduation) when all tools are
+                // complete AND this container is "done" (turn ended or more content
+                // follows). This prevents a completed ToolGroup from graduating
+                // before the LLM sends the next tool call — which would cause the
+                // second tool to appear in a separate group.
                 let all_complete = tools.iter().all(|t| t.complete);
-                if all_complete {
+                if all_complete && params.is_complete {
                     scrollback(id.clone(), [content])
                 } else {
                     content
