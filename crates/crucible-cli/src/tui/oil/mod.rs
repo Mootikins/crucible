@@ -93,7 +93,7 @@ pub use terminal::*;
 pub use test_harness::*;
 pub use theme::{colors, styles};
 pub use viewport::*;
-pub use viewport_cache::{CachedMessage, StreamingBuffer, ViewportAnchor, ViewportCache};
+pub use viewport_cache::CachedMessage;
 
 #[cfg(test)]
 mod tests;
