@@ -85,6 +85,27 @@ fn snapshot_streaming_with_spinner() {
 }
 
 #[test]
+fn snapshot_streaming_no_text_yet() {
+    // Spinner should appear immediately after sending a message,
+    // before any tokens arrive from the daemon
+    let mut app = OilChatApp::default();
+    app.on_message(ChatAppMsg::UserMessage("Do something".to_string()));
+    assert_snapshot!(render_app(&app));
+}
+
+#[test]
+fn snapshot_ordered_list_numbering() {
+    let mut app = OilChatApp::default();
+    app.on_message(ChatAppMsg::UserMessage("List things".to_string()));
+    // Stream an ordered list with \n\n separators (how LLMs typically send them)
+    app.on_message(ChatAppMsg::TextDelta("1. First item\n\n".to_string()));
+    app.on_message(ChatAppMsg::TextDelta("2. Second item\n\n".to_string()));
+    app.on_message(ChatAppMsg::TextDelta("3. Third item".to_string()));
+    app.on_message(ChatAppMsg::StreamComplete);
+    assert_snapshot!(render_app(&app));
+}
+
+#[test]
 fn snapshot_tool_call_pending() {
     let mut app = OilChatApp::default();
     app.on_message(ChatAppMsg::UserMessage("Read a file".to_string()));
@@ -234,6 +255,207 @@ fn snapshot_text_tool_text_spacing() {
     ));
     app.on_message(ChatAppMsg::StreamComplete);
 
+    assert_snapshot!(render_app(&app));
+}
+
+/// Text → Tool → Text → Tool → Text: multiple tool interruptions with continuation text.
+#[test]
+fn snapshot_sequential_tool_calls_with_text() {
+    let mut app = OilChatApp::default();
+    app.on_message(ChatAppMsg::UserMessage(
+        "Analyze the project".to_string(),
+    ));
+
+    // First text segment
+    app.on_message(ChatAppMsg::TextDelta(
+        "Let me check the project structure.".to_string(),
+    ));
+
+    // First tool call
+    app.on_message(ChatAppMsg::ToolCall {
+        name: "bash".to_string(),
+        args: r#"{"command":"ls src/"}"#.to_string(),
+    });
+    app.on_message(ChatAppMsg::ToolResultDelta {
+        name: "bash".to_string(),
+        delta: "main.rs\nlib.rs".to_string(),
+    });
+    app.on_message(ChatAppMsg::ToolResultComplete {
+        name: "bash".to_string(),
+    });
+
+    // Continuation text after first tool
+    app.on_message(ChatAppMsg::TextDelta(
+        "Found two source files. Let me read the main one.".to_string(),
+    ));
+
+    // Second tool call
+    app.on_message(ChatAppMsg::ToolCall {
+        name: "read_file".to_string(),
+        args: r#"{"path":"src/main.rs"}"#.to_string(),
+    });
+    app.on_message(ChatAppMsg::ToolResultDelta {
+        name: "read_file".to_string(),
+        delta: "fn main() {\n    println!(\"hello\");\n}".to_string(),
+    });
+    app.on_message(ChatAppMsg::ToolResultComplete {
+        name: "read_file".to_string(),
+    });
+
+    // Final continuation text
+    app.on_message(ChatAppMsg::TextDelta(
+        "The project has a simple main function that prints hello.".to_string(),
+    ));
+    app.on_message(ChatAppMsg::StreamComplete);
+
+    assert_snapshot!(render_app(&app));
+}
+
+/// Bullet (unordered) list rendering.
+#[test]
+fn snapshot_bullet_list() {
+    let mut app = OilChatApp::default();
+    app.on_message(ChatAppMsg::UserMessage("What files?".to_string()));
+    app.on_message(ChatAppMsg::TextDelta(
+        "Here are the key files:\n\n\
+         - `README.md` — project overview\n\
+         - `Cargo.toml` — dependencies\n\
+         - `src/main.rs` — entry point\n\
+         - `src/lib.rs` — library root"
+            .to_string(),
+    ));
+    app.on_message(ChatAppMsg::StreamComplete);
+    assert_snapshot!(render_app(&app));
+}
+
+/// Nested list: numbered items with bullet sub-items.
+#[test]
+fn snapshot_nested_list_numbered_with_bullets() {
+    let mut app = OilChatApp::default();
+    app.on_message(ChatAppMsg::UserMessage("Describe the architecture".to_string()));
+    app.on_message(ChatAppMsg::TextDelta(
+        "The system has three layers:\n\n\
+         1. **Frontend**\n\
+         \x20\x20 - React components\n\
+         \x20\x20 - State management\n\
+         \x20\x20 - Routing\n\n\
+         2. **Backend**\n\
+         \x20\x20 - REST API\n\
+         \x20\x20 - Authentication\n\
+         \x20\x20 - Database access\n\n\
+         3. **Infrastructure**\n\
+         \x20\x20 - Docker containers\n\
+         \x20\x20 - CI/CD pipeline"
+            .to_string(),
+    ));
+    app.on_message(ChatAppMsg::StreamComplete);
+    assert_snapshot!(render_app(&app));
+}
+
+/// Numbered list interrupted by a tool call, then continued.
+#[test]
+fn snapshot_numbered_list_across_tool_boundary() {
+    let mut app = OilChatApp::default();
+    app.on_message(ChatAppMsg::UserMessage(
+        "Steps to fix the bug".to_string(),
+    ));
+
+    // First two list items
+    app.on_message(ChatAppMsg::TextDelta(
+        "Here's the plan:\n\n\
+         1. Read the failing test\n\n\
+         2. Identify the root cause"
+            .to_string(),
+    ));
+
+    // Tool call interrupts the list
+    app.on_message(ChatAppMsg::ToolCall {
+        name: "read_file".to_string(),
+        args: r#"{"path":"tests/regression.rs"}"#.to_string(),
+    });
+    app.on_message(ChatAppMsg::ToolResultDelta {
+        name: "read_file".to_string(),
+        delta: "#[test]\nfn test_regression() {\n    assert!(false);\n}".to_string(),
+    });
+    app.on_message(ChatAppMsg::ToolResultComplete {
+        name: "read_file".to_string(),
+    });
+
+    // Continue with remaining list items
+    app.on_message(ChatAppMsg::TextDelta(
+        "Now I can see the issue. Continuing:\n\n\
+         3. Fix the assertion\n\n\
+         4. Run the test suite\n\n\
+         5. Commit the fix"
+            .to_string(),
+    ));
+    app.on_message(ChatAppMsg::StreamComplete);
+
+    assert_snapshot!(render_app(&app));
+}
+
+/// Bullet list interrupted by tool call — checks continuation indentation.
+#[test]
+fn snapshot_bullet_list_across_tool_boundary() {
+    let mut app = OilChatApp::default();
+    app.on_message(ChatAppMsg::UserMessage("Check the files".to_string()));
+
+    // Start with bullet list
+    app.on_message(ChatAppMsg::TextDelta(
+        "Checking these files:\n\n\
+         - `main.rs`\n\
+         - `lib.rs`"
+            .to_string(),
+    ));
+
+    // Tool call
+    app.on_message(ChatAppMsg::ToolCall {
+        name: "read_file".to_string(),
+        args: r#"{"path":"src/main.rs"}"#.to_string(),
+    });
+    app.on_message(ChatAppMsg::ToolResultDelta {
+        name: "read_file".to_string(),
+        delta: "fn main() {}".to_string(),
+    });
+    app.on_message(ChatAppMsg::ToolResultComplete {
+        name: "read_file".to_string(),
+    });
+
+    // Continue with analysis after tool
+    app.on_message(ChatAppMsg::TextDelta(
+        "The main file is minimal. Key observations:\n\n\
+         - No error handling\n\
+         - No logging setup\n\
+         - Missing CLI argument parsing"
+            .to_string(),
+    ));
+    app.on_message(ChatAppMsg::StreamComplete);
+
+    assert_snapshot!(render_app(&app));
+}
+
+/// Deeply nested list: bullets inside numbered inside bullets.
+#[test]
+fn snapshot_deeply_nested_list() {
+    let mut app = OilChatApp::default();
+    app.on_message(ChatAppMsg::UserMessage("Project structure".to_string()));
+    app.on_message(ChatAppMsg::TextDelta(
+        "Project overview:\n\n\
+         - **Source code**\n\
+         \x20\x20 1. `src/main.rs` — entry point\n\
+         \x20\x20 2. `src/lib.rs` — library\n\
+         \x20\x20 3. `src/utils/` — helpers\n\
+         \x20\x20\x20\x20\x20 - `format.rs`\n\
+         \x20\x20\x20\x20\x20 - `parse.rs`\n\
+         - **Configuration**\n\
+         \x20\x20 1. `Cargo.toml`\n\
+         \x20\x20 2. `.cargo/config.toml`\n\
+         - **Documentation**\n\
+         \x20\x20 1. `README.md`\n\
+         \x20\x20 2. `CHANGELOG.md`"
+            .to_string(),
+    ));
+    app.on_message(ChatAppMsg::StreamComplete);
     assert_snapshot!(render_app(&app));
 }
 
