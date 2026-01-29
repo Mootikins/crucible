@@ -505,18 +505,20 @@ fn rendering_is_idempotent_with_tool_calls() {
     app.on_message(ChatAppMsg::ToolCall {
         name: "test_tool".to_string(),
         args: r#"{"arg": "value"}"#.to_string(),
+                call_id: None,
     });
     app.on_message(ChatAppMsg::ToolResultDelta {
         name: "test_tool".to_string(),
         delta: "Tool output line 1\n".to_string(),
+                call_id: None,
     });
     app.on_message(ChatAppMsg::ToolResultDelta {
         name: "test_tool".to_string(),
         delta: "Tool output line 2\n".to_string(),
+                call_id: None,
     });
-    app.on_message(ChatAppMsg::ToolResultComplete {
-        name: "test_tool".to_string(),
-    });
+    app.on_message(ChatAppMsg::ToolResultComplete { name: "test_tool".to_string(),
+                call_id: None });
     app.on_message(ChatAppMsg::TextDelta("After tool".to_string()));
     app.on_message(ChatAppMsg::StreamComplete);
 

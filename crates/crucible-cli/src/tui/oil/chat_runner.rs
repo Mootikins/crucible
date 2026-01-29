@@ -273,6 +273,7 @@ impl OilChatRunner {
                                     if msg_tx.send(ChatAppMsg::ToolCall {
                                         name: tc.name.clone(),
                                         args: args_val.to_string(),
+                                        call_id: tc.id.clone(),
                                     }).is_err() {
                                         tracing::warn!(tool = %tc.name, "UI channel closed, ToolCall dropped");
                                     }
@@ -285,16 +286,19 @@ impl OilChatRunner {
                                         let _ = msg_tx.send(ChatAppMsg::ToolResultError {
                                             name: tr.name.clone(),
                                             error: error.clone(),
+                                            call_id: tr.call_id.clone(),
                                         });
                                     } else {
                                         if !tr.result.is_empty() {
                                             let _ = msg_tx.send(ChatAppMsg::ToolResultDelta {
                                                 name: tr.name.clone(),
                                                 delta: tr.result.clone(),
+                                                call_id: tr.call_id.clone(),
                                             });
                                         }
                                         let _ = msg_tx.send(ChatAppMsg::ToolResultComplete {
                                             name: tr.name.clone(),
+                                            call_id: tr.call_id.clone(),
                                         });
                                     }
                                 }
