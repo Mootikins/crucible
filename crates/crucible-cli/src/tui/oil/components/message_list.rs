@@ -4,8 +4,7 @@ use crate::tui::oil::chat_app::Role;
 use crate::tui::oil::component::Component;
 use crate::tui::oil::markdown::{markdown_to_node_styled, Margins, RenderStyle};
 use crate::tui::oil::node::{
-    col, row, scrollback, scrollback_tool, spinner_with_frames, styled, text, Node,
-    BRAILLE_SPINNER_FRAMES,
+    col, row, scrollback, spinner_with_frames, styled, text, Node, BRAILLE_SPINNER_FRAMES,
 };
 use crate::tui::oil::style::Style;
 use crate::tui::oil::theme::{colors, styles};
@@ -189,19 +188,18 @@ pub fn render_tool_call_with_frame(tool: &CachedToolCall, spinner_frame: usize) 
 }
 
 fn render_tool_error(
-    tool: &CachedToolCall,
+    _tool: &CachedToolCall,
     display_name: &str,
     args_formatted: &str,
     error: &str,
 ) -> Node {
-    let header = row([
+    // No scrollback_tool wrapper - the container handles graduation at group level
+    row([
         styled(" ✗ ", Style::new().fg(colors::ERROR)),
         styled(display_name, Style::new().fg(colors::TEXT_DIM)),
         styled(format!("({}) ", args_formatted), styles::dim()),
         styled(format!("→ {}", truncate_line(error, 50)), styles::error()),
-    ]);
-
-    scrollback_tool(&tool.id, [header])
+    ])
 }
 
 fn render_tool_complete(
@@ -246,13 +244,12 @@ fn render_tool_complete(
         format_tool_result(&tool.name, result_str)
     };
 
-    let content = if matches!(result_node, Node::Empty) {
+    // No scrollback_tool wrapper - the container handles graduation at group level
+    if matches!(result_node, Node::Empty) {
         header
     } else {
         col([header, result_node])
-    };
-
-    scrollback_tool(&tool.id, [content])
+    }
 }
 
 fn render_tool_running(
