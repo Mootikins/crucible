@@ -41,16 +41,19 @@ pub fn apply_rpc_event(app: &mut OilChatApp, event: &RpcEvent) {
             app.on_message(ChatAppMsg::ToolCall {
                 name: name.clone(),
                 args: args.clone(),
+                call_id: None,
             });
         }
         RpcEvent::ToolResultDelta { name, delta } => {
             app.on_message(ChatAppMsg::ToolResultDelta {
                 name: name.clone(),
                 delta: delta.clone(),
+                call_id: None,
             });
         }
         RpcEvent::ToolResultComplete { name } => {
-            app.on_message(ChatAppMsg::ToolResultComplete { name: name.clone() });
+            app.on_message(ChatAppMsg::ToolResultComplete { name: name.clone(),
+                call_id: None, });
         }
     }
 }
