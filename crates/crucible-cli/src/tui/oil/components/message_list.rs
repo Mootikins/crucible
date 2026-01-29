@@ -8,6 +8,7 @@ use crate::tui::oil::node::{
 };
 use crate::tui::oil::style::Style;
 use crate::tui::oil::theme::{colors, styles};
+use crate::tui::oil::utils::{terminal_width, truncate_first_line, truncate_to_chars};
 use crate::tui::oil::viewport_cache::{
     CachedChatItem, CachedMessage, CachedShellExecution, CachedSubagent, CachedToolCall,
     SubagentStatus,
@@ -198,7 +199,10 @@ fn render_tool_error(
         styled(" ✗ ", Style::new().fg(colors::ERROR)),
         styled(display_name, Style::new().fg(colors::TEXT_DIM)),
         styled(format!("({}) ", args_formatted), styles::dim()),
-        styled(format!("→ {}", truncate_line(error, 50)), styles::error()),
+        styled(
+            format!("→ {}", truncate_first_line(error, 50, true)),
+            styles::error(),
+        ),
     ])
 }
 
@@ -314,14 +318,6 @@ fn collapse_result(name: &str, result: &str, summary: Option<&str>) -> Option<St
     }
 }
 
-fn truncate_line(s: &str, max: usize) -> String {
-    let first_line = s.lines().next().unwrap_or(s);
-    if first_line.len() <= max {
-        first_line.to_string()
-    } else {
-        format!("{}…", &first_line[..max.saturating_sub(1)])
-    }
-}
 
 pub fn render_shell_execution(shell: &CachedShellExecution) -> Node {
     let exit_style = if shell.exit_code == 0 {
@@ -367,7 +363,7 @@ pub fn render_subagent(subagent: &CachedSubagent, spinner_frame: usize) -> Node 
         SubagentStatus::Failed => (" ✗ ".to_string(), Style::new().fg(colors::ERROR)),
     };
 
-    let prompt_preview = truncate_line(&subagent.prompt, 60);
+    let prompt_preview = truncate_first_line(&subagent.prompt, 60, true);
 
     let status_text = match subagent.status {
         SubagentStatus::Running => {
@@ -377,12 +373,12 @@ pub fn render_subagent(subagent: &CachedSubagent, spinner_frame: usize) -> Node 
         SubagentStatus::Completed => subagent
             .summary
             .as_ref()
-            .map(|s| format!(" → {}", truncate_line(s, 50)))
+            .map(|s| format!(" → {}", truncate_first_line(s, 50, true)))
             .unwrap_or_default(),
         SubagentStatus::Failed => subagent
             .error
             .as_ref()
-            .map(|e| format!(" → {}", truncate_line(e, 50)))
+            .map(|e| format!(" → {}", truncate_first_line(e, 50, true)))
             .unwrap_or_default(),
     };
 
@@ -416,7 +412,7 @@ pub fn format_tool_args(args: &str) -> String {
                         serde_json::Value::String(s) => {
                             let collapsed = s.replace('\n', "↵").replace('\r', "");
                             if collapsed.chars().count() > 30 {
-                                format!("\"{}…\"", truncate_chars(&collapsed, 27))
+                                format!("\"{}…\"", truncate_to_chars(&collapsed, 27, false))
                             } else {
                                 format!("\"{}\"", collapsed)
                             }
@@ -424,7 +420,7 @@ pub fn format_tool_args(args: &str) -> String {
                         other => {
                             let s = other.to_string();
                             if s.chars().count() > 30 {
-                                format!("{}…", truncate_chars(&s, 27))
+                                format!("{}…", truncate_to_chars(&s, 27, false))
                             } else {
                                 s
                             }
@@ -441,12 +437,8 @@ pub fn format_tool_args(args: &str) -> String {
     if oneline.chars().count() <= 60 {
         oneline
     } else {
-        format!("{}…", truncate_chars(&oneline, 57))
+        format!("{}…", truncate_to_chars(&oneline, 57, false))
     }
-}
-
-fn truncate_chars(s: &str, max_chars: usize) -> String {
-    s.chars().take(max_chars).collect()
 }
 
 pub fn format_tool_result(name: &str, result: &str) -> Node {
@@ -489,14 +481,8 @@ pub fn format_streaming_output(output: &str) -> Node {
     format_output_tail(&unwrapped, "     ")
 }
 
-fn term_width() -> usize {
-    crossterm::terminal::size()
-        .map(|(w, _)| w as usize)
-        .unwrap_or(80)
-}
-
 pub fn format_output_tail(output: &str, prefix: &str) -> Node {
-    let width = term_width();
+    let width = terminal_width();
     let all_lines: Vec<&str> = output.lines().collect();
     let lines: Vec<&str> = all_lines.iter().rev().take(3).rev().copied().collect();
     let hidden_count = all_lines.len().saturating_sub(3);
