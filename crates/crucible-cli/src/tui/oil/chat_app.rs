@@ -1,4 +1,5 @@
 use crate::tui::oil::app::{Action, App, ViewContext};
+use crate::tui::oil::chat_container::ContainerList;
 use crate::tui::oil::commands::SetCommand;
 use crate::tui::oil::component::Component;
 use crate::tui::oil::components::{
@@ -14,9 +15,8 @@ use crate::tui::oil::markdown::{
     markdown_to_node_styled, markdown_to_node_with_width, Margins, RenderStyle,
 };
 use crate::tui::oil::node::*;
-use crate::tui::oil::style::{Color, Gap, Style};
+use crate::tui::oil::style::{Color, Gap, Padding, Style};
 use crate::tui::oil::theme::{colors, styles};
-use crate::tui::oil::chat_container::ContainerList;
 use crate::tui::oil::viewport_cache::{
     CachedChatItem, CachedMessage, CachedShellExecution, CachedSubagent, CachedToolCall,
     StreamSegment, ViewportCache,
@@ -390,6 +390,8 @@ impl App for OilChatApp {
             self.render_containers(),
             self.render_error(),
             spacer(),
+            // Space character creates a visible blank line for separation before input area
+            text(" "),
             bottom,
             self.render_popup_overlay(),
         ])
