@@ -125,6 +125,7 @@ pub use graph::{
 };
 pub use hooks::{get_session_start_hooks, register_hooks_module};
 pub use http::register_http_module;
+pub use interaction::{lua_ask_to_core, lua_permission_to_core, register_interaction_module};
 pub use json_query::{
     detect_format, encode_to_format, json_to_lua, lua_to_json, parse_auto, parse_with_format,
     register_oq_module, Format,
@@ -135,9 +136,6 @@ pub use panel::{
 };
 pub use paths::{register_paths_module, PathsContext};
 pub use popup::{lua_entry_to_core, lua_request_to_core, register_popup_module};
-pub use interaction::{
-    lua_ask_to_core, lua_permission_to_core, register_interaction_module,
-};
 pub use registry::LuaToolRegistry;
 pub use schema::{generate_input_schema, type_to_string, FunctionSignature, LuauType, TypedParam};
 pub use shell::{register_shell_module, ExecResult, ShellPolicy};
