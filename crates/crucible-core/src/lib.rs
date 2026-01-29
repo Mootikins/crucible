@@ -11,6 +11,7 @@ pub mod database;
 pub mod discovery;
 pub mod enrichment;
 pub mod events;
+pub mod fuzzy;
 pub mod hashing;
 pub mod http;
 pub mod interaction;
