@@ -1,6 +1,15 @@
 import { render, screen, waitFor } from '@solidjs/testing-library';
 import { describe, it, expect, vi } from 'vitest';
 import { ChatProvider, useChat } from './ChatContext';
+import * as api from '@/lib/api';
+import type { ChatEvent } from '@/lib/types';
+
+vi.mock('@/lib/api', () => ({
+  sendChatMessage: vi.fn(),
+  generateMessageId: () => `msg_${Date.now()}_test`,
+}));
+
+const mockSendChatMessage = api.sendChatMessage as ReturnType<typeof vi.fn>;
 
 // Test component that uses the context
 function TestConsumer() {
@@ -35,6 +44,12 @@ describe('ChatContext', () => {
   });
 
   it('adds user message when sending', async () => {
+    mockSendChatMessage.mockImplementation(
+      async (_msg: string, onEvent: (event: ChatEvent) => void) => {
+        onEvent({ type: 'message_complete', id: 'msg_1', content: 'ok', tool_calls: [] });
+      }
+    );
+
     render(() => (
       <ChatProvider>
         <TestConsumer />
@@ -44,19 +59,28 @@ describe('ChatContext', () => {
     const sendButton = screen.getByText('Send');
     sendButton.click();
 
-    // Should immediately add user message
     await waitFor(() => {
-      expect(screen.getByTestId('count').textContent).toBe('2'); // user + assistant placeholder
+      expect(screen.getByTestId('count').textContent).toBe('2');
     });
 
-    // First message should be user's
     const items = screen.getAllByRole('listitem');
     expect(items[0].getAttribute('data-role')).toBe('user');
     expect(items[0].textContent).toBe('test message');
   });
 
   it('streams assistant response', async () => {
-    vi.useFakeTimers({ shouldAdvanceTime: true });
+    mockSendChatMessage.mockImplementation(
+      async (_msg: string, onEvent: (event: ChatEvent) => void) => {
+        onEvent({ type: 'token', content: 'This is a ' });
+        onEvent({ type: 'token', content: 'test response' });
+        onEvent({
+          type: 'message_complete',
+          id: 'msg_1',
+          content: 'This is a test response',
+          tool_calls: [],
+        });
+      }
+    );
 
     render(() => (
       <ChatProvider>
@@ -66,18 +90,25 @@ describe('ChatContext', () => {
 
     screen.getByText('Send').click();
 
-    // Wait for streaming to complete
-    await vi.runAllTimersAsync();
-
-    const items = screen.getAllByRole('listitem');
-    expect(items[1].getAttribute('data-role')).toBe('assistant');
-    expect(items[1].textContent).toContain('test response');
-
-    vi.useRealTimers();
+    await waitFor(() => {
+      const items = screen.getAllByRole('listitem');
+      expect(items[1].getAttribute('data-role')).toBe('assistant');
+      expect(items[1].textContent).toContain('test response');
+    });
   });
 
   it('shows loading state while sending', async () => {
-    vi.useFakeTimers({ shouldAdvanceTime: true });
+    let resolveMessage: () => void;
+    const messagePromise = new Promise<void>((resolve) => {
+      resolveMessage = resolve;
+    });
+
+    mockSendChatMessage.mockImplementation(
+      async (_msg: string, onEvent: (event: ChatEvent) => void) => {
+        await messagePromise;
+        onEvent({ type: 'message_complete', id: 'msg_1', content: 'done', tool_calls: [] });
+      }
+    );
 
     render(() => (
       <ChatProvider>
@@ -87,13 +118,14 @@ describe('ChatContext', () => {
 
     screen.getByText('Send').click();
 
-    // Should be loading immediately after click
-    expect(screen.getByTestId('loading').textContent).toBe('loading');
+    await waitFor(() => {
+      expect(screen.getByTestId('loading').textContent).toBe('loading');
+    });
 
-    // After all timers, should be idle
-    await vi.runAllTimersAsync();
-    expect(screen.getByTestId('loading').textContent).toBe('idle');
+    resolveMessage!();
 
-    vi.useRealTimers();
+    await waitFor(() => {
+      expect(screen.getByTestId('loading').textContent).toBe('idle');
+    });
   });
 });

@@ -5,7 +5,7 @@ import {
   createSignal,
 } from 'solid-js';
 import { createStore } from 'solid-js/store';
-import type { Message, ChatContextValue } from '@/lib/types';
+import type { Message, ChatContextValue, ChatEvent } from '@/lib/types';
 import { sendChatMessage, generateMessageId } from '@/lib/api';
 
 const ChatContext = createContext<ChatContextValue>();
@@ -18,22 +18,64 @@ export const ChatProvider: ParentComponent = (props) => {
     setMessages((prev) => [...prev, message]);
   };
 
-  const updateLastMessage = (content: string) => {
+  const updateLastMessage = (updates: Partial<Message>) => {
     setMessages((prev) => {
       if (prev.length === 0) return prev;
       const updated = [...prev];
       updated[updated.length - 1] = {
         ...updated[updated.length - 1],
-        content,
+        ...updates,
       };
       return updated;
     });
   };
 
+  const handleEvent = (event: ChatEvent) => {
+    switch (event.type) {
+      case 'token':
+        setMessages((prev) => {
+          if (prev.length === 0) return prev;
+          const updated = [...prev];
+          const last = updated[updated.length - 1];
+          updated[updated.length - 1] = {
+            ...last,
+            content: last.content + event.content,
+          };
+          return updated;
+        });
+        break;
+
+      case 'tool_call':
+        console.log('[ToolCall]', event.title, event.id, event.arguments);
+        break;
+
+      case 'tool_result':
+        console.log('[ToolResult]', event.id, event.result);
+        break;
+
+      case 'thinking':
+        console.log('[Thinking]', event.content);
+        break;
+
+      case 'message_complete':
+        updateLastMessage({
+          id: event.id,
+          content: event.content,
+          toolCalls: event.tool_calls,
+        });
+        break;
+
+      case 'error':
+        updateLastMessage({
+          content: `Error: ${event.message} (${event.code})`,
+        });
+        break;
+    }
+  };
+
   const sendMessage = async (content: string) => {
     if (!content.trim() || isLoading()) return;
 
-    // Add user message
     const userMessage: Message = {
       id: generateMessageId(),
       role: 'user',
@@ -42,7 +84,6 @@ export const ChatProvider: ParentComponent = (props) => {
     };
     addMessage(userMessage);
 
-    // Create placeholder for assistant response
     const assistantMessage: Message = {
       id: generateMessageId(),
       role: 'assistant',
@@ -54,14 +95,12 @@ export const ChatProvider: ParentComponent = (props) => {
     setIsLoading(true);
 
     try {
-      let accumulatedContent = '';
-      await sendChatMessage(content, (chunk) => {
-        accumulatedContent += chunk;
-        updateLastMessage(accumulatedContent);
-      });
+      await sendChatMessage(content, handleEvent);
     } catch (error) {
       console.error('Failed to send message:', error);
-      updateLastMessage('Error: Failed to get response. Please try again.');
+      updateLastMessage({
+        content: 'Error: Failed to connect to server. Please try again.',
+      });
     } finally {
       setIsLoading(false);
     }
