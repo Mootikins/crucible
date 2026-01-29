@@ -15,6 +15,17 @@ use super::generators::{
 };
 use super::helpers::{apply_rpc_event, combined_output, view_with_default_ctx};
 
+/// Render and sync graduation state between runtime and app.
+/// This matches the real render loop behavior in chat_runner.
+fn render_and_graduate(runtime: &mut TestRuntime, app: &mut OilChatApp) {
+    let tree = view_with_default_ctx(app);
+    runtime.render(&tree);
+    let graduated = runtime.last_graduated_keys();
+    if !graduated.is_empty() {
+        app.mark_graduated(graduated);
+    }
+}
+
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(50))]
 
@@ -45,8 +56,7 @@ proptest! {
                 }
                 apply_rpc_event(&mut app, event);
 
-                let tree = view_with_default_ctx(&app);
-                runtime.render(&tree);
+                render_and_graduate(&mut runtime, &mut app);
             }
 
             if turn.cancelled {
@@ -55,8 +65,7 @@ proptest! {
                 app.on_message(ChatAppMsg::StreamComplete);
             }
 
-            let tree = view_with_default_ctx(&app);
-            runtime.render(&tree);
+            render_and_graduate(&mut runtime, &mut app);
         }
 
         let stdout = strip_ansi(runtime.stdout_content());
@@ -93,14 +102,12 @@ proptest! {
             }
             apply_rpc_event(&mut app, event);
 
-            let tree = view_with_default_ctx(&app);
-            runtime.render(&tree);
+            render_and_graduate(&mut runtime, &mut app);
         }
 
         app.on_message(ChatAppMsg::StreamComplete);
 
-        let tree = view_with_default_ctx(&app);
-        runtime.render(&tree);
+        render_and_graduate(&mut runtime, &mut app);
 
         let combined = combined_output(&runtime);
 
@@ -140,16 +147,22 @@ proptest! {
         for event in &events {
             apply_rpc_event(&mut app, event);
 
+            // Use catch_unwind to handle any panics during rapid switching
             let tree = view_with_default_ctx(&app);
-            let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            if std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 runtime.render(&tree);
-            }));
+            })).is_ok() {
+                // Sync graduation state only if render succeeded
+                let graduated = runtime.last_graduated_keys();
+                if !graduated.is_empty() {
+                    app.mark_graduated(graduated);
+                }
+            }
         }
 
         app.on_message(ChatAppMsg::StreamComplete);
 
-        let tree = view_with_default_ctx(&app);
-        runtime.render(&tree);
+        render_and_graduate(&mut runtime, &mut app);
 
         let stdout = strip_ansi(runtime.stdout_content());
         prop_assert!(
@@ -180,14 +193,12 @@ proptest! {
                 app.on_message(ChatAppMsg::TextDelta(text_chunks[i].clone()));
             }
 
-            let tree = view_with_default_ctx(&app);
-            runtime.render(&tree);
+            render_and_graduate(&mut runtime, &mut app);
         }
 
         app.on_message(ChatAppMsg::StreamComplete);
 
-        let tree = view_with_default_ctx(&app);
-        runtime.render(&tree);
+        render_and_graduate(&mut runtime, &mut app);
 
         let stdout = strip_ansi(runtime.stdout_content());
 
@@ -224,15 +235,13 @@ proptest! {
                 name: tool.clone(),
             });
 
-            let tree = view_with_default_ctx(&app);
-            runtime.render(&tree);
+            render_and_graduate(&mut runtime, &mut app);
         }
 
         app.on_message(ChatAppMsg::TextDelta("All tools complete.".to_string()));
         app.on_message(ChatAppMsg::StreamComplete);
 
-        let tree = view_with_default_ctx(&app);
-        runtime.render(&tree);
+        render_and_graduate(&mut runtime, &mut app);
 
         let combined = combined_output(&runtime);
 
@@ -262,14 +271,12 @@ proptest! {
         app.on_message(ChatAppMsg::UserMessage("Q".to_string()));
         app.on_message(ChatAppMsg::TextDelta("Response".to_string()));
 
-        let tree = view_with_default_ctx(&app);
-        runtime.render(&tree);
+        render_and_graduate(&mut runtime, &mut app);
         let before = strip_ansi(runtime.stdout_content());
 
         app.on_message(ChatAppMsg::ContextUsage { used, total });
 
-        let tree = view_with_default_ctx(&app);
-        runtime.render(&tree);
+        render_and_graduate(&mut runtime, &mut app);
         let after = strip_ansi(runtime.stdout_content());
 
         prop_assert_eq!(
@@ -290,14 +297,12 @@ proptest! {
         app.on_message(ChatAppMsg::TextDelta("R1".to_string()));
         app.on_message(ChatAppMsg::StreamComplete);
 
-        let tree = view_with_default_ctx(&app);
-        runtime.render(&tree);
+        render_and_graduate(&mut runtime, &mut app);
 
         app.on_message(ChatAppMsg::UserMessage("Q2".to_string()));
         app.on_message(ChatAppMsg::Error(error_msg.clone()));
 
-        let tree = view_with_default_ctx(&app);
-        runtime.render(&tree);
+        render_and_graduate(&mut runtime, &mut app);
 
         let stdout = strip_ansi(runtime.stdout_content());
 
@@ -334,8 +339,7 @@ mod e2e_edge_cases {
         app.on_message(ChatAppMsg::TextDelta("Done".to_string()));
         app.on_message(ChatAppMsg::StreamComplete);
 
-        let tree = view_with_default_ctx(&app);
-        runtime.render(&tree);
+        render_and_graduate(&mut runtime, &mut app);
 
         let combined = combined_output(&runtime);
 
@@ -351,15 +355,13 @@ mod e2e_edge_cases {
         app.on_message(ChatAppMsg::UserMessage("Q".to_string()));
         app.on_message(ChatAppMsg::TextDelta("Part 1".to_string()));
 
-        let tree = view_with_default_ctx(&app);
-        runtime.render(&tree);
+        render_and_graduate(&mut runtime, &mut app);
 
         app.on_message(ChatAppMsg::ModeChanged("plan".to_string()));
         app.on_message(ChatAppMsg::TextDelta(" Part 2".to_string()));
         app.on_message(ChatAppMsg::StreamComplete);
 
-        let tree = view_with_default_ctx(&app);
-        runtime.render(&tree);
+        render_and_graduate(&mut runtime, &mut app);
 
         let stdout = strip_ansi(runtime.stdout_content());
         assert!(stdout.contains("Part 1") || stdout.contains("Part 2"));
