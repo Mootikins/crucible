@@ -660,8 +660,32 @@ impl ContainerList {
         }
     }
 
-    /// Update a tool call by name (finds most recent matching tool).
-    pub fn update_tool(&mut self, tool_name: &str, f: impl FnOnce(&mut CachedToolCall)) {
+    /// Update a tool call, preferring call_id match over name match.
+    ///
+    /// When `call_id` is provided, finds the tool with that exact call_id.
+    /// Falls back to name-based lookup (most recent matching tool) when
+    /// call_id is None or not found.
+    pub fn update_tool(
+        &mut self,
+        tool_name: &str,
+        call_id: Option<&str>,
+        f: impl FnOnce(&mut CachedToolCall),
+    ) {
+        // First try: match by call_id (exact, unambiguous)
+        if let Some(cid) = call_id {
+            for container in self.containers.iter_mut().rev() {
+                if let ChatContainer::ToolGroup { tools, .. } = container {
+                    if let Some(tool) = tools
+                        .iter_mut()
+                        .find(|t| t.call_id.as_deref() == Some(cid))
+                    {
+                        f(tool);
+                        return;
+                    }
+                }
+            }
+        }
+        // Fallback: match by name (most recent, for backwards compatibility)
         for container in self.containers.iter_mut().rev() {
             if let ChatContainer::ToolGroup { tools, .. } = container {
                 if let Some(tool) = tools
@@ -1102,6 +1126,7 @@ mod tests {
             id: "test-tool-1".to_string(),
             name: std::sync::Arc::from("read_file"),
             args: std::sync::Arc::from(r#"{"path": "/tmp/test.txt"}"#),
+            call_id: None,
             output_tail: std::collections::VecDeque::new(),
             output_path: None,
             output_total_bytes: 0,
@@ -1192,6 +1217,7 @@ mod tests {
             id: "tool-123".to_string(),
             name: std::sync::Arc::from("read_file"),
             args: std::sync::Arc::from("{}"),
+            call_id: None,
             output_tail: std::collections::VecDeque::new(),
             output_path: None,
             output_total_bytes: 0,
@@ -1210,7 +1236,7 @@ mod tests {
         }
 
         // Update by name (not id)
-        list.update_tool("read_file", |t| {
+        list.update_tool("read_file", None, |t| {
             t.mark_complete();
         });
 
@@ -1245,14 +1271,15 @@ mod tests {
         app.on_message(ChatAppMsg::ToolCall {
             name: "___".to_string(),
             args: r#"{"query": "test"}"#.to_string(),
+                call_id: None,
         });
         app.on_message(ChatAppMsg::ToolResultDelta {
             name: "___".to_string(),
             delta: "result".to_string(),
+                call_id: None,
         });
-        app.on_message(ChatAppMsg::ToolResultComplete {
-            name: "___".to_string(),
-        });
+        app.on_message(ChatAppMsg::ToolResultComplete { name: "___".to_string(),
+                call_id: None });
         app.on_message(ChatAppMsg::TextDelta("after text".to_string()));
         app.on_message(ChatAppMsg::StreamComplete);
 
@@ -1304,14 +1331,14 @@ mod tests {
             ("ToolCall ___", ChatAppMsg::ToolCall {
                 name: "___".to_string(),
                 args: r#"{"query": "test"}"#.to_string(),
+                call_id: None,
             }),
             ("ToolResultDelta ___", ChatAppMsg::ToolResultDelta {
                 name: "___".to_string(),
                 delta: "Q_   __ge95.AYs 5sD_9.hQ._HD-1.K_I-N3L-0E  wL".to_string(),
+                call_id: None,
             }),
-            ("ToolResultComplete ___", ChatAppMsg::ToolResultComplete {
-                name: "___".to_string(),
-            }),
+            ("ToolResultComplete ___", ChatAppMsg::ToolResultComplete { name: "___".to_string(), call_id: None }),
             ("TextDelta ?i...", ChatAppMsg::TextDelta("?i !, U,!9 i0.vnKn Az?0!DQ7rt  Xp!u7cQ6ZrrtA ,Xyk?,J,,,4h,zw,bB7Mi,?j!Ay!1tx??,,?.?.bK,Z".to_string())),
         ];
 
@@ -1446,6 +1473,7 @@ mod tests {
             id: "t1".to_string(),
             name: std::sync::Arc::from("read_file"),
             args: std::sync::Arc::from("{}"),
+            call_id: None,
             output_tail: std::collections::VecDeque::new(),
             output_path: None,
             output_total_bytes: 0,

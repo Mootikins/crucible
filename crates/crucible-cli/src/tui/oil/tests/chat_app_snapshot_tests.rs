@@ -112,6 +112,7 @@ fn snapshot_tool_call_pending() {
     app.on_message(ChatAppMsg::ToolCall {
         name: "read_file".to_string(),
         args: r#"{"path":"README.md","offset":1,"limit":100}"#.to_string(),
+        call_id: None,
     });
     assert_snapshot!(render_app(&app));
 }
@@ -123,14 +124,15 @@ fn snapshot_tool_call_complete() {
     app.on_message(ChatAppMsg::ToolCall {
         name: "read_file".to_string(),
         args: r#"{"path":"README.md"}"#.to_string(),
+                call_id: None,
     });
     app.on_message(ChatAppMsg::ToolResultDelta {
         name: "read_file".to_string(),
         delta: "# README\n\nThis is the content.\n".to_string(),
+                call_id: None,
     });
-    app.on_message(ChatAppMsg::ToolResultComplete {
-        name: "read_file".to_string(),
-    });
+    app.on_message(ChatAppMsg::ToolResultComplete { name: "read_file".to_string(),
+                call_id: None });
     assert_snapshot!(render_app(&app));
 }
 
@@ -141,16 +143,17 @@ fn snapshot_tool_output_many_lines_shows_count() {
     app.on_message(ChatAppMsg::ToolCall {
         name: "mcp_bash".to_string(),
         args: r#"{"command":"ls -la"}"#.to_string(),
+                call_id: None,
     });
     let output = "file1.txt\nfile2.txt\nfile3.txt\nfile4.txt\nfile5.txt\n\
                   file6.txt\nfile7.txt\nfile8.txt\nfile9.txt\nfile10.txt";
     app.on_message(ChatAppMsg::ToolResultDelta {
         name: "mcp_bash".to_string(),
         delta: output.to_string(),
+                call_id: None,
     });
-    app.on_message(ChatAppMsg::ToolResultComplete {
-        name: "mcp_bash".to_string(),
-    });
+    app.on_message(ChatAppMsg::ToolResultComplete { name: "mcp_bash".to_string(),
+                call_id: None });
     assert_snapshot!(render_app(&app));
 }
 
@@ -161,15 +164,16 @@ fn snapshot_read_tool_preserves_closing_bracket() {
     app.on_message(ChatAppMsg::ToolCall {
         name: "mcp_read".to_string(),
         args: r#"{"filePath":"/home/user/test.rs"}"#.to_string(),
+                call_id: None,
     });
     let output = "<file>\n00001| fn main() {\n00002|     println!(\"hello\");\n00003| }\n</file>\n\n[Directory Context: /home/user/project]";
     app.on_message(ChatAppMsg::ToolResultDelta {
         name: "mcp_read".to_string(),
         delta: output.to_string(),
+                call_id: None,
     });
-    app.on_message(ChatAppMsg::ToolResultComplete {
-        name: "mcp_read".to_string(),
-    });
+    app.on_message(ChatAppMsg::ToolResultComplete { name: "mcp_read".to_string(),
+                call_id: None });
     assert_snapshot!(render_app(&app));
 }
 
@@ -184,40 +188,43 @@ fn snapshot_multiple_tools_no_gaps() {
     app.on_message(ChatAppMsg::ToolCall {
         name: "bash".to_string(),
         args: r#"{"command":"ls -la"}"#.to_string(),
+                call_id: None,
     });
     app.on_message(ChatAppMsg::ToolResultDelta {
         name: "bash".to_string(),
         delta: "file1.txt\nfile2.txt".to_string(),
+                call_id: None,
     });
-    app.on_message(ChatAppMsg::ToolResultComplete {
-        name: "bash".to_string(),
-    });
+    app.on_message(ChatAppMsg::ToolResultComplete { name: "bash".to_string(),
+                call_id: None });
 
     // Second tool call - should be tight against first
     app.on_message(ChatAppMsg::ToolCall {
         name: "read_file".to_string(),
         args: r#"{"path":"README.md"}"#.to_string(),
+                call_id: None,
     });
     app.on_message(ChatAppMsg::ToolResultDelta {
         name: "read_file".to_string(),
         delta: "# README".to_string(),
+                call_id: None,
     });
-    app.on_message(ChatAppMsg::ToolResultComplete {
-        name: "read_file".to_string(),
-    });
+    app.on_message(ChatAppMsg::ToolResultComplete { name: "read_file".to_string(),
+                call_id: None });
 
     // Third tool call - should be tight against second
     app.on_message(ChatAppMsg::ToolCall {
         name: "bash".to_string(),
         args: r#"{"command":"cat Cargo.toml"}"#.to_string(),
+                call_id: None,
     });
     app.on_message(ChatAppMsg::ToolResultDelta {
         name: "bash".to_string(),
         delta: "[package]\nname = \"test\"".to_string(),
+                call_id: None,
     });
-    app.on_message(ChatAppMsg::ToolResultComplete {
-        name: "bash".to_string(),
-    });
+    app.on_message(ChatAppMsg::ToolResultComplete { name: "bash".to_string(),
+                call_id: None });
 
     assert_snapshot!(render_app(&app));
 }
@@ -240,14 +247,15 @@ fn snapshot_text_tool_text_spacing() {
     app.on_message(ChatAppMsg::ToolCall {
         name: "bash".to_string(),
         args: r#"{"command":"ls"}"#.to_string(),
+                call_id: None,
     });
     app.on_message(ChatAppMsg::ToolResultDelta {
         name: "bash".to_string(),
         delta: "README.md\nCargo.toml".to_string(),
+                call_id: None,
     });
-    app.on_message(ChatAppMsg::ToolResultComplete {
-        name: "bash".to_string(),
-    });
+    app.on_message(ChatAppMsg::ToolResultComplete { name: "bash".to_string(),
+                call_id: None });
 
     // Text after tool - this is continuation (no bullet)
     app.on_message(ChatAppMsg::TextDelta(
@@ -275,14 +283,15 @@ fn snapshot_sequential_tool_calls_with_text() {
     app.on_message(ChatAppMsg::ToolCall {
         name: "bash".to_string(),
         args: r#"{"command":"ls src/"}"#.to_string(),
+                call_id: None,
     });
     app.on_message(ChatAppMsg::ToolResultDelta {
         name: "bash".to_string(),
         delta: "main.rs\nlib.rs".to_string(),
+                call_id: None,
     });
-    app.on_message(ChatAppMsg::ToolResultComplete {
-        name: "bash".to_string(),
-    });
+    app.on_message(ChatAppMsg::ToolResultComplete { name: "bash".to_string(),
+                call_id: None });
 
     // Continuation text after first tool
     app.on_message(ChatAppMsg::TextDelta(
@@ -293,14 +302,15 @@ fn snapshot_sequential_tool_calls_with_text() {
     app.on_message(ChatAppMsg::ToolCall {
         name: "read_file".to_string(),
         args: r#"{"path":"src/main.rs"}"#.to_string(),
+                call_id: None,
     });
     app.on_message(ChatAppMsg::ToolResultDelta {
         name: "read_file".to_string(),
         delta: "fn main() {\n    println!(\"hello\");\n}".to_string(),
+                call_id: None,
     });
-    app.on_message(ChatAppMsg::ToolResultComplete {
-        name: "read_file".to_string(),
-    });
+    app.on_message(ChatAppMsg::ToolResultComplete { name: "read_file".to_string(),
+                call_id: None });
 
     // Final continuation text
     app.on_message(ChatAppMsg::TextDelta(
@@ -372,14 +382,15 @@ fn snapshot_numbered_list_across_tool_boundary() {
     app.on_message(ChatAppMsg::ToolCall {
         name: "read_file".to_string(),
         args: r#"{"path":"tests/regression.rs"}"#.to_string(),
+                call_id: None,
     });
     app.on_message(ChatAppMsg::ToolResultDelta {
         name: "read_file".to_string(),
         delta: "#[test]\nfn test_regression() {\n    assert!(false);\n}".to_string(),
+                call_id: None,
     });
-    app.on_message(ChatAppMsg::ToolResultComplete {
-        name: "read_file".to_string(),
-    });
+    app.on_message(ChatAppMsg::ToolResultComplete { name: "read_file".to_string(),
+                call_id: None });
 
     // Continue with remaining list items
     app.on_message(ChatAppMsg::TextDelta(
@@ -412,14 +423,15 @@ fn snapshot_bullet_list_across_tool_boundary() {
     app.on_message(ChatAppMsg::ToolCall {
         name: "read_file".to_string(),
         args: r#"{"path":"src/main.rs"}"#.to_string(),
+                call_id: None,
     });
     app.on_message(ChatAppMsg::ToolResultDelta {
         name: "read_file".to_string(),
         delta: "fn main() {}".to_string(),
+                call_id: None,
     });
-    app.on_message(ChatAppMsg::ToolResultComplete {
-        name: "read_file".to_string(),
-    });
+    app.on_message(ChatAppMsg::ToolResultComplete { name: "read_file".to_string(),
+                call_id: None });
 
     // Continue with analysis after tool
     app.on_message(ChatAppMsg::TextDelta(
@@ -455,6 +467,211 @@ fn snapshot_deeply_nested_list() {
          \x20\x20 2. `CHANGELOG.md`"
             .to_string(),
     ));
+    app.on_message(ChatAppMsg::StreamComplete);
+    assert_snapshot!(render_app(&app));
+}
+
+/// Sequential tool calls mid-stream: text → tool1 (complete) → tool2 (running).
+/// Captured during streaming before StreamComplete.
+#[test]
+fn snapshot_sequential_tools_mid_stream() {
+    let mut app = OilChatApp::default();
+    app.on_message(ChatAppMsg::UserMessage(
+        "Check the project".to_string(),
+    ));
+
+    // First text
+    app.on_message(ChatAppMsg::TextDelta(
+        "Let me look at the files.".to_string(),
+    ));
+
+    // First tool — complete
+    app.on_message(ChatAppMsg::ToolCall {
+        name: "bash".to_string(),
+        args: r#"{"command":"ls"}"#.to_string(),
+                call_id: None,
+    });
+    app.on_message(ChatAppMsg::ToolResultDelta {
+        name: "bash".to_string(),
+        delta: "src/\nCargo.toml".to_string(),
+                call_id: None,
+    });
+    app.on_message(ChatAppMsg::ToolResultComplete { name: "bash".to_string(),
+                call_id: None });
+
+    // Continuation text
+    app.on_message(ChatAppMsg::TextDelta(
+        "Now let me read the main file.".to_string(),
+    ));
+
+    // Second tool — still running
+    app.on_message(ChatAppMsg::ToolCall {
+        name: "read_file".to_string(),
+        args: r#"{"path":"src/main.rs"}"#.to_string(),
+                call_id: None,
+    });
+
+    // Snapshot mid-stream: second tool is pending
+    assert_snapshot!(render_app(&app));
+}
+
+/// Sequential tool calls: text → tool1 complete → text → tool2 complete → still streaming.
+/// The turn is still active so turn-level spinner should appear.
+#[test]
+fn snapshot_sequential_tools_all_complete_still_streaming() {
+    let mut app = OilChatApp::default();
+    app.on_message(ChatAppMsg::UserMessage(
+        "Analyze everything".to_string(),
+    ));
+
+    // First text
+    app.on_message(ChatAppMsg::TextDelta(
+        "Starting analysis.".to_string(),
+    ));
+
+    // First tool
+    app.on_message(ChatAppMsg::ToolCall {
+        name: "bash".to_string(),
+        args: r#"{"command":"ls -la"}"#.to_string(),
+                call_id: None,
+    });
+    app.on_message(ChatAppMsg::ToolResultDelta {
+        name: "bash".to_string(),
+        delta: "total 42\ndrwxr-xr-x  5 user".to_string(),
+                call_id: None,
+    });
+    app.on_message(ChatAppMsg::ToolResultComplete { name: "bash".to_string(),
+                call_id: None });
+
+    // Continuation text
+    app.on_message(ChatAppMsg::TextDelta(
+        "Found the directory listing. Let me check the config.".to_string(),
+    ));
+
+    // Second tool
+    app.on_message(ChatAppMsg::ToolCall {
+        name: "read_file".to_string(),
+        args: r#"{"path":"Cargo.toml"}"#.to_string(),
+                call_id: None,
+    });
+    app.on_message(ChatAppMsg::ToolResultDelta {
+        name: "read_file".to_string(),
+        delta: "[package]\nname = \"myproject\"".to_string(),
+                call_id: None,
+    });
+    app.on_message(ChatAppMsg::ToolResultComplete { name: "read_file".to_string(),
+                call_id: None });
+
+    // No StreamComplete — still streaming. Turn spinner should show.
+    assert_snapshot!(render_app(&app));
+}
+
+/// Parallel tool calls: two tools with the same name issued before either gets results.
+/// This tests that results are delivered to the correct tool, not mixed up.
+#[test]
+fn snapshot_parallel_tool_calls_same_name() {
+    let mut app = OilChatApp::default();
+    app.on_message(ChatAppMsg::UserMessage(
+        "Read both files".to_string(),
+    ));
+
+    app.on_message(ChatAppMsg::TextDelta(
+        "I'll read both files in parallel.".to_string(),
+    ));
+
+    // Both tool calls arrive before any results (with distinct call_ids)
+    app.on_message(ChatAppMsg::ToolCall {
+        name: "read_file".to_string(),
+        args: r#"{"path":"README.md"}"#.to_string(),
+        call_id: Some("call-readme".to_string()),
+    });
+    app.on_message(ChatAppMsg::ToolCall {
+        name: "read_file".to_string(),
+        args: r#"{"path":"Cargo.toml"}"#.to_string(),
+        call_id: Some("call-cargo".to_string()),
+    });
+
+    // Results for first tool (README.md) — matched by call_id
+    app.on_message(ChatAppMsg::ToolResultDelta {
+        name: "read_file".to_string(),
+        delta: "# My Project".to_string(),
+        call_id: Some("call-readme".to_string()),
+    });
+    app.on_message(ChatAppMsg::ToolResultComplete {
+        name: "read_file".to_string(),
+        call_id: Some("call-readme".to_string()),
+    });
+
+    // Results for second tool (Cargo.toml) — matched by call_id
+    app.on_message(ChatAppMsg::ToolResultDelta {
+        name: "read_file".to_string(),
+        delta: "[package]".to_string(),
+        call_id: Some("call-cargo".to_string()),
+    });
+    app.on_message(ChatAppMsg::ToolResultComplete {
+        name: "read_file".to_string(),
+        call_id: Some("call-cargo".to_string()),
+    });
+
+    app.on_message(ChatAppMsg::StreamComplete);
+    assert_snapshot!(render_app(&app));
+}
+
+/// Back-to-back tool calls without text between them — should be grouped.
+#[test]
+fn snapshot_back_to_back_tools_no_text() {
+    let mut app = OilChatApp::default();
+    app.on_message(ChatAppMsg::UserMessage(
+        "Read all files".to_string(),
+    ));
+
+    // Initial text
+    app.on_message(ChatAppMsg::TextDelta(
+        "Let me read everything.".to_string(),
+    ));
+
+    // Tool 1
+    app.on_message(ChatAppMsg::ToolCall {
+        name: "read_file".to_string(),
+        args: r#"{"path":"README.md"}"#.to_string(),
+                call_id: None,
+    });
+    app.on_message(ChatAppMsg::ToolResultDelta {
+        name: "read_file".to_string(),
+        delta: "# My Project".to_string(),
+                call_id: None,
+    });
+    app.on_message(ChatAppMsg::ToolResultComplete { name: "read_file".to_string(),
+                call_id: None });
+
+    // Tool 2 — no text between, should group with tool 1
+    app.on_message(ChatAppMsg::ToolCall {
+        name: "read_file".to_string(),
+        args: r#"{"path":"Cargo.toml"}"#.to_string(),
+                call_id: None,
+    });
+    app.on_message(ChatAppMsg::ToolResultDelta {
+        name: "read_file".to_string(),
+        delta: "[package]".to_string(),
+                call_id: None,
+    });
+    app.on_message(ChatAppMsg::ToolResultComplete { name: "read_file".to_string(),
+                call_id: None });
+
+    // Tool 3 — no text between, should group with tools 1-2
+    app.on_message(ChatAppMsg::ToolCall {
+        name: "read_file".to_string(),
+        args: r#"{"path":"src/main.rs"}"#.to_string(),
+                call_id: None,
+    });
+    app.on_message(ChatAppMsg::ToolResultDelta {
+        name: "read_file".to_string(),
+        delta: "fn main() {}".to_string(),
+                call_id: None,
+    });
+    app.on_message(ChatAppMsg::ToolResultComplete { name: "read_file".to_string(),
+                call_id: None });
+
     app.on_message(ChatAppMsg::StreamComplete);
     assert_snapshot!(render_app(&app));
 }
