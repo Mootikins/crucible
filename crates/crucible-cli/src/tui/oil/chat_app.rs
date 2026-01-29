@@ -17,6 +17,7 @@ use crate::tui::oil::markdown::{
 use crate::tui::oil::node::*;
 use crate::tui::oil::style::{Color, Gap, Padding, Style};
 use crate::tui::oil::theme::{colors, styles};
+use crate::tui::oil::utils::terminal_width;
 use crate::tui::oil::viewport_cache::{
     CachedChatItem, CachedMessage, CachedShellExecution, CachedSubagent, CachedToolCall,
     StreamSegment, ViewportCache,
@@ -2776,11 +2777,6 @@ impl OilChatApp {
     }
 }
 
-fn terminal_width() -> usize {
-    crossterm::terminal::size()
-        .map(|(w, _)| w as usize)
-        .unwrap_or(80)
-}
 
 #[cfg(test)]
 mod tests {
