@@ -314,3 +314,67 @@ That's the overview."#;
 
     assert_snapshot!("no_double_blank_lines", rendered);
 }
+
+/// Issue: Missing blank line between graduated user prompt and streaming assistant response.
+///
+/// After the user prompt graduates to stdout, the first viewport element (the assistant
+/// response) should be separated by a blank line. This requires multi-frame simulation
+/// because the graduation feedback (mark_graduated) happens after planner.plan().
+#[test]
+fn blank_line_between_graduated_prompt_and_streaming_response() {
+    let mut app = OilChatApp::default();
+    let mut planner = FramePlanner::new(80, 24);
+    let focus = FocusContext::new();
+
+    // Submit user message and start streaming
+    app.on_message(ChatAppMsg::UserMessage("Hello world".to_string()));
+    app.on_message(ChatAppMsg::TextDelta("The answer is here.".to_string()));
+
+    // Frame 1: planner graduates the user prompt
+    let ctx = ViewContext::new(&focus);
+    let tree1 = app.view(&ctx);
+    let snapshot1 = planner.plan(&tree1);
+
+    // Feed graduation back to the app (simulates real chat_runner flow)
+    let graduated_keys: Vec<String> = snapshot1.plan.trace.graduated_keys.clone();
+    assert!(
+        !graduated_keys.is_empty(),
+        "User prompt should graduate on frame 1"
+    );
+    app.mark_graduated(graduated_keys);
+
+    // Frame 2: viewport_start is now > 0, viewport has blank line spacer
+    let ctx2 = ViewContext::new(&focus);
+    let tree2 = app.view(&ctx2);
+    let snapshot2 = planner.plan(&tree2);
+
+    // Combine frame 1's graduated stdout with frame 2's viewport
+    // This simulates what the real terminal shows: persistent stdout + redrawn viewport
+    let combined = format!(
+        "{}{}",
+        strip_ansi(&snapshot1.stdout_delta),
+        strip_ansi(snapshot2.viewport_content())
+    );
+    let lines: Vec<&str> = combined.lines().collect();
+
+    // Find the assistant text
+    let assistant_line = lines
+        .iter()
+        .position(|l| l.contains("The answer is here"))
+        .expect("should have assistant text");
+
+    // Find the user prompt bottom edge: the ▀▀▀ line BEFORE the assistant text
+    let prompt_bottom = lines[..assistant_line]
+        .iter()
+        .rposition(|l| l.starts_with('▀'))
+        .expect("should have user prompt bottom edge before assistant text");
+
+    // There should be at least one blank line between prompt bottom and assistant text
+    assert!(
+        assistant_line > prompt_bottom + 1,
+        "Missing blank line between graduated prompt (line {}) and assistant text (line {}).\nLines:\n{}",
+        prompt_bottom,
+        assistant_line,
+        lines.iter().enumerate().map(|(i, l)| format!("{:02}: {:?}", i, l)).collect::<Vec<_>>().join("\n")
+    );
+}
