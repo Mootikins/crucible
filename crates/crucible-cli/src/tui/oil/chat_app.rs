@@ -399,20 +399,14 @@ impl App for OilChatApp {
     fn on_message(&mut self, msg: ChatAppMsg) -> Action<ChatAppMsg> {
         match msg {
             ChatAppMsg::UserMessage(content) => {
-                self.add_user_message(content);
+                self.submit_user_message(content);
                 Action::Continue
             }
             ChatAppMsg::TextDelta(delta) => {
-                if !self.container_list.is_streaming() {
-                    self.container_list.start_assistant_response();
-                }
                 self.container_list.append_text(&delta);
                 Action::Continue
             }
             ChatAppMsg::ThinkingDelta(delta) => {
-                if !self.container_list.is_streaming() {
-                    self.container_list.start_assistant_response();
-                }
                 self.container_list.append_thinking(&delta);
                 Action::Continue
             }
@@ -1239,7 +1233,7 @@ impl OilChatApp {
             callback(content.clone());
         }
 
-        self.add_user_message(content);
+        self.submit_user_message(content);
         self.status = "Thinking...".to_string();
 
         Action::Continue
@@ -1994,6 +1988,14 @@ impl OilChatApp {
         self.container_list.add_user_message(content);
     }
 
+    /// Add user message and mark the turn as active so the turn-level
+    /// spinner renders while waiting for the first token.
+    /// Use this (not `add_user_message`) when sending to the daemon.
+    fn submit_user_message(&mut self, content: String) {
+        self.add_user_message(content);
+        self.container_list.mark_turn_active();
+    }
+
     fn add_system_message(&mut self, content: String) {
         self.message_counter += 1;
         self.container_list.add_system_message(content);
@@ -2010,7 +2012,7 @@ impl OilChatApp {
 
     fn process_deferred_queue(&mut self) -> Action<ChatAppMsg> {
         if let Some(queued) = self.deferred_messages.pop_front() {
-            self.add_user_message(queued.clone());
+            self.submit_user_message(queued.clone());
             self.status = "Thinking...".to_string();
             Action::Send(ChatAppMsg::UserMessage(queued))
         } else {
@@ -2030,10 +2032,34 @@ impl OilChatApp {
             return Node::Empty;
         }
 
-        let nodes: Vec<Node> = containers
+        let mut nodes: Vec<Node> = containers
             .iter()
-            .map(|c| c.view(term_width, self.spinner_frame, self.show_thinking))
+            .enumerate()
+            .map(|(i, c)| {
+                use crate::tui::oil::chat_container::ViewParams;
+                let abs_idx = self.container_list.viewport_start_index() + i;
+                let params = ViewParams {
+                    width: term_width,
+                    spinner_frame: self.spinner_frame,
+                    show_thinking: self.show_thinking,
+                    is_continuation: self.container_list.is_continuation(abs_idx),
+                    is_complete: self.container_list.is_response_complete(abs_idx),
+                };
+                c.view_with_params(&params)
+            })
             .collect();
+
+        // Turn-level spinner: shown when the turn is active but no container
+        // is currently displaying a spinner (e.g. after tools complete, before
+        // next TextDelta or StreamComplete).
+        if self.container_list.needs_turn_spinner() {
+            nodes.push(
+                row([text(" "), spinner(None, self.spinner_frame)]).with_margin(Padding {
+                    top: 1,
+                    ..Default::default()
+                }),
+            );
+        }
 
         col(nodes)
     }
