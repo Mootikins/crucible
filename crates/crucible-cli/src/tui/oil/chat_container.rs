@@ -12,9 +12,48 @@ use crate::tui::oil::components::{
     render_user_prompt,
 };
 use crate::tui::oil::markdown::{markdown_to_node_styled, Margins, RenderStyle};
-use crate::tui::oil::node::{col, scrollback, Node};
+use crate::tui::oil::node::{col, row, scrollback, spinner, text, Node};
 use crate::tui::oil::style::Padding;
 use crate::tui::oil::viewport_cache::{CachedShellExecution, CachedSubagent, CachedToolCall};
+
+/// Parameters for rendering a container view.
+///
+/// Bundles layout context and derived state that containers need for rendering.
+/// This prepares for plugin extensibility where external code can define
+/// `(data, view_fn)` pairs using the `ContainerView` trait.
+#[derive(Debug, Clone, Copy)]
+pub struct ViewParams {
+    pub width: usize,
+    pub spinner_frame: usize,
+    pub show_thinking: bool,
+    /// Whether this container is a continuation after a tool call (no bullet shown).
+    pub is_continuation: bool,
+    /// Whether this response is complete (derived from turn state + position).
+    pub is_complete: bool,
+}
+
+/// Trait for rendering a container to a node tree.
+///
+/// Built-in containers implement this via `ChatContainer`. External plugins
+/// can provide their own implementations for custom container types.
+pub trait ContainerView {
+    /// Unique ID for this container (used for graduation).
+    fn id(&self) -> &str;
+    /// Render this container to a Node tree.
+    fn view(&self, params: &ViewParams) -> Node;
+}
+
+impl ContainerView for ChatContainer {
+    fn id(&self) -> &str {
+        // Delegate to the inherent method
+        ChatContainer::id(self)
+    }
+
+    fn view(&self, params: &ViewParams) -> Node {
+        // Delegate to the inherent method
+        ChatContainer::view_with_params(self, params)
+    }
+}
 
 /// A block of thinking content with token count.
 #[derive(Debug, Clone)]
@@ -40,10 +79,6 @@ pub enum ChatContainer {
         blocks: Vec<String>,
         /// Associated thinking block (shown if enabled)
         thinking: Option<ThinkingBlock>,
-        /// Whether streaming is complete for this response
-        complete: bool,
-        /// Whether this is a continuation (text after tool call) - no bullet shown
-        is_continuation: bool,
     },
 
     /// Group of consecutive tool calls (rendered compactly)
@@ -81,11 +116,14 @@ impl ChatContainer {
         }
     }
 
-    /// Whether this container is complete and can graduate
+    /// Whether this container is inherently complete and can graduate.
+    ///
+    /// For AssistantResponse, completeness depends on the turn state and
+    /// position in the container list — use `ContainerList::is_response_complete()`.
     pub fn is_complete(&self) -> bool {
         match self {
             Self::UserMessage { .. } => true,
-            Self::AssistantResponse { complete, .. } => *complete,
+            Self::AssistantResponse { .. } => false,
             Self::ToolGroup { tools, .. } => tools.iter().all(|t| t.complete),
             Self::Subagent { subagent, .. } => {
                 use crate::tui::oil::viewport_cache::SubagentStatus;
@@ -99,15 +137,35 @@ impl ChatContainer {
         }
     }
 
+    /// Render this container to a Node tree using individual parameters.
+    ///
+    /// Prefer using `view_with_params()` or the `ContainerView` trait for new code.
+    pub fn view(
+        &self,
+        width: usize,
+        spinner_frame: usize,
+        show_thinking: bool,
+        is_continuation: bool,
+        is_complete: bool,
+    ) -> Node {
+        self.view_with_params(&ViewParams {
+            width,
+            spinner_frame,
+            show_thinking,
+            is_continuation,
+            is_complete,
+        })
+    }
+
     /// Render this container to a Node tree.
     ///
     /// For most containers, content is wrapped in scrollback with the container's ID.
     /// For AssistantResponse, each completed block gets its own scrollback to enable
     /// incremental graduation during streaming.
-    pub fn view(&self, width: usize, spinner_frame: usize, show_thinking: bool) -> Node {
+    pub fn view_with_params(&self, params: &ViewParams) -> Node {
         match self {
             Self::UserMessage { id, content } => {
-                let content_node = render_user_prompt(content, width);
+                let content_node = render_user_prompt(content, params.width);
                 scrollback(id.clone(), [content_node])
             }
 
@@ -115,20 +173,19 @@ impl ChatContainer {
                 id,
                 blocks,
                 thinking,
-                complete,
-                is_continuation,
             } => render_assistant_blocks_with_graduation(
                 id,
                 blocks,
                 thinking.as_ref(),
-                *complete,
-                width,
-                show_thinking,
-                *is_continuation,
+                params.is_complete,
+                params.width,
+                params.show_thinking,
+                params.is_continuation,
+                params.spinner_frame,
             ),
 
             Self::ToolGroup { id, tools } => {
-                let content = render_tool_group(tools, spinner_frame);
+                let content = render_tool_group(tools, params.spinner_frame);
                 // Only wrap in scrollback (allow graduation) when all tools are complete
                 // This prevents tools from graduating with spinners and then not updating
                 let all_complete = tools.iter().all(|t| t.complete);
@@ -140,7 +197,7 @@ impl ChatContainer {
             }
 
             Self::Subagent { id, subagent } => {
-                let content = render_subagent(subagent, spinner_frame);
+                let content = render_subagent(subagent, params.spinner_frame);
                 // Only wrap in scrollback when subagent is complete
                 use crate::tui::oil::viewport_cache::SubagentStatus;
                 let is_complete = matches!(
@@ -181,6 +238,7 @@ fn render_assistant_blocks_with_graduation(
     width: usize,
     show_thinking: bool,
     is_continuation: bool,
+    spinner_frame: usize,
 ) -> Node {
     let mut nodes = Vec::new();
 
@@ -208,6 +266,21 @@ fn render_assistant_blocks_with_graduation(
     } else {
         blocks.len().saturating_sub(1)
     };
+
+    // Show spinner when streaming and no text yet
+    if !complete && blocks.is_empty() {
+        let spinner_node = if thinking.is_some() && show_thinking {
+            // Thinking is visible, show plain spinner below it
+            row([text(" "), spinner(None, spinner_frame)])
+        } else {
+            // No content at all yet — show spinner as the only indicator
+            row([text(" "), spinner(None, spinner_frame)])
+        };
+        nodes.push(spinner_node.with_margin(Padding {
+            top: 1,
+            ..Default::default()
+        }));
+    }
 
     // Render text blocks
     for (i, block) in blocks.iter().enumerate() {
@@ -249,6 +322,11 @@ fn render_assistant_blocks_with_graduation(
         }
     }
 
+    // Show spinner after text blocks while still streaming
+    if !complete && !blocks.is_empty() {
+        nodes.push(row([text(" "), spinner(None, spinner_frame)]));
+    }
+
     col(nodes)
 }
 
@@ -278,6 +356,43 @@ fn render_system_message(content: &str) -> Node {
     })
 }
 
+/// Check if a text part is a continuation of an ordered list (numbered item > 1).
+/// Returns true for "2. foo", "3. bar", "10. baz" but not "1. start".
+fn is_ordered_list_continuation(s: &str) -> bool {
+    let trimmed = s.trim_start();
+    let bytes = trimmed.as_bytes();
+    if bytes.is_empty() || !bytes[0].is_ascii_digit() {
+        return false;
+    }
+    // Find the ". " pattern after digits
+    if let Some(dot_pos) = trimmed.find(". ") {
+        // All chars before dot must be digits, and number must be > 1
+        let prefix = &trimmed[..dot_pos];
+        if prefix.chars().all(|c| c.is_ascii_digit()) {
+            if let Ok(n) = prefix.parse::<u32>() {
+                return n > 1;
+            }
+        }
+    }
+    false
+}
+
+/// Check if a block ends with an ordered list item.
+fn ends_with_ordered_list_item(s: &str) -> bool {
+    // Check the last line
+    if let Some(last_line) = s.lines().last() {
+        let trimmed = last_line.trim_start();
+        let bytes = trimmed.as_bytes();
+        if !bytes.is_empty() && bytes[0].is_ascii_digit() {
+            if let Some(dot_pos) = trimmed.find(". ") {
+                let prefix = &trimmed[..dot_pos];
+                return prefix.chars().all(|c| c.is_ascii_digit());
+            }
+        }
+    }
+    false
+}
+
 /// Manages the list of chat containers.
 ///
 /// Containers are append-only during a conversation. When content graduates
@@ -288,11 +403,6 @@ pub struct ContainerList {
     viewport_start: usize,
     /// Counter for generating unique IDs
     id_counter: u64,
-    /// Index of current open (incomplete) assistant response, if any.
-    /// This allows text to continue after tool calls interrupt the flow.
-    current_response_idx: Option<usize>,
-    /// If true, next response created is a continuation (no bullet)
-    next_response_is_continuation: bool,
     /// Whether the assistant turn is active (streaming). This stays true
     /// across tool calls until explicitly completed or cancelled.
     turn_active: bool,
@@ -310,8 +420,6 @@ impl ContainerList {
             containers: Vec::new(),
             viewport_start: 0,
             id_counter: 0,
-            current_response_idx: None,
-            next_response_is_continuation: false,
             turn_active: false,
         }
     }
@@ -330,52 +438,58 @@ impl ContainerList {
             .push(ChatContainer::UserMessage { id, content });
     }
 
-    /// Start a new assistant response (called when streaming begins).
-    /// Uses and clears the `next_response_is_continuation` flag.
-    pub fn start_assistant_response(&mut self) -> &str {
-        let is_continuation = self.next_response_is_continuation;
-        self.next_response_is_continuation = false;
+    /// Remove the last container if it's an empty AssistantResponse (no text, no thinking).
+    /// This avoids "gap" containers that block graduation.
+    fn remove_empty_trailing_response(&mut self) {
+        let should_remove = matches!(
+            self.containers.last(),
+            Some(ChatContainer::AssistantResponse {
+                blocks,
+                thinking: None,
+                ..
+            }) if blocks.is_empty()
+        );
+        if should_remove {
+            self.containers.pop();
+        }
+    }
 
+    /// Ensure an open AssistantResponse exists and return its index.
+    ///
+    /// If the last container is already an AssistantResponse and the turn is active,
+    /// returns its index. Otherwise creates a new one.
+    fn ensure_open_response(&mut self) -> usize {
+        if self.turn_active {
+            if let Some(ChatContainer::AssistantResponse { .. }) = self.containers.last() {
+                return self.containers.len() - 1;
+            }
+        }
         let id = self.next_id("assistant");
-        let idx = self.containers.len();
         self.containers.push(ChatContainer::AssistantResponse {
             id,
             blocks: Vec::new(),
             thinking: None,
-            complete: false,
-            is_continuation,
         });
-        self.current_response_idx = Some(idx);
+        self.turn_active = true;
+        self.containers.len() - 1
+    }
+
+    /// Start a new assistant response (called when streaming begins).
+    pub fn start_assistant_response(&mut self) -> &str {
+        let id = self.next_id("assistant");
+        self.containers.push(ChatContainer::AssistantResponse {
+            id,
+            blocks: Vec::new(),
+            thinking: None,
+        });
         self.turn_active = true;
         self.containers.last().unwrap().id()
     }
 
     /// Append text to the current assistant response.
-    /// Creates a new response if none exists.
-    /// Uses tracked current_response_idx to continue after tool calls.
+    /// Creates a new response if none exists (via backward scan).
     pub fn append_text(&mut self, text: &str) {
-        // Find existing open response by tracked index, or create new
-        let response_idx = match self.current_response_idx {
-            Some(idx) if idx < self.containers.len() => {
-                // Verify it's still an open response
-                if matches!(
-                    &self.containers[idx],
-                    ChatContainer::AssistantResponse {
-                        complete: false,
-                        ..
-                    }
-                ) {
-                    idx
-                } else {
-                    self.start_assistant_response();
-                    self.containers.len() - 1
-                }
-            }
-            _ => {
-                self.start_assistant_response();
-                self.containers.len() - 1
-            }
-        };
+        let response_idx = self.ensure_open_response();
 
         if let ChatContainer::AssistantResponse { blocks, .. } = &mut self.containers[response_idx]
         {
@@ -388,16 +502,43 @@ impl ContainerList {
                     if !first.is_empty() {
                         blocks.push(first.to_string());
                     }
-                    // Add remaining parts as new blocks
+                    // Add remaining parts, merging ordered list continuations
                     for part in rest {
                         if !part.is_empty() {
-                            blocks.push(part.to_string());
+                            if is_ordered_list_continuation(part)
+                                && blocks
+                                    .last()
+                                    .map(|b| ends_with_ordered_list_item(b))
+                                    .unwrap_or(false)
+                            {
+                                // Merge with previous block to preserve list numbering
+                                if let Some(last) = blocks.last_mut() {
+                                    last.push_str("\n\n");
+                                    last.push_str(part);
+                                }
+                            } else {
+                                blocks.push(part.to_string());
+                            }
                         }
                     }
                 }
             } else if parts.len() == 1 {
                 // No separator in this text
-                if let Some(last) = blocks.last_mut() {
+                // Check if we should merge a list continuation into the previous block
+                // (the last block is an empty placeholder from a prior \n\n split)
+                let should_merge_list = blocks.len() >= 2
+                    && blocks.last().map(|b| b.is_empty()).unwrap_or(false)
+                    && is_ordered_list_continuation(text)
+                    && ends_with_ordered_list_item(&blocks[blocks.len() - 2]);
+
+                if should_merge_list {
+                    // Remove empty placeholder, merge into previous block
+                    blocks.pop();
+                    if let Some(prev) = blocks.last_mut() {
+                        prev.push_str("\n\n");
+                        prev.push_str(text);
+                    }
+                } else if let Some(last) = blocks.last_mut() {
                     if last.is_empty() {
                         // Replace placeholder with content
                         *last = text.to_string();
@@ -410,11 +551,32 @@ impl ContainerList {
                 // Has separator(s) - append first part to current, create new blocks for rest
                 if let Some((first, rest)) = parts.split_first() {
                     if let Some(last) = blocks.last_mut() {
+                        // If the first part is a list continuation and the current block
+                        // ends with a list item, preserve the \n\n separator
+                        if !first.is_empty()
+                            && is_ordered_list_continuation(first)
+                            && ends_with_ordered_list_item(last)
+                        {
+                            last.push_str("\n\n");
+                        }
                         last.push_str(first);
                     }
-                    // Push even empty parts as placeholders for next append
+                    // Push parts, merging ordered list continuations
                     for part in rest {
-                        blocks.push(part.to_string());
+                        if !part.is_empty()
+                            && is_ordered_list_continuation(part)
+                            && blocks
+                                .last()
+                                .map(|b| ends_with_ordered_list_item(b))
+                                .unwrap_or(false)
+                        {
+                            if let Some(last) = blocks.last_mut() {
+                                last.push_str("\n\n");
+                                last.push_str(part);
+                            }
+                        } else {
+                            blocks.push(part.to_string());
+                        }
                     }
                 }
             }
@@ -423,42 +585,21 @@ impl ContainerList {
 
     /// Set thinking content for the current assistant response.
     pub fn set_thinking(&mut self, content: String, token_count: usize) {
-        if let Some(idx) = self.current_response_idx {
-            if let Some(ChatContainer::AssistantResponse { thinking, .. }) =
-                self.containers.get_mut(idx)
-            {
-                *thinking = Some(ThinkingBlock {
-                    content,
-                    token_count,
-                });
-            }
+        let idx = self.ensure_open_response();
+        if let Some(ChatContainer::AssistantResponse { thinking, .. }) =
+            self.containers.get_mut(idx)
+        {
+            *thinking = Some(ThinkingBlock {
+                content,
+                token_count,
+            });
         }
     }
 
     /// Append thinking content to the current assistant response.
     /// Creates a new response if none exists.
     pub fn append_thinking(&mut self, delta: &str) {
-        // Ensure we have a current response
-        let response_idx = match self.current_response_idx {
-            Some(idx) if idx < self.containers.len() => {
-                if matches!(
-                    &self.containers[idx],
-                    ChatContainer::AssistantResponse {
-                        complete: false,
-                        ..
-                    }
-                ) {
-                    idx
-                } else {
-                    self.start_assistant_response();
-                    self.containers.len() - 1
-                }
-            }
-            _ => {
-                self.start_assistant_response();
-                self.containers.len() - 1
-            }
-        };
+        let response_idx = self.ensure_open_response();
 
         if let ChatContainer::AssistantResponse { thinking, .. } =
             &mut self.containers[response_idx]
@@ -480,31 +621,16 @@ impl ContainerList {
 
     /// Mark the current assistant response as complete and end the turn.
     pub fn complete_response(&mut self) {
-        if let Some(idx) = self.current_response_idx.take() {
-            if let Some(ChatContainer::AssistantResponse { complete, .. }) =
-                self.containers.get_mut(idx)
-            {
-                *complete = true;
-            }
-        }
         self.turn_active = false;
     }
 
     /// Add a tool call.
     /// Groups with previous tool group if one exists and is incomplete.
-    /// Marks any current response as complete, then clears current_response_idx.
-    /// Sets next_response_is_continuation so the next text won't have a bullet.
+    /// Add a tool call.
+    /// Removes empty trailing responses to avoid graduation gaps.
     pub fn add_tool_call(&mut self, tool: CachedToolCall) {
-        // Mark current response as complete - no more text will be added to it
-        if let Some(idx) = self.current_response_idx.take() {
-            if let Some(ChatContainer::AssistantResponse { complete, .. }) =
-                self.containers.get_mut(idx)
-            {
-                *complete = true;
-            }
-        }
-        // Next text response is a continuation (no bullet)
-        self.next_response_is_continuation = true;
+        // Remove empty trailing AssistantResponse to avoid graduation gaps.
+        self.remove_empty_trailing_response();
 
         // Check if we can add to existing tool group in the viewport
         // Only append if:
@@ -551,18 +677,10 @@ impl ContainerList {
     }
 
     /// Add a subagent.
-    /// Like tools, subagents break the current response and mark next as continuation.
+    /// Like tools, subagents break the current response.
     pub fn add_subagent(&mut self, subagent: CachedSubagent) {
-        // Mark current response as complete - no more text will be added to it
-        if let Some(idx) = self.current_response_idx.take() {
-            if let Some(ChatContainer::AssistantResponse { complete, .. }) =
-                self.containers.get_mut(idx)
-            {
-                *complete = true;
-            }
-        }
-        // Next text response is a continuation (no bullet)
-        self.next_response_is_continuation = true;
+        // Remove empty trailing response to avoid graduation gaps.
+        self.remove_empty_trailing_response();
 
         let id = self.next_id("subagent");
         self.containers
@@ -612,6 +730,11 @@ impl ContainerList {
         &self.containers[self.viewport_start..]
     }
 
+    /// Index of the first non-graduated container.
+    pub fn viewport_start_index(&self) -> usize {
+        self.viewport_start
+    }
+
     /// Get all containers (including graduated, for debugging).
     pub fn all_containers(&self) -> &[ChatContainer] {
         &self.containers
@@ -632,15 +755,80 @@ impl ContainerList {
         self.turn_active
     }
 
+    /// Derive whether an AssistantResponse at the given index is complete.
+    ///
+    /// A response is complete if the turn is not active, or if there is
+    /// any container after it in the list.
+    pub fn is_response_complete(&self, index: usize) -> bool {
+        if !self.turn_active {
+            return true;
+        }
+        // Complete if anything follows this response
+        index + 1 < self.containers.len()
+    }
+
+    /// Derive whether a container at the given index is a continuation response.
+    ///
+    /// An AssistantResponse is a continuation if the container before it is a
+    /// ToolGroup, Subagent, or ShellExecution — meaning the assistant is
+    /// continuing after a tool call rather than starting a fresh response.
+    pub fn is_continuation(&self, index: usize) -> bool {
+        if index == 0 {
+            return false;
+        }
+        // Only relevant for AssistantResponse containers
+        if !matches!(
+            &self.containers[index],
+            ChatContainer::AssistantResponse { .. }
+        ) {
+            return false;
+        }
+        matches!(
+            &self.containers[index - 1],
+            ChatContainer::ToolGroup { .. }
+                | ChatContainer::Subagent { .. }
+                | ChatContainer::ShellExecution { .. }
+        )
+    }
+
+    /// Whether the container list needs a turn-level spinner appended.
+    ///
+    /// Returns true when the turn is active but the last container doesn't
+    /// already show a spinner (e.g. all tools are complete, no open
+    /// AssistantResponse). This fills the gap between tool completion and
+    /// the next event (TextDelta, another ToolCall, or StreamComplete).
+    pub fn needs_turn_spinner(&self) -> bool {
+        if !self.turn_active {
+            return false;
+        }
+        match self.containers.last() {
+            // AssistantResponse at the end of an active turn is incomplete
+            // and already shows its own spinner
+            Some(ChatContainer::AssistantResponse { .. }) => false,
+            // ToolGroup with any pending tool already shows braille spinners
+            Some(ChatContainer::ToolGroup { tools, .. }) => tools.iter().all(|t| t.complete),
+            // Incomplete subagent already shows its own spinner
+            Some(ChatContainer::Subagent { subagent, .. }) => {
+                use crate::tui::oil::viewport_cache::SubagentStatus;
+                matches!(
+                    subagent.status,
+                    SubagentStatus::Completed | SubagentStatus::Failed
+                )
+            }
+            // Everything else (completed containers, user messages, etc.)
+            _ => true,
+        }
+    }
+
     /// Mark the turn as active without starting an assistant response.
     /// Used when a tool call or subagent starts before any text.
     pub fn mark_turn_active(&mut self) {
         self.turn_active = true;
     }
 
-    /// Cancel streaming without completing the response.
+    /// Cancel streaming — sets turn_active to false, removes empty trailing response.
     pub fn cancel_streaming(&mut self) {
-        self.current_response_idx = None;
+        self.remove_empty_trailing_response();
         self.turn_active = false;
     }
 
@@ -773,8 +961,6 @@ impl ContainerList {
     pub fn clear(&mut self) {
         self.containers.clear();
         self.viewport_start = 0;
-        self.current_response_idx = None;
-        self.next_response_is_continuation = false;
         self.turn_active = false;
     }
 }
@@ -844,12 +1030,21 @@ mod tests {
         list.add_user_message("Hello".to_string());
         assert!(list.containers[0].is_complete());
 
-        // Assistant responses start incomplete
+        // AssistantResponse.is_complete() always returns false (needs context)
         list.start_assistant_response();
         assert!(!list.containers[1].is_complete());
 
+        // But ContainerList::is_response_complete() derives from turn state
+        assert!(
+            !list.is_response_complete(1),
+            "Active turn, nothing after => incomplete"
+        );
+
         list.complete_response();
-        assert!(list.containers[1].is_complete());
+        assert!(
+            list.is_response_complete(1),
+            "Turn ended => complete"
+        );
     }
 
     #[test]
@@ -888,7 +1083,7 @@ mod tests {
 
         // Render each container and verify it produces a non-empty node
         for container in list.viewport_containers() {
-            let node = container.view(80, 0, false);
+            let node = container.view(80, 0, false, false, true);
             assert!(
                 !matches!(node, Node::Empty),
                 "Container should render non-empty"
@@ -922,7 +1117,7 @@ mod tests {
         assert!(matches!(containers[0], ChatContainer::ToolGroup { .. }));
 
         // Verify rendering
-        let node = containers[0].view(80, 0, false);
+        let node = containers[0].view(80, 0, false, false, true);
         assert!(!matches!(node, Node::Empty));
     }
 
@@ -942,8 +1137,8 @@ mod tests {
         let asst_id = list.containers[1].id().to_string();
 
         // Render containers
-        let user_node = list.containers[0].view(80, 0, false);
-        let asst_node = list.containers[1].view(80, 0, false);
+        let user_node = list.containers[0].view(80, 0, false, false, true);
+        let asst_node = list.containers[1].view(80, 0, false, false, true);
 
         // Check that scrollback nodes use the container IDs
         // We can check this by rendering and seeing the output contains content
@@ -1133,13 +1328,11 @@ mod tests {
                     ChatContainer::AssistantResponse {
                         id,
                         blocks,
-                        is_continuation,
-                        complete,
                         ..
                     } => {
                         eprintln!(
-                            "{}: Asst({}, cont={}, complete={}): {:?}",
-                            i, id, is_continuation, complete, blocks
+                            "{}: Asst({}): {:?}",
+                            i, id, blocks
                         );
                     }
                     ChatContainer::ToolGroup { id, tools } => {
@@ -1166,13 +1359,11 @@ mod tests {
                 ChatContainer::AssistantResponse {
                     id,
                     blocks,
-                    is_continuation,
-                    complete,
                     ..
                 } => {
                     eprintln!(
-                        "{}: Asst({}, cont={}, complete={}): {:?}",
-                        i, id, is_continuation, complete, blocks
+                        "{}: Asst({}): {:?}",
+                        i, id, blocks
                     );
                 }
                 ChatContainer::ToolGroup { id, tools } => {
@@ -1267,6 +1458,77 @@ mod tests {
         assert!(list.find_tool("read_file").is_some());
         assert!(list.find_tool("write_file").is_none());
         assert!(list.tool_should_spill("read_file") == false);
+    }
+
+    #[test]
+    fn test_ordered_list_not_split_across_blocks() {
+        let mut list = ContainerList::new();
+        list.start_assistant_response();
+        list.append_text("1. First item\n\n2. Second item\n\n3. Third item");
+
+        if let Some(ChatContainer::AssistantResponse { blocks, .. }) = list.containers.last() {
+            // All list items should be in one block
+            assert_eq!(blocks.len(), 1, "List items should not be split: {:?}", blocks);
+            assert!(blocks[0].contains("1. First item"));
+            assert!(blocks[0].contains("2. Second item"));
+            assert!(blocks[0].contains("3. Third item"));
+        } else {
+            panic!("Expected AssistantResponse");
+        }
+    }
+
+    #[test]
+    fn test_ordered_list_incremental_streaming() {
+        let mut list = ContainerList::new();
+        list.start_assistant_response();
+        list.append_text("1. First item\n\n");
+        list.append_text("2. Second item\n\n");
+        list.append_text("3. Third item");
+
+        if let Some(ChatContainer::AssistantResponse { blocks, .. }) = list.containers.last() {
+            // All list items should be merged into one block
+            assert_eq!(blocks.len(), 1, "Streamed list items should merge: {:?}", blocks);
+            assert!(blocks[0].contains("1. First item"));
+            assert!(blocks[0].contains("2. Second item"));
+            assert!(blocks[0].contains("3. Third item"));
+        } else {
+            panic!("Expected AssistantResponse");
+        }
+    }
+
+    #[test]
+    fn test_ordered_list_followed_by_paragraph() {
+        let mut list = ContainerList::new();
+        list.start_assistant_response();
+        list.append_text("1. First item\n\n2. Second item\n\nSome paragraph after the list");
+
+        if let Some(ChatContainer::AssistantResponse { blocks, .. }) = list.containers.last() {
+            // List items in one block, paragraph in another
+            assert_eq!(blocks.len(), 2, "Paragraph should be separate: {:?}", blocks);
+            assert!(blocks[0].contains("1. First item"));
+            assert!(blocks[0].contains("2. Second item"));
+            assert_eq!(blocks[1], "Some paragraph after the list");
+        } else {
+            panic!("Expected AssistantResponse");
+        }
+    }
+
+    #[test]
+    fn test_is_ordered_list_continuation() {
+        assert!(super::is_ordered_list_continuation("2. Second"));
+        assert!(super::is_ordered_list_continuation("3. Third"));
+        assert!(super::is_ordered_list_continuation("10. Tenth"));
+        assert!(!super::is_ordered_list_continuation("1. First")); // starts new list
+        assert!(!super::is_ordered_list_continuation("Not a list"));
+        assert!(!super::is_ordered_list_continuation(""));
+    }
+
+    #[test]
+    fn test_ends_with_ordered_list_item() {
+        assert!(super::ends_with_ordered_list_item("1. First item"));
+        assert!(super::ends_with_ordered_list_item("Some text\n2. Second item"));
+        assert!(!super::ends_with_ordered_list_item("Just text"));
+        assert!(!super::ends_with_ordered_list_item(""));
     }
 
     #[test]
