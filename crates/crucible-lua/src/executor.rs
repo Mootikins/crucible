@@ -5,10 +5,10 @@
 
 use crate::ask::register_ask_module;
 use crate::error::LuaError;
-use crate::interaction::register_interaction_module;
 #[cfg(feature = "fennel")]
 use crate::fennel::FennelCompiler;
 use crate::hooks::register_hooks_module;
+use crate::interaction::register_interaction_module;
 use crate::oil::register_oil_module;
 use crate::session_api::{register_session_module, Session, SessionManager};
 use crate::types::{LuaExecutionResult, LuaTool, ToolResult};
