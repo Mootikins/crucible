@@ -10,6 +10,7 @@
 //! at computed coordinates, then converts the buffer to an ANSI string.
 
 use crate::tui::oil::cell_grid::CellGrid;
+use crate::tui::oil::utils::truncate_to_width;
 use crucible_oil::layout::Rect;
 use crucible_oil::style::{Border, Style};
 
@@ -144,7 +145,7 @@ fn render_text(
         let target_y = y + row_idx;
         if target_y < grid.height() {
             // Truncate line to width if needed
-            let truncated = truncate_to_width(line, width);
+            let truncated = truncate_to_width(line, width, false);
             grid.blit_line(&truncated, x, target_y);
         }
     }
@@ -366,40 +367,6 @@ fn visible_width(s: &str) -> usize {
     width
 }
 
-/// Truncate a string to fit within a given visible width.
-fn truncate_to_width(s: &str, max_width: usize) -> String {
-    let mut result = String::new();
-    let mut width = 0;
-    let mut chars = s.chars().peekable();
-    let mut in_escape = false;
-
-    while let Some(c) = chars.next() {
-        if c == '\x1b' {
-            // Start of ANSI escape sequence
-            result.push(c);
-            in_escape = true;
-            if chars.peek() == Some(&'[') {
-                result.push(chars.next().unwrap());
-                while let Some(&next) = chars.peek() {
-                    result.push(chars.next().unwrap());
-                    if next.is_ascii_alphabetic() {
-                        in_escape = false;
-                        break;
-                    }
-                }
-            }
-        } else if !in_escape {
-            if width >= max_width {
-                break;
-            }
-            result.push(c);
-            width += 1;
-        }
-    }
-
-    result
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -572,7 +539,7 @@ mod tests {
     #[test]
     fn truncate_preserves_ansi() {
         let styled = "\x1b[31mhello world\x1b[0m";
-        let truncated = truncate_to_width(styled, 5);
+        let truncated = truncate_to_width(styled, 5, false);
         assert!(truncated.contains("\x1b[31m"));
         assert!(truncated.contains("hello"));
         assert!(!truncated.contains("world"));

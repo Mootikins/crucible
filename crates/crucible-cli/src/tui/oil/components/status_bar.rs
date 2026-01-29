@@ -3,6 +3,7 @@ use crate::tui::oil::component::Component;
 use crate::tui::oil::node::{row, spacer, styled, Node};
 use crate::tui::oil::style::{Color, Style};
 use crate::tui::oil::theme::{colors, styles};
+use crate::tui::oil::utils::truncate_to_chars;
 use crate::tui::oil::ViewContext;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -109,7 +110,7 @@ impl StatusBar {
         if self.model.is_empty() {
             "...".to_string()
         } else {
-            truncate_string(&self.model, 20)
+            truncate_to_chars(&self.model, 20, true).into_owned()
         }
     }
 }
@@ -152,15 +153,6 @@ impl Component for StatusBar {
         }
 
         row(items)
-    }
-}
-
-fn truncate_string(s: &str, max_len: usize) -> String {
-    if s.chars().count() <= max_len {
-        s.to_string()
-    } else {
-        let truncated: String = s.chars().take(max_len - 1).collect();
-        format!("{}…", truncated)
     }
 }
 
@@ -255,13 +247,6 @@ mod tests {
         assert!(plain.contains("3"));
         assert!(plain.contains("ERROR"));
         assert!(plain.contains("1"));
-    }
-
-    #[test]
-    fn truncate_string_handles_multibyte_utf8() {
-        let result = truncate_string("café☕model", 6);
-        assert!(result.ends_with('…'));
-        assert_eq!(result.chars().count(), 6);
     }
 
     #[test]
