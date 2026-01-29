@@ -13,7 +13,6 @@ expression: render_app(&app)
    │ drwxr-xr-x  5 user
 
    Found the directory listing. Let me check the config.
-
  ✓ read_file(path="Cargo.toml") → [package]                                     
                                 name = "myproject"                              
  ◐
