@@ -4,6 +4,7 @@
 //! and understanding layout hierarchies without rendering.
 
 use super::types::{LayoutBox, LayoutContent, LayoutTree};
+use crate::tui::oil::utils::truncate_to_chars;
 
 impl LayoutTree {
     /// Generate an ASCII art representation of the layout tree structure.
@@ -77,7 +78,7 @@ fn format_box_info(box_node: &LayoutBox) -> String {
         LayoutContent::Empty => "Empty".to_string(),
 
         LayoutContent::Text { content, .. } => {
-            let preview = truncate_string(content, 30);
+            let preview = truncate_to_chars(content, 30, true);
             format!("Text \"{}\"", preview)
         }
 
@@ -88,11 +89,11 @@ fn format_box_info(box_node: &LayoutBox) -> String {
             focused,
             ..
         } => {
-            let value_preview = truncate_string(value, 20);
+            let value_preview = truncate_to_chars(value, 20, true);
             let focus_indicator = if *focused { " [focused]" } else { "" };
             let placeholder_str = placeholder
                 .as_ref()
-                .map(|p| format!(" placeholder=\"{}\"", truncate_string(p, 15)))
+                .map(|p| format!(" placeholder=\"{}\"", truncate_to_chars(p, 15, true)))
                 .unwrap_or_default();
             format!(
                 "Input value=\"{}\" cursor={}{}{}",
@@ -150,15 +151,6 @@ fn format_box_info(box_node: &LayoutBox) -> String {
     format!("{} {} {}{}", content_str, pos_size, key_str, "")
         .trim_end()
         .to_string()
-}
-
-/// Truncate a string to a maximum length, adding ellipsis if needed.
-fn truncate_string(s: &str, max_len: usize) -> String {
-    if s.len() <= max_len {
-        s.to_string()
-    } else {
-        format!("{}…", &s[..max_len.saturating_sub(1)])
-    }
 }
 
 #[cfg(test)]

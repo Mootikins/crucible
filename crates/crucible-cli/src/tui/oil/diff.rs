@@ -1,6 +1,7 @@
 use crate::tui::oil::node::{col, row, styled, Node};
 use crate::tui::oil::style::Style;
 use crate::tui::oil::theme::styles;
+use crate::tui::oil::utils::truncate_to_chars;
 use similar::{ChangeTag, TextDiff};
 
 pub fn diff_to_node(old: &str, new: &str, context_lines: usize) -> Node {
@@ -56,12 +57,20 @@ pub fn diff_to_node_width(
                 if !in_hunk {
                     in_hunk = true;
                     for (_, ctx_line) in &context_buffer {
-                        let display = truncate_line(&format!(" {}", ctx_line), max_width);
+                        let line = format!(" {}", ctx_line);
+                        let display = match max_width {
+                            Some(w) => truncate_to_chars(&line, w.saturating_sub(1), true).into_owned(),
+                            None => line,
+                        };
                         hunk_lines.push(styled(display, context_style));
                     }
                 } else {
                     for (_, ctx_line) in pending_context.drain(..) {
-                        let display = truncate_line(&format!(" {}", ctx_line), max_width);
+                        let line = format!(" {}", ctx_line);
+                        let display = match max_width {
+                            Some(w) => truncate_to_chars(&line, w.saturating_sub(1), true).into_owned(),
+                            None => line,
+                        };
                         hunk_lines.push(styled(display, context_style));
                     }
                 }
@@ -84,17 +93,6 @@ pub fn diff_to_node_width(
         Node::Empty
     } else {
         col(nodes)
-    }
-}
-
-fn truncate_line(line: &str, max_width: Option<usize>) -> String {
-    match max_width {
-        Some(w) if line.chars().count() > w.saturating_sub(1) => {
-            let limit = w.saturating_sub(2);
-            let truncated: String = line.chars().take(limit).collect();
-            format!("{}…", truncated)
-        }
-        _ => line.to_string(),
     }
 }
 
@@ -220,27 +218,6 @@ mod tests {
         assert!(output.contains("-c"));
         assert!(output.contains("+B"));
         assert!(output.contains("+C"));
-    }
-
-    #[test]
-    fn truncate_line_handles_multibyte_utf8() {
-        let line = "héllo wörld café";
-        let result = truncate_line(line, Some(8));
-        assert_eq!(result, "héllo …");
-        assert_eq!(result.chars().count(), 7);
-    }
-
-    #[test]
-    fn truncate_line_no_panic_on_cjk() {
-        let line = "你好世界测试数据";
-        let result = truncate_line(line, Some(5));
-        assert!(result.ends_with('…'));
-    }
-
-    #[test]
-    fn truncate_line_none_returns_original() {
-        let result = truncate_line("hello", None);
-        assert_eq!(result, "hello");
     }
 
     #[test]
