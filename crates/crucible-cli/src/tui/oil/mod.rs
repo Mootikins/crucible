@@ -65,6 +65,7 @@ mod taffy_layout;
 mod terminal;
 mod test_harness;
 pub mod theme;
+pub mod utils;
 mod viewport;
 mod viewport_cache;
 
