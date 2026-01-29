@@ -4,6 +4,9 @@ use crate::tui::oil::planning::RenderedOverlay;
 use crossterm::{cursor, execute, terminal};
 use std::io::{self, Stdout, Write};
 
+const BEGIN_SYNCHRONIZED_UPDATE: &str = "\x1b[?2026h";
+const END_SYNCHRONIZED_UPDATE: &str = "\x1b[?2026l";
+
 pub struct OutputBuffer {
     stdout: Stdout,
     previous_lines: Vec<String>,
@@ -116,6 +119,8 @@ impl OutputBuffer {
 
         self.force_next_redraw = false;
 
+        write!(self.stdout, "{}", BEGIN_SYNCHRONIZED_UPDATE)?;
+
         if self.previous_visual_rows > 0 {
             let move_up_amount = (self.previous_visual_rows as u16)
                 .saturating_sub(1)
@@ -149,6 +154,7 @@ impl OutputBuffer {
             }
         }
 
+        write!(self.stdout, "{}", END_SYNCHRONIZED_UPDATE)?;
         self.stdout.flush()?;
         self.previous_lines = viewport_lines;
         self.previous_visual_rows = viewport_visual_rows;
@@ -202,6 +208,8 @@ impl OutputBuffer {
     }
 
     pub fn render_fullscreen(&mut self, content: &str) -> io::Result<()> {
+        write!(self.stdout, "{}", BEGIN_SYNCHRONIZED_UPDATE)?;
+
         execute!(
             self.stdout,
             cursor::MoveTo(0, 0),
@@ -209,6 +217,8 @@ impl OutputBuffer {
         )?;
 
         write!(self.stdout, "{}", content)?;
+
+        write!(self.stdout, "{}", END_SYNCHRONIZED_UPDATE)?;
         self.stdout.flush()?;
 
         self.previous_lines.clear();
