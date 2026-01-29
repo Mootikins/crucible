@@ -16,7 +16,9 @@ fn render_app(app: &OilChatApp) -> String {
     let tree = app.view(&ctx);
     let mut planner = FramePlanner::new(80, 24);
     let snapshot = planner.plan(&tree);
-    strip_ansi(&snapshot.viewport_with_overlays(80))
+    // Use screen_with_overlays() to get graduated stdout, viewport, and overlay content
+    // This shows what the user would see in the terminal including popups/notifications
+    strip_ansi(&snapshot.screen_with_overlays(80))
 }
 
 fn render_app_raw(app: &OilChatApp) -> String {
