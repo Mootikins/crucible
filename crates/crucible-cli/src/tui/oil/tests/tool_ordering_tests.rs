@@ -1027,12 +1027,9 @@ mod duplicate_content_prevention {
         ));
         app.on_message(ChatAppMsg::StreamComplete);
 
-        let pre_grad_keys = app.take_pending_pre_graduate_keys();
-        assert!(
-            !pre_grad_keys.is_empty(),
-            "Should have pre-graduate keys after streaming completes"
-        );
-        runtime.pre_graduate_keys(pre_grad_keys);
+        // With container-based rendering, we don't need pre_graduate_keys.
+        // Container blocks have stable IDs that the runtime tracks - once graduated,
+        // they won't be output again.
 
         let tree2 = app.view(&ctx);
         runtime.render(&tree2);
