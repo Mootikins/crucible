@@ -5,6 +5,7 @@
 
 use crate::ask::register_ask_module;
 use crate::error::LuaError;
+use crate::interaction::register_interaction_module;
 #[cfg(feature = "fennel")]
 use crate::fennel::FennelCompiler;
 use crate::hooks::register_hooks_module;
@@ -196,6 +197,9 @@ end
 
         // Register oil module for UI building
         register_oil_module(lua)?;
+
+        // Register interaction module for unified interaction bindings
+        register_interaction_module(lua)?;
 
         Ok(())
     }
