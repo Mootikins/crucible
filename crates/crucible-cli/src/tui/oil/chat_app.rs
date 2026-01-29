@@ -68,17 +68,25 @@ pub enum ChatAppMsg {
     ToolCall {
         name: String,
         args: String,
+        /// LLM-assigned call ID for correlating results with the correct tool
+        call_id: Option<String>,
     },
     ToolResultDelta {
         name: String,
         delta: String,
+        /// LLM-assigned call ID for correlating results with the correct tool
+        call_id: Option<String>,
     },
     ToolResultComplete {
         name: String,
+        /// LLM-assigned call ID for correlating results with the correct tool
+        call_id: Option<String>,
     },
     ToolResultError {
         name: String,
         error: String,
+        /// LLM-assigned call ID for correlating results with the correct tool
+        call_id: Option<String>,
     },
     StreamComplete,
     StreamCancelled,
@@ -410,7 +418,7 @@ impl App for OilChatApp {
                 self.container_list.append_thinking(&delta);
                 Action::Continue
             }
-            ChatAppMsg::ToolCall { name, args } => {
+            ChatAppMsg::ToolCall { name, args, call_id } => {
                 if !self.container_list.is_streaming() {
                     self.container_list.mark_turn_active();
                 }
@@ -418,37 +426,40 @@ impl App for OilChatApp {
                 let tool_id = format!("tool-{}", self.message_counter);
                 tracing::debug!(
                     tool_name = %name,
+                    ?call_id,
                     args_len = args.len(),
                     counter = self.message_counter,
                     "Adding ToolCall"
                 );
-                self.container_list
-                    .add_tool_call(CachedToolCall::new(tool_id, &name, &args));
+                let mut tool = CachedToolCall::new(tool_id, &name, &args);
+                tool.call_id = call_id;
+                self.container_list.add_tool_call(tool);
                 Action::Continue
             }
-            ChatAppMsg::ToolResultDelta { name, delta } => {
+            ChatAppMsg::ToolResultDelta { name, delta, call_id } => {
                 tracing::debug!(
                     tool_name = %name,
+                    ?call_id,
                     delta_len = delta.len(),
                     "Received ToolResultDelta"
                 );
-                self.container_list.update_tool(&name, |t| {
+                self.container_list.update_tool(&name, call_id.as_deref(), |t| {
                     t.append_output(&delta);
                 });
                 self.maybe_spill_tool_output(&name);
                 Action::Continue
             }
-            ChatAppMsg::ToolResultComplete { name } => {
-                tracing::debug!(tool_name = %name, "Received ToolResultComplete");
+            ChatAppMsg::ToolResultComplete { name, call_id } => {
+                tracing::debug!(tool_name = %name, ?call_id, "Received ToolResultComplete");
                 self.maybe_spill_tool_output(&name);
-                self.container_list.update_tool(&name, |t| {
+                self.container_list.update_tool(&name, call_id.as_deref(), |t| {
                     t.mark_complete();
                 });
                 Action::Continue
             }
-            ChatAppMsg::ToolResultError { name, error } => {
-                tracing::debug!(tool_name = %name, error = %error, "Received ToolResultError");
-                self.container_list.update_tool(&name, |t| {
+            ChatAppMsg::ToolResultError { name, error, call_id } => {
+                tracing::debug!(tool_name = %name, ?call_id, error = %error, "Received ToolResultError");
+                self.container_list.update_tool(&name, call_id.as_deref(), |t| {
                     t.set_error(error);
                 });
                 Action::Continue
@@ -2557,6 +2568,7 @@ mod tests {
         app.on_message(ChatAppMsg::ToolCall {
             name: "Read".to_string(),
             args: r#"{"path":"file.md","offset":10}"#.to_string(),
+            call_id: None,
         });
         let tool = app.container_list().find_tool("Read").unwrap();
         assert_eq!(tool.name.as_ref(), "Read");
@@ -2565,6 +2577,7 @@ mod tests {
         app.on_message(ChatAppMsg::ToolResultDelta {
             name: "Read".to_string(),
             delta: "line 1\n".to_string(),
+                call_id: None,
         });
         let tool = app.container_list().find_tool("Read").unwrap();
         assert_eq!(tool.result(), "line 1");
@@ -2572,13 +2585,13 @@ mod tests {
         app.on_message(ChatAppMsg::ToolResultDelta {
             name: "Read".to_string(),
             delta: "line 2\n".to_string(),
+                call_id: None,
         });
         let tool = app.container_list().find_tool("Read").unwrap();
         assert_eq!(tool.result(), "line 1\nline 2");
 
-        app.on_message(ChatAppMsg::ToolResultComplete {
-            name: "Read".to_string(),
-        });
+        app.on_message(ChatAppMsg::ToolResultComplete { name: "Read".to_string(),
+                call_id: None });
         let tool = app.container_list().find_tool("Read").unwrap();
         assert!(tool.complete);
     }
@@ -2664,6 +2677,7 @@ mod tests {
         app.on_message(ChatAppMsg::ToolCall {
             name: "read_file".to_string(),
             args: r#"{"path":"README.md","offset":1,"limit":200}"#.to_string(),
+            call_id: None,
         });
 
         let focus = FocusContext::new();
@@ -2677,6 +2691,7 @@ mod tests {
         app.on_message(ChatAppMsg::ToolResultDelta {
             name: "read_file".to_string(),
             delta: "# README\nThis is the content.".to_string(),
+                call_id: None,
         });
 
         let node = app.view(&ctx);
@@ -2686,9 +2701,8 @@ mod tests {
             "should show streaming output while running"
         );
 
-        app.on_message(ChatAppMsg::ToolResultComplete {
-            name: "read_file".to_string(),
-        });
+        app.on_message(ChatAppMsg::ToolResultComplete { name: "read_file".to_string(),
+                call_id: None });
 
         let node = app.view(&ctx);
         let output = render_to_string(&node, 80);
