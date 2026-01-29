@@ -2072,6 +2072,13 @@ impl OilChatApp {
             );
         }
 
+        // When graduated content exists above in stdout, insert a spacer line
+        // so the viewport starts with a blank line (visual separation from
+        // the graduated user prompt / previous content).
+        if self.container_list.viewport_start_index() > 0 {
+            nodes.insert(0, text(" "));
+        }
+
         col(nodes)
     }
 
