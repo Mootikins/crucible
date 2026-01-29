@@ -8,12 +8,13 @@
 //! - SystemMessage: System-level messages
 
 use crate::tui::oil::components::{
-    render_subagent, render_thinking_block, render_tool_call_with_frame, render_user_prompt,
+    render_shell_execution, render_subagent, render_thinking_block, render_tool_call_with_frame,
+    render_user_prompt,
 };
 use crate::tui::oil::markdown::{markdown_to_node_styled, Margins, RenderStyle};
 use crate::tui::oil::node::{col, scrollback, Node};
 use crate::tui::oil::style::Padding;
-use crate::tui::oil::viewport_cache::{CachedSubagent, CachedToolCall};
+use crate::tui::oil::viewport_cache::{CachedShellExecution, CachedSubagent, CachedToolCall};
 
 /// A block of thinking content with token count.
 #[derive(Debug, Clone)]
@@ -57,6 +58,12 @@ pub enum ChatContainer {
         subagent: CachedSubagent,
     },
 
+    /// Shell command execution
+    ShellExecution {
+        id: String,
+        shell: CachedShellExecution,
+    },
+
     /// System-level message (info, warnings)
     SystemMessage { id: String, content: String },
 }
@@ -69,6 +76,7 @@ impl ChatContainer {
             Self::AssistantResponse { id, .. } => id,
             Self::ToolGroup { id, .. } => id,
             Self::Subagent { id, .. } => id,
+            Self::ShellExecution { id, .. } => id,
             Self::SystemMessage { id, .. } => id,
         }
     }
@@ -86,6 +94,7 @@ impl ChatContainer {
                     SubagentStatus::Completed | SubagentStatus::Failed
                 )
             }
+            Self::ShellExecution { .. } => true,
             Self::SystemMessage { .. } => true,
         }
     }
@@ -143,6 +152,11 @@ impl ChatContainer {
                 } else {
                     content
                 }
+            }
+
+            Self::ShellExecution { id, shell } => {
+                let content = render_shell_execution(shell);
+                scrollback(id.clone(), [content])
             }
 
             Self::SystemMessage { id, content } => {
@@ -279,6 +293,9 @@ pub struct ContainerList {
     current_response_idx: Option<usize>,
     /// If true, next response created is a continuation (no bullet)
     next_response_is_continuation: bool,
+    /// Whether the assistant turn is active (streaming). This stays true
+    /// across tool calls until explicitly completed or cancelled.
+    turn_active: bool,
 }
 
 impl Default for ContainerList {
@@ -295,6 +312,7 @@ impl ContainerList {
             id_counter: 0,
             current_response_idx: None,
             next_response_is_continuation: false,
+            turn_active: false,
         }
     }
 
@@ -328,6 +346,7 @@ impl ContainerList {
             is_continuation,
         });
         self.current_response_idx = Some(idx);
+        self.turn_active = true;
         self.containers.last().unwrap().id()
     }
 
@@ -459,7 +478,7 @@ impl ContainerList {
         }
     }
 
-    /// Mark the current assistant response as complete.
+    /// Mark the current assistant response as complete and end the turn.
     pub fn complete_response(&mut self) {
         if let Some(idx) = self.current_response_idx.take() {
             if let Some(ChatContainer::AssistantResponse { complete, .. }) =
@@ -468,6 +487,7 @@ impl ContainerList {
                 *complete = true;
             }
         }
+        self.turn_active = false;
     }
 
     /// Add a tool call.
@@ -607,12 +627,155 @@ impl ContainerList {
         self.containers.len()
     }
 
+    /// Whether the assistant turn is active (streaming, tool calls, etc.)
+    pub fn is_streaming(&self) -> bool {
+        self.turn_active
+    }
+
+    /// Mark the turn as active without starting an assistant response.
+    /// Used when a tool call or subagent starts before any text.
+    pub fn mark_turn_active(&mut self) {
+        self.turn_active = true;
+    }
+
+    /// Cancel streaming without completing the response.
+    pub fn cancel_streaming(&mut self) {
+        self.current_response_idx = None;
+        self.turn_active = false;
+    }
+
+    /// Add a shell execution record.
+    pub fn add_shell_execution(&mut self, shell: CachedShellExecution) {
+        let id = self.next_id("shell");
+        self.containers
+            .push(ChatContainer::ShellExecution { id, shell });
+    }
+
+    /// Find the most recent tool with the given name.
+    pub fn find_tool(&self, name: &str) -> Option<&CachedToolCall> {
+        for container in self.containers.iter().rev() {
+            if let ChatContainer::ToolGroup { tools, .. } = container {
+                if let Some(tool) = tools.iter().rev().find(|t| t.name.as_ref() == name) {
+                    return Some(tool);
+                }
+            }
+        }
+        None
+    }
+
+    /// Find the most recent tool with the given name (mutable).
+    pub fn find_tool_mut(&mut self, name: &str) -> Option<&mut CachedToolCall> {
+        for container in self.containers.iter_mut().rev() {
+            if let ChatContainer::ToolGroup { tools, .. } = container {
+                if let Some(tool) = tools.iter_mut().rev().find(|t| t.name.as_ref() == name) {
+                    return Some(tool);
+                }
+            }
+        }
+        None
+    }
+
+    /// Check whether a tool's output should be spilled to a file.
+    pub fn tool_should_spill(&self, name: &str) -> bool {
+        self.find_tool(name)
+            .map(|t| t.should_spill_to_file())
+            .unwrap_or(false)
+    }
+
+    /// Get the full output of a tool by name.
+    pub fn get_tool_output(&self, name: &str) -> Option<String> {
+        self.find_tool(name).map(|t| t.result())
+    }
+
+    /// Set the output file path for a tool by name.
+    pub fn set_tool_output_path(&mut self, name: &str, path: std::path::PathBuf) {
+        if let Some(tool) = self.find_tool_mut(name) {
+            tool.set_output_path(path);
+        }
+    }
+
+    /// Format all containers for export as markdown.
+    pub fn format_for_export(&self) -> String {
+        use crate::tui::oil::viewport_cache::SubagentStatus;
+        use std::fmt::Write;
+
+        let mut output = String::from("# Chat Session Export\n\n");
+
+        for container in &self.containers {
+            match container {
+                ChatContainer::UserMessage { content, .. } => {
+                    let _ = writeln!(output, "## User\n\n{}\n", content);
+                }
+                ChatContainer::AssistantResponse { blocks, .. } => {
+                    let combined = blocks.join("\n\n");
+                    if !combined.is_empty() {
+                        let _ = writeln!(output, "## Assistant\n\n{}\n", combined);
+                    }
+                }
+                ChatContainer::ToolGroup { tools, .. } => {
+                    for tool in tools {
+                        let _ = writeln!(output, "### Tool: {}\n", tool.name);
+                        if !tool.args.is_empty() {
+                            let _ = writeln!(output, "```json\n{}\n```\n", tool.args);
+                        }
+                        let result_str = tool.result();
+                        if !result_str.is_empty() {
+                            let _ =
+                                writeln!(output, "**Result:**\n```\n{}\n```\n", result_str);
+                        }
+                    }
+                }
+                ChatContainer::Subagent { subagent, .. } => {
+                    let status = match subagent.status {
+                        SubagentStatus::Running => "running",
+                        SubagentStatus::Completed => "completed",
+                        SubagentStatus::Failed => "failed",
+                    };
+                    let _ = writeln!(output, "### Subagent: {} ({})\n", subagent.id, status);
+                    let prompt_preview = if subagent.prompt.len() > 100 {
+                        format!("{}...", &subagent.prompt[..100])
+                    } else {
+                        subagent.prompt.to_string()
+                    };
+                    let _ = writeln!(output, "Prompt: {}\n", prompt_preview);
+                    if let Some(ref summary) = subagent.summary {
+                        let _ = writeln!(output, "Result: {}\n", summary);
+                    }
+                    if let Some(ref error) = subagent.error {
+                        let _ = writeln!(output, "Error: {}\n", error);
+                    }
+                }
+                ChatContainer::ShellExecution { shell, .. } => {
+                    let _ = writeln!(
+                        output,
+                        "### Shell: `{}`\n\nExit code: {}\n",
+                        shell.command, shell.exit_code
+                    );
+                    if !shell.output_tail.is_empty() {
+                        output.push_str("```\n");
+                        for line in &shell.output_tail {
+                            output.push_str(line);
+                            output.push('\n');
+                        }
+                        output.push_str("```\n\n");
+                    }
+                }
+                ChatContainer::SystemMessage { content, .. } => {
+                    let _ = writeln!(output, "> {}\n", content.replace('\n', "\n> "));
+                }
+            }
+        }
+
+        output
+    }
+
     /// Clear all containers.
     pub fn clear(&mut self) {
         self.containers.clear();
         self.viewport_start = 0;
         self.current_response_idx = None;
         self.next_response_is_continuation = false;
+        self.turn_active = false;
     }
 }
 
@@ -1044,5 +1207,82 @@ mod tests {
             checkmark_count,
             combined
         );
+    }
+
+    #[test]
+    fn test_is_streaming() {
+        let mut list = ContainerList::new();
+        assert!(!list.is_streaming());
+
+        list.start_assistant_response();
+        assert!(list.is_streaming());
+
+        list.complete_response();
+        assert!(!list.is_streaming());
+    }
+
+    #[test]
+    fn test_cancel_streaming() {
+        let mut list = ContainerList::new();
+        list.start_assistant_response();
+        assert!(list.is_streaming());
+
+        list.cancel_streaming();
+        assert!(!list.is_streaming());
+    }
+
+    #[test]
+    fn test_shell_execution() {
+        let mut list = ContainerList::new();
+        let shell =
+            CachedShellExecution::new("s1", "ls -la", 0, vec!["file.rs".to_string()], None);
+        list.add_shell_execution(shell);
+
+        assert_eq!(list.len(), 1);
+        assert!(matches!(
+            &list.containers[0],
+            ChatContainer::ShellExecution { .. }
+        ));
+        assert!(list.containers[0].is_complete());
+    }
+
+    #[test]
+    fn test_find_tool() {
+        use std::time::Instant;
+
+        let mut list = ContainerList::new();
+        let tool = CachedToolCall {
+            id: "t1".to_string(),
+            name: std::sync::Arc::from("read_file"),
+            args: std::sync::Arc::from("{}"),
+            output_tail: std::collections::VecDeque::new(),
+            output_path: None,
+            output_total_bytes: 0,
+            error: None,
+            started_at: Instant::now(),
+            complete: false,
+        };
+        list.add_tool_call(tool);
+
+        assert!(list.find_tool("read_file").is_some());
+        assert!(list.find_tool("write_file").is_none());
+        assert!(list.tool_should_spill("read_file") == false);
+    }
+
+    #[test]
+    fn test_format_for_export() {
+        let mut list = ContainerList::new();
+        list.add_user_message("Hello".to_string());
+        list.start_assistant_response();
+        list.append_text("World");
+        list.complete_response();
+        list.add_system_message("Info".to_string());
+
+        let export = list.format_for_export();
+        assert!(export.contains("## User"));
+        assert!(export.contains("Hello"));
+        assert!(export.contains("## Assistant"));
+        assert!(export.contains("World"));
+        assert!(export.contains("> Info"));
     }
 }

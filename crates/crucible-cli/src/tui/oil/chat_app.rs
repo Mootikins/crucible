@@ -3,11 +3,9 @@ use crate::tui::oil::chat_container::ContainerList;
 use crate::tui::oil::commands::SetCommand;
 use crate::tui::oil::component::Component;
 use crate::tui::oil::components::{
-    format_streaming_output, format_tool_args, format_tool_result, render_shell_execution,
-    render_subagent, render_thinking_block, render_tool_call, render_user_prompt,
-    summarize_tool_result, Drawer, DrawerKind, InteractionModal, InteractionModalMsg,
-    InteractionModalOutput, InteractionMode, NotificationArea, ShellHistoryItem, ShellModal,
-    ShellModalMsg, ShellModalOutput, ShellStatus, StatusBar,
+    Drawer, DrawerKind, InteractionModal, InteractionModalMsg, InteractionModalOutput,
+    InteractionMode, NotificationArea, ShellHistoryItem, ShellModal, ShellModalMsg,
+    ShellModalOutput, ShellStatus, StatusBar,
 };
 use crate::tui::oil::config::{ConfigValue, ModSource, RuntimeConfig};
 use crate::tui::oil::event::{Event, InputAction, InputBuffer};
@@ -18,10 +16,7 @@ use crate::tui::oil::node::*;
 use crate::tui::oil::style::{Color, Gap, Padding, Style};
 use crate::tui::oil::theme::{colors, styles};
 use crate::tui::oil::utils::terminal_width;
-use crate::tui::oil::viewport_cache::{
-    CachedChatItem, CachedMessage, CachedShellExecution, CachedSubagent, CachedToolCall,
-    StreamSegment, ViewportCache,
-};
+use crate::tui::oil::viewport_cache::{CachedShellExecution, CachedSubagent, CachedToolCall};
 use crossterm::event::KeyCode;
 use crossterm::terminal::{EnterAlternateScreen, LeaveAlternateScreen};
 use crossterm::{cursor, execute};
@@ -157,13 +152,6 @@ pub enum Role {
     System,
 }
 
-#[derive(Debug, Clone)]
-pub struct ThinkingBlock {
-    pub message_id: String,
-    pub content: String,
-    pub token_count: usize,
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ChatMode {
     #[default]
@@ -260,9 +248,6 @@ pub struct McpServerDisplay {
 }
 
 pub struct OilChatApp {
-    /// Legacy cache - retained for backwards compatibility during migration
-    #[allow(dead_code)]
-    cache: ViewportCache,
     /// Semantic containers for chat content (container architecture)
     container_list: ContainerList,
     input: InputBuffer,
@@ -293,13 +278,11 @@ pub struct OilChatApp {
     deferred_messages: VecDeque<String>,
     available_models: Vec<String>,
     model_list_state: ModelListState,
-    last_thinking: Option<ThinkingBlock>,
     show_thinking: bool,
     runtime_config: RuntimeConfig,
     current_provider: String,
     notification_area: NotificationArea,
     interaction_modal: Option<InteractionModal>,
-    pending_pre_graduate_keys: Vec<String>,
     /// Queue of pending permission requests (request_id, request) when multiple arrive rapidly
     permission_queue: VecDeque<(String, PermRequest)>,
     /// Whether to show diff by default in permission prompts (session-scoped)
@@ -311,7 +294,6 @@ pub struct OilChatApp {
 impl Default for OilChatApp {
     fn default() -> Self {
         Self {
-            cache: ViewportCache::new(),
             container_list: ContainerList::new(),
             input: InputBuffer::new(),
             spinner_frame: 0,
@@ -341,13 +323,11 @@ impl Default for OilChatApp {
             deferred_messages: VecDeque::new(),
             available_models: Vec::new(),
             model_list_state: ModelListState::NotLoaded,
-            last_thinking: None,
             show_thinking: true,
             runtime_config: RuntimeConfig::empty(),
             current_provider: "local".to_string(),
             notification_area: NotificationArea::new(),
             interaction_modal: None,
-            pending_pre_graduate_keys: Vec::new(),
             permission_queue: VecDeque::new(),
             perm_show_diff: true,
             perm_autoconfirm_session: false,
@@ -423,28 +403,22 @@ impl App for OilChatApp {
                 Action::Continue
             }
             ChatAppMsg::TextDelta(delta) => {
-                if !self.cache.is_streaming() {
-                    self.cache.start_streaming();
-                    // Phase 2: Start new assistant response in container list
+                if !self.container_list.is_streaming() {
                     self.container_list.start_assistant_response();
                 }
-                self.cache.append_streaming(&delta);
-                // Phase 2: Also append to container list
                 self.container_list.append_text(&delta);
                 Action::Continue
             }
             ChatAppMsg::ThinkingDelta(delta) => {
-                if !self.cache.is_streaming() {
-                    self.cache.start_streaming();
+                if !self.container_list.is_streaming() {
+                    self.container_list.start_assistant_response();
                 }
-                self.cache.append_streaming_thinking(&delta);
-                // Phase 2: Also append to container list
                 self.container_list.append_thinking(&delta);
                 Action::Continue
             }
             ChatAppMsg::ToolCall { name, args } => {
-                if !self.cache.is_streaming() {
-                    self.cache.start_streaming();
+                if !self.container_list.is_streaming() {
+                    self.container_list.mark_turn_active();
                 }
                 self.message_counter += 1;
                 let tool_id = format!("tool-{}", self.message_counter);
@@ -452,11 +426,8 @@ impl App for OilChatApp {
                     tool_name = %name,
                     args_len = args.len(),
                     counter = self.message_counter,
-                    "Adding ToolCall to cache"
+                    "Adding ToolCall"
                 );
-                self.cache.push_streaming_tool_call(tool_id.clone());
-                self.cache.push_tool_call(tool_id.clone(), &name, &args);
-                // Phase 2: Also add to container list
                 self.container_list
                     .add_tool_call(CachedToolCall::new(tool_id, &name, &args));
                 Action::Continue
@@ -465,22 +436,17 @@ impl App for OilChatApp {
                 tracing::debug!(
                     tool_name = %name,
                     delta_len = delta.len(),
-                    items_count = self.cache.item_count(),
                     "Received ToolResultDelta"
                 );
-                self.cache.append_tool_output(&name, &delta);
-                self.maybe_spill_tool_output(&name);
-                // Phase 2: Also update tool in container list
                 self.container_list.update_tool(&name, |t| {
                     t.append_output(&delta);
                 });
+                self.maybe_spill_tool_output(&name);
                 Action::Continue
             }
             ChatAppMsg::ToolResultComplete { name } => {
                 tracing::debug!(tool_name = %name, "Received ToolResultComplete");
                 self.maybe_spill_tool_output(&name);
-                self.cache.complete_tool(&name);
-                // Phase 2: Also mark complete in container list
                 self.container_list.update_tool(&name, |t| {
                     t.mark_complete();
                 });
@@ -488,8 +454,6 @@ impl App for OilChatApp {
             }
             ChatAppMsg::ToolResultError { name, error } => {
                 tracing::debug!(tool_name = %name, error = %error, "Received ToolResultError");
-                self.cache.set_tool_error(&name, error.clone());
-                // Phase 2: Also set error in container list
                 self.container_list.update_tool(&name, |t| {
                     t.set_error(error);
                 });
@@ -516,7 +480,7 @@ impl App for OilChatApp {
             }
             ChatAppMsg::Error(msg) => {
                 self.error = Some(msg);
-                self.cache.cancel_streaming();
+                self.container_list.cancel_streaming();
                 Action::Continue
             }
             ChatAppMsg::Status(status) => {
@@ -560,26 +524,20 @@ impl App for OilChatApp {
             ChatAppMsg::SetTemperature(_) => Action::Continue,
             ChatAppMsg::SetMaxTokens(_) => Action::Continue,
             ChatAppMsg::SubagentSpawned { id, prompt } => {
-                if !self.cache.is_streaming() {
-                    self.cache.start_streaming();
+                if !self.container_list.is_streaming() {
+                    self.container_list.mark_turn_active();
                 }
-                self.cache.push_subagent(id.clone(), &prompt);
-                // Phase 2: Also add to container list
                 self.container_list
                     .add_subagent(CachedSubagent::new(id, &prompt));
                 Action::Continue
             }
             ChatAppMsg::SubagentCompleted { id, summary } => {
-                self.cache.complete_subagent(&id, &summary);
-                // Phase 2: Also update in container list
                 self.container_list.update_subagent(&id, |s| {
                     s.mark_completed(&summary);
                 });
                 Action::Continue
             }
             ChatAppMsg::SubagentFailed { id, error } => {
-                self.cache.fail_subagent(&id, &error);
-                // Phase 2: Also update in container list
                 self.container_list.update_subagent(&id, |s| {
                     s.mark_failed(&error);
                 });
@@ -763,18 +721,26 @@ impl OilChatApp {
 
     pub fn mark_graduated(&mut self, ids: impl IntoIterator<Item = String>) {
         let ids: Vec<String> = ids.into_iter().collect();
-        self.cache.mark_graduated(ids.iter().cloned());
         self.container_list.graduate(&ids);
     }
 
     pub fn load_previous_messages(&mut self, items: Vec<ChatItem>) {
-        self.cache.clear();
-        for item in items {
+        self.container_list.clear();
+        for item in &items {
             match item {
-                ChatItem::Message { id, role, content } => {
-                    self.cache
-                        .push_message(CachedMessage::new(id, role, content));
-                }
+                ChatItem::Message { role, content, .. } => match role {
+                    Role::User => {
+                        self.container_list.add_user_message(content.clone());
+                    }
+                    Role::Assistant => {
+                        self.container_list.start_assistant_response();
+                        self.container_list.append_text(content);
+                        self.container_list.complete_response();
+                    }
+                    Role::System => {
+                        self.container_list.add_system_message(content.clone());
+                    }
+                },
                 ChatItem::ToolCall {
                     id,
                     name,
@@ -782,13 +748,14 @@ impl OilChatApp {
                     result,
                     complete,
                 } => {
-                    self.cache.push_tool_call(id, &name, &args);
+                    let mut tool = CachedToolCall::new(id, name, args);
                     if !result.is_empty() {
-                        self.cache.append_tool_output(&name, &result);
+                        tool.append_output(result);
                     }
-                    if complete {
-                        self.cache.complete_tool(&name);
+                    if *complete {
+                        tool.complete = true;
                     }
+                    self.container_list.add_tool_call(tool);
                 }
                 ChatItem::ShellExecution {
                     id,
@@ -797,17 +764,18 @@ impl OilChatApp {
                     output_tail,
                     output_path,
                 } => {
-                    self.cache.push_shell_execution(
-                        id,
-                        &command,
-                        exit_code,
-                        output_tail,
-                        output_path,
-                    );
+                    self.container_list
+                        .add_shell_execution(CachedShellExecution::new(
+                            id,
+                            command,
+                            *exit_code,
+                            output_tail.clone(),
+                            output_path.clone(),
+                        ));
                 }
             }
         }
-        self.message_counter = self.cache.item_count();
+        self.message_counter = self.container_list.len();
     }
 
     fn push_shell_history(&mut self, cmd: String) {
@@ -818,7 +786,7 @@ impl OilChatApp {
     }
 
     pub fn is_streaming(&self) -> bool {
-        self.cache.is_streaming()
+        self.container_list.is_streaming()
     }
 
     pub fn input_content(&self) -> &str {
@@ -904,10 +872,6 @@ impl OilChatApp {
 
     pub fn take_needs_full_redraw(&mut self) -> bool {
         std::mem::take(&mut self.needs_full_redraw)
-    }
-
-    pub fn take_pending_pre_graduate_keys(&mut self) -> Vec<String> {
-        std::mem::take(&mut self.pending_pre_graduate_keys)
     }
 
     fn handle_key(&mut self, key: crossterm::event::KeyEvent) -> Action<ChatAppMsg> {
@@ -1276,7 +1240,6 @@ impl OilChatApp {
         }
 
         self.add_user_message(content);
-        self.cache.start_streaming();
         self.status = "Thinking...".to_string();
 
         Action::Continue
@@ -1389,7 +1352,7 @@ impl OilChatApp {
                 }
             }
             "clear" => {
-                self.cache.clear();
+                self.container_list.clear();
                 self.message_counter = 0;
                 self.status = "Cleared".to_string();
                 Action::Send(ChatAppMsg::ClearHistory)
@@ -1700,72 +1663,7 @@ impl OilChatApp {
     }
 
     fn format_session_for_export(&self) -> String {
-        use std::fmt::Write;
-
-        let mut output = String::from("# Chat Session Export\n\n");
-
-        for item in self.cache.items() {
-            match item {
-                CachedChatItem::Message(msg) => {
-                    match msg.role {
-                        Role::User => writeln!(output, "## User\n\n{}\n", msg.content()),
-                        Role::Assistant => writeln!(output, "## Assistant\n\n{}\n", msg.content()),
-                        Role::System => {
-                            writeln!(output, "> {}\n", msg.content().replace('\n', "\n> "))
-                        }
-                    }
-                    .ok();
-                }
-                CachedChatItem::ToolCall(tool) => {
-                    let _ = writeln!(output, "### Tool: {}\n", tool.name);
-                    if !tool.args.is_empty() {
-                        let _ = writeln!(output, "```json\n{}\n```\n", tool.args);
-                    }
-                    let result_str = tool.result();
-                    if !result_str.is_empty() {
-                        let _ = writeln!(output, "**Result:**\n```\n{}\n```\n", result_str);
-                    }
-                }
-                CachedChatItem::ShellExecution(shell) => {
-                    let _ = writeln!(
-                        output,
-                        "### Shell: `{}`\n\nExit code: {}\n",
-                        shell.command, shell.exit_code
-                    );
-                    if !shell.output_tail.is_empty() {
-                        output.push_str("```\n");
-                        shell.output_tail.iter().for_each(|line| {
-                            output.push_str(line);
-                            output.push('\n');
-                        });
-                        output.push_str("```\n\n");
-                    }
-                }
-                CachedChatItem::Subagent(subagent) => {
-                    use crate::tui::oil::viewport_cache::SubagentStatus;
-                    let status = match subagent.status {
-                        SubagentStatus::Running => "running",
-                        SubagentStatus::Completed => "completed",
-                        SubagentStatus::Failed => "failed",
-                    };
-                    let _ = writeln!(output, "### Subagent: {} ({})\n", subagent.id, status);
-                    let prompt_preview = if subagent.prompt.len() > 100 {
-                        format!("{}...", &subagent.prompt[..100])
-                    } else {
-                        subagent.prompt.to_string()
-                    };
-                    let _ = writeln!(output, "Prompt: {}\n", prompt_preview);
-                    if let Some(ref summary) = subagent.summary {
-                        let _ = writeln!(output, "Result: {}\n", summary);
-                    }
-                    if let Some(ref error) = subagent.error {
-                        let _ = writeln!(output, "Error: {}\n", error);
-                    }
-                }
-            }
-        }
-
-        output
+        self.container_list.format_for_export()
     }
 
     fn handle_mcp_command(&mut self) {
@@ -1843,13 +1741,14 @@ impl OilChatApp {
                 self.save_shell_output();
 
                 self.message_counter += 1;
-                self.cache.push_shell_execution(
-                    format!("shell-{}", self.message_counter),
-                    &history_item.command,
-                    history_item.exit_code,
-                    history_item.output_tail,
-                    history_item.output_path,
-                );
+                self.container_list
+                    .add_shell_execution(CachedShellExecution::new(
+                        format!("shell-{}", self.message_counter),
+                        &history_item.command,
+                        history_item.exit_code,
+                        history_item.output_tail,
+                        history_item.output_path,
+                    ));
 
                 self.shell_modal = None;
                 self.leave_alternate_screen();
@@ -1942,13 +1841,14 @@ impl OilChatApp {
 
     fn close_shell_modal_with_history(&mut self, history_item: ShellHistoryItem) {
         self.message_counter += 1;
-        self.cache.push_shell_execution(
-            format!("shell-{}", self.message_counter),
-            &history_item.command,
-            history_item.exit_code,
-            history_item.output_tail,
-            history_item.output_path,
-        );
+        self.container_list
+            .add_shell_execution(CachedShellExecution::new(
+                format!("shell-{}", self.message_counter),
+                &history_item.command,
+                history_item.exit_code,
+                history_item.output_tail,
+                history_item.output_path,
+            ));
         self.shell_modal = None;
         self.leave_alternate_screen();
     }
@@ -1973,7 +1873,7 @@ impl OilChatApp {
     }
 
     fn maybe_spill_tool_output(&mut self, name: &str) {
-        if !self.cache.tool_should_spill(name) {
+        if !self.container_list.tool_should_spill(name) {
             return;
         }
 
@@ -1996,12 +1896,12 @@ impl OilChatApp {
         let filename = format!("{}-{}.txt", timestamp, name_slug);
         let path = tool_dir.join(&filename);
 
-        if let Some(output) = self.cache.get_tool_output(name) {
+        if let Some(output) = self.container_list.get_tool_output(name) {
             if let Err(e) = std::fs::write(&path, &output) {
                 tracing::error!(path = %path.display(), error = %e, "Failed to write tool output");
                 return;
             }
-            self.cache.set_tool_output_path(name, path);
+            self.container_list.set_tool_output_path(name, path);
         }
     }
 
@@ -2090,41 +1990,18 @@ impl OilChatApp {
     }
 
     fn add_user_message(&mut self, content: String) {
-        self.last_thinking = None;
         self.message_counter += 1;
-        self.cache.push_message(CachedMessage::new(
-            format!("user-{}", self.message_counter),
-            Role::User,
-            content.clone(),
-        ));
-        // Phase 2: Also populate container list
         self.container_list.add_user_message(content);
     }
 
     fn add_system_message(&mut self, content: String) {
         self.message_counter += 1;
-        self.cache.push_message(CachedMessage::new(
-            format!("system-{}", self.message_counter),
-            Role::System,
-            content.clone(),
-        ));
-        // Phase 2: Also populate container list
         self.container_list.add_system_message(content);
     }
 
     fn finalize_streaming(&mut self) {
-        if self.cache.is_streaming() {
+        if self.container_list.is_streaming() {
             self.message_counter += 1;
-            let msg_id = format!("assistant-{}", self.message_counter);
-            // Complete streaming in legacy cache (kept for compatibility)
-            let _result = self
-                .cache
-                .complete_streaming(msg_id.clone(), Role::Assistant);
-
-            // Container IDs are stable, so we don't need pre_graduate_keys
-            self.last_thinking = None;
-
-            // Mark current response as complete in container list
             self.container_list.complete_response();
         }
 
@@ -2134,7 +2011,6 @@ impl OilChatApp {
     fn process_deferred_queue(&mut self) -> Action<ChatAppMsg> {
         if let Some(queued) = self.deferred_messages.pop_front() {
             self.add_user_message(queued.clone());
-            self.cache.start_streaming();
             self.status = "Thinking...".to_string();
             Action::Send(ChatAppMsg::UserMessage(queued))
         } else {
@@ -2142,7 +2018,7 @@ impl OilChatApp {
         }
     }
 
-    /// Render chat content using the container-based architecture (Phase 2).
+    /// Render chat content using the container-based architecture.
     ///
     /// This renders all viewport containers (non-graduated) in order.
     /// Each container is wrapped in scrollback with its stable ID.
@@ -2160,206 +2036,6 @@ impl OilChatApp {
             .collect();
 
         col(nodes)
-    }
-
-    fn render_items(&self) -> Node {
-        let items: Vec<_> = if self.cache.is_streaming() {
-            self.cache.ungraduated_items_before_streaming().collect()
-        } else {
-            self.cache.ungraduated_items().collect()
-        };
-        self.render_item_sequence(&items)
-    }
-
-    fn render_item_sequence(&self, items: &[&CachedChatItem]) -> Node {
-        let mut nodes = Vec::with_capacity(items.len());
-        let mut had_assistant_message = false;
-
-        for item in items {
-            let node = match item {
-                CachedChatItem::Message(msg) => {
-                    let is_continuation = msg.role == Role::Assistant && had_assistant_message;
-                    if msg.role == Role::Assistant {
-                        had_assistant_message = true;
-                    }
-                    self.render_message_with_continuation(msg, is_continuation)
-                }
-                CachedChatItem::ToolCall(tool) => render_tool_call(tool),
-                CachedChatItem::ShellExecution(shell) => render_shell_execution(shell),
-                CachedChatItem::Subagent(subagent) => render_subagent(subagent, self.spinner_frame),
-            };
-            nodes.push(node);
-        }
-
-        col(nodes)
-    }
-
-    fn render_message(&self, msg: &CachedMessage) -> Node {
-        self.render_message_with_continuation(msg, false)
-    }
-
-    fn render_message_with_continuation(&self, msg: &CachedMessage, is_continuation: bool) -> Node {
-        let term_width = terminal_width();
-        let content_node = match msg.role {
-            Role::User => render_user_prompt(msg.content(), term_width),
-            Role::Assistant => {
-                let margins = if is_continuation {
-                    Margins::assistant_continuation()
-                } else {
-                    Margins::assistant()
-                };
-                let style = RenderStyle::natural_with_margins(term_width, margins);
-                let md_node = markdown_to_node_styled(msg.content(), style);
-
-                let thinking_for_this_msg = self
-                    .last_thinking
-                    .as_ref()
-                    .filter(|tb| tb.message_id == msg.id);
-
-                match thinking_for_this_msg {
-                    Some(tb) => {
-                        let thinking_node =
-                            render_thinking_block(&tb.content, tb.token_count, term_width);
-                        col([text(""), thinking_node, md_node, text("")])
-                    }
-                    None => col([text(""), md_node, text("")]),
-                }
-            }
-            Role::System => col([
-                text(""),
-                styled(format!(" * {} ", msg.content()), styles::system_message()),
-            ]),
-        };
-        scrollback(&msg.id, [content_node])
-    }
-
-    fn render_streaming(&self) -> Node {
-        when(self.cache.is_streaming(), {
-            let term_width = terminal_width();
-            let spinner_indent = " ";
-
-            let segments = self.cache.streaming_segments().unwrap_or(&[]);
-            let graduated_blocks = self.cache.streaming_graduated_blocks().unwrap_or(&[]);
-            let in_progress_content = self.cache.streaming_in_progress_content().unwrap_or("");
-            let current_thinking = self.cache.streaming_current_thinking().unwrap_or("");
-            let thinking_tokens = self.cache.streaming_thinking_token_count();
-
-            let mut nodes: Vec<Node> = Vec::new();
-            let mut text_block_count = 0;
-            let mut has_tool_calls = false;
-
-            for (seg_idx, segment) in segments.iter().enumerate() {
-                match segment {
-                    StreamSegment::Text(content) => {
-                        let margins = if text_block_count == 0 {
-                            Margins::assistant()
-                        } else {
-                            Margins::assistant_continuation()
-                        };
-                        let style = RenderStyle::natural_with_margins(term_width, margins);
-                        let md_node = markdown_to_node_styled(content, style);
-                        nodes.push(scrollback(
-                            format!("streaming-seg-{}", seg_idx),
-                            [col([text(""), md_node, text("")])],
-                        ));
-                        text_block_count += 1;
-                    }
-                    StreamSegment::Thinking(content) if self.show_thinking => {
-                        let thinking_node = render_thinking_block(
-                            content,
-                            content.split_whitespace().count(),
-                            term_width,
-                        );
-                        nodes.push(scrollback(
-                            format!("streaming-think-{}", seg_idx),
-                            [col([text(""), thinking_node])],
-                        ));
-                    }
-                    StreamSegment::ToolCall(tool_id) => {
-                        if let Some(CachedChatItem::ToolCall(tool)) = self.cache.get_item(tool_id) {
-                            nodes.push(render_tool_call(tool));
-                            has_tool_calls = true;
-                        }
-                    }
-                    StreamSegment::Subagent(subagent_id) => {
-                        if let Some(CachedChatItem::Subagent(subagent)) =
-                            self.cache.get_item(subagent_id)
-                        {
-                            nodes.push(render_subagent(subagent, self.spinner_frame));
-                        }
-                    }
-                    _ => {}
-                }
-            }
-
-            for (i, block_content) in graduated_blocks.iter().enumerate() {
-                let margins = if text_block_count == 0 && i == 0 {
-                    Margins::assistant()
-                } else {
-                    Margins::assistant_continuation()
-                };
-                let style = RenderStyle::natural_with_margins(term_width, margins);
-                let md_node = markdown_to_node_styled(block_content, style);
-                nodes.push(scrollback(
-                    format!("streaming-graduated-{}", i),
-                    [col([text(""), md_node, text("")])],
-                ));
-                text_block_count += 1;
-            }
-
-            let has_graduated = text_block_count > 0 || has_tool_calls;
-
-            let in_progress_node = {
-                let margins = if has_graduated {
-                    Margins::assistant_continuation()
-                } else {
-                    Margins::assistant()
-                };
-                let style = RenderStyle::viewport_with_margins(term_width, margins);
-
-                let thinking_visible = self.show_thinking && !current_thinking.is_empty();
-                let text_visible = !in_progress_content.is_empty();
-
-                if text_visible {
-                    let content_node = markdown_to_node_styled(in_progress_content, style);
-                    col([
-                        text(""),
-                        content_node,
-                        text(""),
-                        row([text(spinner_indent), spinner(None, self.spinner_frame)]),
-                    ])
-                } else if thinking_visible {
-                    let thinking_node =
-                        render_thinking_block(current_thinking, thinking_tokens, term_width);
-                    col([
-                        text(""),
-                        thinking_node,
-                        row([
-                            text(spinner_indent),
-                            spinner(Some("Thinking...".to_string()), self.spinner_frame),
-                        ]),
-                    ])
-                } else if !has_graduated {
-                    let spinner_text = if thinking_tokens > 0 {
-                        format!("Thinking... ({} tokens)", thinking_tokens)
-                    } else {
-                        "Thinking...".to_string()
-                    };
-                    col([
-                        text(""),
-                        row([
-                            text(spinner_indent),
-                            spinner(Some(spinner_text), self.spinner_frame),
-                        ]),
-                    ])
-                } else {
-                    row([text(spinner_indent), spinner(None, self.spinner_frame)])
-                }
-            };
-
-            nodes.push(in_progress_node);
-            col(nodes)
-        })
     }
 
     fn render_error(&self) -> Node {
@@ -2781,6 +2457,7 @@ impl OilChatApp {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::tui::oil::chat_container::ChatContainer;
     use crate::tui::oil::focus::FocusContext;
     use crate::tui::oil::render::render_to_string;
 
@@ -2803,7 +2480,7 @@ mod tests {
     #[test]
     fn test_app_init() {
         let app = OilChatApp::init();
-        assert_eq!(app.cache.item_count(), 0);
+        assert!(app.container_list().is_empty());
         assert!(!app.is_streaming());
         assert_eq!(app.mode, ChatMode::Normal);
     }
@@ -2813,10 +2490,14 @@ mod tests {
         let mut app = OilChatApp::init();
         app.add_user_message("Hello".to_string());
 
-        assert_eq!(app.cache.item_count(), 1);
-        let msg = app.cache.items().next().unwrap().as_message().unwrap();
-        assert_eq!(msg.role, Role::User);
-        assert_eq!(msg.content(), "Hello");
+        assert_eq!(app.container_list().len(), 1);
+        if let ChatContainer::UserMessage { content, .. } =
+            &app.container_list().all_containers()[0]
+        {
+            assert_eq!(content, "Hello");
+        } else {
+            panic!("Expected UserMessage");
+        }
     }
 
     #[test]
@@ -2824,17 +2505,23 @@ mod tests {
         let mut app = OilChatApp::init();
 
         app.on_message(ChatAppMsg::TextDelta("Hello ".to_string()));
-        assert!(app.cache.is_streaming());
-        assert_eq!(app.cache.streaming_content(), Some("Hello "));
+        assert!(app.is_streaming());
 
         app.on_message(ChatAppMsg::TextDelta("World".to_string()));
-        assert_eq!(app.cache.streaming_content(), Some("Hello World"));
+        assert!(app.is_streaming());
 
         app.on_message(ChatAppMsg::StreamComplete);
-        assert!(!app.cache.is_streaming());
-        assert_eq!(app.cache.item_count(), 1);
-        let msg = app.cache.items().next().unwrap().as_message().unwrap();
-        assert_eq!(msg.content(), "Hello World");
+        assert!(!app.is_streaming());
+
+        // Verify content via container list
+        let containers = app.container_list().all_containers();
+        assert_eq!(containers.len(), 1);
+        if let ChatContainer::AssistantResponse { blocks, .. } = &containers[0] {
+            let combined = blocks.join("");
+            assert_eq!(combined, "Hello World");
+        } else {
+            panic!("Expected AssistantResponse");
+        }
     }
 
     #[test]
@@ -2845,8 +2532,7 @@ mod tests {
             name: "Read".to_string(),
             args: r#"{"path":"file.md","offset":10}"#.to_string(),
         });
-        assert_eq!(app.cache.item_count(), 1);
-        let tool = app.cache.items().next().unwrap().as_tool_call().unwrap();
+        let tool = app.container_list().find_tool("Read").unwrap();
         assert_eq!(tool.name.as_ref(), "Read");
         assert!(!tool.complete);
 
@@ -2854,20 +2540,20 @@ mod tests {
             name: "Read".to_string(),
             delta: "line 1\n".to_string(),
         });
-        let tool = app.cache.items().next().unwrap().as_tool_call().unwrap();
+        let tool = app.container_list().find_tool("Read").unwrap();
         assert_eq!(tool.result(), "line 1");
 
         app.on_message(ChatAppMsg::ToolResultDelta {
             name: "Read".to_string(),
             delta: "line 2\n".to_string(),
         });
-        let tool = app.cache.items().next().unwrap().as_tool_call().unwrap();
+        let tool = app.container_list().find_tool("Read").unwrap();
         assert_eq!(tool.result(), "line 1\nline 2");
 
         app.on_message(ChatAppMsg::ToolResultComplete {
             name: "Read".to_string(),
         });
-        let tool = app.cache.items().next().unwrap().as_tool_call().unwrap();
+        let tool = app.container_list().find_tool("Read").unwrap();
         assert!(tool.complete);
     }
 
@@ -2888,10 +2574,10 @@ mod tests {
         let mut app = OilChatApp::init();
 
         app.add_user_message("test".to_string());
-        assert_eq!(app.cache.item_count(), 1);
+        assert_eq!(app.container_list().len(), 1);
 
         let action = app.handle_repl_command(":clear");
-        assert_eq!(app.cache.item_count(), 0);
+        assert!(app.container_list().is_empty());
         assert!(matches!(action, Action::Send(ChatAppMsg::ClearHistory)));
     }
 
@@ -3097,26 +2783,6 @@ mod tests {
             !app.notification_area.is_empty(),
             "Notification should be added to store"
         );
-    }
-
-    #[test]
-    fn test_cache_ring_buffer_evicts_oldest() {
-        use crate::tui::oil::viewport_cache::DEFAULT_MAX_CACHED_ITEMS;
-        let mut app = OilChatApp::init();
-        let max_items = app.cache.max_items();
-
-        for i in 0..(max_items + 10) {
-            app.add_user_message(format!("Message {}", i));
-        }
-
-        assert_eq!(app.cache.item_count(), max_items);
-
-        let items: Vec<_> = app.cache.items().collect();
-        let first = items.first().unwrap().as_message().unwrap();
-        assert_eq!(first.content(), "Message 10");
-
-        let last = items.last().unwrap().as_message().unwrap();
-        assert_eq!(last.content(), format!("Message {}", max_items + 9));
     }
 
     #[test]
