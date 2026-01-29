@@ -108,17 +108,15 @@ impl ChatContainer {
                 thinking,
                 complete,
                 is_continuation,
-            } => {
-                render_assistant_blocks_with_graduation(
-                    id,
-                    blocks,
-                    thinking.as_ref(),
-                    *complete,
-                    width,
-                    show_thinking,
-                    *is_continuation,
-                )
-            }
+            } => render_assistant_blocks_with_graduation(
+                id,
+                blocks,
+                thinking.as_ref(),
+                *complete,
+                width,
+                show_thinking,
+                *is_continuation,
+            ),
 
             Self::ToolGroup { id, tools } => {
                 let content = render_tool_group(tools, spinner_frame);
@@ -310,7 +308,8 @@ impl ContainerList {
     /// Add a user message.
     pub fn add_user_message(&mut self, content: String) {
         let id = self.next_id("user");
-        self.containers.push(ChatContainer::UserMessage { id, content });
+        self.containers
+            .push(ChatContainer::UserMessage { id, content });
     }
 
     /// Start a new assistant response (called when streaming begins).
@@ -342,7 +341,10 @@ impl ContainerList {
                 // Verify it's still an open response
                 if matches!(
                     &self.containers[idx],
-                    ChatContainer::AssistantResponse { complete: false, .. }
+                    ChatContainer::AssistantResponse {
+                        complete: false,
+                        ..
+                    }
                 ) {
                     idx
                 } else {
@@ -356,7 +358,8 @@ impl ContainerList {
             }
         };
 
-        if let ChatContainer::AssistantResponse { blocks, .. } = &mut self.containers[response_idx] {
+        if let ChatContainer::AssistantResponse { blocks, .. } = &mut self.containers[response_idx]
+        {
             // Check if text contains block separators
             let parts: Vec<&str> = text.split("\n\n").collect();
 
@@ -421,7 +424,10 @@ impl ContainerList {
             Some(idx) if idx < self.containers.len() => {
                 if matches!(
                     &self.containers[idx],
-                    ChatContainer::AssistantResponse { complete: false, .. }
+                    ChatContainer::AssistantResponse {
+                        complete: false,
+                        ..
+                    }
                 ) {
                     idx
                 } else {
@@ -480,12 +486,20 @@ impl ContainerList {
         // Next text response is a continuation (no bullet)
         self.next_response_is_continuation = true;
 
-        // Check if we can add to existing tool group
-        let can_append = self
-            .containers
-            .last()
-            .map(|c| matches!(c, ChatContainer::ToolGroup { tools, .. } if tools.iter().all(|t| !t.complete)))
-            .unwrap_or(false);
+        // Check if we can add to existing tool group in the viewport
+        // Only append if:
+        // 1. The last container is a ToolGroup
+        // 2. It's still in the viewport (hasn't graduated)
+        // This keeps consecutive tools together during streaming while preventing
+        // tools from being added to already-graduated groups.
+        let can_append = if !self.containers.is_empty() {
+            let last_idx = self.containers.len() - 1;
+            let in_viewport = last_idx >= self.viewport_start;
+            let is_tool_group = matches!(self.containers.last(), Some(ChatContainer::ToolGroup { .. }));
+            in_viewport && is_tool_group
+        } else {
+            false
+        };
 
         if can_append {
             if let Some(ChatContainer::ToolGroup { tools, .. }) = self.containers.last_mut() {
@@ -504,7 +518,11 @@ impl ContainerList {
     pub fn update_tool(&mut self, tool_name: &str, f: impl FnOnce(&mut CachedToolCall)) {
         for container in self.containers.iter_mut().rev() {
             if let ChatContainer::ToolGroup { tools, .. } = container {
-                if let Some(tool) = tools.iter_mut().rev().find(|t| t.name.as_ref() == tool_name) {
+                if let Some(tool) = tools
+                    .iter_mut()
+                    .rev()
+                    .find(|t| t.name.as_ref() == tool_name)
+                {
                     f(tool);
                     return;
                 }
@@ -527,7 +545,8 @@ impl ContainerList {
         self.next_response_is_continuation = true;
 
         let id = self.next_id("subagent");
-        self.containers.push(ChatContainer::Subagent { id, subagent });
+        self.containers
+            .push(ChatContainer::Subagent { id, subagent });
     }
 
     /// Update a subagent by ID.
@@ -707,7 +726,10 @@ mod tests {
         // Render each container and verify it produces a non-empty node
         for container in list.viewport_containers() {
             let node = container.view(80, 0, false);
-            assert!(!matches!(node, Node::Empty), "Container should render non-empty");
+            assert!(
+                !matches!(node, Node::Empty),
+                "Container should render non-empty"
+            );
         }
     }
 
@@ -765,8 +787,14 @@ mod tests {
         let user_output = render_to_string(&user_node, 80);
         let asst_output = render_to_string(&asst_node, 80);
 
-        assert!(user_output.contains("Hello"), "User content should be rendered");
-        assert!(asst_output.contains("World"), "Assistant content should be rendered");
+        assert!(
+            user_output.contains("Hello"),
+            "User content should be rendered"
+        );
+        assert!(
+            asst_output.contains("World"),
+            "Assistant content should be rendered"
+        );
 
         // The IDs should be stable
         assert!(user_id.starts_with("user-"));
@@ -830,7 +858,10 @@ mod tests {
 
         // Verify tool is now complete
         if let Some(ChatContainer::ToolGroup { tools, .. }) = list.containers.last() {
-            assert!(tools[0].complete, "Tool should be complete after update_tool by name");
+            assert!(
+                tools[0].complete,
+                "Tool should be complete after update_tool by name"
+            );
         } else {
             panic!("Expected ToolGroup");
         }
@@ -839,12 +870,12 @@ mod tests {
     /// Test reproducing the property test minimal failing input
     #[test]
     fn test_tool_complete_renders_checkmark() {
+        use crate::tui::oil::ansi::strip_ansi;
         use crate::tui::oil::app::{App, ViewContext};
         use crate::tui::oil::chat_app::{ChatAppMsg, OilChatApp};
         use crate::tui::oil::focus::FocusContext;
         use crate::tui::oil::render::render_to_string;
         use crate::tui::oil::TestRuntime;
-        use crate::tui::oil::ansi::strip_ansi;
 
         let mut runtime = TestRuntime::new(80, 24);
         let mut app = OilChatApp::default();
@@ -886,18 +917,19 @@ mod tests {
         assert!(
             checkmark_count >= 1,
             "Should have at least 1 checkmark for completed tool, found {}. Output:\n{}",
-            checkmark_count, combined
+            checkmark_count,
+            combined
         );
     }
 
     /// Same test but rendering after each event like the property test
     #[test]
     fn test_tool_complete_with_incremental_rendering() {
+        use crate::tui::oil::ansi::strip_ansi;
         use crate::tui::oil::app::{App, ViewContext};
         use crate::tui::oil::chat_app::{ChatAppMsg, OilChatApp};
         use crate::tui::oil::focus::FocusContext;
         use crate::tui::oil::TestRuntime;
-        use crate::tui::oil::ansi::strip_ansi;
 
         let mut runtime = TestRuntime::new(80, 24);
         let mut app = OilChatApp::default();
@@ -935,8 +967,17 @@ mod tests {
                     ChatContainer::UserMessage { id, content } => {
                         eprintln!("{}: User({}): {:.30}", i, id, content);
                     }
-                    ChatContainer::AssistantResponse { id, blocks, is_continuation, complete, .. } => {
-                        eprintln!("{}: Asst({}, cont={}, complete={}): {:?}", i, id, is_continuation, complete, blocks);
+                    ChatContainer::AssistantResponse {
+                        id,
+                        blocks,
+                        is_continuation,
+                        complete,
+                        ..
+                    } => {
+                        eprintln!(
+                            "{}: Asst({}, cont={}, complete={}): {:?}",
+                            i, id, is_continuation, complete, blocks
+                        );
                     }
                     ChatContainer::ToolGroup { id, tools } => {
                         for t in tools {
@@ -959,8 +1000,17 @@ mod tests {
                 ChatContainer::UserMessage { id, content } => {
                     eprintln!("{}: User({}): {:.30}", i, id, content);
                 }
-                ChatContainer::AssistantResponse { id, blocks, is_continuation, complete, .. } => {
-                    eprintln!("{}: Asst({}, cont={}, complete={}): {:?}", i, id, is_continuation, complete, blocks);
+                ChatContainer::AssistantResponse {
+                    id,
+                    blocks,
+                    is_continuation,
+                    complete,
+                    ..
+                } => {
+                    eprintln!(
+                        "{}: Asst({}, cont={}, complete={}): {:?}",
+                        i, id, is_continuation, complete, blocks
+                    );
                 }
                 ChatContainer::ToolGroup { id, tools } => {
                     for t in tools {
@@ -991,7 +1041,8 @@ mod tests {
         assert!(
             checkmark_count >= 1,
             "Should have at least 1 checkmark for completed tool, found {}. Output:\n{}",
-            checkmark_count, combined
+            checkmark_count,
+            combined
         );
     }
 }
