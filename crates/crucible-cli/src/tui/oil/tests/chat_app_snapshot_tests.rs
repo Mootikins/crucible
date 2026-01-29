@@ -152,6 +152,91 @@ fn snapshot_read_tool_preserves_closing_bracket() {
     assert_snapshot!(render_app(&app));
 }
 
+/// Issue: Multiple consecutive tool calls should not have gaps between them.
+/// They should be rendered tightly grouped.
+#[test]
+fn snapshot_multiple_tools_no_gaps() {
+    let mut app = OilChatApp::default();
+    app.on_message(ChatAppMsg::UserMessage("Explore repo".to_string()));
+
+    // First tool call
+    app.on_message(ChatAppMsg::ToolCall {
+        name: "bash".to_string(),
+        args: r#"{"command":"ls -la"}"#.to_string(),
+    });
+    app.on_message(ChatAppMsg::ToolResultDelta {
+        name: "bash".to_string(),
+        delta: "file1.txt\nfile2.txt".to_string(),
+    });
+    app.on_message(ChatAppMsg::ToolResultComplete {
+        name: "bash".to_string(),
+    });
+
+    // Second tool call - should be tight against first
+    app.on_message(ChatAppMsg::ToolCall {
+        name: "read_file".to_string(),
+        args: r#"{"path":"README.md"}"#.to_string(),
+    });
+    app.on_message(ChatAppMsg::ToolResultDelta {
+        name: "read_file".to_string(),
+        delta: "# README".to_string(),
+    });
+    app.on_message(ChatAppMsg::ToolResultComplete {
+        name: "read_file".to_string(),
+    });
+
+    // Third tool call - should be tight against second
+    app.on_message(ChatAppMsg::ToolCall {
+        name: "bash".to_string(),
+        args: r#"{"command":"cat Cargo.toml"}"#.to_string(),
+    });
+    app.on_message(ChatAppMsg::ToolResultDelta {
+        name: "bash".to_string(),
+        delta: "[package]\nname = \"test\"".to_string(),
+    });
+    app.on_message(ChatAppMsg::ToolResultComplete {
+        name: "bash".to_string(),
+    });
+
+    assert_snapshot!(render_app(&app));
+}
+
+/// Issue: Text before tool call, then tool, then more text.
+/// Tools should not have excessive spacing from surrounding text.
+#[test]
+fn snapshot_text_tool_text_spacing() {
+    let mut app = OilChatApp::default();
+    app.on_message(ChatAppMsg::UserMessage(
+        "Tell me about the repo".to_string(),
+    ));
+
+    // Initial assistant text
+    app.on_message(ChatAppMsg::TextDelta(
+        "Let me explore the repository for you.".to_string(),
+    ));
+
+    // Tool call
+    app.on_message(ChatAppMsg::ToolCall {
+        name: "bash".to_string(),
+        args: r#"{"command":"ls"}"#.to_string(),
+    });
+    app.on_message(ChatAppMsg::ToolResultDelta {
+        name: "bash".to_string(),
+        delta: "README.md\nCargo.toml".to_string(),
+    });
+    app.on_message(ChatAppMsg::ToolResultComplete {
+        name: "bash".to_string(),
+    });
+
+    // Text after tool - this is continuation (no bullet)
+    app.on_message(ChatAppMsg::TextDelta(
+        "The repository contains the standard Rust project files.".to_string(),
+    ));
+    app.on_message(ChatAppMsg::StreamComplete);
+
+    assert_snapshot!(render_app(&app));
+}
+
 #[test]
 fn snapshot_error_displayed() {
     let mut app = OilChatApp::default();
