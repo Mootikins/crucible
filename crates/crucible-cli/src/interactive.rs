@@ -1,10 +1,8 @@
 //! Interactive utilities for CLI
-//!
-//! NOTE: Fuzzy matching stubbed - nucleo removed during event architecture cleanup.
-//! Uses simple substring matching as fallback.
 
 use anyhow::Result;
 use crucible_core::database::SearchResult;
+use crucible_core::fuzzy::FuzzyMatcher;
 use std::io::{self, Write};
 
 /// Compatibility wrapper for search results with display information
@@ -28,12 +26,15 @@ impl From<SearchResult> for SearchResultWithScore {
     }
 }
 
-/// Interactive picker (fuzzy matching stubbed pending event architecture)
-pub struct FuzzyPicker;
+pub struct FuzzyPicker {
+    matcher: FuzzyMatcher,
+}
 
 impl FuzzyPicker {
     pub fn new() -> Self {
-        Self
+        Self {
+            matcher: FuzzyMatcher::new(),
+        }
     }
 
     /// Pick from search results interactively
@@ -83,32 +84,8 @@ impl FuzzyPicker {
         }
     }
 
-    /// Filter items by query using simple substring matching
-    /// (nucleo fuzzy matching removed - will be reimplemented with event architecture)
     pub fn filter_items(&mut self, items: &[String], query: &str) -> Vec<(usize, u32)> {
-        let query_lower = query.to_lowercase();
-        let mut matches = Vec::new();
-
-        for (idx, item) in items.iter().enumerate() {
-            let item_lower = item.to_lowercase();
-            if query.is_empty() || item_lower.contains(&query_lower) {
-                // Score based on position (earlier = better) and length match
-                let score = if query.is_empty() {
-                    100
-                } else if item_lower == query_lower {
-                    1000 // Exact match
-                } else if item_lower.starts_with(&query_lower) {
-                    500 // Prefix match
-                } else {
-                    100 // Substring match
-                };
-                matches.push((idx, score));
-            }
-        }
-
-        // Sort by score descending
-        matches.sort_by(|a, b| b.1.cmp(&a.1));
-        matches
+        self.matcher.match_items(query, items)
     }
 }
 
