@@ -18,7 +18,9 @@ export interface ToolCallSummary {
 export interface ChatContextValue {
   messages: () => Message[];
   isLoading: () => boolean;
+  pendingInteraction: () => InteractionRequest | null;
   sendMessage: (content: string) => Promise<void>;
+  respondToInteraction: (response: InteractionResponse) => void;
   clearMessages: () => void;
 }
 
@@ -79,3 +81,63 @@ export type ChatEvent =
 
 /** SSE event type discriminator */
 export type ChatEventType = ChatEvent['type'];
+
+// =============================================================================
+// Interaction Request/Response Types (from Rust core interaction.rs)
+// =============================================================================
+
+export interface AskRequest {
+  type: 'ask';
+  id: string;
+  question: string;
+  choices?: string[];
+  multi_select?: boolean;
+  allow_other?: boolean;
+}
+
+export interface PopupEntry {
+  label: string;
+  description?: string;
+  data?: unknown;
+}
+
+export interface PopupRequest {
+  type: 'popup';
+  id: string;
+  title: string;
+  entries: PopupEntry[];
+  allow_other?: boolean;
+}
+
+export type PermActionType = 'bash' | 'read' | 'write' | 'tool';
+
+export interface PermRequest {
+  type: 'permission';
+  id: string;
+  action_type: PermActionType;
+  tokens: string[];
+  tool_name?: string;
+  tool_args?: unknown;
+}
+
+export type InteractionRequest = AskRequest | PopupRequest | PermRequest;
+
+export interface AskResponse {
+  selected: number[];
+  other?: string;
+}
+
+export interface PopupResponse {
+  selected_index?: number;
+  other?: string;
+}
+
+export type PermissionScope = 'once' | 'session' | 'project' | 'user';
+
+export interface PermResponse {
+  allowed: boolean;
+  pattern?: string;
+  scope: PermissionScope;
+}
+
+export type InteractionResponse = AskResponse | PopupResponse | PermResponse;

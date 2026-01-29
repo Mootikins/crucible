@@ -5,7 +5,13 @@ import {
   createSignal,
 } from 'solid-js';
 import { createStore } from 'solid-js/store';
-import type { Message, ChatContextValue, ChatEvent } from '@/lib/types';
+import type {
+  Message,
+  ChatContextValue,
+  ChatEvent,
+  InteractionRequest,
+  InteractionResponse,
+} from '@/lib/types';
 import { sendChatMessage, generateMessageId } from '@/lib/api';
 
 const ChatContext = createContext<ChatContextValue>();
@@ -13,6 +19,8 @@ const ChatContext = createContext<ChatContextValue>();
 export const ChatProvider: ParentComponent = (props) => {
   const [messages, setMessages] = createStore<Message[]>([]);
   const [isLoading, setIsLoading] = createSignal(false);
+  const [pendingInteraction, setPendingInteraction] =
+    createSignal<InteractionRequest | null>(null);
 
   const addMessage = (message: Message) => {
     setMessages((prev) => [...prev, message]);
@@ -110,10 +118,21 @@ export const ChatProvider: ParentComponent = (props) => {
     setMessages([]);
   };
 
+  const respondToInteraction = (response: InteractionResponse) => {
+    const request = pendingInteraction();
+    if (!request) return;
+
+    console.log('[InteractionResponse]', request.id, response);
+    setPendingInteraction(null);
+    // TODO: Send response to backend when endpoint exists
+  };
+
   const value: ChatContextValue = {
     messages: () => messages,
     isLoading,
+    pendingInteraction,
     sendMessage,
+    respondToInteraction,
     clearMessages,
   };
 
