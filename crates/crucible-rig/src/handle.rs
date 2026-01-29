@@ -651,7 +651,7 @@ where
                                             let chat_tc = ChatToolCall {
                                                 name: parsed_tc.name.clone(),
                                                 arguments: Some(args_json),
-                                                id: Some(xml_id),
+                                                id: Some(xml_id.clone()),
                                             };
                                             tool_calls.push(chat_tc.clone());
 
@@ -679,6 +679,7 @@ where
                                                         name: parsed_tc.name.clone(),
                                                         result: String::new(),
                                                         error: Some("Blocked in plan mode".to_string()),
+                                                        call_id: Some(xml_id.clone()),
                                                     }]),
                                                     reasoning: None,
                                                     usage: None,
@@ -811,6 +812,7 @@ where
                                             name: tc.function.name.clone(),
                                             result: String::new(),
                                             error: Some("Blocked in plan mode".to_string()),
+                                            call_id: tc.call_id.clone(),
                                         }]),
                                         reasoning: None,
                                         usage: None,
@@ -905,6 +907,7 @@ where
                                 name: tool_name,
                                 result: result_text,
                                 error: None, // Rig doesn't distinguish error results
+                                call_id: tr.call_id.clone(),
                             }]),
                             reasoning: None,
                             usage: None,

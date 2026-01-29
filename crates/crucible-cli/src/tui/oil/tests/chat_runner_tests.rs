@@ -342,14 +342,15 @@ fn app_handles_tool_call_from_stream() {
     app.on_message(ChatAppMsg::ToolCall {
         name: "read_file".to_string(),
         args: r#"{"path":"test.txt"}"#.to_string(),
+                call_id: None,
     });
     app.on_message(ChatAppMsg::ToolResultDelta {
         name: "read_file".to_string(),
         delta: "File contents here".to_string(),
+                call_id: None,
     });
-    app.on_message(ChatAppMsg::ToolResultComplete {
-        name: "read_file".to_string(),
-    });
+    app.on_message(ChatAppMsg::ToolResultComplete { name: "read_file".to_string(),
+                call_id: None });
     app.on_message(ChatAppMsg::StreamComplete);
 
     assert!(!app.is_streaming());
@@ -414,6 +415,7 @@ mod daemon_event_to_tui_tests {
                 msgs.push(ChatAppMsg::ToolCall {
                     name: tc.name,
                     args: args_val.to_string(),
+                call_id: None,
                 });
             }
         }
@@ -424,9 +426,10 @@ mod daemon_event_to_tui_tests {
                     msgs.push(ChatAppMsg::ToolResultDelta {
                         name: tr.name.clone(),
                         delta: tr.result,
+                call_id: None,
                     });
                 }
-                msgs.push(ChatAppMsg::ToolResultComplete { name: tr.name });
+                msgs.push(ChatAppMsg::ToolResultComplete { name: tr.name , call_id: None });
             }
         }
 
@@ -518,6 +521,7 @@ mod daemon_event_to_tui_tests {
         app.on_message(ChatAppMsg::ToolCall {
             name: "read_file".to_string(),
             args: r#"{"path":"test.rs"}"#.to_string(),
+                call_id: None,
         });
 
         let chunk = ChatChunk {
@@ -528,6 +532,7 @@ mod daemon_event_to_tui_tests {
                 name: "read_file".to_string(),
                 result: "fn main() {}".to_string(),
                 error: None,
+                call_id: None,
             }]),
             reasoning: None,
             usage: None,
@@ -708,14 +713,15 @@ mod daemon_event_to_tui_tests {
         app.on_message(ChatAppMsg::ToolCall {
             name: "glob".to_string(),
             args: r#"{"pattern":"*.rs"}"#.to_string(),
+                call_id: None,
         });
         app.on_message(ChatAppMsg::ToolResultDelta {
             name: "glob".to_string(),
             delta: "main.rs, lib.rs".to_string(),
+            call_id: None,
         });
-        app.on_message(ChatAppMsg::ToolResultComplete {
-            name: "glob".to_string(),
-        });
+        app.on_message(ChatAppMsg::ToolResultComplete { name: "glob".to_string(),
+                call_id: None });
         app.on_message(ChatAppMsg::TextDelta(" Found 2 files.".to_string()));
         app.on_message(ChatAppMsg::StreamComplete);
 
@@ -755,14 +761,15 @@ mod daemon_event_to_tui_tests {
         app.on_message(ChatAppMsg::ToolCall {
             name: "read_file".to_string(),
             args: r#"{"path":"test.rs"}"#.to_string(),
+                call_id: None,
         });
         app.on_message(ChatAppMsg::ToolResultDelta {
             name: "read_file".to_string(),
             delta: "content".to_string(),
+                call_id: None,
         });
-        app.on_message(ChatAppMsg::ToolResultComplete {
-            name: "read_file".to_string(),
-        });
+        app.on_message(ChatAppMsg::ToolResultComplete { name: "read_file".to_string(),
+                call_id: None });
         app.on_message(ChatAppMsg::StreamComplete);
 
         let focus = FocusContext::new();

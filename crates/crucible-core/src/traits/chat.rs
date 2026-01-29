@@ -102,6 +102,9 @@ pub struct ChatToolResult {
     pub result: String,
     /// Error message if tool failed
     pub error: Option<String>,
+    /// LLM-assigned call ID for matching results to the correct tool call
+    #[serde(default)]
+    pub call_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

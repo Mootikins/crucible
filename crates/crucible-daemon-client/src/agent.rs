@@ -192,7 +192,11 @@ fn session_event_to_chat_chunk(event: &SessionEvent) -> Option<ChatChunk> {
             let call_id = event.data.get("call_id").and_then(|v| v.as_str());
             let result = event.data.get("result")?;
 
-            let name = tool_name.or(call_id).unwrap_or("tool").to_string();
+            let call_id_str = call_id.map(String::from);
+            let name = tool_name
+                .map(String::from)
+                .or_else(|| call_id_str.clone())
+                .unwrap_or_else(|| "tool".to_string());
 
             let error = result
                 .get("error")
@@ -217,6 +221,7 @@ fn session_event_to_chat_chunk(event: &SessionEvent) -> Option<ChatChunk> {
                     name,
                     result: result_str,
                     error,
+                    call_id: call_id_str,
                 }]),
                 reasoning: None,
                 usage: None,

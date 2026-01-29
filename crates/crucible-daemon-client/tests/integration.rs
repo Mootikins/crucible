@@ -1295,6 +1295,7 @@ mod event_flow_tests {
                         name: call_id.unwrap_or("tool").to_string(),
                         result: result_str,
                         error: None,
+                        call_id: call_id.map(String::from),
                     }]),
                     reasoning: None,
                     usage: None,

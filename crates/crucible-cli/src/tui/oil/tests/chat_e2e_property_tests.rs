@@ -226,14 +226,14 @@ proptest! {
             app.on_message(ChatAppMsg::ToolCall {
                 name: tool.clone(),
                 args: r#"{"x": 1}"#.to_string(),
+                call_id: None,
             });
             app.on_message(ChatAppMsg::ToolResultDelta {
                 name: tool.clone(),
                 delta: format!("Result for {}", tool),
+                call_id: None,
             });
-            app.on_message(ChatAppMsg::ToolResultComplete {
-                name: tool.clone(),
-            });
+            app.on_message(ChatAppMsg::ToolResultComplete { name: tool.clone(), call_id: None });
 
             render_and_graduate(&mut runtime, &mut app);
         }
@@ -332,10 +332,10 @@ mod e2e_edge_cases {
         app.on_message(ChatAppMsg::ToolCall {
             name: "empty_tool".to_string(),
             args: "{}".to_string(),
+                call_id: None,
         });
-        app.on_message(ChatAppMsg::ToolResultComplete {
-            name: "empty_tool".to_string(),
-        });
+        app.on_message(ChatAppMsg::ToolResultComplete { name: "empty_tool".to_string(),
+                call_id: None });
         app.on_message(ChatAppMsg::TextDelta("Done".to_string()));
         app.on_message(ChatAppMsg::StreamComplete);
 

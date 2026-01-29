@@ -48,6 +48,9 @@ pub struct CachedToolCall {
     pub id: String,
     pub name: Arc<str>,
     pub args: Arc<str>,
+    /// LLM-assigned call ID for matching results to the correct tool call.
+    /// When set, tool result lookups prefer this over name-based matching.
+    pub call_id: Option<String>,
     pub output_tail: VecDeque<Arc<str>>,
     pub output_path: Option<PathBuf>,
     pub output_total_bytes: usize,
@@ -62,6 +65,7 @@ impl CachedToolCall {
             id: id.into(),
             name: Arc::from(name.as_ref()),
             args: Arc::from(args.as_ref()),
+            call_id: None,
             output_tail: VecDeque::new(),
             output_path: None,
             output_total_bytes: 0,

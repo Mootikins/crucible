@@ -146,6 +146,7 @@ impl FramePlanner {
             cursor: CursorInfo::default(),
         };
 
+
         let rendered_overlays = self.render_overlays(&overlay_nodes);
 
         let trace = FrameTrace {
@@ -184,6 +185,7 @@ impl FramePlanner {
 
         let viewport =
             render_with_cursor_filtered(&main_tree, self.width as usize, &self.graduation);
+
 
         let rendered_overlays = self.render_overlays(&overlay_nodes);
 
