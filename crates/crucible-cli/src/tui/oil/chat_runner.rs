@@ -194,12 +194,6 @@ impl OilChatRunner {
                 self.terminal.force_full_redraw()?;
             }
 
-            let pre_graduate = app.take_pending_pre_graduate_keys();
-            if !pre_graduate.is_empty() {
-                tracing::debug!(keys = ?pre_graduate, "pre-graduating keys from streaming completion");
-                self.terminal.pre_graduate_keys(pre_graduate);
-            }
-
             let ctx = ViewContext::new(&self.focus);
             let tree = app.view(&ctx);
 
