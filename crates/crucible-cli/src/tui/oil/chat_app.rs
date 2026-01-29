@@ -16,9 +16,10 @@ use crate::tui::oil::markdown::{
 use crate::tui::oil::node::*;
 use crate::tui::oil::style::{Color, Gap, Style};
 use crate::tui::oil::theme::{colors, styles};
+use crate::tui::oil::chat_container::ContainerList;
 use crate::tui::oil::viewport_cache::{
-    CachedChatItem, CachedMessage, CachedShellExecution, CachedToolCall, StreamSegment,
-    ViewportCache,
+    CachedChatItem, CachedMessage, CachedShellExecution, CachedSubagent, CachedToolCall,
+    StreamSegment, ViewportCache,
 };
 use crossterm::event::KeyCode;
 use crossterm::terminal::{EnterAlternateScreen, LeaveAlternateScreen};
@@ -258,7 +259,11 @@ pub struct McpServerDisplay {
 }
 
 pub struct OilChatApp {
+    /// Legacy cache - retained for backwards compatibility during migration
+    #[allow(dead_code)]
     cache: ViewportCache,
+    /// Semantic containers for chat content (container architecture)
+    container_list: ContainerList,
     input: InputBuffer,
     spinner_frame: usize,
     mode: ChatMode,
@@ -306,6 +311,7 @@ impl Default for OilChatApp {
     fn default() -> Self {
         Self {
             cache: ViewportCache::new(),
+            container_list: ContainerList::new(),
             input: InputBuffer::new(),
             spinner_frame: 0,
             mode: ChatMode::Normal,
@@ -381,8 +387,7 @@ impl App for OilChatApp {
         };
 
         col([
-            self.render_items(),
-            self.render_streaming(),
+            self.render_containers(),
             self.render_error(),
             spacer(),
             bottom,
@@ -417,8 +422,12 @@ impl App for OilChatApp {
             ChatAppMsg::TextDelta(delta) => {
                 if !self.cache.is_streaming() {
                     self.cache.start_streaming();
+                    // Phase 2: Start new assistant response in container list
+                    self.container_list.start_assistant_response();
                 }
                 self.cache.append_streaming(&delta);
+                // Phase 2: Also append to container list
+                self.container_list.append_text(&delta);
                 Action::Continue
             }
             ChatAppMsg::ThinkingDelta(delta) => {
@@ -426,6 +435,8 @@ impl App for OilChatApp {
                     self.cache.start_streaming();
                 }
                 self.cache.append_streaming_thinking(&delta);
+                // Phase 2: Also append to container list
+                self.container_list.append_thinking(&delta);
                 Action::Continue
             }
             ChatAppMsg::ToolCall { name, args } => {
@@ -441,7 +452,10 @@ impl App for OilChatApp {
                     "Adding ToolCall to cache"
                 );
                 self.cache.push_streaming_tool_call(tool_id.clone());
-                self.cache.push_tool_call(tool_id, &name, &args);
+                self.cache.push_tool_call(tool_id.clone(), &name, &args);
+                // Phase 2: Also add to container list
+                self.container_list
+                    .add_tool_call(CachedToolCall::new(tool_id, &name, &args));
                 Action::Continue
             }
             ChatAppMsg::ToolResultDelta { name, delta } => {
@@ -453,17 +467,29 @@ impl App for OilChatApp {
                 );
                 self.cache.append_tool_output(&name, &delta);
                 self.maybe_spill_tool_output(&name);
+                // Phase 2: Also update tool in container list
+                self.container_list.update_tool(&name, |t| {
+                    t.append_output(&delta);
+                });
                 Action::Continue
             }
             ChatAppMsg::ToolResultComplete { name } => {
                 tracing::debug!(tool_name = %name, "Received ToolResultComplete");
                 self.maybe_spill_tool_output(&name);
                 self.cache.complete_tool(&name);
+                // Phase 2: Also mark complete in container list
+                self.container_list.update_tool(&name, |t| {
+                    t.mark_complete();
+                });
                 Action::Continue
             }
             ChatAppMsg::ToolResultError { name, error } => {
                 tracing::debug!(tool_name = %name, error = %error, "Received ToolResultError");
-                self.cache.set_tool_error(&name, error);
+                self.cache.set_tool_error(&name, error.clone());
+                // Phase 2: Also set error in container list
+                self.container_list.update_tool(&name, |t| {
+                    t.set_error(error);
+                });
                 Action::Continue
             }
             ChatAppMsg::StreamComplete => {
@@ -534,15 +560,26 @@ impl App for OilChatApp {
                 if !self.cache.is_streaming() {
                     self.cache.start_streaming();
                 }
-                self.cache.push_subagent(id, &prompt);
+                self.cache.push_subagent(id.clone(), &prompt);
+                // Phase 2: Also add to container list
+                self.container_list
+                    .add_subagent(CachedSubagent::new(id, &prompt));
                 Action::Continue
             }
             ChatAppMsg::SubagentCompleted { id, summary } => {
                 self.cache.complete_subagent(&id, &summary);
+                // Phase 2: Also update in container list
+                self.container_list.update_subagent(&id, |s| {
+                    s.mark_completed(&summary);
+                });
                 Action::Continue
             }
             ChatAppMsg::SubagentFailed { id, error } => {
                 self.cache.fail_subagent(&id, &error);
+                // Phase 2: Also update in container list
+                self.container_list.update_subagent(&id, |s| {
+                    s.mark_failed(&error);
+                });
                 Action::Continue
             }
             ChatAppMsg::ToggleMessages => {
@@ -623,6 +660,12 @@ impl OilChatApp {
 
     pub fn perm_autoconfirm_session(&self) -> bool {
         self.perm_autoconfirm_session
+    }
+
+    /// Get access to the container list for testing/inspection.
+    #[cfg(test)]
+    pub fn container_list(&self) -> &ContainerList {
+        &self.container_list
     }
 
     pub fn add_notification(&mut self, notification: crucible_core::types::Notification) {
@@ -716,7 +759,9 @@ impl OilChatApp {
     }
 
     pub fn mark_graduated(&mut self, ids: impl IntoIterator<Item = String>) {
-        self.cache.mark_graduated(ids);
+        let ids: Vec<String> = ids.into_iter().collect();
+        self.cache.mark_graduated(ids.iter().cloned());
+        self.container_list.graduate(&ids);
     }
 
     pub fn load_previous_messages(&mut self, items: Vec<ChatItem>) {
@@ -2047,8 +2092,10 @@ impl OilChatApp {
         self.cache.push_message(CachedMessage::new(
             format!("user-{}", self.message_counter),
             Role::User,
-            content,
+            content.clone(),
         ));
+        // Phase 2: Also populate container list
+        self.container_list.add_user_message(content);
     }
 
     fn add_system_message(&mut self, content: String) {
@@ -2056,21 +2103,26 @@ impl OilChatApp {
         self.cache.push_message(CachedMessage::new(
             format!("system-{}", self.message_counter),
             Role::System,
-            content,
+            content.clone(),
         ));
+        // Phase 2: Also populate container list
+        self.container_list.add_system_message(content);
     }
 
     fn finalize_streaming(&mut self) {
         if self.cache.is_streaming() {
             self.message_counter += 1;
             let msg_id = format!("assistant-{}", self.message_counter);
-            let result = self
+            // Complete streaming in legacy cache (kept for compatibility)
+            let _result = self
                 .cache
                 .complete_streaming(msg_id.clone(), Role::Assistant);
 
-            self.pending_pre_graduate_keys
-                .extend(result.pre_graduate_keys);
+            // Container IDs are stable, so we don't need pre_graduate_keys
             self.last_thinking = None;
+
+            // Mark current response as complete in container list
+            self.container_list.complete_response();
         }
 
         self.status = "Ready".to_string();
@@ -2085,6 +2137,26 @@ impl OilChatApp {
         } else {
             Action::Continue
         }
+    }
+
+    /// Render chat content using the container-based architecture (Phase 2).
+    ///
+    /// This renders all viewport containers (non-graduated) in order.
+    /// Each container is wrapped in scrollback with its stable ID.
+    fn render_containers(&self) -> Node {
+        let term_width = terminal_width();
+        let containers = self.container_list.viewport_containers();
+
+        if containers.is_empty() {
+            return Node::Empty;
+        }
+
+        let nodes: Vec<Node> = containers
+            .iter()
+            .map(|c| c.view(term_width, self.spinner_frame, self.show_thinking))
+            .collect();
+
+        col(nodes)
     }
 
     fn render_items(&self) -> Node {
