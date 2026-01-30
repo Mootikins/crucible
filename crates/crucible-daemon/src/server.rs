@@ -87,7 +87,10 @@ pub struct Server {
 
 impl Server {
     /// Bind to a Unix socket path
-    pub async fn bind(path: &Path, mcp_config: Option<&crucible_config::McpConfig>) -> Result<Self> {
+    pub async fn bind(
+        path: &Path,
+        mcp_config: Option<&crucible_config::McpConfig>,
+    ) -> Result<Self> {
         // Remove stale socket
         if path.exists() {
             std::fs::remove_file(path)?;
@@ -108,7 +111,10 @@ impl Server {
         let mcp_gateway = if let Some(mcp_cfg) = mcp_config {
             match McpGatewayManager::from_config(mcp_cfg).await {
                 Ok(gw) => {
-                    info!("MCP gateway initialized with {} upstream(s)", gw.upstream_count());
+                    info!(
+                        "MCP gateway initialized with {} upstream(s)",
+                        gw.upstream_count()
+                    );
                     Some(Arc::new(RwLock::new(gw)))
                 }
                 Err(e) => {

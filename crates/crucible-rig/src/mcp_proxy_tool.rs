@@ -90,10 +90,7 @@ impl Tool for McpProxyTool {
 
         if result.is_error {
             return Err(McpProxyError::ToolError(
-                result
-                    .first_text()
-                    .unwrap_or("Unknown error")
-                    .to_string(),
+                result.first_text().unwrap_or("Unknown error").to_string(),
             ));
         }
 
@@ -195,23 +192,18 @@ mod tests {
         ];
 
         // Filter to only "gh" tools
-        let gh_tools =
-            mcp_tools_from_gateway(&gateway, &["gh".to_string()], &tools);
+        let gh_tools = mcp_tools_from_gateway(&gateway, &["gh".to_string()], &tools);
         assert_eq!(gh_tools.len(), 2);
         assert_eq!(gh_tools[0].name(), "gh_search_repos");
         assert_eq!(gh_tools[1].name(), "gh_create_issue");
 
         // Filter to multiple servers
-        let multi = mcp_tools_from_gateway(
-            &gateway,
-            &["gh".to_string(), "brave".to_string()],
-            &tools,
-        );
+        let multi =
+            mcp_tools_from_gateway(&gateway, &["gh".to_string(), "brave".to_string()], &tools);
         assert_eq!(multi.len(), 3);
 
         // Filter to nonexistent server
-        let empty =
-            mcp_tools_from_gateway(&gateway, &["nonexistent".to_string()], &tools);
+        let empty = mcp_tools_from_gateway(&gateway, &["nonexistent".to_string()], &tools);
         assert!(empty.is_empty());
     }
 

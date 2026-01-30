@@ -175,19 +175,17 @@ impl Client for CrucibleClient {
                 tracing::info!("Permission denied via gate: {:?}", response.reason);
                 RequestPermissionOutcome::Cancelled
             }
+        } else if let Some(first_option) = args.options.first() {
+            tracing::info!(
+                "Permission granted (auto-allow): {}",
+                first_option.option_id
+            );
+            RequestPermissionOutcome::Selected(SelectedPermissionOutcome::new(
+                first_option.option_id.clone(),
+            ))
         } else {
-            if let Some(first_option) = args.options.first() {
-                tracing::info!(
-                    "Permission granted (auto-allow): {}",
-                    first_option.option_id
-                );
-                RequestPermissionOutcome::Selected(SelectedPermissionOutcome::new(
-                    first_option.option_id.clone(),
-                ))
-            } else {
-                tracing::warn!("No permission options provided, cancelling");
-                RequestPermissionOutcome::Cancelled
-            }
+            tracing::warn!("No permission options provided, cancelling");
+            RequestPermissionOutcome::Cancelled
         };
 
         Ok(RequestPermissionResponse::new(outcome))
