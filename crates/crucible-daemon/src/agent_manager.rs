@@ -118,12 +118,14 @@ pub struct AgentManager {
     background_manager: Arc<BackgroundJobManager>,
     lua_states: Arc<DashMap<String, Arc<Mutex<SessionLuaState>>>>,
     pending_permissions: Arc<DashMap<String, HashMap<PermissionId, PendingPermission>>>,
+    mcp_gateway: Option<Arc<tokio::sync::RwLock<crucible_tools::mcp_gateway::McpGatewayManager>>>,
 }
 
 impl AgentManager {
     pub fn new(
         session_manager: Arc<SessionManager>,
         background_manager: Arc<BackgroundJobManager>,
+        mcp_gateway: Option<Arc<tokio::sync::RwLock<crucible_tools::mcp_gateway::McpGatewayManager>>>,
     ) -> Self {
         Self {
             request_state: Arc::new(DashMap::new()),
@@ -132,6 +134,7 @@ impl AgentManager {
             background_manager,
             lua_states: Arc::new(DashMap::new()),
             pending_permissions: Arc::new(DashMap::new()),
+            mcp_gateway,
         }
     }
 
@@ -437,6 +440,7 @@ impl AgentManager {
             workspace,
             Some(self.background_manager.clone()),
             event_tx,
+            self.mcp_gateway.clone(),
         )
         .await?;
         let agent = Arc::new(Mutex::new(agent));
@@ -1424,7 +1428,7 @@ mod tests {
     fn create_test_agent_manager(session_manager: Arc<SessionManager>) -> AgentManager {
         let (event_tx, _) = broadcast::channel(16);
         let background_manager = Arc::new(BackgroundJobManager::new(event_tx));
-        AgentManager::new(session_manager, background_manager)
+        AgentManager::new(session_manager, background_manager, None)
     }
 
     #[tokio::test]

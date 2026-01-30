@@ -44,7 +44,7 @@ async fn start_daemon(foreground: bool, wait: bool) -> Result<()> {
     if foreground {
         // Run server directly in this process
         info!("Starting daemon in foreground");
-        let server = Server::bind(&sock).await?;
+        let server = Server::bind(&sock, None).await?;
 
         println!("Daemon listening on {:?}", sock);
         server.run().await?;
