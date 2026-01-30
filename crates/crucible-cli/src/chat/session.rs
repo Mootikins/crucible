@@ -392,6 +392,8 @@ impl ChatSession {
             runner = runner.with_resume_session(session_id);
         }
 
+        runner = runner.with_slash_commands(crate::commands::chat::known_slash_commands());
+
         runner.run_with_factory(&bridge, create_agent).await
     }
 }

@@ -196,9 +196,28 @@ async fn run_interactive_chat(
 
     info!("Starting oil chat with model: {}", model_name);
 
-    if let Some(session_id) = resume_session_id {
+    if let Some(ref session_id) = resume_session_id {
         info!("Will resume session: {}", session_id);
-        runner = runner.with_resume_session(session_id);
+        runner = runner.with_resume_session(session_id.clone());
+
+        match fetch_resume_history(session_id, &config.kiln_path).await {
+            Ok(history) if !history.is_empty() => {
+                info!(
+                    count = history.len(),
+                    "Fetched resume history for viewport hydration"
+                );
+                runner = runner.with_resume_history(history);
+            }
+            Ok(_) => {
+                info!("No history events found for session {}", session_id);
+            }
+            Err(e) => {
+                warn!(
+                    "Failed to fetch resume history, starting with blank viewport: {}",
+                    e
+                );
+            }
+        }
     }
 
     let workspace_root = working_dir.clone().unwrap_or_else(|| {
@@ -286,6 +305,8 @@ async fn run_interactive_chat(
         runner = runner.with_mcp_servers(mcp_servers);
     }
 
+    runner = runner.with_slash_commands(known_slash_commands());
+
     let session_id = format!("chat-{}", chrono::Utc::now().format("%Y%m%d-%H%M%S"));
     let session_dir = config
         .kiln_path
@@ -297,6 +318,7 @@ async fn run_interactive_chat(
 
     let config_for_factory = config;
     let initial_mode_str = initial_mode.to_string();
+    let resume_id_for_factory = resume_session_id;
     let factory = move |selection: AgentSelection| {
         let config = config_for_factory.clone();
         let default_agent = default_agent.clone();
@@ -304,6 +326,7 @@ async fn run_interactive_chat(
         let parsed_env = parsed_env.clone();
         let working_dir = working_dir.clone();
         let initial_mode = initial_mode_str.clone();
+        let resume_session_id = resume_id_for_factory.clone();
 
         async move {
             match selection {
@@ -315,7 +338,8 @@ async fn run_interactive_chat(
                         .with_read_only(is_read_only(&initial_mode))
                         .with_max_context_tokens(max_context_tokens)
                         .with_env_overrides(parsed_env)
-                        .with_force_local(force_local);
+                        .with_force_local(force_local)
+                        .with_resume_session_id(resume_session_id);
 
                     if let Some(wd) = working_dir {
                         params = params.with_working_dir(wd);
@@ -340,7 +364,8 @@ async fn run_interactive_chat(
                         .with_read_only(is_read_only(&initial_mode))
                         .with_max_context_tokens(max_context_tokens)
                         .with_env_overrides(parsed_env)
-                        .with_force_local(force_local);
+                        .with_force_local(force_local)
+                        .with_resume_session_id(resume_session_id);
 
                     if let Some(wd) = working_dir {
                         params = params.with_working_dir(wd);
@@ -625,6 +650,110 @@ async fn spawn_background_watch(config: CliConfig, _pipeline: Arc<NotePipeline>)
     event_handle.shutdown().await?;
     info!("Background watch stopped");
     Ok(())
+}
+
+use crate::tui::oil::chat_app::{ChatItem, Role};
+
+async fn fetch_resume_history(
+    session_id: &str,
+    kiln_path: &std::path::Path,
+) -> Result<Vec<ChatItem>> {
+    use crucible_daemon_client::DaemonClient;
+
+    let client = DaemonClient::connect().await?;
+    let result = client
+        .session_resume_from_storage(session_id, kiln_path, None, None)
+        .await?;
+
+    let history = result
+        .get("history")
+        .and_then(|h| h.as_array())
+        .cloned()
+        .unwrap_or_default();
+
+    Ok(events_to_chat_items(&history))
+}
+
+fn events_to_chat_items(events: &[serde_json::Value]) -> Vec<ChatItem> {
+    let mut items = Vec::new();
+    let mut counter = 0usize;
+
+    for event in events {
+        let event_type = event.get("event").and_then(|e| e.as_str()).unwrap_or("");
+        let data = event.get("data").cloned().unwrap_or_default();
+
+        match event_type {
+            "message_complete" => {
+                let full_response = data
+                    .get("full_response")
+                    .and_then(|r| r.as_str())
+                    .unwrap_or_default();
+                if !full_response.is_empty() {
+                    items.push(ChatItem::Message {
+                        id: format!("resume-{counter}"),
+                        role: Role::Assistant,
+                        content: full_response.to_string(),
+                    });
+                    counter += 1;
+                }
+            }
+            "tool_call" => {
+                let call_id = data
+                    .get("call_id")
+                    .and_then(|c| c.as_str())
+                    .unwrap_or("unknown")
+                    .to_string();
+                let tool_name = data
+                    .get("tool")
+                    .and_then(|t| t.as_str())
+                    .unwrap_or("unknown")
+                    .to_string();
+                let args = data.get("args").map(|a| a.to_string()).unwrap_or_default();
+
+                items.push(ChatItem::ToolCall {
+                    id: call_id,
+                    name: tool_name,
+                    args,
+                    result: String::new(),
+                    complete: false,
+                });
+                counter += 1;
+            }
+            "tool_result" => {
+                let call_id = data.get("call_id").and_then(|c| c.as_str()).unwrap_or("");
+                let result_val = data
+                    .get("result")
+                    .map(|r| r.to_string())
+                    .unwrap_or_default();
+
+                if let Some(ChatItem::ToolCall {
+                    result, complete, ..
+                }) = items
+                    .iter_mut()
+                    .rev()
+                    .find(|item| matches!(item, ChatItem::ToolCall { id, .. } if id == call_id))
+                {
+                    *result = result_val;
+                    *complete = true;
+                }
+            }
+            _ => {}
+        }
+    }
+
+    items
+}
+
+pub fn known_slash_commands() -> Vec<(String, String)> {
+    vec![
+        ("search".into(), "Search the knowledge base".into()),
+        ("commit".into(), "Smart git commit workflow".into()),
+        ("agent".into(), "Show/list available agents".into()),
+        ("new".into(), "Start a new session".into()),
+        ("resume".into(), "Resume a recent session".into()),
+        ("view".into(), "Open or list Lua-defined views".into()),
+        ("models".into(), "List or switch models".into()),
+    ]
 }
 
 #[cfg(test)]

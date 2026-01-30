@@ -128,6 +128,9 @@ pub enum ChatAppMsg {
         request_id: String,
         response: InteractionResponse,
     },
+    LoadHistory(Vec<ChatItem>),
+    /// Forward an unrecognized slash command to the runner for registry-based execution
+    ExecuteSlashCommand(String),
 }
 
 #[derive(Debug, Clone)]
@@ -356,6 +359,8 @@ pub struct OilChatApp {
     workspace_files: Vec<String>,
     /// Kiln note names (for #-note autocomplete)
     kiln_notes: Vec<String>,
+    /// Known slash commands (name, description) for autocomplete — populated by runner
+    slash_commands: Vec<(String, String)>,
 }
 
 impl Default for OilChatApp {
@@ -400,6 +405,7 @@ impl Default for OilChatApp {
             runtime_config: RuntimeConfig::empty(),
             workspace_files: Vec::new(),
             kiln_notes: Vec::new(),
+            slash_commands: Vec::new(),
         }
     }
 }
@@ -639,6 +645,14 @@ impl App for OilChatApp {
                 self.close_interaction();
                 Action::Continue
             }
+            ChatAppMsg::LoadHistory(items) => {
+                self.load_previous_messages(items);
+                Action::Continue
+            }
+            ChatAppMsg::ExecuteSlashCommand(_) => {
+                // Handled by the runner — TUI just forwards
+                Action::Continue
+            }
         }
     }
 
@@ -674,6 +688,10 @@ impl OilChatApp {
 
     pub fn set_kiln_notes(&mut self, notes: Vec<String>) {
         self.kiln_notes = notes;
+    }
+
+    pub fn set_slash_commands(&mut self, commands: Vec<(String, String)>) {
+        self.slash_commands = commands;
     }
 
     pub fn set_session_dir(&mut self, path: PathBuf) {
@@ -864,7 +882,11 @@ impl OilChatApp {
 
         self.notification_area.hide();
 
-        self.interaction_modal = Some(InteractionModal::new(request_id, request));
+        self.interaction_modal = Some(InteractionModal::new(
+            request_id,
+            request,
+            self.perm_show_diff,
+        ));
     }
 
     pub fn close_interaction(&mut self) {
@@ -964,9 +986,7 @@ impl OilChatApp {
         }
 
         if key.code == KeyCode::BackTab {
-            self.mode = self.mode.cycle();
-            self.status = format!("Mode: {}", self.mode.as_str());
-            return Action::Continue;
+            return self.set_mode_with_status(self.mode.cycle());
         }
 
         let action = InputAction::from(key);
@@ -1165,11 +1185,7 @@ impl OilChatApp {
                     )));
                 Action::Continue
             }
-            KeyCode::BackTab => {
-                self.mode = self.mode.cycle();
-                self.status = format!("Mode: {}", self.mode.as_str());
-                Action::Continue
-            }
+            KeyCode::BackTab => self.set_mode_with_status(self.mode.cycle()),
             KeyCode::Enter if ctrl => {
                 let content = self.input.content().to_string();
                 if !content.trim().is_empty() {
@@ -1255,6 +1271,19 @@ impl OilChatApp {
                 self.input.handle(InputAction::Clear);
                 self.handle_repl_command(&label)
             }
+            AutocompleteKind::Command => {
+                self.close_popup();
+                self.input.handle(InputAction::Clear);
+                if label.starts_with('/') {
+                    self.handle_slash_command(&label)
+                } else if label.starts_with(':') {
+                    self.handle_repl_command(&label)
+                } else {
+                    // Tool or other — can't execute directly, show in status
+                    self.status = format!("Tool: {}", label);
+                    Action::Continue
+                }
+            }
             _ => Action::Continue,
         }
     }
@@ -1294,37 +1323,26 @@ impl OilChatApp {
         match command.as_str() {
             "quit" | "exit" | "q" => Action::Quit,
             "mode" => {
-                self.set_mode_with_status(self.mode.cycle());
-                Action::Continue
+                let next = self.mode.cycle();
+                self.set_mode_with_status(next)
             }
-            "default" | "normal" => {
-                self.set_mode_with_status(ChatMode::Normal);
-                Action::Continue
-            }
-            "plan" => {
-                self.set_mode_with_status(ChatMode::Plan);
-                Action::Continue
-            }
-            "auto" => {
-                self.set_mode_with_status(ChatMode::Auto);
-                Action::Continue
-            }
+            "default" | "normal" => self.set_mode_with_status(ChatMode::Normal),
+            "plan" => self.set_mode_with_status(ChatMode::Plan),
+            "auto" => self.set_mode_with_status(ChatMode::Auto),
             "help" => {
                 self.add_system_message(
-                    "Commands: /mode, /normal, /plan, /auto, /help, /quit".to_string(),
+                    "Commands: /mode, /normal, /plan, /auto, /help, /quit, /search, /new, /resume, /agent, /commit, /view, /models".to_string(),
                 );
                 Action::Continue
             }
-            _ => {
-                self.error = Some(format!("Unknown command: /{}", command));
-                Action::Continue
-            }
+            _ => Action::Send(ChatAppMsg::ExecuteSlashCommand(cmd.to_string())),
         }
     }
 
-    fn set_mode_with_status(&mut self, mode: ChatMode) {
+    fn set_mode_with_status(&mut self, mode: ChatMode) -> Action<ChatAppMsg> {
         self.mode = mode;
         self.status = format!("Mode: {}", mode.as_str());
+        Action::Send(ChatAppMsg::ModeChanged(mode.as_str().to_string()))
     }
 
     fn handle_repl_command(&mut self, cmd: &str) -> Action<ChatAppMsg> {
@@ -1856,6 +1874,7 @@ impl OilChatApp {
             self.interaction_modal = Some(InteractionModal::new(
                 next_id,
                 InteractionRequest::Permission(next_perm),
+                self.perm_show_diff,
             ));
         }
     }
@@ -2190,17 +2209,32 @@ impl OilChatApp {
                 ],
                 &filter,
             ),
-            AutocompleteKind::SlashCommand => Self::filter_commands(
-                &[
+            AutocompleteKind::SlashCommand => {
+                let mut commands: Vec<(&str, &str, &str)> = vec![
                     ("/mode", "Cycle chat mode", "command"),
                     ("/default", "Set default mode (ask permissions)", "command"),
                     ("/plan", "Set plan mode (read-only)", "command"),
                     ("/auto", "Set auto mode (full access)", "command"),
                     ("/help", "Show help", "command"),
                     ("/quit", "Exit chat", "command"),
-                ],
-                &filter,
-            ),
+                ];
+                let owned: Vec<(String, String, String)> = self
+                    .slash_commands
+                    .iter()
+                    .filter(|(name, _)| {
+                        !commands
+                            .iter()
+                            .any(|(builtin, _, _)| builtin.trim_start_matches('/') == name.as_str())
+                    })
+                    .map(|(name, desc)| (format!("/{}", name), desc.clone(), "command".to_string()))
+                    .collect();
+                let extra_refs: Vec<(&str, &str, &str)> = owned
+                    .iter()
+                    .map(|(n, d, k)| (n.as_str(), d.as_str(), k.as_str()))
+                    .collect();
+                commands.extend(extra_refs);
+                Self::filter_commands(&commands, &filter)
+            }
             AutocompleteKind::ReplCommand => Self::filter_commands(
                 &[
                     (":quit", "Exit chat", "core"),
