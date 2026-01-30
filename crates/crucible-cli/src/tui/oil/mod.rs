@@ -51,6 +51,7 @@ pub mod example;
 mod focus;
 pub mod graduation;
 mod layout;
+pub mod lua_bridge;
 pub mod lua_view;
 pub mod markdown;
 mod node;

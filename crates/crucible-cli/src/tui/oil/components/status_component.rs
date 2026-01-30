@@ -1,3 +1,5 @@
+use crucible_lua::statusline::StatuslineConfig;
+
 use crate::tui::oil::chat_app::ChatMode;
 use crate::tui::oil::component::Component;
 use crate::tui::oil::components::status_bar::{NotificationToastKind, StatusBar};
@@ -19,6 +21,7 @@ pub struct StatusComponent<'a> {
     pub error: Option<&'a str>,
     pub toast: Option<(&'a str, NotificationToastKind)>,
     pub notification_counts: Vec<(NotificationToastKind, usize)>,
+    pub config: Option<&'a StatuslineConfig>,
 }
 
 impl<'a> StatusComponent<'a> {
@@ -60,6 +63,11 @@ impl<'a> StatusComponent<'a> {
         self.notification_counts = counts;
         self
     }
+
+    pub fn config(mut self, config: &'a StatuslineConfig) -> Self {
+        self.config = Some(config);
+        self
+    }
 }
 
 impl Component for StatusComponent<'_> {
@@ -86,7 +94,13 @@ impl Component for StatusComponent<'_> {
             status_bar = status_bar.counts(self.notification_counts.clone());
         }
 
-        col(vec![error_node, status_bar.view(ctx)])
+        let bar_node = if let Some(cfg) = self.config {
+            status_bar.view_from_config(cfg)
+        } else {
+            status_bar.view(ctx)
+        };
+
+        col(vec![error_node, bar_node])
     }
 }
 
