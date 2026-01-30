@@ -5,8 +5,8 @@ expression: render_app(&app)
 ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄
   npm install lodash                                                            
                                                                                 
-    > [y] Allow once                                                            
-      [n] Deny                                                                  
-      [p] Allow + Save pattern                                                  
+  > [y] Yes                                                                     
+    [n] No                                                                      
+    [a] Allowlist                                                               
 ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
- PERMISSION  BASH  ↑/↓ navigate  Enter select  y/n/p shortcuts  Esc cancel
+ PERMISSION  BASH   y/n/a options  ↑↓ move  Tab entry  Esc cancel

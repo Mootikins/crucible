@@ -5,8 +5,8 @@ expression: render_app(&app)
 ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄
   /home/user/project/src/main.rs                                                
                                                                                 
-    > [y] Allow once                                                            
-      [n] Deny                                                                  
-      [p] Allow + Save pattern                                                  
+  > [y] Yes                                                                     
+    [n] No                                                                      
+    [a] Allowlist                                                               
 ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
- PERMISSION  WRITE  ↑/↓ navigate  Enter select  y/n/p shortcuts  h diff  Esc cancel
+ PERMISSION  WRITE   y/n/a options  ↑↓ move  Tab entry  h diff  Esc cancel
