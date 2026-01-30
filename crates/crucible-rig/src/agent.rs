@@ -428,7 +428,13 @@ where
     let kiln_ctx = components.kiln_ctx.clone();
 
     let builder = configure_builder(client, &config);
-    let agent = attach_tools(builder, &ctx, kiln_ctx.as_ref(), &components.mode_id, mcp_tools);
+    let agent = attach_tools(
+        builder,
+        &ctx,
+        kiln_ctx.as_ref(),
+        &components.mode_id,
+        mcp_tools,
+    );
 
     Ok(BuiltAgent {
         agent,

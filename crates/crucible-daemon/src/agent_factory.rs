@@ -145,9 +145,14 @@ pub async fn create_agent_from_session_config(
 
     let handle: Box<dyn AgentHandle + Send + Sync> = match client {
         RigClient::Ollama(ref ollama_client) => {
-            let agent =
-                build_agent_with_model_size(&rig_agent_config, ollama_client, &ws_ctx, model_size, mcp_tools)
-                    .map_err(|e| AgentFactoryError::AgentBuild(e.to_string()))?;
+            let agent = build_agent_with_model_size(
+                &rig_agent_config,
+                ollama_client,
+                &ws_ctx,
+                model_size,
+                mcp_tools,
+            )
+            .map_err(|e| AgentFactoryError::AgentBuild(e.to_string()))?;
             let mut components =
                 AgentComponents::new(rig_agent_config.clone(), client, ws_ctx.clone())
                     .with_model_size(model_size);
@@ -167,9 +172,14 @@ pub async fn create_agent_from_session_config(
             Box::new(handle)
         }
         RigClient::OpenAI(openai_client) => {
-            let agent =
-                build_agent_with_model_size(&rig_agent_config, &openai_client, &ws_ctx, model_size, mcp_tools)
-                    .map_err(|e| AgentFactoryError::AgentBuild(e.to_string()))?;
+            let agent = build_agent_with_model_size(
+                &rig_agent_config,
+                &openai_client,
+                &ws_ctx,
+                model_size,
+                mcp_tools,
+            )
+            .map_err(|e| AgentFactoryError::AgentBuild(e.to_string()))?;
             let mut handle = RigAgentHandle::new(agent)
                 .with_workspace_context(ws_ctx)
                 .with_model(agent_config.model.clone())
@@ -180,9 +190,14 @@ pub async fn create_agent_from_session_config(
             Box::new(handle)
         }
         RigClient::OpenAICompat(compat_client) => {
-            let agent =
-                build_agent_with_model_size(&rig_agent_config, &compat_client, &ws_ctx, model_size, mcp_tools)
-                    .map_err(|e| AgentFactoryError::AgentBuild(e.to_string()))?;
+            let agent = build_agent_with_model_size(
+                &rig_agent_config,
+                &compat_client,
+                &ws_ctx,
+                model_size,
+                mcp_tools,
+            )
+            .map_err(|e| AgentFactoryError::AgentBuild(e.to_string()))?;
             let mut handle = RigAgentHandle::new(agent)
                 .with_workspace_context(ws_ctx)
                 .with_model(agent_config.model.clone())
@@ -221,9 +236,14 @@ pub async fn create_agent_from_session_config(
             let compat_client = crucible_rig::create_openai_compat_client(&api_token, &api_base)
                 .map_err(|e| AgentFactoryError::ClientCreation(e.to_string()))?;
 
-            let agent =
-                build_agent_with_model_size(&rig_agent_config, &compat_client, &ws_ctx, model_size, mcp_tools)
-                    .map_err(|e| AgentFactoryError::AgentBuild(e.to_string()))?;
+            let agent = build_agent_with_model_size(
+                &rig_agent_config,
+                &compat_client,
+                &ws_ctx,
+                model_size,
+                mcp_tools,
+            )
+            .map_err(|e| AgentFactoryError::AgentBuild(e.to_string()))?;
             Box::new(
                 RigAgentHandle::new(agent)
                     .with_workspace_context(ws_ctx)
@@ -273,7 +293,8 @@ mod tests {
 
         let result = tokio::runtime::Runtime::new().unwrap().block_on(async {
             let (event_tx, _) = broadcast::channel(16);
-            create_agent_from_session_config(&config, Path::new("/tmp"), None, &event_tx, None).await
+            create_agent_from_session_config(&config, Path::new("/tmp"), None, &event_tx, None)
+                .await
         });
 
         assert!(matches!(
@@ -288,7 +309,8 @@ mod tests {
         let config = test_agent_config();
         let (event_tx, _) = broadcast::channel(16);
         let result =
-            create_agent_from_session_config(&config, Path::new("/tmp"), None, &event_tx, None).await;
+            create_agent_from_session_config(&config, Path::new("/tmp"), None, &event_tx, None)
+                .await;
         assert!(result.is_ok());
     }
 }
