@@ -10,6 +10,9 @@ rust-version.workspace = true
 name = "cru"
 path = "src/main.rs"
 
+[lib]
+doctest = false
+
 [features]
 default = ["storage-surrealdb"]
 
