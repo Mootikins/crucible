@@ -31,6 +31,10 @@ pub struct DaemonAgentHandle {
     interaction_rx: Option<mpsc::UnboundedReceiver<InteractionEvent>>,
     mode_id: String,
     connected: bool,
+    cached_model: Option<String>,
+    cached_temperature: Option<f64>,
+    cached_max_tokens: Option<u32>,
+    cached_thinking_budget: Option<i64>,
 }
 
 impl DaemonAgentHandle {
@@ -59,6 +63,10 @@ impl DaemonAgentHandle {
             interaction_rx: Some(interaction_rx),
             mode_id: "normal".to_string(),
             connected: true,
+            cached_model: None,
+            cached_temperature: None,
+            cached_max_tokens: None,
+            cached_thinking_budget: None,
         }
     }
 
@@ -77,7 +85,26 @@ impl DaemonAgentHandle {
 
         tracing::info!(session_id = %session_id, "Successfully subscribed to session events");
 
-        Ok(Self::new(client, session_id, event_rx))
+        let mut handle = Self::new(client.clone(), session_id.clone(), event_rx);
+
+        // Fetch initial cached values from daemon (best-effort, default to None on failure)
+        handle.cached_temperature = client
+            .session_get_temperature(&session_id)
+            .await
+            .ok()
+            .flatten();
+        handle.cached_max_tokens = client
+            .session_get_max_tokens(&session_id)
+            .await
+            .ok()
+            .flatten();
+        handle.cached_thinking_budget = client
+            .session_get_thinking_budget(&session_id)
+            .await
+            .ok()
+            .flatten();
+
+        Ok(handle)
     }
 
     pub fn session_id(&self) -> &str {
@@ -353,11 +380,13 @@ impl AgentHandle for DaemonAgentHandle {
         self.client
             .session_switch_model(&self.session_id, model_id)
             .await
-            .map_err(|e| ChatError::Communication(format!("Failed to switch model: {}", e)))
+            .map_err(|e| ChatError::Communication(format!("Failed to switch model: {}", e)))?;
+        self.cached_model = Some(model_id.to_string());
+        Ok(())
     }
 
     fn current_model(&self) -> Option<&str> {
-        None
+        self.cached_model.as_deref()
     }
 
     async fn fetch_available_models(&mut self) -> Vec<String> {
@@ -370,16 +399,29 @@ impl AgentHandle for DaemonAgentHandle {
         }
     }
 
+    async fn cancel(&self) -> ChatResult<()> {
+        tracing::info!(session_id = %self.session_id, "Cancelling agent via daemon");
+        self.client
+            .session_cancel(&self.session_id)
+            .await
+            .map_err(|e| ChatError::Communication(format!("Failed to cancel agent: {}", e)))?;
+        Ok(())
+    }
+
     async fn set_thinking_budget(&mut self, budget: i64) -> ChatResult<()> {
         tracing::info!(session_id = %self.session_id, budget = budget, "Setting thinking budget via daemon");
         self.client
             .session_set_thinking_budget(&self.session_id, Some(budget))
             .await
-            .map_err(|e| ChatError::Communication(format!("Failed to set thinking budget: {}", e)))
+            .map_err(|e| {
+                ChatError::Communication(format!("Failed to set thinking budget: {}", e))
+            })?;
+        self.cached_thinking_budget = Some(budget);
+        Ok(())
     }
 
     fn get_thinking_budget(&self) -> Option<i64> {
-        None
+        self.cached_thinking_budget
     }
 
     async fn set_temperature(&mut self, temperature: f64) -> ChatResult<()> {
@@ -387,11 +429,13 @@ impl AgentHandle for DaemonAgentHandle {
         self.client
             .session_set_temperature(&self.session_id, temperature)
             .await
-            .map_err(|e| ChatError::Communication(format!("Failed to set temperature: {}", e)))
+            .map_err(|e| ChatError::Communication(format!("Failed to set temperature: {}", e)))?;
+        self.cached_temperature = Some(temperature);
+        Ok(())
     }
 
     fn get_temperature(&self) -> Option<f64> {
-        None
+        self.cached_temperature
     }
 
     async fn set_max_tokens(&mut self, max_tokens: Option<u32>) -> ChatResult<()> {
@@ -399,11 +443,13 @@ impl AgentHandle for DaemonAgentHandle {
         self.client
             .session_set_max_tokens(&self.session_id, max_tokens)
             .await
-            .map_err(|e| ChatError::Communication(format!("Failed to set max_tokens: {}", e)))
+            .map_err(|e| ChatError::Communication(format!("Failed to set max_tokens: {}", e)))?;
+        self.cached_max_tokens = max_tokens;
+        Ok(())
     }
 
     fn get_max_tokens(&self) -> Option<u32> {
-        None
+        self.cached_max_tokens
     }
 
     async fn interaction_respond(
