@@ -2,7 +2,27 @@ use crate::node::{col, row, styled, Node};
 use crate::style::{Color, Style};
 use similar::{ChangeTag, TextDiff};
 
-pub fn diff_to_node(old: &str, new: &str, context_lines: usize) -> Node {
+/// Colors for diff rendering
+#[derive(Debug, Clone, Copy)]
+pub struct DiffColors {
+    pub delete: Style,
+    pub insert: Style,
+    pub context: Style,
+    pub hunk_header: Style,
+}
+
+impl Default for DiffColors {
+    fn default() -> Self {
+        Self {
+            delete: Style::new().fg(Color::Red),
+            insert: Style::new().fg(Color::Green),
+            context: Style::new().fg(Color::DarkGray),
+            hunk_header: Style::new().fg(Color::Cyan),
+        }
+    }
+}
+
+pub fn diff_to_node(old: &str, new: &str, context_lines: usize, colors: &DiffColors) -> Node {
     if old == new {
         return Node::Empty;
     }
@@ -10,10 +30,10 @@ pub fn diff_to_node(old: &str, new: &str, context_lines: usize) -> Node {
     let diff = TextDiff::from_lines(old, new);
     let mut nodes: Vec<Node> = Vec::new();
 
-    let delete_style = Style::new().fg(Color::Red);
-    let insert_style = Style::new().fg(Color::Green);
-    let context_style = Style::new().fg(Color::DarkGray);
-    let hunk_header_style = Style::new().fg(Color::Cyan);
+    let delete_style = colors.delete;
+    let insert_style = colors.insert;
+    let context_style = colors.context;
+    let hunk_header_style = colors.hunk_header;
 
     let mut in_hunk = false;
     let mut hunk_lines: Vec<Node> = Vec::new();
@@ -82,7 +102,7 @@ fn flush_hunk(nodes: &mut Vec<Node>, hunk_lines: &mut Vec<Node>, _header_style: 
     nodes.append(hunk_lines);
 }
 
-pub fn diff_to_node_with_word_highlight(old: &str, new: &str) -> Node {
+pub fn diff_to_node_with_word_highlight(old: &str, new: &str, colors: &DiffColors) -> Node {
     if old == new {
         return Node::Empty;
     }
@@ -90,8 +110,8 @@ pub fn diff_to_node_with_word_highlight(old: &str, new: &str) -> Node {
     let line_diff = TextDiff::from_lines(old, new);
     let mut nodes: Vec<Node> = Vec::new();
 
-    let delete_style = Style::new().fg(Color::Red);
-    let insert_style = Style::new().fg(Color::Green);
+    let delete_style = colors.delete;
+    let insert_style = colors.insert;
 
     for change in line_diff.iter_all_changes() {
         let line_content = change.value().trim_end_matches('\n');
@@ -135,13 +155,13 @@ mod tests {
 
     #[test]
     fn diff_to_node_identical_returns_empty() {
-        let result = diff_to_node("same\n", "same\n", 0);
+        let result = diff_to_node("same\n", "same\n", 0, &DiffColors::default());
         assert!(matches!(result, Node::Empty));
     }
 
     #[test]
     fn diff_to_node_deletion_is_red() {
-        let result = diff_to_node("old line\n", "", 0);
+        let result = diff_to_node("old line\n", "", 0, &DiffColors::default());
         let output = render_to_string(&result, 80);
 
         assert!(
@@ -154,7 +174,7 @@ mod tests {
 
     #[test]
     fn diff_to_node_insertion_is_green() {
-        let result = diff_to_node("", "new line\n", 0);
+        let result = diff_to_node("", "new line\n", 0, &DiffColors::default());
         let output = render_to_string(&result, 80);
 
         assert!(
@@ -167,7 +187,7 @@ mod tests {
 
     #[test]
     fn diff_to_node_modification_shows_both() {
-        let result = diff_to_node("old\n", "new\n", 0);
+        let result = diff_to_node("old\n", "new\n", 0, &DiffColors::default());
         let output = render_to_string(&result, 80);
 
         assert!(output.contains("-old"));
@@ -178,7 +198,7 @@ mod tests {
     fn diff_to_node_with_context() {
         let old = "line1\nline2\nline3\n";
         let new = "line1\nmodified\nline3\n";
-        let result = diff_to_node(old, new, 1);
+        let result = diff_to_node(old, new, 1, &DiffColors::default());
         let output = render_to_string(&result, 80);
 
         assert!(output.contains(" line1"), "Should show context before");
@@ -188,7 +208,7 @@ mod tests {
     fn diff_to_node_multiline_changes() {
         let old = "a\nb\nc\n";
         let new = "a\nB\nC\n";
-        let result = diff_to_node(old, new, 0);
+        let result = diff_to_node(old, new, 0, &DiffColors::default());
         let output = render_to_string(&result, 80);
 
         assert!(output.contains("-b"));
@@ -201,7 +221,7 @@ mod tests {
     fn diff_preserves_indentation() {
         let old = "    indented line\n";
         let new = "    modified line\n";
-        let result = diff_to_node(old, new, 0);
+        let result = diff_to_node(old, new, 0, &DiffColors::default());
         let output = render_to_string(&result, 80);
 
         assert!(
