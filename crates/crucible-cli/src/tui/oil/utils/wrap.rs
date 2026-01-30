@@ -81,8 +81,7 @@ pub fn wrap_to_width_indented(s: &str, max_width: usize, indent: usize) -> Strin
                 vec![String::new()]
             } else {
                 // First wrap to full width
-                let first_wrap =
-                    wrap_styled_text(&[(line.to_string(), String::new())], max_width);
+                let first_wrap = wrap_styled_text(&[(line.to_string(), String::new())], max_width);
 
                 if first_wrap.len() <= 1 {
                     // No wrapping needed

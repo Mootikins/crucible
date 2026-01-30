@@ -322,7 +322,7 @@ impl LayoutEngine {
                 rect,
                 LayoutContent::Text {
                     content: text.content.clone(),
-                    style: text.style.clone(),
+                    style: text.style,
                 },
             ),
 
@@ -340,11 +340,11 @@ impl LayoutEngine {
                 LayoutBox {
                     rect,
                     content: LayoutContent::Box {
-                        border: boxnode.border.clone(),
-                        style: boxnode.style.clone(),
+                        border: boxnode.border,
+                        style: boxnode.style,
                     },
                     children,
-                    style: boxnode.style.clone(),
+                    style: boxnode.style,
                     key: None,
                 }
             }
@@ -364,7 +364,7 @@ impl LayoutEngine {
                     cursor: input.cursor,
                     placeholder: input.placeholder.clone(),
                     focused: input.focused,
-                    style: input.style.clone(),
+                    style: input.style,
                 },
             ),
 
@@ -374,7 +374,7 @@ impl LayoutEngine {
                     label: spinner.label.clone(),
                     frame: spinner.frame,
                     frames: spinner.frames,
-                    style: spinner.style.clone(),
+                    style: spinner.style,
                 },
             ),
 

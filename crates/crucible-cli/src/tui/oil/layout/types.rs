@@ -120,9 +120,10 @@ impl LayoutBox {
 ///
 /// This enum mirrors the `Node` variants but contains only the data
 /// needed for rendering (no layout hints like `Size` or `Direction`).
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub enum LayoutContent {
     /// No content (spacer, empty box).
+    #[default]
     Empty,
 
     /// Text content with optional styling.
@@ -190,12 +191,6 @@ pub enum LayoutContent {
         display_width: u16,
         display_height: u16,
     },
-}
-
-impl Default for LayoutContent {
-    fn default() -> Self {
-        Self::Empty
-    }
 }
 
 /// A single item in a popup menu.

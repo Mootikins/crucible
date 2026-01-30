@@ -225,18 +225,12 @@ mod tests {
 
     #[test]
     fn width_truncation_with_ellipsis() {
-        assert_eq!(
-            truncate_to_width("hello world", 5, true),
-            "hell…"
-        );
+        assert_eq!(truncate_to_width("hello world", 5, true), "hell…");
     }
 
     #[test]
     fn width_truncation_without_ellipsis() {
-        assert_eq!(
-            truncate_to_width("hello world", 5, false),
-            "hello"
-        );
+        assert_eq!(truncate_to_width("hello world", 5, false), "hello");
     }
 
     #[test]
@@ -280,7 +274,10 @@ mod tests {
     #[test]
     fn width_exact_fit_no_ellipsis() {
         assert_eq!(truncate_to_width("hello", 5, false), "hello");
-        assert!(matches!(truncate_to_width("hello", 5, false), Cow::Borrowed(_)));
+        assert!(matches!(
+            truncate_to_width("hello", 5, false),
+            Cow::Borrowed(_)
+        ));
     }
 
     // ==================== truncate_to_chars tests ====================

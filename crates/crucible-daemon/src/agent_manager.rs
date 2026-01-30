@@ -42,6 +42,7 @@ pub type PermissionId = String;
 /// `false` for read-only tools:
 /// - `read_note`, `read_metadata` - reading content
 /// - `text_search`, `property_search`, `semantic_search` - search operations
+///
 /// Default-deny: only explicitly safe tools skip the permission prompt.
 /// Everything unknown (including all external MCP tools) requires permission.
 pub fn is_safe(tool_name: &str) -> bool {
@@ -611,60 +612,64 @@ impl AgentManager {
                                                 "Waiting for permission response"
                                             );
 
-                                            let (permission_granted, deny_reason) = match response_rx.await {
-                                                Ok(response) => {
-                                                    debug!(
-                                                        session_id = %session_id,
-                                                        tool = %tc.name,
-                                                        permission_id = %permission_id,
-                                                        allowed = response.allowed,
-                                                        pattern = ?response.pattern,
-                                                        "Permission response received"
-                                                    );
+                                            let (permission_granted, deny_reason) =
+                                                match response_rx.await {
+                                                    Ok(response) => {
+                                                        debug!(
+                                                            session_id = %session_id,
+                                                            tool = %tc.name,
+                                                            permission_id = %permission_id,
+                                                            allowed = response.allowed,
+                                                            pattern = ?response.pattern,
+                                                            "Permission response received"
+                                                        );
 
-                                                    if response.allowed {
-                                                        if let Some(ref pattern) = response.pattern
-                                                        {
-                                                            if response.scope
-                                                                == PermissionScope::Project
+                                                        if response.allowed {
+                                                            if let Some(ref pattern) =
+                                                                response.pattern
                                                             {
-                                                                if let Err(e) = Self::store_pattern(
-                                                                    &tc.name,
-                                                                    pattern,
-                                                                    &project_path,
-                                                                ) {
-                                                                    warn!(
-                                                                        session_id = %session_id,
-                                                                        tool = %tc.name,
-                                                                        pattern = %pattern,
-                                                                        error = %e,
-                                                                        "Failed to store pattern"
-                                                                    );
-                                                                } else {
-                                                                    info!(
-                                                                        session_id = %session_id,
-                                                                        tool = %tc.name,
-                                                                        pattern = %pattern,
-                                                                        "Pattern stored for future use"
-                                                                    );
+                                                                if response.scope
+                                                                    == PermissionScope::Project
+                                                                {
+                                                                    if let Err(e) =
+                                                                        Self::store_pattern(
+                                                                            &tc.name,
+                                                                            pattern,
+                                                                            &project_path,
+                                                                        )
+                                                                    {
+                                                                        warn!(
+                                                                            session_id = %session_id,
+                                                                            tool = %tc.name,
+                                                                            pattern = %pattern,
+                                                                            error = %e,
+                                                                            "Failed to store pattern"
+                                                                        );
+                                                                    } else {
+                                                                        info!(
+                                                                            session_id = %session_id,
+                                                                            tool = %tc.name,
+                                                                            pattern = %pattern,
+                                                                            "Pattern stored for future use"
+                                                                        );
+                                                                    }
                                                                 }
                                                             }
+                                                            (true, None)
+                                                        } else {
+                                                            (false, response.reason)
                                                         }
-                                                        (true, None)
-                                                    } else {
-                                                        (false, response.reason)
                                                     }
-                                                }
-                                                Err(_) => {
-                                                    warn!(
-                                                        session_id = %session_id,
-                                                        tool = %tc.name,
-                                                        permission_id = %permission_id,
-                                                        "Permission channel dropped, treating as deny"
-                                                    );
-                                                    (false, None)
-                                                }
-                                            };
+                                                    Err(_) => {
+                                                        warn!(
+                                                            session_id = %session_id,
+                                                            tool = %tc.name,
+                                                            permission_id = %permission_id,
+                                                            "Permission channel dropped, treating as deny"
+                                                        );
+                                                        (false, None)
+                                                    }
+                                                };
 
                                             if !permission_granted {
                                                 let resource_desc =
@@ -2480,7 +2485,11 @@ mod tests {
             store.add_file_pattern("src/").unwrap();
 
             let args = serde_json::json!({"path": "src/lib.rs"});
-            assert!(AgentManager::check_pattern_match("write_file", &args, &store));
+            assert!(AgentManager::check_pattern_match(
+                "write_file",
+                &args,
+                &store
+            ));
         }
 
         #[test]
@@ -2489,7 +2498,11 @@ mod tests {
             store.add_file_pattern("src/").unwrap();
 
             let args = serde_json::json!({"path": "tests/test.rs"});
-            assert!(!AgentManager::check_pattern_match("write_file", &args, &store));
+            assert!(!AgentManager::check_pattern_match(
+                "write_file",
+                &args,
+                &store
+            ));
         }
 
         #[test]

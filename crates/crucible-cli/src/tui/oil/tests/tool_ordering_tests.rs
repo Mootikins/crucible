@@ -56,7 +56,7 @@ mod chat_app_message_handling {
         app.on_message(ChatAppMsg::ToolCall {
             name: "read_file".to_string(),
             args: r#"{"path":"test.rs"}"#.to_string(),
-                call_id: None,
+            call_id: None,
         });
 
         assert!(app.is_streaming(), "Should be in streaming state");
@@ -76,15 +76,17 @@ mod chat_app_message_handling {
         app.on_message(ChatAppMsg::ToolCall {
             name: "read_file".to_string(),
             args: "{}".to_string(),
-                call_id: None,
+            call_id: None,
         });
         app.on_message(ChatAppMsg::ToolResultDelta {
             name: "read_file".to_string(),
             delta: "file contents".to_string(),
-                call_id: None,
+            call_id: None,
         });
-        app.on_message(ChatAppMsg::ToolResultComplete { name: "read_file".to_string(),
-                call_id: None });
+        app.on_message(ChatAppMsg::ToolResultComplete {
+            name: "read_file".to_string(),
+            call_id: None,
+        });
         app.on_message(ChatAppMsg::StreamComplete);
 
         let output = render_app(&app);
@@ -104,7 +106,7 @@ mod chat_app_message_handling {
         app.on_message(ChatAppMsg::ToolCall {
             name: "my_tool".to_string(),
             args: "{}".to_string(),
-                call_id: None,
+            call_id: None,
         });
         app.on_message(ChatAppMsg::TextDelta("AFTER_TOOL".to_string()));
 
@@ -121,15 +123,17 @@ mod chat_app_message_handling {
         app.on_message(ChatAppMsg::ToolCall {
             name: "my_tool".to_string(),
             args: "{}".to_string(),
-                call_id: None,
+            call_id: None,
         });
         app.on_message(ChatAppMsg::ToolResultDelta {
             name: "my_tool".to_string(),
             delta: "result".to_string(),
-                call_id: None,
+            call_id: None,
         });
-        app.on_message(ChatAppMsg::ToolResultComplete { name: "my_tool".to_string(),
-                call_id: None });
+        app.on_message(ChatAppMsg::ToolResultComplete {
+            name: "my_tool".to_string(),
+            call_id: None,
+        });
         app.on_message(ChatAppMsg::TextDelta("AFTER_TOOL".to_string()));
         app.on_message(ChatAppMsg::StreamComplete);
 
@@ -153,20 +157,24 @@ mod chat_app_message_handling {
         app.on_message(ChatAppMsg::ToolCall {
             name: "tool_alpha".to_string(),
             args: "{}".to_string(),
-                call_id: None,
+            call_id: None,
         });
-        app.on_message(ChatAppMsg::ToolResultComplete { name: "tool_alpha".to_string(),
-                call_id: None });
+        app.on_message(ChatAppMsg::ToolResultComplete {
+            name: "tool_alpha".to_string(),
+            call_id: None,
+        });
 
         app.on_message(ChatAppMsg::TextDelta("MIDDLE ".to_string()));
 
         app.on_message(ChatAppMsg::ToolCall {
             name: "tool_beta".to_string(),
             args: "{}".to_string(),
-                call_id: None,
+            call_id: None,
         });
-        app.on_message(ChatAppMsg::ToolResultComplete { name: "tool_beta".to_string(),
-                call_id: None });
+        app.on_message(ChatAppMsg::ToolResultComplete {
+            name: "tool_beta".to_string(),
+            call_id: None,
+        });
 
         app.on_message(ChatAppMsg::TextDelta("END".to_string()));
         app.on_message(ChatAppMsg::StreamComplete);
@@ -190,7 +198,7 @@ mod tool_completion_visibility {
         app.on_message(ChatAppMsg::ToolCall {
             name: "pending_tool".to_string(),
             args: "{}".to_string(),
-                call_id: None,
+            call_id: None,
         });
 
         let output = render_app(&app);
@@ -208,10 +216,12 @@ mod tool_completion_visibility {
         app.on_message(ChatAppMsg::ToolCall {
             name: "completed_tool".to_string(),
             args: "{}".to_string(),
-                call_id: None,
+            call_id: None,
         });
-        app.on_message(ChatAppMsg::ToolResultComplete { name: "completed_tool".to_string(),
-                call_id: None });
+        app.on_message(ChatAppMsg::ToolResultComplete {
+            name: "completed_tool".to_string(),
+            call_id: None,
+        });
         app.on_message(ChatAppMsg::StreamComplete);
 
         let output = render_app(&app);
@@ -229,15 +239,17 @@ mod tool_completion_visibility {
         app.on_message(ChatAppMsg::ToolCall {
             name: "result_tool".to_string(),
             args: "{}".to_string(),
-                call_id: None,
+            call_id: None,
         });
         app.on_message(ChatAppMsg::ToolResultDelta {
             name: "result_tool".to_string(),
             delta: "TOOL_OUTPUT_CONTENT".to_string(),
-                call_id: None,
+            call_id: None,
         });
-        app.on_message(ChatAppMsg::ToolResultComplete { name: "result_tool".to_string(),
-                call_id: None });
+        app.on_message(ChatAppMsg::ToolResultComplete {
+            name: "result_tool".to_string(),
+            call_id: None,
+        });
         app.on_message(ChatAppMsg::StreamComplete);
 
         let output = render_app(&app);
@@ -255,10 +267,12 @@ mod tool_completion_visibility {
         app.on_message(ChatAppMsg::ToolCall {
             name: "actual_tool".to_string(),
             args: "{}".to_string(),
-                call_id: None,
+            call_id: None,
         });
-        app.on_message(ChatAppMsg::ToolResultComplete { name: "different_tool".to_string(),
-                call_id: None });
+        app.on_message(ChatAppMsg::ToolResultComplete {
+            name: "different_tool".to_string(),
+            call_id: None,
+        });
         app.on_message(ChatAppMsg::StreamComplete);
 
         let output = render_app(&app);
@@ -287,15 +301,17 @@ mod realistic_scenarios {
         app.on_message(ChatAppMsg::ToolCall {
             name: "read_file".to_string(),
             args: r#"{"path":"config.toml"}"#.to_string(),
-                call_id: None,
+            call_id: None,
         });
         app.on_message(ChatAppMsg::ToolResultDelta {
             name: "read_file".to_string(),
             delta: "[package]\nname = \"test\"".to_string(),
-                call_id: None,
+            call_id: None,
         });
-        app.on_message(ChatAppMsg::ToolResultComplete { name: "read_file".to_string(),
-                call_id: None });
+        app.on_message(ChatAppMsg::ToolResultComplete {
+            name: "read_file".to_string(),
+            call_id: None,
+        });
         app.on_message(ChatAppMsg::TextDelta(
             "The config file contains a package named \"test\".".to_string(),
         ));
@@ -327,15 +343,17 @@ mod realistic_scenarios {
         app.on_message(ChatAppMsg::ToolCall {
             name: "glob".to_string(),
             args: r#"{"pattern":"*.rs"}"#.to_string(),
-                call_id: None,
+            call_id: None,
         });
         app.on_message(ChatAppMsg::ToolResultDelta {
             name: "glob".to_string(),
             delta: "main.rs\nlib.rs".to_string(),
-                call_id: None,
+            call_id: None,
         });
-        app.on_message(ChatAppMsg::ToolResultComplete { name: "glob".to_string(),
-                call_id: None });
+        app.on_message(ChatAppMsg::ToolResultComplete {
+            name: "glob".to_string(),
+            call_id: None,
+        });
 
         app.on_message(ChatAppMsg::TextDelta(
             "Found 2 files. Reading main.rs...\n\n".to_string(),
@@ -344,15 +362,17 @@ mod realistic_scenarios {
         app.on_message(ChatAppMsg::ToolCall {
             name: "read_file".to_string(),
             args: r#"{"path":"main.rs"}"#.to_string(),
-                call_id: None,
+            call_id: None,
         });
         app.on_message(ChatAppMsg::ToolResultDelta {
             name: "read_file".to_string(),
             delta: "fn main() {}".to_string(),
-                call_id: None,
+            call_id: None,
         });
-        app.on_message(ChatAppMsg::ToolResultComplete { name: "read_file".to_string(),
-                call_id: None });
+        app.on_message(ChatAppMsg::ToolResultComplete {
+            name: "read_file".to_string(),
+            call_id: None,
+        });
 
         app.on_message(ChatAppMsg::TextDelta(
             "The main function is empty.".to_string(),
@@ -397,7 +417,7 @@ mod graduation_tracking {
         app.on_message(ChatAppMsg::ToolCall {
             name: "read_file".to_string(),
             args: r#"{"path":"test.rs"}"#.to_string(),
-                call_id: None,
+            call_id: None,
         });
         let snap2 = render_app(&app);
         let pos2 = positions(&snap2, &["BEFORE_TOOL_TEXT", "read_file"]);
@@ -412,10 +432,12 @@ mod graduation_tracking {
         app.on_message(ChatAppMsg::ToolResultDelta {
             name: "read_file".to_string(),
             delta: "TOOL_OUTPUT_CONTENT".to_string(),
-                call_id: None,
+            call_id: None,
         });
-        app.on_message(ChatAppMsg::ToolResultComplete { name: "read_file".to_string(),
-                call_id: None });
+        app.on_message(ChatAppMsg::ToolResultComplete {
+            name: "read_file".to_string(),
+            call_id: None,
+        });
         let snap3 = render_app(&app);
         assert!(
             snap3.contains("✓") || snap3.contains("\u{2713}"),
@@ -511,10 +533,12 @@ mod graduation_tracking {
         app.on_message(ChatAppMsg::ToolCall {
             name: "test_tool".to_string(),
             args: "{}".to_string(),
-                call_id: None,
+            call_id: None,
         });
-        app.on_message(ChatAppMsg::ToolResultComplete { name: "test_tool".to_string(),
-                call_id: None });
+        app.on_message(ChatAppMsg::ToolResultComplete {
+            name: "test_tool".to_string(),
+            call_id: None,
+        });
 
         // Add text after tool
         app.on_message(ChatAppMsg::TextDelta("MIDDLE\n\n".to_string()));
@@ -585,10 +609,12 @@ mod duplicate_content_prevention {
         app.on_message(ChatAppMsg::ToolCall {
             name: "my_tool".to_string(),
             args: "{}".to_string(),
-                call_id: None,
+            call_id: None,
         });
-        app.on_message(ChatAppMsg::ToolResultComplete { name: "my_tool".to_string(),
-                call_id: None });
+        app.on_message(ChatAppMsg::ToolResultComplete {
+            name: "my_tool".to_string(),
+            call_id: None,
+        });
         app.on_message(ChatAppMsg::TextDelta("AFTER_TOOL".to_string()));
 
         let output = render_app(&app);
@@ -621,10 +647,12 @@ mod duplicate_content_prevention {
         app.on_message(ChatAppMsg::ToolCall {
             name: "example_tool".to_string(),
             args: "{}".to_string(),
-                call_id: None,
+            call_id: None,
         });
-        app.on_message(ChatAppMsg::ToolResultComplete { name: "example_tool".to_string(),
-                call_id: None });
+        app.on_message(ChatAppMsg::ToolResultComplete {
+            name: "example_tool".to_string(),
+            call_id: None,
+        });
 
         app.on_message(ChatAppMsg::TextDelta(
             "Let me know what you'd like to do next!".to_string(),
@@ -664,10 +692,12 @@ mod duplicate_content_prevention {
         app.on_message(ChatAppMsg::ToolCall {
             name: "tool1".to_string(),
             args: "{}".to_string(),
-                call_id: None,
+            call_id: None,
         });
-        app.on_message(ChatAppMsg::ToolResultComplete { name: "tool1".to_string(),
-                call_id: None });
+        app.on_message(ChatAppMsg::ToolResultComplete {
+            name: "tool1".to_string(),
+            call_id: None,
+        });
         app.on_message(ChatAppMsg::TextDelta("SECOND_BLOCK".to_string()));
         app.on_message(ChatAppMsg::StreamComplete);
 
@@ -742,10 +772,12 @@ mod duplicate_content_prevention {
         app.on_message(ChatAppMsg::ToolCall {
             name: "test_tool".to_string(),
             args: "{}".to_string(),
-                call_id: None,
+            call_id: None,
         });
-        app.on_message(ChatAppMsg::ToolResultComplete { name: "test_tool".to_string(),
-                call_id: None });
+        app.on_message(ChatAppMsg::ToolResultComplete {
+            name: "test_tool".to_string(),
+            call_id: None,
+        });
 
         // More text after
         app.on_message(ChatAppMsg::TextDelta("PARA_FOUR\n\n".to_string()));
@@ -780,10 +812,12 @@ mod duplicate_content_prevention {
         app.on_message(ChatAppMsg::ToolCall {
             name: "tool1".to_string(),
             args: "{}".to_string(),
-                call_id: None,
+            call_id: None,
         });
-        app.on_message(ChatAppMsg::ToolResultComplete { name: "tool1".to_string(),
-                call_id: None });
+        app.on_message(ChatAppMsg::ToolResultComplete {
+            name: "tool1".to_string(),
+            call_id: None,
+        });
         app.on_message(ChatAppMsg::TextDelta("Second part of response".to_string()));
 
         let output = render_app(&app);
@@ -805,10 +839,12 @@ mod duplicate_content_prevention {
         app.on_message(ChatAppMsg::ToolCall {
             name: "tool1".to_string(),
             args: "{}".to_string(),
-                call_id: None,
+            call_id: None,
         });
-        app.on_message(ChatAppMsg::ToolResultComplete { name: "tool1".to_string(),
-                call_id: None });
+        app.on_message(ChatAppMsg::ToolResultComplete {
+            name: "tool1".to_string(),
+            call_id: None,
+        });
         app.on_message(ChatAppMsg::TextDelta("Second part".to_string()));
         app.on_message(ChatAppMsg::StreamComplete);
 
