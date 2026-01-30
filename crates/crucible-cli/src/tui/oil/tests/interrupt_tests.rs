@@ -118,9 +118,8 @@ fn stream_cancelled_message_clears_streaming() {
 fn queued_message_processed_after_stream_complete() {
     let mut app = OilChatApp::default();
 
-    app.on_message(ChatAppMsg::QueueMessage("queued question".to_string()));
-
     app.on_message(ChatAppMsg::UserMessage("first".to_string()));
+    app.on_message(ChatAppMsg::QueueMessage("queued question".to_string()));
     app.on_message(ChatAppMsg::TextDelta("response".to_string()));
 
     let action = app.on_message(ChatAppMsg::StreamComplete);
@@ -136,9 +135,8 @@ fn queued_message_processed_after_stream_complete() {
 fn queued_message_processed_after_stream_cancelled() {
     let mut app = OilChatApp::default();
 
-    app.on_message(ChatAppMsg::QueueMessage("queued question".to_string()));
-
     app.on_message(ChatAppMsg::UserMessage("first".to_string()));
+    app.on_message(ChatAppMsg::QueueMessage("queued question".to_string()));
     app.on_message(ChatAppMsg::TextDelta("partial".to_string()));
 
     let action = app.on_message(ChatAppMsg::StreamCancelled);
@@ -154,6 +152,7 @@ fn queued_message_processed_after_stream_cancelled() {
 fn multiple_queued_messages_processed_in_order() {
     let mut app = OilChatApp::default();
 
+    app.on_message(ChatAppMsg::UserMessage("initial".to_string()));
     app.on_message(ChatAppMsg::QueueMessage("first queued".to_string()));
     app.on_message(ChatAppMsg::QueueMessage("second queued".to_string()));
 
@@ -287,5 +286,38 @@ fn cancelled_status_shows_after_cancel() {
         output.contains("Cancelled") || output.contains("cancelled"),
         "Status should show cancelled: {}",
         output
+    );
+}
+
+#[test]
+fn queue_message_when_idle_promotes_to_user_message() {
+    let mut app = OilChatApp::default();
+
+    assert!(!app.is_streaming());
+
+    let action = app.on_message(ChatAppMsg::QueueMessage("hello".to_string()));
+
+    assert!(
+        matches!(action, Action::Send(ChatAppMsg::UserMessage(ref msg)) if msg == "hello"),
+        "QueueMessage when idle should promote to UserMessage, got {:?}",
+        action
+    );
+}
+
+#[test]
+fn queue_message_when_idle_shows_spinner() {
+    let mut app = OilChatApp::default();
+
+    assert!(!app.is_streaming());
+
+    let action = app.on_message(ChatAppMsg::QueueMessage("hello".to_string()));
+
+    if let Action::Send(msg) = action {
+        app.on_message(msg);
+    }
+
+    assert!(
+        app.is_streaming(),
+        "Should be streaming after promoted QueueMessage"
     );
 }
