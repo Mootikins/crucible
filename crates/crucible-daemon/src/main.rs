@@ -12,6 +12,7 @@ mod session_storage;
 mod subscription;
 
 use anyhow::Result;
+use crucible_config::CliAppConfig;
 use lifecycle::{remove_socket, socket_path, wait_for_shutdown};
 use scopeguard::defer;
 use server::Server;
@@ -23,14 +24,15 @@ async fn main() -> Result<()> {
 
     let sock_path = socket_path();
 
-    // Setup cleanup on exit
+    let config = CliAppConfig::load(None, None, None).unwrap_or_default();
+    let mcp_config = config.mcp.as_ref();
+
     defer! {
         tracing::info!("Cleaning up daemon resources");
         remove_socket(&sock_path);
     }
 
-    // Bind server - will fail if socket already exists and is in use
-    let server = Server::bind(&sock_path).await?;
+    let server = Server::bind(&sock_path, mcp_config).await?;
     tracing::info!("Daemon started successfully");
 
     // Run server until shutdown
