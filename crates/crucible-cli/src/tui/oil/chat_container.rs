@@ -233,6 +233,7 @@ impl ChatContainer {
 /// to enable incremental graduation. The in-progress block stays in the viewport.
 ///
 /// If `is_continuation` is true, no bullet is shown (it's a continuation after a tool call).
+#[allow(clippy::too_many_arguments)]
 fn render_assistant_blocks_with_graduation(
     container_id: &str,
     blocks: &[String],
@@ -1476,7 +1477,7 @@ mod tests {
 
         assert!(list.find_tool("read_file").is_some());
         assert!(list.find_tool("write_file").is_none());
-        assert!(list.tool_should_spill("read_file") == false);
+        assert!(!list.tool_should_spill("read_file"));
     }
 
     #[test]
