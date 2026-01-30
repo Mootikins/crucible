@@ -479,7 +479,7 @@ async fn daemon_execute(config: CliConfig, cmd: DaemonSessionCommands) -> Result
             provider,
             model,
             endpoint,
-        } => daemon_configure(&client, &session_id, &provider, &model, endpoint).await,
+        } => daemon_configure(&client, &config, &session_id, &provider, &model, endpoint).await,
         DaemonSessionCommands::Subscribe { session_ids } => daemon_subscribe(&session_ids).await,
         DaemonSessionCommands::Load { session_id } => {
             daemon_load(&client, &config, &session_id).await
@@ -708,11 +708,18 @@ async fn daemon_send(
 /// Configure agent for a session
 async fn daemon_configure(
     client: &DaemonClient,
+    config: &CliConfig,
     session_id: &str,
     provider: &str,
     model: &str,
     endpoint: Option<String>,
 ) -> Result<()> {
+    let mcp_servers = config
+        .mcp
+        .as_ref()
+        .map(|mcp| mcp.servers.iter().map(|s| s.name.clone()).collect())
+        .unwrap_or_default();
+
     let agent = crucible_core::session::SessionAgent {
         agent_type: "internal".to_string(),
         agent_name: None,
@@ -726,7 +733,7 @@ async fn daemon_configure(
         thinking_budget: None,
         endpoint,
         env_overrides: std::collections::HashMap::new(),
-        mcp_servers: vec![],
+        mcp_servers,
         agent_card_name: None,
     };
 
