@@ -70,6 +70,13 @@ export interface ErrorEvent {
   message: string;
 }
 
+/** An interaction is requested from the user */
+export interface InteractionRequestedEvent {
+  type: 'interaction_requested';
+  id: string;
+  [key: string]: unknown;
+}
+
 /** Union of all SSE event types */
 export type ChatEvent =
   | TokenEvent
@@ -77,7 +84,8 @@ export type ChatEvent =
   | ToolResultEvent
   | ThinkingEvent
   | MessageCompleteEvent
-  | ErrorEvent;
+  | ErrorEvent
+  | InteractionRequestedEvent;
 
 /** SSE event type discriminator */
 export type ChatEventType = ChatEvent['type'];

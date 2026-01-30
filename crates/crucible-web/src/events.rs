@@ -37,6 +37,13 @@ pub enum ChatEvent {
 
     /// An error occurred
     Error { code: String, message: String },
+
+    /// An interaction is requested from the user
+    InteractionRequested {
+        id: String,
+        #[serde(flatten)]
+        request: serde_json::Value,
+    },
 }
 
 /// Summary of a tool call for the complete message
@@ -56,6 +63,7 @@ impl ChatEvent {
             ChatEvent::Thinking { .. } => "thinking",
             ChatEvent::MessageComplete { .. } => "message_complete",
             ChatEvent::Error { .. } => "error",
+            ChatEvent::InteractionRequested { .. } => "interaction_requested",
         };
 
         let data = serde_json::to_string(self).unwrap_or_else(|_| "{}".to_string());
