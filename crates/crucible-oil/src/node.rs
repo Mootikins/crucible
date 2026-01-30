@@ -46,6 +46,8 @@ pub enum Node {
     Focusable(FocusableNode),
     ErrorBoundary(ErrorBoundaryNode),
     Overlay(OverlayNode),
+    /// Raw escape sequence passthrough (for protocol-specific content like images)
+    Raw(RawNode),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -65,6 +67,13 @@ pub struct ErrorBoundaryNode {
 pub struct OverlayNode {
     pub child: Box<Node>,
     pub anchor: OverlayAnchor,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct RawNode {
+    pub content: String,
+    pub display_width: u16,
+    pub display_height: u16,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -367,6 +376,14 @@ pub fn overlay_from_bottom_right(child: Node, offset: usize) -> Node {
     Node::Overlay(OverlayNode {
         child: Box::new(child),
         anchor: OverlayAnchor::FromBottomRight(offset),
+    })
+}
+
+pub fn raw(content: impl Into<String>, display_width: u16, display_height: u16) -> Node {
+    Node::Raw(RawNode {
+        content: content.into(),
+        display_width,
+        display_height,
     })
 }
 
@@ -801,6 +818,49 @@ mod tests {
             assert_eq!(t.content, "-----");
         } else {
             panic!("Expected Text");
+        }
+    }
+}
+
+#[cfg(test)]
+mod raw_node_tests {
+    use super::*;
+    use crate::render::{render_to_plain_text, render_to_string};
+
+    #[test]
+    fn raw_node_renders_content_as_is() {
+        let node = raw("\x1b]1337;File=inline=1:abc\x07", 10, 5);
+        let output = render_to_string(&node, 80);
+        assert!(output.contains("\x1b]1337;File=inline=1:abc\x07"));
+    }
+
+    #[test]
+    fn raw_node_plain_text_shows_placeholder() {
+        let node = raw("\x1b_Gi=1;abc\x1b\\", 10, 5);
+        let output = render_to_plain_text(&node, 80);
+        assert!(output.contains("[raw:"));
+        assert!(output.contains("10x5"));
+    }
+
+    #[test]
+    fn raw_node_pads_to_width() {
+        let node = raw("\x1b_G\x1b\\", 3, 1);
+        let output = render_to_string(&node, 10);
+        // Raw content + 7 spaces of padding (10 - 3)
+        assert!(output.starts_with("\x1b_G\x1b\\"));
+        assert_eq!(output.len(), "\x1b_G\x1b\\".len() + 7);
+    }
+
+    #[test]
+    fn raw_builder_creates_raw_node() {
+        let node = raw("test", 5, 3);
+        match node {
+            Node::Raw(r) => {
+                assert_eq!(r.content, "test");
+                assert_eq!(r.display_width, 5);
+                assert_eq!(r.display_height, 3);
+            }
+            _ => panic!("Expected Raw node"),
         }
     }
 }

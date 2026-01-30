@@ -155,6 +155,17 @@ impl LayoutEngine {
             }
 
             Node::Overlay(_) => self.tree.new_leaf(taffy::style::Style::default()).unwrap(),
+
+            Node::Raw(raw) => self
+                .tree
+                .new_leaf(Style {
+                    size: Size {
+                        width: length(raw.display_width as f32),
+                        height: length(raw.display_height as f32),
+                    },
+                    ..Default::default()
+                })
+                .unwrap(),
         };
 
         self.node_map.insert(id, node_id);
