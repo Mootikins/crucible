@@ -323,12 +323,22 @@ impl PatternStore {
     ///
     /// let mut store = PatternStore::new();
     /// store.add_tool_pattern("read_note").unwrap();
+    /// store.add_tool_pattern("fs_*").unwrap();
     ///
     /// assert!(store.matches_tool("read_note"));
+    /// assert!(store.matches_tool("fs_read_file"));
+    /// assert!(store.matches_tool("fs_write_file"));
     /// assert!(!store.matches_tool("write_note"));
+    /// assert!(!store.matches_tool("gh_create_issue"));
     /// ```
     pub fn matches_tool(&self, tool_name: &str) -> bool {
-        self.tools.always_allow.contains(&tool_name.to_string())
+        self.tools.always_allow.iter().any(|pattern| {
+            if let Some(prefix) = pattern.strip_suffix('*') {
+                tool_name.starts_with(prefix)
+            } else {
+                pattern == tool_name
+            }
+        })
     }
 
     /// Merge another pattern store into this one

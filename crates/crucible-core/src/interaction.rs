@@ -773,7 +773,6 @@ impl PermRequest {
         }
     }
 
-    /// Get tokens/segments for pattern building.
     pub fn tokens(&self) -> &[String] {
         match &self.action {
             PermAction::Bash { tokens } => tokens,
@@ -782,14 +781,36 @@ impl PermRequest {
         }
     }
 
-    /// Build a pattern from token boundary.
-    ///
-    /// - `boundary=0` → `"*"` (allow anything)
-    /// - `boundary=1` → `"npm *"` (allow npm with any args)
-    /// - `boundary=len` → exact match
-    ///
-    /// This enables vim-motion-style UIs where users can use `h`/`l` to
-    /// expand or contract the permission scope.
+    /// Suggested pattern for allowlisting this request.
+    /// For bash: first token + `*` (e.g., `cargo *`)
+    /// For file ops: directory prefix (e.g., `src/`)
+    /// For tools: tool name, or MCP prefix + `*` (e.g., `fs_*`)
+    pub fn suggested_pattern(&self) -> String {
+        match &self.action {
+            PermAction::Bash { tokens } => {
+                if tokens.is_empty() {
+                    "*".to_string()
+                } else {
+                    format!("{} *", tokens[0])
+                }
+            }
+            PermAction::Read { segments } | PermAction::Write { segments } => {
+                if segments.is_empty() {
+                    "*".to_string()
+                } else {
+                    format!("{}/", segments[0])
+                }
+            }
+            PermAction::Tool { name, .. } => {
+                if let Some(prefix_end) = name.find('_') {
+                    format!("{}_*", &name[..prefix_end])
+                } else {
+                    name.clone()
+                }
+            }
+        }
+    }
+
     pub fn pattern_at(&self, boundary: usize) -> String {
         let tokens = self.tokens();
         if boundary == 0 {
@@ -805,41 +826,49 @@ impl PermRequest {
 /// Response to a permission request.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PermResponse {
-    /// Whether permission was granted.
     pub allowed: bool,
-    /// Optional pattern for the grant (e.g., "npm install *").
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pattern: Option<String>,
-    /// Scope of the permission grant.
     #[serde(default)]
     pub scope: PermissionScope,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
 }
 
 impl PermResponse {
-    /// Create an allow-once response.
     pub fn allow() -> Self {
         Self {
             allowed: true,
             pattern: None,
             scope: PermissionScope::Once,
+            reason: None,
         }
     }
 
-    /// Create a deny response.
     pub fn deny() -> Self {
         Self {
             allowed: false,
             pattern: None,
             scope: PermissionScope::Once,
+            reason: None,
         }
     }
 
-    /// Create an allow response with a pattern and scope.
+    pub fn deny_with_reason(reason: impl Into<String>) -> Self {
+        Self {
+            allowed: false,
+            pattern: None,
+            scope: PermissionScope::Once,
+            reason: Some(reason.into()),
+        }
+    }
+
     pub fn allow_pattern(pattern: impl Into<String>, scope: PermissionScope) -> Self {
         Self {
             allowed: true,
             pattern: Some(pattern.into()),
             scope,
+            reason: None,
         }
     }
 }
