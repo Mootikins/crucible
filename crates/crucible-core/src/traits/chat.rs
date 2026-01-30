@@ -233,6 +233,14 @@ pub trait AgentHandle: Send + Sync {
         None
     }
 
+    /// Cancel the current agent operation
+    ///
+    /// Propagates cancellation to the backend (e.g., daemon RPC).
+    /// Default is a no-op for agents that don't support remote cancellation.
+    async fn cancel(&self) -> ChatResult<()> {
+        Ok(())
+    }
+
     /// Set the temperature for response generation.
     ///
     /// Values: 0.0 = deterministic, 1.0 = balanced, 2.0 = maximum randomness
@@ -364,6 +372,10 @@ impl AgentHandle for Box<dyn AgentHandle + Send + Sync> {
 
     fn get_thinking_budget(&self) -> Option<i64> {
         (**self).get_thinking_budget()
+    }
+
+    async fn cancel(&self) -> ChatResult<()> {
+        (**self).cancel().await
     }
 
     async fn set_temperature(&mut self, temperature: f64) -> ChatResult<()> {
