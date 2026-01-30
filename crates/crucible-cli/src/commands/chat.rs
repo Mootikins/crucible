@@ -304,6 +304,9 @@ async fn run_interactive_chat(
     if !mcp_servers.is_empty() {
         runner = runner.with_mcp_servers(mcp_servers);
     }
+    if let Some(ref mcp) = config.mcp {
+        runner = runner.with_mcp_config(mcp.clone());
+    }
 
     runner = runner.with_slash_commands(known_slash_commands());
 
