@@ -112,6 +112,89 @@ fn graduated_table_fits_terminal_width() {
 }
 
 #[test]
+fn code_block_with_blank_line_not_split_into_separate_blocks() {
+    let mut app = OilChatApp::default();
+    app.on_message(ChatAppMsg::UserMessage("Show code".to_string()));
+
+    app.on_message(ChatAppMsg::TextDelta("```bash\n".to_string()));
+    app.on_message(ChatAppMsg::TextDelta("echo hello\n".to_string()));
+    app.on_message(ChatAppMsg::TextDelta("\n".to_string()));
+    app.on_message(ChatAppMsg::TextDelta("echo world\n".to_string()));
+    app.on_message(ChatAppMsg::TextDelta("```".to_string()));
+    app.on_message(ChatAppMsg::StreamComplete);
+
+    let tree = view_with_default_ctx(&app);
+    let rendered = render_to_string(&tree, 80);
+    let stripped = strip_ansi(&rendered);
+
+    let backtick_count = stripped.matches("```").count();
+    assert!(
+        backtick_count <= 2,
+        "Code block with blank line should have at most 2 fence markers (open+close), got {}.\nOutput:\n{}",
+        backtick_count,
+        stripped
+    );
+
+    assert!(
+        stripped.contains("echo hello"),
+        "Should contain first line of code block.\nOutput:\n{}",
+        stripped
+    );
+    assert!(
+        stripped.contains("echo world"),
+        "Should contain second line of code block.\nOutput:\n{}",
+        stripped
+    );
+}
+
+#[test]
+fn streaming_code_block_fence_not_tripled() {
+    let mut app = OilChatApp::default();
+    app.on_message(ChatAppMsg::UserMessage("Show code".to_string()));
+
+    app.on_message(ChatAppMsg::TextDelta(
+        "Here's the code:\n\n```bash\ngit clone repo\n```\n\nDone.".to_string(),
+    ));
+    app.on_message(ChatAppMsg::StreamComplete);
+
+    let tree = view_with_default_ctx(&app);
+    let rendered = render_to_string(&tree, 80);
+    let stripped = strip_ansi(&rendered);
+
+    let backtick_count = stripped.matches("```").count();
+    assert_eq!(
+        backtick_count, 2,
+        "Should have exactly 2 fence markers, got {}.\nOutput:\n{}",
+        backtick_count, stripped
+    );
+}
+
+#[test]
+fn streaming_incremental_code_block_no_duplicate_fences() {
+    let mut app = OilChatApp::default();
+    app.on_message(ChatAppMsg::UserMessage("Show code".to_string()));
+
+    app.on_message(ChatAppMsg::TextDelta("Here's the output:\n\n".to_string()));
+    app.on_message(ChatAppMsg::TextDelta("```\n".to_string()));
+    app.on_message(ChatAppMsg::TextDelta("total 100\n".to_string()));
+    app.on_message(ChatAppMsg::TextDelta("drwxr-xr-x file1\n".to_string()));
+    app.on_message(ChatAppMsg::TextDelta("```\n\n".to_string()));
+    app.on_message(ChatAppMsg::TextDelta("That's all.".to_string()));
+    app.on_message(ChatAppMsg::StreamComplete);
+
+    let tree = view_with_default_ctx(&app);
+    let rendered = render_to_string(&tree, 80);
+    let stripped = strip_ansi(&rendered);
+
+    let backtick_count = stripped.matches("```").count();
+    assert_eq!(
+        backtick_count, 2,
+        "Should have exactly 2 fence markers, got {}.\nOutput:\n{}",
+        backtick_count, stripped
+    );
+}
+
+#[test]
 fn live_graduation_does_not_duplicate_content() {
     let mut runtime = TestRuntime::new(80, 24);
     let mut app = OilChatApp::default();

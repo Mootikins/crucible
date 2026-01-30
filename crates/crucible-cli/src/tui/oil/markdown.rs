@@ -1682,4 +1682,91 @@ mod tests {
             "Should not panic on bullet with apostrophe and list"
         );
     }
+
+    #[test]
+    fn code_block_fence_markers_not_duplicated() {
+        // Complete code block - fence markers should appear exactly twice (open + close)
+        let md = "```bash\ngit clone repo\n```";
+        let node = markdown_to_node(md);
+        let output = render_to_string(&node, 80);
+        let backtick_count = output.matches("```").count();
+        assert_eq!(
+            backtick_count, 2,
+            "Expected exactly 2 fence markers (open + close), got {}. Output:\n{}",
+            backtick_count, output
+        );
+    }
+
+    #[test]
+    fn code_block_with_language_renders_fence_correctly() {
+        let md = "```rust\nfn main() {\n    println!(\"hello\");\n}\n```";
+        let node = markdown_to_node(md);
+        let output = render_to_string(&node, 80);
+        let backtick_count = output.matches("```").count();
+        assert_eq!(
+            backtick_count, 2,
+            "Expected exactly 2 fence markers, got {}. Output:\n{}",
+            backtick_count, output
+        );
+        assert!(output.contains("rust"), "Should contain language tag");
+    }
+
+    #[test]
+    fn unclosed_code_fence_no_extra_markers() {
+        // Simulates streaming: opening fence received but no closing fence yet
+        let md = "```bash\ngit clone repo";
+        let node = markdown_to_node(md);
+        let output = render_to_string(&node, 80);
+        let backtick_count = output.matches("```").count();
+        // Unclosed fence: markdown-it auto-closes it, so we expect 2 (open + close)
+        // OR if it doesn't parse as a fence at all, 0
+        assert!(
+            backtick_count <= 2,
+            "Unclosed fence should not produce more than 2 markers, got {}. Output:\n{}",
+            backtick_count,
+            output
+        );
+    }
+
+    #[test]
+    fn two_consecutive_code_blocks_no_tripled_fences() {
+        // Two code blocks back-to-back
+        let md = "```bash\nls -la\n```\n\n```bash\ncat file\n```";
+        let node = markdown_to_node(md);
+        let output = render_to_string(&node, 80);
+        let backtick_count = output.matches("```").count();
+        assert_eq!(
+            backtick_count, 4,
+            "Two code blocks should have 4 fence markers, got {}. Output:\n{}",
+            backtick_count, output
+        );
+    }
+
+    #[test]
+    fn code_block_with_blank_line_inside() {
+        // Code block containing a blank line (which is also the \n\n block separator)
+        let md = "```\nline1\n\nline3\n```";
+        let node = markdown_to_node(md);
+        let output = render_to_string(&node, 80);
+        let backtick_count = output.matches("```").count();
+        assert_eq!(
+            backtick_count, 2,
+            "Code block with blank line should still have exactly 2 fence markers, got {}. Output:\n{}",
+            backtick_count, output
+        );
+    }
+
+    #[test]
+    fn adjacent_code_blocks_no_separator() {
+        // Adjacent code blocks with only a single newline between them (no \n\n)
+        let md = "```\nblock1\n```\n```\nblock2\n```";
+        let node = markdown_to_node(md);
+        let output = render_to_string(&node, 80);
+        let backtick_count = output.matches("```").count();
+        assert_eq!(
+            backtick_count, 4,
+            "Adjacent code blocks should have 4 fence markers, got {}. Output:\n{}",
+            backtick_count, output
+        );
+    }
 }

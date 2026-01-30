@@ -529,6 +529,11 @@ impl ContainerList {
                             }
                         }
                     }
+                    // Text ended with \n\n — push empty placeholder so next delta
+                    // starts a fresh block instead of appending to the current one
+                    if text.ends_with("\n\n") && !blocks.is_empty() {
+                        blocks.push(String::new());
+                    }
                 }
             } else if parts.len() == 1 {
                 // No separator in this text
@@ -558,16 +563,36 @@ impl ContainerList {
             } else {
                 // Has separator(s) - append first part to current, create new blocks for rest
                 if let Some((first, rest)) = parts.split_first() {
-                    if let Some(last) = blocks.last_mut() {
-                        // If the first part is a list continuation and the current block
-                        // ends with a list item, preserve the \n\n separator
-                        if !first.is_empty()
-                            && is_ordered_list_continuation(first)
-                            && ends_with_ordered_list_item(last)
-                        {
-                            last.push_str("\n\n");
+                    // Check if last block is an empty placeholder and first part is a
+                    // list continuation that should merge with the block before it
+                    let merged_list = if blocks.len() >= 2
+                        && blocks.last().map(|b| b.is_empty()).unwrap_or(false)
+                        && !first.is_empty()
+                        && is_ordered_list_continuation(first)
+                        && ends_with_ordered_list_item(&blocks[blocks.len() - 2])
+                    {
+                        blocks.pop();
+                        if let Some(prev) = blocks.last_mut() {
+                            prev.push_str("\n\n");
+                            prev.push_str(first);
                         }
-                        last.push_str(first);
+                        true
+                    } else {
+                        false
+                    };
+
+                    if !merged_list {
+                        if let Some(last) = blocks.last_mut() {
+                            // If the first part is a list continuation and the current block
+                            // ends with a list item, preserve the \n\n separator
+                            if !first.is_empty()
+                                && is_ordered_list_continuation(first)
+                                && ends_with_ordered_list_item(last)
+                            {
+                                last.push_str("\n\n");
+                            }
+                            last.push_str(first);
+                        }
                     }
                     // Push parts, merging ordered list continuations
                     for part in rest {
