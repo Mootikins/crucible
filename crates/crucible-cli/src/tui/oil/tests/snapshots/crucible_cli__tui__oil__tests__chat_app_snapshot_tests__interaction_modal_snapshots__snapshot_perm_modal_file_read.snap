@@ -5,8 +5,8 @@ expression: render_app(&app)
 ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄
   /etc/hosts                                                                    
                                                                                 
-    > [y] Allow once                                                            
-      [n] Deny                                                                  
-      [p] Allow + Save pattern                                                  
+  > [y] Yes                                                                     
+    [n] No                                                                      
+    [a] Allowlist                                                               
 ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
- PERMISSION  READ  ↑/↓ navigate  Enter select  y/n/p shortcuts  Esc cancel
+ PERMISSION  READ   y/n/a options  ↑↓ move  Tab entry  Esc cancel
