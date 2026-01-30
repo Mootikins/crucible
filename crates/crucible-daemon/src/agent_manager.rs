@@ -42,11 +42,23 @@ pub type PermissionId = String;
 /// `false` for read-only tools:
 /// - `read_note`, `read_metadata` - reading content
 /// - `text_search`, `property_search`, `semantic_search` - search operations
-/// - `get_kiln_info`, `list_notes` - metadata queries
-pub fn is_destructive(tool_name: &str) -> bool {
+/// Default-deny: only explicitly safe tools skip the permission prompt.
+/// Everything unknown (including all external MCP tools) requires permission.
+pub fn is_safe(tool_name: &str) -> bool {
     matches!(
         tool_name,
-        "write" | "bash" | "delete" | "create_note" | "update_note" | "delete_note"
+        "read_file"
+            | "glob"
+            | "grep"
+            | "semantic_search"
+            | "text_search"
+            | "property_search"
+            | "list_notes"
+            | "read_note"
+            | "read_metadata"
+            | "get_kiln_info"
+            | "get_outlinks"
+            | "get_inlinks"
     )
 }
 
@@ -484,7 +496,7 @@ impl AgentManager {
                                 .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
                             let args = tc.arguments.clone().unwrap_or(serde_json::Value::Null);
 
-                            if is_destructive(&tc.name) {
+                            if !is_safe(&tc.name) {
                                 // Check if tool call matches a whitelisted pattern
                                 let project_path = workspace_path.to_string_lossy();
                                 let pattern_store =
@@ -599,7 +611,7 @@ impl AgentManager {
                                                 "Waiting for permission response"
                                             );
 
-                                            let permission_granted = match response_rx.await {
+                                            let (permission_granted, deny_reason) = match response_rx.await {
                                                 Ok(response) => {
                                                     debug!(
                                                         session_id = %session_id,
@@ -611,7 +623,6 @@ impl AgentManager {
                                                     );
 
                                                     if response.allowed {
-                                                        // AllowPattern: store pattern if provided
                                                         if let Some(ref pattern) = response.pattern
                                                         {
                                                             if response.scope
@@ -639,32 +650,36 @@ impl AgentManager {
                                                                 }
                                                             }
                                                         }
-                                                        true
+                                                        (true, None)
                                                     } else {
-                                                        // Deny: skip tool execution
-                                                        false
+                                                        (false, response.reason)
                                                     }
                                                 }
                                                 Err(_) => {
-                                                    // Channel dropped - treat as deny for safety
                                                     warn!(
                                                         session_id = %session_id,
                                                         tool = %tc.name,
                                                         permission_id = %permission_id,
                                                         "Permission channel dropped, treating as deny"
                                                     );
-                                                    false
+                                                    (false, None)
                                                 }
                                             };
 
                                             if !permission_granted {
-                                                // Create a brief resource description from args
                                                 let resource_desc =
                                                     Self::brief_resource_description(&args);
-                                                let error_msg = format!(
-                                                    "User denied permission to {} {}",
-                                                    tc.name, resource_desc
-                                                );
+                                                let error_msg = if let Some(reason) = &deny_reason {
+                                                    format!(
+                                                        "User denied permission to {} {}. Feedback: {}",
+                                                        tc.name, resource_desc, reason
+                                                    )
+                                                } else {
+                                                    format!(
+                                                        "User denied permission to {} {}",
+                                                        tc.name, resource_desc
+                                                    )
+                                                };
 
                                                 debug!(
                                                     session_id = %session_id,
@@ -924,7 +939,7 @@ impl AgentManager {
                     false
                 }
             }
-            "write" | "create_note" | "update_note" | "delete_note" => {
+            "write_file" | "edit_file" | "create_note" | "update_note" | "delete_note" => {
                 let path = args
                     .get("path")
                     .or_else(|| args.get("file"))
@@ -949,7 +964,7 @@ impl AgentManager {
 
         match tool_name {
             "bash" => store.add_bash_pattern(pattern)?,
-            "write" | "create_note" | "update_note" | "delete_note" => {
+            "write_file" | "edit_file" | "create_note" | "update_note" | "delete_note" => {
                 store.add_file_pattern(pattern)?
             }
             _ => store.add_tool_pattern(pattern)?,
@@ -2327,35 +2342,42 @@ mod tests {
         );
     }
 
-    mod is_destructive_tests {
+    mod is_safe_tests {
         use super::*;
 
         #[test]
-        fn destructive_tools_return_true() {
-            assert!(is_destructive("write"));
-            assert!(is_destructive("bash"));
-            assert!(is_destructive("delete"));
-            assert!(is_destructive("create_note"));
-            assert!(is_destructive("update_note"));
-            assert!(is_destructive("delete_note"));
+        fn read_only_tools_are_safe() {
+            assert!(is_safe("read_file"));
+            assert!(is_safe("glob"));
+            assert!(is_safe("grep"));
+            assert!(is_safe("read_note"));
+            assert!(is_safe("read_metadata"));
+            assert!(is_safe("text_search"));
+            assert!(is_safe("property_search"));
+            assert!(is_safe("semantic_search"));
+            assert!(is_safe("get_kiln_info"));
+            assert!(is_safe("list_notes"));
+            assert!(is_safe("get_outlinks"));
+            assert!(is_safe("get_inlinks"));
         }
 
         #[test]
-        fn read_only_tools_return_false() {
-            assert!(!is_destructive("read_note"));
-            assert!(!is_destructive("read_metadata"));
-            assert!(!is_destructive("text_search"));
-            assert!(!is_destructive("property_search"));
-            assert!(!is_destructive("semantic_search"));
-            assert!(!is_destructive("get_kiln_info"));
-            assert!(!is_destructive("list_notes"));
+        fn write_tools_are_not_safe() {
+            assert!(!is_safe("write_file"));
+            assert!(!is_safe("edit_file"));
+            assert!(!is_safe("bash"));
+            assert!(!is_safe("create_note"));
+            assert!(!is_safe("update_note"));
+            assert!(!is_safe("delete_note"));
         }
 
         #[test]
-        fn unknown_tools_return_false() {
-            assert!(!is_destructive("unknown_tool"));
-            assert!(!is_destructive(""));
-            assert!(!is_destructive("some_custom_tool"));
+        fn unknown_tools_are_not_safe() {
+            assert!(!is_safe("unknown_tool"));
+            assert!(!is_safe(""));
+            assert!(!is_safe("some_custom_tool"));
+            assert!(!is_safe("fs_write_file")); // MCP prefixed tools
+            assert!(!is_safe("gh_create_issue"));
         }
     }
 
@@ -2458,7 +2480,7 @@ mod tests {
             store.add_file_pattern("src/").unwrap();
 
             let args = serde_json::json!({"path": "src/lib.rs"});
-            assert!(AgentManager::check_pattern_match("write", &args, &store));
+            assert!(AgentManager::check_pattern_match("write_file", &args, &store));
         }
 
         #[test]
@@ -2467,7 +2489,7 @@ mod tests {
             store.add_file_pattern("src/").unwrap();
 
             let args = serde_json::json!({"path": "tests/test.rs"});
-            assert!(!AgentManager::check_pattern_match("write", &args, &store));
+            assert!(!AgentManager::check_pattern_match("write_file", &args, &store));
         }
 
         #[test]
@@ -2556,7 +2578,7 @@ mod tests {
             let tmp = TempDir::new().unwrap();
             let project_path = tmp.path().to_string_lossy().to_string();
 
-            AgentManager::store_pattern("write", "src/", &project_path).unwrap();
+            AgentManager::store_pattern("write_file", "src/", &project_path).unwrap();
 
             let store = PatternStore::load_sync(&project_path).unwrap();
             assert!(store.matches_file("src/main.rs"));
