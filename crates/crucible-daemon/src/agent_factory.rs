@@ -13,8 +13,8 @@ use crucible_core::session::SessionAgent;
 use crucible_core::traits::chat::AgentHandle;
 use crucible_core::{EventPushCallback, InteractionContext};
 use crucible_rig::{
-    build_agent_with_model_size, create_client, AgentComponents, AgentConfig, RigAgentHandle,
-    RigClient, WorkspaceContext,
+    build_agent_with_model_size, create_client, mcp_tools_from_gateway, AgentComponents,
+    AgentConfig, McpProxyTool, RigAgentHandle, RigClient, WorkspaceContext,
 };
 use std::path::Path;
 use std::str::FromStr;
@@ -58,6 +58,7 @@ pub async fn create_agent_from_session_config(
     workspace: &Path,
     background_spawner: Option<Arc<dyn BackgroundSpawner>>,
     event_tx: &broadcast::Sender<SessionEventMessage>,
+    mcp_gateway: Option<Arc<tokio::sync::RwLock<crucible_tools::mcp_gateway::McpGatewayManager>>>,
 ) -> Result<Box<dyn AgentHandle + Send + Sync>, AgentFactoryError> {
     if agent_config.agent_type != "internal" {
         return Err(AgentFactoryError::UnsupportedAgentType(format!(
@@ -65,6 +66,26 @@ pub async fn create_agent_from_session_config(
             agent_config.agent_type
         )));
     }
+
+    let mcp_tools: Vec<McpProxyTool> = if let Some(ref gw) = mcp_gateway {
+        let gw_read = gw.read().await;
+        debug!(
+            tool_count = gw_read.tool_count(),
+            mcp_servers = ?agent_config.mcp_servers,
+            "MCP gateway available for agent"
+        );
+        if !agent_config.mcp_servers.is_empty() {
+            let all_tools = gw_read.all_tools();
+            drop(gw_read);
+            let tools = mcp_tools_from_gateway(gw, &agent_config.mcp_servers, &all_tools);
+            info!(count = tools.len(), servers = ?agent_config.mcp_servers, "Resolved MCP proxy tools");
+            tools
+        } else {
+            vec![]
+        }
+    } else {
+        vec![]
+    };
 
     info!(
         provider = %agent_config.provider,
@@ -125,7 +146,7 @@ pub async fn create_agent_from_session_config(
     let handle: Box<dyn AgentHandle + Send + Sync> = match client {
         RigClient::Ollama(ref ollama_client) => {
             let agent =
-                build_agent_with_model_size(&rig_agent_config, ollama_client, &ws_ctx, model_size)
+                build_agent_with_model_size(&rig_agent_config, ollama_client, &ws_ctx, model_size, mcp_tools)
                     .map_err(|e| AgentFactoryError::AgentBuild(e.to_string()))?;
             let mut components =
                 AgentComponents::new(rig_agent_config.clone(), client, ws_ctx.clone())
@@ -136,6 +157,9 @@ pub async fn create_agent_from_session_config(
             if let Some(ref endpoint) = ollama_endpoint {
                 components = components.with_ollama_endpoint(endpoint.clone());
             }
+            if let Some(gw) = mcp_gateway {
+                components = components.with_mcp_gateway(gw);
+            }
             let handle = RigAgentHandle::new(agent)
                 .with_ollama_components(components)
                 .with_model(agent_config.model.clone())
@@ -144,7 +168,7 @@ pub async fn create_agent_from_session_config(
         }
         RigClient::OpenAI(openai_client) => {
             let agent =
-                build_agent_with_model_size(&rig_agent_config, &openai_client, &ws_ctx, model_size)
+                build_agent_with_model_size(&rig_agent_config, &openai_client, &ws_ctx, model_size, mcp_tools)
                     .map_err(|e| AgentFactoryError::AgentBuild(e.to_string()))?;
             let mut handle = RigAgentHandle::new(agent)
                 .with_workspace_context(ws_ctx)
@@ -157,7 +181,7 @@ pub async fn create_agent_from_session_config(
         }
         RigClient::OpenAICompat(compat_client) => {
             let agent =
-                build_agent_with_model_size(&rig_agent_config, &compat_client, &ws_ctx, model_size)
+                build_agent_with_model_size(&rig_agent_config, &compat_client, &ws_ctx, model_size, mcp_tools)
                     .map_err(|e| AgentFactoryError::AgentBuild(e.to_string()))?;
             let mut handle = RigAgentHandle::new(agent)
                 .with_workspace_context(ws_ctx)
@@ -174,6 +198,7 @@ pub async fn create_agent_from_session_config(
                 &anthropic_client,
                 &ws_ctx,
                 model_size,
+                mcp_tools,
             )
             .map_err(|e| AgentFactoryError::AgentBuild(e.to_string()))?;
             Box::new(
@@ -197,7 +222,7 @@ pub async fn create_agent_from_session_config(
                 .map_err(|e| AgentFactoryError::ClientCreation(e.to_string()))?;
 
             let agent =
-                build_agent_with_model_size(&rig_agent_config, &compat_client, &ws_ctx, model_size)
+                build_agent_with_model_size(&rig_agent_config, &compat_client, &ws_ctx, model_size, mcp_tools)
                     .map_err(|e| AgentFactoryError::AgentBuild(e.to_string()))?;
             Box::new(
                 RigAgentHandle::new(agent)
@@ -248,7 +273,7 @@ mod tests {
 
         let result = tokio::runtime::Runtime::new().unwrap().block_on(async {
             let (event_tx, _) = broadcast::channel(16);
-            create_agent_from_session_config(&config, Path::new("/tmp"), None, &event_tx).await
+            create_agent_from_session_config(&config, Path::new("/tmp"), None, &event_tx, None).await
         });
 
         assert!(matches!(
@@ -263,7 +288,7 @@ mod tests {
         let config = test_agent_config();
         let (event_tx, _) = broadcast::channel(16);
         let result =
-            create_agent_from_session_config(&config, Path::new("/tmp"), None, &event_tx).await;
+            create_agent_from_session_config(&config, Path::new("/tmp"), None, &event_tx, None).await;
         assert!(result.is_ok());
     }
 }
