@@ -5,36 +5,34 @@
 
 use crate::tui::oil::node::{col, row, scrollback, styled, Node};
 use crate::tui::oil::style::Style;
-use crate::tui::oil::theme::{colors, styles};
+use crate::tui::oil::theme::ThemeTokens;
 use crate::tui::oil::viewport_cache::CachedShellExecution;
 
 /// Render a shell execution with command, exit code, and output.
 pub fn render_shell_execution(shell: &CachedShellExecution) -> Node {
+    let theme = ThemeTokens::default_ref();
     let exit_style = if shell.exit_code == 0 {
-        styles::success()
+        theme.success_style()
     } else {
-        styles::error()
+        theme.error_style()
     };
 
     let header = row([
-        styled(" $ ", styles::muted()),
-        styled(
-            shell.command.as_ref(),
-            Style::new().fg(colors::TEXT_PRIMARY),
-        ),
+        styled(" $ ", theme.muted()),
+        styled(shell.command.as_ref(), Style::new().fg(theme.text_primary)),
         styled(format!("  exit {}", shell.exit_code), exit_style.dim()),
     ]);
 
     let tail_nodes: Vec<Node> = shell
         .output_tail
         .iter()
-        .map(|line| styled(format!("   {}", line), styles::dim()))
+        .map(|line| styled(format!("   {}", line), theme.dim()))
         .collect();
 
     let path_node = shell
         .output_path
         .as_ref()
-        .map(|p| styled(format!("   → {}", p.display()), styles::dim()))
+        .map(|p| styled(format!("   → {}", p.display()), theme.dim()))
         .unwrap_or(Node::Empty);
 
     let content = col(std::iter::once(header)

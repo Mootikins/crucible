@@ -91,7 +91,7 @@ pub use runtime::*;
 pub use style::*;
 pub use terminal::*;
 pub use test_harness::*;
-pub use theme::{colors, styles};
+pub use theme::ThemeTokens;
 pub use viewport::*;
 pub use viewport_cache::CachedMessage;
 
