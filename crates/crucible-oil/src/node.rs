@@ -277,10 +277,25 @@ pub fn fragment(children: impl IntoIterator<Item = Node>) -> Node {
 }
 
 pub fn popup(items: Vec<PopupItemNode>, selected: usize, max_visible: usize) -> Node {
-    // Default styles with original hardcoded colors
-    let bg_style = Style::new().bg(Color::Rgb(45, 50, 60));
-    let selected_style = Style::new().bg(Color::Rgb(60, 70, 90));
-    let unselected_style = Style::new().bg(Color::Rgb(45, 50, 60));
+    popup_with_colors(
+        items,
+        selected,
+        max_visible,
+        Color::Rgb(45, 50, 60),
+        Color::Rgb(60, 70, 90),
+    )
+}
+
+pub fn popup_with_colors(
+    items: Vec<PopupItemNode>,
+    selected: usize,
+    max_visible: usize,
+    bg_color: Color,
+    selected_color: Color,
+) -> Node {
+    let bg_style = Style::new().bg(bg_color);
+    let selected_style = Style::new().bg(selected_color);
+    let unselected_style = Style::new().bg(bg_color);
     popup_styled(
         items,
         selected,

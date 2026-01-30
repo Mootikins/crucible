@@ -11,6 +11,7 @@
 
 use crate::tui::oil::cell_grid::CellGrid;
 use crate::tui::oil::utils::truncate_to_width;
+use crucible_oil::ansi::apply_style;
 use crucible_oil::layout::Rect;
 use crucible_oil::style::{Border, Style};
 
@@ -336,15 +337,6 @@ fn render_box_content(
 }
 
 /// Apply ANSI styling to content.
-fn apply_style(content: &str, style: &Style) -> String {
-    if *style == Style::default() {
-        return content.to_string();
-    }
-
-    use crossterm::style::StyledContent;
-    let ct_style = style.to_crossterm();
-    format!("{}", StyledContent::new(ct_style, content))
-}
 
 /// Calculate visible width of a string (excluding ANSI escape codes).
 fn visible_width(s: &str) -> usize {
