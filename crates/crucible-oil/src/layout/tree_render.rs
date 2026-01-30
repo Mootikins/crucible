@@ -66,6 +66,10 @@ fn render_layout_box_filtered<F>(
         LayoutContent::Popup(popup) => {
             render_popup(popup, width, output);
         }
+
+        LayoutContent::Raw(raw) => {
+            output.push_str(&raw.content);
+        }
     }
 }
 
