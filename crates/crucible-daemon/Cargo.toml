@@ -32,6 +32,7 @@ crucible-pipeline = { path = "../crucible-pipeline" }
 crucible-enrichment = { path = "../crucible-enrichment" }
 crucible-observe = { path = "../crucible-observe" }
 crucible-lua = { path = "../crucible-lua" }
+crucible-tools = { path = "../crucible-tools" }
 mlua = { workspace = true }
 scopeguard = "1"
 reqwest = { workspace = true }
