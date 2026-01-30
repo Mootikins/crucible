@@ -57,10 +57,13 @@ fn render_node_plain_text(node: &Node, width: usize, output: &mut String) {
                 render_node_plain_text(child, width, output);
             }
         }
-        Node::Box(boxnode) => {
-            for child in &boxnode.children {
-                render_node_plain_text(child, width, output);
-            }
+        Node::Box(_) => {
+            // Delegate to the full layout engine so column/row direction,
+            // spacer expansion, and width allocation are all honoured,
+            // then strip ANSI codes and carriage returns (\r from \r\n).
+            let rendered = render_to_string(node, width);
+            let plain = crate::ansi::strip_ansi(&rendered).replace('\r', "");
+            output.push_str(&plain);
         }
         Node::Static(static_node) => {
             for child in &static_node.children {
