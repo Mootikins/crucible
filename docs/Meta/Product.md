@@ -1,0 +1,238 @@
+---
+description: Product feature map — capabilities, status, documentation, and dependencies
+type: product
+status: active
+updated: 2026-01-30
+tags:
+  - meta
+  - product
+  - moc
+---
+
+# Crucible Product Map
+
+> A living inventory of every capability, organized by what users get.
+>
+> **Legend**: `[x]` shipped · `[-]` in progress · `[ ]` planned
+> **Phases**: `P0` core · `P1` extensibility · `P2` workflows · `P3` polish · `P4` scale
+
+## Vision
+
+**"Neovim for agents+notes"** — extensible, open, documented
+
+A knowledge management system where:
+- AI agents have perfect context from your vault
+- Workflows are defined in markdown and executed by agents
+- Everything is extensible via Lua scripting and hooks
+- Power users get CLI, everyone else gets web/desktop UI eventually
+
+## User Progression
+
+| Phase | Users | Interface |
+|-------|-------|-----------|
+| Now | Power users, developers | CLI (chat-focused) |
+| Next | Plugin creators, agent developers | CLI + Lua scripting |
+| Later | Non-technical users | Web UI, Tauri desktop |
+
+---
+
+## Note-Taking & Authoring
+
+- [x] **Wikilinks** `P0` — `[[note]]` linking with aliases, headings, and block refs · [[Help/Wikilinks]] · `crucible-parser`
+- [x] **Tags** `P0` — `#tag` and `#nested/tag` taxonomy · [[Help/Tags]] · `crucible-parser`
+- [x] **Frontmatter** `P0` — YAML/TOML metadata in note headers · [[Help/Frontmatter]] · `crucible-parser`
+- [x] **Block References** `P0` — `^block-id` paragraph-level linking · [[Help/Block References]] · `crucible-parser`
+- [x] **Callouts** `P0` — `> [!type]` admonition blocks · `crucible-parser`
+- [x] **LaTeX** `P0` — `$inline$` and `$$block$$` math notation · `crucible-parser`
+- [x] **Footnotes** `P0` — Reference-style footnotes · `crucible-parser`
+- [x] **Tables** `P0` — Markdown tables with alignment · `crucible-parser`
+- [x] **Task Lists** `P0` — `- [ ]` / `- [x]` checkbox items · [[Help/Task Management]] · `crucible-parser`
+- [x] **Kilns** `P0` — Vault-like note collections with `.crucible/` config · [[Help/Concepts/Kilns]] · `crucible-core`
+- [x] **Plaintext First** `P0` — Markdown files are always the source of truth · [[Help/Concepts/Plaintext First]]
+- [ ] **Note Types** `P3` — Templates and typed notes (book, meeting, movie) · `crucible-core`
+
+## Knowledge Discovery
+
+- [x] **Semantic Search** `P0` — Vector similarity search with reranking · [[Help/Concepts/Semantic Search]] · `crucible-surrealdb`, `crucible-llm`
+- [x] **Full-text Search** `P0` — Fast text search across all notes · [[Help/CLI/search]] · `crucible-surrealdb`
+- [x] **Knowledge Graph** `P0` — Wikilink-based graph structure and traversal · [[Help/Concepts/The Knowledge Graph]] · `crucible-surrealdb`
+- [x] **Query System** `P0` — Structured note queries with composable pipeline · [[Help/Query/Query System]] · `crucible-query`
+- [x] **Property Search** `P0` — Search notes by frontmatter properties and tags · `crucible-tools`
+- [x] **Document Clustering** `P0` — K-means and heuristic clustering with MoC detection · `crucible-surrealdb`
+- [x] **Block-level Embeddings** `P0` — Paragraph-granularity semantic indexing · `crucible-llm`, `crucible-surrealdb`
+- [ ] **Precognition** `P?` — Auto-RAG: inject relevant context before each agent turn
+
+## AI Chat & Agents
+
+- [x] **Interactive Chat** `P0` — Conversational AI with streaming responses · [[Help/CLI/chat]] · `crucible-cli`, `crucible-rig`
+- [x] **Agent Cards** `P0` — Configurable AI agent personas with system prompts · [[Help/Extending/Agent Cards]] · [[Help/Config/agents]] · `crucible-config`
+- [x] **Session Persistence** `P0` — Conversations saved as markdown in kiln · [[Help/Core/Sessions]] · `crucible-daemon`
+- [x] **Session Resume** `P0` — Load and continue previous sessions · [[Help/Core/Sessions]] · `crucible-daemon`, `crucible-daemon-client`
+- [x] **Internal Agent** `P0` — Built-in agent with session memory and tool access · [[Help/Extending/Internal Agent]] · `crucible-rig`
+- [x] **Model Switching** `P0` — Runtime model changes via `:model` command · `crucible-daemon`, `crucible-cli`
+- [x] **Extended Thinking** `P0` — Thinking budget control and display toggle · `crucible-daemon`, `crucible-cli`
+- [x] **Tool Calls** `P0` — Inline tool execution with streaming results · `crucible-rig`, `crucible-tools`
+- [x] **Context Enrichment** `P0` — Inject vault context into agent conversations · `crucible-context`, `crucible-enrichment`
+- [x] **File Attachment** `P0` — `@file` context attachment in chat · `crucible-cli`
+- [x] **Rules Files** `P0` — Project-level AI instructions (`.crucible/rules`) · [[Help/Rules Files]] · `crucible-config`
+- [x] **Multiple LLM Providers** `P0` — Ollama, OpenAI, Anthropic via unified interface · [[Help/Config/llm]] · `crucible-rig`
+- [-] **MCP Tool System** `P0` — Permission prompts, ACP integration (95%) · `crucible-tools`, `crucible-acp`
+- [-] **Error Handling UX** `P0` — Clear error messages, graceful degradation · `crucible-cli`
+- [ ] **Grammar + Lua Integration** `P1` — Constrained generation for structured agent outputs · `crucible-core`
+
+## Terminal Interface (TUI)
+
+- [x] **Chat Modes** `P0` — Normal, Plan (read-only), Auto (auto-approve) modes · [[Help/TUI/Modes]] · `crucible-cli`
+- [x] **Input Modes** `P0` — Normal (`>`), Command (`:`), Shell (`!`) input · [[Help/TUI/Commands]] · `crucible-cli`
+- [x] **Streaming Display** `P0` — Real-time token streaming with cancel (Esc/Ctrl+C) · `crucible-cli`
+- [x] **Streaming Graduation** `P0` — Content transitions from viewport to stdout · `crucible-cli`
+- [x] **Autocomplete** `P0` — Popup for `/commands`, `:repl`, `@files`, `[[notes]]`, `:model`, `:set` · `crucible-cli`
+- [x] **Command Palette** `P0` — F1 toggle for command discovery · `crucible-cli`
+- [x] **Shell Modal** `P0` — Full-screen shell command execution with scrollable output · [[Help/TUI/Shell Execution]] · `crucible-cli`
+- [x] **Notification System** `P0` — Toast notifications with expiry, toggle with `:messages` · `crucible-cli`
+- [x] **Interaction Modals** `P0` — Permission requests (allow/deny/always), ask questions · `crucible-cli`
+- [x] **Diff Preview** `P0` — Diff display for permission prompts · `crucible-cli`
+- [x] **Keybindings** `P0` — Configurable keyboard shortcuts · [[Help/TUI/Keybindings]] · `crucible-cli`
+- [x] **Runtime Config** `P0` — Vim-style `:set` with enable/disable/toggle/reset/query · [[Help/TUI/Commands]] · `crucible-cli`
+- [x] **Session Export** `P0` — `:export <path>` to save session as markdown · `crucible-cli`
+- [x] **Markdown Rendering** `P0` — Full markdown-to-node rendering with styled output · `crucible-cli`, `crucible-oil`
+- [x] **Oil Renderer** `P0` — Custom terminal rendering engine (replaced ratatui) · [[Help/TUI/Component Architecture]] · `crucible-oil`
+- [x] **Theme System** `P0` — Token-based theming with configurable colors · [[Meta/TUI-Style-Guide]] · `crucible-oil`
+- [x] **Taffy Layout** `P0` — Flexbox-based terminal layout engine · `crucible-oil`
+- [x] **Context Usage Display** `P0` — Token usage (used/total) in statusline · `crucible-cli`
+- [x] **Subagent Display** `P0` — Spawned/completed/failed subagent tracking · `crucible-cli`
+- [x] **Drawer Component** `P0` — Expandable UI panels · `crucible-cli`
+- [x] **Viewport Caching** `P0` — Cached tool calls, shell executions, subagents · `crucible-cli`
+- [ ] **TUI Redesign** `P1` — Splash screen, bottom-anchored chat · [[Meta/TUI User Stories]] · `crucible-cli`
+- [ ] **Chat Improvements** `P1` — Command history, session stats · `crucible-cli`
+
+## Extensibility & Plugins
+
+- [x] **Lua Scripting** `P0` — Lua 5.4 runtime for plugins · [[Help/Lua/Language Basics]] · [[Help/Concepts/Scripting Languages]] · `crucible-lua`
+- [x] **Fennel Support** `P0` — Lisp-to-Lua compiler with macros · [[Help/Concepts/Scripting Languages]] · `crucible-lua`
+- [x] **Plugin System** `P0` — Discovery, lifecycle, manifests · [[Help/Extending/Creating Plugins]] · [[Help/Extending/Plugin Manifest]] · `crucible-lua`
+- [x] **Tool Annotations** `P0` — `@tool`, `@hook`, `@param` annotations for Lua functions · [[Help/Extending/Custom Tools]] · `crucible-lua`
+- [x] **Event Hooks** `P0` — Note lifecycle hooks (`note:created`, `note:modified`, etc.) · [[Help/Extending/Event Hooks]] · `crucible-lua`
+- [x] **Custom Handlers** `P0` — Event handler chains with priority ordering · [[Help/Extending/Custom Handlers]] · `crucible-lua`
+- [x] **Oil UI DSL** `P1` — React-like functional UI for Lua/Fennel plugins · [[Help/Extending/Scripted UI]] · [[Help/Plugins/Oil-Lua-API]] · `crucible-lua`, `crucible-oil`
+- [x] **Lua API Modules** `P0` — 17+ modules: `crucible.fs`, `crucible.graph`, `crucible.http`, `crucible.session`, `crucible.shell`, etc. · `crucible-lua`
+- [x] **Plugin Config** `P0` — Per-plugin configuration schemas · [[Help/Lua/Configuration]] · `crucible-lua`
+- [x] **Script Agent Queries** `P0` — Lua-based agent queries · [[Help/Extending/Script Agent Queries]] · `crucible-lua`
+- [x] **HTTP Module** `P0` — HTTP client for plugins · [[Help/Extending/HTTP Module]] · `crucible-lua`
+- [-] **Lua Integration (full)** `P1` — Complete scripting API for custom workflows and callout handlers · `crucible-lua`
+- [ ] **Hook Documentation** `P1` — Comprehensive guide on extending Crucible · [[Help/Extending/Event Hooks]]
+
+## MCP Integration
+
+- [x] **MCP Server** `P0` — Expose kiln as MCP tools for external AI agents · [[Help/Concepts/Agents & Protocols]] · `crucible-tools`
+- [x] **Note Tools** `P0` — `create_note`, `read_note`, `read_metadata`, `update_note`, `delete_note`, `list_notes` · `crucible-tools`
+- [x] **Search Tools** `P0` — `semantic_search`, `text_search`, `property_search` · `crucible-tools`
+- [x] **Kiln Tools** `P0` — `get_kiln_info`, `get_kiln_roots`, `get_kiln_stats` · `crucible-tools`
+- [x] **Workspace Tools** `P0` — `read_file`, `edit_file`, `write_file`, `bash`, `glob`, `grep` · `crucible-tools`
+- [x] **MCP Gateway** `P0` — Connect upstream MCP servers with prefixed tool names · [[Help/Extending/MCP Gateway]] · [[Help/Config/mcp]] · `crucible-tools`
+- [x] **Lua Plugin Tools** `P0` — Dynamic tool discovery from Lua plugins · `crucible-tools`, `crucible-lua`
+- [x] **TOON Formatting** `P0` — Token-efficient response formatting · `crucible-tools`
+- [-] **MCP Bridge/Gateway** `P0` — Integration tests, documentation (85%) · `crucible-tools`
+- [-] **MCP Connection Stability** `P0` — Reconnect logic, timeout handling, status indicators · `crucible-acp`
+- [-] **ACP Protocol** `P0` — Agent Context Protocol session/request handling · [[Help/Concepts/Agents & Protocols]] · `crucible-acp`
+
+## Workflow Automation
+
+- [ ] **Markdown Handlers** `P2` — Event handlers in pure markdown, inject context into agents · [[Help/Extending/Markdown Handlers]] · depends: [[#Extensibility & Plugins]]
+- [ ] **Workflow Markup** `P2` — DAG workflows in markdown (`@agent`, `->` data flow, `> [!gate]`) · [[Help/Workflows/Workflow Syntax]] · [[Help/Workflows/Markup]]
+- [ ] **Workflow Sessions** `P2` — Log execution as markdown, resume interrupted work · [[Help/Workflows/Index]]
+- [ ] **Session Learning** `P2` — Codify successful sessions into reusable workflows
+- [ ] **Parallel Execution** `P2` — `(parallel)` suffix or `&` prefix for concurrent steps
+- [ ] **Workflow Authoring** `P2` — Guide for creating workflows · [[Help/Extending/Workflow Authoring]]
+
+## Storage & Processing
+
+- [x] **SurrealDB Backend** `P0` — Primary storage with RocksDB engine · [[Help/Config/storage]] · `crucible-surrealdb`
+- [x] **SQLite Backend** `P0` — Lightweight alternative storage · [[Help/Config/storage]] · `crucible-sqlite`
+- [x] **Vector Embeddings** `P0` — FastEmbed (ONNX) local embedding generation · [[Help/Config/embedding]] · `crucible-llm`
+- [x] **Embedding Reranking** `P0` — Search result reranking for relevance · `crucible-surrealdb`
+- [x] **File Processing** `P0` — Parse, enrich, and index notes via pipeline · [[Help/CLI/process]] · `crucible-pipeline`, `crucible-enrichment`
+- [x] **Transaction Queue** `P0` — Batched database operations with consistency · `crucible-surrealdb`
+- [x] **Hash-based Change Detection** `P0` — Content-addressable block hashing · `crucible-core`
+- [x] **Task Storage** `P0` — Task records, history, dependencies, file associations · `crucible-surrealdb`
+- [x] **Kiln Statistics** `P0` — Note counts, link analysis, storage metrics · [[Help/CLI/stats]] · `crucible-cli`
+- [x] **Daemon Server** `P0` — Unix socket server with 35 RPC methods · `crucible-daemon`
+- [x] **Daemon Client** `P0` — Auto-spawn, reconnect, RPC client library · `crucible-daemon-client`
+- [x] **Event Subscriptions** `P0` — Per-session and wildcard event streaming via daemon · `crucible-daemon`
+- [x] **Notification RPC** `P0` — Add, list, dismiss notifications via daemon · `crucible-daemon`
+- [-] **File Watching** `P0` — Filesystem change detection for auto-reprocessing · `crucible-watch`
+- [ ] **Burn Embeddings** `P?` — Burn ML framework for local embeddings (stubbed) · `crucible-llm`
+- [ ] **LlamaCpp Embeddings** `P?` — GGUF model inference for embeddings (stubbed) · `crucible-llm`
+- [ ] **Session Compaction** `P?` — Compact sessions with cache purge for memory efficiency · `crucible-daemon`
+
+## Configuration & Setup
+
+- [x] **Config System** `P0` — TOML config with profiles, includes, environment overrides · [[Help/Configuration]] · `crucible-config`
+- [x] **Provider Config** `P0` — Unified provider configuration (Ollama, OpenAI, Anthropic) · [[Help/Config/llm]] · `crucible-config`
+- [x] **Embedding Config** `P0` — Provider, model, batch size, concurrency settings · [[Help/Config/embedding]] · `crucible-config`
+- [x] **Storage Config** `P0` — Backend selection, embedded vs daemon mode · [[Help/Config/storage]] · `crucible-config`
+- [x] **MCP Config** `P0` — Upstream MCP server connections · [[Help/Config/mcp]] · `crucible-config`
+- [x] **Workspace Config** `P0` — Multi-workspace kiln associations · [[Help/Config/workspaces]] · `crucible-config`
+- [x] **Agent Config** `P0` — Default agent, temperature, max_tokens, thinking budget · [[Help/Config/agents]] · `crucible-config`
+- [x] **CLI Commands** `P0` — 16 command modules: chat, session, process, search, stats, config, etc. · [[Help/CLI/Index]] · `crucible-cli`
+- [x] **Init Command** `P0` — Project initialization (`cru init`) · `crucible-cli`
+- [x] **Getting Started** `P0` — Installation and first steps guide · [[Guides/Getting Started]] · [[Guides/Your First Kiln]]
+- [x] **Platform Guides** `P0` — Windows setup, GitHub Copilot integration · [[Guides/Windows Setup]] · [[Guides/GitHub Copilot Setup]]
+- [-] **CLI Help & Discoverability** `P0` — `--help` completeness, command suggestions · `crucible-cli`
+- [-] **Plugin Loading Errors** `P0` — Clear feedback when Lua plugins fail to load · `crucible-lua`
+
+## Web & Desktop
+
+- [-] **Web Chat UI** `P3` — Axum + SvelteKit + SSE streaming chat interface · `crucible-web`
+- [ ] **Oil Node Serialization** `P3` — Oil Node → JSON for web rendering · `crucible-oil`
+- [ ] **SolidJS Renderer** `P3` — `<OilNode>` component for browser rendering · `crucible-web`
+- [ ] **Shared Component Model** `P3` — Unified TUI/Web rendering from same Oil nodes · `crucible-oil`, `crucible-web`
+- [ ] **Tauri Desktop** `P3` — Native desktop app wrapping web UI · depends: [[#Web & Desktop|Web Chat UI]]
+- [ ] **Canvas / Flowcharts** `P3` — WebGL-based visual workflow editor · depends: [[#Web & Desktop|Web Chat UI]]
+- [ ] **Rich Rendering** `P3` — Mermaid diagrams, LaTeX rendering, image OCR · `crucible-web`
+- [ ] **Document Preview** `P3` — PDF and image rendering in notes · `crucible-web`
+
+## Collaboration & Scale
+
+- [ ] **Sync System** `P4` — Merkle diff + CRDT for multi-device synchronization
+- [ ] **Concurrent Agent Access** `P4` — Multiple agents accessing a kiln simultaneously · `crucible-daemon`
+- [ ] **Shared Memory** `P4` — Worlds/Rooms for collaborative cognition
+- [ ] **Federation** `P4` — A2A protocol for cross-vault agent communication
+
+---
+
+## Decision Log
+
+| Date | Decision | Rationale |
+|------|----------|-----------|
+| 2024-12-13 | Cut GPUI desktop, keep Tauri | Web tech enables rich features (canvas, mermaid, latex) at low cost |
+| 2024-12-13 | Keep ACP | Working, enables Cursor-specific models |
+| 2024-12-13 | Event hooks = Tool + Note lifecycle | Focused scope vs. 317-task proposal |
+| 2024-12-13 | Keep grammar crate | Integrate with Lua for constrained generation |
+| 2024-12-13 | CLI is chat-focused | Other commands for testing, primary UX is conversation |
+| 2025-01-23 | Oil UI DSL: Lua + Fennel | React-like functional UI, web deferred to Phase 3 |
+| 2025-01-23 | Web is SolidJS, not Svelte | Corrected docs; SolidJS already in use |
+| 2025-01-24 | Vim-style :set command | Runtime config overlay with modification tracking |
+| 2025-01-24 | Model switching | Runtime model changes via :model command and daemon RPC |
+
+## Archived / Cut
+
+| Item | Reason |
+|------|--------|
+| `crucible-desktop` (GPUI) | Cut — using Tauri + web instead |
+| `add-desktop-ui` OpenSpec | Archived — GPUI approach abandoned |
+| `add-meta-systems` | Too ambitious (365 tasks), overlaps with focused Lua approach |
+| `add-advanced-tool-architecture` | Overlaps with working MCP bridge |
+| `add-quick-prompt-features` | Nice UX, not core — revisit in Phase 3 |
+| `refactor-clustering-plugins` | Nice feature, not core |
+| Ratatui TUI | Removed — migrated to oil-only TUI (2025-01-17) |
+
+## Links
+
+- [[Meta/Roadmap]] — Phase-based development timeline
+- [[Meta/Tasks]] — Active operational tasks
+- [[Meta/backlog]] — Development backlog
+- [[Meta/Systems]] — System architecture and boundaries
+- [[Meta/TUI User Stories]] — TUI requirements
+- [[Meta/Plugin User Stories]] — Plugin requirements
+- [[Meta/Plugin API Sketches]] — Plugin API designs

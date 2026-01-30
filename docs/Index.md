@@ -27,6 +27,7 @@ Think of it as Crucible documenting itself, using itself.
 
 Navigate by topic:
 
+- **[[Meta/Product]]** — Feature map: capabilities, status, and documentation
 - **[[AI Features]]** — Agents, chat, sessions, and AI-powered capabilities
 - **[[Extending Crucible]]** — Plugins, hooks, tools, and scripting
 - **[[Search & Discovery]]** — Finding and navigating your notes
