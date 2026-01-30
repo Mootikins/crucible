@@ -336,8 +336,6 @@ fn render_box_content(
     }
 }
 
-/// Apply ANSI styling to content.
-
 /// Calculate visible width of a string (excluding ANSI escape codes).
 fn visible_width(s: &str) -> usize {
     let mut width = 0;

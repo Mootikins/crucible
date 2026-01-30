@@ -11,7 +11,7 @@ pub fn arb_text_content() -> impl Strategy<Value = String> {
                 && !t
                     .chars()
                     .next()
-                    .map_or(false, |c| c.is_ascii_digit() && t.contains(". "))
+                    .is_some_and(|c| c.is_ascii_digit() && t.contains(". "))
         })
 }
 
