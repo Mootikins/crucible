@@ -1,15 +1,28 @@
 use crate::tui::oil::event::Event;
 use crate::tui::oil::focus::FocusContext;
 use crate::tui::oil::node::Node;
+use crate::tui::oil::theme::ThemeTokens;
 use std::time::Duration;
 
 pub struct ViewContext<'a> {
     pub focus: &'a FocusContext,
+    pub theme: &'a ThemeTokens,
 }
 
 impl<'a> ViewContext<'a> {
     pub fn new(focus: &'a FocusContext) -> Self {
-        Self { focus }
+        Self {
+            focus,
+            theme: ThemeTokens::default_ref(),
+        }
+    }
+
+    pub fn with_theme(focus: &'a FocusContext, theme: &'a ThemeTokens) -> Self {
+        Self { focus, theme }
+    }
+
+    pub fn theme(&self) -> &ThemeTokens {
+        self.theme
     }
 
     pub fn is_focused(&self, id: &str) -> bool {
