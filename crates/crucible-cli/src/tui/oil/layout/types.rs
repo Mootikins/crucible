@@ -184,6 +184,12 @@ pub enum LayoutContent {
 
     /// Fragment (transparent container, no visual representation).
     Fragment,
+
+    Raw {
+        content: String,
+        display_width: u16,
+        display_height: u16,
+    },
 }
 
 impl Default for LayoutContent {

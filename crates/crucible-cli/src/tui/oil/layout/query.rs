@@ -37,6 +37,7 @@ impl LayoutBox {
             LayoutContent::Fragment => None,
             LayoutContent::Empty => None,
             LayoutContent::Popup { .. } => None,
+            LayoutContent::Raw { .. } => None,
         }
     }
 }
