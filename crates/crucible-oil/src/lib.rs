@@ -36,7 +36,6 @@ mod span;
 pub mod style;
 mod taffy_layout;
 pub mod template;
-pub mod theme;
 
 pub use cell_grid::{CellGrid, StyledCell};
 pub use components::{
@@ -54,7 +53,6 @@ pub use overlay::{composite_overlays, Overlay, OverlayAnchor};
 pub use render::*;
 pub use span::{OwnedSpan, OwnedSpanLine, Span, SpanLine};
 pub use style::*;
-pub use theme::Theme;
 
 // Re-export commonly used decrypt functions
 pub use decrypt::{decrypt_text, DecryptConfig, CIPHER_CHARS};
