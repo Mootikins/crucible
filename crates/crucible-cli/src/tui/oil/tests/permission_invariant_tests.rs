@@ -69,10 +69,12 @@ fn bash_command_strategy() -> impl Strategy<Value = Vec<String>> {
 
 /// Generate a random key that is NOT y, Y, n, N, h, H, p, P, or Esc.
 fn random_non_action_key_strategy() -> impl Strategy<Value = char> {
+    // Excludes: y/Y (allow), n/N (deny), a/A (allowlist), h/H (toggle diff),
+    // j/k (navigation), p/P (legacy pattern)
     prop::sample::select(vec![
-        'a', 'b', 'c', 'd', 'e', 'f', 'g', 'i', 'j', 'k', 'l', 'm', 'o', 'q', 'r', 's', 't', 'u',
-        'v', 'w', 'x', 'z', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', ' ', '@', '#', '$',
-        '%', '&', '*', '+', '=', '-', '_', '/', '\\', '|', ';', ':', ',', '.', '<', '>', '?',
+        'b', 'c', 'd', 'e', 'f', 'g', 'i', 'l', 'm', 'o', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x',
+        'z', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', ' ', '@', '#', '$', '%', '&', '*',
+        '+', '=', '-', '_', '/', '\\', '|', ';', ':', ',', '.', '<', '>', '?',
     ])
 }
 

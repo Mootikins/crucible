@@ -269,49 +269,81 @@ impl InteractionModal {
         key: KeyEvent,
         perm_request: PermRequest,
     ) -> InteractionModalOutput {
-        let has_pattern_option = !perm_request.tokens().is_empty();
-        let total_options = if has_pattern_option { 3 } else { 2 };
+        const TOTAL_OPTIONS: usize = 3;
 
-        match key.code {
-            KeyCode::Up | KeyCode::Char('k') | KeyCode::Char('K') => {
-                self.selected = Self::wrap_selection(self.selected, -1, total_options);
-                InteractionModalOutput::None
-            }
-            KeyCode::Down | KeyCode::Char('j') | KeyCode::Char('J') => {
-                self.selected = Self::wrap_selection(self.selected, 1, total_options);
-                InteractionModalOutput::None
-            }
-            KeyCode::Enter => self.handle_perm_enter_key(&perm_request, has_pattern_option),
-            KeyCode::Char('y') | KeyCode::Char('Y') => InteractionModalOutput::PermissionResponse {
-                request_id: self.request_id.clone(),
-                response: PermResponse::allow(),
+        match self.mode {
+            InteractionMode::Selecting => match key.code {
+                KeyCode::Up | KeyCode::Char('k') | KeyCode::Char('K') => {
+                    self.selected = Self::wrap_selection(self.selected, -1, TOTAL_OPTIONS);
+                    InteractionModalOutput::None
+                }
+                KeyCode::Down | KeyCode::Char('j') | KeyCode::Char('J') => {
+                    self.selected = Self::wrap_selection(self.selected, 1, TOTAL_OPTIONS);
+                    InteractionModalOutput::None
+                }
+                KeyCode::Enter => self.handle_perm_confirm(&perm_request),
+                KeyCode::Char('y') | KeyCode::Char('Y') => {
+                    InteractionModalOutput::PermissionResponse {
+                        request_id: self.request_id.clone(),
+                        response: PermResponse::allow(),
+                    }
+                }
+                KeyCode::Char('n') | KeyCode::Char('N') => {
+                    InteractionModalOutput::PermissionResponse {
+                        request_id: self.request_id.clone(),
+                        response: PermResponse::deny(),
+                    }
+                }
+                KeyCode::Char('a') | KeyCode::Char('A') => {
+                    InteractionModalOutput::PermissionResponse {
+                        request_id: self.request_id.clone(),
+                        response: PermResponse::allow_pattern(
+                            perm_request.suggested_pattern(),
+                            PermissionScope::Project,
+                        ),
+                    }
+                }
+                KeyCode::Tab => {
+                    self.mode = InteractionMode::TextInput;
+                    if self.selected == 2 {
+                        self.other_text = perm_request.suggested_pattern();
+                    }
+                    InteractionModalOutput::None
+                }
+                KeyCode::Char('h') | KeyCode::Char('H') => {
+                    self.diff_collapsed = !self.diff_collapsed;
+                    InteractionModalOutput::ToggleDiff
+                }
+                KeyCode::Esc | KeyCode::Char('c')
+                    if key.code == KeyCode::Esc || Self::is_ctrl_c(key) =>
+                {
+                    InteractionModalOutput::PermissionResponse {
+                        request_id: self.request_id.clone(),
+                        response: PermResponse::deny(),
+                    }
+                }
+                _ => InteractionModalOutput::None,
             },
-            KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc => {
-                InteractionModalOutput::PermissionResponse {
-                    request_id: self.request_id.clone(),
-                    response: PermResponse::deny(),
+            InteractionMode::TextInput => match key.code {
+                KeyCode::Enter => self.handle_perm_text_confirm(&perm_request),
+                KeyCode::Esc => {
+                    self.mode = InteractionMode::Selecting;
+                    InteractionModalOutput::None
                 }
-            }
-            KeyCode::Char('c') if Self::is_ctrl_c(key) => {
-                InteractionModalOutput::PermissionResponse {
-                    request_id: self.request_id.clone(),
-                    response: PermResponse::deny(),
+                KeyCode::Backspace => {
+                    self.other_text.pop();
+                    InteractionModalOutput::None
                 }
-            }
-            KeyCode::Char('p') | KeyCode::Char('P') => self.handle_perm_pattern_key(&perm_request),
-            KeyCode::Char('h') | KeyCode::Char('H') => {
-                self.diff_collapsed = !self.diff_collapsed;
-                InteractionModalOutput::ToggleDiff
-            }
-            _ => InteractionModalOutput::None,
+                KeyCode::Char(c) => {
+                    self.other_text.push(c);
+                    InteractionModalOutput::None
+                }
+                _ => InteractionModalOutput::None,
+            },
         }
     }
 
-    fn handle_perm_enter_key(
-        &self,
-        perm_request: &PermRequest,
-        has_pattern_option: bool,
-    ) -> InteractionModalOutput {
+    fn handle_perm_confirm(&self, perm_request: &PermRequest) -> InteractionModalOutput {
         match self.selected {
             0 => InteractionModalOutput::PermissionResponse {
                 request_id: self.request_id.clone(),
@@ -321,31 +353,41 @@ impl InteractionModal {
                 request_id: self.request_id.clone(),
                 response: PermResponse::deny(),
             },
-            2 if has_pattern_option => {
-                let pattern = perm_request.pattern_at(perm_request.tokens().len());
-                InteractionModalOutput::PermissionResponse {
-                    request_id: self.request_id.clone(),
-                    response: PermResponse::allow_pattern(
-                        pattern.clone(),
-                        PermissionScope::Project,
-                    ),
-                }
-            }
+            2 => InteractionModalOutput::PermissionResponse {
+                request_id: self.request_id.clone(),
+                response: PermResponse::allow_pattern(
+                    perm_request.suggested_pattern(),
+                    PermissionScope::Project,
+                ),
+            },
             _ => InteractionModalOutput::None,
         }
     }
 
-    fn handle_perm_pattern_key(&self, perm_request: &PermRequest) -> InteractionModalOutput {
-        let tokens = perm_request.tokens();
-        if tokens.is_empty() {
-            return InteractionModalOutput::Notify(
-                "Cannot create pattern for this request type".to_string(),
-            );
-        }
-        let pattern = perm_request.pattern_at(tokens.len());
-        InteractionModalOutput::PermissionResponse {
-            request_id: self.request_id.clone(),
-            response: PermResponse::allow_pattern(pattern.clone(), PermissionScope::Project),
+    fn handle_perm_text_confirm(&self, _perm_request: &PermRequest) -> InteractionModalOutput {
+        let text = self.other_text.trim().to_string();
+        match self.selected {
+            0 => InteractionModalOutput::PermissionResponse {
+                request_id: self.request_id.clone(),
+                response: PermResponse::allow(),
+            },
+            1 => InteractionModalOutput::PermissionResponse {
+                request_id: self.request_id.clone(),
+                response: if text.is_empty() {
+                    PermResponse::deny()
+                } else {
+                    PermResponse::deny_with_reason(text)
+                },
+            },
+            2 => InteractionModalOutput::PermissionResponse {
+                request_id: self.request_id.clone(),
+                response: if text.is_empty() {
+                    PermResponse::deny()
+                } else {
+                    PermResponse::allow_pattern(text, PermissionScope::Project)
+                },
+            },
+            _ => InteractionModalOutput::None,
         }
     }
 
@@ -406,63 +448,46 @@ impl InteractionModal {
         };
 
         let queue_total = 1 + queue_size;
-        let has_pattern_option = !perm_request.tokens().is_empty();
 
-        // Helper: pad a content string to full width with INPUT_BG background
         let pad_line = |content: &str, visible_len: usize| -> Node {
             let pad = " ".repeat(term_width.saturating_sub(visible_len));
             styled(
-                format!("{}{}", content, pad),
+                format!("{content}{pad}"),
                 Style::new().bg(panel_bg).fg(theme.overlay_bright),
             )
         };
 
         let mut lines: Vec<Node> = Vec::new();
 
-        // ── Top border: ▄ repeated ──
         lines.push(styled(
             "\u{2584}".repeat(term_width),
             Style::new().fg(border_fg),
         ));
 
-        // ── Action detail line ──
         let action_text = if queue_total > 1 {
             format!("  [{}/{}] {}", 1, queue_total, action_detail)
         } else {
             format!("  {}", action_detail)
         };
-        let action_visible_len = action_text.len();
-        lines.push(pad_line(&action_text, action_visible_len));
+        lines.push(pad_line(&action_text, action_text.len()));
 
-        // ── Blank line ──
         lines.push(styled(" ".repeat(term_width), Style::new().bg(panel_bg)));
 
-        // ── Options ──
-        let options: Vec<(&str, &str)> = if has_pattern_option {
-            vec![
-                ("y", "Allow once"),
-                ("n", "Deny"),
-                ("p", "Allow + Save pattern"),
-            ]
-        } else {
-            vec![("y", "Allow once"), ("n", "Deny")]
-        };
+        let options: [(&str, &str); 3] = [("y", "Yes"), ("n", "No"), ("a", "Allowlist")];
 
         for (i, (key, label)) in options.iter().enumerate() {
             let is_selected = i == self.selected;
             if is_selected {
-                let content = format!("    > [{}] {}", key, label);
-                let visible_len = content.len();
-                let pad = " ".repeat(term_width.saturating_sub(visible_len));
+                let content = format!("  > [{}] {}", key, label);
+                let pad = " ".repeat(term_width.saturating_sub(content.len()));
                 lines.push(styled(
-                    format!("{}{}", content, pad),
+                    format!("{content}{pad}"),
                     Style::new().bg(panel_bg).fg(theme.text_accent).bold(),
                 ));
             } else {
-                let key_part = format!("      [{}]", key);
+                let key_part = format!("    [{}]", key);
                 let label_part = format!(" {}", label);
-                let visible_len = key_part.len() + label_part.len();
-                let pad = " ".repeat(term_width.saturating_sub(visible_len));
+                let pad = " ".repeat(term_width.saturating_sub(key_part.len() + label_part.len()));
                 lines.push(row([
                     styled(key_part, Style::new().bg(panel_bg).fg(theme.overlay_text)),
                     styled(
@@ -472,42 +497,53 @@ impl InteractionModal {
                     styled(pad, Style::new().bg(panel_bg)),
                 ]));
             }
+
+            if is_selected && self.mode == InteractionMode::TextInput {
+                let prompt = format!("      > {}_", self.other_text);
+                let pad = " ".repeat(term_width.saturating_sub(prompt.len()));
+                lines.push(styled(
+                    format!("{prompt}{pad}"),
+                    Style::new().bg(panel_bg).fg(theme.text_primary),
+                ));
+            }
         }
 
-        // ── Bottom border: ▀ repeated ──
         lines.push(styled(
             "\u{2580}".repeat(term_width),
             Style::new().fg(border_fg),
         ));
 
-        // ── Footer: PERMISSION badge + TYPE badge + key hints ──
         let key_style = theme.overlay_key(theme.error);
         let hint_style = theme.overlay_hint();
 
-        let shortcut_keys = options
-            .iter()
-            .map(|(k, _)| *k)
-            .collect::<Vec<_>>()
-            .join("/");
-
-        let mut footer_nodes: Vec<Node> = vec![
-            styled(" PERMISSION ", theme.permission_badge()),
-            styled(format!(" {} ", type_label), theme.permission_type()),
-            styled(" ↑/↓", key_style),
-            styled(" navigate", hint_style),
-            styled("  Enter", key_style),
-            styled(" select", hint_style),
-            styled(format!("  {}", shortcut_keys), key_style),
-            styled(" shortcuts", hint_style),
-        ];
-
-        if is_write {
-            footer_nodes.push(styled("  h", key_style));
-            footer_nodes.push(styled(" diff", hint_style));
-        }
-
-        footer_nodes.push(styled("  Esc", key_style));
-        footer_nodes.push(styled(" cancel", hint_style));
+        let footer_nodes: Vec<Node> = if self.mode == InteractionMode::TextInput {
+            vec![
+                styled(" PERMISSION ", theme.permission_badge()),
+                styled(format!(" {} ", type_label), theme.permission_type()),
+                styled("  Enter", key_style),
+                styled(" send", hint_style),
+                styled("  Esc", key_style),
+                styled(" back", hint_style),
+            ]
+        } else {
+            let mut nodes = vec![
+                styled(" PERMISSION ", theme.permission_badge()),
+                styled(format!(" {} ", type_label), theme.permission_type()),
+                styled("  y/n/a", key_style),
+                styled(" options", hint_style),
+                styled("  ↑↓", key_style),
+                styled(" move", hint_style),
+                styled("  Tab", key_style),
+                styled(" entry", hint_style),
+            ];
+            if is_write {
+                nodes.push(styled("  h", key_style));
+                nodes.push(styled(" diff", hint_style));
+            }
+            nodes.push(styled("  Esc", key_style));
+            nodes.push(styled(" cancel", hint_style));
+            nodes
+        };
 
         lines.push(row(footer_nodes));
 
@@ -818,5 +854,100 @@ mod tests {
         assert!(set.contains(&1));
         InteractionModal::toggle_checked(&mut set, 1);
         assert!(!set.contains(&1));
+    }
+
+    #[test]
+    fn test_perm_modal_allowlist_shortcut() {
+        let perm = PermRequest::bash(["cargo", "build"]);
+        let mut modal =
+            InteractionModal::new("req-1".to_string(), InteractionRequest::Permission(perm));
+
+        let output = modal.update(InteractionModalMsg::Key(key_event(KeyCode::Char('a'))));
+        match output {
+            InteractionModalOutput::PermissionResponse { response, .. } => {
+                assert!(response.allowed);
+                assert!(response.pattern.is_some());
+                assert_eq!(response.pattern.unwrap(), "cargo *");
+            }
+            _ => panic!("Expected PermissionResponse with pattern"),
+        }
+    }
+
+    #[test]
+    fn test_perm_modal_tab_opens_text_input() {
+        let perm = PermRequest::bash(["npm", "install"]);
+        let mut modal =
+            InteractionModal::new("req-1".to_string(), InteractionRequest::Permission(perm));
+
+        assert_eq!(modal.mode, InteractionMode::Selecting);
+        modal.update(InteractionModalMsg::Key(key_event(KeyCode::Tab)));
+        assert_eq!(modal.mode, InteractionMode::TextInput);
+    }
+
+    #[test]
+    fn test_perm_modal_tab_on_allowlist_prefills_pattern() {
+        let perm = PermRequest::bash(["cargo", "test"]);
+        let mut modal =
+            InteractionModal::new("req-1".to_string(), InteractionRequest::Permission(perm));
+
+        modal.update(InteractionModalMsg::Key(key_event(KeyCode::Down)));
+        modal.update(InteractionModalMsg::Key(key_event(KeyCode::Down)));
+        assert_eq!(modal.selected, 2);
+
+        modal.update(InteractionModalMsg::Key(key_event(KeyCode::Tab)));
+        assert_eq!(modal.mode, InteractionMode::TextInput);
+        assert_eq!(modal.other_text, "cargo *");
+    }
+
+    #[test]
+    fn test_perm_modal_deny_with_reason() {
+        let perm = PermRequest::bash(["rm", "-rf", "/"]);
+        let mut modal =
+            InteractionModal::new("req-1".to_string(), InteractionRequest::Permission(perm));
+
+        modal.update(InteractionModalMsg::Key(key_event(KeyCode::Down)));
+        assert_eq!(modal.selected, 1);
+
+        modal.update(InteractionModalMsg::Key(key_event(KeyCode::Tab)));
+        assert_eq!(modal.mode, InteractionMode::TextInput);
+
+        for c in "too dangerous".chars() {
+            modal.update(InteractionModalMsg::Key(key_event(KeyCode::Char(c))));
+        }
+
+        let output = modal.update(InteractionModalMsg::Key(key_event(KeyCode::Enter)));
+        match output {
+            InteractionModalOutput::PermissionResponse { response, .. } => {
+                assert!(!response.allowed);
+                assert_eq!(response.reason.as_deref(), Some("too dangerous"));
+            }
+            _ => panic!("Expected PermissionResponse with reason"),
+        }
+    }
+
+    #[test]
+    fn test_perm_modal_esc_from_text_returns_to_selecting() {
+        let perm = PermRequest::bash(["npm", "install"]);
+        let mut modal =
+            InteractionModal::new("req-1".to_string(), InteractionRequest::Permission(perm));
+
+        modal.update(InteractionModalMsg::Key(key_event(KeyCode::Tab)));
+        assert_eq!(modal.mode, InteractionMode::TextInput);
+
+        modal.update(InteractionModalMsg::Key(key_event(KeyCode::Esc)));
+        assert_eq!(modal.mode, InteractionMode::Selecting);
+    }
+
+    #[test]
+    fn test_perm_modal_navigation_wraps_at_3() {
+        let perm = PermRequest::bash(["npm", "install"]);
+        let mut modal =
+            InteractionModal::new("req-1".to_string(), InteractionRequest::Permission(perm));
+
+        assert_eq!(modal.selected, 0);
+        modal.update(InteractionModalMsg::Key(key_event(KeyCode::Up)));
+        assert_eq!(modal.selected, 2);
+        modal.update(InteractionModalMsg::Key(key_event(KeyCode::Down)));
+        assert_eq!(modal.selected, 0);
     }
 }

@@ -5,7 +5,8 @@ expression: render_app(&app)
 ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄
   semantic_search (query="rust memory safety", limit=10)                        
                                                                                 
-    > [y] Allow once                                                            
-      [n] Deny                                                                  
+  > [y] Yes                                                                     
+    [n] No                                                                      
+    [a] Allowlist                                                               
 ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
- PERMISSION  TOOL  ↑/↓ navigate  Enter select  y/n shortcuts  Esc cancel
+ PERMISSION  TOOL   y/n/a options  ↑↓ move  Tab entry  Esc cancel
