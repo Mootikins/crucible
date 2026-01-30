@@ -9,18 +9,14 @@ use crossterm::terminal;
 ///
 /// Returns fallback (80) if terminal size unavailable.
 pub fn terminal_width() -> usize {
-    terminal::size()
-        .map(|(w, _)| w as usize)
-        .unwrap_or(80)
+    terminal::size().map(|(w, _)| w as usize).unwrap_or(80)
 }
 
 /// Get current terminal height in rows.
 ///
 /// Returns fallback (24) if terminal size unavailable.
 pub fn terminal_height() -> usize {
-    terminal::size()
-        .map(|(_, h)| h as usize)
-        .unwrap_or(24)
+    terminal::size().map(|(_, h)| h as usize).unwrap_or(24)
 }
 
 /// Get terminal dimensions as (width, height).

@@ -248,7 +248,7 @@ fn overflow_graduation_does_not_duplicate_content() {
     app.on_message(ChatAppMsg::ToolCall {
         name: "bash".to_string(),
         args: r#"{"command":"ls -la"}"#.to_string(),
-                call_id: None,
+        call_id: None,
     });
     let tree = view_with_default_ctx(&app);
     runtime.render(&tree);
@@ -256,13 +256,15 @@ fn overflow_graduation_does_not_duplicate_content() {
     app.on_message(ChatAppMsg::ToolResultDelta {
         name: "bash".to_string(),
         delta: "total 100\n".to_string(),
-                call_id: None,
+        call_id: None,
     });
     let tree = view_with_default_ctx(&app);
     runtime.render(&tree);
 
-    app.on_message(ChatAppMsg::ToolResultComplete { name: "bash".to_string(),
-                call_id: None });
+    app.on_message(ChatAppMsg::ToolResultComplete {
+        name: "bash".to_string(),
+        call_id: None,
+    });
     let tree = view_with_default_ctx(&app);
     runtime.render(&tree);
 
@@ -315,7 +317,7 @@ fn incremental_text_after_tool_no_duplication() {
     app.on_message(ChatAppMsg::ToolCall {
         name: "bash".to_string(),
         args: "{}".to_string(),
-                call_id: None,
+        call_id: None,
     });
     let tree = view_with_default_ctx(&app);
     runtime.render(&tree);
@@ -323,15 +325,17 @@ fn incremental_text_after_tool_no_duplication() {
     app.on_message(ChatAppMsg::ToolResultDelta {
         name: "bash".to_string(),
         delta: "output line 1\n".to_string(),
-                call_id: None,
+        call_id: None,
     });
     app.on_message(ChatAppMsg::ToolResultDelta {
         name: "bash".to_string(),
         delta: "output line 2\n".to_string(),
-                call_id: None,
+        call_id: None,
     });
-    app.on_message(ChatAppMsg::ToolResultComplete { name: "bash".to_string(),
-                call_id: None });
+    app.on_message(ChatAppMsg::ToolResultComplete {
+        name: "bash".to_string(),
+        call_id: None,
+    });
     let tree = view_with_default_ctx(&app);
     runtime.render(&tree);
 
