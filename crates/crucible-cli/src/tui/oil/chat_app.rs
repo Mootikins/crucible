@@ -363,6 +363,8 @@ pub struct OilChatApp {
     kiln_notes: Vec<String>,
     /// Known slash commands (name, description) for autocomplete — populated by runner
     slash_commands: Vec<(String, String)>,
+    /// Lua statusline layout config (loaded once at startup)
+    statusline_config: Option<crucible_lua::statusline::StatuslineConfig>,
 }
 
 impl Default for OilChatApp {
@@ -408,6 +410,7 @@ impl Default for OilChatApp {
             workspace_files: Vec::new(),
             kiln_notes: Vec::new(),
             slash_commands: Vec::new(),
+            statusline_config: crucible_lua::get_statusline_config(),
         }
     }
 }
@@ -2172,6 +2175,10 @@ impl OilChatApp {
             .model(&self.model)
             .context(self.context_used, self.context_total)
             .status(&self.status);
+
+        if let Some(ref cfg) = self.statusline_config {
+            comp = comp.config(cfg);
+        }
 
         if let Some((text, kind)) = self.notification_area.active_toast() {
             comp = comp.toast(text, kind);
