@@ -39,11 +39,11 @@ pub mod crucible_agent;
 pub mod github_copilot;
 pub mod handle;
 pub mod kiln_tools;
+pub mod mcp_proxy_tool;
 pub mod openai_reasoning;
 pub mod providers;
 pub mod session;
 pub mod tools;
-pub mod mcp_proxy_tool;
 pub mod workspace_tools;
 pub mod xml_tool_parser;
 

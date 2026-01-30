@@ -38,9 +38,7 @@ impl PermissionGate for DaemonPermissionGate {
     async fn request_permission(&self, request: PermRequest) -> PermResponse {
         let tool_name = match &request.action {
             PermAction::Tool { name, .. } => name.as_str(),
-            PermAction::Bash { tokens } => {
-                tokens.first().map(|s| s.as_str()).unwrap_or("bash")
-            }
+            PermAction::Bash { tokens } => tokens.first().map(|s| s.as_str()).unwrap_or("bash"),
             PermAction::Read { .. } => "read_file",
             PermAction::Write { .. } => "write_file",
         };

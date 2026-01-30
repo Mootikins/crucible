@@ -33,8 +33,8 @@ async fn test_rig_agent_basic_prompt() {
     let config = create_test_config();
     let temp_dir = TempDir::new().unwrap();
 
-    let (agent, _ws_ctx) =
-        build_agent_with_tools(&config, &client, temp_dir.path(), vec![]).expect("Failed to build agent");
+    let (agent, _ws_ctx) = build_agent_with_tools(&config, &client, temp_dir.path(), vec![])
+        .expect("Failed to build agent");
     let mut handle = RigAgentHandle::new(agent);
 
     // Send a simple message and collect response
@@ -81,8 +81,8 @@ async fn test_rig_agent_with_read_file_tool() {
     let test_file = temp_dir.path().join("test.txt");
     std::fs::write(&test_file, "Hello from the test file!").expect("Failed to write test file");
 
-    let (agent, _ws_ctx) =
-        build_agent_with_tools(&config, &client, temp_dir.path(), vec![]).expect("Failed to build agent");
+    let (agent, _ws_ctx) = build_agent_with_tools(&config, &client, temp_dir.path(), vec![])
+        .expect("Failed to build agent");
     let mut handle = RigAgentHandle::new(agent);
 
     // Ask the agent to read the file
@@ -121,8 +121,8 @@ async fn test_rig_agent_streaming_multiple_chunks() {
     let config = create_test_config();
     let temp_dir = TempDir::new().unwrap();
 
-    let (agent, _ws_ctx) =
-        build_agent_with_tools(&config, &client, temp_dir.path(), vec![]).expect("Failed to build agent");
+    let (agent, _ws_ctx) = build_agent_with_tools(&config, &client, temp_dir.path(), vec![])
+        .expect("Failed to build agent");
     let mut handle = RigAgentHandle::new(agent);
 
     // Ask for a slightly longer response
@@ -172,8 +172,8 @@ async fn test_rig_agent_history_preserved() {
     let config = create_test_config();
     let temp_dir = TempDir::new().unwrap();
 
-    let (agent, _ws_ctx) =
-        build_agent_with_tools(&config, &client, temp_dir.path(), vec![]).expect("Failed to build agent");
+    let (agent, _ws_ctx) = build_agent_with_tools(&config, &client, temp_dir.path(), vec![])
+        .expect("Failed to build agent");
     let mut handle = RigAgentHandle::new(agent);
 
     // First message - introduce a fact

@@ -374,20 +374,23 @@ impl McpGatewayManager {
         self.tool_index.len()
     }
 
-    /// Get names of upstreams that are disconnected/errored and have auto_reconnect enabled.
+    /// Get names of upstreams that are disconnected/errored and have `auto_reconnect` enabled.
     #[must_use]
     pub fn upstreams_needing_reconnect(&self) -> Vec<String> {
         self.upstreams
             .values()
             .filter(|c| {
                 c.config.auto_reconnect
-                    && matches!(c.state(), ConnectionState::Disconnected | ConnectionState::Error)
+                    && matches!(
+                        c.state(),
+                        ConnectionState::Disconnected | ConnectionState::Error
+                    )
             })
             .map(|c| c.name.clone())
             .collect()
     }
 
-    /// Get status summary for each upstream (name, state, tool_count).
+    /// Get status summary for each upstream (name, state, `tool_count`).
     #[must_use]
     pub fn upstream_status(&self) -> Vec<(String, ConnectionState, usize)> {
         self.upstreams
@@ -636,10 +639,16 @@ mod tests {
         let mut client4 = UpstreamClient::new(config4);
         client4.state = ConnectionState::Disconnected;
 
-        manager.upstreams.insert("disconnected_auto".to_string(), client1);
+        manager
+            .upstreams
+            .insert("disconnected_auto".to_string(), client1);
         manager.upstreams.insert("error_auto".to_string(), client2);
-        manager.upstreams.insert("connected_auto".to_string(), client3);
-        manager.upstreams.insert("disconnected_no_auto".to_string(), client4);
+        manager
+            .upstreams
+            .insert("connected_auto".to_string(), client3);
+        manager
+            .upstreams
+            .insert("disconnected_no_auto".to_string(), client4);
 
         let needs_reconnect = manager.upstreams_needing_reconnect();
         assert_eq!(needs_reconnect.len(), 2);
@@ -655,7 +664,9 @@ mod tests {
         let mut client = UpstreamClient::new(config);
         client.state = ConnectionState::Connected;
 
-        manager.upstreams.insert("test_upstream".to_string(), client);
+        manager
+            .upstreams
+            .insert("test_upstream".to_string(), client);
 
         let status = manager.upstream_status();
         assert_eq!(status.len(), 1);
