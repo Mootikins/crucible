@@ -23,7 +23,7 @@ impl NotificationToastKind {
         }
     }
 
-    fn label(&self) -> &'static str {
+    pub fn label(&self) -> &'static str {
         match self {
             NotificationToastKind::Info => "INFO",
             NotificationToastKind::Warning => "WARN",
@@ -114,6 +114,62 @@ impl StatusBar {
         } else {
             truncate_to_chars(&self.model, 20, true).into_owned()
         }
+    }
+}
+
+impl StatusBar {
+    pub fn view_from_config(&self, config: &crucible_lua::statusline::StatuslineConfig) -> Node {
+        use crate::tui::oil::lua_bridge::{render_component_node, StatusBarData};
+
+        let theme = ThemeTokens::default_ref();
+        let data = StatusBarData {
+            mode: self.mode,
+            model: self.model.clone(),
+            context_used: self.context_used,
+            context_total: self.context_total,
+            status: self.status.clone(),
+            notification_toast: self.notification_toast.clone(),
+            notification_counts: self.notification_counts.clone(),
+        };
+
+        let sep = config.separator.as_deref().unwrap_or(" ");
+
+        let mut items: Vec<Node> = Vec::new();
+
+        let render_section = |components: &[crucible_lua::statusline::StatuslineComponent],
+                              data: &StatusBarData,
+                              sep: &str|
+         -> Vec<Node> {
+            let mut nodes = Vec::new();
+            for (i, component) in components.iter().enumerate() {
+                if i > 0 && !sep.is_empty() {
+                    nodes.push(styled(sep.to_string(), theme.muted()));
+                }
+                nodes.push(render_component_node(component, data));
+            }
+            nodes
+        };
+
+        items.extend(render_section(&config.left, &data, sep));
+
+        if !self.status.is_empty() {
+            if !items.is_empty() {
+                items.push(styled(sep.to_string(), theme.muted()));
+            }
+            items.push(styled(self.status.clone(), theme.muted()));
+        }
+
+        if !config.center.is_empty() {
+            items.push(spacer());
+            items.extend(render_section(&config.center, &data, sep));
+        }
+
+        if !config.right.is_empty() {
+            items.push(spacer());
+            items.extend(render_section(&config.right, &data, sep));
+        }
+
+        row(items)
     }
 }
 
@@ -260,5 +316,163 @@ mod tests {
         assert!(!plain.contains("INFO"));
         assert!(!plain.contains("WARN"));
         assert!(!plain.contains("ERRO"));
+    }
+
+    mod config_driven {
+        use super::*;
+        use crucible_lua::statusline::{
+            ModeStyleSpec, StatuslineComponent, StatuslineConfig, StyleSpec,
+        };
+
+        fn make_config(
+            left: Vec<StatuslineComponent>,
+            center: Vec<StatuslineComponent>,
+            right: Vec<StatuslineComponent>,
+        ) -> StatuslineConfig {
+            StatuslineConfig {
+                left,
+                center,
+                right,
+                separator: None,
+            }
+        }
+
+        fn mode_component() -> StatuslineComponent {
+            StatuslineComponent::Mode {
+                normal: ModeStyleSpec::default(),
+                plan: ModeStyleSpec::default(),
+                auto: ModeStyleSpec::default(),
+            }
+        }
+
+        #[test]
+        fn config_with_left_mode_center_model_right_context() {
+            let config = make_config(
+                vec![mode_component()],
+                vec![StatuslineComponent::Model {
+                    max_length: None,
+                    fallback: None,
+                    style: StyleSpec::default(),
+                }],
+                vec![StatuslineComponent::Context {
+                    format: None,
+                    style: StyleSpec::default(),
+                }],
+            );
+            let bar = StatusBar::new()
+                .mode(ChatMode::Normal)
+                .model("gpt-4o")
+                .context(4000, 8000);
+            let node = bar.view_from_config(&config);
+            let plain = render_to_plain_text(&node, 120);
+            assert!(
+                plain.contains("NORMAL"),
+                "Should contain mode label: {}",
+                plain
+            );
+            assert!(plain.contains("gpt-4o"), "Should contain model: {}", plain);
+            assert!(
+                plain.contains("50% ctx"),
+                "Should contain context: {}",
+                plain
+            );
+        }
+
+        #[test]
+        fn config_with_text() {
+            let config = make_config(
+                vec![StatuslineComponent::Text {
+                    content: "hello".to_string(),
+                    style: StyleSpec::default(),
+                }],
+                vec![],
+                vec![],
+            );
+            let bar = StatusBar::new();
+            let node = bar.view_from_config(&config);
+            let plain = render_to_plain_text(&node, 80);
+            assert!(plain.contains("hello"), "Should contain text: {}", plain);
+        }
+
+        #[test]
+        fn config_with_mode_spacer_model() {
+            let config = make_config(
+                vec![
+                    mode_component(),
+                    StatuslineComponent::Spacer,
+                    StatuslineComponent::Model {
+                        max_length: None,
+                        fallback: None,
+                        style: StyleSpec::default(),
+                    },
+                ],
+                vec![],
+                vec![],
+            );
+            let bar = StatusBar::new().mode(ChatMode::Plan).model("claude-3");
+            let node = bar.view_from_config(&config);
+            let plain = render_to_plain_text(&node, 120);
+            assert!(plain.contains("PLAN"), "Should contain mode: {}", plain);
+            assert!(
+                plain.contains("claude-3"),
+                "Should contain model: {}",
+                plain
+            );
+        }
+
+        #[test]
+        fn empty_config_produces_empty_row() {
+            let config = make_config(vec![], vec![], vec![]);
+            let bar = StatusBar::new();
+            let node = bar.view_from_config(&config);
+            let plain = render_to_plain_text(&node, 80);
+            assert!(
+                !plain.contains("NORMAL") && !plain.contains("ctx"),
+                "Empty config should produce empty output: {}",
+                plain
+            );
+        }
+
+        #[test]
+        fn config_with_custom_separator() {
+            let config = StatuslineConfig {
+                left: vec![
+                    StatuslineComponent::Text {
+                        content: "A".to_string(),
+                        style: StyleSpec::default(),
+                    },
+                    StatuslineComponent::Text {
+                        content: "B".to_string(),
+                        style: StyleSpec::default(),
+                    },
+                ],
+                center: vec![],
+                right: vec![],
+                separator: Some(" | ".to_string()),
+            };
+            let bar = StatusBar::new();
+            let node = bar.view_from_config(&config);
+            let plain = render_to_plain_text(&node, 80);
+            assert!(
+                plain.contains("A") && plain.contains("|") && plain.contains("B"),
+                "Should contain separator between components: {}",
+                plain
+            );
+        }
+
+        #[test]
+        fn status_field_rendered_with_config() {
+            let config = make_config(vec![mode_component()], vec![], vec![]);
+            let bar = StatusBar::new()
+                .mode(ChatMode::Normal)
+                .status("Streaming...");
+            let node = bar.view_from_config(&config);
+            let plain = render_to_plain_text(&node, 120);
+            assert!(
+                plain.contains("Streaming..."),
+                "Status should still render with config: {}",
+                plain
+            );
+        }
     }
 }
