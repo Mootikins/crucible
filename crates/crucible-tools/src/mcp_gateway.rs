@@ -6,7 +6,10 @@ use crucible_core::traits::mcp::{McpToolExecutor, McpToolInfo, ToolCallResult};
 use crucible_core::utils::glob_match;
 use serde_json::Value as JsonValue;
 use std::collections::HashMap;
+use std::sync::Arc;
 use std::time::Duration;
+use tokio::sync::Mutex;
+use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, warn};
 
 /// Error type for gateway operations.
@@ -371,6 +374,28 @@ impl McpGatewayManager {
         self.tool_index.len()
     }
 
+    /// Get names of upstreams that are disconnected/errored and have auto_reconnect enabled.
+    #[must_use]
+    pub fn upstreams_needing_reconnect(&self) -> Vec<String> {
+        self.upstreams
+            .values()
+            .filter(|c| {
+                c.config.auto_reconnect
+                    && matches!(c.state(), ConnectionState::Disconnected | ConnectionState::Error)
+            })
+            .map(|c| c.name.clone())
+            .collect()
+    }
+
+    /// Get status summary for each upstream (name, state, tool_count).
+    #[must_use]
+    pub fn upstream_status(&self) -> Vec<(String, ConnectionState, usize)> {
+        self.upstreams
+            .values()
+            .map(|c| (c.name.clone(), c.state(), c.tools().len()))
+            .collect()
+    }
+
     /// Try to reconnect a disconnected upstream.
     ///
     /// # Errors
@@ -393,6 +418,60 @@ impl McpGatewayManager {
         }
 
         Ok(())
+    }
+
+    /// Start a background reconnect loop that periodically checks for disconnected upstreams.
+    ///
+    /// Uses exponential backoff per-upstream: 30s → 60s → 120s → max 300s.
+    /// Only reconnects upstreams with `auto_reconnect: true` in their config.
+    ///
+    /// Returns a `JoinHandle` for the background task.
+    pub fn start_reconnect_loop(
+        gateway: Arc<Mutex<Self>>,
+        ct: CancellationToken,
+    ) -> tokio::task::JoinHandle<()> {
+        tokio::spawn(async move {
+            let mut backoff: HashMap<String, u64> = HashMap::new();
+            let base_interval = Duration::from_secs(30);
+            let max_backoff = 300u64;
+
+            loop {
+                tokio::select! {
+                    () = ct.cancelled() => {
+                        info!("MCP reconnect loop shutting down");
+                        break;
+                    }
+                    () = tokio::time::sleep(base_interval) => {
+                        let needs_reconnect = {
+                            let gw = gateway.lock().await;
+                            gw.upstreams_needing_reconnect()
+                        };
+
+                        for name in needs_reconnect {
+                            let current_backoff = backoff.get(&name).copied().unwrap_or(30);
+
+                            info!("Attempting reconnect for upstream '{}'", name);
+
+                            let mut gw = gateway.lock().await;
+                            match gw.reconnect(&name).await {
+                                Ok(()) => {
+                                    info!("Reconnected to upstream '{}'", name);
+                                    backoff.remove(&name);
+                                }
+                                Err(e) => {
+                                    let next = (current_backoff * 2).min(max_backoff);
+                                    warn!(
+                                        "Reconnect failed for '{}': {}. Next attempt in {}s",
+                                        name, e, next
+                                    );
+                                    backoff.insert(name, next);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        })
     }
 }
 
@@ -519,5 +598,69 @@ mod tests {
 
         assert!(!client.is_tool_allowed("dangerous_action"));
         assert!(client.is_tool_allowed("safe_action"));
+    }
+
+    #[test]
+    fn test_upstreams_needing_reconnect_empty() {
+        let manager = McpGatewayManager::new();
+        assert!(manager.upstreams_needing_reconnect().is_empty());
+    }
+
+    #[test]
+    fn test_upstream_status_empty() {
+        let manager = McpGatewayManager::new();
+        assert!(manager.upstream_status().is_empty());
+    }
+
+    #[test]
+    fn test_upstreams_needing_reconnect_filters_by_state_and_config() {
+        let mut manager = McpGatewayManager::new();
+
+        let mut config1 = test_config("disconnected_auto", "d1_");
+        config1.auto_reconnect = true;
+        let mut client1 = UpstreamClient::new(config1);
+        client1.state = ConnectionState::Disconnected;
+
+        let mut config2 = test_config("error_auto", "e1_");
+        config2.auto_reconnect = true;
+        let mut client2 = UpstreamClient::new(config2);
+        client2.state = ConnectionState::Error;
+
+        let mut config3 = test_config("connected_auto", "c1_");
+        config3.auto_reconnect = true;
+        let mut client3 = UpstreamClient::new(config3);
+        client3.state = ConnectionState::Connected;
+
+        let mut config4 = test_config("disconnected_no_auto", "d2_");
+        config4.auto_reconnect = false;
+        let mut client4 = UpstreamClient::new(config4);
+        client4.state = ConnectionState::Disconnected;
+
+        manager.upstreams.insert("disconnected_auto".to_string(), client1);
+        manager.upstreams.insert("error_auto".to_string(), client2);
+        manager.upstreams.insert("connected_auto".to_string(), client3);
+        manager.upstreams.insert("disconnected_no_auto".to_string(), client4);
+
+        let needs_reconnect = manager.upstreams_needing_reconnect();
+        assert_eq!(needs_reconnect.len(), 2);
+        assert!(needs_reconnect.contains(&"disconnected_auto".to_string()));
+        assert!(needs_reconnect.contains(&"error_auto".to_string()));
+    }
+
+    #[test]
+    fn test_upstream_status_returns_correct_info() {
+        let mut manager = McpGatewayManager::new();
+
+        let config = test_config("test_upstream", "t_");
+        let mut client = UpstreamClient::new(config);
+        client.state = ConnectionState::Connected;
+
+        manager.upstreams.insert("test_upstream".to_string(), client);
+
+        let status = manager.upstream_status();
+        assert_eq!(status.len(), 1);
+        assert_eq!(status[0].0, "test_upstream");
+        assert_eq!(status[0].1, ConnectionState::Connected);
+        assert_eq!(status[0].2, 0);
     }
 }
