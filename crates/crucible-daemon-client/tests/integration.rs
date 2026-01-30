@@ -25,7 +25,7 @@ impl TestServer {
         let temp_dir = tempfile::tempdir()?;
         let socket_path = temp_dir.path().join("daemon.sock");
 
-        let server = Server::bind(&socket_path).await?;
+        let server = Server::bind(&socket_path, None).await?;
         let shutdown_handle = server.shutdown_handle();
 
         let server_handle = tokio::spawn(async move {

@@ -205,6 +205,7 @@ mod tests {
         let agent_manager = Arc::new(AgentManager::new(
             session_manager.clone(),
             background_manager,
+            None,
         ));
 
         RpcContext::new(
