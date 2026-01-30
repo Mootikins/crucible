@@ -84,7 +84,8 @@ impl InProcessMcpHost {
             sse_path: "/sse".to_string(),
             post_path: "/message".to_string(),
             ct: shutdown.clone(),
-            sse_keep_alive: None,
+            // 30s keepalive prevents silent connection drops on long-lived SSE streams
+            sse_keep_alive: Some(std::time::Duration::from_secs(30)),
         };
 
         // Create the SSE server and router
