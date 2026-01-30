@@ -117,7 +117,7 @@ async fn test_basic_response_contract(config: &ModelTestConfig) -> Result<(), St
         AgentConfig::new(&config.model_id, "You are a helpful assistant. Be concise.");
     let temp_dir = TempDir::new().map_err(|e| e.to_string())?;
 
-    let (agent, _ws_ctx) = build_agent_with_tools(&agent_config, &client, temp_dir.path())
+    let (agent, _ws_ctx) = build_agent_with_tools(&agent_config, &client, temp_dir.path(), vec![])
         .map_err(|e| format!("Failed to build agent: {}", e))?;
     let mut handle = RigAgentHandle::new(agent);
 
@@ -187,7 +187,7 @@ async fn test_tool_invocation_contract(config: &ModelTestConfig) -> Result<(), S
     let test_file = temp_dir.path().join("test.txt");
     std::fs::write(&test_file, "Contract test content").map_err(|e| e.to_string())?;
 
-    let (agent, _ws_ctx) = build_agent_with_tools(&agent_config, &client, temp_dir.path())
+    let (agent, _ws_ctx) = build_agent_with_tools(&agent_config, &client, temp_dir.path(), vec![])
         .map_err(|e| format!("Failed to build agent: {}", e))?;
     let mut handle = RigAgentHandle::new(agent);
 
@@ -273,7 +273,7 @@ async fn test_streaming_order_contract(config: &ModelTestConfig) -> Result<(), S
     let agent_config = AgentConfig::new(&config.model_id, "You are a helpful assistant.");
     let temp_dir = TempDir::new().map_err(|e| e.to_string())?;
 
-    let (agent, _ws_ctx) = build_agent_with_tools(&agent_config, &client, temp_dir.path())
+    let (agent, _ws_ctx) = build_agent_with_tools(&agent_config, &client, temp_dir.path(), vec![])
         .map_err(|e| format!("Failed to build agent: {}", e))?;
     let mut handle = RigAgentHandle::new(agent);
 
@@ -347,7 +347,7 @@ async fn test_multi_turn_context_contract(config: &ModelTestConfig) -> Result<()
     );
     let temp_dir = TempDir::new().map_err(|e| e.to_string())?;
 
-    let (agent, _ws_ctx) = build_agent_with_tools(&agent_config, &client, temp_dir.path())
+    let (agent, _ws_ctx) = build_agent_with_tools(&agent_config, &client, temp_dir.path(), vec![])
         .map_err(|e| format!("Failed to build agent: {}", e))?;
     let mut handle = RigAgentHandle::new(agent);
 
