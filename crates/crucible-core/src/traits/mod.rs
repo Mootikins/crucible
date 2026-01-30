@@ -45,6 +45,7 @@ pub mod storage;
 pub mod storage_client;
 pub mod text_search;
 pub mod tools;
+pub mod permission_gate;
 
 // Re-export key traits
 pub use acp::{FilesystemHandler, SessionManager, StreamHandler, ToolBridge};
@@ -89,3 +90,4 @@ pub use mcp::{
     McpToolDiscovery, McpToolExecutor, McpToolInfo, McpTransportConfig, ToolCallResult,
 };
 pub use text_search::{TextSearchMatch, TextSearcher};
+pub use permission_gate::PermissionGate;
