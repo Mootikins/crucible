@@ -16,7 +16,7 @@
 use crate::tui::oil::ansi::{visible_width, wrap_styled_text};
 use crate::tui::oil::node::*;
 use crate::tui::oil::style::{Color, Style};
-use crate::tui::oil::theme::styles;
+use crate::tui::oil::theme::ThemeTokens;
 use markdown_it::parser::inline::Text;
 use markdown_it::plugins::cmark::block::blockquote::Blockquote;
 use markdown_it::plugins::cmark::block::code::CodeBlock as MdCodeBlock;
@@ -343,7 +343,10 @@ fn render_node(node: &markdown_it::Node, ctx: &mut RenderContext) {
             let show_bullet = margins.show_bullet && ctx.is_first_paragraph;
 
             let prefix = if show_bullet {
-                styled(ASSISTANT_BULLET, styles::bullet_prefix())
+                styled(
+                    ASSISTANT_BULLET,
+                    ThemeTokens::default_ref().bullet_prefix_style(),
+                )
             } else {
                 text(" ".repeat(margins.left))
             };
@@ -442,8 +445,10 @@ fn render_node(node: &markdown_it::Node, ctx: &mut RenderContext) {
 
     if node.cast::<CodeInline>().is_some() {
         let code_text = extract_all_text(node);
-        ctx.current_spans
-            .push((format!("`{}`", code_text), styles::inline_code()));
+        ctx.current_spans.push((
+            format!("`{}`", code_text),
+            ThemeTokens::default_ref().inline_code(),
+        ));
         return;
     }
 
@@ -487,7 +492,10 @@ fn render_paragraph(node: &markdown_it::Node, ctx: &mut RenderContext) {
 
     for (i, line) in wrapped.iter().enumerate() {
         let prefix = if i == 0 && show_bullet {
-            styled(ASSISTANT_BULLET, styles::bullet_prefix())
+            styled(
+                ASSISTANT_BULLET,
+                ThemeTokens::default_ref().bullet_prefix_style(),
+            )
         } else {
             text(&indent)
         };
@@ -520,9 +528,14 @@ fn render_code_block(node: &markdown_it::Node, ctx: &mut RenderContext) {
         "```".to_string()
     };
 
-    push_indented_block(ctx, styled(&fence_marker, styles::fence_marker()), &indent);
+    let theme = ThemeTokens::default_ref();
+    push_indented_block(
+        ctx,
+        styled(&fence_marker, theme.fence_marker_style()),
+        &indent,
+    );
     render_highlighted_code(&content, lang_str, ctx, &indent);
-    push_indented_block(ctx, styled("```", styles::fence_marker()), &indent);
+    push_indented_block(ctx, styled("```", theme.fence_marker_style()), &indent);
 
     ctx.mark_block_end();
 }
@@ -541,7 +554,7 @@ fn render_highlighted_code(content: &str, lang: &str, ctx: &mut RenderContext, i
     use crate::tui::oil::ansi::wrap_styled_text;
 
     if lang.is_empty() || !SyntaxHighlighter::supports_language(lang) {
-        let fallback = styles::code_fallback();
+        let fallback = ThemeTokens::default_ref().code_fallback_style();
         for line in content.lines() {
             let spans = vec![(line.to_string(), fallback.to_ansi_codes())];
             for wrapped in wrap_styled_text(&spans, ctx.width) {
@@ -669,8 +682,8 @@ fn render_blockquote(node: &markdown_it::Node, ctx: &mut RenderContext) {
         let wrapped = wrap_text(&child_text, content_width);
         for line in wrapped {
             let quote_row = row([
-                styled(prefix, styles::blockquote_prefix()),
-                styled(line, styles::blockquote_text()),
+                styled(prefix, ThemeTokens::default_ref().blockquote_prefix_style()),
+                styled(line, ThemeTokens::default_ref().blockquote_text_style()),
             ]);
             if margins.left > 0 {
                 ctx.push_block(row([text(&margin_indent), quote_row]));
@@ -979,14 +992,16 @@ fn render_link(node: &markdown_it::Node, link: &Link, ctx: &mut RenderContext) {
     } else {
         link_text
     };
-    ctx.current_spans.push((display, styles::link()));
+    ctx.current_spans
+        .push((display, ThemeTokens::default_ref().link_style()));
 }
 
 fn heading_style(level: u8) -> Style {
+    let theme = ThemeTokens::default_ref();
     match level {
-        1 => styles::heading_1(),
-        2 => styles::heading_2(),
-        3 => styles::heading_3(),
+        1 => theme.heading_1_style(),
+        2 => theme.heading_2_style(),
+        3 => theme.heading_3_style(),
         _ => Style::new().bold(),
     }
 }

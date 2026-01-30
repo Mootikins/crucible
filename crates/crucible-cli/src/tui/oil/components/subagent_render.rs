@@ -5,7 +5,7 @@
 
 use crate::tui::oil::node::{col, row, scrollback, styled, text, Node, BRAILLE_SPINNER_FRAMES};
 use crate::tui::oil::style::Style;
-use crate::tui::oil::theme::{colors, styles};
+use crate::tui::oil::theme::ThemeTokens;
 use crate::tui::oil::utils::truncate_first_line;
 use crate::tui::oil::viewport_cache::{CachedSubagent, SubagentStatus};
 use std::time::Duration;
@@ -14,13 +14,14 @@ use super::tool_render::format_elapsed;
 
 /// Render a subagent with status indicator and prompt preview.
 pub fn render_subagent(subagent: &CachedSubagent, spinner_frame: usize) -> Node {
+    let theme = ThemeTokens::default_ref();
     let (icon, icon_style) = match subagent.status {
         SubagentStatus::Running => {
             let frame = BRAILLE_SPINNER_FRAMES[spinner_frame % BRAILLE_SPINNER_FRAMES.len()];
-            (format!(" {} ", frame), Style::new().fg(colors::TEXT_ACCENT))
+            (format!(" {} ", frame), Style::new().fg(theme.text_accent))
         }
-        SubagentStatus::Completed => (" ✓ ".to_string(), Style::new().fg(colors::SUCCESS)),
-        SubagentStatus::Failed => (" ✗ ".to_string(), Style::new().fg(colors::ERROR)),
+        SubagentStatus::Completed => (" ✓ ".to_string(), Style::new().fg(theme.success)),
+        SubagentStatus::Failed => (" ✗ ".to_string(), Style::new().fg(theme.error)),
     };
 
     let prompt_preview = truncate_first_line(&subagent.prompt, 60, true);
@@ -43,15 +44,15 @@ pub fn render_subagent(subagent: &CachedSubagent, spinner_frame: usize) -> Node 
     };
 
     let status_style = match subagent.status {
-        SubagentStatus::Running => styles::dim(),
-        SubagentStatus::Completed => styles::muted(),
-        SubagentStatus::Failed => styles::error(),
+        SubagentStatus::Running => theme.dim(),
+        SubagentStatus::Completed => theme.muted(),
+        SubagentStatus::Failed => theme.error_style(),
     };
 
     let header = row([
         styled(icon, icon_style),
-        styled("subagent", Style::new().fg(colors::TEXT_PRIMARY)),
-        styled(format!(" {}", prompt_preview), styles::muted()),
+        styled("subagent", Style::new().fg(theme.text_primary)),
+        styled(format!(" {}", prompt_preview), theme.muted()),
         styled(status_text, status_style),
     ]);
 
