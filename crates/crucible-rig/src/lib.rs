@@ -43,6 +43,7 @@ pub mod openai_reasoning;
 pub mod providers;
 pub mod session;
 pub mod tools;
+pub mod mcp_proxy_tool;
 pub mod workspace_tools;
 pub mod xml_tool_parser;
 
@@ -70,6 +71,9 @@ pub use workspace_tools::{
     BashTool, CancelJobTool, EditFileTool, GetJobResultTool, GlobTool, GrepTool, ListJobsTool,
     ReadFileTool, SpawnSubagentTool, WorkspaceContext, WorkspaceToolError, WriteFileTool,
 };
+
+// Re-export MCP proxy tool (for upstream MCP tool integration)
+pub use mcp_proxy_tool::{mcp_tools_from_gateway, McpProxyError, McpProxyTool};
 
 // Re-export kiln tools (for knowledge base access)
 pub use kiln_tools::{KilnContext, KilnToolError, ListNotesTool, ReadNoteTool, SemanticSearchTool};
