@@ -1,25 +1,17 @@
 //! Runtime theme token system.
 //!
-//! `ThemeTokens` is the runtime equivalent of the compile-time `colors::*` constants
-//! and `styles::*` functions. Components will look up colors via `ThemeTokens` at
-//! runtime, enabling future theme customization without recompilation.
+//! `ThemeTokens` is the single source of truth for all TUI colors and styles.
+//! Components look up colors via `ThemeTokens` at runtime, enabling future
+//! theme customization without recompilation.
 //!
-//! # Migration path
-//!
-//! 1. (This task) Create `ThemeTokens` with identical values to `colors::*` constants
-//! 2. Wire `ThemeTokens` into `ViewContext` so components can access it
-//! 3. (Future) Migrate components from `colors::CONST` → `ctx.theme().field`
-//! 4. (Future) Remove legacy `colors::*` and `styles::*` modules
+//! Use `ThemeTokens::default_ref()` for a zero-cost `&'static` reference.
 
 use crucible_oil::style::{Color, Style};
 
 /// Runtime color tokens for the TUI theme.
 ///
-/// Each field corresponds to a `const` in [`super::colors`]. The field names match
-/// the constant names in `snake_case` (which they already are).
-///
-/// Use [`ThemeTokens::default()`] to get the standard dark theme, identical to
-/// the compile-time constants.
+/// Use [`ThemeTokens::default()`] or [`ThemeTokens::default_ref()`] for the
+/// standard dark theme.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ThemeTokens {
     // ── Surfaces (backgrounds) ──────────────────────────────────────────
@@ -497,76 +489,75 @@ impl ThemeTokens {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tui::oil::theme::{colors, styles};
 
     #[test]
-    fn default_matches_legacy_colors() {
+    fn default_color_tokens_are_correct() {
         let t = ThemeTokens::default();
 
         // Surfaces
-        assert_eq!(t.input_bg, colors::INPUT_BG);
-        assert_eq!(t.command_bg, colors::COMMAND_BG);
-        assert_eq!(t.shell_bg, colors::SHELL_BG);
-        assert_eq!(t.popup_bg, colors::POPUP_BG);
-        assert_eq!(t.code_bg, colors::CODE_BG);
-        assert_eq!(t.thinking_bg, colors::THINKING_BG);
+        assert_eq!(t.input_bg, Color::Rgb(40, 44, 52));
+        assert_eq!(t.command_bg, Color::Rgb(60, 50, 20));
+        assert_eq!(t.shell_bg, Color::Rgb(60, 30, 30));
+        assert_eq!(t.popup_bg, Color::Rgb(30, 34, 42));
+        assert_eq!(t.code_bg, Color::Rgb(35, 39, 47));
+        assert_eq!(t.thinking_bg, Color::Rgb(45, 40, 55));
 
         // Text
-        assert_eq!(t.text_primary, colors::TEXT_PRIMARY);
-        assert_eq!(t.text_muted, colors::TEXT_MUTED);
-        assert_eq!(t.text_accent, colors::TEXT_ACCENT);
-        assert_eq!(t.text_dim, colors::TEXT_DIM);
+        assert_eq!(t.text_primary, Color::White);
+        assert_eq!(t.text_muted, Color::DarkGray);
+        assert_eq!(t.text_accent, Color::Cyan);
+        assert_eq!(t.text_dim, Color::Gray);
 
         // Semantic
-        assert_eq!(t.success, colors::SUCCESS);
-        assert_eq!(t.error, colors::ERROR);
-        assert_eq!(t.warning, colors::WARNING);
-        assert_eq!(t.info, colors::INFO);
+        assert_eq!(t.success, Color::Rgb(158, 206, 106));
+        assert_eq!(t.error, Color::Rgb(247, 118, 142));
+        assert_eq!(t.warning, Color::Rgb(224, 175, 104));
+        assert_eq!(t.info, Color::Rgb(0, 206, 209));
 
         // Roles
-        assert_eq!(t.role_user, colors::ROLE_USER);
-        assert_eq!(t.role_assistant, colors::ROLE_ASSISTANT);
-        assert_eq!(t.role_system, colors::ROLE_SYSTEM);
-        assert_eq!(t.role_tool, colors::ROLE_TOOL);
+        assert_eq!(t.role_user, Color::Green);
+        assert_eq!(t.role_assistant, Color::Cyan);
+        assert_eq!(t.role_system, Color::Yellow);
+        assert_eq!(t.role_tool, Color::Magenta);
 
         // Modes
-        assert_eq!(t.mode_normal, colors::MODE_NORMAL);
-        assert_eq!(t.mode_plan, colors::MODE_PLAN);
-        assert_eq!(t.mode_auto, colors::MODE_AUTO);
+        assert_eq!(t.mode_normal, Color::Green);
+        assert_eq!(t.mode_plan, Color::Blue);
+        assert_eq!(t.mode_auto, Color::Yellow);
 
         // UI elements
-        assert_eq!(t.spinner, colors::SPINNER);
-        assert_eq!(t.selected, colors::SELECTED);
-        assert_eq!(t.border, colors::BORDER);
-        assert_eq!(t.prompt, colors::PROMPT);
-        assert_eq!(t.model_name, colors::MODEL_NAME);
-        assert_eq!(t.notification, colors::NOTIFICATION);
+        assert_eq!(t.spinner, Color::Cyan);
+        assert_eq!(t.selected, Color::Cyan);
+        assert_eq!(t.border, Color::Rgb(40, 44, 52)); // same as input_bg
+        assert_eq!(t.prompt, Color::Cyan);
+        assert_eq!(t.model_name, Color::Cyan);
+        assert_eq!(t.notification, Color::Yellow);
 
         // Markdown
-        assert_eq!(t.code_inline, colors::CODE_INLINE);
-        assert_eq!(t.code_fallback, colors::CODE_FALLBACK);
-        assert_eq!(t.fence_marker, colors::FENCE_MARKER);
-        assert_eq!(t.blockquote_prefix, colors::BLOCKQUOTE_PREFIX);
-        assert_eq!(t.blockquote_text, colors::BLOCKQUOTE_TEXT);
-        assert_eq!(t.link, colors::LINK);
-        assert_eq!(t.heading_1, colors::HEADING_1);
-        assert_eq!(t.heading_2, colors::HEADING_2);
-        assert_eq!(t.heading_3, colors::HEADING_3);
-        assert_eq!(t.bullet_prefix, colors::BULLET_PREFIX);
+        assert_eq!(t.code_inline, Color::Yellow);
+        assert_eq!(t.code_fallback, Color::Green);
+        assert_eq!(t.fence_marker, Color::DarkGray);
+        assert_eq!(t.blockquote_prefix, Color::DarkGray);
+        assert_eq!(t.blockquote_text, Color::Gray);
+        assert_eq!(t.link, Color::Blue);
+        assert_eq!(t.heading_1, Color::Cyan);
+        assert_eq!(t.heading_2, Color::Blue);
+        assert_eq!(t.heading_3, Color::Magenta);
+        assert_eq!(t.bullet_prefix, Color::DarkGray);
 
         // Overlay
-        assert_eq!(t.overlay_text, colors::OVERLAY_TEXT);
-        assert_eq!(t.overlay_dim, colors::OVERLAY_DIM);
-        assert_eq!(t.overlay_bright, colors::OVERLAY_BRIGHT);
+        assert_eq!(t.overlay_text, Color::Rgb(192, 202, 245));
+        assert_eq!(t.overlay_dim, Color::Rgb(100, 110, 130));
+        assert_eq!(t.overlay_bright, Color::Rgb(255, 255, 255));
 
         // Diff
-        assert_eq!(t.diff_bg, colors::DIFF_BG);
-        assert_eq!(t.diff_fg, colors::DIFF_FG);
-        assert_eq!(t.diff_add, colors::DIFF_ADD);
-        assert_eq!(t.diff_del, colors::DIFF_DEL);
-        assert_eq!(t.diff_ctx, colors::DIFF_CTX);
-        assert_eq!(t.diff_hunk, colors::DIFF_HUNK);
-        assert_eq!(t.gutter_fg, colors::GUTTER_FG);
+        assert_eq!(t.diff_bg, Color::Rgb(28, 32, 40));
+        assert_eq!(t.diff_fg, Color::Rgb(28, 32, 40));
+        assert_eq!(t.diff_add, Color::Rgb(158, 206, 106));
+        assert_eq!(t.diff_del, Color::Rgb(247, 118, 142));
+        assert_eq!(t.diff_ctx, Color::Rgb(100, 110, 130));
+        assert_eq!(t.diff_hunk, Color::Rgb(0, 206, 209));
+        assert_eq!(t.gutter_fg, Color::Rgb(70, 75, 90));
     }
 
     #[test]
@@ -580,81 +571,127 @@ mod tests {
     }
 
     #[test]
-    fn style_presets_match_legacy_styles() {
+    fn style_presets_produce_correct_styles() {
         let t = ThemeTokens::default();
 
         // Chat roles
-        assert_eq!(t.user_prompt(), styles::user_prompt());
-        assert_eq!(t.assistant_response(), styles::assistant_response());
-        assert_eq!(t.system_message(), styles::system_message());
-        assert_eq!(t.tool_call(), styles::tool_call());
-        assert_eq!(t.tool_result(), styles::tool_result());
+        assert_eq!(t.user_prompt(), Style::new().fg(Color::Green).bold());
+        assert_eq!(t.assistant_response(), Style::new().fg(Color::Cyan));
+        assert_eq!(t.system_message(), Style::new().fg(Color::Yellow).italic());
+        assert_eq!(t.tool_call(), Style::new().fg(Color::Magenta).dim());
+        assert_eq!(t.tool_result(), Style::new().fg(Color::Gray));
 
         // Status
-        assert_eq!(t.error_style(), styles::error());
-        assert_eq!(t.warning_style(), styles::warning());
-        assert_eq!(t.success_style(), styles::success());
-        assert_eq!(t.info_style(), styles::info());
+        assert_eq!(
+            t.error_style(),
+            Style::new().fg(Color::Rgb(247, 118, 142)).bold()
+        );
+        assert_eq!(
+            t.warning_style(),
+            Style::new().fg(Color::Rgb(224, 175, 104))
+        );
+        assert_eq!(
+            t.success_style(),
+            Style::new().fg(Color::Rgb(158, 206, 106))
+        );
+        assert_eq!(t.info_style(), Style::new().fg(Color::Rgb(0, 206, 209)));
 
         // Text variations
-        assert_eq!(t.muted(), styles::muted());
-        assert_eq!(t.dim(), styles::dim());
-        assert_eq!(t.accent(), styles::accent());
-        assert_eq!(t.accent_bold(), styles::accent_bold());
+        assert_eq!(t.muted(), Style::new().fg(Color::DarkGray));
+        assert_eq!(t.dim(), Style::new().fg(Color::Gray).dim());
+        assert_eq!(t.accent(), Style::new().fg(Color::Cyan));
+        assert_eq!(t.accent_bold(), Style::new().fg(Color::Cyan).bold());
 
         // UI elements
-        assert_eq!(t.prompt_style(), styles::prompt());
-        assert_eq!(t.spinner_style(), styles::spinner());
-        assert_eq!(t.model_name_style(), styles::model_name());
-        assert_eq!(t.notification_style(), styles::notification());
-        assert_eq!(t.selected_style(), styles::selected());
-        assert_eq!(t.popup_description(), styles::popup_description());
+        assert_eq!(t.prompt_style(), Style::new().fg(Color::Cyan));
+        assert_eq!(t.spinner_style(), Style::new().fg(Color::Cyan));
+        assert_eq!(t.model_name_style(), Style::new().fg(Color::Cyan));
+        assert_eq!(t.notification_style(), Style::new().fg(Color::Yellow));
+        assert_eq!(
+            t.selected_style(),
+            Style::new().fg(Color::Black).bg(Color::Cyan)
+        );
+        assert_eq!(t.popup_description(), Style::new().fg(Color::Gray).dim());
 
         // Mode badges
-        assert_eq!(t.mode_normal_style(), styles::mode_normal());
-        assert_eq!(t.mode_plan_style(), styles::mode_plan());
-        assert_eq!(t.mode_auto_style(), styles::mode_auto());
+        assert_eq!(
+            t.mode_normal_style(),
+            Style::new().bg(Color::Green).fg(Color::Black).bold()
+        );
+        assert_eq!(
+            t.mode_plan_style(),
+            Style::new().bg(Color::Blue).fg(Color::Black).bold()
+        );
+        assert_eq!(
+            t.mode_auto_style(),
+            Style::new().bg(Color::Yellow).fg(Color::Black).bold()
+        );
 
         // Code/thinking
-        assert_eq!(t.code_block(), styles::code_block());
-        assert_eq!(t.thinking_header(), styles::thinking_header());
-        assert_eq!(t.thinking_content(), styles::thinking_content());
+        assert_eq!(t.code_block(), Style::new().bg(Color::Rgb(35, 39, 47)));
+        assert_eq!(t.thinking_header(), Style::new().fg(Color::Gray).italic());
+        assert_eq!(t.thinking_content(), Style::new().fg(Color::Gray).dim());
 
         // Diff
-        assert_eq!(t.diff_delete(), styles::diff_delete());
-        assert_eq!(t.diff_insert(), styles::diff_insert());
-        assert_eq!(t.diff_context(), styles::diff_context());
-        assert_eq!(t.diff_hunk_header(), styles::diff_hunk_header());
+        assert_eq!(t.diff_delete(), Style::new().fg(Color::Rgb(247, 118, 142)));
+        assert_eq!(t.diff_insert(), Style::new().fg(Color::Rgb(158, 206, 106)));
+        assert_eq!(t.diff_context(), Style::new().fg(Color::Gray));
+        assert_eq!(
+            t.diff_hunk_header(),
+            Style::new().fg(Color::Rgb(0, 206, 209))
+        );
 
         // Markdown
-        assert_eq!(t.inline_code(), styles::inline_code());
-        assert_eq!(t.code_fallback_style(), styles::code_fallback());
-        assert_eq!(t.fence_marker_style(), styles::fence_marker());
-        assert_eq!(t.blockquote_prefix_style(), styles::blockquote_prefix());
-        assert_eq!(t.blockquote_text_style(), styles::blockquote_text());
-        assert_eq!(t.link_style(), styles::link());
-        assert_eq!(t.heading_1_style(), styles::heading_1());
-        assert_eq!(t.heading_2_style(), styles::heading_2());
-        assert_eq!(t.heading_3_style(), styles::heading_3());
-        assert_eq!(t.bullet_prefix_style(), styles::bullet_prefix());
+        assert_eq!(t.inline_code(), Style::new().fg(Color::Yellow));
+        assert_eq!(t.code_fallback_style(), Style::new().fg(Color::Green));
+        assert_eq!(t.fence_marker_style(), Style::new().fg(Color::DarkGray));
+        assert_eq!(
+            t.blockquote_prefix_style(),
+            Style::new().fg(Color::DarkGray)
+        );
+        assert_eq!(
+            t.blockquote_text_style(),
+            Style::new().fg(Color::Gray).italic()
+        );
+        assert_eq!(t.link_style(), Style::new().fg(Color::Blue).underline());
+        assert_eq!(t.heading_1_style(), Style::new().fg(Color::Cyan).bold());
+        assert_eq!(t.heading_2_style(), Style::new().fg(Color::Blue).bold());
+        assert_eq!(t.heading_3_style(), Style::new().fg(Color::Magenta).bold());
+        assert_eq!(t.bullet_prefix_style(), Style::new().fg(Color::DarkGray));
 
         // Overlay
+        let info_color = Color::Rgb(0, 206, 209);
         assert_eq!(
-            t.notification_badge(colors::INFO),
-            styles::notification_badge(colors::INFO)
+            t.notification_badge(info_color),
+            Style::new().fg(info_color).bold().reverse()
         );
-        assert_eq!(t.permission_badge(), styles::permission_badge());
-        assert_eq!(t.permission_type(), styles::permission_type());
         assert_eq!(
-            t.overlay_key(colors::SUCCESS),
-            styles::overlay_key(colors::SUCCESS)
+            t.permission_badge(),
+            Style::new().fg(Color::Rgb(247, 118, 142)).bold().reverse()
         );
-        assert_eq!(t.overlay_hint(), styles::overlay_hint());
-        assert_eq!(t.overlay_text_style(), styles::overlay_text());
-        assert_eq!(t.overlay_bright_style(), styles::overlay_bright());
-        assert_eq!(t.diff_gutter(), styles::diff_gutter());
-        assert_eq!(t.diff_bg_style(), styles::diff_bg());
-        assert_eq!(t.input_bg_style(), styles::input_bg());
+        assert_eq!(
+            t.permission_type(),
+            Style::new().fg(Color::Rgb(247, 118, 142)).bold()
+        );
+        let success_color = Color::Rgb(158, 206, 106);
+        assert_eq!(t.overlay_key(success_color), Style::new().fg(success_color));
+        assert_eq!(t.overlay_hint(), Style::new().fg(Color::Rgb(100, 110, 130)));
+        assert_eq!(
+            t.overlay_text_style(),
+            Style::new().fg(Color::Rgb(192, 202, 245))
+        );
+        assert_eq!(
+            t.overlay_bright_style(),
+            Style::new().fg(Color::Rgb(255, 255, 255))
+        );
+        assert_eq!(
+            t.diff_gutter(),
+            Style::new()
+                .fg(Color::Rgb(70, 75, 90))
+                .bg(Color::Rgb(28, 32, 40))
+        );
+        assert_eq!(t.diff_bg_style(), Style::new().bg(Color::Rgb(28, 32, 40)));
+        assert_eq!(t.input_bg_style(), Style::new().bg(Color::Rgb(40, 44, 52)));
     }
 
     #[test]
