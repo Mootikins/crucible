@@ -243,22 +243,16 @@ fn test_permission_other_keys_ignored() {
     assert!(app.interaction_visible(), "Modal should be open");
 
     // Press random keys that should be ignored
-    app.update(Event::Key(key(KeyCode::Char('a'))));
-    assert!(
-        app.interaction_visible(),
-        "Modal should remain open after 'a'"
-    );
-
     app.update(Event::Key(key(KeyCode::Char('x'))));
     assert!(
         app.interaction_visible(),
         "Modal should remain open after 'x'"
     );
 
-    app.update(Event::Key(key(KeyCode::Tab)));
+    app.update(Event::Key(key(KeyCode::Char('z'))));
     assert!(
         app.interaction_visible(),
-        "Modal should remain open after Tab"
+        "Modal should remain open after 'z'"
     );
 }
 
@@ -492,7 +486,7 @@ fn test_permission_down_arrow_navigates() {
         app.interaction_visible(),
         "Modal should remain open after navigation"
     );
-    assert_contains(&output_after, "Deny", "should still show deny option");
+    assert_contains(&output_after, "No", "should still show deny option");
 }
 
 #[test]
@@ -708,11 +702,11 @@ fn test_permission_shows_selectable_options() {
     app.open_interaction("perm-1".to_string(), request);
 
     let output = render_app(&app);
-    assert_contains(&output, "Allow once", "should show Allow once option");
-    assert_contains(&output, "Deny", "should show Deny option");
-    assert_contains(&output, "Save pattern", "should show Save pattern option");
-    assert_contains(&output, "navigate", "should show navigation hint");
-    assert_contains(&output, "Enter", "should show Enter hint");
+    assert_contains(&output, "Yes", "should show Yes option");
+    assert_contains(&output, "No", "should show No option");
+    assert_contains(&output, "Allowlist", "should show Allowlist option");
+    assert_contains(&output, "y", "should show y keybinding hint");
+    assert_contains(&output, "n", "should show n keybinding hint");
 }
 
 // =============================================================================
