@@ -1461,4 +1461,34 @@ mod overlay_snapshots {
         app.open_interaction("perm-bash".to_string(), request);
         assert_snapshot!(render_app_raw(&app));
     }
+
+    #[test]
+    fn snapshot_tool_call_visible_under_permission_prompt() {
+        let mut app = OilChatApp::default();
+        app.on_message(ChatAppMsg::UserMessage("Run the build".to_string()));
+        app.on_message(ChatAppMsg::TextDelta(
+            "I'll run the build for you.".to_string(),
+        ));
+        app.on_message(ChatAppMsg::ToolCall {
+            name: "bash".to_string(),
+            args: r#"{"command":"cargo build"}"#.to_string(),
+            call_id: None,
+        });
+
+        let request = crucible_core::interaction::InteractionRequest::Permission(
+            crucible_core::interaction::PermRequest::bash(["cargo", "build"]),
+        );
+        app.open_interaction("perm-build".to_string(), request);
+
+        let output = render_app(&app);
+        assert!(
+            output.contains("cargo build"),
+            "Tool call should be visible under permission prompt"
+        );
+        assert!(
+            output.contains("PERMISSION"),
+            "Permission modal should be visible"
+        );
+        assert_snapshot!(output);
+    }
 }
