@@ -374,7 +374,7 @@ impl App for OilChatApp {
         }
 
         let bottom = if self.notification_area.is_visible() {
-            self.render_messages_drawer()
+            self.render_messages_drawer(ctx)
         } else {
             col([self.render_input(ctx), self.render_status()])
         };
@@ -672,71 +672,35 @@ impl OilChatApp {
         self.notification_area.clear();
     }
 
-    fn render_messages_drawer(&self) -> Node {
+    fn render_messages_drawer(&self, ctx: &ViewContext<'_>) -> Node {
         use crate::tui::oil::components::status_bar::NotificationToastKind;
-        use crate::tui::oil::node::{row, styled};
-        use crate::tui::oil::style::Style;
-        use crate::tui::oil::theme::ThemeTokens;
+        use crate::tui::oil::components::{NotificationComponent, NotificationEntry};
 
-        let theme = ThemeTokens::default_ref();
         let term_width = terminal_width();
 
-        let content_rows: Vec<Node> = self
+        let entries: Vec<NotificationEntry> = self
             .notification_area
             .history()
             .iter()
             .map(|(notif, instant)| {
-                let elapsed = instant.elapsed();
-                let secs_ago = elapsed.as_secs();
-                let timestamp = if secs_ago < 60 {
-                    format!("{:>2}s ago", secs_ago)
-                } else if secs_ago < 3600 {
-                    format!("{:>2}m ago", secs_ago / 60)
-                } else {
-                    format!("{:>2}h ago", secs_ago / 3600)
-                };
-
-                let (kind_label, badge_kind): (&str, NotificationToastKind) = match &notif.kind {
-                    crucible_core::types::NotificationKind::Toast => {
-                        ("INFO", NotificationToastKind::Info)
-                    }
+                let kind = match &notif.kind {
+                    crucible_core::types::NotificationKind::Toast => NotificationToastKind::Info,
                     crucible_core::types::NotificationKind::Progress { .. } => {
-                        ("INFO", NotificationToastKind::Info)
+                        NotificationToastKind::Info
                     }
                     crucible_core::types::NotificationKind::Warning => {
-                        ("WARN", NotificationToastKind::Warning)
+                        NotificationToastKind::Warning
                     }
                 };
-
-                let bg = theme.input_bg;
-                let text_style = Style::new().bg(bg).fg(theme.overlay_text);
-                let badge_style = theme.notification_badge(badge_kind.color());
-
-                let timestamp_part = format!(" {}: ", timestamp);
-                let message_part = format!(" {}", notif.message);
-                let badge_text = format!(" {} ", kind_label);
-                let used = timestamp_part.chars().count()
-                    + badge_text.chars().count()
-                    + message_part.chars().count();
-                let padding = if term_width > used {
-                    " ".repeat(term_width - used)
-                } else {
-                    String::new()
-                };
-
-                row([
-                    styled(timestamp_part, text_style),
-                    styled(badge_text, badge_style),
-                    styled(message_part, text_style),
-                    styled(padding, Style::new().bg(bg)),
-                ])
+                NotificationEntry::new(&notif.message, kind, instant.elapsed().as_secs())
             })
             .collect();
 
-        Drawer::new(DrawerKind::Messages)
-            .content_rows(content_rows)
-            .width(term_width)
-            .view()
+        let comp = NotificationComponent::new(entries)
+            .visible(true)
+            .width(term_width);
+
+        comp.view(ctx)
     }
 
     pub fn clear_messages(&mut self) {
@@ -2141,103 +2105,16 @@ impl OilChatApp {
     }
 
     fn render_input(&self, ctx: &ViewContext<'_>) -> Node {
-        let width = terminal_width();
+        use crate::tui::oil::components::{InputComponent, InputMode as ComponentInputMode};
+
+        let input_mode = ComponentInputMode::from_content(self.input.content());
         let is_focused = !self.show_popup || ctx.is_focused(FOCUS_INPUT);
-        let input_mode = self.detect_input_mode();
 
-        let prompt = input_mode.prompt();
-        let bg = input_mode.bg_color();
-
-        let top_edge = styled("▄".repeat(width), Style::new().fg(bg));
-        let bottom_edge = styled("▀".repeat(width), Style::new().fg(bg));
-
-        let content = self.input.content();
-        let display_content = match input_mode {
-            InputMode::Command => content.strip_prefix(':').unwrap_or(content),
-            InputMode::Shell => content.strip_prefix('!').unwrap_or(content),
-            InputMode::Normal => content,
-        };
-
-        let cursor_offset = if matches!(input_mode, InputMode::Command | InputMode::Shell) {
-            1
-        } else {
-            0
-        };
-        let display_cursor = self.input.cursor().saturating_sub(cursor_offset);
-
-        let content_width = width.saturating_sub(prompt.len() + 1);
-        let all_lines = wrap_content(display_content, content_width);
-
-        let (cursor_line, cursor_col) = if content_width > 0 && !all_lines.is_empty() {
-            let line_idx = display_cursor / content_width;
-            let col_in_line = display_cursor % content_width;
-            (line_idx.min(all_lines.len() - 1), col_in_line)
-        } else {
-            (0, display_cursor)
-        };
-
-        let (visible_lines, visible_cursor_line) =
-            Self::clamp_input_lines(&all_lines, cursor_line, INPUT_MAX_CONTENT_LINES);
-
-        let mut rows: Vec<Node> = Vec::with_capacity(INPUT_MAX_CONTENT_LINES + 2);
-        rows.push(top_edge);
-
-        for (i, line) in visible_lines.iter().enumerate() {
-            let line_len = line.chars().count();
-            let line_padding = " ".repeat(content_width.saturating_sub(line_len) + 1);
-            let is_first_visible = i == 0 && visible_lines.len() == all_lines.len();
-            let line_prefix = if is_first_visible { prompt } else { "   " };
-
-            if i == visible_cursor_line && is_focused {
-                rows.push(row([
-                    styled(line_prefix, Style::new().bg(bg)),
-                    Node::Input(crate::tui::oil::node::InputNode {
-                        value: line.to_string(),
-                        cursor: cursor_col.min(line_len),
-                        placeholder: None,
-                        style: Style::new().bg(bg),
-                        focused: true,
-                    }),
-                    styled(line_padding, Style::new().bg(bg)),
-                ]));
-            } else {
-                rows.push(styled(
-                    format!("{}{}{}", line_prefix, line, line_padding),
-                    Style::new().bg(bg),
-                ));
-            }
-        }
-
-        rows.push(bottom_edge);
-
-        let input_node = col(rows);
-
-        focusable_auto(FOCUS_INPUT, input_node)
-    }
-
-    fn clamp_input_lines(
-        lines: &[String],
-        cursor_line: usize,
-        max_lines: usize,
-    ) -> (Vec<String>, usize) {
-        if lines.len() <= max_lines {
-            return (lines.to_vec(), cursor_line);
-        }
-
-        let half = max_lines / 2;
-        let start = if cursor_line <= half {
-            0
-        } else if cursor_line >= lines.len() - half {
-            lines.len() - max_lines
-        } else {
-            cursor_line - half
-        };
-
-        let end = (start + max_lines).min(lines.len());
-        let visible = lines[start..end].to_vec();
-        let adjusted_cursor = cursor_line - start;
-
-        (visible, adjusted_cursor)
+        InputComponent::new(self.input.content(), self.input.cursor(), terminal_width())
+            .mode(input_mode)
+            .focused(is_focused)
+            .show_popup(self.show_popup)
+            .view(ctx)
     }
 
     fn get_popup_items(&self) -> Vec<PopupItemNode> {
