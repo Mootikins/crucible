@@ -125,7 +125,9 @@ impl AgentManager {
     pub fn new(
         session_manager: Arc<SessionManager>,
         background_manager: Arc<BackgroundJobManager>,
-        mcp_gateway: Option<Arc<tokio::sync::RwLock<crucible_tools::mcp_gateway::McpGatewayManager>>>,
+        mcp_gateway: Option<
+            Arc<tokio::sync::RwLock<crucible_tools::mcp_gateway::McpGatewayManager>>,
+        >,
     ) -> Self {
         Self {
             request_state: Arc::new(DashMap::new()),

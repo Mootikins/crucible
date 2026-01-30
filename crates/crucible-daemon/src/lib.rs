@@ -42,9 +42,9 @@ pub use background_manager::{
 };
 pub use kiln_manager::KilnManager;
 pub use lifecycle::{remove_socket, socket_path, wait_for_shutdown};
+pub use permission_bridge::DaemonPermissionGate;
 pub use protocol::{Request, Response, RpcError, SessionEventMessage};
 pub use server::Server;
 pub use session_manager::{SessionError, SessionManager};
 pub use session_storage::{FileSessionStorage, SessionStorage};
-pub use permission_bridge::DaemonPermissionGate;
 pub use subscription::{ClientId, SubscriptionManager};
