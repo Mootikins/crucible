@@ -6,7 +6,7 @@ use crate::formatting::{HighlightedLine, SyntaxHighlighter};
 use crate::tui::oil::diff::{diff_to_node, diff_to_node_width};
 use crate::tui::oil::node::{col, row, styled, Node};
 use crate::tui::oil::style::{Color, Style};
-use crate::tui::oil::theme::{colors, styles};
+use crate::tui::oil::theme::ThemeTokens;
 
 /// Maximum number of lines to display before truncating.
 const MAX_LINES: usize = 500;
@@ -125,23 +125,25 @@ fn render_header(file_path: &str, action: &str) -> Node {
         _ => "[unknown]",
     };
 
+    let theme = ThemeTokens::default_ref();
     let label_style = match action {
-        "create" => styles::diff_insert(),
-        "delete" => styles::diff_delete(),
-        _ => styles::info(),
+        "create" => theme.diff_insert(),
+        "delete" => theme.diff_delete(),
+        _ => theme.info_style(),
     };
 
     row([
         styled(format!("{} ", label), label_style),
-        styled(file_path.to_string(), styles::accent()),
+        styled(file_path.to_string(), theme.accent()),
     ])
 }
 
 fn render_all_lines_styled(content: &str, is_insert: bool, extension: Option<&str>) -> Node {
+    let theme = ThemeTokens::default_ref();
     let diff_bg = if is_insert {
-        colors::SUCCESS
+        theme.success
     } else {
-        colors::ERROR
+        theme.error
     };
     let prefix = if is_insert { "+" } else { "-" };
 
@@ -180,7 +182,7 @@ fn render_all_lines_styled(content: &str, is_insert: bool, extension: Option<&st
         let remaining = total_lines - MAX_LINES;
         nodes.push(styled(
             format!("... {} more lines", remaining),
-            styles::muted(),
+            ThemeTokens::default_ref().muted(),
         ));
     }
 
@@ -219,7 +221,10 @@ fn render_modification_diff(old: &str, new: &str, max_width: Option<usize>) -> N
         let remaining = total_lines.saturating_sub(MAX_LINES);
         col([
             diff_node,
-            styled(format!("... {} more lines", remaining), styles::muted()),
+            styled(
+                format!("... {} more lines", remaining),
+                ThemeTokens::default_ref().muted(),
+            ),
         ])
     } else {
         diff_to_node_width(old, new, 3, max_width)

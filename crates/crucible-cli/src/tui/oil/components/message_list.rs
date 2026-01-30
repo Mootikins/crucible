@@ -10,7 +10,7 @@ use crate::tui::oil::component::Component;
 use crate::tui::oil::markdown::{markdown_to_node_styled, Margins, RenderStyle};
 use crate::tui::oil::node::{col, scrollback, styled, text, Node};
 use crate::tui::oil::style::Style;
-use crate::tui::oil::theme::{colors, styles};
+use crate::tui::oil::theme::ThemeTokens;
 use crate::tui::oil::viewport_cache::{CachedChatItem, CachedMessage};
 use crate::tui::oil::ViewContext;
 
@@ -54,7 +54,10 @@ impl<'a> MessageList<'a> {
             }
             Role::System => col([
                 text(""),
-                styled(format!(" * {} ", msg.content()), styles::system_message()),
+                styled(
+                    format!(" * {} ", msg.content()),
+                    ThemeTokens::default_ref().system_message(),
+                ),
             ]),
         };
         scrollback(&msg.id, [content_node])
@@ -69,8 +72,9 @@ impl Component for MessageList<'_> {
 
 /// Render a user prompt with styled background.
 pub fn render_user_prompt(content: &str, width: usize) -> Node {
-    let top_edge = styled("▄".repeat(width), Style::new().fg(colors::INPUT_BG));
-    let bottom_edge = styled("▀".repeat(width), Style::new().fg(colors::INPUT_BG));
+    let theme = ThemeTokens::default_ref();
+    let top_edge = styled("▄".repeat(width), Style::new().fg(theme.input_bg));
+    let bottom_edge = styled("▀".repeat(width), Style::new().fg(theme.input_bg));
 
     let prefix = " > ";
     let continuation_prefix = "   ";
@@ -87,7 +91,7 @@ pub fn render_user_prompt(content: &str, width: usize) -> Node {
         let line_prefix = if i == 0 { prefix } else { continuation_prefix };
         rows.push(styled(
             format!("{}{}{}", line_prefix, line, line_padding),
-            Style::new().bg(colors::INPUT_BG),
+            Style::new().bg(theme.input_bg),
         ));
     }
 
@@ -100,7 +104,7 @@ pub fn render_user_prompt(content: &str, width: usize) -> Node {
 pub fn render_thinking_block(content: &str, token_count: usize, width: usize) -> Node {
     let header = styled(
         format!("  ┌─ thinking ({} tokens)", token_count),
-        styles::thinking_header(),
+        ThemeTokens::default_ref().thinking_header(),
     );
 
     let display_content: Cow<'_, str> = if content.len() > 1200 {
