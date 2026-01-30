@@ -554,14 +554,20 @@ impl App for OilChatApp {
                 self.process_deferred_queue()
             }
             ChatAppMsg::QueueMessage(content) => {
-                self.deferred_messages.push_back(content);
-                let count = self.deferred_messages.len();
-                self.status = format!(
-                    "{} message{} queued",
-                    count,
-                    if count == 1 { "" } else { "s" }
-                );
-                Action::Continue
+                if self.is_streaming() {
+                    self.deferred_messages.push_back(content);
+                    let count = self.deferred_messages.len();
+                    self.status = format!(
+                        "{} message{} queued",
+                        count,
+                        if count == 1 { "" } else { "s" }
+                    );
+                    Action::Continue
+                } else {
+                    // Not streaming — immediately promote to UserMessage so the
+                    // runner can start the stream and the app shows the spinner.
+                    Action::Send(ChatAppMsg::UserMessage(content))
+                }
             }
             ChatAppMsg::Error(msg) => {
                 self.error = Some(msg);
