@@ -2,6 +2,7 @@
 //!
 //! Functions for stripping ANSI codes and calculating visible width.
 
+use crate::style::Style;
 use unicode_width::UnicodeWidthStr;
 
 /// Strip ANSI escape sequences from a string, returning only visible characters.
@@ -188,6 +189,20 @@ pub fn wrap_styled_text(spans: &[(String, String)], width: usize) -> Vec<String>
     }
 
     result
+}
+
+/// Apply a Style to content, generating appropriate ANSI escape sequences.
+///
+/// Returns the content formatted with the given style using crossterm's StyledContent.
+/// If the style is the default, returns the content unchanged.
+pub fn apply_style(content: &str, style: &Style) -> String {
+    if style == &Style::default() {
+        return content.to_string();
+    }
+
+    use crossterm::style::StyledContent;
+    let ct_style = style.to_crossterm();
+    format!("{}", StyledContent::new(ct_style, content))
 }
 
 #[cfg(test)]

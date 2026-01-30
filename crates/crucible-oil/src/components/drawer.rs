@@ -26,6 +26,9 @@ pub struct Drawer<K: DrawerKind> {
     pub content_rows: Vec<Node>,
     pub max_items: usize,
     pub width: usize,
+    pub border_color: Color,
+    pub bg_color: Color,
+    pub dim_color: Color,
 }
 
 impl<K: DrawerKind> Drawer<K> {
@@ -37,6 +40,9 @@ impl<K: DrawerKind> Drawer<K> {
             content_rows: Vec::new(),
             max_items: 10,
             width: 80,
+            border_color: Color::Rgb(40, 44, 52),
+            bg_color: Color::Rgb(40, 44, 52),
+            dim_color: Color::Rgb(100, 110, 130),
         }
     }
 
@@ -68,14 +74,35 @@ impl<K: DrawerKind> Drawer<K> {
         self
     }
 
+    /// Set border color
+    #[must_use]
+    pub fn border_color(mut self, color: Color) -> Self {
+        self.border_color = color;
+        self
+    }
+
+    /// Set background color
+    #[must_use]
+    pub fn bg_color(mut self, color: Color) -> Self {
+        self.bg_color = color;
+        self
+    }
+
+    /// Set dim text color
+    #[must_use]
+    pub fn dim_color(mut self, color: Color) -> Self {
+        self.dim_color = color;
+        self
+    }
+
     fn render_border_top(&self) -> Node {
         let border: String = "▄".repeat(self.width);
-        styled(border, Style::new().fg(Color::Rgb(40, 44, 52)))
+        styled(border, Style::new().fg(self.border_color))
     }
 
     fn render_border_bottom(&self) -> Node {
         let border: String = "▀".repeat(self.width);
-        styled(border, Style::new().fg(Color::Rgb(40, 44, 52)))
+        styled(border, Style::new().fg(self.border_color))
     }
 
     fn render_content_row(&self, label: &str, content: &str) -> Node {
@@ -88,11 +115,11 @@ impl<K: DrawerKind> Drawer<K> {
             String::new()
         };
 
-        let style = Style::new().bg(Color::Rgb(40, 44, 52)).fg(Color::White);
+        let style = Style::new().bg(self.bg_color).fg(Color::White);
         row([
             styled(label_part, style),
             styled(content.to_string(), style),
-            styled(padding, Style::new().bg(Color::Rgb(40, 44, 52))),
+            styled(padding, Style::new().bg(self.bg_color)),
         ])
     }
 
@@ -108,10 +135,7 @@ impl<K: DrawerKind> Drawer<K> {
             styled(" ".to_string(), Style::new()),
             styled("ESC/q".to_string(), Style::new().fg(self.kind.hint_fg())),
             styled(" ".to_string(), Style::new()),
-            styled(
-                "close".to_string(),
-                Style::new().fg(Color::Rgb(100, 110, 130)),
-            ),
+            styled("close".to_string(), Style::new().fg(self.dim_color)),
         ])
     }
 
