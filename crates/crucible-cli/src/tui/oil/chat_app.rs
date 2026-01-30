@@ -2998,7 +2998,7 @@ mod tests {
     }
 
     #[test]
-    fn test_perm_request_p_saves_pattern_and_allows() {
+    fn test_perm_request_a_saves_pattern_and_allows() {
         use crossterm::event::{KeyEvent, KeyModifiers};
         use crucible_core::interaction::PermRequest;
 
@@ -3006,22 +3006,22 @@ mod tests {
         let request = InteractionRequest::Permission(PermRequest::bash(["npm", "install"]));
         app.open_interaction("perm-7".to_string(), request);
 
-        let key = KeyEvent::new(KeyCode::Char('p'), KeyModifiers::NONE);
+        let key = KeyEvent::new(KeyCode::Char('a'), KeyModifiers::NONE);
         let action = app.handle_key(key);
 
         assert!(
             !app.interaction_visible(),
-            "Modal should close after p (pattern saved)"
+            "Modal should close after a (pattern saved)"
         );
         match action {
             Action::Send(ChatAppMsg::CloseInteraction { response, .. }) => match response {
                 InteractionResponse::Permission(perm) => {
-                    assert!(perm.allowed, "p should allow");
-                    assert!(perm.pattern.is_some(), "p should set a pattern");
+                    assert!(perm.allowed, "a should allow");
+                    assert!(perm.pattern.is_some(), "a should set a pattern");
                     assert_eq!(
                         perm.pattern.as_deref(),
-                        Some("npm install"),
-                        "pattern should match command"
+                        Some("npm *"),
+                        "pattern should match suggested pattern"
                     );
                 }
                 _ => panic!("Expected Permission response"),
@@ -3039,7 +3039,7 @@ mod tests {
         let request = InteractionRequest::Permission(PermRequest::bash(["ls", "-la"]));
         app.open_interaction("perm-8".to_string(), request);
 
-        for c in ['a', 'b', 'x', 'z', '1', '!'] {
+        for c in ['b', 'x', 'z', '1', '!'] {
             let key = KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE);
             let action = app.handle_key(key);
 
