@@ -255,15 +255,38 @@ fn session_event_to_chat_chunk(event: &SessionEvent) -> Option<ChatChunk> {
                 subagent_events: None,
             })
         }
-        "message_complete" => Some(ChatChunk {
-            delta: String::new(),
-            done: true,
-            tool_calls: None,
-            tool_results: None,
-            reasoning: None,
-            usage: None,
-            subagent_events: None,
-        }),
+        "message_complete" => {
+            let usage = event
+                .data
+                .get("total_tokens")
+                .and_then(|v| v.as_u64())
+                .map(|total| {
+                    let prompt = event
+                        .data
+                        .get("prompt_tokens")
+                        .and_then(|v| v.as_u64())
+                        .unwrap_or(0);
+                    let completion = event
+                        .data
+                        .get("completion_tokens")
+                        .and_then(|v| v.as_u64())
+                        .unwrap_or(0);
+                    crucible_core::traits::llm::TokenUsage {
+                        prompt_tokens: prompt as u32,
+                        completion_tokens: completion as u32,
+                        total_tokens: total as u32,
+                    }
+                });
+            Some(ChatChunk {
+                delta: String::new(),
+                done: true,
+                tool_calls: None,
+                tool_results: None,
+                reasoning: None,
+                usage,
+                subagent_events: None,
+            })
+        }
         "ended" => Some(ChatChunk {
             delta: String::new(),
             done: true,
@@ -841,6 +864,75 @@ mod tests {
         assert!(
             results[0].error.is_none(),
             "Error should be None for successful results"
+        );
+    }
+
+    #[test]
+    fn test_message_complete_with_usage_extraction() {
+        let event = SessionEvent {
+            session_id: "test".to_string(),
+            event_type: "message_complete".to_string(),
+            data: json!({
+                "message_id": "msg-1",
+                "full_response": "done",
+                "prompt_tokens": 200,
+                "completion_tokens": 80,
+                "total_tokens": 280
+            }),
+        };
+
+        let chunk = session_event_to_chat_chunk(&event).unwrap();
+        assert!(chunk.done, "message_complete should set done=true");
+        let usage = chunk.usage.expect("Should extract usage from event data");
+        assert_eq!(usage.prompt_tokens, 200);
+        assert_eq!(usage.completion_tokens, 80);
+        assert_eq!(usage.total_tokens, 280);
+    }
+
+    #[test]
+    fn test_message_complete_without_usage_extraction() {
+        let event = SessionEvent {
+            session_id: "test".to_string(),
+            event_type: "message_complete".to_string(),
+            data: json!({
+                "message_id": "msg-2",
+                "full_response": "no tokens"
+            }),
+        };
+
+        let chunk = session_event_to_chat_chunk(&event).unwrap();
+        assert!(chunk.done, "message_complete should set done=true");
+        assert!(
+            chunk.usage.is_none(),
+            "Should be None when no token fields in event data"
+        );
+    }
+
+    #[test]
+    fn test_message_complete_usage_defaults_missing_fields() {
+        // total_tokens present but prompt/completion missing → should still extract
+        let event = SessionEvent {
+            session_id: "test".to_string(),
+            event_type: "message_complete".to_string(),
+            data: json!({
+                "message_id": "msg-3",
+                "full_response": "partial usage",
+                "total_tokens": 500
+            }),
+        };
+
+        let chunk = session_event_to_chat_chunk(&event).unwrap();
+        let usage = chunk
+            .usage
+            .expect("Should extract usage when total_tokens present");
+        assert_eq!(usage.total_tokens, 500);
+        assert_eq!(
+            usage.prompt_tokens, 0,
+            "Missing prompt_tokens should default to 0"
+        );
+        assert_eq!(
+            usage.completion_tokens, 0,
+            "Missing completion_tokens should default to 0"
         );
     }
 }

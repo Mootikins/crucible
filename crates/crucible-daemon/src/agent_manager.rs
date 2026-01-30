@@ -765,6 +765,7 @@ impl AgentManager {
                                 session_id,
                                 message_id,
                                 accumulated_response.clone(),
+                                chunk.usage.as_ref(),
                             ))
                             .is_err()
                         {
