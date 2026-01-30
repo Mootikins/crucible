@@ -16,9 +16,6 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::{ClientError, Result};
-use agent_client_protocol::{ClientRequest, ClientResponse};
-
 /// ACP transport layer configuration.
 ///
 /// Settings for the underlying ACP client transport (timeouts, message limits).
@@ -70,45 +67,6 @@ impl AcpSession {
     pub fn id(&self) -> &str {
         &self.session_id
     }
-
-    /// Send a request to the agent and wait for a response
-    ///
-    /// # Arguments
-    ///
-    /// * `request` - The request to send
-    ///
-    /// # Returns
-    ///
-    /// The agent's response
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if:
-    /// - The session is closed
-    /// - The request times out
-    /// - The agent returns an error
-    /// - Serialization/deserialization fails
-    pub async fn send_request(&self, _request: ClientRequest) -> Result<ClientResponse> {
-        // TODO: Implement request sending
-        // This is a stub - will be implemented in TDD cycles
-        Err(ClientError::Session("Not yet implemented".to_string()))
-    }
-
-    /// Close the session and cleanup resources
-    ///
-    /// This will gracefully terminate the session and notify the agent.
-    pub async fn close(self) -> Result<()> {
-        // TODO: Implement session cleanup
-        // This is a stub - will be implemented in TDD cycles
-        Ok(())
-    }
-
-    /// Check if the session is still active
-    pub fn is_active(&self) -> bool {
-        // TODO: Implement session state tracking
-        // This is a stub - will be implemented in TDD cycles
-        true
-    }
 }
 
 #[cfg(test)]
@@ -120,7 +78,6 @@ mod tests {
         let config = TransportConfig::default();
         let session = AcpSession::new(config, "test-session-id".to_string());
         assert_eq!(session.id(), "test-session-id");
-        assert!(session.is_active());
     }
 
     #[test]
