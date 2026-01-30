@@ -104,6 +104,7 @@ pub enum ChatAppMsg {
     FetchModels,
     ModelsLoaded(Vec<String>),
     ModelsFetchFailed(String),
+    McpStatusLoaded(Vec<McpServerDisplay>),
     SetThinkingBudget(i64),
     SetTemperature(f64),
     SetMaxTokens(Option<u32>),
@@ -253,6 +254,7 @@ pub enum ModelListState {
     Failed(String),
 }
 
+#[derive(Debug, Clone)]
 pub struct McpServerDisplay {
     pub name: String,
     pub prefix: String,
@@ -601,6 +603,18 @@ impl App for OilChatApp {
             ChatAppMsg::ModelsFetchFailed(reason) => {
                 self.model_list_state = ModelListState::Failed(reason.clone());
                 self.error = Some(format!("Failed to fetch models: {}", reason));
+                Action::Continue
+            }
+            ChatAppMsg::McpStatusLoaded(servers) => {
+                let connected = servers.iter().filter(|s| s.connected).count();
+                let tools: usize = servers.iter().map(|s| s.tool_count).sum();
+                self.set_mcp_servers(servers.clone());
+                if connected > 0 {
+                    self.add_notification(crucible_core::types::Notification::toast(format!(
+                        "MCP: {} server(s) connected, {} tools",
+                        connected, tools
+                    )));
+                }
                 Action::Continue
             }
             ChatAppMsg::SetThinkingBudget(_) => Action::Continue,
