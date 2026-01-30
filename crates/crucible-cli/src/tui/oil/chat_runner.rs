@@ -5,6 +5,7 @@ use crate::tui::oil::chat_app::{ChatAppMsg, ChatMode, McpServerDisplay, OilChatA
 use crate::tui::oil::event::Event;
 use crate::tui::oil::focus::FocusContext;
 use crate::tui::oil::terminal::Terminal;
+use crate::tui::oil::theme::ThemeTokens;
 use anyhow::Result;
 use crossterm::event::{Event as CtEvent, EventStream, KeyCode, KeyModifiers};
 use crucible_core::events::SessionEvent;
@@ -149,7 +150,8 @@ impl OilChatRunner {
         }
         app.set_show_thinking(self.show_thinking);
 
-        let ctx = ViewContext::new(&self.focus);
+        let terminal_size = self.terminal.size();
+        let ctx = ViewContext::with_terminal_size(&self.focus, ThemeTokens::default_ref(), terminal_size);
         let tree = app.view(&ctx);
         let _ = self.terminal.render(&tree)?;
 
@@ -194,7 +196,8 @@ impl OilChatRunner {
                 self.terminal.force_full_redraw()?;
             }
 
-            let ctx = ViewContext::new(&self.focus);
+            let terminal_size = self.terminal.size();
+            let ctx = ViewContext::with_terminal_size(&self.focus, ThemeTokens::default_ref(), terminal_size);
             let tree = app.view(&ctx);
 
             let graduated_keys = if app.has_shell_modal() {

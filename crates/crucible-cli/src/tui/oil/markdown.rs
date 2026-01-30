@@ -151,10 +151,7 @@ impl RenderStyle {
 
 /// Convert markdown text to an oil Node tree
 pub fn markdown_to_node(markdown: &str) -> Node {
-    let width = crossterm::terminal::size()
-        .map(|(w, _)| w as usize)
-        .unwrap_or(80);
-    markdown_to_node_with_width(markdown, width)
+    markdown_to_node_with_width(markdown, 80)
 }
 
 /// Convert markdown text to an oil Node tree with explicit width (viewport style)
