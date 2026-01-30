@@ -1,8 +1,8 @@
 ---
-description: Vision, milestones, and feature planning for Crucible development
+description: Phase-based development timeline for Crucible
 type: roadmap
 status: active
-updated: 2024-12-13
+updated: 2026-01-30
 tags:
   - meta
   - planning
@@ -11,20 +11,17 @@ tags:
 
 # Crucible Roadmap
 
+> Feature details are tracked in [[Meta/Product]]. This document provides the phase-based timeline view.
+
 ## Vision
 
-**"Neovim for agents+notes"** - extensible, open, documented
+**"Neovim for agents+notes"** — extensible, open, documented
 
 A knowledge management system where:
 - AI agents have perfect context from your vault
 - Workflows are defined in markdown and executed by agents
 - Everything is extensible via Lua scripting and hooks
 - Power users get CLI, everyone else gets web/desktop UI eventually
-
-## Killer Workflows
-
-1. **AI agent with perfect vault context** - Claude/agents find relevant notes automatically, help you think with full context
-2. **Workflow automation in markdown** - Define workflows as prose, agents execute them, progress logged as reviewable notes
 
 ## User Progression
 
@@ -38,111 +35,51 @@ A knowledge management system where:
 
 ## Phase 0: Core Foundation (Current)
 
-*Must work before anything else*
+> See [[Meta/Product]] for detailed status of each feature.
 
-### Finish In-Progress
+**Focus**: Stability, error handling, session persistence, MCP completion.
 
-- [ ] **MCP Tool System** (95%) - Permission prompts, ACP integration
-- [ ] **MCP Bridge/Gateway** (85%) - Integration tests, documentation
-- [x] **Lua programmatic tool calling** - Tool discovery (`discover_tools`, `get_tool_schema`) complete
-- [x] **Event/Hook System** - Note lifecycle hooks (`note:created`, `note:modified`, `note:deleted`) complete
-
-### Polish & Stability (Dogfooding Focus)
-
-- [ ] **Error handling UX** - Clear error messages, graceful degradation when services unavailable
-- [ ] **Session persistence** - Reliable save/resume, handle crashes gracefully
-- [ ] **Plugin loading errors** - Clear feedback when Lua plugins fail to load
-- [ ] **MCP connection stability** - Reconnect logic, timeout handling, status indicators
-- [ ] **CLI help & discoverability** - `--help` completeness, command suggestions
-
-### Maintain
-
-- [x] Parser + Storage - Stable
-- [x] ACP Integration - Working (enables Cursor, external agents)
-- [x] Chat CLI - Primary interface
-- [x] Embeddings - Semantic search working
-- [x] Query System - Context enrichment for agents (see [[Help/Query/Query System]])
-- [x] TUI E2E Testing - expectrl-based test harness for PTY testing (see [[Help/TUI/E2E Testing]])
-- [x] **Oil TUI Renderer** - Removed ratatui, oil is now the sole TUI renderer
-- [x] **Vim-style :set Command** - Runtime config overlay with presets (see [[Help/TUI/Commands]])
-- [x] **Model Switching** - Runtime model changes via `:model` command
-- [x] **Extended Thinking** - Thinking budget control and display toggle (`Alt+T`)
-- [x] **Session Management** - Load/resume sessions via daemon RPC
-- [x] **Streaming Graduation** - Content transitions from viewport to stdout
+Key areas: [[Meta/Product#AI Chat & Agents]], [[Meta/Product#MCP Integration]], [[Meta/Product#Configuration & Setup]], [[Meta/Product#Storage & Processing]]
 
 ---
 
 ## Phase 1: Extensibility Complete
 
-*The "Neovim-like" extension story*
+> See [[Meta/Product]] for detailed status of each feature.
 
-### High Priority
+**Focus**: Complete Lua scripting API, internal agent system, TUI redesign.
 
-- [x] **Oil UI DSL** - React-like functional UI for Lua/Fennel plugins
-  - [x] `cru.oil` module with clean API (`oil.col`, `oil.text`, etc.)
-  - [x] Fennel macros for native Lisp feel (`(oil.col {:gap 1} (oil.text "Hi"))`)
-  - [x] Component composition via function calls
-  - See [[Help/Extending/Scripted UI]] for documentation
-- [ ] **Lua Integration (full)** - Complete scripting API for custom workflows, agent behaviors, callout handlers
-- [ ] **Internal Agent System** - Direct LLM usage (Ollama, OpenAI) without ACP dependency
-- [ ] **Grammar + Lua integration** - Constrained generation for specific flows
-
-### Medium Priority
-
-- [ ] **TUI Redesign** - Streaming UX, splash screen, bottom-anchored chat (see [[TUI User Stories]])
-- [ ] **Chat Improvements** - File references (`@file`), command history, session stats
-- [ ] **Hook documentation** - How to extend Crucible guide
+Key areas: [[Meta/Product#Extensibility & Plugins]], [[Meta/Product#Terminal Interface (TUI)]], [[Meta/Product#AI Chat & Agents]]
 
 ---
 
 ## Phase 2: Workflow Automation
 
-*Killer workflow #2: workflows defined in markdown*
+> See [[Meta/Product]] for detailed status of each feature.
 
-### High Priority
+**Focus**: Markdown-defined workflows, DAG execution, session learning.
 
-- [ ] **Markdown Handlers** - Event handlers defined in pure markdown, inject context into agents (see [[Help/Extending/Markdown Handlers]])
-- [ ] **Workflow Markup** - DAG workflows in markdown prose (`@agent`, `->` data flow, `> [!gate]` approvals) (see [[Help/Workflows/Workflow Syntax]])
-- [ ] **Workflow Sessions** - Log execution as markdown, resume interrupted work
-
-### Medium Priority
-
-- [ ] **Session learning** - Codify successful sessions into reusable workflows
-- [ ] **Parallel execution** - `(parallel)` suffix or `&` prefix for concurrent steps (deferred)
+Key areas: [[Meta/Product#Workflow Automation]]
 
 ---
 
 ## Phase 3: Polish & Rich Features
 
-*Better UX, preparing for non-technical users*
+> See [[Meta/Product]] for detailed status of each feature.
 
-### Web/Desktop UI (Tauri + Web)
+**Focus**: Browser UI, Tauri desktop, rich rendering, note types.
 
-- [ ] **Browser UI** - SolidJS chat interface via `cru serve`
-  - [ ] Oil Node → JSON serialization
-  - [ ] SolidJS `<OilNode>` renderer component
-  - [ ] Shared component model with TUI
-- [ ] **Tauri Desktop** - Native app wrapping web UI
-- [ ] **Canvas/Flowcharts** - WebGL-based visual workflows
-- [ ] **Rich rendering** - Mermaid diagrams, LaTeX, image OCR
-- [ ] **Document preview** - PDF, image rendering in notes
-
-### Note Features
-
-- [ ] **Note Types** - Templates and typed notes (book, meeting, movie)
+Key areas: [[Meta/Product#Web & Desktop]], [[Meta/Product#Note-Taking & Authoring]]
 
 ---
 
 ## Phase 4: Scale & Collaborate
 
-*Multi-device, multi-user, federation*
+> See [[Meta/Product]] for detailed status of each feature.
 
-### Deferred (revisit when core is solid)
+**Focus**: Multi-device sync, federation, collaborative cognition.
 
-- [ ] **Sync System** - Merkle diff + CRDT for multi-device
-- [ ] **Session Daemon** - Concurrent agent access to kiln
-- [ ] **Shared Memory** - Worlds/Rooms for collaborative cognition
-- [ ] **Federation** - A2A protocol for cross-vault agents
+Key areas: [[Meta/Product#Collaboration & Scale]]
 
 ---
 
@@ -150,22 +87,8 @@ A knowledge management system where:
 
 | Item | Notes |
 |------|-------|
-| Session compaction with cache purge | When compacting, purge ViewportCache graduated_ids for pre-compaction content. Memory scales with model context length, not full session history. A compacted session behaves like multiple smaller sessions joined. Also consider context graph traversal (reusing response parents). |
+| Session compaction with cache purge | When compacting, purge ViewportCache graduated_ids for pre-compaction content. Memory scales with model context length, not full session history. |
 | Remove remaining unused deps | `cargo machete` shows unused deps in other crates (core, surrealdb, tools, etc.) |
-
----
-
-## Archived / Cut
-
-| Item | Reason |
-|------|--------|
-| `crucible-desktop` (GPUI) | Cut - using Tauri + web instead |
-| `add-desktop-ui` OpenSpec | Archived - GPUI approach abandoned |
-| `add-meta-systems` | Too ambitious (365 tasks), overlaps with focused Lua approach |
-| `add-advanced-tool-architecture` | Overlaps with working MCP bridge |
-| `add-quick-prompt-features` | Nice UX, not core - revisit in Phase 3 |
-| `refactor-clustering-plugins` | Nice feature, not core |
-| Ratatui TUI | Removed - migrated to oil-only TUI (2025-01-17) |
 
 ---
 
@@ -185,12 +108,27 @@ A knowledge management system where:
 
 ---
 
+## Archived / Cut
+
+| Item | Reason |
+|------|--------|
+| `crucible-desktop` (GPUI) | Cut — using Tauri + web instead |
+| `add-desktop-ui` OpenSpec | Archived — GPUI approach abandoned |
+| `add-meta-systems` | Too ambitious (365 tasks), overlaps with focused Lua approach |
+| `add-advanced-tool-architecture` | Overlaps with working MCP bridge |
+| `add-quick-prompt-features` | Nice UX, not core — revisit in Phase 3 |
+| `refactor-clustering-plugins` | Nice feature, not core |
+| Ratatui TUI | Removed — migrated to oil-only TUI (2025-01-17) |
+
+---
+
 ## Links
 
-- [[Dev Kiln Architecture]] - System architecture
-- [[TUI User Stories]] - Chat interface requirements
-- [[Plugin User Stories]] - Extension system requirements
-- [[Meta/Systems]] - System boundaries
-- [[Help/Workflows/Workflow Syntax]] - Workflow syntax reference
-- [[Help/Extending/Markdown Handlers]] - Handler syntax reference
-- [[Help/Query/Query System]] - Query system reference
+- [[Meta/Product]] — Feature map with status and documentation links
+- [[Dev Kiln Architecture]] — System architecture
+- [[TUI User Stories]] — Chat interface requirements
+- [[Plugin User Stories]] — Extension system requirements
+- [[Meta/Systems]] — System boundaries
+- [[Help/Workflows/Workflow Syntax]] — Workflow syntax reference
+- [[Help/Extending/Markdown Handlers]] — Handler syntax reference
+- [[Help/Query/Query System]] — Query system reference
