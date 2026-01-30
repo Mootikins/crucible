@@ -32,6 +32,7 @@ pub struct OilChatRunner {
     resume_session_id: Option<String>,
     resume_history: Option<Vec<ChatItem>>,
     mcp_servers: Vec<McpServerDisplay>,
+    mcp_config: Option<crucible_config::mcp::McpConfig>,
     available_models: Vec<String>,
     show_thinking: bool,
     session_cmd_rx: Option<mpsc::UnboundedReceiver<SessionCommand>>,
@@ -53,6 +54,7 @@ impl OilChatRunner {
             resume_session_id: None,
             resume_history: None,
             mcp_servers: Vec::new(),
+            mcp_config: None,
             available_models: Vec::new(),
             show_thinking: false,
             session_cmd_rx: None,
@@ -128,6 +130,11 @@ impl OilChatRunner {
         self
     }
 
+    pub fn with_mcp_config(mut self, config: crucible_config::mcp::McpConfig) -> Self {
+        self.mcp_config = Some(config);
+        self
+    }
+
     pub async fn run_with_factory<F, Fut, A>(
         &mut self,
         bridge: &AgentEventBridge,
@@ -190,6 +197,42 @@ impl OilChatRunner {
         app.set_status("Ready");
 
         let (msg_tx, msg_rx) = mpsc::unbounded_channel::<ChatAppMsg>();
+
+        // Connect to MCP servers in background and update display
+        if !self.mcp_servers.is_empty() {
+            if let Some(ref mcp_config) = self.mcp_config {
+                let mcp_config = mcp_config.clone();
+                let mcp_tx = msg_tx.clone();
+                tokio::spawn(async move {
+                    use crucible_tools::mcp_gateway::McpGatewayManager;
+                    match McpGatewayManager::from_config(&mcp_config).await {
+                        Ok(gateway) => {
+                            let servers: Vec<McpServerDisplay> = gateway
+                                .upstream_names()
+                                .map(|name| {
+                                    let tools_for_upstream: Vec<_> = gateway
+                                        .all_tools()
+                                        .into_iter()
+                                        .filter(|t| t.upstream == name)
+                                        .collect();
+                                    McpServerDisplay {
+                                        name: name.to_string(),
+                                        prefix: name.to_string(),
+                                        tool_count: tools_for_upstream.len(),
+                                        connected: !tools_for_upstream.is_empty(),
+                                    }
+                                })
+                                .collect();
+                            let _ = mcp_tx.send(ChatAppMsg::McpStatusLoaded(servers));
+                        }
+                        Err(e) => {
+                            tracing::warn!("Failed to connect MCP servers: {}", e);
+                        }
+                    }
+                    // Drop the gateway — Phase A is display-only
+                });
+            }
+        }
 
         let interaction_rx = agent.take_interaction_receiver();
         tracing::debug!(
@@ -565,6 +608,9 @@ impl OilChatRunner {
                             tracing::info!(count = models.len(), "Models fetched successfully");
                             let _ = app.on_message(ChatAppMsg::ModelsLoaded(models));
                         }
+                    }
+                    ChatAppMsg::McpStatusLoaded(_) => {
+                        app.on_message(msg.clone());
                     }
                     ChatAppMsg::SetThinkingBudget(budget) => {
                         tracing::info!(budget = budget, "Setting thinking budget");
