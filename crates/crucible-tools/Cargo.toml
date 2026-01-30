@@ -24,6 +24,7 @@ schemars = { workspace = true }
 
 # Async runtime
 tokio = { workspace = true }
+tokio-util = "0.7"
 async-trait = { workspace = true }
 
 # Error handling
