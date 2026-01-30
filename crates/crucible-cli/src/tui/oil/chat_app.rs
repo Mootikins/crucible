@@ -1361,7 +1361,7 @@ impl OilChatApp {
 
     fn set_mode_with_status(&mut self, mode: ChatMode) -> Action<ChatAppMsg> {
         self.mode = mode;
-        self.status = format!("Mode: {}", mode.as_str());
+        self.status = "Ready".to_string();
         Action::Send(ChatAppMsg::ModeChanged(mode.as_str().to_string()))
     }
 
@@ -2782,6 +2782,44 @@ mod tests {
     }
 
     #[test]
+    fn test_context_percentage_calculation() {
+        let test_cases: Vec<(usize, usize, &str)> = vec![
+            (0, 100000, "0%"),
+            (50000, 100000, "50%"),
+            (100000, 100000, "100%"),
+            (1000, 100000, "1%"),
+            (99999, 100000, "100%"),
+            (33333, 100000, "33%"),
+            (66666, 100000, "67%"),
+        ];
+
+        for (used, total, expected_pct) in test_cases {
+            let mut app = OilChatApp::init();
+            app.on_message(ChatAppMsg::ContextUsage { used, total });
+
+            let focus = FocusContext::new();
+            let ctx = ViewContext::new(&focus);
+            let tree = app.view(&ctx);
+            let output = render_to_string(&tree, 80);
+
+            assert!(
+                output.contains(expected_pct),
+                "For used={}, total={}: expected '{}' in output: {}",
+                used,
+                total,
+                expected_pct,
+                output
+            );
+            assert!(
+                output.contains("ctx"),
+                "For used={}, total={}: should contain 'ctx'",
+                used,
+                total
+            );
+        }
+    }
+
+    #[test]
     fn test_status_shows_mode_indicator() {
         let mut app = OilChatApp::init();
         app.set_mode(ChatMode::Plan);
@@ -3326,6 +3364,35 @@ mod tests {
             ":messages should open drawer even during streaming"
         );
         assert!(app.is_streaming(), "Stream should still be active");
+    }
+
+    #[test]
+    fn test_mode_change_does_not_duplicate_in_status() {
+        let mut app = OilChatApp::init();
+
+        for mode in [ChatMode::Plan, ChatMode::Auto, ChatMode::Normal] {
+            app.set_mode(mode);
+            app.status = "Ready".to_string();
+
+            let focus = FocusContext::new();
+            let ctx = ViewContext::new(&focus);
+            let tree = app.view(&ctx);
+            let output = render_to_string(&tree, 80);
+
+            let label = mode.as_str().to_uppercase();
+            let count = output.matches(&label).count();
+            assert_eq!(
+                count, 1,
+                "Mode '{}' should appear exactly once in status bar, found {} times in: {}",
+                label, count, output
+            );
+
+            assert!(
+                !output.contains(&format!("Mode: {}", mode.as_str())),
+                "Status text should not contain 'Mode: {}' (duplicate indicator)",
+                mode.as_str()
+            );
+        }
     }
 
     #[test]

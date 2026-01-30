@@ -207,15 +207,18 @@ impl SessionEventMessage {
         session_id: impl Into<String>,
         message_id: impl Into<String>,
         full_response: impl Into<String>,
+        usage: Option<&crucible_core::traits::llm::TokenUsage>,
     ) -> Self {
-        Self::new(
-            session_id,
-            "message_complete",
-            serde_json::json!({
-                "message_id": message_id.into(),
-                "full_response": full_response.into(),
-            }),
-        )
+        let mut data = serde_json::json!({
+            "message_id": message_id.into(),
+            "full_response": full_response.into(),
+        });
+        if let Some(u) = usage {
+            data["prompt_tokens"] = serde_json::json!(u.prompt_tokens);
+            data["completion_tokens"] = serde_json::json!(u.completion_tokens);
+            data["total_tokens"] = serde_json::json!(u.total_tokens);
+        }
+        Self::new(session_id, "message_complete", data)
     }
 
     /// Create a terminal output event
@@ -453,5 +456,33 @@ mod tests {
         assert!(line.ends_with('\n'));
         let trimmed = line.trim_end();
         let _: serde_json::Value = serde_json::from_str(trimmed).unwrap();
+    }
+
+    #[test]
+    fn test_message_complete_without_usage() {
+        let event = SessionEventMessage::message_complete("s1", "m1", "response text", None);
+        let json = serde_json::to_string(&event).unwrap();
+
+        assert!(json.contains("\"event\":\"message_complete\""));
+        assert!(json.contains("\"full_response\":\"response text\""));
+        assert!(!json.contains("total_tokens"));
+        assert!(!json.contains("prompt_tokens"));
+    }
+
+    #[test]
+    fn test_message_complete_with_usage() {
+        let usage = crucible_core::traits::llm::TokenUsage {
+            prompt_tokens: 100,
+            completion_tokens: 50,
+            total_tokens: 150,
+        };
+        let event = SessionEventMessage::message_complete("s1", "m1", "done", Some(&usage));
+        let json = serde_json::to_string(&event).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(parsed["data"]["prompt_tokens"], 100);
+        assert_eq!(parsed["data"]["completion_tokens"], 50);
+        assert_eq!(parsed["data"]["total_tokens"], 150);
+        assert_eq!(parsed["data"]["full_response"], "done");
     }
 }
