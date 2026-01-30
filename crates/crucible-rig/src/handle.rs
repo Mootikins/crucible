@@ -266,7 +266,7 @@ impl RigAgentHandle<rig::providers::ollama::CompletionModel> {
                     }
                 };
 
-                let built = build_agent_from_components_generic(comp, model, client)
+                let built = build_agent_from_components_generic(comp, model, client, vec![])
                     .map_err(|e| ChatError::Internal(format!("Agent rebuild failed: {}", e)))?;
 
                 Ok(built.agent)

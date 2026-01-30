@@ -408,6 +408,7 @@ pub async fn create_internal_agent(
                 &workspace_root,
                 model_size,
                 kiln_ctx.clone(),
+                vec![],
             )?;
 
             let mut components = AgentComponents::new(
@@ -440,6 +441,7 @@ pub async fn create_internal_agent(
                 &workspace_root,
                 model_size,
                 kiln_ctx,
+                vec![],
             )?;
             let mut handle = RigAgentHandle::new(agent)
                 .with_workspace_context(ws_ctx)
@@ -460,6 +462,7 @@ pub async fn create_internal_agent(
                 &workspace_root,
                 model_size,
                 kiln_ctx,
+                vec![],
             )?;
             let mut handle = RigAgentHandle::new(agent)
                 .with_workspace_context(ws_ctx)
@@ -480,6 +483,7 @@ pub async fn create_internal_agent(
                 &workspace_root,
                 model_size,
                 kiln_ctx,
+                vec![],
             )?;
             Ok(Box::new(
                 RigAgentHandle::new(agent)
@@ -505,6 +509,7 @@ pub async fn create_internal_agent(
                 &workspace_root,
                 model_size,
                 kiln_ctx,
+                vec![],
             )?;
             let handle = RigAgentHandle::new(agent)
                 .with_workspace_context(ws_ctx)
@@ -591,6 +596,12 @@ pub async fn create_daemon_agent(
             .clone()
             .unwrap_or_else(|| "llama3.2".to_string());
 
+        let mcp_servers = config
+            .mcp
+            .as_ref()
+            .map(|mcp| mcp.servers.iter().map(|s| s.name.clone()).collect())
+            .unwrap_or_default();
+
         let session_agent = SessionAgent {
             agent_type: "internal".to_string(),
             agent_name: None,
@@ -604,7 +615,7 @@ pub async fn create_daemon_agent(
             thinking_budget: None,
             endpoint: config.chat.endpoint.clone(),
             env_overrides: std::collections::HashMap::new(),
-            mcp_servers: vec![],
+            mcp_servers,
             agent_card_name: None,
         };
 

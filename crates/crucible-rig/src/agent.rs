@@ -23,6 +23,7 @@
 //! ```
 
 use crate::kiln_tools::{KilnContext, ListNotesTool, ReadNoteTool, SemanticSearchTool};
+use crate::mcp_proxy_tool::McpProxyTool;
 use crate::providers::RigClient;
 use crate::workspace_tools::{
     AskUserTool, BashTool, CancelJobTool, EditFileTool, GetJobResultTool, GlobTool, GrepTool,
@@ -30,11 +31,14 @@ use crate::workspace_tools::{
 };
 use crucible_core::agent::AgentCard;
 use crucible_core::prompts::ModelSize;
+use crucible_tools::mcp_gateway::McpGatewayManager;
 use rig::agent::{Agent, AgentBuilder};
 use rig::client::CompletionClient;
 use rig::completion::CompletionModel;
 use std::path::Path;
+use std::sync::Arc;
 use thiserror::Error;
+use tokio::sync::RwLock;
 
 /// Errors from agent building operations
 #[derive(Debug, Error)]
@@ -87,33 +91,31 @@ fn attach_tools<M: CompletionModel>(
     ctx: &WorkspaceContext,
     kiln_ctx: Option<&KilnContext>,
     mode_id: &str,
+    mcp_tools: Vec<McpProxyTool>,
 ) -> Agent<M> {
     let read_only = is_read_only_mode(mode_id);
     let has_background = ctx.has_background_spawner();
     let has_interaction = ctx.has_interaction_context();
 
-    match (read_only, kiln_ctx, has_background, has_interaction) {
+    let builder_with_tools = match (read_only, kiln_ctx, has_background, has_interaction) {
         (true, None, _, _) => builder
             .tool(ReadFileTool::new(ctx.clone()))
             .tool(GlobTool::new(ctx.clone()))
-            .tool(GrepTool::new(ctx.clone()))
-            .build(),
+            .tool(GrepTool::new(ctx.clone())),
         (true, Some(kiln), _, _) => builder
             .tool(ReadFileTool::new(ctx.clone()))
             .tool(GlobTool::new(ctx.clone()))
             .tool(GrepTool::new(ctx.clone()))
             .tool(SemanticSearchTool::new(kiln.clone()))
             .tool(ReadNoteTool::new(kiln.clone()))
-            .tool(ListNotesTool::new(kiln.clone()))
-            .build(),
+            .tool(ListNotesTool::new(kiln.clone())),
         (false, None, false, false) => builder
             .tool(ReadFileTool::new(ctx.clone()))
             .tool(EditFileTool::new(ctx.clone()))
             .tool(WriteFileTool::new(ctx.clone()))
             .tool(BashTool::new(ctx.clone()))
             .tool(GlobTool::new(ctx.clone()))
-            .tool(GrepTool::new(ctx.clone()))
-            .build(),
+            .tool(GrepTool::new(ctx.clone())),
         (false, None, false, true) => builder
             .tool(ReadFileTool::new(ctx.clone()))
             .tool(EditFileTool::new(ctx.clone()))
@@ -123,8 +125,7 @@ fn attach_tools<M: CompletionModel>(
             .tool(GrepTool::new(ctx.clone()))
             .tool(AskUserTool::new(
                 (*ctx.interaction_context().unwrap()).clone(),
-            ))
-            .build(),
+            )),
         (false, None, true, false) => builder
             .tool(ReadFileTool::new(ctx.clone()))
             .tool(EditFileTool::new(ctx.clone()))
@@ -135,8 +136,7 @@ fn attach_tools<M: CompletionModel>(
             .tool(ListJobsTool::new(ctx.clone()))
             .tool(GetJobResultTool::new(ctx.clone()))
             .tool(CancelJobTool::new(ctx.clone()))
-            .tool(SpawnSubagentTool::new(ctx.clone()))
-            .build(),
+            .tool(SpawnSubagentTool::new(ctx.clone())),
         (false, None, true, true) => builder
             .tool(ReadFileTool::new(ctx.clone()))
             .tool(EditFileTool::new(ctx.clone()))
@@ -150,8 +150,7 @@ fn attach_tools<M: CompletionModel>(
             .tool(SpawnSubagentTool::new(ctx.clone()))
             .tool(AskUserTool::new(
                 (*ctx.interaction_context().unwrap()).clone(),
-            ))
-            .build(),
+            )),
         (false, Some(kiln), false, false) => builder
             .tool(ReadFileTool::new(ctx.clone()))
             .tool(EditFileTool::new(ctx.clone()))
@@ -161,8 +160,7 @@ fn attach_tools<M: CompletionModel>(
             .tool(GrepTool::new(ctx.clone()))
             .tool(SemanticSearchTool::new(kiln.clone()))
             .tool(ReadNoteTool::new(kiln.clone()))
-            .tool(ListNotesTool::new(kiln.clone()))
-            .build(),
+            .tool(ListNotesTool::new(kiln.clone())),
         (false, Some(kiln), false, true) => builder
             .tool(ReadFileTool::new(ctx.clone()))
             .tool(EditFileTool::new(ctx.clone()))
@@ -175,8 +173,7 @@ fn attach_tools<M: CompletionModel>(
             .tool(ListNotesTool::new(kiln.clone()))
             .tool(AskUserTool::new(
                 (*ctx.interaction_context().unwrap()).clone(),
-            ))
-            .build(),
+            )),
         (false, Some(kiln), true, false) => builder
             .tool(ReadFileTool::new(ctx.clone()))
             .tool(EditFileTool::new(ctx.clone()))
@@ -190,8 +187,7 @@ fn attach_tools<M: CompletionModel>(
             .tool(SpawnSubagentTool::new(ctx.clone()))
             .tool(SemanticSearchTool::new(kiln.clone()))
             .tool(ReadNoteTool::new(kiln.clone()))
-            .tool(ListNotesTool::new(kiln.clone()))
-            .build(),
+            .tool(ListNotesTool::new(kiln.clone())),
         (false, Some(kiln), true, true) => builder
             .tool(ReadFileTool::new(ctx.clone()))
             .tool(EditFileTool::new(ctx.clone()))
@@ -208,9 +204,15 @@ fn attach_tools<M: CompletionModel>(
             .tool(ListNotesTool::new(kiln.clone()))
             .tool(AskUserTool::new(
                 (*ctx.interaction_context().unwrap()).clone(),
-            ))
-            .build(),
+            )),
+    };
+
+    // Inject MCP proxy tools (additive — no-op if empty)
+    let mut builder_with_mcp = builder_with_tools;
+    for mcp_tool in mcp_tools {
+        builder_with_mcp = builder_with_mcp.tool(mcp_tool);
     }
+    builder_with_mcp.build()
 }
 
 /// Configuration extracted from an AgentCard for building agents
@@ -332,6 +334,8 @@ pub struct AgentComponents {
     pub ollama_endpoint: Option<String>,
     /// Thinking budget for reasoning models
     pub thinking_budget: Option<i64>,
+    /// Optional MCP gateway for upstream tool injection
+    pub mcp_gateway: Option<Arc<RwLock<McpGatewayManager>>>,
 }
 
 impl AgentComponents {
@@ -346,7 +350,14 @@ impl AgentComponents {
             mode_id: "normal".to_string(),
             ollama_endpoint: None,
             thinking_budget: None,
+            mcp_gateway: None,
         }
+    }
+
+    /// Set the MCP gateway for upstream tool injection.
+    pub fn with_mcp_gateway(mut self, gateway: Arc<RwLock<McpGatewayManager>>) -> Self {
+        self.mcp_gateway = Some(gateway);
+        self
     }
 
     /// Set the kiln context for knowledge base tools.
@@ -406,6 +417,7 @@ pub fn build_agent_from_components_generic<C>(
     components: &AgentComponents,
     model: &str,
     client: &C,
+    mcp_tools: Vec<McpProxyTool>,
 ) -> AgentBuildResult<BuiltAgent<C::CompletionModel>>
 where
     C: CompletionClient,
@@ -416,7 +428,7 @@ where
     let kiln_ctx = components.kiln_ctx.clone();
 
     let builder = configure_builder(client, &config);
-    let agent = attach_tools(builder, &ctx, kiln_ctx.as_ref(), &components.mode_id);
+    let agent = attach_tools(builder, &ctx, kiln_ctx.as_ref(), &components.mode_id, mcp_tools);
 
     Ok(BuiltAgent {
         agent,
@@ -505,6 +517,7 @@ pub fn build_agent_with_tools<C>(
     config: &AgentConfig,
     client: &C,
     workspace_root: impl AsRef<Path>,
+    mcp_tools: Vec<McpProxyTool>,
 ) -> AgentBuildResult<(Agent<C::CompletionModel>, WorkspaceContext)>
 where
     C: CompletionClient,
@@ -512,7 +525,7 @@ where
 {
     let ctx = WorkspaceContext::new(workspace_root.as_ref());
     let builder = configure_builder(client, config);
-    let agent = attach_tools(builder, &ctx, None, "normal");
+    let agent = attach_tools(builder, &ctx, None, "normal", mcp_tools);
     Ok((agent, ctx))
 }
 
@@ -527,6 +540,7 @@ pub fn build_agent_with_kiln_tools<C>(
     workspace_root: impl AsRef<Path>,
     model_size: crucible_core::prompts::ModelSize,
     kiln_ctx: Option<KilnContext>,
+    mcp_tools: Vec<McpProxyTool>,
 ) -> AgentBuildResult<(Agent<C::CompletionModel>, WorkspaceContext)>
 where
     C: CompletionClient,
@@ -534,7 +548,7 @@ where
 {
     let ctx = WorkspaceContext::new(workspace_root.as_ref());
     let builder = configure_builder(client, config);
-    let agent = attach_tools(builder, &ctx, kiln_ctx.as_ref(), "normal");
+    let agent = attach_tools(builder, &ctx, kiln_ctx.as_ref(), "normal", mcp_tools);
     Ok((agent, ctx))
 }
 
@@ -547,13 +561,14 @@ pub fn build_agent_with_model_size<C>(
     client: &C,
     ctx: &WorkspaceContext,
     model_size: crucible_core::prompts::ModelSize,
+    mcp_tools: Vec<McpProxyTool>,
 ) -> AgentBuildResult<Agent<C::CompletionModel>>
 where
     C: CompletionClient,
     C::CompletionModel: CompletionModel<Client = C>,
 {
     let builder = configure_builder(client, config);
-    Ok(attach_tools(builder, ctx, None, "normal"))
+    Ok(attach_tools(builder, ctx, None, "normal", mcp_tools))
 }
 
 /// Build a Rig agent with a pre-configured WorkspaceContext.
@@ -565,13 +580,14 @@ pub fn build_agent_with_context<C>(
     client: &C,
     ctx: &WorkspaceContext,
     model_size: crucible_core::prompts::ModelSize,
+    mcp_tools: Vec<McpProxyTool>,
 ) -> AgentBuildResult<Agent<C::CompletionModel>>
 where
     C: CompletionClient,
     C::CompletionModel: CompletionModel<Client = C>,
 {
     let builder = configure_builder(client, config);
-    Ok(attach_tools(builder, ctx, None, "normal"))
+    Ok(attach_tools(builder, ctx, None, "normal", mcp_tools))
 }
 
 #[cfg(test)]
