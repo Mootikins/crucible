@@ -24,6 +24,7 @@ use crucible_core::interaction::{
     AskRequest, AskResponse, InteractionRequest, InteractionResponse, PermAction, PermRequest,
     PermResponse, PermissionScope,
 };
+use std::cell::Cell;
 use std::collections::VecDeque;
 use std::io::Write;
 use std::path::PathBuf;
@@ -298,6 +299,8 @@ pub struct OilChatApp {
     perm_show_diff: bool,
     /// Whether to auto-allow all permission prompts for this session
     perm_autoconfirm_session: bool,
+    /// Current terminal size (width, height) - updated in view()
+    terminal_size: Cell<(u16, u16)>,
 }
 
 impl Default for OilChatApp {
@@ -340,6 +343,7 @@ impl Default for OilChatApp {
             permission_queue: VecDeque::new(),
             perm_show_diff: true,
             perm_autoconfirm_session: false,
+            terminal_size: Cell::new((80, 24)),
         }
     }
 }
@@ -352,6 +356,7 @@ impl App for OilChatApp {
     }
 
     fn view(&self, ctx: &ViewContext<'_>) -> Node {
+        self.terminal_size.set(ctx.terminal_size);
         if self.shell_modal.is_some() {
             return self.render_shell_modal();
         }
@@ -361,9 +366,7 @@ impl App for OilChatApp {
                 InteractionRequest::Ask(_)
                 | InteractionRequest::AskBatch(_)
                 | InteractionRequest::Permission(_) => {
-                    let (term_width, _) = crossterm::terminal::size()
-                        .map(|(w, h)| (w as usize, h as usize))
-                        .unwrap_or((80, 24));
+                    let term_width = ctx.terminal_size.0 as usize;
                     return modal.view(term_width, self.permission_queue.len());
                 }
                 _ => {} // Other types not yet supported
@@ -1841,9 +1844,8 @@ impl OilChatApp {
     }
 
     fn modal_visible_lines(&self) -> usize {
-        let term_height = crossterm::terminal::size()
-            .map(|(_, h)| h as usize)
-            .unwrap_or(24);
+        let (_, term_height) = self.terminal_size.get();
+        let term_height = term_height as usize;
         term_height.saturating_sub(2)
     }
 
@@ -2001,9 +2003,9 @@ impl OilChatApp {
     }
 
     fn render_shell_modal(&self) -> Node {
-        let (term_width, term_height) = crossterm::terminal::size()
-            .map(|(w, h)| (w as usize, h as usize))
-            .unwrap_or((80, 24));
+        let (term_width, term_height) = self.terminal_size.get();
+        let term_width = term_width as usize;
+        let term_height = term_height as usize;
 
         self.shell_modal
             .as_ref()
