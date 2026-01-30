@@ -15,10 +15,7 @@
 //! - **Single Responsibility**: Focused on protocol-level operations
 //! - **Open/Closed**: Extensible for new message types
 
-use agent_client_protocol::{AgentSide, ClientSide, IncomingMessage, OutgoingMessage};
 use serde::{Deserialize, Serialize};
-
-use crate::{ClientError, Result};
 
 /// Protocol version information
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -84,62 +81,6 @@ impl MessageHandler {
     /// Get the protocol version
     pub fn version(&self) -> &ProtocolVersion {
         &self.version
-    }
-
-    /// Validate an incoming message according to protocol rules
-    ///
-    /// # Arguments
-    ///
-    /// * `message` - The message to validate
-    ///
-    /// # Returns
-    ///
-    /// `Ok(())` if the message is valid, error otherwise
-    pub fn validate_message(&self, _message: &IncomingMessage<ClientSide>) -> Result<()> {
-        // TODO: Implement message validation
-        // This is a stub - will be implemented in TDD cycles
-        Ok(())
-    }
-
-    /// Parse an incoming message from the agent
-    ///
-    /// # Arguments
-    ///
-    /// * `_data` - Raw message data
-    ///
-    /// # Returns
-    ///
-    /// Parsed incoming message
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if parsing fails
-    pub fn parse_message(&self, _data: &[u8]) -> Result<IncomingMessage<ClientSide>> {
-        // TODO: Implement message parsing using agent-client-protocol's parsing utilities
-        // This is a stub - will be implemented in TDD cycles
-        Err(ClientError::Session("Not yet implemented".to_string()))
-    }
-
-    /// Serialize an outgoing message to the agent
-    ///
-    /// # Arguments
-    ///
-    /// * `_message` - The message to serialize
-    ///
-    /// # Returns
-    ///
-    /// Serialized message bytes
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if serialization fails
-    pub fn serialize_message(
-        &self,
-        _message: &OutgoingMessage<ClientSide, AgentSide>,
-    ) -> Result<Vec<u8>> {
-        // TODO: Implement message serialization using agent-client-protocol's serialization utilities
-        // This is a stub - will be implemented in TDD cycles
-        Err(ClientError::Session("Not yet implemented".to_string()))
     }
 }
 
