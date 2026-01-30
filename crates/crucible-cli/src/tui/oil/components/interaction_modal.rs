@@ -81,7 +81,7 @@ pub struct InteractionModal {
 
 impl InteractionModal {
     /// Create a new interaction modal for the given request.
-    pub fn new(request_id: String, request: InteractionRequest) -> Self {
+    pub fn new(request_id: String, request: InteractionRequest, show_diff: bool) -> Self {
         Self {
             request_id,
             request,
@@ -94,7 +94,7 @@ impl InteractionModal {
             other_text_preserved: false,
             batch_answers: Vec::new(),
             batch_other_texts: Vec::new(),
-            diff_collapsed: false,
+            diff_collapsed: !show_diff,
         }
     }
 
@@ -735,8 +735,11 @@ mod tests {
     #[test]
     fn test_perm_modal_allow() {
         let perm = PermRequest::bash(["npm", "install"]);
-        let mut modal =
-            InteractionModal::new("req-1".to_string(), InteractionRequest::Permission(perm));
+        let mut modal = InteractionModal::new(
+            "req-1".to_string(),
+            InteractionRequest::Permission(perm),
+            true,
+        );
 
         let output = modal.update(InteractionModalMsg::Key(key_event(KeyCode::Char('y'))));
         match output {
@@ -754,8 +757,11 @@ mod tests {
     #[test]
     fn test_perm_modal_deny() {
         let perm = PermRequest::bash(["npm", "install"]);
-        let mut modal =
-            InteractionModal::new("req-1".to_string(), InteractionRequest::Permission(perm));
+        let mut modal = InteractionModal::new(
+            "req-1".to_string(),
+            InteractionRequest::Permission(perm),
+            true,
+        );
 
         let output = modal.update(InteractionModalMsg::Key(key_event(KeyCode::Char('n'))));
         match output {
@@ -773,8 +779,11 @@ mod tests {
     #[test]
     fn test_perm_modal_navigation() {
         let perm = PermRequest::bash(["npm", "install"]);
-        let mut modal =
-            InteractionModal::new("req-1".to_string(), InteractionRequest::Permission(perm));
+        let mut modal = InteractionModal::new(
+            "req-1".to_string(),
+            InteractionRequest::Permission(perm),
+            true,
+        );
 
         assert_eq!(modal.selected, 0);
 
@@ -788,7 +797,8 @@ mod tests {
     #[test]
     fn test_ask_modal_selection() {
         let ask = AskRequest::new("Choose one").choices(["A", "B", "C"]);
-        let mut modal = InteractionModal::new("req-2".to_string(), InteractionRequest::Ask(ask));
+        let mut modal =
+            InteractionModal::new("req-2".to_string(), InteractionRequest::Ask(ask), true);
 
         modal.update(InteractionModalMsg::Key(key_event(KeyCode::Down)));
         assert_eq!(modal.selected, 1);
@@ -814,7 +824,8 @@ mod tests {
     #[test]
     fn test_ask_modal_cancel_esc() {
         let ask = AskRequest::new("Choose one").choices(["A", "B"]);
-        let mut modal = InteractionModal::new("req-3".to_string(), InteractionRequest::Ask(ask));
+        let mut modal =
+            InteractionModal::new("req-3".to_string(), InteractionRequest::Ask(ask), true);
 
         let output = modal.update(InteractionModalMsg::Key(key_event(KeyCode::Esc)));
         match output {
@@ -828,7 +839,8 @@ mod tests {
     #[test]
     fn test_ask_modal_cancel_ctrl_c() {
         let ask = AskRequest::new("Choose one").choices(["A", "B"]);
-        let mut modal = InteractionModal::new("req-4".to_string(), InteractionRequest::Ask(ask));
+        let mut modal =
+            InteractionModal::new("req-4".to_string(), InteractionRequest::Ask(ask), true);
 
         let output = modal.update(InteractionModalMsg::Key(ctrl_c()));
         match output {
@@ -859,8 +871,11 @@ mod tests {
     #[test]
     fn test_perm_modal_allowlist_shortcut() {
         let perm = PermRequest::bash(["cargo", "build"]);
-        let mut modal =
-            InteractionModal::new("req-1".to_string(), InteractionRequest::Permission(perm));
+        let mut modal = InteractionModal::new(
+            "req-1".to_string(),
+            InteractionRequest::Permission(perm),
+            true,
+        );
 
         let output = modal.update(InteractionModalMsg::Key(key_event(KeyCode::Char('a'))));
         match output {
@@ -876,8 +891,11 @@ mod tests {
     #[test]
     fn test_perm_modal_tab_opens_text_input() {
         let perm = PermRequest::bash(["npm", "install"]);
-        let mut modal =
-            InteractionModal::new("req-1".to_string(), InteractionRequest::Permission(perm));
+        let mut modal = InteractionModal::new(
+            "req-1".to_string(),
+            InteractionRequest::Permission(perm),
+            true,
+        );
 
         assert_eq!(modal.mode, InteractionMode::Selecting);
         modal.update(InteractionModalMsg::Key(key_event(KeyCode::Tab)));
@@ -887,8 +905,11 @@ mod tests {
     #[test]
     fn test_perm_modal_tab_on_allowlist_prefills_pattern() {
         let perm = PermRequest::bash(["cargo", "test"]);
-        let mut modal =
-            InteractionModal::new("req-1".to_string(), InteractionRequest::Permission(perm));
+        let mut modal = InteractionModal::new(
+            "req-1".to_string(),
+            InteractionRequest::Permission(perm),
+            true,
+        );
 
         modal.update(InteractionModalMsg::Key(key_event(KeyCode::Down)));
         modal.update(InteractionModalMsg::Key(key_event(KeyCode::Down)));
@@ -902,8 +923,11 @@ mod tests {
     #[test]
     fn test_perm_modal_deny_with_reason() {
         let perm = PermRequest::bash(["rm", "-rf", "/"]);
-        let mut modal =
-            InteractionModal::new("req-1".to_string(), InteractionRequest::Permission(perm));
+        let mut modal = InteractionModal::new(
+            "req-1".to_string(),
+            InteractionRequest::Permission(perm),
+            true,
+        );
 
         modal.update(InteractionModalMsg::Key(key_event(KeyCode::Down)));
         assert_eq!(modal.selected, 1);
@@ -928,8 +952,11 @@ mod tests {
     #[test]
     fn test_perm_modal_esc_from_text_returns_to_selecting() {
         let perm = PermRequest::bash(["npm", "install"]);
-        let mut modal =
-            InteractionModal::new("req-1".to_string(), InteractionRequest::Permission(perm));
+        let mut modal = InteractionModal::new(
+            "req-1".to_string(),
+            InteractionRequest::Permission(perm),
+            true,
+        );
 
         modal.update(InteractionModalMsg::Key(key_event(KeyCode::Tab)));
         assert_eq!(modal.mode, InteractionMode::TextInput);
@@ -941,8 +968,11 @@ mod tests {
     #[test]
     fn test_perm_modal_navigation_wraps_at_3() {
         let perm = PermRequest::bash(["npm", "install"]);
-        let mut modal =
-            InteractionModal::new("req-1".to_string(), InteractionRequest::Permission(perm));
+        let mut modal = InteractionModal::new(
+            "req-1".to_string(),
+            InteractionRequest::Permission(perm),
+            true,
+        );
 
         assert_eq!(modal.selected, 0);
         modal.update(InteractionModalMsg::Key(key_event(KeyCode::Up)));

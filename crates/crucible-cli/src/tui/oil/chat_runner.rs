@@ -1,7 +1,7 @@
 use crate::chat::bridge::AgentEventBridge;
 use crate::tui::oil::agent_selection::AgentSelection;
 use crate::tui::oil::app::{Action, App, ViewContext};
-use crate::tui::oil::chat_app::{ChatAppMsg, ChatMode, McpServerDisplay, OilChatApp};
+use crate::tui::oil::chat_app::{ChatAppMsg, ChatItem, ChatMode, McpServerDisplay, OilChatApp};
 use crate::tui::oil::event::Event;
 use crate::tui::oil::focus::FocusContext;
 use crate::tui::oil::terminal::Terminal;
@@ -30,10 +30,12 @@ pub struct OilChatRunner {
     kiln_notes: Vec<String>,
     session_dir: Option<PathBuf>,
     resume_session_id: Option<String>,
+    resume_history: Option<Vec<ChatItem>>,
     mcp_servers: Vec<McpServerDisplay>,
     available_models: Vec<String>,
     show_thinking: bool,
     session_cmd_rx: Option<mpsc::UnboundedReceiver<SessionCommand>>,
+    slash_commands: Vec<(String, String)>,
 }
 
 impl OilChatRunner {
@@ -49,10 +51,12 @@ impl OilChatRunner {
             kiln_notes: Vec::new(),
             session_dir: None,
             resume_session_id: None,
+            resume_history: None,
             mcp_servers: Vec::new(),
             available_models: Vec::new(),
             show_thinking: false,
             session_cmd_rx: None,
+            slash_commands: Vec::new(),
         })
     }
 
@@ -99,6 +103,11 @@ impl OilChatRunner {
         self
     }
 
+    pub fn with_resume_history(mut self, history: Vec<ChatItem>) -> Self {
+        self.resume_history = Some(history);
+        self
+    }
+
     pub fn with_mcp_servers(mut self, servers: Vec<McpServerDisplay>) -> Self {
         self.mcp_servers = servers;
         self
@@ -111,6 +120,11 @@ impl OilChatRunner {
 
     pub fn with_show_thinking(mut self, show: bool) -> Self {
         self.show_thinking = show;
+        self
+    }
+
+    pub fn with_slash_commands(mut self, commands: Vec<(String, String)>) -> Self {
+        self.slash_commands = commands;
         self
     }
 
@@ -149,6 +163,20 @@ impl OilChatRunner {
             app.set_available_models(std::mem::take(&mut self.available_models));
         }
         app.set_show_thinking(self.show_thinking);
+        if !self.slash_commands.is_empty() {
+            app.set_slash_commands(std::mem::take(&mut self.slash_commands));
+        }
+
+        // Hydrate viewport with conversation history from a resumed session
+        if let Some(history) = self.resume_history.take() {
+            if !history.is_empty() {
+                tracing::info!(
+                    count = history.len(),
+                    "Loading resume history into viewport"
+                );
+                app.load_previous_messages(history);
+            }
+        }
 
         let terminal_size = self.terminal.size();
         let ctx =
@@ -506,6 +534,9 @@ impl OilChatRunner {
                     }
                     ChatAppMsg::StreamCancelled => {
                         if active_stream.is_some() {
+                            if let Err(e) = agent.cancel().await {
+                                tracing::warn!(error = %e, "Failed to cancel agent stream on daemon");
+                            }
                             tracing::info!(
                                 "Dropping active stream due to cancellation (from action)"
                             );
@@ -584,6 +615,17 @@ impl OilChatRunner {
                                 tracing::warn!(request_id = %request_id, error = %e, "Failed to send interaction response");
                             }
                         }
+                    }
+                    ChatAppMsg::ModeChanged(ref mode_id) => {
+                        tracing::info!(mode = %mode_id, "Mode change requested");
+                        if let Err(e) = agent.set_mode_str(mode_id).await {
+                            tracing::warn!(mode = %mode_id, error = %e, "Failed to set mode on agent");
+                        }
+                    }
+                    ChatAppMsg::ExecuteSlashCommand(ref cmd) => {
+                        tracing::info!(command = %cmd, "Forwarding slash command as user message");
+                        let stream = agent.send_message_stream(cmd.clone());
+                        *active_stream = Some(stream);
                     }
                     _ => {}
                 }

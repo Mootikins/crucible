@@ -64,45 +64,104 @@ A knowledge management system where:
 
 ## AI Chat & Agents
 
-- [x] **Interactive Chat** `P0` — Conversational AI with streaming responses · [[Help/CLI/chat]] · `crucible-cli`, `crucible-rig`
-- [x] **Agent Cards** `P0` — Configurable AI agent personas with system prompts · [[Help/Extending/Agent Cards]] · [[Help/Config/agents]] · `crucible-config`
-- [x] **Session Persistence** `P0` — Conversations saved as markdown in kiln · [[Help/Core/Sessions]] · `crucible-daemon`
-- [x] **Session Resume** `P0` — Load and continue previous sessions · [[Help/Core/Sessions]] · `crucible-daemon`, `crucible-daemon-client`
+### Conversation & Sessions
+- [x] **Interactive Chat** `P0` — Conversational AI with streaming text, thinking, tool calls, and subagent events · [[Help/CLI/chat]] · `crucible-cli`, `crucible-rig`
+- [x] **Agent Cards** `P0` — Configurable agent personas with system prompts, model, temperature, tools · [[Help/Extending/Agent Cards]] · [[Help/Config/agents]] · `crucible-config`
+- [x] **Session Persistence** `P0` — Conversations saved as markdown + JSONL in kiln · [[Help/Core/Sessions]] · `crucible-daemon`
+- [x] **Session Resume** `P0` — Load and continue previous sessions with full history · [[Help/Core/Sessions]] · `crucible-daemon`, `crucible-daemon-client`
+- [x] **Conversation History** `P0` — Clear history (`:clear`), resume with prior messages; TUI viewport hydrated from daemon session events · `crucible-rig`
+- [x] **Message Queueing** `P0` — Type and queue messages during streaming; Ctrl+Enter force-sends · `crucible-cli`
+
+### Agent Runtime
 - [x] **Internal Agent** `P0` — Built-in agent with session memory and tool access · [[Help/Extending/Internal Agent]] · `crucible-rig`
-- [x] **Model Switching** `P0` — Runtime model changes via `:model` command · `crucible-daemon`, `crucible-cli`
-- [x] **Extended Thinking** `P0` — Thinking budget control and display toggle · `crucible-daemon`, `crucible-cli`
-- [x] **Tool Calls** `P0` — Inline tool execution with streaming results · `crucible-rig`, `crucible-tools`
+- [x] **Multiple LLM Providers** `P0` — Ollama, OpenAI, Anthropic via unified interface · [[Help/Config/llm]] · `crucible-rig`
+- [x] **Model Switching** `P0` — Runtime `:model <name>` with autocomplete; model listing from Ollama · `crucible-daemon`, `crucible-cli`
+- [x] **Temperature Control** `P0` — Runtime `:set temperature=0.5`; range 0.0–2.0; persisted per-session · `crucible-daemon`, `crucible-cli`
+- [x] **Max Tokens Control** `P0` — Runtime `:set max_tokens=4096` or `none` for provider default; persisted · `crucible-daemon`, `crucible-cli`
+- [x] **Extended Thinking** `P0` — Budget presets (off/minimal/low/medium/high/max) via `:set thinkingbudget`; Ctrl+T toggles display · `crucible-daemon`, `crucible-cli`
+- [x] **System Prompt** `P0` — Loaded from agent card at session creation; layered prompt composition · `crucible-rig`, `crucible-config`
+- [x] **Environment Overrides** `P0` — `--env KEY=VALUE` flag for per-session env vars (e.g., API keys) · `crucible-cli`
+- [x] **Agent Cancellation** `P0` — Ctrl+C/Esc cancels local stream and propagates to daemon via `session.cancel` RPC · `crucible-daemon`
+
+### Tools & Permissions
+- [x] **Tool Calls** `P0` — Inline tool execution with streaming results; parallel calls tracked by call_id · `crucible-rig`, `crucible-tools`
+- [x] **Permission System** `P0` — Multi-layer: safe-tool whitelist → pattern matching → Lua hooks → user prompt · `crucible-daemon`
+- [x] **Pattern Whitelisting** `P0` — "Always allow" saves project-scoped patterns for future sessions · `crucible-daemon`
+- [x] **Permission Hooks (Lua)** `P0` — Custom Lua hooks can Allow/Deny/Prompt with 1s timeout · `crucible-lua`, `crucible-daemon`
+- [x] **Interaction System** `P0` — Agent can ask questions (single/multi-select, free-text) and request permission · `crucible-core`, `crucible-daemon`
+- [x] **Subagent Spawning** `P0` — Background job manager for parallel subagent tasks with cancellation · `crucible-daemon`
+
+### Context & Knowledge
 - [x] **Context Enrichment** `P0` — Inject vault context into agent conversations · `crucible-context`, `crucible-enrichment`
 - [x] **File Attachment** `P0` — `@file` context attachment in chat · `crucible-cli`
 - [x] **Rules Files** `P0` — Project-level AI instructions (`.crucible/rules`) · [[Help/Rules Files]] · `crucible-config`
-- [x] **Multiple LLM Providers** `P0` — Ollama, OpenAI, Anthropic via unified interface · [[Help/Config/llm]] · `crucible-rig`
+
+### Lua Session API
+- [x] **Scripted Agent Control** `P0` — Lua API for temperature, max_tokens, thinking_budget, model, mode; daemon getters use local cache · `crucible-lua`
+- [x] **Session Event Handlers** `P0` — Lua hooks on `turn:complete` can inject follow-up messages · `crucible-lua`, `crucible-daemon`
+
+### In Progress / Planned
 - [-] **MCP Tool System** `P0` — Permission prompts, ACP integration (95%) · `crucible-tools`, `crucible-acp`
 - [-] **Error Handling UX** `P0` — Clear error messages, graceful degradation · `crucible-cli`
+- [-] **Per-session MCP Servers** `P0` — Agent cards define MCP servers; config persisted but not fully wired in daemon factory · `crucible-acp`
 - [ ] **Grammar + Lua Integration** `P1` — Constrained generation for structured agent outputs · `crucible-core`
 
 ## Terminal Interface (TUI)
 
-- [x] **Chat Modes** `P0` — Normal, Plan (read-only), Auto (auto-approve) modes · [[Help/TUI/Modes]] · `crucible-cli`
+### Modes & Input
+- [x] **Chat Modes** `P0` — Normal, Plan (read-only), Auto (auto-approve); cycle with BackTab; syncs to daemon agent · [[Help/TUI/Modes]] · `crucible-cli`
 - [x] **Input Modes** `P0` — Normal (`>`), Command (`:`), Shell (`!`) input · [[Help/TUI/Commands]] · `crucible-cli`
+- [x] **Slash Commands** `P0` — `/quit`, `/mode`, `/plan`, `/auto`, `/normal`, `/help` handled locally; registry commands (`/search`, `/commit`, `/agent`, etc.) forwarded to agent · `crucible-cli`
+- [x] **REPL Commands** `P0` — `:quit`, `:help`, `:clear`, `:model`, `:set`, `:export`, `:messages`, `:mcp`, `:config`, `:palette` · [[Help/TUI/Commands]] · `crucible-cli`
+- [x] **Runtime Config** `P0` — Vim-style `:set` with enable/disable/toggle/reset/query/history (`?`, `??`, `&`, `<`) · [[Help/TUI/Commands]] · `crucible-cli`
+- [x] **Double Ctrl+C Quit** `P0` — First clears input or shows warning; second within 300ms quits · `crucible-cli`
+
+### Streaming & Display
 - [x] **Streaming Display** `P0` — Real-time token streaming with cancel (Esc/Ctrl+C) · `crucible-cli`
-- [x] **Streaming Graduation** `P0` — Content transitions from viewport to stdout · `crucible-cli`
-- [x] **Autocomplete** `P0` — Popup for `/commands`, `:repl`, `@files`, `[[notes]]`, `:model`, `:set` · `crucible-cli`
-- [x] **Command Palette** `P0` — F1 toggle for command discovery · `crucible-cli`
-- [x] **Shell Modal** `P0` — Full-screen shell command execution with scrollable output · [[Help/TUI/Shell Execution]] · `crucible-cli`
-- [x] **Notification System** `P0` — Toast notifications with expiry, toggle with `:messages` · `crucible-cli`
-- [x] **Interaction Modals** `P0` — Permission requests (allow/deny/always), ask questions · `crucible-cli`
-- [x] **Diff Preview** `P0` — Diff display for permission prompts · `crucible-cli`
-- [x] **Keybindings** `P0` — Configurable keyboard shortcuts · [[Help/TUI/Keybindings]] · `crucible-cli`
-- [x] **Runtime Config** `P0` — Vim-style `:set` with enable/disable/toggle/reset/query · [[Help/TUI/Commands]] · `crucible-cli`
-- [x] **Session Export** `P0` — `:export <path>` to save session as markdown · `crucible-cli`
+- [x] **Streaming Graduation** `P0` — Dual-zone: viewport (live) → stdout (permanent); XOR placement, monotonic, atomic · `crucible-cli`
+- [x] **Thinking Display** `P0` — Streaming thinking blocks with token count; Ctrl+T toggles; `:set thinking`; note: token count is inaccurate (counts delta messages, not actual tokens) · `crucible-cli`
 - [x] **Markdown Rendering** `P0` — Full markdown-to-node rendering with styled output · `crucible-cli`, `crucible-oil`
-- [x] **Oil Renderer** `P0` — Custom terminal rendering engine (replaced ratatui) · [[Help/TUI/Component Architecture]] · `crucible-oil`
-- [x] **Theme System** `P0` — Token-based theming with configurable colors · [[Meta/TUI-Style-Guide]] · `crucible-oil`
-- [x] **Taffy Layout** `P0` — Flexbox-based terminal layout engine · `crucible-oil`
 - [x] **Context Usage Display** `P0` — Token usage (used/total) in statusline · `crucible-cli`
-- [x] **Subagent Display** `P0` — Spawned/completed/failed subagent tracking · `crucible-cli`
-- [x] **Drawer Component** `P0` — Expandable UI panels · `crucible-cli`
-- [x] **Viewport Caching** `P0` — Cached tool calls, shell executions, subagents · `crucible-cli`
+
+### Tool & Agent Display
+- [x] **Tool Call Display** `P0` — Spinner while running, smart summarization (line/file/match counts), MCP prefix stripping · `crucible-cli`
+- [x] **Tool Output Handling** `P0` — Tail display (50 lines), spill to file at >10KB, parallel call tracking by call_id · `crucible-cli`
+- [x] **Subagent Display** `P0` — Spawned/completed/failed tracking with elapsed time and truncated prompt · `crucible-cli`
+- [-] **MCP Server Display** `P0` — `:mcp` lists servers but shows static zeros; tool/resource counts never updated at runtime · `crucible-cli`
+
+### Interaction Modals
+- [x] **Permission Modal** `P0` — Allow (y), Deny (n), Allowlist (a); diff toggle (d); queued permissions auto-open · `crucible-cli`
+- [x] **Ask Modal** `P0` — Single-select, multi-select (Space), free-text "other" option · `crucible-cli`
+- [x] **Diff Preview** `P0` — Syntax-highlighted line/word-level diffs for file operations; collapsible · `crucible-cli`
+- [x] **Permission Session Settings** `P0` — `:set perm.show_diff` controls initial diff visibility, `:set perm.autoconfirm_session` auto-approves permissions · `crucible-cli`
+- [ ] **Batch Ask / Edit / Show / Panel** `P0` — InteractionRequest variants exist in types but TUI completely stubs all 5 (logged and skipped in chat_runner) · `crucible-cli`
+
+### Autocomplete & Popups
+- [x] **Autocomplete** `P0` — 9 trigger kinds: `@files`, `[[notes]]`, `/commands`, `:repl`, `:model`, `:set`, command args, F1 palette · `crucible-cli`
+- [x] **Command Palette** `P0` — F1 toggle for full command discovery; selecting items executes slash/REPL commands · `crucible-cli`
+- [x] **Model Lazy-Fetch** `P0` — Models loaded on first `:model` access (NotLoaded → Loading → Loaded) · `crucible-cli`
+
+### Shell
+- [x] **Shell Modal** `P0` — `!command` full-screen execution; scrollable (j/k/g/G/PgUp/PgDn); `i` inserts output · [[Help/TUI/Shell Execution]] · `crucible-cli`
+- [x] **Shell History** `P0` — Last 100 commands recalled with `!` prefix · `crucible-cli`
+
+### Notifications
+- [x] **Toast Notifications** `P0` — Auto-dismiss after 3s; badge in status bar (INFO/WARN/ERROR) · `crucible-cli`
+- [x] **Messages Drawer** `P0` — `:messages` toggles full notification history panel · `crucible-cli`
+- [x] **Warning Badges** `P0` — Persistent count badge when warnings exist · `crucible-cli`
+
+### Rendering Engine
+- [x] **Oil Renderer** `P0` — Custom terminal rendering engine (replaced ratatui) · [[Help/TUI/Component Architecture]] · `crucible-oil`
+- [x] **Taffy Layout** `P0` — Flexbox-based terminal layout engine · `crucible-oil`
+- [x] **Theme System** `P0` — Token-based theming with configurable colors · [[Meta/TUI-Style-Guide]] · `crucible-oil`
+- [x] **Viewport Caching** `P0` — Cached messages, tool calls, shell executions, subagents with lazy line-wrapping · `crucible-cli`
+- [x] **Drawer Component** `P0` — Bordered expandable panels with title/footer badges · `crucible-cli`
+
+### Session & Export
+- [-] **Session Export** `P0` — `:export <path>` saves session as markdown; missing tilde expansion, thinking blocks not exported, no frontmatter/metadata · `crucible-cli`
+- [x] **Keybindings** `P0` — Full keybinding table (Enter, Esc, Ctrl+C, Ctrl+T, BackTab, F1, y/n/a/d in modals) · [[Help/TUI/Keybindings]] · `crucible-cli`
+
+### In Progress / Planned
 - [ ] **TUI Redesign** `P1` — Splash screen, bottom-anchored chat · [[Meta/TUI User Stories]] · `crucible-cli`
 - [ ] **Chat Improvements** `P1` — Command history, session stats · `crucible-cli`
 

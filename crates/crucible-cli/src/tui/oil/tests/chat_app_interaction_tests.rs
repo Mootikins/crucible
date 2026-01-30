@@ -448,19 +448,20 @@ fn error_clears_on_next_keypress() {
 }
 
 #[test]
-fn unknown_slash_command_shows_error() {
-    let mut harness: AppHarness<OilChatApp> = AppHarness::new(80, 24);
-    harness.render();
+fn unknown_slash_command_forwards_to_runner() {
+    let mut app = OilChatApp::default();
 
-    // Type unknown command
-    harness.send_text("/unknowncommand");
-    harness.send_enter();
+    app.set_input_content("/unknowncommand");
+    let event = Event::Key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+    let action = app.update(event);
 
-    let output = harness.viewport();
     assert!(
-        output.contains("Unknown command") || output.contains("unknowncommand"),
-        "Should show error for unknown command: {}",
-        output
+        matches!(
+            action,
+            Action::Send(ChatAppMsg::ExecuteSlashCommand(ref cmd)) if cmd == "/unknowncommand"
+        ),
+        "Unknown slash command should be forwarded via ExecuteSlashCommand, got: {:?}",
+        action
     );
 }
 
