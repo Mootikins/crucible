@@ -27,7 +27,24 @@ pub struct ChatRequest {
 pub fn chat_routes(state: ChatState) -> Router {
     Router::new()
         .route("/api/chat", post(chat_handler))
+        .route("/api/interaction/respond", post(interaction_respond_handler))
         .with_state(state)
+}
+
+#[derive(Debug, Deserialize)]
+struct InteractionResponseRequest {
+    request_id: String,
+    response: serde_json::Value,
+}
+
+async fn interaction_respond_handler(
+    State(chat_service): State<ChatState>,
+    Json(request): Json<InteractionResponseRequest>,
+) -> Result<(), WebError> {
+    chat_service
+        .submit_interaction_response(request.request_id, request.response)
+        .await;
+    Ok(())
 }
 
 /// Handle chat message and return SSE stream
@@ -90,5 +107,6 @@ fn event_type(event: &ChatEvent) -> &'static str {
         ChatEvent::Thinking { .. } => "thinking",
         ChatEvent::MessageComplete { .. } => "message_complete",
         ChatEvent::Error { .. } => "error",
+        ChatEvent::InteractionRequested { .. } => "interaction_requested",
     }
 }
