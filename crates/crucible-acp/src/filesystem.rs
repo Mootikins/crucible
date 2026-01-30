@@ -263,10 +263,31 @@ impl FileSystemHandler {
     /// - The path is not allowed
     /// - The directory doesn't exist
     /// - IO errors occur
-    pub async fn list_directory(&self, _path: &Path) -> Result<Vec<PathBuf>> {
-        // TODO: Implement directory listing
-        // This is a stub - will be implemented in TDD cycles
-        Err(ClientError::FileSystem("Not yet implemented".to_string()))
+    pub async fn list_directory(&self, path: &Path) -> Result<Vec<PathBuf>> {
+        if !self.is_path_allowed(path) {
+            return Err(ClientError::PermissionDenied(format!(
+                "Path not allowed: {}",
+                path.display()
+            )));
+        }
+        if !path.exists() {
+            return Err(ClientError::NotFound(format!(
+                "Directory not found: {}",
+                path.display()
+            )));
+        }
+        if !path.is_dir() {
+            return Err(ClientError::FileSystem(format!(
+                "Not a directory: {}",
+                path.display()
+            )));
+        }
+        let mut entries = Vec::new();
+        let mut read_dir = tokio::fs::read_dir(path).await.map_err(ClientError::Io)?;
+        while let Some(entry) = read_dir.next_entry().await.map_err(ClientError::Io)? {
+            entries.push(entry.path());
+        }
+        Ok(entries)
     }
 }
 
@@ -515,22 +536,141 @@ mod tests {
         assert!(nested_file.exists());
     }
 
-    #[tokio::test]
-    async fn test_write_file_no_create_dirs() {
-        let temp_dir = TempDir::new().unwrap();
-        let allowed_root = temp_dir.path().canonicalize().unwrap();
+     #[tokio::test]
+     async fn test_write_file_no_create_dirs() {
+         let temp_dir = TempDir::new().unwrap();
+         let allowed_root = temp_dir.path().canonicalize().unwrap();
+ 
+         let config = FileSystemConfig {
+             allowed_roots: vec![allowed_root.clone()],
+             allow_write: true,
+             allow_create_dirs: false,
+             max_read_size: 10 * 1024 * 1024,
+         };
+         let handler = FileSystemHandler::new(config);
+ 
+         // Should fail because parent directory doesn't exist
+         let nested_file = allowed_root.join("nonexistent").join("file.txt");
+         let result = handler.write_file(&nested_file, "content").await;
+         assert!(result.is_err());
+     }
 
-        let config = FileSystemConfig {
-            allowed_roots: vec![allowed_root.clone()],
-            allow_write: true,
-            allow_create_dirs: false,
-            max_read_size: 10 * 1024 * 1024,
-        };
-        let handler = FileSystemHandler::new(config);
+     #[tokio::test]
+     async fn test_list_directory_success() {
+         let temp_dir = TempDir::new().unwrap();
+         let allowed_root = temp_dir.path().canonicalize().unwrap();
 
-        // Should fail because parent directory doesn't exist
-        let nested_file = allowed_root.join("nonexistent").join("file.txt");
-        let result = handler.write_file(&nested_file, "content").await;
-        assert!(result.is_err());
-    }
-}
+         // Create 2 files and 1 subdirectory
+         fs::write(allowed_root.join("file1.txt"), "content1").unwrap();
+         fs::write(allowed_root.join("file2.txt"), "content2").unwrap();
+         fs::create_dir(allowed_root.join("subdir")).unwrap();
+
+         let config = FileSystemConfig {
+             allowed_roots: vec![allowed_root.clone()],
+             allow_write: false,
+             allow_create_dirs: false,
+             max_read_size: 10 * 1024 * 1024,
+         };
+         let handler = FileSystemHandler::new(config);
+
+         let result = handler.list_directory(&allowed_root).await;
+         assert!(result.is_ok());
+         let entries = result.unwrap();
+         assert_eq!(entries.len(), 3);
+     }
+
+     #[tokio::test]
+     async fn test_list_directory_permission_denied() {
+         let temp_dir = TempDir::new().unwrap();
+         let allowed_root = temp_dir.path().canonicalize().unwrap();
+
+         let config = FileSystemConfig {
+             allowed_roots: vec![allowed_root],
+             allow_write: false,
+             allow_create_dirs: false,
+             max_read_size: 10 * 1024 * 1024,
+         };
+         let handler = FileSystemHandler::new(config);
+
+         // Try to list a directory outside allowed root
+         let outside_dir = TempDir::new().unwrap();
+         let result = handler.list_directory(outside_dir.path()).await;
+         assert!(result.is_err());
+
+         match result {
+             Err(ClientError::PermissionDenied(_)) => {}
+             _ => panic!("Expected PermissionDenied error"),
+         }
+     }
+
+     #[tokio::test]
+     async fn test_list_directory_not_found() {
+         let temp_dir = TempDir::new().unwrap();
+         let allowed_root = temp_dir.path().canonicalize().unwrap();
+
+         let config = FileSystemConfig {
+             allowed_roots: vec![allowed_root.clone()],
+             allow_write: false,
+             allow_create_dirs: false,
+             max_read_size: 10 * 1024 * 1024,
+         };
+         let handler = FileSystemHandler::new(config);
+
+         // Try to list a non-existent directory
+         let missing_dir = allowed_root.join("doesnotexist");
+         let result = handler.list_directory(&missing_dir).await;
+         assert!(result.is_err());
+
+         match result {
+             Err(ClientError::NotFound(_)) => {}
+             _ => panic!("Expected NotFound error"),
+         }
+     }
+
+     #[tokio::test]
+     async fn test_list_directory_not_a_directory() {
+         let temp_dir = TempDir::new().unwrap();
+         let allowed_root = temp_dir.path().canonicalize().unwrap();
+
+         // Create a regular file
+         let test_file = allowed_root.join("file.txt");
+         fs::write(&test_file, "content").unwrap();
+
+         let config = FileSystemConfig {
+             allowed_roots: vec![allowed_root],
+             allow_write: false,
+             allow_create_dirs: false,
+             max_read_size: 10 * 1024 * 1024,
+         };
+         let handler = FileSystemHandler::new(config);
+
+         // Try to list a regular file as if it were a directory
+         let result = handler.list_directory(&test_file).await;
+         assert!(result.is_err());
+
+         match result {
+             Err(ClientError::FileSystem(_)) => {}
+             _ => panic!("Expected FileSystem error"),
+         }
+     }
+
+     #[tokio::test]
+     async fn test_list_directory_empty() {
+         let temp_dir = TempDir::new().unwrap();
+         let allowed_root = temp_dir.path().canonicalize().unwrap();
+
+         let config = FileSystemConfig {
+             allowed_roots: vec![allowed_root.clone()],
+             allow_write: false,
+             allow_create_dirs: false,
+             max_read_size: 10 * 1024 * 1024,
+         };
+         let handler = FileSystemHandler::new(config);
+
+         // List an empty directory
+         let result = handler.list_directory(&allowed_root).await;
+         assert!(result.is_ok());
+         let entries = result.unwrap();
+         assert_eq!(entries.len(), 0);
+     }
+ }
