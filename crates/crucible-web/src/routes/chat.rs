@@ -27,7 +27,10 @@ pub struct ChatRequest {
 pub fn chat_routes(state: ChatState) -> Router {
     Router::new()
         .route("/api/chat", post(chat_handler))
-        .route("/api/interaction/respond", post(interaction_respond_handler))
+        .route(
+            "/api/interaction/respond",
+            post(interaction_respond_handler),
+        )
         .with_state(state)
 }
 

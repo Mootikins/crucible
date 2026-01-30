@@ -9,6 +9,7 @@ use crate::tui::oil::ViewContext;
 ///
 /// Error (when present) renders above the status bar.  All state is
 /// owned by `OilChatApp`; this struct borrows snapshots of it.
+#[derive(Default)]
 pub struct StatusComponent<'a> {
     pub mode: ChatMode,
     pub model: &'a str,
@@ -22,18 +23,8 @@ pub struct StatusComponent<'a> {
 
 impl<'a> StatusComponent<'a> {
     pub fn new() -> Self {
-        Self {
-            mode: ChatMode::default(),
-            model: "",
-            context_used: 0,
-            context_total: 0,
-            status: "",
-            error: None,
-            toast: None,
-            notification_counts: Vec::new(),
-        }
+        Self::default()
     }
-
     pub fn mode(mut self, mode: ChatMode) -> Self {
         self.mode = mode;
         self

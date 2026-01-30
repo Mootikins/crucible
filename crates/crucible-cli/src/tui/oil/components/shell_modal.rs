@@ -3,7 +3,7 @@ use crate::tui::oil::style::{Color, Style};
 use crate::tui::oil::theme::ThemeTokens;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use std::io::BufRead;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::time::{Duration, Instant};
@@ -307,7 +307,7 @@ impl ShellModal {
         content
     }
 
-    pub fn save_output(&mut self, session_dir: &PathBuf) -> Option<PathBuf> {
+    pub fn save_output(&mut self, session_dir: &Path) -> Option<PathBuf> {
         let shell_dir = session_dir.join("shell");
         if std::fs::create_dir_all(&shell_dir).is_err() {
             return None;

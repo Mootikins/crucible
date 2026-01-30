@@ -52,8 +52,10 @@ pub fn apply_rpc_event(app: &mut OilChatApp, event: &RpcEvent) {
             });
         }
         RpcEvent::ToolResultComplete { name } => {
-            app.on_message(ChatAppMsg::ToolResultComplete { name: name.clone(),
-                call_id: None, });
+            app.on_message(ChatAppMsg::ToolResultComplete {
+                name: name.clone(),
+                call_id: None,
+            });
         }
     }
 }

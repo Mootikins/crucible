@@ -332,10 +332,12 @@ mod e2e_edge_cases {
         app.on_message(ChatAppMsg::ToolCall {
             name: "empty_tool".to_string(),
             args: "{}".to_string(),
-                call_id: None,
+            call_id: None,
         });
-        app.on_message(ChatAppMsg::ToolResultComplete { name: "empty_tool".to_string(),
-                call_id: None });
+        app.on_message(ChatAppMsg::ToolResultComplete {
+            name: "empty_tool".to_string(),
+            call_id: None,
+        });
         app.on_message(ChatAppMsg::TextDelta("Done".to_string()));
         app.on_message(ChatAppMsg::StreamComplete);
 
