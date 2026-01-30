@@ -7,6 +7,7 @@ use std::time::Duration;
 pub struct ViewContext<'a> {
     pub focus: &'a FocusContext,
     pub theme: &'a ThemeTokens,
+    pub terminal_size: (u16, u16),
 }
 
 impl<'a> ViewContext<'a> {
@@ -14,11 +15,28 @@ impl<'a> ViewContext<'a> {
         Self {
             focus,
             theme: ThemeTokens::default_ref(),
+            terminal_size: (80, 24),
         }
     }
 
     pub fn with_theme(focus: &'a FocusContext, theme: &'a ThemeTokens) -> Self {
-        Self { focus, theme }
+        Self {
+            focus,
+            theme,
+            terminal_size: (80, 24),
+        }
+    }
+
+    pub fn with_terminal_size(
+        focus: &'a FocusContext,
+        theme: &'a ThemeTokens,
+        terminal_size: (u16, u16),
+    ) -> Self {
+        Self {
+            focus,
+            theme,
+            terminal_size,
+        }
     }
 
     pub fn theme(&self) -> &ThemeTokens {
