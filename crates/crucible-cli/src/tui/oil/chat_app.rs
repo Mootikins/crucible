@@ -4,8 +4,8 @@ use crate::tui::oil::commands::SetCommand;
 use crate::tui::oil::component::Component;
 use crate::tui::oil::components::{
     Drawer, DrawerKind, InteractionModal, InteractionModalMsg, InteractionModalOutput,
-    InteractionMode, NotificationArea, ShellHistoryItem, ShellModal, ShellModalMsg,
-    ShellModalOutput, ShellStatus, StatusBar,
+    InteractionMode, NotificationArea, PopupComponent, ShellHistoryItem, ShellModal, ShellModalMsg,
+    ShellModalOutput, ShellStatus, StatusComponent,
 };
 use crate::tui::oil::config::{ConfigValue, ModSource, RuntimeConfig};
 use crate::tui::oil::event::{Event, InputAction, InputBuffer};
@@ -383,10 +383,9 @@ impl App for OilChatApp {
             self.render_containers(),
             self.render_error(),
             spacer(),
-            // Space character creates a visible blank line for separation before input area
             text(" "),
             bottom,
-            self.render_popup_overlay(),
+            self.render_popup_overlay(ctx),
         ])
         .gap(Gap::row(0))
     }
@@ -2111,25 +2110,23 @@ impl OilChatApp {
     }
 
     fn render_status(&self) -> Node {
-        use crate::tui::oil::component::Component;
-
-        let mut status_bar = StatusBar::new()
+        let mut comp = StatusComponent::new()
             .mode(self.mode)
             .model(&self.model)
             .context(self.context_used, self.context_total)
             .status(&self.status);
 
         if let Some((text, kind)) = self.notification_area.active_toast() {
-            status_bar = status_bar.toast(text, kind);
+            comp = comp.toast(text, kind);
         }
         let counts = self.notification_area.warning_counts();
         if !counts.is_empty() {
-            status_bar = status_bar.counts(counts);
+            comp = comp.counts(counts);
         }
 
         let focus = crate::tui::oil::focus::FocusContext::default();
         let ctx = ViewContext::new(&focus);
-        status_bar.view(&ctx)
+        comp.view(&ctx)
     }
 
     fn detect_input_mode(&self) -> InputMode {
@@ -2421,21 +2418,17 @@ impl OilChatApp {
             .collect()
     }
 
-    fn render_popup_overlay(&self) -> Node {
+    fn render_popup_overlay(&self, ctx: &ViewContext<'_>) -> Node {
         let show = self.show_popup && self.popup_kind != AutocompleteKind::None;
         let items = if show { self.get_popup_items() } else { vec![] };
 
-        if show && !items.is_empty() {
-            let input_height = self.calculate_input_height();
-            let status_height = 1;
-            let offset_from_bottom = input_height + status_height;
+        let popup = PopupComponent::new(items)
+            .visible(show)
+            .selected(self.popup_selected)
+            .input_height(self.calculate_input_height())
+            .max_visible(POPUP_HEIGHT);
 
-            let popup_node =
-                focusable(FOCUS_POPUP, popup(items, self.popup_selected, POPUP_HEIGHT));
-            overlay_from_bottom(popup_node, offset_from_bottom)
-        } else {
-            Node::Empty
-        }
+        popup.view(ctx)
     }
 
     fn calculate_input_height(&self) -> usize {
