@@ -46,6 +46,9 @@ use agent_client_protocol::{
     WaitForTerminalExitResponse, WriteTextFileRequest, WriteTextFileResponse,
 };
 
+use crucible_core::interaction::PermRequest;
+use crucible_core::traits::PermissionGate;
+
 use crate::{ClientError, Result};
 
 /// Information about a file write operation for diff display
@@ -73,6 +76,8 @@ pub struct CrucibleClient {
     notifications: Arc<Mutex<Vec<SessionNotification>>>,
     /// Information about the last write operation (for diff display)
     last_write: Arc<Mutex<Option<WriteInfo>>>,
+    /// Optional permission gate for routing permission decisions
+    permission_gate: Option<Arc<dyn PermissionGate>>,
 }
 
 impl CrucibleClient {
@@ -88,6 +93,7 @@ impl CrucibleClient {
             read_only,
             notifications: Arc::new(Mutex::new(Vec::new())),
             last_write: Arc::new(Mutex::new(None)),
+            permission_gate: None,
         }
     }
 
@@ -122,6 +128,12 @@ impl CrucibleClient {
     pub fn clear_last_write(&self) {
         *self.last_write.lock().unwrap() = None;
     }
+
+    /// Set a permission gate for routing permission decisions.
+    pub fn with_permission_gate(mut self, gate: Arc<dyn PermissionGate>) -> Self {
+        self.permission_gate = Some(gate);
+        self
+    }
 }
 
 #[async_trait(?Send)]
@@ -141,25 +153,38 @@ impl Client for CrucibleClient {
         tracing::debug!("Tool call details: {:?}", args.tool_call);
         tracing::debug!("Permission options: {:?}", args.options);
 
-        // Select appropriate option based on mode
         let outcome = if self.read_only {
-            // In read-only mode, look for a "reject" or "deny" option, or cancel
             tracing::warn!("Permission denied (read-only mode)");
-
-            // For now, just cancel the request in read-only mode
             RequestPermissionOutcome::Cancelled
+        } else if let Some(ref gate) = self.permission_gate {
+            let perm_request = PermRequest::tool(
+                args.tool_call.tool_call_id.to_string(),
+                serde_json::to_value(&args.tool_call).unwrap_or_default(),
+            );
+            let response = gate.request_permission(perm_request).await;
+            if response.allowed {
+                if let Some(first_option) = args.options.first() {
+                    tracing::info!("Permission granted via gate: {}", first_option.option_id);
+                    RequestPermissionOutcome::Selected(SelectedPermissionOutcome::new(
+                        first_option.option_id.clone(),
+                    ))
+                } else {
+                    RequestPermissionOutcome::Cancelled
+                }
+            } else {
+                tracing::info!("Permission denied via gate: {:?}", response.reason);
+                RequestPermissionOutcome::Cancelled
+            }
         } else {
-            // In act mode, select the first option (usually "allow" or "approve")
             if let Some(first_option) = args.options.first() {
                 tracing::info!(
-                    "Permission granted: selecting option {}",
+                    "Permission granted (auto-allow): {}",
                     first_option.option_id
                 );
                 RequestPermissionOutcome::Selected(SelectedPermissionOutcome::new(
                     first_option.option_id.clone(),
                 ))
             } else {
-                // No options provided, cancel
                 tracing::warn!("No permission options provided, cancelling");
                 RequestPermissionOutcome::Cancelled
             }
@@ -602,5 +627,101 @@ mod tests {
         let info2 = client.last_write_info().expect("Should have write info");
         assert_eq!(info2.path, file2);
         assert_eq!(info2.new_content, "content2");
+    }
+
+    // === PermissionGate integration tests ===
+
+    mod gate_tests {
+        use super::*;
+        use agent_client_protocol::{
+            PermissionOption, PermissionOptionKind, ToolCallId, ToolCallUpdate,
+            ToolCallUpdateFields,
+        };
+        use crucible_core::interaction::{PermRequest, PermResponse};
+        use crucible_core::traits::PermissionGate;
+
+        struct DenyAllGate;
+
+        #[async_trait::async_trait]
+        impl PermissionGate for DenyAllGate {
+            async fn request_permission(&self, _request: PermRequest) -> PermResponse {
+                PermResponse::deny()
+            }
+        }
+
+        struct AllowAllGate;
+
+        #[async_trait::async_trait]
+        impl PermissionGate for AllowAllGate {
+            async fn request_permission(&self, _request: PermRequest) -> PermResponse {
+                PermResponse::allow()
+            }
+        }
+
+        fn make_permission_request() -> RequestPermissionRequest {
+            let tool_call =
+                ToolCallUpdate::new(ToolCallId::from("1"), ToolCallUpdateFields::default());
+            let option = PermissionOption::new(
+                "allow",
+                "Allow".to_string(),
+                PermissionOptionKind::AllowOnce,
+            );
+            RequestPermissionRequest::new(SessionId::from("test"), tool_call, vec![option])
+        }
+
+        #[tokio::test]
+        async fn gate_deny_cancels_permission() {
+            let temp = TempDir::new().unwrap();
+            let client = CrucibleClient::new(temp.path().to_path_buf(), false)
+                .with_permission_gate(Arc::new(DenyAllGate));
+
+            let result = client.request_permission(make_permission_request()).await;
+            assert!(result.is_ok());
+            assert!(matches!(
+                result.unwrap().outcome,
+                RequestPermissionOutcome::Cancelled
+            ));
+        }
+
+        #[tokio::test]
+        async fn gate_allow_selects_first_option() {
+            let temp = TempDir::new().unwrap();
+            let client = CrucibleClient::new(temp.path().to_path_buf(), false)
+                .with_permission_gate(Arc::new(AllowAllGate));
+
+            let result = client.request_permission(make_permission_request()).await;
+            assert!(result.is_ok());
+            assert!(matches!(
+                result.unwrap().outcome,
+                RequestPermissionOutcome::Selected(_)
+            ));
+        }
+
+        #[tokio::test]
+        async fn no_gate_auto_allows() {
+            let temp = TempDir::new().unwrap();
+            let client = CrucibleClient::new(temp.path().to_path_buf(), false);
+
+            let result = client.request_permission(make_permission_request()).await;
+            assert!(result.is_ok());
+            assert!(matches!(
+                result.unwrap().outcome,
+                RequestPermissionOutcome::Selected(_)
+            ));
+        }
+
+        #[tokio::test]
+        async fn read_only_overrides_gate() {
+            let temp = TempDir::new().unwrap();
+            let client = CrucibleClient::new(temp.path().to_path_buf(), true)
+                .with_permission_gate(Arc::new(AllowAllGate));
+
+            let result = client.request_permission(make_permission_request()).await;
+            assert!(result.is_ok());
+            assert!(matches!(
+                result.unwrap().outcome,
+                RequestPermissionOutcome::Cancelled
+            ));
+        }
     }
 }
