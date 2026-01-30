@@ -60,5 +60,5 @@ pub use theme::Theme;
 pub use decrypt::{decrypt_text, DecryptConfig, CIPHER_CHARS};
 
 pub mod utils {
-    pub use crate::ansi::{strip_ansi, visible_width, visual_rows};
+    pub use crate::ansi::{apply_style, strip_ansi, visible_width, visual_rows};
 }

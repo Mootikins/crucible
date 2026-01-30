@@ -3,7 +3,7 @@
 //! This module renders the computed layout tree to a string with ANSI escape codes.
 
 use super::tree::{LayoutBox, LayoutContent, LayoutTree};
-use crate::ansi::visible_width;
+use crate::ansi::{apply_style, visible_width};
 use crate::node::Direction;
 use crate::style::{Color, Style};
 use textwrap::{wrap, Options, WordSplitter};
@@ -168,8 +168,8 @@ fn render_popup(popup: &crate::node::PopupNode, width: usize, output: &mut Strin
         return;
     }
 
-    let popup_bg = Color::Rgb(45, 50, 60);
-    let selected_bg = Color::Rgb(60, 70, 90);
+    let popup_bg = popup.bg_style.bg.unwrap_or(Color::Rgb(45, 50, 60));
+    let selected_bg = popup.selected_style.bg.unwrap_or(Color::Rgb(60, 70, 90));
 
     let visible_end = (popup.viewport_offset + popup.max_visible).min(popup.items.len());
     let visible_items = &popup.items[popup.viewport_offset..visible_end];
@@ -252,16 +252,6 @@ fn render_popup(popup: &crate::node::PopupNode, width: usize, output: &mut Strin
             output.push_str("\r\n");
         }
     }
-}
-
-fn apply_style(content: &str, style: &Style) -> String {
-    if style == &Style::default() {
-        return content.to_string();
-    }
-
-    use crossterm::style::StyledContent;
-    let ct_style = style.to_crossterm();
-    format!("{}", StyledContent::new(ct_style, content))
 }
 
 #[cfg(test)]

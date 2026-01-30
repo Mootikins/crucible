@@ -1,3 +1,4 @@
+use crate::ansi::apply_style;
 use crate::ansi::{visible_width, visual_rows};
 use crate::cell_grid::CellGrid;
 use crate::layout::flex::{calculate_row_widths, ChildMeasurement, FlexLayoutInput};
@@ -846,16 +847,6 @@ pub fn render_popup_standalone(popup: &PopupNode, width: usize) -> String {
     let mut output = String::new();
     render_popup(popup, width, &mut output);
     output
-}
-
-fn apply_style(content: &str, style: &Style) -> String {
-    if style == &Style::default() {
-        return content.to_string();
-    }
-
-    use crossterm::style::StyledContent;
-    let ct_style = style.to_crossterm();
-    format!("{}", StyledContent::new(ct_style, content))
 }
 
 pub fn print_to_stdout(content: &str) -> io::Result<()> {
