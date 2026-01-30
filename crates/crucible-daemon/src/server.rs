@@ -87,7 +87,7 @@ pub struct Server {
 
 impl Server {
     /// Bind to a Unix socket path
-    pub async fn bind(path: &Path) -> Result<Self> {
+    pub async fn bind(path: &Path, mcp_config: Option<&crucible_config::McpConfig>) -> Result<Self> {
         // Remove stale socket
         if path.exists() {
             std::fs::remove_file(path)?;
@@ -102,12 +102,31 @@ impl Server {
         let (shutdown_tx, _) = broadcast::channel(1);
         let (event_tx, _) = broadcast::channel(1024);
 
+        use crucible_tools::mcp_gateway::McpGatewayManager;
+        use tokio::sync::RwLock;
+
+        let mcp_gateway = if let Some(mcp_cfg) = mcp_config {
+            match McpGatewayManager::from_config(mcp_cfg).await {
+                Ok(gw) => {
+                    info!("MCP gateway initialized with {} upstream(s)", gw.upstream_count());
+                    Some(Arc::new(RwLock::new(gw)))
+                }
+                Err(e) => {
+                    warn!("Failed to initialize MCP gateway: {}", e);
+                    None
+                }
+            }
+        } else {
+            None
+        };
+
         let kiln_manager = Arc::new(KilnManager::new());
         let session_manager = Arc::new(SessionManager::new());
         let background_manager = Arc::new(BackgroundJobManager::new(event_tx.clone()));
         let agent_manager = Arc::new(AgentManager::new(
             session_manager.clone(),
             background_manager.clone(),
+            mcp_gateway,
         ));
         let subscription_manager = Arc::new(SubscriptionManager::new());
 
@@ -1461,7 +1480,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let sock_path = tmp.path().join("test.sock");
 
-        let server = Server::bind(&sock_path).await.unwrap();
+        let server = Server::bind(&sock_path, None).await.unwrap();
         let shutdown_handle = server.shutdown_handle();
 
         // Spawn server
@@ -1494,7 +1513,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let sock_path = tmp.path().join("test.sock");
 
-        let server = Server::bind(&sock_path).await.unwrap();
+        let server = Server::bind(&sock_path, None).await.unwrap();
         let shutdown_handle = server.shutdown_handle();
         let server_task = tokio::spawn(async move { server.run().await });
 
@@ -1523,7 +1542,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let sock_path = tmp.path().join("test.sock");
 
-        let server = Server::bind(&sock_path).await.unwrap();
+        let server = Server::bind(&sock_path, None).await.unwrap();
         let shutdown_handle = server.shutdown_handle();
         let server_task = tokio::spawn(async move { server.run().await });
 
@@ -1552,7 +1571,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let sock_path = tmp.path().join("test.sock");
 
-        let server = Server::bind(&sock_path).await.unwrap();
+        let server = Server::bind(&sock_path, None).await.unwrap();
         let shutdown_handle = server.shutdown_handle();
         let server_task = tokio::spawn(async move { server.run().await });
 
@@ -1579,7 +1598,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let sock_path = tmp.path().join("test.sock");
 
-        let server = Server::bind(&sock_path).await.unwrap();
+        let server = Server::bind(&sock_path, None).await.unwrap();
         let shutdown_handle = server.shutdown_handle();
         let server_task = tokio::spawn(async move { server.run().await });
 
@@ -1609,7 +1628,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let sock_path = tmp.path().join("test.sock");
 
-        let server = Server::bind(&sock_path).await.unwrap();
+        let server = Server::bind(&sock_path, None).await.unwrap();
         let shutdown_handle = server.shutdown_handle();
         let server_task = tokio::spawn(async move { server.run().await });
 
@@ -1635,7 +1654,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let sock_path = tmp.path().join("test.sock");
 
-        let server = Server::bind(&sock_path).await.unwrap();
+        let server = Server::bind(&sock_path, None).await.unwrap();
         let server_task = tokio::spawn(async move { server.run().await });
 
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
@@ -1663,7 +1682,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let sock_path = tmp.path().join("test.sock");
 
-        let server = Server::bind(&sock_path).await.unwrap();
+        let server = Server::bind(&sock_path, None).await.unwrap();
         let shutdown_handle = server.shutdown_handle();
         let server_task = tokio::spawn(async move { server.run().await });
 
@@ -1692,7 +1711,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let sock_path = tmp.path().join("test.sock");
 
-        let server = Server::bind(&sock_path).await.unwrap();
+        let server = Server::bind(&sock_path, None).await.unwrap();
         let shutdown_handle = server.shutdown_handle();
         let server_task = tokio::spawn(async move { server.run().await });
 
@@ -1728,7 +1747,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let sock_path = tmp.path().join("test.sock");
 
-        let server = Server::bind(&sock_path).await.unwrap();
+        let server = Server::bind(&sock_path, None).await.unwrap();
         let event_tx = server.event_sender();
 
         // Subscribe a receiver so send() succeeds
@@ -1749,7 +1768,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let sock_path = tmp.path().join("test.sock");
 
-        let server = Server::bind(&sock_path).await.unwrap();
+        let server = Server::bind(&sock_path, None).await.unwrap();
         let shutdown_handle = server.shutdown_handle();
         let server_task = tokio::spawn(server.run());
 
@@ -1778,7 +1797,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let sock_path = tmp.path().join("test.sock");
 
-        let server = Server::bind(&sock_path).await.unwrap();
+        let server = Server::bind(&sock_path, None).await.unwrap();
         let shutdown_handle = server.shutdown_handle();
         let server_task = tokio::spawn(server.run());
 
@@ -1808,7 +1827,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let sock_path = tmp.path().join("test.sock");
 
-        let server = Server::bind(&sock_path).await.unwrap();
+        let server = Server::bind(&sock_path, None).await.unwrap();
         let shutdown_handle = server.shutdown_handle();
         let server_task = tokio::spawn(server.run());
 
@@ -1836,7 +1855,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let sock_path = tmp.path().join("test.sock");
 
-        let server = Server::bind(&sock_path).await.unwrap();
+        let server = Server::bind(&sock_path, None).await.unwrap();
         let shutdown_handle = server.shutdown_handle();
         let server_task = tokio::spawn(server.run());
 
@@ -1867,7 +1886,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let sock_path = tmp.path().join("test.sock");
 
-        let server = Server::bind(&sock_path).await.unwrap();
+        let server = Server::bind(&sock_path, None).await.unwrap();
         let shutdown_handle = server.shutdown_handle();
         let server_task = tokio::spawn(server.run());
 
@@ -1901,7 +1920,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let sock_path = tmp.path().join("test.sock");
 
-        let server = Server::bind(&sock_path).await.unwrap();
+        let server = Server::bind(&sock_path, None).await.unwrap();
         let shutdown_handle = server.shutdown_handle();
         let server_task = tokio::spawn(server.run());
 
@@ -1940,7 +1959,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let sock_path = tmp.path().join("test.sock");
 
-        let server = Server::bind(&sock_path).await.unwrap();
+        let server = Server::bind(&sock_path, None).await.unwrap();
         let shutdown_handle = server.shutdown_handle();
         let server_task = tokio::spawn(server.run());
 
@@ -1971,7 +1990,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let sock_path = tmp.path().join("test.sock");
 
-        let server = Server::bind(&sock_path).await.unwrap();
+        let server = Server::bind(&sock_path, None).await.unwrap();
         let event_tx = server.event_sender();
         let shutdown_handle = server.shutdown_handle();
         let server_task = tokio::spawn(server.run());
@@ -2026,7 +2045,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let sock_path = tmp.path().join("test.sock");
 
-        let server = Server::bind(&sock_path).await.unwrap();
+        let server = Server::bind(&sock_path, None).await.unwrap();
         let event_tx = server.event_sender();
         let shutdown_handle = server.shutdown_handle();
         let server_task = tokio::spawn(server.run());
@@ -2071,7 +2090,7 @@ mod tests {
         let kiln_path = tmp.path().join("kiln");
         std::fs::create_dir_all(&kiln_path).unwrap();
 
-        let server = Server::bind(&sock_path).await.unwrap();
+        let server = Server::bind(&sock_path, None).await.unwrap();
         let event_tx = server.event_sender();
         let shutdown_handle = server.shutdown_handle();
         let server_task = tokio::spawn(server.run());
