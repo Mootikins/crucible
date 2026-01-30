@@ -116,6 +116,10 @@ fn render_box(layout_box: &LayoutBox, grid: &mut CellGrid) {
         LayoutContent::Fragment => {
             // Transparent container, no visual representation
         }
+
+        LayoutContent::Raw { content, .. } => {
+            grid.blit_line(content, x, y);
+        }
     }
 
     // Render children (later children can overwrite earlier ones for z-order)

@@ -84,7 +84,7 @@ pub fn arb_style() -> impl Strategy<Value = Style> {
     )
 }
 
-/// Leaf node generator: Empty, Text, Input, Spinner
+/// Leaf node generator: Empty, Text, Input, Spinner, Raw
 pub fn arb_leaf() -> impl Strategy<Value = Node> {
     prop_oneof![
         2 => Just(Node::Empty),
@@ -94,6 +94,9 @@ pub fn arb_leaf() -> impl Strategy<Value = Node> {
             text_input(s, cursor)
         }),
         1 => (prop::option::of(arb_text()), 0usize..20).prop_map(|(lbl, frame)| spinner(lbl, frame)),
+        1 => (1u16..20, 1u16..5).prop_map(|(w, h)| {
+            raw(format!("\x1b]1337;test=placeholder\x07"), w, h)
+        }),
     ]
 }
 
