@@ -1,7 +1,9 @@
 use crate::ansi::{visible_width, visual_rows};
 use crate::cell_grid::CellGrid;
 use crate::layout::flex::{calculate_row_widths, ChildMeasurement, FlexLayoutInput};
-use crate::node::{BoxNode, Direction, InputNode, Node, PopupNode, Size, SpinnerNode, TextNode};
+use crate::node::{
+    BoxNode, Direction, InputNode, Node, PopupNode, RawNode, Size, SpinnerNode, TextNode,
+};
 use crate::style::Style;
 use std::io::{self, Write};
 use textwrap::{wrap, Options, WordSplitter};
@@ -36,7 +38,42 @@ pub fn render_to_string(node: &Node, width: usize) -> String {
 }
 
 pub fn render_to_plain_text(node: &Node, width: usize) -> String {
-    crate::ansi::strip_ansi(&render_to_string(node, width))
+    let mut output = String::new();
+    render_node_plain_text(node, width, &mut output);
+    output
+}
+
+fn render_node_plain_text(node: &Node, width: usize, output: &mut String) {
+    match node {
+        Node::Raw(raw) => {
+            output.push_str(&format!(
+                "[raw: {}x{}]",
+                raw.display_width, raw.display_height
+            ));
+        }
+        Node::Fragment(children) => {
+            for child in children {
+                render_node_plain_text(child, width, output);
+            }
+        }
+        Node::Box(boxnode) => {
+            for child in &boxnode.children {
+                render_node_plain_text(child, width, output);
+            }
+        }
+        Node::Static(static_node) => {
+            for child in &static_node.children {
+                render_node_plain_text(child, width, output);
+            }
+        }
+        Node::Focusable(f) => render_node_plain_text(&f.child, width, output),
+        Node::ErrorBoundary(b) => render_node_plain_text(&b.child, width, output),
+        Node::Overlay(o) => render_node_plain_text(&o.child, width, output),
+        other => {
+            let rendered = render_to_string(other, width);
+            output.push_str(&crate::ansi::strip_ansi(&rendered));
+        }
+    }
 }
 
 /// Render a slice of nodes without cloning them into a Fragment.
@@ -168,6 +205,10 @@ fn render_node_filtered(
 
         Node::Overlay(overlay) => {
             render_node_filtered(&overlay.child, width, filter, output, cursor_info);
+        }
+
+        Node::Raw(raw) => {
+            render_raw(raw, width, output);
         }
     }
 }
@@ -478,6 +519,18 @@ fn render_node_to_string(node: &Node, width: usize, output: &mut String) {
         Node::Overlay(overlay) => {
             render_node_to_string(&overlay.child, width, output);
         }
+
+        Node::Raw(raw) => {
+            render_raw(raw, width, output);
+        }
+    }
+}
+
+fn render_raw(raw: &RawNode, width: usize, output: &mut String) {
+    output.push_str(&raw.content);
+    let pad = width.saturating_sub(raw.display_width as usize);
+    if pad > 0 {
+        output.push_str(&" ".repeat(pad));
     }
 }
 
@@ -618,6 +671,7 @@ enum ChildSize {
 fn get_node_size(node: &Node) -> Size {
     match node {
         Node::Box(b) => b.size,
+        Node::Raw(raw) => Size::Fixed(raw.display_width),
         _ => Size::Content,
     }
 }
@@ -668,26 +722,7 @@ fn render_bordered_content(
 }
 
 fn strip_ansi_codes(s: &str) -> String {
-    let mut result = String::with_capacity(s.len());
-    let mut chars = s.chars().peekable();
-
-    while let Some(c) = chars.next() {
-        if c == '\x1b' {
-            if chars.peek() == Some(&'[') {
-                chars.next();
-                while let Some(&next) = chars.peek() {
-                    chars.next();
-                    if next.is_ascii_alphabetic() {
-                        break;
-                    }
-                }
-            }
-        } else {
-            result.push(c);
-        }
-    }
-
-    result
+    crate::ansi::strip_ansi(s)
 }
 
 fn render_input(input: &InputNode, output: &mut String) {

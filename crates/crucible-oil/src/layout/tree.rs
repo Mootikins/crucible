@@ -3,7 +3,7 @@
 //! This module provides the bridge between Taffy layout computation and ANSI rendering.
 //! The pipeline is: Node → Taffy → LayoutTree → render_layout_tree() → String
 
-use crate::node::{BoxNode, Direction, InputNode, Node, PopupNode, Size, SpinnerNode};
+use crate::node::{BoxNode, Direction, InputNode, Node, PopupNode, RawNode, Size, SpinnerNode};
 use crate::style::Style;
 
 /// The root of a computed layout tree.
@@ -63,7 +63,10 @@ pub enum LayoutContent {
     /// Empty node
     Empty,
     /// Text content with style
-    Text { content: String, style: Style },
+    Text {
+        content: String,
+        style: Style,
+    },
     /// Container (Box or Fragment)
     Container,
     /// Input field
@@ -72,6 +75,7 @@ pub enum LayoutContent {
     Spinner(SpinnerNode),
     /// Popup menu
     Popup(PopupNode),
+    Raw(RawNode),
 }
 
 impl LayoutBox {
@@ -228,6 +232,21 @@ fn build_layout_box(node: &Node, available: LayoutRect) -> LayoutBox {
         Node::ErrorBoundary(boundary) => build_layout_box(&boundary.child, available),
 
         Node::Overlay(_) => LayoutBox::empty(),
+
+        Node::Raw(raw) => LayoutBox {
+            rect: LayoutRect::new(
+                available.x,
+                available.y,
+                raw.display_width.min(available.width),
+                raw.display_height.min(available.height),
+            ),
+            content: LayoutContent::Raw(raw.clone()),
+            children: Vec::new(),
+            style: Style::default(),
+            gap: 0,
+            direction: Direction::Column,
+            key: None,
+        },
     }
 }
 

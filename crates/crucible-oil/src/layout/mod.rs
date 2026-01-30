@@ -125,6 +125,16 @@ fn layout_node(node: &Node, available: &Rect) -> LayoutNode {
         Node::ErrorBoundary(boundary) => layout_node(&boundary.child, available),
 
         Node::Overlay(_) => LayoutNode::empty(),
+
+        Node::Raw(raw) => LayoutNode {
+            rect: Rect::new(
+                available.x,
+                available.y,
+                raw.display_width.min(available.width),
+                raw.display_height.min(available.height),
+            ),
+            children: Vec::new(),
+        },
     }
 }
 

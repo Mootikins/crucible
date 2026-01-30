@@ -5,29 +5,63 @@
 use unicode_width::UnicodeWidthStr;
 
 /// Strip ANSI escape sequences from a string, returning only visible characters.
+///
+/// Handles CSI (`\x1b[`), OSC (`\x1b]`), APC (`\x1b_`), and DCS (`\x1bP`) sequences.
 pub fn strip_ansi(s: &str) -> String {
     let mut result = String::with_capacity(s.len());
     let mut chars = s.chars().peekable();
 
     while let Some(c) = chars.next() {
         if c == '\x1b' {
-            // Start of escape sequence
-            if chars.peek() == Some(&'[') {
-                chars.next(); // consume '['
-                              // Consume until we hit a letter (the command character)
-                while let Some(&next) = chars.peek() {
+            match chars.peek() {
+                // CSI: \x1b[ ... <letter>
+                Some(&'[') => {
                     chars.next();
-                    if next.is_ascii_alphabetic() {
-                        break;
+                    while let Some(&next) = chars.peek() {
+                        chars.next();
+                        if next.is_ascii_alphabetic() {
+                            break;
+                        }
                     }
                 }
+                // OSC: \x1b] ... (terminated by BEL \x07 or ST \x1b\\)
+                Some(&']') => {
+                    chars.next();
+                    skip_until_st_or_bel(&mut chars);
+                }
+                // APC: \x1b_ ... (terminated by ST \x1b\\)
+                Some(&'_') => {
+                    chars.next();
+                    skip_until_st_or_bel(&mut chars);
+                }
+                // DCS: \x1bP ... (terminated by ST \x1b\\)
+                Some(&'P') => {
+                    chars.next();
+                    skip_until_st_or_bel(&mut chars);
+                }
+                _ => {}
             }
+        } else if c == '\x07' {
+            // Stray BEL outside a sequence — skip it
         } else {
             result.push(c);
         }
     }
 
     result
+}
+
+/// Consume chars until String Terminator (ST = `\x1b\\`) or BEL (`\x07`).
+fn skip_until_st_or_bel(chars: &mut std::iter::Peekable<std::str::Chars<'_>>) {
+    while let Some(c) = chars.next() {
+        if c == '\x07' {
+            return;
+        }
+        if c == '\x1b' && chars.peek() == Some(&'\\') {
+            chars.next();
+            return;
+        }
+    }
 }
 
 /// Calculate the visible width of a string (excluding ANSI codes).
@@ -184,6 +218,36 @@ mod tests {
         // Multiple styles: \x1b[1;31;4mstuff\x1b[0m
         let complex = "\x1b[1;31;4mstuff\x1b[0m";
         assert_eq!(strip_ansi(complex), "stuff");
+    }
+
+    #[test]
+    fn strip_ansi_handles_osc_sequences() {
+        let input = "hello\x1b]1337;File=inline=1:abc\x07world";
+        assert_eq!(strip_ansi(input), "helloworld");
+    }
+
+    #[test]
+    fn strip_ansi_handles_osc_with_st_terminator() {
+        let input = "hello\x1b]0;title\x1b\\world";
+        assert_eq!(strip_ansi(input), "helloworld");
+    }
+
+    #[test]
+    fn strip_ansi_handles_apc_sequences() {
+        let input = "hello\x1b_Gi=31,s=1,v=1;AAAA\x1b\\world";
+        assert_eq!(strip_ansi(input), "helloworld");
+    }
+
+    #[test]
+    fn strip_ansi_handles_dcs_sequences() {
+        let input = "hello\x1bPq#0;2~-\x1b\\world";
+        assert_eq!(strip_ansi(input), "helloworld");
+    }
+
+    #[test]
+    fn visible_width_excludes_osc_apc_dcs() {
+        let input = "hi\x1b]1337;abc\x07there";
+        assert_eq!(visible_width(input), 7); // "hi" + "there"
     }
 
     #[test]

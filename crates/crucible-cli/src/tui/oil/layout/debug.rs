@@ -140,6 +140,14 @@ fn format_box_info(box_node: &LayoutBox) -> String {
         }
 
         LayoutContent::Fragment => "Fragment".to_string(),
+
+        LayoutContent::Raw {
+            display_width,
+            display_height,
+            ..
+        } => {
+            format!("Raw {}x{}", display_width, display_height)
+        }
     };
 
     let key_str = box_node

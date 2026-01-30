@@ -71,22 +71,38 @@ impl CellGrid {
             }
 
             if c == '\x1b' {
-                if chars.peek() == Some(&'[') {
-                    let mut escape = String::from("\x1b[");
-                    chars.next();
-                    while let Some(&next) = chars.peek() {
-                        escape.push(chars.next().unwrap());
-                        if next.is_ascii_alphabetic() {
-                            break;
+                match chars.peek() {
+                    Some(&'[') => {
+                        let mut escape = String::from("\x1b[");
+                        chars.next();
+                        while let Some(&next) = chars.peek() {
+                            escape.push(chars.next().unwrap());
+                            if next.is_ascii_alphabetic() {
+                                break;
+                            }
+                        }
+                        if escape.contains('m') {
+                            if escape == "\x1b[0m" || escape == "\x1b[m" {
+                                current_style.clear();
+                            } else {
+                                current_style = escape;
+                            }
                         }
                     }
-                    if escape.contains('m') {
-                        if escape == "\x1b[0m" || escape == "\x1b[m" {
-                            current_style.clear();
-                        } else {
-                            current_style = escape;
+                    // OSC / APC / DCS: skip entirely without interpreting as visible chars
+                    Some(&']') | Some(&'_') | Some(&'P') => {
+                        chars.next();
+                        while let Some(sc) = chars.next() {
+                            if sc == '\x07' {
+                                break;
+                            }
+                            if sc == '\x1b' && chars.peek() == Some(&'\\') {
+                                chars.next();
+                                break;
+                            }
                         }
                     }
+                    _ => {}
                 }
             } else {
                 let char_width = UnicodeWidthChar::width(c).unwrap_or(1);
