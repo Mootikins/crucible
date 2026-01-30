@@ -473,30 +473,10 @@ impl OilChatRunner {
             };
 
             if let Some(ev) = event {
-                if let Event::Key(key) = &ev {
-                    if key.code == crossterm::event::KeyCode::Enter && active_stream.is_none() {
-                        let content = app.input_content().to_string();
-                        let trimmed = content.trim();
-                        if !trimmed.is_empty()
-                            && !trimmed.starts_with('/')
-                            && !trimmed.starts_with(':')
-                            && !trimmed.starts_with('!')
-                        {
-                            bridge.ring.push(SessionEvent::MessageReceived {
-                                content: content.clone(),
-                                participant_id: "user".to_string(),
-                            });
-
-                            let stream = agent.send_message_stream(content);
-                            active_stream = Some(stream);
-                        }
-                    }
-                }
-
                 let action = app.update(ev.clone());
                 tracing::trace!(?ev, ?action, "processed event");
                 if self
-                    .process_action(action, app, agent, &mut active_stream)
+                    .process_action(action, app, agent, bridge, &mut active_stream)
                     .await?
                 {
                     tracing::trace!("quit action received, breaking loop");
@@ -564,6 +544,7 @@ impl OilChatRunner {
         action: Action<ChatAppMsg>,
         app: &mut OilChatApp,
         agent: &mut A,
+        bridge: &AgentEventBridge,
         active_stream: &mut Option<BoxStream<'static, ChatResult<ChatChunk>>>,
     ) -> io::Result<bool> {
         match action {
@@ -668,6 +649,16 @@ impl OilChatRunner {
                             tracing::warn!(mode = %mode_id, error = %e, "Failed to set mode on agent");
                         }
                     }
+                    ChatAppMsg::UserMessage(ref content) => {
+                        if active_stream.is_none() {
+                            bridge.ring.push(SessionEvent::MessageReceived {
+                                content: content.clone(),
+                                participant_id: "user".to_string(),
+                            });
+                            let stream = agent.send_message_stream(content.clone());
+                            *active_stream = Some(stream);
+                        }
+                    }
                     ChatAppMsg::ExecuteSlashCommand(ref cmd) => {
                         tracing::info!(command = %cmd, "Forwarding slash command as user message");
                         let stream = agent.send_message_stream(cmd.clone());
@@ -676,11 +667,13 @@ impl OilChatRunner {
                     _ => {}
                 }
                 let action = app.on_message(msg);
-                Box::pin(self.process_action(action, app, agent, active_stream)).await
+                Box::pin(self.process_action(action, app, agent, bridge, active_stream)).await
             }
             Action::Batch(actions) => {
                 for action in actions {
-                    if Box::pin(self.process_action(action, app, agent, active_stream)).await? {
+                    if Box::pin(self.process_action(action, app, agent, bridge, active_stream))
+                        .await?
+                    {
                         return Ok(true);
                     }
                 }
