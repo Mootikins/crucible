@@ -38,6 +38,7 @@ pub mod knowledge;
 pub mod llm;
 pub mod mcp;
 pub mod parser;
+pub mod permission_gate;
 pub mod prompt_builder;
 pub mod provider;
 pub mod registry;
@@ -45,7 +46,6 @@ pub mod storage;
 pub mod storage_client;
 pub mod text_search;
 pub mod tools;
-pub mod permission_gate;
 
 // Re-export key traits
 pub use acp::{FilesystemHandler, SessionManager, StreamHandler, ToolBridge};
@@ -89,5 +89,5 @@ pub use mcp::{
     ContentBlock, McpClient, McpClientConfig, McpConnection, McpError, McpServerInfo,
     McpToolDiscovery, McpToolExecutor, McpToolInfo, McpTransportConfig, ToolCallResult,
 };
-pub use text_search::{TextSearchMatch, TextSearcher};
 pub use permission_gate::PermissionGate;
+pub use text_search::{TextSearchMatch, TextSearcher};
