@@ -257,93 +257,149 @@ pub struct McpServerDisplay {
     pub connected: bool,
 }
 
+/// Autocomplete popup state — purely local UI chrome.
+///
+/// Groups the five tightly-coupled fields that together describe
+/// whether a popup is visible, what kind it is, which item is
+/// highlighted, and how the list is filtered.
+#[derive(Debug, Default)]
+pub struct PopupState {
+    /// Whether the popup overlay is currently visible
+    pub show: bool,
+    /// Index of the currently highlighted item
+    pub selected: usize,
+    /// What the popup is completing (command, file, model, …)
+    pub kind: AutocompleteKind,
+    /// User-typed text used to narrow the item list
+    pub filter: String,
+    /// Cursor position in the input buffer where the trigger character was typed
+    pub trigger_pos: usize,
+}
+
 pub struct OilChatApp {
+    // ─── Viewport Projection (daemon-derived state) ───────────────────
+    // These fields mirror information received from the daemon and
+    // represent the authoritative view of the current session.
     /// Semantic containers for chat content (container architecture)
     container_list: ContainerList,
-    input: InputBuffer,
-    spinner_frame: usize,
+    /// Current chat mode (Normal / Plan / Auto)
     mode: ChatMode,
+    /// Display name of the active LLM model
     model: String,
+    /// Status text from the daemon (e.g. "Thinking…")
     status: String,
-    error: Option<String>,
-    message_counter: usize,
-    on_submit: Option<Box<dyn Fn(String) + Send + Sync>>,
-    show_popup: bool,
-    popup_selected: usize,
-    popup_kind: AutocompleteKind,
-    popup_filter: String,
-    popup_trigger_pos: usize,
-    workspace_files: Vec<String>,
-    kiln_notes: Vec<String>,
-    attached_context: Vec<String>,
+    /// Context window tokens consumed so far
     context_used: usize,
+    /// Context window total capacity
     context_total: usize,
-    last_ctrl_c: Option<std::time::Instant>,
-    shell_modal: Option<ShellModal>,
-    shell_history: VecDeque<String>,
-    shell_history_index: Option<usize>,
-    session_dir: Option<PathBuf>,
-    needs_full_redraw: bool,
-    mcp_servers: Vec<McpServerDisplay>,
-    deferred_messages: VecDeque<String>,
-    available_models: Vec<String>,
-    model_list_state: ModelListState,
-    show_thinking: bool,
-    runtime_config: RuntimeConfig,
+    /// Display name of the active LLM provider
     current_provider: String,
+    /// MCP servers known to the daemon
+    mcp_servers: Vec<McpServerDisplay>,
+    /// Available models fetched from the provider
+    available_models: Vec<String>,
+    /// Fetch-state of the model list
+    model_list_state: ModelListState,
+
+    // ─── UI Chrome (purely local state) ───────────────────────────────
+    // Everything here is display-only and never round-trips to the
+    // daemon. Grouped by concern.
+    /// Text input buffer for the chat prompt
+    input: InputBuffer,
+    /// Autocomplete popup state
+    popup: PopupState,
+    /// Notification banner area
     notification_area: NotificationArea,
+    /// Interactive permission / question modal
     interaction_modal: Option<InteractionModal>,
+    /// Shell command modal overlay
+    shell_modal: Option<ShellModal>,
+    /// Spinner animation frame counter
+    spinner_frame: usize,
+    /// Force a full terminal redraw on next tick
+    needs_full_redraw: bool,
+    /// Whether to render LLM thinking/reasoning blocks
+    show_thinking: bool,
+    /// Current terminal size (width, height) — updated in view()
+    terminal_size: Cell<(u16, u16)>,
+    /// Last error to display to the user
+    error: Option<String>,
     /// Queue of pending permission requests (request_id, request) when multiple arrive rapidly
     permission_queue: VecDeque<(String, PermRequest)>,
     /// Whether to show diff by default in permission prompts (session-scoped)
     perm_show_diff: bool,
     /// Whether to auto-allow all permission prompts for this session
     perm_autoconfirm_session: bool,
-    /// Current terminal size (width, height) - updated in view()
-    terminal_size: Cell<(u16, u16)>,
+    /// Messages deferred until the current stream completes
+    deferred_messages: VecDeque<String>,
+    /// Monotonic counter for assigning message IDs
+    message_counter: usize,
+    /// Timestamp of the last Ctrl-C press (for double-tap quit)
+    last_ctrl_c: Option<std::time::Instant>,
+    /// Files attached as extra context for the next message
+    attached_context: Vec<String>,
+
+    // ─── I/O / Lifecycle (tech debt — future extraction) ──────────────
+    // Callbacks, filesystem state, and registries that ideally move
+    // behind a trait or into a dedicated struct later.
+    /// Submit callback — fires when the user sends a message
+    on_submit: Option<Box<dyn Fn(String) + Send + Sync>>,
+    /// Filesystem path for saving session transcripts
+    session_dir: Option<PathBuf>,
+    /// Recent shell commands (for !-history recall)
+    shell_history: VecDeque<String>,
+    /// Current index into shell_history during recall
+    shell_history_index: Option<usize>,
+    /// Runtime configuration (`:set` overrides)
+    runtime_config: RuntimeConfig,
+    /// Workspace file paths (for @-file autocomplete)
+    workspace_files: Vec<String>,
+    /// Kiln note names (for #-note autocomplete)
+    kiln_notes: Vec<String>,
 }
 
 impl Default for OilChatApp {
     fn default() -> Self {
         Self {
+            // Viewport Projection
             container_list: ContainerList::new(),
-            input: InputBuffer::new(),
-            spinner_frame: 0,
             mode: ChatMode::Normal,
             model: String::new(),
             status: String::new(),
-            error: None,
-            message_counter: 0,
-            on_submit: None,
-            show_popup: false,
-            popup_selected: 0,
-            popup_kind: AutocompleteKind::None,
-            popup_filter: String::new(),
-            popup_trigger_pos: 0,
-            workspace_files: Vec::new(),
-            kiln_notes: Vec::new(),
-            attached_context: Vec::new(),
             context_used: 0,
             context_total: 0,
-            last_ctrl_c: None,
-            shell_modal: None,
-            shell_history: VecDeque::with_capacity(MAX_SHELL_HISTORY),
-            shell_history_index: None,
-            session_dir: None,
-            needs_full_redraw: false,
+            current_provider: "local".to_string(),
             mcp_servers: Vec::new(),
-            deferred_messages: VecDeque::new(),
             available_models: Vec::new(),
             model_list_state: ModelListState::NotLoaded,
-            show_thinking: true,
-            runtime_config: RuntimeConfig::empty(),
-            current_provider: "local".to_string(),
+
+            // UI Chrome
+            input: InputBuffer::new(),
+            popup: PopupState::default(),
             notification_area: NotificationArea::new(),
             interaction_modal: None,
+            shell_modal: None,
+            spinner_frame: 0,
+            needs_full_redraw: false,
+            show_thinking: true,
+            terminal_size: Cell::new((80, 24)),
+            error: None,
             permission_queue: VecDeque::new(),
             perm_show_diff: true,
             perm_autoconfirm_session: false,
-            terminal_size: Cell::new((80, 24)),
+            deferred_messages: VecDeque::new(),
+            message_counter: 0,
+            last_ctrl_c: None,
+            attached_context: Vec::new(),
+
+            // I/O / Lifecycle
+            on_submit: None,
+            session_dir: None,
+            shell_history: VecDeque::with_capacity(MAX_SHELL_HISTORY),
+            shell_history_index: None,
+            runtime_config: RuntimeConfig::empty(),
+            workspace_files: Vec::new(),
+            kiln_notes: Vec::new(),
         }
     }
 }
@@ -533,8 +589,8 @@ impl App for OilChatApp {
             ChatAppMsg::ModelsLoaded(models) => {
                 self.available_models = models;
                 self.model_list_state = ModelListState::Loaded;
-                if self.popup_kind == AutocompleteKind::Model && self.show_popup {
-                    self.popup_selected = 0;
+                if self.popup.kind == AutocompleteKind::Model && self.popup.show {
+                    self.popup.selected = 0;
                 }
                 Action::Continue
             }
@@ -783,12 +839,12 @@ impl OilChatApp {
 
     #[cfg(test)]
     pub fn is_popup_visible(&self) -> bool {
-        self.show_popup
+        self.popup.show
     }
 
     #[cfg(test)]
     pub fn current_popup_filter(&self) -> &str {
-        &self.popup_filter
+        &self.popup.filter
     }
 
     #[cfg(test)]
@@ -885,7 +941,7 @@ impl OilChatApp {
             return Action::Continue;
         }
 
-        if self.show_popup {
+        if self.popup.show {
             return self.handle_popup_key(key);
         }
 
@@ -953,20 +1009,20 @@ impl OilChatApp {
     }
 
     fn toggle_command_palette(&mut self) {
-        if self.show_popup {
+        if self.popup.show {
             self.close_popup();
         } else {
-            self.show_popup = true;
-            self.popup_kind = AutocompleteKind::Command;
-            self.popup_filter.clear();
+            self.popup.show = true;
+            self.popup.kind = AutocompleteKind::Command;
+            self.popup.filter.clear();
         }
-        self.popup_selected = 0;
+        self.popup.selected = 0;
     }
 
     fn close_popup(&mut self) {
-        self.show_popup = false;
-        self.popup_kind = AutocompleteKind::None;
-        self.popup_filter.clear();
+        self.popup.show = false;
+        self.popup.kind = AutocompleteKind::None;
+        self.popup.filter.clear();
     }
 
     fn check_autocomplete_trigger(&mut self) -> Option<Action<ChatAppMsg>> {
@@ -977,20 +1033,20 @@ impl OilChatApp {
             let needs_model_fetch = kind == AutocompleteKind::Model
                 && self.model_list_state == ModelListState::NotLoaded;
 
-            self.popup_kind = kind;
-            self.popup_trigger_pos = trigger_pos;
-            self.popup_filter = filter;
-            self.popup_selected = 0;
-            self.show_popup = !self.get_popup_items().is_empty();
+            self.popup.kind = kind;
+            self.popup.trigger_pos = trigger_pos;
+            self.popup.filter = filter;
+            self.popup.selected = 0;
+            self.popup.show = !self.get_popup_items().is_empty();
 
             if needs_model_fetch {
-                self.show_popup = true;
+                self.popup.show = true;
                 return Some(Action::Send(ChatAppMsg::FetchModels));
             }
-        } else if self.popup_kind != AutocompleteKind::None {
-            self.popup_kind = AutocompleteKind::None;
-            self.popup_filter.clear();
-            self.show_popup = false;
+        } else if self.popup.kind != AutocompleteKind::None {
+            self.popup.kind = AutocompleteKind::None;
+            self.popup.filter.clear();
+            self.popup.show = false;
         }
         None
     }
@@ -1154,17 +1210,17 @@ impl OilChatApp {
                 self.close_popup();
             }
             KeyCode::Up => {
-                self.popup_selected = self.popup_selected.saturating_sub(1);
+                self.popup.selected = self.popup.selected.saturating_sub(1);
             }
             KeyCode::Down => {
                 let max = self.get_popup_items().len().saturating_sub(1);
-                self.popup_selected = (self.popup_selected + 1).min(max);
+                self.popup.selected = (self.popup.selected + 1).min(max);
             }
             KeyCode::Enter | KeyCode::Tab => {
                 return self.select_popup_item();
             }
             KeyCode::Backspace => {
-                if self.popup_filter.is_empty() {
+                if self.popup.filter.is_empty() {
                     self.close_popup();
                 }
                 self.input.handle(InputAction::Backspace);
@@ -1184,12 +1240,12 @@ impl OilChatApp {
 
     fn select_popup_item(&mut self) -> Action<ChatAppMsg> {
         let items = self.get_popup_items();
-        let Some(item) = items.get(self.popup_selected) else {
+        let Some(item) = items.get(self.popup.selected) else {
             return Action::Continue;
         };
 
         let label = item.label.clone();
-        let kind = self.popup_kind.clone();
+        let kind = self.popup.kind.clone();
         self.insert_autocomplete_selection(&label);
 
         match kind {
@@ -1298,10 +1354,10 @@ impl OilChatApp {
                 Action::Continue
             }
             "palette" | "commands" => {
-                self.show_popup = true;
-                self.popup_kind = AutocompleteKind::Command;
-                self.popup_filter.clear();
-                self.popup_selected = 0;
+                self.popup.show = true;
+                self.popup.kind = AutocompleteKind::Command;
+                self.popup.filter.clear();
+                self.popup.selected = 0;
                 Action::Continue
             }
             "mcp" => {
@@ -1310,11 +1366,11 @@ impl OilChatApp {
             }
             "model" => {
                 if self.model_list_state == ModelListState::NotLoaded {
-                    self.show_popup = true;
-                    self.popup_kind = AutocompleteKind::Model;
-                    self.popup_filter.clear();
-                    self.popup_selected = 0;
-                    self.popup_trigger_pos = 0;
+                    self.popup.show = true;
+                    self.popup.kind = AutocompleteKind::Model;
+                    self.popup.filter.clear();
+                    self.popup.selected = 0;
+                    self.popup.trigger_pos = 0;
                     return Action::Send(ChatAppMsg::FetchModels);
                 }
                 if self.available_models.is_empty() {
@@ -1322,11 +1378,11 @@ impl OilChatApp {
                         "No models available. Type :model <name> to switch.".to_string(),
                     );
                 } else {
-                    self.show_popup = true;
-                    self.popup_kind = AutocompleteKind::Model;
-                    self.popup_filter.clear();
-                    self.popup_selected = 0;
-                    self.popup_trigger_pos = 0;
+                    self.popup.show = true;
+                    self.popup.kind = AutocompleteKind::Model;
+                    self.popup.filter.clear();
+                    self.popup.selected = 0;
+                    self.popup.trigger_pos = 0;
                 }
                 Action::Continue
             }
@@ -2108,19 +2164,19 @@ impl OilChatApp {
         use crate::tui::oil::components::{InputComponent, InputMode as ComponentInputMode};
 
         let input_mode = ComponentInputMode::from_content(self.input.content());
-        let is_focused = !self.show_popup || ctx.is_focused(FOCUS_INPUT);
+        let is_focused = !self.popup.show || ctx.is_focused(FOCUS_INPUT);
 
         InputComponent::new(self.input.content(), self.input.cursor(), terminal_width())
             .mode(input_mode)
             .focused(is_focused)
-            .show_popup(self.show_popup)
+            .show_popup(self.popup.show)
             .view(ctx)
     }
 
     fn get_popup_items(&self) -> Vec<PopupItemNode> {
-        let filter = self.popup_filter.to_lowercase();
+        let filter = self.popup.filter.to_lowercase();
 
-        match self.popup_kind {
+        match self.popup.kind {
             AutocompleteKind::File => {
                 Self::filter_to_popup_items(&self.workspace_files, &filter, "file", 15)
             }
@@ -2296,12 +2352,12 @@ impl OilChatApp {
     }
 
     fn render_popup_overlay(&self, ctx: &ViewContext<'_>) -> Node {
-        let show = self.show_popup && self.popup_kind != AutocompleteKind::None;
+        let show = self.popup.show && self.popup.kind != AutocompleteKind::None;
         let items = if show { self.get_popup_items() } else { vec![] };
 
         let popup = PopupComponent::new(items)
             .visible(show)
-            .selected(self.popup_selected)
+            .selected(self.popup.selected)
             .input_height(self.calculate_input_height())
             .max_visible(POPUP_HEIGHT);
 
@@ -2323,7 +2379,7 @@ impl OilChatApp {
     }
 
     fn insert_autocomplete_selection(&mut self, label: &str) {
-        match &self.popup_kind {
+        match &self.popup.kind {
             AutocompleteKind::File => {
                 self.replace_at_trigger(format!("@{} ", label));
                 self.add_context_if_new(format!("@{}", label));
@@ -2359,7 +2415,7 @@ impl OilChatApp {
 
     fn replace_at_trigger(&mut self, replacement: String) {
         let content = self.input.content().to_string();
-        let trigger_pos = self.popup_trigger_pos;
+        let trigger_pos = self.popup.trigger_pos;
         let prefix = &content[..trigger_pos];
         let suffix = &content[self.input.cursor()..];
         let new_content = format!("{}{}{}", prefix, replacement, suffix);
