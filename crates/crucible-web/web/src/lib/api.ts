@@ -75,6 +75,21 @@ export async function sendChatMessage(
   }
 }
 
+export async function respondToInteraction(
+  requestId: string,
+  response: unknown
+): Promise<void> {
+  const res = await fetch('/api/interaction/respond', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ request_id: requestId, response }),
+  });
+
+  if (!res.ok) {
+    throw new Error(`Failed to respond: HTTP ${res.status}`);
+  }
+}
+
 export function generateMessageId(): string {
   return `msg_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
 }

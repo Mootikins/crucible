@@ -123,4 +123,13 @@ impl ChatService {
 
         Ok(())
     }
+
+    pub async fn submit_interaction_response(
+        &self,
+        request_id: String,
+        response: serde_json::Value,
+    ) {
+        tracing::info!(%request_id, ?response, "Interaction response received");
+        // TODO: Route to ACP agent when interaction support is added
+    }
 }

@@ -12,7 +12,7 @@ import type {
   InteractionRequest,
   InteractionResponse,
 } from '@/lib/types';
-import { sendChatMessage, generateMessageId } from '@/lib/api';
+import { sendChatMessage, generateMessageId, respondToInteraction as apiRespondToInteraction } from '@/lib/api';
 
 const ChatContext = createContext<ChatContextValue>();
 
@@ -78,6 +78,12 @@ export const ChatProvider: ParentComponent = (props) => {
           content: `Error: ${event.message} (${event.code})`,
         });
         break;
+
+      case 'interaction_requested': {
+        const request = event as unknown as InteractionRequest;
+        setPendingInteraction(request);
+        break;
+      }
     }
   };
 
@@ -118,13 +124,17 @@ export const ChatProvider: ParentComponent = (props) => {
     setMessages([]);
   };
 
-  const respondToInteraction = (response: InteractionResponse) => {
+  const respondToInteraction = async (response: InteractionResponse) => {
     const request = pendingInteraction();
     if (!request) return;
 
-    console.log('[InteractionResponse]', request.id, response);
     setPendingInteraction(null);
-    // TODO: Send response to backend when endpoint exists
+
+    try {
+      await apiRespondToInteraction(request.id, response);
+    } catch (error) {
+      console.error('Failed to send interaction response:', error);
+    }
   };
 
   const value: ChatContextValue = {
