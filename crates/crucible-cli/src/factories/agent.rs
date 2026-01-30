@@ -542,7 +542,12 @@ pub async fn create_daemon_agent(
     let (session_id, is_new_session) = match &params.resume_session_id {
         Some(id) if !id.is_empty() => {
             info!("Resuming specific daemon session: {}", id);
-            client.session_resume(id).await?;
+            match client.session_resume(id).await {
+                Ok(_) => {}
+                Err(e) => {
+                    info!("Session resume skipped (may already be active): {}", e);
+                }
+            }
             (id.clone(), false)
         }
         Some(_) => {
