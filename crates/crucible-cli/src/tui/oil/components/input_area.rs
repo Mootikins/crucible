@@ -1,7 +1,7 @@
 use crate::tui::oil::component::Component;
 use crate::tui::oil::node::Node;
 use crate::tui::oil::style::Color;
-use crate::tui::oil::theme::colors;
+use crate::tui::oil::theme::ThemeTokens;
 use crate::tui::oil::ViewContext;
 use crucible_oil::InputStyle;
 
@@ -20,10 +20,11 @@ pub enum InputMode {
 
 impl InputMode {
     pub fn bg_color(&self) -> Color {
+        let theme = ThemeTokens::default_ref();
         match self {
-            InputMode::Normal => colors::INPUT_BG,
-            InputMode::Command => colors::COMMAND_BG,
-            InputMode::Shell => colors::SHELL_BG,
+            InputMode::Normal => theme.input_bg,
+            InputMode::Command => theme.command_bg,
+            InputMode::Shell => theme.shell_bg,
         }
     }
 

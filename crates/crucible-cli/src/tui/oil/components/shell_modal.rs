@@ -1,6 +1,6 @@
 use crate::tui::oil::node::{col, row, spacer, styled, text, Node};
 use crate::tui::oil::style::{Color, Style};
-use crate::tui::oil::theme::colors;
+use crate::tui::oil::theme::ThemeTokens;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use std::io::BufRead;
 use std::path::PathBuf;
@@ -354,8 +354,9 @@ impl ShellModal {
     pub fn view(&self, term_width: usize, term_height: usize) -> Node {
         let content_height = term_height.saturating_sub(2);
 
-        let header_bg = colors::POPUP_BG;
-        let footer_bg = colors::INPUT_BG;
+        let theme = ThemeTokens::default_ref();
+        let header_bg = theme.popup_bg;
+        let footer_bg = theme.input_bg;
 
         let header_text = format!(" {} ", self.format_header());
         let header_padding = " ".repeat(term_width.saturating_sub(header_text.len()));
@@ -375,9 +376,10 @@ impl ShellModal {
 
     fn render_footer(&self, width: usize, bg: Color) -> Node {
         let line_info = format!("({} lines)", self.output_lines.len());
-        let key_style = Style::new().bg(bg).fg(colors::TEXT_ACCENT);
-        let sep_style = Style::new().bg(bg).fg(colors::TEXT_MUTED);
-        let text_style = Style::new().bg(bg).fg(colors::TEXT_PRIMARY).dim();
+        let theme = ThemeTokens::default_ref();
+        let key_style = Style::new().bg(bg).fg(theme.text_accent);
+        let sep_style = Style::new().bg(bg).fg(theme.text_muted);
+        let text_style = Style::new().bg(bg).fg(theme.text_primary).dim();
 
         let content = if self.is_running() {
             row([

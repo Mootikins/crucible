@@ -1,6 +1,6 @@
 use crate::tui::oil::node::{col, row, styled, Node};
 use crate::tui::oil::style::Style;
-use crate::tui::oil::theme::styles;
+use crate::tui::oil::theme::ThemeTokens;
 use crate::tui::oil::utils::truncate_to_chars;
 use similar::{ChangeTag, TextDiff};
 
@@ -21,10 +21,11 @@ pub fn diff_to_node_width(
     let diff = TextDiff::from_lines(old, new);
     let mut nodes: Vec<Node> = Vec::new();
 
-    let delete_style = styles::diff_delete();
-    let insert_style = styles::diff_insert();
-    let context_style = styles::diff_context();
-    let hunk_header_style = styles::diff_hunk_header();
+    let theme = ThemeTokens::default_ref();
+    let delete_style = theme.diff_delete();
+    let insert_style = theme.diff_insert();
+    let context_style = theme.diff_context();
+    let hunk_header_style = theme.diff_hunk_header();
 
     let mut in_hunk = false;
     let mut hunk_lines: Vec<Node> = Vec::new();
@@ -59,7 +60,9 @@ pub fn diff_to_node_width(
                     for (_, ctx_line) in &context_buffer {
                         let line = format!(" {}", ctx_line);
                         let display = match max_width {
-                            Some(w) => truncate_to_chars(&line, w.saturating_sub(1), true).into_owned(),
+                            Some(w) => {
+                                truncate_to_chars(&line, w.saturating_sub(1), true).into_owned()
+                            }
                             None => line,
                         };
                         hunk_lines.push(styled(display, context_style));
@@ -68,7 +71,9 @@ pub fn diff_to_node_width(
                     for (_, ctx_line) in pending_context.drain(..) {
                         let line = format!(" {}", ctx_line);
                         let display = match max_width {
-                            Some(w) => truncate_to_chars(&line, w.saturating_sub(1), true).into_owned(),
+                            Some(w) => {
+                                truncate_to_chars(&line, w.saturating_sub(1), true).into_owned()
+                            }
                             None => line,
                         };
                         hunk_lines.push(styled(display, context_style));
@@ -111,8 +116,9 @@ pub fn diff_to_node_with_word_highlight(old: &str, new: &str) -> Node {
     let line_diff = TextDiff::from_lines(old, new);
     let mut nodes: Vec<Node> = Vec::new();
 
-    let delete_style = styles::diff_delete();
-    let insert_style = styles::diff_insert();
+    let theme = ThemeTokens::default_ref();
+    let delete_style = theme.diff_delete();
+    let insert_style = theme.diff_insert();
 
     for change in line_diff.iter_all_changes() {
         let line_content = change.value().trim_end_matches('\n');

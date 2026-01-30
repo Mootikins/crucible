@@ -351,9 +351,13 @@ fn render_tool_group(tools: &[CachedToolCall], spinner_frame: usize) -> Node {
 /// Render a system message.
 fn render_system_message(content: &str) -> Node {
     use crate::tui::oil::node::styled;
-    use crate::tui::oil::theme::styles;
+    use crate::tui::oil::theme::ThemeTokens;
 
-    styled(format!(" * {} ", content), styles::system_message()).with_margin(Padding {
+    styled(
+        format!(" * {} ", content),
+        ThemeTokens::default_ref().system_message(),
+    )
+    .with_margin(Padding {
         top: 1,
         ..Default::default()
     })
@@ -644,7 +648,10 @@ impl ContainerList {
         let can_append = if !self.containers.is_empty() {
             let last_idx = self.containers.len() - 1;
             let in_viewport = last_idx >= self.viewport_start;
-            let is_tool_group = matches!(self.containers.last(), Some(ChatContainer::ToolGroup { .. }));
+            let is_tool_group = matches!(
+                self.containers.last(),
+                Some(ChatContainer::ToolGroup { .. })
+            );
             in_viewport && is_tool_group
         } else {
             false
@@ -678,9 +685,7 @@ impl ContainerList {
         if let Some(cid) = call_id {
             for container in self.containers.iter_mut().rev() {
                 if let ChatContainer::ToolGroup { tools, .. } = container {
-                    if let Some(tool) = tools
-                        .iter_mut()
-                        .find(|t| t.call_id.as_deref() == Some(cid))
+                    if let Some(tool) = tools.iter_mut().find(|t| t.call_id.as_deref() == Some(cid))
                     {
                         f(tool);
                         return;
@@ -935,8 +940,7 @@ impl ContainerList {
                         }
                         let result_str = tool.result();
                         if !result_str.is_empty() {
-                            let _ =
-                                writeln!(output, "**Result:**\n```\n{}\n```\n", result_str);
+                            let _ = writeln!(output, "**Result:**\n```\n{}\n```\n", result_str);
                         }
                     }
                 }
@@ -1068,10 +1072,7 @@ mod tests {
         );
 
         list.complete_response();
-        assert!(
-            list.is_response_complete(1),
-            "Turn ended => complete"
-        );
+        assert!(list.is_response_complete(1), "Turn ended => complete");
     }
 
     #[test]
@@ -1274,15 +1275,17 @@ mod tests {
         app.on_message(ChatAppMsg::ToolCall {
             name: "___".to_string(),
             args: r#"{"query": "test"}"#.to_string(),
-                call_id: None,
+            call_id: None,
         });
         app.on_message(ChatAppMsg::ToolResultDelta {
             name: "___".to_string(),
             delta: "result".to_string(),
-                call_id: None,
+            call_id: None,
         });
-        app.on_message(ChatAppMsg::ToolResultComplete { name: "___".to_string(),
-                call_id: None });
+        app.on_message(ChatAppMsg::ToolResultComplete {
+            name: "___".to_string(),
+            call_id: None,
+        });
         app.on_message(ChatAppMsg::TextDelta("after text".to_string()));
         app.on_message(ChatAppMsg::StreamComplete);
 
@@ -1355,15 +1358,8 @@ mod tests {
                     ChatContainer::UserMessage { id, content } => {
                         eprintln!("{}: User({}): {:.30}", i, id, content);
                     }
-                    ChatContainer::AssistantResponse {
-                        id,
-                        blocks,
-                        ..
-                    } => {
-                        eprintln!(
-                            "{}: Asst({}): {:?}",
-                            i, id, blocks
-                        );
+                    ChatContainer::AssistantResponse { id, blocks, .. } => {
+                        eprintln!("{}: Asst({}): {:?}", i, id, blocks);
                     }
                     ChatContainer::ToolGroup { id, tools } => {
                         for t in tools {
@@ -1386,15 +1382,8 @@ mod tests {
                 ChatContainer::UserMessage { id, content } => {
                     eprintln!("{}: User({}): {:.30}", i, id, content);
                 }
-                ChatContainer::AssistantResponse {
-                    id,
-                    blocks,
-                    ..
-                } => {
-                    eprintln!(
-                        "{}: Asst({}): {:?}",
-                        i, id, blocks
-                    );
+                ChatContainer::AssistantResponse { id, blocks, .. } => {
+                    eprintln!("{}: Asst({}): {:?}", i, id, blocks);
                 }
                 ChatContainer::ToolGroup { id, tools } => {
                     for t in tools {
@@ -1455,8 +1444,7 @@ mod tests {
     #[test]
     fn test_shell_execution() {
         let mut list = ContainerList::new();
-        let shell =
-            CachedShellExecution::new("s1", "ls -la", 0, vec!["file.rs".to_string()], None);
+        let shell = CachedShellExecution::new("s1", "ls -la", 0, vec!["file.rs".to_string()], None);
         list.add_shell_execution(shell);
 
         assert_eq!(list.len(), 1);
@@ -1499,7 +1487,12 @@ mod tests {
 
         if let Some(ChatContainer::AssistantResponse { blocks, .. }) = list.containers.last() {
             // All list items should be in one block
-            assert_eq!(blocks.len(), 1, "List items should not be split: {:?}", blocks);
+            assert_eq!(
+                blocks.len(),
+                1,
+                "List items should not be split: {:?}",
+                blocks
+            );
             assert!(blocks[0].contains("1. First item"));
             assert!(blocks[0].contains("2. Second item"));
             assert!(blocks[0].contains("3. Third item"));
@@ -1518,7 +1511,12 @@ mod tests {
 
         if let Some(ChatContainer::AssistantResponse { blocks, .. }) = list.containers.last() {
             // All list items should be merged into one block
-            assert_eq!(blocks.len(), 1, "Streamed list items should merge: {:?}", blocks);
+            assert_eq!(
+                blocks.len(),
+                1,
+                "Streamed list items should merge: {:?}",
+                blocks
+            );
             assert!(blocks[0].contains("1. First item"));
             assert!(blocks[0].contains("2. Second item"));
             assert!(blocks[0].contains("3. Third item"));
@@ -1535,7 +1533,12 @@ mod tests {
 
         if let Some(ChatContainer::AssistantResponse { blocks, .. }) = list.containers.last() {
             // List items in one block, paragraph in another
-            assert_eq!(blocks.len(), 2, "Paragraph should be separate: {:?}", blocks);
+            assert_eq!(
+                blocks.len(),
+                2,
+                "Paragraph should be separate: {:?}",
+                blocks
+            );
             assert!(blocks[0].contains("1. First item"));
             assert!(blocks[0].contains("2. Second item"));
             assert_eq!(blocks[1], "Some paragraph after the list");
@@ -1557,7 +1560,9 @@ mod tests {
     #[test]
     fn test_ends_with_ordered_list_item() {
         assert!(super::ends_with_ordered_list_item("1. First item"));
-        assert!(super::ends_with_ordered_list_item("Some text\n2. Second item"));
+        assert!(super::ends_with_ordered_list_item(
+            "Some text\n2. Second item"
+        ));
         assert!(!super::ends_with_ordered_list_item("Just text"));
         assert!(!super::ends_with_ordered_list_item(""));
     }

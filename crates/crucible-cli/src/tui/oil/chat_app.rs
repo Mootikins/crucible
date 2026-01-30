@@ -14,7 +14,7 @@ use crate::tui::oil::markdown::{
 };
 use crate::tui::oil::node::*;
 use crate::tui::oil::style::{Color, Gap, Padding, Style};
-use crate::tui::oil::theme::{colors, styles};
+use crate::tui::oil::theme::ThemeTokens;
 use crate::tui::oil::utils::terminal_width;
 use crate::tui::oil::viewport_cache::{CachedShellExecution, CachedSubagent, CachedToolCall};
 use crossterm::event::KeyCode;
@@ -204,10 +204,11 @@ pub enum InputMode {
 
 impl InputMode {
     pub fn bg_color(&self) -> Color {
+        let theme = ThemeTokens::default_ref();
         match self {
-            InputMode::Normal => colors::INPUT_BG,
-            InputMode::Command => colors::COMMAND_BG,
-            InputMode::Shell => colors::SHELL_BG,
+            InputMode::Normal => theme.input_bg,
+            InputMode::Command => theme.command_bg,
+            InputMode::Shell => theme.shell_bg,
         }
     }
 
@@ -418,7 +419,11 @@ impl App for OilChatApp {
                 self.container_list.append_thinking(&delta);
                 Action::Continue
             }
-            ChatAppMsg::ToolCall { name, args, call_id } => {
+            ChatAppMsg::ToolCall {
+                name,
+                args,
+                call_id,
+            } => {
                 if !self.container_list.is_streaming() {
                     self.container_list.mark_turn_active();
                 }
@@ -436,32 +441,43 @@ impl App for OilChatApp {
                 self.container_list.add_tool_call(tool);
                 Action::Continue
             }
-            ChatAppMsg::ToolResultDelta { name, delta, call_id } => {
+            ChatAppMsg::ToolResultDelta {
+                name,
+                delta,
+                call_id,
+            } => {
                 tracing::debug!(
                     tool_name = %name,
                     ?call_id,
                     delta_len = delta.len(),
                     "Received ToolResultDelta"
                 );
-                self.container_list.update_tool(&name, call_id.as_deref(), |t| {
-                    t.append_output(&delta);
-                });
+                self.container_list
+                    .update_tool(&name, call_id.as_deref(), |t| {
+                        t.append_output(&delta);
+                    });
                 self.maybe_spill_tool_output(&name);
                 Action::Continue
             }
             ChatAppMsg::ToolResultComplete { name, call_id } => {
                 tracing::debug!(tool_name = %name, ?call_id, "Received ToolResultComplete");
                 self.maybe_spill_tool_output(&name);
-                self.container_list.update_tool(&name, call_id.as_deref(), |t| {
-                    t.mark_complete();
-                });
+                self.container_list
+                    .update_tool(&name, call_id.as_deref(), |t| {
+                        t.mark_complete();
+                    });
                 Action::Continue
             }
-            ChatAppMsg::ToolResultError { name, error, call_id } => {
+            ChatAppMsg::ToolResultError {
+                name,
+                error,
+                call_id,
+            } => {
                 tracing::debug!(tool_name = %name, ?call_id, error = %error, "Received ToolResultError");
-                self.container_list.update_tool(&name, call_id.as_deref(), |t| {
-                    t.set_error(error);
-                });
+                self.container_list
+                    .update_tool(&name, call_id.as_deref(), |t| {
+                        t.set_error(error);
+                    });
                 Action::Continue
             }
             ChatAppMsg::StreamComplete => {
@@ -658,8 +674,9 @@ impl OilChatApp {
         use crate::tui::oil::components::status_bar::NotificationToastKind;
         use crate::tui::oil::node::{row, styled};
         use crate::tui::oil::style::Style;
-        use crate::tui::oil::theme::{colors, styles};
+        use crate::tui::oil::theme::ThemeTokens;
 
+        let theme = ThemeTokens::default_ref();
         let term_width = terminal_width();
 
         let content_rows: Vec<Node> = self
@@ -689,9 +706,9 @@ impl OilChatApp {
                     }
                 };
 
-                let bg = colors::INPUT_BG;
-                let text_style = Style::new().bg(bg).fg(colors::OVERLAY_TEXT);
-                let badge_style = styles::notification_badge(badge_kind.color());
+                let bg = theme.input_bg;
+                let text_style = Style::new().bg(bg).fg(theme.overlay_text);
+                let badge_style = theme.notification_badge(badge_kind.color());
 
                 let timestamp_part = format!(" {}: ", timestamp);
                 let message_part = format!(" {}", notif.message);
@@ -2084,7 +2101,10 @@ impl OilChatApp {
 
     fn render_error(&self) -> Node {
         maybe(self.error.clone(), |err| {
-            styled(format!("Error: {}", err), styles::error())
+            styled(
+                format!("Error: {}", err),
+                ThemeTokens::default_ref().error_style(),
+            )
         })
     }
 
@@ -2497,7 +2517,6 @@ impl OilChatApp {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2584,7 +2603,7 @@ mod tests {
         app.on_message(ChatAppMsg::ToolResultDelta {
             name: "Read".to_string(),
             delta: "line 1\n".to_string(),
-                call_id: None,
+            call_id: None,
         });
         let tool = app.container_list().find_tool("Read").unwrap();
         assert_eq!(tool.result(), "line 1");
@@ -2592,13 +2611,15 @@ mod tests {
         app.on_message(ChatAppMsg::ToolResultDelta {
             name: "Read".to_string(),
             delta: "line 2\n".to_string(),
-                call_id: None,
+            call_id: None,
         });
         let tool = app.container_list().find_tool("Read").unwrap();
         assert_eq!(tool.result(), "line 1\nline 2");
 
-        app.on_message(ChatAppMsg::ToolResultComplete { name: "Read".to_string(),
-                call_id: None });
+        app.on_message(ChatAppMsg::ToolResultComplete {
+            name: "Read".to_string(),
+            call_id: None,
+        });
         let tool = app.container_list().find_tool("Read").unwrap();
         assert!(tool.complete);
     }
@@ -2698,7 +2719,7 @@ mod tests {
         app.on_message(ChatAppMsg::ToolResultDelta {
             name: "read_file".to_string(),
             delta: "# README\nThis is the content.".to_string(),
-                call_id: None,
+            call_id: None,
         });
 
         let node = app.view(&ctx);
@@ -2708,8 +2729,10 @@ mod tests {
             "should show streaming output while running"
         );
 
-        app.on_message(ChatAppMsg::ToolResultComplete { name: "read_file".to_string(),
-                call_id: None });
+        app.on_message(ChatAppMsg::ToolResultComplete {
+            name: "read_file".to_string(),
+            call_id: None,
+        });
 
         let node = app.view(&ctx);
         let output = render_to_string(&node, 80);

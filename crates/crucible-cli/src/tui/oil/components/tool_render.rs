@@ -3,11 +3,9 @@
 //! Renders tool call states: running (with spinner), complete (with result summary),
 //! and error (with error message).
 
-use crate::tui::oil::node::{
-    col, row, spinner_with_frames, styled, Node, BRAILLE_SPINNER_FRAMES,
-};
+use crate::tui::oil::node::{col, row, spinner_with_frames, styled, Node, BRAILLE_SPINNER_FRAMES};
 use crate::tui::oil::style::Style;
-use crate::tui::oil::theme::{colors, styles};
+use crate::tui::oil::theme::ThemeTokens;
 use crate::tui::oil::utils::{terminal_width, truncate_first_line, truncate_to_chars};
 use crate::tui::oil::viewport_cache::CachedToolCall;
 use std::time::Duration;
@@ -46,13 +44,14 @@ fn render_tool_error(
     args_formatted: &str,
     error: &str,
 ) -> Node {
+    let theme = ThemeTokens::default_ref();
     row([
-        styled(" ✗ ", Style::new().fg(colors::ERROR)),
-        styled(display_name, Style::new().fg(colors::TEXT_DIM)),
-        styled(format!("({}) ", args_formatted), styles::dim()),
+        styled(" ✗ ", Style::new().fg(theme.error)),
+        styled(display_name, Style::new().fg(theme.text_dim)),
+        styled(format!("({}) ", args_formatted), theme.dim()),
         styled(
             format!("→ {}", truncate_first_line(error, 50, true)),
-            styles::error(),
+            theme.error_style(),
         ),
     ])
 }
@@ -72,23 +71,24 @@ fn render_tool_complete(
     let collapsed = collapse_result(&tool.name, result_str, result_summary.as_deref());
     let has_arrow_suffix = tool.output_path.is_some() || collapsed.is_some();
 
+    let theme = ThemeTokens::default_ref();
     let arrow_suffix = if let Some(ref path) = tool.output_path {
-        styled(format!("→ {}", path.display()), styles::muted())
+        styled(format!("→ {}", path.display()), theme.muted())
     } else if let Some(ref s) = collapsed {
-        styled(format!("→ {}", s), styles::muted())
+        styled(format!("→ {}", s), theme.muted())
     } else {
         Node::Empty
     };
 
     let header = row([
-        styled(" ✓ ", Style::new().fg(colors::SUCCESS)),
-        styled(display_name, Style::new().fg(colors::TEXT_DIM)),
+        styled(" ✓ ", Style::new().fg(theme.success)),
+        styled(display_name, Style::new().fg(theme.text_dim)),
         if args_formatted.is_empty() {
             Node::Empty
         } else if has_arrow_suffix {
-            styled(format!("({}) ", args_formatted), styles::dim())
+            styled(format!("({}) ", args_formatted), theme.dim())
         } else {
-            styled(format!("({})", args_formatted), styles::dim())
+            styled(format!("({})", args_formatted), theme.dim())
         },
         arrow_suffix,
     ]);
@@ -116,18 +116,19 @@ fn render_tool_running(
     let elapsed = tool.elapsed();
     let show_elapsed = elapsed >= Duration::from_secs(2);
 
+    let theme = ThemeTokens::default_ref();
     let header = row([
         styled(" ", Style::new()),
         spinner_with_frames(
             spinner_frame,
-            Style::new().fg(colors::TEXT_DIM),
+            Style::new().fg(theme.text_dim),
             BRAILLE_SPINNER_FRAMES,
         ),
         styled(" ", Style::new()),
-        styled(display_name, Style::new().fg(colors::TEXT_DIM)),
-        styled(format!("({})", args_formatted), styles::dim()),
+        styled(display_name, Style::new().fg(theme.text_dim)),
+        styled(format!("({})", args_formatted), theme.dim()),
         if show_elapsed {
-            styled(format!("  {}", format_elapsed(elapsed)), styles::dim())
+            styled(format!("  {}", format_elapsed(elapsed)), theme.dim())
         } else {
             Node::Empty
         },
@@ -230,7 +231,10 @@ pub fn format_tool_args(args: &str) -> String {
 /// Format tool result for display.
 pub fn format_tool_result(name: &str, result: &str) -> Node {
     if let Some(summary) = summarize_tool_result(name, result) {
-        return styled(format!("   {}", summary), styles::muted());
+        return styled(
+            format!("   {}", summary),
+            ThemeTokens::default_ref().muted(),
+        );
     }
     let inner = unwrap_json_result(result);
     format_output_tail(&inner, "   ")
@@ -282,7 +286,7 @@ pub fn format_output_tail(output: &str, prefix: &str) -> Node {
     col(std::iter::once(if hidden_count > 0 {
         styled(
             format!("{}({} more lines)", bar_prefix, hidden_count),
-            styles::tool_result(),
+            ThemeTokens::default_ref().tool_result(),
         )
     } else {
         Node::Empty
@@ -293,7 +297,7 @@ pub fn format_output_tail(output: &str, prefix: &str) -> Node {
         } else {
             format!("{}{}", bar_prefix, line)
         };
-        styled(display, styles::tool_result())
+        styled(display, ThemeTokens::default_ref().tool_result())
     })))
 }
 

@@ -2,7 +2,7 @@ use crate::tui::oil::chat_app::ChatMode;
 use crate::tui::oil::component::Component;
 use crate::tui::oil::node::{row, spacer, styled, Node};
 use crate::tui::oil::style::{Color, Style};
-use crate::tui::oil::theme::{colors, styles};
+use crate::tui::oil::theme::ThemeTokens;
 use crate::tui::oil::utils::truncate_to_chars;
 use crate::tui::oil::ViewContext;
 
@@ -15,10 +15,11 @@ pub enum NotificationToastKind {
 
 impl NotificationToastKind {
     pub fn color(&self) -> Color {
+        let theme = ThemeTokens::default_ref();
         match self {
-            NotificationToastKind::Info => colors::INFO,
-            NotificationToastKind::Warning => colors::WARNING,
-            NotificationToastKind::Error => colors::ERROR,
+            NotificationToastKind::Info => theme.info,
+            NotificationToastKind::Warning => theme.warning,
+            NotificationToastKind::Error => theme.error,
         }
     }
 
@@ -79,10 +80,11 @@ impl StatusBar {
     }
 
     fn mode_style(&self) -> Style {
+        let theme = ThemeTokens::default_ref();
         match self.mode {
-            ChatMode::Normal => styles::mode_normal(),
-            ChatMode::Plan => styles::mode_plan(),
-            ChatMode::Auto => styles::mode_auto(),
+            ChatMode::Normal => theme.mode_normal_style(),
+            ChatMode::Plan => theme.mode_plan_style(),
+            ChatMode::Auto => theme.mode_auto_style(),
         }
     }
 
@@ -117,33 +119,34 @@ impl StatusBar {
 
 impl Component for StatusBar {
     fn view(&self, _ctx: &ViewContext<'_>) -> Node {
+        let theme = ThemeTokens::default_ref();
         let mut items = vec![
             styled(self.mode_label().to_string(), self.mode_style()),
-            styled(" ".to_string(), styles::muted()),
-            styled(self.model_display(), styles::model_name()),
-            styled(" ".to_string(), styles::muted()),
-            styled(self.context_display(), styles::muted()),
+            styled(" ".to_string(), theme.muted()),
+            styled(self.model_display(), theme.model_name_style()),
+            styled(" ".to_string(), theme.muted()),
+            styled(self.context_display(), theme.muted()),
         ];
 
         if !self.status.is_empty() {
-            items.push(styled(" ".to_string(), styles::muted()));
-            items.push(styled(self.status.clone(), styles::muted()));
+            items.push(styled(" ".to_string(), theme.muted()));
+            items.push(styled(self.status.clone(), theme.muted()));
         }
 
         if let Some((text, kind)) = &self.notification_toast {
             items.push(spacer());
-            items.push(styled(text.clone(), styles::overlay_bright()));
+            items.push(styled(text.clone(), theme.overlay_bright_style()));
             items.push(styled(" ".to_string(), Style::new()));
             items.push(styled(
                 format!(" {} ", kind.label()),
-                styles::notification_badge(kind.color()),
+                theme.notification_badge(kind.color()),
             ));
         } else if !self.notification_counts.is_empty() {
             items.push(spacer());
             for (kind, count) in &self.notification_counts {
                 items.push(styled(
                     format!(" {} ", kind.label()),
-                    styles::notification_badge(kind.color()),
+                    theme.notification_badge(kind.color()),
                 ));
                 items.push(styled(
                     format!(" {} ", count),
