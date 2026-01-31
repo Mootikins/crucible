@@ -28,7 +28,9 @@ use crate::statusline::{parse_statusline_config, StatuslineConfig};
 use mlua::{Lua, Table, Value};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
+
+const DEFAULT_STATUSLINE_LUA: &str = include_str!("defaults/statusline.lua");
 
 /// Global config state - stores parsed configuration from Lua
 #[derive(Debug, Default)]
@@ -176,7 +178,7 @@ pub fn register_statusline_namespace(lua: &Lua, crucible: &Table) -> Result<(), 
     })?;
     statusline.set("spacer", spacer_fn)?;
 
-    // crucible.statusline.notification({ fg = "yellow" })
+    // crucible.statusline.notification({ fg = "yellow", fallback = crucible.statusline.context() })
     let notification_fn = lua.create_function(|lua, config: Option<Table>| {
         let component = lua.create_table()?;
         component.set("type", "notification")?;
@@ -186,6 +188,9 @@ pub fn register_statusline_namespace(lua: &Lua, crucible: &Table) -> Result<(), 
             }
             if let Ok(v) = cfg.get::<Value>("bg") {
                 component.set("bg", v)?;
+            }
+            if let Ok(v) = cfg.get::<Value>("fallback") {
+                component.set("fallback", v)?;
             }
         }
         Ok(component)
@@ -281,6 +286,15 @@ impl ConfigLoader {
 
         // Register crucible.statusline
         register_statusline_namespace(lua, &crucible)?;
+
+        // Load embedded default statusline (user init.lua can override via setup())
+        if let Err(e) = lua
+            .load(DEFAULT_STATUSLINE_LUA)
+            .set_name("[builtin] statusline.lua")
+            .exec()
+        {
+            warn!("Failed to load default statusline: {}", e);
+        }
 
         // Register crucible.include()
         register_include(lua, &crucible, self.config_dir.clone())?;

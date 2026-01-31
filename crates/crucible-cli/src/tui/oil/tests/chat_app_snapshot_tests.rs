@@ -1314,6 +1314,10 @@ mod overlay_snapshots {
     use super::*;
     use crucible_core::types::Notification;
 
+    fn default_statusline_config() -> crucible_lua::statusline::StatuslineConfig {
+        crucible_lua::statusline::StatuslineConfig::builtin_default()
+    }
+
     /// Scenario 4: :messages drawer with notification history
     #[test]
     fn snapshot_messages_drawer_with_history() {
@@ -1346,7 +1350,6 @@ mod overlay_snapshots {
     /// Scenario 7: Recent warnings show as toast; counts show after expiry
     #[test]
     fn snapshot_statusline_warning_counts() {
-        use crate::tui::oil::component::Component;
         use crate::tui::oil::components::status_bar::NotificationToastKind;
         use crate::tui::oil::components::StatusBar;
 
@@ -1357,9 +1360,7 @@ mod overlay_snapshots {
                 (NotificationToastKind::Warning, 3),
                 (NotificationToastKind::Error, 1),
             ]);
-        let focus = crate::tui::oil::focus::FocusContext::default();
-        let ctx = crate::tui::oil::ViewContext::new(&focus);
-        let node = bar.view(&ctx);
+        let node = bar.view_from_config(&default_statusline_config());
         let output = crate::tui::oil::render::render_to_plain_text(&node, 80);
         assert_snapshot!(output);
     }
@@ -1434,7 +1435,6 @@ mod overlay_snapshots {
 
     #[test]
     fn snapshot_raw_statusline_warning_counts() {
-        use crate::tui::oil::component::Component;
         use crate::tui::oil::components::status_bar::NotificationToastKind;
         use crate::tui::oil::components::StatusBar;
 
@@ -1445,9 +1445,7 @@ mod overlay_snapshots {
                 (NotificationToastKind::Warning, 3),
                 (NotificationToastKind::Error, 1),
             ]);
-        let focus = crate::tui::oil::focus::FocusContext::default();
-        let ctx = crate::tui::oil::ViewContext::new(&focus);
-        let node = bar.view(&ctx);
+        let node = bar.view_from_config(&default_statusline_config());
         let output = crate::tui::oil::render::render_to_string(&node, 80);
         assert_snapshot!(output);
     }
