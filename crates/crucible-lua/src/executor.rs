@@ -7,7 +7,9 @@ use crate::ask::register_ask_module;
 use crate::error::LuaError;
 #[cfg(feature = "fennel")]
 use crate::fennel::FennelCompiler;
+use crate::fs::register_fs_module;
 use crate::hooks::register_hooks_module;
+use crate::http::register_http_module;
 use crate::interaction::register_interaction_module;
 use crate::oil::register_oil_module;
 use crate::session_api::{register_session_module, Session, SessionManager};
@@ -200,6 +202,10 @@ end
 
         // Register interaction module for unified interaction bindings
         register_interaction_module(lua)?;
+
+        // Register stateless utility modules
+        register_http_module(lua)?;
+        register_fs_module(lua)?;
 
         Ok(())
     }
@@ -587,5 +593,53 @@ mod tests {
             .unwrap();
 
         assert_eq!(result, "No placeholders");
+    }
+
+    #[test]
+    fn test_http_module_available() {
+        let executor = LuaExecutor::new().unwrap();
+
+        let result: bool = executor
+            .lua()
+            .load(r#"return http ~= nil and type(http.get) == "function""#)
+            .eval()
+            .unwrap();
+
+        assert!(result, "http module should be available with get function");
+    }
+
+    #[test]
+    fn test_fs_module_available() {
+        let executor = LuaExecutor::new().unwrap();
+
+        let result: bool = executor
+            .lua()
+            .load(r#"return fs ~= nil and type(fs.read) == "function""#)
+            .eval()
+            .unwrap();
+
+        assert!(result, "fs module should be available with read function");
+    }
+
+    #[test]
+    fn test_http_and_fs_modules_in_production() {
+        let executor = LuaExecutor::new().unwrap();
+
+        let result: bool = executor
+            .lua()
+            .load(
+                r#"
+                local has_http = http ~= nil and type(http.get) == "function" and type(http.post) == "function"
+                local has_fs = fs ~= nil and type(fs.read) == "function" and type(fs.write) == "function"
+                return has_http and has_fs
+            "#,
+            )
+            .eval()
+            .unwrap();
+
+        assert!(
+            result,
+            "Both http and fs modules should be available in production"
+        );
     }
 }
