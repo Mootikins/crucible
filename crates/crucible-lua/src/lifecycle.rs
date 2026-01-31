@@ -1033,6 +1033,7 @@ fn parse_capability(s: &str) -> Option<Capability> {
         "ui" => Some(Capability::Ui),
         "config" => Some(Capability::Config),
         "system" => Some(Capability::System),
+        "websocket" => Some(Capability::WebSocket),
         _ => None,
     }
 }

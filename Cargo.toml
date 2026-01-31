@@ -105,6 +105,7 @@ markdown-it = "0.6"
 toml = "0.9"
 futures-util = "0.3"
 tokio-stream = "0.1"
+tokio-tungstenite = { version = "0.26", features = ["native-tls"] }
 hostname = "0.4"
 
 # Metrics and monitoring
