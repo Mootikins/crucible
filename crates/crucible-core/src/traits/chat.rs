@@ -181,7 +181,7 @@ pub trait AgentHandle: Send + Sync {
     ///
     /// Resets the agent's conversation context, removing all previous messages.
     /// UI state should be cleared separately.
-    fn clear_history(&mut self) {}
+    async fn clear_history(&mut self) {}
 
     /// Switch to a different model
     ///
@@ -346,8 +346,8 @@ impl AgentHandle for Box<dyn AgentHandle + Send + Sync> {
         (**self).get_commands()
     }
 
-    fn clear_history(&mut self) {
-        (**self).clear_history()
+    async fn clear_history(&mut self) {
+        (**self).clear_history().await
     }
 
     async fn switch_model(&mut self, model_id: &str) -> ChatResult<()> {

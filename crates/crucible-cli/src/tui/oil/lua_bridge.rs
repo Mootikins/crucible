@@ -98,7 +98,7 @@ pub fn render_component_node(component: &StatuslineComponent, data: &StatusBarDa
             } else if data.context_used > 0 {
                 format!("{}k tok", data.context_used / 1000)
             } else {
-                String::new()
+                "— ctx".to_string()
             };
             styled(display, theme.muted())
         }
@@ -395,7 +395,7 @@ mod tests {
     }
 
     #[test]
-    fn render_context_empty() {
+    fn render_context_no_data_shows_placeholder() {
         let mut data = default_data();
         data.context_total = 0;
         data.context_used = 0;
@@ -404,10 +404,9 @@ mod tests {
             style: StyleSpec::default(),
         };
         let node = render_component_node(&component, &data);
-        let rendered = crucible_oil::render::render_to_string(&node, 80);
         assert!(
-            !rendered.contains("ctx") && !rendered.contains("tok"),
-            "Empty context should render nothing"
+            node_contains_text(&node, "— ctx"),
+            "Context with no data should show placeholder"
         );
     }
 

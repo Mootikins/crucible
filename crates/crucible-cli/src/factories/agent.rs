@@ -629,7 +629,41 @@ pub async fn create_daemon_agent(
         resumed = !is_new_session,
         "Daemon agent handle ready"
     );
-    let handle = DaemonAgentHandle::new_and_subscribe(client, session_id, event_rx).await?;
+    let handle = DaemonAgentHandle::new_and_subscribe(client, session_id, event_rx)
+        .await?
+        .with_kiln_path(config.kiln_path.clone())
+        .with_workspace(workspace.clone());
+
+    let handle = if is_new_session {
+        let model = config
+            .chat
+            .model
+            .clone()
+            .unwrap_or_else(|| "llama3.2".to_string());
+        let mcp_servers = config
+            .mcp
+            .as_ref()
+            .map(|mcp| mcp.servers.iter().map(|s| s.name.clone()).collect())
+            .unwrap_or_default();
+        handle.with_agent_config(SessionAgent {
+            agent_type: "internal".to_string(),
+            agent_name: None,
+            provider_key: Some(format!("{:?}", config.chat.provider).to_lowercase()),
+            provider: format!("{:?}", config.chat.provider).to_lowercase(),
+            model,
+            system_prompt: String::new(),
+            temperature: config.chat.temperature.map(|t| t as f64),
+            max_tokens: config.chat.max_tokens,
+            max_context_tokens: None,
+            thinking_budget: None,
+            endpoint: config.chat.endpoint.clone(),
+            env_overrides: std::collections::HashMap::new(),
+            mcp_servers,
+            agent_card_name: None,
+        })
+    } else {
+        handle
+    };
 
     Ok(Box::new(handle))
 }
