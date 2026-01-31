@@ -222,8 +222,8 @@ No global singleton — each subsystem opens its own connection.
 | `available_models` | default | default | default | default | default |
 | `fetch_available_models` | default | ✅ RPC | ✅ HTTP /api/tags | default | ✅ delegates |
 | `cancel` | default | ✅ RPC | default no-op | default | **❌ NOT DELEGATED** |
-| `set_thinking_budget` | default | ✅ RPC | default ❌ | default ❌ | **❌ NOT DELEGATED** |
-| `get_thinking_budget` | default | ✅ cached | default None | default None | **❌ NOT DELEGATED** |
+| `set_thinking_budget` | default | ✅ RPC | ✅ rebuild | default ❌ | **❌ NOT DELEGATED** |
+| `get_thinking_budget` | default | ✅ cached | ✅ cached | default None | **❌ NOT DELEGATED** |
 | `set_temperature` | default | ✅ RPC | ✅ rebuild | default ❌ | **❌ NOT DELEGATED** |
 | `get_temperature` | default | ✅ cached | ✅ cached | default None | **❌ NOT DELEGATED** |
 | `set_max_tokens` | default | ✅ RPC | ✅ rebuild | default ❌ | **❌ NOT DELEGATED** |
@@ -231,18 +231,9 @@ No global singleton — each subsystem opens its own connection.
 | `interaction_respond` | default | ✅ RPC | default ❌ | default ❌ | ✅ delegates |
 | `take_interaction_receiver` | default | ✅ returns rx | default None | default None | ✅ delegates |
 
-### DynamicAgent Delegation Gap (BUG)
+### DynamicAgent Delegation Gap (RESOLVED)
 
-7 methods fall through to trait defaults instead of delegating to inner handle:
-
-```
-cancel, set_thinking_budget, get_thinking_budget,
-set_temperature, get_temperature, set_max_tokens, get_max_tokens
-```
-
-**Impact**: `:set temperature 0.5` and `:set thinkingbudget 1024` from TUI go through
-`process_action → agent.set_temperature()` where `agent` is a `DynamicAgent`.
-Since `DynamicAgent` doesn't delegate these, they hit the default `Err(NotSupported)`.
+`DynamicAgent` was eliminated entirely in `bccd68a6`. The TUI now holds `Box<dyn AgentHandle>` directly, removing the delegation layer and its 7 missing method delegations.
 The error is logged but the setting silently fails to reach the daemon.
 
 ### Creation Flow
@@ -270,42 +261,37 @@ It is **not dead code**, but in normal operation the daemon path wins.
 
 ### HIGH — Should Fix
 
-| # | Issue | Location | Impact |
+| # | Issue | Location | Status |
 |---|---|---|---|
-| **H1** | DynamicAgent missing 7 method delegations | `dynamic_agent.rs` | `:set temperature`, `:set thinkingbudget`, `:set maxtokens`, `cancel` all silently fail through DynamicAgent |
-| **H2** | process_message duplicates 3 handlers from process_action | `chat_runner.rs` | ClearHistory/StreamCancelled in sync path can't call async agent methods — degraded copies that only drop the stream |
+| **H1** | DynamicAgent missing 7 method delegations | `dynamic_agent.rs` | ✅ FIXED — DynamicAgent eliminated, 289 lines removed (`bccd68a6`) |
+| **H2** | process_message duplicates 3 handlers from process_action | `chat_runner.rs` | ✅ FIXED — Dead arms removed (`db1d941b`) |
 
 ### MEDIUM — Should Clean Up
 
-| # | Issue | Location | Impact |
+| # | Issue | Location | Status |
 |---|---|---|---|
-| **M1** | 7 dead RPC methods | `client.rs` | Dead code: kiln_close, process_file, session_compact, session_test_interaction, 3× notification methods |
-| **M2** | DaemonAgentHandle overrides 6 methods identically to defaults | `agent.rs` | `supports_streaming→true`, `on_commands_update→Ok(())`, `get_modes→None`, `get_commands→&[]` — unnecessary overrides |
-| **M3** | Dual socket connections per TUI session | `factories/` | Agent and storage each open separate daemon connections. Could share one event-mode connection. |
-| **M4** | `:model name` and `:set model name` are duplicate paths to SwitchModel | `chat_app.rs` | Two syntaxes for same action |
+| **M1** | 7 dead RPC methods | `client.rs` | ✅ FIXED — 121 lines removed (`a1270751`) |
+| **M2** | DaemonAgentHandle overrides 4 methods identically to defaults | `agent.rs` | ✅ FIXED — Redundant overrides removed (`612bdbba`) |
+| **M3** | Dual socket connections per TUI session | `factories/` | DEBUNKED — Interactive TUI already uses one connection |
+| **M4** | `:model name` and `:set model name` are duplicate paths to SwitchModel | `chat_app.rs` | ✅ FIXED — `:model <name>` delegates to `:set model` (`1c78bb67`) |
 
 ### LOW — Nice to Have
 
-| # | Issue | Location | Impact |
+| # | Issue | Location | Status |
 |---|---|---|---|
-| **L1** | `send_message` default impl (collect stream) is never called | All impls use `send_message_stream` | Could remove from trait or mark as deprecated |
-| **L2** | `available_models` (sync) is never overridden; everything uses `fetch_available_models` (async) | All impls | Dead trait method |
-| **L3** | RigAgentHandle doesn't implement thinking_budget despite having the field | `handle.rs` | Rig path can't control thinking budget |
+| **L1** | `send_message` default impl (collect stream) is never called | All impls use `send_message_stream` | DEFERRED — Has one production caller, leave as-is |
+| **L2** | `ListModels` session command calls sync `available_models()` (always empty) | `chat_runner.rs` | ✅ FIXED — Now calls async `fetch_available_models()` (`d14fde23`) |
+| **L3** | RigAgentHandle doesn't implement thinking_budget despite having the field | `handle.rs` | ✅ FIXED — `set_thinking_budget`/`get_thinking_budget` wired (`00136861`) |
 
 ---
 
-## 5. Suggested Simplification Priority
+## 5. Simplification Status
 
-**Phase 1 — Fix bugs:**
-1. Add 7 missing delegations to DynamicAgent (H1)
+All actionable items from the analysis have been resolved:
 
-**Phase 2 — Reduce duplication:**
-2. Unify process_message/process_action overlap (H2) — make process_message schedule async work instead of duplicating logic
-3. Remove 6 redundant overrides from DaemonAgentHandle (M2)
-
-**Phase 3 — Remove dead code:**
-4. Remove or `#[cfg(test)]`-gate dead RPC methods (M1)
-5. Consider removing `available_models` and `send_message` from trait (L1, L2)
-
-**Phase 4 — Architecture:**
-6. Consider shared daemon connection for agent + storage (M3)
+| Phase | Items | Status |
+|---|---|---|
+| **Phase 1 — Fix bugs** | H1 (DynamicAgent), L2 (ListModels), L3 (thinking_budget) | ✅ Complete |
+| **Phase 2 — Reduce duplication** | H2 (sync dispatch), M2 (trait overrides), M4 (:model path) | ✅ Complete |
+| **Phase 3 — Remove dead code** | M1 (dead RPC methods) | ✅ Complete |
+| **Deferred** | M3 (debunked), L1 (has caller) | N/A |
