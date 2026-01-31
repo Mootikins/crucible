@@ -132,6 +132,8 @@ pub enum ChatAppMsg {
     LoadHistory(Vec<ChatItem>),
     /// Forward an unrecognized slash command to the runner for registry-based execution
     ExecuteSlashCommand(String),
+    /// Export session to markdown file via observe renderer
+    ExportSession(PathBuf),
 }
 
 #[derive(Debug, Clone)]
@@ -676,7 +678,7 @@ impl App for OilChatApp {
                 self.load_previous_messages(items);
                 Action::Continue
             }
-            ChatAppMsg::ExecuteSlashCommand(_) => {
+            ChatAppMsg::ExecuteSlashCommand(_) | ChatAppMsg::ExportSession(_) => {
                 // Handled by the runner — TUI just forwards
                 Action::Continue
             }
@@ -723,6 +725,10 @@ impl OilChatApp {
 
     pub fn set_session_dir(&mut self, path: PathBuf) {
         self.session_dir = Some(path);
+    }
+
+    pub fn session_dir(&self) -> Option<&std::path::Path> {
+        self.session_dir.as_deref()
     }
 
     pub fn set_mcp_servers(&mut self, servers: Vec<McpServerDisplay>) {
