@@ -106,6 +106,7 @@ pub enum Capability {
     Ui,
     Config,
     System,
+    WebSocket,
 }
 
 impl Capability {
@@ -119,6 +120,7 @@ impl Capability {
             Self::Ui,
             Self::Config,
             Self::System,
+            Self::WebSocket,
         ]
     }
 
@@ -132,6 +134,7 @@ impl Capability {
             Self::Ui => "Create custom UI views",
             Self::Config => "Access user configuration",
             Self::System => "Access system information",
+            Self::WebSocket => "Establish persistent WebSocket connections",
         }
     }
 }

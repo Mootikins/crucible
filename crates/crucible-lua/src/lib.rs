@@ -76,6 +76,7 @@ pub mod statusline;
 mod types;
 mod vault;
 mod views;
+mod ws;
 
 pub mod config;
 
@@ -128,6 +129,7 @@ pub use vault::{
     register_vault_module, register_vault_module_full, register_vault_module_with_graph,
     register_vault_module_with_store,
 };
+pub use ws::register_ws_module;
 // Handler system
 pub use handlers::{
     execute_handler, execute_permission_hooks, interpret_handler_result, register_crucible_on_api,
