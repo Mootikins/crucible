@@ -67,16 +67,18 @@ Press `Shift+Tab` to cycle through modes: Normal → Plan → Auto → Normal
 
 ### Status Bar
 
-The current mode is shown in the status bar:
+The current mode is shown as a colored badge in the status bar:
 
 ```
-Normal │ claude-sonnet │ 23% ctx
+ NORMAL   claude-sonnet   23% ctx
 ```
 
-Mode colors:
-- **Normal** - Green
-- **Plan** - Blue
-- **Auto** - Yellow
+The badge is rendered with inverted colors (colored background, dark text):
+- **Normal** — Green badge
+- **Plan** — Blue badge
+- **Auto** — Yellow badge
+
+The status bar layout is configurable via Lua — see [[Help/Lua/Configuration]].
 
 ## Interaction with Agent Cards
 

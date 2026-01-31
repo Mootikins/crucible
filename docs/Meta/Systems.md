@@ -127,6 +127,45 @@ Multi-session server for concurrent agent access.
 
 See: [[Help/Core/Sessions]], AGENTS.md Daemon Architecture section
 
+## Rust/Lua Boundary
+
+Crucible follows a "scriptable surfaces, not a scripted runtime" model. Lua owns presentation and policy. Rust owns structure and correctness.
+
+### What Stays in Rust
+
+| Area | Reason |
+|------|--------|
+| Rendering engine (Oil) | Node tree, layout, ANSI output — correctness-critical |
+| Input FSM | Key events, mode transitions, focus management |
+| Component framework | `Component` trait, `ViewContext`, lifecycle |
+| Session/agent protocol | RPC, event streaming, message types |
+| Parser | Markdown → AST — deterministic, perf-sensitive |
+| Storage | Database operations, indexing, embedding |
+
+### What Lua Controls
+
+| Surface | How |
+|---------|-----|
+| Statusline layout | `crucible.statusline.setup()` — components, order, colors |
+| Theme tokens | *(planned)* — color palette, style overrides |
+| Keybinding remaps | *(planned)* — user-defined key → action mapping |
+| Event handlers | Hooks on session events (turn complete, tool call, etc.) |
+
+### Decision Filter
+
+> Would a user reasonably want to change this without changing Crucible's behavior?
+>
+> **YES** → Lua surface (statusline layout, colors, key bindings)
+> **NO** → Rust (rendering correctness, protocol, input handling)
+
+### Embedded Defaults
+
+Lua surfaces ship with embedded Rust defaults (`StatuslineConfig::builtin_default()`) that match the embedded Lua default (`defaults/statusline.lua`). This ensures:
+
+1. The TUI works without any Lua initialization (tests, emergency fallback)
+2. User's `init.lua` overrides the default — not required for basic functionality
+3. One rendering path (config-driven) for both default and custom configs
+
 ## Cross-Cutting Concerns
 
 Some changes span multiple systems:

@@ -17,11 +17,14 @@ Create `~/.config/crucible/init.lua`:
 ```lua
 -- Configure the statusline
 crucible.statusline.setup({
-    left = { crucible.statusline.mode() },
-    center = { crucible.statusline.model({ max_length = 20 }) },
-    right = { 
-        crucible.statusline.context(),
-        crucible.statusline.notification() 
+    left = {
+        crucible.statusline.mode(),
+        crucible.statusline.model({ max_length = 25 }),
+    },
+    right = {
+        crucible.statusline.notification({
+            fallback = crucible.statusline.context(),
+        }),
     },
 })
 ```
@@ -128,11 +131,20 @@ crucible.statusline.spacer()
 
 #### notification()
 
-Shows transient notifications:
+Shows transient notifications (toasts and warning/error counts). Supports an optional `fallback` component that renders when no notifications are active:
 
 ```lua
+-- Simple notification area
 crucible.statusline.notification({ fg = "yellow" })
+
+-- With fallback to context usage when idle
+crucible.statusline.notification({
+    fg = "yellow",
+    fallback = crucible.statusline.context({ fg = "gray" }),
+})
 ```
+
+When a toast or warning counts are active, the notification component renders them. When idle, it renders the `fallback` component (if set) or nothing.
 
 ### Colors
 
@@ -168,9 +180,10 @@ crucible.statusline.setup({
         crucible.statusline.model({ max_length = 25, fg = "cyan" }),
     },
     right = {
-        crucible.statusline.context({ fg = "gray" }),
-        crucible.statusline.text(" ", {}),
-        crucible.statusline.notification({ fg = "yellow" }),
+        crucible.statusline.notification({
+            fg = "yellow",
+            fallback = crucible.statusline.context({ fg = "gray" }),
+        }),
     },
 })
 
@@ -185,9 +198,11 @@ crucible.log("info", "Config loaded!")
 - Check logs: `cru chat` with `RUST_LOG=crucible_lua=debug`
 
 **Statusline not changing?**
-- The TUI currently uses hardcoded defaults
-- Lua config is scaffolding for future customization
-- `crucible.statusline.setup()` stores config but rendering uses it in future versions
+- Ensure your `init.lua` runs before the TUI starts (check for syntax errors first)
+- `crucible.statusline.setup()` is loaded at TUI startup — changes require restarting the chat session
+- Crucible ships an embedded Lua default that runs before your `init.lua`. Your config overrides it — you don't need to configure everything from scratch
+- If the Lua runtime fails entirely, a minimal emergency statusline (mode + model) renders in pure Rust
+- Check logs with `RUST_LOG=crucible_lua=debug` to verify config was loaded
 
 ## See Also
 
