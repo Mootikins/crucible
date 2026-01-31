@@ -657,6 +657,50 @@ impl OilChatRunner {
                         let stream = agent.send_message_stream(cmd.clone());
                         *active_stream = Some(stream);
                     }
+                    ChatAppMsg::ExportSession(ref export_path) => {
+                        let session_dir = match app.session_dir() {
+                            Some(dir) => dir.to_path_buf(),
+                            None => {
+                                app.on_message(ChatAppMsg::Error(
+                                    "Export failed: no active session".to_string(),
+                                ));
+                                return Ok(false);
+                            }
+                        };
+
+                        match crucible_observe::load_events(&session_dir).await {
+                            Ok(events) if events.is_empty() => {
+                                app.on_message(ChatAppMsg::Error(
+                                    "Nothing to export — session has no recorded events"
+                                        .to_string(),
+                                ));
+                            }
+                            Ok(events) => {
+                                let options = crucible_observe::RenderOptions::default();
+                                let md = crucible_observe::render_to_markdown(&events, &options);
+                                match tokio::fs::write(&export_path, &md).await {
+                                    Ok(_) => {
+                                        app.add_system_message(format!(
+                                            "Session exported to {}",
+                                            export_path.display()
+                                        ));
+                                    }
+                                    Err(e) => {
+                                        app.on_message(ChatAppMsg::Error(format!(
+                                            "Export failed: {}",
+                                            e
+                                        )));
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                app.on_message(ChatAppMsg::Error(format!(
+                                    "Failed to load session events: {}",
+                                    e
+                                )));
+                            }
+                        }
+                    }
                     _ => {}
                 }
                 let action = app.on_message(msg);
