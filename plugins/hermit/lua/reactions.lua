@@ -7,7 +7,6 @@ local awareness = require("awareness")
 local M = {}
 
 --- Suggest links when a new note is created
--- @handler event="note:created" priority=150
 function M.on_note_created(ctx, event)
     if not config.reaction_enabled("note_created") then
         return event
@@ -56,7 +55,6 @@ function M.on_note_created(ctx, event)
 end
 
 --- Check for broken links when a note is modified
--- @handler event="note:modified" priority=150
 function M.on_note_modified(ctx, event)
     if not config.reaction_enabled("note_modified") then
         return event
@@ -93,7 +91,6 @@ function M.on_note_modified(ctx, event)
 end
 
 --- Bootstrap awareness on session start
--- @handler event="session:started" priority=50
 function M.on_session_started(ctx, event)
     if not config.reaction_enabled("session_started") then
         return event

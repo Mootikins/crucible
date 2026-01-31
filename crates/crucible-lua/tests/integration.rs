@@ -1,17 +1,7 @@
 //! Integration tests for Lua/Fennel tool discovery and execution
-//!
-//! These tests verify the full pipeline:
-//! 1. Parse annotations from source files
-//! 2. Discover tools/hooks/plugins
-//! 3. Execute tools with JSON args
-//! 4. Verify results
 
-use crucible_lua::{
-    register_oq_module, register_shell_module, AnnotationParser, LuaExecutor, LuaToolRegistry,
-    ShellPolicy,
-};
+use crucible_lua::{register_oq_module, register_shell_module, LuaExecutor, LuaToolRegistry, ShellPolicy};
 use serde_json::json;
-use std::path::Path;
 use tempfile::TempDir;
 use tokio::fs;
 
@@ -214,119 +204,7 @@ end
 }
 
 // ============================================================================
-// ANNOTATION PARSER INTEGRATION
-// ============================================================================
-
-#[test]
-fn test_annotation_parser_multiple_tools_in_file() {
-    let parser = AnnotationParser::new();
-
-    let source = r#"
---- Search the knowledge base
--- @tool desc="Search for notes"
--- @param query string The search query
--- @param limit number? Maximum results
-function search(query, limit)
-    return crucible.search(query, limit or 10)
-end
-
---- Get note by path
--- @tool desc="Retrieve a note"
--- @param path string Path to the note
-function get_note(path)
-    return crucible.get_note(path)
-end
-
---- Format output
--- @hook event="tool:after" pattern="search*"
-function format_search_results(ctx, event)
-    return event
-end
-"#;
-
-    let tools = parser.parse_tools(source, Path::new("multi.lua")).unwrap();
-    assert_eq!(tools.len(), 2, "Should find 2 tools");
-
-    // Verify search tool
-    let search = tools.iter().find(|t| t.name == "search").unwrap();
-    assert_eq!(search.params.len(), 2);
-    assert_eq!(search.params[0].name, "query");
-    assert_eq!(search.params[0].param_type, "string");
-    assert_eq!(search.params[1].name, "limit");
-    assert!(search.params[1].param_type.contains("number"));
-
-    let handlers = parser
-        .parse_handlers(source, Path::new("multi.lua"))
-        .unwrap();
-    assert_eq!(handlers.len(), 1);
-    assert_eq!(handlers[0].event_type, "tool:after");
-    assert_eq!(handlers[0].pattern, "search*");
-}
-
-#[test]
-fn test_annotation_parser_fennel_syntax() {
-    let parser = AnnotationParser::new();
-
-    // Note: Using underscores in names because the regex uses \w+ which doesn't match hyphens
-    let source = r#"
-;;; Calculate factorial
-;; @tool desc="Compute factorial"
-;; @param n number The input number
-;; @return number The factorial
-(fn factorial [n]
-  (if (<= n 1)
-    1
-    (* n (factorial (- n 1)))))
-
-;;; Log calls for debugging
-;; @hook event="tool:before" pattern="*"
-(fn log_call [ctx event]
-  (print "Calling tool...")
-  event)
-"#;
-
-    let tools = parser.parse_tools(source, Path::new("math.fnl")).unwrap();
-    assert_eq!(tools.len(), 1);
-    assert!(tools[0].is_fennel);
-    assert_eq!(tools[0].name, "factorial");
-    assert_eq!(tools[0].params.len(), 1);
-    assert_eq!(tools[0].params[0].name, "n");
-
-    let handlers = parser
-        .parse_handlers(source, Path::new("math.fnl"))
-        .unwrap();
-    assert_eq!(handlers.len(), 1);
-    assert_eq!(handlers[0].name, "log_call");
-}
-
-#[test]
-fn test_annotation_parser_plugin_discovery() {
-    let parser = AnnotationParser::new();
-
-    // Plugin name is taken from the function name, not from annotation attributes
-    let source = r#"
---- Git integration plugin
--- @plugin watch=["*.md", "*.txt"]
-function git_tools()
-    -- plugin factory function
-    return {}
-end
-
---- Initialize plugin
--- @init
-function init(config)
-    crucible.log("info", "Git plugin initialized")
-end
-"#;
-
-    let plugins = parser.parse_plugins(source, Path::new("git.lua")).unwrap();
-    assert_eq!(plugins.len(), 1);
-    assert_eq!(plugins[0].name, "git_tools");
-    assert_eq!(plugins[0].description, "Git integration plugin");
-}
-
-// ============================================================================
-// FULL PIPELINE: ANNOTATION -> REGISTRY -> EXECUTION
+// FULL PIPELINE: DISCOVERY -> REGISTRY -> EXECUTION
 // ============================================================================
 
 #[tokio::test]

@@ -18,7 +18,6 @@ local function kv_row(label, value, opts)
 end
 
 --- Splash view — shown on session start or /hermit status
--- @view name="hermit-splash" desc="Hermit kiln overview"
 function M.splash_view(ctx)
     local profile = awareness.get()
 
@@ -55,7 +54,6 @@ function M.splash_view(ctx)
 end
 
 --- Keyboard handler for splash view
--- @view.handler name="hermit-splash"
 function M.splash_handler(key, ctx)
     if key == "q" then
         ctx:close_view()
@@ -71,7 +69,6 @@ function M.splash_handler(key, ctx)
 end
 
 --- Digest view — renders daily digest with styled sections
--- @view name="hermit-digest" desc="Hermit daily digest"
 function M.digest_view(ctx)
     local state = ctx.state or {}
     local result = state.digest
@@ -128,7 +125,6 @@ function M.digest_view(ctx)
 end
 
 --- Keyboard handler for digest view
--- @view.handler name="hermit-digest"
 function M.digest_handler(key, ctx)
     if key == "q" then
         ctx:close_view()

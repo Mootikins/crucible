@@ -2,7 +2,7 @@
 //!
 //! This crate provides Lua scripting with optional Fennel support:
 //! - **LLM-friendly**: Simple syntax, massive training data
-//! - **LDoc annotations**: Extract tool schemas from doc comments
+//! - **Spec tables**: Plugins declare exports by returning a table from `init.lua`
 //! - **Threading**: `send` feature enables Send+Sync
 //! - **Fennel**: Lisp syntax with macros (compiles to Lua)
 //!
@@ -10,23 +10,24 @@
 //!
 //! ```text
 //! ┌─────────────────────────────────────────────┐
-//! │  tool.lua (with LDoc annotations)           │
+//! │  init.lua (returns spec table)              │
 //! │                                             │
-//! │  --- Search the knowledge base              │
-//! │  -- @tool                                   │
-//! │  -- @param query string Search query        │
-//! │  function search(query, limit)              │
+//! │  return {                                   │
+//! │    name = "my-plugin",                      │
+//! │    tools = { ... },                         │
+//! │    commands = { ... },                      │
+//! │  }                                          │
 //! └─────────────────────────────────────────────┘
 //!                       │
 //!                       ▼
 //!             ┌─────────────────────────┐
-//!             │  Annotations Parser     │
-//!             │  LDoc-style comments    │
+//!             │  PluginManager          │
+//!             │  Lua runtime loading    │
 //!             └─────────────────────────┘
 //!                       │
 //!                       ▼
 //!             ┌─────────────────────────────────┐
-//!             │  Tool/Hook/Plugin Registry      │
+//!             │  Tool/Command/Handler Registry  │
 //!             │  JSON Schema generation         │
 //!             └─────────────────────────────────┘
 //!                       │
@@ -35,26 +36,6 @@
 //!             │  mlua/Lua 5.4 Runtime           │
 //!             │  + data, shell, json modules    │
 //!             └─────────────────────────────────┘
-//! ```
-//!
-//! ## Annotation Format
-//!
-//! Tools, hooks, and plugins are discovered via LDoc-style annotations:
-//!
-//! ```lua
-//! --- Search the knowledge base
-//! -- @tool desc="Search for notes"
-//! -- @param query string The search query
-//! -- @param limit number? Maximum results (optional)
-//! function search(query, limit)
-//!     return crucible.search(query, limit or 10)
-//! end
-//!
-//! --- Filter tool results
-//! -- @hook event="tool:after" pattern="search_*" priority=50
-//! function filter_results(ctx, event)
-//!     return event
-//! end
 //! ```
 //!
 //! ## Feature Flags
@@ -99,8 +80,7 @@ mod views;
 pub mod config;
 
 pub use annotations::{
-    AnnotationParser, DiscoveredCommand, DiscoveredHandler, DiscoveredPlugin, DiscoveredTool,
-    DiscoveredView,
+    DiscoveredCommand, DiscoveredHandler, DiscoveredPlugin, DiscoveredTool, DiscoveredView,
 };
 pub use ask::{
     core_answer_to_lua, core_batch_to_lua, core_question_to_lua, core_response_to_lua,
@@ -110,7 +90,7 @@ pub use ask::{
     register_ask_module_with_context, EventPushCallback, LuaAgentAskContext, LuaAskBatch,
     LuaAskBatchResponse, LuaAskContext, LuaAskError, LuaAskQuestion, LuaQuestionAnswer,
 };
-pub use commands::{command_to_descriptor, discover_commands_from, LuaCommandHandler};
+pub use commands::{command_to_descriptor, LuaCommandHandler};
 pub use config::{get_statusline_config, ConfigLoader, ConfigState};
 pub use core_handler::{LuaHandler, LuaHandlerMeta};
 pub use error::LuaError;
@@ -148,7 +128,6 @@ pub use vault::{
     register_vault_module, register_vault_module_full, register_vault_module_with_graph,
     register_vault_module_with_store,
 };
-pub use views::discover_views_from;
 // Handler system
 pub use handlers::{
     execute_handler, execute_permission_hooks, interpret_handler_result, register_crucible_on_api,
@@ -157,8 +136,8 @@ pub use handlers::{
     RuntimeHandler, ScriptHandlerResult,
 };
 pub use lifecycle::{
-    CommandBuilder, HandlerBuilder, LifecycleError, LifecycleResult, PluginManager,
-    RegistrationHandle, ToolBuilder, ViewBuilder,
+    load_plugin_spec, load_plugin_spec_from_source, CommandBuilder, HandlerBuilder, LifecycleError,
+    LifecycleResult, PluginManager, PluginSpec, RegistrationHandle, ToolBuilder, ViewBuilder,
 };
 pub use manifest::{
     Capability, ConfigProperty, ConfigSchema, ConfigType, ExportDeclarations, LoadedPlugin,

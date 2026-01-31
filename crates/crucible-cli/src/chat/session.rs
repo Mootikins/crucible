@@ -171,7 +171,7 @@ impl ChatSession {
 
     /// Create a chat session with pre-discovered Lua commands.
     ///
-    /// Use `crucible_lua::discover_commands_from` to discover commands before calling this.
+    /// Commands are discovered via `PluginManager` spec table loading.
     pub fn with_lua_commands(
         config: ChatSessionConfig,
         core: Arc<KilnContext>,
@@ -183,8 +183,7 @@ impl ChatSession {
 
     /// Create a chat session with pre-discovered Lua commands and views.
     ///
-    /// Use `crucible_lua::discover_commands_from` and `crucible_lua::discover_views_from`
-    /// to discover plugins before calling this.
+    /// Plugins are discovered via `PluginManager` spec table loading.
     pub fn with_lua_plugins(
         config: ChatSessionConfig,
         core: Arc<KilnContext>,
