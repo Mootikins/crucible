@@ -940,80 +940,6 @@ impl ContainerList {
         }
     }
 
-    /// Format all containers for export as markdown.
-    pub fn format_for_export(&self) -> String {
-        use crate::tui::oil::viewport_cache::SubagentStatus;
-        use std::fmt::Write;
-
-        let mut output = String::from("# Chat Session Export\n\n");
-
-        for container in &self.containers {
-            match container {
-                ChatContainer::UserMessage { content, .. } => {
-                    let _ = writeln!(output, "## User\n\n{}\n", content);
-                }
-                ChatContainer::AssistantResponse { blocks, .. } => {
-                    let combined = blocks.join("\n\n");
-                    if !combined.is_empty() {
-                        let _ = writeln!(output, "## Assistant\n\n{}\n", combined);
-                    }
-                }
-                ChatContainer::ToolGroup { tools, .. } => {
-                    for tool in tools {
-                        let _ = writeln!(output, "### Tool: {}\n", tool.name);
-                        if !tool.args.is_empty() {
-                            let _ = writeln!(output, "```json\n{}\n```\n", tool.args);
-                        }
-                        let result_str = tool.result();
-                        if !result_str.is_empty() {
-                            let _ = writeln!(output, "**Result:**\n```\n{}\n```\n", result_str);
-                        }
-                    }
-                }
-                ChatContainer::Subagent { subagent, .. } => {
-                    let status = match subagent.status {
-                        SubagentStatus::Running => "running",
-                        SubagentStatus::Completed => "completed",
-                        SubagentStatus::Failed => "failed",
-                    };
-                    let _ = writeln!(output, "### Subagent: {} ({})\n", subagent.id, status);
-                    let prompt_preview = if subagent.prompt.len() > 100 {
-                        format!("{}...", &subagent.prompt[..100])
-                    } else {
-                        subagent.prompt.to_string()
-                    };
-                    let _ = writeln!(output, "Prompt: {}\n", prompt_preview);
-                    if let Some(ref summary) = subagent.summary {
-                        let _ = writeln!(output, "Result: {}\n", summary);
-                    }
-                    if let Some(ref error) = subagent.error {
-                        let _ = writeln!(output, "Error: {}\n", error);
-                    }
-                }
-                ChatContainer::ShellExecution { shell, .. } => {
-                    let _ = writeln!(
-                        output,
-                        "### Shell: `{}`\n\nExit code: {}\n",
-                        shell.command, shell.exit_code
-                    );
-                    if !shell.output_tail.is_empty() {
-                        output.push_str("```\n");
-                        for line in &shell.output_tail {
-                            output.push_str(line);
-                            output.push('\n');
-                        }
-                        output.push_str("```\n\n");
-                    }
-                }
-                ChatContainer::SystemMessage { content, .. } => {
-                    let _ = writeln!(output, "> {}\n", content.replace('\n', "\n> "));
-                }
-            }
-        }
-
-        output
-    }
-
     /// Clear all containers.
     pub fn clear(&mut self) {
         self.containers.clear();
@@ -1591,22 +1517,5 @@ mod tests {
         ));
         assert!(!super::ends_with_ordered_list_item("Just text"));
         assert!(!super::ends_with_ordered_list_item(""));
-    }
-
-    #[test]
-    fn test_format_for_export() {
-        let mut list = ContainerList::new();
-        list.add_user_message("Hello".to_string());
-        list.start_assistant_response();
-        list.append_text("World");
-        list.complete_response();
-        list.add_system_message("Info".to_string());
-
-        let export = list.format_for_export();
-        assert!(export.contains("## User"));
-        assert!(export.contains("Hello"));
-        assert!(export.contains("## Assistant"));
-        assert!(export.contains("World"));
-        assert!(export.contains("> Info"));
     }
 }
