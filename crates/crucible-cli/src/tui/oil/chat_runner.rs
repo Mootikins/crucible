@@ -716,7 +716,7 @@ impl OilChatRunner {
                 let _ = reply.send(result);
             }
             SessionCommand::ListModels(reply) => {
-                let _ = reply.send(agent.available_models());
+                let _ = reply.send(agent.fetch_available_models().await);
             }
             SessionCommand::GetMode(reply) => {
                 let _ = reply.send(agent.get_mode_id().to_string());
