@@ -24,6 +24,7 @@
 pub mod agent_factory;
 pub mod agent_manager;
 pub mod background_manager;
+pub mod daemon_plugins;
 pub mod kiln_manager;
 pub mod lifecycle;
 pub mod permission_bridge;
@@ -35,6 +36,7 @@ pub mod session_manager;
 pub mod session_storage;
 pub mod subscription;
 
+pub use daemon_plugins::{default_daemon_plugin_paths, DaemonPluginLoader};
 pub use agent_factory::{create_agent_from_session_config, AgentFactoryError};
 pub use agent_manager::{AgentError, AgentManager};
 pub use background_manager::{
