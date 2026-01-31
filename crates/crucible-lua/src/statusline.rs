@@ -176,10 +176,12 @@ pub enum StatuslineComponent {
     },
     /// Flexible spacer
     Spacer,
-    /// Notification display
+    /// Notification display (shows fallback component when no notification is active)
     Notification {
         #[serde(flatten)]
         style: StyleSpec,
+        /// Component to render when no notification is active (e.g., context usage)
+        fallback: Option<Box<StatuslineComponent>>,
     },
 }
 
@@ -190,6 +192,38 @@ pub struct StatuslineConfig {
     pub center: Vec<StatuslineComponent>,
     pub right: Vec<StatuslineComponent>,
     pub separator: Option<String>,
+}
+
+impl StatuslineConfig {
+    /// Returns the built-in default layout matching the embedded Lua default.
+    ///
+    /// Used when Lua hasn't initialized (e.g., tests) so the status bar
+    /// still renders a usable layout instead of falling back to emergency mode.
+    pub fn builtin_default() -> Self {
+        Self {
+            left: vec![
+                StatuslineComponent::Mode {
+                    normal: ModeStyleSpec::default(),
+                    plan: ModeStyleSpec::default(),
+                    auto: ModeStyleSpec::default(),
+                },
+                StatuslineComponent::Model {
+                    max_length: Some(25),
+                    fallback: None,
+                    style: StyleSpec::default(),
+                },
+            ],
+            center: vec![],
+            right: vec![StatuslineComponent::Notification {
+                style: StyleSpec::default(),
+                fallback: Some(Box::new(StatuslineComponent::Context {
+                    format: None,
+                    style: StyleSpec::default(),
+                })),
+            }],
+            separator: Some(" ".to_string()),
+        }
+    }
 }
 
 fn extract_color(table: &Table, key: &str) -> Option<ColorSpec> {
@@ -243,7 +277,12 @@ fn parse_component(table: &Table) -> LuaResult<StatuslineComponent> {
         "spacer" => Ok(StatuslineComponent::Spacer),
         "notification" => {
             let style = extract_style(table);
-            Ok(StatuslineComponent::Notification { style })
+            let fallback = if let Ok(fb_table) = table.get::<Table>("fallback") {
+                Some(Box::new(parse_component(&fb_table)?))
+            } else {
+                None
+            };
+            Ok(StatuslineComponent::Notification { style, fallback })
         }
         _ => Err(mlua::Error::RuntimeError(format!(
             "unknown component type: {}",
@@ -356,7 +395,7 @@ pub fn register_statusline_module(lua: &Lua) -> Result<(), LuaError> {
     })?;
     statusline.set("spacer", spacer_fn)?;
 
-    // statusline.notification({ fg = "yellow" })
+    // statusline.notification({ fg = "yellow", fallback = statusline.context() })
     let notification_fn = lua.create_function(|lua, config: Option<Table>| {
         let component = lua.create_table()?;
         component.set("type", "notification")?;
@@ -366,6 +405,9 @@ pub fn register_statusline_module(lua: &Lua) -> Result<(), LuaError> {
             }
             if let Ok(v) = cfg.get::<Value>("bg") {
                 component.set("bg", v)?;
+            }
+            if let Ok(v) = cfg.get::<Value>("fallback") {
+                component.set("fallback", v)?;
             }
         }
         Ok(component)

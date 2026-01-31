@@ -51,10 +51,18 @@ fn assert_fits_width(output: &str, max_width: usize) {
 mod status_bar_tests {
     use super::*;
 
+    fn render_bar(bar: &StatusBar, width: usize) -> String {
+        render_to_plain_text(&bar.emergency_view(), width)
+    }
+
+    fn render_bar_ansi(bar: &StatusBar, width: usize) -> String {
+        render_to_string(&bar.emergency_view(), width)
+    }
+
     #[test]
     fn renders_mode_label_at_start() {
         let bar = StatusBar::new().mode(ChatMode::Normal);
-        let plain = render_plain(&bar, 80);
+        let plain = render_bar(&bar, 80);
 
         assert!(
             plain.starts_with(" NORMAL "),
@@ -69,20 +77,15 @@ mod status_bar_tests {
         let plan = StatusBar::new().mode(ChatMode::Plan);
         let auto = StatusBar::new().mode(ChatMode::Auto);
 
-        let normal_plain = render_plain(&normal, 80);
-        let plan_plain = render_plain(&plan, 80);
-        let auto_plain = render_plain(&auto, 80);
-
-        // All mode labels should have space padding
-        assert!(normal_plain.contains(" NORMAL "));
-        assert!(plan_plain.contains(" PLAN "));
-        assert!(auto_plain.contains(" AUTO "));
+        assert!(render_bar(&normal, 80).contains(" NORMAL "));
+        assert!(render_bar(&plan, 80).contains(" PLAN "));
+        assert!(render_bar(&auto, 80).contains(" AUTO "));
     }
 
     #[test]
     fn ansi_output_has_color_codes() {
         let bar = StatusBar::new().mode(ChatMode::Normal).model("gpt-4o");
-        let ansi = render_ansi(&bar, 80);
+        let ansi = render_bar_ansi(&bar, 80);
 
         assert!(
             has_ansi_codes(&ansi),
@@ -95,10 +98,9 @@ mod status_bar_tests {
         let normal = StatusBar::new().mode(ChatMode::Normal);
         let plan = StatusBar::new().mode(ChatMode::Plan);
 
-        let normal_ansi = render_ansi(&normal, 80);
-        let plan_ansi = render_ansi(&plan, 80);
+        let normal_ansi = render_bar_ansi(&normal, 80);
+        let plan_ansi = render_bar_ansi(&plan, 80);
 
-        // The raw ANSI should differ (different background colors)
         assert_ne!(
             normal_ansi, plan_ansi,
             "Different modes should have different ANSI codes"
@@ -110,7 +112,7 @@ mod status_bar_tests {
         let bar = StatusBar::new()
             .mode(ChatMode::Normal)
             .model("claude-3-opus");
-        let plain = render_plain(&bar, 80);
+        let plain = render_bar(&bar, 80);
 
         let mode_pos = plain.find("NORMAL").expect("mode should exist");
         let model_pos = plain.find("claude-3-opus").expect("model should exist");
@@ -121,7 +123,7 @@ mod status_bar_tests {
     #[test]
     fn context_percentage_formatted_correctly() {
         let bar = StatusBar::new().context(32000, 128000);
-        let plain = render_plain(&bar, 80);
+        let plain = render_bar(&bar, 80);
 
         assert!(
             plain.contains("25% ctx"),
@@ -133,7 +135,7 @@ mod status_bar_tests {
     #[test]
     fn context_token_count_when_no_total() {
         let bar = StatusBar::new().context(15000, 0);
-        let plain = render_plain(&bar, 80);
+        let plain = render_bar(&bar, 80);
 
         assert!(
             plain.contains("15k tok"),
@@ -148,7 +150,8 @@ mod status_bar_tests {
         let bar = StatusBar::new()
             .mode(ChatMode::Normal)
             .toast("Processing", NotificationToastKind::Info);
-        let plain = render_plain(&bar, 80);
+        let node = bar.view_from_config(&default_statusline_config());
+        let plain = render_to_plain_text(&node, 80);
 
         let mode_pos = plain.find("NORMAL").expect("mode should exist");
         let badge_pos = plain.find("INFO").expect("notification badge should exist");
@@ -171,7 +174,8 @@ mod status_bar_tests {
                 (NotificationToastKind::Warning, 3),
                 (NotificationToastKind::Error, 1),
             ]);
-        let plain = render_plain(&bar, 80);
+        let node = bar.view_from_config(&default_statusline_config());
+        let plain = render_to_plain_text(&node, 80);
 
         assert_fits_width(&plain, 80);
     }
@@ -182,7 +186,7 @@ mod status_bar_tests {
             .mode(ChatMode::Normal)
             .model("gpt-4o-mini")
             .context(10000, 128000);
-        assert_snapshot!("status_bar_normal", render_plain(&bar, 80));
+        assert_snapshot!("status_bar_normal", render_bar(&bar, 80));
     }
 
     #[test]
@@ -192,7 +196,11 @@ mod status_bar_tests {
             .model("claude-3-opus")
             .context(50000, 200000)
             .status("Thinking...");
-        assert_snapshot!("status_bar_plan", render_plain(&bar, 80));
+        assert_snapshot!("status_bar_plan", render_bar(&bar, 80));
+    }
+
+    fn default_statusline_config() -> crucible_lua::statusline::StatuslineConfig {
+        crucible_lua::statusline::StatuslineConfig::builtin_default()
     }
 }
 
@@ -599,14 +607,13 @@ mod layout_tests {
 
     #[test]
     fn nested_components_render_correctly() {
-        // Create a column containing status bar and input area
         let status = StatusBar::new().mode(ChatMode::Normal).model("test-model");
         let input = InputArea::new("Hello", 5, 80);
 
         let focus = FocusContext::new();
         let ctx = ViewContext::new(&focus);
 
-        let combined = col([status.view(&ctx), input.view(&ctx)]);
+        let combined = col([status.emergency_view(), input.view(&ctx)]);
         let plain = render_to_plain_text(&combined, 80);
 
         // Both components should be present

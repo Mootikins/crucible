@@ -104,7 +104,7 @@ pub fn render_component_node(component: &StatuslineComponent, data: &StatusBarDa
         }
         StatuslineComponent::Text { content, .. } => styled(content.clone(), theme.muted()),
         StatuslineComponent::Spacer => spacer(),
-        StatuslineComponent::Notification { .. } => {
+        StatuslineComponent::Notification { fallback, .. } => {
             let mut items = Vec::new();
             if let Some((text, kind)) = &data.notification_toast {
                 items.push(styled(text.clone(), theme.overlay_bright_style()));
@@ -124,6 +124,8 @@ pub fn render_component_node(component: &StatuslineComponent, data: &StatusBarDa
                         Style::new().fg(kind.color()).bold(),
                     ));
                 }
+            } else if let Some(fb) = fallback {
+                return render_component_node(fb, data);
             }
             row(items)
         }
@@ -442,6 +444,7 @@ mod tests {
         data.notification_toast = Some(("Processing".to_string(), NotificationToastKind::Info));
         let component = StatuslineComponent::Notification {
             style: StyleSpec::default(),
+            fallback: None,
         };
         let node = render_component_node(&component, &data);
         assert!(node_contains_text(&node, "Processing"));
@@ -454,9 +457,47 @@ mod tests {
         data.notification_counts = vec![(NotificationToastKind::Warning, 3)];
         let component = StatuslineComponent::Notification {
             style: StyleSpec::default(),
+            fallback: None,
         };
         let node = render_component_node(&component, &data);
         assert!(node_contains_text(&node, "WARN"));
         assert!(node_contains_text(&node, "3"));
+    }
+
+    #[test]
+    fn render_notification_fallback_when_idle() {
+        let data = default_data();
+        let component = StatuslineComponent::Notification {
+            style: StyleSpec::default(),
+            fallback: Some(Box::new(StatuslineComponent::Context {
+                format: None,
+                style: StyleSpec::default(),
+            })),
+        };
+        let node = render_component_node(&component, &data);
+        assert!(
+            node_contains_text(&node, "50% ctx"),
+            "Should render fallback context when no notification"
+        );
+    }
+
+    #[test]
+    fn render_notification_toast_hides_fallback() {
+        let mut data = default_data();
+        data.notification_toast = Some(("Saving...".to_string(), NotificationToastKind::Info));
+        let component = StatuslineComponent::Notification {
+            style: StyleSpec::default(),
+            fallback: Some(Box::new(StatuslineComponent::Context {
+                format: None,
+                style: StyleSpec::default(),
+            })),
+        };
+        let node = render_component_node(&component, &data);
+        assert!(node_contains_text(&node, "Saving..."));
+        assert!(node_contains_text(&node, "INFO"));
+        assert!(
+            !node_contains_text(&node, "50% ctx"),
+            "Toast should hide fallback context"
+        );
     }
 }

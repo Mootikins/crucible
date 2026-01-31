@@ -205,7 +205,7 @@ fn status_shows_queued_count() {
 
     assert!(
         output.contains("1 message queued") || output.contains("queued"),
-        "Status should show queued message count: {}",
+        "Should show queued notification: {}",
         output
     );
 }
@@ -284,7 +284,7 @@ fn cancelled_status_shows_after_cancel() {
 
     assert!(
         output.contains("Cancelled") || output.contains("cancelled"),
-        "Status should show cancelled: {}",
+        "Should show cancelled notification: {}",
         output
     );
 }
