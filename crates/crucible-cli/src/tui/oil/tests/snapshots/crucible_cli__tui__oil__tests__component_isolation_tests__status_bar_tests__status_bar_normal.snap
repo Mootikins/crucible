@@ -2,4 +2,4 @@
 source: crates/crucible-cli/src/tui/oil/tests/component_isolation_tests.rs
 expression: "render_plain(&bar, 80)"
 ---
- NORMAL  gpt-4o-mini 8% ctx
+ NORMAL  gpt-4o-mini                                                      8% ctx
