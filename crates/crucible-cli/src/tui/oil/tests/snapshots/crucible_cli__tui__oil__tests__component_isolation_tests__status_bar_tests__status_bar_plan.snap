@@ -1,5 +1,5 @@
 ---
 source: crates/crucible-cli/src/tui/oil/tests/component_isolation_tests.rs
-expression: "render_plain(&bar, 80)"
+expression: "render_bar(&bar, 80)"
 ---
- PLAN  claude-3-opus 25% ctx Thinking...
+ PLAN  claude-3-opus                                                     25% ctx
