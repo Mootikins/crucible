@@ -158,6 +158,7 @@ impl StatusBar {
         if !config.right.is_empty() {
             items.push(spacer());
             items.extend(render_section(&config.right, &data, sep));
+            items.push(styled(" ".to_string(), Style::new()));
         }
 
         row(items)

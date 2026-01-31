@@ -478,7 +478,9 @@ impl App for OilChatApp {
     fn on_message(&mut self, msg: ChatAppMsg) -> Action<ChatAppMsg> {
         match msg {
             ChatAppMsg::UserMessage(content) => {
-                self.submit_user_message(content);
+                if !self.is_streaming() {
+                    self.submit_user_message(content);
+                }
                 Action::Continue
             }
             ChatAppMsg::TextDelta(delta) => {
@@ -570,8 +572,7 @@ impl App for OilChatApp {
                     )));
                     Action::Continue
                 } else {
-                    // Not streaming — immediately promote to UserMessage so the
-                    // runner can start the stream and the app shows the spinner.
+                    self.submit_user_message(content.clone());
                     Action::Send(ChatAppMsg::UserMessage(content))
                 }
             }
@@ -1332,14 +1333,8 @@ impl OilChatApp {
             return self.handle_shell_command(&content);
         }
 
-        if let Some(ref callback) = self.on_submit {
-            callback(content.clone());
-        }
-
-        self.submit_user_message(content);
-        self.status = "Thinking...".to_string();
-
-        Action::Continue
+        self.submit_user_message(content.clone());
+        Action::Send(ChatAppMsg::UserMessage(content))
     }
 
     fn handle_slash_command(&mut self, cmd: &str) -> Action<ChatAppMsg> {
@@ -1438,9 +1433,7 @@ impl OilChatApp {
                 }
             }
             "clear" => {
-                self.container_list.clear();
-                self.message_counter = 0;
-                self.status = "Cleared".to_string();
+                self.reset_session();
                 Action::Send(ChatAppMsg::ClearHistory)
             }
             _ if command.starts_with("export ") => {
@@ -2100,6 +2093,18 @@ impl OilChatApp {
         }
 
         self.status = "Ready".to_string();
+    }
+
+    fn reset_session(&mut self) {
+        self.container_list.clear();
+        self.message_counter = 0;
+        self.deferred_messages.clear();
+        self.error = None;
+        self.context_used = 0;
+        self.context_total = 0;
+        self.status = "Ready".to_string();
+        self.notification_area.clear();
+        self.needs_full_redraw = true;
     }
 
     fn process_deferred_queue(&mut self) -> Action<ChatAppMsg> {
@@ -2776,7 +2781,7 @@ mod tests {
     }
 
     #[test]
-    fn test_context_display_no_usage() {
+    fn test_context_display_no_usage_shows_placeholder() {
         let app = OilChatApp::init();
 
         let focus = FocusContext::new();
@@ -2785,8 +2790,8 @@ mod tests {
         let output = render_to_string(&tree, 80);
 
         assert!(
-            !output.contains("ctx") && !output.contains("tok"),
-            "Should not show context info when no usage: {}",
+            output.contains("— ctx"),
+            "Should show placeholder when no context data: {}",
             output
         );
     }
