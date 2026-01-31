@@ -1429,7 +1429,7 @@ impl OilChatApp {
                     self.error = Some("Usage: :model <name>".to_string());
                     Action::Continue
                 } else {
-                    Action::Send(ChatAppMsg::SwitchModel(model_name.to_string()))
+                    self.handle_set_command(&format!("set model {}", model_name))
                 }
             }
             "clear" => {
