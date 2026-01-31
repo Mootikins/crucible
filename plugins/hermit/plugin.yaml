@@ -1,0 +1,39 @@
+name: hermit
+version: "0.1.0"
+description: Watches your kilns, connects notes, and surfaces forgotten knowledge
+author: Crucible Team
+license: MIT
+
+main: init.lua
+
+capabilities:
+  - vault
+  - ui
+  - config
+  - filesystem
+
+config:
+  properties:
+    soul_file:
+      type: string
+      description: Path to custom SOUL definition file
+      default: ""
+    auto_link:
+      type: boolean
+      description: Automatically suggest wikilinks when notes are created
+      default: true
+    awareness_cache_ttl:
+      type: number
+      description: Seconds before awareness cache expires
+      default: 300
+    quiet_mode:
+      type: boolean
+      description: Suppress non-essential notifications
+      default: false
+    enabled_reactions:
+      type: string
+      description: "Comma-separated reaction filter (all|none|note_created,note_modified,session_started)"
+      default: "all"
+
+exports:
+  auto_discover: true
