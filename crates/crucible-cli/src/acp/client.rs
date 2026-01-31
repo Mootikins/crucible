@@ -616,7 +616,7 @@ impl AgentHandle for CrucibleAcpClient {
         }
     }
 
-    fn clear_history(&mut self) {
+    async fn clear_history(&mut self) {
         if let Some(session) = &mut self.session {
             session.clear_history();
             info!("Conversation history cleared");
