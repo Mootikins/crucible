@@ -2,6 +2,7 @@
 
 use crate::agent_manager::AgentManager;
 use crate::background_manager::BackgroundJobManager;
+use crate::daemon_plugins::DaemonPluginLoader;
 use crate::kiln_manager::KilnManager;
 use crate::protocol::{
     Request, Response, SessionEventMessage, INTERNAL_ERROR, INVALID_PARAMS, METHOD_NOT_FOUND,
@@ -83,6 +84,7 @@ pub struct Server {
     subscription_manager: Arc<SubscriptionManager>,
     event_tx: broadcast::Sender<SessionEventMessage>,
     dispatcher: Arc<RpcDispatcher>,
+    plugin_loader: Option<DaemonPluginLoader>,
 }
 
 impl Server {
@@ -146,6 +148,17 @@ impl Server {
         );
         let dispatcher = Arc::new(RpcDispatcher::new(ctx));
 
+        let plugin_loader = match DaemonPluginLoader::new() {
+            Ok(loader) => {
+                info!("Daemon plugin loader initialized");
+                Some(loader)
+            }
+            Err(e) => {
+                warn!("Failed to initialize daemon plugin loader: {}", e);
+                None
+            }
+        };
+
         info!("Daemon listening on {:?}", path);
         Ok(Self {
             listener,
@@ -157,6 +170,7 @@ impl Server {
             subscription_manager,
             event_tx,
             dispatcher,
+            plugin_loader,
         })
     }
 
@@ -175,8 +189,22 @@ impl Server {
     }
 
     /// Run the server until shutdown
-    pub async fn run(self) -> Result<()> {
+    pub async fn run(mut self) -> Result<()> {
         let mut shutdown_rx = self.shutdown_tx.subscribe();
+
+        if let Some(ref mut loader) = self.plugin_loader {
+            let paths = crate::daemon_plugins::default_daemon_plugin_paths();
+            match loader.load_plugins(&paths) {
+                Ok(specs) => {
+                    if !specs.is_empty() {
+                        info!("Loaded {} daemon plugin(s)", specs.len());
+                    }
+                }
+                Err(e) => {
+                    warn!("Failed to load daemon plugins: {}", e);
+                }
+            }
+        }
 
         // Spawn event persistence task with cancellation support
         let storage = FileSessionStorage::new();

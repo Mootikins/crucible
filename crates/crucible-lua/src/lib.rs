@@ -45,6 +45,7 @@
 
 pub mod annotations;
 mod ask;
+pub mod capability_gate;
 mod commands;
 pub mod core_handler;
 mod error;
@@ -71,6 +72,7 @@ mod registry;
 pub mod schema;
 pub mod session;
 mod session_api;
+mod sessions;
 mod shell;
 pub mod statusline;
 mod types;
@@ -91,6 +93,7 @@ pub use ask::{
     register_ask_module_with_context, EventPushCallback, LuaAgentAskContext, LuaAskBatch,
     LuaAskBatchResponse, LuaAskContext, LuaAskError, LuaAskQuestion, LuaQuestionAnswer,
 };
+pub use capability_gate::{check_module_access, module_capability_map, ModuleCapabilityMapping};
 pub use commands::{command_to_descriptor, LuaCommandHandler};
 pub use config::{get_statusline_config, ConfigLoader, ConfigState};
 pub use core_handler::{LuaHandler, LuaHandlerMeta};
@@ -154,4 +157,7 @@ pub use session::{
 pub use session_api::{
     register_session_module, ChannelSessionRpc, Session, SessionCommand, SessionConfigRpc,
     SessionManager,
+};
+pub use sessions::{
+    register_sessions_module, register_sessions_module_with_api, DaemonSessionApi,
 };
