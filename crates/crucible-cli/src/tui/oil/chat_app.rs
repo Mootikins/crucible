@@ -2099,7 +2099,7 @@ impl OilChatApp {
         self.container_list.mark_turn_active();
     }
 
-    fn add_system_message(&mut self, content: String) {
+    pub(crate) fn add_system_message(&mut self, content: String) {
         self.message_counter += 1;
         self.container_list.add_system_message(content);
     }
