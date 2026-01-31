@@ -16,8 +16,7 @@
 //! end
 //! ```
 //!
-//! The `@param` annotations are parsed by `AnnotationParser` and converted to
-//! tool schemas using this module's types.
+//! Tool parameters are converted to schemas using this module's types.
 
 use crate::types::LuaTool;
 #[cfg(test)]

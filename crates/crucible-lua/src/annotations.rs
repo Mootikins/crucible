@@ -108,6 +108,10 @@ pub struct DiscoveredView {
 }
 
 /// Annotation parser for Lua/Fennel files
+///
+/// Note: For plugins managed by `PluginManager`, prefer returning a spec table
+/// from `init.lua` instead of annotations. This parser remains used by
+/// `LuaScriptHandlerRegistry` for handler discovery in non-plugin scripts.
 pub struct AnnotationParser {
     /// Regex for Lua function declarations
     lua_function_re: Regex,

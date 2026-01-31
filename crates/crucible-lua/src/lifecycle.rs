@@ -1,10 +1,10 @@
 //! Plugin lifecycle management
 
 use crate::annotations::{
-    AnnotationParser, DiscoveredCommand, DiscoveredHandler, DiscoveredParam, DiscoveredTool,
-    DiscoveredView,
+    DiscoveredCommand, DiscoveredHandler, DiscoveredParam, DiscoveredTool, DiscoveredView,
 };
 use crate::manifest::{Capability, LoadedPlugin, ManifestError, PluginManifest, PluginState};
+use mlua::{Lua, Value};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -38,6 +38,24 @@ pub enum LifecycleError {
 }
 
 pub type LifecycleResult<T> = Result<T, LifecycleError>;
+
+/// Spec extracted from a plugin's returned Lua table.
+///
+/// When a plugin's `init.lua` returns a table, this struct captures the
+/// declared metadata and exports. Fields that aren't present in the table
+/// are left as `None`/empty.
+#[derive(Debug, Clone, Default)]
+pub struct PluginSpec {
+    pub name: Option<String>,
+    pub version: Option<String>,
+    pub description: Option<String>,
+    pub capabilities: Vec<String>,
+    pub tools: Vec<DiscoveredTool>,
+    pub commands: Vec<DiscoveredCommand>,
+    pub handlers: Vec<DiscoveredHandler>,
+    pub views: Vec<DiscoveredView>,
+    pub has_setup: bool,
+}
 
 /// Handle for unregistering programmatically-added items
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -151,29 +169,91 @@ impl PluginManager {
                 let entry = entry?;
                 let path = entry.path();
 
-                if !path.is_dir() {
-                    continue;
-                }
+                if path.is_dir() {
+                    // Try manifest first, then fall back to manifest-less discovery
+                    match PluginManifest::discover(&path) {
+                        Ok(Some(manifest)) => {
+                            let name = manifest.name.clone();
+                            if self.plugins.contains_key(&name) {
+                                debug!("Plugin already discovered: {}", name);
+                                continue;
+                            }
+                            info!("Discovered plugin: {} v{}", name, manifest.version);
+                            let plugin = LoadedPlugin::new(manifest, path);
+                            self.plugins.insert(name.clone(), plugin);
+                            discovered.push(name);
+                        }
+                        Ok(None) => {
+                            // No manifest — check for init.lua (manifest-less plugin)
+                            if path.join("init.lua").exists() {
+                                match PluginManifest::from_directory_defaults(&path) {
+                                    Ok(manifest) => {
+                                        let name = manifest.name.clone();
+                                        if self.plugins.contains_key(&name) {
+                                            debug!("Plugin already discovered: {}", name);
+                                            continue;
+                                        }
+                                        info!(
+                                            "Discovered manifest-less plugin: {} (from {})",
+                                            name,
+                                            path.display()
+                                        );
+                                        let plugin = LoadedPlugin::new(manifest, path);
+                                        self.plugins.insert(name.clone(), plugin);
+                                        discovered.push(name);
+                                    }
+                                    Err(e) => {
+                                        warn!(
+                                            "Failed to create default manifest for {}: {}",
+                                            path.display(),
+                                            e
+                                        );
+                                    }
+                                }
+                            } else {
+                                debug!("No manifest or init.lua in: {}", path.display());
+                            }
+                        }
+                        Err(e) => {
+                            warn!("Failed to load manifest from {}: {}", path.display(), e);
+                        }
+                    }
+                } else if path.is_file() {
+                    // Single-file plugin: .lua or .fnl file directly in plugins dir
+                    let ext = path.extension().and_then(|e| e.to_str());
+                    if matches!(ext, Some("lua") | Some("fnl")) {
+                        let stem = path
+                            .file_stem()
+                            .and_then(|s| s.to_str())
+                            .unwrap_or("")
+                            .to_string();
 
-                match PluginManifest::discover(&path) {
-                    Ok(Some(manifest)) => {
-                        let name = manifest.name.clone();
-
-                        if self.plugins.contains_key(&name) {
-                            debug!("Plugin already discovered: {}", name);
+                        if stem.is_empty() || self.plugins.contains_key(&stem) {
                             continue;
                         }
 
-                        info!("Discovered plugin: {} v{}", name, manifest.version);
-                        let plugin = LoadedPlugin::new(manifest, path);
-                        self.plugins.insert(name.clone(), plugin);
-                        discovered.push(name);
-                    }
-                    Ok(None) => {
-                        debug!("No manifest found in: {}", path.display());
-                    }
-                    Err(e) => {
-                        warn!("Failed to load manifest from {}: {}", path.display(), e);
+                        // Validate as plugin name
+                        match PluginManifest::from_yaml(&format!(
+                            "name: \"{}\"\nversion: \"0.0.0\"\nmain: \"{}\"\nexports:\n  auto_discover: false\n",
+                            stem,
+                            path.file_name().unwrap().to_string_lossy()
+                        )) {
+                            Ok(manifest) => {
+                                let name = manifest.name.clone();
+                                // Use the search_path as the plugin dir for single-file plugins
+                                let plugin = LoadedPlugin::new(manifest, search_path.clone());
+                                info!(
+                                    "Discovered single-file plugin: {} ({})",
+                                    name,
+                                    path.display()
+                                );
+                                self.plugins.insert(name.clone(), plugin);
+                                discovered.push(name);
+                            }
+                            Err(e) => {
+                                debug!("Skipping file {}: {}", path.display(), e);
+                            }
+                        }
                     }
                 }
             }
@@ -403,6 +483,7 @@ impl PluginManager {
             .ok_or_else(|| LifecycleError::NotFound(name.to_string()))?;
 
         let plugin_dir = plugin.dir.clone();
+        let main_path = plugin.main_path();
         let auto_discover = plugin.manifest.exports.auto_discover;
 
         debug!(
@@ -412,119 +493,118 @@ impl PluginManager {
             plugin_dir.display()
         );
 
-        if auto_discover {
-            self.scan_plugin_files(&plugin_dir)?;
-        } else {
-            let main_path = plugin.main_path();
-            debug!(
-                "  main_path: {}, exists: {}",
-                main_path.display(),
-                main_path.exists()
-            );
-            if main_path.exists() {
-                self.scan_file(&main_path)?;
-            } else {
-                warn!("Main file does not exist: {}", main_path.display());
-            }
-        }
-
-        Ok(())
-    }
-
-    fn scan_plugin_files(&mut self, dir: &Path) -> LifecycleResult<()> {
-        for entry in walkdir::WalkDir::new(dir)
-            .into_iter()
-            .filter_map(|e| e.ok())
+        // Try spec-based loading first (execute init.lua/init.fnl, inspect returned table)
+        if main_path.exists()
+            && main_path
+                .extension()
+                .is_some_and(|e| e == "lua" || e == "fnl")
         {
-            let path = entry.path();
-            if path.is_file() {
-                let ext = path.extension().and_then(|e| e.to_str());
-                if matches!(ext, Some("lua") | Some("fnl")) {
-                    self.scan_file(path)?;
+            match load_plugin_spec(&main_path) {
+                Ok(Some(spec)) => {
+                    debug!(
+                        "Loaded spec for plugin {}: {} tools, {} commands, {} handlers, {} views",
+                        name,
+                        spec.tools.len(),
+                        spec.commands.len(),
+                        spec.handlers.len(),
+                        spec.views.len()
+                    );
+
+                    // Update manifest metadata from spec if available
+                    if let Some(plugin) = self.plugins.get_mut(name) {
+                        if let Some(ref spec_name) = spec.name {
+                            // Only override if manifest came from directory defaults
+                            if plugin.manifest.version == "0.0.0" {
+                                plugin.manifest.name = spec_name.clone();
+                            }
+                        }
+                        if let Some(ref spec_version) = spec.version {
+                            if plugin.manifest.version == "0.0.0" {
+                                plugin.manifest.version = spec_version.clone();
+                            }
+                        }
+                        if let Some(ref spec_desc) = spec.description {
+                            if plugin.manifest.description.is_empty() {
+                                plugin.manifest.description = spec_desc.clone();
+                            }
+                        }
+                        // Merge capabilities from spec
+                        for cap_str in &spec.capabilities {
+                            if let Some(cap) = parse_capability(cap_str) {
+                                if !plugin.manifest.capabilities.contains(&cap) {
+                                    plugin.manifest.capabilities.push(cap);
+                                }
+                            }
+                        }
+                    }
+
+                    // Register all exports from spec
+                    let source_path = main_path.to_string_lossy().to_string();
+                    self.register_spec_exports(spec, &source_path, name);
+
+                    return Ok(());
+                }
+                Ok(None) => {
+                    debug!(
+                        "Plugin {} init.lua returned nil/non-table, no spec exports registered",
+                        name
+                    );
+                }
+                Err(e) => {
+                    warn!("Failed to load spec for plugin {}: {}", name, e);
                 }
             }
         }
+
         Ok(())
     }
 
-    fn scan_file(&mut self, path: &Path) -> LifecycleResult<()> {
-        debug!("Scanning file: {}", path.display());
-        let content = std::fs::read_to_string(path)?;
-        let parser = AnnotationParser::new();
-
-        if let Ok(tools) = parser.parse_tools(&content, path) {
-            debug!("  Found {} tools", tools.len());
-            for tool in tools {
-                if !self
-                    .tools
-                    .iter()
-                    .any(|t| t.item.name == tool.name && t.item.source_path == tool.source_path)
-                {
-                    debug!("Discovered tool: {} from {}", tool.name, path.display());
-                    self.tools.push(RegisteredItem {
-                        item: tool,
-                        handle: RegistrationHandle::new(),
-                        owner: None,
-                    });
-                }
+    fn register_spec_exports(&mut self, spec: PluginSpec, source_path: &str, owner: &str) {
+        for tool in spec.tools {
+            if !self.tools.iter().any(|t| t.item.name == tool.name) {
+                debug!("Registered tool from spec: {}", tool.name);
+                self.tools.push(RegisteredItem {
+                    item: tool,
+                    handle: RegistrationHandle::new(),
+                    owner: Some(owner.to_string()),
+                });
             }
         }
 
-        if let Ok(commands) = parser.parse_commands(&content, path) {
-            for cmd in commands {
-                if !self
-                    .commands
-                    .iter()
-                    .any(|c| c.item.name == cmd.name && c.item.source_path == cmd.source_path)
-                {
-                    debug!("Discovered command: {} from {}", cmd.name, path.display());
-                    self.commands.push(RegisteredItem {
-                        item: cmd,
-                        handle: RegistrationHandle::new(),
-                        owner: None,
-                    });
-                }
+        for cmd in spec.commands {
+            if !self.commands.iter().any(|c| c.item.name == cmd.name) {
+                debug!("Registered command from spec: {}", cmd.name);
+                self.commands.push(RegisteredItem {
+                    item: cmd,
+                    handle: RegistrationHandle::new(),
+                    owner: Some(owner.to_string()),
+                });
             }
         }
 
-        if let Ok(views) = parser.parse_views(&content, path) {
-            for view in views {
-                if !self
-                    .views
-                    .iter()
-                    .any(|v| v.item.name == view.name && v.item.source_path == view.source_path)
-                {
-                    debug!("Discovered view: {} from {}", view.name, path.display());
-                    self.views.push(RegisteredItem {
-                        item: view,
-                        handle: RegistrationHandle::new(),
-                        owner: None,
-                    });
-                }
+        for handler in spec.handlers {
+            if !self.handlers.iter().any(|h| h.item.name == handler.name) {
+                debug!("Registered handler from spec: {}", handler.name);
+                self.handlers.push(RegisteredItem {
+                    item: handler,
+                    handle: RegistrationHandle::new(),
+                    owner: Some(owner.to_string()),
+                });
             }
         }
 
-        let handlers = parser.parse_handlers(&content, path);
-        if let Ok(handlers) = handlers {
-            for handler in handlers {
-                if !self.handlers.iter().any(|h| {
-                    h.item.name == handler.name && h.item.source_path == handler.source_path
-                }) {
-                    debug!(
-                        "Discovered handler: {} from {}",
-                        handler.name,
-                        path.display()
-                    );
-                    self.handlers.push(RegisteredItem {
-                        item: handler,
-                        handle: RegistrationHandle::new(),
-                        owner: None,
-                    });
-                }
+        for view in spec.views {
+            if !self.views.iter().any(|v| v.item.name == view.name) {
+                debug!("Registered view from spec: {}", view.name);
+                self.views.push(RegisteredItem {
+                    item: view,
+                    handle: RegistrationHandle::new(),
+                    owner: Some(owner.to_string()),
+                });
             }
         }
 
-        Ok(())
+        let _ = source_path; // used for debug context
     }
 
     pub fn get(&self, name: &str) -> Option<&LoadedPlugin> {
@@ -942,6 +1022,331 @@ impl ViewBuilder {
     }
 }
 
+/// Parse a capability string (from Lua spec) to a Capability enum.
+fn parse_capability(s: &str) -> Option<Capability> {
+    match s.to_lowercase().as_str() {
+        "filesystem" => Some(Capability::Filesystem),
+        "network" => Some(Capability::Network),
+        "shell" => Some(Capability::Shell),
+        "vault" => Some(Capability::Vault),
+        "agent" => Some(Capability::Agent),
+        "ui" => Some(Capability::Ui),
+        "config" => Some(Capability::Config),
+        "system" => Some(Capability::System),
+        _ => None,
+    }
+}
+
+/// Set up a permissive sandbox for spec extraction.
+///
+/// Stubs `require()`, `crucible`, `cru`, and `io` so that plugin init files
+/// can be evaluated for their return table without crashing on missing runtime
+/// dependencies. The stubs are no-ops — we only care about the spec table structure.
+fn setup_spec_sandbox(lua: &Lua) -> Result<(), mlua::Error> {
+    lua.load(
+        r#"
+-- Stub require: return an empty table that tolerates any method call
+local stub_mt = {}
+stub_mt.__index = function() return function() return setmetatable({}, stub_mt) end end
+stub_mt.__call = function() return setmetatable({}, stub_mt) end
+
+local _real_require = require
+require = function(name)
+    local ok, mod = pcall(_real_require, name)
+    if ok then return mod end
+    return setmetatable({}, stub_mt)
+end
+
+-- Stub crucible namespace
+crucible = setmetatable({}, stub_mt)
+
+-- Stub cru namespace
+cru = setmetatable({}, stub_mt)
+
+-- Stub io (some plugins use io.open at load time)
+if not io then io = setmetatable({}, stub_mt) end
+"#,
+    )
+    .exec()?;
+    Ok(())
+}
+
+/// Execute a plugin's init.lua and extract a PluginSpec from the returned table.
+///
+/// Returns `Ok(Some(spec))` if the script returns a table with recognized fields,
+/// `Ok(None)` if it returns nil or a non-table value,
+/// or `Err` if there's a Lua execution error.
+pub fn load_plugin_spec(init_path: &Path) -> LifecycleResult<Option<PluginSpec>> {
+    let source = std::fs::read_to_string(init_path).map_err(LifecycleError::Io)?;
+
+    // Compile Fennel to Lua if needed
+    let is_fennel = init_path.extension().is_some_and(|ext| ext == "fnl");
+
+    if is_fennel {
+        #[cfg(feature = "fennel")]
+        {
+            let lua_source = crate::fennel::compile_fennel(&source).map_err(|e| {
+                LifecycleError::LoadError(format!(
+                    "Fennel compilation failed for {}: {}",
+                    init_path.display(),
+                    e
+                ))
+            })?;
+            return load_plugin_spec_from_source(&lua_source, init_path);
+        }
+        #[cfg(not(feature = "fennel"))]
+        {
+            return Err(LifecycleError::LoadError(format!(
+                "Fennel file {} requires the 'fennel' feature",
+                init_path.display()
+            )));
+        }
+    }
+
+    load_plugin_spec_from_source(&source, init_path)
+}
+
+/// Extract a PluginSpec from Lua source code. Exposed for testing.
+pub fn load_plugin_spec_from_source(
+    source: &str,
+    source_path: &Path,
+) -> LifecycleResult<Option<PluginSpec>> {
+    let lua = Lua::new();
+    let source_path_str = source_path.to_string_lossy().to_string();
+    let is_fennel = source_path.extension().is_some_and(|ext| ext == "fnl");
+
+    // Set up a permissive environment so plugins that use require(), crucible.*,
+    // cru.*, io.*, etc. don't crash before we can read their spec table.
+    setup_spec_sandbox(&lua)
+        .map_err(|e| LifecycleError::LoadError(format!("Failed to set up spec sandbox: {}", e)))?;
+
+    // Execute the source and capture the return value
+    let result: Value = lua
+        .load(source)
+        .set_name(source_path_str.as_str())
+        .eval()
+        .map_err(|e| {
+            LifecycleError::LoadError(format!("Lua error in {}: {}", source_path_str, e))
+        })?;
+
+    let table = match result {
+        Value::Table(t) => t,
+        Value::Nil => return Ok(None),
+        _ => return Ok(None),
+    };
+
+    // Determine if this is a spec table vs a plain module table.
+    // A spec table has at least one recognized declarative field.
+    let spec_fields = [
+        "name", "version", "tools", "commands", "handlers", "views", "setup",
+    ];
+    let has_spec_field = spec_fields
+        .iter()
+        .any(|&field| !matches!(table.get::<Value>(field), Ok(Value::Nil) | Err(_)));
+
+    if !has_spec_field {
+        // Plain module table (e.g., `local M = {}; return M`) — not a spec
+        return Ok(None);
+    }
+
+    let mut spec = PluginSpec {
+        name: table.get::<Option<String>>("name").unwrap_or(None),
+        version: table.get::<Option<String>>("version").unwrap_or(None),
+        description: table.get::<Option<String>>("description").unwrap_or(None),
+        ..Default::default()
+    };
+
+    // Extract capabilities
+    if let Ok(Value::Table(caps)) = table.get::<Value>("capabilities") {
+        for i in 1..=caps.raw_len() {
+            if let Ok(s) = caps.get::<String>(i) {
+                spec.capabilities.push(s);
+            }
+        }
+    }
+
+    // Extract tools
+    if let Ok(Value::Table(tools_table)) = table.get::<Value>("tools") {
+        for pair in tools_table.pairs::<String, Value>() {
+            if let Ok((tool_name, Value::Table(tool_def))) = pair {
+                let desc = tool_def
+                    .get::<Option<String>>("desc")
+                    .unwrap_or(None)
+                    .unwrap_or_default();
+
+                let mut params = Vec::new();
+                if let Ok(Value::Table(params_table)) = tool_def.get::<Value>("params") {
+                    for i in 1..=params_table.raw_len() {
+                        if let Ok(Value::Table(param_def)) = params_table.get::<Value>(i) {
+                            let pname = param_def
+                                .get::<Option<String>>("name")
+                                .unwrap_or(None)
+                                .unwrap_or_default();
+                            let ptype = param_def
+                                .get::<Option<String>>("type")
+                                .unwrap_or(None)
+                                .unwrap_or_else(|| "string".to_string());
+                            let pdesc = param_def
+                                .get::<Option<String>>("desc")
+                                .unwrap_or(None)
+                                .unwrap_or_default();
+                            let optional = param_def
+                                .get::<Option<bool>>("optional")
+                                .unwrap_or(None)
+                                .unwrap_or(false);
+
+                            params.push(DiscoveredParam {
+                                name: pname,
+                                param_type: ptype,
+                                description: pdesc,
+                                optional,
+                            });
+                        }
+                    }
+                }
+
+                spec.tools.push(DiscoveredTool {
+                    name: tool_name,
+                    description: desc,
+                    params,
+                    return_type: None,
+                    source_path: source_path_str.clone(),
+                    is_fennel,
+                });
+            }
+        }
+    }
+
+    // Extract commands
+    if let Ok(Value::Table(cmds_table)) = table.get::<Value>("commands") {
+        for pair in cmds_table.pairs::<String, Value>() {
+            if let Ok((cmd_name, Value::Table(cmd_def))) = pair {
+                let desc = cmd_def
+                    .get::<Option<String>>("desc")
+                    .unwrap_or(None)
+                    .unwrap_or_default();
+                let hint = cmd_def.get::<Option<String>>("hint").unwrap_or(None);
+
+                // Extract params if present
+                let mut params = Vec::new();
+                if let Ok(Value::Table(params_table)) = cmd_def.get::<Value>("params") {
+                    for i in 1..=params_table.raw_len() {
+                        if let Ok(Value::Table(param_def)) = params_table.get::<Value>(i) {
+                            let pname = param_def
+                                .get::<Option<String>>("name")
+                                .unwrap_or(None)
+                                .unwrap_or_default();
+                            let ptype = param_def
+                                .get::<Option<String>>("type")
+                                .unwrap_or(None)
+                                .unwrap_or_else(|| "string".to_string());
+                            let pdesc = param_def
+                                .get::<Option<String>>("desc")
+                                .unwrap_or(None)
+                                .unwrap_or_default();
+                            let optional = param_def
+                                .get::<Option<bool>>("optional")
+                                .unwrap_or(None)
+                                .unwrap_or(false);
+
+                            params.push(DiscoveredParam {
+                                name: pname,
+                                param_type: ptype,
+                                description: pdesc,
+                                optional,
+                            });
+                        }
+                    }
+                }
+
+                spec.commands.push(DiscoveredCommand {
+                    name: cmd_name.clone(),
+                    description: desc,
+                    params,
+                    input_hint: hint,
+                    source_path: source_path_str.clone(),
+                    handler_fn: cmd_name,
+                    is_fennel,
+                });
+            }
+        }
+    }
+
+    // Extract handlers
+    if let Ok(Value::Table(handlers_table)) = table.get::<Value>("handlers") {
+        for i in 1..=handlers_table.raw_len() {
+            if let Ok(Value::Table(handler_def)) = handlers_table.get::<Value>(i) {
+                let event = handler_def
+                    .get::<Option<String>>("event")
+                    .unwrap_or(None)
+                    .unwrap_or_default();
+                let priority = handler_def
+                    .get::<Option<i64>>("priority")
+                    .unwrap_or(None)
+                    .unwrap_or(100);
+                let pattern = handler_def
+                    .get::<Option<String>>("pattern")
+                    .unwrap_or(None)
+                    .unwrap_or_else(|| "*".to_string());
+                let name = handler_def
+                    .get::<Option<String>>("name")
+                    .unwrap_or(None)
+                    .unwrap_or_else(|| format!("handler_{}", i));
+                let desc = handler_def
+                    .get::<Option<String>>("desc")
+                    .unwrap_or(None)
+                    .unwrap_or_default();
+
+                if !event.is_empty() {
+                    spec.handlers.push(DiscoveredHandler {
+                        name: name.clone(),
+                        event_type: event,
+                        pattern,
+                        priority,
+                        description: desc,
+                        source_path: source_path_str.clone(),
+                        handler_fn: name,
+                        is_fennel,
+                    });
+                }
+            }
+        }
+    }
+
+    // Extract views
+    if let Ok(Value::Table(views_table)) = table.get::<Value>("views") {
+        for pair in views_table.pairs::<String, Value>() {
+            if let Ok((view_name, Value::Table(view_def))) = pair {
+                let desc = view_def
+                    .get::<Option<String>>("desc")
+                    .unwrap_or(None)
+                    .unwrap_or_default();
+                // Check if handler fn is present (it's a Lua function, so we just check for non-nil)
+                let has_handler =
+                    matches!(view_def.get::<Value>("handler"), Ok(Value::Function(_)));
+
+                spec.views.push(DiscoveredView {
+                    name: view_name.clone(),
+                    description: desc,
+                    source_path: source_path_str.clone(),
+                    view_fn: view_name.clone(),
+                    handler_fn: if has_handler {
+                        Some(format!("{}_handler", view_name))
+                    } else {
+                        None
+                    },
+                    is_fennel,
+                });
+            }
+        }
+    }
+
+    // Check for setup function
+    spec.has_setup = matches!(table.get::<Value>("setup"), Ok(Value::Function(_)));
+
+    Ok(Some(spec))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -956,19 +1361,28 @@ mod tests {
 name: {name}
 version: "{version}"
 main: init.lua
-exports:
-  auto_discover: true
 "#
         );
         std::fs::write(plugin_dir.join("plugin.yaml"), manifest).unwrap();
 
-        let lua = r#"
---- Test tool
--- @tool name="test_tool" desc="A test tool"
-function test_tool()
+        let lua = format!(
+            r#"
+local M = {{}}
+function M.test_tool()
     return "ok"
 end
-"#;
+return {{
+    name = "{name}",
+    version = "{version}",
+    tools = {{
+        test_tool = {{
+            desc = "A test tool",
+            fn = M.test_tool,
+        }},
+    }},
+}}
+"#
+        );
         std::fs::write(plugin_dir.join("init.lua"), lua).unwrap();
 
         plugin_dir
@@ -1410,13 +1824,13 @@ enabled: false
     }
 
     #[test]
-    fn test_mixed_annotation_and_programmatic() {
+    fn test_mixed_spec_and_programmatic() {
         let temp = TempDir::new().unwrap();
-        create_test_plugin(temp.path(), "annotation-plugin", "1.0.0");
+        create_test_plugin(temp.path(), "spec-plugin", "1.0.0");
 
         let mut manager = PluginManager::new().with_search_paths(vec![temp.path().to_path_buf()]);
         manager.discover().unwrap();
-        manager.load("annotation-plugin").unwrap();
+        manager.load("spec-plugin").unwrap();
 
         assert_eq!(manager.tools().len(), 1);
         assert_eq!(manager.tools()[0].name, "test_tool");
@@ -1433,5 +1847,550 @@ enabled: false
         manager.unregister(handle);
         assert_eq!(manager.tools().len(), 1);
         assert_eq!(manager.tools()[0].name, "test_tool");
+    }
+
+    // ====================================================================
+    // Spec-based plugin loading tests
+    // ====================================================================
+
+    #[test]
+    fn test_load_plugin_spec_basic() {
+        let source = r#"
+return {
+    name = "test-plugin",
+    version = "1.2.3",
+    description = "A test plugin",
+    tools = {
+        my_tool = {
+            desc = "Do something",
+            params = {
+                { name = "query", type = "string", desc = "Search query" },
+            },
+            fn = function(args) return { result = "ok" } end,
+        },
+    },
+}
+"#;
+        let spec = load_plugin_spec_from_source(source, Path::new("test/init.lua"))
+            .unwrap()
+            .expect("Should return Some(spec)");
+
+        assert_eq!(spec.name, Some("test-plugin".to_string()));
+        assert_eq!(spec.version, Some("1.2.3".to_string()));
+        assert_eq!(spec.description, Some("A test plugin".to_string()));
+        assert_eq!(spec.tools.len(), 1);
+        assert_eq!(spec.tools[0].name, "my_tool");
+        assert_eq!(spec.tools[0].description, "Do something");
+        assert_eq!(spec.tools[0].params.len(), 1);
+        assert_eq!(spec.tools[0].params[0].name, "query");
+        assert_eq!(spec.tools[0].params[0].param_type, "string");
+        assert!(!spec.tools[0].params[0].optional);
+    }
+
+    #[test]
+    fn test_load_plugin_spec_all_export_types() {
+        let source = r#"
+local M = {}
+function M.my_tool(args) return { result = "ok" } end
+function M.my_command(args, ctx) end
+function M.my_handler(ctx, event) return event end
+function M.my_view(ctx) end
+
+return {
+    name = "full-plugin",
+    version = "0.1.0",
+    tools = {
+        my_tool = { desc = "A tool", fn = M.my_tool },
+    },
+    commands = {
+        my_command = { desc = "A command", hint = "[args]", fn = M.my_command },
+    },
+    handlers = {
+        { event = "note:created", priority = 150, name = "on_note_created", fn = M.my_handler },
+    },
+    views = {
+        ["my-view"] = { desc = "A view", fn = M.my_view },
+    },
+}
+"#;
+        let spec = load_plugin_spec_from_source(source, Path::new("test/init.lua"))
+            .unwrap()
+            .expect("Should return Some(spec)");
+
+        assert_eq!(spec.tools.len(), 1);
+        assert_eq!(spec.commands.len(), 1);
+        assert_eq!(spec.handlers.len(), 1);
+        assert_eq!(spec.views.len(), 1);
+    }
+
+    #[test]
+    fn test_load_plugin_spec_with_setup() {
+        let source = r#"
+return {
+    name = "setup-plugin",
+    version = "0.1.0",
+    setup = function(config)
+        -- Called after load with plugin config
+    end,
+}
+"#;
+        let spec = load_plugin_spec_from_source(source, Path::new("test/init.lua"))
+            .unwrap()
+            .expect("Should return Some(spec)");
+
+        assert!(spec.has_setup);
+        assert_eq!(spec.name, Some("setup-plugin".to_string()));
+    }
+
+    #[test]
+    fn test_load_plugin_spec_empty_table() {
+        // Empty table with no recognized fields returns None (not a spec)
+        let source = "return {}";
+        let result = load_plugin_spec_from_source(source, Path::new("test/init.lua")).unwrap();
+        assert!(
+            result.is_none(),
+            "Empty table should not be recognized as a spec"
+        );
+    }
+
+    #[test]
+    fn test_load_plugin_spec_no_return() {
+        // Script that doesn't return anything (returns nil)
+        let source = "local x = 42";
+        let result = load_plugin_spec_from_source(source, Path::new("test/init.lua")).unwrap();
+        assert!(result.is_none(), "nil return should yield None");
+    }
+
+    #[test]
+    fn test_load_plugin_spec_lua_error() {
+        // Syntax error in Lua
+        let source = "this is not valid lua!!!";
+        let result = load_plugin_spec_from_source(source, Path::new("test/init.lua"));
+        assert!(result.is_err(), "Lua syntax error should return Err");
+    }
+
+    #[test]
+    fn test_load_plugin_spec_runtime_error() {
+        // Runtime error
+        let source = r#"error("boom")"#;
+        let result = load_plugin_spec_from_source(source, Path::new("test/init.lua"));
+        assert!(result.is_err(), "Runtime error should return Err");
+    }
+
+    #[test]
+    fn test_tool_params_required_and_optional() {
+        let source = r#"
+return {
+    name = "params-test",
+    version = "1.0.0",
+    tools = {
+        search = {
+            desc = "Search",
+            params = {
+                { name = "query", type = "string", desc = "Search query" },
+                { name = "limit", type = "number", desc = "Max results", optional = true },
+            },
+        },
+    },
+}
+"#;
+        let spec = load_plugin_spec_from_source(source, Path::new("test/init.lua"))
+            .unwrap()
+            .unwrap();
+
+        let tool = &spec.tools[0];
+        assert_eq!(tool.params.len(), 2);
+        assert!(!tool.params[0].optional);
+        assert!(tool.params[1].optional);
+        assert_eq!(tool.params[1].param_type, "number");
+    }
+
+    #[test]
+    fn test_handler_spec_fields() {
+        let source = r#"
+return {
+    name = "handler-test",
+    version = "1.0.0",
+    handlers = {
+        { event = "note:created", priority = 50, pattern = "*.md", name = "on_md_created" },
+        { event = "tool:after", name = "log_tool" },
+    },
+}
+"#;
+        let spec = load_plugin_spec_from_source(source, Path::new("test/init.lua"))
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(spec.handlers.len(), 2);
+
+        let h1 = &spec.handlers[0];
+        assert_eq!(h1.event_type, "note:created");
+        assert_eq!(h1.priority, 50);
+        assert_eq!(h1.pattern, "*.md");
+        assert_eq!(h1.name, "on_md_created");
+
+        let h2 = &spec.handlers[1];
+        assert_eq!(h2.event_type, "tool:after");
+        assert_eq!(h2.priority, 100); // default
+        assert_eq!(h2.pattern, "*"); // default
+    }
+
+    #[test]
+    fn test_view_spec_with_handler() {
+        let source = r#"
+return {
+    name = "view-test",
+    version = "1.0.0",
+    views = {
+        ["my-view"] = {
+            desc = "A custom view",
+            fn = function(ctx) end,
+            handler = function(key, ctx) end,
+        },
+    },
+}
+"#;
+        let spec = load_plugin_spec_from_source(source, Path::new("test/init.lua"))
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(spec.views.len(), 1);
+        assert_eq!(spec.views[0].name, "my-view");
+        assert_eq!(spec.views[0].description, "A custom view");
+        assert!(spec.views[0].handler_fn.is_some());
+    }
+
+    #[test]
+    fn test_view_spec_without_handler() {
+        let source = r#"
+return {
+    name = "view-test",
+    version = "1.0.0",
+    views = {
+        ["simple-view"] = {
+            desc = "Simple",
+            fn = function(ctx) end,
+        },
+    },
+}
+"#;
+        let spec = load_plugin_spec_from_source(source, Path::new("test/init.lua"))
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(spec.views.len(), 1);
+        assert!(spec.views[0].handler_fn.is_none());
+    }
+
+    #[test]
+    fn test_command_spec_with_hint() {
+        let source = r#"
+return {
+    name = "cmd-test",
+    version = "1.0.0",
+    commands = {
+        daily = { desc = "Create daily note", hint = "[title]" },
+    },
+}
+"#;
+        let spec = load_plugin_spec_from_source(source, Path::new("test/init.lua"))
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(spec.commands.len(), 1);
+        assert_eq!(spec.commands[0].name, "daily");
+        assert_eq!(spec.commands[0].description, "Create daily note");
+        assert_eq!(spec.commands[0].input_hint, Some("[title]".to_string()));
+    }
+
+    #[test]
+    fn test_capabilities_from_spec() {
+        let source = r#"
+return {
+    name = "cap-test",
+    version = "1.0.0",
+    capabilities = { "vault", "ui", "config" },
+}
+"#;
+        let spec = load_plugin_spec_from_source(source, Path::new("test/init.lua"))
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(spec.capabilities, vec!["vault", "ui", "config"]);
+    }
+
+    #[test]
+    fn test_plain_module_table_not_spec() {
+        // A plugin that returns a module table (not a spec) should be None
+        let source = r#"
+local M = {}
+function M.my_tool(args) return { result = "ok" } end
+function M.my_command(args, ctx) end
+return M
+"#;
+        let result = load_plugin_spec_from_source(source, Path::new("test/init.lua")).unwrap();
+        assert!(
+            result.is_none(),
+            "Module table with only function values should not be a spec"
+        );
+    }
+
+    #[test]
+    fn test_spec_with_only_name() {
+        // A table with just a name field is recognized as a spec
+        let source = r#"return { name = "minimal" }"#;
+        let spec = load_plugin_spec_from_source(source, Path::new("test/init.lua"))
+            .unwrap()
+            .expect("Table with name should be a spec");
+
+        assert_eq!(spec.name, Some("minimal".to_string()));
+        assert!(spec.tools.is_empty());
+    }
+
+    // ====================================================================
+    // Manifest-less discovery tests
+    // ====================================================================
+
+    #[test]
+    fn test_discover_directory_without_manifest() {
+        let temp = TempDir::new().unwrap();
+        let plugin_dir = temp.path().join("my-plugin");
+        std::fs::create_dir_all(&plugin_dir).unwrap();
+        std::fs::write(plugin_dir.join("init.lua"), "-- code").unwrap();
+
+        let mut manager = PluginManager::new().with_search_paths(vec![temp.path().to_path_buf()]);
+        let discovered = manager.discover().unwrap();
+
+        assert_eq!(discovered.len(), 1);
+        assert!(discovered.contains(&"my-plugin".to_string()));
+
+        let plugin = manager.get("my-plugin").unwrap();
+        assert_eq!(plugin.version(), "0.0.0");
+    }
+
+    #[test]
+    fn test_discover_manifestless_with_spec_override() {
+        let temp = TempDir::new().unwrap();
+        let plugin_dir = temp.path().join("my-plugin");
+        std::fs::create_dir_all(&plugin_dir).unwrap();
+        // Plugin returns a spec with custom name/version
+        std::fs::write(
+            plugin_dir.join("init.lua"),
+            r#"return { name = "custom-name", version = "1.2.0" }"#,
+        )
+        .unwrap();
+
+        let mut manager = PluginManager::new().with_search_paths(vec![temp.path().to_path_buf()]);
+        manager.discover().unwrap();
+        manager.load("my-plugin").unwrap();
+
+        let plugin = manager.get("my-plugin").unwrap();
+        // Name updated from spec (since version was 0.0.0 = directory defaults)
+        assert_eq!(plugin.manifest.name, "custom-name");
+        assert_eq!(plugin.version(), "1.2.0");
+    }
+
+    #[test]
+    fn test_manifest_takes_precedence_over_lua_table() {
+        let temp = TempDir::new().unwrap();
+        let plugin_dir = temp.path().join("my-plugin");
+        std::fs::create_dir_all(&plugin_dir).unwrap();
+
+        // Manifest with explicit version
+        std::fs::write(
+            plugin_dir.join("plugin.yaml"),
+            "name: my-plugin\nversion: \"2.0.0\"\nmain: init.lua\n",
+        )
+        .unwrap();
+
+        // Lua spec with different version
+        std::fs::write(
+            plugin_dir.join("init.lua"),
+            r#"return { name = "other-name", version = "9.9.9" }"#,
+        )
+        .unwrap();
+
+        let mut manager = PluginManager::new().with_search_paths(vec![temp.path().to_path_buf()]);
+        manager.discover().unwrap();
+        manager.load("my-plugin").unwrap();
+
+        let plugin = manager.get("my-plugin").unwrap();
+        // Manifest values should win (version != "0.0.0", so spec doesn't override)
+        assert_eq!(plugin.manifest.name, "my-plugin");
+        assert_eq!(plugin.version(), "2.0.0");
+    }
+
+    #[test]
+    fn test_empty_directory_not_discovered() {
+        let temp = TempDir::new().unwrap();
+        let empty_dir = temp.path().join("empty-dir");
+        std::fs::create_dir_all(&empty_dir).unwrap();
+
+        let mut manager = PluginManager::new().with_search_paths(vec![temp.path().to_path_buf()]);
+        let discovered = manager.discover().unwrap();
+
+        assert!(discovered.is_empty());
+    }
+
+    // ====================================================================
+    // Spec-based plugin loading integration tests
+    // ====================================================================
+
+    fn create_spec_plugin(dir: &Path, name: &str) -> PathBuf {
+        let plugin_dir = dir.join(name);
+        std::fs::create_dir_all(&plugin_dir).unwrap();
+
+        let lua = format!(
+            r#"
+local M = {{}}
+function M.search(args) return {{ result = "ok" }} end
+function M.search_command(args, ctx) end
+function M.on_note(ctx, event) return event end
+function M.graph_view(ctx) end
+function M.graph_handler(key, ctx) end
+
+return {{
+    name = "{}",
+    version = "1.0.0",
+    description = "Test spec plugin",
+    capabilities = {{ "vault" }},
+
+    tools = {{
+        search = {{
+            desc = "Search notes",
+            params = {{
+                {{ name = "query", type = "string", desc = "Search query" }},
+                {{ name = "limit", type = "number", desc = "Max results", optional = true }},
+            }},
+            fn = M.search,
+        }},
+    }},
+
+    commands = {{
+        search = {{ desc = "Search command", hint = "[query]", fn = M.search_command }},
+    }},
+
+    handlers = {{
+        {{ event = "note:created", priority = 50, name = "on_note", fn = M.on_note }},
+    }},
+
+    views = {{
+        graph = {{ desc = "Graph view", fn = M.graph_view, handler = M.graph_handler }},
+    }},
+
+    setup = function(config) end,
+}}
+"#,
+            name
+        );
+
+        std::fs::write(plugin_dir.join("init.lua"), lua).unwrap();
+        plugin_dir
+    }
+
+    #[test]
+    fn test_spec_plugin_full_lifecycle() {
+        let temp = TempDir::new().unwrap();
+        create_spec_plugin(temp.path(), "spec-test");
+
+        let mut manager = PluginManager::new().with_search_paths(vec![temp.path().to_path_buf()]);
+        manager.discover().unwrap();
+        manager.load("spec-test").unwrap();
+
+        let plugin = manager.get("spec-test").unwrap();
+        assert_eq!(plugin.state, PluginState::Active);
+        assert_eq!(plugin.manifest.name, "spec-test");
+        assert_eq!(plugin.version(), "1.0.0");
+
+        assert_eq!(manager.tools().len(), 1);
+        assert_eq!(manager.tools()[0].name, "search");
+        assert_eq!(manager.tools()[0].params.len(), 2);
+
+        assert_eq!(manager.commands().len(), 1);
+        assert_eq!(manager.commands()[0].name, "search");
+        assert_eq!(
+            manager.commands()[0].input_hint,
+            Some("[query]".to_string())
+        );
+
+        assert_eq!(manager.handlers().len(), 1);
+        assert_eq!(manager.handlers()[0].event_type, "note:created");
+        assert_eq!(manager.handlers()[0].priority, 50);
+
+        assert_eq!(manager.views().len(), 1);
+        assert_eq!(manager.views()[0].name, "graph");
+        assert!(manager.views()[0].handler_fn.is_some());
+
+        // Unload and verify cleanup
+        manager.unload("spec-test").unwrap();
+        assert_eq!(manager.tools().len(), 0);
+        assert_eq!(manager.commands().len(), 0);
+        assert_eq!(manager.handlers().len(), 0);
+        assert_eq!(manager.views().len(), 0);
+    }
+
+    #[test]
+    fn test_spec_plugin_without_manifest() {
+        let temp = TempDir::new().unwrap();
+        // Create a manifest-less plugin that returns a spec
+        create_spec_plugin(temp.path(), "no-manifest");
+
+        let mut manager = PluginManager::new().with_search_paths(vec![temp.path().to_path_buf()]);
+        manager.discover().unwrap();
+        manager.load("no-manifest").unwrap();
+
+        let plugin = manager.get("no-manifest").unwrap();
+        assert_eq!(plugin.state, PluginState::Active);
+        // Name/version updated from spec
+        assert_eq!(plugin.manifest.name, "no-manifest");
+        assert_eq!(plugin.version(), "1.0.0");
+
+        assert_eq!(manager.tools().len(), 1);
+        assert_eq!(manager.commands().len(), 1);
+        assert_eq!(manager.handlers().len(), 1);
+        assert_eq!(manager.views().len(), 1);
+    }
+
+    #[test]
+    fn test_spec_capabilities_merged_into_manifest() {
+        let temp = TempDir::new().unwrap();
+        create_spec_plugin(temp.path(), "cap-merge");
+
+        let mut manager = PluginManager::new().with_search_paths(vec![temp.path().to_path_buf()]);
+        manager.discover().unwrap();
+        manager.load("cap-merge").unwrap();
+
+        let plugin = manager.get("cap-merge").unwrap();
+        assert!(plugin.manifest.has_capability(Capability::Vault));
+    }
+
+    #[test]
+    fn test_multiple_spec_plugins_coexist() {
+        let temp = TempDir::new().unwrap();
+
+        // Manifest + spec plugin
+        create_test_plugin(temp.path(), "manifest-plugin", "1.0.0");
+
+        // Manifest-less spec plugin
+        create_spec_plugin(temp.path(), "spec-plugin");
+
+        let mut manager = PluginManager::new().with_search_paths(vec![temp.path().to_path_buf()]);
+        manager.discover().unwrap();
+        manager.load_all().unwrap();
+
+        // Both should be loaded
+        assert_eq!(
+            manager.get("manifest-plugin").unwrap().state,
+            PluginState::Active
+        );
+        assert_eq!(
+            manager.get("spec-plugin").unwrap().state,
+            PluginState::Active
+        );
+
+        // manifest-plugin has 1 tool (test_tool), spec-plugin has 1 tool (search)
+        let tool_names: Vec<_> = manager.tools().iter().map(|t| t.name.clone()).collect();
+        assert!(tool_names.contains(&"test_tool".to_string()));
+        assert!(tool_names.contains(&"search".to_string()));
     }
 }
