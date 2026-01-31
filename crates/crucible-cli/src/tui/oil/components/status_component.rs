@@ -71,7 +71,7 @@ impl<'a> StatusComponent<'a> {
 }
 
 impl Component for StatusComponent<'_> {
-    fn view(&self, ctx: &ViewContext<'_>) -> Node {
+    fn view(&self, _ctx: &ViewContext<'_>) -> Node {
         let error_node = if let Some(err) = self.error {
             styled(
                 format!("Error: {}", err),
@@ -97,7 +97,7 @@ impl Component for StatusComponent<'_> {
         let bar_node = if let Some(cfg) = self.config {
             status_bar.view_from_config(cfg)
         } else {
-            status_bar.view(ctx)
+            status_bar.emergency_view()
         };
 
         col(vec![error_node, bar_node])
@@ -110,20 +110,24 @@ mod tests {
     use crate::tui::oil::component::ComponentHarness;
     use crate::tui::oil::render::render_to_plain_text;
 
+    fn default_statusline_config() -> StatuslineConfig {
+        StatuslineConfig::builtin_default()
+    }
+
     #[test]
     fn status_no_error_shows_bar_only() {
+        let cfg = default_statusline_config();
         let mut harness = ComponentHarness::new(80, 4);
         let comp = StatusComponent::new()
             .mode(ChatMode::Normal)
             .model("gpt-4")
             .context(4000, 8000)
-            .status("Ready");
+            .config(&cfg);
         harness.render_component(&comp);
         let plain = render_to_plain_text(&comp.view(&ViewContext::new(harness.focus())), 80);
         assert!(plain.contains("NORMAL"));
         assert!(plain.contains("gpt-4"));
         assert!(plain.contains("50% ctx"));
-        assert!(plain.contains("Ready"));
         assert!(!plain.contains("Error:"));
     }
 
@@ -143,11 +147,13 @@ mod tests {
 
     #[test]
     fn status_with_toast_renders_toast() {
+        let cfg = default_statusline_config();
         let harness = ComponentHarness::new(80, 4);
         let comp = StatusComponent::new()
             .mode(ChatMode::Auto)
             .model("claude")
-            .toast("Processing", NotificationToastKind::Info);
+            .toast("Processing", NotificationToastKind::Info)
+            .config(&cfg);
         let plain = render_to_plain_text(&comp.view(&ViewContext::new(harness.focus())), 80);
         assert!(plain.contains("Processing"));
         assert!(plain.contains("INFO"));
@@ -156,6 +162,7 @@ mod tests {
 
     #[test]
     fn status_with_notification_counts() {
+        let cfg = default_statusline_config();
         let harness = ComponentHarness::new(80, 4);
         let comp = StatusComponent::new()
             .mode(ChatMode::Plan)
@@ -163,7 +170,8 @@ mod tests {
             .counts(vec![
                 (NotificationToastKind::Warning, 3),
                 (NotificationToastKind::Error, 1),
-            ]);
+            ])
+            .config(&cfg);
         let plain = render_to_plain_text(&comp.view(&ViewContext::new(harness.focus())), 80);
         assert!(plain.contains("PLAN"));
         assert!(plain.contains("WARN"));

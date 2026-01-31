@@ -410,7 +410,10 @@ impl Default for OilChatApp {
             workspace_files: Vec::new(),
             kiln_notes: Vec::new(),
             slash_commands: Vec::new(),
-            statusline_config: crucible_lua::get_statusline_config(),
+            statusline_config: Some(
+                crucible_lua::get_statusline_config()
+                    .unwrap_or_else(crucible_lua::statusline::StatuslineConfig::builtin_default),
+            ),
         }
     }
 }
@@ -553,18 +556,18 @@ impl App for OilChatApp {
             }
             ChatAppMsg::StreamCancelled => {
                 self.finalize_streaming();
-                self.status = "Cancelled".to_string();
+                self.add_notification(crucible_core::types::Notification::toast("Cancelled"));
                 self.process_deferred_queue()
             }
             ChatAppMsg::QueueMessage(content) => {
                 if self.is_streaming() {
                     self.deferred_messages.push_back(content);
                     let count = self.deferred_messages.len();
-                    self.status = format!(
+                    self.add_notification(crucible_core::types::Notification::toast(format!(
                         "{} message{} queued",
                         count,
                         if count == 1 { "" } else { "s" }
-                    );
+                    )));
                     Action::Continue
                 } else {
                     // Not streaming — immediately promote to UserMessage so the
