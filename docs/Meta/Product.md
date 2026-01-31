@@ -101,9 +101,9 @@ A knowledge management system where:
 - [x] **Session Event Handlers** `P0` — Lua hooks on `turn:complete` can inject follow-up messages · `crucible-lua`, `crucible-daemon`
 
 ### In Progress / Planned
-- [-] **MCP Tool System** `P0` — Permission prompts, ACP integration (95%) · `crucible-tools`, `crucible-acp`
+- [x] **MCP Tool System** `P0` — Permission prompts via `PermissionGate` trait, ACP integration, `McpProxyTool` injection · `crucible-tools`, `crucible-acp`
 - [-] **Error Handling UX** `P0` — Clear error messages, graceful degradation · `crucible-cli`
-- [-] **Per-session MCP Servers** `P0` — Agent cards define MCP servers; config persisted but not fully wired in daemon factory · `crucible-acp`
+- [x] **Per-session MCP Servers** `P0` — Agent cards define MCP servers; `mcp_servers` propagated to `SessionAgent` and wired in daemon · `crucible-acp`
 - [ ] **Grammar + Lua Integration** `P1` — Constrained generation for structured agent outputs · `crucible-core`
 
 ## Terminal Interface (TUI)
@@ -121,13 +121,14 @@ A knowledge management system where:
 - [x] **Streaming Graduation** `P0` — Dual-zone: viewport (live) → stdout (permanent); XOR placement, monotonic, atomic · `crucible-cli`
 - [x] **Thinking Display** `P0` — Streaming thinking blocks with token count; Ctrl+T toggles; `:set thinking`; note: token count is inaccurate (counts delta messages, not actual tokens) · `crucible-cli`
 - [x] **Markdown Rendering** `P0` — Full markdown-to-node rendering with styled output · `crucible-cli`, `crucible-oil`
-- [x] **Context Usage Display** `P0` — Token usage (used/total) in statusline · `crucible-cli`
+- [x] **Context Usage Display** `P0` — Token usage (used/total) in statusline; daemon pipes prompt/completion tokens via `message_complete` event · `crucible-cli`
+- [x] **Lua Statusline Bridge** `P0` — `crucible.statusline.setup()` config drives TUI `StatusBar` rendering; falls back to hardcoded layout · [[Help/Lua/Configuration]] · `crucible-cli`
 
 ### Tool & Agent Display
 - [x] **Tool Call Display** `P0` — Spinner while running, smart summarization (line/file/match counts), MCP prefix stripping · `crucible-cli`
 - [x] **Tool Output Handling** `P0` — Tail display (50 lines), spill to file at >10KB, parallel call tracking by call_id · `crucible-cli`
 - [x] **Subagent Display** `P0` — Spawned/completed/failed tracking with elapsed time and truncated prompt · `crucible-cli`
-- [-] **MCP Server Display** `P0` — `:mcp` lists servers but shows static zeros; tool/resource counts never updated at runtime · `crucible-cli`
+- [x] **MCP Server Display** `P0` — `:mcp` lists servers with live connection status; `ChatAppMsg::McpStatusLoaded` updates display at runtime · `crucible-cli`
 
 ### Interaction Modals
 - [x] **Permission Modal** `P0` — Allow (y), Deny (n), Allowlist (a); diff toggle (d); queued permissions auto-open · `crucible-cli`
@@ -191,9 +192,9 @@ A knowledge management system where:
 - [x] **MCP Gateway** `P0` — Connect upstream MCP servers with prefixed tool names · [[Help/Extending/MCP Gateway]] · [[Help/Config/mcp]] · `crucible-tools`
 - [x] **Lua Plugin Tools** `P0` — Dynamic tool discovery from Lua plugins · `crucible-tools`, `crucible-lua`
 - [x] **TOON Formatting** `P0` — Token-efficient response formatting · `crucible-tools`
-- [-] **MCP Bridge/Gateway** `P0` — Integration tests, documentation (85%) · `crucible-tools`
-- [-] **MCP Connection Stability** `P0` — Reconnect logic, timeout handling, status indicators · `crucible-acp`
-- [-] **ACP Protocol** `P0` — Agent Context Protocol session/request handling · [[Help/Concepts/Agents & Protocols]] · `crucible-acp`
+- [x] **MCP Bridge/Gateway** `P0` — `McpGatewayManager` shared in daemon, `McpProxyTool` dynamic injection, live status display · `crucible-tools`
+- [x] **MCP Connection Stability** `P0` — Auto-reconnect loop, 30s SSE keepalive, live status indicators in TUI · `crucible-acp`
+- [x] **ACP Protocol** `P0` — `PermissionGate` trait for pluggable permission decisions, `list_directory` in `FileSystemHandler`; dead protocol/session stubs removed · [[Help/Concepts/Agents & Protocols]] · `crucible-acp`
 
 ## Workflow Automation
 

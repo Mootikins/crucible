@@ -264,6 +264,28 @@ pub fn validate_query(ctx, event) {
 }
 ```
 
+## Runtime Behavior
+
+### Startup
+
+When you start a chat session (`cru chat`), Crucible connects to all configured MCP servers. The TUI displays real connection status — you'll see which servers are connected, pending, or failed.
+
+Use `:mcp` in the TUI to view live server status at any time.
+
+### Auto-Reconnect
+
+If a server disconnects (network issues, server restart, etc.), Crucible automatically attempts to reconnect when `auto_reconnect = true` (the default). The reconnect loop runs in the background — no user action needed.
+
+### Tool Injection
+
+Gateway tools are dynamically injected into the agent at session creation via `McpProxyTool`. Tools appear with their configured prefix (e.g., `gh_search_code`) and are available alongside built-in tools.
+
+The daemon manages gateway connections through a shared `McpGatewayManager`, so all sessions share the same server connections.
+
+### SSE Keepalive
+
+For SSE transport connections, a 30-second keepalive ping prevents idle timeouts. This is automatic and requires no configuration.
+
 ## Troubleshooting
 
 **Server won't start:**
