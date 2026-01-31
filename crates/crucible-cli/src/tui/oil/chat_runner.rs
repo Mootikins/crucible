@@ -513,29 +513,15 @@ impl OilChatRunner {
         bridge: &AgentEventBridge,
         active_stream: &mut Option<BoxStream<'static, ChatResult<ChatChunk>>>,
     ) -> Action<ChatAppMsg> {
-        match msg {
-            ChatAppMsg::ClearHistory => {
-                if active_stream.is_some() {
-                    *active_stream = None;
-                }
+        if let ChatAppMsg::UserMessage(content) = msg {
+            if active_stream.is_none() {
+                bridge.ring.push(SessionEvent::MessageReceived {
+                    content: content.clone(),
+                    participant_id: "user".to_string(),
+                });
+                let stream = agent.send_message_stream(content.clone());
+                *active_stream = Some(stream);
             }
-            ChatAppMsg::StreamCancelled => {
-                if active_stream.is_some() {
-                    tracing::info!("Dropping active stream due to cancellation");
-                    *active_stream = None;
-                }
-            }
-            ChatAppMsg::UserMessage(content) => {
-                if active_stream.is_none() {
-                    bridge.ring.push(SessionEvent::MessageReceived {
-                        content: content.clone(),
-                        participant_id: "user".to_string(),
-                    });
-                    let stream = agent.send_message_stream(content.clone());
-                    *active_stream = Some(stream);
-                }
-            }
-            _ => {}
         }
         app.on_message(msg.clone())
     }
