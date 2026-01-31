@@ -40,12 +40,12 @@
 
 (fn render-node [node selected]
   "Render a single graph node"
-  (let [style (if selected {:bold true :fg "cyan"} 
+  (let [style (if selected {:bold true :fg "cyan"}
                   (= node.depth 0) {:bold true :fg "yellow"}
                   (< node.depth 0) {:fg "magenta"}
                   {:fg "white"})
         indent (string.rep "  " (math.max 0 (+ node.depth 1)))
-        prefix (if (< node.depth 0) "<- " 
+        prefix (if (< node.depth 0) "<- "
                    (> node.depth 0) "-> "
                    "* ")]
     (cru.oil.text (.. indent prefix node.name) style)))
@@ -57,8 +57,8 @@
         title (.. "Graph: " (or state.center "unknown"))
         header (cru.oil.text title {:bold true :fg "green"})
         separator (cru.oil.text (string.rep "-" ctx.width) {:fg "gray"})
-        stats (cru.oil.text 
-                (string.format "Nodes: %d | Edges: %d | Depth: %d" 
+        stats (cru.oil.text
+                (string.format "Nodes: %d | Edges: %d | Depth: %d"
                                (length graph.nodes)
                                (length graph.edges)
                                (get-config :max_depth 3))
@@ -75,7 +75,6 @@
       (cru.oil.text "j/k: navigate | Enter: focus | q: quit" {:fg "gray"}))))
 
 ;;; Graph visualization view
-;; @view name="graph" desc="Interactive knowledge graph visualization"
 (fn M.graph_view [ctx]
   (let [state (or ctx.state {:center (or ctx.current_note "index")
                               :selected 0
@@ -85,7 +84,6 @@
     (render-graph ctx state)))
 
 ;;; Handle keyboard input for graph view
-;; @view.handler name="graph"
 (fn M.graph_handler [key ctx]
   (let [state ctx.state
         nodes (or state.graph.nodes [])]
@@ -102,9 +100,6 @@
     (ctx:refresh)))
 
 ;;; Get graph statistics
-;; @tool name="graph_stats" desc="Get knowledge graph statistics"
-;; @param note string? "Center note (default: current note)"
-;; @param depth number? "Max traversal depth (default: 3)"
 (fn M.graph_stats [args]
   (let [center (or args.note "index")
         depth (or args.depth (get-config :max_depth 3))
@@ -121,9 +116,23 @@
                        counts)}))
 
 ;;; Open graph view command
-;; @command name="graph" desc="Open knowledge graph view" hint="[note]"
 (fn M.graph_command [args ctx]
   (let [note (or (and args._positional (. args._positional 1)) ctx.current_note "index")]
     (ctx:open_view "graph" {:center note :selected 0 :graph nil})))
 
-M
+{:name "graph-view"
+ :version "1.0.0"
+ :description "Interactive knowledge graph visualization"
+
+ :tools {:graph_stats {:desc "Get knowledge graph statistics"
+                       :params [{:name "note" :type "string" :desc "Center note (default: current note)" :optional true}
+                                {:name "depth" :type "number" :desc "Max traversal depth (default: 3)" :optional true}]
+                       :fn M.graph_stats}}
+
+ :commands {:graph {:desc "Open knowledge graph view"
+                    :hint "[note]"
+                    :fn M.graph_command}}
+
+ :views {:graph {:desc "Interactive knowledge graph visualization"
+                 :fn M.graph_view
+                 :handler M.graph_handler}}}

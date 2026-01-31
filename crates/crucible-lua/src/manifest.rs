@@ -221,6 +221,46 @@ impl PluginManifest {
         Ok(None)
     }
 
+    /// Create a default manifest from a directory path (no plugin.yaml required).
+    ///
+    /// Uses the directory stem as the plugin name with version "0.0.0".
+    /// Sets `auto_discover: true` so Lua files are scanned for exports.
+    pub fn from_directory_defaults(dir: &Path) -> ManifestResult<Self> {
+        let name = dir
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .ok_or_else(|| ManifestError::Validation("Cannot derive name from directory".into()))?
+            .to_string();
+
+        if !is_valid_plugin_name(&name) {
+            return Err(ManifestError::Validation(format!(
+                "Directory name '{}' is not a valid plugin name",
+                name
+            )));
+        }
+
+        Ok(Self {
+            name,
+            version: "0.0.0".to_string(),
+            description: String::new(),
+            author: String::new(),
+            license: None,
+            homepage: None,
+            repository: None,
+            main: "init.lua".to_string(),
+            init: None,
+            capabilities: Vec::new(),
+            dependencies: Vec::new(),
+            exports: ExportDeclarations {
+                auto_discover: true,
+                ..Default::default()
+            },
+            config: None,
+            keywords: Vec::new(),
+            enabled: None,
+        })
+    }
+
     pub fn validate(&self) -> ManifestResult<()> {
         if self.name.is_empty() {
             return Err(ManifestError::MissingField("name".to_string()));
@@ -550,5 +590,23 @@ enabled: false
 "#;
         let manifest = PluginManifest::from_yaml(yaml).unwrap();
         assert!(!manifest.is_enabled());
+    }
+
+    #[test]
+    fn test_from_directory_defaults() {
+        let manifest =
+            PluginManifest::from_directory_defaults(Path::new("/plugins/my-plugin")).unwrap();
+        assert_eq!(manifest.name, "my-plugin");
+        assert_eq!(manifest.version, "0.0.0");
+        assert_eq!(manifest.main, "init.lua");
+        assert!(manifest.exports.auto_discover);
+        assert!(manifest.capabilities.is_empty());
+        assert!(manifest.dependencies.is_empty());
+    }
+
+    #[test]
+    fn test_from_directory_defaults_invalid_name() {
+        let result = PluginManifest::from_directory_defaults(Path::new("/plugins/My Plugin!"));
+        assert!(result.is_err());
     }
 }
