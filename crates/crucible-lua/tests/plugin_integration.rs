@@ -28,18 +28,31 @@ fn create_plugin_structure(
     );
 
     fs::write(plugin_dir.join("plugin.yaml"), manifest).unwrap();
-    fs::write(
-        plugin_dir.join("init.lua"),
+
+    let lua = format!(
         r#"
---- Example tool
--- @tool desc="Test tool"
--- @param query string Search query
+local M = {{}}
 function M.test_tool(args)
-    return { result = "ok" }
+    return {{ result = "ok" }}
 end
+return {{
+    name = "{}",
+    version = "{}",
+    tools = {{
+        test_tool = {{
+            desc = "Test tool",
+            params = {{
+                {{ name = "query", type = "string", desc = "Search query" }},
+            }},
+            fn = M.test_tool,
+        }},
+    }},
+}}
 "#,
-    )
-    .unwrap();
+        name, version
+    );
+
+    fs::write(plugin_dir.join("init.lua"), lua).unwrap();
 
     plugin_dir
 }
@@ -112,24 +125,30 @@ fn test_discover_multiple_plugins() {
 fn test_discover_ignores_invalid_plugins() {
     let temp = TempDir::new().unwrap();
 
-    // Valid plugin
+    // Valid plugin with manifest
     create_plugin_structure(temp.path(), "valid-plugin", "1.0.0");
 
-    // Invalid: missing manifest
-    let invalid_dir = temp.path().join("invalid-no-manifest");
-    fs::create_dir_all(&invalid_dir).unwrap();
-    fs::write(invalid_dir.join("init.lua"), "-- code").unwrap();
+    // Manifest-less plugin: has init.lua but no manifest — now valid via manifest-less discovery
+    let manifestless_dir = temp.path().join("manifestless-plugin");
+    fs::create_dir_all(&manifestless_dir).unwrap();
+    fs::write(manifestless_dir.join("init.lua"), "-- code").unwrap();
 
-    // Invalid: bad manifest JSON
+    // Invalid: directory with unrecognized manifest file (not plugin.yaml)
     let bad_json_dir = temp.path().join("invalid-bad-json");
     fs::create_dir_all(&bad_json_dir).unwrap();
     fs::write(bad_json_dir.join("plugin.json"), "{ broken json").unwrap();
 
+    // Invalid: empty directory (no init.lua, no manifest)
+    let empty_dir = temp.path().join("empty-dir");
+    fs::create_dir_all(&empty_dir).unwrap();
+
     let mut manager = PluginManager::new().with_search_paths(vec![temp.path().to_path_buf()]);
     let discovered = manager.discover().unwrap();
 
-    assert_eq!(discovered.len(), 1);
+    // valid-plugin (manifest) + manifestless-plugin (init.lua) = 2
+    assert_eq!(discovered.len(), 2);
     assert!(discovered.contains(&"valid-plugin".to_string()));
+    assert!(discovered.contains(&"manifestless-plugin".to_string()));
 }
 
 // ============================================================================
@@ -380,8 +399,118 @@ fn test_register_with_owner() {
 }
 
 // ============================================================================
-// CONDITIONAL HANDLERS
+// SPEC-BASED PLUGIN DISCOVERY
 // ============================================================================
+
+fn create_spec_plugin_structure(base: &std::path::Path, name: &str) -> std::path::PathBuf {
+    let plugin_dir = base.join(name);
+    fs::create_dir_all(&plugin_dir).unwrap();
+
+    let lua = format!(
+        r#"
+local M = {{}}
+function M.my_tool(args) return {{ result = "ok" }} end
+function M.my_cmd(args, ctx) end
+
+return {{
+    name = "{}",
+    version = "1.0.0",
+    description = "Spec-based plugin",
+    tools = {{
+        my_tool = {{
+            desc = "Do something",
+            params = {{
+                {{ name = "query", type = "string", desc = "Search query" }},
+            }},
+            fn = M.my_tool,
+        }},
+    }},
+    commands = {{
+        my_cmd = {{ desc = "A command", hint = "[args]", fn = M.my_cmd }},
+    }},
+}}
+"#,
+        name
+    );
+
+    fs::write(plugin_dir.join("init.lua"), lua).unwrap();
+    plugin_dir
+}
+
+#[test]
+fn test_spec_plugin_discover_and_load() {
+    let temp = TempDir::new().unwrap();
+    create_spec_plugin_structure(temp.path(), "spec-plugin");
+
+    let mut manager = PluginManager::new().with_search_paths(vec![temp.path().to_path_buf()]);
+    manager.discover().unwrap();
+    manager.load("spec-plugin").unwrap();
+
+    let plugin = manager.get("spec-plugin").unwrap();
+    assert_eq!(plugin.state, PluginState::Active);
+    assert_eq!(plugin.version(), "1.0.0");
+
+    // Tools from spec
+    assert_eq!(manager.tools().len(), 1);
+    assert_eq!(manager.tools()[0].name, "my_tool");
+
+    // Commands from spec
+    assert_eq!(manager.commands().len(), 1);
+    assert_eq!(manager.commands()[0].name, "my_cmd");
+}
+
+#[test]
+fn test_manifestless_plugin_discover_and_load() {
+    let temp = TempDir::new().unwrap();
+    // No plugin.yaml, just init.lua with spec
+    create_spec_plugin_structure(temp.path(), "no-yaml-plugin");
+
+    let mut manager = PluginManager::new().with_search_paths(vec![temp.path().to_path_buf()]);
+    let discovered = manager.discover().unwrap();
+
+    assert_eq!(discovered.len(), 1);
+    assert!(discovered.contains(&"no-yaml-plugin".to_string()));
+
+    manager.load("no-yaml-plugin").unwrap();
+    assert_eq!(manager.tools().len(), 1);
+}
+
+#[test]
+fn test_spec_plugin_unload_cleans_exports() {
+    let temp = TempDir::new().unwrap();
+    create_spec_plugin_structure(temp.path(), "cleanup-test");
+
+    let mut manager = PluginManager::new().with_search_paths(vec![temp.path().to_path_buf()]);
+    manager.discover().unwrap();
+    manager.load("cleanup-test").unwrap();
+
+    assert_eq!(manager.tools().len(), 1);
+    assert_eq!(manager.commands().len(), 1);
+
+    manager.unload("cleanup-test").unwrap();
+
+    assert_eq!(manager.tools().len(), 0);
+    assert_eq!(manager.commands().len(), 0);
+}
+
+#[test]
+fn test_multiple_spec_plugins() {
+    let temp = TempDir::new().unwrap();
+
+    // Manifest + spec plugin
+    create_plugin_structure(temp.path(), "manifest-plugin", "1.0.0");
+
+    // Manifest-less spec plugin
+    create_spec_plugin_structure(temp.path(), "spec-plugin");
+
+    let mut manager = PluginManager::new().with_search_paths(vec![temp.path().to_path_buf()]);
+    manager.discover().unwrap();
+    manager.load_all().unwrap();
+
+    let tool_names: Vec<_> = manager.tools().iter().map(|t| t.name.clone()).collect();
+    assert!(tool_names.contains(&"test_tool".to_string())); // from manifest plugin
+    assert!(tool_names.contains(&"my_tool".to_string())); // from spec-only plugin
+}
 
 // ============================================================================
 // PLUGIN MANAGER DEBUG

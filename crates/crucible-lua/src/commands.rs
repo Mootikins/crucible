@@ -2,39 +2,8 @@
 //!
 //! Provides `LuaCommandHandler` that implements `CommandHandler` and executes
 //! Lua functions when slash commands are invoked.
-//!
-//! ## Usage in Lua
-//!
-//! ```lua
-//! --- Create a daily note
-//! -- @command name="daily" hint="title"
-//! -- @param title string? Optional title for the note
-//! function daily(args, ctx)
-//!     local title = args.title or os.date("%Y-%m-%d")
-//!     ctx.insert_text("# " .. title)
-//!     ctx.display_info("Created daily note: " .. title)
-//! end
-//! ```
-//!
-//! ## Command Discovery
-//!
-//! Use `discover_commands_from` to scan directories for Lua/Fennel files with
-//! `@command` annotations:
-//!
-//! ```rust,ignore
-//! use crucible_lua::commands::discover_commands_from;
-//! use crucible_core::discovery::DiscoveryPaths;
-//!
-//! let paths = DiscoveryPaths::new("plugins", Some(kiln_path));
-//! let commands = discover_commands_from(&paths.existing_paths()).await?;
-//!
-//! for cmd in commands {
-//!     let handler = LuaCommandHandler::from_discovered(&cmd);
-//!     // Register with SlashCommandRegistry...
-//! }
-//! ```
 
-use crate::annotations::{AnnotationParser, DiscoveredCommand};
+use crate::annotations::DiscoveredCommand;
 use crate::error::LuaError;
 use async_trait::async_trait;
 use crucible_core::traits::chat::{
@@ -42,82 +11,8 @@ use crucible_core::traits::chat::{
     CommandKind,
 };
 use mlua::{Function, Lua, Table, UserData, UserDataMethods, Value};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use tracing::{debug, info, warn};
-
-/// Discover commands from multiple directories.
-///
-/// Scans each directory for `.lua` and `.fnl` files containing `@command` annotations.
-pub async fn discover_commands_from(dirs: &[PathBuf]) -> Result<Vec<DiscoveredCommand>, LuaError> {
-    let mut all_commands = Vec::new();
-    let parser = AnnotationParser::new();
-
-    for dir in dirs {
-        match discover_commands_in_dir(&parser, dir).await {
-            Ok(commands) => {
-                if !commands.is_empty() {
-                    info!(
-                        "Discovered {} Lua commands from {}",
-                        commands.len(),
-                        dir.display()
-                    );
-                }
-                all_commands.extend(commands);
-            }
-            Err(e) => {
-                warn!("Failed to discover commands from {}: {}", dir.display(), e);
-            }
-        }
-    }
-
-    Ok(all_commands)
-}
-
-async fn discover_commands_in_dir(
-    parser: &AnnotationParser,
-    dir: &Path,
-) -> Result<Vec<DiscoveredCommand>, LuaError> {
-    if !dir.exists() {
-        debug!("Command directory does not exist: {}", dir.display());
-        return Ok(Vec::new());
-    }
-
-    let mut commands = Vec::new();
-    let mut entries = tokio::fs::read_dir(dir).await?;
-
-    while let Some(entry) = entries.next_entry().await? {
-        let path = entry.path();
-
-        let is_lua_or_fennel = path.extension().is_some_and(|e| e == "lua" || e == "fnl");
-
-        if !is_lua_or_fennel {
-            continue;
-        }
-
-        match discover_commands_in_file(parser, &path).await {
-            Ok(file_commands) => {
-                for cmd in file_commands {
-                    debug!("Discovered command: /{} from {}", cmd.name, path.display());
-                    commands.push(cmd);
-                }
-            }
-            Err(e) => {
-                warn!("Failed to parse commands in {}: {}", path.display(), e);
-            }
-        }
-    }
-
-    Ok(commands)
-}
-
-async fn discover_commands_in_file(
-    parser: &AnnotationParser,
-    path: &Path,
-) -> Result<Vec<DiscoveredCommand>, LuaError> {
-    let source = tokio::fs::read_to_string(path).await?;
-    parser.parse_commands(&source, path)
-}
 
 #[derive(Debug, Clone)]
 pub enum ContextAction {
@@ -514,76 +409,4 @@ mod tests {
         assert!(!handler.is_fennel);
     }
 
-    #[tokio::test]
-    async fn test_discover_commands_from_directory() {
-        let dir = tempfile::tempdir().unwrap();
-
-        let script_content = r#"
---- Create a daily note
--- @command name="daily" hint="title"
--- @param title string? Optional title
-function create_daily(args)
-    return { message = "Created daily" }
-end
-"#;
-        std::fs::write(dir.path().join("daily.lua"), script_content).unwrap();
-
-        let commands = discover_commands_from(&[dir.path().to_path_buf()])
-            .await
-            .unwrap();
-
-        assert_eq!(commands.len(), 1);
-        assert_eq!(commands[0].name, "daily");
-        assert_eq!(commands[0].input_hint, Some("title".to_string()));
-        assert_eq!(commands[0].handler_fn, "create_daily");
-    }
-
-    #[tokio::test]
-    async fn test_discover_commands_empty_directory() {
-        let dir = tempfile::tempdir().unwrap();
-
-        let commands = discover_commands_from(&[dir.path().to_path_buf()])
-            .await
-            .unwrap();
-
-        assert!(commands.is_empty());
-    }
-
-    #[tokio::test]
-    async fn test_discover_commands_nonexistent_directory() {
-        let commands = discover_commands_from(&[PathBuf::from("/nonexistent/path")])
-            .await
-            .unwrap();
-
-        assert!(commands.is_empty());
-    }
-
-    #[tokio::test]
-    async fn test_discover_multiple_commands_same_file() {
-        let dir = tempfile::tempdir().unwrap();
-
-        let script_content = r#"
---- First command
--- @command name="cmd1"
-function cmd1_handler(args)
-    return nil
-end
-
---- Second command
--- @command name="cmd2"
-function cmd2_handler(args)
-    return nil
-end
-"#;
-        std::fs::write(dir.path().join("multi.lua"), script_content).unwrap();
-
-        let commands = discover_commands_from(&[dir.path().to_path_buf()])
-            .await
-            .unwrap();
-
-        assert_eq!(commands.len(), 2);
-        let names: Vec<_> = commands.iter().map(|c| c.name.as_str()).collect();
-        assert!(names.contains(&"cmd1"));
-        assert!(names.contains(&"cmd2"));
-    }
 }

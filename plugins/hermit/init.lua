@@ -8,6 +8,8 @@ local config = require("config")
 local awareness = require("awareness")
 local background = require("background")
 local digest = require("digest")
+local reactions = require("reactions")
+local ui = require("ui")
 
 -- ============================================================================
 -- SOUL loader
@@ -47,17 +49,10 @@ end)
 -- Tools
 -- ============================================================================
 
---- Generate a kiln activity digest
--- @tool name="hermit_digest" desc="Generate an activity summary of the kiln"
--- @param days number? "Number of days to cover (default: 1)"
 function M.hermit_digest(args)
     return background.generate_daily_digest(args.days or 1)
 end
 
---- Suggest wikilinks for a note based on graph neighbors
--- @tool name="hermit_links" desc="Suggest wikilinks for a note"
--- @param path string "Path to the note"
--- @param depth number? "Graph traversal depth (default: 2)"
 function M.hermit_links(args)
     if not args.path then
         return { error = "path is required" }
@@ -65,14 +60,10 @@ function M.hermit_links(args)
     return background.suggest_links(args.path, args.depth)
 end
 
---- List orphaned notes with no connections
--- @tool name="hermit_orphans" desc="List notes with no inbound or outbound links"
 function M.hermit_orphans(args)
     return background.find_orphans()
 end
 
---- Show the cached kiln awareness profile
--- @tool name="hermit_profile" desc="Show cached kiln profile (note count, tags, orphans, recent)"
 function M.hermit_profile(args)
     local profile = awareness.get()
     return {
@@ -88,8 +79,6 @@ end
 -- Commands
 -- ============================================================================
 
---- /hermit master command
--- @command name="hermit" desc="Hermit knowledge assistant" hint="[status|digest|orphans|soul]"
 function M.hermit_command(args, ctx)
     local sub = args._positional and args._positional[1] or "status"
 
@@ -117,18 +106,84 @@ function M.hermit_command(args, ctx)
     end
 end
 
---- /digest shortcut
--- @command name="digest" desc="Show kiln digest" hint=""
 function M.digest_command(args, ctx)
     local profile = awareness.get()
     local result = digest.format(profile, 1)
     ctx:open_view("hermit-digest", { digest = result })
 end
 
---- /soul shortcut
--- @command name="soul" desc="View Hermit's soul definition" hint=""
 function M.soul_command(args, ctx)
     ctx.display_info(load_soul())
 end
 
-return M
+-- ============================================================================
+-- Plugin Spec
+-- ============================================================================
+
+return {
+    name = "hermit",
+    version = "0.1.0",
+    description = "Watches your kilns, connects notes, and surfaces forgotten knowledge",
+    capabilities = { "vault", "ui", "config", "filesystem" },
+
+    tools = {
+        hermit_digest = {
+            desc = "Generate an activity summary of the kiln",
+            params = {
+                { name = "days", type = "number", desc = "Number of days to cover (default: 1)", optional = true },
+            },
+            fn = M.hermit_digest,
+        },
+        hermit_links = {
+            desc = "Suggest wikilinks for a note",
+            params = {
+                { name = "path", type = "string", desc = "Path to the note" },
+                { name = "depth", type = "number", desc = "Graph traversal depth (default: 2)", optional = true },
+            },
+            fn = M.hermit_links,
+        },
+        hermit_orphans = {
+            desc = "List notes with no inbound or outbound links",
+            fn = M.hermit_orphans,
+        },
+        hermit_profile = {
+            desc = "Show cached kiln profile (note count, tags, orphans, recent)",
+            fn = M.hermit_profile,
+        },
+    },
+
+    commands = {
+        hermit = {
+            desc = "Hermit knowledge assistant",
+            hint = "[status|digest|orphans|soul]",
+            fn = M.hermit_command,
+        },
+        digest = {
+            desc = "Show kiln digest",
+            hint = "",
+            fn = M.digest_command,
+        },
+        soul = {
+            desc = "View Hermit's soul definition",
+            hint = "",
+            fn = M.soul_command,
+        },
+    },
+
+    handlers = {
+        { name = "on_note_created", event = "note:created", priority = 150, fn = reactions.on_note_created },
+        { name = "on_note_modified", event = "note:modified", priority = 150, fn = reactions.on_note_modified },
+        { name = "on_session_started", event = "session:started", priority = 50, fn = reactions.on_session_started },
+    },
+
+    views = {
+        ["hermit-splash"] = { desc = "Hermit kiln overview", fn = ui.splash_view, handler = ui.splash_handler },
+        ["hermit-digest"] = { desc = "Hermit daily digest", fn = ui.digest_view, handler = ui.digest_handler },
+    },
+
+    setup = function(cfg)
+        if cfg then
+            config.init(cfg)
+        end
+    end,
+}

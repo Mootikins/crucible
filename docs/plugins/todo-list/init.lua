@@ -12,16 +12,16 @@ local function read_tasks(filepath)
     if not file then
         return {}
     end
-    
+
     local tasks = {}
     local current_section = "Tasks"
-    
+
     for line in file:lines() do
         local header = line:match("^#+%s+(.+)$")
         if header then
             current_section = header
         end
-        
+
         local status, text = line:match("^%s*%-%s+%[([x%s])%]%s+(.+)$")
         if status and text then
             table.insert(tasks, {
@@ -32,7 +32,7 @@ local function read_tasks(filepath)
             })
         end
     end
-    
+
     file:close()
     return tasks
 end
@@ -42,27 +42,24 @@ local function write_tasks(filepath, tasks)
     if not file then
         return false, "Cannot open file for writing"
     end
-    
+
     file:write("# Tasks\n\n")
-    
+
     for _, task in ipairs(tasks) do
         local checkbox = task.completed and "[x]" or "[ ]"
         file:write(string.format("- %s %s\n", checkbox, task.text))
     end
-    
+
     file:close()
     return true
 end
 
 --- List all tasks from TASKS.md
--- @tool name="tasks_list" desc="List all tasks with their status"
--- @param file string? "Path to tasks file (default: TASKS.md)"
--- @param show_completed boolean? "Include completed tasks"
 function M.tasks_list(args)
     local filepath = get_tasks_file(args)
     local tasks = read_tasks(filepath)
     local show_completed = args.show_completed ~= false
-    
+
     local results = {}
     for i, task in ipairs(tasks) do
         if show_completed or not task.completed then
@@ -74,7 +71,7 @@ function M.tasks_list(args)
             })
         end
     end
-    
+
     return {
         file = filepath,
         count = #results,
@@ -83,28 +80,25 @@ function M.tasks_list(args)
 end
 
 --- Add a new task to TASKS.md
--- @tool name="tasks_add" desc="Add a new task"
--- @param text string "Task description"
--- @param file string? "Path to tasks file (default: TASKS.md)"
 function M.tasks_add(args)
     if not args.text or args.text == "" then
         return { error = "Task text is required" }
     end
-    
+
     local filepath = get_tasks_file(args)
     local tasks = read_tasks(filepath)
-    
+
     table.insert(tasks, {
         text = args.text,
         completed = false,
         section = "Tasks"
     })
-    
+
     local ok, err = write_tasks(filepath, tasks)
     if not ok then
         return { error = err }
     end
-    
+
     return {
         success = true,
         message = "Task added: " .. args.text,
@@ -113,36 +107,33 @@ function M.tasks_add(args)
 end
 
 --- Mark a task as complete
--- @tool name="tasks_complete" desc="Mark a task as completed"
--- @param id number "Task ID (from tasks_list)"
--- @param file string? "Path to tasks file (default: TASKS.md)"
 function M.tasks_complete(args)
     if not args.id then
         return { error = "Task ID is required" }
     end
-    
+
     local filepath = get_tasks_file(args)
     local tasks = read_tasks(filepath)
-    
+
     local id = tonumber(args.id)
     if not id or id < 1 or id > #tasks then
         return { error = "Invalid task ID: " .. tostring(args.id) }
     end
-    
+
     if tasks[id].completed then
-        return { 
-            success = false, 
-            message = "Task already completed" 
+        return {
+            success = false,
+            message = "Task already completed"
         }
     end
-    
+
     tasks[id].completed = true
-    
+
     local ok, err = write_tasks(filepath, tasks)
     if not ok then
         return { error = err }
     end
-    
+
     return {
         success = true,
         message = "Completed: " .. tasks[id].text
@@ -150,12 +141,10 @@ function M.tasks_complete(args)
 end
 
 --- Get the next uncompleted task
--- @tool name="tasks_next" desc="Get the next available task to work on"
--- @param file string? "Path to tasks file (default: TASKS.md)"
 function M.tasks_next(args)
     local filepath = get_tasks_file(args)
     local tasks = read_tasks(filepath)
-    
+
     for i, task in ipairs(tasks) do
         if not task.completed then
             return {
@@ -166,7 +155,7 @@ function M.tasks_next(args)
             }
         end
     end
-    
+
     return {
         message = "All tasks completed!",
         total = #tasks
@@ -174,10 +163,9 @@ function M.tasks_next(args)
 end
 
 --- /tasks command handler
--- @command name="tasks" desc="Show task summary" hint="[list|add|next]"
 function M.tasks_command(args, ctx)
     local subcommand = args._positional and args._positional[1] or "list"
-    
+
     if subcommand == "list" then
         local result = M.tasks_list({ show_completed = true })
         local lines = { "Tasks:" }
@@ -210,4 +198,50 @@ function M.tasks_command(args, ctx)
     end
 end
 
-return M
+return {
+    name = "todo-list",
+    version = "1.0.0",
+    description = "Manages tasks in TASKS.md format",
+
+    tools = {
+        tasks_list = {
+            desc = "List all tasks with their status",
+            params = {
+                { name = "file", type = "string", desc = "Path to tasks file (default: TASKS.md)", optional = true },
+                { name = "show_completed", type = "boolean", desc = "Include completed tasks", optional = true },
+            },
+            fn = M.tasks_list,
+        },
+        tasks_add = {
+            desc = "Add a new task",
+            params = {
+                { name = "text", type = "string", desc = "Task description" },
+                { name = "file", type = "string", desc = "Path to tasks file (default: TASKS.md)", optional = true },
+            },
+            fn = M.tasks_add,
+        },
+        tasks_complete = {
+            desc = "Mark a task as completed",
+            params = {
+                { name = "id", type = "number", desc = "Task ID (from tasks_list)" },
+                { name = "file", type = "string", desc = "Path to tasks file (default: TASKS.md)", optional = true },
+            },
+            fn = M.tasks_complete,
+        },
+        tasks_next = {
+            desc = "Get the next available task to work on",
+            params = {
+                { name = "file", type = "string", desc = "Path to tasks file (default: TASKS.md)", optional = true },
+            },
+            fn = M.tasks_next,
+        },
+    },
+
+    commands = {
+        tasks = {
+            desc = "Show task summary",
+            hint = "[list|add|next]",
+            fn = M.tasks_command,
+        },
+    },
+}
