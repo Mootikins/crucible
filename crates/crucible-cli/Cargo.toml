@@ -103,6 +103,7 @@ regex = { workspace = true }
 
 # Path manipulation
 dirs = { workspace = true }
+shellexpand = "3.1"
 
 # Unicode width for proper character display width calculation
 unicode-width = "0.2"
