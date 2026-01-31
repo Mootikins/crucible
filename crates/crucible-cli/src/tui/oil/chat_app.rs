@@ -1759,10 +1759,6 @@ impl OilChatApp {
         }
     }
 
-    fn format_session_for_export(&self) -> String {
-        self.container_list.format_for_export()
-    }
-
     fn handle_mcp_command(&mut self) {
         if self.mcp_servers.is_empty() {
             self.add_system_message("No MCP servers configured".to_string());
