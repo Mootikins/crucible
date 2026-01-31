@@ -1444,8 +1444,7 @@ impl OilChatApp {
             }
             _ if command.starts_with("export ") => {
                 let path = command.strip_prefix("export ").unwrap().trim();
-                self.handle_export_command(path);
-                Action::Continue
+                self.handle_export_command(path)
             }
             _ => {
                 self.error = Some(format!("Unknown REPL command: {}", cmd));
@@ -1454,23 +1453,36 @@ impl OilChatApp {
         }
     }
 
-    fn handle_export_command(&mut self, path: &str) {
+    fn handle_export_command(&mut self, path: &str) -> Action<ChatAppMsg> {
         if path.is_empty() {
             self.error = Some("Usage: :export <path>".to_string());
-            return;
+            return Action::Continue;
         }
 
-        let export_path = std::path::Path::new(path);
-        let content = self.format_session_for_export();
+        let expanded = shellexpand::full(path)
+            .map(|p| p.into_owned())
+            .unwrap_or_else(|e| {
+                tracing::warn!(error = %e, "Path expansion failed, using original");
+                path.to_string()
+            });
+        let export_path = PathBuf::from(expanded);
 
-        match std::fs::write(export_path, &content) {
-            Ok(_) => {
-                self.add_system_message(format!("Session exported to {}", path));
-            }
-            Err(e) => {
-                self.error = Some(format!("Export failed: {}", e));
+        if let Some(parent) = export_path.parent() {
+            if !parent.as_os_str().is_empty() && !parent.exists() {
+                self.error = Some(format!(
+                    "Parent directory does not exist: {}",
+                    parent.display()
+                ));
+                return Action::Continue;
             }
         }
+
+        if self.session_dir.is_none() {
+            self.error = Some("No active session — nothing to export".to_string());
+            return Action::Continue;
+        }
+
+        Action::Send(ChatAppMsg::ExportSession(export_path))
     }
 
     fn handle_set_command(&mut self, command: &str) -> Action<ChatAppMsg> {
@@ -3434,5 +3446,34 @@ mod tests {
             "BackTab should cycle mode during streaming"
         );
         assert!(app.is_streaming(), "Stream should still be active");
+    }
+
+    #[test]
+    fn export_command_returns_export_session_action() {
+        let mut app = OilChatApp::init();
+        app.set_session_dir(PathBuf::from("/tmp/test-session"));
+        let action = app.handle_export_command("/tmp/test.md");
+        match action {
+            Action::Send(ChatAppMsg::ExportSession(path)) => {
+                assert_eq!(path, PathBuf::from("/tmp/test.md"));
+            }
+            other => panic!("Expected ExportSession action, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn export_command_empty_path_sets_error() {
+        let mut app = OilChatApp::init();
+        let action = app.handle_export_command("");
+        assert!(matches!(action, Action::Continue));
+        assert!(app.error.is_some());
+    }
+
+    #[test]
+    fn export_command_no_session_sets_error() {
+        let mut app = OilChatApp::init();
+        let action = app.handle_export_command("/tmp/test.md");
+        assert!(matches!(action, Action::Continue));
+        assert!(app.error.as_ref().unwrap().contains("No active session"));
     }
 }
