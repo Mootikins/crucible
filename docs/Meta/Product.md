@@ -159,7 +159,7 @@ A knowledge management system where:
 - [x] **Drawer Component** `P0` — Bordered expandable panels with title/footer badges · `crucible-cli`
 
 ### Session & Export
-- [-] **Session Export** `P0` — `:export <path>` saves session as markdown; missing tilde expansion, thinking blocks not exported, no frontmatter/metadata · `crucible-cli`
+- [x] **Session Export** `P0` — `:export <path>` saves session as markdown via observe renderer; tilde expansion, frontmatter, thinking blocks, tool calls · `crucible-cli`
 - [x] **Keybindings** `P0` — Full keybinding table (Enter, Esc, Ctrl+C, Ctrl+T, BackTab, F1, y/n/a/d in modals) · [[Help/TUI/Keybindings]] · `crucible-cli`
 
 ### In Progress / Planned
