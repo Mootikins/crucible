@@ -40,15 +40,15 @@ end
 local function create_daily_note(date)
     local path = get_daily_path(date)
     local date_str = get_date_string(date)
-    
+
     local dir = config.folder
     os.execute("mkdir -p " .. dir)
-    
+
     local file = io.open(path, "w")
     if not file then
         return nil, "Cannot create file: " .. path
     end
-    
+
     local template = read_template()
     if template then
         local content = template:gsub("{{date}}", date_str)
@@ -60,17 +60,15 @@ local function create_daily_note(date)
         file:write("## Tasks\n\n")
         file:write("- [ ] \n")
     end
-    
+
     file:close()
     return path
 end
 
 --- Create today's daily note
--- @tool name="daily_create" desc="Create a daily note for today or a specific date"
--- @param date string? "Date in YYYY-MM-DD format (default: today)"
 function M.daily_create(args)
     local timestamp = os.time()
-    
+
     if args.date then
         local y, m, d = args.date:match("(%d+)-(%d+)-(%d+)")
         if y and m and d then
@@ -79,9 +77,9 @@ function M.daily_create(args)
             return { error = "Invalid date format. Use YYYY-MM-DD" }
         end
     end
-    
+
     local path = get_daily_path(timestamp)
-    
+
     if file_exists(path) then
         return {
             path = path,
@@ -89,12 +87,12 @@ function M.daily_create(args)
             message = "Daily note already exists"
         }
     end
-    
+
     local created_path, err = create_daily_note(timestamp)
     if not created_path then
         return { error = err }
     end
-    
+
     return {
         path = created_path,
         created = true,
@@ -103,21 +101,19 @@ function M.daily_create(args)
 end
 
 --- Open today's daily note (create if missing)
--- @tool name="daily_open" desc="Open today's daily note, creating if needed"
--- @param date string? "Date in YYYY-MM-DD format (default: today)"
 function M.daily_open(args)
     local timestamp = os.time()
-    
+
     if args.date then
         local y, m, d = args.date:match("(%d+)-(%d+)-(%d+)")
         if y and m and d then
             timestamp = os.time({ year = tonumber(y), month = tonumber(m), day = tonumber(d) })
         end
     end
-    
+
     local path = get_daily_path(timestamp)
     local created = false
-    
+
     if not file_exists(path) then
         local _, err = create_daily_note(timestamp)
         if err then
@@ -125,7 +121,7 @@ function M.daily_open(args)
         end
         created = true
     end
-    
+
     return {
         path = path,
         created = created,
@@ -134,25 +130,23 @@ function M.daily_open(args)
 end
 
 --- List recent daily notes
--- @tool name="daily_list" desc="List recent daily notes"
--- @param days number? "Number of days to look back (default: 7)"
 function M.daily_list(args)
     local days = args.days or 7
     local notes = {}
     local now = os.time()
-    
+
     for i = 0, days - 1 do
         local timestamp = now - (i * 86400)
         local path = get_daily_path(timestamp)
         local exists = file_exists(path)
-        
+
         table.insert(notes, {
             date = get_date_string(timestamp),
             path = path,
             exists = exists
         })
     end
-    
+
     return {
         count = #notes,
         notes = notes
@@ -160,11 +154,10 @@ function M.daily_list(args)
 end
 
 --- /daily command handler
--- @command name="daily" desc="Open or create daily note" hint="[today|yesterday|YYYY-MM-DD]"
 function M.daily_command(args, ctx)
     local subcommand = args._positional and args._positional[1] or "today"
     local date = nil
-    
+
     if subcommand == "today" then
         date = nil
     elseif subcommand == "yesterday" then
@@ -184,7 +177,7 @@ function M.daily_command(args, ctx)
         ctx.display_error("Usage: /daily [today|yesterday|YYYY-MM-DD|list]")
         return
     end
-    
+
     local result = M.daily_open({ date = date })
     if result.error then
         ctx.display_error(result.error)
@@ -194,4 +187,40 @@ function M.daily_command(args, ctx)
     end
 end
 
-return M
+return {
+    name = "daily-notes",
+    version = "1.0.0",
+    description = "Create and manage daily journal notes",
+
+    tools = {
+        daily_create = {
+            desc = "Create a daily note for today or a specific date",
+            params = {
+                { name = "date", type = "string", desc = "Date in YYYY-MM-DD format (default: today)", optional = true },
+            },
+            fn = M.daily_create,
+        },
+        daily_open = {
+            desc = "Open today's daily note, creating if needed",
+            params = {
+                { name = "date", type = "string", desc = "Date in YYYY-MM-DD format (default: today)", optional = true },
+            },
+            fn = M.daily_open,
+        },
+        daily_list = {
+            desc = "List recent daily notes",
+            params = {
+                { name = "days", type = "number", desc = "Number of days to look back (default: 7)", optional = true },
+            },
+            fn = M.daily_list,
+        },
+    },
+
+    commands = {
+        daily = {
+            desc = "Open or create daily note",
+            hint = "[today|yesterday|YYYY-MM-DD]",
+            fn = M.daily_command,
+        },
+    },
+}
