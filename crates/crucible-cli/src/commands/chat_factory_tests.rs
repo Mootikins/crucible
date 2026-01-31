@@ -1,6 +1,6 @@
 //! Tests for the deferred chat flow factory closure
 //!
-//! Tests that the factory correctly creates DynamicAgent instances from AgentSelection variants.
+//! Tests that the factory correctly creates agent handles from AgentSelection variants.
 
 use crate::tui::AgentSelection;
 
@@ -192,8 +192,8 @@ async fn test_factory_propagates_errors() {
 // Integration test notes:
 //
 // The actual factory closure in run_deferred_chat() creates real agents:
-// - AgentSelection::Acp -> factories::create_agent() -> DynamicAgent::acp()
-// - AgentSelection::Internal -> factories::create_agent() -> DynamicAgent::local()
+// - AgentSelection::Acp -> factories::create_agent() -> Box<dyn AgentHandle>
+// - AgentSelection::Internal -> factories::create_agent() -> Box<dyn AgentHandle>
 // - AgentSelection::Cancelled -> Error
 //
 // These tests verify the factory pattern structure and behavior.

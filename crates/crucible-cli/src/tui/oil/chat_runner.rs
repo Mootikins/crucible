@@ -515,8 +515,9 @@ impl OilChatRunner {
     ) -> Action<ChatAppMsg> {
         match msg {
             ChatAppMsg::ClearHistory => {
-                agent.clear_history();
-                tracing::info!("Conversation history cleared");
+                if active_stream.is_some() {
+                    *active_stream = None;
+                }
             }
             ChatAppMsg::StreamCancelled => {
                 if active_stream.is_some() {
@@ -553,8 +554,14 @@ impl OilChatRunner {
             Action::Send(msg) => {
                 match &msg {
                     ChatAppMsg::ClearHistory => {
-                        agent.clear_history();
-                        tracing::info!("Conversation history cleared");
+                        if active_stream.is_some() {
+                            if let Err(e) = agent.cancel().await {
+                                tracing::warn!(error = %e, "Failed to cancel agent stream");
+                            }
+                            *active_stream = None;
+                        }
+                        agent.clear_history().await;
+                        tracing::info!("New session started (history cleared)");
                     }
                     ChatAppMsg::StreamCancelled => {
                         if active_stream.is_some() {

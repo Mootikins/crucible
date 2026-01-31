@@ -2,4 +2,4 @@
 source: crates/crucible-cli/src/tui/oil/tests/chat_app_snapshot_tests.rs
 expression: output
 ---
- NORMAL  gpt-4o                                               WARN  3  ERROR  1
+ NORMAL  gpt-4o                                              WARN  3  ERROR  1

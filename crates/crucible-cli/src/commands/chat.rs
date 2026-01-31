@@ -11,7 +11,6 @@ use std::sync::Arc;
 use tracing::{debug, info, warn};
 
 use crate::acp::{ContextEnricher, CrucibleAcpClient};
-use crate::chat::DynamicAgent;
 use crate::config::CliConfig;
 use crate::core_facade::KilnContext;
 use crate::factories;
@@ -353,7 +352,10 @@ async fn run_interactive_chat(
                     match agent {
                         factories::InitializedAgent::Acp(mut client) => {
                             client.spawn().await?;
-                            Ok(DynamicAgent::acp(client))
+                            Ok(Box::new(client)
+                                as Box<
+                                    dyn crucible_core::traits::chat::AgentHandle + Send + Sync,
+                                >)
                         }
                         factories::InitializedAgent::Internal(_) => {
                             anyhow::bail!("Expected ACP agent but got Internal")
@@ -377,9 +379,7 @@ async fn run_interactive_chat(
                     let agent = factories::create_agent(&config, params).await?;
 
                     match agent {
-                        factories::InitializedAgent::Internal(handle) => {
-                            Ok(DynamicAgent::local(handle))
-                        }
+                        factories::InitializedAgent::Internal(handle) => Ok(handle),
                         factories::InitializedAgent::Acp(_) => {
                             anyhow::bail!("Expected Internal agent but got ACP")
                         }

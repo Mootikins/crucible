@@ -1119,7 +1119,7 @@ where
         Ok(())
     }
 
-    fn clear_history(&mut self) {
+    async fn clear_history(&mut self) {
         if let Ok(mut history) = self.chat_history.try_write() {
             history.clear();
             debug!("Cleared chat history");
