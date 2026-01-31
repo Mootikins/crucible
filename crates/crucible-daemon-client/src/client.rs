@@ -480,15 +480,6 @@ impl DaemonClient {
         Ok(())
     }
 
-    pub async fn kiln_close(&self, path: &Path) -> Result<()> {
-        self.call(
-            "kiln.close",
-            serde_json::json!({ "path": path.to_string_lossy() }),
-        )
-        .await?;
-        Ok(())
-    }
-
     pub async fn kiln_list(&self) -> Result<Vec<serde_json::Value>> {
         let result = self.call("kiln.list", serde_json::json!({})).await?;
         Ok(result.as_array().cloned().unwrap_or_default())
@@ -679,24 +670,6 @@ impl DaemonClient {
     // Pipeline RPC Methods
     // =========================================================================
 
-    pub async fn process_file(&self, kiln_path: &Path, file_path: &Path) -> Result<bool> {
-        let result = self
-            .call(
-                "process_file",
-                serde_json::json!({
-                    "kiln": kiln_path.to_string_lossy(),
-                    "path": file_path.to_string_lossy()
-                }),
-            )
-            .await?;
-
-        let status = result
-            .get("status")
-            .and_then(|v| v.as_str())
-            .unwrap_or("unknown");
-        Ok(status == "processed")
-    }
-
     pub async fn process_batch(
         &self,
         kiln_path: &Path,
@@ -849,14 +822,6 @@ impl DaemonClient {
         self.call("session.resume_from_storage", params).await
     }
 
-    pub async fn session_compact(&self, session_id: &str) -> Result<serde_json::Value> {
-        self.call(
-            "session.compact",
-            serde_json::json!({ "session_id": session_id }),
-        )
-        .await
-    }
-
     pub async fn session_subscribe(&self, session_ids: &[&str]) -> Result<serde_json::Value> {
         self.call(
             "session.subscribe",
@@ -920,29 +885,6 @@ impl DaemonClient {
         .await?;
 
         Ok(())
-    }
-
-    pub async fn session_test_interaction(
-        &self,
-        session_id: &str,
-        interaction_type: &str,
-        custom_params: Option<serde_json::Value>,
-    ) -> Result<String> {
-        let mut params = serde_json::json!({
-            "session_id": session_id,
-            "type": interaction_type
-        });
-
-        if let Some(extra) = custom_params {
-            if let (Some(base), Some(extra_obj)) = (params.as_object_mut(), extra.as_object()) {
-                for (k, v) in extra_obj {
-                    base.insert(k.clone(), v.clone());
-                }
-            }
-        }
-
-        let result = self.call("session.test_interaction", params).await?;
-        Ok(result["request_id"].as_str().unwrap_or("").to_string())
     }
 
     pub async fn session_cancel(&self, session_id: &str) -> Result<bool> {
@@ -1087,69 +1029,6 @@ impl DaemonClient {
             .map(|v| v as u32);
 
         Ok(max_tokens)
-    }
-
-    pub async fn session_add_notification(
-        &self,
-        session_id: &str,
-        notification: crucible_core::types::Notification,
-    ) -> Result<()> {
-        self.call(
-            "session.add_notification",
-            serde_json::json!({
-                "session_id": session_id,
-                "notification": notification,
-            }),
-        )
-        .await?;
-        Ok(())
-    }
-
-    pub async fn session_list_notifications(
-        &self,
-        session_id: &str,
-    ) -> Result<Vec<crucible_core::types::Notification>> {
-        let result = self
-            .call(
-                "session.list_notifications",
-                serde_json::json!({ "session_id": session_id }),
-            )
-            .await?;
-
-        let notifications = result
-            .get("notifications")
-            .and_then(|v| v.as_array())
-            .map(|arr| {
-                arr.iter()
-                    .filter_map(|item| serde_json::from_value(item.clone()).ok())
-                    .collect()
-            })
-            .unwrap_or_default();
-
-        Ok(notifications)
-    }
-
-    pub async fn session_dismiss_notification(
-        &self,
-        session_id: &str,
-        notification_id: &str,
-    ) -> Result<bool> {
-        let result = self
-            .call(
-                "session.dismiss_notification",
-                serde_json::json!({
-                    "session_id": session_id,
-                    "notification_id": notification_id,
-                }),
-            )
-            .await?;
-
-        let success = result
-            .get("success")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
-
-        Ok(success)
     }
 }
 
