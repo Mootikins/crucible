@@ -7,11 +7,13 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use crucible_core::interaction::InteractionEvent;
+use crucible_core::session::SessionAgent;
 use crucible_core::traits::chat::{
     AgentHandle, ChatChunk, ChatError, ChatResult, ChatToolCall, ChatToolResult, CommandDescriptor,
 };
 use crucible_core::types::acp::schema::{AvailableCommand, SessionModeState};
 use futures::stream::BoxStream;
+use std::path::PathBuf;
 use tokio::sync::mpsc;
 use tokio::sync::Mutex;
 
@@ -27,6 +29,7 @@ use crate::{DaemonClient, SessionEvent};
 pub struct DaemonAgentHandle {
     client: Arc<DaemonClient>,
     session_id: String,
+    router_session_id: Arc<tokio::sync::watch::Sender<String>>,
     streaming_rx: Arc<Mutex<mpsc::UnboundedReceiver<SessionEvent>>>,
     interaction_rx: Option<mpsc::UnboundedReceiver<InteractionEvent>>,
     mode_id: String,
@@ -35,6 +38,9 @@ pub struct DaemonAgentHandle {
     cached_temperature: Option<f64>,
     cached_max_tokens: Option<u32>,
     cached_thinking_budget: Option<i64>,
+    kiln_path: Option<PathBuf>,
+    workspace: Option<PathBuf>,
+    cached_agent_config: Option<SessionAgent>,
 }
 
 impl DaemonAgentHandle {
@@ -51,14 +57,16 @@ impl DaemonAgentHandle {
         let (streaming_tx, streaming_rx) = mpsc::unbounded_channel();
         let (interaction_tx, interaction_rx) = mpsc::unbounded_channel();
 
-        let session_id_clone = session_id.clone();
+        let (session_id_tx, session_id_rx) = tokio::sync::watch::channel(session_id.clone());
+
         tokio::spawn(async move {
-            event_router(event_rx, streaming_tx, interaction_tx, session_id_clone).await;
+            event_router(event_rx, streaming_tx, interaction_tx, session_id_rx).await;
         });
 
         Self {
             client,
             session_id,
+            router_session_id: Arc::new(session_id_tx),
             streaming_rx: Arc::new(Mutex::new(streaming_rx)),
             interaction_rx: Some(interaction_rx),
             mode_id: "normal".to_string(),
@@ -67,6 +75,9 @@ impl DaemonAgentHandle {
             cached_temperature: None,
             cached_max_tokens: None,
             cached_thinking_budget: None,
+            kiln_path: None,
+            workspace: None,
+            cached_agent_config: None,
         }
     }
 
@@ -110,20 +121,39 @@ impl DaemonAgentHandle {
     pub fn session_id(&self) -> &str {
         &self.session_id
     }
+
+    pub fn with_kiln_path(mut self, path: PathBuf) -> Self {
+        self.kiln_path = Some(path);
+        self
+    }
+
+    pub fn with_workspace(mut self, path: PathBuf) -> Self {
+        self.workspace = Some(path);
+        self
+    }
+
+    pub fn with_agent_config(mut self, config: SessionAgent) -> Self {
+        self.cached_agent_config = Some(config);
+        self
+    }
 }
 
 /// Background task that routes events from daemon to appropriate channels
+///
+/// Uses a `watch::Receiver` for the session_id so `clear_history` can atomically
+/// switch the router to a new session without restarting this task.
 async fn event_router(
     mut event_rx: mpsc::UnboundedReceiver<SessionEvent>,
     streaming_tx: mpsc::UnboundedSender<SessionEvent>,
     interaction_tx: mpsc::UnboundedSender<InteractionEvent>,
-    session_id: String,
+    session_id_rx: tokio::sync::watch::Receiver<String>,
 ) {
     while let Some(event) = event_rx.recv().await {
-        if event.session_id != session_id {
+        let current_session_id = session_id_rx.borrow().clone();
+        if event.session_id != current_session_id {
             tracing::trace!(
                 event_session = %event.session_id,
-                expected_session = %session_id,
+                expected_session = %current_session_id,
                 "Filtering event from different session in router"
             );
             continue;
@@ -394,8 +424,59 @@ impl AgentHandle for DaemonAgentHandle {
         &[]
     }
 
-    fn clear_history(&mut self) {
-        tracing::info!(session_id = %self.session_id, "Clear history requested (daemon handles internally)");
+    async fn clear_history(&mut self) {
+        tracing::info!(session_id = %self.session_id, "Clearing session — ending old, creating new");
+
+        let _ = self.client.session_unsubscribe(&[&self.session_id]).await;
+        let _ = self.client.session_end(&self.session_id).await;
+
+        let (Some(kiln), Some(ws)) = (&self.kiln_path, &self.workspace) else {
+            tracing::warn!("Cannot create new session: missing kiln_path or workspace");
+            return;
+        };
+
+        let result = match self
+            .client
+            .session_create("chat", kiln, Some(ws), vec![])
+            .await
+        {
+            Ok(r) => r,
+            Err(e) => {
+                tracing::warn!(error = %e, "Failed to create new session after clear");
+                return;
+            }
+        };
+
+        let Some(new_id) = result["session_id"].as_str() else {
+            tracing::warn!("No session_id in create response");
+            return;
+        };
+        let new_id = new_id.to_string();
+
+        if let Some(agent_config) = &self.cached_agent_config {
+            let mut config = agent_config.clone();
+            if let Some(model) = &self.cached_model {
+                config.model = model.clone();
+            }
+            if let Some(temp) = self.cached_temperature {
+                config.temperature = Some(temp);
+            }
+            if let Some(max) = self.cached_max_tokens {
+                config.max_tokens = Some(max);
+            }
+            config.thinking_budget = self.cached_thinking_budget;
+            if let Err(e) = self.client.session_configure_agent(&new_id, &config).await {
+                tracing::warn!(error = %e, "Failed to configure agent on new session");
+            }
+        }
+
+        if let Err(e) = self.client.session_subscribe(&[&new_id]).await {
+            tracing::warn!(error = %e, "Failed to subscribe to new session");
+        }
+
+        tracing::info!(old = %self.session_id, new = %new_id, "Session switched");
+        self.session_id = new_id.clone();
+        let _ = self.router_session_id.send(new_id);
     }
 
     async fn switch_model(&mut self, model_id: &str) -> ChatResult<()> {
