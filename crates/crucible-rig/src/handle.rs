@@ -1170,6 +1170,20 @@ where
         self.max_tokens
     }
 
+    async fn set_thinking_budget(&mut self, budget: i64) -> ChatResult<()> {
+        info!(budget = %budget, "Setting thinking budget");
+        self.thinking_budget = Some(budget);
+        if let Some(ref mut comp) = self.components {
+            comp.thinking_budget = Some(budget);
+            self.needs_rebuild.store(true, Ordering::SeqCst);
+        }
+        Ok(())
+    }
+
+    fn get_thinking_budget(&self) -> Option<i64> {
+        self.thinking_budget
+    }
+
     async fn fetch_available_models(&mut self) -> Vec<String> {
         let endpoint = self
             .ollama_endpoint
