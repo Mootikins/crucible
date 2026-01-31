@@ -9,9 +9,8 @@ use async_trait::async_trait;
 use crucible_core::interaction::InteractionEvent;
 use crucible_core::session::SessionAgent;
 use crucible_core::traits::chat::{
-    AgentHandle, ChatChunk, ChatError, ChatResult, ChatToolCall, ChatToolResult, CommandDescriptor,
+    AgentHandle, ChatChunk, ChatError, ChatResult, ChatToolCall, ChatToolResult,
 };
-use crucible_core::types::acp::schema::{AvailableCommand, SessionModeState};
 use futures::stream::BoxStream;
 use std::path::PathBuf;
 use tokio::sync::mpsc;
@@ -399,18 +398,6 @@ impl AgentHandle for DaemonAgentHandle {
         self.connected
     }
 
-    fn supports_streaming(&self) -> bool {
-        true
-    }
-
-    async fn on_commands_update(&mut self, _commands: Vec<CommandDescriptor>) -> ChatResult<()> {
-        Ok(())
-    }
-
-    fn get_modes(&self) -> Option<&SessionModeState> {
-        None
-    }
-
     fn get_mode_id(&self) -> &str {
         &self.mode_id
     }
@@ -418,10 +405,6 @@ impl AgentHandle for DaemonAgentHandle {
     async fn set_mode_str(&mut self, mode_id: &str) -> ChatResult<()> {
         self.mode_id = mode_id.to_string();
         Ok(())
-    }
-
-    fn get_commands(&self) -> &[AvailableCommand] {
-        &[]
     }
 
     async fn clear_history(&mut self) {
