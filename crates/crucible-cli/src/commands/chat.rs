@@ -909,6 +909,13 @@ fn events_to_chat_items(events: &[serde_json::Value]) -> Vec<ChatItem> {
 
 pub fn known_slash_commands() -> Vec<(String, String)> {
     vec![
+        ("mode".into(), "Cycle chat mode".into()),
+        (
+            "default".into(),
+            "Set default mode (ask permissions)".into(),
+        ),
+        ("plan".into(), "Set plan mode (read-only)".into()),
+        ("auto".into(), "Set auto mode (full access)".into()),
         ("search".into(), "Search the knowledge base".into()),
         ("commit".into(), "Smart git commit workflow".into()),
         ("agent".into(), "Show/list available agents".into()),
