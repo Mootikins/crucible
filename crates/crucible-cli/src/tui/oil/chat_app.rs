@@ -1306,6 +1306,7 @@ impl OilChatApp {
             KeyCode::Backspace => {
                 if self.popup.filter.is_empty() {
                     self.close_popup();
+                    return Action::Continue;
                 }
                 self.input.handle(InputAction::Backspace);
                 self.check_autocomplete_trigger();
