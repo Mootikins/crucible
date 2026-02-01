@@ -324,7 +324,11 @@ pub enum SessionCommands {
     },
 
     /// Rebuild session index from JSONL files
-    Reindex,
+    Reindex {
+        /// Re-index all sessions even if already indexed
+        #[arg(long)]
+        force: bool,
+    },
 
     /// Clean up old sessions
     Cleanup {
@@ -1059,7 +1063,7 @@ mod tests {
         let cli = Cli::try_parse_from(["cru", "session", "reindex"]).unwrap();
         assert!(matches!(
             cli.command,
-            Some(Commands::Session(SessionCommands::Reindex))
+            Some(Commands::Session(SessionCommands::Reindex { force: false }))
         ));
     }
 
