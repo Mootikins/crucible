@@ -134,6 +134,14 @@ pub enum ChatAppMsg {
     ExecuteSlashCommand(String),
     /// Export session to markdown file via observe renderer
     ExportSession(PathBuf),
+    PrecognitionResult {
+        notes_count: usize,
+    },
+    /// Internal: enriched message ready to send to agent (from background precognition)
+    EnrichedMessage {
+        original: String,
+        enriched: String,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -327,6 +335,8 @@ pub struct OilChatApp {
     needs_full_redraw: bool,
     /// Whether to render LLM thinking/reasoning blocks
     show_thinking: bool,
+    /// Whether to auto-enrich user messages with knowledge base context (precognition / auto-RAG)
+    precognition: bool,
     /// Current terminal size (width, height) — updated in view()
     terminal_size: Cell<(u16, u16)>,
     /// Last error to display to the user
@@ -393,6 +403,7 @@ impl Default for OilChatApp {
             spinner_frame: 0,
             needs_full_redraw: false,
             show_thinking: true,
+            precognition: false,
             terminal_size: Cell::new((80, 24)),
             error: None,
             permission_queue: VecDeque::new(),
@@ -678,6 +689,16 @@ impl App for OilChatApp {
                 self.load_previous_messages(items);
                 Action::Continue
             }
+            ChatAppMsg::PrecognitionResult { notes_count } => {
+                if notes_count > 0 {
+                    self.add_system_message(format!("📎 Found {} relevant notes", notes_count));
+                }
+                Action::Continue
+            }
+            ChatAppMsg::EnrichedMessage { .. } => {
+                // Handled by the runner — starts agent stream with enriched content
+                Action::Continue
+            }
             ChatAppMsg::ExecuteSlashCommand(_) | ChatAppMsg::ExportSession(_) => {
                 // Handled by the runner — TUI just forwards
                 Action::Continue
@@ -741,6 +762,10 @@ impl OilChatApp {
 
     pub fn set_show_thinking(&mut self, show: bool) {
         self.show_thinking = show;
+    }
+
+    pub fn precognition(&self) -> bool {
+        self.precognition
     }
 
     pub fn perm_show_diff(&self) -> bool {
@@ -1753,6 +1778,11 @@ impl OilChatApp {
             "perm.autoconfirm_session" => {
                 if let Some(val) = self.runtime_config.get("perm.autoconfirm_session") {
                     self.perm_autoconfirm_session = val.as_bool().unwrap_or(false);
+                }
+            }
+            "precognition" => {
+                if let Some(val) = self.runtime_config.get("precognition") {
+                    self.precognition = val.as_bool().unwrap_or(false);
                 }
             }
             _ => {}
@@ -3471,5 +3501,50 @@ mod tests {
         let action = app.handle_export_command("/tmp/test.md");
         assert!(matches!(action, Action::Continue));
         assert!(app.error.as_ref().unwrap().contains("No active session"));
+    }
+
+    #[test]
+    fn precognition_default_off() {
+        let app = OilChatApp::init();
+        assert!(!app.precognition());
+    }
+
+    #[test]
+    fn precognition_toggle_via_set_command() {
+        let mut app = OilChatApp::init();
+        assert!(!app.precognition());
+
+        app.handle_set_command("set precognition");
+        assert!(app.precognition());
+
+        app.handle_set_command("set noprecognition");
+        assert!(!app.precognition());
+
+        app.handle_set_command("set precognition!");
+        assert!(app.precognition());
+    }
+
+    #[test]
+    fn precognition_result_shows_system_message() {
+        let mut app = OilChatApp::init();
+
+        app.on_message(ChatAppMsg::PrecognitionResult { notes_count: 3 });
+
+        let containers = app.container_list().all_containers();
+        assert_eq!(containers.len(), 1);
+        if let ChatContainer::SystemMessage { content, .. } = &containers[0] {
+            assert!(content.contains("3 relevant notes"));
+        } else {
+            panic!("Expected SystemMessage, got {:?}", containers[0]);
+        }
+    }
+
+    #[test]
+    fn precognition_result_zero_notes_no_message() {
+        let mut app = OilChatApp::init();
+
+        app.on_message(ChatAppMsg::PrecognitionResult { notes_count: 0 });
+
+        assert!(app.container_list().is_empty());
     }
 }
