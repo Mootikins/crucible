@@ -296,16 +296,13 @@ impl OilChatRunner {
             }
 
             while let Ok(msg) = msg_rx.try_recv() {
-                let action = Self::process_message(&msg, app, agent, bridge, &mut active_stream);
+                let mut action = Self::process_message(&msg, app, agent, bridge, &mut active_stream);
+                while let Action::Send(follow_up) = action {
+                    action =
+                        Self::process_message(&follow_up, app, agent, bridge, &mut active_stream);
+                }
                 if action.is_quit() {
                     return Ok(());
-                }
-                if let Action::Send(follow_up) = action {
-                    let follow_action =
-                        Self::process_message(&follow_up, app, agent, bridge, &mut active_stream);
-                    if follow_action.is_quit() {
-                        return Ok(());
-                    }
                 }
             }
 
