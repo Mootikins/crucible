@@ -36,7 +36,7 @@
 use crate::error::LuaError;
 use async_trait::async_trait;
 use crucible_core::events::{Handler, HandlerContext, HandlerResult, SessionEvent};
-use mlua::{Function, Lua, Value};
+use mlua::{Function, Lua, LuaSerdeExt, Value};
 use serde_json::Value as JsonValue;
 use std::path::PathBuf;
 use tokio::task::spawn_blocking;
@@ -294,14 +294,14 @@ fn execute_lua_handler_from_source(
     })?;
 
     // Convert JSON to Lua values
-    let ctx_val = json_to_lua(&lua, ctx_json)?;
-    let event_val = json_to_lua(&lua, event_json)?;
+    let ctx_val = lua.to_value(&ctx_json)?;
+    let event_val = lua.to_value(&event_json)?;
 
     // Call the handler
     let result: Value = handler.call((ctx_val, event_val))?;
 
     // Convert result back to JSON
-    lua_to_json(&lua, result)
+    Ok(serde_json::to_value(&result)?)
 }
 
 /// Set up global functions available to Lua scripts.
@@ -325,92 +325,21 @@ fn setup_globals(lua: &Lua) -> Result<(), LuaError> {
     crucible.set("log", log_fn)?;
 
     // crucible.json_encode(value) -> string
-    let json_encode = lua.create_function(|lua, value: Value| {
-        let json = lua_to_json(lua, value).map_err(mlua::Error::external)?;
-        serde_json::to_string(&json).map_err(mlua::Error::external)
+    let json_encode = lua.create_function(|_lua, value: Value| {
+        serde_json::to_string(&value).map_err(mlua::Error::external)
     })?;
     crucible.set("json_encode", json_encode)?;
 
     // crucible.json_decode(string) -> value
     let json_decode = lua.create_function(|lua, s: String| {
         let json: JsonValue = serde_json::from_str(&s).map_err(mlua::Error::external)?;
-        json_to_lua(lua, json)
+        lua.to_value(&json)
     })?;
     crucible.set("json_decode", json_decode)?;
 
     globals.set("crucible", crucible)?;
 
     Ok(())
-}
-
-/// Convert a Lua value to JSON.
-fn lua_to_json(_lua: &Lua, value: Value) -> Result<JsonValue, LuaError> {
-    match value {
-        Value::Nil => Ok(JsonValue::Null),
-        Value::Boolean(b) => Ok(JsonValue::Bool(b)),
-        Value::Integer(i) => Ok(JsonValue::Number(i.into())),
-        Value::Number(n) => Ok(serde_json::Number::from_f64(n)
-            .map(JsonValue::Number)
-            .unwrap_or(JsonValue::Null)),
-        Value::String(s) => Ok(JsonValue::String(s.to_str()?.to_string())),
-        Value::Table(t) => {
-            // Check if it's an array (sequential integer keys starting at 1)
-            let is_array = t.clone().pairs::<i64, Value>().all(|pair| pair.is_ok());
-            let len = t.raw_len();
-
-            if is_array && len > 0 {
-                // It's an array
-                let mut arr = Vec::with_capacity(len);
-                for i in 1..=len {
-                    let v: Value = t.get(i)?;
-                    arr.push(lua_to_json(_lua, v)?);
-                }
-                Ok(JsonValue::Array(arr))
-            } else {
-                // It's an object
-                let mut map = serde_json::Map::new();
-                for pair in t.pairs::<String, Value>() {
-                    let (k, v) = pair?;
-                    map.insert(k, lua_to_json(_lua, v)?);
-                }
-                Ok(JsonValue::Object(map))
-            }
-        }
-        // Functions, userdata, etc. become null
-        _ => Ok(JsonValue::Null),
-    }
-}
-
-/// Convert JSON to a Lua value.
-fn json_to_lua(lua: &Lua, value: JsonValue) -> mlua::Result<Value> {
-    match value {
-        JsonValue::Null => Ok(Value::Nil),
-        JsonValue::Bool(b) => Ok(Value::Boolean(b)),
-        JsonValue::Number(n) => {
-            if let Some(i) = n.as_i64() {
-                Ok(Value::Integer(i))
-            } else if let Some(f) = n.as_f64() {
-                Ok(Value::Number(f))
-            } else {
-                Ok(Value::Nil)
-            }
-        }
-        JsonValue::String(s) => Ok(Value::String(lua.create_string(&s)?)),
-        JsonValue::Array(arr) => {
-            let table = lua.create_table()?;
-            for (i, v) in arr.into_iter().enumerate() {
-                table.set(i + 1, json_to_lua(lua, v)?)?;
-            }
-            Ok(Value::Table(table))
-        }
-        JsonValue::Object(obj) => {
-            let table = lua.create_table()?;
-            for (k, v) in obj {
-                table.set(k, json_to_lua(lua, v)?)?;
-            }
-            Ok(Value::Table(table))
-        }
-    }
 }
 
 /// Parse the JSON result from a Lua handler function.
