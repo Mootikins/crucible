@@ -807,8 +807,9 @@ fn oil_mode_cycle() {
 
     session.wait(Duration::from_secs(1));
 
-    let screen0 = session.capture_screen().unwrap_or_default();
-    assert!(screen0.contains("Plan"), "Initial mode should be Plan");
+    session
+        .wait_for_text("Plan", Duration::from_secs(3))
+        .expect("Initial mode should be Plan");
 
     for _ in 0..3 {
         session.send("/mode\r").expect("Failed to send /mode");
@@ -832,22 +833,14 @@ fn oil_explicit_mode_commands() {
     session.wait(Duration::from_secs(1));
 
     session.send_line("/act").expect("Failed to send /act");
-    session.wait(Duration::from_millis(500));
-
-    let screen_act = session.capture_screen().unwrap_or_default();
-    assert!(
-        screen_act.contains("Act") || screen_act.to_lowercase().contains("act"),
-        "Should show Act mode indicator"
-    );
+    session
+        .wait_for_text("Act", Duration::from_secs(3))
+        .expect("Should show Act mode indicator");
 
     session.send_line("/plan").expect("Failed to send /plan");
-    session.wait(Duration::from_millis(500));
-
-    let screen_plan = session.capture_screen().unwrap_or_default();
-    assert!(
-        screen_plan.contains("Plan") || screen_plan.to_lowercase().contains("plan"),
-        "Should show Plan mode indicator"
-    );
+    session
+        .wait_for_text("Plan", Duration::from_secs(3))
+        .expect("Should show Plan mode indicator");
 
     session.send_control('c').ok();
     session.send_control('c').ok();
@@ -1415,20 +1408,20 @@ fn oil_narrow_terminal_60_cols() {
 
     session.wait(Duration::from_secs(1));
 
-    let screen = session.capture_screen().unwrap_or_default();
-    assert!(
-        screen.contains("Plan"),
-        "Should show mode indicator at 60 cols"
-    );
+    session
+        .wait_for_text("Plan", Duration::from_secs(3))
+        .expect("Should show mode indicator at 60 cols");
 
     session.send("/help\r").expect("Help failed");
-    session.wait(Duration::from_millis(500));
-
-    let screen_help = session.capture_screen().unwrap_or_default();
-    assert!(
-        screen_help.contains("Commands") || screen_help.contains("/mode"),
-        "Help should render at narrow width"
-    );
+    session
+        .wait_until(
+            |s| {
+                let c = s.contents();
+                c.contains("Commands") || c.contains("/mode")
+            },
+            Duration::from_secs(3),
+        )
+        .expect("Help should render at narrow width");
 
     session.send("/quit\r").ok();
 }
@@ -1467,20 +1460,20 @@ fn oil_wide_terminal_120_cols() {
 
     session.wait(Duration::from_secs(1));
 
-    let screen = session.capture_screen().unwrap_or_default();
-    assert!(
-        screen.contains("Plan"),
-        "Should show mode indicator at 120 cols"
-    );
+    session
+        .wait_for_text("Plan", Duration::from_secs(3))
+        .expect("Should show mode indicator at 120 cols");
 
     session.send_key(Key::F(1)).expect("F1 failed");
-    session.wait(Duration::from_millis(500));
-
-    let screen_popup = session.capture_screen().unwrap_or_default();
-    assert!(
-        screen_popup.contains("semantic_search") || screen_popup.contains("tool"),
-        "Popup should render at wide width"
-    );
+    session
+        .wait_until(
+            |s| {
+                let c = s.contents();
+                c.contains("semantic_search") || c.contains("tool")
+            },
+            Duration::from_secs(3),
+        )
+        .expect("Popup should render at wide width");
 
     session.send("/quit\r").ok();
 }
