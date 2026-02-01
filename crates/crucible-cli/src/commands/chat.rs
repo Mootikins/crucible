@@ -455,6 +455,29 @@ async fn run_interactive_chat(
     std::fs::create_dir_all(&session_dir).ok();
     runner = runner.with_session_dir(session_dir);
 
+    // Best-effort enricher for precognition (auto-RAG)
+    match factories::get_storage(&config).await {
+        Ok(storage_handle) => {
+            match storage_handle
+                .get_embedded_for_operation(&config, "precognition enricher")
+                .await
+            {
+                Ok(storage_client) => {
+                    let core = Arc::new(KilnContext::from_storage(storage_client, config.clone()));
+                    let enricher = Arc::new(ContextEnricher::new(core, None));
+                    runner = runner.with_enricher(enricher);
+                    debug!("Precognition enricher initialized");
+                }
+                Err(e) => {
+                    debug!("No embedded storage for precognition: {}", e);
+                }
+            }
+        }
+        Err(e) => {
+            debug!("No storage available for precognition: {}", e);
+        }
+    }
+
     let config_for_factory = config;
     let initial_mode_str = initial_mode.to_string();
     let resume_id_for_factory = resume_session_id;
