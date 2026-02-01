@@ -316,6 +316,7 @@ pub struct AutoStore {
 }
 
 impl AutoStore {
+    /// Create a new `AutoStore` with default file path.
     pub fn new() -> Self {
         Self {
             file: SecretsFile::new(),
@@ -324,6 +325,7 @@ impl AutoStore {
         }
     }
 
+    /// Create a new `AutoStore` with a custom secrets file path.
     pub fn with_file_path(path: PathBuf) -> Self {
         Self {
             file: SecretsFile::with_path(path),
