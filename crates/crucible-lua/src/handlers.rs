@@ -323,7 +323,7 @@ pub fn interpret_handler_result(result: &Value) -> LuaResult<ScriptHandlerResult
         _ => {
             // Other values treated as transform - convert to JSON
             warn!("Handler returned unexpected type, treating as transform");
-            let json = serde_json::to_value(&result).map_err(mlua::Error::external)?;
+            let json = serde_json::to_value(result).map_err(mlua::Error::external)?;
             Ok(ScriptHandlerResult::Transform(json))
         }
     }
