@@ -844,8 +844,7 @@ fn snapshot_multi_turn_conversation() {
 fn snapshot_system_message() {
     let mut app = OilChatApp::default();
 
-    // Trigger help command which adds system message
-    for c in "/help".chars() {
+    for c in ":help".chars() {
         app.update(crate::tui::oil::event::Event::Key(KeyEvent::new(
             KeyCode::Char(c),
             KeyModifiers::NONE,
