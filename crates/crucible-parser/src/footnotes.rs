@@ -15,25 +15,21 @@ use async_trait::async_trait;
 
 use regex::Regex;
 use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
+
+static REFERENCE_REGEX: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"\[\^([\w\-\s]+)\]").expect("footnote reference regex"));
+
+static DEFINITION_REGEX: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?m)^[ \t]*\[\^([\w\-\s]+)\]:[ \t]*(.*)$").expect("footnote definition regex"));
 
 /// Footnote syntax extension
-pub struct FootnoteExtension {
-    /// Regex for footnote references [^identifier] (not followed by colon)
-    reference_regex: Regex,
-    /// Regex for footnote definitions [^identifier]: content
-    definition_regex: Regex,
-}
+pub struct FootnoteExtension;
 
 impl FootnoteExtension {
     /// Create a new footnote extension
     pub fn new() -> Self {
-        Self {
-            // Match [^identifier] where identifier is alphanumeric, hyphen, underscore, or space
-            // This avoids matching regex patterns like [^\s] or [^\d]
-            reference_regex: Regex::new(r"\[\^([\w\-\s]+)\]").unwrap(),
-            definition_regex: Regex::new(r"(?m)^[ \t]*\[\^([\w\-\s]+)\]:[ \t]*(.*)$").unwrap(),
-        }
+        Self
     }
 }
 
@@ -71,7 +67,7 @@ impl SyntaxExtension for FootnoteExtension {
         let mut duplicate_identifiers: HashSet<String> = HashSet::new();
 
         // Parse footnote definitions first
-        for cap in self.definition_regex.captures_iter(content) {
+        for cap in DEFINITION_REGEX.captures_iter(content) {
             let full_match = cap.get(0).unwrap();
             let identifier = cap.get(1).unwrap().as_str().trim();
             let initial_content = cap.get(2).unwrap().as_str().trim();
@@ -113,7 +109,7 @@ impl SyntaxExtension for FootnoteExtension {
         }
 
         // Parse footnote references
-        for cap in self.reference_regex.captures_iter(content) {
+        for cap in REFERENCE_REGEX.captures_iter(content) {
             let full_match = cap.get(0).unwrap();
             let identifier = cap.get(1).unwrap().as_str().trim();
             let offset = full_match.start();
