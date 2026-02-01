@@ -398,7 +398,38 @@ pub async fn create_internal_agent(
 
     let initial_mode = if params.read_only { "plan" } else { "normal" };
 
-    // Build Rig agent with size-appropriate tools (and kiln tools if context provided)
+    let mcp_tools = match config.mcp.as_ref() {
+        Some(mcp_cfg) if !mcp_cfg.servers.is_empty() => {
+            match crucible_tools::mcp_gateway::McpGatewayManager::from_config(mcp_cfg).await {
+                Ok(gw) => {
+                    let server_names: Vec<String> =
+                        mcp_cfg.servers.iter().map(|s| s.name.clone()).collect();
+                    let all_tools = gw.all_tools();
+                    let gateway = std::sync::Arc::new(tokio::sync::RwLock::new(gw));
+                    let tools = crucible_rig::mcp_proxy_tool::mcp_tools_from_gateway(
+                        &gateway,
+                        &server_names,
+                        &all_tools,
+                    );
+                    info!(
+                        "MCP gateway: {} tools from {} server(s)",
+                        tools.len(),
+                        server_names.len()
+                    );
+                    tools
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        "MCP gateway init failed, continuing without MCP tools: {}",
+                        e
+                    );
+                    vec![]
+                }
+            }
+        }
+        _ => vec![],
+    };
+
     let kiln_ctx = params.kiln_context;
     match client {
         crucible_rig::RigClient::Ollama(ollama_client) => {
@@ -408,7 +439,7 @@ pub async fn create_internal_agent(
                 &workspace_root,
                 model_size,
                 kiln_ctx.clone(),
-                vec![],
+                mcp_tools.clone(),
             )?;
 
             let mut components = AgentComponents::new(
@@ -441,7 +472,7 @@ pub async fn create_internal_agent(
                 &workspace_root,
                 model_size,
                 kiln_ctx,
-                vec![],
+                mcp_tools.clone(),
             )?;
             let mut handle = RigAgentHandle::new(agent)
                 .with_workspace_context(ws_ctx)
@@ -462,7 +493,7 @@ pub async fn create_internal_agent(
                 &workspace_root,
                 model_size,
                 kiln_ctx,
-                vec![],
+                mcp_tools.clone(),
             )?;
             let mut handle = RigAgentHandle::new(agent)
                 .with_workspace_context(ws_ctx)
@@ -483,7 +514,7 @@ pub async fn create_internal_agent(
                 &workspace_root,
                 model_size,
                 kiln_ctx,
-                vec![],
+                mcp_tools.clone(),
             )?;
             Ok(Box::new(
                 RigAgentHandle::new(agent)
@@ -509,7 +540,7 @@ pub async fn create_internal_agent(
                 &workspace_root,
                 model_size,
                 kiln_ctx,
-                vec![],
+                mcp_tools,
             )?;
             let handle = RigAgentHandle::new(agent)
                 .with_workspace_context(ws_ctx)

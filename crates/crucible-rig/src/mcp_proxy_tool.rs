@@ -43,6 +43,7 @@ pub enum McpProxyError {
 /// Each instance wraps a single tool discovered from an upstream MCP server.
 /// The tool's name, description, and input schema come from [`McpToolInfo`],
 /// and calls are forwarded through [`McpGatewayManager::call_tool`].
+#[derive(Clone)]
 pub struct McpProxyTool {
     name: String,
     description: String,
