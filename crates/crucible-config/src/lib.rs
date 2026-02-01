@@ -29,6 +29,7 @@
 
 mod components;
 mod config;
+pub mod credentials;
 mod enrichment;
 mod global;
 mod includes;
@@ -45,6 +46,12 @@ mod workspace;
 mod test_utils;
 
 pub use components::*;
+pub use credentials::{
+    resolve_api_key, AutoStore, CredentialError, CredentialResult, CredentialSource,
+    CredentialStore, ProviderSecrets, SecretsFile, SecretsFileContent,
+};
+#[cfg(feature = "keyring")]
+pub use credentials::KeyringStore;
 pub use config::{
     CacheConfig, CacheType, CliAppConfig, Config, ConfigError, ConfigValidationError,
     DatabaseConfig, DatabaseType, EffectiveLlmConfig, LoggingConfig, ProcessingConfig,
