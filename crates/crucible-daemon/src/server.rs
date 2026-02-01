@@ -10,8 +10,8 @@ use crate::protocol::{
 };
 use crate::rpc::{RpcContext, RpcDispatcher};
 use crate::rpc_helpers::{
-    optional_str_param, optional_u64_param, require_array_param, require_f64_param,
-    require_i64_param, require_obj_param, require_str_param,
+    optional_i64_param, optional_str_param, optional_u64_param, require_array_param,
+    require_f64_param, require_obj_param, require_str_param,
 };
 use crate::session_manager::SessionManager;
 use crate::session_storage::{FileSessionStorage, SessionStorage};
@@ -254,7 +254,13 @@ impl Server {
                                     }
                                 }
                             }
-                            Err(_) => break, // Channel closed
+                            Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
+                                tracing::warn!(
+                                    "Persist task lagged, dropped {} events", n
+                                );
+                                continue;
+                            }
+                            Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
                         }
                     }
                 }
@@ -341,7 +347,13 @@ async fn handle_client(
                                 }
                             }
                         }
-                        Err(_) => break,
+                        Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
+                            tracing::warn!(
+                                "Event forwarder lagged, dropped {} events for client {}", n, client_id
+                            );
+                            continue;
+                        }
+                        Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
                     }
                 }
             }
@@ -1277,10 +1289,13 @@ async fn handle_session_set_thinking_budget(
     event_tx: &broadcast::Sender<SessionEventMessage>,
 ) -> Response {
     let session_id = require_str_param!(req, "session_id");
-    let budget = require_i64_param!(req, "thinking_budget");
+    let budget = optional_i64_param!(req, "thinking_budget");
+
+    // When budget is None, clear the thinking budget override
+    let effective_budget = budget.unwrap_or(0);
 
     match am
-        .set_thinking_budget(session_id, budget, Some(event_tx))
+        .set_thinking_budget(session_id, effective_budget, Some(event_tx))
         .await
     {
         Ok(()) => Response::success(

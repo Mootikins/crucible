@@ -232,9 +232,7 @@ impl SessionManager {
         Ok(previous)
     }
 
-    /// End a session and persist the state change.
-    ///
-    /// The session remains in memory with Ended state until explicitly removed.
+    /// End a session, persist the state change, and remove it from the in-memory map.
     pub async fn end_session(&self, session_id: &str) -> Result<Session, SessionError> {
         let session = {
             let mut entry = self
@@ -250,10 +248,10 @@ impl SessionManager {
             entry.clone()
         };
 
-        // Persist updated state
         self.storage.save(&session).await?;
 
-        info!(session_id = %session_id, "Session ended");
+        self.sessions.remove(session_id);
+        info!(session_id = %session_id, "Session ended and removed from memory");
         Ok(session)
     }
 
@@ -547,8 +545,8 @@ mod tests {
         let ended = manager.end_session(&session_id).await.unwrap();
         assert_eq!(ended.state, SessionState::Ended);
 
-        // Session still in memory
-        assert!(manager.get_session(&session_id).is_some());
+        // Session removed from memory after end
+        assert!(manager.get_session(&session_id).is_none());
     }
 
     #[tokio::test]
@@ -561,17 +559,15 @@ mod tests {
             .unwrap();
         let session_id = session.id.clone();
 
-        // Can't remove active session
         let err = manager.remove_session(&session_id).unwrap_err();
         assert!(matches!(err, SessionError::InvalidState { .. }));
 
-        // End then remove
         manager.end_session(&session_id).await.unwrap();
-        let removed = manager.remove_session(&session_id).unwrap();
-        assert_eq!(removed.id, session_id);
 
-        // No longer in memory
+        // end_session already removes from memory
         assert!(manager.get_session(&session_id).is_none());
+        let err = manager.remove_session(&session_id).unwrap_err();
+        assert!(matches!(err, SessionError::NotFound(_)));
     }
 
     #[tokio::test]
@@ -600,7 +596,7 @@ mod tests {
 
         manager.end_session(&session2.id).await.unwrap();
         assert_eq!(manager.active_count(), 0);
-        assert_eq!(manager.total_count(), 2);
+        assert_eq!(manager.total_count(), 1);
     }
 
     #[tokio::test]
