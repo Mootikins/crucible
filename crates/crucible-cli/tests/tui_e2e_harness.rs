@@ -40,6 +40,7 @@
 use expectrl::{session::OsSession, spawn, Eof, Expect, Regex};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
+use vt100::Parser as Vt100Parser;
 
 /// Configuration for TUI test sessions
 #[derive(Debug, Clone)]
@@ -135,16 +136,19 @@ impl TuiTestConfig {
     }
 }
 
-/// A test session wrapping an expectrl PTY session
+/// A test session wrapping an expectrl PTY session with vt100 terminal emulation.
+///
+/// The vt100 parser accumulates ALL output from the PTY, building a queryable
+/// screen buffer. Use `screen()` to inspect parsed terminal state (cells,
+/// colors, cursor position) instead of raw byte matching.
 pub struct TuiTestSession {
     session: OsSession,
     config: TuiTestConfig,
-    /// Captured output chunks with timestamps for flicker detection and replay
     output_log: Vec<OutputChunk>,
-    /// When recording started (for relative timestamps)
     start_time: Instant,
-    /// Whether to record output
     recording: bool,
+    /// vt100 terminal emulator — accumulates all PTY output into a queryable screen buffer.
+    vt_parser: Vt100Parser,
 }
 
 /// A timestamped chunk of output for granular analysis and replay
@@ -199,12 +203,15 @@ impl TuiTestSession {
 
         let session = spawn(&cmd)?;
 
+        let vt_parser = Vt100Parser::new(config.rows, config.cols, 0);
+
         Ok(Self {
             session,
             config,
             output_log: Vec::new(),
             start_time: Instant::now(),
             recording: false,
+            vt_parser,
         })
     }
 
@@ -259,11 +266,14 @@ impl TuiTestSession {
         Ok(())
     }
 
-    /// Capture current screen content (best effort)
+    /// Capture current screen content (best effort).
+    /// Also feeds raw bytes through the vt100 parser for `screen()` queries.
     pub fn capture_screen(&mut self) -> Result<String, std::io::Error> {
         let mut buffer = [0u8; 65536];
-        // Read available output without blocking
         let n = self.session.try_read(&mut buffer)?;
+        if n > 0 {
+            self.vt_parser.process(&buffer[..n]);
+        }
         Ok(String::from_utf8_lossy(&buffer[..n]).to_string())
     }
 
@@ -300,6 +310,9 @@ impl TuiTestSession {
     pub fn capture_and_record(&mut self) -> Result<String, std::io::Error> {
         let mut buffer = [0u8; 65536];
         let n = self.session.try_read(&mut buffer)?;
+        if n > 0 {
+            self.vt_parser.process(&buffer[..n]);
+        }
         let data = buffer[..n].to_vec();
         let text = String::from_utf8_lossy(&data).to_string();
 
@@ -348,6 +361,75 @@ impl TuiTestSession {
             .map(|chunk| String::from_utf8_lossy(&chunk.data))
             .collect::<Vec<_>>()
             .join("")
+    }
+
+    // =========================================================================
+    // vt100 Screen Access
+    // =========================================================================
+
+    /// Drain any available PTY output into the vt100 parser without blocking.
+    pub fn refresh_screen(&mut self) {
+        let mut buffer = [0u8; 65536];
+        loop {
+            match self.session.try_read(&mut buffer) {
+                Ok(0) => break,
+                Ok(n) => {
+                    self.vt_parser.process(&buffer[..n]);
+                    if self.recording {
+                        self.output_log.push(OutputChunk {
+                            timestamp_ms: self.start_time.elapsed().as_millis() as u64,
+                            data: buffer[..n].to_vec(),
+                        });
+                    }
+                }
+                Err(_) => break,
+            }
+        }
+    }
+
+    /// Get the current vt100 screen state.
+    ///
+    /// Call `refresh_screen()` first if you need the latest output after a
+    /// `wait()` or `expect()` call that may not have fed the parser.
+    pub fn screen(&self) -> &vt100::Screen {
+        self.vt_parser.screen()
+    }
+
+    /// Get the full text contents of the parsed screen (no ANSI codes).
+    pub fn screen_contents(&self) -> String {
+        self.vt_parser.screen().contents()
+    }
+
+    /// Poll until a predicate on the screen becomes true, or timeout.
+    ///
+    /// Drains PTY output every `poll_interval` and checks the predicate.
+    /// Returns `Ok(())` on success or `Err` with screen contents on timeout.
+    pub fn wait_until<F>(&mut self, predicate: F, timeout: Duration) -> Result<(), String>
+    where
+        F: Fn(&vt100::Screen) -> bool,
+    {
+        let poll_interval = Duration::from_millis(80);
+        let start = Instant::now();
+        loop {
+            self.refresh_screen();
+            if predicate(self.screen()) {
+                return Ok(());
+            }
+            if start.elapsed() >= timeout {
+                return Err(format!(
+                    "wait_until timed out after {:?}.\nScreen contents:\n{}",
+                    timeout,
+                    self.screen_contents()
+                ));
+            }
+            std::thread::sleep(poll_interval);
+        }
+    }
+
+    /// Poll until the screen contains the given text, or timeout.
+    pub fn wait_for_text(&mut self, text: &str, timeout: Duration) -> Result<(), String> {
+        let owned = text.to_string();
+        self.wait_until(move |s| s.contents().contains(&owned), timeout)
     }
 
     /// Get the underlying session for advanced operations
@@ -451,6 +533,108 @@ impl Default for TuiTestBuilder {
 }
 
 // =============================================================================
+// vt100 Screen Assertion Helpers
+// =============================================================================
+
+/// Assert that the screen contains the given text anywhere.
+pub fn assert_screen_contains(screen: &vt100::Screen, text: &str) {
+    let contents = screen.contents();
+    assert!(
+        contents.contains(text),
+        "Expected screen to contain {:?}, but it was not found.\nScreen contents:\n{}",
+        text,
+        contents,
+    );
+}
+
+/// Assert that the screen does NOT contain the given text.
+pub fn assert_screen_not_contains(screen: &vt100::Screen, text: &str) {
+    let contents = screen.contents();
+    assert!(
+        !contents.contains(text),
+        "Expected screen to NOT contain {:?}, but it was found.\nScreen contents:\n{}",
+        text,
+        contents,
+    );
+}
+
+/// Assert that a specific row contains the given text.
+pub fn assert_row_contains(screen: &vt100::Screen, row: u16, text: &str) {
+    let contents = screen.contents();
+    let line = contents.lines().nth(row as usize).unwrap_or("");
+    assert!(
+        line.contains(text),
+        "Expected row {} to contain {:?}, but got {:?}.\nFull screen:\n{}",
+        row,
+        text,
+        line,
+        contents,
+    );
+}
+
+/// Assert that a rectangular region of the screen contains the given text.
+pub fn assert_region_contains(
+    screen: &vt100::Screen,
+    top: u16,
+    left: u16,
+    bottom: u16,
+    right: u16,
+    text: &str,
+) {
+    let mut region = String::new();
+    for row in top..=bottom {
+        for col in left..=right {
+            if let Some(cell) = screen.cell(row, col) {
+                region.push_str(&cell.contents());
+            }
+        }
+        if row < bottom {
+            region.push('\n');
+        }
+    }
+    assert!(
+        region.contains(text),
+        "Expected region ({},{})..({},{}) to contain {:?}, but got {:?}.\nFull screen:\n{}",
+        top,
+        left,
+        bottom,
+        right,
+        text,
+        region,
+        screen.contents(),
+    );
+}
+
+/// Assert the cursor is at the given position.
+pub fn assert_cursor_at(screen: &vt100::Screen, row: u16, col: u16) {
+    let (actual_row, actual_col) = screen.cursor_position();
+    assert_eq!(
+        (actual_row, actual_col),
+        (row, col),
+        "Expected cursor at ({}, {}), but it was at ({}, {}).\nScreen contents:\n{}",
+        row,
+        col,
+        actual_row,
+        actual_col,
+        screen.contents(),
+    );
+}
+
+/// Assert that a cell has the bold attribute set.
+pub fn assert_cell_bold(screen: &vt100::Screen, row: u16, col: u16) {
+    let cell = screen
+        .cell(row, col)
+        .unwrap_or_else(|| panic!("No cell at ({}, {})", row, col));
+    assert!(
+        cell.bold(),
+        "Expected cell ({}, {}) to be bold, but it was not. Contents: {:?}",
+        row,
+        col,
+        cell.contents(),
+    );
+}
+
+// =============================================================================
 // Example Tests
 // =============================================================================
 
@@ -458,7 +642,6 @@ impl Default for TuiTestBuilder {
 mod tests {
     use super::*;
 
-    /// Test that the binary can be found
     #[test]
     fn test_find_binary() {
         let config = TuiTestConfig::default();
@@ -466,7 +649,6 @@ mod tests {
         assert!(binary.exists(), "Binary should exist at {:?}", binary);
     }
 
-    /// Test basic session spawning with --help (doesn't require full TUI)
     #[test]
     #[ignore = "requires built binary"]
     fn test_spawn_help() {
@@ -476,8 +658,99 @@ mod tests {
             .spawn()
             .expect("Failed to spawn");
 
-        // Should see usage info
         session.expect("Usage").expect("Should see usage");
         session.expect_eof().expect("Should exit cleanly");
+    }
+
+    // =========================================================================
+    // vt100 assertion helper tests
+    // =========================================================================
+
+    fn make_screen(input: &[u8]) -> vt100::Screen {
+        let mut parser = Vt100Parser::new(24, 80, 0);
+        parser.process(input);
+        parser.screen().clone()
+    }
+
+    #[test]
+    fn vt100_assert_screen_contains_finds_text() {
+        let screen = make_screen(b"Hello World");
+        assert_screen_contains(&screen, "Hello");
+        assert_screen_contains(&screen, "World");
+    }
+
+    #[test]
+    #[should_panic(expected = "Expected screen to contain")]
+    fn vt100_assert_screen_contains_panics_on_missing() {
+        let screen = make_screen(b"Hello");
+        assert_screen_contains(&screen, "Goodbye");
+    }
+
+    #[test]
+    fn vt100_assert_screen_not_contains_passes_on_absent() {
+        let screen = make_screen(b"Hello");
+        assert_screen_not_contains(&screen, "Goodbye");
+    }
+
+    #[test]
+    #[should_panic(expected = "Expected screen to NOT contain")]
+    fn vt100_assert_screen_not_contains_panics_on_present() {
+        let screen = make_screen(b"Hello World");
+        assert_screen_not_contains(&screen, "Hello");
+    }
+
+    #[test]
+    fn vt100_assert_row_contains_finds_text_on_row() {
+        let screen = make_screen(b"Line Zero\r\nLine One\r\nLine Two");
+        assert_row_contains(&screen, 0, "Zero");
+        assert_row_contains(&screen, 1, "One");
+        assert_row_contains(&screen, 2, "Two");
+    }
+
+    #[test]
+    #[should_panic(expected = "Expected row 0 to contain")]
+    fn vt100_assert_row_contains_panics_on_wrong_row() {
+        let screen = make_screen(b"AAA\r\nBBB");
+        assert_row_contains(&screen, 0, "BBB");
+    }
+
+    #[test]
+    fn vt100_assert_region_contains_finds_text() {
+        let screen = make_screen(b"ABCDE\r\nFGHIJ\r\nKLMNO");
+        assert_region_contains(&screen, 1, 1, 1, 3, "GHI");
+    }
+
+    #[test]
+    fn vt100_assert_cursor_at_correct_position() {
+        let screen = make_screen(b"AB");
+        assert_cursor_at(&screen, 0, 2);
+    }
+
+    #[test]
+    #[should_panic(expected = "Expected cursor at")]
+    fn vt100_assert_cursor_at_panics_on_wrong_position() {
+        let screen = make_screen(b"AB");
+        assert_cursor_at(&screen, 0, 0);
+    }
+
+    #[test]
+    fn vt100_assert_cell_bold_with_bold_text() {
+        let screen = make_screen(b"\x1b[1mBold\x1b[m");
+        assert_cell_bold(&screen, 0, 0);
+    }
+
+    #[test]
+    #[should_panic(expected = "Expected cell (0, 0) to be bold")]
+    fn vt100_assert_cell_bold_panics_on_non_bold() {
+        let screen = make_screen(b"Normal");
+        assert_cell_bold(&screen, 0, 0);
+    }
+
+    #[test]
+    fn vt100_screen_parses_ansi_colors() {
+        let screen = make_screen(b"normal \x1b[31mRED\x1b[m normal");
+        assert_screen_contains(&screen, "RED");
+        let cell = screen.cell(0, 7).unwrap();
+        assert_eq!(cell.fgcolor(), vt100::Color::Idx(1));
     }
 }
