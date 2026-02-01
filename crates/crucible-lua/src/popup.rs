@@ -134,7 +134,7 @@ pub fn lua_entry_to_core(entry: &Table) -> LuaResult<crucible_core::types::Popup
     // Handle data field if present
     if let Ok(data) = entry.get::<Value>("data") {
         if !matches!(data, Value::Nil) {
-            if let Ok(json_data) = lua_value_to_json(&data) {
+            if let Ok(json_data) = serde_json::to_value(&data) {
                 popup_entry = popup_entry.with_data(json_data);
             }
         }
@@ -162,59 +162,6 @@ pub fn lua_request_to_core(request: &Table) -> LuaResult<crucible_core::interact
     }
 
     Ok(popup_request)
-}
-
-/// Convert a Lua value to serde_json::Value
-fn lua_value_to_json(value: &Value) -> LuaResult<serde_json::Value> {
-    match value {
-        Value::Nil => Ok(serde_json::Value::Null),
-        Value::Boolean(b) => Ok(serde_json::Value::Bool(*b)),
-        Value::Integer(i) => Ok(serde_json::Value::Number((*i).into())),
-        Value::Number(n) => {
-            if let Some(num) = serde_json::Number::from_f64(*n) {
-                Ok(serde_json::Value::Number(num))
-            } else {
-                Ok(serde_json::Value::Null)
-            }
-        }
-        Value::String(s) => Ok(serde_json::Value::String(s.to_str()?.to_string())),
-        Value::Table(t) => {
-            // Check if it's an array (sequential integer keys starting from 1)
-            let mut is_array = true;
-            let mut max_key = 0i64;
-
-            for pair in t.clone().pairs::<Value, Value>() {
-                let (key, _) = pair?;
-                match key {
-                    Value::Integer(i) if i > 0 => {
-                        max_key = max_key.max(i);
-                    }
-                    _ => {
-                        is_array = false;
-                        break;
-                    }
-                }
-            }
-
-            if is_array && max_key > 0 {
-                let mut arr = Vec::new();
-                for i in 1..=max_key {
-                    if let Ok(val) = t.get::<Value>(i) {
-                        arr.push(lua_value_to_json(&val)?);
-                    }
-                }
-                Ok(serde_json::Value::Array(arr))
-            } else {
-                let mut obj = serde_json::Map::new();
-                for pair in t.clone().pairs::<String, Value>() {
-                    let (key, val) = pair?;
-                    obj.insert(key, lua_value_to_json(&val)?);
-                }
-                Ok(serde_json::Value::Object(obj))
-            }
-        }
-        _ => Ok(serde_json::Value::Null),
-    }
 }
 
 #[cfg(test)]

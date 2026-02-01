@@ -49,7 +49,7 @@ use crate::annotations::{AnnotationParser, DiscoveredHandler};
 use crate::error::LuaError;
 use crucible_core::events::SessionEvent;
 use crucible_core::utils::glob_match;
-use mlua::{Function, Lua, RegistryKey, Result as LuaResult, Table, Value};
+use mlua::{Function, Lua, LuaSerdeExt, RegistryKey, Result as LuaResult, Table, Value};
 use serde_json::Value as JsonValue;
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -243,8 +243,8 @@ impl LuaScriptHandler {
         let handler: Function = lua.globals().get(self.metadata.handler_fn.as_str())?;
 
         // Convert to Lua values
-        let ctx_val = json_to_lua(lua, ctx)?;
-        let event_val = json_to_lua(lua, event.clone())?;
+        let ctx_val = lua.to_value(&ctx)?;
+        let event_val = lua.to_value(&event)?;
 
         // Call handler
         let result: Value = handler.call((ctx_val, event_val))?;
@@ -323,7 +323,7 @@ pub fn interpret_handler_result(result: &Value) -> LuaResult<ScriptHandlerResult
         _ => {
             // Other values treated as transform - convert to JSON
             warn!("Handler returned unexpected type, treating as transform");
-            let json = lua_to_json(result.clone())?;
+            let json = serde_json::to_value(&result).map_err(mlua::Error::external)?;
             Ok(ScriptHandlerResult::Transform(json))
         }
     }
@@ -816,7 +816,7 @@ pub fn execute_permission_hooks(
     // Create request table
     let request_table = lua.create_table()?;
     request_table.set("tool_name", request.tool_name.as_str())?;
-    request_table.set("args", json_to_lua(lua, request.args.clone())?)?;
+    request_table.set("args", lua.to_value(&request.args)?)?;
     if let Some(ref path) = request.file_path {
         request_table.set("file_path", path.as_str())?;
     }
@@ -891,7 +891,7 @@ fn session_event_to_lua(lua: &Lua, event: &SessionEvent) -> LuaResult<Table> {
                 for (key, value) in map {
                     if key != "type" {
                         // Don't overwrite our type field
-                        let lua_val = json_to_lua(lua, value)?;
+                        let lua_val = lua.to_value(&value)?;
                         table.set(key, lua_val)?;
                     }
                 }
@@ -944,88 +944,11 @@ fn lua_table_to_json(table: &Table) -> LuaResult<JsonValue> {
             _ => continue, // Skip non-string, non-integer keys
         };
 
-        let json_val = lua_to_json(value)?;
+        let json_val = serde_json::to_value(&value).map_err(mlua::Error::external)?;
         map.insert(key_str, json_val);
     }
 
     Ok(JsonValue::Object(map))
-}
-
-/// Convert JSON to Lua value
-fn json_to_lua(lua: &Lua, value: JsonValue) -> LuaResult<Value> {
-    match value {
-        JsonValue::Null => Ok(Value::Nil),
-        JsonValue::Bool(b) => Ok(Value::Boolean(b)),
-        JsonValue::Number(n) => {
-            if let Some(i) = n.as_i64() {
-                Ok(Value::Integer(i))
-            } else if let Some(f) = n.as_f64() {
-                Ok(Value::Number(f))
-            } else {
-                Ok(Value::Nil)
-            }
-        }
-        JsonValue::String(s) => Ok(Value::String(lua.create_string(&s)?)),
-        JsonValue::Array(arr) => {
-            let table = lua.create_table()?;
-            for (i, v) in arr.into_iter().enumerate() {
-                table.set(i + 1, json_to_lua(lua, v)?)?;
-            }
-            Ok(Value::Table(table))
-        }
-        JsonValue::Object(obj) => {
-            let table = lua.create_table()?;
-            for (k, v) in obj {
-                table.set(k, json_to_lua(lua, v)?)?;
-            }
-            Ok(Value::Table(table))
-        }
-    }
-}
-
-/// Convert Lua value to JSON
-fn lua_to_json(value: Value) -> LuaResult<JsonValue> {
-    match value {
-        Value::Nil => Ok(JsonValue::Null),
-        Value::Boolean(b) => Ok(JsonValue::Bool(b)),
-        Value::Integer(i) => Ok(JsonValue::Number(i.into())),
-        Value::Number(n) => Ok(serde_json::Number::from_f64(n)
-            .map(JsonValue::Number)
-            .unwrap_or(JsonValue::Null)),
-        Value::String(s) => Ok(JsonValue::String(s.to_str()?.to_string())),
-        Value::Table(t) => {
-            // Check if it's an array (sequential integer keys starting at 1)
-            let len = t.raw_len();
-            let is_array = len > 0 && {
-                let mut is_seq = true;
-                for i in 1..=len {
-                    if t.get::<Value>(i).is_err() {
-                        is_seq = false;
-                        break;
-                    }
-                }
-                is_seq
-            };
-
-            if is_array {
-                let mut arr = Vec::with_capacity(len);
-                for i in 1..=len {
-                    let v: Value = t.get(i)?;
-                    arr.push(lua_to_json(v)?);
-                }
-                Ok(JsonValue::Array(arr))
-            } else {
-                let mut map = serde_json::Map::new();
-                for pair in t.pairs::<String, Value>() {
-                    let (k, v) = pair?;
-                    map.insert(k, lua_to_json(v)?);
-                }
-                Ok(JsonValue::Object(map))
-            }
-        }
-        // Functions, userdata, etc. become null
-        _ => Ok(JsonValue::Null),
-    }
 }
 
 /// Result of handler execution (legacy compatibility)
@@ -1416,8 +1339,8 @@ mod tests {
             "nested": {"key": "value"}
         });
 
-        let lua_val = json_to_lua(&lua, original.clone()).unwrap();
-        let back = lua_to_json(lua_val).unwrap();
+        let lua_val = lua.to_value(&original).unwrap();
+        let back: serde_json::Value = serde_json::to_value(&lua_val).unwrap();
 
         assert_eq!(original["string"], back["string"]);
         assert_eq!(original["number"], back["number"]);
