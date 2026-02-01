@@ -47,7 +47,7 @@
 //! ```
 
 use crate::error::LuaError;
-use mlua::{Lua, Value};
+use mlua::{Lua, LuaSerdeExt, Value};
 use oq::{compile_filter, format_tool_response, format_tool_response_with, run_filter, ToolType};
 use serde_json::Value as JsonValue;
 
@@ -394,7 +394,7 @@ pub fn register_oq_module(lua: &Lua) -> Result<(), LuaError> {
     oq.set("format", format_fn)?;
 
     // oq.null constant
-    let null = lua.create_userdata(OqNull)?;
+    let null = lua.create_ser_userdata(OqNull)?;
     oq.set("null", null)?;
 
     // Register oq module globally
@@ -409,78 +409,20 @@ struct OqNull;
 
 impl mlua::UserData for OqNull {}
 
+impl serde::Serialize for OqNull {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_none()
+    }
+}
+
 /// Convert JSON value to Lua value
 pub fn json_to_lua(lua: &Lua, value: JsonValue) -> mlua::Result<Value> {
-    match value {
-        JsonValue::Null => Ok(Value::Nil),
-        JsonValue::Bool(b) => Ok(Value::Boolean(b)),
-        JsonValue::Number(n) => {
-            if let Some(i) = n.as_i64() {
-                Ok(Value::Integer(i))
-            } else if let Some(f) = n.as_f64() {
-                Ok(Value::Number(f))
-            } else {
-                Ok(Value::Nil)
-            }
-        }
-        JsonValue::String(s) => Ok(Value::String(lua.create_string(&s)?)),
-        JsonValue::Array(arr) => {
-            let table = lua.create_table()?;
-            for (i, v) in arr.into_iter().enumerate() {
-                table.set(i + 1, json_to_lua(lua, v)?)?;
-            }
-            Ok(Value::Table(table))
-        }
-        JsonValue::Object(obj) => {
-            let table = lua.create_table()?;
-            for (k, v) in obj {
-                table.set(k, json_to_lua(lua, v)?)?;
-            }
-            Ok(Value::Table(table))
-        }
-    }
+    lua.to_value(&value)
 }
 
 /// Convert Lua value to JSON value
 pub fn lua_to_json(_lua: &Lua, value: Value) -> Result<JsonValue, LuaError> {
-    match value {
-        Value::Nil => Ok(JsonValue::Null),
-        Value::Boolean(b) => Ok(JsonValue::Bool(b)),
-        Value::Integer(i) => Ok(JsonValue::Number(i.into())),
-        Value::Number(n) => Ok(serde_json::Number::from_f64(n)
-            .map(JsonValue::Number)
-            .unwrap_or(JsonValue::Null)),
-        Value::String(s) => Ok(JsonValue::String(s.to_str()?.to_string())),
-        Value::Table(t) => {
-            // Determine if it's an array or object
-            // Arrays have consecutive integer keys starting at 1
-            let len = t.raw_len();
-            let is_array = len > 0 && (1..=len).all(|i| t.contains_key(i).unwrap_or(false));
-
-            if is_array {
-                let mut arr = Vec::with_capacity(len);
-                for i in 1..=len {
-                    let v: Value = t.get(i)?;
-                    arr.push(lua_to_json(_lua, v)?);
-                }
-                Ok(JsonValue::Array(arr))
-            } else {
-                let mut map = serde_json::Map::new();
-                for pair in t.pairs::<Value, Value>() {
-                    let (k, v) = pair?;
-                    let key = match k {
-                        Value::String(s) => s.to_str()?.to_string(),
-                        Value::Integer(i) => i.to_string(),
-                        _ => continue,
-                    };
-                    map.insert(key, lua_to_json(_lua, v)?);
-                }
-                Ok(JsonValue::Object(map))
-            }
-        }
-        // UserData (including our null marker), functions, threads, etc. become null
-        _ => Ok(JsonValue::Null),
-    }
+    Ok(serde_json::to_value(&value)?)
 }
 
 #[cfg(test)]
