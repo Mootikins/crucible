@@ -150,6 +150,7 @@ serial_test = "3.3"  # For preventing parallel test execution with shared env va
 scopeguard = "1.2"  # For RAII-style cleanup in tests
 insta = { version = "1.46", features = ["filters"] }  # Snapshot testing for TUI
 expectrl = { workspace = true }  # PTY-based TUI testing
+vt100 = "0.15"  # Terminal emulation for queryable screen buffer in E2E tests
 proptest = "1.8"  # Property-based testing for graduation invariants
 test-case = "3.3"  # Parameterized tests
 
