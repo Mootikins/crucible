@@ -56,9 +56,9 @@ pub mod truncate;
 // Re-exports for convenience
 pub use events::{LogEvent, PermissionDecision, TokenUsage};
 pub use id::{SessionId, SessionIdError, SessionType};
+pub use indexer::{extract_session_content, SessionContent};
 pub use markdown::{render_to_markdown, RenderOptions};
 pub use session::{list_sessions, load_events, SessionError, SessionMetadata, SessionWriter};
-pub use indexer::{extract_session_content, SessionContent};
 pub use truncate::{truncate_for_log, TruncateResult, DEFAULT_TRUNCATE_THRESHOLD};
 
 #[cfg(feature = "sqlite")]

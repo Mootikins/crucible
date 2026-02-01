@@ -692,10 +692,7 @@ impl OilChatRunner {
                                             });
                                         }
                                         Err(e) => {
-                                            tracing::warn!(
-                                                "Precognition enrichment failed: {}",
-                                                e
-                                            );
+                                            tracing::warn!("Precognition enrichment failed: {}", e);
                                             let _ = tx.send(ChatAppMsg::EnrichedMessage {
                                                 original: content.clone(),
                                                 enriched: content,
@@ -765,12 +762,20 @@ impl OilChatRunner {
                     _ => {}
                 }
                 let action = app.on_message(msg);
-                Box::pin(self.process_action(action, app, agent, bridge, active_stream, msg_tx)).await
+                Box::pin(self.process_action(action, app, agent, bridge, active_stream, msg_tx))
+                    .await
             }
             Action::Batch(actions) => {
                 for action in actions {
-                    if Box::pin(self.process_action(action, app, agent, bridge, active_stream, msg_tx))
-                        .await?
+                    if Box::pin(self.process_action(
+                        action,
+                        app,
+                        agent,
+                        bridge,
+                        active_stream,
+                        msg_tx,
+                    ))
+                    .await?
                     {
                         return Ok(true);
                     }
