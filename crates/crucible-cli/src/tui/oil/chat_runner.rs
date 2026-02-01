@@ -16,8 +16,11 @@ use futures::stream::BoxStream;
 use futures::StreamExt;
 use std::io;
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc;
+
+use crate::acp::context::ContextEnricher;
 
 pub struct OilChatRunner {
     terminal: Terminal,
@@ -37,6 +40,7 @@ pub struct OilChatRunner {
     show_thinking: bool,
     session_cmd_rx: Option<mpsc::UnboundedReceiver<SessionCommand>>,
     slash_commands: Vec<(String, String)>,
+    enricher: Option<Arc<ContextEnricher>>,
 }
 
 impl OilChatRunner {
@@ -59,6 +63,7 @@ impl OilChatRunner {
             show_thinking: false,
             session_cmd_rx: None,
             slash_commands: Vec::new(),
+            enricher: None,
         })
     }
 
@@ -132,6 +137,11 @@ impl OilChatRunner {
 
     pub fn with_mcp_config(mut self, config: crucible_config::mcp::McpConfig) -> Self {
         self.mcp_config = Some(config);
+        self
+    }
+
+    pub fn with_enricher(mut self, enricher: Arc<ContextEnricher>) -> Self {
+        self.enricher = Some(enricher);
         self
     }
 
@@ -476,7 +486,7 @@ impl OilChatRunner {
                 let action = app.update(ev.clone());
                 tracing::trace!(?ev, ?action, "processed event");
                 if self
-                    .process_action(action, app, agent, bridge, &mut active_stream)
+                    .process_action(action, app, agent, bridge, &mut active_stream, &msg_tx)
                     .await?
                 {
                     tracing::trace!("quit action received, breaking loop");
@@ -513,15 +523,30 @@ impl OilChatRunner {
         bridge: &AgentEventBridge,
         active_stream: &mut Option<BoxStream<'static, ChatResult<ChatChunk>>>,
     ) -> Action<ChatAppMsg> {
-        if let ChatAppMsg::UserMessage(content) = msg {
-            if active_stream.is_none() {
-                bridge.ring.push(SessionEvent::MessageReceived {
-                    content: content.clone(),
-                    participant_id: "user".to_string(),
-                });
-                let stream = agent.send_message_stream(content.clone());
-                *active_stream = Some(stream);
+        match msg {
+            ChatAppMsg::UserMessage(content) => {
+                if active_stream.is_none() && !app.precognition() {
+                    bridge.ring.push(SessionEvent::MessageReceived {
+                        content: content.clone(),
+                        participant_id: "user".to_string(),
+                    });
+                    let stream = agent.send_message_stream(content.clone());
+                    *active_stream = Some(stream);
+                }
             }
+            ChatAppMsg::EnrichedMessage {
+                original, enriched, ..
+            } => {
+                if active_stream.is_none() {
+                    bridge.ring.push(SessionEvent::MessageReceived {
+                        content: original.clone(),
+                        participant_id: "user".to_string(),
+                    });
+                    let stream = agent.send_message_stream(enriched.clone());
+                    *active_stream = Some(stream);
+                }
+            }
+            _ => {}
         }
         app.on_message(msg.clone())
     }
@@ -533,6 +558,7 @@ impl OilChatRunner {
         agent: &mut A,
         bridge: &AgentEventBridge,
         active_stream: &mut Option<BoxStream<'static, ChatResult<ChatChunk>>>,
+        msg_tx: &mpsc::UnboundedSender<ChatAppMsg>,
     ) -> io::Result<bool> {
         match action {
             Action::Quit => Ok(true),
@@ -644,12 +670,47 @@ impl OilChatRunner {
                     }
                     ChatAppMsg::UserMessage(ref content) => {
                         if active_stream.is_none() {
-                            bridge.ring.push(SessionEvent::MessageReceived {
-                                content: content.clone(),
-                                participant_id: "user".to_string(),
-                            });
-                            let stream = agent.send_message_stream(content.clone());
-                            *active_stream = Some(stream);
+                            if app.precognition()
+                                && self.enricher.is_some()
+                                && !content.starts_with("/search")
+                            {
+                                let enricher = self.enricher.clone().unwrap();
+                                let content = content.clone();
+                                let tx = msg_tx.clone();
+                                tokio::spawn(async move {
+                                    match enricher.enrich_with_results(&content).await {
+                                        Ok(result) => {
+                                            let notes_count = result.notes_found.len();
+                                            if notes_count > 0 {
+                                                let _ = tx.send(ChatAppMsg::PrecognitionResult {
+                                                    notes_count,
+                                                });
+                                            }
+                                            let _ = tx.send(ChatAppMsg::EnrichedMessage {
+                                                original: content,
+                                                enriched: result.prompt,
+                                            });
+                                        }
+                                        Err(e) => {
+                                            tracing::warn!(
+                                                "Precognition enrichment failed: {}",
+                                                e
+                                            );
+                                            let _ = tx.send(ChatAppMsg::EnrichedMessage {
+                                                original: content.clone(),
+                                                enriched: content,
+                                            });
+                                        }
+                                    }
+                                });
+                            } else {
+                                bridge.ring.push(SessionEvent::MessageReceived {
+                                    content: content.clone(),
+                                    participant_id: "user".to_string(),
+                                });
+                                let stream = agent.send_message_stream(content.clone());
+                                *active_stream = Some(stream);
+                            }
                         }
                     }
                     ChatAppMsg::ExecuteSlashCommand(ref cmd) => {
@@ -704,11 +765,11 @@ impl OilChatRunner {
                     _ => {}
                 }
                 let action = app.on_message(msg);
-                Box::pin(self.process_action(action, app, agent, bridge, active_stream)).await
+                Box::pin(self.process_action(action, app, agent, bridge, active_stream, msg_tx)).await
             }
             Action::Batch(actions) => {
                 for action in actions {
-                    if Box::pin(self.process_action(action, app, agent, bridge, active_stream))
+                    if Box::pin(self.process_action(action, app, agent, bridge, active_stream, msg_tx))
                         .await?
                     {
                         return Ok(true);
