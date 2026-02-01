@@ -25,6 +25,8 @@ pub mod event_system;
 pub mod factories;
 pub mod formatting;
 pub mod interactive;
+pub mod kiln_discover;
+pub mod kiln_validate;
 pub mod output;
 pub mod progress;
 pub mod provider_detect;
