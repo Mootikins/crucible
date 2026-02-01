@@ -347,30 +347,38 @@ impl AgentManager {
             .clone()
             .ok_or_else(|| AgentError::NoAgentConfigured(session_id.to_string()))?;
 
-        if self.request_state.contains_key(session_id) {
-            return Err(AgentError::ConcurrentRequest(session_id.to_string()));
+        use dashmap::mapref::entry::Entry;
+        let (cancel_tx, cancel_rx) = oneshot::channel();
+
+        match self.request_state.entry(session_id.to_string()) {
+            Entry::Occupied(_) => {
+                return Err(AgentError::ConcurrentRequest(session_id.to_string()));
+            }
+            Entry::Vacant(e) => {
+                e.insert(RequestState {
+                    cancel_tx: Some(cancel_tx),
+                    task_handle: None,
+                    started_at: Instant::now(),
+                });
+            }
         }
 
         let event_tx_clone = event_tx.clone();
-        let agent = self
+        let agent = match self
             .get_or_create_agent(
                 session_id,
                 &agent_config,
                 &session.workspace,
                 &event_tx_clone,
             )
-            .await?;
-
-        let (cancel_tx, cancel_rx) = oneshot::channel();
-
-        self.request_state.insert(
-            session_id.to_string(),
-            RequestState {
-                cancel_tx: Some(cancel_tx),
-                task_handle: None,
-                started_at: Instant::now(),
-            },
-        );
+            .await
+        {
+            Ok(agent) => agent,
+            Err(e) => {
+                self.request_state.remove(session_id);
+                return Err(e);
+            }
+        };
 
         let message_id = format!("msg-{}", uuid::Uuid::new_v4());
         let session_id_owned = session_id.to_string();
