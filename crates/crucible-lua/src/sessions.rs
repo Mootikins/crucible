@@ -116,10 +116,8 @@ pub trait DaemonSessionApi: Send + Sync + 'static {
     ) -> Pin<Box<dyn Future<Output = Result<bool, String>> + Send>>;
 
     /// Pause a session.
-    fn pause(
-        &self,
-        session_id: String,
-    ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send>>;
+    fn pause(&self, session_id: String)
+        -> Pin<Box<dyn Future<Output = Result<(), String>> + Send>>;
 
     /// Resume a paused session.
     fn resume(
@@ -188,12 +186,7 @@ pub fn register_sessions_module(lua: &Lua) -> Result<(), LuaError> {
     stub_async!("create", lua, sessions, (String, String, Option<String>));
     stub_async!("get", lua, sessions, String);
     stub_async!("list", lua, sessions, ());
-    stub_async!(
-        "configure_agent",
-        lua,
-        sessions,
-        (String, mlua::Value)
-    );
+    stub_async!("configure_agent", lua, sessions, (String, mlua::Value));
     stub_async!("send_message", lua, sessions, (String, String));
     stub_async!("cancel", lua, sessions, String);
     stub_async!("pause", lua, sessions, String);
@@ -472,8 +465,6 @@ pub fn register_sessions_module_with_api(
     Ok(())
 }
 
-
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -622,8 +613,7 @@ mod api_tests {
 
         fn list_sessions(
             &self,
-        ) -> Pin<Box<dyn Future<Output = Result<Vec<serde_json::Value>, String>> + Send>>
-        {
+        ) -> Pin<Box<dyn Future<Output = Result<Vec<serde_json::Value>, String>> + Send>> {
             Box::pin(async {
                 Ok(vec![
                     serde_json::json!({
@@ -760,7 +750,11 @@ mod api_tests {
             .unwrap();
 
         let id: String = result.get("id").unwrap();
-        assert!(id.starts_with("chat-"), "id should start with 'chat-': {}", id);
+        assert!(
+            id.starts_with("chat-"),
+            "id should start with 'chat-': {}",
+            id
+        );
         assert_eq!(result.get::<String>("state").unwrap(), "active");
         assert_eq!(result.get::<String>("kiln").unwrap(), "/tmp/kiln");
     }

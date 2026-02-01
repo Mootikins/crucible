@@ -88,7 +88,11 @@ pub async fn execute(path: Option<PathBuf>, force: bool, interactive: bool) -> R
     Ok(())
 }
 
-pub fn create_kiln_with_config(crucible_dir: &Path, config_content: &str, force: bool) -> Result<()> {
+pub fn create_kiln_with_config(
+    crucible_dir: &Path,
+    config_content: &str,
+    force: bool,
+) -> Result<()> {
     if force && crucible_dir.exists() {
         fs::remove_dir_all(crucible_dir)?;
     }
