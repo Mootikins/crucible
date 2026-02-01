@@ -422,7 +422,7 @@ impl Default for OilChatApp {
             runtime_config: RuntimeConfig::empty(),
             workspace_files: Vec::new(),
             kiln_notes: Vec::new(),
-            slash_commands: Vec::new(),
+            slash_commands: crate::commands::chat::known_slash_commands(),
             statusline_config: Some(
                 crucible_lua::get_statusline_config()
                     .unwrap_or_else(crucible_lua::statusline::StatuslineConfig::builtin_default),
@@ -673,10 +673,7 @@ impl App for OilChatApp {
             ChatAppMsg::OpenInteraction {
                 request_id,
                 request,
-            } => {
-                self.open_interaction(request_id, request);
-                Action::Continue
-            }
+            } => self.open_interaction(request_id, request),
             ChatAppMsg::CloseInteraction {
                 request_id: _,
                 response: _,
@@ -930,11 +927,25 @@ impl OilChatApp {
         self.shell_modal.is_some()
     }
 
-    pub fn open_interaction(&mut self, request_id: String, request: InteractionRequest) {
+    pub fn open_interaction(
+        &mut self,
+        request_id: String,
+        request: InteractionRequest,
+    ) -> Action<ChatAppMsg> {
+        if self.perm_autoconfirm_session {
+            if let InteractionRequest::Permission(_) = &request {
+                tracing::info!(request_id = %request_id, "Auto-confirming permission");
+                return Action::Send(ChatAppMsg::CloseInteraction {
+                    request_id,
+                    response: InteractionResponse::Permission(PermResponse::allow()),
+                });
+            }
+        }
+
         if let InteractionRequest::Permission(perm) = &request {
             if self.interaction_modal.is_some() {
                 self.permission_queue.push_back((request_id, perm.clone()));
-                return;
+                return Action::Continue;
             }
         }
 
@@ -945,6 +956,7 @@ impl OilChatApp {
             request,
             self.perm_show_diff,
         ));
+        Action::Continue
     }
 
     pub fn close_interaction(&mut self) {
@@ -1373,7 +1385,6 @@ impl OilChatApp {
         let command = parts[0].to_lowercase();
 
         match command.as_str() {
-            "quit" | "exit" | "q" => Action::Quit,
             "mode" => {
                 let next = self.mode.cycle();
                 self.set_mode_with_status(next)
@@ -1381,12 +1392,6 @@ impl OilChatApp {
             "default" | "normal" => self.set_mode_with_status(ChatMode::Normal),
             "plan" => self.set_mode_with_status(ChatMode::Plan),
             "auto" => self.set_mode_with_status(ChatMode::Auto),
-            "help" => {
-                self.add_system_message(
-                    "Commands: /mode, /normal, /plan, /auto, /help, /quit, /search, /new, /resume, /agent, /commit, /view, /models".to_string(),
-                );
-                Action::Continue
-            }
             _ => Action::Send(ChatAppMsg::ExecuteSlashCommand(cmd.to_string())),
         }
     }
@@ -1411,10 +1416,16 @@ impl OilChatApp {
         match command {
             "q" | "quit" => Action::Quit,
             "help" | "h" => {
-                self.add_system_message(
-                    "[core] :quit :help :clear :palette :model :set :export <path> :messages\n[mcp] :mcp"
-                        .to_string(),
-                );
+                let slash_list: String = self
+                    .slash_commands
+                    .iter()
+                    .map(|(name, _)| format!("/{}", name))
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                self.add_system_message(format!(
+                    "[system] :quit :help :clear :palette :model :set :export <path> :messages :mcp\n[agent] {}",
+                    slash_list
+                ));
                 Action::Continue
             }
             "messages" | "msgs" | "notifications" => {
@@ -2289,30 +2300,16 @@ impl OilChatApp {
                 &filter,
             ),
             AutocompleteKind::SlashCommand => {
-                let mut commands: Vec<(&str, &str, &str)> = vec![
-                    ("/mode", "Cycle chat mode", "command"),
-                    ("/default", "Set default mode (ask permissions)", "command"),
-                    ("/plan", "Set plan mode (read-only)", "command"),
-                    ("/auto", "Set auto mode (full access)", "command"),
-                    ("/help", "Show help", "command"),
-                    ("/quit", "Exit chat", "command"),
-                ];
                 let owned: Vec<(String, String, String)> = self
                     .slash_commands
                     .iter()
-                    .filter(|(name, _)| {
-                        !commands
-                            .iter()
-                            .any(|(builtin, _, _)| builtin.trim_start_matches('/') == name.as_str())
-                    })
                     .map(|(name, desc)| (format!("/{}", name), desc.clone(), "command".to_string()))
                     .collect();
-                let extra_refs: Vec<(&str, &str, &str)> = owned
+                let refs: Vec<(&str, &str, &str)> = owned
                     .iter()
                     .map(|(n, d, k)| (n.as_str(), d.as_str(), k.as_str()))
                     .collect();
-                commands.extend(extra_refs);
-                Self::filter_commands(&commands, &filter)
+                Self::filter_commands(&refs, &filter)
             }
             AutocompleteKind::ReplCommand => Self::filter_commands(
                 &[
@@ -2717,7 +2714,7 @@ mod tests {
     #[test]
     fn test_quit_command() {
         let mut app = OilChatApp::init();
-        let action = app.handle_slash_command("/quit");
+        let action = app.handle_repl_command(":quit");
         assert!(action.is_quit());
     }
 
@@ -3546,5 +3543,61 @@ mod tests {
         app.on_message(ChatAppMsg::PrecognitionResult { notes_count: 0 });
 
         assert!(app.container_list().is_empty());
+    }
+
+    #[test]
+    fn autoconfirm_session_skips_modal_and_returns_allow() {
+        let mut app = OilChatApp::init();
+        app.handle_set_command("set perm.autoconfirm_session");
+
+        let request = InteractionRequest::Permission(PermRequest::bash(["rm", "-rf", "/"]));
+        let action = app.open_interaction("perm-auto".to_string(), request);
+
+        assert!(!app.interaction_visible(), "Modal should not open");
+        match action {
+            Action::Send(ChatAppMsg::CloseInteraction {
+                request_id,
+                response,
+            }) => {
+                assert_eq!(request_id, "perm-auto");
+                match response {
+                    InteractionResponse::Permission(perm) => assert!(perm.allowed),
+                    other => panic!("Expected Permission response, got {:?}", other),
+                }
+            }
+            other => panic!("Expected CloseInteraction, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn autoconfirm_session_does_not_affect_ask_requests() {
+        let mut app = OilChatApp::init();
+        app.handle_set_command("set perm.autoconfirm_session");
+
+        let request = InteractionRequest::Ask(AskRequest {
+            question: "Pick one".to_string(),
+            choices: Some(vec!["a".to_string(), "b".to_string()]),
+            allow_other: false,
+            multi_select: false,
+        });
+        let action = app.open_interaction("ask-auto".to_string(), request);
+
+        assert!(app.interaction_visible(), "Ask modal should still open");
+        assert!(matches!(action, Action::Continue));
+    }
+
+    #[test]
+    fn autoconfirm_off_shows_modal_normally() {
+        let mut app = OilChatApp::init();
+        assert!(!app.perm_autoconfirm_session());
+
+        let request = InteractionRequest::Permission(PermRequest::bash(["ls"]));
+        let action = app.open_interaction("perm-normal".to_string(), request);
+
+        assert!(
+            app.interaction_visible(),
+            "Modal should open when autoconfirm off"
+        );
+        assert!(matches!(action, Action::Continue));
     }
 }
