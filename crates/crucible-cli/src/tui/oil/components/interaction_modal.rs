@@ -698,7 +698,8 @@ impl InteractionModal {
                         let v_str = match v {
                             serde_json::Value::String(s) => {
                                 if s.len() > 30 {
-                                    format!("\"{}...\"", &s[..27])
+                                    let truncated: String = s.chars().take(27).collect();
+                                    format!("\"{}...\"", truncated)
                                 } else {
                                     format!("\"{}\"", s)
                                 }
