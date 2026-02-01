@@ -46,16 +46,16 @@ mod workspace;
 mod test_utils;
 
 pub use components::*;
-pub use credentials::{
-    resolve_api_key, AutoStore, CredentialError, CredentialResult, CredentialSource,
-    CredentialStore, ProviderSecrets, SecretsFile, SecretsFileContent,
-};
-#[cfg(feature = "keyring")]
-pub use credentials::KeyringStore;
 pub use config::{
     CacheConfig, CacheType, CliAppConfig, Config, ConfigError, ConfigValidationError,
     DatabaseConfig, DatabaseType, EffectiveLlmConfig, LoggingConfig, ProcessingConfig,
     ServerConfig,
+};
+#[cfg(feature = "keyring")]
+pub use credentials::KeyringStore;
+pub use credentials::{
+    resolve_api_key, AutoStore, CredentialError, CredentialResult, CredentialSource,
+    CredentialStore, ProviderSecrets, SecretsFile, SecretsFileContent,
 };
 pub use enrichment::*;
 pub use global::GlobalConfig;
