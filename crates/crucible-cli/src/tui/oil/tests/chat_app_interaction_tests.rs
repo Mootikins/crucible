@@ -557,11 +557,10 @@ fn slash_auto_sets_mode_to_auto() {
 }
 
 #[test]
-fn slash_help_adds_system_message() {
+fn help_shows_both_slash_and_colon_commands() {
     let mut app = OilChatApp::default();
 
-    // Type /help and submit
-    for c in "/help".chars() {
+    for c in ":help".chars() {
         app.update(Event::Key(key(KeyCode::Char(c))));
     }
     app.update(Event::Key(key(KeyCode::Enter)));
@@ -570,7 +569,7 @@ fn slash_help_adds_system_message() {
     let output = render_to_string(&tree, 80);
 
     assert!(
-        output.contains("Commands:") || output.contains("/mode") || output.contains("/help"),
+        output.contains("[system]") || output.contains("/mode") || output.contains(":quit"),
         "Help should show available commands: {}",
         output
     );
@@ -805,7 +804,7 @@ fn ctrl_c_closes_popup_instead_of_inserting_c() {
 fn slash_command_triggers_after_whitespace() {
     let mut app = OilChatApp::default();
 
-    for c in "hello /hel".chars() {
+    for c in "hello /mod".chars() {
         app.update(Event::Key(key(KeyCode::Char(c))));
     }
 
@@ -815,7 +814,7 @@ fn slash_command_triggers_after_whitespace() {
     );
     assert_eq!(
         app.current_popup_filter(),
-        "hel",
+        "mod",
         "Filter should be text after slash"
     );
 }
