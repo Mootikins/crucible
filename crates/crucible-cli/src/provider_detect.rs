@@ -5,6 +5,7 @@
 //! - OpenAI: OPENAI_API_KEY env var
 //! - Anthropic: ANTHROPIC_API_KEY env var
 
+use crucible_config::credentials::{CredentialSource, CredentialStore, SecretsFile};
 use std::time::Duration;
 
 /// Default Ollama endpoint
@@ -14,10 +15,11 @@ const DEFAULT_OLLAMA_HOST: &str = "http://localhost:11434";
 #[derive(Debug, Clone)]
 pub struct DetectedProvider {
     pub name: String,
-    pub provider_type: String, // "ollama", "openai", "anthropic"
+    pub provider_type: String,
     pub available: bool,
-    pub reason: String, // "Running locally", "API key found", etc.
+    pub reason: String,
     pub default_model: Option<String>,
+    pub source: Option<CredentialSource>,
 }
 
 /// Get the Ollama endpoint from OLLAMA_HOST env var or default
@@ -35,13 +37,29 @@ pub fn ollama_endpoint() -> String {
         .unwrap_or_else(|| DEFAULT_OLLAMA_HOST.to_string())
 }
 
-/// Check if an API key exists for a provider
+/// Check if an API key exists for a provider (env var or credential store)
 pub fn has_api_key(provider: &str) -> bool {
+    has_api_key_with_source(provider).is_some()
+}
+
+/// Check if an API key exists and return its source
+pub fn has_api_key_with_source(provider: &str) -> Option<CredentialSource> {
     match provider.to_lowercase().as_str() {
-        "openai" => std::env::var("OPENAI_API_KEY").is_ok(),
-        "anthropic" => std::env::var("ANTHROPIC_API_KEY").is_ok(),
-        _ => false,
+        "openai" if std::env::var("OPENAI_API_KEY").is_ok() => {
+            return Some(CredentialSource::EnvVar)
+        }
+        "anthropic" if std::env::var("ANTHROPIC_API_KEY").is_ok() => {
+            return Some(CredentialSource::EnvVar)
+        }
+        _ => {}
     }
+
+    let store = SecretsFile::new();
+    if let Ok(Some(_)) = store.get(provider) {
+        return Some(CredentialSource::Store);
+    }
+
+    None
 }
 
 /// Check if Ollama is running (checks OLLAMA_HOST env var or localhost:11434)
@@ -232,7 +250,6 @@ pub async fn fetch_model_context_length(endpoint: &str, model_id: &str) -> Optio
 pub async fn detect_providers_available() -> Vec<DetectedProvider> {
     let mut providers = Vec::new();
 
-    // Check Ollama
     if let Some(models) = check_ollama().await {
         providers.push(DetectedProvider {
             name: "Ollama (Local)".to_string(),
@@ -240,28 +257,29 @@ pub async fn detect_providers_available() -> Vec<DetectedProvider> {
             available: true,
             reason: format!("{} models available", models.len()),
             default_model: models.first().cloned(),
+            source: None,
         });
     }
 
-    // Check OpenAI
-    if has_api_key("openai") {
+    if let Some(src) = has_api_key_with_source("openai") {
         providers.push(DetectedProvider {
             name: "OpenAI".to_string(),
             provider_type: "openai".to_string(),
             available: true,
-            reason: "API key found".to_string(),
+            reason: format!("API key found ({})", src),
             default_model: Some("gpt-4o-mini".to_string()),
+            source: Some(src),
         });
     }
 
-    // Check Anthropic
-    if has_api_key("anthropic") {
+    if let Some(src) = has_api_key_with_source("anthropic") {
         providers.push(DetectedProvider {
             name: "Anthropic".to_string(),
             provider_type: "anthropic".to_string(),
             available: true,
-            reason: "API key found".to_string(),
+            reason: format!("API key found ({})", src),
             default_model: Some("claude-3-5-sonnet-latest".to_string()),
+            source: Some(src),
         });
     }
 
@@ -335,6 +353,7 @@ mod tests {
             available: true,
             reason: "Test reason".to_string(),
             default_model: Some("test-model".to_string()),
+            source: Some(CredentialSource::EnvVar),
         };
 
         assert_eq!(provider.name, "Test Provider");
