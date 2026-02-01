@@ -417,17 +417,22 @@ impl DaemonClient {
             .as_ref()
             .ok_or_else(|| anyhow::anyhow!("No reader available in event mode"))?;
 
-        let mut line = String::new();
-        {
-            let mut reader = reader.lock().await;
-            let bytes_read = reader.read_line(&mut line).await?;
-            if bytes_read == 0 {
-                anyhow::bail!("Connection closed by daemon");
+        loop {
+            let mut line = String::new();
+            {
+                let mut reader = reader.lock().await;
+                let bytes_read = reader.read_line(&mut line).await?;
+                if bytes_read == 0 {
+                    anyhow::bail!("Connection closed by daemon");
+                }
+            }
+
+            let msg: serde_json::Value = serde_json::from_str(&line)?;
+
+            if msg.get("id").is_some() || msg.get("error").is_some() {
+                return Ok(msg);
             }
         }
-
-        let msg: serde_json::Value = serde_json::from_str(&line)?;
-        Ok(msg)
     }
 
     // =========================================================================
