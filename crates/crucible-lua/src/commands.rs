@@ -408,5 +408,4 @@ mod tests {
         assert_eq!(handler.source_path, PathBuf::from("/tmp/test.lua"));
         assert!(!handler.is_fennel);
     }
-
 }

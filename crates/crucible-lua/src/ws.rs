@@ -142,7 +142,9 @@ impl UserData for WsConnection {
                     code: tungstenite::protocol::frame::coding::CloseCode::Normal,
                     reason: "closed by client".into(),
                 };
-                let _ = sink.send(tungstenite::Message::Close(Some(close_frame))).await;
+                let _ = sink
+                    .send(tungstenite::Message::Close(Some(close_frame)))
+                    .await;
                 let _ = sink.close().await;
             }
 
@@ -249,10 +251,7 @@ mod tests {
         let ud = lua.create_userdata(conn).unwrap();
         lua.globals().set("test_conn", ud).unwrap();
 
-        let result = lua
-            .load(r#"test_conn:send("hello")"#)
-            .exec_async()
-            .await;
+        let result = lua.load(r#"test_conn:send("hello")"#).exec_async().await;
         assert!(result.is_err());
         let err_msg = result.unwrap_err().to_string();
         assert!(
@@ -260,10 +259,7 @@ mod tests {
             "Expected closed error, got: {err_msg}"
         );
 
-        let result = lua
-            .load(r#"test_conn:receive()"#)
-            .exec_async()
-            .await;
+        let result = lua.load(r#"test_conn:receive()"#).exec_async().await;
         assert!(result.is_err());
         let err_msg = result.unwrap_err().to_string();
         assert!(
