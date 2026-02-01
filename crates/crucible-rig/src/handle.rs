@@ -991,9 +991,9 @@ where
 
                         let rig_usage = final_resp.usage();
                         let usage = Some(TokenUsage {
-                            prompt_tokens: rig_usage.input_tokens as u32,
-                            completion_tokens: rig_usage.output_tokens as u32,
-                            total_tokens: rig_usage.total_tokens as u32,
+                            prompt_tokens: (rig_usage.input_tokens).min(u32::MAX as u64) as u32,
+                            completion_tokens: (rig_usage.output_tokens).min(u32::MAX as u64) as u32,
+                            total_tokens: (rig_usage.total_tokens).min(u32::MAX as u64) as u32,
                         });
 
                         info!(
