@@ -1,4 +1,13 @@
+---
+status: complete
+completed: 2025 (approximate)
+---
+
 # Ink TUI Testability Design
+
+> **Status: COMPLETE** — All 5 phases implemented. This document is now a historical reference.
+> See: `graduation.rs` (RenderFilter), `planning.rs` (FramePlanner), `component.rs` (Component trait),
+> `test_harness.rs` (AppHarness), `terminal.rs` (Terminal refactor).
 
 > Design for improving testability and scrollback preservation in the Crucible ink TUI framework.
 
