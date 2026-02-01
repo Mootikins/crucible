@@ -33,7 +33,7 @@
 use crate::error::LuaError;
 use crucible_core::storage::{GraphView, NoteStore};
 use crucible_core::traits::GraphQueryExecutor;
-use mlua::{Lua, Table, Value};
+use mlua::{Lua, LuaSerdeExt, Table, Value};
 use std::sync::Arc;
 
 /// Register the graph module with a Lua state
@@ -162,7 +162,7 @@ pub fn register_graph_module_with_executor(
             match exec.execute(&query).await {
                 Ok(results) => {
                     if let Some(first) = results.into_iter().next() {
-                        json_to_lua_value(&lua, &first)
+                        lua.to_value(&first)
                     } else {
                         Ok(Value::Nil)
                     }
@@ -448,7 +448,7 @@ fn note_record_to_lua(
     // Properties as table (convert serde_json::Value to Lua)
     let props = lua.create_table()?;
     for (k, v) in &record.properties {
-        props.set(k.as_str(), json_to_lua_value(lua, v)?)?;
+        props.set(k.as_str(), lua.to_value(v)?)?;
     }
     table.set("properties", props)?;
 
@@ -467,45 +467,9 @@ fn escape_quotes(s: &str) -> String {
     s.replace('\\', "\\\\").replace('"', "\\\"")
 }
 
-/// Convert a JSON value to a Lua value
-fn json_to_lua_value(lua: &Lua, value: &serde_json::Value) -> Result<Value, mlua::Error> {
-    match value {
-        serde_json::Value::Null => Ok(Value::Nil),
-        serde_json::Value::Bool(b) => Ok(Value::Boolean(*b)),
-        serde_json::Value::Number(n) => {
-            if let Some(i) = n.as_i64() {
-                Ok(Value::Integer(i))
-            } else if let Some(f) = n.as_f64() {
-                Ok(Value::Number(f))
-            } else {
-                Ok(Value::Nil)
-            }
-        }
-        serde_json::Value::String(s) => lua.create_string(s).map(Value::String),
-        serde_json::Value::Array(arr) => {
-            let table = lua.create_table()?;
-            for (i, v) in arr.iter().enumerate() {
-                table.set(i + 1, json_to_lua_value(lua, v)?)?;
-            }
-            Ok(Value::Table(table))
-        }
-        serde_json::Value::Object(map) => {
-            let table = lua.create_table()?;
-            for (k, v) in map {
-                table.set(k.as_str(), json_to_lua_value(lua, v)?)?;
-            }
-            Ok(Value::Table(table))
-        }
-    }
-}
-
 /// Convert a JSON array to a Lua table
 fn json_array_to_lua_table(lua: &Lua, values: &[serde_json::Value]) -> Result<Value, mlua::Error> {
-    let table = lua.create_table()?;
-    for (i, v) in values.iter().enumerate() {
-        table.set(i + 1, json_to_lua_value(lua, v)?)?;
-    }
-    Ok(Value::Table(table))
+    lua.to_value(values)
 }
 
 #[cfg(test)]

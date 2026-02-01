@@ -48,7 +48,7 @@
 
 use crate::error::LuaError;
 use crate::lua_util::register_in_namespaces;
-use mlua::{Lua, Table, Value};
+use mlua::{Lua, LuaSerdeExt, Table, Value};
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -237,7 +237,7 @@ pub fn register_sessions_module_with_api(
             async move {
                 match a.create_session(session_type, kiln, workspace).await {
                     Ok(val) => {
-                        let lua_val = json_to_lua_value(&lua, &val)?;
+                        let lua_val = lua.to_value(&val)?;
                         Ok((lua_val, Value::Nil))
                     }
                     Err(e) => {
@@ -257,7 +257,7 @@ pub fn register_sessions_module_with_api(
         async move {
             match a.get_session(session_id).await {
                 Ok(Some(val)) => {
-                    let lua_val = json_to_lua_value(&lua, &val)?;
+                    let lua_val = lua.to_value(&val)?;
                     Ok((lua_val, Value::Nil))
                 }
                 Ok(None) => Ok((Value::Nil, Value::Nil)),
@@ -279,7 +279,7 @@ pub fn register_sessions_module_with_api(
                 Ok(vals) => {
                     let table = lua.create_table()?;
                     for (i, val) in vals.iter().enumerate() {
-                        let lua_val = json_to_lua_value(&lua, val)?;
+                        let lua_val = lua.to_value(val)?;
                         table.set(i + 1, lua_val)?;
                     }
                     Ok((Value::Table(table), Value::Nil))
@@ -299,7 +299,8 @@ pub fn register_sessions_module_with_api(
         lua.create_async_function(move |lua, (session_id, config): (String, Value)| {
             let a = Arc::clone(&a);
             async move {
-                let json_config = lua_value_to_json(&config)?;
+                let json_config: serde_json::Value =
+                    serde_json::to_value(&config).map_err(mlua::Error::external)?;
                 match a.configure_agent(session_id, json_config).await {
                     Ok(()) => Ok((Value::Boolean(true), Value::Nil)),
                     Err(e) => {
@@ -401,7 +402,8 @@ pub fn register_sessions_module_with_api(
         move |lua, (session_id, request_id, response): (String, String, Value)| {
             let a = Arc::clone(&a);
             async move {
-                let json_response = lua_value_to_json(&response)?;
+                let json_response: serde_json::Value =
+                    serde_json::to_value(&response).map_err(mlua::Error::external)?;
                 match a
                     .respond_to_permission(session_id, request_id, json_response)
                     .await
@@ -433,7 +435,7 @@ pub fn register_sessions_module_with_api(
                             let mut guard = rx.lock().await;
                             match guard.recv().await {
                                 Some(event) => {
-                                    let lua_val = json_to_lua_value(&lua, &event)?;
+                                    let lua_val = lua.to_value(&event)?;
                                     Ok((lua_val, Value::Nil))
                                 }
                                 None => Ok((Value::Nil, Value::Nil)),
@@ -470,73 +472,7 @@ pub fn register_sessions_module_with_api(
     Ok(())
 }
 
-/// Convert a JSON value to a Lua value.
-fn json_to_lua_value(lua: &Lua, value: &serde_json::Value) -> Result<Value, mlua::Error> {
-    match value {
-        serde_json::Value::Null => Ok(Value::Nil),
-        serde_json::Value::Bool(b) => Ok(Value::Boolean(*b)),
-        serde_json::Value::Number(n) => {
-            if let Some(i) = n.as_i64() {
-                Ok(Value::Integer(i))
-            } else if let Some(f) = n.as_f64() {
-                Ok(Value::Number(f))
-            } else {
-                Ok(Value::Nil)
-            }
-        }
-        serde_json::Value::String(s) => lua.create_string(s).map(Value::String),
-        serde_json::Value::Array(arr) => {
-            let table = lua.create_table()?;
-            for (i, v) in arr.iter().enumerate() {
-                table.set(i + 1, json_to_lua_value(lua, v)?)?;
-            }
-            Ok(Value::Table(table))
-        }
-        serde_json::Value::Object(map) => {
-            let table = lua.create_table()?;
-            for (k, v) in map {
-                table.set(k.as_str(), json_to_lua_value(lua, v)?)?;
-            }
-            Ok(Value::Table(table))
-        }
-    }
-}
 
-/// Convert a Lua value to a JSON value.
-fn lua_value_to_json(value: &Value) -> Result<serde_json::Value, mlua::Error> {
-    match value {
-        Value::Nil => Ok(serde_json::Value::Null),
-        Value::Boolean(b) => Ok(serde_json::Value::Bool(*b)),
-        Value::Integer(i) => Ok(serde_json::Value::Number((*i).into())),
-        Value::Number(f) => serde_json::Number::from_f64(*f)
-            .map(serde_json::Value::Number)
-            .ok_or_else(|| mlua::Error::runtime("invalid float value")),
-        Value::String(s) => Ok(serde_json::Value::String(s.to_str()?.to_string())),
-        Value::Table(t) => {
-            // Detect if table is array-like (sequential integer keys starting at 1)
-            let len = t.raw_len();
-            if len > 0 {
-                let mut arr = Vec::with_capacity(len);
-                for i in 1..=len {
-                    let v: Value = t.raw_get(i)?;
-                    arr.push(lua_value_to_json(&v)?);
-                }
-                Ok(serde_json::Value::Array(arr))
-            } else {
-                let mut map = serde_json::Map::new();
-                for pair in t.pairs::<String, Value>() {
-                    let (k, v) = pair?;
-                    map.insert(k, lua_value_to_json(&v)?);
-                }
-                Ok(serde_json::Value::Object(map))
-            }
-        }
-        _ => Err(mlua::Error::runtime(format!(
-            "cannot convert {:?} to JSON",
-            value.type_name()
-        ))),
-    }
-}
 
 #[cfg(test)]
 mod tests {
