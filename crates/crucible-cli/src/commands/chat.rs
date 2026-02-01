@@ -14,6 +14,7 @@ use crate::acp::{ContextEnricher, CrucibleAcpClient};
 use crate::config::CliConfig;
 use crate::core_facade::KilnContext;
 use crate::factories;
+use crate::kiln_discover::{discover_kiln, DiscoverySource};
 use crate::progress::{BackgroundProgress, LiveProgress, StatusLine};
 use crate::provider_detect::{fetch_model_context_length, fetch_provider_models};
 use crate::tui::oil::McpServerDisplay;
@@ -86,6 +87,43 @@ pub async fn execute(
     let parsed_env = parse_env_overrides(&env_overrides);
     let working_dir = std::env::current_dir().ok();
 
+    let mut config = config;
+
+    if query.is_none() {
+        let global_kiln = if config.kiln_path.join(".crucible").is_dir() {
+            Some(config.kiln_path.as_path())
+        } else {
+            None
+        };
+
+        let discovered = discover_kiln(None, global_kiln);
+
+        match discovered {
+            Some(found) => {
+                info!(
+                    "Discovered kiln at {} (via {:?})",
+                    found.path.display(),
+                    found.source
+                );
+                if found.source != DiscoverySource::CliFlag {
+                    config.kiln_path = found.path;
+                }
+            }
+            None => {
+                info!("No kiln found, launching setup wizard");
+                match run_setup_wizard().await {
+                    Ok(wizard_config) => {
+                        config.kiln_path = wizard_config.kiln_path;
+                    }
+                    Err(e) => {
+                        info!("Setup wizard cancelled or failed: {}", e);
+                        return Ok(());
+                    }
+                }
+            }
+        }
+    }
+
     match query {
         None => {
             run_interactive_chat(
@@ -147,6 +185,105 @@ fn parse_env_overrides(env_overrides: &[String]) -> std::collections::HashMap<St
     }
 
     parsed
+}
+
+async fn run_setup_wizard() -> Result<crate::tui::oil::components::WizardConfig> {
+    use crate::commands::init::{create_kiln_with_config, generate_config_with_provider};
+    use crate::provider_detect::detect_providers_available;
+    use crate::tui::oil::components::{
+        DetectedProviderInfo, SetupWizard, SetupWizardMsg, SetupWizardOutput,
+    };
+    use crate::tui::oil::{FocusContext, Terminal, ThemeTokens, ViewContext};
+    use crossterm::event::{Event as CtEvent, EventStream};
+    use crucible_config::LlmProvider;
+    use futures::StreamExt;
+
+    let mut terminal = Terminal::new()?;
+    terminal.enter()?;
+
+    let mut wizard = SetupWizard::new();
+    let theme = ThemeTokens::default();
+    let focus = FocusContext::new();
+    let mut event_stream = EventStream::new();
+
+    loop {
+        let _ctx = ViewContext::new(&focus);
+        let tree = wizard.view(&theme);
+        let _ = terminal.render(&tree)?;
+
+        let tick = tokio::time::sleep(std::time::Duration::from_millis(50));
+        tokio::pin!(tick);
+
+        tokio::select! {
+            maybe_event = event_stream.next() => {
+                if let Some(Ok(CtEvent::Key(key))) = maybe_event {
+                    let output = wizard.update(SetupWizardMsg::Key(key));
+                    match output {
+                        SetupWizardOutput::Close => {
+                            terminal.exit()?;
+                            anyhow::bail!("Setup cancelled");
+                        }
+                        SetupWizardOutput::NeedsProviderDetection => {
+                            let providers = detect_providers_available().await;
+                            let infos: Vec<DetectedProviderInfo> = providers
+                                .into_iter()
+                                .map(|p| DetectedProviderInfo {
+                                    name: p.name,
+                                    provider_type: p.provider_type,
+                                    reason: p.reason,
+                                    default_model: p.default_model,
+                                })
+                                .collect();
+                            wizard.update(SetupWizardMsg::ProvidersDetected(infos));
+                        }
+                        SetupWizardOutput::NeedsModelFetch(provider_type) => {
+                            let llm_provider = match provider_type.as_str() {
+                                "openai" => LlmProvider::OpenAI,
+                                "anthropic" => LlmProvider::Anthropic,
+                                _ => LlmProvider::Ollama,
+                            };
+                            let endpoint = match provider_type.as_str() {
+                                "ollama" => "http://localhost:11434",
+                                "openai" => "https://api.openai.com/v1",
+                                "anthropic" => "https://api.anthropic.com",
+                                _ => "http://localhost:11434",
+                            };
+                            let models = crate::provider_detect::fetch_provider_models(
+                                &llm_provider,
+                                endpoint,
+                            )
+                            .await;
+                            wizard.update(SetupWizardMsg::ModelsLoaded(models));
+                        }
+                        SetupWizardOutput::Complete(wiz_config) => {
+                            terminal.exit()?;
+
+                            if !wiz_config.kiln_path.exists() {
+                                std::fs::create_dir_all(&wiz_config.kiln_path)?;
+                            }
+
+                            let crucible_dir = wiz_config.kiln_path.join(".crucible");
+                            let config_content =
+                                generate_config_with_provider(&wiz_config.provider, &wiz_config.model);
+                            create_kiln_with_config(&crucible_dir, &config_content, false)?;
+
+                            info!(
+                                "Wizard complete: kiln={}, provider={}, model={}",
+                                wiz_config.kiln_path.display(),
+                                wiz_config.provider,
+                                wiz_config.model
+                            );
+                            return Ok(wiz_config);
+                        }
+                        SetupWizardOutput::None => {}
+                    }
+                }
+            }
+            _ = &mut tick => {
+                wizard.update(SetupWizardMsg::Tick);
+            }
+        }
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
