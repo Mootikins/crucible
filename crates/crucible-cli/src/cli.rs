@@ -263,6 +263,12 @@ pub enum Commands {
     /// Session management (list, show, resume, export)
     #[command(subcommand)]
     Session(SessionCommands),
+
+    /// Manage LLM provider credentials (defaults to 'list' if no subcommand given)
+    Auth {
+        #[command(subcommand)]
+        command: Option<AuthCommands>,
+    },
 }
 
 /// Session management subcommands
@@ -466,6 +472,30 @@ pub enum AgentsCommands {
         #[arg(long)]
         verbose: bool,
     },
+}
+
+#[derive(Subcommand)]
+pub enum AuthCommands {
+    /// Store an API key for a provider
+    Login {
+        /// Provider name (openai, anthropic, etc.)
+        #[arg(short, long)]
+        provider: Option<String>,
+
+        /// API key value
+        #[arg(short, long)]
+        key: Option<String>,
+    },
+
+    /// Remove a stored credential
+    Logout {
+        /// Provider name to remove
+        #[arg(short, long)]
+        provider: Option<String>,
+    },
+
+    /// Show all configured credentials and their sources
+    List,
 }
 
 #[derive(Subcommand)]
