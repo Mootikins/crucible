@@ -12,25 +12,18 @@ use super::types::{InlineLink, NoteContent};
 use async_trait::async_trait;
 
 use regex::Regex;
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
+
+static LINK_REGEX: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r#"\[([^\]]+)\]\(([^\s)]+)(?:\s+"([^"]+)")?\)"#).expect("inline link regex"));
 
 /// Inline link syntax extension
-pub struct InlineLinkExtension {
-    /// Regex for inline markdown links [text](url) and [text](url "title")
-    link_regex: Regex,
-}
+pub struct InlineLinkExtension;
 
 impl InlineLinkExtension {
     /// Create a new inline link extension
     pub fn new() -> Self {
-        // Regex pattern that matches:
-        // - [text](url) - basic link
-        // - [text](url "title") - link with title
-        // - [text](url 'title') - link with single-quoted title
-        // Captures: 1=text, 2=url, 3=title (optional)
-        Self {
-            link_regex: Regex::new(r#"\[([^\]]+)\]\(([^\s)]+)(?:\s+"([^"]+)")?\)"#).unwrap(),
-        }
+        Self
     }
 }
 
@@ -63,7 +56,7 @@ impl SyntaxExtension for InlineLinkExtension {
         let errors = Vec::new();
 
         // Extract all inline links
-        for cap in self.link_regex.captures_iter(content) {
+        for cap in LINK_REGEX.captures_iter(content) {
             let full_match = cap.get(0).unwrap();
             let text = cap.get(1).unwrap().as_str().trim();
             let url = cap.get(2).unwrap().as_str().trim();

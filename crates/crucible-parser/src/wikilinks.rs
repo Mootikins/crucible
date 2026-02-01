@@ -13,35 +13,26 @@ use super::extensions::SyntaxExtension;
 use super::types::{NoteContent, Wikilink};
 use async_trait::async_trait;
 use regex::Regex;
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
+
+static WIKILINK_REGEX: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(!?)\[\[([^\]]+)\]\]").expect("wikilink regex"));
+
+static CODE_BLOCK_REGEX: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?m)^```[\s\S]*?^```|^    .*$|`[^`]+`").expect("code block regex"));
 
 /// Wikilink syntax extension
-pub struct WikilinkExtension {
-    /// Regex for wikilinks !?[[...]]
-    wikilink_regex: Regex,
-    /// Regex to detect code block boundaries
-    code_block_regex: Regex,
-}
+pub struct WikilinkExtension;
 
 impl WikilinkExtension {
     /// Create a new wikilink extension
     pub fn new() -> Self {
-        Self {
-            // Matches: !?[[...]] capturing the content inside brackets
-            // Group 1: optional ! for embeds
-            // Group 2: content inside [[...]]
-            wikilink_regex: Regex::new(r"(!?)\[\[([^\]]+)\]\]").unwrap(),
-            // Matches code blocks (fenced, indented, or inline)
-            // Pattern 1: Fenced code blocks ```...```
-            // Pattern 2: Indented code blocks (4 spaces)
-            // Pattern 3: Inline code `...`
-            code_block_regex: Regex::new(r"(?m)^```[\s\S]*?^```|^    .*$|`[^`]+`").unwrap(),
-        }
+        Self
     }
 
     /// Check if an offset is inside a code block
     fn is_inside_code_block(&self, content: &str, offset: usize) -> bool {
-        for cap in self.code_block_regex.find_iter(content) {
+        for cap in CODE_BLOCK_REGEX.find_iter(content) {
             if offset >= cap.start() && offset < cap.end() {
                 return true;
             }
@@ -79,7 +70,7 @@ impl SyntaxExtension for WikilinkExtension {
         let errors = Vec::new();
 
         // Extract all wikilinks
-        for cap in self.wikilink_regex.captures_iter(content) {
+        for cap in WIKILINK_REGEX.captures_iter(content) {
             let full_match = cap.get(0).unwrap();
             let offset = full_match.start();
 
