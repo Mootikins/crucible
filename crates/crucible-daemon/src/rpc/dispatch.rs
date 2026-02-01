@@ -46,6 +46,12 @@ pub const METHODS: &[&str] = &[
     "session.add_notification",
     "session.list_notifications",
     "session.dismiss_notification",
+    "session.interaction_respond",
+    "session.set_temperature",
+    "session.get_temperature",
+    "session.set_max_tokens",
+    "session.get_max_tokens",
+    "session.test_interaction",
 ];
 
 fn to_response(id: Option<RequestId>, result: RpcResult<serde_json::Value>) -> Response {
@@ -228,7 +234,7 @@ mod tests {
 
     #[test]
     fn methods_count() {
-        assert_eq!(METHODS.len(), 35, "Update when adding RPC methods");
+        assert_eq!(METHODS.len(), 41, "Update when adding RPC methods");
     }
 
     #[tokio::test]
