@@ -19,6 +19,31 @@
 //! - **Navigation tests**: Key sequences, mode switching
 //! - **Multi-turn tests**: Full conversation flows
 //! - **Command tests**: Slash command behavior
+//!
+//! # vt100 Assertion Patterns
+//!
+//! Tests use a vt100 terminal emulator (`TuiTestSession.vt_parser`) that parses
+//! all PTY output into a queryable screen buffer. Prefer these over raw string
+//! matching on `capture_screen()` output:
+//!
+//! ```rust,ignore
+//! // Wait for the TUI to render expected content (polls with timeout):
+//! session.wait_for_text("Plan", Duration::from_secs(3)).expect("mode visible");
+//!
+//! // Assert on parsed screen state (no ANSI escape codes):
+//! assert_screen_contains(session.screen(), "Plan");
+//! assert_screen_not_contains(session.screen(), "Error");
+//!
+//! // Custom predicates for complex conditions:
+//! session.wait_until(
+//!     |s| s.contents().contains("Act") || s.contents().contains("Plan"),
+//!     Duration::from_secs(3),
+//! ).expect("mode indicator visible");
+//! ```
+//!
+//! See `tui_e2e_harness.rs` for the full set of assertion helpers:
+//! `assert_screen_contains`, `assert_screen_not_contains`, `assert_row_contains`,
+//! `assert_region_contains`, `assert_cursor_at`, `assert_cell_bold`.
 
 // Include the harness module
 #[path = "tui_e2e_harness.rs"]
@@ -26,7 +51,10 @@ mod tui_e2e_harness;
 
 use std::path::PathBuf;
 use std::time::Duration;
-use tui_e2e_harness::{Key, TuiTestBuilder, TuiTestConfig, TuiTestSession};
+use tui_e2e_harness::{
+    assert_screen_contains, assert_screen_not_contains, Key, TuiTestBuilder, TuiTestConfig,
+    TuiTestSession,
+};
 
 // =============================================================================
 // Helper Functions
@@ -1766,4 +1794,142 @@ fn exit_code_process_nonexistent_path() {
 
     let _stderr = String::from_utf8_lossy(&output.stderr);
     let _stdout = String::from_utf8_lossy(&output.stdout);
+}
+
+// =============================================================================
+// vt100 Exemplar Tests
+// =============================================================================
+
+/// Exemplar: verify screen content with `wait_for_text` and `assert_screen_contains`.
+///
+/// Demonstrates the basic vt100 assertion flow:
+/// 1. `wait_for_text()` polls until content appears (or times out)
+/// 2. `assert_screen_contains()` checks the parsed screen (no ANSI noise)
+#[test]
+#[ignore = "requires built binary"]
+fn vt100_exemplar_screen_content_verification() {
+    let config = TuiTestConfig::new("chat")
+        .with_args(&["--no-process"])
+        .with_env("RUST_LOG", "warn")
+        .with_timeout(Duration::from_secs(10));
+
+    let mut session = TuiTestSession::spawn(config).expect("Failed to spawn");
+
+    session
+        .wait_for_text("Plan", Duration::from_secs(5))
+        .expect("TUI should render mode indicator on startup");
+
+    assert_screen_contains(session.screen(), "Plan");
+
+    session.send("/quit\r").ok();
+}
+
+/// Exemplar: popup lifecycle — open, verify content, close, verify gone.
+///
+/// Demonstrates asserting popup presence and absence using the vt100 screen:
+/// 1. Open popup with a command
+/// 2. `wait_for_text()` confirms popup appeared
+/// 3. Dismiss popup
+/// 4. `assert_screen_not_contains()` confirms popup dismissed
+#[test]
+#[ignore = "requires built binary"]
+fn vt100_exemplar_popup_lifecycle() {
+    let config = TuiTestConfig::new("chat")
+        .with_args(&["--no-process"])
+        .with_env("RUST_LOG", "warn")
+        .with_timeout(Duration::from_secs(10));
+
+    let mut session = TuiTestSession::spawn(config).expect("Failed to spawn");
+
+    session
+        .wait_for_text("Plan", Duration::from_secs(5))
+        .expect("TUI ready");
+
+    session.send("/help\r").expect("Failed to send /help");
+    session
+        .wait_until(
+            |s| {
+                let c = s.contents();
+                c.contains("Commands") || c.contains("/mode")
+            },
+            Duration::from_secs(3),
+        )
+        .expect("Help popup should appear");
+
+    session.send_key(Key::Escape).expect("Escape failed");
+    session.wait(Duration::from_millis(300));
+    session.refresh_screen();
+
+    // After dismissing, the help popup title should be gone.
+    // Note: "Commands" may still appear in the input area, so this checks
+    // the popup-specific content is no longer rendered.
+    assert_screen_not_contains(session.screen(), "Commands");
+
+    session.send("/quit\r").ok();
+}
+
+/// Exemplar: mode switching verified through the parsed screen.
+///
+/// Demonstrates using `wait_for_text()` to track mode indicator changes
+/// across multiple mode switches, replacing fragile raw string matching.
+#[test]
+#[ignore = "requires built binary"]
+fn vt100_exemplar_mode_indicator() {
+    let config = TuiTestConfig::new("chat")
+        .with_args(&["--no-process"])
+        .with_env("RUST_LOG", "warn")
+        .with_timeout(Duration::from_secs(10));
+
+    let mut session = TuiTestSession::spawn(config).expect("Failed to spawn");
+
+    session
+        .wait_for_text("Plan", Duration::from_secs(5))
+        .expect("Should start in Plan mode");
+
+    session.send_line("/act").expect("Failed to send /act");
+    session
+        .wait_for_text("Act", Duration::from_secs(3))
+        .expect("Should switch to Act mode");
+
+    assert_screen_contains(session.screen(), "Act");
+
+    session.send_line("/plan").expect("Failed to send /plan");
+    session
+        .wait_for_text("Plan", Duration::from_secs(3))
+        .expect("Should switch back to Plan mode");
+
+    assert_screen_contains(session.screen(), "Plan");
+
+    session.send("/quit\r").ok();
+}
+
+/// Exemplar: terminal size adaptation — same interaction at different widths.
+///
+/// Demonstrates using `wait_until()` with a custom predicate to verify content
+/// renders correctly at a non-default terminal size.
+#[test]
+#[ignore = "requires built binary"]
+fn vt100_exemplar_terminal_size_adaptation() {
+    for (cols, rows, label) in [(60, 24, "narrow"), (120, 40, "wide")] {
+        let config = TuiTestConfig::new("chat")
+            .with_args(&["--no-process"])
+            .with_env("RUST_LOG", "warn")
+            .with_dimensions(cols, rows)
+            .with_timeout(Duration::from_secs(10));
+
+        let mut session = TuiTestSession::spawn(config).expect("Failed to spawn");
+
+        session
+            .wait_for_text("Plan", Duration::from_secs(5))
+            .unwrap_or_else(|e| {
+                panic!(
+                    "Mode indicator should render at {} ({cols}x{rows}): {e}",
+                    label
+                )
+            });
+
+        assert_screen_contains(session.screen(), "Plan");
+
+        session.send("/quit\r").ok();
+    }
 }
