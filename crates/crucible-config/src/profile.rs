@@ -289,7 +289,8 @@ impl ProfileManager {
     /// Get the default profile.
     pub fn get_default_profile(&self) -> &ProfileConfig {
         self.get_profile(&self.default_profile)
-            .unwrap_or_else(|| self.get_profile("development").unwrap())
+            .or_else(|| self.get_profile("development"))
+            .expect("no default profile and no 'development' profile found; ensure at least one profile exists in config")
     }
 
     /// Set the default profile.
