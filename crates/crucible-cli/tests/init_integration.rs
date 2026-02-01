@@ -57,7 +57,7 @@ async fn test_init_creates_required_directories() {
 }
 
 #[tokio::test]
-async fn test_init_fails_if_already_exists() {
+async fn test_init_is_idempotent_on_existing_kiln() {
     let temp_dir = TempDir::new().unwrap();
     let path = temp_dir.path().to_path_buf();
 
@@ -66,9 +66,19 @@ async fn test_init_fails_if_already_exists() {
         .await
         .unwrap();
 
-    // Second init without force should fail
+    // Second init without force should succeed (idempotent — prints "already exists", returns Ok)
     let result = crucible_cli::commands::init::execute(Some(path.clone()), false, false).await;
-    assert!(result.is_err(), "should fail when already initialized");
+    assert!(
+        result.is_ok(),
+        "re-init on existing kiln should be idempotent (Ok)"
+    );
+
+    // Config should still be intact
+    let config_path = path.join(".crucible/config.toml");
+    assert!(
+        config_path.exists(),
+        "config should still exist after re-init"
+    );
 }
 
 #[tokio::test]

@@ -910,4 +910,259 @@ mod tests {
         wizard.step = WizardStep::Complete;
         assert!(!matches!(wizard.view(&theme), Node::Empty));
     }
+
+    #[test]
+    fn full_flow_path_validation_triggers_warning_for_tmp() {
+        let mut wizard = SetupWizard::new();
+        wizard.update(key(KeyCode::Enter)); // Welcome → ConfigureKiln
+
+        for c in "/tmp/test-kiln".chars() {
+            wizard.update(char_key(c));
+        }
+        wizard.update(key(KeyCode::Enter)); // Submit path
+
+        // /tmp triggers strong warning → ShowWarning step
+        assert_eq!(
+            *wizard.step(),
+            WizardStep::ShowWarning,
+            "tmp path should trigger ShowWarning"
+        );
+    }
+
+    #[test]
+    fn full_flow_warning_change_path_returns_to_kiln() {
+        let mut wizard = SetupWizard::new();
+        wizard.update(key(KeyCode::Enter));
+
+        for c in "/tmp/test-kiln".chars() {
+            wizard.update(char_key(c));
+        }
+        wizard.update(key(KeyCode::Enter)); // → ShowWarning
+        assert_eq!(*wizard.step(), WizardStep::ShowWarning);
+
+        // Default selection is "Change path" (index 1), press Enter to go back
+        wizard.update(key(KeyCode::Enter));
+        assert_eq!(
+            *wizard.step(),
+            WizardStep::ConfigureKiln,
+            "declining warning should return to ConfigureKiln"
+        );
+    }
+
+    #[test]
+    fn full_flow_warning_proceed_goes_to_confirm_create_if_nonexistent() {
+        let mut wizard = SetupWizard::new();
+        wizard.update(key(KeyCode::Enter));
+
+        for c in "/tmp/nonexistent-test-kiln-12345".chars() {
+            wizard.update(char_key(c));
+        }
+        wizard.update(key(KeyCode::Enter)); // → ShowWarning (tmp)
+
+        // Switch to "Proceed anyway" (index 0) and confirm
+        wizard.update(key(KeyCode::Left));
+        let output = wizard.update(key(KeyCode::Enter));
+
+        // Path doesn't exist → ConfirmCreate
+        assert_eq!(
+            *wizard.step(),
+            WizardStep::ConfirmCreate,
+            "proceeding past warning on nonexistent path should ask to create"
+        );
+        assert!(matches!(output, SetupWizardOutput::None));
+    }
+
+    #[test]
+    fn full_flow_confirm_create_yes_triggers_provider_detection() {
+        let mut wizard = SetupWizard::new();
+        wizard.step = WizardStep::ConfirmCreate;
+        wizard.resolved_path = Some(PathBuf::from("/tmp/new-kiln"));
+        wizard.warning_selected = 0; // "Yes"
+
+        let output = wizard.update(key(KeyCode::Enter));
+        assert_eq!(*wizard.step(), WizardStep::DetectingProviders);
+        assert!(matches!(output, SetupWizardOutput::NeedsProviderDetection));
+    }
+
+    #[test]
+    fn full_flow_confirm_create_no_returns_to_kiln() {
+        let mut wizard = SetupWizard::new();
+        wizard.step = WizardStep::ConfirmCreate;
+        wizard.resolved_path = Some(PathBuf::from("/tmp/new-kiln"));
+        wizard.warning_selected = 1; // "No"
+
+        wizard.update(key(KeyCode::Enter));
+        assert_eq!(*wizard.step(), WizardStep::ConfigureKiln);
+        assert!(wizard.resolved_path.is_none());
+    }
+
+    #[test]
+    fn full_flow_end_to_end_happy_path() {
+        let mut wizard = SetupWizard::new();
+        assert_eq!(*wizard.step(), WizardStep::Welcome);
+
+        // Welcome → ConfigureKiln
+        wizard.update(key(KeyCode::Enter));
+        assert_eq!(*wizard.step(), WizardStep::ConfigureKiln);
+
+        // Type a valid existing path (use tempdir)
+        let tmp = tempfile::TempDir::new().unwrap();
+        let path_str = tmp.path().to_string_lossy().to_string();
+        for c in path_str.chars() {
+            wizard.update(char_key(c));
+        }
+
+        let output = wizard.update(key(KeyCode::Enter));
+        let step = wizard.step().clone();
+        match step {
+            WizardStep::ShowWarning => {
+                // Proceed past warning
+                wizard.update(key(KeyCode::Left)); // "Proceed anyway"
+                let output = wizard.update(key(KeyCode::Enter));
+                assert!(matches!(output, SetupWizardOutput::NeedsProviderDetection));
+            }
+            WizardStep::DetectingProviders => {
+                assert!(matches!(output, SetupWizardOutput::NeedsProviderDetection));
+            }
+            other => panic!(
+                "Expected ShowWarning or DetectingProviders, got {:?}",
+                other
+            ),
+        }
+
+        // Simulate provider detection
+        wizard.update(SetupWizardMsg::ProvidersDetected(vec![
+            DetectedProviderInfo {
+                name: "Ollama".into(),
+                provider_type: "ollama".into(),
+                reason: "12 models available".into(),
+                default_model: Some("llama3.2".into()),
+            },
+        ]));
+        assert_eq!(*wizard.step(), WizardStep::SelectProvider);
+
+        // Select provider → FetchingModels
+        let output = wizard.update(key(KeyCode::Enter));
+        assert_eq!(*wizard.step(), WizardStep::FetchingModels);
+        assert!(matches!(output, SetupWizardOutput::NeedsModelFetch(ref t) if t == "ollama"));
+
+        // Simulate model loading
+        wizard.update(SetupWizardMsg::ModelsLoaded(vec![
+            "llama3.2".into(),
+            "mistral".into(),
+        ]));
+        assert_eq!(*wizard.step(), WizardStep::SelectModel);
+
+        // Select model → Complete
+        wizard.update(key(KeyCode::Enter));
+        assert_eq!(*wizard.step(), WizardStep::Complete);
+
+        // Complete → WizardConfig output
+        let output = wizard.update(key(KeyCode::Enter));
+        match output {
+            SetupWizardOutput::Complete(config) => {
+                assert_eq!(config.provider, "ollama");
+                assert_eq!(config.model, "llama3.2");
+                assert!(!config.kiln_path.as_os_str().is_empty());
+            }
+            other => panic!("Expected Complete, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn filesystem_root_is_hard_blocked() {
+        let mut wizard = SetupWizard::new();
+        wizard.update(key(KeyCode::Enter)); // → ConfigureKiln
+
+        wizard.update(char_key('/'));
+        wizard.update(key(KeyCode::Enter));
+
+        // Should stay on ConfigureKiln with error message
+        assert_eq!(*wizard.step(), WizardStep::ConfigureKiln);
+        assert!(wizard.error_message.is_some());
+        assert!(wizard
+            .error_message
+            .as_ref()
+            .unwrap()
+            .contains("filesystem root"));
+    }
+
+    #[test]
+    fn nested_kiln_is_hard_blocked() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        std::fs::create_dir_all(tmp.path().join(".crucible")).unwrap();
+        let nested = tmp.path().join("sub");
+        std::fs::create_dir_all(&nested).unwrap();
+
+        let mut wizard = SetupWizard::new();
+        wizard.update(key(KeyCode::Enter));
+
+        for c in nested.to_string_lossy().chars() {
+            wizard.update(char_key(c));
+        }
+        wizard.update(key(KeyCode::Enter));
+
+        assert_eq!(*wizard.step(), WizardStep::ConfigureKiln);
+        assert!(wizard.error_message.is_some());
+        assert!(wizard
+            .error_message
+            .as_ref()
+            .unwrap()
+            .contains("inside another kiln"));
+    }
+
+    #[test]
+    fn empty_models_uses_default() {
+        let mut wizard = SetupWizard::new();
+        wizard.step = WizardStep::FetchingModels;
+        wizard.providers = vec![DetectedProviderInfo {
+            name: "OpenAI".into(),
+            provider_type: "openai".into(),
+            reason: "API key found".into(),
+            default_model: Some("gpt-4o-mini".into()),
+        }];
+        wizard.provider_selected = 0;
+
+        wizard.update(SetupWizardMsg::ModelsLoaded(vec![]));
+
+        assert_eq!(*wizard.step(), WizardStep::SelectModel);
+        assert_eq!(wizard.models, vec!["gpt-4o-mini"]);
+    }
+
+    #[test]
+    fn tick_increments_spinner() {
+        let mut wizard = SetupWizard::new();
+        assert_eq!(wizard.spinner_frame, 0);
+        wizard.update(SetupWizardMsg::Tick);
+        assert_eq!(wizard.spinner_frame, 1);
+        wizard.update(SetupWizardMsg::Tick);
+        assert_eq!(wizard.spinner_frame, 2);
+    }
+
+    #[test]
+    fn cursor_navigation_home_end() {
+        let mut wizard = SetupWizard::new();
+        wizard.update(key(KeyCode::Enter));
+
+        for c in "abcdef".chars() {
+            wizard.update(char_key(c));
+        }
+        assert_eq!(wizard.path_cursor, 6);
+
+        wizard.update(key(KeyCode::Home));
+        assert_eq!(wizard.path_cursor, 0);
+
+        wizard.update(key(KeyCode::End));
+        assert_eq!(wizard.path_cursor, 6);
+
+        wizard.update(key(KeyCode::Left));
+        assert_eq!(wizard.path_cursor, 5);
+
+        wizard.update(key(KeyCode::Right));
+        assert_eq!(wizard.path_cursor, 6);
+
+        // Right past end is no-op
+        wizard.update(key(KeyCode::Right));
+        assert_eq!(wizard.path_cursor, 6);
+    }
 }
