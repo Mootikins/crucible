@@ -8,7 +8,6 @@ mod notification_area;
 mod notification_component;
 mod popup_component;
 mod popup_overlay;
-mod setup_wizard;
 mod shell_modal;
 mod shell_render;
 pub(crate) mod status_bar;
@@ -30,9 +29,6 @@ pub use notification_component::{NotificationComponent, NotificationEntry};
 pub use popup_component::PopupComponent;
 pub use popup_overlay::{
     popup_item, popup_item_with_desc, PopupOverlay, FOCUS_POPUP, POPUP_MAX_VISIBLE,
-};
-pub use setup_wizard::{
-    DetectedProviderInfo, SetupWizard, SetupWizardMsg, SetupWizardOutput, WizardConfig,
 };
 pub use shell_modal::{ShellHistoryItem, ShellModal, ShellModalMsg, ShellModalOutput, ShellStatus};
 pub use shell_render::render_shell_execution;
