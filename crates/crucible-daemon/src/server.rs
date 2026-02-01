@@ -199,6 +199,13 @@ impl Server {
                     if !specs.is_empty() {
                         info!("Loaded {} daemon plugin(s)", specs.len());
                     }
+                    let total_services: usize = specs.iter().map(|s| s.services.len()).sum();
+                    if total_services > 0 {
+                        info!(
+                            "Discovered {} service(s) across plugins (not yet runnable — service execution is future work)",
+                            total_services
+                        );
+                    }
                 }
                 Err(e) => {
                     warn!("Failed to load daemon plugins: {}", e);

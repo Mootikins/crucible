@@ -94,12 +94,19 @@ impl DaemonPluginLoader {
             match self.load_plugin_spec(name) {
                 Ok(spec) => {
                     info!(
-                        "Plugin '{}' spec extracted (tools={}, commands={}, handlers={})",
+                        "Plugin '{}' spec extracted (tools={}, commands={}, handlers={}, services={})",
                         name,
                         spec.tools.len(),
                         spec.commands.len(),
                         spec.handlers.len(),
+                        spec.services.len(),
                     );
+                    for svc in &spec.services {
+                        info!(
+                            "  service '{}' (fn={}) — {}",
+                            svc.name, svc.service_fn, svc.description
+                        );
+                    }
                     specs.push(spec);
                 }
                 Err(e) => {
