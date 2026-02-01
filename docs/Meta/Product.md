@@ -2,7 +2,7 @@
 description: Product feature map — capabilities, status, documentation, and dependencies
 type: product
 status: active
-updated: 2026-01-30
+updated: 2026-01-31
 tags:
   - meta
   - product
@@ -60,7 +60,8 @@ A knowledge management system where:
 - [x] **Property Search** `P0` — Search notes by frontmatter properties and tags · `crucible-tools`
 - [x] **Document Clustering** `P0` — K-means and heuristic clustering with MoC detection · `crucible-surrealdb`
 - [x] **Block-level Embeddings** `P0` — Paragraph-granularity semantic indexing · `crucible-llm`, `crucible-surrealdb`
-- [ ] **Precognition** `P?` — Auto-RAG: inject relevant context before each agent turn
+- [x] **Precognition** `P0` — Opt-in auto-RAG: inject relevant vault/session context before each agent turn via `:set precognition on` · `crucible-cli`, `crucible-acp`
+- [x] **Session Search** `P0` — Past conversations indexed and searchable via session indexing pipeline; `cru session reindex` for batch processing · `crucible-observe`, `crucible-cli`
 
 ## AI Chat & Agents
 
@@ -235,7 +236,10 @@ A knowledge management system where:
 - [x] **Workspace Config** `P0` — Multi-workspace kiln associations · [[Help/Config/workspaces]] · `crucible-config`
 - [x] **Agent Config** `P0` — Default agent, temperature, max_tokens, thinking budget · [[Help/Config/agents]] · `crucible-config`
 - [x] **CLI Commands** `P0` — 16 command modules: chat, session, process, search, stats, config, etc. · [[Help/CLI/Index]] · `crucible-cli`
-- [x] **Init Command** `P0` — Project initialization (`cru init`) · `crucible-cli`
+- [x] **Init Command** `P0` — Project initialization (`cru init`) with path validation · `crucible-cli`
+- [x] **Setup Wizard** `P0` — Oil TUI first-run wizard: auto-triggers on `cru chat` when no kiln exists; guides through kiln path, provider detection, model selection · `crucible-cli`
+- [x] **Kiln Discovery** `P0` — Git-like upward `.crucible/` search with priority: CLI flag → ancestor walk → env var → global config · `crucible-cli`
+- [x] **Kiln Path Validation** `P0` — Shared validation layer: hard blocks (root, nested kiln), strong warnings (git repo, source project, home dir, tmp), mild warnings (cloud sync) · `crucible-cli`
 - [x] **Getting Started** `P0` — Installation and first steps guide · [[Guides/Getting Started]] · [[Guides/Your First Kiln]]
 - [x] **Platform Guides** `P0` — Windows setup, GitHub Copilot integration · [[Guides/Windows Setup]] · [[Guides/GitHub Copilot Setup]]
 - [-] **CLI Help & Discoverability** `P0` — `--help` completeness, command suggestions · `crucible-cli`
