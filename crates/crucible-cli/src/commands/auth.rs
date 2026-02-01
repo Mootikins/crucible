@@ -40,8 +40,7 @@ async fn login(provider: Option<String>, key: Option<String>) -> Result<()> {
                 2 => {
                     println!(
                         "{}",
-                        "Ollama doesn't require an API key. No credential stored."
-                            .yellow()
+                        "Ollama doesn't require an API key. No credential stored.".yellow()
                     );
                     return Ok(());
                 }
@@ -66,11 +65,7 @@ async fn login(provider: Option<String>, key: Option<String>) -> Result<()> {
     let mut store = SecretsFile::new();
     store.set(&provider, &key)?;
 
-    println!(
-        "{} Credential stored for {}",
-        "✓".green(),
-        provider.bold()
-    );
+    println!("{} Credential stored for {}", "✓".green(), provider.bold());
     println!(
         "  {}",
         format!("Stored in {}", store.path().display()).dimmed()
@@ -104,11 +99,7 @@ async fn logout(provider: Option<String>) -> Result<()> {
 
     let removed = store.remove(&provider)?;
     if removed {
-        println!(
-            "{} Credential removed for {}",
-            "✓".green(),
-            provider.bold()
-        );
+        println!("{} Credential removed for {}", "✓".green(), provider.bold());
     } else {
         println!(
             "{} No credential found for {}",
@@ -180,7 +171,10 @@ async fn list() -> Result<()> {
         println!("{}", "No credentials configured.".dimmed());
         println!();
         println!("Add credentials with:");
-        println!("  {} {}", "cru auth login".bold(), "--provider openai --key sk-...");
+        println!(
+            "  {} --provider openai --key sk-...",
+            "cru auth login".bold()
+        );
         println!("  {} {}", "or set".dimmed(), "OPENAI_API_KEY".bold());
     }
 

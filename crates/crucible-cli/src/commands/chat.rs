@@ -213,13 +213,13 @@ async fn run_preflight_checks(config: &mut CliConfig) -> Result<()> {
 
                 let config_content =
                     crate::commands::init::generate_config_with_provider(&provider, &model);
-                crate::commands::init::create_kiln_with_config(&crucible_dir, &config_content, false)?;
+                crate::commands::init::create_kiln_with_config(
+                    &crucible_dir,
+                    &config_content,
+                    false,
+                )?;
 
-                println!(
-                    "{} Kiln initialized at {}",
-                    "✓".green(),
-                    expanded.display()
-                );
+                println!("{} Kiln initialized at {}", "✓".green(), expanded.display());
             }
 
             config.kiln_path = expanded;
@@ -228,10 +228,7 @@ async fn run_preflight_checks(config: &mut CliConfig) -> Result<()> {
 
     if providers.is_empty() {
         warn!("No LLM providers detected");
-        println!(
-            "{} No LLM provider configured.",
-            "Warning:".yellow().bold()
-        );
+        println!("{} No LLM provider configured.", "Warning:".yellow().bold());
         println!(
             "  Run {} or set {} / {}",
             "cru auth login".bold(),
@@ -240,8 +237,7 @@ async fn run_preflight_checks(config: &mut CliConfig) -> Result<()> {
         );
         println!(
             "  {}",
-            "Chat will start, but requests will fail without a provider."
-                .dimmed()
+            "Chat will start, but requests will fail without a provider.".dimmed()
         );
     } else {
         let has_cloud_provider = providers
