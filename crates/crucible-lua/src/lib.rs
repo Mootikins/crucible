@@ -83,7 +83,8 @@ mod ws;
 pub mod config;
 
 pub use annotations::{
-    DiscoveredCommand, DiscoveredHandler, DiscoveredPlugin, DiscoveredTool, DiscoveredView,
+    DiscoveredCommand, DiscoveredHandler, DiscoveredPlugin, DiscoveredService, DiscoveredTool,
+    DiscoveredView,
 };
 pub use ask::{
     core_answer_to_lua, core_batch_to_lua, core_question_to_lua, core_response_to_lua,

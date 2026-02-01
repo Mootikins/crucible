@@ -107,6 +107,23 @@ pub struct DiscoveredView {
     pub is_fennel: bool,
 }
 
+/// Discovered long-running service from plugin spec table.
+///
+/// Services are background tasks that run for the lifetime of the plugin.
+/// They are spawned after `setup()` completes and stopped on plugin unload
+/// or daemon shutdown.
+#[derive(Debug, Clone)]
+pub struct DiscoveredService {
+    /// Service name (must be unique within plugin)
+    pub name: String,
+    /// Human-readable description
+    pub description: String,
+    /// Source path of the plugin defining this service
+    pub source_path: String,
+    /// Name of the service function in the Lua spec table
+    pub service_fn: String,
+}
+
 /// Annotation parser for Lua/Fennel files
 ///
 /// Note: For plugins managed by `PluginManager`, prefer returning a spec table
