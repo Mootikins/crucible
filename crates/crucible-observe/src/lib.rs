@@ -46,6 +46,7 @@
 
 pub mod events;
 pub mod id;
+pub mod indexer;
 pub mod markdown;
 pub mod serde_md;
 pub mod session;
@@ -57,6 +58,7 @@ pub use events::{LogEvent, PermissionDecision, TokenUsage};
 pub use id::{SessionId, SessionIdError, SessionType};
 pub use markdown::{render_to_markdown, RenderOptions};
 pub use session::{list_sessions, load_events, SessionError, SessionMetadata, SessionWriter};
+pub use indexer::{extract_session_content, SessionContent};
 pub use truncate::{truncate_for_log, TruncateResult, DEFAULT_TRUNCATE_THRESHOLD};
 
 #[cfg(feature = "sqlite")]
