@@ -153,10 +153,14 @@ impl SecretsFile {
             Ok(parsed) => Ok(parsed),
             Err(e) => {
                 warn!(
-                    "Failed to parse secrets file at {}: {}. Treating as empty.",
+                    "Failed to parse secrets file at {}: {}. Backing up corrupted file.",
                     self.path.display(),
                     e
                 );
+                let backup = self.path.with_extension("toml.bak");
+                if let Err(backup_err) = std::fs::copy(&self.path, &backup) {
+                    warn!("Failed to back up corrupted secrets file: {}", backup_err);
+                }
                 Ok(SecretsFileContent::default())
             }
         }
@@ -169,13 +173,23 @@ impl SecretsFile {
         }
 
         let toml_str = toml::to_string_pretty(content)?;
-        std::fs::write(&self.path, toml_str)?;
 
         #[cfg(unix)]
         {
-            use std::os::unix::fs::PermissionsExt;
-            let perms = std::fs::Permissions::from_mode(0o600);
-            std::fs::set_permissions(&self.path, perms)?;
+            use std::io::Write;
+            use std::os::unix::fs::OpenOptionsExt;
+            let mut file = std::fs::OpenOptions::new()
+                .write(true)
+                .create(true)
+                .truncate(true)
+                .mode(0o600)
+                .open(&self.path)?;
+            file.write_all(toml_str.as_bytes())?;
+        }
+
+        #[cfg(not(unix))]
+        {
+            std::fs::write(&self.path, toml_str)?;
         }
 
         Ok(())
@@ -294,7 +308,17 @@ impl CredentialStore for KeyringStore {
 
     fn list(&self) -> CredentialResult<HashMap<String, String>> {
         let mut result = HashMap::new();
-        let known = ["openai", "anthropic", "ollama"];
+        let known = [
+            "openai",
+            "anthropic",
+            "ollama",
+            "google",
+            "cohere",
+            "mistral",
+            "groq",
+            "github-copilot",
+            "deepseek",
+        ];
         for provider in &known {
             if let Ok(Some(key)) = self.get(provider) {
                 result.insert(provider.to_string(), key);
