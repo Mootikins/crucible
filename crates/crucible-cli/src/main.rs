@@ -368,6 +368,10 @@ async fn main() -> Result<()> {
             commands::session::execute(config, cmd).await?;
         }
 
+        Some(Commands::Auth { command }) => {
+            commands::auth::execute(command).await?;
+        }
+
         None => {
             commands::chat::execute(
                 config,
