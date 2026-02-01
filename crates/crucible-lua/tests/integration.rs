@@ -1,6 +1,8 @@
 //! Integration tests for Lua/Fennel tool discovery and execution
 
-use crucible_lua::{register_oq_module, register_shell_module, LuaExecutor, LuaToolRegistry, ShellPolicy};
+use crucible_lua::{
+    register_oq_module, register_shell_module, LuaExecutor, LuaToolRegistry, ShellPolicy,
+};
 use serde_json::json;
 use tempfile::TempDir;
 use tokio::fs;

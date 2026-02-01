@@ -36,12 +36,12 @@ pub mod session_manager;
 pub mod session_storage;
 pub mod subscription;
 
-pub use daemon_plugins::{default_daemon_plugin_paths, DaemonPluginLoader};
 pub use agent_factory::{create_agent_from_session_config, AgentFactoryError};
 pub use agent_manager::{AgentError, AgentManager};
 pub use background_manager::{
     BackgroundError, BackgroundJobManager, SubagentContext, SubagentFactory,
 };
+pub use daemon_plugins::{default_daemon_plugin_paths, DaemonPluginLoader};
 pub use kiln_manager::KilnManager;
 pub use lifecycle::{remove_socket, socket_path, wait_for_shutdown};
 pub use permission_bridge::DaemonPermissionGate;
