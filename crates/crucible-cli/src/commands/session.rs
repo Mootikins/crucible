@@ -6,9 +6,11 @@ use crate::cli::{DaemonSessionCommands, SessionCommands};
 use crate::config::CliConfig;
 use anyhow::{anyhow, Result};
 use chrono::{Duration, Utc};
+use crucible_core::storage::NoteStore;
 use crucible_daemon_client::DaemonClient;
 use crucible_observe::{
-    list_sessions, load_events, render_to_markdown, LogEvent, RenderOptions, SessionId, SessionType,
+    extract_session_content, list_sessions, load_events, render_to_markdown, LogEvent,
+    RenderOptions, SessionId, SessionType,
 };
 use std::path::PathBuf;
 use tokio::fs;
@@ -29,7 +31,7 @@ pub async fn execute(config: CliConfig, cmd: SessionCommands) -> Result<()> {
             output,
             timestamps,
         } => export(config, id, output, timestamps).await,
-        SessionCommands::Reindex => reindex(config).await,
+        SessionCommands::Reindex { force } => reindex(config, force).await,
         SessionCommands::Cleanup {
             older_than,
             dry_run,
@@ -367,8 +369,8 @@ async fn export(
     Ok(())
 }
 
-/// Rebuild session index (placeholder - SQLite index not yet integrated)
-async fn reindex(config: CliConfig) -> Result<()> {
+/// Rebuild session index by extracting content and upserting into NoteStore
+async fn reindex(config: CliConfig, force: bool) -> Result<()> {
     let sessions_path = sessions_dir(&config);
 
     if !sessions_path.exists() {
@@ -377,11 +379,105 @@ async fn reindex(config: CliConfig) -> Result<()> {
     }
 
     let ids = list_sessions(&sessions_path).await?;
-    println!("Found {} sessions to index.", ids.len());
+    if ids.is_empty() {
+        println!("No sessions found.");
+        return Ok(());
+    }
 
-    // TODO: When SQLite index is integrated, rebuild it here
-    println!("Note: Session indexing is not yet fully implemented.");
-    println!("Sessions are currently stored as JSONL files without a central index.");
+    println!("Found {} sessions to scan.", ids.len());
+
+    let storage = crate::factories::get_storage(&config).await?;
+    let note_store = match storage.note_store() {
+        Some(ns) => ns,
+        None => {
+            println!("NoteStore not available — session content extracted but not stored.");
+            println!("Configure storage.mode = \"embedded\", \"daemon\", or \"lightweight\".");
+            return Ok(());
+        }
+    };
+
+    let embedding_provider = match crate::factories::get_or_create_embedding_provider(&config).await
+    {
+        Ok(p) => Some(p),
+        Err(e) => {
+            println!(
+                "Embedding provider unavailable ({}), indexing without embeddings.",
+                e
+            );
+            None
+        }
+    };
+
+    let mut indexed = 0u32;
+    let mut skipped = 0u32;
+    let mut errors = 0u32;
+
+    for id in &ids {
+        let session_dir = sessions_path.join(id.as_str());
+        let path = format!("sessions/{}", id.as_str());
+
+        if !force {
+            match note_store.get(&path).await {
+                Ok(Some(_)) => {
+                    skipped += 1;
+                    continue;
+                }
+                Ok(None) => {}
+                Err(_) => {}
+            }
+        }
+
+        let events = match load_events(&session_dir).await {
+            Ok(e) => e,
+            Err(e) => {
+                eprintln!("  Error loading {}: {}", id, e);
+                errors += 1;
+                continue;
+            }
+        };
+
+        let content = match extract_session_content(id.as_str(), &events) {
+            Some(c) => c,
+            None => {
+                skipped += 1;
+                continue;
+            }
+        };
+
+        let embedding = if let Some(ref provider) = embedding_provider {
+            match provider.embed(&content.content_for_embedding()).await {
+                Ok(emb) => Some(emb),
+                Err(e) => {
+                    eprintln!("  Embedding failed for {}: {}", id, e);
+                    errors += 1;
+                    None
+                }
+            }
+        } else {
+            None
+        };
+
+        let record = content.to_note_record(embedding);
+        if let Err(e) = note_store.upsert(record).await {
+            eprintln!("  Store failed for {}: {}", id, e);
+            errors += 1;
+            continue;
+        }
+
+        let label = if force { "Re-indexed" } else { "Indexed" };
+        println!(
+            "  {} {} ({} user messages)",
+            label,
+            id,
+            content.user_messages.len()
+        );
+        indexed += 1;
+    }
+
+    println!(
+        "\nIndexed {} sessions ({} skipped, {} errors)",
+        indexed, skipped, errors
+    );
 
     Ok(())
 }
@@ -934,5 +1030,66 @@ mod tests {
     fn test_truncate() {
         assert_eq!(truncate("hello", 10), "hello");
         assert_eq!(truncate("hello world", 5), "hello...");
+    }
+
+    #[tokio::test]
+    async fn test_reindex_no_sessions_dir() {
+        let tmp = TempDir::new().unwrap();
+        let config = CliConfig {
+            kiln_path: tmp.path().to_path_buf(),
+            ..Default::default()
+        };
+
+        let result = reindex(config, false).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_reindex_empty_sessions_dir() {
+        let tmp = TempDir::new().unwrap();
+        let sessions_path = tmp.path().join(".crucible").join("sessions");
+        std::fs::create_dir_all(&sessions_path).unwrap();
+
+        let config = CliConfig {
+            kiln_path: tmp.path().to_path_buf(),
+            ..Default::default()
+        };
+
+        let result = reindex(config, false).await;
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_extract_session_content_for_reindex() {
+        use crucible_observe::extract_session_content;
+
+        let events = vec![
+            LogEvent::system("You are helpful"),
+            LogEvent::user("What is Rust?"),
+            LogEvent::assistant("Rust is a systems programming language."),
+            LogEvent::user("Tell me more"),
+            LogEvent::assistant("It focuses on safety and performance."),
+        ];
+
+        let content = extract_session_content("test-sess", &events).unwrap();
+        assert_eq!(content.user_messages.len(), 2);
+        assert_eq!(content.session_id, "test-sess");
+
+        let record = content.to_note_record(None);
+        assert_eq!(record.path, "sessions/test-sess");
+        assert!(record.tags.contains(&"session".to_string()));
+        assert!(record.embedding.is_none());
+    }
+
+    #[test]
+    fn test_extract_session_content_skips_empty() {
+        use crucible_observe::extract_session_content;
+
+        let events = vec![
+            LogEvent::system("System prompt only"),
+            LogEvent::assistant("Unprompted"),
+        ];
+
+        assert!(extract_session_content("empty-sess", &events).is_none());
     }
 }
