@@ -1,7 +1,8 @@
 //! Plugin lifecycle management
 
 use crate::annotations::{
-    DiscoveredCommand, DiscoveredHandler, DiscoveredParam, DiscoveredTool, DiscoveredView,
+    DiscoveredCommand, DiscoveredHandler, DiscoveredParam, DiscoveredService, DiscoveredTool,
+    DiscoveredView,
 };
 use crate::manifest::{Capability, LoadedPlugin, ManifestError, PluginManifest, PluginState};
 use mlua::{Lua, Value};
@@ -54,6 +55,7 @@ pub struct PluginSpec {
     pub commands: Vec<DiscoveredCommand>,
     pub handlers: Vec<DiscoveredHandler>,
     pub views: Vec<DiscoveredView>,
+    pub services: Vec<DiscoveredService>,
     pub has_setup: bool,
 }
 
@@ -1342,6 +1344,27 @@ pub fn load_plugin_spec_from_source(
         }
     }
 
+    // Extract services
+    if let Ok(Value::Table(services_table)) = table.get::<Value>("services") {
+        for pair in services_table.pairs::<String, Value>() {
+            if let Ok((service_name, Value::Table(service_def))) = pair {
+                let desc = service_def
+                    .get::<Option<String>>("desc")
+                    .unwrap_or(None)
+                    .unwrap_or_default();
+                let has_fn = matches!(service_def.get::<Value>("fn"), Ok(Value::Function(_)));
+                if has_fn {
+                    spec.services.push(DiscoveredService {
+                        name: service_name.clone(),
+                        description: desc,
+                        source_path: source_path_str.clone(),
+                        service_fn: service_name,
+                    });
+                }
+            }
+        }
+    }
+
     // Check for setup function
     spec.has_setup = matches!(table.get::<Value>("setup"), Ok(Value::Function(_)));
 
@@ -2393,5 +2416,40 @@ return {{
         let tool_names: Vec<_> = manager.tools().iter().map(|t| t.name.clone()).collect();
         assert!(tool_names.contains(&"test_tool".to_string()));
         assert!(tool_names.contains(&"search".to_string()));
+    }
+
+    #[test]
+    fn test_spec_services_parsed() {
+        let source = r#"
+            return {
+                name = "service-plugin",
+                services = {
+                    gateway = {
+                        desc = "WebSocket gateway",
+                        fn = function() end,
+                    },
+                    heartbeat = {
+                        desc = "Keep-alive pinger",
+                        fn = function() end,
+                    },
+                    no_fn_service = {
+                        desc = "Missing fn field -- should be skipped",
+                    },
+                },
+            }
+        "#;
+
+        let spec = load_plugin_spec_from_source(source, Path::new("test.lua")).unwrap();
+        let spec = spec.expect("should return Some");
+
+        assert_eq!(spec.services.len(), 2);
+
+        let names: Vec<&str> = spec.services.iter().map(|s| s.name.as_str()).collect();
+        assert!(names.contains(&"gateway"));
+        assert!(names.contains(&"heartbeat"));
+
+        let gw = spec.services.iter().find(|s| s.name == "gateway").unwrap();
+        assert_eq!(gw.description, "WebSocket gateway");
+        assert_eq!(gw.service_fn, "gateway");
     }
 }
