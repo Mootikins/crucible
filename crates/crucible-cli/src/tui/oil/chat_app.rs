@@ -445,15 +445,8 @@ impl App for OilChatApp {
         }
 
         let bottom = if let Some(modal) = &self.interaction_modal {
-            match &modal.request {
-                InteractionRequest::Ask(_)
-                | InteractionRequest::AskBatch(_)
-                | InteractionRequest::Permission(_) => {
-                    let term_width = ctx.terminal_size.0 as usize;
-                    modal.view(term_width, self.permission_queue.len())
-                }
-                _ => col([self.render_input(ctx), self.render_status()]),
-            }
+            let term_width = ctx.terminal_size.0 as usize;
+            modal.view(term_width, self.permission_queue.len())
         } else if self.notification_area.is_visible() {
             self.render_messages_drawer(ctx)
         } else {
