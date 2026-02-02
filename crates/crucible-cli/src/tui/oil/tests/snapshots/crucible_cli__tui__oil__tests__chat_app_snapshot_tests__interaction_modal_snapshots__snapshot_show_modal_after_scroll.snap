@@ -1,0 +1,29 @@
+---
+source: crates/crucible-cli/src/tui/oil/tests/chat_app_snapshot_tests.rs
+expression: render_app(&app)
+---
+ 
+▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄
+ View                                                                           
+  Line number 6                                                                 
+  Line number 7                                                                 
+  Line number 8                                                                 
+  Line number 9                                                                 
+  Line number 10                                                                
+  Line number 11                                                                
+  Line number 12                                                                
+  Line number 13                                                                
+  Line number 14                                                                
+  Line number 15                                                                
+  Line number 16                                                                
+  Line number 17                                                                
+  Line number 18                                                                
+  Line number 19                                                                
+  Line number 20                                                                
+  Line number 21                                                                
+  Line number 22                                                                
+  Line number 23                                                                
+  Line number 24                                                                
+  Line number 25                                                                
+▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+ SHOW  6/30  j/k scroll  PgUp/PgDn page  q/Esc close
