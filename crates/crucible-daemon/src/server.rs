@@ -128,7 +128,7 @@ impl Server {
             None
         };
 
-        let kiln_manager = Arc::new(KilnManager::new());
+        let kiln_manager = Arc::new(KilnManager::with_event_tx(event_tx.clone()));
         let session_manager = Arc::new(SessionManager::new());
         let background_manager = Arc::new(BackgroundJobManager::new(event_tx.clone()));
         let agent_manager = Arc::new(AgentManager::new(

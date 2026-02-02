@@ -2,6 +2,7 @@ mod agent_factory;
 mod agent_manager;
 mod background_manager;
 mod daemon_plugins;
+mod file_watch_bridge;
 mod kiln_manager;
 mod lifecycle;
 mod protocol;

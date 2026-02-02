@@ -3747,6 +3747,7 @@ dependencies = [
  "crucible-sqlite",
  "crucible-surrealdb",
  "crucible-tools",
+ "crucible-watch",
  "dashmap 6.1.0",
  "dirs 6.0.0",
  "futures",
