@@ -1,11 +1,13 @@
 //! Provider detection for interactive setup
 //!
 //! Detects available LLM providers by checking:
-//! - Ollama: HTTP check to endpoint (priority: config file > OLLAMA_HOST env var > localhost:11434)
-//! - OpenAI: OPENAI_API_KEY env var
-//! - Anthropic: ANTHROPIC_API_KEY env var
+//! - Config file: chat.provider setting
+//! - Ollama: OLLAMA_HOST env var or config endpoint
+//! - OpenAI: OPENAI_API_KEY env var or credential store
+//! - Anthropic: ANTHROPIC_API_KEY env var or credential store
 
 use crucible_config::credentials::{CredentialSource, CredentialStore, SecretsFile};
+use crucible_config::{ChatConfig, LlmProvider};
 use std::time::Duration;
 
 /// Default Ollama endpoint
@@ -62,13 +64,8 @@ pub fn has_api_key_with_source(provider: &str) -> Option<CredentialSource> {
     None
 }
 
-/// Check if Ollama is running (checks OLLAMA_HOST env var or localhost:11434)
-pub async fn check_ollama() -> Option<Vec<String>> {
-    check_ollama_at(&ollama_endpoint()).await
-}
-
-/// Check if Ollama is running at a specific endpoint
-pub async fn check_ollama_at(endpoint: &str) -> Option<Vec<String>> {
+/// Fetch available models from an Ollama endpoint (used by `cru models`)
+pub async fn check_ollama_models(endpoint: &str) -> Option<Vec<String>> {
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(5))
         .build()
@@ -81,7 +78,6 @@ pub async fn check_ollama_at(endpoint: &str) -> Option<Vec<String>> {
         return None;
     }
 
-    // Parse model list
     #[derive(serde::Deserialize)]
     struct TagsResponse {
         models: Vec<ModelInfo>,
@@ -97,11 +93,9 @@ pub async fn check_ollama_at(endpoint: &str) -> Option<Vec<String>> {
 
 /// Fetch available models for a provider, returning formatted as "provider/model"
 pub async fn fetch_provider_models(
-    provider: &crucible_config::LlmProvider,
+    provider: &LlmProvider,
     endpoint: &str,
 ) -> Vec<String> {
-    use crucible_config::LlmProvider;
-
     match provider {
         LlmProvider::Ollama => fetch_ollama_models(endpoint).await,
         LlmProvider::OpenAI => fetch_openai_models(endpoint).await,
@@ -246,40 +240,97 @@ pub async fn fetch_model_context_length(endpoint: &str, model_id: &str) -> Optio
         .and_then(|ls| ls.context_length)
 }
 
-/// Detect all available providers
-pub async fn detect_providers_available() -> Vec<DetectedProvider> {
+/// Detect available providers from config and environment only (no HTTP probes).
+///
+/// Checks: config file provider, OLLAMA_HOST env, API key env vars, credential store.
+pub fn detect_providers(config: &ChatConfig) -> Vec<DetectedProvider> {
     let mut providers = Vec::new();
 
-    if let Some(models) = check_ollama().await {
+    match config.provider {
+        LlmProvider::Ollama => {
+            let endpoint = config.endpoint.as_deref().unwrap_or(DEFAULT_OLLAMA_HOST);
+            let reason = if std::env::var("OLLAMA_HOST").is_ok() {
+                format!("OLLAMA_HOST={}", ollama_endpoint())
+            } else if config.endpoint.is_some() {
+                format!("config endpoint={}", endpoint)
+            } else {
+                "config provider=ollama".to_string()
+            };
+            providers.push(DetectedProvider {
+                name: "Ollama (Local)".to_string(),
+                provider_type: "ollama".to_string(),
+                available: true,
+                reason,
+                default_model: config.model.clone(),
+                source: None,
+            });
+        }
+        LlmProvider::OpenAI => {
+            if let Some(src) = has_api_key_with_source("openai") {
+                providers.push(DetectedProvider {
+                    name: "OpenAI".to_string(),
+                    provider_type: "openai".to_string(),
+                    available: true,
+                    reason: format!("API key found ({})", src),
+                    default_model: config.model.clone().or(Some("gpt-4o-mini".to_string())),
+                    source: Some(src),
+                });
+            }
+        }
+        LlmProvider::Anthropic => {
+            if let Some(src) = has_api_key_with_source("anthropic") {
+                providers.push(DetectedProvider {
+                    name: "Anthropic".to_string(),
+                    provider_type: "anthropic".to_string(),
+                    available: true,
+                    reason: format!("API key found ({})", src),
+                    default_model: config
+                        .model
+                        .clone()
+                        .or(Some("claude-3-5-sonnet-latest".to_string())),
+                    source: Some(src),
+                });
+            }
+        }
+    }
+
+    // Also detect providers not in config but available via env/credentials
+    if !providers.iter().any(|p| p.provider_type == "openai") {
+        if let Some(src) = has_api_key_with_source("openai") {
+            providers.push(DetectedProvider {
+                name: "OpenAI".to_string(),
+                provider_type: "openai".to_string(),
+                available: true,
+                reason: format!("API key found ({})", src),
+                default_model: Some("gpt-4o-mini".to_string()),
+                source: Some(src),
+            });
+        }
+    }
+
+    if !providers.iter().any(|p| p.provider_type == "anthropic") {
+        if let Some(src) = has_api_key_with_source("anthropic") {
+            providers.push(DetectedProvider {
+                name: "Anthropic".to_string(),
+                provider_type: "anthropic".to_string(),
+                available: true,
+                reason: format!("API key found ({})", src),
+                default_model: Some("claude-3-5-sonnet-latest".to_string()),
+                source: Some(src),
+            });
+        }
+    }
+
+    // Ollama via OLLAMA_HOST env even if not the configured provider
+    if !providers.iter().any(|p| p.provider_type == "ollama") && std::env::var("OLLAMA_HOST").is_ok()
+    {
         providers.push(DetectedProvider {
             name: "Ollama (Local)".to_string(),
             provider_type: "ollama".to_string(),
             available: true,
-            reason: format!("{} models available", models.len()),
-            default_model: models.first().cloned(),
+            reason: format!("OLLAMA_HOST={}", ollama_endpoint()),
+            default_model: None,
             source: None,
-        });
-    }
-
-    if let Some(src) = has_api_key_with_source("openai") {
-        providers.push(DetectedProvider {
-            name: "OpenAI".to_string(),
-            provider_type: "openai".to_string(),
-            available: true,
-            reason: format!("API key found ({})", src),
-            default_model: Some("gpt-4o-mini".to_string()),
-            source: Some(src),
-        });
-    }
-
-    if let Some(src) = has_api_key_with_source("anthropic") {
-        providers.push(DetectedProvider {
-            name: "Anthropic".to_string(),
-            provider_type: "anthropic".to_string(),
-            available: true,
-            reason: format!("API key found ({})", src),
-            default_model: Some("claude-3-5-sonnet-latest".to_string()),
-            source: Some(src),
         });
     }
 
@@ -291,16 +342,64 @@ mod tests {
     use super::*;
     use serial_test::serial;
 
-    #[tokio::test]
+    #[test]
+    fn test_detect_ollama_from_default_config() {
+        let config = ChatConfig::default();
+        let detected = detect_providers(&config);
+        assert!(!detected.is_empty());
+        assert_eq!(detected[0].provider_type, "ollama");
+        assert!(detected[0].reason.contains("config provider=ollama"));
+    }
+
+    #[test]
     #[serial]
-    async fn test_detect_no_providers() {
-        // With no Ollama and no API keys, should return empty
+    fn test_detect_ollama_from_env() {
+        std::env::set_var("OLLAMA_HOST", "http://myhost:11434");
+        let config = ChatConfig::default();
+        let detected = detect_providers(&config);
+        assert!(!detected.is_empty());
+        let ollama = detected.iter().find(|p| p.provider_type == "ollama").unwrap();
+        assert!(ollama.reason.contains("OLLAMA_HOST"));
+        std::env::remove_var("OLLAMA_HOST");
+    }
+
+    #[test]
+    #[serial]
+    fn test_detect_openai_from_config_with_key() {
+        std::env::set_var("OPENAI_API_KEY", "sk-test");
+        let config = ChatConfig {
+            provider: LlmProvider::OpenAI,
+            ..ChatConfig::default()
+        };
+        let detected = detect_providers(&config);
+        assert!(detected.iter().any(|p| p.provider_type == "openai"));
+        std::env::remove_var("OPENAI_API_KEY");
+    }
+
+    #[test]
+    #[serial]
+    fn test_detect_openai_from_config_without_key_is_empty() {
         std::env::remove_var("OPENAI_API_KEY");
         std::env::remove_var("ANTHROPIC_API_KEY");
+        let config = ChatConfig {
+            provider: LlmProvider::OpenAI,
+            ..ChatConfig::default()
+        };
+        let detected = detect_providers(&config);
+        // No API key = no provider detected for cloud providers
+        assert!(!detected.iter().any(|p| p.provider_type == "openai"));
+    }
 
-        let detected = detect_providers_available().await;
-        // Ollama might be running locally, so just check structure
-        assert!(detected.iter().all(|p| !p.name.is_empty()));
+    #[test]
+    #[serial]
+    fn test_detect_extra_providers_from_env() {
+        std::env::set_var("ANTHROPIC_API_KEY", "sk-ant-test");
+        let config = ChatConfig::default(); // ollama config
+        let detected = detect_providers(&config);
+        // Should have ollama from config + anthropic from env
+        assert!(detected.iter().any(|p| p.provider_type == "ollama"));
+        assert!(detected.iter().any(|p| p.provider_type == "anthropic"));
+        std::env::remove_var("ANTHROPIC_API_KEY");
     }
 
     #[test]
@@ -321,7 +420,6 @@ mod tests {
 
     #[test]
     fn test_has_api_key_unknown_provider() {
-        // Unknown providers should return false
         assert!(!has_api_key("unknown"));
         assert!(!has_api_key("google"));
     }
