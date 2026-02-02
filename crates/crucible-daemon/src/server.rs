@@ -84,7 +84,7 @@ pub struct Server {
     subscription_manager: Arc<SubscriptionManager>,
     event_tx: broadcast::Sender<SessionEventMessage>,
     dispatcher: Arc<RpcDispatcher>,
-    plugin_loader: Option<DaemonPluginLoader>,
+    plugin_loader: Arc<Mutex<Option<DaemonPluginLoader>>>,
 }
 
 impl Server {
@@ -148,7 +148,7 @@ impl Server {
         );
         let dispatcher = Arc::new(RpcDispatcher::new(ctx));
 
-        let plugin_loader = match DaemonPluginLoader::new() {
+        let plugin_loader = Arc::new(Mutex::new(match DaemonPluginLoader::new() {
             Ok(loader) => {
                 info!("Daemon plugin loader initialized");
                 Some(loader)
@@ -157,7 +157,7 @@ impl Server {
                 warn!("Failed to initialize daemon plugin loader: {}", e);
                 None
             }
-        };
+        }));
 
         info!("Daemon listening on {:?}", path);
         Ok(Self {
@@ -192,7 +192,9 @@ impl Server {
     pub async fn run(mut self) -> Result<()> {
         let mut shutdown_rx = self.shutdown_tx.subscribe();
 
-        if let Some(ref mut loader) = self.plugin_loader {
+        {
+          let mut loader_guard = self.plugin_loader.lock().await;
+          if let Some(ref mut loader) = *loader_guard {
             let paths = crate::daemon_plugins::default_daemon_plugin_paths();
             match loader.load_plugins(&paths) {
                 Ok(specs) => {
@@ -211,6 +213,7 @@ impl Server {
                     warn!("Failed to load daemon plugins: {}", e);
                 }
             }
+          }
         }
 
         // Spawn event persistence task with cancellation support
@@ -279,8 +282,9 @@ impl Server {
                             let sub_m = self.subscription_manager.clone();
                             let event_tx = self.event_tx.clone();
                             let event_rx = self.event_tx.subscribe();
+                            let pl = self.plugin_loader.clone();
                             tokio::spawn(async move {
-                                if let Err(e) = handle_client(stream, dispatcher, km, sm, am, sub_m, event_tx, event_rx).await {
+                                if let Err(e) = handle_client(stream, dispatcher, km, sm, am, sub_m, event_tx, event_rx, pl).await {
                                     error!("Client error: {}", e);
                                 }
                             });
@@ -319,6 +323,7 @@ async fn handle_client(
     subscription_manager: Arc<SubscriptionManager>,
     event_tx: broadcast::Sender<SessionEventMessage>,
     mut event_rx: broadcast::Receiver<SessionEventMessage>,
+    plugin_loader: Arc<Mutex<Option<DaemonPluginLoader>>>,
 ) -> Result<()> {
     let client_id = ClientId::new();
     let (reader, writer) = stream.into_split();
@@ -378,6 +383,7 @@ async fn handle_client(
                     &agent_manager,
                     &subscription_manager,
                     &event_tx,
+                    &plugin_loader,
                 )
                 .await
             }
@@ -412,6 +418,7 @@ async fn handle_request(
     agent_manager: &Arc<AgentManager>,
     _subscription_manager: &Arc<SubscriptionManager>,
     event_tx: &broadcast::Sender<SessionEventMessage>,
+    plugin_loader: &Arc<Mutex<Option<DaemonPluginLoader>>>,
 ) -> Response {
     let req_clone = req.clone();
     let resp = dispatcher.dispatch(client_id, req).await;
@@ -424,6 +431,7 @@ async fn handle_request(
                 session_manager,
                 agent_manager,
                 event_tx,
+                plugin_loader,
             )
             .await;
         }
@@ -439,11 +447,12 @@ async fn handle_legacy_request(
     session_manager: &Arc<SessionManager>,
     agent_manager: &Arc<AgentManager>,
     event_tx: &broadcast::Sender<SessionEventMessage>,
+    plugin_loader: &Arc<Mutex<Option<DaemonPluginLoader>>>,
 ) -> Response {
     tracing::debug!("Legacy handler for method={:?}", req.method);
 
     match req.method.as_str() {
-        "kiln.open" => handle_kiln_open(req, kiln_manager).await,
+        "kiln.open" => handle_kiln_open(req, kiln_manager, plugin_loader).await,
         "kiln.close" => handle_kiln_close(req, kiln_manager).await,
         "kiln.list" => handle_kiln_list(req, kiln_manager).await,
         "search_vectors" => handle_search_vectors(req, kiln_manager).await,
@@ -506,13 +515,29 @@ async fn handle_legacy_request(
     }
 }
 
-async fn handle_kiln_open(req: Request, km: &Arc<KilnManager>) -> Response {
+async fn handle_kiln_open(
+    req: Request,
+    km: &Arc<KilnManager>,
+    plugin_loader: &Arc<Mutex<Option<DaemonPluginLoader>>>,
+) -> Response {
     let path = require_str_param!(req, "path");
+    let kiln_path = Path::new(path);
 
-    match km.open(Path::new(path)).await {
-        Ok(()) => Response::success(req.id, serde_json::json!({"status": "ok"})),
-        Err(e) => internal_error(req.id, e),
+    if let Err(e) = km.open(kiln_path).await {
+        return internal_error(req.id, e);
     }
+
+    if let Some(handle) = km.get(kiln_path).await {
+        let store = handle.as_note_store();
+        let loader_guard = plugin_loader.lock().await;
+        if let Some(ref loader) = *loader_guard {
+            if let Err(e) = loader.upgrade_with_storage(store) {
+                warn!("Failed to upgrade Lua modules with storage: {}", e);
+            }
+        }
+    }
+
+    Response::success(req.id, serde_json::json!({"status": "ok"}))
 }
 
 async fn handle_kiln_close(req: Request, km: &Arc<KilnManager>) -> Response {
