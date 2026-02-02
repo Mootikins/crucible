@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use tokio::task;
 
 use crate::kiln_validate::{expand_tilde, validate_kiln_path, ValidationSeverity};
-use crate::provider_detect::{detect_providers_available, DetectedProvider};
+use crate::provider_detect::{detect_providers, DetectedProvider};
 
 pub async fn execute(path: Option<PathBuf>, force: bool, interactive: bool) -> Result<()> {
     let target_path = match path {
@@ -50,7 +50,7 @@ pub async fn execute(path: Option<PathBuf>, force: bool, interactive: bool) -> R
 
     let crucible_dir = target_path.join(".crucible");
 
-    let providers = detect_providers_available().await;
+    let providers = detect_providers(&crucible_config::ChatConfig::default());
 
     let (provider, model) = if interactive && !providers.is_empty() {
         prompt_provider_selection(&providers)?

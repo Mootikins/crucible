@@ -19,7 +19,7 @@ use crate::factories;
 use crate::kiln_discover::{discover_kiln, DiscoverySource};
 use crate::progress::{BackgroundProgress, LiveProgress, StatusLine};
 use crate::provider_detect::{
-    detect_providers_available, fetch_model_context_length, fetch_provider_models,
+    detect_providers, fetch_model_context_length, fetch_provider_models,
 };
 use crate::tui::oil::McpServerDisplay;
 use crate::tui::AgentSelection;
@@ -168,7 +168,7 @@ async fn run_preflight_checks(config: &mut CliConfig) -> Result<()> {
     };
 
     let discovered = discover_kiln(None, global_kiln);
-    let providers = detect_providers_available().await;
+    let providers = detect_providers(&config.chat);
 
     match discovered {
         Some(found) => {
