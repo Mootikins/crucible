@@ -25,6 +25,7 @@ pub mod agent_factory;
 pub mod agent_manager;
 pub mod background_manager;
 pub mod daemon_plugins;
+pub mod file_watch_bridge;
 pub mod kiln_manager;
 pub mod lifecycle;
 pub mod permission_bridge;
@@ -42,6 +43,7 @@ pub use background_manager::{
     BackgroundError, BackgroundJobManager, SubagentContext, SubagentFactory,
 };
 pub use daemon_plugins::{default_daemon_plugin_paths, DaemonPluginLoader};
+pub use file_watch_bridge::{create_event_bridge, DaemonEventBridge};
 pub use kiln_manager::KilnManager;
 pub use lifecycle::{remove_socket, socket_path, wait_for_shutdown};
 pub use permission_bridge::DaemonPermissionGate;
