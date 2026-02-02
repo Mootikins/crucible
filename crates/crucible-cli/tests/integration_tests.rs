@@ -152,7 +152,7 @@ fn test_chat_help() {
 
     cmd.assert()
         .success()
-        .stdout(predicate::str::contains("Natural language chat"))
+        .stdout(predicate::str::contains("Interactive AI chat"))
         .stdout(predicate::str::contains("--plan"))
         .stdout(predicate::str::contains("plan"));
 }
@@ -222,7 +222,7 @@ fn test_process_help() {
     cmd.assert()
         .success()
         .stdout(predicate::str::contains(
-            "Process files through the pipeline",
+            "Process markdown files through the pipeline",
         ))
         .stdout(predicate::str::contains("--force"))
         .stdout(predicate::str::contains("--watch"));
@@ -277,7 +277,7 @@ fn test_config_help() {
 
     cmd.assert()
         .success()
-        .stdout(predicate::str::contains("Configuration management"));
+        .stdout(predicate::str::contains("Manage Crucible configuration"));
 }
 
 #[test]
