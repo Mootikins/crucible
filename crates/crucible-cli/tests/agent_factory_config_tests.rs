@@ -294,22 +294,6 @@ async fn test_create_internal_agent_with_default_config() {
 }
 
 #[tokio::test]
-#[ignore = "Rig uses config.chat.provider, not params.provider_key - test obsolete"]
-async fn test_create_internal_agent_with_nonexistent_provider() {
-    // NOTE: This test is obsolete after switching to Rig-only internal agents.
-    // Rig reads the provider from config.chat.provider, not from params.provider_key.
-    // The params.provider_key field is now unused.
-    let config = create_test_config();
-    let params = AgentInitParams::new().with_provider("this-provider-does-not-exist");
-
-    let result = create_internal_agent(&config, params).await;
-
-    // With Rig, this succeeds because it ignores params.provider_key
-    // and uses config.chat.provider (Ollama by default)
-    assert!(result.is_err());
-}
-
-#[tokio::test]
 async fn test_create_internal_agent_respects_custom_model() {
     let mut config = create_test_config();
     config.chat.model = Some("custom-model-name".to_string());
