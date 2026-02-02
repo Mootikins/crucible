@@ -346,6 +346,7 @@ impl PluginManager {
                     warn!("Failed to load plugin {}: {}", name, e);
                     if let Some(plugin) = self.plugins.get_mut(&name) {
                         plugin.state = PluginState::Error;
+                        plugin.last_error = Some(e.to_string());
                     }
                 }
             }
@@ -643,6 +644,14 @@ impl PluginManager {
         self.plugins
             .get(name)
             .is_some_and(|p| p.manifest.has_capability(cap))
+    }
+
+    pub fn load_errors(&self) -> Vec<(&str, &str)> {
+        self.plugins
+            .iter()
+            .filter(|(_, p)| p.state == PluginState::Error)
+            .filter_map(|(name, p)| p.last_error.as_deref().map(|e| (name.as_str(), e)))
+            .collect()
     }
 
     pub fn register_tool(
