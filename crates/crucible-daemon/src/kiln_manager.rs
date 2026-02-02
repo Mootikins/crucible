@@ -8,13 +8,17 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Instant;
-use tokio::sync::RwLock;
-use tracing::info;
+use tokio::sync::{broadcast, RwLock};
+use tracing::{info, warn};
 
 use crucible_core::processing::InMemoryChangeDetectionStore;
 use crucible_core::storage::note_store::NoteRecord;
 use crucible_core::traits::NoteInfo;
 use crucible_pipeline::{NotePipeline, NotePipelineConfig, ParserBackend};
+use crucible_watch::{EventFilter, WatchManager, WatchManagerConfig};
+
+use crate::file_watch_bridge::create_event_bridge;
+use crate::protocol::SessionEventMessage;
 
 // Backend-specific imports
 #[cfg(feature = "storage-sqlite")]
@@ -183,17 +187,27 @@ pub struct KilnConnection {
     pub handle: StorageHandle,
     pub pipeline: NotePipeline,
     pub last_access: Instant,
+    watch_manager: Option<WatchManager>,
 }
 
 /// Manages connections to multiple kilns
 pub struct KilnManager {
     connections: RwLock<HashMap<PathBuf, KilnConnection>>,
+    event_tx: Option<broadcast::Sender<SessionEventMessage>>,
 }
 
 impl KilnManager {
     pub fn new() -> Self {
         Self {
             connections: RwLock::new(HashMap::new()),
+            event_tx: None,
+        }
+    }
+
+    pub fn with_event_tx(event_tx: broadcast::Sender<SessionEventMessage>) -> Self {
+        Self {
+            connections: RwLock::new(HashMap::new()),
+            event_tx: Some(event_tx),
         }
     }
 
@@ -229,6 +243,8 @@ impl KilnManager {
         let pipeline = create_pipeline(&handle)?;
         info!("Pipeline created for kiln at {:?}", canonical);
 
+        let watch_manager = self.start_watch_manager(&canonical).await;
+
         let mut conns = self.connections.write().await;
         conns.insert(
             canonical,
@@ -236,6 +252,7 @@ impl KilnManager {
                 handle,
                 pipeline,
                 last_access: Instant::now(),
+                watch_manager,
             },
         );
 
@@ -248,7 +265,12 @@ impl KilnManager {
             .canonicalize()
             .unwrap_or_else(|_| kiln_path.to_path_buf());
         let mut conns = self.connections.write().await;
-        if conns.remove(&canonical).is_some() {
+        if let Some(mut conn) = conns.remove(&canonical) {
+            if let Some(ref mut wm) = conn.watch_manager {
+                if let Err(e) = wm.shutdown().await {
+                    warn!("Failed to shutdown watch manager for {:?}: {}", canonical, e);
+                }
+            }
             info!("Closed kiln at {:?}", canonical);
         }
         Ok(())
@@ -376,6 +398,51 @@ impl KilnManager {
             .get(&canonical)
             .map(|c| c.handle.clone())
             .ok_or_else(|| anyhow::anyhow!("Failed to get connection after opening"))
+    }
+
+    async fn start_watch_manager(&self, kiln_path: &Path) -> Option<WatchManager> {
+        let event_tx = self.event_tx.as_ref()?;
+
+        let bridge = create_event_bridge(event_tx.clone());
+        let config = WatchManagerConfig {
+            enable_default_handlers: true,
+            queue_capacity: 1000,
+            debounce_delay: std::time::Duration::from_millis(500),
+            ..Default::default()
+        };
+
+        let mut wm = match WatchManager::with_emitter(config, bridge).await {
+            Ok(wm) => wm,
+            Err(e) => {
+                warn!("Failed to create watch manager for {:?}: {}", kiln_path, e);
+                return None;
+            }
+        };
+
+        if let Err(e) = wm.start().await {
+            warn!("Failed to start watch manager for {:?}: {}", kiln_path, e);
+            return None;
+        }
+
+        let filter = EventFilter::new()
+            .with_extension("md")
+            .exclude_dir(kiln_path.join(".crucible"));
+
+        let watch_config = crucible_watch::traits::WatchConfig::new(format!(
+            "kiln-{}",
+            kiln_path.display()
+        ))
+        .with_filter(filter)
+        .with_debounce(crucible_watch::traits::DebounceConfig::new(500));
+
+        if let Err(e) = wm.add_watch(kiln_path.to_path_buf(), watch_config).await {
+            warn!("Failed to add watch for {:?}: {}", kiln_path, e);
+            let _ = wm.shutdown().await;
+            return None;
+        }
+
+        info!("File watcher started for kiln at {:?}", kiln_path);
+        Some(wm)
     }
 }
 
