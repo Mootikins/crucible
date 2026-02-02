@@ -21,7 +21,7 @@ use crate::progress::{BackgroundProgress, LiveProgress, StatusLine};
 use crate::provider_detect::{
     detect_providers, fetch_model_context_length, fetch_provider_models,
 };
-use crate::tui::oil::McpServerDisplay;
+use crate::tui::oil::{McpServerDisplay, PluginStatusEntry};
 use crate::tui::AgentSelection;
 use crucible_core::traits::chat::{is_read_only, mode_display_name};
 use crucible_pipeline::NotePipeline;
@@ -425,6 +425,11 @@ async fn run_interactive_chat(
     }
 
     runner = runner.with_slash_commands(known_slash_commands());
+
+    let plugin_entries = discover_plugin_status(Some(&kiln_root));
+    if !plugin_entries.is_empty() {
+        runner = runner.with_plugin_status(plugin_entries);
+    }
 
     let session_id = format!("chat-{}", chrono::Utc::now().format("%Y%m%d-%H%M%S"));
     let session_dir = config
@@ -904,6 +909,28 @@ pub fn known_slash_commands() -> Vec<(String, String)> {
         ("view".into(), "Open or list Lua-defined views".into()),
         ("models".into(), "List or switch models".into()),
     ]
+}
+
+fn discover_plugin_status(kiln_path: Option<&std::path::Path>) -> Vec<PluginStatusEntry> {
+    use crucible_lua::PluginManager;
+
+    let manager = match PluginManager::initialize(kiln_path) {
+        Ok(m) => m,
+        Err(e) => {
+            warn!("Plugin discovery failed: {}", e);
+            return Vec::new();
+        }
+    };
+
+    manager
+        .list()
+        .map(|p| PluginStatusEntry {
+            name: p.name().to_string(),
+            version: p.version().to_string(),
+            state: format!("{:?}", p.state),
+            error: p.last_error.clone(),
+        })
+        .collect()
 }
 
 #[cfg(test)]

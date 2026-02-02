@@ -72,7 +72,9 @@ mod viewport_cache;
 
 pub use agent_selection::AgentSelection;
 pub use app::*;
-pub use chat_app::{ChatAppMsg, ChatItem, ChatMode, McpServerDisplay, OilChatApp, Role};
+pub use chat_app::{
+    ChatAppMsg, ChatItem, ChatMode, McpServerDisplay, OilChatApp, PluginStatusEntry, Role,
+};
 pub use chat_container::{ChatContainer, ContainerList, ThinkingBlock};
 pub use chat_runner::OilChatRunner;
 pub use component::{Component, ComponentHarness};

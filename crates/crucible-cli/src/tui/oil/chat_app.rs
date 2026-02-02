@@ -105,6 +105,7 @@ pub enum ChatAppMsg {
     ModelsLoaded(Vec<String>),
     ModelsFetchFailed(String),
     McpStatusLoaded(Vec<McpServerDisplay>),
+    PluginStatusLoaded(Vec<PluginStatusEntry>),
     SetThinkingBudget(i64),
     SetTemperature(f64),
     SetMaxTokens(Option<u32>),
@@ -272,6 +273,14 @@ pub struct McpServerDisplay {
     pub connected: bool,
 }
 
+#[derive(Debug, Clone)]
+pub struct PluginStatusEntry {
+    pub name: String,
+    pub version: String,
+    pub state: String,
+    pub error: Option<String>,
+}
+
 /// Autocomplete popup state — purely local UI chrome.
 ///
 /// Groups the five tightly-coupled fields that together describe
@@ -311,6 +320,7 @@ pub struct OilChatApp {
     current_provider: String,
     /// MCP servers known to the daemon
     mcp_servers: Vec<McpServerDisplay>,
+    plugin_status: Vec<PluginStatusEntry>,
     /// Available models fetched from the provider
     available_models: Vec<String>,
     /// Fetch-state of the model list
@@ -390,6 +400,7 @@ impl Default for OilChatApp {
             context_total: 0,
             current_provider: "local".to_string(),
             mcp_servers: Vec::new(),
+            plugin_status: Vec::new(),
             available_models: Vec::new(),
             model_list_state: ModelListState::NotLoaded,
 
@@ -638,6 +649,20 @@ impl App for OilChatApp {
                 }
                 Action::Continue
             }
+            ChatAppMsg::PluginStatusLoaded(entries) => {
+                let errors: Vec<_> = entries.iter().filter(|e| e.error.is_some()).collect();
+                for entry in &errors {
+                    if let Some(ref err) = entry.error {
+                        self.notification_area
+                            .add(crucible_core::types::Notification::warning(format!(
+                                "Plugin '{}' failed to load: {}",
+                                entry.name, err
+                            )));
+                    }
+                }
+                self.plugin_status = entries;
+                Action::Continue
+            }
             ChatAppMsg::SetThinkingBudget(_) => Action::Continue,
             ChatAppMsg::SetTemperature(_) => Action::Continue,
             ChatAppMsg::SetMaxTokens(_) => Action::Continue,
@@ -746,6 +771,10 @@ impl OilChatApp {
 
     pub fn set_mcp_servers(&mut self, servers: Vec<McpServerDisplay>) {
         self.mcp_servers = servers;
+    }
+
+    pub fn set_plugin_status(&mut self, entries: Vec<PluginStatusEntry>) {
+        self.plugin_status = entries;
     }
 
     pub fn set_available_models(&mut self, models: Vec<String>) {
@@ -1417,7 +1446,7 @@ impl OilChatApp {
                     .collect::<Vec<_>>()
                     .join(" ");
                 self.add_system_message(format!(
-                    "[system] :quit :help :clear :palette :model :set :export <path> :messages :mcp\n[agent] {}",
+                    "[system] :quit :help :clear :palette :model :set :export <path> :messages :mcp :plugins\n[agent] {}",
                     slash_list
                 ));
                 Action::Continue
@@ -1435,6 +1464,10 @@ impl OilChatApp {
             }
             "mcp" => {
                 self.handle_mcp_command();
+                Action::Continue
+            }
+            "plugins" => {
+                self.handle_plugins_command();
                 Action::Continue
             }
             "model" => {
@@ -1829,6 +1862,40 @@ impl OilChatApp {
             }
             _ => {}
         }
+    }
+
+    fn handle_plugins_command(&mut self) {
+        if self.plugin_status.is_empty() {
+            self.add_system_message("No plugins found".to_string());
+            return;
+        }
+
+        let mut lines = vec![format!("Plugins ({}):", self.plugin_status.len())];
+        for entry in &self.plugin_status {
+            let (icon, state_label) = match entry.state.as_str() {
+                "Active" => ("✓", "active"),
+                "Error" => ("✗", "error"),
+                "Disabled" => ("○", "disabled"),
+                "Discovered" => ("◌", "discovered"),
+                "Loaded" => ("✓", "loaded"),
+                _ => ("?", entry.state.as_str()),
+            };
+            let version_part = if entry.version.is_empty() {
+                String::new()
+            } else {
+                format!(" v{}", entry.version)
+            };
+            let detail = if let Some(ref err) = entry.error {
+                format!("({}: {})", state_label, err)
+            } else {
+                format!("({})", state_label)
+            };
+            lines.push(format!(
+                "  {} {}{} {}",
+                icon, entry.name, version_part, detail
+            ));
+        }
+        self.add_system_message(lines.join("\n"));
     }
 
     fn handle_mcp_command(&mut self) {
@@ -2351,6 +2418,7 @@ impl OilChatApp {
                     (":palette", "Open command palette", "core"),
                     (":model", "Switch model", "core"),
                     (":mcp", "List MCP servers", "mcp"),
+                    (":plugins", "Show plugin status", "core"),
                     (":export", "Export session to file", "core"),
                     (":set", "View/modify runtime options", "core"),
                 ],
@@ -3633,5 +3701,79 @@ mod tests {
             "Modal should open when autoconfirm off"
         );
         assert!(matches!(action, Action::Continue));
+    }
+
+    #[test]
+    fn plugins_command_no_plugins_shows_message() {
+        let mut app = OilChatApp::init();
+        let action = app.handle_repl_command(":plugins");
+        assert!(matches!(action, Action::Continue));
+        let containers = app.container_list().all_containers();
+        assert_eq!(containers.len(), 1);
+        if let ChatContainer::SystemMessage { content, .. } = &containers[0] {
+            assert!(content.contains("No plugins found"));
+        } else {
+            panic!("Expected SystemMessage, got {:?}", containers[0]);
+        }
+    }
+
+    #[test]
+    fn plugins_command_shows_status() {
+        let mut app = OilChatApp::init();
+        app.set_plugin_status(vec![
+            PluginStatusEntry {
+                name: "test-plugin".to_string(),
+                version: "1.0.0".to_string(),
+                state: "Active".to_string(),
+                error: None,
+            },
+            PluginStatusEntry {
+                name: "broken-plugin".to_string(),
+                version: "0.1.0".to_string(),
+                state: "Error".to_string(),
+                error: Some("syntax error".to_string()),
+            },
+        ]);
+        let action = app.handle_repl_command(":plugins");
+        assert!(matches!(action, Action::Continue));
+        let containers = app.container_list().all_containers();
+        assert_eq!(containers.len(), 1);
+        if let ChatContainer::SystemMessage { content, .. } = &containers[0] {
+            assert!(content.contains("Plugins (2):"), "Header with count");
+            assert!(
+                content.contains("✓ test-plugin v1.0.0 (active)"),
+                "Active plugin"
+            );
+            assert!(
+                content.contains("✗ broken-plugin v0.1.0 (error: syntax error)"),
+                "Error plugin with message"
+            );
+        } else {
+            panic!("Expected SystemMessage, got {:?}", containers[0]);
+        }
+    }
+
+    #[test]
+    fn plugin_status_loaded_surfaces_errors_as_notifications() {
+        let mut app = OilChatApp::init();
+        app.on_message(ChatAppMsg::PluginStatusLoaded(vec![
+            PluginStatusEntry {
+                name: "good-plugin".to_string(),
+                version: "1.0.0".to_string(),
+                state: "Active".to_string(),
+                error: None,
+            },
+            PluginStatusEntry {
+                name: "bad-plugin".to_string(),
+                version: String::new(),
+                state: "Error".to_string(),
+                error: Some("file not found".to_string()),
+            },
+        ]));
+        assert_eq!(app.plugin_status.len(), 2);
+        assert!(
+            !app.notification_area.is_empty(),
+            "Should have notification for error plugin"
+        );
     }
 }
