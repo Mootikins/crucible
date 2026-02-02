@@ -189,7 +189,7 @@ impl Server {
     }
 
     /// Run the server until shutdown
-    pub async fn run(mut self) -> Result<()> {
+    pub async fn run(self) -> Result<()> {
         let mut shutdown_rx = self.shutdown_tx.subscribe();
 
         {
