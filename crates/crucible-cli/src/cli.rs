@@ -79,6 +79,10 @@ pub struct Cli {
 #[derive(Subcommand)]
 pub enum Commands {
     /// Natural language chat interface (toggleable plan/act modes)
+    #[command(
+        long_about = "Interactive AI chat with session persistence and tool access.\n\nExamples:\n  # Interactive chat session\n  cru chat\n\n  # One-shot query\n  cru chat \"Explain the architecture\"\n\n  # Resume previous session\n  cru chat --resume chat-20250102-1430-a1b2\n\n  # Use specific agent\n  cru chat --agent claude-code\n\n  # Plan mode (read-only)\n  cru chat --plan",
+        visible_alias = "c"
+    )]
     Chat {
         /// Optional one-shot query (if omitted, starts interactive mode)
         query: Option<String>,
@@ -162,6 +166,10 @@ pub enum Commands {
     },
 
     /// Process files through the pipeline (parse, enrich, store)
+    #[command(
+        long_about = "Process markdown files through the pipeline: parse, enrich with embeddings, and store in the knowledge graph.\n\nExamples:\n  # Process entire kiln\n  cru process\n\n  # Process specific file\n  cru process docs/notes.md\n\n  # Watch for changes\n  cru process --watch\n\n  # Force reprocess all files\n  cru process --force\n\n  # Dry run to preview changes\n  cru process --dry-run\n\n  # Use 4 parallel workers\n  cru process --parallel 4",
+        visible_alias = "p"
+    )]
     Process {
         /// Specific file or directory to process (if omitted, processes entire kiln)
         #[arg(value_name = "PATH")]
@@ -191,7 +199,11 @@ pub enum Commands {
     Models,
 
     /// Configuration management
-    #[command(subcommand)]
+    #[command(
+        subcommand,
+        long_about = "Manage Crucible configuration - initialize, view, and export settings.\n\nExamples:\n  # Initialize config\n  cru config init\n\n  # Show current config\n  cru config show\n\n  # Show config as JSON\n  cru config show -f json\n\n  # Dump default config\n  cru config dump > default-config.toml",
+        visible_alias = "cfg"
+    )]
     Config(ConfigCommands),
 
     /// Show storage status and statistics
@@ -246,6 +258,10 @@ pub enum Commands {
     /// Creates a .crucible directory with configuration, sessions, and plugins directories.
     /// Use --path to specify a different location (defaults to current directory).
     /// Use --force to overwrite an existing kiln.
+    #[command(
+        long_about = "Initialize a new kiln (Crucible workspace) with configuration and directory structure.\n\nExamples:\n  # Initialize kiln in current directory\n  cru init\n\n  # Initialize in specific directory\n  cru init --path ~/my-kiln\n\n  # Interactive setup with provider selection\n  cru init --interactive\n\n  # Force overwrite existing kiln\n  cru init --force",
+        visible_alias = "i"
+    )]
     Init {
         /// Path where kiln should be created (defaults to current directory)
         #[arg(short, long)]
@@ -261,7 +277,11 @@ pub enum Commands {
     },
 
     /// Session management (list, show, resume, export)
-    #[command(subcommand)]
+    #[command(
+        subcommand,
+        long_about = "Manage chat sessions - list, show details, resume, export, and search.\n\nExamples:\n  # List recent sessions\n  cru session list\n\n  # Show session details\n  cru session show chat-20250102-1430-a1b2\n\n  # Resume a session\n  cru session resume chat-20250102-1430-a1b2\n\n  # Export session to markdown\n  cru session export chat-20250102-1430-a1b2 -o session.md\n\n  # Search sessions\n  cru session search \"rust\"",
+        visible_aliases = ["s", "sess"]
+    )]
     Session(SessionCommands),
 
     /// Manage LLM provider credentials (defaults to 'list' if no subcommand given)
