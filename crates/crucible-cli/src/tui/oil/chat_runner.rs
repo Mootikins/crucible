@@ -1,7 +1,9 @@
 use crate::chat::bridge::AgentEventBridge;
 use crate::tui::oil::agent_selection::AgentSelection;
 use crate::tui::oil::app::{Action, App, ViewContext};
-use crate::tui::oil::chat_app::{ChatAppMsg, ChatItem, ChatMode, McpServerDisplay, OilChatApp};
+use crate::tui::oil::chat_app::{
+    ChatAppMsg, ChatItem, ChatMode, McpServerDisplay, OilChatApp, PluginStatusEntry,
+};
 use crate::tui::oil::event::Event;
 use crate::tui::oil::focus::FocusContext;
 use crate::tui::oil::terminal::Terminal;
@@ -35,6 +37,7 @@ pub struct OilChatRunner {
     resume_session_id: Option<String>,
     resume_history: Option<Vec<ChatItem>>,
     mcp_servers: Vec<McpServerDisplay>,
+    plugin_status: Vec<PluginStatusEntry>,
     mcp_config: Option<crucible_config::mcp::McpConfig>,
     available_models: Vec<String>,
     show_thinking: bool,
@@ -58,6 +61,7 @@ impl OilChatRunner {
             resume_session_id: None,
             resume_history: None,
             mcp_servers: Vec::new(),
+            plugin_status: Vec::new(),
             mcp_config: None,
             available_models: Vec::new(),
             show_thinking: false,
@@ -120,6 +124,11 @@ impl OilChatRunner {
         self
     }
 
+    pub fn with_plugin_status(mut self, entries: Vec<PluginStatusEntry>) -> Self {
+        self.plugin_status = entries;
+        self
+    }
+
     pub fn with_available_models(mut self, models: Vec<String>) -> Self {
         self.available_models = models;
         self
@@ -175,6 +184,18 @@ impl OilChatRunner {
         }
         if !self.mcp_servers.is_empty() {
             app.set_mcp_servers(std::mem::take(&mut self.mcp_servers));
+        }
+        if !self.plugin_status.is_empty() {
+            let entries = std::mem::take(&mut self.plugin_status);
+            for entry in &entries {
+                if let Some(ref err) = entry.error {
+                    app.add_notification(crucible_core::types::Notification::warning(format!(
+                        "Plugin '{}' failed to load: {}",
+                        entry.name, err
+                    )));
+                }
+            }
+            app.set_plugin_status(entries);
         }
         if !self.available_models.is_empty() {
             app.set_available_models(std::mem::take(&mut self.available_models));
@@ -606,7 +627,8 @@ impl OilChatRunner {
                             let _ = app.on_message(ChatAppMsg::ModelsLoaded(models));
                         }
                     }
-                    ChatAppMsg::McpStatusLoaded(_) => {
+                    ChatAppMsg::McpStatusLoaded(_)
+                    | ChatAppMsg::PluginStatusLoaded(_) => {
                         app.on_message(msg.clone());
                     }
                     ChatAppMsg::SetThinkingBudget(budget) => {
