@@ -303,6 +303,23 @@ pub fn register_note_store_functions(lua: &Lua, store: Arc<dyn NoteStore>) -> Re
     Ok(())
 }
 
+/// Register the graph module with NoteStore-backed async queries (`note_get`, `note_list`).
+///
+/// Ensures the base graph module exists first (idempotent).
+/// Call when storage becomes available (e.g., daemon kiln.open).
+pub fn register_graph_module_with_store(
+    lua: &Lua,
+    store: Arc<dyn NoteStore>,
+) -> Result<(), LuaError> {
+    if lua.globals().get::<Option<Table>>("graph")?.is_none() {
+        register_graph_module(lua)?;
+    }
+
+    register_note_store_functions(lua, store)?;
+
+    Ok(())
+}
+
 /// Register the graph module with both executor and note store
 ///
 /// This is a convenience function that combines `register_graph_module_with_executor`

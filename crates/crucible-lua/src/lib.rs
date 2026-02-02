@@ -105,8 +105,8 @@ pub use fennel::FennelCompiler;
 pub use fs::register_fs_module;
 pub use graph::{
     register_graph_module, register_graph_module_full, register_graph_module_with_all,
-    register_graph_module_with_executor, register_graph_view_functions,
-    register_note_store_functions,
+    register_graph_module_with_executor, register_graph_module_with_store,
+    register_graph_view_functions, register_note_store_functions,
 };
 pub use hooks::{get_session_start_hooks, register_hooks_module};
 pub use http::register_http_module;
