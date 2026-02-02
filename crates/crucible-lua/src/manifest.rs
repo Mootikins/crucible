@@ -355,6 +355,7 @@ pub struct LoadedPlugin {
     pub manifest: PluginManifest,
     pub dir: PathBuf,
     pub state: PluginState,
+    pub last_error: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -372,6 +373,7 @@ impl LoadedPlugin {
             manifest,
             dir,
             state: PluginState::Discovered,
+            last_error: None,
         }
     }
 
