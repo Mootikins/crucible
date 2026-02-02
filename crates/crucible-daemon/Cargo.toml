@@ -31,6 +31,7 @@ crucible-sqlite = { path = "../crucible-sqlite", optional = true }
 crucible-pipeline = { path = "../crucible-pipeline" }
 crucible-enrichment = { path = "../crucible-enrichment" }
 crucible-observe = { path = "../crucible-observe" }
+crucible-watch = { path = "../crucible-watch" }
 crucible-lua = { path = "../crucible-lua" }
 crucible-tools = { path = "../crucible-tools" }
 mlua = { workspace = true }
