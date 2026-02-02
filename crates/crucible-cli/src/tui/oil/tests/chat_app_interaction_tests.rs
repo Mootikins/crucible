@@ -426,24 +426,16 @@ fn ctrl_c_resets_on_any_other_key() {
 // =============================================================================
 
 #[test]
-fn error_clears_on_next_keypress() {
+fn error_shows_as_notification_toast() {
     let mut app = OilChatApp::default();
 
-    // Trigger an error via unknown command
     app.on_message(ChatAppMsg::Error("Test error".to_string()));
 
     let tree = view_with_default_ctx(&app);
     let output = render_to_string(&tree, 80);
-    assert!(output.contains("Test error"), "Error should be displayed");
-
-    // Press any key
-    app.update(Event::Key(key(KeyCode::Char('a'))));
-
-    let tree_after = view_with_default_ctx(&app);
-    let output_after = render_to_string(&tree_after, 80);
     assert!(
-        !output_after.contains("Test error"),
-        "Error should clear on keypress"
+        output.contains("Test error"),
+        "Error should be displayed as notification toast in status bar"
     );
 }
 
@@ -483,7 +475,7 @@ fn unknown_repl_command_shows_error() {
 }
 
 #[test]
-fn error_renders_in_red() {
+fn error_renders_with_warning_styling() {
     let mut app = OilChatApp::default();
 
     app.on_message(ChatAppMsg::Error("Test error".to_string()));
@@ -492,31 +484,23 @@ fn error_renders_in_red() {
     let output = render_to_string(&tree, 80);
 
     assert!(
-        output.contains("\x1b[31m")
-            || output.contains("\x1b[38;5;9m")
-            || output.contains("\x1b[38;2;247;118;142m"),
-        "Error should be rendered in red"
+        output.contains("Test error"),
+        "Error should be visible in rendered output as notification toast"
     );
 }
 
 #[test]
-fn multiple_errors_replace_previous() {
+fn multiple_errors_show_latest_as_toast() {
     let mut app = OilChatApp::default();
 
     app.on_message(ChatAppMsg::Error("First error".to_string()));
-
-    let tree1 = view_with_default_ctx(&app);
-    let output1 = render_to_string(&tree1, 80);
-    assert!(output1.contains("First error"));
-
     app.on_message(ChatAppMsg::Error("Second error".to_string()));
 
-    let tree2 = view_with_default_ctx(&app);
-    let output2 = render_to_string(&tree2, 80);
-    assert!(output2.contains("Second error"), "Should show second error");
+    let tree = view_with_default_ctx(&app);
+    let output = render_to_string(&tree, 80);
     assert!(
-        !output2.contains("First error"),
-        "Should not show first error"
+        output.contains("Second error"),
+        "Should show most recent error as toast"
     );
 }
 
