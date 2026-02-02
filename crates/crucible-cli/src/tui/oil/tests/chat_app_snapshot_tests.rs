@@ -697,7 +697,7 @@ fn snapshot_back_to_back_tools_no_text() {
 }
 
 #[test]
-fn snapshot_error_displayed() {
+fn snapshot_error_displayed_as_notification() {
     let mut app = OilChatApp::default();
     app.on_message(ChatAppMsg::UserMessage("Do something".to_string()));
     app.on_message(ChatAppMsg::Error("Connection failed: timeout".to_string()));

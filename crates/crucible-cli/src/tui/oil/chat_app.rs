@@ -339,8 +339,7 @@ pub struct OilChatApp {
     precognition: bool,
     /// Current terminal size (width, height) — updated in view()
     terminal_size: Cell<(u16, u16)>,
-    /// Last error to display to the user
-    error: Option<String>,
+
     /// Queue of pending permission requests (request_id, request) when multiple arrive rapidly
     permission_queue: VecDeque<(String, PermRequest)>,
     /// Whether to show diff by default in permission prompts (session-scoped)
@@ -405,7 +404,6 @@ impl Default for OilChatApp {
             show_thinking: true,
             precognition: false,
             terminal_size: Cell::new((80, 24)),
-            error: None,
             permission_queue: VecDeque::new(),
             perm_show_diff: true,
             perm_autoconfirm_session: false,
@@ -455,7 +453,6 @@ impl App for OilChatApp {
 
         col([
             self.render_containers(),
-            self.render_error(),
             spacer(),
             text(" "),
             bottom,
@@ -583,7 +580,8 @@ impl App for OilChatApp {
                 }
             }
             ChatAppMsg::Error(msg) => {
-                self.error = Some(msg);
+                self.notification_area
+                    .add(crucible_core::types::Notification::warning(msg));
                 self.container_list.cancel_streaming();
                 Action::Continue
             }
@@ -621,7 +619,11 @@ impl App for OilChatApp {
             }
             ChatAppMsg::ModelsFetchFailed(reason) => {
                 self.model_list_state = ModelListState::Failed(reason.clone());
-                self.error = Some(format!("Failed to fetch models: {}", reason));
+                self.notification_area
+                    .add(crucible_core::types::Notification::warning(format!(
+                        "Failed to fetch models: {}",
+                        reason
+                    )));
                 Action::Continue
             }
             ChatAppMsg::McpStatusLoaded(servers) => {
@@ -1002,8 +1004,6 @@ impl OilChatApp {
     }
 
     fn handle_key(&mut self, key: crossterm::event::KeyEvent) -> Action<ChatAppMsg> {
-        self.error = None;
-
         if self.notification_area.is_visible() {
             self.notification_area.hide();
             return Action::Continue;
@@ -1462,7 +1462,10 @@ impl OilChatApp {
             _ if command.starts_with("model ") => {
                 let model_name = command.strip_prefix("model ").unwrap().trim();
                 if model_name.is_empty() {
-                    self.error = Some("Usage: :model <name>".to_string());
+                    self.notification_area
+                        .add(crucible_core::types::Notification::warning(
+                            "Usage: :model <name>".to_string(),
+                        ));
                     Action::Continue
                 } else {
                     self.handle_set_command(&format!("set model {}", model_name))
@@ -1477,7 +1480,11 @@ impl OilChatApp {
                 self.handle_export_command(path)
             }
             _ => {
-                self.error = Some(format!("Unknown REPL command: {}", cmd));
+                self.notification_area
+                    .add(crucible_core::types::Notification::warning(format!(
+                        "Unknown REPL command: {}",
+                        cmd
+                    )));
                 Action::Continue
             }
         }
@@ -1485,7 +1492,10 @@ impl OilChatApp {
 
     fn handle_export_command(&mut self, path: &str) -> Action<ChatAppMsg> {
         if path.is_empty() {
-            self.error = Some("Usage: :export <path>".to_string());
+            self.notification_area
+                .add(crucible_core::types::Notification::warning(
+                    "Usage: :export <path>".to_string(),
+                ));
             return Action::Continue;
         }
 
@@ -1499,16 +1509,20 @@ impl OilChatApp {
 
         if let Some(parent) = export_path.parent() {
             if !parent.as_os_str().is_empty() && !parent.exists() {
-                self.error = Some(format!(
-                    "Parent directory does not exist: {}",
-                    parent.display()
-                ));
+                self.notification_area
+                    .add(crucible_core::types::Notification::warning(format!(
+                        "Parent directory does not exist: {}",
+                        parent.display()
+                    )));
                 return Action::Continue;
             }
         }
 
         if self.session_dir.is_none() {
-            self.error = Some("No active session — nothing to export".to_string());
+            self.notification_area
+                .add(crucible_core::types::Notification::warning(
+                    "No active session — nothing to export".to_string(),
+                ));
             return Action::Continue;
         }
 
@@ -1568,7 +1582,9 @@ impl OilChatApp {
                                 self.add_system_message(format!("  {}=false", key));
                             }
                             Err(e) => {
-                                self.error = Some(e.to_string());
+                                self.notification_area.add(
+                                    crucible_core::types::Notification::warning(e.to_string()),
+                                );
                             }
                         }
                     }
@@ -1579,7 +1595,9 @@ impl OilChatApp {
                                 self.add_system_message(format!("  {}={}", key, new_val));
                             }
                             Err(e) => {
-                                self.error = Some(e.to_string());
+                                self.notification_area.add(
+                                    crucible_core::types::Notification::warning(e.to_string()),
+                                );
                             }
                         }
                     }
@@ -1624,8 +1642,12 @@ impl OilChatApp {
                                 return Action::Send(ChatAppMsg::SetThinkingBudget(budget));
                             } else {
                                 let valid = ThinkingPreset::names().collect::<Vec<_>>().join(", ");
-                                self.error =
-                                    Some(format!("Unknown preset '{}'. Valid: {}", value, valid));
+                                self.notification_area.add(
+                                    crucible_core::types::Notification::warning(format!(
+                                        "Unknown preset '{}'. Valid: {}",
+                                        value, valid
+                                    )),
+                                );
                                 return Action::Continue;
                             }
                         }
@@ -1639,13 +1661,20 @@ impl OilChatApp {
                                     return Action::Send(ChatAppMsg::SetTemperature(temp));
                                 }
                                 Ok(_) => {
-                                    self.error =
-                                        Some("Temperature must be between 0.0 and 2.0".to_string());
+                                    self.notification_area.add(
+                                        crucible_core::types::Notification::warning(
+                                            "Temperature must be between 0.0 and 2.0".to_string(),
+                                        ),
+                                    );
                                     return Action::Continue;
                                 }
                                 Err(_) => {
-                                    self.error =
-                                        Some(format!("Invalid temperature value: {}", value));
+                                    self.notification_area.add(
+                                        crucible_core::types::Notification::warning(format!(
+                                            "Invalid temperature value: {}",
+                                            value
+                                        )),
+                                    );
                                     return Action::Continue;
                                 }
                             }
@@ -1658,10 +1687,12 @@ impl OilChatApp {
                                 match value.parse::<u32>() {
                                     Ok(n) => Some(n),
                                     Err(_) => {
-                                        self.error = Some(format!(
+                                        self.notification_area.add(
+                                            crucible_core::types::Notification::warning(format!(
                                             "Invalid max_tokens value: {} (use a number or 'none')",
                                             value
-                                        ));
+                                        )),
+                                        );
                                         return Action::Continue;
                                     }
                                 }
@@ -1686,7 +1717,11 @@ impl OilChatApp {
                 Action::Continue
             }
             Err(e) => {
-                self.error = Some(format!("Parse error: {}", e));
+                self.notification_area
+                    .add(crucible_core::types::Notification::warning(format!(
+                        "Parse error: {}",
+                        e
+                    )));
                 Action::Continue
             }
         }
@@ -1727,11 +1762,12 @@ impl OilChatApp {
         let valid_keys = ["perm.show_diff", "perm.autoconfirm_session"];
 
         if !valid_keys.contains(&key) {
-            self.error = Some(format!(
-                "Unknown permission setting: {}. Valid: {}",
-                key,
-                valid_keys.join(", ")
-            ));
+            self.notification_area
+                .add(crucible_core::types::Notification::warning(format!(
+                    "Unknown permission setting: {}. Valid: {}",
+                    key,
+                    valid_keys.join(", ")
+                )));
             return Action::Continue;
         }
 
@@ -1739,10 +1775,11 @@ impl OilChatApp {
             "true" | "1" | "yes" | "on" => true,
             "false" | "0" | "no" | "off" => false,
             _ => {
-                self.error = Some(format!(
-                    "Invalid value for {}: '{}'. Use true/false",
-                    key, value
-                ));
+                self.notification_area
+                    .add(crucible_core::types::Notification::warning(format!(
+                        "Invalid value for {}: '{}'. Use true/false",
+                        key, value
+                    )));
                 return Action::Continue;
             }
         };
@@ -1814,7 +1851,10 @@ impl OilChatApp {
     fn handle_shell_command(&mut self, cmd: &str) -> Action<ChatAppMsg> {
         let shell_cmd = cmd[1..].trim().to_string();
         if shell_cmd.is_empty() {
-            self.error = Some("Empty shell command".to_string());
+            self.notification_area
+                .add(crucible_core::types::Notification::warning(
+                    "Empty shell command".to_string(),
+                ));
             return Action::Continue;
         }
 
@@ -1835,7 +1875,8 @@ impl OilChatApp {
                 self.shell_modal = Some(modal);
             }
             Err(e) => {
-                self.error = Some(e);
+                self.notification_area
+                    .add(crucible_core::types::Notification::warning(e));
             }
         }
 
@@ -2086,7 +2127,10 @@ impl OilChatApp {
         let path = match self.save_shell_output() {
             Some(p) => p,
             None => {
-                self.error = Some("Failed to save output file".to_string());
+                self.notification_area
+                    .add(crucible_core::types::Notification::warning(
+                        "Failed to save output file".to_string(),
+                    ));
                 return;
             }
         };
@@ -2102,7 +2146,11 @@ impl OilChatApp {
         crossterm::terminal::enable_raw_mode().ok();
 
         if let Err(e) = status {
-            self.error = Some(format!("Failed to open editor: {}", e));
+            self.notification_area
+                .add(crucible_core::types::Notification::warning(format!(
+                    "Failed to open editor: {}",
+                    e
+                )));
         }
     }
 
@@ -2148,7 +2196,6 @@ impl OilChatApp {
         self.container_list.clear();
         self.message_counter = 0;
         self.deferred_messages.clear();
-        self.error = None;
         self.context_used = 0;
         self.context_total = 0;
         self.status = "Ready".to_string();
@@ -2215,15 +2262,6 @@ impl OilChatApp {
         }
 
         col(nodes)
-    }
-
-    fn render_error(&self) -> Node {
-        maybe(self.error.clone(), |err| {
-            styled(
-                format!("Error: {}", err),
-                ThemeTokens::default_ref().error_style(),
-            )
-        })
     }
 
     fn render_status(&self) -> Node {
@@ -3483,7 +3521,7 @@ mod tests {
         let mut app = OilChatApp::init();
         let action = app.handle_export_command("");
         assert!(matches!(action, Action::Continue));
-        assert!(app.error.is_some());
+        assert!(app.notification_area.active_toast().is_some());
     }
 
     #[test]
@@ -3491,7 +3529,9 @@ mod tests {
         let mut app = OilChatApp::init();
         let action = app.handle_export_command("/tmp/test.md");
         assert!(matches!(action, Action::Continue));
-        assert!(app.error.as_ref().unwrap().contains("No active session"));
+        let toast = app.notification_area.active_toast();
+        assert!(toast.is_some());
+        assert!(toast.unwrap().0.contains("No active session"));
     }
 
     #[test]
