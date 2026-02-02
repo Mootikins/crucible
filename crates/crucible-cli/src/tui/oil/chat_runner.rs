@@ -857,26 +857,14 @@ impl OilChatRunner {
                         request,
                     })
                 }
-                InteractionRequest::AskBatch(_) => {
-                    tracing::warn!("AskBatch interaction not yet implemented, skipping");
-                    None
-                }
-                InteractionRequest::Edit(_) => {
-                    tracing::warn!("Edit interaction not yet implemented, skipping");
-                    None
-                }
-                InteractionRequest::Show(_) => {
-                    tracing::warn!("Show interaction not yet implemented, skipping");
-                    None
-                }
-                InteractionRequest::Popup(_) => {
-                    tracing::warn!("Popup interaction not yet implemented, skipping");
-                    None
-                }
-                InteractionRequest::Panel(_) => {
-                    tracing::warn!("Panel interaction not yet implemented, skipping");
-                    None
-                }
+                InteractionRequest::AskBatch(_)
+                | InteractionRequest::Edit(_)
+                | InteractionRequest::Show(_)
+                | InteractionRequest::Popup(_)
+                | InteractionRequest::Panel(_) => Some(ChatAppMsg::OpenInteraction {
+                    request_id,
+                    request,
+                }),
             },
             _ => None,
         }
