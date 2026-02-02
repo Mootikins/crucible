@@ -1303,6 +1303,235 @@ mod interaction_modal_snapshots {
 
         assert_snapshot!(render_app(&app));
     }
+
+    // =========================================================================
+    // Show Interaction Tests
+    // =========================================================================
+
+    #[test]
+    fn snapshot_show_modal_basic() {
+        use crucible_core::interaction::ShowRequest;
+
+        let mut app = OilChatApp::default();
+        let content = "This is some content to display.\nIt has multiple lines.\nLine three here.\nAnd a fourth line for good measure.";
+        let request = InteractionRequest::Show(ShowRequest::new(content).title("Preview"));
+        app.open_interaction("show-1".to_string(), request);
+
+        assert_snapshot!(render_app(&app));
+    }
+
+    #[test]
+    fn snapshot_show_modal_after_scroll() {
+        use crucible_core::interaction::ShowRequest;
+
+        let mut app = OilChatApp::default();
+        let lines: Vec<String> = (1..=30).map(|i| format!("Line number {i}")).collect();
+        let content = lines.join("\n");
+        let request = InteractionRequest::Show(ShowRequest::new(&content));
+        app.open_interaction("show-scroll".to_string(), request);
+
+        for _ in 0..5 {
+            app.update(crate::tui::oil::event::Event::Key(key(KeyCode::Char('j'))));
+        }
+
+        assert_snapshot!(render_app(&app));
+    }
+
+    // =========================================================================
+    // Popup Interaction Tests
+    // =========================================================================
+
+    #[test]
+    fn snapshot_popup_modal_basic() {
+        use crucible_core::interaction::PopupRequest;
+        use crucible_core::types::PopupEntry;
+
+        let mut app = OilChatApp::default();
+        let request = InteractionRequest::Popup(
+            PopupRequest::new("Select an action")
+                .entry(PopupEntry::new("Open").with_description("Open the file in editor"))
+                .entry(PopupEntry::new("Delete").with_description("Remove permanently"))
+                .entry(PopupEntry::new("Rename")),
+        );
+        app.open_interaction("popup-1".to_string(), request);
+
+        assert_snapshot!(render_app(&app));
+    }
+
+    #[test]
+    fn snapshot_popup_modal_second_selected() {
+        use crucible_core::interaction::PopupRequest;
+        use crucible_core::types::PopupEntry;
+
+        let mut app = OilChatApp::default();
+        let request = InteractionRequest::Popup(
+            PopupRequest::new("Pick one")
+                .entry(PopupEntry::new("Alpha"))
+                .entry(PopupEntry::new("Beta"))
+                .entry(PopupEntry::new("Gamma")),
+        );
+        app.open_interaction("popup-nav".to_string(), request);
+
+        app.update(crate::tui::oil::event::Event::Key(key(KeyCode::Down)));
+
+        assert_snapshot!(render_app(&app));
+    }
+
+    #[test]
+    fn snapshot_popup_modal_with_allow_other() {
+        use crucible_core::interaction::PopupRequest;
+        use crucible_core::types::PopupEntry;
+
+        let mut app = OilChatApp::default();
+        let request = InteractionRequest::Popup(
+            PopupRequest::new("Choose or type custom")
+                .entry(PopupEntry::new("Option A"))
+                .entry(PopupEntry::new("Option B"))
+                .allow_other(),
+        );
+        app.open_interaction("popup-other".to_string(), request);
+
+        assert_snapshot!(render_app(&app));
+    }
+
+    // =========================================================================
+    // Edit Interaction Tests
+    // =========================================================================
+
+    #[test]
+    fn snapshot_edit_modal_normal_mode() {
+        use crucible_core::interaction::EditRequest;
+
+        let mut app = OilChatApp::default();
+        let content = "fn main() {\n    println!(\"Hello\");\n}";
+        let request = InteractionRequest::Edit(EditRequest::new(content).hint("Edit the function"));
+        app.open_interaction("edit-1".to_string(), request);
+
+        assert_snapshot!(render_app(&app));
+    }
+
+    #[test]
+    fn snapshot_edit_modal_insert_mode() {
+        use crucible_core::interaction::EditRequest;
+
+        let mut app = OilChatApp::default();
+        let content = "first line\nsecond line\nthird line";
+        let request = InteractionRequest::Edit(EditRequest::new(content));
+        app.open_interaction("edit-insert".to_string(), request);
+
+        app.update(crate::tui::oil::event::Event::Key(key(KeyCode::Char('i'))));
+
+        assert_snapshot!(render_app(&app));
+    }
+
+    #[test]
+    fn snapshot_edit_modal_cursor_moved() {
+        use crucible_core::interaction::EditRequest;
+
+        let mut app = OilChatApp::default();
+        let content = "line one\nline two\nline three";
+        let request = InteractionRequest::Edit(EditRequest::new(content));
+        app.open_interaction("edit-cursor".to_string(), request);
+
+        app.update(crate::tui::oil::event::Event::Key(key(KeyCode::Char('j'))));
+        app.update(crate::tui::oil::event::Event::Key(key(KeyCode::Char('l'))));
+        app.update(crate::tui::oil::event::Event::Key(key(KeyCode::Char('l'))));
+
+        assert_snapshot!(render_app(&app));
+    }
+
+    // =========================================================================
+    // Panel Interaction Tests
+    // =========================================================================
+
+    #[test]
+    fn snapshot_panel_modal_basic() {
+        use crucible_core::interaction::{InteractivePanel, PanelItem};
+
+        let mut app = OilChatApp::default();
+        let request =
+            InteractionRequest::Panel(InteractivePanel::new("Select files to process").items([
+                PanelItem::new("README.md").with_description("Project readme"),
+                PanelItem::new("Cargo.toml").with_description("Rust manifest"),
+                PanelItem::new("src/main.rs"),
+                PanelItem::new("src/lib.rs"),
+            ]));
+        app.open_interaction("panel-1".to_string(), request);
+
+        assert_snapshot!(render_app(&app));
+    }
+
+    #[test]
+    fn snapshot_panel_modal_multi_select_with_checks() {
+        use crucible_core::interaction::{InteractivePanel, PanelHints, PanelItem};
+
+        let mut app = OilChatApp::default();
+        let request = InteractionRequest::Panel(
+            InteractivePanel::new("Toggle items")
+                .items([
+                    PanelItem::new("Apple"),
+                    PanelItem::new("Banana"),
+                    PanelItem::new("Cherry"),
+                    PanelItem::new("Date"),
+                ])
+                .hints(PanelHints::new().multi_select()),
+        );
+        app.open_interaction("panel-multi".to_string(), request);
+
+        app.update(crate::tui::oil::event::Event::Key(KeyEvent::new(
+            KeyCode::Char(' '),
+            KeyModifiers::NONE,
+        )));
+        app.update(crate::tui::oil::event::Event::Key(key(KeyCode::Down)));
+        app.update(crate::tui::oil::event::Event::Key(key(KeyCode::Down)));
+        app.update(crate::tui::oil::event::Event::Key(KeyEvent::new(
+            KeyCode::Char(' '),
+            KeyModifiers::NONE,
+        )));
+
+        assert_snapshot!(render_app(&app));
+    }
+
+    #[test]
+    fn snapshot_panel_modal_filterable() {
+        use crucible_core::interaction::{InteractivePanel, PanelHints, PanelItem};
+
+        let mut app = OilChatApp::default();
+        let request = InteractionRequest::Panel(
+            InteractivePanel::new("Search and select")
+                .items([
+                    PanelItem::new("Apple"),
+                    PanelItem::new("Apricot"),
+                    PanelItem::new("Banana"),
+                    PanelItem::new("Blueberry"),
+                    PanelItem::new("Cherry"),
+                ])
+                .hints(PanelHints::new().filterable()),
+        );
+        app.open_interaction("panel-filter".to_string(), request);
+
+        assert_snapshot!(render_app(&app));
+    }
+
+    #[test]
+    fn snapshot_panel_modal_with_initial_selection() {
+        use crucible_core::interaction::{InteractivePanel, PanelHints, PanelItem};
+
+        let mut app = OilChatApp::default();
+        let request = InteractionRequest::Panel(
+            InteractivePanel::new("Pre-selected items")
+                .items([
+                    PanelItem::new("Item A"),
+                    PanelItem::new("Item B"),
+                    PanelItem::new("Item C"),
+                    PanelItem::new("Item D"),
+                ])
+                .hints(PanelHints::new().multi_select().initial_selection([0, 2])),
+        );
+        app.open_interaction("panel-presel".to_string(), request);
+
+        assert_snapshot!(render_app(&app));
+    }
 }
 
 // =============================================================================
