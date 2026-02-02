@@ -7,12 +7,15 @@
 //! UI modules (oil, popup, panel, statusline) are intentionally excluded —
 //! the daemon is headless.
 
+use crucible_core::storage::NoteStore;
 use crucible_lua::{
-    register_fs_module, register_http_module, register_oq_module, register_paths_module,
-    register_shell_module, register_ws_module, LuaExecutor, PathsContext, PluginManager,
-    PluginSpec, ShellPolicy,
+    register_fs_module, register_graph_module, register_graph_module_with_store,
+    register_http_module, register_oq_module, register_paths_module, register_shell_module,
+    register_vault_module, register_vault_module_with_store, register_ws_module, LuaExecutor,
+    PathsContext, PluginManager, PluginSpec, ShellPolicy,
 };
 use std::path::PathBuf;
+use std::sync::Arc;
 use tracing::{info, warn};
 
 /// Daemon-side plugin loader with its own Lua runtime.
@@ -52,6 +55,9 @@ impl DaemonPluginLoader {
         register_paths_module(lua, PathsContext::new())
             .map_err(|e| anyhow::anyhow!("paths module: {e}"))?;
 
+        register_graph_module(lua).map_err(|e| anyhow::anyhow!("graph module: {e}"))?;
+        register_vault_module(lua).map_err(|e| anyhow::anyhow!("vault module: {e}"))?;
+
         let plugin_manager = PluginManager::new();
 
         Ok(Self {
@@ -59,6 +65,22 @@ impl DaemonPluginLoader {
             plugin_manager,
             loaded_specs: Vec::new(),
         })
+    }
+
+    /// Upgrade graph and vault modules with real NoteStore-backed implementations.
+    ///
+    /// Call after a kiln opens and storage is available. Replaces stub functions
+    /// registered in `new()` with implementations that query the store.
+    pub fn upgrade_with_storage(&self, store: Arc<dyn NoteStore>) -> anyhow::Result<()> {
+        let lua = self.executor.lua();
+
+        register_graph_module_with_store(lua, store.clone())
+            .map_err(|e| anyhow::anyhow!("graph upgrade: {e}"))?;
+        register_vault_module_with_store(lua, store)
+            .map_err(|e| anyhow::anyhow!("vault upgrade: {e}"))?;
+
+        info!("Lua graph/vault modules upgraded with storage");
+        Ok(())
     }
 
     /// Discover and load plugins from the given search paths.
