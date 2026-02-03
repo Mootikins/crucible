@@ -75,4 +75,4 @@ config:
 ## Capabilities Required
 
 - `filesystem` - Read and write TASKS.md files
-- `vault` - Access to kiln for task storage
+- `kiln` - Access to kiln for task storage
