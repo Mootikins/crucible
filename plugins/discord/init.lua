@@ -96,12 +96,13 @@ gateway.on("MESSAGE_CREATE", function(data)
     local lower = raw:lower()
 
     -- Intercept y/n replies for pending permission prompts
-    if responder.pending_replies[channel_id] == "waiting" then
+    local pending = responder.pending_replies[channel_id]
+    if pending and pending.state == "waiting" and data.author and data.author.id == pending.user_id then
         if lower == "y" or lower == "yes" then
-            responder.pending_replies[channel_id] = true
+            pending.state = "allowed"
             return
         elseif lower == "n" or lower == "no" then
-            responder.pending_replies[channel_id] = false
+            pending.state = "denied"
             return
         end
     end
@@ -120,9 +121,10 @@ gateway.on("MESSAGE_CREATE", function(data)
         return
     end
 
+    local author_id = data.author and data.author.id
     cru.spawn(function()
         local reply_to = guild_id and msg_id or nil
-        local ok, resp_err = pcall(responder.respond, session_id, channel_id, content, reply_to)
+        local ok, resp_err = pcall(responder.respond, session_id, channel_id, content, reply_to, author_id)
         if not ok then
             cru.log("warn", "Responder error: " .. tostring(resp_err))
         end

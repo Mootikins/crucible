@@ -9,8 +9,8 @@ local MAX_MESSAGE_LEN = 2000
 local RESPONSE_TIMEOUT = 120  -- seconds
 local PERMISSION_TIMEOUT = 60 -- seconds to wait for y/n reply
 
--- Pending permission replies: channel_id -> true/false/nil
--- Set by init.lua when it intercepts a y/n message, read by the responder polling loop.
+-- Pending permission replies: channel_id -> {state="waiting"|"allowed"|"denied", user_id=string}
+-- Set by responder, resolved by init.lua when it intercepts a y/n from the same user.
 M.pending_replies = {}
 
 --- Find structural break positions in text up to `limit`, scored by priority:
@@ -145,19 +145,21 @@ local function send_chunked(channel_id, text, reply_to_msg_id)
     return nil
 end
 
---- Wait for a y/n reply from the Discord user in this channel.
+--- Wait for a y/n reply from the original user in this channel.
 --- Returns true (allowed), false (denied), or nil (timeout).
-local function wait_for_permission_reply(channel_id)
-    M.pending_replies[channel_id] = "waiting"
+local function wait_for_permission_reply(channel_id, user_id)
+    M.pending_replies[channel_id] = { state = "waiting", user_id = user_id }
     local waited = 0
-    while M.pending_replies[channel_id] == "waiting" and waited < PERMISSION_TIMEOUT do
+    while M.pending_replies[channel_id]
+        and M.pending_replies[channel_id].state == "waiting"
+        and waited < PERMISSION_TIMEOUT do
         cru.timer.sleep(0.5)
         waited = waited + 0.5
     end
-    local reply = M.pending_replies[channel_id]
+    local pending = M.pending_replies[channel_id]
     M.pending_replies[channel_id] = nil
-    if reply == "waiting" then return nil end
-    return reply
+    if not pending or pending.state == "waiting" then return nil end
+    return pending.state == "allowed"
 end
 
 --- Format a permission request prompt for Discord.
@@ -176,7 +178,8 @@ end
 ---@param channel_id string Discord channel ID
 ---@param user_message string The user's message content
 ---@param reply_to_msg_id string|nil Discord message ID to reply to
-function M.respond(session_id, channel_id, user_message, reply_to_msg_id)
+---@param user_id string|nil Discord user ID of the requester (for permission auth)
+function M.respond(session_id, channel_id, user_message, reply_to_msg_id, user_id)
     cru.log("info", "Responder: starting for session " .. session_id)
     pcall(api.trigger_typing, channel_id)
 
@@ -228,7 +231,11 @@ function M.respond(session_id, channel_id, user_message, reply_to_msg_id)
             api.send_message(channel_id, prompt, { reply_to = reply_id })
             first_message = false
 
-            local allowed = wait_for_permission_reply(channel_id)
+            local wait_ok, allowed = pcall(wait_for_permission_reply, channel_id, user_id)
+            if not wait_ok then
+                M.pending_replies[channel_id] = nil
+                allowed = nil
+            end
             if allowed == nil then
                 api.send_message(channel_id, "> \u{23f0} Permission timed out — denying.")
                 allowed = false
