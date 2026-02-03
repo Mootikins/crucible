@@ -43,7 +43,7 @@ pub fn register_timer_module(lua: &Lua) -> Result<()> {
     // Returns (true, result) on success, (false, "timeout") on timeout, (false, err) on error
     timer.set(
         "timeout",
-        lua.create_async_function(|_lua, (secs, func): (f64, Function)| async move {
+        lua.create_async_function(|lua, (secs, func): (f64, Function)| async move {
             if !secs.is_finite() || secs < 0.0 {
                 return Err(mlua::Error::runtime(
                     "timeout duration must be a finite non-negative number",
@@ -52,8 +52,8 @@ pub fn register_timer_module(lua: &Lua) -> Result<()> {
             let dur = Duration::from_secs_f64(secs);
             match tokio::time::timeout(dur, func.call_async::<Value>(())).await {
                 Ok(Ok(result)) => Ok((true, result)),
-                Ok(Err(e)) => Ok((false, Value::String(_lua.create_string(e.to_string())?))),
-                Err(_) => Ok((false, Value::String(_lua.create_string("timeout")?))),
+                Ok(Err(e)) => Ok((false, Value::String(lua.create_string(e.to_string())?))),
+                Err(_) => Ok((false, Value::String(lua.create_string("timeout")?))),
             }
         })?,
     )?;

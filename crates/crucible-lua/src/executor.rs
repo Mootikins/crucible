@@ -156,9 +156,6 @@ end
         )
         .exec()?;
 
-        // Get the cru table that was just created
-        let _cru: mlua::Table = globals.get("cru")?;
-
         // Create crucible namespace
         let crucible = lua.create_table()?;
 
