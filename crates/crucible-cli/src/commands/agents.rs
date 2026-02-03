@@ -356,6 +356,7 @@ mod tests {
             context: None,
             storage: None,
             mcp: None,
+            plugins: std::collections::HashMap::new(),
             source_map: None,
         }
     }
