@@ -115,7 +115,6 @@ function M.discord_register_commands(args)
     cru.check.string(args.guild_id, "guild_id", { optional = true })
 
     local commands = args.commands
-    cru.check.table(commands, "commands")
     if type(commands) == "string" then
         local ok, decoded = pcall(cru.json.decode, commands)
         if not ok then
@@ -123,6 +122,7 @@ function M.discord_register_commands(args)
         end
         commands = decoded
     end
+    cru.check.table(commands, "commands")
 
     local result, err
     if args.guild_id then
@@ -215,7 +215,7 @@ return {
             params = {
                 { name = "app_id", type = "string", desc = "Discord application ID" },
                 { name = "guild_id", type = "string", desc = "Guild ID (for testing)", optional = true },
-                { name = "commands", type = "table", desc = "Array of command objects" },
+                { name = "commands", type = "string", desc = "JSON array of command objects (or table)" },
             },
             fn = M.discord_register_commands,
         },
