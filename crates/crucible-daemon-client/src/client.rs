@@ -129,7 +129,10 @@ impl DaemonClient {
             }
         }
 
-        anyhow::bail!("Failed to start daemon or connect after multiple attempts")
+        anyhow::bail!(
+            "Failed to connect to daemon after 10 attempts. \
+             Try: cru daemon stop && cru daemon start"
+        )
     }
 
     /// Connect to daemon or start it if not running (event mode).
@@ -171,7 +174,10 @@ impl DaemonClient {
             }
         }
 
-        anyhow::bail!("Failed to start daemon or connect after multiple attempts")
+        anyhow::bail!(
+            "Failed to connect to daemon after 10 attempts. \
+             Try: cru daemon stop && cru daemon start"
+        )
     }
 
     async fn start_daemon() -> Result<()> {
@@ -349,6 +355,45 @@ impl DaemonClient {
         } else {
             warn!("Received response for unknown request id: {}", id);
         }
+    }
+
+    /// Send a JSON-RPC request with automatic retry on transient failures.
+    ///
+    /// Retries up to 2 times with exponential backoff (200ms, 400ms) on timeout errors.
+    /// RPC-level errors (application errors from the daemon) are NOT retried.
+    pub async fn call_with_retry(
+        &self,
+        method: &str,
+        params: serde_json::Value,
+    ) -> Result<serde_json::Value> {
+        const MAX_RETRIES: u32 = 2;
+        const INITIAL_DELAY_MS: u64 = 200;
+
+        let mut last_err = None;
+        for attempt in 0..=MAX_RETRIES {
+            match self.call(method, params.clone()).await {
+                Ok(result) => return Ok(result),
+                Err(e) => {
+                    let msg = e.to_string();
+                    let is_transient = msg.contains("timed out")
+                        || msg.contains("Request timeout")
+                        || msg.contains("deadline has elapsed");
+                    if !is_transient || attempt >= MAX_RETRIES {
+                        return Err(e);
+                    }
+                    let delay_ms = INITIAL_DELAY_MS * 2u64.pow(attempt);
+                    warn!(
+                        method = %method,
+                        attempt = attempt + 1,
+                        delay_ms = delay_ms,
+                        "RPC call timed out, retrying"
+                    );
+                    tokio::time::sleep(Duration::from_millis(delay_ms)).await;
+                    last_err = Some(e);
+                }
+            }
+        }
+        Err(last_err.unwrap_or_else(|| anyhow::anyhow!("Retry exhausted with no error")))
     }
 
     /// Send a JSON-RPC request and get the response
@@ -904,7 +949,7 @@ impl DaemonClient {
     }
 
     pub async fn session_switch_model(&self, session_id: &str, model_id: &str) -> Result<()> {
-        self.call(
+        self.call_with_retry(
             "session.switch_model",
             serde_json::json!({
                 "session_id": session_id,
@@ -917,7 +962,7 @@ impl DaemonClient {
 
     pub async fn session_list_models(&self, session_id: &str) -> Result<Vec<String>> {
         let result = self
-            .call(
+            .call_with_retry(
                 "session.list_models",
                 serde_json::json!({ "session_id": session_id }),
             )
@@ -955,7 +1000,8 @@ impl DaemonClient {
             params["thinking_budget"] = serde_json::json!(b);
         }
 
-        self.call("session.set_thinking_budget", params).await?;
+        self.call_with_retry("session.set_thinking_budget", params)
+            .await?;
         Ok(())
     }
 
@@ -964,7 +1010,7 @@ impl DaemonClient {
     /// Returns the configured thinking budget, or `None` if not set (using defaults).
     pub async fn session_get_thinking_budget(&self, session_id: &str) -> Result<Option<i64>> {
         let result = self
-            .call(
+            .call_with_retry(
                 "session.get_thinking_budget",
                 serde_json::json!({ "session_id": session_id }),
             )
@@ -979,7 +1025,7 @@ impl DaemonClient {
     }
 
     pub async fn session_set_temperature(&self, session_id: &str, temperature: f64) -> Result<()> {
-        self.call(
+        self.call_with_retry(
             "session.set_temperature",
             serde_json::json!({
                 "session_id": session_id,
@@ -992,7 +1038,7 @@ impl DaemonClient {
 
     pub async fn session_get_temperature(&self, session_id: &str) -> Result<Option<f64>> {
         let result = self
-            .call(
+            .call_with_retry(
                 "session.get_temperature",
                 serde_json::json!({ "session_id": session_id }),
             )
@@ -1016,13 +1062,14 @@ impl DaemonClient {
             params["max_tokens"] = serde_json::json!(mt);
         }
 
-        self.call("session.set_max_tokens", params).await?;
+        self.call_with_retry("session.set_max_tokens", params)
+            .await?;
         Ok(())
     }
 
     pub async fn session_get_max_tokens(&self, session_id: &str) -> Result<Option<u32>> {
         let result = self
-            .call(
+            .call_with_retry(
                 "session.get_max_tokens",
                 serde_json::json!({ "session_id": session_id }),
             )
@@ -1290,5 +1337,34 @@ mod tests {
         assert_eq!(cleared, Some(0), "Budget should be 0 (disabled)");
 
         let _ = client.session_end(session_id).await;
+    }
+
+    #[tokio::test]
+    async fn test_call_with_retry_succeeds_on_valid_method() {
+        let (_tmp, sock_path, _handle) = setup_test_server().await;
+
+        let client = DaemonClient::connect_to(&sock_path).await.unwrap();
+        let result = client
+            .call_with_retry("ping", serde_json::json!({}))
+            .await
+            .unwrap();
+        assert_eq!(result, "pong");
+    }
+
+    #[tokio::test]
+    async fn test_call_with_retry_does_not_retry_rpc_errors() {
+        let (_tmp, sock_path, _handle) = setup_test_server().await;
+
+        let client = DaemonClient::connect_to(&sock_path).await.unwrap();
+        let result = client
+            .call_with_retry("nonexistent.method", serde_json::json!({}))
+            .await;
+        assert!(result.is_err(), "Unknown method should fail without retry");
+        let err_msg = result.unwrap_err().to_string();
+        assert!(
+            !err_msg.contains("timeout"),
+            "Error should not be timeout-related: {}",
+            err_msg
+        );
     }
 }
