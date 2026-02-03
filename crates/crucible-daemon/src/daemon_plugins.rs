@@ -256,9 +256,10 @@ impl DaemonPluginLoader {
         let lua_dir = plugin_dir.join("lua");
 
         // Add plugin's lua/ dir to package.path so require() works
+        let lua_dir_str = lua_dir.to_string_lossy().replace('\\', "\\\\").replace('"', "\\\"");
         let setup_code = format!(
             r#"package.path = "{}/?.lua;" .. package.path"#,
-            lua_dir.display()
+            lua_dir_str
         );
         lua.load(&setup_code)
             .exec()
