@@ -684,6 +684,10 @@ pub struct CliAppConfig {
     #[serde(default)]
     pub mcp: Option<McpConfig>,
 
+    /// Per-plugin configuration sections (e.g. `[plugins.discord]`)
+    #[serde(default)]
+    pub plugins: HashMap<String, serde_json::Value>,
+
     /// Value source tracking for configuration provenance
     ///
     /// Tracks where each configuration value came from (file, environment, CLI, default).
@@ -712,6 +716,7 @@ impl Default for CliAppConfig {
             context: None,
             storage: None,
             mcp: None,
+            plugins: HashMap::new(),
             source_map: None,
         }
     }

@@ -93,6 +93,15 @@ impl Server {
         path: &Path,
         mcp_config: Option<&crucible_config::McpConfig>,
     ) -> Result<Self> {
+        Self::bind_with_plugin_config(path, mcp_config, std::collections::HashMap::new()).await
+    }
+
+    /// Bind to a Unix socket path with plugin configuration
+    pub async fn bind_with_plugin_config(
+        path: &Path,
+        mcp_config: Option<&crucible_config::McpConfig>,
+        plugin_config: std::collections::HashMap<String, serde_json::Value>,
+    ) -> Result<Self> {
         // Remove stale socket
         if path.exists() {
             std::fs::remove_file(path)?;
@@ -148,7 +157,7 @@ impl Server {
         );
         let dispatcher = Arc::new(RpcDispatcher::new(ctx));
 
-        let plugin_loader = Arc::new(Mutex::new(match DaemonPluginLoader::new() {
+        let plugin_loader = Arc::new(Mutex::new(match DaemonPluginLoader::new(plugin_config) {
             Ok(loader) => {
                 info!("Daemon plugin loader initialized");
                 Some(loader)
@@ -195,6 +204,17 @@ impl Server {
         {
             let mut loader_guard = self.plugin_loader.lock().await;
             if let Some(ref mut loader) = *loader_guard {
+                // Upgrade sessions module with real daemon API before loading plugins
+                let session_api: Arc<dyn crucible_lua::DaemonSessionApi> =
+                    Arc::new(crate::session_bridge::DaemonSessionBridge::new(
+                        self.session_manager.clone(),
+                        self.agent_manager.clone(),
+                        self.event_tx.clone(),
+                    ));
+                if let Err(e) = loader.upgrade_with_sessions(session_api) {
+                    warn!("Failed to upgrade Lua sessions module: {}", e);
+                }
+
                 let paths = crate::daemon_plugins::default_daemon_plugin_paths();
                 match loader.load_plugins(&paths) {
                     Ok(specs) => {
@@ -595,7 +615,7 @@ async fn handle_kiln_open(
         let store = handle.as_note_store();
         let loader_guard = plugin_loader.lock().await;
         if let Some(ref loader) = *loader_guard {
-            if let Err(e) = loader.upgrade_with_storage(store) {
+            if let Err(e) = loader.upgrade_with_storage(store, kiln_path) {
                 warn!("Failed to upgrade Lua modules with storage: {}", e);
             }
         }
