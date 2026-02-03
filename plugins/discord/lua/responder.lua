@@ -133,12 +133,9 @@ local function format_tool_call(part)
         return "> \u{1f527} `bash` ```\n" .. args.command .. "\n```"
     end
 
-    if (tool == "read_file" or tool == "write_file") and args and args.path then
+    if (tool == "read_file" or tool == "write_file" or tool == "edit_file")
+        and args and args.path then
         return "> \u{1f527} `" .. tool .. "` `" .. args.path .. "`"
-    end
-
-    if tool == "edit_file" and args and args.path then
-        return "> \u{1f527} `edit_file` `" .. args.path .. "`"
     end
 
     if tool == "grep" and args then
@@ -245,16 +242,12 @@ function M.respond(session_id, channel_id, user_message, reply_to_msg_id, user_i
 
     local last_typing = 0
     local function next_part_with_typing()
-        while true do
-            -- next_part() blocks until a part arrives or stream ends
-            -- We can't poll it, but we fire typing before each call
-            local now = cru.timer.clock()
-            if now - last_typing > TYPING_INTERVAL then
-                pcall(api.trigger_typing, channel_id)
-                last_typing = now
-            end
-            return next_part()
+        local now = cru.timer.clock()
+        if now - last_typing > TYPING_INTERVAL then
+            pcall(api.trigger_typing, channel_id)
+            last_typing = now
         end
+        return next_part()
     end
 
     local first_message = true
@@ -303,13 +296,8 @@ function M.respond(session_id, channel_id, user_message, reply_to_msg_id, user_i
                 reply = { allowed = false, scope = "once" }
             end
 
-            local response = {
-                allowed = reply.allowed,
-                scope = reply.scope,
-                reason = reply.reason,
-            }
             local _, respond_err = cru.sessions.interaction_respond(
-                session_id, part.request_id, response
+                session_id, part.request_id, reply
             )
             if respond_err then
                 cru.log("warn", "Failed to respond to permission: " .. tostring(respond_err))
