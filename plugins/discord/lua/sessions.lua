@@ -78,9 +78,11 @@ function M.configure_agent(session_id)
         provider = provider,
         model = model,
         system_prompt = config.get("system_prompt",
-            "You are a helpful assistant in a Discord chat. "
-            .. "Keep responses concise and conversational. "
-            .. "Use Discord markdown formatting when appropriate."),
+            "You are a knowledgeable assistant in a Discord chat. "
+            .. "Do NOT call any tools or functions — respond with text only. "
+            .. "Conversations here are short — usually one or two exchanges — so make each response count. "
+            .. "Be thorough and thoughtful rather than terse; the user may not follow up. "
+            .. "Use Discord markdown formatting (bold, code blocks, lists) when it helps clarity."),
     }
 
     -- Optional fields
