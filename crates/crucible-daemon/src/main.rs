@@ -1,3 +1,4 @@
+mod acp_handle;
 mod agent_factory;
 mod agent_manager;
 mod background_manager;

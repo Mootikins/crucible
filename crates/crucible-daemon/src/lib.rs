@@ -21,6 +21,7 @@
 //! # Or: /tmp/crucible.sock
 //! ```
 //!
+pub mod acp_handle;
 pub mod agent_factory;
 pub mod agent_manager;
 pub mod background_manager;
@@ -37,6 +38,7 @@ pub mod session_manager;
 pub mod session_storage;
 pub mod subscription;
 
+pub use acp_handle::{AcpAgentHandle, AcpHandleError};
 pub use agent_factory::{create_agent_from_session_config, AgentFactoryError};
 pub use agent_manager::{AgentError, AgentManager};
 pub use background_manager::{
