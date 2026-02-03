@@ -146,6 +146,36 @@ pub enum BackendError {
     Internal(String),
 }
 
+impl BackendError {
+    /// Check if the error is retryable (transient failure).
+    ///
+    /// Matches the pattern established by `EmbeddingError::is_retryable()`.
+    pub fn is_retryable(&self) -> bool {
+        match self {
+            BackendError::Http(_) => true,
+            BackendError::RateLimit { .. } => true,
+            BackendError::Timeout { .. } => true,
+            BackendError::InvalidResponse(_) => false,
+            BackendError::Authentication(_) => false,
+            BackendError::ModelNotFound(_) => false,
+            BackendError::Provider(_) => false,
+            BackendError::Internal(_) => false,
+        }
+    }
+
+    /// Get the recommended retry delay in seconds.
+    ///
+    /// Returns `None` for non-retryable errors.
+    pub fn retry_delay_secs(&self) -> Option<u64> {
+        match self {
+            BackendError::RateLimit { retry_after_secs } => Some(*retry_after_secs),
+            BackendError::Http(_) => Some(1),
+            BackendError::Timeout { .. } => Some(2),
+            _ => None,
+        }
+    }
+}
+
 /// Result type for backend operations
 pub type BackendResult<T> = Result<T, BackendError>;
 
@@ -291,5 +321,39 @@ mod tests {
 
         let err: BackendResult<i32> = Err(BackendError::Internal("test".into()));
         assert!(err.is_err());
+    }
+
+    #[test]
+    fn test_retryable_errors() {
+        assert!(BackendError::Http("connection refused".into()).is_retryable());
+        assert!(BackendError::RateLimit { retry_after_secs: 30 }.is_retryable());
+        assert!(BackendError::Timeout { timeout_secs: 60 }.is_retryable());
+    }
+
+    #[test]
+    fn test_non_retryable_errors() {
+        assert!(!BackendError::InvalidResponse("bad json".into()).is_retryable());
+        assert!(!BackendError::Authentication("bad key".into()).is_retryable());
+        assert!(!BackendError::ModelNotFound("gpt-5".into()).is_retryable());
+        assert!(!BackendError::Provider("unknown".into()).is_retryable());
+        assert!(!BackendError::Internal("bug".into()).is_retryable());
+    }
+
+    #[test]
+    fn test_retry_delay_secs() {
+        assert_eq!(
+            BackendError::RateLimit { retry_after_secs: 30 }.retry_delay_secs(),
+            Some(30)
+        );
+        assert_eq!(BackendError::Http("err".into()).retry_delay_secs(), Some(1));
+        assert_eq!(
+            BackendError::Timeout { timeout_secs: 60 }.retry_delay_secs(),
+            Some(2)
+        );
+        assert_eq!(
+            BackendError::Authentication("bad".into()).retry_delay_secs(),
+            None
+        );
+        assert_eq!(BackendError::Internal("bug".into()).retry_delay_secs(), None);
     }
 }
