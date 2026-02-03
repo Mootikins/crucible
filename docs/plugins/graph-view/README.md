@@ -106,15 +106,15 @@ Key Fennel features used:
 ## Capabilities Required
 
 - `ui` - Render custom views with cru.oil
-- `vault` - Access note links via cru.vault.outlinks/backlinks
+- `kiln` - Access note links via cru.kiln.outlinks/backlinks
 
 ## API Reference
 
-### cru.vault.outlinks(note)
+### cru.kiln.outlinks(note)
 
 Returns array of note names that the given note links to.
 
-### cru.vault.backlinks(note)
+### cru.kiln.backlinks(note)
 
 Returns array of note names that link to the given note.
 

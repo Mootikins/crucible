@@ -7,7 +7,7 @@ license: MIT
 # Plugin capabilities
 capabilities:
   - ui
-  - vault
+  - kiln
 
 main: init.fnl
 
