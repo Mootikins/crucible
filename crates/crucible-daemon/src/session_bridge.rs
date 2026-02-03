@@ -7,7 +7,7 @@ use crate::agent_manager::AgentManager;
 use crate::protocol::SessionEventMessage;
 use crate::session_manager::SessionManager;
 use crucible_core::session::SessionType;
-use crucible_lua::DaemonSessionApi;
+use crucible_lua::{DaemonSessionApi, ResponsePart};
 use std::future::Future;
 use std::path::PathBuf;
 use std::pin::Pin;
@@ -273,11 +273,22 @@ impl DaemonSessionApi for DaemonSessionBridge {
         session_id: String,
         content: String,
         timeout_secs: Option<f64>,
-    ) -> BoxFut<String> {
+        max_tool_result_len: Option<usize>,
+    ) -> Pin<
+        Box<
+            dyn Future<
+                    Output = Result<
+                        tokio::sync::mpsc::UnboundedReceiver<ResponsePart>,
+                        String,
+                    >,
+                > + Send,
+        >,
+    > {
         let am = self.agent_manager.clone();
         let event_tx = self.event_tx.clone();
         Box::pin(async move {
             let timeout = std::time::Duration::from_secs_f64(timeout_secs.unwrap_or(120.0));
+            let max_result = max_tool_result_len.unwrap_or(500);
 
             // Subscribe to broadcast BEFORE sending so we don't miss early events
             let mut broadcast_rx = event_tx.subscribe();
@@ -287,46 +298,181 @@ impl DaemonSessionApi for DaemonSessionBridge {
                 .await
                 .map_err(|e| e.to_string())?;
 
-            let mut parts = Vec::new();
-            let deadline = tokio::time::Instant::now() + timeout;
+            let (part_tx, part_rx) = tokio::sync::mpsc::unbounded_channel();
 
-            loop {
-                let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
-                if remaining.is_zero() {
-                    tracing::warn!(session_id = %session_id, "send_and_collect: timeout");
-                    break;
-                }
+            tokio::spawn(async move {
+                let mut text_buf = String::new();
+                let deadline = tokio::time::Instant::now() + timeout;
 
-                match tokio::time::timeout(remaining, broadcast_rx.recv()).await {
-                    Ok(Ok(event)) if event.session_id == session_id => {
-                        match event.event.as_str() {
-                            "text_delta" => {
-                                if let Some(content) = event
-                                    .data
-                                    .get("content")
-                                    .and_then(|v| v.as_str())
-                                {
-                                    parts.push(content.to_string());
-                                }
-                            }
-                            "message_complete" | "response_complete" | "response_done" => break,
-                            "ended" => break,
-                            _ => {}
-                        }
+                let flush_text = |buf: &mut String, tx: &tokio::sync::mpsc::UnboundedSender<ResponsePart>| {
+                    if !buf.is_empty() {
+                        let _ = tx.send(ResponsePart::Text { content: std::mem::take(buf) });
                     }
-                    Ok(Ok(_)) => {}
-                    Ok(Err(broadcast::error::RecvError::Lagged(n))) => {
-                        tracing::warn!(session_id = %session_id, lagged = n, "send_and_collect: lagged");
-                    }
-                    Ok(Err(broadcast::error::RecvError::Closed)) => break,
-                    Err(_) => {
+                };
+
+                loop {
+                    let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+                    if remaining.is_zero() {
                         tracing::warn!(session_id = %session_id, "send_and_collect: timeout");
                         break;
                     }
-                }
-            }
 
-            Ok(parts.join(""))
+                    match tokio::time::timeout(remaining, broadcast_rx.recv()).await {
+                        Ok(Ok(event)) if event.session_id == session_id => {
+                            match event.event.as_str() {
+                                "text_delta" => {
+                                    if let Some(c) = event.data.get("content").and_then(|v| v.as_str()) {
+                                        text_buf.push_str(c);
+                                    }
+                                }
+                                "tool_call" => {
+                                    flush_text(&mut text_buf, &part_tx);
+                                    let tool = event.data.get("tool")
+                                        .and_then(|v| v.as_str())
+                                        .unwrap_or("unknown")
+                                        .to_string();
+                                    let args_brief = truncate_json_preview(
+                                        event.data.get("args"),
+                                        120,
+                                    );
+                                    let _ = part_tx.send(ResponsePart::ToolCall { tool, args_brief });
+                                }
+                                "tool_result" => {
+                                    flush_text(&mut text_buf, &part_tx);
+                                    let tool = event.data.get("tool")
+                                        .and_then(|v| v.as_str())
+                                        .unwrap_or("unknown")
+                                        .to_string();
+                                    let result_data = event.data.get("result");
+                                    let is_error = result_data
+                                        .and_then(|r| r.get("error"))
+                                        .is_some();
+                                    let result_brief = if is_error {
+                                        truncate_str(
+                                            result_data
+                                                .and_then(|r| r.get("error"))
+                                                .and_then(|v| v.as_str())
+                                                .unwrap_or("error"),
+                                            max_result,
+                                        )
+                                    } else {
+                                        truncate_json_preview(result_data, max_result)
+                                    };
+                                    let _ = part_tx.send(ResponsePart::ToolResult {
+                                        tool,
+                                        result_brief,
+                                        is_error,
+                                    });
+                                }
+                                "thinking" => {
+                                    flush_text(&mut text_buf, &part_tx);
+                                    let c = event.data.get("content")
+                                        .and_then(|v| v.as_str())
+                                        .unwrap_or("")
+                                        .to_string();
+                                    if !c.is_empty() {
+                                        let _ = part_tx.send(ResponsePart::Thinking { content: c });
+                                    }
+                                }
+                                "interaction_requested" => {
+                                    flush_text(&mut text_buf, &part_tx);
+                                    let request_id = event.data.get("request_id")
+                                        .and_then(|v| v.as_str())
+                                        .unwrap_or("")
+                                        .to_string();
+                                    let (tool, description) = extract_permission_info(&event.data);
+                                    if !request_id.is_empty() {
+                                        let _ = part_tx.send(ResponsePart::PermissionRequest {
+                                            request_id,
+                                            tool,
+                                            description,
+                                        });
+                                    }
+                                }
+                                "message_complete" | "response_complete" | "response_done" | "ended" => {
+                                    flush_text(&mut text_buf, &part_tx);
+                                    break;
+                                }
+                                _ => {}
+                            }
+                        }
+                        Ok(Ok(_)) => {}
+                        Ok(Err(broadcast::error::RecvError::Lagged(n))) => {
+                            tracing::warn!(session_id = %session_id, lagged = n, "send_and_collect: lagged");
+                        }
+                        Ok(Err(broadcast::error::RecvError::Closed)) => {
+                            flush_text(&mut text_buf, &part_tx);
+                            break;
+                        }
+                        Err(_) => {
+                            tracing::warn!(session_id = %session_id, "send_and_collect: timeout");
+                            flush_text(&mut text_buf, &part_tx);
+                            break;
+                        }
+                    }
+                }
+                // part_tx drops here, signalling end-of-stream to the receiver
+            });
+
+            Ok(part_rx)
         })
+    }
+}
+
+fn extract_permission_info(data: &serde_json::Value) -> (String, String) {
+    let request = data.get("request");
+    let action = request.and_then(|r| r.get("action"));
+    let action_type = action
+        .and_then(|a| a.get("type"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("unknown");
+
+    let (tool, description) = match action_type {
+        "bash" => {
+            let tokens: Vec<&str> = action
+                .and_then(|a| a.get("tokens"))
+                .and_then(|t| t.as_array())
+                .map(|arr| arr.iter().filter_map(|v| v.as_str()).collect())
+                .unwrap_or_default();
+            ("bash".to_string(), tokens.join(" "))
+        }
+        "read" | "write" => {
+            let segments: Vec<&str> = action
+                .and_then(|a| a.get("segments"))
+                .and_then(|s| s.as_array())
+                .map(|arr| arr.iter().filter_map(|v| v.as_str()).collect())
+                .unwrap_or_default();
+            let path = segments.join("/");
+            (action_type.to_string(), path)
+        }
+        "tool" => {
+            let name = action
+                .and_then(|a| a.get("name"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("unknown");
+            let args = action.and_then(|a| a.get("args"));
+            (name.to_string(), truncate_json_preview(args, 200))
+        }
+        _ => ("unknown".to_string(), data.to_string()),
+    };
+
+    (tool, description)
+}
+
+fn truncate_str(s: &str, max_len: usize) -> String {
+    if s.len() <= max_len {
+        s.to_string()
+    } else {
+        format!("{}...", &s[..max_len.saturating_sub(3)])
+    }
+}
+
+fn truncate_json_preview(val: Option<&serde_json::Value>, max_len: usize) -> String {
+    match val {
+        Some(v) => {
+            let s = v.to_string();
+            truncate_str(&s, max_len)
+        }
+        None => String::new(),
     }
 }

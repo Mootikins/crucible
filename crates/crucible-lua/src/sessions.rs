@@ -49,9 +49,43 @@
 use crate::error::LuaError;
 use crate::lua_util::register_in_namespaces;
 use mlua::{Lua, LuaSerdeExt, Table, Value};
+use serde::{Deserialize, Serialize};
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
+
+/// A structured part of an agent response.
+///
+/// `send_and_collect` returns a `Vec<ResponsePart>` so callers (e.g. the Discord
+/// plugin) can render each segment independently — sending tool calls as separate
+/// messages, folding thinking blocks, etc.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum ResponsePart {
+    /// Prose / markdown text from the LLM.
+    Text { content: String },
+    /// The LLM requested a tool invocation.
+    ToolCall {
+        tool: String,
+        /// Truncated JSON preview of the arguments.
+        args_brief: String,
+    },
+    /// A tool finished executing.
+    ToolResult {
+        tool: String,
+        /// Truncated preview of the result.
+        result_brief: String,
+        is_error: bool,
+    },
+    /// Chain-of-thought / thinking block.
+    Thinking { content: String },
+    /// The agent needs permission to proceed (e.g. run a command).
+    PermissionRequest {
+        request_id: String,
+        tool: String,
+        description: String,
+    },
+}
 
 /// Trait abstracting daemon session operations for Lua plugins.
 ///
@@ -166,19 +200,29 @@ pub trait DaemonSessionApi: Send + Sync + 'static {
         session_id: String,
     ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send>>;
 
-    /// Send a message and collect the full response (batched API).
+    /// Send a message and stream structured response parts.
     ///
-    /// Subscribes, sends the message, collects all `text_delta` events until
-    /// `message_complete` / `response_complete` / `response_done`, then
-    /// unsubscribes. Returns the concatenated response text.
-    ///
-    /// `timeout_secs` defaults to 120 if `None`.
+    /// Subscribes, sends the message, then returns a receiver that yields
+    /// [`ResponsePart`]s as they become available. Text deltas are accumulated
+    /// and flushed as a single `Text` part at each boundary (tool call, tool
+    /// result, thinking, or completion). `timeout_secs` defaults to 120.
+    /// `max_tool_result_len` caps tool-result previews (default 500).
     fn send_and_collect(
         &self,
         session_id: String,
         content: String,
         timeout_secs: Option<f64>,
-    ) -> Pin<Box<dyn Future<Output = Result<String, String>> + Send>>;
+        max_tool_result_len: Option<usize>,
+    ) -> Pin<
+        Box<
+            dyn Future<
+                    Output = Result<
+                        tokio::sync::mpsc::UnboundedReceiver<ResponsePart>,
+                        String,
+                    >,
+                > + Send,
+        >,
+    >;
 }
 
 /// Register the sessions module with stub functions.
@@ -523,20 +567,37 @@ pub fn register_sessions_module_with_api(
     })?;
     sessions.set("unsubscribe", unsubscribe_fn)?;
 
-    // send_and_collect(session_id, content, opts?) -> (response_text, nil) or (nil, err)
+    // send_and_collect(session_id, content, opts?) -> (next_part, nil) or (nil, err)
+    // next_part() yields { type = "text"|"tool_call"|"tool_result"|"thinking", ... } or nil
     let a = Arc::clone(&api);
     let collect_fn = lua.create_async_function(move |lua, (session_id, content, opts): (String, String, Value)| {
         let a = Arc::clone(&a);
         async move {
-            let timeout_secs = match opts {
-                Value::Table(ref t) => t.get::<f64>("timeout").ok(),
-                Value::Number(n) => Some(n),
-                _ => None,
+            let (timeout_secs, max_tool_result_len) = match opts {
+                Value::Table(ref t) => (
+                    t.get::<f64>("timeout").ok(),
+                    t.get::<usize>("max_tool_result_len").ok(),
+                ),
+                Value::Number(n) => (Some(n), None),
+                _ => (None, None),
             };
-            match a.send_and_collect(session_id, content, timeout_secs).await {
-                Ok(response) => {
-                    let lua_val = lua.create_string(&response)?;
-                    Ok((Value::String(lua_val), Value::Nil))
+            match a.send_and_collect(session_id, content, timeout_secs, max_tool_result_len).await {
+                Ok(rx) => {
+                    let rx = Arc::new(tokio::sync::Mutex::new(rx));
+                    let next_part = lua.create_async_function(move |lua, ()| {
+                        let rx = Arc::clone(&rx);
+                        async move {
+                            let mut guard = rx.lock().await;
+                            match guard.recv().await {
+                                Some(part) => {
+                                    let val = lua.to_value(&part)?;
+                                    Ok((val, Value::Nil))
+                                }
+                                None => Ok((Value::Nil, Value::Nil)),
+                            }
+                        }
+                    })?;
+                    Ok((Value::Function(next_part), Value::Nil))
                 }
                 Err(e) => {
                     let err = lua.create_string(&e)?;
@@ -814,8 +875,25 @@ mod api_tests {
             _session_id: String,
             _content: String,
             _timeout_secs: Option<f64>,
-        ) -> Pin<Box<dyn Future<Output = Result<String, String>> + Send>> {
-            Box::pin(async { Ok("Hello World".to_string()) })
+            _max_tool_result_len: Option<usize>,
+        ) -> Pin<
+            Box<
+                dyn Future<
+                        Output = Result<
+                            tokio::sync::mpsc::UnboundedReceiver<ResponsePart>,
+                            String,
+                        >,
+                    > + Send,
+            >,
+        > {
+            Box::pin(async {
+                let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+                let _ = tx.send(ResponsePart::Text {
+                    content: "Hello World".to_string(),
+                });
+                drop(tx);
+                Ok(rx)
+            })
         }
     }
 
@@ -1232,8 +1310,25 @@ mod api_tests {
             _session_id: String,
             _content: String,
             _timeout_secs: Option<f64>,
-        ) -> Pin<Box<dyn Future<Output = Result<String, String>> + Send>> {
-            Box::pin(async { Ok("mock response".to_string()) })
+            _max_tool_result_len: Option<usize>,
+        ) -> Pin<
+            Box<
+                dyn Future<
+                        Output = Result<
+                            tokio::sync::mpsc::UnboundedReceiver<ResponsePart>,
+                            String,
+                        >,
+                    > + Send,
+            >,
+        > {
+            Box::pin(async {
+                let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+                let _ = tx.send(ResponsePart::Text {
+                    content: "mock response".to_string(),
+                });
+                drop(tx);
+                Ok(rx)
+            })
         }
     }
 
