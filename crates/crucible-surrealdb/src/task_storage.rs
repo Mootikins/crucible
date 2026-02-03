@@ -468,39 +468,344 @@ mod tests {
         assert_eq!(ready[0].task_id, "a");
     }
 
-    #[tokio::test]
-    async fn graph_query_excludes_blocked_deps() {
-        let storage = MockTaskStorage::new();
-        let file = create_test_file();
-        storage.save_task_file(&file).await.unwrap();
+     #[tokio::test]
+     async fn graph_query_excludes_blocked_deps() {
+         let storage = MockTaskStorage::new();
+         let file = create_test_file();
+         storage.save_task_file(&file).await.unwrap();
 
-        // Task A - done
-        let mut task_a = create_test_task("test/TASKS.md", "a", vec![]);
-        task_a.status = "done".to_string();
-        storage.save_task(&task_a).await.unwrap();
+         // Task A - done
+         let mut task_a = create_test_task("test/TASKS.md", "a", vec![]);
+         task_a.status = "done".to_string();
+         storage.save_task(&task_a).await.unwrap();
 
-        // Task B depends on A - should be ready (A is done)
-        storage
-            .save_task(&create_test_task(
-                "test/TASKS.md",
-                "b",
-                vec!["a".to_string()],
-            ))
-            .await
-            .unwrap();
+         // Task B depends on A - should be ready (A is done)
+         storage
+             .save_task(&create_test_task(
+                 "test/TASKS.md",
+                 "b",
+                 vec!["a".to_string()],
+             ))
+             .await
+             .unwrap();
 
-        // Task C depends on B - should NOT be ready (B not done)
-        storage
-            .save_task(&create_test_task(
-                "test/TASKS.md",
-                "c",
-                vec!["b".to_string()],
-            ))
-            .await
-            .unwrap();
+         // Task C depends on B - should NOT be ready (B not done)
+         storage
+             .save_task(&create_test_task(
+                 "test/TASKS.md",
+                 "c",
+                 vec!["b".to_string()],
+             ))
+             .await
+             .unwrap();
 
-        let ready = storage.find_ready_tasks("test/TASKS.md").await.unwrap();
-        assert_eq!(ready.len(), 1);
-        assert_eq!(ready[0].task_id, "b");
-    }
+         let ready = storage.find_ready_tasks("test/TASKS.md").await.unwrap();
+         assert_eq!(ready.len(), 1);
+         assert_eq!(ready[0].task_id, "b");
+     }
+
+     // Additional tests for untested methods
+
+     #[tokio::test]
+     async fn save_task_file_and_get_task_file() {
+         let storage = MockTaskStorage::new();
+         let file = create_test_file();
+
+         let saved = storage.save_task_file(&file).await.unwrap();
+         assert_eq!(saved.path, "test/TASKS.md");
+         assert_eq!(saved.title, Some("Test Tasks".to_string()));
+         assert!(saved.id.is_some());
+
+         let retrieved = storage.get_task_file("test/TASKS.md").await.unwrap();
+         assert!(retrieved.is_some());
+         let retrieved = retrieved.unwrap();
+         assert_eq!(retrieved.path, "test/TASKS.md");
+         assert_eq!(retrieved.title, Some("Test Tasks".to_string()));
+     }
+
+     #[tokio::test]
+     async fn list_task_files_returns_all_saved() {
+         let storage = MockTaskStorage::new();
+
+         let file1 = TaskFileRecord::new("test/TASKS1.md").with_title("Tasks 1");
+         let file2 = TaskFileRecord::new("test/TASKS2.md").with_title("Tasks 2");
+         let file3 = TaskFileRecord::new("test/TASKS3.md").with_title("Tasks 3");
+
+         storage.save_task_file(&file1).await.unwrap();
+         storage.save_task_file(&file2).await.unwrap();
+         storage.save_task_file(&file3).await.unwrap();
+
+         let files = storage.list_task_files().await.unwrap();
+         assert_eq!(files.len(), 3);
+         assert!(files.iter().any(|f| f.path == "test/TASKS1.md"));
+         assert!(files.iter().any(|f| f.path == "test/TASKS2.md"));
+         assert!(files.iter().any(|f| f.path == "test/TASKS3.md"));
+     }
+
+     #[tokio::test]
+     async fn get_task_file_returns_none_for_missing() {
+         let storage = MockTaskStorage::new();
+
+         let result = storage.get_task_file("nonexistent/TASKS.md").await.unwrap();
+         assert!(result.is_none());
+     }
+
+     #[tokio::test]
+     async fn save_task_file_upserts_existing() {
+         let storage = MockTaskStorage::new();
+
+         let file1 = TaskFileRecord::new("test/TASKS.md").with_title("Original Title");
+         storage.save_task_file(&file1).await.unwrap();
+
+         let file2 = TaskFileRecord::new("test/TASKS.md").with_title("Updated Title");
+         storage.save_task_file(&file2).await.unwrap();
+
+         let files = storage.list_task_files().await.unwrap();
+         assert_eq!(files.len(), 1);
+         assert_eq!(files[0].title, Some("Updated Title".to_string()));
+     }
+
+     #[tokio::test]
+     async fn delete_task_file_removes_file_and_tasks() {
+         let storage = MockTaskStorage::new();
+         let file = create_test_file();
+         storage.save_task_file(&file).await.unwrap();
+
+         storage
+             .save_task(&create_test_task("test/TASKS.md", "1.1", vec![]))
+             .await
+             .unwrap();
+         storage
+             .save_task(&create_test_task("test/TASKS.md", "1.2", vec![]))
+             .await
+             .unwrap();
+
+         storage.delete_task_file("test/TASKS.md").await.unwrap();
+
+         let files = storage.list_task_files().await.unwrap();
+         assert_eq!(files.len(), 0);
+
+         let tasks = storage.list_tasks("test/TASKS.md").await.unwrap();
+         assert_eq!(tasks.len(), 0);
+     }
+
+     #[tokio::test]
+     async fn get_tasks_by_status_filters_correctly() {
+         let storage = MockTaskStorage::new();
+         let file = create_test_file();
+         storage.save_task_file(&file).await.unwrap();
+
+         let mut task1 = create_test_task("test/TASKS.md", "1.1", vec![]);
+         task1.status = "pending".to_string();
+         storage.save_task(&task1).await.unwrap();
+
+         let mut task2 = create_test_task("test/TASKS.md", "1.2", vec![]);
+         task2.status = "done".to_string();
+         storage.save_task(&task2).await.unwrap();
+
+         let mut task3 = create_test_task("test/TASKS.md", "1.3", vec![]);
+         task3.status = "pending".to_string();
+         storage.save_task(&task3).await.unwrap();
+
+         let pending = storage
+             .get_tasks_by_status("test/TASKS.md", "pending")
+             .await
+             .unwrap();
+         assert_eq!(pending.len(), 2);
+         assert!(pending.iter().all(|t| t.status == "pending"));
+
+         let done = storage
+             .get_tasks_by_status("test/TASKS.md", "done")
+             .await
+             .unwrap();
+         assert_eq!(done.len(), 1);
+         assert_eq!(done[0].task_id, "1.2");
+     }
+
+     #[tokio::test]
+     async fn get_dependencies_returns_dep_tasks() {
+         let storage = MockTaskStorage::new();
+         let file = create_test_file();
+         storage.save_task_file(&file).await.unwrap();
+
+         storage
+             .save_task(&create_test_task("test/TASKS.md", "a", vec![]))
+             .await
+             .unwrap();
+         storage
+             .save_task(&create_test_task("test/TASKS.md", "b", vec![]))
+             .await
+             .unwrap();
+         storage
+             .save_task(&create_test_task(
+                 "test/TASKS.md",
+                 "c",
+                 vec!["a".to_string(), "b".to_string()],
+             ))
+             .await
+             .unwrap();
+
+         let deps = storage.get_dependencies("c").await.unwrap();
+         assert_eq!(deps.len(), 2);
+         assert!(deps.iter().any(|t| t.task_id == "a"));
+         assert!(deps.iter().any(|t| t.task_id == "b"));
+     }
+
+     #[tokio::test]
+     async fn get_dependents_returns_dependent_tasks() {
+         let storage = MockTaskStorage::new();
+         let file = create_test_file();
+         storage.save_task_file(&file).await.unwrap();
+
+         storage
+             .save_task(&create_test_task("test/TASKS.md", "a", vec![]))
+             .await
+             .unwrap();
+         storage
+             .save_task(&create_test_task(
+                 "test/TASKS.md",
+                 "b",
+                 vec!["a".to_string()],
+             ))
+             .await
+             .unwrap();
+         storage
+             .save_task(&create_test_task(
+                 "test/TASKS.md",
+                 "c",
+                 vec!["a".to_string()],
+             ))
+             .await
+             .unwrap();
+
+         let dependents = storage.get_dependents("a").await.unwrap();
+         assert_eq!(dependents.len(), 2);
+         assert!(dependents.iter().any(|t| t.task_id == "b"));
+         assert!(dependents.iter().any(|t| t.task_id == "c"));
+     }
+
+     #[tokio::test]
+     async fn record_history_and_get_task_history() {
+         let storage = MockTaskStorage::new();
+
+         let task_ref = RecordId::new("tasks", "test:1.1");
+         let history1 = TaskHistory::new(task_ref.clone(), "pending", "in_progress", "user1");
+         let history2 = TaskHistory::new(task_ref, "in_progress", "done", "user2");
+
+         storage.record_history(&history1).await.unwrap();
+         storage.record_history(&history2).await.unwrap();
+
+         let histories = storage.get_task_history("1.1").await.unwrap();
+         assert_eq!(histories.len(), 2);
+         assert_eq!(histories[0].from_status, "pending");
+         assert_eq!(histories[0].to_status, "in_progress");
+         assert_eq!(histories[1].from_status, "in_progress");
+         assert_eq!(histories[1].to_status, "done");
+     }
+
+     #[tokio::test]
+     async fn update_status_with_reason_records_in_history() {
+         let storage = MockTaskStorage::new();
+         let file = create_test_file();
+         storage.save_task_file(&file).await.unwrap();
+
+         let task = create_test_task("test/TASKS.md", "1.1", vec![]);
+         storage.save_task(&task).await.unwrap();
+
+         storage
+             .update_status(
+                 "test/TASKS.md",
+                 "1.1",
+                 "done",
+                 "user",
+                 Some("Completed successfully"),
+             )
+             .await
+             .unwrap();
+
+         let histories = storage.get_task_history("1.1").await.unwrap();
+         assert_eq!(histories.len(), 1);
+         assert_eq!(histories[0].reason, Some("Completed successfully".to_string()));
+     }
+
+     #[tokio::test]
+     async fn can_start_task_returns_true_when_deps_done() {
+         let storage = MockTaskStorage::new();
+         let file = create_test_file();
+         storage.save_task_file(&file).await.unwrap();
+
+         let mut dep_task = create_test_task("test/TASKS.md", "a", vec![]);
+         dep_task.status = "done".to_string();
+         storage.save_task(&dep_task).await.unwrap();
+
+         storage
+             .save_task(&create_test_task(
+                 "test/TASKS.md",
+                 "b",
+                 vec!["a".to_string()],
+             ))
+             .await
+             .unwrap();
+
+         let can_start = storage
+             .can_start_task("test/TASKS.md", "b")
+             .await
+             .unwrap();
+         assert!(can_start);
+     }
+
+     #[tokio::test]
+     async fn can_start_task_returns_false_when_deps_pending() {
+         let storage = MockTaskStorage::new();
+         let file = create_test_file();
+         storage.save_task_file(&file).await.unwrap();
+
+         storage
+             .save_task(&create_test_task("test/TASKS.md", "a", vec![]))
+             .await
+             .unwrap();
+
+         storage
+             .save_task(&create_test_task(
+                 "test/TASKS.md",
+                 "b",
+                 vec!["a".to_string()],
+             ))
+             .await
+             .unwrap();
+
+         let can_start = storage
+             .can_start_task("test/TASKS.md", "b")
+             .await
+             .unwrap();
+         assert!(!can_start);
+     }
+
+     #[tokio::test]
+     async fn can_start_task_returns_false_for_non_pending_task() {
+         let storage = MockTaskStorage::new();
+         let file = create_test_file();
+         storage.save_task_file(&file).await.unwrap();
+
+         let mut task = create_test_task("test/TASKS.md", "a", vec![]);
+         task.status = "done".to_string();
+         storage.save_task(&task).await.unwrap();
+
+         let can_start = storage
+             .can_start_task("test/TASKS.md", "a")
+             .await
+             .unwrap();
+         assert!(!can_start);
+     }
+
+     #[tokio::test]
+     async fn can_start_task_returns_false_for_missing_task() {
+         let storage = MockTaskStorage::new();
+
+         let can_start = storage
+             .can_start_task("test/TASKS.md", "nonexistent")
+             .await
+             .unwrap();
+         assert!(!can_start);
+     }
 }

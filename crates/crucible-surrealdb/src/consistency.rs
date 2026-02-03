@@ -269,3 +269,157 @@ impl FlushStatus {
         self.pending_batches + self.processing_events
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn consistency_level_default_is_eventual() {
+        let level = ConsistencyLevel::default();
+        assert_eq!(level, ConsistencyLevel::Eventual);
+    }
+
+    #[test]
+    fn consistency_level_variants_are_distinct() {
+        assert_ne!(ConsistencyLevel::Eventual, ConsistencyLevel::ReadAfterWrite);
+        assert_ne!(ConsistencyLevel::ReadAfterWrite, ConsistencyLevel::Strong);
+        assert_ne!(ConsistencyLevel::Eventual, ConsistencyLevel::Strong);
+    }
+
+    #[test]
+    fn pending_operations_result_none_has_no_pending() {
+        let result = PendingOperationsResult::none();
+        assert!(!result.has_pending());
+        assert!(!result.is_processing());
+        assert_eq!(result.total_pending, 0);
+        assert!(result.estimated_completion.is_none());
+        assert!(matches!(result.status, ProcessingStatus::None));
+    }
+
+    #[test]
+    fn pending_operations_result_queued_reports_pending() {
+        let op = PendingOperation {
+            file_path: PathBuf::from("test.md"),
+            operation_type: OperationType::Create,
+            batch_id: None,
+            queued_at: Instant::now(),
+            estimated_completion: None,
+            event_id: uuid::Uuid::new_v4(),
+        };
+        let result = PendingOperationsResult::queued(vec![op]);
+        assert!(result.has_pending());
+        assert!(!result.is_processing());
+        assert_eq!(result.total_pending, 1);
+        assert!(matches!(result.status, ProcessingStatus::Queued(_)));
+    }
+
+    #[test]
+    fn pending_operations_result_processing_reports_active() {
+        let op = PendingOperation {
+            file_path: PathBuf::from("note.md"),
+            operation_type: OperationType::Update,
+            batch_id: Some(uuid::Uuid::new_v4()),
+            queued_at: Instant::now(),
+            estimated_completion: Some(Instant::now()),
+            event_id: uuid::Uuid::new_v4(),
+        };
+        let result = PendingOperationsResult::processing(vec![op]);
+        assert!(result.has_pending());
+        assert!(result.is_processing());
+        assert_eq!(result.total_pending, 1);
+        assert!(result.estimated_completion.is_some());
+        assert!(matches!(result.status, ProcessingStatus::Processing(_)));
+    }
+
+    #[test]
+    fn pending_operations_result_queued_and_processing_combines_counts() {
+        let make_op = |path: &str, op_type: OperationType| PendingOperation {
+            file_path: PathBuf::from(path),
+            operation_type: op_type,
+            batch_id: None,
+            queued_at: Instant::now(),
+            estimated_completion: None,
+            event_id: uuid::Uuid::new_v4(),
+        };
+
+        let queued = vec![make_op("a.md", OperationType::Create)];
+        let processing = vec![
+            make_op("b.md", OperationType::Update),
+            make_op("c.md", OperationType::Delete),
+        ];
+        let result = PendingOperationsResult::queued_and_processing(queued, processing);
+
+        assert!(result.has_pending());
+        assert!(result.is_processing());
+        assert_eq!(result.total_pending, 3);
+        assert!(matches!(
+            result.status,
+            ProcessingStatus::QueuedAndProcessing { .. }
+        ));
+    }
+
+    #[test]
+    fn consistency_config_default_values() {
+        let config = ConsistencyConfig::default();
+        assert_eq!(config.default_level, ConsistencyLevel::Eventual);
+        assert_eq!(config.max_wait_time_ms, 5000);
+        assert!(!config.enable_auto_strong);
+        assert!(config.critical_files.is_empty());
+    }
+
+    #[test]
+    fn flush_status_has_pending_when_batches_exist() {
+        let status = FlushStatus {
+            pending_batches: 2,
+            processing_events: 0,
+            estimated_completion: None,
+        };
+        assert!(status.has_pending());
+        assert_eq!(status.total_in_progress(), 2);
+    }
+
+    #[test]
+    fn flush_status_has_pending_when_events_processing() {
+        let status = FlushStatus {
+            pending_batches: 0,
+            processing_events: 3,
+            estimated_completion: None,
+        };
+        assert!(status.has_pending());
+        assert_eq!(status.total_in_progress(), 3);
+    }
+
+    #[test]
+    fn flush_status_no_pending_when_empty() {
+        let status = FlushStatus {
+            pending_batches: 0,
+            processing_events: 0,
+            estimated_completion: None,
+        };
+        assert!(!status.has_pending());
+        assert_eq!(status.total_in_progress(), 0);
+    }
+
+    #[test]
+    fn flush_status_total_combines_batches_and_events() {
+        let status = FlushStatus {
+            pending_batches: 5,
+            processing_events: 3,
+            estimated_completion: Some(Instant::now()),
+        };
+        assert_eq!(status.total_in_progress(), 8);
+    }
+
+    #[test]
+    fn operation_type_variants_exist() {
+        let types = [
+            OperationType::Create,
+            OperationType::Update,
+            OperationType::Delete,
+            OperationType::MetadataUpdate,
+            OperationType::Embedding,
+        ];
+        assert_eq!(types.len(), 5);
+    }
+}
