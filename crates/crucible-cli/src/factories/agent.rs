@@ -163,34 +163,16 @@ impl Default for AgentInitParams {
     }
 }
 
-/// Result of agent initialization
-#[allow(clippy::large_enum_variant)] // Acp variant is large but this enum is not frequently cloned
-pub enum InitializedAgent {
-    /// ACP agent (needs async spawning)
-    Acp(crate::acp::CrucibleAcpClient),
-    /// Internal agent (ready to use)
-    ///
-    /// This is boxed to support both native (InternalAgentHandle) and
-    /// Rig (RigAgentHandle) backends via trait object erasure.
-    Internal(Box<dyn AgentHandle + Send + Sync>),
-}
+/// Result of agent initialization — always a ready-to-use AgentHandle.
+///
+/// Both ACP and internal agents route through the daemon, which returns
+/// a DaemonAgentHandle. The local internal fallback (force_local) returns
+/// a RigAgentHandle directly.
+pub struct InitializedAgent(Box<dyn AgentHandle + Send + Sync>);
 
 impl InitializedAgent {
-    /// Get the display name for this agent type
-    pub fn display_name(&self) -> &str {
-        match self {
-            Self::Acp(client) => client.agent_name(),
-            Self::Internal(_) => "internal",
-        }
-    }
-
-    /// Get as AgentHandle trait object for unified usage
-    /// Note: For ACP agents, must call spawn() first
-    pub fn into_boxed(self) -> Box<dyn AgentHandle> {
-        match self {
-            Self::Acp(client) => Box::new(client),
-            Self::Internal(handle) => handle,
-        }
+    pub fn into_handle(self) -> Box<dyn AgentHandle + Send + Sync> {
+        self.0
     }
 }
 
@@ -621,33 +603,57 @@ pub async fn create_daemon_agent(
     };
 
     if is_new_session {
-        let model = config
-            .chat
-            .model
-            .clone()
-            .unwrap_or_else(|| "llama3.2".to_string());
+        let is_acp = params
+            .agent_type
+            .map(|t| t == AgentType::Acp)
+            .unwrap_or(false);
 
-        let mcp_servers = config
-            .mcp
-            .as_ref()
-            .map(|mcp| mcp.servers.iter().map(|s| s.name.clone()).collect())
-            .unwrap_or_default();
+        let session_agent = if is_acp {
+            SessionAgent {
+                agent_type: "acp".to_string(),
+                agent_name: params.agent_name.clone(),
+                provider_key: None,
+                provider: String::new(),
+                model: String::new(),
+                system_prompt: String::new(),
+                temperature: None,
+                max_tokens: None,
+                max_context_tokens: None,
+                thinking_budget: None,
+                endpoint: None,
+                env_overrides: params.env_overrides.clone(),
+                mcp_servers: vec![],
+                agent_card_name: None,
+            }
+        } else {
+            let model = config
+                .chat
+                .model
+                .clone()
+                .unwrap_or_else(|| "llama3.2".to_string());
 
-        let session_agent = SessionAgent {
-            agent_type: "internal".to_string(),
-            agent_name: None,
-            provider_key: Some(format!("{:?}", config.chat.provider).to_lowercase()),
-            provider: format!("{:?}", config.chat.provider).to_lowercase(),
-            model: model.clone(),
-            system_prompt: String::new(),
-            temperature: config.chat.temperature.map(|t| t as f64),
-            max_tokens: config.chat.max_tokens,
-            max_context_tokens: None,
-            thinking_budget: None,
-            endpoint: config.chat.endpoint.clone(),
-            env_overrides: std::collections::HashMap::new(),
-            mcp_servers,
-            agent_card_name: None,
+            let mcp_servers = config
+                .mcp
+                .as_ref()
+                .map(|mcp| mcp.servers.iter().map(|s| s.name.clone()).collect())
+                .unwrap_or_default();
+
+            SessionAgent {
+                agent_type: "internal".to_string(),
+                agent_name: None,
+                provider_key: Some(format!("{:?}", config.chat.provider).to_lowercase()),
+                provider: format!("{:?}", config.chat.provider).to_lowercase(),
+                model,
+                system_prompt: String::new(),
+                temperature: config.chat.temperature.map(|t| t as f64),
+                max_tokens: config.chat.max_tokens,
+                max_context_tokens: None,
+                thinking_budget: None,
+                endpoint: config.chat.endpoint.clone(),
+                env_overrides: std::collections::HashMap::new(),
+                mcp_servers,
+                agent_card_name: None,
+            }
         };
 
         client
@@ -666,32 +672,57 @@ pub async fn create_daemon_agent(
         .with_workspace(workspace.clone());
 
     let handle = if is_new_session {
-        let model = config
-            .chat
-            .model
-            .clone()
-            .unwrap_or_else(|| "llama3.2".to_string());
-        let mcp_servers = config
-            .mcp
-            .as_ref()
-            .map(|mcp| mcp.servers.iter().map(|s| s.name.clone()).collect())
-            .unwrap_or_default();
-        handle.with_agent_config(SessionAgent {
-            agent_type: "internal".to_string(),
-            agent_name: None,
-            provider_key: Some(format!("{:?}", config.chat.provider).to_lowercase()),
-            provider: format!("{:?}", config.chat.provider).to_lowercase(),
-            model,
-            system_prompt: String::new(),
-            temperature: config.chat.temperature.map(|t| t as f64),
-            max_tokens: config.chat.max_tokens,
-            max_context_tokens: None,
-            thinking_budget: None,
-            endpoint: config.chat.endpoint.clone(),
-            env_overrides: std::collections::HashMap::new(),
-            mcp_servers,
-            agent_card_name: None,
-        })
+        let is_acp = params
+            .agent_type
+            .map(|t| t == AgentType::Acp)
+            .unwrap_or(false);
+
+        let agent_config = if is_acp {
+            SessionAgent {
+                agent_type: "acp".to_string(),
+                agent_name: params.agent_name.clone(),
+                provider_key: None,
+                provider: String::new(),
+                model: String::new(),
+                system_prompt: String::new(),
+                temperature: None,
+                max_tokens: None,
+                max_context_tokens: None,
+                thinking_budget: None,
+                endpoint: None,
+                env_overrides: params.env_overrides.clone(),
+                mcp_servers: vec![],
+                agent_card_name: None,
+            }
+        } else {
+            let model = config
+                .chat
+                .model
+                .clone()
+                .unwrap_or_else(|| "llama3.2".to_string());
+            let mcp_servers = config
+                .mcp
+                .as_ref()
+                .map(|mcp| mcp.servers.iter().map(|s| s.name.clone()).collect())
+                .unwrap_or_default();
+            SessionAgent {
+                agent_type: "internal".to_string(),
+                agent_name: None,
+                provider_key: Some(format!("{:?}", config.chat.provider).to_lowercase()),
+                provider: format!("{:?}", config.chat.provider).to_lowercase(),
+                model,
+                system_prompt: String::new(),
+                temperature: config.chat.temperature.map(|t| t as f64),
+                max_tokens: config.chat.max_tokens,
+                max_context_tokens: None,
+                thinking_budget: None,
+                endpoint: config.chat.endpoint.clone(),
+                env_overrides: std::collections::HashMap::new(),
+                mcp_servers,
+                agent_card_name: None,
+            }
+        };
+        handle.with_agent_config(agent_config)
     } else {
         handle
     };
@@ -741,7 +772,7 @@ pub async fn create_agent(
         match create_daemon_agent(config, &params).await {
             Ok(handle) => {
                 info!("Using daemon-backed agent");
-                return Ok(InitializedAgent::Internal(handle));
+                return Ok(InitializedAgent(handle));
             }
             Err(e) => {
                 tracing::warn!("Daemon agent creation failed, falling back to local: {}", e);
@@ -749,7 +780,6 @@ pub async fn create_agent(
         }
     }
 
-    // Determine agent type from params or config
     let agent_type = params
         .agent_type
         .unwrap_or(match config.chat.agent_preference {
@@ -761,42 +791,12 @@ pub async fn create_agent(
         AgentType::Internal => {
             info!("Initializing local internal agent");
             let handle = create_internal_agent(config, params).await?;
-            Ok(InitializedAgent::Internal(handle))
+            Ok(InitializedAgent(handle))
         }
         AgentType::Acp => {
-            info!("Initializing ACP agent");
-            use crate::acp::{discover_agent, CrucibleAcpClient};
-
-            let agent_name = params
-                .agent_name
-                .or_else(|| config.acp.default_agent.clone());
-            let mut agent = discover_agent(agent_name.as_deref()).await?;
-
-            debug!("Discovered agent: {}", agent.name);
-
-            if let Some(profile) = config.acp.agents.get(&agent.name) {
-                if !profile.env.is_empty() {
-                    let keys: Vec<_> = profile.env.keys().collect();
-                    info!("Applying config profile env vars: {:?}", keys);
-                    agent.env_vars.extend(profile.env.clone());
-                }
-            }
-
-            if !params.env_overrides.is_empty() {
-                let keys: Vec<_> = params.env_overrides.keys().collect();
-                info!("Applying CLI env overrides: {:?}", keys);
-                agent.env_vars.extend(params.env_overrides);
-            }
-
-            let mut client =
-                CrucibleAcpClient::with_acp_config(agent, params.read_only, config.acp.clone());
-
-            if let Some(working_dir) = params.working_dir {
-                info!("Setting agent working directory: {}", working_dir.display());
-                client = client.with_working_dir(working_dir);
-            }
-
-            Ok(InitializedAgent::Acp(client))
+            anyhow::bail!(
+                "ACP agents require the daemon. Start cru-server or remove --force-local"
+            )
         }
     }
 }
