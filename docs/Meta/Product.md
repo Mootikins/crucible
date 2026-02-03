@@ -32,7 +32,7 @@ A knowledge management system where:
 |-------|-------|-----------|
 | Now | Power users, developers | CLI (chat-focused) |
 | Next | Plugin creators, agent developers | CLI + Lua scripting + messaging integrations |
-| Later | Obsidian users, broader audience | Obsidian plugin, web PWA (Tailscale self-host) |
+| Later | Broader audience, mobile users | Web PWA (self-hosted via Tailscale/Cloudflare Tunnel) |
 
 ---
 
@@ -241,24 +241,45 @@ Crucible acts as an **ACP host**, spawning and controlling external AI agents (C
 - [ ] **One-Line Install** `P0` — Pre-built binaries via GitHub Releases (linux x86_64/aarch64, macOS Intel/Apple Silicon, Windows); `curl|sh`, `brew install crucible`, `cargo binstall crucible`, AUR, Nix flake; target: working `cru` binary in <60 seconds · `crucible-cli`
 - [ ] **Precognition Default-On** `P0` — Change default from opt-in to on; the knowledge-graph-aware context is the core differentiator and should not be hidden behind `:set precognition on` · `crucible-cli`, `crucible-config`
 
+### HTTP Gateway (P1 — platform layer for everything external)
+
+> The daemon is Unix-socket-only (JSON-RPC 2.0). Messaging bots, webhook triggers, web UI, and any external client all need HTTP access. This is the shared foundation — wire `crucible-web` to `DaemonClient` and expose the daemon's 55 RPC methods over HTTP + SSE/WebSocket for events.
+
+```
+HTTP Gateway (crucible-web wired to daemon)
+    ├── Messaging bots (Telegram, Discord)
+    ├── Webhook endpoints (POST /api/webhook/:name)
+    └── Web UI (SolidJS frontend on same server)
+         └── Remote access (Tailscale / Cloudflare Tunnel)
+```
+
+- [ ] **HTTP-to-RPC Bridge** `P1` — Wire `DaemonClient` into `crucible-web` Axum routes; translate HTTP requests to daemon JSON-RPC calls; ~1,000-1,500 lines of Rust · `crucible-web`, `crucible-daemon-client`
+- [ ] **SSE/WebSocket Event Bridge** `P1` — Subscribe to daemon session events, stream to HTTP clients via SSE or WebSocket; the only non-trivial part of the gateway · `crucible-web`
+- [ ] **Chat HTTP API** `P1` — `POST /api/chat/send` + SSE stream for responses; `POST /api/session/create`, `/resume`, `/list`, `/end` · `crucible-web`
+- [ ] **Search HTTP API** `P1` — `POST /api/search` (semantic + full-text + property); `GET /api/notes`, `GET /api/notes/:name` · `crucible-web`
+- [ ] **API Auth** `P1` — Bearer token or API key auth; required the moment the gateway is exposed beyond localhost · `crucible-web`
+- [ ] **Webhook API** `P1` — `POST /api/webhook/:name` triggers named Lua handlers; enables GitHub webhooks, calendar events, IFTTT/Zapier/n8n integration; enriches payloads with vault context (uniquely Crucible) · `crucible-web`, `crucible-lua`
+
 ### Messaging Integrations (P1 — meet users where they are)
 
-> 1-2 good messaging integrations reduce the need for a web UI substantially. Users interact daily in messaging apps; Crucible meets them there and delivers proactive vault insights.
+> 1-2 good messaging integrations reduce the need for a web UI substantially. Users interact daily in messaging apps; Crucible meets them there and delivers proactive vault insights. Messaging bots are thin adapters over the HTTP gateway — they don't need Unix socket access or colocation with the daemon.
 
-- [ ] **Telegram Bot** `P1` — Bot API integration; daemon exposes chat via Telegram; lowest friction (HTTP API, no app store approval, huge dev audience); enables proactive digest delivery · `crucible-telegram` (new crate)
-- [ ] **Discord Bot** `P1` — Discord integration for developer communities; secondary to Telegram · `crucible-discord` (new crate)
-- [ ] **Matrix Bridge** `P2` — Matrix protocol integration; strong overlap with self-host/privacy audience · `crucible-matrix` (new crate)
+- [ ] **Telegram Bot** `P1` — Bot API adapter over HTTP gateway; lowest friction (HTTP API, no app store approval, huge dev audience); enables proactive digest delivery · `crucible-telegram` (new crate) · depends: [[#HTTP Gateway|HTTP-to-RPC Bridge]]
+- [ ] **Discord Bot** `P1` — Discord adapter over HTTP gateway for developer communities; secondary to Telegram · `crucible-discord` (new crate) · depends: [[#HTTP Gateway|HTTP-to-RPC Bridge]]
+- [ ] **Matrix Bridge** `P2` — Matrix protocol integration; strong overlap with self-host/privacy audience · `crucible-matrix` (new crate) · depends: [[#HTTP Gateway|HTTP-to-RPC Bridge]]
 
-### Obsidian Plugin (P1 — uniquely differentiated)
+### Remote Access (P2 — self-hosting for everyone)
 
-> No other AI assistant offers "chat that's natively part of your knowledge graph." This is Crucible's strongest differentiator. The plugin is a thin client talking to `cru-server` over the daemon socket/local HTTP — can coexist with web UI or messaging integrations indefinitely.
+> Agents can't be on every device. Self-hosting with easy remote access is more aligned with "local-first, your notes, your control" than paid cloud hosting. Cloudflare Tunnel / Tailscale Funnel provide zero-config encrypted remote access to a locally-running daemon.
 
-- [ ] **Obsidian Sidebar Chat** `P1` — Obsidian community plugin; sidebar panel with chat + vault search; talks to daemon via local HTTP endpoint; Obsidian users get AI that reads/writes their vault natively · TypeScript, Obsidian API
-- [ ] **Obsidian Graph Integration** `P2` — Surface Crucible's knowledge graph connections in Obsidian's graph view; show AI-discovered links · TypeScript, Obsidian API
+- [ ] **`cru tunnel`** `P2` — One-command remote access setup; wraps `cloudflared tunnel` or `tailscale funnel`; exposes HTTP gateway with auth to user's devices · `crucible-cli`
+- [ ] **Cloudflare Tunnel Integration** `P2` — `cru tunnel --cloudflare`; auto-configures `cloudflared` with API auth; free tier for personal use · `crucible-cli`
+- [ ] **Tailscale Funnel Integration** `P2` — `cru tunnel --tailscale`; WireGuard encrypted, ACL-gated; zero-config for Tailscale users · `crucible-cli`
+- [ ] **Paid Hosting** `P?` — Multi-tenant hosted option (OpenClaw model); needs daemon isolation, user management, billing; defer until clear demand · future
 
 ### Proactive Behavior (P2 — viral feature)
 
-> OpenClaw's most praised feature was the heartbeat — the agent reaching out unprompted. Crucible can do this better because it has a knowledge graph, not flat memory.
+> OpenClaw's most praised feature was the heartbeat — the agent reaching out unprompted. Crucible can do this better because it has a knowledge graph, not flat memory. Heartbeat is time-based; webhook triggers are event-driven — Crucible can do both.
 
 - [ ] **Vault Digest** `P2` — Periodic scan of recent vault changes; surface missed connections ("You wrote about X in two notes this week — want me to link them?"); delivered via messaging integration or TUI notification · `crucible-daemon`, `crucible-lua`
 - [ ] **Scheduled Lua Hooks** `P2` — Cron-style callbacks for Lua plugins; enables daily briefings, orphan note detection, task reminders from `- [ ]` items · `crucible-lua`, `crucible-daemon`
@@ -322,9 +343,9 @@ Crucible acts as an **ACP host**, spawning and controlling external AI agents (C
 
 ## Web & Desktop
 
-> Deprioritized relative to messaging integrations. With 1-2 messaging channels + Obsidian plugin, the web UI serves richer interactions (graph viz, multi-panel, file preview) rather than being the primary daily interface. Serve over Tailscale for zero-config private access; PWA for mobile without app store friction.
+> Builds on the HTTP gateway (P1). Messaging integrations are the daily-driver interface; web UI adds richer interactions (graph visualization, multi-panel layouts, file previews, workflow configuration). Serve over Tailscale/Cloudflare Tunnel for self-hosted remote access; PWA for mobile without app store friction.
 
-- [-] **Web Chat UI** `P3` — Axum + SolidJS + SSE streaming chat interface; serve over Tailscale/local network for privacy · `crucible-web`
+- [-] **Web Chat UI** `P3` — SolidJS frontend on the same `crucible-web` server as the HTTP gateway; chat + search + vault browsing · `crucible-web` · depends: [[#HTTP Gateway|HTTP-to-RPC Bridge]]
 - [ ] **PWA Support** `P3` — Progressive Web App manifest + service worker; enables mobile access without app store, installable from browser · `crucible-web`
 - [ ] **Oil Node Serialization** `P3` — Oil Node → JSON for web rendering · `crucible-oil`
 - [ ] **SolidJS Renderer** `P3` — `<OilNode>` component for browser rendering · `crucible-web`
@@ -360,9 +381,14 @@ Crucible acts as an **ACP host**, spawning and controlling external AI agents (C
 | 2026-02-02 | Lua primitives over bespoke features | Autonomous loops, fan-out, automations are Lua plugins — not built-in features; matches Neovim philosophy |
 | 2026-02-02 | ACP direction clarified | Crucible is ACP host (controls agents), not ACP agent; embeddable agent mode is future P1 work for registry distribution |
 | 2026-02-03 | One-line install promoted to P0 | #1 adoption blocker; OpenClaw's `npm install -g` is the bar to beat |
-| 2026-02-03 | Messaging integrations (Telegram, Discord) at P1 | Meet users where they are; 1-2 messaging channels reduce need for web UI substantially |
-| 2026-02-03 | Obsidian plugin at P1 | Uniquely differentiated — no other AI assistant is natively part of a knowledge graph; thin client to daemon, coexists with web UI |
-| 2026-02-03 | Web UI deprioritized to P3 | Messaging + Obsidian cover daily interaction; web serves richer interactions later, via Tailscale for privacy, PWA for mobile |
+| 2026-02-03 | HTTP gateway as P1 platform layer | Daemon is Unix-socket-only; messaging bots, webhooks, web UI all need HTTP; wire crucible-web to DaemonClient as shared foundation |
+| 2026-02-03 | Webhook API at P1 | `POST /api/webhook/:name` triggers Lua handlers; enables GitHub/calendar/IFTTT integration; enriches with vault context — uniquely Crucible vs OpenClaw's time-based heartbeat |
+| 2026-02-03 | Messaging integrations (Telegram, Discord) at P1 | Meet users where they are; thin adapters over HTTP gateway; 1-2 channels reduce need for web UI substantially |
+| 2026-02-03 | Messaging → web progression | Messaging is precursor work to web; HTTP gateway serves both; web adds richer interactions (graph viz, config, workflow) later |
+| 2026-02-03 | Remote access via Cloudflare/Tailscale at P2 | Agents can't be on every device; `cru tunnel` wraps cloudflared/tailscale funnel; self-host > paid hosting for positioning |
+| 2026-02-03 | Paid hosting deferred | Multi-tenant needs daemon isolation, billing, ops; defer until demand is clear; free self-host + tunnel is more aligned with local-first positioning |
+| 2026-02-03 | Obsidian plugin dropped | HTTP gateway + messaging + web covers the progression; Obsidian plugin is a separate TypeScript project with maintenance burden for a subset of users |
+| 2026-02-03 | Web UI deprioritized to P3 | Messaging covers daily interaction; web serves richer interactions later, via Tailscale for privacy, PWA for mobile |
 | 2026-02-03 | Precognition should default to on | Core differentiator shouldn't be opt-in; knowledge-graph-aware context is the product's value proposition |
 | 2026-02-03 | Proactive vault digest at P2 | Matches OpenClaw's most viral feature (heartbeat) using Crucible's strength (knowledge graph); delivered via messaging integrations |
 
