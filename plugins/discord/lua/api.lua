@@ -31,6 +31,10 @@ local function api_request(method, path, body)
             r = cru.http.put(url, opts)
         elseif method == "PATCH" then
             r = cru.http.patch(url, opts)
+        elseif method == "DELETE" then
+            r = cru.http.delete(url, opts)
+        else
+            error("Unsupported HTTP method: " .. method)
         end
 
         if r.status == 429 or (r.status >= 500 and r.status < 600) then

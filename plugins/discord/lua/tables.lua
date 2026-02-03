@@ -19,11 +19,6 @@ local BOX = {
     cross        = "┼",
 }
 
---- Visible width of a string (ASCII only for now; sufficient for code blocks).
-local function visible_width(s)
-    return #s
-end
-
 --- Parse a single markdown table from lines.
 --- Returns {headers = {str...}, rows = {{str...}...}} or nil.
 local function parse_table(lines)
@@ -66,12 +61,12 @@ local function render_table(tbl)
 
     local col_widths = {}
     for i = 1, num_cols do
-        col_widths[i] = math.max(3, visible_width(tbl.headers[i]))
+        col_widths[i] = math.max(3, #tbl.headers[i])
     end
     for _, row in ipairs(tbl.rows) do
         for i = 1, num_cols do
             local cell = row[i] or ""
-            col_widths[i] = math.max(col_widths[i], visible_width(cell))
+            col_widths[i] = math.max(col_widths[i], #cell)
         end
     end
 
@@ -91,7 +86,7 @@ local function render_table(tbl)
         local parts = { BOX.vertical }
         for i = 1, num_cols do
             local cell = cells[i] or ""
-            local pad = col_widths[i] - visible_width(cell)
+            local pad = col_widths[i] - #cell
             table.insert(parts, " " .. cell .. (" "):rep(pad) .. " " .. BOX.vertical)
         end
         return table.concat(parts)
