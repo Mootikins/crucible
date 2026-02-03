@@ -439,6 +439,7 @@ async fn run_interactive_chat(
     runner = runner.with_session_dir(session_dir);
 
     // Best-effort enricher for precognition (auto-RAG)
+    #[cfg(feature = "storage-surrealdb")]
     match factories::get_storage(&config).await {
         Ok(storage_handle) => {
             match storage_handle
@@ -562,29 +563,47 @@ async fn run_oneshot_chat(
 
     status.update("Initializing storage...");
     let storage_handle = factories::get_storage(&config).await?;
-    let storage_client = storage_handle
-        .get_embedded_for_operation(&config, "chat initialization")
-        .await?;
-    factories::initialize_surrealdb_schema(&storage_client).await?;
+
+    #[cfg(feature = "storage-surrealdb")]
+    let storage_client = {
+        let client = storage_handle
+            .get_embedded_for_operation(&config, "chat initialization")
+            .await?;
+        factories::initialize_surrealdb_schema(&client).await?;
+        Some(client)
+    };
+    #[cfg(not(feature = "storage-surrealdb"))]
+    let storage_client: Option<()> = None;
 
     let initialized_agent = if use_internal {
         status.update("Initializing LLM provider with kiln tools...");
-        let embedding_provider = factories::get_or_create_embedding_provider(&config).await?;
-        let knowledge_repo = storage_client.as_knowledge_repository();
-        let kiln_ctx =
-            crucible_rig::KilnContext::new(&config.kiln_path, knowledge_repo, embedding_provider);
-        let agent_params = agent_params.with_kiln_context(kiln_ctx);
-        factories::create_agent(&config, agent_params).await?
+        #[cfg(feature = "storage-surrealdb")]
+        {
+            let storage_client = storage_client.as_ref().expect("storage-surrealdb required for internal agent");
+            let embedding_provider = factories::get_or_create_embedding_provider(&config).await?;
+            let knowledge_repo = storage_client.as_knowledge_repository();
+            let kiln_ctx =
+                crucible_rig::KilnContext::new(&config.kiln_path, knowledge_repo, embedding_provider);
+            let agent_params = agent_params.with_kiln_context(kiln_ctx);
+            factories::create_agent(&config, agent_params).await?
+        }
+        #[cfg(not(feature = "storage-surrealdb"))]
+        {
+            anyhow::bail!("Internal agent mode requires the 'storage-surrealdb' feature")
+        }
     } else {
         status.update("Discovering agent...");
         factories::create_agent(&config, agent_params).await?
     };
 
     let bg_progress: Option<BackgroundProgress> = if !no_process && !no_context {
+        #[cfg(feature = "storage-surrealdb")]
+        {
         use crate::sync::quick_sync_check;
 
+        let storage_client = storage_client.as_ref().expect("storage required for sync");
         status.update("Checking for file changes...");
-        let sync_status = quick_sync_check(&storage_client, &config.kiln_path).await?;
+        let sync_status = quick_sync_check(storage_client, &config.kiln_path).await?;
 
         if sync_status.needs_processing() {
             let pending = sync_status.pending_count();
@@ -640,12 +659,15 @@ async fn run_oneshot_chat(
             }
             None
         }
+        }
+        #[cfg(not(feature = "storage-surrealdb"))]
+        { None }
     } else {
         None
     };
 
     status.update("Initializing core...");
-    let core = Arc::new(KilnContext::from_storage(storage_client.clone(), config));
+    let core = Arc::new(KilnContext::from_storage_handle(storage_handle, config));
 
     status.update("Connecting to agent...");
     let mut handle = initialized_agent.into_handle();
