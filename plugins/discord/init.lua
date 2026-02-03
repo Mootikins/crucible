@@ -89,13 +89,29 @@ gateway.on("READY", function(data)
 end)
 
 gateway.on("MESSAGE_CREATE", function(data)
+    if data.author and data.author.bot then return end
+
+    local channel_id = data.channel_id
+    local raw = (data.content or ""):match("^%s*(.-)%s*$") or ""
+    local lower = raw:lower()
+
+    -- Intercept y/n replies for pending permission prompts
+    if responder.pending_replies[channel_id] == "waiting" then
+        if lower == "y" or lower == "yes" then
+            responder.pending_replies[channel_id] = true
+            return
+        elseif lower == "n" or lower == "no" then
+            responder.pending_replies[channel_id] = false
+            return
+        end
+    end
+
     if not should_respond(data) then return end
 
     local content = clean_content(data.content)
     if content == "" then return end
 
     local guild_id = data.guild_id
-    local channel_id = data.channel_id
     local msg_id = data.id
 
     local session_id, err = sessions.get_or_create(channel_id, guild_id)
@@ -104,10 +120,9 @@ gateway.on("MESSAGE_CREATE", function(data)
         return
     end
 
-    -- Spawn responder as independent async task so it can yield for
-    -- subscribe/next_event (event handlers run inside pcall which blocks yields)
     cru.spawn(function()
-        local ok, resp_err = pcall(responder.respond, session_id, channel_id, content, msg_id)
+        local reply_to = guild_id and msg_id or nil
+        local ok, resp_err = pcall(responder.respond, session_id, channel_id, content, reply_to)
         if not ok then
             cru.log("warn", "Responder error: " .. tostring(resp_err))
         end
