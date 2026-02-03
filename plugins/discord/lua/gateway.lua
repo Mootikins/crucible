@@ -33,10 +33,17 @@ local awaiting_ack = false
 -- Event system
 local events = cru.emitter.new()
 
+-- Periodic hook (called on each receive loop iteration / timeout)
+local periodic_hook = nil
+
 --- Register a handler for a gateway event (delegates to emitter)
 function M.on(event_name, handler) return events:on(event_name, handler) end
 function M.once(event_name, handler) return events:once(event_name, handler) end
 function M.off(event_name, id) events:off(event_name, id) end
+
+--- Set a function to be called periodically in the receive loop.
+--- Used for digest delivery and session cleanup.
+function M.set_periodic_hook(fn) periodic_hook = fn end
 
 -- ---------------------------------------------------------------------------
 -- Internal helpers
@@ -186,6 +193,9 @@ function M.connect()
                     error({ retryable = true })
                 end
             end
+
+            -- Run periodic hook (digest, session cleanup, etc.)
+            if periodic_hook then pcall(periodic_hook) end
             -- On timeout, loop continues and heartbeat fires at top
         end
     end, {
