@@ -1296,3 +1296,189 @@ fn config_show_command_displays_values() {
         output
     );
 }
+
+// =============================================================================
+// BackTab Mode Cycling Tests
+// =============================================================================
+
+fn rendered_status_bar(app: &OilChatApp) -> String {
+    let tree = view_with_default_ctx(app);
+    let output = render_to_string(&tree, 80);
+    crate::tui::oil::ansi::strip_ansi(&output)
+}
+
+fn status_contains_mode(app: &OilChatApp, mode: &str) -> bool {
+    rendered_status_bar(app).contains(mode)
+}
+
+#[test]
+fn backtab_cycles_mode_from_default() {
+    let mut app = OilChatApp::default();
+    let initial = rendered_status_bar(&app);
+    assert!(
+        initial.contains("NORMAL"),
+        "Default mode should be NORMAL: {}",
+        initial
+    );
+
+    app.update(Event::Key(KeyEvent::new(
+        KeyCode::BackTab,
+        KeyModifiers::SHIFT,
+    )));
+    let after = rendered_status_bar(&app);
+    assert!(
+        after.contains("PLAN") || after.contains("AUTO"),
+        "BackTab should cycle to PLAN or AUTO: {}",
+        after
+    );
+}
+
+#[test]
+fn backtab_cycles_through_all_modes() {
+    let mut app = OilChatApp::default();
+
+    let mut modes_seen = Vec::new();
+    for _ in 0..4 {
+        let bar = rendered_status_bar(&app);
+        if bar.contains("PLAN") {
+            modes_seen.push("PLAN");
+        } else if bar.contains("NORMAL") {
+            modes_seen.push("NORMAL");
+        } else if bar.contains("AUTO") {
+            modes_seen.push("AUTO");
+        }
+        app.update(Event::Key(KeyEvent::new(
+            KeyCode::BackTab,
+            KeyModifiers::SHIFT,
+        )));
+    }
+
+    assert!(
+        modes_seen.len() >= 2,
+        "Should visit multiple modes: {:?}",
+        modes_seen
+    );
+    assert!(
+        modes_seen.contains(&"NORMAL"),
+        "Should visit NORMAL mode: {:?}",
+        modes_seen
+    );
+}
+
+#[test]
+fn backtab_during_streaming_still_cycles() {
+    let mut app = OilChatApp::default();
+    app.on_message(ChatAppMsg::UserMessage("Hello".to_string()));
+    app.on_message(ChatAppMsg::TextDelta("Hi there".to_string()));
+
+    let bar_before = rendered_status_bar(&app);
+    app.update(Event::Key(KeyEvent::new(
+        KeyCode::BackTab,
+        KeyModifiers::SHIFT,
+    )));
+    let bar_after = rendered_status_bar(&app);
+    assert_ne!(
+        bar_before, bar_after,
+        "BackTab should change mode during streaming"
+    );
+}
+
+// =============================================================================
+// :set Command Tests
+// =============================================================================
+
+#[test]
+fn set_unknown_option_echoes_value() {
+    let mut harness: AppHarness<OilChatApp> = AppHarness::new(80, 24);
+    harness.render();
+
+    harness.send_text(":set nonexistent_option=true");
+    harness.send_enter();
+
+    let output = harness.screen();
+    assert!(
+        output.contains("nonexistent_option"),
+        "Should echo the set option. Got: {}",
+        output
+    );
+}
+
+// =============================================================================
+// Notification Lifecycle Tests
+// =============================================================================
+
+#[test]
+fn error_notification_appears_and_app_stays_responsive() {
+    let mut app = OilChatApp::default();
+    app.on_message(ChatAppMsg::Error("Database connection failed".to_string()));
+
+    let tree = view_with_default_ctx(&app);
+    let output = render_to_string(&tree, 80);
+    assert!(
+        output.contains("Database connection failed"),
+        "Error should be visible: {}",
+        output
+    );
+
+    for c in "still typing".chars() {
+        app.update(Event::Key(key(KeyCode::Char(c))));
+    }
+    let tree = view_with_default_ctx(&app);
+    let output = render_to_string(&tree, 80);
+    assert!(
+        output.contains("still typing"),
+        "Input should still work after error: {}",
+        output
+    );
+}
+
+// =============================================================================
+// Model Loading State Tests
+// =============================================================================
+
+#[test]
+fn models_loaded_updates_popup_content() {
+    let mut app = OilChatApp::default();
+    app.on_message(ChatAppMsg::ModelsLoaded(vec![
+        "llama3.2".to_string(),
+        "mistral".to_string(),
+        "codellama".to_string(),
+    ]));
+
+    for c in ":model".chars() {
+        app.update(Event::Key(key(KeyCode::Char(c))));
+    }
+    app.update(Event::Key(key(KeyCode::Enter)));
+
+    let tree = view_with_default_ctx(&app);
+    let output = render_to_string(&tree, 80);
+    assert!(
+        output.contains("llama3.2") || output.contains("mistral"),
+        "Model popup should show loaded models: {}",
+        output
+    );
+}
+
+#[test]
+fn model_fetch_failed_shows_error_in_popup() {
+    let mut app = OilChatApp::default();
+    app.on_message(ChatAppMsg::ModelsFetchFailed(
+        "Connection refused".to_string(),
+    ));
+
+    for c in ":model".chars() {
+        app.update(Event::Key(key(KeyCode::Char(c))));
+    }
+    app.update(Event::Key(key(KeyCode::Enter)));
+
+    let tree = view_with_default_ctx(&app);
+    let output = render_to_string(&tree, 80);
+    assert!(
+        output.contains("Connection refused")
+            || output.contains("error")
+            || output.contains("failed")
+            || output.contains("No models"),
+        "Should show error when models failed to load: {}",
+        output
+    );
+}
