@@ -92,8 +92,6 @@ gateway.on("READY", function(data)
 end)
 
 gateway.on("MESSAGE_CREATE", function(data)
-    if data.author and data.author.bot then return end
-
     local channel_id = data.channel_id
     local raw = (data.content or ""):match("^%s*(.-)%s*$") or ""
     local lower = raw:lower()
