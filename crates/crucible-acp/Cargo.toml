@@ -7,6 +7,9 @@ edition.workspace = true
 rust-version.workspace = true
 description = "Agent Client Protocol integration for Crucible - MCP-compatible agent communication"
 
+[package.metadata.dist]
+dist = false
+
 [lib]
 name = "crucible_acp"
 path = "src/lib.rs"
