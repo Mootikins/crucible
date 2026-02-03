@@ -10,10 +10,13 @@
 use crucible_core::storage::NoteStore;
 use crucible_lua::{
     register_graph_module, register_graph_module_with_store, register_oq_module,
-    register_paths_module, register_shell_module, register_vault_module,
-    register_vault_module_with_store, register_ws_module, LuaExecutor, PathsContext, PluginManager,
-    PluginSpec, ShellPolicy,
+    register_paths_module, register_sessions_module, register_sessions_module_with_api,
+    register_shell_module, register_vault_module, register_vault_module_with_store,
+    register_ws_module, DaemonSessionApi, LuaExecutor, PathsContext, PluginManager, PluginSpec,
+    ShellPolicy,
 };
+use mlua::LuaSerdeExt;
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tracing::{info, warn};
@@ -43,7 +46,9 @@ impl DaemonPluginLoader {
     ///
     /// **Not** registered (UI-only):
     /// - `cru.oil`, `cru.popup`, `cru.panel`, `cru.statusline`
-    pub fn new() -> anyhow::Result<Self> {
+    pub fn new(
+        plugin_config: HashMap<String, serde_json::Value>,
+    ) -> anyhow::Result<Self> {
         let executor = LuaExecutor::new().map_err(|e| anyhow::anyhow!("LuaExecutor init: {e}"))?;
 
         // LuaExecutor::new() already registers: http, fs, timer, ratelimit, lua_stdlib.
@@ -58,6 +63,9 @@ impl DaemonPluginLoader {
             .map_err(|e| anyhow::anyhow!("paths module: {e}"))?;
         register_graph_module(lua).map_err(|e| anyhow::anyhow!("graph module: {e}"))?;
         register_vault_module(lua).map_err(|e| anyhow::anyhow!("vault module: {e}"))?;
+        register_sessions_module(lua).map_err(|e| anyhow::anyhow!("sessions module: {e}"))?;
+        Self::register_plugin_config(lua, plugin_config)
+            .map_err(|e| anyhow::anyhow!("config module: {e}"))?;
 
         let plugin_manager = PluginManager::new();
 
@@ -68,11 +76,64 @@ impl DaemonPluginLoader {
         })
     }
 
+    /// Register plugin config as `crucible.config` in the Lua runtime.
+    ///
+    /// Provides `crucible.config.get("plugin_name.key")` for dotted-key lookup
+    /// from `[plugins.*]` sections in config.toml.
+    fn register_plugin_config(
+        lua: &mlua::Lua,
+        config: HashMap<String, serde_json::Value>,
+    ) -> Result<(), mlua::Error> {
+        let config_table = lua.create_table()?;
+
+        // Store the raw config data as a Lua table
+        let data = lua.to_value(&config)?;
+        config_table.set("_data", data)?;
+
+        // crucible.config.get("namespace.key") -> value
+        let get_fn = lua.create_function(|lua, key: String| {
+            let globals = lua.globals();
+            let crucible: mlua::Table = globals.get("crucible")?;
+            let config: mlua::Table = crucible.get("config")?;
+            let data: mlua::Value = config.get("_data")?;
+
+            let mlua::Value::Table(data_table) = data else {
+                return Ok(mlua::Value::Nil);
+            };
+
+            // Split on first dot: "discord.bot_token" -> ("discord", "bot_token")
+            if let Some(dot_pos) = key.find('.') {
+                let namespace = &key[..dot_pos];
+                let subkey = &key[dot_pos + 1..];
+                let ns_val: mlua::Value = data_table.get(namespace.to_string())?;
+                if let mlua::Value::Table(ns_table) = ns_val {
+                    return ns_table.get(subkey.to_string());
+                }
+                Ok(mlua::Value::Nil)
+            } else {
+                data_table.get(key)
+            }
+        })?;
+        config_table.set("get", get_fn)?;
+
+        // Register on the crucible global
+        let globals = lua.globals();
+        let crucible: mlua::Table = globals.get("crucible")?;
+        crucible.set("config", config_table)?;
+
+        Ok(())
+    }
+
     /// Upgrade graph and vault modules with real NoteStore-backed implementations.
     ///
     /// Call after a kiln opens and storage is available. Replaces stub functions
     /// registered in `new()` with implementations that query the store.
-    pub fn upgrade_with_storage(&self, store: Arc<dyn NoteStore>) -> anyhow::Result<()> {
+    /// Also sets `cru.kiln.active_path` to the kiln directory path.
+    pub fn upgrade_with_storage(
+        &self,
+        store: Arc<dyn NoteStore>,
+        kiln_path: &std::path::Path,
+    ) -> anyhow::Result<()> {
         let lua = self.executor.lua();
 
         register_graph_module_with_store(lua, store.clone())
@@ -80,7 +141,26 @@ impl DaemonPluginLoader {
         register_vault_module_with_store(lua, store)
             .map_err(|e| anyhow::anyhow!("vault upgrade: {e}"))?;
 
-        info!("Lua graph/vault modules upgraded with storage");
+        // Set cru.kiln.active_path so plugins know which kiln is active
+        let globals = lua.globals();
+        if let Ok(cru) = globals.get::<mlua::Table>("cru") {
+            if let Ok(kiln) = cru.get::<mlua::Table>("kiln") {
+                let _ = kiln.set("active_path", kiln_path.to_string_lossy().to_string());
+            }
+        }
+
+        info!("Lua graph/vault modules upgraded with storage (kiln: {})", kiln_path.display());
+        Ok(())
+    }
+
+    /// Upgrade sessions module with real daemon-backed implementations.
+    ///
+    /// Call after session/agent managers are created. Replaces stub `cru.sessions.*`
+    /// functions with implementations that delegate to the provided API.
+    pub fn upgrade_with_sessions(&self, api: Arc<dyn DaemonSessionApi>) -> anyhow::Result<()> {
+        register_sessions_module_with_api(self.executor.lua(), api)
+            .map_err(|e| anyhow::anyhow!("sessions upgrade: {e}"))?;
+        info!("Lua sessions module upgraded with daemon API");
         Ok(())
     }
 
@@ -149,10 +229,51 @@ impl DaemonPluginLoader {
             .ok_or_else(|| anyhow::anyhow!("plugin '{}' not found after load", name))?;
 
         let main_path = plugin.main_path();
+
+        // Extract spec from sandbox (for metadata)
         let spec = crucible_lua::load_plugin_spec(&main_path)
             .map_err(|e| anyhow::anyhow!("spec load for '{}': {e}", name))?
             .ok_or_else(|| anyhow::anyhow!("plugin '{}' returned no spec", name))?;
+
+        // Also execute the plugin in the daemon's real Lua runtime so that
+        // event handlers, gateway connections, etc. actually register.
+        if let Err(e) = self.execute_plugin(&main_path) {
+            warn!("Failed to execute plugin '{}' in daemon runtime: {}", name, e);
+        }
+
         Ok(spec)
+    }
+
+    /// Execute a plugin's init.lua in the daemon's Lua executor.
+    ///
+    /// Sets up `package.path` so that `require("gateway")` etc. resolves
+    /// to files in the plugin's `lua/` directory, then evaluates the init file.
+    fn execute_plugin(&self, init_path: &std::path::Path) -> anyhow::Result<()> {
+        let lua = self.executor.lua();
+        let plugin_dir = init_path
+            .parent()
+            .ok_or_else(|| anyhow::anyhow!("init path has no parent"))?;
+        let lua_dir = plugin_dir.join("lua");
+
+        // Add plugin's lua/ dir to package.path so require() works
+        let setup_code = format!(
+            r#"package.path = "{}/?.lua;" .. package.path"#,
+            lua_dir.display()
+        );
+        lua.load(&setup_code)
+            .exec()
+            .map_err(|e| anyhow::anyhow!("package.path setup: {e}"))?;
+
+        // Execute init.lua
+        let source = std::fs::read_to_string(init_path)
+            .map_err(|e| anyhow::anyhow!("read {}: {e}", init_path.display()))?;
+        lua.load(&source)
+            .set_name(init_path.to_string_lossy().as_ref())
+            .exec()
+            .map_err(|e| anyhow::anyhow!("exec {}: {e}", init_path.display()))?;
+
+        info!("Executed plugin in daemon runtime: {}", init_path.display());
+        Ok(())
     }
 
     #[allow(dead_code)]
@@ -173,13 +294,14 @@ impl DaemonPluginLoader {
     }
 }
 
-/// Return the default daemon plugin search paths.
+/// Return the default plugin search paths.
 ///
-/// Currently: `~/.config/crucible/daemon-plugins/`
+/// Uses the same paths as the CLI: `CRUCIBLE_PLUGIN_PATH` env var
+/// and `~/.config/crucible/plugins/`.
 pub fn default_daemon_plugin_paths() -> Vec<PathBuf> {
     let mut paths = Vec::new();
 
-    if let Ok(env_paths) = std::env::var("CRUCIBLE_DAEMON_PLUGIN_PATH") {
+    if let Ok(env_paths) = std::env::var("CRUCIBLE_PLUGIN_PATH") {
         let sep = if cfg!(windows) { ';' } else { ':' };
         for p in env_paths.split(sep) {
             if !p.is_empty() {
@@ -189,7 +311,7 @@ pub fn default_daemon_plugin_paths() -> Vec<PathBuf> {
     }
 
     if let Some(config_dir) = dirs::config_dir() {
-        paths.push(config_dir.join("crucible").join("daemon-plugins"));
+        paths.push(config_dir.join("crucible").join("plugins"));
     }
 
     paths
@@ -201,7 +323,7 @@ mod tests {
 
     #[test]
     fn daemon_plugin_loader_creates_successfully() {
-        let loader = DaemonPluginLoader::new();
+        let loader = DaemonPluginLoader::new(HashMap::new());
         assert!(
             loader.is_ok(),
             "DaemonPluginLoader::new() failed: {:?}",
@@ -212,12 +334,12 @@ mod tests {
     #[test]
     fn default_paths_includes_config_dir() {
         let paths = default_daemon_plugin_paths();
-        let has_daemon_plugins = paths
+        let has_plugins = paths
             .iter()
-            .any(|p| p.to_string_lossy().contains("daemon-plugins"));
+            .any(|p| p.to_string_lossy().contains("plugins"));
         assert!(
-            has_daemon_plugins,
-            "Expected daemon-plugins path in {:?}",
+            has_plugins,
+            "Expected plugins path in {:?}",
             paths
         );
     }
