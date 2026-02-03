@@ -400,6 +400,19 @@ impl KilnManager {
             .ok_or_else(|| anyhow::anyhow!("Failed to get connection after opening"))
     }
 
+    /// Find which open kiln contains the given file path.
+    pub async fn find_kiln_for_path(&self, file_path: &Path) -> Option<PathBuf> {
+        let canonical = file_path
+            .canonicalize()
+            .unwrap_or_else(|_| file_path.to_path_buf());
+        let conns = self.connections.read().await;
+        conns
+            .keys()
+            .filter(|kiln_path| canonical.starts_with(kiln_path))
+            .max_by_key(|p| p.components().count())
+            .cloned()
+    }
+
     async fn start_watch_manager(&self, kiln_path: &Path) -> Option<WatchManager> {
         let event_tx = self.event_tx.as_ref()?;
 
@@ -660,6 +673,63 @@ mod tests {
         // get() should now return Some(handle)
         let result = km.get(&kiln_path).await;
         assert!(result.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_find_kiln_for_path_returns_matching_kiln() {
+        let km = KilnManager::new();
+        let tmp = TempDir::new().unwrap();
+        let kiln_path = tmp.path().join("my_kiln");
+
+        km.open(&kiln_path).await.unwrap();
+
+        let file_in_kiln = kiln_path.join("notes").join("test.md");
+        let result = km.find_kiln_for_path(&file_in_kiln).await;
+        assert!(result.is_some());
+        assert_eq!(
+            result.unwrap(),
+            kiln_path.canonicalize().unwrap_or(kiln_path)
+        );
+    }
+
+    #[tokio::test]
+    async fn test_find_kiln_for_path_returns_none_for_unrelated_path() {
+        let km = KilnManager::new();
+        let tmp = TempDir::new().unwrap();
+        let kiln_path = tmp.path().join("my_kiln");
+
+        km.open(&kiln_path).await.unwrap();
+
+        let unrelated = PathBuf::from("/some/other/path/note.md");
+        let result = km.find_kiln_for_path(&unrelated).await;
+        assert!(result.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_find_kiln_for_path_returns_none_when_no_kilns_open() {
+        let km = KilnManager::new();
+        let path = PathBuf::from("/any/path/note.md");
+        let result = km.find_kiln_for_path(&path).await;
+        assert!(result.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_find_kiln_for_path_with_multiple_kilns() {
+        let km = KilnManager::new();
+        let tmp = TempDir::new().unwrap();
+        let kiln_a = tmp.path().join("kiln_a");
+        let kiln_b = tmp.path().join("kiln_b");
+
+        km.open(&kiln_a).await.unwrap();
+        km.open(&kiln_b).await.unwrap();
+
+        let file_in_b = kiln_b.join("sub").join("test.md");
+        let result = km.find_kiln_for_path(&file_in_b).await;
+        assert!(result.is_some());
+        assert_eq!(
+            result.unwrap(),
+            kiln_b.canonicalize().unwrap_or(kiln_b)
+        );
     }
 
     #[tokio::test]
