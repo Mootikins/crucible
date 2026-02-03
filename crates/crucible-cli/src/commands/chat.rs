@@ -18,9 +18,7 @@ use crate::core_facade::KilnContext;
 use crate::factories;
 use crate::kiln_discover::{discover_kiln, DiscoverySource};
 use crate::progress::{BackgroundProgress, LiveProgress, StatusLine};
-use crate::provider_detect::{
-    detect_providers, fetch_model_context_length, fetch_provider_models,
-};
+use crate::provider_detect::{detect_providers, fetch_model_context_length, fetch_provider_models};
 use crate::tui::oil::{McpServerDisplay, PluginStatusEntry};
 use crate::tui::AgentSelection;
 use crucible_core::traits::chat::{is_read_only, mode_display_name};

@@ -260,7 +260,10 @@ impl CrucibleParser {
         // Check for YAML frontmatter
         if content.starts_with("---\n") || content.starts_with("---\r\n") {
             let start = if content.starts_with("---\r\n") { 5 } else { 4 };
-            if let Some(end) = content.find("\n---\n").or_else(|| content.find("\n---\r\n")) {
+            if let Some(end) = content
+                .find("\n---\n")
+                .or_else(|| content.find("\n---\r\n"))
+            {
                 let frontmatter = &content[start..end];
                 let after = &content[end..];
                 let skip = if after.starts_with("\n---\r\n") { 6 } else { 5 };
@@ -272,7 +275,14 @@ impl CrucibleParser {
                 );
             }
             if content[start..].trim_end() == "---" || content.ends_with("\n---") {
-                let end = content.len() - if content.ends_with("\r\n---") { 5 } else if content.ends_with("\n---") { 4 } else { 3 };
+                let end = content.len()
+                    - if content.ends_with("\r\n---") {
+                        5
+                    } else if content.ends_with("\n---") {
+                        4
+                    } else {
+                        3
+                    };
                 let frontmatter = &content[start..end];
                 return (
                     Some(frontmatter.to_string()),
@@ -285,7 +295,10 @@ impl CrucibleParser {
         // Check for TOML frontmatter
         if content.starts_with("+++\n") || content.starts_with("+++\r\n") {
             let start = if content.starts_with("+++\r\n") { 5 } else { 4 };
-            if let Some(end) = content.find("\n+++\n").or_else(|| content.find("\n+++\r\n")) {
+            if let Some(end) = content
+                .find("\n+++\n")
+                .or_else(|| content.find("\n+++\r\n"))
+            {
                 let frontmatter = &content[start..end];
                 let after = &content[end..];
                 let skip = if after.starts_with("\n+++\r\n") { 6 } else { 5 };
@@ -297,7 +310,14 @@ impl CrucibleParser {
                 );
             }
             if content[start..].trim_end() == "+++" || content.ends_with("\n+++") {
-                let end = content.len() - if content.ends_with("\r\n+++") { 5 } else if content.ends_with("\n+++") { 4 } else { 3 };
+                let end = content.len()
+                    - if content.ends_with("\r\n+++") {
+                        5
+                    } else if content.ends_with("\n+++") {
+                        4
+                    } else {
+                        3
+                    };
                 let frontmatter = &content[start..end];
                 return (
                     Some(frontmatter.to_string()),
