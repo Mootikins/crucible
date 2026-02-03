@@ -41,7 +41,7 @@ end
 --- Event handler example
 -- @handler event="tool:after" pattern="*" priority=100
 function on_tool_complete(ctx, event)
-    crucible.log("info", "Tool completed: " .. event.tool_name)
+    cru.log("info", "Tool completed: " .. event.tool_name)
     return event
 end
 ```
@@ -70,7 +70,7 @@ function my_tool(args)
     local query = args.query
     local limit = args.limit or 10
     
-    local results = crucible.search(query)
+    local results = cru.kiln.search(query)
     return {
         count = #results,
         items = results

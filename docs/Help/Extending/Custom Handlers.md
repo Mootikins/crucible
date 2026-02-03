@@ -111,14 +111,14 @@ Place Lua handler files in:
 --- Handle events
 -- @handler event="note:parsed" pattern="*" priority=100
 function handle_note_parsed(ctx, event)
-    crucible.log("info", "Note parsed: " .. event.identifier)
+    cru.log("info", "Note parsed: " .. event.identifier)
     return event
 end
 
 --- Handle file changes
 -- @handler event="file:changed" pattern="*" priority=100
 function handle_file_changed(ctx, event)
-    crucible.log("info", "File changed: " .. event.identifier)
+    cru.log("info", "File changed: " .. event.identifier)
     return event
 end
 ```
@@ -150,7 +150,7 @@ Handlers can cancel preventable events:
 -- @handler event="tool:before" pattern="*" priority=5
 function block_secrets(ctx, event)
     if string.find(event.identifier, ".secret") then
-        crucible.log("warn", "Blocked access to secret file")
+        cru.log("warn", "Blocked access to secret file")
         event.cancelled = true
     end
     return event

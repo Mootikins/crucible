@@ -15,8 +15,8 @@ Complete reference for all Crucible CLI commands.
 
 | Command | Description |
 |---------|-------------|
-| `cru process` | Process vault and sync to database |
-| `cru stats` | Show vault statistics |
+| `cru process` | Process kiln and sync to database |
+| `cru stats` | Show kiln statistics |
 | `cru status` | Show storage status and statistics |
 | `cru config` | Configuration management |
 
