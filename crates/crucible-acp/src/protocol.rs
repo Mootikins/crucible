@@ -17,6 +17,12 @@
 
 use serde::{Deserialize, Serialize};
 
+/// Current ACP protocol version tracked by Crucible.
+///
+/// Wire protocol version is `1` (see `connect_with_handshake`); this tracks
+/// the internal ACP spec revision for compatibility checks.
+pub const ACP_VERSION: (u32, u32, u32) = (0, 10, 6);
+
 /// Protocol version information
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ProtocolVersion {
@@ -48,8 +54,8 @@ impl ProtocolVersion {
 
 impl Default for ProtocolVersion {
     fn default() -> Self {
-        // Internal tracking only — wire protocol version is `1` (see connect_with_handshake)
-        Self::new(0, 10, 6)
+        let (major, minor, patch) = ACP_VERSION;
+        Self::new(major, minor, patch)
     }
 }
 
@@ -96,21 +102,23 @@ mod tests {
 
     #[test]
     fn test_protocol_version() {
-        let v1 = ProtocolVersion::new(0, 10, 6);
+        let (major, minor, patch) = ACP_VERSION;
+        let v1 = ProtocolVersion::new(major, minor, patch);
         let v2 = ProtocolVersion::new(0, 8, 0);
         let v3 = ProtocolVersion::new(1, 0, 0);
 
         assert!(v1.is_compatible_with(&v2));
         assert!(!v1.is_compatible_with(&v3));
-        assert_eq!(v1.to_string(), "0.10.6");
+        assert_eq!(v1.to_string(), format!("{major}.{minor}.{patch}"));
     }
 
     #[test]
     fn test_message_handler_creation() {
+        let (major, minor, patch) = ACP_VERSION;
         let handler = MessageHandler::default();
-        assert_eq!(handler.version().major, 0);
-        assert_eq!(handler.version().minor, 10);
-        assert_eq!(handler.version().patch, 6);
+        assert_eq!(handler.version().major, major);
+        assert_eq!(handler.version().minor, minor);
+        assert_eq!(handler.version().patch, patch);
     }
 
     #[test]
