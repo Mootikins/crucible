@@ -156,31 +156,37 @@ function M.connect()
         ws = cru.ws.connect(url)
         if not ws then error({ retryable = true }) end
 
-        -- Receive loop with heartbeat via timeout
-        local last_heartbeat = 0
+        -- Receive loop with explicit heartbeat tracking
+        local last_heartbeat_at = os.clock()
 
         while true do
-            -- Determine receive timeout based on heartbeat interval
-            local timeout_secs = heartbeat_interval
-                and (heartbeat_interval / 1000.0 * 0.75)
-                or 30.0
+            -- Compute time until next heartbeat is due
+            local recv_timeout = 30.0
+            if heartbeat_interval then
+                local interval_secs = heartbeat_interval / 1000.0
+                local elapsed = os.clock() - last_heartbeat_at
+                local remaining = interval_secs - elapsed
+                if remaining <= 0 then
+                    send_heartbeat()
+                    last_heartbeat_at = os.clock()
+                    remaining = interval_secs
+                end
+                recv_timeout = remaining
+            end
 
-            local ok, msg = cru.timer.timeout(timeout_secs, function()
+            local ok, msg = cru.timer.timeout(recv_timeout, function()
                 return ws:receive()
             end)
 
-            -- Timeout elapsed — send heartbeat
-            if not ok then
-                if heartbeat_interval then send_heartbeat() end
-            elseif msg then
+            if ok and msg then
                 local should_continue = handle_message(msg)
                 if not should_continue then
                     ws:close()
                     ws = nil
-                    -- Reconnect requested: retry with backoff
                     error({ retryable = true })
                 end
             end
+            -- On timeout, loop continues and heartbeat fires at top
         end
     end, {
         max_retries = 10,
