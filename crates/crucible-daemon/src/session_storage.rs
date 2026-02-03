@@ -11,6 +11,7 @@
 use crate::session_manager::SessionError;
 use async_trait::async_trait;
 use chrono::Utc;
+use crucible_config::is_crucible_home;
 use crucible_core::session::{Session, SessionSummary};
 use std::path::Path;
 use tokio::fs;
@@ -85,18 +86,28 @@ impl FileSessionStorage {
 
     /// Get the storage directory for a session.
     ///
-    /// Returns: `{kiln}/.crucible/sessions/{session_id}/`
+    /// When the kiln is the crucible home (`~/.crucible/`), sessions go directly
+    /// to `~/.crucible/sessions/{id}` to avoid double-nesting `.crucible/.crucible/`.
+    /// Otherwise returns `{kiln}/.crucible/sessions/{session_id}/`.
     fn session_dir(session: &Session) -> std::path::PathBuf {
-        session
-            .kiln
-            .join(".crucible")
-            .join("sessions")
-            .join(&session.id)
+        Self::sessions_base(&session.kiln).join(&session.id)
     }
 
     /// Get the storage directory for a session by ID and kiln.
     fn session_dir_by_id(session_id: &str, kiln: &Path) -> std::path::PathBuf {
-        kiln.join(".crucible").join("sessions").join(session_id)
+        Self::sessions_base(kiln).join(session_id)
+    }
+
+    /// Get the base sessions directory for a kiln.
+    ///
+    /// For crucible home: `~/.crucible/sessions/`
+    /// For other kilns: `{kiln}/.crucible/sessions/`
+    fn sessions_base(kiln: &Path) -> std::path::PathBuf {
+        if is_crucible_home(kiln) {
+            kiln.join("sessions")
+        } else {
+            kiln.join(".crucible").join("sessions")
+        }
     }
 }
 
@@ -153,7 +164,7 @@ impl SessionStorage for FileSessionStorage {
     }
 
     async fn list(&self, kiln: &Path) -> Result<Vec<SessionSummary>, SessionError> {
-        let sessions_dir = kiln.join(".crucible").join("sessions");
+        let sessions_dir = Self::sessions_base(kiln);
 
         if !sessions_dir.exists() {
             return Ok(vec![]);
@@ -687,6 +698,64 @@ not json at all
         assert_eq!(events[0]["content"], "valid1");
         assert_eq!(events[1]["content"], "valid2");
         assert_eq!(events[2]["content"], "valid3");
+    }
+
+    #[tokio::test]
+    async fn test_crucible_home_avoids_double_nesting() {
+        // When kiln IS crucible_home, sessions go to {kiln}/sessions/ (no .crucible prefix)
+        let home = crucible_config::crucible_home();
+        let base = FileSessionStorage::sessions_base(&home);
+        // Should be {home}/sessions, NOT {home}/.crucible/sessions
+        assert_eq!(base, home.join("sessions"));
+        assert!(
+            !base.to_string_lossy().contains(".crucible/.crucible"),
+            "Should not double-nest .crucible: {:?}",
+            base
+        );
+    }
+
+    #[tokio::test]
+    async fn test_regular_kiln_uses_crucible_prefix() {
+        // When kiln is NOT crucible_home, sessions go to {kiln}/.crucible/sessions/
+        let tmp = TempDir::new().unwrap();
+        let kiln = tmp.path().join("my-notes");
+        std::fs::create_dir_all(&kiln).unwrap();
+
+        let base = FileSessionStorage::sessions_base(&kiln);
+        assert_eq!(base, kiln.join(".crucible").join("sessions"));
+    }
+
+    #[tokio::test]
+    async fn test_session_storage_save_load_with_crucible_home() {
+        // Use the real crucible_home path for this test
+        let home = crucible_config::crucible_home();
+        let storage = FileSessionStorage::new();
+
+        let session = Session::new(SessionType::Chat, home.clone());
+        let session_id = session.id.clone();
+
+        storage.save(&session).await.unwrap();
+
+        // Verify file is at {home}/sessions/{id}/meta.json (no .crucible prefix)
+        let meta_path = home
+            .join("sessions")
+            .join(&session_id)
+            .join("meta.json");
+        assert!(meta_path.exists(), "meta.json should be at {:?}", meta_path);
+
+        // Verify the double-nested path does NOT exist
+        let bad_path = home
+            .join(".crucible")
+            .join("sessions")
+            .join(&session_id);
+        assert!(!bad_path.exists(), "should NOT have double .crucible nesting");
+
+        // Load should work
+        let loaded = storage.load(&session_id, &home).await.unwrap();
+        assert_eq!(loaded.id, session_id);
+
+        // Cleanup: remove the test session dir
+        let _ = tokio::fs::remove_dir_all(home.join("sessions").join(&session_id)).await;
     }
 
     #[tokio::test]
