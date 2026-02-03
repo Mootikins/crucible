@@ -50,8 +50,15 @@ function M.set_periodic_hook(fn) periodic_hook = fn end
 -- ---------------------------------------------------------------------------
 
 local function send_payload(op, d)
-    if not ws then return end
-    ws:send(cru.json.encode({ op = op, d = d }))
+    if not ws then return false end
+    local ok, err = pcall(function()
+        ws:send(cru.json.encode({ op = op, d = d }))
+    end)
+    if not ok then
+        cru.log("warn", "Discord gateway: send failed: " .. tostring(err))
+        return false
+    end
+    return true
 end
 
 local function send_heartbeat()
@@ -59,7 +66,7 @@ local function send_heartbeat()
         cru.log("warn", "Discord gateway: missed heartbeat ACK, connection may be zombie")
     end
     awaiting_ack = true
-    send_payload(OP.HEARTBEAT, last_sequence)
+    return send_payload(OP.HEARTBEAT, last_sequence)
 end
 
 local function send_identify()
@@ -165,7 +172,7 @@ function M.connect()
 
         -- Receive loop with explicit heartbeat tracking
         -- Initial heartbeat uses jitter (random fraction of interval) per Discord spec
-        local last_heartbeat_at = os.clock()
+        local last_heartbeat_at = cru.timer.clock()
         local first_heartbeat = true
 
         while true do
@@ -173,31 +180,41 @@ function M.connect()
             local recv_timeout = 30.0
             if heartbeat_interval then
                 local interval_secs = heartbeat_interval / 1000.0
-                local elapsed = os.clock() - last_heartbeat_at
+                local elapsed = cru.timer.clock() - last_heartbeat_at
                 -- First heartbeat uses jitter: random 0..interval per Discord spec
                 local target = first_heartbeat and (interval_secs * math.random()) or interval_secs
                 local remaining = target - elapsed
                 if remaining <= 0 then
-                    send_heartbeat()
-                    last_heartbeat_at = os.clock()
+                    if not send_heartbeat() then
+                        -- WebSocket closed during heartbeat, trigger reconnect
+                        ws = nil
+                        error({ retryable = true })
+                    end
+                    last_heartbeat_at = cru.timer.clock()
                     first_heartbeat = false
                     remaining = interval_secs
                 end
                 recv_timeout = remaining
             end
 
-            local ok, msg = cru.timer.timeout(recv_timeout, function()
-                return ws:receive()
-            end)
+            local ok, msg = pcall(ws.receive, ws, recv_timeout)
 
-            if ok and msg then
-                local should_continue = handle_message(msg)
-                if not should_continue then
-                    ws:close()
+            if not ok then
+                -- ws:receive threw an error (connection closed, etc.)
+                cru.log("info", "Discord gateway: receive error: " .. tostring(msg))
+                ws = nil
+                error({ retryable = true })
+            end
+
+            if msg then
+                local hok, should_continue = pcall(handle_message, msg)
+                if not hok or not should_continue then
+                    pcall(function() ws:close() end)
                     ws = nil
                     error({ retryable = true })
                 end
             end
+            -- msg == nil means timeout, loop continues and heartbeat fires at top
 
             -- Run periodic hook (digest, session cleanup, etc.)
             if periodic_hook then pcall(periodic_hook) end
