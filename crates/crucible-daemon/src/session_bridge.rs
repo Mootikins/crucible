@@ -335,7 +335,7 @@ impl DaemonSessionApi for DaemonSessionBridge {
                                         .to_string();
                                     let args_brief = truncate_json_preview(
                                         event.data.get("args"),
-                                        120,
+                                        500,
                                     );
                                     emit!(ResponsePart::ToolCall { tool, args_brief });
                                 }

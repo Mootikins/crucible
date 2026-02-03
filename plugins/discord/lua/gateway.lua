@@ -230,6 +230,19 @@ function M.connect()
     })
 end
 
+--- Update bot presence/status.
+---@param status string "online"|"idle"|"dnd"|"invisible"
+---@param activity table|nil {name=string, type=number} (0=Playing, 1=Streaming, 2=Listening, 3=Watching, 5=Competing)
+function M.update_presence(status, activity)
+    local d = {
+        since = (status == "idle") and (os.time() * 1000) or nil,
+        activities = activity and { activity } or {},
+        status = status,
+        afk = status == "idle",
+    }
+    send_payload(OP.PRESENCE_UPDATE, d)
+end
+
 --- Disconnect from gateway (clean disconnect clears session)
 function M.disconnect()
     if ws then
