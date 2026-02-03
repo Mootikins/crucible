@@ -77,7 +77,8 @@ gateway.on("READY", function(data)
     local guild_count = data.guilds and #data.guilds or 0
     cru.log("info", string.format("Discord bot ready: %s (%d guilds)", data.user.username, guild_count))
 
-    -- Auto-register slash commands if app_id is configured
+    gateway.update_presence("online", { name = "ready", type = 3 })
+
     local app_id = config.get("app_id", "")
     if app_id ~= "" then
         local interactions = require("interactions")
@@ -95,14 +96,27 @@ gateway.on("MESSAGE_CREATE", function(data)
     local raw = (data.content or ""):match("^%s*(.-)%s*$") or ""
     local lower = raw:lower()
 
-    -- Intercept y/n replies for pending permission prompts
+    -- Intercept permission replies from the original requester
     local pending = responder.pending_replies[channel_id]
     if pending and pending.state == "waiting" and data.author and data.author.id == pending.user_id then
         if lower == "y" or lower == "yes" then
             pending.state = "allowed"
+            pending.scope = "once"
+            return
+        elseif lower == "y!" or lower == "yes!" then
+            pending.state = "allowed"
+            pending.scope = "session"
             return
         elseif lower == "n" or lower == "no" then
             pending.state = "denied"
+            return
+        elseif lower == "n!" or lower == "no!" then
+            pending.state = "denied"
+            pending.scope = "session"
+            return
+        elseif lower:match("^n[,:]%s*") or lower:match("^no[,:]%s*") then
+            pending.state = "denied"
+            pending.reason = raw:match("[,:]%s*(.+)$")
             return
         end
     end
