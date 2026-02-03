@@ -9,21 +9,39 @@ local MAX_MESSAGE_LEN = 2000
 local RESPONSE_TIMEOUT = 120  -- seconds
 local TYPING_INTERVAL = 8     -- re-trigger typing every 8s
 
---- Find the last double-newline (paragraph break) before `pos`.
-local function find_paragraph_break(text, pos)
-    local best = nil
+--- Find structural break positions in text up to `limit`, scored by priority:
+--- 3 = heading (\n#), 2 = paragraph (\n\n), 1 = single newline.
+--- Each entry: {pos = byte where next section starts, priority = int}.
+local function find_structural_breaks(text, limit)
+    local breaks = {}
     local i = 1
-    while true do
-        local found = text:find("\n\n", i, true)
-        if not found or found > pos then break end
-        best = found
-        i = found + 1
+    while i <= limit do
+        local nl = text:find("\n", i, true)
+        if not nl or nl > limit then break end
+
+        local next_char = text:sub(nl + 1, nl + 1)
+        if next_char == "\n" then
+            -- Consume consecutive blank lines, break pos = start of next content
+            local end_blanks = nl + 1
+            while text:sub(end_blanks + 1, end_blanks + 1) == "\n" do
+                end_blanks = end_blanks + 1
+            end
+            local has_heading = text:sub(end_blanks + 1, end_blanks + 1) == "#"
+            table.insert(breaks, { pos = end_blanks + 1, priority = has_heading and 3 or 2 })
+            i = end_blanks + 1
+        elseif next_char == "#" then
+            table.insert(breaks, { pos = nl + 1, priority = 3 })
+            i = nl + 1
+        else
+            table.insert(breaks, { pos = nl + 1, priority = 1 })
+            i = nl + 1
+        end
     end
-    return best
+    return breaks
 end
 
 --- Split text into balanced chunks that fit within Discord's message limit.
---- Prefers paragraph boundaries; avoids tiny orphan messages.
+--- Prefers heading and paragraph boundaries; avoids tiny orphan messages.
 local function chunk_text(text, max_len)
     max_len = max_len or MAX_MESSAGE_LEN
     if #text <= max_len then
@@ -48,25 +66,47 @@ local function chunk_text(text, max_len)
         if ideal > pos + max_len - 1 then ideal = pos + max_len - 1 end
 
         local window = text:sub(pos, ideal)
-        local break_at = #window
+        local all_breaks = find_structural_breaks(window, #window)
 
-        local para = find_paragraph_break(window, #window)
-        if para and para > #window * 0.4 then
-            break_at = para + 1
-        else
-            local nl = window:find("\n[^\n]*$")
-            if nl and nl > #window * 0.3 then
-                break_at = nl
-            else
-                local sp = window:find(" [^ ]*$")
-                if sp and sp > #window * 0.3 then
-                    break_at = sp
+        local min_offset = math.floor(#window * 0.3)
+        local best_pos = nil
+        local best_priority = -1
+        local best_dist = math.huge
+
+        for _, b in ipairs(all_breaks) do
+            if b.pos >= min_offset then
+                local dist = math.abs(b.pos - target_size)
+                if b.priority > best_priority
+                    or (b.priority == best_priority and dist < best_dist) then
+                    best_pos = b.pos
+                    best_priority = b.priority
+                    best_dist = dist
                 end
             end
         end
 
-        table.insert(chunks, text:sub(pos, pos + break_at - 1))
+        local break_at
+        if best_pos then
+            break_at = best_pos - 1
+        else
+            local sp = window:find(" [^ ]*$")
+            if sp and sp > min_offset then
+                break_at = sp
+            else
+                break_at = #window
+            end
+        end
+
+        local chunk = text:sub(pos, pos + break_at - 1):gsub("%s+$", "")
+        if #chunk > 0 then
+            table.insert(chunks, chunk)
+        end
         pos = pos + break_at
+        -- Skip inter-chunk whitespace, but preserve heading markers
+        while pos <= total and (text:sub(pos, pos) == "\n" or text:sub(pos, pos) == " ") do
+            if text:sub(pos, pos) == "#" then break end
+            pos = pos + 1
+        end
     end
 
     return chunks
