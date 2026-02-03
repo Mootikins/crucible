@@ -5,6 +5,9 @@ edition = "2021"
 description = "Agent inbox plugin for Zellij"
 license = "MIT"
 
+[package.metadata.dist]
+dist = false
+
 [lib]
 crate-type = ["cdylib", "rlib"]
 
