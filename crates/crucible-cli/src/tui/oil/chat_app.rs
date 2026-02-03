@@ -1493,7 +1493,10 @@ impl OilChatApp {
                 Action::Continue
             }
             _ if command.starts_with("model ") => {
-                let model_name = command.strip_prefix("model ").unwrap().trim();
+                let model_name = command
+                    .strip_prefix("model ")
+                    .expect("starts_with guard")
+                    .trim();
                 if model_name.is_empty() {
                     self.notification_area
                         .add(crucible_core::types::Notification::warning(
@@ -1509,7 +1512,10 @@ impl OilChatApp {
                 Action::Send(ChatAppMsg::ClearHistory)
             }
             _ if command.starts_with("export ") => {
-                let path = command.strip_prefix("export ").unwrap().trim();
+                let path = command
+                    .strip_prefix("export ")
+                    .expect("starts_with guard")
+                    .trim();
                 self.handle_export_command(path)
             }
             _ => {
