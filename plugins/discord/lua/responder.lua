@@ -90,7 +90,7 @@ function M.collect_response_with_iterator(next_event, session_id, opts)
         local event_type = event.type or event.event
 
         if event_type == "text_delta" then
-            local text = event.data and event.data.text or event.data
+            local text = event.data and (event.data.content or event.data.text) or event.data
             if type(text) == "string" then
                 table.insert(parts, text)
             end
