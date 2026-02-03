@@ -191,7 +191,15 @@ end
         register_hooks_module(lua, &crucible)?;
         crate::notify::register_notify_module(lua, &crucible)?;
 
-        globals.set("crucible", crucible)?;
+        globals.set("crucible", crucible.clone())?;
+
+        // Add cru.log and cru.json aliases for concise access
+        let cru_ns: mlua::Table = globals.get("cru")?;
+        cru_ns.set("log", crucible.get::<mlua::Value>("log")?)?;
+        let json_table = lua.create_table()?;
+        json_table.set("encode", crucible.get::<mlua::Value>("json_encode")?)?;
+        json_table.set("decode", crucible.get::<mlua::Value>("json_decode")?)?;
+        cru_ns.set("json", json_table)?;
 
         // Register ask module for user interaction
         register_ask_module(lua)?;
@@ -205,6 +213,9 @@ end
         // Register stateless utility modules
         register_http_module(lua)?;
         register_fs_module(lua)?;
+        crate::timer::register_timer_module(lua)?;
+        crate::ratelimit::register_ratelimit_module(lua)?;
+        crate::lua_stdlib::register_lua_stdlib(lua)?;
 
         Ok(())
     }
