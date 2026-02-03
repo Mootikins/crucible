@@ -81,11 +81,13 @@ gateway.on("READY", function(data)
 
     local app_id = config.get("app_id", "")
     if app_id ~= "" then
-        local interactions = require("interactions")
-        local ok, err = pcall(interactions.register_commands, app_id)
-        if not ok then
-            cru.log("warn", "Failed to register slash commands: " .. tostring(err))
-        end
+        cru.spawn(function()
+            local interactions = require("interactions")
+            local ok, err = pcall(interactions.register_commands, app_id)
+            if not ok then
+                cru.log("warn", "Failed to register slash commands: " .. tostring(err))
+            end
+        end)
     end
 end)
 
