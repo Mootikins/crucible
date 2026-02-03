@@ -189,3 +189,45 @@ pub fn arb_conversation_turn() -> impl Strategy<Value = ConversationTurn> {
 pub fn arb_multi_turn_conversation() -> impl Strategy<Value = Vec<ConversationTurn>> {
     prop::collection::vec(arb_conversation_turn(), 1..5)
 }
+
+#[derive(Debug, Clone)]
+pub enum SubagentOutcome {
+    Completed(String),
+    Failed(String),
+    /// Spawned but never resolved (still pending)
+    Pending,
+}
+
+#[derive(Debug, Clone)]
+pub struct SubagentEvent {
+    pub id: String,
+    pub prompt: String,
+    pub outcome: SubagentOutcome,
+}
+
+pub fn arb_subagent_event() -> impl Strategy<Value = SubagentEvent> {
+    (
+        arb_short_text(),
+        arb_user_query(),
+        prop_oneof![
+            arb_text_content().prop_map(SubagentOutcome::Completed),
+            arb_text_content().prop_map(SubagentOutcome::Failed),
+            Just(SubagentOutcome::Pending),
+        ],
+    )
+        .prop_map(|(id, prompt, outcome)| SubagentEvent {
+            id,
+            prompt,
+            outcome,
+        })
+}
+
+pub fn arb_subagent_sequence() -> impl Strategy<Value = Vec<SubagentEvent>> {
+    prop::collection::vec(arb_subagent_event(), 1..6)
+        .prop_map(|mut events| {
+            let mut seen = std::collections::HashSet::new();
+            events.retain(|e| seen.insert(e.id.clone()));
+            events
+        })
+        .prop_filter("non-empty after dedup", |v| !v.is_empty())
+}
