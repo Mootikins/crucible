@@ -4,7 +4,7 @@
 local api = require("api")
 local config = require("config")
 local sessions = require("sessions")
-local responder = require("responder")
+local tables = require("tables")
 
 local M = {}
 
@@ -83,17 +83,24 @@ local function handle_ask(data)
         return edit_deferred(app_id, data.token, "Failed to create session: " .. tostring(err))
     end
 
-    local msg_id, send_err = cru.sessions.send_message(session_id, question)
-    if not msg_id then
+    local next_part, send_err = cru.sessions.send_and_collect(session_id, question, {
+        timeout = 120,
+    })
+    if send_err then
         return edit_deferred(app_id, data.token, "Agent error: " .. tostring(send_err))
     end
 
-    local response, collect_err = responder.collect_response(session_id)
-    if collect_err then
-        return edit_deferred(app_id, data.token, "Failed to collect response: " .. collect_err)
+    local text_parts = {}
+    while true do
+        local part = next_part()
+        if part == nil then break end
+        if part.type == "text" and part.content and part.content ~= "" then
+            table.insert(text_parts, part.content)
+        end
     end
 
-    -- Discord edit limit is 2000 chars; truncate if needed
+    local response = tables.transform(table.concat(text_parts))
+    if response == "" then response = "No response." end
     if #response > 2000 then
         response = response:sub(1, 1990) .. "\n[truncated]"
     end
