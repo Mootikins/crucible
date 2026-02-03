@@ -48,8 +48,8 @@ impl ProtocolVersion {
 
 impl Default for ProtocolVersion {
     fn default() -> Self {
-        // Default to ACP 0.7.0 (current agent-client-protocol version)
-        Self::new(0, 7, 0)
+        // Internal tracking only — wire protocol version is `1` (see connect_with_handshake)
+        Self::new(0, 10, 6)
     }
 }
 
@@ -96,21 +96,21 @@ mod tests {
 
     #[test]
     fn test_protocol_version() {
-        let v1 = ProtocolVersion::new(0, 7, 0);
+        let v1 = ProtocolVersion::new(0, 10, 6);
         let v2 = ProtocolVersion::new(0, 8, 0);
         let v3 = ProtocolVersion::new(1, 0, 0);
 
         assert!(v1.is_compatible_with(&v2));
         assert!(!v1.is_compatible_with(&v3));
-        assert_eq!(v1.to_string(), "0.7.0");
+        assert_eq!(v1.to_string(), "0.10.6");
     }
 
     #[test]
     fn test_message_handler_creation() {
         let handler = MessageHandler::default();
         assert_eq!(handler.version().major, 0);
-        assert_eq!(handler.version().minor, 7);
-        assert_eq!(handler.version().patch, 0);
+        assert_eq!(handler.version().minor, 10);
+        assert_eq!(handler.version().patch, 6);
     }
 
     #[test]

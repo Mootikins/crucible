@@ -138,7 +138,10 @@ pub enum Commands {
     ///
     /// By default, starts an SSE (Server-Sent Events) server on port 3847.
     /// Use --stdio for traditional stdin/stdout transport.
-    #[command(name = "mcp")]
+    #[command(
+        name = "mcp",
+        long_about = "Start MCP server exposing Crucible tools for external AI agents.\n\nSupports both SSE (Server-Sent Events) and stdio transports. Default is SSE on port 3847.\n\nExamples:\n  # Start SSE server on default port\n  cru mcp\n\n  # Start SSE on custom port\n  cru mcp --port 4000\n\n  # Use stdio transport (for Claude Desktop)\n  cru mcp --stdio\n\n  # Custom kiln path\n  cru mcp --kiln-path ~/my-kiln\n\n  # Disable Just tools\n  cru mcp --no-just"
+    )]
     Mcp {
         /// Use stdio transport instead of SSE (default: SSE)
         #[arg(long)]
@@ -193,9 +196,15 @@ pub enum Commands {
     },
 
     /// Display kiln statistics
+    #[command(
+        long_about = "Display comprehensive kiln statistics including note count, embeddings status, and storage metrics.\n\nShows overview of your knowledge base with format options for different output styles.\n\nExamples:\n  # Show statistics in table format\n  cru stats\n\n  # JSON output for scripting\n  cru stats -f json\n\n  # CSV format for spreadsheets\n  cru stats -f csv"
+    )]
     Stats,
 
     /// List available models from configured provider
+    #[command(
+        long_about = "List available models from the configured LLM provider.\n\nQueries the provider (Ollama, OpenAI, Anthropic, etc.) to show available models and their capabilities.\n\nExamples:\n  # List models from configured provider\n  cru models\n\n  # JSON output for scripting\n  cru models -f json\n\n  # Show with detailed information\n  cru models --detailed"
+    )]
     Models,
 
     /// Configuration management
@@ -207,6 +216,9 @@ pub enum Commands {
     Config(ConfigCommands),
 
     /// Show storage status and statistics
+    #[command(
+        long_about = "Show storage status and statistics for the knowledge base.\n\nDisplay current storage mode, usage metrics, and recent activity. Supports detailed analysis and format options.\n\nExamples:\n  # Show global storage status\n  cru status\n\n  # Analyze specific path\n  cru status docs/\n\n  # Detailed block-level information\n  cru status --detailed\n\n  # Include recent changes\n  cru status --recent\n\n  # JSON output\n  cru status -f json"
+    )]
     Status {
         /// Path to analyze (optional - shows global status if omitted)
         #[arg(value_name = "PATH")]
@@ -226,16 +238,25 @@ pub enum Commands {
     },
 
     /// Storage management and operations
-    #[command(subcommand)]
+    #[command(
+        subcommand,
+        long_about = "Manage storage operations including migration, verification, backup, and cleanup.\n\nSupports mode switching, integrity checks, maintenance, and data export/import.\n\nExamples:\n  # Show current storage mode\n  cru storage mode\n\n  # Display storage statistics\n  cru storage stats\n\n  # Verify content integrity\n  cru storage verify\n\n  # Backup storage data\n  cru storage backup ~/backup.json\n\n  # Restore from backup\n  cru storage restore ~/backup.json\n\n  # Cleanup and optimize\n  cru storage cleanup --gc --optimize"
+    )]
     Storage(StorageCommands),
 
     /// Agent card management (defaults to 'list' if no subcommand given)
+    #[command(
+        long_about = "Manage agent cards - list, show details, and validate configurations.\n\nAgent cards define AI assistant profiles with system prompts, capabilities, and settings.\n\nExamples:\n  # List all agent cards\n  cru agents list\n\n  # Filter by tag\n  cru agents list -t documentation\n\n  # Show agent details\n  cru agents show \"Claude Code\"\n\n  # Show full system prompt\n  cru agents show \"Claude Code\" --full\n\n  # Validate all agent cards\n  cru agents validate --verbose"
+    )]
     Agents {
         #[command(subcommand)]
         command: Option<AgentsCommands>,
     },
 
     /// Task harness management
+    #[command(
+        long_about = "Manage tasks from a TASKS.md file with list, next, pick, and done subcommands.\n\nTrack work items with status, blocking, and completion tracking.\n\nExamples:\n  # List all tasks\n  cru tasks list\n\n  # Show next task\n  cru tasks next\n\n  # Pick a specific task\n  cru tasks pick task-1\n\n  # Mark task as done\n  cru tasks done task-1\n\n  # Use custom tasks file\n  cru tasks --file ~/work/TASKS.md list\n\n  # Mark task as blocked\n  cru tasks blocked task-2 \"waiting for review\""
+    )]
     Tasks {
         /// Path to tasks file (default: TASKS.md in cwd)
         #[arg(long, default_value = "TASKS.md")]
@@ -246,11 +267,17 @@ pub enum Commands {
     },
 
     /// Daemon management (start, stop, status)
-    #[command(subcommand)]
+    #[command(
+        subcommand,
+        long_about = "Manage the Crucible daemon server for multi-session support.\n\nStart, stop, and monitor the background daemon that handles session persistence and agent execution.\n\nExamples:\n  # Start daemon\n  cru daemon start\n\n  # Check daemon status\n  cru daemon status\n\n  # Stop daemon\n  cru daemon stop\n\n  # View daemon logs\n  cru daemon logs\n\n  # Restart daemon\n  cru daemon restart"
+    )]
     Daemon(crate::commands::daemon::DaemonCommands),
 
     /// Agent skills management
-    #[command(subcommand)]
+    #[command(
+        subcommand,
+        long_about = "Discover and manage agent skills - reusable capabilities and tools.\n\nList available skills, show details, and search by functionality.\n\nExamples:\n  # List all discovered skills\n  cru skills list\n\n  # Filter by scope\n  cru skills list --scope workspace\n\n  # Show skill details\n  cru skills show \"semantic_search\"\n\n  # Search skills by query\n  cru skills search \"search\" -n 5"
+    )]
     Skills(SkillsCommands),
 
     /// Initialize a new kiln (crucible workspace)
@@ -285,6 +312,9 @@ pub enum Commands {
     Session(SessionCommands),
 
     /// Manage LLM provider credentials (defaults to 'list' if no subcommand given)
+    #[command(
+        long_about = "Manage LLM provider credentials and authentication.\n\nStore, retrieve, and manage API keys for OpenAI, Anthropic, Ollama, and other providers.\n\nExamples:\n  # List all configured credentials\n  cru auth list\n\n  # Store API key for provider\n  cru auth login --provider openai --key sk-...\n\n  # Interactive login prompt\n  cru auth login\n\n  # Remove credential\n  cru auth logout --provider anthropic"
+    )]
     Auth {
         #[command(subcommand)]
         command: Option<AuthCommands>,
