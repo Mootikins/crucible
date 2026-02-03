@@ -10,8 +10,8 @@ use crate::tui::oil::TestRuntime;
 use proptest::prelude::*;
 
 use super::generators::{
-    arb_multi_turn_conversation, arb_rpc_sequence_with_tools, arb_text_content, arb_tool_name,
-    RpcEvent,
+    arb_multi_turn_conversation, arb_rpc_sequence_with_tools, arb_subagent_sequence,
+    arb_text_content, arb_tool_name, RpcEvent, SubagentOutcome,
 };
 use super::helpers::{apply_rpc_event, combined_output, view_with_default_ctx};
 
@@ -315,6 +315,168 @@ proptest! {
             stdout.contains("R1"),
             "Previous response should persist:\n{}",
             stdout
+        );
+    }
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(50))]
+
+    #[test]
+    fn subagent_events_never_panic(
+        subagents in arb_subagent_sequence(),
+        response in arb_text_content()
+    ) {
+        let mut runtime = TestRuntime::new(80, 24);
+        let mut app = OilChatApp::default();
+
+        app.on_message(ChatAppMsg::UserMessage("Q".to_string()));
+
+        for sa in &subagents {
+            app.on_message(ChatAppMsg::SubagentSpawned {
+                id: sa.id.clone(),
+                prompt: sa.prompt.clone(),
+            });
+            render_and_graduate(&mut runtime, &mut app);
+        }
+
+        for sa in &subagents {
+            match &sa.outcome {
+                SubagentOutcome::Completed(summary) => {
+                    app.on_message(ChatAppMsg::SubagentCompleted {
+                        id: sa.id.clone(),
+                        summary: summary.clone(),
+                    });
+                }
+                SubagentOutcome::Failed(error) => {
+                    app.on_message(ChatAppMsg::SubagentFailed {
+                        id: sa.id.clone(),
+                        error: error.clone(),
+                    });
+                }
+                SubagentOutcome::Pending => {}
+            }
+            render_and_graduate(&mut runtime, &mut app);
+        }
+
+        app.on_message(ChatAppMsg::TextDelta(response));
+        app.on_message(ChatAppMsg::StreamComplete);
+        render_and_graduate(&mut runtime, &mut app);
+
+        let combined = combined_output(&runtime);
+        prop_assert!(
+            combined.contains("Q"),
+            "User message should persist through subagent events:\n{}",
+            combined
+        );
+    }
+
+    #[test]
+    fn subagent_prompts_appear_in_output(
+        subagents in arb_subagent_sequence()
+    ) {
+        let mut runtime = TestRuntime::new(80, 24);
+        let mut app = OilChatApp::default();
+
+        app.on_message(ChatAppMsg::UserMessage("Q".to_string()));
+
+        for sa in &subagents {
+            app.on_message(ChatAppMsg::SubagentSpawned {
+                id: sa.id.clone(),
+                prompt: sa.prompt.clone(),
+            });
+
+            match &sa.outcome {
+                SubagentOutcome::Completed(summary) => {
+                    app.on_message(ChatAppMsg::SubagentCompleted {
+                        id: sa.id.clone(),
+                        summary: summary.clone(),
+                    });
+                }
+                SubagentOutcome::Failed(error) => {
+                    app.on_message(ChatAppMsg::SubagentFailed {
+                        id: sa.id.clone(),
+                        error: error.clone(),
+                    });
+                }
+                SubagentOutcome::Pending => {}
+            }
+        }
+
+        app.on_message(ChatAppMsg::TextDelta("Done".to_string()));
+        app.on_message(ChatAppMsg::StreamComplete);
+        render_and_graduate(&mut runtime, &mut app);
+
+        let combined = combined_output(&runtime);
+
+        for sa in &subagents {
+            let prompt_word = sa.prompt.split_whitespace().next();
+            if let Some(word) = prompt_word {
+                if word.len() >= 3 {
+                    prop_assert!(
+                        combined.contains(word),
+                        "Subagent prompt word '{}' should appear in output:\n{}",
+                        word, combined
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn subagents_interleaved_with_tools_no_corruption(
+        subagents in arb_subagent_sequence(),
+        tool_sequence in arb_rpc_sequence_with_tools()
+    ) {
+        let mut runtime = TestRuntime::new(80, 24);
+        let mut app = OilChatApp::default();
+
+        app.on_message(ChatAppMsg::UserMessage("Complex query".to_string()));
+
+        let mut tool_iter = tool_sequence.iter();
+
+        for sa in &subagents {
+            app.on_message(ChatAppMsg::SubagentSpawned {
+                id: sa.id.clone(),
+                prompt: sa.prompt.clone(),
+            });
+
+            if let Some(event) = tool_iter.next() {
+                apply_rpc_event(&mut app, event);
+            }
+
+            match &sa.outcome {
+                SubagentOutcome::Completed(summary) => {
+                    app.on_message(ChatAppMsg::SubagentCompleted {
+                        id: sa.id.clone(),
+                        summary: summary.clone(),
+                    });
+                }
+                SubagentOutcome::Failed(error) => {
+                    app.on_message(ChatAppMsg::SubagentFailed {
+                        id: sa.id.clone(),
+                        error: error.clone(),
+                    });
+                }
+                SubagentOutcome::Pending => {}
+            }
+
+            render_and_graduate(&mut runtime, &mut app);
+        }
+
+        for event in tool_iter {
+            apply_rpc_event(&mut app, event);
+            render_and_graduate(&mut runtime, &mut app);
+        }
+
+        app.on_message(ChatAppMsg::StreamComplete);
+        render_and_graduate(&mut runtime, &mut app);
+
+        let combined = combined_output(&runtime);
+        prop_assert!(
+            combined.contains("Complex query"),
+            "User message should persist:\n{}",
+            combined
         );
     }
 }
