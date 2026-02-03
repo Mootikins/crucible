@@ -12,7 +12,7 @@ use tracing::{debug, info, warn};
 
 use colored::Colorize;
 
-use crate::acp::{ContextEnricher, CrucibleAcpClient};
+use crate::context_enricher::ContextEnricher;
 use crate::config::CliConfig;
 use crate::core_facade::KilnContext;
 use crate::factories;
@@ -491,19 +491,7 @@ async fn run_interactive_chat(
                     }
 
                     let agent = factories::create_agent(&config, params).await?;
-
-                    match agent {
-                        factories::InitializedAgent::Acp(mut client) => {
-                            client.spawn().await?;
-                            Ok(Box::new(client)
-                                as Box<
-                                    dyn crucible_core::traits::chat::AgentHandle + Send + Sync,
-                                >)
-                        }
-                        factories::InitializedAgent::Internal(_) => {
-                            anyhow::bail!("Expected ACP agent but got Internal")
-                        }
-                    }
+                    Ok(agent.into_handle())
                 }
                 AgentSelection::Internal => {
                     let mut params = factories::AgentInitParams::new()
@@ -520,13 +508,7 @@ async fn run_interactive_chat(
                     }
 
                     let agent = factories::create_agent(&config, params).await?;
-
-                    match agent {
-                        factories::InitializedAgent::Internal(handle) => Ok(handle),
-                        factories::InitializedAgent::Acp(_) => {
-                            anyhow::bail!("Expected Internal agent but got ACP")
-                        }
-                    }
+                    Ok(agent.into_handle())
                 }
                 AgentSelection::Cancelled => {
                     anyhow::bail!("Agent selection was cancelled")
@@ -665,67 +647,41 @@ async fn run_oneshot_chat(
     status.update("Initializing core...");
     let core = Arc::new(KilnContext::from_storage(storage_client.clone(), config));
 
-    status.update("Initializing embedding provider...");
-    let embedding_provider = factories::get_or_create_embedding_provider(core.config()).await?;
-    let knowledge_repo = storage_client.as_knowledge_repository();
+    status.update("Connecting to agent...");
+    let mut handle = initialized_agent.into_handle();
+    status.success("Ready");
 
-    match initialized_agent {
-        factories::InitializedAgent::Acp(client) => {
-            let kiln_path = core.config().kiln_path.clone();
-            let mut client = client
-                .with_kiln_path(kiln_path)
-                .with_mcp_dependencies(knowledge_repo, embedding_provider);
+    let _live_progress = bg_progress.map(LiveProgress::start);
 
-            status.update("Connecting to agent...");
-            client.spawn().await?;
-            status.success("Ready");
+    let prompt = if no_context {
+        query_text
+    } else {
+        let enricher = ContextEnricher::new(core.clone(), context_size);
+        enricher.enrich(&query_text).await?
+    };
 
-            let _live_progress = bg_progress.map(LiveProgress::start);
+    {
+        use crate::formatting::render_markdown;
+        use crucible_core::traits::chat::AgentHandle;
+        use futures::StreamExt;
 
-            let prompt = if no_context {
-                query_text
-            } else {
-                let enricher = ContextEnricher::new(core.clone(), context_size);
-                enricher.enrich(&query_text).await?
-            };
-
-            client.start_chat(&prompt).await?;
-            client.shutdown().await?;
-        }
-        factories::InitializedAgent::Internal(mut handle) => {
-            status.success("Ready");
-
-            let _live_progress = bg_progress.map(LiveProgress::start);
-
-            let prompt = if no_context {
-                query_text
-            } else {
-                let enricher = ContextEnricher::new(core.clone(), context_size);
-                enricher.enrich(&query_text).await?
-            };
-
-            use crate::formatting::render_markdown;
-            use crucible_core::traits::chat::AgentHandle;
-            use futures::StreamExt;
-
-            let mut response_content = String::new();
-            let mut stream = handle.send_message_stream(prompt);
-            while let Some(result) = stream.next().await {
-                match result {
-                    Ok(chunk) => {
-                        if !chunk.done {
-                            response_content.push_str(&chunk.delta);
-                        }
-                    }
-                    Err(e) => {
-                        eprintln!("\nError: {}", e);
-                        return Err(e.into());
+        let mut response_content = String::new();
+        let mut stream = handle.send_message_stream(prompt);
+        while let Some(result) = stream.next().await {
+            match result {
+                Ok(chunk) => {
+                    if !chunk.done {
+                        response_content.push_str(&chunk.delta);
                     }
                 }
+                Err(e) => {
+                    eprintln!("\nError: {}", e);
+                    return Err(e.into());
+                }
             }
-
-            println!("{}", render_markdown(&response_content));
         }
+
+        println!("{}", render_markdown(&response_content));
     }
 
     Ok(())
