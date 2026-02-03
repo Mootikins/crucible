@@ -270,6 +270,64 @@ impl Server {
             }
         });
 
+        // Spawn file reprocessing task: watches for file_changed events and re-runs pipeline
+        let km_reprocess = self.kiln_manager.clone();
+        let mut reprocess_rx = self.event_tx.subscribe();
+        let reprocess_cancel = CancellationToken::new();
+        let reprocess_cancel_clone = reprocess_cancel.clone();
+
+        let reprocess_task = tokio::spawn(async move {
+            loop {
+                tokio::select! {
+                    biased;
+                    _ = reprocess_cancel_clone.cancelled() => break,
+                    result = reprocess_rx.recv() => {
+                        match result {
+                            Ok(event)
+                                if event.session_id == "system"
+                                    && event.event == "file_changed" =>
+                            {
+                                let Some(path_str) =
+                                    event.data.get("path").and_then(|v| v.as_str())
+                                else {
+                                    continue;
+                                };
+                                let file_path = PathBuf::from(path_str);
+
+                                let Some(kiln_path) =
+                                    km_reprocess.find_kiln_for_path(&file_path).await
+                                else {
+                                    debug!(path = %path_str, "File changed but no matching open kiln");
+                                    continue;
+                                };
+
+                                match km_reprocess.process_file(&kiln_path, &file_path).await {
+                                    Ok(true) => {
+                                        info!(path = %path_str, "Reprocessed changed file");
+                                    }
+                                    Ok(false) => {
+                                        debug!(path = %path_str, "File unchanged, skipped");
+                                    }
+                                    Err(e) => {
+                                        warn!(
+                                            path = %path_str,
+                                            error = %e,
+                                            "Failed to reprocess file"
+                                        );
+                                    }
+                                }
+                            }
+                            Ok(_) => {}
+                            Err(broadcast::error::RecvError::Lagged(n)) => {
+                                warn!("Reprocess task lagged, dropped {} events", n);
+                            }
+                            Err(broadcast::error::RecvError::Closed) => break,
+                        }
+                    }
+                }
+            }
+        });
+
         loop {
             tokio::select! {
                 accept_result = self.listener.accept() => {
@@ -303,10 +361,16 @@ impl Server {
 
         // Graceful shutdown: signal cancellation, wait with timeout, then abort if needed
         persist_cancel.cancel();
+        reprocess_cancel.cancel();
         match tokio::time::timeout(std::time::Duration::from_secs(5), persist_task).await {
             Ok(Ok(())) => debug!("Persist task completed gracefully"),
             Ok(Err(e)) => warn!("Persist task panicked: {}", e),
             Err(_) => warn!("Persist task did not complete within timeout, aborting"),
+        }
+        match tokio::time::timeout(std::time::Duration::from_secs(5), reprocess_task).await {
+            Ok(Ok(())) => debug!("Reprocess task completed gracefully"),
+            Ok(Err(e)) => warn!("Reprocess task panicked: {}", e),
+            Err(_) => warn!("Reprocess task did not complete within timeout, aborting"),
         }
 
         Ok(())
