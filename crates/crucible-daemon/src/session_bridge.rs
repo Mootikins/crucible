@@ -267,4 +267,66 @@ impl DaemonSessionApi for DaemonSessionBridge {
         // The spawned task will detect the closed channel and exit.
         Box::pin(async { Ok(()) })
     }
+
+    fn send_and_collect(
+        &self,
+        session_id: String,
+        content: String,
+        timeout_secs: Option<f64>,
+    ) -> BoxFut<String> {
+        let am = self.agent_manager.clone();
+        let event_tx = self.event_tx.clone();
+        Box::pin(async move {
+            let timeout = std::time::Duration::from_secs_f64(timeout_secs.unwrap_or(120.0));
+
+            // Subscribe to broadcast BEFORE sending so we don't miss early events
+            let mut broadcast_rx = event_tx.subscribe();
+
+            let _msg_id = am
+                .send_message(&session_id, content, &event_tx)
+                .await
+                .map_err(|e| e.to_string())?;
+
+            let mut parts = Vec::new();
+            let deadline = tokio::time::Instant::now() + timeout;
+
+            loop {
+                let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+                if remaining.is_zero() {
+                    tracing::warn!(session_id = %session_id, "send_and_collect: timeout");
+                    break;
+                }
+
+                match tokio::time::timeout(remaining, broadcast_rx.recv()).await {
+                    Ok(Ok(event)) if event.session_id == session_id => {
+                        match event.event.as_str() {
+                            "text_delta" => {
+                                if let Some(content) = event
+                                    .data
+                                    .get("content")
+                                    .and_then(|v| v.as_str())
+                                {
+                                    parts.push(content.to_string());
+                                }
+                            }
+                            "message_complete" | "response_complete" | "response_done" => break,
+                            "ended" => break,
+                            _ => {}
+                        }
+                    }
+                    Ok(Ok(_)) => {}
+                    Ok(Err(broadcast::error::RecvError::Lagged(n))) => {
+                        tracing::warn!(session_id = %session_id, lagged = n, "send_and_collect: lagged");
+                    }
+                    Ok(Err(broadcast::error::RecvError::Closed)) => break,
+                    Err(_) => {
+                        tracing::warn!(session_id = %session_id, "send_and_collect: timeout");
+                        break;
+                    }
+                }
+            }
+
+            Ok(parts.join(""))
+        })
+    }
 }
