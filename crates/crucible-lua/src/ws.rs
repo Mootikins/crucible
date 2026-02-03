@@ -80,7 +80,9 @@ impl UserData for WsConnection {
             Ok(())
         });
 
-        methods.add_async_method("receive", |lua, this, ()| async move {
+        // receive(timeout_secs?) — optional timeout in seconds
+        // Returns message table on success, nil on timeout, error on failure
+        methods.add_async_method("receive", |lua, this, timeout_secs: Option<f64>| async move {
             let closed = *this.closed.lock().await;
             if closed {
                 return Err(mlua::Error::runtime("WebSocket connection is closed"));
@@ -91,27 +93,46 @@ impl UserData for WsConnection {
                 .as_mut()
                 .ok_or_else(|| mlua::Error::runtime("WebSocket connection is closed"))?;
 
+            let deadline = timeout_secs.map(|s| tokio::time::Instant::now() + std::time::Duration::from_secs_f64(s));
+
             loop {
-                match stream.next().await {
+                let next_msg = if let Some(dl) = deadline {
+                    match tokio::time::timeout_at(dl, stream.next()).await {
+                        Ok(msg) => msg,
+                        Err(_) => return Ok(mlua::Value::Nil), // timeout
+                    }
+                } else {
+                    stream.next().await
+                };
+
+                match next_msg {
                     Some(Ok(tungstenite::Message::Text(text))) => {
                         let result = lua.create_table()?;
                         result.set("type", "text")?;
                         result.set("data", text.to_string())?;
-                        return Ok(result);
+                        return Ok(mlua::Value::Table(result));
                     }
                     Some(Ok(tungstenite::Message::Binary(data))) => {
                         let result = lua.create_table()?;
                         result.set("type", "binary")?;
                         result.set("data", BASE64.encode(&data))?;
-                        return Ok(result);
+                        return Ok(mlua::Value::Table(result));
                     }
                     Some(Ok(tungstenite::Message::Close(_))) => {
                         *this.closed.lock().await = true;
                         let result = lua.create_table()?;
                         result.set("type", "close")?;
-                        return Ok(result);
+                        return Ok(mlua::Value::Table(result));
                     }
-                    Some(Ok(tungstenite::Message::Ping(_) | tungstenite::Message::Pong(_))) => {
+                    Some(Ok(tungstenite::Message::Ping(data))) => {
+                        // Respond with Pong to keep the connection alive
+                        let mut sink_guard = this.sink.lock().await;
+                        if let Some(sink) = sink_guard.as_mut() {
+                            let _ = sink.send(tungstenite::Message::Pong(data)).await;
+                        }
+                        continue;
+                    }
+                    Some(Ok(tungstenite::Message::Pong(_))) => {
                         continue;
                     }
                     Some(Ok(tungstenite::Message::Frame(_))) => {
