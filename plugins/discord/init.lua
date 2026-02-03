@@ -104,10 +104,14 @@ gateway.on("MESSAGE_CREATE", function(data)
         return
     end
 
-    local ok, resp_err = pcall(responder.respond, session_id, channel_id, content, msg_id)
-    if not ok then
-        cru.log("warn", "Responder error: " .. tostring(resp_err))
-    end
+    -- Spawn responder as independent async task so it can yield for
+    -- subscribe/next_event (event handlers run inside pcall which blocks yields)
+    cru.spawn(function()
+        local ok, resp_err = pcall(responder.respond, session_id, channel_id, content, msg_id)
+        if not ok then
+            cru.log("warn", "Responder error: " .. tostring(resp_err))
+        end
+    end)
 end)
 
 -- Wire periodic hooks (digest + session cleanup)
@@ -324,6 +328,13 @@ return {
             desc = "Discord gateway management",
             hint = "[connect|disconnect|status]",
             fn = M.discord_command,
+        },
+    },
+
+    services = {
+        gateway = {
+            desc = "Discord WebSocket gateway connection",
+            fn = gateway.connect,
         },
     },
 
