@@ -63,7 +63,7 @@ sudo ln -s /path/to/crucible/target/release/cru /usr/local/bin/cru
 
 ### Set Your Kiln Path
 
-Crucible stores notes in a "kiln" - this is your markdown directory (like an Obsidian vault).
+Crucible stores notes in a "kiln" - your markdown directory.
 
 **Option 1: Environment Variable**
 ```bash
@@ -75,7 +75,7 @@ export CRUCIBLE_KILN_PATH="/path/to/your/notes"
 Create `~/.config/crucible/config.toml`:
 
 ```toml
-kiln_path = "/home/user/Documents/my-vault"
+kiln_path = "/home/user/Documents/my-kiln"
 
 [embedding]
 provider = "fastembed"
@@ -104,7 +104,7 @@ Kiln Statistics
 Total files: 42
 Markdown files: 38
 Total size: 156 KB
-Kiln path: /home/user/Documents/my-vault
+Kiln path: /home/user/Documents/my-kiln
 
 Kiln scan completed successfully.
 ```

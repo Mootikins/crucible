@@ -74,7 +74,7 @@
 # Kiln Settings - Core paths and identification
 # =============================================================================
 
-# Path to your Obsidian vault / knowledge base
+# Path to your kiln (knowledge base)
 # This is the root directory containing your markdown notes.
 # Can be absolute, relative to this config file, or use ~ for home directory.
 #
@@ -100,7 +100,7 @@ kiln_path = "."
 # =============================================================================
 # Profiles allow you to maintain multiple configurations and switch between
 # them easily. Useful for:
-# - Different vaults (work vs personal)
+# - Different kilns (work vs personal)
 # - Different embedding providers (local vs cloud)
 # - Different environments (dev vs prod)
 #
@@ -109,10 +109,10 @@ kiln_path = "."
 #
 # Define profiles (see profiles.toml example for full details):
 # [profiles.default]
-# kiln_path = "~/Documents/vault"
+# kiln_path = "~/Documents/kiln"
 #
 # [profiles.work]
-# kiln_path = "~/Documents/work-vault"
+# kiln_path = "~/Documents/work-kiln"
 # agent_directories = ["~/work/agents"]
 
 # =============================================================================
@@ -627,7 +627,7 @@ verbose = false
 # - Minimal external dependencies
 #
 # For your own kiln, customize:
-# 1. Set kiln_path to your vault location
+# 1. Set kiln_path to your kiln location
 # 2. Choose embedding provider (ollama, fastembed, or cloud)
 # 3. Configure LLM providers (local, cloud, or both)
 # 4. Add MCP servers if needed (GitHub, etc.)

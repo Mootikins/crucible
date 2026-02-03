@@ -32,7 +32,7 @@ Create tools using the Lua scripting language:
 -- @tool name="search_web" description="Search the web for information"
 -- @param query string "Search query"
 function search_web(args)
-    local response = http.get("https://api.search.com?q=" .. args.query)
+    local response = cru.http.get("https://api.search.com?q=" .. args.query)
     return { results = response.body }
 end
 ```

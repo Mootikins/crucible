@@ -237,7 +237,7 @@ Precognition will automatically search your kiln before each LLM call and inject
 Plugins can use namespaced storage within the kiln:
 
 ```lua
-local storage = require("crucible.storage")
+local storage = require("cru.storage")  -- or require("crucible.storage")
 
 -- Get a namespace for your plugin
 local store = storage.namespace("my-plugin")
@@ -268,7 +268,7 @@ store:set_state("config", new_state)
 -- @handler event="agent:before_llm" pattern="*" priority=100
 function inject_recent(ctx, state)
     -- Add recently modified notes to context
-    local recent = crucible.search({
+    local recent = cru.kiln.search({
         modified_after = os.time() - 86400  -- 24 hours
     })
 

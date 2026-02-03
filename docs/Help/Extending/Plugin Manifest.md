@@ -221,8 +221,8 @@ Use this to temporarily disable a plugin without removing it.
 ## Programmatic Access
 
 ```lua
--- In Lua, access plugin manager
-local plugins = crucible.plugins
+-- In Lua, access plugin manager (cru.* is canonical, crucible.* is an alias)
+local plugins = cru.plugins
 
 -- List loaded plugins
 for name, plugin in pairs(plugins.list()) do
