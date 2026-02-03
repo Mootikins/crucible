@@ -435,3 +435,121 @@ impl Default for EventFilterBuilder {
         Self::new()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::events::{EventMetadata, FileEventKind};
+    use std::path::PathBuf;
+
+    fn make_event(path: &str) -> FileEvent {
+        FileEvent::new(FileEventKind::Modified, PathBuf::from(path))
+    }
+
+    fn make_event_with_meta(path: &str, size: u64) -> FileEvent {
+        let meta = EventMetadata {
+            size: Some(size),
+            permissions: None,
+            mime_type: None,
+            content_hash: None,
+            backend: "test".into(),
+            watch_id: "w".into(),
+        };
+        FileEvent::with_metadata(FileEventKind::Created, PathBuf::from(path), meta)
+    }
+
+    #[test]
+    fn temp_file_filter_rejects_swap_files() {
+        let f = TempFileFilter;
+        assert!(!f.should_allow(&make_event("/foo/.hidden")));
+        assert!(!f.should_allow(&make_event("/foo/file.swp")));
+        assert!(!f.should_allow(&make_event("/foo/file.tmp")));
+        assert!(!f.should_allow(&make_event("/foo/~backup")));
+        assert!(!f.should_allow(&make_event("/foo/file~")));
+        assert!(!f.should_allow(&make_event("/foo/file.bak")));
+        assert!(f.should_allow(&make_event("/foo/real.md")));
+    }
+
+    #[test]
+    fn system_file_filter_rejects_git_and_node_modules() {
+        let f = SystemFileFilter;
+        assert!(!f.should_allow(&make_event("/repo/.git/config")));
+        assert!(!f.should_allow(&make_event("/repo/node_modules/pkg/index.js")));
+        assert!(!f.should_allow(&make_event("/repo/target/debug/binary")));
+        assert!(!f.should_allow(&make_event("/repo/.DS_Store")));
+        assert!(f.should_allow(&make_event("/repo/src/main.rs")));
+    }
+
+    #[test]
+    fn size_filter_enforces_bounds() {
+        let f = SizeFilter::new(100, Some(5000));
+        assert!(!f.should_allow(&make_event_with_meta("small.md", 10)));
+        assert!(f.should_allow(&make_event_with_meta("ok.md", 500)));
+        assert!(!f.should_allow(&make_event_with_meta("huge.md", 10_000)));
+    }
+
+    #[test]
+    fn size_filter_allows_events_without_metadata() {
+        let f = SizeFilter::new(100, Some(5000));
+        assert!(f.should_allow(&make_event("no_meta.md")));
+    }
+
+    #[test]
+    fn advanced_filter_stats_tracking() {
+        let base = EventFilter::new().with_extension("md");
+        let mut filter = AdvancedEventFilter::new(base).with_stats(true);
+
+        filter.should_allow(&make_event("/a/b.md"));
+        filter.should_allow(&make_event("/a/b.txt"));
+        filter.should_allow(&make_event("/a/c.md"));
+
+        let stats = filter.get_stats();
+        assert_eq!(stats.total_processed, 3);
+        assert_eq!(stats.allowed, 2);
+        assert_eq!(stats.filtered, 1);
+    }
+
+    #[test]
+    fn advanced_filter_reset_stats() {
+        let base = EventFilter::new();
+        let mut filter = AdvancedEventFilter::new(base).with_stats(true);
+        filter.should_allow(&make_event("/a.md"));
+        assert_eq!(filter.get_stats().total_processed, 1);
+
+        filter.reset_stats();
+        assert_eq!(filter.get_stats().total_processed, 0);
+    }
+
+    #[test]
+    fn filter_stats_rates() {
+        let mut stats = FilterStats::default();
+        assert_eq!(stats.filtering_rate(), 0.0);
+        assert_eq!(stats.avg_filtering_time_ns(), 0.0);
+
+        stats.record_allowed(None);
+        stats.record_filtered("test", None);
+        assert!((stats.filtering_rate() - 0.5).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn builder_creates_filter_with_all_options() {
+        let mut filter = EventFilterBuilder::new()
+            .include_extension("md")
+            .exclude_extension("log")
+            .exclude_temp_files()
+            .exclude_system_files()
+            .with_stats()
+            .build();
+
+        assert!(filter.should_allow(&make_event("/notes/idea.md")));
+        assert!(!filter.should_allow(&make_event("/notes/idea.log")));
+        assert!(!filter.should_allow(&make_event("/notes/.hidden")));
+        assert!(!filter.should_allow(&make_event("/.git/config")));
+    }
+
+    #[test]
+    fn builder_default_is_permissive() {
+        let mut filter = EventFilterBuilder::default().build();
+        assert!(filter.should_allow(&make_event("/anything.rs")));
+    }
+}
