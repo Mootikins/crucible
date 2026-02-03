@@ -75,6 +75,9 @@ mod session_api;
 mod sessions;
 mod shell;
 pub mod statusline;
+mod lua_stdlib;
+mod ratelimit;
+mod timer;
 mod types;
 mod vault;
 mod views;
@@ -133,6 +136,9 @@ pub use vault::{
     register_vault_module, register_vault_module_full, register_vault_module_with_graph,
     register_vault_module_with_store,
 };
+pub use lua_stdlib::register_lua_stdlib;
+pub use ratelimit::register_ratelimit_module;
+pub use timer::register_timer_module;
 pub use ws::register_ws_module;
 // Handler system
 pub use handlers::{
