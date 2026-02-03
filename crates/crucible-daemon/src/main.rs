@@ -31,13 +31,16 @@ async fn main() -> Result<()> {
     let config = CliAppConfig::load(None, None, None).unwrap_or_default();
     let mcp_config = config.mcp.as_ref();
     let plugin_config = config.plugins.clone();
+    let providers_config = config.providers.clone();
 
     defer! {
         tracing::info!("Cleaning up daemon resources");
         remove_socket(&sock_path);
     }
 
-    let server = Server::bind_with_plugin_config(&sock_path, mcp_config, plugin_config).await?;
+    let server =
+        Server::bind_with_plugin_config(&sock_path, mcp_config, plugin_config, providers_config)
+            .await?;
     tracing::info!("Daemon started successfully");
 
     // Run server until shutdown

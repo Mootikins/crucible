@@ -212,6 +212,7 @@ mod tests {
             session_manager.clone(),
             background_manager,
             None,
+            crucible_config::ProvidersConfig::default(),
         ));
 
         RpcContext::new(
