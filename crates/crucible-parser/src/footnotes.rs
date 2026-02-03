@@ -20,8 +20,9 @@ use std::sync::{Arc, LazyLock};
 static REFERENCE_REGEX: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"\[\^([\w\-\s]+)\]").expect("footnote reference regex"));
 
-static DEFINITION_REGEX: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?m)^[ \t]*\[\^([\w\-\s]+)\]:[ \t]*(.*)$").expect("footnote definition regex"));
+static DEFINITION_REGEX: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?m)^[ \t]*\[\^([\w\-\s]+)\]:[ \t]*(.*)$").expect("footnote definition regex")
+});
 
 /// Footnote syntax extension
 pub struct FootnoteExtension;

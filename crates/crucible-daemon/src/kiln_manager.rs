@@ -268,7 +268,10 @@ impl KilnManager {
         if let Some(mut conn) = conns.remove(&canonical) {
             if let Some(ref mut wm) = conn.watch_manager {
                 if let Err(e) = wm.shutdown().await {
-                    warn!("Failed to shutdown watch manager for {:?}: {}", canonical, e);
+                    warn!(
+                        "Failed to shutdown watch manager for {:?}: {}",
+                        canonical, e
+                    );
                 }
             }
             info!("Closed kiln at {:?}", canonical);
@@ -441,12 +444,10 @@ impl KilnManager {
             .with_extension("md")
             .exclude_dir(kiln_path.join(".crucible"));
 
-        let watch_config = crucible_watch::traits::WatchConfig::new(format!(
-            "kiln-{}",
-            kiln_path.display()
-        ))
-        .with_filter(filter)
-        .with_debounce(crucible_watch::traits::DebounceConfig::new(500));
+        let watch_config =
+            crucible_watch::traits::WatchConfig::new(format!("kiln-{}", kiln_path.display()))
+                .with_filter(filter)
+                .with_debounce(crucible_watch::traits::DebounceConfig::new(500));
 
         if let Err(e) = wm.add_watch(kiln_path.to_path_buf(), watch_config).await {
             warn!("Failed to add watch for {:?}: {}", kiln_path, e);
@@ -726,10 +727,7 @@ mod tests {
         let file_in_b = kiln_b.join("sub").join("test.md");
         let result = km.find_kiln_for_path(&file_in_b).await;
         assert!(result.is_some());
-        assert_eq!(
-            result.unwrap(),
-            kiln_b.canonicalize().unwrap_or(kiln_b)
-        );
+        assert_eq!(result.unwrap(), kiln_b.canonicalize().unwrap_or(kiln_b));
     }
 
     #[tokio::test]

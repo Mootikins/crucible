@@ -14,8 +14,9 @@ use async_trait::async_trait;
 use regex::Regex;
 use std::sync::{Arc, LazyLock};
 
-static LINK_REGEX: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r#"\[([^\]]+)\]\(([^\s)]+)(?:\s+"([^"]+)")?\)"#).expect("inline link regex"));
+static LINK_REGEX: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r#"\[([^\]]+)\]\(([^\s)]+)(?:\s+"([^"]+)")?\)"#).expect("inline link regex")
+});
 
 /// Inline link syntax extension
 pub struct InlineLinkExtension;
