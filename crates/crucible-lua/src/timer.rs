@@ -22,8 +22,22 @@ use std::time::Duration;
 /// Functions:
 /// - `timer.sleep(seconds)` — async sleep, yields the coroutine
 /// - `timer.timeout(seconds, fn)` — run fn with a timeout, returns (ok, result_or_err)
+/// - `timer.clock()` — monotonic wall-clock time in seconds (f64)
 pub fn register_timer_module(lua: &Lua) -> Result<()> {
     let timer = lua.create_table()?;
+
+    // Capture a reference instant for monotonic clock
+    let epoch = std::time::Instant::now();
+
+    // timer.clock() — monotonic wall-clock time in seconds (high resolution)
+    // Unlike os.clock() which returns CPU time, this returns wall time that
+    // advances even when the Lua VM is yielded at async points.
+    timer.set(
+        "clock",
+        lua.create_function(move |_lua, ()| {
+            Ok(epoch.elapsed().as_secs_f64())
+        })?,
+    )?;
 
     // timer.sleep(seconds) — async, yields until duration elapses
     timer.set(
@@ -59,6 +73,30 @@ pub fn register_timer_module(lua: &Lua) -> Result<()> {
     )?;
 
     crate::lua_util::register_in_namespaces(lua, "timer", timer)?;
+
+    // cru.spawn(fn) — spawn an async Lua function as an independent task.
+    // The function runs concurrently with the caller (fire-and-forget).
+    // This is needed when event handlers (called via pcall) need to perform
+    // async operations that require yielding (e.g. subscribe, next_event).
+    // Requires the `send` feature (mlua/send) since tokio::spawn needs Send.
+    #[cfg(feature = "send")]
+    {
+        let spawn_fn = lua.create_function(|_lua, func: Function| {
+            tokio::spawn(async move {
+                if let Err(e) = func.call_async::<()>(()).await {
+                    tracing::warn!("Spawned Lua task error: {}", e);
+                }
+            });
+            Ok(())
+        })?;
+        let globals = lua.globals();
+        let cru: mlua::Table = globals.get("cru")?;
+        cru.set("spawn", spawn_fn)?;
+        if let Ok(crucible) = globals.get::<mlua::Table>("crucible") {
+            crucible.set("spawn", cru.get::<mlua::Value>("spawn")?)?;
+        }
+    }
+
     Ok(())
 }
 
