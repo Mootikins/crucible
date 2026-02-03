@@ -36,8 +36,9 @@ impl TokenBucket {
     fn refill(&mut self) {
         let now = Instant::now();
         let elapsed = now.duration_since(self.last_refill);
-        if elapsed >= self.interval && self.interval.as_secs_f64() > 0.0 {
-            let new_tokens = elapsed.as_secs_f64() / self.interval.as_secs_f64();
+        let interval_secs = self.interval.as_secs_f64();
+        if interval_secs > 0.0 {
+            let new_tokens = elapsed.as_secs_f64() / interval_secs;
             self.tokens = (self.tokens + new_tokens).min(self.capacity);
             self.last_refill = now;
         }
@@ -121,11 +122,11 @@ pub fn register_ratelimit_module(lua: &Lua) -> Result<()> {
             let capacity: f64 = opts.get::<f64>("capacity").unwrap_or(5.0);
             let interval: f64 = opts.get::<f64>("interval").unwrap_or(1.0);
 
-            if capacity <= 0.0 {
-                return Err(mlua::Error::runtime("capacity must be positive"));
+            if !capacity.is_finite() || capacity <= 0.0 {
+                return Err(mlua::Error::runtime("capacity must be a finite positive number"));
             }
-            if interval <= 0.0 {
-                return Err(mlua::Error::runtime("interval must be positive"));
+            if !interval.is_finite() || interval <= 0.0 {
+                return Err(mlua::Error::runtime("interval must be a finite positive number"));
             }
 
             let bucket = TokenBucket::new(capacity, Duration::from_secs_f64(interval));
