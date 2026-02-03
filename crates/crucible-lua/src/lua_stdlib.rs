@@ -48,16 +48,16 @@ do
     Emitter.__index = Emitter
 
     function Emitter.new()
-        return setmetatable({ _listeners = {}, _id = 0 }, Emitter)
+        return setmetatable({ _listeners = {} }, Emitter)
     end
 
     function Emitter:on(event, fn)
-        self._id = self._id + 1
-        local id = self._id
         if not self._listeners[event] then
             self._listeners[event] = {}
         end
-        self._listeners[event][id] = fn
+        local list = self._listeners[event]
+        local id = #list + 1
+        list[id] = fn
         return id
     end
 
@@ -72,17 +72,20 @@ do
 
     function Emitter:off(event, id)
         if self._listeners[event] then
-            self._listeners[event][id] = nil
+            self._listeners[event][id] = false
         end
     end
 
     function Emitter:emit(event, ...)
         local listeners = self._listeners[event]
         if not listeners then return end
-        for _, fn in pairs(listeners) do
-            local ok, err = pcall(fn, ...)
-            if not ok then
-                cru.log("warn", "emitter handler error on '" .. event .. "': " .. tostring(err))
+        for i = 1, #listeners do
+            local fn = listeners[i]
+            if fn then
+                local ok, err = pcall(fn, ...)
+                if not ok then
+                    cru.log("warn", "emitter handler error on '" .. event .. "': " .. tostring(err))
+                end
             end
         end
     end
@@ -363,5 +366,56 @@ mod tests {
         assert!(cru.get::<Table>("emitter").is_ok());
         assert!(cru.get::<Table>("check").is_ok());
         assert!(cru.get::<mlua::Function>("retry").is_ok());
+    }
+
+    #[test]
+    fn test_emitter_preserves_registration_order() {
+        let lua = setup_lua();
+        let result: String = lua
+            .load(
+                r#"
+                local em = cru.emitter.new()
+                local order = ""
+                em:on("test", function() order = order .. "a" end)
+                em:on("test", function() order = order .. "b" end)
+                em:on("test", function() order = order .. "c" end)
+                em:emit("test")
+                return order
+                "#,
+            )
+            .eval()
+            .unwrap();
+        assert_eq!(result, "abc");
+    }
+
+    #[tokio::test]
+    async fn test_retry_with_real_timer() {
+        let lua = Lua::new();
+        lua.load("cru = cru or {}").exec().unwrap();
+        lua.load(r#"cru.log = function() end"#).exec().unwrap();
+        crate::timer::register_timer_module(&lua).unwrap();
+        register_lua_stdlib(&lua).unwrap();
+
+        let start = std::time::Instant::now();
+        let result: (String, i32) = lua
+            .load(
+                r#"
+                local attempts = 0
+                local result = cru.retry(function()
+                    attempts = attempts + 1
+                    if attempts < 3 then error({ retryable = true }) end
+                    return "ok"
+                end, { max_retries = 5, base_delay = 0.01 })
+                return result, attempts
+                "#,
+            )
+            .eval_async()
+            .await
+            .unwrap();
+
+        assert_eq!(result.0, "ok");
+        assert_eq!(result.1, 3);
+        // Verify real async sleep was used (at least some time passed)
+        assert!(start.elapsed().as_millis() >= 10);
     }
 }
