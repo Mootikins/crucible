@@ -233,7 +233,8 @@ pub fn register_fs_module(lua: &Lua) -> Result<(), LuaError> {
     fs_table.set("rename", rename_fn)?;
 
     // Register fs module globally
-    lua.globals().set("fs", fs_table)?;
+    lua.globals().set("fs", fs_table.clone())?;
+    crate::lua_util::register_in_namespaces(lua, "fs", fs_table)?;
 
     Ok(())
 }
