@@ -569,6 +569,18 @@ impl ChatSession {
         &self.metadata.id
     }
 
+    /// Set the session mode on the agent via ACP protocol
+    ///
+    /// Sends `session/set_mode` to the connected agent.
+    /// Returns Ok(()) even if no agent is connected (mode stored locally by caller).
+    pub async fn set_session_mode(&mut self, mode_id: &str) -> Result<()> {
+        if let (Some(client), Some(session)) = (&mut self.agent_client, &self.agent_session) {
+            let session_id = session.id().to_string();
+            client.set_session_mode(&session_id, mode_id).await?;
+        }
+        Ok(())
+    }
+
     /// Get the latest agent-provided slash commands (if any were advertised)
     pub fn available_commands(&self) -> &[AvailableCommand] {
         if let Some(client) = &self.agent_client {
