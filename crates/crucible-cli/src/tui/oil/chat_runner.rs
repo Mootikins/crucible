@@ -693,7 +693,7 @@ impl OilChatRunner {
                                 && self.enricher.is_some()
                                 && !content.starts_with("/search")
                             {
-                                let enricher = self.enricher.clone().unwrap();
+                                let enricher = self.enricher.clone().expect("checked is_some above");
                                 let content = content.clone();
                                 let tx = msg_tx.clone();
                                 tokio::spawn(async move {
