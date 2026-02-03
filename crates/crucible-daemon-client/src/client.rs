@@ -374,11 +374,7 @@ impl DaemonClient {
             match self.call(method, params.clone()).await {
                 Ok(result) => return Ok(result),
                 Err(e) => {
-                    let msg = e.to_string();
-                    let is_transient = msg.contains("timed out")
-                        || msg.contains("Request timeout")
-                        || msg.contains("deadline has elapsed");
-                    if !is_transient || attempt >= MAX_RETRIES {
+                    if !Self::is_transient_error(&e) || attempt >= MAX_RETRIES {
                         return Err(e);
                     }
                     let delay_ms = INITIAL_DELAY_MS * 2u64.pow(attempt);
@@ -394,6 +390,22 @@ impl DaemonClient {
             }
         }
         Err(last_err.unwrap_or_else(|| anyhow::anyhow!("Retry exhausted with no error")))
+    }
+
+    /// Transient error patterns that indicate a retry may succeed.
+    const TRANSIENT_ERROR_PATTERNS: &[&str] = &[
+        "timed out",
+        "Request timeout",
+        "deadline has elapsed",
+        "connection reset",
+        "broken pipe",
+    ];
+
+    fn is_transient_error(err: &anyhow::Error) -> bool {
+        let msg = err.to_string();
+        Self::TRANSIENT_ERROR_PATTERNS
+            .iter()
+            .any(|pattern| msg.contains(pattern))
     }
 
     /// Send a JSON-RPC request and get the response

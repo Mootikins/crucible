@@ -404,6 +404,12 @@ impl KilnManager {
     }
 
     /// Find which open kiln contains the given file path.
+    ///
+    /// Both the incoming `file_path` and stored kiln keys are canonicalized
+    /// (kiln keys are canonicalized at `open()` time). If `file_path` cannot
+    /// be canonicalized (e.g., file was deleted between event and lookup),
+    /// we fall back to the raw path which may still match if the kiln key
+    /// also wasn't canonicalized (defensive).
     pub async fn find_kiln_for_path(&self, file_path: &Path) -> Option<PathBuf> {
         let canonical = file_path
             .canonicalize()
