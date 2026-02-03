@@ -757,4 +757,105 @@ mod tests {
             "Expected 2 embeddings - section-style IDs should embed all blocks"
         );
     }
+
+    #[tokio::test]
+    async fn test_enrich_internal_full_flow_without_embeddings() {
+        let service = DefaultEnrichmentService::without_embeddings();
+        let parsed = create_test_parsed_note_with_content();
+
+        let enriched = service.enrich_internal(parsed, vec![]).await.unwrap();
+
+        assert!(enriched.embeddings.is_empty());
+        assert_eq!(enriched.metadata.language, Some("en".to_string()));
+        assert!(enriched.inferred_relations.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_enrich_internal_full_flow_with_embeddings() {
+        let provider = Arc::new(MockEmbeddingProvider::new());
+        let service = DefaultEnrichmentService::new(provider);
+        let parsed = create_test_parsed_note_with_content();
+
+        let enriched = service.enrich_internal(parsed, vec![]).await.unwrap();
+
+        assert_eq!(enriched.embeddings.len(), 2);
+        assert_eq!(enriched.embeddings[0].model, "mock-model");
+    }
+
+    #[tokio::test]
+    async fn test_trait_impl_enrich() {
+        use crucible_core::enrichment::EnrichmentService;
+
+        let service = DefaultEnrichmentService::without_embeddings();
+        let parsed = create_test_parsed_note();
+
+        let enriched = service.enrich(parsed, vec![]).await.unwrap();
+        assert!(enriched.embeddings.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_trait_impl_has_embedding_provider() {
+        use crucible_core::enrichment::EnrichmentService;
+
+        let without = DefaultEnrichmentService::without_embeddings();
+        assert!(!without.has_embedding_provider());
+
+        let with = DefaultEnrichmentService::new(Arc::new(MockEmbeddingProvider::new()));
+        assert!(with.has_embedding_provider());
+    }
+
+    #[test]
+    fn test_build_breadcrumbs_with_headings() {
+        use crucible_core::parser::{Heading, Paragraph, ParsedNoteBuilder};
+
+        let mut note = ParsedNoteBuilder::new(PathBuf::from("/test/note.md")).build();
+        note.content.headings.push(Heading::new(1, "Introduction", 0));
+        note.content.headings.push(Heading::new(2, "Details", 50));
+        note.content.paragraphs.push(Paragraph::new(
+            "A paragraph under Details heading with enough words.".to_string(),
+            60,
+        ));
+
+        let crumbs = build_breadcrumbs(&note);
+
+        assert!(crumbs.contains_key(&0));
+        assert!(crumbs.contains_key(&50));
+        let para_crumb = crumbs.get(&60).unwrap();
+        assert!(
+            para_crumb.contains("Details"),
+            "paragraph breadcrumb should contain parent heading: {para_crumb}"
+        );
+    }
+
+    #[test]
+    fn test_build_breadcrumbs_empty_note() {
+        let note = create_test_parsed_note();
+        let crumbs = build_breadcrumbs(&note);
+        assert!(crumbs.is_empty());
+    }
+
+    #[test]
+    fn test_extract_block_texts_skips_short_blocks() {
+        use crucible_core::parser::{Paragraph, ParsedNoteBuilder};
+
+        let service = DefaultEnrichmentService::without_embeddings();
+        let mut note = ParsedNoteBuilder::new(PathBuf::from("/test/note.md")).build();
+        note.content
+            .paragraphs
+            .push(Paragraph::new("Hi".to_string(), 0));
+        note.content
+            .paragraphs
+            .push(Paragraph::new("One two three four five six".to_string(), 10));
+
+        let blocks = service.extract_block_texts(&note, &[]);
+        assert_eq!(blocks.len(), 1, "short paragraph should be skipped");
+        assert_eq!(blocks[0].0, "paragraph_1");
+    }
+
+    #[test]
+    fn test_builder_with_max_batch_size() {
+        let provider = Arc::new(MockEmbeddingProvider::new());
+        let service = DefaultEnrichmentService::new(provider).with_max_batch_size(5);
+        assert_eq!(service.max_batch_size, 5);
+    }
 }
