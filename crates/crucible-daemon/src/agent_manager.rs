@@ -119,6 +119,7 @@ pub struct AgentManager {
     lua_states: Arc<DashMap<String, Arc<Mutex<SessionLuaState>>>>,
     pending_permissions: Arc<DashMap<String, HashMap<PermissionId, PendingPermission>>>,
     mcp_gateway: Option<Arc<tokio::sync::RwLock<crucible_tools::mcp_gateway::McpGatewayManager>>>,
+    providers_config: crucible_config::ProvidersConfig,
 }
 
 impl AgentManager {
@@ -128,6 +129,7 @@ impl AgentManager {
         mcp_gateway: Option<
             Arc<tokio::sync::RwLock<crucible_tools::mcp_gateway::McpGatewayManager>>,
         >,
+        providers_config: crucible_config::ProvidersConfig,
     ) -> Self {
         Self {
             request_state: Arc::new(DashMap::new()),
@@ -137,6 +139,7 @@ impl AgentManager {
             lua_states: Arc::new(DashMap::new()),
             pending_permissions: Arc::new(DashMap::new()),
             mcp_gateway,
+            providers_config,
         }
     }
 
@@ -438,15 +441,38 @@ impl AgentManager {
             return Ok(cached.clone());
         }
 
+        // Resolve endpoint from providers config if not explicitly set
+        let resolved_config = if agent_config.endpoint.is_none() {
+            let provider_key = agent_config
+                .provider_key
+                .as_deref()
+                .unwrap_or(&agent_config.provider);
+            if let Some(provider) = self.providers_config.get(provider_key) {
+                let mut config = agent_config.clone();
+                config.endpoint = provider.endpoint();
+                debug!(
+                    provider_key = %provider_key,
+                    endpoint = ?config.endpoint,
+                    "Resolved endpoint from providers config"
+                );
+                config
+            } else {
+                agent_config.clone()
+            }
+        } else {
+            agent_config.clone()
+        };
+
         info!(
             session_id = %session_id,
-            provider = %agent_config.provider,
-            model = %agent_config.model,
+            provider = %resolved_config.provider,
+            model = %resolved_config.model,
+            endpoint = ?resolved_config.endpoint,
             "Creating new agent"
         );
 
         let agent = create_agent_from_session_config(
-            agent_config,
+            &resolved_config,
             workspace,
             Some(self.background_manager.clone()),
             event_tx,
@@ -1439,7 +1465,12 @@ mod tests {
     fn create_test_agent_manager(session_manager: Arc<SessionManager>) -> AgentManager {
         let (event_tx, _) = broadcast::channel(16);
         let background_manager = Arc::new(BackgroundJobManager::new(event_tx));
-        AgentManager::new(session_manager, background_manager, None)
+        AgentManager::new(
+            session_manager,
+            background_manager,
+            None,
+            crucible_config::ProvidersConfig::default(),
+        )
     }
 
     #[tokio::test]
