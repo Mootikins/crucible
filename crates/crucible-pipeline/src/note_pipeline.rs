@@ -400,40 +400,272 @@ impl NotePipelineOrchestrator for NotePipeline {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use crucible_core::enrichment::{EnrichedNote, EnrichmentService, InferredRelation};
+    use crucible_core::enrichment::EnrichmentMetadata;
+    use crucible_core::events::SessionEvent;
+    use crucible_core::parser::{BlockHash, ParsedNote};
     use crucible_core::processing::InMemoryChangeDetectionStore;
+    use crucible_core::storage::{Filter, NoteRecord, SearchResult, StorageError};
     use std::io::Write;
     use std::sync::Arc;
     use tempfile::NamedTempFile;
 
-    // TODO: Add tests once we have mock EnrichmentService
+    // -- Mock EnrichmentService --
 
-    #[tokio::test]
-    async fn test_pipeline_creation() {
-        let _change_detector = Arc::new(InMemoryChangeDetectionStore::new());
-
-        // For now, we can't test without a mock EnrichmentService
-        // This will be added once we wire up the full implementation
+    struct MockEnrichmentService {
+        should_fail: bool,
     }
 
-    /// Test that Phase 2 parse errors include file path in error message
-    #[tokio::test]
-    async fn test_parse_error_includes_file_path() {
-        let mut temp_file = NamedTempFile::new().unwrap();
-        writeln!(temp_file, "# Test").unwrap();
-        let _file_path = temp_file.path();
+    impl MockEnrichmentService {
+        fn new() -> Self {
+            Self { should_fail: false }
+        }
 
-        // TODO: Implement with mock parser that returns errors
+        fn failing() -> Self {
+            Self { should_fail: true }
+        }
     }
 
-    /// Test that Phase 3 enrichment errors include file path and phase info
-    #[tokio::test]
-    async fn test_enrichment_error_includes_context() {
-        // TODO: Implement with mock enrichment service that returns errors
+    #[async_trait::async_trait]
+    impl EnrichmentService for MockEnrichmentService {
+        async fn enrich(
+            &self,
+            parsed: ParsedNote,
+            _changed_block_ids: Vec<String>,
+        ) -> Result<EnrichedNote> {
+            if self.should_fail {
+                anyhow::bail!("mock enrichment failure");
+            }
+            Ok(EnrichedNote::new(
+                parsed,
+                Vec::new(),
+                EnrichmentMetadata::default(),
+                Vec::new(),
+            ))
+        }
+
+        async fn enrich_with_tree(
+            &self,
+            parsed: ParsedNote,
+            changed_block_ids: Vec<String>,
+        ) -> Result<EnrichedNote> {
+            self.enrich(parsed, changed_block_ids).await
+        }
+
+        async fn infer_relations(
+            &self,
+            _enriched: &EnrichedNote,
+            _threshold: f64,
+        ) -> Result<Vec<InferredRelation>> {
+            Ok(Vec::new())
+        }
+
+        fn min_words_for_embedding(&self) -> usize { 5 }
+        fn max_batch_size(&self) -> usize { 10 }
+        fn has_embedding_provider(&self) -> bool { false }
     }
 
-    /// Test that Phase 4 storage errors include file path and what failed
+    // -- Mock NoteStore --
+
+    struct MockNoteStore {
+        should_fail: bool,
+    }
+
+    impl MockNoteStore {
+        fn new() -> Self {
+            Self { should_fail: false }
+        }
+
+        fn failing() -> Self {
+            Self { should_fail: true }
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl NoteStore for MockNoteStore {
+        async fn upsert(
+            &self,
+            _note: NoteRecord,
+        ) -> std::result::Result<Vec<SessionEvent>, StorageError> {
+            if self.should_fail {
+                return Err(StorageError::Backend("mock storage failure".into()));
+            }
+            Ok(vec![])
+        }
+
+        async fn get(
+            &self,
+            _path: &str,
+        ) -> std::result::Result<Option<NoteRecord>, StorageError> {
+            Ok(None)
+        }
+
+        async fn delete(
+            &self,
+            _path: &str,
+        ) -> std::result::Result<SessionEvent, StorageError> {
+            Ok(SessionEvent::NoteDeleted {
+                path: std::path::PathBuf::new(),
+                existed: false,
+            })
+        }
+
+        async fn list(&self) -> std::result::Result<Vec<NoteRecord>, StorageError> {
+            Ok(vec![])
+        }
+
+        async fn get_by_hash(
+            &self,
+            _hash: &BlockHash,
+        ) -> std::result::Result<Option<NoteRecord>, StorageError> {
+            Ok(None)
+        }
+
+        async fn search(
+            &self,
+            _embedding: &[f32],
+            _k: usize,
+            _filter: Option<Filter>,
+        ) -> std::result::Result<Vec<SearchResult>, StorageError> {
+            Ok(vec![])
+        }
+    }
+
+    fn create_pipeline(
+        enrichment: Arc<dyn EnrichmentService>,
+        note_store: Arc<dyn NoteStore>,
+    ) -> NotePipeline {
+        let change_detector = Arc::new(InMemoryChangeDetectionStore::new());
+        let config = NotePipelineConfig {
+            skip_enrichment: false,
+            force_reprocess: true,
+            ..Default::default()
+        };
+        NotePipeline::with_config(change_detector, enrichment, note_store, config)
+    }
+
+    fn write_temp_note(content: &str) -> NamedTempFile {
+        let mut f = NamedTempFile::new().unwrap();
+        write!(f, "{}", content).unwrap();
+        f
+    }
+
     #[tokio::test]
-    async fn test_storage_error_includes_operation_context() {
-        // TODO: Implement with mock storage that returns errors
+    async fn pipeline_processes_markdown_file_successfully() {
+        let enrichment = Arc::new(MockEnrichmentService::new());
+        let store = Arc::new(MockNoteStore::new());
+        let pipeline = create_pipeline(enrichment, store);
+
+        let tmp = write_temp_note("# Hello World\n\nSome content here.\n");
+        let result = pipeline.process(tmp.path()).await.unwrap();
+        assert!(
+            !result.is_skipped(),
+            "newly created file should not be skipped"
+        );
+    }
+
+    #[tokio::test]
+    async fn pipeline_skips_unchanged_file_on_second_pass() {
+        let change_detector = Arc::new(InMemoryChangeDetectionStore::new());
+        let enrichment: Arc<dyn EnrichmentService> = Arc::new(MockEnrichmentService::new());
+        let store: Arc<dyn NoteStore> = Arc::new(MockNoteStore::new());
+
+        // force_reprocess=false so the change detector is consulted
+        let config = NotePipelineConfig {
+            skip_enrichment: true,
+            force_reprocess: false,
+            ..Default::default()
+        };
+        let pipeline =
+            NotePipeline::with_config(change_detector, enrichment, store, config);
+
+        let tmp = write_temp_note("# Test\n\nParagraph.\n");
+
+        // First pass should process
+        let r1 = pipeline.process(tmp.path()).await.unwrap();
+        assert!(!r1.is_skipped());
+
+        // Second pass with same content should skip
+        let r2 = pipeline.process(tmp.path()).await.unwrap();
+        assert!(r2.is_skipped(), "unchanged file should be skipped on second pass");
+    }
+
+    #[tokio::test]
+    async fn pipeline_enrichment_error_propagates_with_context() {
+        let enrichment = Arc::new(MockEnrichmentService::failing());
+        let store = Arc::new(MockNoteStore::new());
+        let pipeline = create_pipeline(enrichment, store);
+
+        let tmp = write_temp_note("# Oops\n\nThis should fail enrichment.\n");
+        let err = pipeline.process(tmp.path()).await.unwrap_err();
+        let msg = format!("{:#}", err);
+        assert!(
+            msg.contains("Phase 3") || msg.contains("enrich"),
+            "error should mention enrichment phase, got: {msg}"
+        );
+    }
+
+    #[tokio::test]
+    async fn pipeline_storage_error_propagates_with_context() {
+        let enrichment = Arc::new(MockEnrichmentService::new());
+        let store = Arc::new(MockNoteStore::failing());
+        let pipeline = create_pipeline(enrichment, store);
+
+        let tmp = write_temp_note("# Store fail\n\nContent.\n");
+        let err = pipeline.process(tmp.path()).await.unwrap_err();
+        let msg = format!("{:#}", err);
+        assert!(
+            msg.contains("Phase 4") || msg.contains("store") || msg.contains("storage") || msg.contains("Storage"),
+            "error should mention storage phase, got: {msg}"
+        );
+    }
+
+    #[tokio::test]
+    async fn pipeline_skip_enrichment_config_bypasses_enrichment() {
+        let change_detector = Arc::new(InMemoryChangeDetectionStore::new());
+        let enrichment: Arc<dyn EnrichmentService> =
+            Arc::new(MockEnrichmentService::failing());
+        let store: Arc<dyn NoteStore> = Arc::new(MockNoteStore::new());
+
+        let config = NotePipelineConfig {
+            skip_enrichment: true,
+            force_reprocess: true,
+            ..Default::default()
+        };
+        let pipeline =
+            NotePipeline::with_config(change_detector, enrichment, store, config);
+
+        let tmp = write_temp_note("# Skip enrichment\n\nBody text.\n");
+        // Should succeed even though enrichment would fail,
+        // because enrichment is skipped
+        let result = pipeline.process(tmp.path()).await.unwrap();
+        assert!(!result.is_skipped());
+    }
+
+    #[tokio::test]
+    async fn pipeline_nonexistent_file_returns_error() {
+        let enrichment = Arc::new(MockEnrichmentService::new());
+        let store = Arc::new(MockNoteStore::new());
+        let pipeline = create_pipeline(enrichment, store);
+
+        let result = pipeline
+            .process(std::path::Path::new("/nonexistent/file.md"))
+            .await;
+        assert!(result.is_err(), "nonexistent file should error");
+    }
+
+    #[test]
+    fn parser_backend_default_is_default() {
+        let backend = ParserBackend::default();
+        assert_eq!(backend, ParserBackend::Default);
+    }
+
+    #[test]
+    fn pipeline_config_default_values() {
+        let config = NotePipelineConfig::default();
+        assert!(!config.skip_enrichment);
+        assert!(!config.force_reprocess);
+        assert_eq!(config.parser, ParserBackend::Default);
     }
 }
