@@ -2,12 +2,14 @@
 --- Routes messages to Crucible sessions and streams response parts back to Discord.
 
 local api = require("api")
+local tables = require("tables")
 
 local M = {}
 
 local MAX_MESSAGE_LEN = 2000
 local RESPONSE_TIMEOUT = 120  -- seconds
 local PERMISSION_TIMEOUT = 60 -- seconds to wait for y/n reply
+local TYPING_INTERVAL = 8    -- seconds between typing indicator refreshes
 
 -- Pending permission replies: channel_id -> {state="waiting"|"allowed"|"denied", user_id=string}
 -- Set by responder, resolved by init.lua when it intercepts a y/n from the same user.
@@ -266,7 +268,7 @@ function M.respond(session_id, channel_id, user_message, reply_to_msg_id, user_i
         local reply_id = first_message and reply_to_msg_id or nil
 
         if part.type == "text" then
-            local content = part.content or ""
+            local content = tables.transform(part.content or "")
             if content ~= "" then
                 send_chunked(channel_id, content, reply_id)
                 first_message = false
