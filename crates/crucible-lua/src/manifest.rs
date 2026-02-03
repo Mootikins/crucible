@@ -367,6 +367,18 @@ pub enum PluginState {
     Error,
 }
 
+impl std::fmt::Display for PluginState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Discovered => f.write_str("Discovered"),
+            Self::Loaded => f.write_str("Loaded"),
+            Self::Active => f.write_str("Active"),
+            Self::Disabled => f.write_str("Disabled"),
+            Self::Error => f.write_str("Error"),
+        }
+    }
+}
+
 impl LoadedPlugin {
     pub fn new(manifest: PluginManifest, dir: PathBuf) -> Self {
         Self {

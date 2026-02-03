@@ -925,7 +925,7 @@ fn discover_plugin_status(kiln_path: Option<&std::path::Path>) -> Vec<PluginStat
         .map(|p| PluginStatusEntry {
             name: p.name().to_string(),
             version: p.version().to_string(),
-            state: format!("{:?}", p.state),
+            state: p.state.to_string(),
             error: p.last_error.clone(),
         })
         .collect()
