@@ -398,7 +398,8 @@ pub fn register_oq_module(lua: &Lua) -> Result<(), LuaError> {
     oq.set("null", null)?;
 
     // Register oq module globally
-    lua.globals().set("oq", oq)?;
+    lua.globals().set("oq", oq.clone())?;
+    crate::lua_util::register_in_namespaces(lua, "oq", oq)?;
 
     Ok(())
 }

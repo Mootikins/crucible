@@ -125,7 +125,8 @@ pub fn register_paths_module(lua: &Lua, context: PathsContext) -> Result<(), Lua
     paths.set("join", join_fn)?;
 
     // Register paths module globally
-    lua.globals().set("paths", paths)?;
+    lua.globals().set("paths", paths.clone())?;
+    crate::lua_util::register_in_namespaces(lua, "paths", paths)?;
 
     Ok(())
 }

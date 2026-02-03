@@ -11,8 +11,9 @@ use crucible_core::storage::NoteStore;
 use crucible_lua::{
     register_fs_module, register_graph_module, register_graph_module_with_store,
     register_http_module, register_oq_module, register_paths_module, register_shell_module,
-    register_vault_module, register_vault_module_with_store, register_ws_module, LuaExecutor,
-    PathsContext, PluginManager, PluginSpec, ShellPolicy,
+    register_ratelimit_module, register_timer_module, register_vault_module,
+    register_vault_module_with_store,
+    register_ws_module, LuaExecutor, PathsContext, PluginManager, PluginSpec, ShellPolicy,
 };
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -48,6 +49,8 @@ impl DaemonPluginLoader {
 
         register_http_module(lua).map_err(|e| anyhow::anyhow!("http module: {e}"))?;
         register_ws_module(lua).map_err(|e| anyhow::anyhow!("ws module: {e}"))?;
+        register_timer_module(lua).map_err(|e| anyhow::anyhow!("timer module: {e}"))?;
+        register_ratelimit_module(lua).map_err(|e| anyhow::anyhow!("ratelimit module: {e}"))?;
         register_fs_module(lua).map_err(|e| anyhow::anyhow!("fs module: {e}"))?;
         register_shell_module(lua, ShellPolicy::default())
             .map_err(|e| anyhow::anyhow!("shell module: {e}"))?;
