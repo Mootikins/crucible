@@ -161,6 +161,24 @@ web-dev:
 release-web: web-build
     cargo build -p crucible-cli --release
 
+# === Coverage ===
+
+# Run code coverage with tarpaulin (uses tarpaulin.toml config)
+coverage:
+    cargo tarpaulin --config tarpaulin.toml
+
+# Run quick coverage on core crates only
+coverage-quick:
+    cargo tarpaulin --config tarpaulin.toml --run-types lib
+
+# Run coverage for a specific crate
+coverage-crate crate:
+    cargo tarpaulin -p {{crate}} --skip-clean --timeout 120 --exclude-files 'vendor/*' --out html --output-dir target/tarpaulin
+
+# Open coverage report in browser
+coverage-open: coverage
+    xdg-open target/tarpaulin/tarpaulin-report.html 2>/dev/null || open target/tarpaulin/tarpaulin-report.html 2>/dev/null || echo "Open target/tarpaulin/tarpaulin-report.html manually"
+
 # === CI ===
 
 # Run full CI check
