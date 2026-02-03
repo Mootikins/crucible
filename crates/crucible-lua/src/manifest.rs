@@ -101,7 +101,8 @@ pub enum Capability {
     Filesystem,
     Network,
     Shell,
-    Vault,
+    #[serde(rename = "kiln", alias = "vault")]
+    Kiln,
     Agent,
     Ui,
     Config,
@@ -116,7 +117,7 @@ impl Capability {
             Self::Filesystem,
             Self::Network,
             Self::Shell,
-            Self::Vault,
+            Self::Kiln,
             Self::Agent,
             Self::Ui,
             Self::Config,
@@ -130,7 +131,7 @@ impl Capability {
             Self::Filesystem => "Read/write files outside the kiln",
             Self::Network => "Make HTTP requests",
             Self::Shell => "Execute shell commands",
-            Self::Vault => "Access the knowledge vault",
+            Self::Kiln => "Access the knowledge kiln",
             Self::Agent => "Interact with AI agents",
             Self::Ui => "Create custom UI views",
             Self::Config => "Access user configuration",
@@ -465,7 +466,7 @@ keywords:
         assert_eq!(manifest.capabilities.len(), 3);
         assert!(manifest.has_capability(Capability::Filesystem));
         assert!(manifest.has_capability(Capability::Shell));
-        assert!(manifest.has_capability(Capability::Vault));
+        assert!(manifest.has_capability(Capability::Kiln));
         assert!(!manifest.has_capability(Capability::Network));
         assert_eq!(manifest.dependencies.len(), 2);
         assert_eq!(manifest.required_dependencies().count(), 1);
