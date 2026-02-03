@@ -121,7 +121,7 @@ pub fn register_vault_module_with_store(
                     }
                     Ok(Value::Table(table))
                 }
-                Err(e) => Err(mlua::Error::runtime(format!("Vault error: {}", e))),
+                Err(e) => Err(mlua::Error::runtime(format!("Kiln error: {}", e))),
             }
         }
     })?;
@@ -134,7 +134,7 @@ pub fn register_vault_module_with_store(
             match s.get(&path).await {
                 Ok(Some(record)) => note_record_to_lua(&lua, &record),
                 Ok(None) => Ok(Value::Nil),
-                Err(e) => Err(mlua::Error::runtime(format!("Vault error: {}", e))),
+                Err(e) => Err(mlua::Error::runtime(format!("Kiln error: {}", e))),
             }
         }
     })?;

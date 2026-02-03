@@ -9,9 +9,8 @@
 
 use crucible_core::storage::NoteStore;
 use crucible_lua::{
-    register_fs_module, register_graph_module, register_graph_module_with_store,
-    register_http_module, register_lua_stdlib, register_oq_module, register_paths_module,
-    register_ratelimit_module, register_shell_module, register_timer_module, register_vault_module,
+    register_graph_module, register_graph_module_with_store, register_oq_module,
+    register_paths_module, register_shell_module, register_vault_module,
     register_vault_module_with_store, register_ws_module, LuaExecutor, PathsContext, PluginManager,
     PluginSpec, ShellPolicy,
 };
@@ -32,37 +31,33 @@ pub struct DaemonPluginLoader {
 impl DaemonPluginLoader {
     /// Create a new loader, registering daemon-appropriate Lua modules.
     ///
-    /// Registered modules:
-    /// - `cru.http` — HTTP client
+    /// `LuaExecutor::new()` provides: `cru.http`, `cru.fs`, `cru.timer`,
+    /// `cru.ratelimit`, and `cru.retry`/`cru.emitter`/`cru.check` (lua stdlib).
+    ///
+    /// Additional daemon modules registered here:
     /// - `cru.ws` — WebSocket client
-    /// - `cru.fs` — Filesystem operations
     /// - `cru.shell` — Shell execution (with default policy)
-    /// - `cru.json_query` (`oq`) — JSON/YAML/TOML query
-    /// - `cru.paths` — Standard path helpers
+    /// - `oq` — JSON/YAML/TOML query
+    /// - `paths` — Standard path helpers
+    /// - `cru.kiln` / `cru.graph` — Kiln and graph stubs (upgraded with storage later)
     ///
     /// **Not** registered (UI-only):
     /// - `cru.oil`, `cru.popup`, `cru.panel`, `cru.statusline`
     pub fn new() -> anyhow::Result<Self> {
         let executor = LuaExecutor::new().map_err(|e| anyhow::anyhow!("LuaExecutor init: {e}"))?;
 
+        // LuaExecutor::new() already registers: http, fs, timer, ratelimit, lua_stdlib.
+        // Register additional daemon-specific modules here.
         let lua = executor.lua();
 
-        register_http_module(lua).map_err(|e| anyhow::anyhow!("http module: {e}"))?;
         register_ws_module(lua).map_err(|e| anyhow::anyhow!("ws module: {e}"))?;
-        register_timer_module(lua).map_err(|e| anyhow::anyhow!("timer module: {e}"))?;
-        register_ratelimit_module(lua).map_err(|e| anyhow::anyhow!("ratelimit module: {e}"))?;
-        register_fs_module(lua).map_err(|e| anyhow::anyhow!("fs module: {e}"))?;
         register_shell_module(lua, ShellPolicy::default())
             .map_err(|e| anyhow::anyhow!("shell module: {e}"))?;
         register_oq_module(lua).map_err(|e| anyhow::anyhow!("oq module: {e}"))?;
         register_paths_module(lua, PathsContext::new())
             .map_err(|e| anyhow::anyhow!("paths module: {e}"))?;
-
         register_graph_module(lua).map_err(|e| anyhow::anyhow!("graph module: {e}"))?;
         register_vault_module(lua).map_err(|e| anyhow::anyhow!("vault module: {e}"))?;
-
-        // Pure Lua stdlib (retry, emitter, check) — must be after timer
-        register_lua_stdlib(lua).map_err(|e| anyhow::anyhow!("lua stdlib: {e}"))?;
 
         let plugin_manager = PluginManager::new();
 
