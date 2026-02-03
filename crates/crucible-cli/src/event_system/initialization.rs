@@ -68,10 +68,14 @@ pub async fn initialize_event_system(config: &CliConfig) -> Result<EventSystemHa
     debug!("Creating Reactor");
     let mut reactor = Reactor::new();
 
-    // Initialize database
-    debug!("Initializing database storage");
-    let storage_client = factories::create_surrealdb_storage(config).await?;
-    factories::initialize_surrealdb_schema(&storage_client).await?;
+    // Initialize database (SurrealDB only)
+    #[cfg(feature = "storage-surrealdb")]
+    let storage_client = {
+        debug!("Initializing database storage");
+        let client = factories::create_surrealdb_storage(config).await?;
+        factories::initialize_surrealdb_schema(&client).await?;
+        client
+    };
 
     // Create shared reactor for the ReactorEventEmitter
     // We need to wrap it now so handlers can get a reference to the emitter
@@ -135,11 +139,21 @@ pub async fn initialize_event_system(config: &CliConfig) -> Result<EventSystemHa
         handler_count
     );
 
-    Ok(EventSystemHandle::new(
-        reactor_arc,
-        watch_manager,
-        storage_client,
-    ))
+    #[cfg(feature = "storage-surrealdb")]
+    {
+        Ok(EventSystemHandle::new(
+            reactor_arc,
+            watch_manager,
+            storage_client,
+        ))
+    }
+    #[cfg(not(feature = "storage-surrealdb"))]
+    {
+        Ok(EventSystemHandle::new_without_storage(
+            reactor_arc,
+            watch_manager,
+        ))
+    }
 }
 
 fn load_lua_handlers(reactor: &mut Reactor, kiln_path: &Path) {

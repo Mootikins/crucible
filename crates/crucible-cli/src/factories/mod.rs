@@ -15,8 +15,10 @@ pub use agent::{
 };
 pub use enrichment::{create_default_enrichment_service, get_or_create_embedding_provider};
 pub use pipeline::create_pipeline;
+pub use storage::{create_daemon_storage, get_storage, StorageHandle};
+#[cfg(feature = "storage-surrealdb")]
 pub use storage::{
-    create_daemon_storage, create_surrealdb_enriched_note_store, create_surrealdb_storage,
-    get_storage, initialize_surrealdb_schema, shutdown_storage, StorageHandle,
+    create_surrealdb_enriched_note_store, create_surrealdb_storage, initialize_surrealdb_schema,
+    shutdown_storage,
 };
 pub use watch::create_file_watcher;
