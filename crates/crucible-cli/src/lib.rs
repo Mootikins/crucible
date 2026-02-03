@@ -14,8 +14,8 @@
 // Allow some lints for WIP TUI code - to be cleaned up
 #![allow(dead_code, unused_imports)]
 
-pub mod acp;
 pub mod chat;
+pub mod context_enricher;
 pub mod cli;
 pub mod commands;
 pub mod common;
