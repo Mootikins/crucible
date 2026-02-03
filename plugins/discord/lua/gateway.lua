@@ -234,13 +234,23 @@ end
 ---@param status string "online"|"idle"|"dnd"|"invisible"
 ---@param activity table|nil {name=string, type=number} (0=Playing, 1=Streaming, 2=Listening, 3=Watching, 5=Competing)
 function M.update_presence(status, activity)
-    local d = {
-        since = (status == "idle") and (os.time() * 1000) or nil,
-        activities = activity and { activity } or {},
-        status = status,
-        afk = status == "idle",
-    }
-    send_payload(OP.PRESENCE_UPDATE, d)
+    -- Discord requires "since" as null or int, but Lua nil omits the key.
+    -- Encode manually to guarantee correct JSON structure.
+    local activities_json = "[]"
+    if activity then
+        activities_json = cru.json.encode({ activity })
+    end
+    local since = "null"
+    if status == "idle" then
+        since = tostring(math.floor(os.time() * 1000))
+    end
+    local json = string.format(
+        '{"op":3,"d":{"since":%s,"activities":%s,"status":"%s","afk":%s}}',
+        since, activities_json, status, status == "idle" and "true" or "false"
+    )
+    if ws then
+        pcall(function() ws:send(json) end)
+    end
 end
 
 --- Disconnect from gateway (clean disconnect clears session)
