@@ -308,3 +308,163 @@ impl EventFilter {
         true
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    fn md_event(name: &str) -> FileEvent {
+        FileEvent::new(FileEventKind::Modified, PathBuf::from(name))
+    }
+
+    fn event_with_size(name: &str, size: u64) -> FileEvent {
+        let meta = EventMetadata {
+            size: Some(size),
+            permissions: None,
+            mime_type: None,
+            content_hash: None,
+            backend: "test".into(),
+            watch_id: "w1".into(),
+        };
+        FileEvent::with_metadata(FileEventKind::Created, PathBuf::from(name), meta)
+    }
+
+    // -- FileEvent --
+
+    #[test]
+    fn file_event_extension_returns_lowercase() {
+        let ev = md_event("/foo/bar.MD");
+        assert_eq!(ev.extension(), Some("md".to_string()));
+    }
+
+    #[test]
+    fn file_event_extension_none_for_no_ext() {
+        let ev = md_event("/foo/Makefile");
+        assert_eq!(ev.extension(), None);
+    }
+
+    #[test]
+    fn file_event_file_name() {
+        let ev = md_event("/a/b/c.txt");
+        assert_eq!(ev.file_name(), Some("c.txt".to_string()));
+    }
+
+    #[test]
+    fn file_event_parent() {
+        let ev = md_event("/a/b/c.txt");
+        assert_eq!(ev.parent(), Some(PathBuf::from("/a/b")));
+    }
+
+    // -- FileEventKind --
+
+    #[test]
+    fn created_and_modified_affect_content() {
+        assert!(FileEventKind::Created.affects_content());
+        assert!(FileEventKind::Modified.affects_content());
+        assert!(!FileEventKind::Deleted.affects_content());
+    }
+
+    #[test]
+    fn deleted_and_moved_are_removal() {
+        assert!(FileEventKind::Deleted.is_removal());
+        assert!(FileEventKind::Moved {
+            from: PathBuf::from("a"),
+            to: PathBuf::from("b"),
+        }
+        .is_removal());
+        assert!(!FileEventKind::Created.is_removal());
+    }
+
+    #[test]
+    fn event_kind_as_str() {
+        assert_eq!(FileEventKind::Created.as_str(), "created");
+        assert_eq!(FileEventKind::Modified.as_str(), "modified");
+        assert_eq!(FileEventKind::Deleted.as_str(), "deleted");
+        assert_eq!(
+            FileEventKind::Moved {
+                from: PathBuf::new(),
+                to: PathBuf::new(),
+            }
+            .as_str(),
+            "moved"
+        );
+        assert_eq!(FileEventKind::Batch(vec![]).as_str(), "batch");
+        assert_eq!(FileEventKind::Unknown("x".into()).as_str(), "unknown");
+    }
+
+    // -- EventMetadata --
+
+    #[test]
+    fn event_metadata_new_sets_backend_and_watch_id() {
+        let m = EventMetadata::new("notify".into(), "watch-1".into());
+        assert_eq!(m.backend, "notify");
+        assert_eq!(m.watch_id, "watch-1");
+        assert!(m.size.is_none());
+    }
+
+    // -- EventFilter --
+
+    #[test]
+    fn filter_by_extension_includes_only_matching() {
+        let filter = EventFilter::new().with_extension("md");
+        assert!(filter.matches(&md_event("/foo/note.md")));
+        assert!(!filter.matches(&md_event("/foo/note.txt")));
+    }
+
+    #[test]
+    fn filter_exclude_extension() {
+        let filter = EventFilter::new().exclude_extension("log");
+        assert!(filter.matches(&md_event("/foo/note.md")));
+        assert!(!filter.matches(&md_event("/foo/app.log")));
+    }
+
+    #[test]
+    fn filter_exclude_dir() {
+        let filter = EventFilter::new().exclude_dir("/tmp/cache");
+        assert!(filter.matches(&md_event("/home/user/note.md")));
+        assert!(!filter.matches(&md_event("/tmp/cache/file.md")));
+    }
+
+    #[test]
+    fn filter_include_dir() {
+        let filter = EventFilter::new().include_dir("/notes");
+        assert!(filter.matches(&md_event("/notes/sub/file.md")));
+        assert!(!filter.matches(&md_event("/other/file.md")));
+    }
+
+    #[test]
+    fn filter_size_limits() {
+        let filter = EventFilter::new().with_size_limits(Some(100), Some(10_000));
+        assert!(filter.matches(&event_with_size("ok.md", 500)));
+        assert!(!filter.matches(&event_with_size("small.md", 10)));
+        assert!(!filter.matches(&event_with_size("big.md", 100_000)));
+    }
+
+    #[test]
+    fn filter_custom_fn() {
+        let filter =
+            EventFilter::new().with_custom_filter(|ev| ev.path.to_string_lossy().contains("keep"));
+        assert!(filter.matches(&md_event("/keep/file.md")));
+        assert!(!filter.matches(&md_event("/drop/file.md")));
+    }
+
+    #[test]
+    fn filter_no_extension_rejected_when_extensions_required() {
+        let filter = EventFilter::new().with_extension("md");
+        assert!(!filter.matches(&md_event("/foo/Makefile")));
+    }
+
+    #[test]
+    fn filter_clone_drops_custom_filter() {
+        let filter = EventFilter::new().with_custom_filter(|_| true);
+        let cloned = filter.clone();
+        assert!(cloned.custom_filter.is_none());
+    }
+
+    #[test]
+    fn empty_filter_allows_everything() {
+        let filter = EventFilter::new();
+        assert!(filter.matches(&md_event("/any/path.rs")));
+    }
+}

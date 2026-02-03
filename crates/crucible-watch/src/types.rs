@@ -968,3 +968,416 @@ pub enum ScanErrorType {
     /// File system error
     FileSystemError,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+    use std::time::SystemTime;
+
+    // --- FileType tests ---
+
+    #[test]
+    fn file_type_from_markdown_extensions() {
+        assert_eq!(
+            FileType::from_path(Path::new("note.md")),
+            FileType::Markdown
+        );
+        assert_eq!(
+            FileType::from_path(Path::new("note.markdown")),
+            FileType::Markdown
+        );
+        assert_eq!(
+            FileType::from_path(Path::new("NOTE.MD")),
+            FileType::Markdown
+        );
+    }
+
+    #[test]
+    fn file_type_from_code_extensions() {
+        let code_files = [
+            "main.rs",
+            "app.py",
+            "index.js",
+            "types.ts",
+            "Component.tsx",
+            "main.go",
+            "App.java",
+        ];
+        for f in code_files {
+            assert_eq!(
+                FileType::from_path(Path::new(f)),
+                FileType::Code,
+                "failed for {f}"
+            );
+        }
+    }
+
+    #[test]
+    fn file_type_from_config_extensions() {
+        let config_files = ["config.yaml", "data.json", "Cargo.toml", "settings.ini"];
+        for f in config_files {
+            assert_eq!(
+                FileType::from_path(Path::new(f)),
+                FileType::Config,
+                "failed for {f}"
+            );
+        }
+    }
+
+    #[test]
+    fn file_type_from_media_extensions() {
+        assert_eq!(FileType::from_path(Path::new("photo.png")), FileType::Image);
+        assert_eq!(FileType::from_path(Path::new("song.mp3")), FileType::Audio);
+        assert_eq!(FileType::from_path(Path::new("clip.mp4")), FileType::Video);
+    }
+
+    #[test]
+    fn file_type_from_binary_and_archive() {
+        assert_eq!(FileType::from_path(Path::new("app.exe")), FileType::Binary);
+        assert_eq!(FileType::from_path(Path::new("lib.so")), FileType::Binary);
+        assert_eq!(
+            FileType::from_path(Path::new("data.zip")),
+            FileType::Archive
+        );
+        assert_eq!(
+            FileType::from_path(Path::new("backup.tar")),
+            FileType::Archive
+        );
+    }
+
+    #[test]
+    fn file_type_unknown_extension() {
+        assert_eq!(
+            FileType::from_path(Path::new("mystery.xyz123")),
+            FileType::Unknown
+        );
+    }
+
+    #[test]
+    fn file_type_no_extension() {
+        assert_eq!(
+            FileType::from_path(Path::new("Makefile")),
+            FileType::Unknown
+        );
+    }
+
+    #[test]
+    fn file_type_should_process_content() {
+        assert!(FileType::Markdown.should_process_content());
+        assert!(FileType::Text.should_process_content());
+        assert!(FileType::Code.should_process_content());
+        assert!(FileType::Config.should_process_content());
+        assert!(!FileType::Binary.should_process_content());
+        assert!(!FileType::Image.should_process_content());
+    }
+
+    #[test]
+    fn file_type_should_watch() {
+        assert!(FileType::Markdown.should_watch());
+        assert!(FileType::Code.should_watch());
+        assert!(!FileType::Binary.should_watch());
+        assert!(!FileType::Archive.should_watch());
+        assert!(!FileType::Unknown.should_watch());
+    }
+
+    #[test]
+    fn file_type_as_str_and_display() {
+        assert_eq!(FileType::Markdown.as_str(), "markdown");
+        assert_eq!(FileType::Code.as_str(), "code");
+        assert_eq!(format!("{}", FileType::Binary), "binary");
+    }
+
+    // --- FilePermissions tests ---
+
+    #[test]
+    fn permissions_readonly() {
+        let perm = FilePermissions::ReadOnly;
+        assert!(perm.is_readonly());
+        assert!(!perm.is_writable());
+        assert!(!perm.is_executable());
+        assert_eq!(perm.mode(), None);
+    }
+
+    #[test]
+    fn permissions_writable() {
+        let perm = FilePermissions::Writable(0o644);
+        assert!(!perm.is_readonly());
+        assert!(perm.is_writable());
+        assert!(!perm.is_executable());
+        assert_eq!(perm.mode(), Some(0o644));
+    }
+
+    #[test]
+    fn permissions_executable() {
+        let perm = FilePermissions::Executable(0o755);
+        assert!(!perm.is_readonly());
+        assert!(perm.is_writable());
+        assert!(perm.is_executable());
+        assert_eq!(perm.mode(), Some(0o755));
+    }
+
+    #[test]
+    fn permissions_display() {
+        assert_eq!(format!("{}", FilePermissions::ReadOnly), "read-only");
+        assert!(format!("{}", FilePermissions::Writable(0o644)).contains("writable"));
+        assert!(format!("{}", FilePermissions::Executable(0o755)).contains("executable"));
+    }
+
+    // --- ScanConfig tests ---
+
+    #[test]
+    fn scan_config_default_includes_text_types() {
+        let config = ScanConfig::default();
+        assert!(config.should_include_type(FileType::Markdown));
+        assert!(config.should_include_type(FileType::Text));
+        assert!(config.should_include_type(FileType::Code));
+        assert!(config.should_include_type(FileType::Config));
+    }
+
+    #[test]
+    fn scan_config_default_excludes_binary() {
+        let config = ScanConfig::default();
+        assert!(!config.should_include_type(FileType::Binary));
+        assert!(!config.should_include_type(FileType::Archive));
+    }
+
+    #[test]
+    fn scan_config_should_include_size() {
+        let config = ScanConfig::default();
+        assert!(config.should_include_size(100));
+        assert!(config.should_include_size(config.max_file_size));
+        assert!(!config.should_include_size(config.max_file_size + 1));
+    }
+
+    #[test]
+    fn scan_config_matches_exclude_pattern() {
+        let config = ScanConfig::default();
+        assert!(config.matches_exclude_pattern(Path::new("file.tmp")));
+        assert!(config.matches_exclude_pattern(Path::new("data.cache")));
+        assert!(!config.matches_exclude_pattern(Path::new("note.md")));
+    }
+
+    #[test]
+    fn scan_config_include_all() {
+        let config = ScanConfig::include_all();
+        assert!(config.should_include_type(FileType::Binary));
+        assert!(config.should_include_type(FileType::Image));
+        assert!(config.should_include_type(FileType::Unknown));
+    }
+
+    #[test]
+    fn scan_config_markdown_only() {
+        let config = ScanConfig::markdown_only();
+        assert!(config.should_include_type(FileType::Markdown));
+        assert!(!config.should_include_type(FileType::Code));
+        assert!(!config.should_include_type(FileType::Text));
+    }
+
+    #[test]
+    fn scan_config_code_only() {
+        let config = ScanConfig::code_only();
+        assert!(config.should_include_type(FileType::Code));
+        assert!(!config.should_include_type(FileType::Markdown));
+    }
+
+    // --- FileInfo builder tests ---
+
+    #[test]
+    fn builder_creates_valid_file_info() {
+        let now = SystemTime::now();
+        let info = FileInfo::builder()
+            .path(PathBuf::from("/root/note.md"))
+            .relative_path("note.md".to_string())
+            .file_size(42)
+            .modified_time(now)
+            .file_type(FileType::Markdown)
+            .build()
+            .unwrap();
+
+        assert_eq!(info.path(), Path::new("/root/note.md"));
+        assert_eq!(info.relative_path(), "note.md");
+        assert_eq!(info.file_size(), 42);
+        assert_eq!(info.file_type(), FileType::Markdown);
+        assert!(info.is_accessible());
+        assert!(info.has_zero_hash());
+    }
+
+    #[test]
+    fn builder_requires_path() {
+        let result = FileInfo::builder()
+            .relative_path("note.md".to_string())
+            .build();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn builder_requires_relative_path() {
+        let result = FileInfo::builder()
+            .path(PathBuf::from("/root/note.md"))
+            .build();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn builder_optional_fields() {
+        let now = SystemTime::now();
+        let info = FileInfo::builder()
+            .path(PathBuf::from("/root/script.sh"))
+            .relative_path("script.sh".to_string())
+            .is_accessible(false)
+            .created_time(now)
+            .permissions(FilePermissions::Executable(0o755))
+            .build()
+            .unwrap();
+
+        assert!(!info.is_accessible());
+        assert!(info.created_time().is_some());
+        assert_eq!(
+            info.permissions(),
+            Some(&FilePermissions::Executable(0o755))
+        );
+    }
+
+    // --- FileInfo method tests ---
+
+    #[test]
+    fn file_info_type_checks() {
+        let md = FileInfo::new(
+            PathBuf::from("/note.md"),
+            "note.md".to_string(),
+            FileHash::zero(),
+            100,
+            SystemTime::now(),
+            FileType::Markdown,
+        );
+        assert!(md.is_markdown());
+        assert!(md.is_text());
+        assert!(!md.is_code());
+        assert!(!md.is_binary());
+
+        let rs = FileInfo::new(
+            PathBuf::from("/main.rs"),
+            "main.rs".to_string(),
+            FileHash::zero(),
+            200,
+            SystemTime::now(),
+            FileType::Code,
+        );
+        assert!(!rs.is_markdown());
+        assert!(rs.is_text());
+        assert!(rs.is_code());
+    }
+
+    #[test]
+    fn file_info_content_matches() {
+        let hash = FileHash::new([1; 32]);
+        let a = FileInfo::new(
+            PathBuf::from("/a.md"),
+            "a.md".to_string(),
+            hash,
+            100,
+            SystemTime::now(),
+            FileType::Markdown,
+        );
+        let b = FileInfo::new(
+            PathBuf::from("/b.md"),
+            "b.md".to_string(),
+            hash,
+            200,
+            SystemTime::now(),
+            FileType::Markdown,
+        );
+        assert!(a.content_matches(&b));
+    }
+
+    #[test]
+    fn file_info_metadata_matches() {
+        let time = SystemTime::now();
+        let a = FileInfo::new(
+            PathBuf::from("/a.md"),
+            "a.md".to_string(),
+            FileHash::zero(),
+            100,
+            time,
+            FileType::Markdown,
+        );
+        let b = FileInfo::new(
+            PathBuf::from("/b.md"),
+            "b.md".to_string(),
+            FileHash::new([1; 32]),
+            100,
+            time,
+            FileType::Markdown,
+        );
+        assert!(a.metadata_matches(&b));
+    }
+
+    #[test]
+    fn file_info_update_content_hash() {
+        let mut info = FileInfo::with_zero_hash(
+            PathBuf::from("/note.md"),
+            "note.md".to_string(),
+            100,
+            SystemTime::now(),
+            FileType::Markdown,
+        );
+        assert!(info.has_zero_hash());
+
+        let new_hash = FileHash::new([42; 32]);
+        info.update_content_hash(new_hash);
+        assert!(!info.has_zero_hash());
+        assert_eq!(info.content_hash(), new_hash);
+    }
+
+    #[test]
+    fn file_info_content_hash_hex() {
+        let info = FileInfo::with_zero_hash(
+            PathBuf::from("/note.md"),
+            "note.md".to_string(),
+            100,
+            SystemTime::now(),
+            FileType::Markdown,
+        );
+        let hex = info.content_hash_hex();
+        assert_eq!(hex.len(), 64);
+        assert!(hex.chars().all(|c| c.is_ascii_hexdigit()));
+    }
+
+    // --- ScanResult tests ---
+
+    #[test]
+    fn scan_result_new_is_empty() {
+        let result = ScanResult::new();
+        assert!(result.discovered_files.is_empty());
+        assert!(result.scan_errors.is_empty());
+        assert_eq!(result.successful_files, 0);
+        assert!(result.is_successful());
+    }
+
+    #[test]
+    fn scan_result_success_rate_empty() {
+        let result = ScanResult::new();
+        assert_eq!(result.success_rate(), 1.0);
+    }
+
+    #[test]
+    fn scan_result_success_rate_with_files() {
+        let mut result = ScanResult::new();
+        result.total_considered = 10;
+        result.successful_files = 8;
+        assert!((result.success_rate() - 0.8).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn scan_result_summary() {
+        let mut result = ScanResult::new();
+        result.total_considered = 10;
+        result.successful_files = 8;
+        result.skipped_files = 2;
+        let summary = result.summary();
+        assert_eq!(summary.total_files, 10);
+        assert_eq!(summary.successful_files, 8);
+        assert_eq!(summary.skipped_files, 2);
+    }
+}
