@@ -92,10 +92,7 @@ pub async fn check_ollama_models(endpoint: &str) -> Option<Vec<String>> {
 }
 
 /// Fetch available models for a provider, returning formatted as "provider/model"
-pub async fn fetch_provider_models(
-    provider: &LlmProvider,
-    endpoint: &str,
-) -> Vec<String> {
+pub async fn fetch_provider_models(provider: &LlmProvider, endpoint: &str) -> Vec<String> {
     match provider {
         LlmProvider::Ollama => fetch_ollama_models(endpoint).await,
         LlmProvider::OpenAI => fetch_openai_models(endpoint).await,
@@ -322,7 +319,8 @@ pub fn detect_providers(config: &ChatConfig) -> Vec<DetectedProvider> {
     }
 
     // Ollama via OLLAMA_HOST env even if not the configured provider
-    if !providers.iter().any(|p| p.provider_type == "ollama") && std::env::var("OLLAMA_HOST").is_ok()
+    if !providers.iter().any(|p| p.provider_type == "ollama")
+        && std::env::var("OLLAMA_HOST").is_ok()
     {
         providers.push(DetectedProvider {
             name: "Ollama (Local)".to_string(),
@@ -358,7 +356,10 @@ mod tests {
         let config = ChatConfig::default();
         let detected = detect_providers(&config);
         assert!(!detected.is_empty());
-        let ollama = detected.iter().find(|p| p.provider_type == "ollama").unwrap();
+        let ollama = detected
+            .iter()
+            .find(|p| p.provider_type == "ollama")
+            .unwrap();
         assert!(ollama.reason.contains("OLLAMA_HOST"));
         std::env::remove_var("OLLAMA_HOST");
     }

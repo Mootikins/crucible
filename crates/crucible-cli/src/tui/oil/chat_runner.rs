@@ -317,7 +317,8 @@ impl OilChatRunner {
             }
 
             while let Ok(msg) = msg_rx.try_recv() {
-                let mut action = Self::process_message(&msg, app, agent, bridge, &mut active_stream);
+                let mut action =
+                    Self::process_message(&msg, app, agent, bridge, &mut active_stream);
                 while let Action::Send(follow_up) = action {
                     action =
                         Self::process_message(&follow_up, app, agent, bridge, &mut active_stream);
@@ -627,8 +628,7 @@ impl OilChatRunner {
                             let _ = app.on_message(ChatAppMsg::ModelsLoaded(models));
                         }
                     }
-                    ChatAppMsg::McpStatusLoaded(_)
-                    | ChatAppMsg::PluginStatusLoaded(_) => {
+                    ChatAppMsg::McpStatusLoaded(_) | ChatAppMsg::PluginStatusLoaded(_) => {
                         app.on_message(msg.clone());
                     }
                     ChatAppMsg::SetThinkingBudget(budget) => {
@@ -693,7 +693,8 @@ impl OilChatRunner {
                                 && self.enricher.is_some()
                                 && !content.starts_with("/search")
                             {
-                                let enricher = self.enricher.clone().expect("checked is_some above");
+                                let enricher =
+                                    self.enricher.clone().expect("checked is_some above");
                                 let content = content.clone();
                                 let tx = msg_tx.clone();
                                 tokio::spawn(async move {

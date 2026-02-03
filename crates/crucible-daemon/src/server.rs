@@ -193,27 +193,27 @@ impl Server {
         let mut shutdown_rx = self.shutdown_tx.subscribe();
 
         {
-          let mut loader_guard = self.plugin_loader.lock().await;
-          if let Some(ref mut loader) = *loader_guard {
-            let paths = crate::daemon_plugins::default_daemon_plugin_paths();
-            match loader.load_plugins(&paths) {
-                Ok(specs) => {
-                    if !specs.is_empty() {
-                        info!("Loaded {} daemon plugin(s)", specs.len());
-                    }
-                    let total_services: usize = specs.iter().map(|s| s.services.len()).sum();
-                    if total_services > 0 {
-                        info!(
+            let mut loader_guard = self.plugin_loader.lock().await;
+            if let Some(ref mut loader) = *loader_guard {
+                let paths = crate::daemon_plugins::default_daemon_plugin_paths();
+                match loader.load_plugins(&paths) {
+                    Ok(specs) => {
+                        if !specs.is_empty() {
+                            info!("Loaded {} daemon plugin(s)", specs.len());
+                        }
+                        let total_services: usize = specs.iter().map(|s| s.services.len()).sum();
+                        if total_services > 0 {
+                            info!(
                             "Discovered {} service(s) across plugins (not yet runnable — service execution is future work)",
                             total_services
                         );
+                        }
+                    }
+                    Err(e) => {
+                        warn!("Failed to load daemon plugins: {}", e);
                     }
                 }
-                Err(e) => {
-                    warn!("Failed to load daemon plugins: {}", e);
-                }
             }
-          }
         }
 
         // Spawn event persistence task with cancellation support
