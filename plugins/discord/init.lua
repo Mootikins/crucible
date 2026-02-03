@@ -1,31 +1,128 @@
 --- Discord integration plugin for Crucible
 --- Connects to Discord via Gateway WebSocket and REST API.
 --- Exposes tools for agents to send/read messages, list channels, and register commands.
+--- Routes @mentions and DMs to Crucible agent sessions for chatbot responses.
 
 local M = {}
 
 local config = require("config")
 local api = require("api")
 local gateway = require("gateway")
+local sessions = require("sessions")
+local responder = require("responder")
+
+-- Bot identity (captured from READY event)
+local bot_user_id = nil
+
+-- ============================================================================
+-- Chatbot routing helpers
+-- ============================================================================
+
+--- Check if a message should trigger a bot response.
+local function should_respond(data)
+    -- Never respond to bots
+    if data.author and data.author.bot then return false end
+
+    local content = data.content or ""
+    local respond_to = config.get("respond_to", "mentions")
+
+    -- DMs (guild_id is nil for DMs)
+    if not data.guild_id then return true end
+
+    -- Check @mention
+    if bot_user_id and respond_to ~= "prefix" then
+        if content:find("<@" .. bot_user_id .. ">") or content:find("<@!" .. bot_user_id .. ">") then
+            return true
+        end
+    end
+
+    -- Check prefix
+    local prefix = config.get("command_prefix", "")
+    if prefix ~= "" and (respond_to == "prefix" or respond_to == "both") then
+        if content:sub(1, #prefix) == prefix then
+            return true
+        end
+    end
+
+    -- Respond to all messages in channel
+    if respond_to == "all" then return true end
+
+    return false
+end
+
+--- Strip bot mention and command prefix from message content.
+local function clean_content(content)
+    if not content then return "" end
+
+    -- Strip @mention
+    if bot_user_id then
+        content = content:gsub("<@!?" .. bot_user_id .. ">", "")
+    end
+
+    -- Strip command prefix
+    local prefix = config.get("command_prefix", "")
+    if prefix ~= "" and content:sub(1, #prefix) == prefix then
+        content = content:sub(#prefix + 1)
+    end
+
+    return content:match("^%s*(.-)%s*$") or ""
+end
 
 -- ============================================================================
 -- Gateway event wiring
 -- ============================================================================
 
-gateway.on("MESSAGE_CREATE", function(data)
-    if data.author and data.author.bot then return end
-
-    cru.log("info", string.format(
-        "Discord message from %s in #%s: %s",
-        data.author and data.author.username or "unknown",
-        data.channel_id or "?",
-        (data.content or ""):sub(1, 80)
-    ))
-end)
-
 gateway.on("READY", function(data)
+    bot_user_id = data.user and data.user.id
     local guild_count = data.guilds and #data.guilds or 0
     cru.log("info", string.format("Discord bot ready: %s (%d guilds)", data.user.username, guild_count))
+
+    -- Auto-register slash commands if app_id is configured
+    local app_id = config.get("app_id", "")
+    if app_id ~= "" then
+        local interactions = require("interactions")
+        local ok, err = pcall(interactions.register_commands, app_id)
+        if not ok then
+            cru.log("warn", "Failed to register slash commands: " .. tostring(err))
+        end
+    end
+end)
+
+gateway.on("MESSAGE_CREATE", function(data)
+    if not should_respond(data) then return end
+
+    local content = clean_content(data.content)
+    if content == "" then return end
+
+    local guild_id = data.guild_id
+    local channel_id = data.channel_id
+    local msg_id = data.id
+
+    local session_id, err = sessions.get_or_create(channel_id, guild_id)
+    if not session_id then
+        cru.log("warn", "Failed to get session for channel " .. channel_id .. ": " .. tostring(err))
+        return
+    end
+
+    local ok, resp_err = pcall(responder.respond, session_id, channel_id, content, msg_id)
+    if not ok then
+        cru.log("warn", "Responder error: " .. tostring(resp_err))
+    end
+end)
+
+-- Wire periodic hooks (digest + session cleanup)
+local digest = require("digest")
+gateway.set_periodic_hook(function()
+    digest.maybe_send()
+    sessions.cleanup_stale()
+end)
+
+gateway.on("INTERACTION_CREATE", function(data)
+    local interactions = require("interactions")
+    local ok, err = pcall(interactions.handle, data)
+    if not ok then
+        cru.log("warn", "Interaction handler error: " .. tostring(err))
+    end
 end)
 
 -- ============================================================================
@@ -161,9 +258,10 @@ function M.discord_command(args, ctx)
         local info = gateway.session_info()
         if info.connected then
             ctx.display_info(string.format(
-                "Connected (session: %s, seq: %s)",
+                "Connected (session: %s, seq: %s, active sessions: %d)",
                 info.session_id or "?",
-                tostring(info.last_sequence or "?")
+                tostring(info.last_sequence or "?"),
+                sessions.active_count()
             ))
         else
             ctx.display_info("Not connected. Use :discord connect")
@@ -180,9 +278,9 @@ end
 
 return {
     name = "discord",
-    version = "0.1.0",
+    version = "0.2.0",
     description = "Discord integration via Gateway WebSocket and REST API",
-    capabilities = { "config" },
+    capabilities = { "config", "network", "websocket", "agent" },
 
     tools = {
         discord_send = {
