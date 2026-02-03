@@ -1,0 +1,40 @@
+# Tarpaulin configuration for Crucible coverage analysis
+# See: https://github.com/xd009642/tarpaulin
+
+[default]
+# Exclude vendor code, docs, and non-SUT from coverage
+exclude-files = [
+    "vendor/",
+    "docs/",
+    "examples/",
+    "target/",
+]
+
+# Exclude crates that won't compile or are irrelevant
+exclude = [
+    "crucible-web",
+    "crucible-benchmarks",
+]
+
+timeout = "120s"
+skip-clean = true
+out = ["html", "json"]
+output-dir = "target/tarpaulin"
+
+[quick]
+packages = [
+    "crucible-core",
+    "crucible-parser",
+    "crucible-config",
+    "crucible-enrichment",
+    "crucible-watch",
+    "crucible-pipeline",
+]
+exclude-files = [
+    "vendor/",
+    "docs/",
+]
+timeout = "60s"
+skip-clean = true
+out = ["html", "json"]
+output-dir = "target/tarpaulin"
