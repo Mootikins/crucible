@@ -106,6 +106,7 @@ pub enum Capability {
     Ui,
     Config,
     System,
+    #[serde(rename = "websocket", alias = "web_socket")]
     WebSocket,
 }
 
