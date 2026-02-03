@@ -33,9 +33,6 @@ tracing = { workspace = true }
 # UUID generation
 uuid = { workspace = true }
 
-# Internal crates
-crucible-acp = { workspace = true }
-
 # Asset embedding (release builds)
 rust-embed = { version = "8", features = ["interpolate-folder-path"] }
 mime_guess = "2"

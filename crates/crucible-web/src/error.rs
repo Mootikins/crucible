@@ -11,9 +11,6 @@ pub type Result<T> = std::result::Result<T, WebError>;
 
 #[derive(Debug, thiserror::Error)]
 pub enum WebError {
-    #[error("ACP error: {0}")]
-    Acp(#[from] crucible_acp::ClientError),
-
     #[error("Configuration error: {0}")]
     Config(String),
 
@@ -30,7 +27,6 @@ pub enum WebError {
 impl IntoResponse for WebError {
     fn into_response(self) -> Response {
         let (status, message) = match &self {
-            WebError::Acp(e) => (StatusCode::BAD_GATEWAY, e.to_string()),
             WebError::Config(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.clone()),
             WebError::Io(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()),
             WebError::Chat(e) => (StatusCode::BAD_REQUEST, e.clone()),
