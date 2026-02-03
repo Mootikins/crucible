@@ -1,5 +1,5 @@
 --- Discord agent response collection and delivery
---- Routes messages to Crucible sessions and sends responses back to Discord.
+--- Routes messages to Crucible sessions and streams response parts back to Discord.
 
 local api = require("api")
 
@@ -7,7 +7,11 @@ local M = {}
 
 local MAX_MESSAGE_LEN = 2000
 local RESPONSE_TIMEOUT = 120  -- seconds
-local TYPING_INTERVAL = 8     -- re-trigger typing every 8s
+local PERMISSION_TIMEOUT = 60 -- seconds to wait for y/n reply
+
+-- Pending permission replies: channel_id -> true/false/nil
+-- Set by init.lua when it intercepts a y/n message, read by the responder polling loop.
+M.pending_replies = {}
 
 --- Find structural break positions in text up to `limit`, scored by priority:
 --- 3 = heading (\n#), 2 = paragraph (\n\n), 1 = single newline.
@@ -112,7 +116,62 @@ local function chunk_text(text, max_len)
     return chunks
 end
 
---- Send a user message to a Crucible session and deliver the response to Discord.
+local function format_tool_call(part)
+    local brief = part.args_brief or ""
+    if #brief > 200 then brief = brief:sub(1, 197) .. "..." end
+    return "> \u{1f527} `" .. (part.tool or "?") .. "` " .. brief
+end
+
+local function format_tool_result(part)
+    local icon = part.is_error and "\u{274c}" or "\u{2705}"
+    local brief = part.result_brief or ""
+    if #brief > 500 then brief = brief:sub(1, 497) .. "..." end
+    return "> " .. icon .. " " .. brief
+end
+
+local function send_chunked(channel_id, text, reply_to_msg_id)
+    local chunks = chunk_text(text)
+    for i, chunk in ipairs(chunks) do
+        local opts = {}
+        if i == 1 and reply_to_msg_id then
+            opts.reply_to = reply_to_msg_id
+        end
+        local _, send_err = api.send_message(channel_id, chunk, opts)
+        if send_err then
+            cru.log("warn", "Failed to send chunk: " .. tostring(send_err))
+            return send_err
+        end
+    end
+    return nil
+end
+
+--- Wait for a y/n reply from the Discord user in this channel.
+--- Returns true (allowed), false (denied), or nil (timeout).
+local function wait_for_permission_reply(channel_id)
+    M.pending_replies[channel_id] = "waiting"
+    local waited = 0
+    while M.pending_replies[channel_id] == "waiting" and waited < PERMISSION_TIMEOUT do
+        cru.timer.sleep(0.5)
+        waited = waited + 0.5
+    end
+    local reply = M.pending_replies[channel_id]
+    M.pending_replies[channel_id] = nil
+    if reply == "waiting" then return nil end
+    return reply
+end
+
+--- Format a permission request prompt for Discord.
+local function format_permission_prompt(part)
+    local desc = part.description or ""
+    if #desc > 300 then desc = desc:sub(1, 297) .. "..." end
+    return string.format(
+        "> \u{26a0}\u{fe0f} **%s** wants to run:\n> ```\n> %s\n> ```\n> Reply **y** to allow, **n** to deny",
+        part.tool or "unknown",
+        desc
+    )
+end
+
+--- Send a user message to a Crucible session and stream response parts to Discord.
 ---@param session_id string Crucible session ID
 ---@param channel_id string Discord channel ID
 ---@param user_message string The user's message content
@@ -121,11 +180,9 @@ function M.respond(session_id, channel_id, user_message, reply_to_msg_id)
     cru.log("info", "Responder: starting for session " .. session_id)
     pcall(api.trigger_typing, channel_id)
 
-    local response, err = cru.sessions.send_and_collect(session_id, user_message, {
+    local next_part, err = cru.sessions.send_and_collect(session_id, user_message, {
         timeout = RESPONSE_TIMEOUT,
     })
-
-    cru.log("info", "Responder: collected response (" .. #(response or "") .. " chars)")
 
     if err then
         cru.log("warn", "Responder: send_and_collect failed: " .. tostring(err))
@@ -135,23 +192,75 @@ function M.respond(session_id, channel_id, user_message, reply_to_msg_id)
         return
     end
 
-    if not response or response == "" then
-        response = "I didn't have a response for that."
+    local first_message = true
+    local part_count = 0
+
+    while true do
+        local part = next_part()
+        if part == nil then break end
+        part_count = part_count + 1
+
+        local reply_id = first_message and reply_to_msg_id or nil
+
+        if part.type == "text" then
+            local content = part.content or ""
+            if content ~= "" then
+                send_chunked(channel_id, content, reply_id)
+                first_message = false
+            end
+
+        elseif part.type == "tool_call" then
+            local msg = format_tool_call(part)
+            api.send_message(channel_id, msg, { reply_to = reply_id })
+            first_message = false
+            pcall(api.trigger_typing, channel_id)
+
+        elseif part.type == "tool_result" then
+            local msg = format_tool_result(part)
+            api.send_message(channel_id, msg, { reply_to = reply_id })
+            first_message = false
+
+        elseif part.type == "thinking" then
+            pcall(api.trigger_typing, channel_id)
+
+        elseif part.type == "permission_request" then
+            local prompt = format_permission_prompt(part)
+            api.send_message(channel_id, prompt, { reply_to = reply_id })
+            first_message = false
+
+            local allowed = wait_for_permission_reply(channel_id)
+            if allowed == nil then
+                api.send_message(channel_id, "> \u{23f0} Permission timed out — denying.")
+                allowed = false
+            end
+
+            local response = {
+                allowed = allowed,
+                scope = "once",
+            }
+            local _, respond_err = cru.sessions.interaction_respond(
+                session_id, part.request_id, response
+            )
+            if respond_err then
+                cru.log("warn", "Failed to respond to permission: " .. tostring(respond_err))
+            end
+
+            if allowed then
+                api.send_message(channel_id, "> \u{2705} Approved")
+            else
+                api.send_message(channel_id, "> \u{1f6ab} Denied")
+            end
+            pcall(api.trigger_typing, channel_id)
+        end
     end
 
-    local chunks = chunk_text(response)
-
-    for i, chunk in ipairs(chunks) do
-        local opts = {}
-        if i == 1 and reply_to_msg_id then
-            opts.reply_to = reply_to_msg_id
-        end
-        local _, send_err = api.send_message(channel_id, chunk, opts)
-        if send_err then
-            cru.log("warn", "Failed to send response chunk: " .. tostring(send_err))
-            break
-        end
+    if part_count == 0 then
+        api.send_message(channel_id, "I didn't have a response for that.", {
+            reply_to = reply_to_msg_id,
+        })
     end
+
+    cru.log("info", "Responder: done (" .. part_count .. " parts)")
 end
 
 return M

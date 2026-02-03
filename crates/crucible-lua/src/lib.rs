@@ -165,4 +165,6 @@ pub use session_api::{
     register_session_module, ChannelSessionRpc, Session, SessionCommand, SessionConfigRpc,
     SessionManager,
 };
-pub use sessions::{register_sessions_module, register_sessions_module_with_api, DaemonSessionApi};
+pub use sessions::{
+    register_sessions_module, register_sessions_module_with_api, DaemonSessionApi, ResponsePart,
+};
