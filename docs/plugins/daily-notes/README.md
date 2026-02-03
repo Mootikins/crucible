@@ -96,4 +96,4 @@ your-kiln/
 ## Capabilities Required
 
 - `filesystem` - Create and read note files
-- `vault` - Access to kiln for note storage
+- `kiln` - Access to kiln for note storage

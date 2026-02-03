@@ -58,7 +58,7 @@ init: setup
 capabilities:
   - filesystem
   - shell
-  - vault
+  - kiln
 
 dependencies:
   - name: core-utils
@@ -132,7 +132,7 @@ capabilities:
   - filesystem    # Read/write files outside kiln
   - network       # Make HTTP requests
   - shell         # Execute shell commands
-  - vault         # Access knowledge vault
+  - kiln          # Access knowledge kiln
   - agent         # Interact with AI agents
   - ui            # Create custom UI views
   - config        # Access user configuration
