@@ -15,7 +15,7 @@ local gateway = require("gateway")
 gateway.on("MESSAGE_CREATE", function(data)
     if data.author and data.author.bot then return end
 
-    crucible.log("info", string.format(
+    cru.log("info", string.format(
         "Discord message from %s in #%s: %s",
         data.author and data.author.username or "unknown",
         data.channel_id or "?",
@@ -25,25 +25,18 @@ end)
 
 gateway.on("READY", function(data)
     local guild_count = data.guilds and #data.guilds or 0
-    crucible.log("info", string.format("Discord bot ready: %s (%d guilds)", data.user.username, guild_count))
+    cru.log("info", string.format("Discord bot ready: %s (%d guilds)", data.user.username, guild_count))
 end)
 
 -- ============================================================================
 -- Tools (exposed to agents)
 -- ============================================================================
 
---- Send a message to a Discord channel
--- @tool name="discord_send" description="Send a message to a Discord channel"
--- @param channel_id string "The Discord channel ID to send to"
--- @param content string "Message content (max 2000 characters)"
--- @param reply_to string "Message ID to reply to (optional)"
 function M.discord_send(args)
-    if not args.channel_id then
-        return { error = "channel_id is required" }
-    end
-    if not args.content then
-        return { error = "content is required" }
-    end
+    cru.check.string(args.channel_id, "channel_id")
+    cru.check.string(args.content, "content")
+    cru.check.string(args.reply_to, "reply_to", { optional = true })
+
     if #args.content > 2000 then
         return { error = "Message content exceeds 2000 character limit" }
     end
@@ -51,10 +44,7 @@ function M.discord_send(args)
     local result, err = api.send_message(args.channel_id, args.content, {
         reply_to = args.reply_to,
     })
-
-    if err then
-        return { error = err }
-    end
+    if err then return { error = err } end
 
     return {
         id = result.id,
@@ -64,20 +54,13 @@ function M.discord_send(args)
     }
 end
 
---- Read recent messages from a Discord channel
--- @tool name="discord_read" description="Read recent messages from a Discord channel"
--- @param channel_id string "The Discord channel ID to read from"
--- @param limit number "Max messages to return (1-100, default 50)"
--- @param before string "Message ID to fetch messages before (for pagination)"
 function M.discord_read(args)
-    if not args.channel_id then
-        return { error = "channel_id is required" }
-    end
+    cru.check.string(args.channel_id, "channel_id")
+    cru.check.number(args.limit, "limit", { optional = true, min = 1, max = 100 })
+    cru.check.string(args.before, "before", { optional = true })
 
     local messages, err = api.get_messages(args.channel_id, args.limit, args.before)
-    if err then
-        return { error = err }
-    end
+    if err then return { error = err } end
 
     local result = {}
     for _, msg in ipairs(messages) do
@@ -95,25 +78,15 @@ function M.discord_read(args)
     return { messages = result, count = #result }
 end
 
---- List channels in a Discord server
--- @tool name="discord_channels" description="List channels in a Discord guild (server)"
--- @param guild_id string "The Discord guild (server) ID"
 function M.discord_channels(args)
     if not args.guild_id then
         local guilds, err = api.get_guilds()
-        if err then
-            return { error = err }
-        end
-        return {
-            error = "guild_id is required. Available guilds:",
-            guilds = guilds,
-        }
+        if err then return { error = err } end
+        return { error = "guild_id is required. Available guilds:", guilds = guilds }
     end
 
     local channels, err = api.get_channels(args.guild_id)
-    if err then
-        return { error = err }
-    end
+    if err then return { error = err } end
 
     local result = {}
     for _, ch in ipairs(channels) do
@@ -134,26 +107,17 @@ function M.discord_channels(args)
     end
 
     table.sort(result, function(a, b) return (a.position or 0) < (b.position or 0) end)
-
     return { channels = result, count = #result }
 end
 
---- Register slash commands with Discord
--- @tool name="discord_register_commands" description="Register slash commands with Discord for a guild"
--- @param app_id string "The Discord application ID"
--- @param guild_id string "The guild ID to register commands in (for testing; omit for global)"
--- @param commands string "JSON array of command objects per Discord API spec"
 function M.discord_register_commands(args)
-    if not args.app_id then
-        return { error = "app_id is required" }
-    end
-    if not args.commands then
-        return { error = "commands is required (JSON array of command objects)" }
-    end
+    cru.check.string(args.app_id, "app_id")
+    cru.check.string(args.guild_id, "guild_id", { optional = true })
 
     local commands = args.commands
+    cru.check.table(commands, "commands")
     if type(commands) == "string" then
-        local ok, decoded = pcall(crucible.json_decode, commands)
+        local ok, decoded = pcall(cru.json.decode, commands)
         if not ok then
             return { error = "Failed to parse commands JSON: " .. tostring(decoded) }
         end
@@ -166,10 +130,7 @@ function M.discord_register_commands(args)
     else
         result, err = api.register_global_commands(args.app_id, commands)
     end
-
-    if err then
-        return { error = err }
-    end
+    if err then return { error = err } end
 
     return { registered = true, result = result }
 end
@@ -186,7 +147,7 @@ function M.discord_command(args, ctx)
             ctx.display_info("Already connected to Discord gateway.")
             return
         end
-        ctx.display_info("Connecting to Discord gateway (blocking)...")
+        ctx.display_info("Connecting to Discord gateway...")
         local ok, err = pcall(gateway.connect)
         if not ok then
             ctx.display_error("Discord gateway error: " .. tostring(err))
@@ -254,7 +215,7 @@ return {
             params = {
                 { name = "app_id", type = "string", desc = "Discord application ID" },
                 { name = "guild_id", type = "string", desc = "Guild ID (for testing)", optional = true },
-                { name = "commands", type = "string", desc = "JSON array of command objects" },
+                { name = "commands", type = "table", desc = "Array of command objects" },
             },
             fn = M.discord_register_commands,
         },
@@ -269,7 +230,6 @@ return {
     },
 
     setup = function(cfg)
-        -- Plugin loaded, config available
-        crucible.log("info", "Discord plugin loaded")
+        cru.log("info", "Discord plugin loaded")
     end,
 }

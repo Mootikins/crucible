@@ -5,32 +5,49 @@ local config = require("config")
 
 local M = {}
 
+-- Rate limiter: 5 requests per second (Discord global rate limit)
+local limiter = cru.ratelimit.new({ capacity = 5, interval = 1.0 })
+
 -- ---------------------------------------------------------------------------
 -- Internal helpers
 -- ---------------------------------------------------------------------------
 
-local function api_url(path)
-    return config.api_base() .. path
-end
+local function api_request(method, path, body)
+    limiter:acquire()
 
-local function api_get(path)
-    local resp = http.get(api_url(path), { headers = config.auth_headers() })
-    if not resp.ok then
-        return nil, string.format("Discord API error %d: %s", resp.status, resp.body or "unknown")
+    local url = config.api_base() .. path
+    local opts = { headers = config.auth_headers() }
+    if body then
+        opts.body = cru.json.encode(body)
     end
-    return crucible.json_decode(resp.body), nil
-end
 
-local function api_post(path, body)
-    local resp = http.post(api_url(path), {
-        headers = config.auth_headers(),
-        body = crucible.json_encode(body),
-    })
+    local resp = cru.retry(function()
+        local r
+        if method == "GET" then
+            r = cru.http.get(url, opts)
+        elseif method == "POST" then
+            r = cru.http.post(url, opts)
+        elseif method == "PUT" then
+            r = cru.http.put(url, opts)
+        end
+
+        if r.status == 429 or (r.status >= 500 and r.status < 600) then
+            local after = nil
+            if r.status == 429 then
+                local ok, data = pcall(cru.json.decode, r.body or "")
+                if ok and data.retry_after then after = data.retry_after end
+            end
+            error({ retryable = true, after = after, status = r.status })
+        end
+
+        return r
+    end, { max_retries = 3, base_delay = 1.0, max_delay = 30.0 })
+
     if not resp.ok then
         return nil, string.format("Discord API error %d: %s", resp.status, resp.body or "unknown")
     end
     if resp.body and #resp.body > 0 then
-        return crucible.json_decode(resp.body), nil
+        return cru.json.decode(resp.body), nil
     end
     return {}, nil
 end
@@ -39,78 +56,53 @@ end
 -- Channel Messages
 -- ---------------------------------------------------------------------------
 
---- Send a message to a channel
 function M.send_message(channel_id, content, opts)
     opts = opts or {}
     local payload = { content = content }
-
-    if opts.embeds then
-        payload.embeds = opts.embeds
-    end
-    if opts.reply_to then
-        payload.message_reference = { message_id = opts.reply_to }
-    end
-
-    return api_post("/channels/" .. channel_id .. "/messages", payload)
+    if opts.embeds then payload.embeds = opts.embeds end
+    if opts.reply_to then payload.message_reference = { message_id = opts.reply_to } end
+    return api_request("POST", "/channels/" .. channel_id .. "/messages", payload)
 end
 
---- Read recent messages from a channel
 function M.get_messages(channel_id, limit, before)
     limit = limit or 50
     local path = "/channels/" .. channel_id .. "/messages?limit=" .. tostring(limit)
-    if before then
-        path = path .. "&before=" .. before
-    end
-    return api_get(path)
+    if before then path = path .. "&before=" .. before end
+    return api_request("GET", path)
 end
 
 -- ---------------------------------------------------------------------------
--- Channels
+-- Channels & Guilds
 -- ---------------------------------------------------------------------------
 
---- List channels in a guild
 function M.get_channels(guild_id)
-    return api_get("/guilds/" .. guild_id .. "/channels")
+    return api_request("GET", "/guilds/" .. guild_id .. "/channels")
 end
 
---- Get a single channel
-function M.get_channel(channel_id)
-    return api_get("/channels/" .. channel_id)
-end
-
--- ---------------------------------------------------------------------------
--- Guilds
--- ---------------------------------------------------------------------------
-
---- List guilds the bot is in
 function M.get_guilds()
-    return api_get("/users/@me/guilds")
+    return api_request("GET", "/users/@me/guilds")
 end
 
 -- ---------------------------------------------------------------------------
--- Slash Commands
+-- Slash Commands (PUT for bulk overwrite per Discord docs)
 -- ---------------------------------------------------------------------------
 
---- Register global application commands
 function M.register_global_commands(app_id, commands)
-    return api_post("/applications/" .. app_id .. "/commands", commands)
+    return api_request("PUT", "/applications/" .. app_id .. "/commands", commands)
 end
 
---- Register guild-specific commands (instant, good for testing)
 function M.register_guild_commands(app_id, guild_id, commands)
-    return api_post("/applications/" .. app_id .. "/guilds/" .. guild_id .. "/commands", commands)
+    return api_request("PUT", "/applications/" .. app_id .. "/guilds/" .. guild_id .. "/commands", commands)
 end
 
 -- ---------------------------------------------------------------------------
 -- Interactions
 -- ---------------------------------------------------------------------------
 
---- Respond to an interaction
 function M.respond_interaction(interaction_id, interaction_token, response)
-    return api_post(
+    return api_request("POST",
         "/interactions/" .. interaction_id .. "/" .. interaction_token .. "/callback",
-        response
-    )
+        response)
 end
 
 return M
