@@ -3734,9 +3734,11 @@ dependencies = [
 name = "crucible-daemon"
 version = "0.1.0"
 dependencies = [
+ "agent-client-protocol",
  "anyhow",
  "async-trait",
  "chrono",
+ "crucible-acp",
  "crucible-config",
  "crucible-core",
  "crucible-enrichment",
