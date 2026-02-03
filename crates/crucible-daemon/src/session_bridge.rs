@@ -58,8 +58,9 @@ impl DaemonSessionApi for DaemonSessionBridge {
     fn create_session(
         &self,
         session_type: String,
-        kiln: String,
+        kiln: Option<String>,
         workspace: Option<String>,
+        connected_kilns: Vec<String>,
     ) -> BoxFut<serde_json::Value> {
         bridge_async!(self.session_manager, |sm| async move {
             let st = match session_type.as_str() {
@@ -68,8 +69,12 @@ impl DaemonSessionApi for DaemonSessionBridge {
                 "workflow" => SessionType::Workflow,
                 other => return Err(format!("Invalid session type: {}", other)),
             };
+            let kiln_path = kiln
+                .map(PathBuf::from)
+                .unwrap_or_else(crucible_config::crucible_home);
+            let connected: Vec<PathBuf> = connected_kilns.into_iter().map(PathBuf::from).collect();
             let session = sm
-                .create_session(st, PathBuf::from(&kiln), workspace.map(PathBuf::from), Vec::new())
+                .create_session(st, kiln_path, workspace.map(PathBuf::from), connected)
                 .await
                 .map_err(|e| e.to_string())?;
             Ok(serde_json::json!({
@@ -200,24 +205,57 @@ impl DaemonSessionApi for DaemonSessionBridge {
             let mut broadcast_rx = event_tx.subscribe();
             let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
 
+            tracing::debug!(
+                session_id = %session_id,
+                "Lua subscribe: creating forwarder task"
+            );
+
+            let sid = session_id.clone();
             tokio::spawn(async move {
+                tracing::debug!(session_id = %sid, "Forwarder task started");
+                let mut forwarded = 0u64;
                 loop {
                     match broadcast_rx.recv().await {
-                        Ok(event) if event.session_id == session_id => {
+                        Ok(event) if event.session_id == sid => {
+                            forwarded += 1;
                             let json = serde_json::json!({
                                 "type": event.event,
                                 "session_id": event.session_id,
                                 "data": event.data,
                             });
                             if tx.send(json).is_err() {
+                                tracing::debug!(
+                                    session_id = %sid,
+                                    forwarded,
+                                    "Forwarder: mpsc receiver dropped"
+                                );
                                 break;
                             }
                         }
                         Ok(_) => {}
-                        Err(broadcast::error::RecvError::Lagged(_)) => continue,
-                        Err(broadcast::error::RecvError::Closed) => break,
+                        Err(broadcast::error::RecvError::Lagged(n)) => {
+                            tracing::warn!(
+                                session_id = %sid,
+                                lagged = n,
+                                "Forwarder: broadcast lagged, lost events"
+                            );
+                            continue;
+                        }
+                        Err(broadcast::error::RecvError::Closed) => {
+                            tracing::debug!(
+                                session_id = %sid,
+                                forwarded,
+                                "Forwarder: broadcast closed"
+                            );
+                            break;
+                        }
                     }
                 }
+                tracing::debug!(
+                    session_id = %sid,
+                    forwarded,
+                    "Forwarder task exiting"
+                );
             });
 
             Ok(rx)

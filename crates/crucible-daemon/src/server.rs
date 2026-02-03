@@ -93,7 +93,13 @@ impl Server {
         path: &Path,
         mcp_config: Option<&crucible_config::McpConfig>,
     ) -> Result<Self> {
-        Self::bind_with_plugin_config(path, mcp_config, std::collections::HashMap::new()).await
+        Self::bind_with_plugin_config(
+            path,
+            mcp_config,
+            std::collections::HashMap::new(),
+            crucible_config::ProvidersConfig::default(),
+        )
+        .await
     }
 
     /// Bind to a Unix socket path with plugin configuration
@@ -101,6 +107,7 @@ impl Server {
         path: &Path,
         mcp_config: Option<&crucible_config::McpConfig>,
         plugin_config: std::collections::HashMap<String, serde_json::Value>,
+        providers_config: crucible_config::ProvidersConfig,
     ) -> Result<Self> {
         // Remove stale socket
         if path.exists() {
@@ -144,6 +151,7 @@ impl Server {
             session_manager.clone(),
             background_manager.clone(),
             mcp_gateway,
+            providers_config,
         ));
         let subscription_manager = Arc::new(SubscriptionManager::new());
 
@@ -216,22 +224,33 @@ impl Server {
                 }
 
                 let paths = crate::daemon_plugins::default_daemon_plugin_paths();
-                match loader.load_plugins(&paths) {
+                match loader.load_plugins(&paths).await {
                     Ok(specs) => {
                         if !specs.is_empty() {
                             info!("Loaded {} daemon plugin(s)", specs.len());
-                        }
-                        let total_services: usize = specs.iter().map(|s| s.services.len()).sum();
-                        if total_services > 0 {
-                            info!(
-                            "Discovered {} service(s) across plugins (not yet runnable — service execution is future work)",
-                            total_services
-                        );
                         }
                     }
                     Err(e) => {
                         warn!("Failed to load daemon plugins: {}", e);
                     }
+                }
+
+                // Extract service functions and spawn them as independent async tasks.
+                // Each mlua::Function holds an internal ref to the Lua VM; mlua's
+                // reentrant mutex serializes actual Lua execution, giving cooperative
+                // multitasking without external coordination.
+                let service_fns = loader.take_service_fns();
+                if !service_fns.is_empty() {
+                    info!("Spawning {} plugin service(s)", service_fns.len());
+                }
+                for (name, func) in service_fns {
+                    info!("Starting service: {}", name);
+                    tokio::spawn(async move {
+                        match func.call_async::<()>(()).await {
+                            Ok(()) => info!("Service '{}' completed", name),
+                            Err(e) => warn!("Service '{}' failed: {}", name, e),
+                        }
+                    });
                 }
             }
         }
@@ -908,8 +927,10 @@ async fn handle_session_create(req: Request, sm: &Arc<SessionManager>) -> Respon
         }
     };
 
-    // Parse kiln path (required)
-    let kiln = PathBuf::from(require_str_param!(req, "kiln"));
+    // Parse kiln path (optional, defaults to crucible home)
+    let kiln = optional_str_param!(req, "kiln")
+        .map(PathBuf::from)
+        .unwrap_or_else(crucible_config::crucible_home);
 
     // Parse optional workspace
     let workspace = optional_str_param!(req, "workspace").map(PathBuf::from);

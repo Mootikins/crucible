@@ -19,7 +19,7 @@ use mlua::LuaSerdeExt;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 
 /// Daemon-side plugin loader with its own Lua runtime.
 ///
@@ -29,6 +29,9 @@ pub struct DaemonPluginLoader {
     executor: LuaExecutor,
     plugin_manager: PluginManager,
     loaded_specs: Vec<PluginSpec>,
+    /// Service functions extracted from plugins during loading.
+    /// Each entry is `(service_name, mlua::Function)`.
+    service_fns: Vec<(String, mlua::Function)>,
 }
 
 impl DaemonPluginLoader {
@@ -73,6 +76,7 @@ impl DaemonPluginLoader {
             executor,
             plugin_manager,
             loaded_specs: Vec::new(),
+            service_fns: Vec::new(),
         })
     }
 
@@ -167,8 +171,9 @@ impl DaemonPluginLoader {
     /// Discover and load plugins from the given search paths.
     ///
     /// Returns the list of [`PluginSpec`]s extracted from successfully loaded
-    /// plugins.
-    pub fn load_plugins(&mut self, plugin_paths: &[PathBuf]) -> anyhow::Result<Vec<PluginSpec>> {
+    /// plugins. Service functions are stored internally and can be retrieved
+    /// via [`take_service_fns`].
+    pub async fn load_plugins(&mut self, plugin_paths: &[PathBuf]) -> anyhow::Result<Vec<PluginSpec>> {
         for path in plugin_paths {
             self.plugin_manager.add_search_path(path.clone());
         }
@@ -194,7 +199,7 @@ impl DaemonPluginLoader {
 
         let mut specs = Vec::new();
         for name in &loaded {
-            match self.load_plugin_spec(name) {
+            match self.load_plugin_spec(name).await {
                 Ok(spec) => {
                     info!(
                         "Plugin '{}' spec extracted (tools={}, commands={}, handlers={}, services={})",
@@ -222,7 +227,16 @@ impl DaemonPluginLoader {
         Ok(specs)
     }
 
-    fn load_plugin_spec(&self, name: &str) -> anyhow::Result<PluginSpec> {
+    /// Drain and return all extracted service functions.
+    ///
+    /// Each entry is `(service_name, mlua::Function)`. The functions hold
+    /// internal refs to the Lua VM and can be spawned as independent async
+    /// tasks via `func.call_async::<()>(())`.
+    pub fn take_service_fns(&mut self) -> Vec<(String, mlua::Function)> {
+        std::mem::take(&mut self.service_fns)
+    }
+
+    async fn load_plugin_spec(&mut self, name: &str) -> anyhow::Result<PluginSpec> {
         let plugin = self
             .plugin_manager
             .get(name)
@@ -235,20 +249,36 @@ impl DaemonPluginLoader {
             .map_err(|e| anyhow::anyhow!("spec load for '{}': {e}", name))?
             .ok_or_else(|| anyhow::anyhow!("plugin '{}' returned no spec", name))?;
 
-        // Also execute the plugin in the daemon's real Lua runtime so that
-        // event handlers, gateway connections, etc. actually register.
-        if let Err(e) = self.execute_plugin(&main_path) {
-            warn!("Failed to execute plugin '{}' in daemon runtime: {}", name, e);
+        // Execute the plugin in the daemon's real Lua runtime using eval_async
+        // so that async Lua functions (gateway.connect, etc.) can yield.
+        // Also extract service Function refs from the returned spec table.
+        match self.execute_plugin(&main_path).await {
+            Ok(services) => {
+                for (svc_name, func) in services {
+                    debug!("Extracted service function '{}' from plugin '{}'", svc_name, name);
+                    self.service_fns.push((svc_name, func));
+                }
+            }
+            Err(e) => {
+                warn!("Failed to execute plugin '{}' in daemon runtime: {}", name, e);
+            }
         }
 
         Ok(spec)
     }
 
-    /// Execute a plugin's init.lua in the daemon's Lua executor.
+    /// Execute a plugin's init.lua in the daemon's Lua executor (async).
     ///
     /// Sets up `package.path` so that `require("gateway")` etc. resolves
-    /// to files in the plugin's `lua/` directory, then evaluates the init file.
-    fn execute_plugin(&self, init_path: &std::path::Path) -> anyhow::Result<()> {
+    /// to files in the plugin's `lua/` directory, then evaluates the init file
+    /// using `eval_async` to enable async Lua function yielding.
+    ///
+    /// Returns extracted service `(name, Function)` pairs from the returned
+    /// spec table's `services` field.
+    async fn execute_plugin(
+        &self,
+        init_path: &std::path::Path,
+    ) -> anyhow::Result<Vec<(String, mlua::Function)>> {
         let lua = self.executor.lua();
         let plugin_dir = init_path
             .parent()
@@ -265,16 +295,32 @@ impl DaemonPluginLoader {
             .exec()
             .map_err(|e| anyhow::anyhow!("package.path setup: {e}"))?;
 
-        // Execute init.lua
+        // Execute init.lua with eval_async — captures return value AND enables async Lua
         let source = std::fs::read_to_string(init_path)
             .map_err(|e| anyhow::anyhow!("read {}: {e}", init_path.display()))?;
-        lua.load(&source)
+        let return_val: mlua::Value = lua
+            .load(&source)
             .set_name(init_path.to_string_lossy().as_ref())
-            .exec()
+            .eval_async()
+            .await
             .map_err(|e| anyhow::anyhow!("exec {}: {e}", init_path.display()))?;
 
+        // Extract service functions from the returned spec table
+        let mut services = Vec::new();
+        if let mlua::Value::Table(spec) = return_val {
+            if let Ok(svc_table) = spec.get::<mlua::Table>("services") {
+                for pair in svc_table.pairs::<String, mlua::Table>() {
+                    if let Ok((name, entry)) = pair {
+                        if let Ok(func) = entry.get::<mlua::Function>("fn") {
+                            services.push((name, func));
+                        }
+                    }
+                }
+            }
+        }
+
         info!("Executed plugin in daemon runtime: {}", init_path.display());
-        Ok(())
+        Ok(services)
     }
 
     #[allow(dead_code)]
