@@ -165,6 +165,20 @@ pub trait DaemonSessionApi: Send + Sync + 'static {
         &self,
         session_id: String,
     ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send>>;
+
+    /// Send a message and collect the full response (batched API).
+    ///
+    /// Subscribes, sends the message, collects all `text_delta` events until
+    /// `message_complete` / `response_complete` / `response_done`, then
+    /// unsubscribes. Returns the concatenated response text.
+    ///
+    /// `timeout_secs` defaults to 120 if `None`.
+    fn send_and_collect(
+        &self,
+        session_id: String,
+        content: String,
+        timeout_secs: Option<f64>,
+    ) -> Pin<Box<dyn Future<Output = Result<String, String>> + Send>>;
 }
 
 /// Register the sessions module with stub functions.
@@ -203,6 +217,7 @@ pub fn register_sessions_module(lua: &Lua) -> Result<(), LuaError> {
     );
     stub_async!("subscribe", lua, sessions, String);
     stub_async!("unsubscribe", lua, sessions, String);
+    stub_async!("send_and_collect", lua, sessions, (String, String, mlua::Value));
 
     register_in_namespaces(lua, "sessions", sessions)?;
 
@@ -508,6 +523,30 @@ pub fn register_sessions_module_with_api(
     })?;
     sessions.set("unsubscribe", unsubscribe_fn)?;
 
+    // send_and_collect(session_id, content, opts?) -> (response_text, nil) or (nil, err)
+    let a = Arc::clone(&api);
+    let collect_fn = lua.create_async_function(move |lua, (session_id, content, opts): (String, String, Value)| {
+        let a = Arc::clone(&a);
+        async move {
+            let timeout_secs = match opts {
+                Value::Table(ref t) => t.get::<f64>("timeout").ok(),
+                Value::Number(n) => Some(n),
+                _ => None,
+            };
+            match a.send_and_collect(session_id, content, timeout_secs).await {
+                Ok(response) => {
+                    let lua_val = lua.create_string(&response)?;
+                    Ok((Value::String(lua_val), Value::Nil))
+                }
+                Err(e) => {
+                    let err = lua.create_string(&e)?;
+                    Ok((Value::Nil, Value::String(err)))
+                }
+            }
+        }
+    })?;
+    sessions.set("send_and_collect", collect_fn)?;
+
     Ok(())
 }
 
@@ -544,6 +583,7 @@ mod tests {
         assert!(sessions.contains_key("pause").unwrap());
         assert!(sessions.contains_key("resume").unwrap());
         assert!(sessions.contains_key("end_session").unwrap());
+        assert!(sessions.contains_key("send_and_collect").unwrap());
 
         // Also registered under crucible.*
         let crucible: Table = lua
@@ -750,12 +790,12 @@ mod api_tests {
                 let _ = tx.send(serde_json::json!({
                     "type": "text_delta",
                     "session_id": "test-session",
-                    "data": { "text": "Hello" }
+                    "data": { "content": "Hello" }
                 }));
                 let _ = tx.send(serde_json::json!({
                     "type": "text_delta",
                     "session_id": "test-session",
-                    "data": { "text": " World" }
+                    "data": { "content": " World" }
                 }));
                 // tx is dropped here, so after reading 2 events, recv() returns None
                 Ok(rx)
@@ -767,6 +807,15 @@ mod api_tests {
             _session_id: String,
         ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send>> {
             Box::pin(async { Ok(()) })
+        }
+
+        fn send_and_collect(
+            &self,
+            _session_id: String,
+            _content: String,
+            _timeout_secs: Option<f64>,
+        ) -> Pin<Box<dyn Future<Output = Result<String, String>> + Send>> {
+            Box::pin(async { Ok("Hello World".to_string()) })
         }
     }
 
@@ -962,8 +1011,8 @@ mod api_tests {
                 return {
                     count = #events,
                     first_type = events[1] and events[1].type or "none",
-                    first_text = events[1] and events[1].data and events[1].data.text or "none",
-                    second_text = events[2] and events[2].data and events[2].data.text or "none",
+                    first_text = events[1] and events[1].data and events[1].data.content or "none",
+                    second_text = events[2] and events[2].data and events[2].data.content or "none",
                 }
                 "#,
             )
@@ -1176,6 +1225,15 @@ mod api_tests {
             _: String,
         ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send>> {
             Box::pin(async { Ok(()) })
+        }
+
+        fn send_and_collect(
+            &self,
+            _session_id: String,
+            _content: String,
+            _timeout_secs: Option<f64>,
+        ) -> Pin<Box<dyn Future<Output = Result<String, String>> + Send>> {
+            Box::pin(async { Ok("mock response".to_string()) })
         }
     }
 
