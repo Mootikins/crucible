@@ -37,11 +37,15 @@ pub fn module_capability_map() -> Vec<ModuleCapabilityMapping> {
         },
         ModuleCapabilityMapping {
             module_name: "vault",
-            required_capability: Some(Capability::Vault),
+            required_capability: Some(Capability::Kiln),
+        },
+        ModuleCapabilityMapping {
+            module_name: "kiln",
+            required_capability: Some(Capability::Kiln),
         },
         ModuleCapabilityMapping {
             module_name: "graph",
-            required_capability: Some(Capability::Vault),
+            required_capability: Some(Capability::Kiln),
         },
         // No capability needed for core modules:
         ModuleCapabilityMapping {
@@ -217,16 +221,16 @@ mod tests {
     }
 
     #[test]
-    fn vault_cap_required_for_vault() {
-        let manifest = make_manifest("test-plugin", vec![Capability::Vault]);
+    fn kiln_cap_required_for_vault() {
+        let manifest = make_manifest("test-plugin", vec![Capability::Kiln]);
         let (allowed, warning) = check_module_access("test-plugin", "vault", &manifest, false);
         assert!(allowed);
         assert!(warning.is_none());
     }
 
     #[test]
-    fn vault_cap_required_for_graph() {
-        let manifest = make_manifest("test-plugin", vec![Capability::Vault]);
+    fn kiln_cap_required_for_graph() {
+        let manifest = make_manifest("test-plugin", vec![Capability::Kiln]);
         let (allowed, warning) = check_module_access("test-plugin", "graph", &manifest, false);
         assert!(allowed);
         assert!(warning.is_none());

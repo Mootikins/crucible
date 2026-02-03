@@ -1039,7 +1039,7 @@ fn parse_capability(s: &str) -> Option<Capability> {
         "filesystem" => Some(Capability::Filesystem),
         "network" => Some(Capability::Network),
         "shell" => Some(Capability::Shell),
-        "vault" => Some(Capability::Vault),
+        "kiln" | "vault" => Some(Capability::Kiln),
         "agent" => Some(Capability::Agent),
         "ui" => Some(Capability::Ui),
         "config" => Some(Capability::Config),
@@ -2394,7 +2394,7 @@ return {{
         manager.load("cap-merge").unwrap();
 
         let plugin = manager.get("cap-merge").unwrap();
-        assert!(plugin.manifest.has_capability(Capability::Vault));
+        assert!(plugin.manifest.has_capability(Capability::Kiln));
     }
 
     #[test]
