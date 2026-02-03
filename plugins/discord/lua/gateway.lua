@@ -164,7 +164,9 @@ function M.connect()
         if not ws then error({ retryable = true }) end
 
         -- Receive loop with explicit heartbeat tracking
+        -- Initial heartbeat uses jitter (random fraction of interval) per Discord spec
         local last_heartbeat_at = os.clock()
+        local first_heartbeat = true
 
         while true do
             -- Compute time until next heartbeat is due
@@ -172,10 +174,13 @@ function M.connect()
             if heartbeat_interval then
                 local interval_secs = heartbeat_interval / 1000.0
                 local elapsed = os.clock() - last_heartbeat_at
-                local remaining = interval_secs - elapsed
+                -- First heartbeat uses jitter: random 0..interval per Discord spec
+                local target = first_heartbeat and (interval_secs * math.random()) or interval_secs
+                local remaining = target - elapsed
                 if remaining <= 0 then
                     send_heartbeat()
                     last_heartbeat_at = os.clock()
+                    first_heartbeat = false
                     remaining = interval_secs
                 end
                 recv_timeout = remaining
