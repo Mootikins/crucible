@@ -207,9 +207,15 @@ impl Session {
 
     /// Get the storage path for this session.
     ///
-    /// Returns: `{kiln}/.crucible/sessions/{session_id}/`
+    /// When the kiln is the crucible home (`~/.crucible/`), returns
+    /// `~/.crucible/sessions/{id}` to avoid double-nesting `.crucible/.crucible/`.
+    /// Otherwise returns `{kiln}/.crucible/sessions/{session_id}/`.
     pub fn storage_path(&self) -> PathBuf {
-        self.kiln.join(".crucible").join("sessions").join(&self.id)
+        if crucible_config::is_crucible_home(&self.kiln) {
+            self.kiln.join("sessions").join(&self.id)
+        } else {
+            self.kiln.join(".crucible").join("sessions").join(&self.id)
+        }
     }
 
     /// Get the path to the markdown log file.

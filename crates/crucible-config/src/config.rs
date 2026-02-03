@@ -17,6 +17,32 @@ use thiserror::Error;
 
 use tracing::{debug, error, info, warn};
 
+/// Returns the Crucible home directory (`~/.crucible/`).
+///
+/// This is the default location for session storage when no kiln is explicitly
+/// specified. Uses `$CRUCIBLE_HOME` if set, otherwise `$HOME/.crucible/`.
+///
+/// # Panics
+///
+/// Returns a fallback path (`/tmp/.crucible`) if the home directory cannot
+/// be determined (should never happen in practice).
+pub fn crucible_home() -> std::path::PathBuf {
+    if let Ok(home) = std::env::var("CRUCIBLE_HOME") {
+        return std::path::PathBuf::from(home);
+    }
+    dirs::home_dir()
+        .unwrap_or_else(|| std::path::PathBuf::from("/tmp"))
+        .join(".crucible")
+}
+
+/// Check if a path is the crucible home directory.
+///
+/// Used by storage code to avoid double `.crucible/` nesting when the
+/// persist kiln is the default crucible home.
+pub fn is_crucible_home(path: &std::path::Path) -> bool {
+    path == crucible_home()
+}
+
 /// Errors that can occur during configuration validation.
 #[derive(Error, Debug, Clone, PartialEq)]
 pub enum ConfigValidationError {
@@ -1900,6 +1926,17 @@ mod tests {
     /// Cross-platform test path helper
     fn test_path(name: &str) -> PathBuf {
         std::env::temp_dir().join(format!("crucible_test_{}", name))
+    }
+
+    #[test]
+    fn test_crucible_home_and_is_crucible_home() {
+        // Test env override
+        let tmp = std::env::temp_dir().join("crucible_test_home_combined");
+        std::env::set_var("CRUCIBLE_HOME", &tmp);
+        assert_eq!(crucible_home(), tmp);
+        assert!(is_crucible_home(&tmp));
+        assert!(!is_crucible_home(std::path::Path::new("/some/other/path")));
+        std::env::remove_var("CRUCIBLE_HOME");
     }
 
     #[test]
