@@ -27,15 +27,13 @@ pub struct CrucibleAcpClient {
     config: ChatSessionConfig,
     acp_config: AcpConfig,
     kiln_path: Option<PathBuf>,
-    /// Working directory for the agent (where it should operate)
-    /// This is distinct from kiln_path which is where knowledge is stored.
     working_dir: Option<PathBuf>,
-    /// Knowledge repository for semantic search (required for in-process MCP)
     knowledge_repo: Option<Arc<dyn KnowledgeRepository>>,
-    /// Embedding provider for vector operations (required for in-process MCP)
     embedding_provider: Option<Arc<dyn EmbeddingProvider>>,
-    /// In-process MCP host (kept alive for the session duration)
     mcp_host: Option<InProcessMcpHost>,
+    cached_temperature: Option<f64>,
+    cached_max_tokens: Option<u32>,
+    cached_thinking_budget: Option<i64>,
 }
 
 impl CrucibleAcpClient {
@@ -88,6 +86,9 @@ impl CrucibleAcpClient {
             knowledge_repo: None,
             embedding_provider: None,
             mcp_host: None,
+            cached_temperature: None,
+            cached_max_tokens: None,
+            cached_thinking_budget: None,
         }
     }
 
@@ -156,6 +157,9 @@ impl CrucibleAcpClient {
             knowledge_repo: None,
             embedding_provider: None,
             mcp_host: None,
+            cached_temperature: None,
+            cached_max_tokens: None,
+            cached_thinking_budget: None,
         }
     }
 
@@ -355,20 +359,21 @@ impl CrucibleAcpClient {
         &self.mode_id
     }
 
-    /// Set the chat mode by ID
-    ///
-    /// Changes the agent's permission level (plan/act/auto).
-    ///
-    /// # Arguments
-    /// * `mode_id` - The new mode ID to set ("normal", "plan", "auto")
-    ///
-    /// # Note
-    /// Currently updates local state only. Future versions may propagate
-    /// to the ACP protocol when runtime mode changes are supported.
+    /// Set the chat mode by ID, propagating to the ACP agent if connected.
     pub async fn set_mode_by_id(&mut self, mode_id: &str) -> Result<()> {
         info!("Changing mode from {} to {}", self.mode_id, mode_id);
+
+        if let Some(session) = &mut self.session {
+            match session.set_session_mode(mode_id).await {
+                Ok(_) => info!("Mode change propagated to ACP agent"),
+                Err(e) => warn!(
+                    "Failed to propagate mode to ACP agent: {} (continuing with local change)",
+                    e
+                ),
+            }
+        }
+
         self.mode_id = mode_id.to_string();
-        // TODO: Propagate to ACP protocol when supported
         Ok(())
     }
 
@@ -621,6 +626,52 @@ impl AgentHandle for CrucibleAcpClient {
             session.clear_history();
             info!("Conversation history cleared");
         }
+    }
+
+    async fn set_temperature(&mut self, temperature: f64) -> ChatResult<()> {
+        info!(
+            temperature,
+            "Setting temperature (cached locally for ACP agent)"
+        );
+        self.cached_temperature = Some(temperature);
+        Ok(())
+    }
+
+    fn get_temperature(&self) -> Option<f64> {
+        self.cached_temperature
+    }
+
+    async fn set_thinking_budget(&mut self, budget: i64) -> ChatResult<()> {
+        info!(
+            budget,
+            "Setting thinking budget (cached locally for ACP agent)"
+        );
+        self.cached_thinking_budget = Some(budget);
+        Ok(())
+    }
+
+    fn get_thinking_budget(&self) -> Option<i64> {
+        self.cached_thinking_budget
+    }
+
+    async fn set_max_tokens(&mut self, max_tokens: Option<u32>) -> ChatResult<()> {
+        info!(
+            ?max_tokens,
+            "Setting max tokens (cached locally for ACP agent)"
+        );
+        self.cached_max_tokens = max_tokens;
+        Ok(())
+    }
+
+    fn get_max_tokens(&self) -> Option<u32> {
+        self.cached_max_tokens
+    }
+
+    async fn switch_model(&mut self, model_id: &str) -> ChatResult<()> {
+        Err(ChatError::NotSupported(format!(
+            "ACP agents manage their own model selection. Cannot switch to '{}'",
+            model_id
+        )))
     }
 }
 

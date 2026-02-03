@@ -587,3 +587,101 @@ mod working_dir_tests {
         );
     }
 }
+
+#[cfg(test)]
+mod agent_handle_parity_tests {
+    use super::super::*;
+    use crate::chat::AgentHandle;
+
+    fn make_client(read_only: bool) -> CrucibleAcpClient {
+        let agent = AgentInfo {
+            name: "test".to_string(),
+            command: "test-cmd".to_string(),
+            args: vec![],
+            env_vars: std::collections::HashMap::new(),
+        };
+        CrucibleAcpClient::new(agent, read_only)
+    }
+
+    #[tokio::test]
+    async fn temperature_round_trips() {
+        let mut client = make_client(false);
+        assert_eq!(client.get_temperature(), None);
+
+        client.set_temperature(0.7).await.unwrap();
+        assert_eq!(client.get_temperature(), Some(0.7));
+
+        client.set_temperature(0.0).await.unwrap();
+        assert_eq!(client.get_temperature(), Some(0.0));
+    }
+
+    #[tokio::test]
+    async fn thinking_budget_round_trips() {
+        let mut client = make_client(false);
+        assert_eq!(client.get_thinking_budget(), None);
+
+        client.set_thinking_budget(4096).await.unwrap();
+        assert_eq!(client.get_thinking_budget(), Some(4096));
+
+        client.set_thinking_budget(-1).await.unwrap();
+        assert_eq!(client.get_thinking_budget(), Some(-1));
+
+        client.set_thinking_budget(0).await.unwrap();
+        assert_eq!(client.get_thinking_budget(), Some(0));
+    }
+
+    #[tokio::test]
+    async fn max_tokens_round_trips() {
+        let mut client = make_client(false);
+        assert_eq!(client.get_max_tokens(), None);
+
+        client.set_max_tokens(Some(2048)).await.unwrap();
+        assert_eq!(client.get_max_tokens(), Some(2048));
+
+        client.set_max_tokens(None).await.unwrap();
+        assert_eq!(client.get_max_tokens(), None);
+    }
+
+    #[tokio::test]
+    async fn switch_model_returns_not_supported() {
+        let mut client = make_client(false);
+
+        let err = client.switch_model("gpt-4").await.unwrap_err();
+        match err {
+            crate::chat::ChatError::NotSupported(msg) => {
+                assert!(
+                    msg.contains("gpt-4"),
+                    "Error should mention the model: {msg}"
+                );
+            }
+            other => panic!("Expected NotSupported, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn read_only_starts_in_plan_mode() {
+        let client = make_client(true);
+        assert_eq!(client.get_mode_id(), "plan");
+    }
+
+    #[test]
+    fn write_enabled_starts_in_normal_mode() {
+        let client = make_client(false);
+        assert_eq!(client.get_mode_id(), "normal");
+    }
+
+    #[tokio::test]
+    async fn mode_change_updates_local_state_without_session() {
+        let mut client = make_client(false);
+        client.set_mode_str("auto").await.unwrap();
+        assert_eq!(client.get_mode_id(), "auto");
+    }
+
+    #[test]
+    fn cached_fields_default_to_none() {
+        let client = make_client(false);
+        assert_eq!(client.get_temperature(), None);
+        assert_eq!(client.get_thinking_budget(), None);
+        assert_eq!(client.get_max_tokens(), None);
+    }
+}
