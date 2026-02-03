@@ -2,7 +2,7 @@
 description: Product feature map — capabilities, status, documentation, and dependencies
 type: product
 status: active
-updated: 2026-02-02
+updated: 2026-02-03
 tags:
   - meta
   - product
@@ -31,8 +31,8 @@ A knowledge management system where:
 | Phase | Users | Interface |
 |-------|-------|-----------|
 | Now | Power users, developers | CLI (chat-focused) |
-| Next | Plugin creators, agent developers | CLI + Lua scripting |
-| Later | Non-technical users | Web UI, Tauri desktop |
+| Next | Plugin creators, agent developers | CLI + Lua scripting + messaging integrations |
+| Later | Obsidian users, broader audience | Obsidian plugin, web PWA (Tailscale self-host) |
 
 ---
 
@@ -61,7 +61,7 @@ A knowledge management system where:
 - [x] **Document Clustering** `P0` — Heuristic clustering and MoC detection · `crucible-surrealdb`
 - [ ] **K-Means Clustering** `P2` — K-means implementation (placeholder stub, needs ndarray or similar) · `crucible-surrealdb`
 - [x] **Block-level Embeddings** `P0` — Paragraph-granularity semantic indexing · `crucible-llm`, `crucible-surrealdb`
-- [x] **Precognition** `P0` — Opt-in auto-RAG: inject relevant vault/session context before each agent turn via `:set precognition on` · `crucible-cli`, `crucible-acp`
+- [x] **Precognition** `P0` — Auto-RAG: inject relevant vault/session context before each agent turn; should default to on (`:set precognition`); the core differentiator — every conversation is knowledge-graph-aware · `crucible-cli`, `crucible-acp`
 - [x] **Session Search** `P0` — Past conversations indexed and searchable via session indexing pipeline; `cru session reindex` for batch processing · `crucible-observe`, `crucible-cli`
 
 ## AI Chat & Agents
@@ -230,15 +230,47 @@ Crucible acts as an **ACP host**, spawning and controlling external AI agents (C
 - [x] **MCP Bridge/Gateway** `P0` — `McpGatewayManager` shared in daemon, `McpProxyTool` dynamic injection, live status display · `crucible-tools`
 - [x] **MCP Connection Stability** `P0` — Auto-reconnect loop, 30s SSE keepalive, live status indicators in TUI · `crucible-acp`
 
-## Distribution & Virality
+## Distribution & Growth
 
-> How Crucible reaches users and spreads.
+> How Crucible reaches users and spreads. Ordered by growth impact.
+>
+> **Insight from OpenClaw analysis (2026-02):** Viral growth came from instant install, meeting users in apps they already use, and proactive behavior. Crucible's counter-position: "Your AI should live in your notes, not a chat app you don't control."
 
-- [ ] **`cru share`** `P1` — Export sessions as self-contained HTML or shareable artifacts; `:export` exists for local markdown, this adds sharable formats · `crucible-cli`
-- [ ] **Plugin Install** `P1` — `cru plugin add <git-url>` or `cru plugin add <name>`; Git-native plugin distribution (lazy.nvim model, not centralized marketplace) · `crucible-lua`, `crucible-cli`
+### Install & Onboarding (P0 — #1 adoption blocker)
+
+- [ ] **One-Line Install** `P0` — Pre-built binaries via GitHub Releases (linux x86_64/aarch64, macOS Intel/Apple Silicon, Windows); `curl|sh`, `brew install crucible`, `cargo binstall crucible`, AUR, Nix flake; target: working `cru` binary in <60 seconds · `crucible-cli`
+- [ ] **Precognition Default-On** `P0` — Change default from opt-in to on; the knowledge-graph-aware context is the core differentiator and should not be hidden behind `:set precognition on` · `crucible-cli`, `crucible-config`
+
+### Messaging Integrations (P1 — meet users where they are)
+
+> 1-2 good messaging integrations reduce the need for a web UI substantially. Users interact daily in messaging apps; Crucible meets them there and delivers proactive vault insights.
+
+- [ ] **Telegram Bot** `P1` — Bot API integration; daemon exposes chat via Telegram; lowest friction (HTTP API, no app store approval, huge dev audience); enables proactive digest delivery · `crucible-telegram` (new crate)
+- [ ] **Discord Bot** `P1` — Discord integration for developer communities; secondary to Telegram · `crucible-discord` (new crate)
+- [ ] **Matrix Bridge** `P2` — Matrix protocol integration; strong overlap with self-host/privacy audience · `crucible-matrix` (new crate)
+
+### Obsidian Plugin (P1 — uniquely differentiated)
+
+> No other AI assistant offers "chat that's natively part of your knowledge graph." This is Crucible's strongest differentiator. The plugin is a thin client talking to `cru-server` over the daemon socket/local HTTP — can coexist with web UI or messaging integrations indefinitely.
+
+- [ ] **Obsidian Sidebar Chat** `P1` — Obsidian community plugin; sidebar panel with chat + vault search; talks to daemon via local HTTP endpoint; Obsidian users get AI that reads/writes their vault natively · TypeScript, Obsidian API
+- [ ] **Obsidian Graph Integration** `P2` — Surface Crucible's knowledge graph connections in Obsidian's graph view; show AI-discovered links · TypeScript, Obsidian API
+
+### Proactive Behavior (P2 — viral feature)
+
+> OpenClaw's most praised feature was the heartbeat — the agent reaching out unprompted. Crucible can do this better because it has a knowledge graph, not flat memory.
+
+- [ ] **Vault Digest** `P2` — Periodic scan of recent vault changes; surface missed connections ("You wrote about X in two notes this week — want me to link them?"); delivered via messaging integration or TUI notification · `crucible-daemon`, `crucible-lua`
+- [ ] **Scheduled Lua Hooks** `P2` — Cron-style callbacks for Lua plugins; enables daily briefings, orphan note detection, task reminders from `- [ ]` items · `crucible-lua`, `crucible-daemon`
+- [ ] **Daily Briefing Plugin** `P2` — Reference plugin: summarize recent vault changes, pending tasks, orphaned notes; delivered via messaging or shown on TUI startup · `crucible-lua`
+
+### Ecosystem & Shareability (P1-P2)
+
 - [ ] **Example Plugin Pack** `P1` — Ship 3-5 reference plugins demonstrating key patterns: autonomous loops, scheduled tasks, fan-out, auto-linking · `crucible-lua`
+- [ ] **Plugin Install** `P1` — `cru plugin add <git-url>` or `cru plugin add <name>`; Git-native distribution (lazy.nvim model, not centralized marketplace) · `crucible-lua`, `crucible-cli`
 - [ ] **Agent Memory Branding** `P1` — Rename "Precognition" to "Agent Memory" in user-facing docs; communicates the value proposition directly · docs
-- [ ] **One-Line Install** `P3` — `curl|sh`, `brew install crucible`, `cargo install crucible`; secondary to ACP registry for discovery · `crucible-cli`
+- [ ] **`cru share`** `P2` — Export sessions as self-contained HTML or shareable artifacts; `:export` exists for local markdown, this adds sharable formats · `crucible-cli`
+- [ ] **Graph Visualization** `P2` — Shareable knowledge graph renders (SVG/HTML); creates viral demo moments ("look at my AI-connected notes") · `crucible-cli` or `crucible-web`
 
 ## Workflow Automation
 
@@ -290,7 +322,10 @@ Crucible acts as an **ACP host**, spawning and controlling external AI agents (C
 
 ## Web & Desktop
 
-- [-] **Web Chat UI** `P3` — Axum + SvelteKit + SSE streaming chat interface · `crucible-web`
+> Deprioritized relative to messaging integrations. With 1-2 messaging channels + Obsidian plugin, the web UI serves richer interactions (graph viz, multi-panel, file preview) rather than being the primary daily interface. Serve over Tailscale for zero-config private access; PWA for mobile without app store friction.
+
+- [-] **Web Chat UI** `P3` — Axum + SolidJS + SSE streaming chat interface; serve over Tailscale/local network for privacy · `crucible-web`
+- [ ] **PWA Support** `P3` — Progressive Web App manifest + service worker; enables mobile access without app store, installable from browser · `crucible-web`
 - [ ] **Oil Node Serialization** `P3` — Oil Node → JSON for web rendering · `crucible-oil`
 - [ ] **SolidJS Renderer** `P3` — `<OilNode>` component for browser rendering · `crucible-web`
 - [ ] **Shared Component Model** `P3` — Unified TUI/Web rendering from same Oil nodes · `crucible-oil`, `crucible-web`
@@ -324,6 +359,12 @@ Crucible acts as an **ACP host**, spawning and controlling external AI agents (C
 | 2026-02-02 | ACP-first distribution | ACP enables context injection that MCP cannot; MCP = demo entry point, ACP host = current value, ACP agent = registry distribution |
 | 2026-02-02 | Lua primitives over bespoke features | Autonomous loops, fan-out, automations are Lua plugins — not built-in features; matches Neovim philosophy |
 | 2026-02-02 | ACP direction clarified | Crucible is ACP host (controls agents), not ACP agent; embeddable agent mode is future P1 work for registry distribution |
+| 2026-02-03 | One-line install promoted to P0 | #1 adoption blocker; OpenClaw's `npm install -g` is the bar to beat |
+| 2026-02-03 | Messaging integrations (Telegram, Discord) at P1 | Meet users where they are; 1-2 messaging channels reduce need for web UI substantially |
+| 2026-02-03 | Obsidian plugin at P1 | Uniquely differentiated — no other AI assistant is natively part of a knowledge graph; thin client to daemon, coexists with web UI |
+| 2026-02-03 | Web UI deprioritized to P3 | Messaging + Obsidian cover daily interaction; web serves richer interactions later, via Tailscale for privacy, PWA for mobile |
+| 2026-02-03 | Precognition should default to on | Core differentiator shouldn't be opt-in; knowledge-graph-aware context is the product's value proposition |
+| 2026-02-03 | Proactive vault digest at P2 | Matches OpenClaw's most viral feature (heartbeat) using Crucible's strength (knowledge graph); delivered via messaging integrations |
 
 ## Archived / Cut
 
