@@ -2,22 +2,25 @@
 
 local M = {}
 
-local DISCORD_API_BASE = "https://discord.com/api/v10"
-local DISCORD_GATEWAY_URL = "wss://gateway.discord.gg/?v=10&encoding=json"
+local API_BASE = "https://discord.com/api/v10"
+local GATEWAY_URL = "wss://gateway.discord.gg/?v=10&encoding=json"
+
+-- Cached bot token (resolved once per runtime)
+local cached_token = nil
 
 --- Get a config value with default fallback
 function M.get(key, default)
     local ok, val = pcall(function()
         return crucible.config.get("discord." .. key)
     end)
-    if ok and val ~= nil then
-        return val
-    end
+    if ok and val ~= nil then return val end
     return default
 end
 
---- Get bot token from config
+--- Get bot token from config (cached after first call)
 function M.get_token()
+    if cached_token then return cached_token end
+
     local token = M.get("bot_token", "")
     if token == "" then
         token = os.getenv("DISCORD_BOT_TOKEN") or ""
@@ -25,6 +28,8 @@ function M.get_token()
     if token == "" then
         error("Discord bot token not configured. Set discord.bot_token in config or DISCORD_BOT_TOKEN env var.")
     end
+
+    cached_token = token
     return token
 end
 
@@ -42,14 +47,7 @@ function M.auth_headers()
     }
 end
 
---- Discord API v10 base URL
-function M.api_base()
-    return DISCORD_API_BASE
-end
-
---- Discord Gateway URL
-function M.gateway_url()
-    return DISCORD_GATEWAY_URL
-end
+function M.api_base() return API_BASE end
+function M.gateway_url() return GATEWAY_URL end
 
 return M

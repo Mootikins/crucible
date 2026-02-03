@@ -28,7 +28,15 @@ local last_sequence = nil
 local session_id = nil
 local resume_gateway_url = nil
 local is_connected = false
-local event_handlers = {}
+local awaiting_ack = false
+
+-- Event system
+local events = cru.emitter.new()
+
+--- Register a handler for a gateway event (delegates to emitter)
+function M.on(event_name, handler) return events:on(event_name, handler) end
+function M.once(event_name, handler) return events:once(event_name, handler) end
+function M.off(event_name, id) events:off(event_name, id) end
 
 -- ---------------------------------------------------------------------------
 -- Internal helpers
@@ -36,11 +44,14 @@ local event_handlers = {}
 
 local function send_payload(op, d)
     if not ws then return end
-    local payload = crucible.json_encode({ op = op, d = d })
-    ws:send(payload)
+    ws:send(cru.json.encode({ op = op, d = d }))
 end
 
 local function send_heartbeat()
+    if awaiting_ack then
+        cru.log("warn", "Discord gateway: missed heartbeat ACK, connection may be zombie")
+    end
+    awaiting_ack = true
     send_payload(OP.HEARTBEAT, last_sequence)
 end
 
@@ -65,47 +76,21 @@ local function send_resume()
 end
 
 -- ---------------------------------------------------------------------------
--- Event dispatch
--- ---------------------------------------------------------------------------
-
---- Register a handler for a gateway event
-function M.on(event_name, handler)
-    if not event_handlers[event_name] then
-        event_handlers[event_name] = {}
-    end
-    table.insert(event_handlers[event_name], handler)
-end
-
-local function dispatch_event(event_name, data)
-    local handlers = event_handlers[event_name]
-    if not handlers then return end
-    for _, handler in ipairs(handlers) do
-        local ok, err = pcall(handler, data)
-        if not ok then
-            crucible.log("warn", "Discord event handler error (" .. event_name .. "): " .. tostring(err))
-        end
-    end
-end
-
--- ---------------------------------------------------------------------------
 -- Message processing
 -- ---------------------------------------------------------------------------
 
 local function handle_message(raw)
     if not raw or raw.type ~= "text" then return true end
 
-    local ok, msg = pcall(crucible.json_decode, raw.data)
+    local ok, msg = pcall(cru.json.decode, raw.data)
     if not ok then
-        crucible.log("warn", "Discord gateway: failed to decode message")
+        cru.log("warn", "Discord gateway: failed to decode message")
         return true
     end
 
     local op = msg.op
 
-    -- Track sequence number
-    if msg.s then
-        last_sequence = msg.s
-    end
+    if msg.s then last_sequence = msg.s end
 
     if op == OP.HELLO then
         heartbeat_interval = msg.d.heartbeat_interval
@@ -117,6 +102,7 @@ local function handle_message(raw)
         return true
 
     elseif op == OP.HEARTBEAT_ACK then
+        awaiting_ack = false
         return true
 
     elseif op == OP.HEARTBEAT then
@@ -130,22 +116,22 @@ local function handle_message(raw)
             session_id = msg.d.session_id
             resume_gateway_url = msg.d.resume_gateway_url
             is_connected = true
-            crucible.log("info", "Discord gateway: connected as " .. msg.d.user.username)
+            cru.log("info", "Discord gateway: connected as " .. msg.d.user.username)
         end
 
-        dispatch_event(event_name, msg.d)
+        events:emit(event_name, msg.d)
         return true
 
     elseif op == OP.RECONNECT then
-        crucible.log("info", "Discord gateway: server requested reconnect")
+        cru.log("info", "Discord gateway: server requested reconnect")
         return false
 
     elseif op == OP.INVALID_SESSION then
         if msg.d then
-            crucible.log("info", "Discord gateway: invalid session (resumable)")
+            cru.log("info", "Discord gateway: invalid session (resumable)")
             send_resume()
         else
-            crucible.log("info", "Discord gateway: invalid session, re-identifying")
+            cru.log("info", "Discord gateway: invalid session, re-identifying")
             session_id = nil
             last_sequence = nil
             send_identify()
@@ -160,62 +146,68 @@ end
 -- Connection lifecycle
 -- ---------------------------------------------------------------------------
 
---- Connect to Discord Gateway and run receive loop.
---- Blocks the calling context. Returns on disconnect/error.
+--- Connect to Discord Gateway with reconnection backoff.
+--- Blocks the calling context. Returns on clean disconnect or exhausted retries.
 function M.connect()
-    local url = resume_gateway_url or config.gateway_url()
+    cru.retry(function()
+        local url = resume_gateway_url or config.gateway_url()
+        cru.log("info", "Discord gateway: connecting to " .. url)
 
-    crucible.log("info", "Discord gateway: connecting to " .. url)
-    ws = cru.ws.connect(url)
+        ws = cru.ws.connect(url)
+        if not ws then error({ retryable = true }) end
 
-    if not ws then
-        error("Failed to connect to Discord gateway")
-    end
+        -- Receive loop with heartbeat via timeout
+        local last_heartbeat = 0
 
-    -- Main receive loop
-    local last_heartbeat = os.clock()
+        while true do
+            -- Determine receive timeout based on heartbeat interval
+            local timeout_secs = heartbeat_interval
+                and (heartbeat_interval / 1000.0 * 0.75)
+                or 30.0
 
-    while true do
-        -- Send heartbeat if interval elapsed
-        if heartbeat_interval then
-            local now = os.clock()
-            if (now - last_heartbeat) * 1000 >= heartbeat_interval then
-                send_heartbeat()
-                last_heartbeat = now
+            local ok, msg = cru.timer.timeout(timeout_secs, function()
+                return ws:receive()
+            end)
+
+            -- Timeout elapsed — send heartbeat
+            if not ok then
+                if heartbeat_interval then send_heartbeat() end
+            elseif msg then
+                local should_continue = handle_message(msg)
+                if not should_continue then
+                    ws:close()
+                    ws = nil
+                    -- Reconnect requested: retry with backoff
+                    error({ retryable = true })
+                end
             end
         end
-
-        local msg = ws:receive()
-        if msg then
-            local should_continue = handle_message(msg)
-            if not should_continue then
-                ws:close()
-                ws = nil
-                crucible.log("info", "Discord gateway: reconnecting...")
-                return M.connect()
-            end
-        end
-    end
+    end, {
+        max_retries = 10,
+        base_delay = 1.0,
+        max_delay = 60.0,
+        retryable = function(err)
+            return type(err) == "table" and err.retryable
+        end,
+    })
 end
 
---- Disconnect from gateway
+--- Disconnect from gateway (clean disconnect clears session)
 function M.disconnect()
     if ws then
         is_connected = false
         session_id = nil
         last_sequence = nil
+        resume_gateway_url = nil
+        awaiting_ack = false
         ws:close()
         ws = nil
-        crucible.log("info", "Discord gateway: disconnected")
+        cru.log("info", "Discord gateway: disconnected")
     end
 end
 
---- Check if currently connected
-function M.is_connected()
-    return is_connected
-end
+function M.is_connected() return is_connected end
 
---- Get current session info
 function M.session_info()
     return {
         connected = is_connected,
