@@ -13,7 +13,7 @@ Crucible is a local-first AI assistant where **every conversation becomes a sear
 
 **Sessions as Markdown**: Conversations aren't ephemeral. Every chat session is saved as a markdown file, organized by workspace. Search across sessions. Link them together. Your AI memory lives in git.
 
-**Knowledge as Context**: Your notes become agent memory. Use `/search` to inject relevant context, or let precognition (coming soon) find it automatically. Wikilinks define relationships. Block-level embeddings enable semantic search at paragraph granularity.
+**Knowledge as Context**: Your notes become agent memory. Precognition automatically injects relevant vault context before each agent turn, or use `/search` for manual control. Wikilinks define relationships. Block-level embeddings enable semantic search at paragraph granularity.
 
 **Extensible Plugins**: Write extensions in Lua with Fennel support:
 - **Lua** — LLM-friendly syntax, simple semantics, gradual types
@@ -24,23 +24,29 @@ Crucible is a local-first AI assistant where **every conversation becomes a sear
 ## Quick Start
 
 ```bash
-# Build from source
+# Install from source
 git clone https://github.com/mootikins/crucible.git
 cd crucible && cargo build --release
 
-# Start a chat session
-./target/release/cru chat
+# Or install directly via Cargo
+cargo install --git https://github.com/Mootikins/crucible.git crucible-cli
+
+# Start a chat session (first run triggers setup wizard)
+cru chat
 
 # Or start the MCP server for Claude/GPT integration
-./target/release/cru mcp
+cru mcp
 ```
+
+On first run, `cru chat` launches a setup wizard that walks you through kiln path selection, provider detection, and model configuration. A background daemon auto-spawns to handle session persistence and file watching.
 
 **In a chat session:**
 - Type naturally — the agent responds with tool access to your knowledge base
 - `/search query` — Inject relevant notes into context
 - `/tasks` — View current task list
-- `:command` — Run REPL commands
+- `:command` — Run REPL commands (`:model`, `:set`, `:export`, `:help`)
 - `!shell` — Execute shell commands
+- `BackTab` — Cycle modes: Normal → Plan → Auto
 
 ## Core Features
 
@@ -111,17 +117,19 @@ See the [docs](./docs/Help/Concepts/Scripting%20Languages.md) for the full plugi
 ## Architecture
 
 ```
-crucible-cli        Terminal UI, REPL, commands
-crucible-web        Browser chat interface (SolidJS + Axum)
-crucible-tools      MCP server, tool implementations
-crucible-core       Domain logic, traits, parser types
-crucible-surrealdb  Storage with EAV graph schema
-crucible-lua        Lua/Luau with Fennel support
-crucible-llm        Embedding backends (FastEmbed, Burn, LlamaCpp)
-crucible-rig        LLM chat via Rig (Ollama, OpenAI, Anthropic)
+crucible-cli             Terminal UI, REPL, commands
+crucible-daemon          Background server (auto-spawned, Unix socket)
+crucible-daemon-client   Client library with auto-reconnect
+crucible-tools           MCP server, tool implementations
+crucible-core            Domain logic, traits, parser types
+crucible-surrealdb       Storage with EAV graph schema
+crucible-lua             Lua/Luau with Fennel support
+crucible-llm             Embedding backends (FastEmbed, Burn, LlamaCpp)
+crucible-rig             LLM chat via Rig (Ollama, OpenAI, Anthropic)
+crucible-acp             Agent Context Protocol (host + gateway)
 ```
 
-LLM providers implement capability traits (`CanEmbed`, `CanChat`), letting you swap backends freely.
+The daemon (`cru-server`) auto-spawns on first use and handles session persistence, file watching, event streaming, and multi-client coordination over a Unix socket. LLM providers implement capability traits (`CanEmbed`, `CanChat`), letting you swap backends freely.
 
 ## Documentation
 
@@ -131,14 +139,17 @@ LLM providers implement capability traits (`CanEmbed`, `CanChat`), letting you s
 
 ## Roadmap
 
-- [x] TUI chat with session persistence
+- [x] TUI chat with session persistence and resume
 - [x] MCP server for external agents
-- [x] Multi-language plugin system
-- [x] Block-level semantic search
+- [x] Lua/Fennel plugin system with 17+ API modules
+- [x] Block-level semantic search with reranking
+- [x] Precognition (auto-RAG before each turn)
+- [x] ACP host for spawning external AI agents
+- [x] Permission system with pattern whitelisting
+- [x] Daemon with auto-spawn, file watching, and multi-session support
 - [ ] Web chat interface
-- [ ] Precognition (auto-RAG before each turn)
-- [ ] Session compaction and resume
-- [ ] Python plugin support
+- [ ] Lua session primitives (fork, inject, collect)
+- [ ] ACP agent mode (embeddable in Zed, JetBrains, Neovim)
 
 ## License
 
