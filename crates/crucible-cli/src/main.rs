@@ -7,8 +7,10 @@ use tracing_subscriber::prelude::*; // For SubscriberExt trait
 use crucible_cli::{
     cli::{Cli, Commands},
     commands, config, factories,
-    sync::{quick_sync_check, SyncStatus},
+    sync::SyncStatus,
 };
+#[cfg(feature = "storage-surrealdb")]
+use crucible_cli::sync::quick_sync_check;
 
 /// Process files with change detection on startup
 ///
@@ -37,11 +39,16 @@ async fn process_files_with_change_detection(config: &crate::config::CliConfig) 
 
     // For embedded SurrealDB mode, we can use the quick_sync_check
     // For other modes, we skip this optimization and process all files
+    #[cfg(feature = "storage-surrealdb")]
     let sync_status = if let Some(surreal) = storage_handle.try_embedded() {
         quick_sync_check(surreal, kiln_path).await?
     } else {
-        // Create a minimal sync status that processes all markdown files
         debug!("Non-embedded mode: skipping quick_sync_check, will process all files");
+        SyncStatus::all_new(kiln_path)?
+    };
+    #[cfg(not(feature = "storage-surrealdb"))]
+    let sync_status = {
+        debug!("Non-SurrealDB mode: skipping quick_sync_check, will process all files");
         SyncStatus::all_new(kiln_path)?
     };
 
@@ -395,6 +402,7 @@ async fn main() -> Result<()> {
 
     // Graceful shutdown: close all cached storage connections
     // This ensures RocksDB flushes WAL/SST files properly
+    #[cfg(feature = "storage-surrealdb")]
     factories::shutdown_storage();
 
     Ok(())

@@ -16,13 +16,17 @@ use crucible_core::enrichment::{EnrichedNote, EnrichedNoteStore};
 use crucible_core::storage::NoteStore;
 use crucible_core::traits::StorageClient;
 use crucible_daemon_client::{lifecycle, DaemonClient, DaemonNoteStore, DaemonStorageClient};
+#[cfg(feature = "storage-surrealdb")]
 use crucible_surrealdb::{adapters, SurrealDbConfig};
+#[cfg(feature = "storage-surrealdb")]
 use once_cell::sync::Lazy;
+#[cfg(feature = "storage-surrealdb")]
 use std::collections::{hash_map::Entry, HashMap};
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 use tracing::{debug, info, warn};
 
+#[cfg(feature = "storage-surrealdb")]
 /// Create SurrealDB storage from CLI configuration
 ///
 /// Returns an opaque handle that can be passed to other factory functions.
@@ -30,6 +34,7 @@ use tracing::{debug, info, warn};
 static SURREAL_CLIENT_CACHE: Lazy<Mutex<HashMap<String, adapters::SurrealClientHandle>>> =
     Lazy::new(|| Mutex::new(HashMap::new()));
 
+#[cfg(feature = "storage-surrealdb")]
 fn storage_cache_key(config: &SurrealDbConfig) -> String {
     format!(
         "{}|{}|{}|{}|{}",
@@ -41,6 +46,7 @@ fn storage_cache_key(config: &SurrealDbConfig) -> String {
     )
 }
 
+#[cfg(feature = "storage-surrealdb")]
 pub async fn create_surrealdb_storage(config: &CliConfig) -> Result<adapters::SurrealClientHandle> {
     let db_config = SurrealDbConfig {
         path: config.database_path_str()?,
@@ -98,6 +104,7 @@ pub async fn create_surrealdb_storage(config: &CliConfig) -> Result<adapters::Su
     Ok(client_handle)
 }
 
+#[cfg(feature = "storage-surrealdb")]
 /// Initialize SurrealDB schema
 ///
 /// This requires access to the internal client, so we expose it via
@@ -108,6 +115,7 @@ pub async fn initialize_surrealdb_schema(client: &adapters::SurrealClientHandle)
     crucible_surrealdb::kiln_integration::initialize_kiln_schema(client.inner()).await
 }
 
+#[cfg(feature = "storage-surrealdb")]
 /// Create SurrealDB-backed enriched note store
 ///
 /// This factory creates an adapter that implements the `EnrichedNoteStore` trait
@@ -194,6 +202,7 @@ pub async fn create_daemon_storage(kiln_path: &Path) -> Result<Arc<DaemonStorage
 #[derive(Clone)]
 pub enum StorageHandle {
     /// Direct in-process SurrealDB (single session)
+    #[cfg(feature = "storage-surrealdb")]
     Embedded(adapters::SurrealClientHandle),
     /// Daemon-backed storage (multi-session via Unix socket)
     Daemon(Arc<DaemonStorageClient>),
@@ -211,6 +220,7 @@ impl StorageHandle {
     /// Lightweight mode does not support SQL queries and will return an error.
     pub async fn query_raw(&self, sql: &str) -> Result<serde_json::Value> {
         match self {
+            #[cfg(feature = "storage-surrealdb")]
             StorageHandle::Embedded(h) => {
                 let inner = h.inner();
                 let result = inner.query(sql, &[]).await?;
@@ -245,6 +255,7 @@ impl StorageHandle {
     /// Use for operations that need full SurrealClientHandle capabilities
     /// (e.g., NoteStore, MerkleStore, etc.). This should be called only
     /// when you know you're in embedded mode.
+    #[cfg(feature = "storage-surrealdb")]
     pub fn as_embedded(&self) -> &adapters::SurrealClientHandle {
         match self {
             StorageHandle::Embedded(h) => h,
@@ -267,6 +278,7 @@ impl StorageHandle {
     /// Try to get as embedded handle (returns None if daemon or lightweight mode)
     ///
     /// Use this for graceful fallback instead of panic.
+    #[cfg(feature = "storage-surrealdb")]
     pub fn try_embedded(&self) -> Option<&adapters::SurrealClientHandle> {
         match self {
             StorageHandle::Embedded(h) => Some(h),
@@ -277,6 +289,7 @@ impl StorageHandle {
     }
 
     /// Check if running in embedded mode
+    #[cfg(feature = "storage-surrealdb")]
     pub fn is_embedded(&self) -> bool {
         matches!(self, StorageHandle::Embedded(_))
     }
@@ -367,6 +380,7 @@ impl StorageHandle {
     /// ```
     pub fn note_store(&self) -> Option<Arc<dyn NoteStore>> {
         match self {
+            #[cfg(feature = "storage-surrealdb")]
             StorageHandle::Embedded(h) => Some(h.as_note_store()),
             StorageHandle::Daemon(c) => Some(Arc::new(DaemonNoteStore::new(Arc::clone(c)))),
             StorageHandle::Lightweight(store) => Some(Arc::clone(store) as Arc<dyn NoteStore>),
@@ -385,6 +399,7 @@ impl StorageHandle {
         &self,
     ) -> Option<Arc<dyn crucible_core::traits::KnowledgeRepository>> {
         match self {
+            #[cfg(feature = "storage-surrealdb")]
             StorageHandle::Embedded(h) => Some(h.as_knowledge_repository()),
             StorageHandle::Daemon(c) => {
                 Some(Arc::clone(c) as Arc<dyn crucible_core::traits::KnowledgeRepository>)
@@ -397,6 +412,7 @@ impl StorageHandle {
         }
     }
 
+    #[cfg(feature = "storage-surrealdb")]
     /// Get embedded handle, creating fallback if in daemon mode
     ///
     /// For operations that require full SurrealClientHandle (schema init,
@@ -491,25 +507,36 @@ pub async fn get_storage(config: &CliConfig) -> Result<StorageHandle> {
 
     match storage_config.mode {
         StorageMode::Embedded => {
-            debug!("Using embedded storage mode");
+            #[cfg(feature = "storage-surrealdb")]
+            {
+                debug!("Using embedded storage mode");
 
-            // Check if daemon is running and has the DB locked
-            // If so, auto-connect to daemon instead of failing
-            let db_path = config.database_path();
-            let socket = lifecycle::default_socket_path();
+                // Check if daemon is running and has the DB locked
+                // If so, auto-connect to daemon instead of failing
+                let db_path = config.database_path();
+                let socket = lifecycle::default_socket_path();
 
-            if lifecycle::is_db_locked(&db_path) && lifecycle::is_daemon_running(&socket) {
-                info!("Database locked by daemon, auto-connecting to daemon");
-                let client = DaemonClient::connect_to(&socket).await?;
-                let kiln_path = config.kiln_path.clone();
-                return Ok(StorageHandle::Daemon(Arc::new(DaemonStorageClient::new(
-                    Arc::new(client),
-                    kiln_path,
-                ))));
+                if lifecycle::is_db_locked(&db_path) && lifecycle::is_daemon_running(&socket) {
+                    info!("Database locked by daemon, auto-connecting to daemon");
+                    let client = DaemonClient::connect_to(&socket).await?;
+                    let kiln_path = config.kiln_path.clone();
+                    return Ok(StorageHandle::Daemon(Arc::new(DaemonStorageClient::new(
+                        Arc::new(client),
+                        kiln_path,
+                    ))));
+                }
+
+                let client = create_surrealdb_storage(config).await?;
+                Ok(StorageHandle::Embedded(client))
             }
-
-            let client = create_surrealdb_storage(config).await?;
-            Ok(StorageHandle::Embedded(client))
+            #[cfg(not(feature = "storage-surrealdb"))]
+            {
+                anyhow::bail!(
+                    "Embedded storage mode requires the 'storage-surrealdb' feature.\n\
+                     Build with: cargo build --features storage-surrealdb\n\
+                     Or use storage.mode = \"sqlite\" or \"daemon\" instead."
+                )
+            }
         }
         StorageMode::Daemon => {
             info!("Using daemon storage mode");
@@ -565,6 +592,7 @@ pub async fn get_storage(config: &CliConfig) -> Result<StorageHandle> {
 // Storage Cleanup (Graceful Shutdown)
 // =============================================================================
 
+#[cfg(feature = "storage-surrealdb")]
 /// Clear all cached storage connections
 ///
 /// This should be called before the process exits to ensure RocksDB
@@ -586,7 +614,7 @@ pub fn shutdown_storage() {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "storage-surrealdb"))]
 mod tests {
     use super::*;
 

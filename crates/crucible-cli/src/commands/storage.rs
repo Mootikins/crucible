@@ -175,9 +175,7 @@ async fn execute_stats(
         println!("  Total Notes: {}", notes.len());
         println!(
             "  Storage Mode: {}",
-            if storage.is_embedded() {
-                "embedded"
-            } else if storage.is_daemon() {
+            if storage.is_daemon() {
                 "daemon"
             } else {
                 "lightweight"

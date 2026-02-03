@@ -4,6 +4,7 @@
 //! Uses filesystem mtime comparison instead of hash computation for speed.
 
 use anyhow::Result;
+#[cfg(feature = "storage-surrealdb")]
 use crucible_surrealdb::adapters::SurrealClientHandle;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -82,6 +83,7 @@ struct StoredFileMeta {
     file_size: u64,
 }
 
+#[cfg(feature = "storage-surrealdb")]
 /// Perform a quick sync check comparing filesystem mtimes against database
 ///
 /// This is much faster than computing file hashes because it only reads
@@ -197,6 +199,7 @@ pub async fn quick_sync_check(
     })
 }
 
+#[cfg(feature = "storage-surrealdb")]
 /// Fetch all file states from database in a single query
 async fn fetch_all_file_states(
     storage: &SurrealClientHandle,

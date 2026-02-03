@@ -4,6 +4,7 @@
 //! This includes storage access, semantic search, and configuration.
 
 use anyhow::{anyhow, Result};
+#[cfg(feature = "storage-surrealdb")]
 use crucible_surrealdb::adapters::SurrealClientHandle;
 use std::path::Path;
 use std::sync::Arc;
@@ -25,7 +26,8 @@ pub struct KilnContext {
 }
 
 impl KilnContext {
-    /// Create a new facade from configuration
+    /// Create a new facade from configuration (requires SurrealDB)
+    #[cfg(feature = "storage-surrealdb")]
     pub async fn from_config(config: CliConfig) -> Result<Self> {
         // Initialize storage using factory function
         let storage_config = crucible_surrealdb::SurrealDbConfig {
@@ -49,10 +51,11 @@ impl KilnContext {
         })
     }
 
-    /// Create a facade from an existing storage client
+    /// Create a facade from an existing storage client (requires SurrealDB)
     ///
     /// This constructor reuses an existing storage connection instead of creating a new one.
     /// Useful when the storage client is already initialized elsewhere (e.g., for pipeline processing).
+    #[cfg(feature = "storage-surrealdb")]
     pub fn from_storage(storage: SurrealClientHandle, config: CliConfig) -> Self {
         Self {
             storage_handle: StorageHandle::Embedded(storage),
@@ -79,6 +82,7 @@ impl KilnContext {
     /// Get a reference to the embedded storage client handle (if available)
     ///
     /// Returns None if running in daemon or lightweight mode.
+    #[cfg(feature = "storage-surrealdb")]
     pub fn storage(&self) -> Option<&SurrealClientHandle> {
         self.storage_handle.try_embedded()
     }
@@ -206,6 +210,7 @@ impl KilnContext {
     ) -> Result<Vec<SemanticSearchResult>> {
         // Reranking requires embedded mode (direct SurrealDB access)
         // In daemon mode, fall back to basic semantic search
+        #[cfg(feature = "storage-surrealdb")]
         if let Some(storage) = self.storage_handle.try_embedded() {
             // Get embedding config from composite config and convert to provider config
             let embedding_config = self.config.embedding.to_provider_config();
@@ -225,7 +230,7 @@ impl KilnContext {
             .await?;
 
             // Convert to facade result type
-            Ok(results
+            return Ok(results
                 .into_iter()
                 .map(|(doc_id, similarity)| {
                     let title = doc_id
@@ -242,11 +247,13 @@ impl KilnContext {
                         similarity: similarity as f32,
                     }
                 })
-                .collect())
-        } else {
-            // In daemon mode, fall back to basic semantic search
+                .collect());
+        }
+
+        {
+            // Fall back to basic semantic search (daemon, sqlite, lightweight modes)
             // Reranking is not supported via RPC yet
-            tracing::debug!("Reranking not available in daemon mode, using basic semantic search");
+            tracing::debug!("Reranking not available in this storage mode, using basic semantic search");
             self.semantic_search(query, limit).await
         }
     }
