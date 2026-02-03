@@ -8,17 +8,28 @@ local M = {}
 -- channel_id -> { session_id, last_active, guild_id }
 local channel_sessions = {}
 
--- Session inactivity timeout (seconds)
-local SESSION_TTL = 3600      -- 1 hour before creating a new session
-local STALE_TTL   = 7200      -- 2 hours before ending idle sessions
+-- Session inactivity timeouts (seconds)
+local DM_SESSION_TTL      = 86400   -- 24 hours for DMs
+local CHANNEL_SESSION_TTL = 900     -- 15 minutes for channel @mentions
+local STALE_TTL           = 7200    -- 2 hours before ending idle sessions
+
+--- Get the session TTL based on context (DM vs channel).
+local function session_ttl(guild_id)
+    if not guild_id then
+        return DM_SESSION_TTL
+    end
+    return CHANNEL_SESSION_TTL
+end
 
 --- Get or create a Crucible session for a Discord channel.
---- Reuses an existing session if it was active within SESSION_TTL.
+--- Reuses an existing session if it was active within the TTL window.
 function M.get_or_create(channel_id, guild_id)
     local entry = channel_sessions[channel_id]
+    local ttl = session_ttl(guild_id)
+
     if entry then
         local age = os.time() - entry.last_active
-        if age < SESSION_TTL then
+        if age < ttl then
             entry.last_active = os.time()
             return entry.session_id, nil
         end
@@ -26,13 +37,16 @@ function M.get_or_create(channel_id, guild_id)
         pcall(cru.sessions.end_session, entry.session_id)
     end
 
-    -- Create new session using the daemon's active kiln
-    local kiln_path = cru.kiln.active_path
-    if not kiln_path or kiln_path == "" then
-        return nil, "No kiln is open in the daemon"
+    -- Build session creation options
+    local create_opts = { type = "chat" }
+
+    -- Add configured read kilns if present
+    local kilns = config.get("kilns")
+    if kilns then
+        create_opts.kilns = kilns
     end
 
-    local session, err = cru.sessions.create("chat", kiln_path)
+    local session, err = cru.sessions.create(create_opts)
     if not session then
         return nil, "Failed to create session: " .. tostring(err)
     end
@@ -51,13 +65,30 @@ end
 
 --- Configure the agent for a session with optional overrides from plugin config.
 function M.configure_agent(session_id)
-    local agent_config = {}
-    for _, key in ipairs({ "provider", "model", "system_prompt" }) do
-        local val = config.get(key)
-        if val then agent_config[key] = val end
+    local provider = config.get("provider")
+    local model = config.get("model")
+
+    if not provider or not model then
+        cru.log("warn", "Discord plugin: provider and model must be configured")
+        return
     end
 
-    if not next(agent_config) then return end
+    local agent_config = {
+        agent_type = config.get("agent_type", "internal"),
+        provider = provider,
+        model = model,
+        system_prompt = config.get("system_prompt",
+            "You are a helpful assistant in a Discord chat. "
+            .. "Keep responses concise and conversational. "
+            .. "Use Discord markdown formatting when appropriate."),
+    }
+
+    -- Optional fields
+    local provider_key = config.get("provider_key")
+    if provider_key then agent_config.provider_key = provider_key end
+
+    local agent_name = config.get("agent_name")
+    if agent_name then agent_config.agent_name = agent_name end
 
     local _, err = cru.sessions.configure_agent(session_id, agent_config)
     if err then
