@@ -21,7 +21,7 @@ tags:
 **"Neovim for agents+notes"** — extensible, open, documented
 
 A knowledge management system where:
-- AI agents have perfect context from your vault
+- AI agents have perfect context from your kiln
 - Workflows are defined in markdown and executed by agents
 - Everything is extensible via Lua scripting and hooks
 - Power users get CLI, everyone else gets web/desktop UI eventually
@@ -61,7 +61,7 @@ A knowledge management system where:
 - [x] **Document Clustering** `P0` — Heuristic clustering and MoC detection · `crucible-surrealdb`
 - [ ] **K-Means Clustering** `P2` — K-means implementation (placeholder stub, needs ndarray or similar) · `crucible-surrealdb`
 - [x] **Block-level Embeddings** `P0` — Paragraph-granularity semantic indexing · `crucible-llm`, `crucible-surrealdb`
-- [x] **Precognition** `P0` — Auto-RAG: inject relevant vault/session context before each agent turn; should default to on (`:set precognition`); the core differentiator — every conversation is knowledge-graph-aware · `crucible-cli`, `crucible-acp`
+- [x] **Precognition** `P0` — Auto-RAG: inject relevant kiln/session context before each agent turn; should default to on (`:set precognition`); the core differentiator — every conversation is knowledge-graph-aware · `crucible-cli`, `crucible-acp`
 - [x] **Session Search** `P0` — Past conversations indexed and searchable via session indexing pipeline; `cru session reindex` for batch processing · `crucible-observe`, `crucible-cli`
 
 ## AI Chat & Agents
@@ -94,7 +94,7 @@ A knowledge management system where:
 - [x] **Subagent Spawning** `P0` — Background job manager for parallel subagent tasks with cancellation · `crucible-daemon`
 
 ### Context & Knowledge
-- [x] **Context Enrichment** `P0` — Inject vault context into agent conversations · `crucible-context`, `crucible-enrichment`
+- [x] **Context Enrichment** `P0` — Inject kiln context into agent conversations · `crucible-context`, `crucible-enrichment`
 - [x] **File Attachment** `P0` — `@file` context attachment in chat · `crucible-cli`
 - [x] **Rules Files** `P0` — Project-level AI instructions (`.crucible/rules`) · [[Help/Rules Files]] · `crucible-config`
 
@@ -186,7 +186,12 @@ A knowledge management system where:
 - [x] **Event Hooks** `P0` — Note lifecycle hooks (`note:created`, `note:modified`, etc.) · [[Help/Extending/Event Hooks]] · `crucible-lua`
 - [x] **Custom Handlers** `P0` — Event handler chains with priority ordering · [[Help/Extending/Custom Handlers]] · `crucible-lua`
 - [x] **Oil UI DSL** `P1` — Lua/Fennel API for interaction modals (ask, popup, panel); predefined modal types, not a general component model · [[Help/Extending/Scripted UI]] · [[Help/Plugins/Oil-Lua-API]] · `crucible-lua`, `crucible-oil`
-- [x] **Lua API Modules** `P0` — 17+ modules: `crucible.fs`, `crucible.graph`, `crucible.http`, `crucible.session`, `crucible.shell`, etc. · `crucible-lua`
+- [x] **Lua API Modules** `P0` — 20+ modules under unified `cru.*` namespace: `cru.fs`, `cru.graph`, `cru.http`, `cru.session`, `cru.shell`, `cru.timer`, `cru.ratelimit`, `cru.retry`, `cru.emitter`, `cru.check`, etc. (`crucible.*` retained as long-form alias) · `crucible-lua`
+- [x] **Timer/Sleep Primitives** `P1` — `cru.timer.sleep(secs)` async sleep, `cru.timer.timeout(secs, fn)` deadline wrapper; backed by `tokio::time` · `crucible-lua`
+- [x] **Rate Limiting** `P1` — `cru.ratelimit.new({ capacity, interval })` token bucket; `:acquire()` (async), `:try_acquire()` (sync), `:remaining()` · `crucible-lua`
+- [x] **Retry with Backoff** `P1` — `cru.retry(fn, opts)` exponential backoff with jitter; configurable max retries, base/max delay · `crucible-lua`
+- [x] **Event Emitter** `P1` — `cru.emitter.new()` minimal pub/sub; `:on(event, handler)`, `:off()`, `:emit()`, `:once()` · `crucible-lua`
+- [x] **Argument Validation** `P1` — `cru.check.string()`, `.number()`, `.table()`, `.one_of()` with optional/range constraints · `crucible-lua`
 - [x] **Plugin Config** `P0` — Per-plugin configuration schemas · [[Help/Lua/Configuration]] · `crucible-lua`
 - [x] **Script Agent Queries** `P0` — Lua-based agent queries · [[Help/Extending/Script Agent Queries]] · `crucible-lua`
 - [x] **HTTP Module** `P0` — HTTP client for plugins · [[Help/Extending/HTTP Module]] · `crucible-lua`
@@ -258,14 +263,14 @@ HTTP Gateway (crucible-web wired to daemon)
 - [ ] **Chat HTTP API** `P1` — `POST /api/chat/send` + SSE stream for responses; `POST /api/session/create`, `/resume`, `/list`, `/end` · `crucible-web`
 - [ ] **Search HTTP API** `P1` — `POST /api/search` (semantic + full-text + property); `GET /api/notes`, `GET /api/notes/:name` · `crucible-web`
 - [ ] **API Auth** `P1` — Bearer token or API key auth; required the moment the gateway is exposed beyond localhost · `crucible-web`
-- [ ] **Webhook API** `P1` — `POST /api/webhook/:name` triggers named Lua handlers; enables GitHub webhooks, calendar events, IFTTT/Zapier/n8n integration; enriches payloads with vault context (uniquely Crucible) · `crucible-web`, `crucible-lua`
+- [ ] **Webhook API** `P1` — `POST /api/webhook/:name` triggers named Lua handlers; enables GitHub webhooks, calendar events, IFTTT/Zapier/n8n integration; enriches payloads with kiln context (uniquely Crucible) · `crucible-web`, `crucible-lua`
 
 ### Messaging Integrations (P1 — meet users where they are)
 
-> 1-2 good messaging integrations reduce the need for a web UI substantially. Users interact daily in messaging apps; Crucible meets them there and delivers proactive vault insights. Messaging bots are thin adapters over the HTTP gateway — they don't need Unix socket access or colocation with the daemon.
+> 1-2 good messaging integrations reduce the need for a web UI substantially. Users interact daily in messaging apps; Crucible meets them there and delivers proactive kiln insights. Integrations can be daemon-side Lua plugins (Discord) or thin adapters over the HTTP gateway (Telegram, Matrix).
 
 - [ ] **Telegram Bot** `P1` — Bot API adapter over HTTP gateway; lowest friction (HTTP API, no app store approval, huge dev audience); enables proactive digest delivery · `crucible-telegram` (new crate) · depends: [[#HTTP Gateway|HTTP-to-RPC Bridge]]
-- [ ] **Discord Bot** `P1` — Discord adapter over HTTP gateway for developer communities; secondary to Telegram · `crucible-discord` (new crate) · depends: [[#HTTP Gateway|HTTP-to-RPC Bridge]]
+- [x] **Discord Plugin** `P1` — Discord integration (REST API + Gateway) as daemon-side Lua plugin; tools: `discord_send`, `discord_read`, `discord_channels`, `discord_register_commands`; commands: `:discord connect/disconnect/status` · `plugins/discord/`
 - [ ] **Matrix Bridge** `P2` — Matrix protocol integration; strong overlap with self-host/privacy audience · `crucible-matrix` (new crate) · depends: [[#HTTP Gateway|HTTP-to-RPC Bridge]]
 
 ### Remote Access (P2 — self-hosting for everyone)
@@ -281,9 +286,9 @@ HTTP Gateway (crucible-web wired to daemon)
 
 > OpenClaw's most praised feature was the heartbeat — the agent reaching out unprompted. Crucible can do this better because it has a knowledge graph, not flat memory. Heartbeat is time-based; webhook triggers are event-driven — Crucible can do both.
 
-- [ ] **Vault Digest** `P2` — Periodic scan of recent vault changes; surface missed connections ("You wrote about X in two notes this week — want me to link them?"); delivered via messaging integration or TUI notification · `crucible-daemon`, `crucible-lua`
+- [ ] **Kiln Digest** `P2` — Periodic scan of recent kiln changes; surface missed connections ("You wrote about X in two notes this week — want me to link them?"); delivered via messaging integration or TUI notification · `crucible-daemon`, `crucible-lua`
 - [ ] **Scheduled Lua Hooks** `P2` — Cron-style callbacks for Lua plugins; enables daily briefings, orphan note detection, task reminders from `- [ ]` items · `crucible-lua`, `crucible-daemon`
-- [ ] **Daily Briefing Plugin** `P2` — Reference plugin: summarize recent vault changes, pending tasks, orphaned notes; delivered via messaging or shown on TUI startup · `crucible-lua`
+- [ ] **Daily Briefing Plugin** `P2` — Reference plugin: summarize recent kiln changes, pending tasks, orphaned notes; delivered via messaging or shown on TUI startup · `crucible-lua`
 
 ### Ecosystem & Shareability (P1-P2)
 
@@ -345,7 +350,7 @@ HTTP Gateway (crucible-web wired to daemon)
 
 > Builds on the HTTP gateway (P1). Messaging integrations are the daily-driver interface; web UI adds richer interactions (graph visualization, multi-panel layouts, file previews, workflow configuration). Serve over Tailscale/Cloudflare Tunnel for self-hosted remote access; PWA for mobile without app store friction.
 
-- [-] **Web Chat UI** `P3` — SolidJS frontend on the same `crucible-web` server as the HTTP gateway; chat + search + vault browsing · `crucible-web` · depends: [[#HTTP Gateway|HTTP-to-RPC Bridge]]
+- [-] **Web Chat UI** `P3` — SolidJS frontend on the same `crucible-web` server as the HTTP gateway; chat + search + kiln browsing · `crucible-web` · depends: [[#HTTP Gateway|HTTP-to-RPC Bridge]]
 - [ ] **PWA Support** `P3` — Progressive Web App manifest + service worker; enables mobile access without app store, installable from browser · `crucible-web`
 - [ ] **Oil Node Serialization** `P3` — Oil Node → JSON for web rendering · `crucible-oil`
 - [ ] **SolidJS Renderer** `P3` — `<OilNode>` component for browser rendering · `crucible-web`
@@ -360,7 +365,7 @@ HTTP Gateway (crucible-web wired to daemon)
 - [ ] **Sync System** `P4` — Merkle diff + CRDT for multi-device synchronization
 - [ ] **Concurrent Agent Access** `P4` — Multiple agents accessing a kiln simultaneously · `crucible-daemon`
 - [ ] **Shared Memory** `P4` — Worlds/Rooms for collaborative cognition
-- [ ] **Federation** `P4` — A2A protocol for cross-vault agent communication
+- [ ] **Federation** `P4` — A2A protocol for cross-kiln agent communication
 
 ---
 
@@ -382,7 +387,7 @@ HTTP Gateway (crucible-web wired to daemon)
 | 2026-02-02 | ACP direction clarified | Crucible is ACP host (controls agents), not ACP agent; embeddable agent mode is future P1 work for registry distribution |
 | 2026-02-03 | One-line install promoted to P0 | #1 adoption blocker; OpenClaw's `npm install -g` is the bar to beat |
 | 2026-02-03 | HTTP gateway as P1 platform layer | Daemon is Unix-socket-only; messaging bots, webhooks, web UI all need HTTP; wire crucible-web to DaemonClient as shared foundation |
-| 2026-02-03 | Webhook API at P1 | `POST /api/webhook/:name` triggers Lua handlers; enables GitHub/calendar/IFTTT integration; enriches with vault context — uniquely Crucible vs OpenClaw's time-based heartbeat |
+| 2026-02-03 | Webhook API at P1 | `POST /api/webhook/:name` triggers Lua handlers; enables GitHub/calendar/IFTTT integration; enriches with kiln context — uniquely Crucible vs OpenClaw's time-based heartbeat |
 | 2026-02-03 | Messaging integrations (Telegram, Discord) at P1 | Meet users where they are; thin adapters over HTTP gateway; 1-2 channels reduce need for web UI substantially |
 | 2026-02-03 | Messaging → web progression | Messaging is precursor work to web; HTTP gateway serves both; web adds richer interactions (graph viz, config, workflow) later |
 | 2026-02-03 | Remote access via Cloudflare/Tailscale at P2 | Agents can't be on every device; `cru tunnel` wraps cloudflared/tailscale funnel; self-host > paid hosting for positioning |
@@ -390,7 +395,8 @@ HTTP Gateway (crucible-web wired to daemon)
 | 2026-02-03 | Obsidian plugin dropped | HTTP gateway + messaging + web covers the progression; Obsidian plugin is a separate TypeScript project with maintenance burden for a subset of users |
 | 2026-02-03 | Web UI deprioritized to P3 | Messaging covers daily interaction; web serves richer interactions later, via Tailscale for privacy, PWA for mobile |
 | 2026-02-03 | Precognition should default to on | Core differentiator shouldn't be opt-in; knowledge-graph-aware context is the product's value proposition |
-| 2026-02-03 | Proactive vault digest at P2 | Matches OpenClaw's most viral feature (heartbeat) using Crucible's strength (knowledge graph); delivered via messaging integrations |
+| 2026-02-03 | Proactive kiln digest at P2 | Matches OpenClaw's most viral feature (heartbeat) using Crucible's strength (knowledge graph); delivered via messaging integrations |
+| 2026-02-03 | Discord as daemon-side plugin, not separate crate | Direct REST API + Gateway integration via Lua plugin with `config`, `network`, `websocket` capabilities; avoids HTTP gateway dependency; validates plugin system for real integrations |
 
 ## Archived / Cut
 

@@ -24,22 +24,24 @@ Lua scripts can make HTTP requests:
 
 ## Lua API
 
+The canonical path is `cru.http`. The standalone `http` global is a backwards-compatible alias.
+
 ```lua
 -- Simple GET request
-local response = http.get("https://api.example.com/data")
+local response = cru.http.get("https://api.example.com/data")
 if response.ok then
-    local data = oq.parse(response.body)
+    local data = cru.oq.parse(response.body)
     print(data.name)
 end
 
 -- POST with JSON body
-local response = http.post("https://api.example.com/users", {
+local response = cru.http.post("https://api.example.com/users", {
     headers = { ["Content-Type"] = "application/json" },
-    body = oq.json({ name = "Alice", age = 30 })
+    body = cru.oq.json({ name = "Alice", age = 30 })
 })
 
 -- Custom request with full control
-local response = http.request({
+local response = cru.http.request({
     url = "https://api.example.com/resource",
     method = "PUT",
     headers = { Authorization = "Bearer token123" },
@@ -47,6 +49,8 @@ local response = http.request({
     timeout = 60
 })
 ```
+
+> **Note:** `http.get(...)`, `oq.parse(...)`, etc. still work as standalone globals for backwards compatibility.
 
 ### Response Format
 
@@ -68,13 +72,13 @@ Use HTTP in handlers to fetch external data:
 -- Handler that enriches tool calls with external data
 -- @handler event="tool:before" pattern="fetch_prices" priority=10
 function on_fetch_prices(ctx, event)
-    local response = http.get("https://api.prices.com/latest")
+    local response = cru.http.get("https://api.prices.com/latest")
     if not response.ok then
         event.cancelled = true
         event.cancel_reason = response.error
         return event
     end
-    event.payload.prices = oq.parse(response.body)
+    event.payload.prices = cru.oq.parse(response.body)
     return event
 end
 ```
@@ -84,16 +88,16 @@ end
 Always check `response.ok` before using the response:
 
 ```lua
-local response = http.get(url)
+local response = cru.http.get(url)
 if response.ok then
     -- Success: use response.body
     process(response.body)
 elseif response.error then
     -- Request failed (network error, timeout)
-    crucible.log("error", "Request failed: " .. response.error)
+    cru.log("error", "Request failed: " .. response.error)
 else
     -- HTTP error (4xx, 5xx)
-    crucible.log("error", "HTTP " .. response.status)
+    cru.log("error", "HTTP " .. response.status)
 end
 ```
 

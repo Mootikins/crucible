@@ -15,15 +15,15 @@ Crucible loads Lua configuration from `~/.config/crucible/init.lua` at startup. 
 Create `~/.config/crucible/init.lua`:
 
 ```lua
--- Configure the statusline
-crucible.statusline.setup({
+-- Configure the statusline (cru.* is canonical, crucible.* still works)
+cru.statusline.setup({
     left = {
-        crucible.statusline.mode(),
-        crucible.statusline.model({ max_length = 25 }),
+        cru.statusline.mode(),
+        cru.statusline.model({ max_length = 25 }),
     },
     right = {
-        crucible.statusline.notification({
-            fallback = crucible.statusline.context(),
+        cru.statusline.notification({
+            fallback = cru.statusline.context(),
         }),
     },
 })
@@ -40,22 +40,48 @@ Kiln config runs after global config, so it can override settings.
 
 ## Built-in Modules
 
-All built-in modules are under the `crucible` namespace:
+All built-in modules are under the `cru` namespace (canonical). The `crucible` namespace is a backwards-compatible alias.
 
 ```lua
-crucible.statusline  -- Statusline configuration
-crucible.log         -- Logging (debug, info, warn, error)
-crucible.json_encode -- Convert table to JSON string
-crucible.json_decode -- Parse JSON string to table
-crucible.include     -- Load another config file
+-- Canonical namespace (preferred)
+cru.statusline       -- Statusline configuration
+cru.log(level, msg)  -- Logging (debug, info, warn, error)
+cru.json.encode(tbl) -- Convert table to JSON string
+cru.json.decode(str) -- Parse JSON string to table
+cru.include          -- Load another config file
+
+-- Also available via cru.*
+cru.http             -- HTTP requests (GET, POST, PUT, etc.)
+cru.fs               -- Filesystem operations
+cru.shell            -- Shell command execution
+cru.oq               -- Data query/transform (parse, json, etc.)
+cru.paths            -- Path utilities
+cru.ws               -- WebSocket client
+cru.kiln             -- Kiln access
+cru.graph            -- Knowledge graph queries
+
+-- Utility modules
+cru.timer            -- sleep(secs), timeout(secs, fn)
+cru.ratelimit        -- Rate limiter: new({capacity, interval})
+cru.retry(fn, opts)  -- Exponential backoff retry
+cru.emitter.new()    -- Event emitter (:on, :once, :off, :emit)
+cru.check            -- Argument validation (.string, .number, .boolean, .table, .one_of)
+
+-- Legacy aliases (still work)
+crucible.statusline  -- same as cru.statusline
+crucible.log         -- same as cru.log
+crucible.json_encode -- same as cru.json.encode
+crucible.json_decode -- same as cru.json.decode
+crucible.include     -- same as cru.include
+-- Standalone globals: http, fs, shell, oq, paths (backwards-compat)
 ```
 
 ## Statusline Configuration
 
-The statusline appears at the bottom of the TUI. Configure it with `crucible.statusline.setup()`:
+The statusline appears at the bottom of the TUI. Configure it with `cru.statusline.setup()`:
 
 ```lua
-crucible.statusline.setup({
+cru.statusline.setup({
     left = { ... },      -- Left-aligned components
     center = { ... },    -- Center-aligned components  
     right = { ... },     -- Right-aligned components
@@ -71,10 +97,10 @@ Shows the current chat mode (Normal/Plan/Auto):
 
 ```lua
 -- With defaults
-crucible.statusline.mode()
+cru.statusline.mode()
 
 -- With custom styling
-crucible.statusline.mode({
+cru.statusline.mode({
     normal = { text = " NORMAL ", bg = "green", fg = "black" },
     plan = { text = " PLAN ", bg = "blue", fg = "black" },
     auto = { text = " AUTO ", bg = "yellow", fg = "black" },
@@ -87,10 +113,10 @@ Shows the current model name:
 
 ```lua
 -- With defaults
-crucible.statusline.model()
+cru.statusline.model()
 
 -- With options
-crucible.statusline.model({
+cru.statusline.model({
     max_length = 20,     -- Truncate long names
     fallback = "...",    -- Show when no model
     fg = "cyan",         -- Text color
@@ -103,10 +129,10 @@ Shows context window usage:
 
 ```lua
 -- With defaults (shows "42% ctx")
-crucible.statusline.context()
+cru.statusline.context()
 
 -- With custom format
-crucible.statusline.context({
+cru.statusline.context({
     format = "{percent}%",
     fg = "gray",
 })
@@ -117,8 +143,8 @@ crucible.statusline.context({
 Static text with optional styling:
 
 ```lua
-crucible.statusline.text(" | ", { fg = "gray" })
-crucible.statusline.text("Crucible", { fg = "cyan", bold = true })
+cru.statusline.text(" | ", { fg = "gray" })
+cru.statusline.text("Crucible", { fg = "cyan", bold = true })
 ```
 
 #### spacer()
@@ -126,7 +152,7 @@ crucible.statusline.text("Crucible", { fg = "cyan", bold = true })
 Flexible space that pushes components apart:
 
 ```lua
-crucible.statusline.spacer()
+cru.statusline.spacer()
 ```
 
 #### notification()
@@ -135,12 +161,12 @@ Shows transient notifications (toasts and warning/error counts). Supports an opt
 
 ```lua
 -- Simple notification area
-crucible.statusline.notification({ fg = "yellow" })
+cru.statusline.notification({ fg = "yellow" })
 
 -- With fallback to context usage when idle
-crucible.statusline.notification({
+cru.statusline.notification({
     fg = "yellow",
-    fallback = crucible.statusline.context({ fg = "gray" }),
+    fallback = cru.statusline.context({ fg = "gray" }),
 })
 ```
 
@@ -158,8 +184,8 @@ Split your config into multiple files:
 
 ```lua
 -- ~/.config/crucible/init.lua
-crucible.include("statusline.lua")  -- loads ~/.config/crucible/statusline.lua
-crucible.include("keymaps.lua")     -- loads ~/.config/crucible/keymaps.lua
+cru.include("statusline.lua")  -- loads ~/.config/crucible/statusline.lua
+cru.include("keymaps.lua")     -- loads ~/.config/crucible/keymaps.lua
 ```
 
 ## Example: Full Configuration
@@ -168,26 +194,26 @@ crucible.include("keymaps.lua")     -- loads ~/.config/crucible/keymaps.lua
 -- ~/.config/crucible/init.lua
 
 -- Statusline with all features
-crucible.statusline.setup({
+cru.statusline.setup({
     left = {
-        crucible.statusline.mode({
+        cru.statusline.mode({
             normal = { text = " N ", bg = "#98c379", fg = "black" },
             plan = { text = " P ", bg = "#61afef", fg = "black" },
             auto = { text = " A ", bg = "#e5c07b", fg = "black" },
         }),
     },
     center = {
-        crucible.statusline.model({ max_length = 25, fg = "cyan" }),
+        cru.statusline.model({ max_length = 25, fg = "cyan" }),
     },
     right = {
-        crucible.statusline.notification({
+        cru.statusline.notification({
             fg = "yellow",
-            fallback = crucible.statusline.context({ fg = "gray" }),
+            fallback = cru.statusline.context({ fg = "gray" }),
         }),
     },
 })
 
-crucible.log("info", "Config loaded!")
+cru.log("info", "Config loaded!")
 ```
 
 ## Troubleshooting
@@ -199,7 +225,7 @@ crucible.log("info", "Config loaded!")
 
 **Statusline not changing?**
 - Ensure your `init.lua` runs before the TUI starts (check for syntax errors first)
-- `crucible.statusline.setup()` is loaded at TUI startup — changes require restarting the chat session
+- `cru.statusline.setup()` is loaded at TUI startup — changes require restarting the chat session
 - Crucible ships an embedded Lua default that runs before your `init.lua`. Your config overrides it — you don't need to configure everything from scratch
 - If the Lua runtime fails entirely, a minimal emergency statusline (mode + model) renders in pure Rust
 - Check logs with `RUST_LOG=crucible_lua=debug` to verify config was loaded
