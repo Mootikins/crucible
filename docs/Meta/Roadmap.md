@@ -18,7 +18,7 @@ tags:
 **"Neovim for agents+notes"** — extensible, open, documented
 
 A knowledge management system where:
-- AI agents have perfect context from your vault
+- AI agents have perfect context from your kiln
 - Workflows are defined in markdown and executed by agents
 - Everything is extensible via Lua scripting and hooks
 - Power users get CLI, everyone else gets web/desktop UI eventually

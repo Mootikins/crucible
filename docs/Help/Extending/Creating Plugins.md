@@ -145,7 +145,7 @@ Use doc comment annotations to expose functions as MCP tools:
 function search_notes(args)
     local query = args.query
     local limit = args.limit or 10
-    local results = crucible.search(query, { limit = limit })
+    local results = cru.kiln.search(query, { limit = limit })
     return { results = results }
 end
 ```
@@ -160,7 +160,7 @@ Use `@handler` to react to events:
 --- Log all tool calls
 -- @handler event="tool:after" pattern="*" priority=100
 function log_tools(ctx, event)
-    crucible.log("info", "Tool called: " .. event.tool_name)
+    cru.log("info", "Tool called: " .. event.tool_name)
     return event
 end
 
@@ -195,13 +195,13 @@ See [[Help/Extending/Event Hooks]] for event types and patterns.
 
 ## Shell Commands
 
-Plugins can execute shell commands using `crucible.shell()`:
+Plugins can execute shell commands using `cru.shell()`:
 
 ```lua
 --- Run project tests
 -- @tool name="run_tests" description="Run the test suite"
 function run_tests(args)
-    local result = crucible.shell("cargo", {"test"})
+    local result = cru.shell("cargo", {"test"})
     return { 
         stdout = result.stdout,
         exit_code = result.exit_code
@@ -231,7 +231,7 @@ See [[Help/Config/workspaces]] for full security configuration.
 ### Shell Options
 
 ```lua
-local result = crucible.shell("cargo", {"build"}, {
+local result = cru.shell("cargo", {"build"}, {
     cwd = "/path/to/project",      -- Working directory
     env = { RUST_LOG = "debug" },  -- Environment variables
     timeout = 60000,               -- Timeout in milliseconds

@@ -31,7 +31,7 @@ Use `PopupRequest` for simple "pick one" scenarios. Use `InteractivePanel` for r
 ### PopupRequest
 
 ```lua
-local popup = require("crucible.popup")
+local popup = require("cru.popup")  -- or require("crucible.popup")
 
 -- Create entries
 local entries = {
@@ -49,7 +49,7 @@ local search = popup.request_with_other("Search or select", entries)
 ### InteractivePanel
 
 ```lua
-local ui = require("crucible.ui")
+local ui = require("cru.ui")  -- or require("crucible.ui")
 
 -- Create panel items
 local items = {
@@ -71,7 +71,7 @@ local choices = ui.multi_select("Pick many", {"X", "Y"})
 Control panel behavior with hints:
 
 ```lua
-local ui = require("crucible.ui")
+local ui = require("cru.ui")  -- or require("crucible.ui")
 
 -- Create hints
 local hints = ui.panel_hints()
@@ -121,7 +121,7 @@ A complete example showing a panel-based tool:
 
 ```lua
 -- database_selector.lua
-local ui = require("crucible.ui")
+local ui = require("cru.ui")  -- or require("crucible.ui")
 
 --- Select a database type for your project
 -- @tool name="choose_database" description="Select a database type for your project"
@@ -135,7 +135,7 @@ function choose_database(args)
     local panel = ui.panel("Select database", items)
 
     -- Display panel and get result
-    local result = crucible.show_panel(panel)
+    local result = cru.show_panel(panel)
 
     if result.cancelled then
         return { message = "Cancelled" }

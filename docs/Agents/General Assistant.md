@@ -28,7 +28,7 @@ This agent works best with tools that provide:
 
 - **Note search** - Full-text and semantic search across notes
 - **Note metadata** - Access to frontmatter and properties
-- **Folder browsing** - Navigate vault structure
+- **Folder browsing** - Navigate kiln structure
 - **Note creation/editing** - Create and modify notes
 
 See [[Tool Capabilities]] for compatible MCP servers.

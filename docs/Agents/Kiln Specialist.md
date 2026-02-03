@@ -19,7 +19,7 @@ This agent works best with tools that provide:
 
 - **Semantic search** - Find conceptually related notes
 - **Note metadata** - Inspect frontmatter and properties
-- **Folder listing** - Browse vault structure
+- **Folder listing** - Browse kiln structure
 - **Note creation** - Create new atomic notes
 - **Backlink analysis** - Understand note connections
 

@@ -21,7 +21,7 @@ Event hooks let you react to things happening in your kiln - tool calls, note ch
 --- Log every tool call
 -- @handler event="tool:after" pattern="*" priority=100
 function log_tools(ctx, event)
-    crucible.log("info", "Tool called: " .. event.identifier)
+    cru.log("info", "Tool called: " .. event.identifier)
     return event
 end
 ```
@@ -100,7 +100,7 @@ end
 --- Prevent accidental deletions
 -- @handler event="tool:before" pattern="*delete*" priority=5
 function block_deletes(ctx, event)
-    crucible.log("warn", "Blocked: " .. event.identifier)
+    cru.log("warn", "Blocked: " .. event.identifier)
     event.cancelled = true
     return event
 end
