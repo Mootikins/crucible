@@ -1039,7 +1039,7 @@ fn parse_capability(s: &str) -> Option<Capability> {
         "filesystem" => Some(Capability::Filesystem),
         "network" => Some(Capability::Network),
         "shell" => Some(Capability::Shell),
-        "kiln" | "vault" => Some(Capability::Kiln),
+        "kiln" => Some(Capability::Kiln),
         "agent" => Some(Capability::Agent),
         "ui" => Some(Capability::Ui),
         "config" => Some(Capability::Config),
@@ -2142,14 +2142,14 @@ return {
 return {
     name = "cap-test",
     version = "1.0.0",
-    capabilities = { "vault", "ui", "config" },
+    capabilities = { "kiln", "ui", "config" },
 }
 "#;
         let spec = load_plugin_spec_from_source(source, Path::new("test/init.lua"))
             .unwrap()
             .unwrap();
 
-        assert_eq!(spec.capabilities, vec!["vault", "ui", "config"]);
+        assert_eq!(spec.capabilities, vec!["kiln", "ui", "config"]);
     }
 
     #[test]
@@ -2286,7 +2286,7 @@ return {{
     name = "{}",
     version = "1.0.0",
     description = "Test spec plugin",
-    capabilities = {{ "vault" }},
+    capabilities = {{ "kiln" }},
 
     tools = {{
         search = {{
