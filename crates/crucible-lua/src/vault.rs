@@ -1,7 +1,7 @@
 //! Kiln API module for Lua scripts
 //!
 //! Provides `cru.kiln.*` functions for accessing notes and knowledge graph
-//! from Lua scripts. Also available as `cru.vault.*` for backwards compatibility.
+//! from Lua scripts.
 //!
 //! ## Usage in Lua
 //!
@@ -44,9 +44,9 @@ use crucible_core::storage::{GraphView, NoteStore};
 use mlua::{Lua, LuaSerdeExt, Table, Value};
 use std::sync::Arc;
 
-/// Register the kiln/vault module with a Lua state
+/// Register the kiln module with a Lua state
 ///
-/// This creates the `cru.kiln` namespace (and `cru.vault` alias) with stub functions.
+/// This creates the `cru.kiln` namespace with stub functions.
 /// Use `register_vault_module_with_store` to add database-backed functionality.
 pub fn register_vault_module(lua: &Lua) -> Result<(), LuaError> {
     let vault = lua.create_table()?;
@@ -85,17 +85,12 @@ pub fn register_vault_module(lua: &Lua) -> Result<(), LuaError> {
     })?;
     vault.set("neighbors", neighbors_stub)?;
 
-    register_in_namespaces(lua, "kiln", vault.clone())?;
-    register_in_namespaces(lua, "vault", vault)?;
+    register_in_namespaces(lua, "kiln", vault)?;
 
     Ok(())
 }
 
-/// Register the vault module with NoteStore for database-backed queries.
-///
-/// Fetches the table via `cru.vault` and mutates it in place. Because
-/// `cru.kiln` and `cru.vault` are the same Lua table (mlua `Table::clone`
-/// is a reference clone, not a deep copy), mutations propagate to both.
+/// Register the kiln module with NoteStore for database-backed queries.
 pub fn register_vault_module_with_store(
     lua: &Lua,
     store: Arc<dyn NoteStore>,
@@ -104,9 +99,7 @@ pub fn register_vault_module_with_store(
 
     let globals = lua.globals();
     let cru: Table = globals.get("cru")?;
-    // NB: cru.kiln and cru.vault share the same Lua table reference,
-    // so mutating this table updates both namespaces.
-    let vault: Table = cru.get("vault")?;
+    let vault: Table = cru.get("kiln")?;
 
     let s = Arc::clone(&store);
     let list_fn = lua.create_async_function(move |lua, limit: Option<usize>| {
@@ -158,14 +151,14 @@ pub fn register_vault_module_with_store(
     Ok(())
 }
 
-/// Register GraphView functions on the vault module for graph traversal
+/// Register GraphView functions on the kiln module for graph traversal.
 pub fn register_vault_module_with_graph(
     lua: &Lua,
     view: Arc<dyn GraphView>,
 ) -> Result<(), LuaError> {
     let globals = lua.globals();
     let cru: Table = globals.get("cru")?;
-    let vault: Table = cru.get("vault")?;
+    let vault: Table = cru.get("kiln")?;
 
     let v = Arc::clone(&view);
     let outlinks_fn = lua.create_function(move |lua, path: String| {
@@ -192,7 +185,7 @@ pub fn register_vault_module_with_graph(
     Ok(())
 }
 
-/// Register the vault module with both NoteStore and GraphView
+/// Register the kiln module with both NoteStore and GraphView
 pub fn register_vault_module_full(
     lua: &Lua,
     store: Arc<dyn NoteStore>,
@@ -262,22 +255,7 @@ mod tests {
     }
 
     #[test]
-    fn test_register_vault_module() {
-        let lua = setup_lua();
-
-        let cru: Table = lua.globals().get("cru").expect("cru should exist");
-        let vault: Table = cru.get("vault").expect("cru.vault should exist");
-
-        assert!(vault.contains_key("list").unwrap());
-        assert!(vault.contains_key("get").unwrap());
-        assert!(vault.contains_key("search").unwrap());
-        assert!(vault.contains_key("outlinks").unwrap());
-        assert!(vault.contains_key("backlinks").unwrap());
-        assert!(vault.contains_key("neighbors").unwrap());
-    }
-
-    #[test]
-    fn test_kiln_alias_exists() {
+    fn test_register_kiln_module() {
         let lua = setup_lua();
 
         let cru: Table = lua.globals().get("cru").expect("cru should exist");
@@ -286,43 +264,30 @@ mod tests {
         assert!(kiln.contains_key("list").unwrap());
         assert!(kiln.contains_key("get").unwrap());
         assert!(kiln.contains_key("search").unwrap());
+        assert!(kiln.contains_key("outlinks").unwrap());
+        assert!(kiln.contains_key("backlinks").unwrap());
+        assert!(kiln.contains_key("neighbors").unwrap());
     }
 
     #[test]
-    fn test_kiln_and_vault_share_same_table() {
-        let lua = setup_lua();
-
-        let cru: Table = lua.globals().get("cru").expect("cru should exist");
-        let _kiln: Table = cru.get("kiln").expect("cru.kiln should exist");
-        let _vault: Table = cru.get("vault").expect("cru.vault should exist");
-
-        // Both point to the same Lua table — modifying one affects the other
-        let result: bool = lua
-            .load(r#"return cru.kiln.list == cru.vault.list"#)
-            .eval()
-            .unwrap();
-        assert!(result, "cru.kiln and cru.vault should share the same functions");
-    }
-
-    #[test]
-    fn test_vault_also_registered_as_crucible() {
+    fn test_kiln_also_registered_as_crucible() {
         let lua = setup_lua();
 
         let crucible: Table = lua
             .globals()
             .get("crucible")
             .expect("crucible should exist");
-        let vault: Table = crucible.get("vault").expect("crucible.vault should exist");
+        let kiln: Table = crucible.get("kiln").expect("crucible.kiln should exist");
 
-        assert!(vault.contains_key("list").unwrap());
+        assert!(kiln.contains_key("list").unwrap());
     }
 
     #[tokio::test]
-    async fn test_vault_list_stub_returns_empty() {
+    async fn test_kiln_list_stub_returns_empty() {
         let lua = setup_lua();
 
         let result: Table = lua
-            .load(r#"return cru.vault.list()"#)
+            .load(r#"return cru.kiln.list()"#)
             .eval_async()
             .await
             .unwrap();
@@ -331,11 +296,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_vault_get_stub_returns_nil() {
+    async fn test_kiln_get_stub_returns_nil() {
         let lua = setup_lua();
 
         let result: Value = lua
-            .load(r#"return cru.vault.get("test.md")"#)
+            .load(r#"return cru.kiln.get("test.md")"#)
             .eval_async()
             .await
             .unwrap();
@@ -344,11 +309,11 @@ mod tests {
     }
 
     #[test]
-    fn test_vault_outlinks_stub_returns_empty() {
+    fn test_kiln_outlinks_stub_returns_empty() {
         let lua = setup_lua();
 
         let result: Table = lua
-            .load(r#"return cru.vault.outlinks("test.md")"#)
+            .load(r#"return cru.kiln.outlinks("test.md")"#)
             .eval()
             .unwrap();
 
@@ -356,11 +321,11 @@ mod tests {
     }
 
     #[test]
-    fn test_vault_backlinks_stub_returns_empty() {
+    fn test_kiln_backlinks_stub_returns_empty() {
         let lua = setup_lua();
 
         let result: Table = lua
-            .load(r#"return cru.vault.backlinks("test.md")"#)
+            .load(r#"return cru.kiln.backlinks("test.md")"#)
             .eval()
             .unwrap();
 
@@ -368,11 +333,11 @@ mod tests {
     }
 
     #[test]
-    fn test_vault_neighbors_stub_returns_empty() {
+    fn test_kiln_neighbors_stub_returns_empty() {
         let lua = setup_lua();
 
         let result: Table = lua
-            .load(r#"return cru.vault.neighbors("test.md", 2)"#)
+            .load(r#"return cru.kiln.neighbors("test.md", 2)"#)
             .eval()
             .unwrap();
 
@@ -488,7 +453,7 @@ mod store_tests {
         let lua = setup_lua_with_store(store);
 
         let result: Table = lua
-            .load(r#"return cru.vault.list()"#)
+            .load(r#"return cru.kiln.list()"#)
             .eval_async()
             .await
             .unwrap();
@@ -506,7 +471,7 @@ mod store_tests {
         let lua = setup_lua_with_store(store);
 
         let result: Table = lua
-            .load(r#"return cru.vault.list(2)"#)
+            .load(r#"return cru.kiln.list(2)"#)
             .eval_async()
             .await
             .unwrap();
@@ -523,7 +488,7 @@ mod store_tests {
         let lua = setup_lua_with_store(store);
 
         let result: Table = lua
-            .load(r#"return cru.vault.get("test.md")"#)
+            .load(r#"return cru.kiln.get("test.md")"#)
             .eval_async()
             .await
             .unwrap();
@@ -539,7 +504,7 @@ mod store_tests {
         let lua = setup_lua_with_store(store);
 
         let result: Value = lua
-            .load(r#"return cru.vault.get("nonexistent.md")"#)
+            .load(r#"return cru.kiln.get("nonexistent.md")"#)
             .eval_async()
             .await
             .unwrap();
@@ -557,7 +522,7 @@ mod store_tests {
         let result: Table = lua
             .load(
                 r#"
-                local note = cru.vault.get("test.md")
+                local note = cru.kiln.get("test.md")
                 return note.tags
                 "#,
             )
@@ -580,7 +545,7 @@ mod store_tests {
         let result: Table = lua
             .load(
                 r#"
-                local note = cru.vault.get("test.md")
+                local note = cru.kiln.get("test.md")
                 return note.links_to
                 "#,
             )
@@ -602,7 +567,7 @@ mod store_tests {
         let result: Table = lua
             .load(
                 r#"
-                local note = cru.vault.get("test.md")
+                local note = cru.kiln.get("test.md")
                 return {
                     has_path = note.path ~= nil,
                     has_title = note.title ~= nil,
@@ -704,7 +669,7 @@ mod graph_tests {
         let lua = setup_lua_with_graph(view);
 
         let result: Table = lua
-            .load(r#"return cru.vault.outlinks("test.md")"#)
+            .load(r#"return cru.kiln.outlinks("test.md")"#)
             .eval()
             .unwrap();
 
@@ -719,7 +684,7 @@ mod graph_tests {
         let lua = setup_lua_with_graph(view);
 
         let result: Table = lua
-            .load(r#"return cru.vault.outlinks("orphan.md")"#)
+            .load(r#"return cru.kiln.outlinks("orphan.md")"#)
             .eval()
             .unwrap();
 
@@ -732,7 +697,7 @@ mod graph_tests {
         let lua = setup_lua_with_graph(view);
 
         let result: Table = lua
-            .load(r#"return cru.vault.backlinks("test.md")"#)
+            .load(r#"return cru.kiln.backlinks("test.md")"#)
             .eval()
             .unwrap();
 
@@ -746,7 +711,7 @@ mod graph_tests {
         let lua = setup_lua_with_graph(view);
 
         let result: Table = lua
-            .load(r#"return cru.vault.backlinks("orphan.md")"#)
+            .load(r#"return cru.kiln.backlinks("orphan.md")"#)
             .eval()
             .unwrap();
 
@@ -759,7 +724,7 @@ mod graph_tests {
         let lua = setup_lua_with_graph(view);
 
         let result: Table = lua
-            .load(r#"return cru.vault.neighbors("test.md")"#)
+            .load(r#"return cru.kiln.neighbors("test.md")"#)
             .eval()
             .unwrap();
 
@@ -772,7 +737,7 @@ mod graph_tests {
         let lua = setup_lua_with_graph(view);
 
         let result: Table = lua
-            .load(r#"return cru.vault.neighbors("test.md", 3)"#)
+            .load(r#"return cru.kiln.neighbors("test.md", 3)"#)
             .eval()
             .unwrap();
 
@@ -785,7 +750,7 @@ mod graph_tests {
         let lua = setup_lua_with_graph(view);
 
         let result: Table = lua
-            .load(r#"return cru.vault.neighbors("isolated.md", 2)"#)
+            .load(r#"return cru.kiln.neighbors("isolated.md", 2)"#)
             .eval()
             .unwrap();
 
