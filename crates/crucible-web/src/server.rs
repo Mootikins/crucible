@@ -18,8 +18,6 @@ pub struct WebConfig {
     pub host: String,
     /// Optional override for static asset directory
     pub web_dir: Option<String>,
-    /// Agent path for ACP connection
-    pub agent_path: String,
 }
 
 impl Default for WebConfig {
@@ -28,7 +26,6 @@ impl Default for WebConfig {
             port: 3000,
             host: "127.0.0.1".to_string(),
             web_dir: None,
-            agent_path: "claude".to_string(),
         }
     }
 }
@@ -49,17 +46,12 @@ impl WebConfig {
         self
     }
 
-    pub fn with_agent_path(mut self, path: impl Into<String>) -> Self {
-        self.agent_path = path.into();
-        self
-    }
+
 }
 
 /// Start the web server
 pub async fn start_server(config: WebConfig) -> Result<()> {
-    // Initialize chat service
     let chat_config = crate::services::chat::ChatServiceConfig {
-        agent_path: config.agent_path.clone(),
         channel_buffer: 100,
     };
     let chat_service = Arc::new(ChatService::new(chat_config));
