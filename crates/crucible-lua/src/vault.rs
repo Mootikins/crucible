@@ -91,7 +91,11 @@ pub fn register_vault_module(lua: &Lua) -> Result<(), LuaError> {
     Ok(())
 }
 
-/// Register the vault module with NoteStore for database-backed queries
+/// Register the vault module with NoteStore for database-backed queries.
+///
+/// Fetches the table via `cru.vault` and mutates it in place. Because
+/// `cru.kiln` and `cru.vault` are the same Lua table (mlua `Table::clone`
+/// is a reference clone, not a deep copy), mutations propagate to both.
 pub fn register_vault_module_with_store(
     lua: &Lua,
     store: Arc<dyn NoteStore>,
@@ -100,6 +104,8 @@ pub fn register_vault_module_with_store(
 
     let globals = lua.globals();
     let cru: Table = globals.get("cru")?;
+    // NB: cru.kiln and cru.vault share the same Lua table reference,
+    // so mutating this table updates both namespaces.
     let vault: Table = cru.get("vault")?;
 
     let s = Arc::clone(&store);
