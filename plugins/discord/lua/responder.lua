@@ -116,17 +116,59 @@ local function chunk_text(text, max_len)
     return chunks
 end
 
+--- Format tool call args in a clean, tool-specific way.
+--- bash: show command directly in code block
+--- read_file/write_file: show path
+--- others: show as key: value pairs
 local function format_tool_call(part)
-    local brief = part.args_brief or ""
-    if #brief > 200 then brief = brief:sub(1, 197) .. "..." end
-    return "> \u{1f527} `" .. (part.tool or "?") .. "` " .. brief
+    local tool = part.tool or "?"
+    local raw = part.args_brief or ""
+
+    local ok, args = pcall(cru.json.decode, raw)
+    if not ok then args = nil end
+
+    if tool == "bash" and args and args.command then
+        return "> \u{1f527} `bash` ```\n" .. args.command .. "\n```"
+    end
+
+    if (tool == "read_file" or tool == "write_file") and args and args.path then
+        return "> \u{1f527} `" .. tool .. "` `" .. args.path .. "`"
+    end
+
+    if tool == "edit_file" and args and args.path then
+        return "> \u{1f527} `edit_file` `" .. args.path .. "`"
+    end
+
+    if tool == "grep" and args then
+        local pattern = args.pattern or args.query or ""
+        local path = args.path or ""
+        return "> \u{1f527} `grep` `" .. pattern .. "` in `" .. path .. "`"
+    end
+
+    if args then
+        local parts = {}
+        for k, v in pairs(args) do
+            local val = type(v) == "string" and v or cru.json.encode(v)
+            if #val > 80 then val = val:sub(1, 77) .. "..." end
+            table.insert(parts, k .. ": " .. val)
+        end
+        if #parts > 0 then
+            return "> \u{1f527} `" .. tool .. "`\n> " .. table.concat(parts, "\n> ")
+        end
+    end
+
+    if #raw > 200 then raw = raw:sub(1, 197) .. "..." end
+    return "> \u{1f527} `" .. tool .. "` " .. raw
 end
 
 local function format_tool_result(part)
     local icon = part.is_error and "\u{274c}" or "\u{2705}"
     local brief = part.result_brief or ""
-    if #brief > 500 then brief = brief:sub(1, 497) .. "..." end
-    return "> " .. icon .. " " .. brief
+    if #brief > 800 then brief = brief:sub(1, 797) .. "..." end
+    if #brief > 100 then
+        return "> " .. icon .. "\n```\n" .. brief .. "\n```"
+    end
+    return "> " .. icon .. " `" .. brief .. "`"
 end
 
 local function send_chunked(channel_id, text, reply_to_msg_id)
@@ -145,8 +187,8 @@ local function send_chunked(channel_id, text, reply_to_msg_id)
     return nil
 end
 
---- Wait for a y/n reply from the original user in this channel.
---- Returns true (allowed), false (denied), or nil (timeout).
+--- Wait for a permission reply from the original user.
+--- Returns {allowed=bool, scope=string, reason=string|nil} or nil on timeout.
 local function wait_for_permission_reply(channel_id, user_id)
     M.pending_replies[channel_id] = { state = "waiting", user_id = user_id }
     local waited = 0
@@ -159,7 +201,11 @@ local function wait_for_permission_reply(channel_id, user_id)
     local pending = M.pending_replies[channel_id]
     M.pending_replies[channel_id] = nil
     if not pending or pending.state == "waiting" then return nil end
-    return pending.state == "allowed"
+    return {
+        allowed = pending.state == "allowed",
+        scope = pending.scope or "once",
+        reason = pending.reason,
+    }
 end
 
 --- Format a permission request prompt for Discord.
@@ -167,7 +213,7 @@ local function format_permission_prompt(part)
     local desc = part.description or ""
     if #desc > 300 then desc = desc:sub(1, 297) .. "..." end
     return string.format(
-        "> \u{26a0}\u{fe0f} **%s** wants to run:\n> ```\n> %s\n> ```\n> Reply **y** to allow, **n** to deny",
+        "> \u{26a0}\u{fe0f} **%s** wants to run:\n> ```\n> %s\n> ```\n> **y** / **n** / **y!** (allow session) / **n, reason**",
         part.tool or "unknown",
         desc
     )
@@ -195,11 +241,25 @@ function M.respond(session_id, channel_id, user_message, reply_to_msg_id, user_i
         return
     end
 
+    local last_typing = 0
+    local function next_part_with_typing()
+        while true do
+            -- next_part() blocks until a part arrives or stream ends
+            -- We can't poll it, but we fire typing before each call
+            local now = cru.timer.clock()
+            if now - last_typing > TYPING_INTERVAL then
+                pcall(api.trigger_typing, channel_id)
+                last_typing = now
+            end
+            return next_part()
+        end
+    end
+
     local first_message = true
     local part_count = 0
 
     while true do
-        local part = next_part()
+        local part = next_part_with_typing()
         if part == nil then break end
         part_count = part_count + 1
 
@@ -231,19 +291,20 @@ function M.respond(session_id, channel_id, user_message, reply_to_msg_id, user_i
             api.send_message(channel_id, prompt, { reply_to = reply_id })
             first_message = false
 
-            local wait_ok, allowed = pcall(wait_for_permission_reply, channel_id, user_id)
+            local wait_ok, reply = pcall(wait_for_permission_reply, channel_id, user_id)
             if not wait_ok then
                 M.pending_replies[channel_id] = nil
-                allowed = nil
+                reply = nil
             end
-            if allowed == nil then
+            if not reply then
                 api.send_message(channel_id, "> \u{23f0} Permission timed out — denying.")
-                allowed = false
+                reply = { allowed = false, scope = "once" }
             end
 
             local response = {
-                allowed = allowed,
-                scope = "once",
+                allowed = reply.allowed,
+                scope = reply.scope,
+                reason = reply.reason,
             }
             local _, respond_err = cru.sessions.interaction_respond(
                 session_id, part.request_id, response
@@ -252,10 +313,13 @@ function M.respond(session_id, channel_id, user_message, reply_to_msg_id, user_i
                 cru.log("warn", "Failed to respond to permission: " .. tostring(respond_err))
             end
 
-            if allowed then
-                api.send_message(channel_id, "> \u{2705} Approved")
+            if reply.allowed then
+                local note = reply.scope == "session" and " (session)" or ""
+                api.send_message(channel_id, "> \u{2705} Approved" .. note)
             else
-                api.send_message(channel_id, "> \u{1f6ab} Denied")
+                local note = reply.reason and (": " .. reply.reason) or ""
+                if reply.scope == "session" then note = " (all denied)" .. note end
+                api.send_message(channel_id, "> \u{1f6ab} Denied" .. note)
             end
             pcall(api.trigger_typing, channel_id)
         end
