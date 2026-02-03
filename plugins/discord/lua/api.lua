@@ -29,6 +29,8 @@ local function api_request(method, path, body)
             r = cru.http.post(url, opts)
         elseif method == "PUT" then
             r = cru.http.put(url, opts)
+        elseif method == "PATCH" then
+            r = cru.http.patch(url, opts)
         end
 
         if r.status == 429 or (r.status >= 500 and r.status < 600) then
@@ -72,6 +74,18 @@ function M.get_messages(channel_id, limit, before)
 end
 
 -- ---------------------------------------------------------------------------
+-- Typing & DM helpers
+-- ---------------------------------------------------------------------------
+
+function M.trigger_typing(channel_id)
+    return api_request("POST", "/channels/" .. channel_id .. "/typing")
+end
+
+function M.create_dm_channel(user_id)
+    return api_request("POST", "/users/@me/channels", { recipient_id = user_id })
+end
+
+-- ---------------------------------------------------------------------------
 -- Channels & Guilds
 -- ---------------------------------------------------------------------------
 
@@ -103,6 +117,12 @@ function M.respond_interaction(interaction_id, interaction_token, response)
     return api_request("POST",
         "/interactions/" .. interaction_id .. "/" .. interaction_token .. "/callback",
         response)
+end
+
+function M.edit_interaction_response(app_id, interaction_token, data)
+    return api_request("PATCH",
+        "/webhooks/" .. app_id .. "/" .. interaction_token .. "/messages/@original",
+        data)
 end
 
 return M
