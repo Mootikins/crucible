@@ -125,15 +125,12 @@ mod tests {
             description: String::new(),
             author: String::new(),
             license: None,
-            homepage: None,
-            repository: None,
             main: "init.lua".to_string(),
             init: None,
             capabilities,
             dependencies: Vec::new(),
             exports: Default::default(),
             config: None,
-            keywords: Vec::new(),
             enabled: None,
         }
     }

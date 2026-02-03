@@ -41,8 +41,8 @@ end
 local function find_orphans(notes)
     local orphans = {}
     for _, note in ipairs(notes) do
-        local outlinks = cru.vault.outlinks(note.path) or {}
-        local backlinks = cru.vault.backlinks(note.path) or {}
+        local outlinks = cru.kiln.outlinks(note.path) or {}
+        local backlinks = cru.kiln.backlinks(note.path) or {}
         if #outlinks == 0 and #backlinks == 0 then
             table.insert(orphans, note.path)
         end
@@ -75,7 +75,7 @@ function M.refresh(force)
         end
     end
 
-    local notes = cru.vault.list() or {}
+    local notes = cru.kiln.list() or {}
     local tag_freq = build_tag_frequency(notes)
     local orphans = find_orphans(notes)
     local recents = recent_notes(notes, 20)

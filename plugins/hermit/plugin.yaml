@@ -7,7 +7,7 @@ license: MIT
 main: init.lua
 
 capabilities:
-  - vault
+  - kiln
   - ui
   - config
   - filesystem

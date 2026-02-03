@@ -20,9 +20,9 @@ function M.on_note_created(ctx, event)
         return event
     end
 
-    local outlinks = cru.vault.outlinks(path) or {}
-    local backlinks = cru.vault.backlinks(path) or {}
-    local neighbors = cru.vault.neighbors(path, 2) or {}
+    local outlinks = cru.kiln.outlinks(path) or {}
+    local backlinks = cru.kiln.backlinks(path) or {}
+    local neighbors = cru.kiln.neighbors(path, 2) or {}
 
     local suggestions = {}
     local linked = {}
@@ -45,7 +45,7 @@ function M.on_note_created(ctx, event)
             #suggestions,
             table.concat(suggestions, ", ")
         )
-        crucible.notify(msg, crucible.log.levels.INFO)
+        cru.log("info", msg)
     end
 
     -- Invalidate cache since the collection changed
@@ -65,11 +65,11 @@ function M.on_note_modified(ctx, event)
         return event
     end
 
-    local outlinks = cru.vault.outlinks(path) or {}
+    local outlinks = cru.kiln.outlinks(path) or {}
     local broken = {}
 
     for _, link in ipairs(outlinks) do
-        local target = cru.vault.get(link)
+        local target = cru.kiln.get(link)
         if not target then
             table.insert(broken, link)
         end
@@ -81,7 +81,7 @@ function M.on_note_modified(ctx, event)
             path,
             table.concat(broken, ", ")
         )
-        crucible.notify(msg, crucible.log.levels.WARN)
+        cru.log("warn", msg)
     end
 
     -- Invalidate cache since content changed
@@ -104,7 +104,7 @@ function M.on_session_started(ctx, event)
             profile.note_count,
             profile.orphan_count
         )
-        crucible.notify(msg, crucible.log.levels.INFO)
+        cru.log("info", msg)
     end
 
     return event
