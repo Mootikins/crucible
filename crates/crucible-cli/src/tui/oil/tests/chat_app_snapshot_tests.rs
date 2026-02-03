@@ -1718,3 +1718,233 @@ mod overlay_snapshots {
         assert_snapshot!(output);
     }
 }
+
+// =============================================================================
+// Thinking Display Snapshot Tests
+// =============================================================================
+
+#[test]
+fn snapshot_thinking_delta_during_stream() {
+    let mut app = OilChatApp::default();
+    app.on_message(ChatAppMsg::UserMessage("Solve this puzzle".to_string()));
+    app.on_message(ChatAppMsg::ThinkingDelta(
+        "Let me think about this step by step...".to_string(),
+    ));
+    app.on_message(ChatAppMsg::ThinkingDelta(
+        "\nFirst, I need to consider the constraints.".to_string(),
+    ));
+    assert_snapshot!(render_app(&app));
+}
+
+#[test]
+fn snapshot_thinking_then_text_response() {
+    let mut app = OilChatApp::default();
+    app.on_message(ChatAppMsg::UserMessage("What is 2+2?".to_string()));
+    app.on_message(ChatAppMsg::ThinkingDelta(
+        "Simple arithmetic...".to_string(),
+    ));
+    app.on_message(ChatAppMsg::TextDelta("The answer is 4.".to_string()));
+    app.on_message(ChatAppMsg::StreamComplete);
+    assert_snapshot!(render_app(&app));
+}
+
+// =============================================================================
+// Context Usage Display Snapshot Tests
+// =============================================================================
+
+#[test]
+fn snapshot_context_usage_in_status_bar() {
+    let mut app = OilChatApp::default();
+    app.on_message(ChatAppMsg::ContextUsage {
+        used: 1500,
+        total: 8192,
+    });
+    assert_snapshot!(render_app(&app));
+}
+
+#[test]
+fn snapshot_context_usage_near_limit() {
+    let mut app = OilChatApp::default();
+    app.on_message(ChatAppMsg::ContextUsage {
+        used: 7800,
+        total: 8192,
+    });
+    app.on_message(ChatAppMsg::UserMessage("Almost full context".to_string()));
+    app.on_message(ChatAppMsg::TextDelta(
+        "I see the context is nearly full.".to_string(),
+    ));
+    app.on_message(ChatAppMsg::StreamComplete);
+    assert_snapshot!(render_app(&app));
+}
+
+// =============================================================================
+// Subagent Display Snapshot Tests
+// =============================================================================
+
+#[test]
+fn snapshot_subagent_spawned() {
+    let mut app = OilChatApp::default();
+    app.on_message(ChatAppMsg::UserMessage("Research this topic".to_string()));
+    app.on_message(ChatAppMsg::TextDelta(
+        "I'll spawn some subagents.".to_string(),
+    ));
+    app.on_message(ChatAppMsg::SubagentSpawned {
+        id: "sub-1".to_string(),
+        prompt: "Search for Rust memory safety patterns".to_string(),
+    });
+    assert_snapshot!(render_app(&app));
+}
+
+#[test]
+fn snapshot_subagent_completed() {
+    let mut app = OilChatApp::default();
+    app.on_message(ChatAppMsg::UserMessage("Research this".to_string()));
+    app.on_message(ChatAppMsg::TextDelta(
+        "Spawning research agents...".to_string(),
+    ));
+    app.on_message(ChatAppMsg::SubagentSpawned {
+        id: "sub-1".to_string(),
+        prompt: "Search for patterns".to_string(),
+    });
+    app.on_message(ChatAppMsg::SubagentCompleted {
+        id: "sub-1".to_string(),
+        summary: "Found 5 relevant patterns in the codebase".to_string(),
+    });
+    assert_snapshot!(render_app(&app));
+}
+
+#[test]
+fn snapshot_subagent_failed() {
+    let mut app = OilChatApp::default();
+    app.on_message(ChatAppMsg::UserMessage("Do something complex".to_string()));
+    app.on_message(ChatAppMsg::SubagentSpawned {
+        id: "sub-err".to_string(),
+        prompt: "Analyze remote API".to_string(),
+    });
+    app.on_message(ChatAppMsg::SubagentFailed {
+        id: "sub-err".to_string(),
+        error: "Connection timeout after 30s".to_string(),
+    });
+    assert_snapshot!(render_app(&app));
+}
+
+#[test]
+fn snapshot_multiple_subagents_parallel() {
+    let mut app = OilChatApp::default();
+    app.on_message(ChatAppMsg::UserMessage("Broad research".to_string()));
+    app.on_message(ChatAppMsg::TextDelta(
+        "Launching parallel research...".to_string(),
+    ));
+    app.on_message(ChatAppMsg::SubagentSpawned {
+        id: "sub-a".to_string(),
+        prompt: "Search database layer".to_string(),
+    });
+    app.on_message(ChatAppMsg::SubagentSpawned {
+        id: "sub-b".to_string(),
+        prompt: "Search API layer".to_string(),
+    });
+    app.on_message(ChatAppMsg::SubagentCompleted {
+        id: "sub-a".to_string(),
+        summary: "Found 3 database modules".to_string(),
+    });
+    assert_snapshot!(render_app(&app));
+}
+
+// =============================================================================
+// Precognition Result Snapshot Tests
+// =============================================================================
+
+#[test]
+fn snapshot_precognition_with_results() {
+    let mut app = OilChatApp::default();
+    app.on_message(ChatAppMsg::PrecognitionResult { notes_count: 5 });
+    app.on_message(ChatAppMsg::UserMessage("Tell me about auth".to_string()));
+    app.on_message(ChatAppMsg::TextDelta(
+        "Based on your notes about authentication...".to_string(),
+    ));
+    app.on_message(ChatAppMsg::StreamComplete);
+    assert_snapshot!(render_app(&app));
+}
+
+// =============================================================================
+// Multi-turn with Tools Snapshot Tests
+// =============================================================================
+
+#[test]
+fn snapshot_multi_turn_with_tool_calls() {
+    let mut app = OilChatApp::default();
+
+    // Turn 1: user asks, agent uses tool
+    app.on_message(ChatAppMsg::UserMessage("Read my config file".to_string()));
+    app.on_message(ChatAppMsg::TextDelta(
+        "Let me read that for you.".to_string(),
+    ));
+    app.on_message(ChatAppMsg::ToolCall {
+        name: "read_file".to_string(),
+        args: r#"{"path":"config.toml"}"#.to_string(),
+        call_id: Some("call-1".to_string()),
+    });
+    app.on_message(ChatAppMsg::ToolResultDelta {
+        name: "read_file".to_string(),
+        delta: "[kiln]\npath = \"~/notes\"".to_string(),
+        call_id: Some("call-1".to_string()),
+    });
+    app.on_message(ChatAppMsg::ToolResultComplete {
+        name: "read_file".to_string(),
+        call_id: Some("call-1".to_string()),
+    });
+    app.on_message(ChatAppMsg::TextDelta(
+        "\nYour config sets the kiln path to ~/notes.".to_string(),
+    ));
+    app.on_message(ChatAppMsg::StreamComplete);
+
+    // Turn 2: follow-up question
+    app.on_message(ChatAppMsg::UserMessage("Change it to ~/vault".to_string()));
+    app.on_message(ChatAppMsg::TextDelta("I'll update that now.".to_string()));
+    app.on_message(ChatAppMsg::ToolCall {
+        name: "edit_file".to_string(),
+        args: r#"{"path":"config.toml","content":"[kiln]\npath = \"~/vault\""}"#.to_string(),
+        call_id: Some("call-2".to_string()),
+    });
+    app.on_message(ChatAppMsg::ToolResultDelta {
+        name: "edit_file".to_string(),
+        delta: "File updated successfully".to_string(),
+        call_id: Some("call-2".to_string()),
+    });
+    app.on_message(ChatAppMsg::ToolResultComplete {
+        name: "edit_file".to_string(),
+        call_id: Some("call-2".to_string()),
+    });
+    app.on_message(ChatAppMsg::TextDelta("\nDone! Config updated.".to_string()));
+    app.on_message(ChatAppMsg::StreamComplete);
+
+    assert_snapshot!(render_app(&app));
+}
+
+// =============================================================================
+// Error During Stream Snapshot Tests
+// =============================================================================
+
+#[test]
+fn snapshot_error_interrupts_streaming() {
+    let mut app = OilChatApp::default();
+    app.on_message(ChatAppMsg::UserMessage("Tell me a story".to_string()));
+    app.on_message(ChatAppMsg::TextDelta(
+        "Once upon a time, there was a ".to_string(),
+    ));
+    app.on_message(ChatAppMsg::Error(
+        "Connection lost: daemon unreachable".to_string(),
+    ));
+    assert_snapshot!(render_app(&app));
+}
+
+#[test]
+fn snapshot_stream_cancelled_by_user() {
+    let mut app = OilChatApp::default();
+    app.on_message(ChatAppMsg::UserMessage("Write a long essay".to_string()));
+    app.on_message(ChatAppMsg::TextDelta(
+        "Here is my comprehensive analysis of the topic...".to_string(),
+    ));
+    app.on_message(ChatAppMsg::StreamCancelled);
+    assert_snapshot!(render_app(&app));
+}
