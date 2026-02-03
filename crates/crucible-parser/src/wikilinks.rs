@@ -18,8 +18,9 @@ use std::sync::{Arc, LazyLock};
 static WIKILINK_REGEX: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(!?)\[\[([^\]]+)\]\]").expect("wikilink regex"));
 
-static CODE_BLOCK_REGEX: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?m)^```[\s\S]*?^```|^    .*$|`[^`]+`").expect("code block regex"));
+static CODE_BLOCK_REGEX: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?m)^```[\s\S]*?^```|^    .*$|`[^`]+`").expect("code block regex")
+});
 
 /// Wikilink syntax extension
 pub struct WikilinkExtension;

@@ -326,7 +326,10 @@ mod tests {
     #[test]
     fn test_retryable_errors() {
         assert!(BackendError::Http("connection refused".into()).is_retryable());
-        assert!(BackendError::RateLimit { retry_after_secs: 30 }.is_retryable());
+        assert!(BackendError::RateLimit {
+            retry_after_secs: 30
+        }
+        .is_retryable());
         assert!(BackendError::Timeout { timeout_secs: 60 }.is_retryable());
     }
 
@@ -342,7 +345,10 @@ mod tests {
     #[test]
     fn test_retry_delay_secs() {
         assert_eq!(
-            BackendError::RateLimit { retry_after_secs: 30 }.retry_delay_secs(),
+            BackendError::RateLimit {
+                retry_after_secs: 30
+            }
+            .retry_delay_secs(),
             Some(30)
         );
         assert_eq!(BackendError::Http("err".into()).retry_delay_secs(), Some(1));
@@ -354,6 +360,9 @@ mod tests {
             BackendError::Authentication("bad".into()).retry_delay_secs(),
             None
         );
-        assert_eq!(BackendError::Internal("bug".into()).retry_delay_secs(), None);
+        assert_eq!(
+            BackendError::Internal("bug".into()).retry_delay_secs(),
+            None
+        );
     }
 }
