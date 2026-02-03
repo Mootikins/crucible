@@ -248,7 +248,8 @@ pub fn register_shell_module(lua: &Lua, policy: ShellPolicy) -> Result<(), LuaEr
     shell.set("which", which_fn)?;
 
     // Register shell module globally
-    lua.globals().set("shell", shell)?;
+    lua.globals().set("shell", shell.clone())?;
+    crate::lua_util::register_in_namespaces(lua, "shell", shell)?;
 
     Ok(())
 }
