@@ -1,5 +1,5 @@
 name: discord
-version: "0.1.0"
+version: "0.2.0"
 description: Discord integration via Gateway WebSocket and REST API
 author: Crucible Team
 license: MIT
@@ -10,6 +10,7 @@ capabilities:
   - config
   - network
   - websocket
+  - agent
 
 config:
   properties:
@@ -29,6 +30,23 @@ config:
       type: string
       description: Prefix for text commands (empty = slash commands only)
       default: ""
+    app_id:
+      type: string
+      description: Discord application ID (enables slash commands)
+      default: ""
+    respond_to:
+      type: string
+      description: When to respond to messages
+      default: "mentions"
+      enum: ["mentions", "prefix", "both", "all"]
+    digest_interval:
+      type: number
+      description: Seconds between digest sends (0 = disabled)
+      default: 0
+    digest_channels:
+      type: array
+      description: Channel IDs to deliver digest embeds to
+      default: []
 
 exports:
   auto_discover: true
