@@ -10,10 +10,10 @@
 use crucible_core::storage::NoteStore;
 use crucible_lua::{
     register_fs_module, register_graph_module, register_graph_module_with_store,
-    register_http_module, register_oq_module, register_paths_module, register_shell_module,
-    register_ratelimit_module, register_timer_module, register_vault_module,
-    register_vault_module_with_store,
-    register_ws_module, LuaExecutor, PathsContext, PluginManager, PluginSpec, ShellPolicy,
+    register_http_module, register_lua_stdlib, register_oq_module, register_paths_module,
+    register_ratelimit_module, register_shell_module, register_timer_module, register_vault_module,
+    register_vault_module_with_store, register_ws_module, LuaExecutor, PathsContext, PluginManager,
+    PluginSpec, ShellPolicy,
 };
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -60,6 +60,9 @@ impl DaemonPluginLoader {
 
         register_graph_module(lua).map_err(|e| anyhow::anyhow!("graph module: {e}"))?;
         register_vault_module(lua).map_err(|e| anyhow::anyhow!("vault module: {e}"))?;
+
+        // Pure Lua stdlib (retry, emitter, check) — must be after timer
+        register_lua_stdlib(lua).map_err(|e| anyhow::anyhow!("lua stdlib: {e}"))?;
 
         let plugin_manager = PluginManager::new();
 
