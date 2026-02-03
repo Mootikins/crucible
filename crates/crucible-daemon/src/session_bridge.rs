@@ -274,16 +274,7 @@ impl DaemonSessionApi for DaemonSessionBridge {
         content: String,
         timeout_secs: Option<f64>,
         max_tool_result_len: Option<usize>,
-    ) -> Pin<
-        Box<
-            dyn Future<
-                    Output = Result<
-                        tokio::sync::mpsc::UnboundedReceiver<ResponsePart>,
-                        String,
-                    >,
-                > + Send,
-        >,
-    > {
+    ) -> BoxFut<tokio::sync::mpsc::UnboundedReceiver<ResponsePart>> {
         let am = self.agent_manager.clone();
         let event_tx = self.event_tx.clone();
         Box::pin(async move {
@@ -302,11 +293,22 @@ impl DaemonSessionApi for DaemonSessionBridge {
 
             tokio::spawn(async move {
                 let mut text_buf = String::new();
-                let deadline = tokio::time::Instant::now() + timeout;
+                let mut deadline = tokio::time::Instant::now() + timeout;
 
-                let flush_text = |buf: &mut String, tx: &tokio::sync::mpsc::UnboundedSender<ResponsePart>| {
+                macro_rules! emit {
+                    ($part:expr) => {
+                        if part_tx.send($part).is_err() {
+                            tracing::debug!(session_id = %session_id, "part receiver dropped, stopping");
+                            return;
+                        }
+                    };
+                }
+
+                let flush_text = |buf: &mut String, tx: &tokio::sync::mpsc::UnboundedSender<ResponsePart>| -> bool {
                     if !buf.is_empty() {
-                        let _ = tx.send(ResponsePart::Text { content: std::mem::take(buf) });
+                        tx.send(ResponsePart::Text { content: std::mem::take(buf) }).is_ok()
+                    } else {
+                        true
                     }
                 };
 
@@ -326,7 +328,7 @@ impl DaemonSessionApi for DaemonSessionBridge {
                                     }
                                 }
                                 "tool_call" => {
-                                    flush_text(&mut text_buf, &part_tx);
+                                    if !flush_text(&mut text_buf, &part_tx) { return; }
                                     let tool = event.data.get("tool")
                                         .and_then(|v| v.as_str())
                                         .unwrap_or("unknown")
@@ -335,54 +337,50 @@ impl DaemonSessionApi for DaemonSessionBridge {
                                         event.data.get("args"),
                                         120,
                                     );
-                                    let _ = part_tx.send(ResponsePart::ToolCall { tool, args_brief });
+                                    emit!(ResponsePart::ToolCall { tool, args_brief });
                                 }
                                 "tool_result" => {
-                                    flush_text(&mut text_buf, &part_tx);
+                                    if !flush_text(&mut text_buf, &part_tx) { return; }
                                     let tool = event.data.get("tool")
                                         .and_then(|v| v.as_str())
                                         .unwrap_or("unknown")
                                         .to_string();
                                     let result_data = event.data.get("result");
-                                    let is_error = result_data
+                                    let error_str = result_data
                                         .and_then(|r| r.get("error"))
-                                        .is_some();
-                                    let result_brief = if is_error {
-                                        truncate_str(
-                                            result_data
-                                                .and_then(|r| r.get("error"))
-                                                .and_then(|v| v.as_str())
-                                                .unwrap_or("error"),
-                                            max_result,
-                                        )
-                                    } else {
-                                        truncate_json_preview(result_data, max_result)
+                                        .and_then(|v| v.as_str());
+                                    let result_brief = match error_str {
+                                        Some(e) => truncate_str(e, max_result),
+                                        None => truncate_json_preview(result_data, max_result),
                                     };
-                                    let _ = part_tx.send(ResponsePart::ToolResult {
+                                    emit!(ResponsePart::ToolResult {
                                         tool,
                                         result_brief,
-                                        is_error,
+                                        is_error: error_str.is_some(),
                                     });
                                 }
                                 "thinking" => {
-                                    flush_text(&mut text_buf, &part_tx);
-                                    let c = event.data.get("content")
+                                    if !flush_text(&mut text_buf, &part_tx) { return; }
+                                    if let Some(content) = event.data.get("content")
                                         .and_then(|v| v.as_str())
-                                        .unwrap_or("")
-                                        .to_string();
-                                    if !c.is_empty() {
-                                        let _ = part_tx.send(ResponsePart::Thinking { content: c });
+                                        .filter(|s| !s.is_empty())
+                                    {
+                                        emit!(ResponsePart::Thinking {
+                                            content: content.to_string(),
+                                        });
                                     }
                                 }
                                 "interaction_requested" => {
-                                    flush_text(&mut text_buf, &part_tx);
+                                    if !flush_text(&mut text_buf, &part_tx) { return; }
+                                    // Reset deadline — user needs time to respond to the prompt
+                                    deadline = tokio::time::Instant::now() + timeout;
                                     let request_id = event.data.get("request_id")
                                         .and_then(|v| v.as_str())
                                         .unwrap_or("")
                                         .to_string();
                                     let (tool, description) = extract_permission_info(&event.data);
                                     if !request_id.is_empty() {
-                                        let _ = part_tx.send(ResponsePart::PermissionRequest {
+                                        emit!(ResponsePart::PermissionRequest {
                                             request_id,
                                             tool,
                                             description,
@@ -390,7 +388,7 @@ impl DaemonSessionApi for DaemonSessionBridge {
                                     }
                                 }
                                 "message_complete" | "response_complete" | "response_done" | "ended" => {
-                                    flush_text(&mut text_buf, &part_tx);
+                                    let _ = flush_text(&mut text_buf, &part_tx);
                                     break;
                                 }
                                 _ => {}
@@ -401,17 +399,16 @@ impl DaemonSessionApi for DaemonSessionBridge {
                             tracing::warn!(session_id = %session_id, lagged = n, "send_and_collect: lagged");
                         }
                         Ok(Err(broadcast::error::RecvError::Closed)) => {
-                            flush_text(&mut text_buf, &part_tx);
+                            let _ = flush_text(&mut text_buf, &part_tx);
                             break;
                         }
                         Err(_) => {
                             tracing::warn!(session_id = %session_id, "send_and_collect: timeout");
-                            flush_text(&mut text_buf, &part_tx);
+                            let _ = flush_text(&mut text_buf, &part_tx);
                             break;
                         }
                     }
                 }
-                // part_tx drops here, signalling end-of-stream to the receiver
             });
 
             Ok(part_rx)
@@ -419,60 +416,55 @@ impl DaemonSessionApi for DaemonSessionBridge {
     }
 }
 
+/// Extract tool name and human-readable description from a permission request's data payload.
 fn extract_permission_info(data: &serde_json::Value) -> (String, String) {
-    let request = data.get("request");
-    let action = request.and_then(|r| r.get("action"));
+    let action = data.get("request").and_then(|r| r.get("action"));
     let action_type = action
         .and_then(|a| a.get("type"))
         .and_then(|v| v.as_str())
         .unwrap_or("unknown");
 
-    let (tool, description) = match action_type {
+    fn collect_str_array<'a>(action: Option<&'a serde_json::Value>, key: &str) -> Vec<&'a str> {
+        action
+            .and_then(|a| a.get(key))
+            .and_then(|v| v.as_array())
+            .map(|arr| arr.iter().filter_map(|v| v.as_str()).collect())
+            .unwrap_or_default()
+    }
+
+    match action_type {
         "bash" => {
-            let tokens: Vec<&str> = action
-                .and_then(|a| a.get("tokens"))
-                .and_then(|t| t.as_array())
-                .map(|arr| arr.iter().filter_map(|v| v.as_str()).collect())
-                .unwrap_or_default();
-            ("bash".to_string(), tokens.join(" "))
+            let description = collect_str_array(action, "tokens").join(" ");
+            ("bash".to_string(), description)
         }
         "read" | "write" => {
-            let segments: Vec<&str> = action
-                .and_then(|a| a.get("segments"))
-                .and_then(|s| s.as_array())
-                .map(|arr| arr.iter().filter_map(|v| v.as_str()).collect())
-                .unwrap_or_default();
-            let path = segments.join("/");
-            (action_type.to_string(), path)
+            let description = collect_str_array(action, "segments").join("/");
+            (action_type.to_string(), description)
         }
         "tool" => {
             let name = action
                 .and_then(|a| a.get("name"))
                 .and_then(|v| v.as_str())
                 .unwrap_or("unknown");
-            let args = action.and_then(|a| a.get("args"));
-            (name.to_string(), truncate_json_preview(args, 200))
+            (name.to_string(), truncate_json_preview(action.and_then(|a| a.get("args")), 200))
         }
-        _ => ("unknown".to_string(), data.to_string()),
-    };
-
-    (tool, description)
+        _ => ("unknown".to_string(), "unrecognized action type".to_string()),
+    }
 }
 
 fn truncate_str(s: &str, max_len: usize) -> String {
     if s.len() <= max_len {
         s.to_string()
     } else {
-        format!("{}...", &s[..max_len.saturating_sub(3)])
+        let mut end = max_len.saturating_sub(3);
+        while end > 0 && !s.is_char_boundary(end) {
+            end -= 1;
+        }
+        format!("{}...", &s[..end])
     }
 }
 
 fn truncate_json_preview(val: Option<&serde_json::Value>, max_len: usize) -> String {
-    match val {
-        Some(v) => {
-            let s = v.to_string();
-            truncate_str(&s, max_len)
-        }
-        None => String::new(),
-    }
+    val.map(|v| truncate_str(&v.to_string(), max_len))
+        .unwrap_or_default()
 }
