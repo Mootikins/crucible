@@ -60,12 +60,6 @@ pub struct PluginManifest {
     #[serde(default)]
     pub license: Option<String>,
 
-    #[serde(default)]
-    pub homepage: Option<String>,
-
-    #[serde(default)]
-    pub repository: Option<String>,
-
     #[serde(default = "default_main")]
     pub main: String,
 
@@ -85,9 +79,6 @@ pub struct PluginManifest {
     pub config: Option<ConfigSchema>,
 
     #[serde(default)]
-    pub keywords: Vec<String>,
-
-    #[serde(default)]
     pub enabled: Option<bool>,
 }
 
@@ -101,6 +92,7 @@ pub enum Capability {
     Filesystem,
     Network,
     Shell,
+    #[serde(alias = "vault")]
     Kiln,
     Agent,
     Ui,
@@ -173,9 +165,6 @@ pub struct ExportDeclarations {
 pub struct ConfigSchema {
     #[serde(default)]
     pub properties: HashMap<String, ConfigProperty>,
-
-    #[serde(default)]
-    pub required: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -188,6 +177,9 @@ pub struct ConfigProperty {
 
     #[serde(default)]
     pub default: Option<serde_yaml::Value>,
+
+    #[serde(default, rename = "enum")]
+    pub allowed_values: Option<Vec<serde_yaml::Value>>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
@@ -249,8 +241,6 @@ impl PluginManifest {
             description: String::new(),
             author: String::new(),
             license: None,
-            homepage: None,
-            repository: None,
             main: "init.lua".to_string(),
             init: None,
             capabilities: Vec::new(),
@@ -260,7 +250,6 @@ impl PluginManifest {
                 ..Default::default()
             },
             config: None,
-            keywords: Vec::new(),
             enabled: None,
         })
     }
@@ -428,7 +417,6 @@ version: "1.0.0"
 description: A sample plugin
 author: Test Author
 license: MIT
-homepage: https://example.com
 main: lua/init.lua
 init: setup
 
@@ -450,10 +438,6 @@ exports:
   commands:
     - /my-command
   auto_discover: true
-
-keywords:
-  - productivity
-  - notes
 "#;
         let manifest = PluginManifest::from_yaml(yaml).unwrap();
         assert_eq!(manifest.name, "my-plugin");
@@ -581,7 +565,6 @@ config:
         let manifest = PluginManifest::from_yaml(yaml).unwrap();
         let config = manifest.config.unwrap();
         assert_eq!(config.properties.len(), 3);
-        assert_eq!(config.required, vec!["api_key"]);
         assert_eq!(config.properties["api_key"].prop_type, ConfigType::String);
         assert_eq!(
             config.properties["max_results"].prop_type,
@@ -626,5 +609,40 @@ enabled: false
     fn test_from_directory_defaults_invalid_name() {
         let result = PluginManifest::from_directory_defaults(Path::new("/plugins/My Plugin!"));
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_vault_capability_alias() {
+        let yaml = r#"
+name: hermit
+version: "0.1.0"
+capabilities:
+  - vault
+  - ui
+"#;
+        let manifest = PluginManifest::from_yaml(yaml).unwrap();
+        assert!(manifest.has_capability(Capability::Kiln));
+        assert!(manifest.has_capability(Capability::Ui));
+    }
+
+    #[test]
+    fn test_parse_config_enum_values() {
+        let yaml = r#"
+name: graph-view
+version: "0.1.0"
+config:
+  properties:
+    layout:
+      type: string
+      description: Graph layout algorithm
+      default: "force"
+      enum: ["force", "tree", "radial"]
+"#;
+        let manifest = PluginManifest::from_yaml(yaml).unwrap();
+        let config = manifest.config.unwrap();
+        let layout = &config.properties["layout"];
+        assert_eq!(layout.prop_type, ConfigType::String);
+        let allowed = layout.allowed_values.as_ref().unwrap();
+        assert_eq!(allowed.len(), 3);
     }
 }

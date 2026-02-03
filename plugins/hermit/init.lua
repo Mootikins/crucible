@@ -37,15 +37,6 @@ local function load_soul()
 end
 
 -- ============================================================================
--- Session hook
--- ============================================================================
-
-crucible.on_session_start(function(session)
-    load_soul()
-    awareness.refresh(false)
-end)
-
--- ============================================================================
 -- Tools
 -- ============================================================================
 
@@ -124,7 +115,7 @@ return {
     name = "hermit",
     version = "0.1.0",
     description = "Watches your kilns, connects notes, and surfaces forgotten knowledge",
-    capabilities = { "vault", "ui", "config", "filesystem" },
+    capabilities = { "kiln", "ui", "config", "filesystem" },
 
     tools = {
         hermit_digest = {

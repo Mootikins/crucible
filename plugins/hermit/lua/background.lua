@@ -11,14 +11,14 @@ function M.suggest_links(path, depth)
         return { error = "Path is required" }
     end
 
-    local note = cru.vault.get(path)
+    local note = cru.kiln.get(path)
     if not note then
         return { error = "Note not found: " .. path }
     end
 
-    local outlinks = cru.vault.outlinks(path) or {}
-    local backlinks = cru.vault.backlinks(path) or {}
-    local neighbors = cru.vault.neighbors(path, depth) or {}
+    local outlinks = cru.kiln.outlinks(path) or {}
+    local backlinks = cru.kiln.backlinks(path) or {}
+    local neighbors = cru.kiln.neighbors(path, depth) or {}
 
     -- Build set of already-linked notes
     local linked = {}
