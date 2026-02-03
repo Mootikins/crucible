@@ -360,6 +360,13 @@ impl CrucibleAcpClient {
     }
 
     /// Set the chat mode by ID, propagating to the ACP agent if connected.
+    ///
+    /// # Design: best-effort propagation
+    ///
+    /// Local state is always updated. If the ACP agent rejects the mode change
+    /// the local and remote states will diverge — this is intentional.
+    /// ACP agents are external processes; we prefer a responsive local UX over
+    /// blocking on a remote round-trip that may never succeed.
     pub async fn set_mode_by_id(&mut self, mode_id: &str) -> Result<()> {
         info!("Changing mode from {} to {}", self.mode_id, mode_id);
 

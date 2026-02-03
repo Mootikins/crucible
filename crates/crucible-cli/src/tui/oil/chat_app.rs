@@ -650,16 +650,8 @@ impl App for OilChatApp {
                 Action::Continue
             }
             ChatAppMsg::PluginStatusLoaded(entries) => {
-                let errors: Vec<_> = entries.iter().filter(|e| e.error.is_some()).collect();
-                for entry in &errors {
-                    if let Some(ref err) = entry.error {
-                        self.notification_area
-                            .add(crucible_core::types::Notification::warning(format!(
-                                "Plugin '{}' failed to load: {}",
-                                entry.name, err
-                            )));
-                    }
-                }
+                // Error notifications are surfaced once during runner init
+                // (see OilChatRunner::setup_app). Only store status here.
                 self.plugin_status = entries;
                 Action::Continue
             }
@@ -3760,7 +3752,7 @@ mod tests {
     }
 
     #[test]
-    fn plugin_status_loaded_surfaces_errors_as_notifications() {
+    fn plugin_status_loaded_stores_entries_without_duplicate_notifications() {
         let mut app = OilChatApp::init();
         app.on_message(ChatAppMsg::PluginStatusLoaded(vec![
             PluginStatusEntry {
@@ -3778,8 +3770,8 @@ mod tests {
         ]));
         assert_eq!(app.plugin_status.len(), 2);
         assert!(
-            !app.notification_area.is_empty(),
-            "Should have notification for error plugin"
+            app.notification_area.is_empty(),
+            "PluginStatusLoaded should not create notifications (runner init handles that)"
         );
     }
 }
