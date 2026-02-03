@@ -261,9 +261,9 @@ fn test_stats_help() {
     let mut cmd = Command::cargo_bin("cru").unwrap();
     cmd.arg("stats").arg("--help");
 
-    cmd.assert()
-        .success()
-        .stdout(predicate::str::contains("Display kiln statistics"));
+    cmd.assert().success().stdout(predicate::str::contains(
+        "Display comprehensive kiln statistics",
+    ));
 }
 
 // ============================================================================
@@ -384,7 +384,7 @@ fn test_storage_help() {
 
     cmd.assert()
         .success()
-        .stdout(predicate::str::contains("Storage management"));
+        .stdout(predicate::str::contains("Manage storage operations"));
 }
 
 #[test]
