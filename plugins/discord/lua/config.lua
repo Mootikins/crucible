@@ -34,8 +34,9 @@ function M.get_token()
 end
 
 --- Get gateway intents bitmask
+--- Default: GUILDS(0) | GUILD_MESSAGES(9) | DIRECT_MESSAGES(12) | MESSAGE_CONTENT(15)
 function M.get_intents()
-    return M.get("intents", 33281)
+    return M.get("intents", 37889)
 end
 
 --- Authorization headers for REST API

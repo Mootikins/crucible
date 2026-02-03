@@ -20,8 +20,8 @@ config:
       default: ""
     intents:
       type: number
-      description: Gateway intents bitmask (default 33281 = GUILDS | GUILD_MESSAGES | MESSAGE_CONTENT | DIRECT_MESSAGES)
-      default: 33281
+      description: Gateway intents bitmask (default 37889 = GUILDS | GUILD_MESSAGES | DIRECT_MESSAGES | MESSAGE_CONTENT)
+      default: 37889
     auto_connect:
       type: boolean
       description: Automatically connect to gateway on plugin load
