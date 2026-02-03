@@ -14,7 +14,7 @@ Thank you for your interest in contributing to Crucible! This document provides 
 
 ### Before You Start
 
-- Check existing [issues](https://github.com/YOUR_USERNAME/crucible/issues) to avoid duplicate work
+- Check existing [issues](https://github.com/Mootikins/crucible/issues) to avoid duplicate work
 - For large changes, open an issue first to discuss the approach
 - Read the [AGENTS.md](./AGENTS.md) file for project architecture overview
 
@@ -315,7 +315,7 @@ Feature requests are welcome! Please:
 
 ## Questions?
 
-- Open a [discussion](https://github.com/YOUR_USERNAME/crucible/discussions) for general questions
+- Open a [discussion](https://github.com/Mootikins/crucible/discussions) for general questions
 - Check [AGENTS.md](./AGENTS.md) for architecture questions
 
 ## License

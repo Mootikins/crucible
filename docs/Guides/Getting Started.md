@@ -27,7 +27,7 @@ Crucible is a plaintext-first knowledge management system that combines markdown
 
 Before installing Crucible, make sure you have:
 
-- **Rust toolchain** (1.70 or newer)
+- **Rust toolchain** (1.75 or newer)
   - Install via [rustup](https://rustup.rs/): `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`
 - **Cargo** (comes with Rust)
 - **Git** (for cloning the repository)
@@ -129,14 +129,18 @@ This parses all markdown files, extracts metadata, wikilinks, tags, and blocks, 
 ### 3. Start Chatting
 
 ```bash
-cru
+cru chat
 ```
 
-This starts a chat session where you can ask questions about your knowledge base.
+On first run, a setup wizard guides you through kiln path, provider, and model configuration. After setup, you enter an interactive chat session with your knowledge base.
 
-**Chat modes:**
-- **Plan Mode** (default): Read-only, agent can't modify files
-- **Act Mode**: Agent can create and modify notes (toggle with `/act`)
+**Chat modes** (cycle with `BackTab`):
+- **Normal** (default): Full access, agent can read and modify files
+- **Plan**: Read-only, agent can search and read but not modify
+- **Auto**: Auto-approve tool calls without prompting
+
+**Slash commands:** `/plan`, `/auto`, `/normal`, `/search`, `/help`
+**REPL commands:** `:model`, `:set`, `:export`, `:clear`, `:help`
 
 **Implementation:** `crates/crucible-cli/src/commands/chat.rs`
 
