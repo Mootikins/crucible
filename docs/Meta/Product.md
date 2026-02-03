@@ -2,7 +2,7 @@
 description: Product feature map — capabilities, status, documentation, and dependencies
 type: product
 status: active
-updated: 2026-01-31
+updated: 2026-02-02
 tags:
   - meta
   - product
@@ -58,7 +58,8 @@ A knowledge management system where:
 - [x] **Knowledge Graph** `P0` — Wikilink-based graph structure and traversal · [[Help/Concepts/The Knowledge Graph]] · `crucible-surrealdb`
 - [x] **Query System** `P0` — Structured note queries with composable pipeline · [[Help/Query/Query System]] · `crucible-query`
 - [x] **Property Search** `P0` — Search notes by frontmatter properties and tags · `crucible-tools`
-- [x] **Document Clustering** `P0` — K-means and heuristic clustering with MoC detection · `crucible-surrealdb`
+- [x] **Document Clustering** `P0` — Heuristic clustering and MoC detection · `crucible-surrealdb`
+- [ ] **K-Means Clustering** `P2` — K-means implementation (placeholder stub, needs ndarray or similar) · `crucible-surrealdb`
 - [x] **Block-level Embeddings** `P0` — Paragraph-granularity semantic indexing · `crucible-llm`, `crucible-surrealdb`
 - [x] **Precognition** `P0` — Opt-in auto-RAG: inject relevant vault/session context before each agent turn via `:set precognition on` · `crucible-cli`, `crucible-acp`
 - [x] **Session Search** `P0` — Past conversations indexed and searchable via session indexing pipeline; `cru session reindex` for batch processing · `crucible-observe`, `crucible-cli`
@@ -101,9 +102,18 @@ A knowledge management system where:
 - [x] **Scripted Agent Control** `P0` — Lua API for temperature, max_tokens, thinking_budget, model, mode; daemon getters use local cache · `crucible-lua`
 - [x] **Session Event Handlers** `P0` — Lua hooks on `turn:complete` can inject follow-up messages · `crucible-lua`, `crucible-daemon`
 
+### Lua Session Primitives (Planned)
+
+> These fill gaps so autonomous loops, fan-out, and context control are trivial plugins — not bespoke features.
+
+- [ ] **`session.messages()`** `P1` — Read conversation history from Lua; enables context windowing, summarization, checkpoint detection · `crucible-lua`
+- [ ] **`session.inject(role, content)`** `P1` — Insert messages mid-conversation; enables fan-out result collection, context injection at checkpoints · `crucible-lua`
+- [ ] **`session.fork()`** `P1` — Branch conversation state; enables parallel exploration, A/B approach testing · `crucible-lua`
+- [ ] **`subagent.collect(ids)`** `P1` — Await multiple subagents and collect results; enables fan-out patterns · `crucible-lua`
+
 ### In Progress / Planned
 - [x] **MCP Tool System** `P0` — Permission prompts via `PermissionGate` trait, ACP integration, `McpProxyTool` injection · `crucible-tools`, `crucible-acp`
-- [-] **Error Handling UX** `P0` — Clear error messages, graceful degradation · `crucible-cli`
+- [x] **Error Handling UX** `P0` — Toast notifications, contextual messages, graceful degradation for DB lock/search/kiln fallback, `BackendError::is_retryable()` + `retry_delay_secs()`, RPC `call_with_retry()` for idempotent daemon ops, recovery suggestions in error messages · `crucible-cli`, `crucible-core`, `crucible-daemon-client`
 - [x] **Per-session MCP Servers** `P0` — Agent cards define MCP servers; `mcp_servers` propagated to `SessionAgent` and wired in daemon · `crucible-acp`
 - [ ] **Grammar + Lua Integration** `P1` — Constrained generation for structured agent outputs · `crucible-core`
 
@@ -136,7 +146,7 @@ A knowledge management system where:
 - [x] **Ask Modal** `P0` — Single-select, multi-select (Space), free-text "other" option · `crucible-cli`
 - [x] **Diff Preview** `P0` — Syntax-highlighted line/word-level diffs for file operations; collapsible · `crucible-cli`
 - [x] **Permission Session Settings** `P0` — `:set perm.show_diff` controls initial diff visibility, `:set perm.autoconfirm_session` auto-approves permissions · `crucible-cli`
-- [ ] **Batch Ask / Edit / Show / Panel** `P0` — InteractionRequest variants exist in types but TUI completely stubs all 5 (logged and skipped in chat_runner) · `crucible-cli`
+- [x] **Batch Ask / Edit / Show / Panel** `P0` — All 7 InteractionRequest variants (Ask, AskBatch, Edit, Show, Permission, Popup, Panel) fully implemented with key handlers, renderers, and tests · `crucible-cli`
 
 ### Autocomplete & Popups
 - [x] **Autocomplete** `P0` — 9 trigger kinds: `@files`, `[[notes]]`, `/commands`, `:repl`, `:model`, `:set`, command args, F1 palette · `crucible-cli`
@@ -175,7 +185,7 @@ A knowledge management system where:
 - [x] **Tool Annotations** `P0` — `@tool`, `@hook`, `@param` annotations for Lua functions · [[Help/Extending/Custom Tools]] · `crucible-lua`
 - [x] **Event Hooks** `P0` — Note lifecycle hooks (`note:created`, `note:modified`, etc.) · [[Help/Extending/Event Hooks]] · `crucible-lua`
 - [x] **Custom Handlers** `P0` — Event handler chains with priority ordering · [[Help/Extending/Custom Handlers]] · `crucible-lua`
-- [x] **Oil UI DSL** `P1` — React-like functional UI for Lua/Fennel plugins · [[Help/Extending/Scripted UI]] · [[Help/Plugins/Oil-Lua-API]] · `crucible-lua`, `crucible-oil`
+- [x] **Oil UI DSL** `P1` — Lua/Fennel API for interaction modals (ask, popup, panel); predefined modal types, not a general component model · [[Help/Extending/Scripted UI]] · [[Help/Plugins/Oil-Lua-API]] · `crucible-lua`, `crucible-oil`
 - [x] **Lua API Modules** `P0` — 17+ modules: `crucible.fs`, `crucible.graph`, `crucible.http`, `crucible.session`, `crucible.shell`, etc. · `crucible-lua`
 - [x] **Plugin Config** `P0` — Per-plugin configuration schemas · [[Help/Lua/Configuration]] · `crucible-lua`
 - [x] **Script Agent Queries** `P0` — Lua-based agent queries · [[Help/Extending/Script Agent Queries]] · `crucible-lua`
@@ -183,19 +193,52 @@ A knowledge management system where:
 - [-] **Lua Integration (full)** `P1` — Complete scripting API for custom workflows and callout handlers · `crucible-lua`
 - [ ] **Hook Documentation** `P1` — Comprehensive guide on extending Crucible · [[Help/Extending/Event Hooks]]
 
-## MCP Integration
+## Agent Protocols (ACP & MCP)
+
+### ACP Host (Crucible → External Agents)
+
+Crucible acts as an **ACP host**, spawning and controlling external AI agents (Claude Code, Codex, Cursor, Gemini CLI, OpenCode) with Crucible's memory, context, and permission system.
+
+- [x] **ACP Host** `P0` — Spawn and control ACP agents with JSON-RPC 2.0 over stdio; capability negotiation, plan/act modes · [[Help/Concepts/Agents & Protocols]] · `crucible-acp`
+- [x] **Context Injection** `P0` — `PromptEnricher` performs semantic search, wraps results in `<precognition>` blocks; configurable via `ContextConfig::inject_context` · `crucible-acp`
+- [x] **In-Process MCP Host** `P0` — SSE transport MCP server running in-process; agents discover Crucible tools without external server · `crucible-acp`
+- [x] **Agent Discovery** `P0` — Parallel probing of known agents (`claude-code`, `opencode`, `cursor-acp`, `gemini`); env var overrides · `crucible-acp`
+- [x] **Sandboxed Filesystem** `P0` — Path validation, traversal prevention, mode-based permissions (plan=read-only), configurable size limits · `crucible-acp`
+- [x] **Permission Gate** `P0` — `PermissionGate` trait for pluggable permission decisions; `list_directory` in `FileSystemHandler` · `crucible-acp`
+- [x] **Streaming Responses** `P0` — Chunk processing, tool call parsing from stream, diff handling · `crucible-acp`
+- [x] **Session Management** `P0` — UUID sessions with config (cwd, mode, context size), history with ACP roles, persistence across reconnections · `crucible-acp`
+
+### ACP Agent (Future — Crucible as Embeddable Agent)
+
+- [ ] **ACP Agent Mode** `P1` — Crucible as an embeddable ACP agent; any ACP host (Zed, JetBrains, Neovim) spawns Crucible to get knowledge graph + memory · `crucible-acp`
+- [ ] **ACP Registry Submission** `P1` — Agent manifest for [ACP Registry](https://github.com/agentclientprotocol/registry); one PR → available in all ACP clients · `crucible-acp`
+- [ ] **ACP Schema Bump** `P1` — Bump `agent-client-protocol-schema` from 0.10.6 → 0.10.7; SDK crate (`agent-client-protocol` 0.9.3) and wire protocol (v1) are already current · `crucible-acp`, `crucible-core`
+
+### MCP Server (External Agents → Crucible Tools)
 
 - [x] **MCP Server** `P0` — Expose kiln as MCP tools for external AI agents · [[Help/Concepts/Agents & Protocols]] · `crucible-tools`
 - [x] **Note Tools** `P0` — `create_note`, `read_note`, `read_metadata`, `update_note`, `delete_note`, `list_notes` · `crucible-tools`
 - [x] **Search Tools** `P0` — `semantic_search`, `text_search`, `property_search` · `crucible-tools`
 - [x] **Kiln Tools** `P0` — `get_kiln_info`, `get_kiln_roots`, `get_kiln_stats` · `crucible-tools`
 - [x] **Workspace Tools** `P0` — `read_file`, `edit_file`, `write_file`, `bash`, `glob`, `grep` · `crucible-tools`
+- [x] **TOON Formatting** `P0` — Token-efficient response formatting · `crucible-tools`
+
+### MCP Gateway (Crucible → Upstream MCP Servers)
+
 - [x] **MCP Gateway** `P0` — Connect upstream MCP servers with prefixed tool names · [[Help/Extending/MCP Gateway]] · [[Help/Config/mcp]] · `crucible-tools`
 - [x] **Lua Plugin Tools** `P0` — Dynamic tool discovery from Lua plugins · `crucible-tools`, `crucible-lua`
-- [x] **TOON Formatting** `P0` — Token-efficient response formatting · `crucible-tools`
 - [x] **MCP Bridge/Gateway** `P0` — `McpGatewayManager` shared in daemon, `McpProxyTool` dynamic injection, live status display · `crucible-tools`
 - [x] **MCP Connection Stability** `P0` — Auto-reconnect loop, 30s SSE keepalive, live status indicators in TUI · `crucible-acp`
-- [x] **ACP Protocol** `P0` — `PermissionGate` trait for pluggable permission decisions, `list_directory` in `FileSystemHandler`; dead protocol/session stubs removed · [[Help/Concepts/Agents & Protocols]] · `crucible-acp`
+
+## Distribution & Virality
+
+> How Crucible reaches users and spreads.
+
+- [ ] **`cru share`** `P1` — Export sessions as self-contained HTML or shareable artifacts; `:export` exists for local markdown, this adds sharable formats · `crucible-cli`
+- [ ] **Plugin Install** `P1` — `cru plugin add <git-url>` or `cru plugin add <name>`; Git-native plugin distribution (lazy.nvim model, not centralized marketplace) · `crucible-lua`, `crucible-cli`
+- [ ] **Example Plugin Pack** `P1` — Ship 3-5 reference plugins demonstrating key patterns: autonomous loops, scheduled tasks, fan-out, auto-linking · `crucible-lua`
+- [ ] **Agent Memory Branding** `P1` — Rename "Precognition" to "Agent Memory" in user-facing docs; communicates the value proposition directly · docs
+- [ ] **One-Line Install** `P3` — `curl|sh`, `brew install crucible`, `cargo install crucible`; secondary to ACP registry for discovery · `crucible-cli`
 
 ## Workflow Automation
 
@@ -221,7 +264,7 @@ A knowledge management system where:
 - [x] **Daemon Client** `P0` — Auto-spawn, reconnect, RPC client library · `crucible-daemon-client`
 - [x] **Event Subscriptions** `P0` — Per-session and wildcard event streaming via daemon · `crucible-daemon`
 - [x] **Notification RPC** `P0` — Add, list, dismiss notifications via daemon · `crucible-daemon`
-- [-] **File Watching** `P0` — Filesystem change detection for auto-reprocessing · `crucible-watch`
+- [x] **File Watching** `P0` — File change detection (notify/polling, debouncing, daemon bridge) with auto-reprocessing: `file_changed` events trigger `pipeline.process()` via daemon reprocess task; enrichment disabled for now (parsing + storage only) · `crucible-watch`, `crucible-daemon`
 - [ ] **Burn Embeddings** `P?` — Burn ML framework for local embeddings (stubbed) · `crucible-llm`
 - [ ] **LlamaCpp Embeddings** `P?` — GGUF model inference for embeddings (stubbed) · `crucible-llm`
 - [ ] **Session Compaction** `P?` — Compact sessions with cache purge for memory efficiency · `crucible-daemon`
@@ -243,7 +286,7 @@ A knowledge management system where:
 - [x] **Getting Started** `P0` — Installation and first steps guide · [[Guides/Getting Started]] · [[Guides/Your First Kiln]]
 - [x] **Platform Guides** `P0` — Windows setup, GitHub Copilot integration · [[Guides/Windows Setup]] · [[Guides/GitHub Copilot Setup]]
 - [-] **CLI Help & Discoverability** `P0` — `--help` completeness, command suggestions · `crucible-cli`
-- [-] **Plugin Loading Errors** `P0` — Clear feedback when Lua plugins fail to load · `crucible-lua`
+- [x] **Plugin Loading Errors** `P0` — `:plugins` command shows load status; failures surfaced as toast notifications with error details · `crucible-lua`, `crucible-cli`
 
 ## Web & Desktop
 
@@ -278,6 +321,9 @@ A knowledge management system where:
 | 2025-01-23 | Web is SolidJS, not Svelte | Corrected docs; SolidJS already in use |
 | 2025-01-24 | Vim-style :set command | Runtime config overlay with modification tracking |
 | 2025-01-24 | Model switching | Runtime model changes via :model command and daemon RPC |
+| 2026-02-02 | ACP-first distribution | ACP enables context injection that MCP cannot; MCP = demo entry point, ACP host = current value, ACP agent = registry distribution |
+| 2026-02-02 | Lua primitives over bespoke features | Autonomous loops, fan-out, automations are Lua plugins — not built-in features; matches Neovim philosophy |
+| 2026-02-02 | ACP direction clarified | Crucible is ACP host (controls agents), not ACP agent; embeddable agent mode is future P1 work for registry distribution |
 
 ## Archived / Cut
 
