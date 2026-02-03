@@ -4,6 +4,7 @@
 //! This is a simplified version of the CLI's agent factory since
 //! `SessionAgent` contains fully-resolved configuration.
 
+use crate::acp_handle::AcpAgentHandle;
 use crate::protocol::SessionEventMessage;
 use crucible_config::{LlmProviderConfig, LlmProviderType};
 use crucible_core::background::BackgroundSpawner;
@@ -60,9 +61,23 @@ pub async fn create_agent_from_session_config(
     event_tx: &broadcast::Sender<SessionEventMessage>,
     mcp_gateway: Option<Arc<tokio::sync::RwLock<crucible_tools::mcp_gateway::McpGatewayManager>>>,
 ) -> Result<Box<dyn AgentHandle + Send + Sync>, AgentFactoryError> {
+    if agent_config.agent_type == "acp" {
+        let handle = AcpAgentHandle::new(
+            agent_config,
+            workspace,
+            None,
+            None,
+            None,
+            None,
+        )
+        .await
+        .map_err(|e| AgentFactoryError::AgentBuild(e.to_string()))?;
+        return Ok(Box::new(handle));
+    }
+
     if agent_config.agent_type != "internal" {
         return Err(AgentFactoryError::UnsupportedAgentType(format!(
-            "Daemon only supports 'internal' agents, got '{}'",
+            "Daemon only supports 'internal' and 'acp' agents, got '{}'",
             agent_config.agent_type
         )));
     }
@@ -289,7 +304,7 @@ mod tests {
     #[test]
     fn test_unsupported_agent_type() {
         let mut config = test_agent_config();
-        config.agent_type = "acp".to_string();
+        config.agent_type = "unknown".to_string();
 
         let result = tokio::runtime::Runtime::new().unwrap().block_on(async {
             let (event_tx, _) = broadcast::channel(16);
