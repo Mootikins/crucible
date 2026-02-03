@@ -173,6 +173,8 @@ impl AgentHandle for AcpAgentHandle {
 
         let client_arc = Arc::clone(&self.client);
         let client_opt = {
+            // SAFETY: &mut self prevents concurrent calls at compile time,
+            // so this lock is never contended during normal operation.
             let mut guard = client_arc.try_lock().expect(
                 "AcpAgentHandle: concurrent send_message_stream (should not happen with &mut self)",
             );
@@ -255,7 +257,7 @@ impl AgentHandle for AcpAgentHandle {
                                 tool_calls.push(ChatToolCall {
                                     name: name.clone(),
                                     arguments: None,
-                                    id: Some(id),
+                                    id: Some(id.clone()),
                                 });
                                 ChatChunk {
                                     delta: String::new(),
@@ -263,7 +265,7 @@ impl AgentHandle for AcpAgentHandle {
                                     tool_calls: Some(vec![ChatToolCall {
                                         name,
                                         arguments: None,
-                                        id: None,
+                                        id: Some(id),
                                     }]),
                                     tool_results: None,
                                     reasoning: None,
@@ -357,10 +359,15 @@ impl AgentHandle for AcpAgentHandle {
             let session_id = session_id.clone();
             let mut guard = self.client.lock().await;
             if let Some(client) = guard.as_mut() {
-                match client.set_session_mode(&session_id, mode_id).await {
-                    Ok(_) => info!("Mode propagated to ACP agent"),
-                    Err(e) => warn!("Failed to propagate mode to ACP agent: {}", e),
-                }
+                client
+                    .set_session_mode(&session_id, mode_id)
+                    .await
+                    .map_err(|e| {
+                        ChatError::ModeChange(format!(
+                            "ACP agent rejected mode '{}': {}",
+                            mode_id, e
+                        ))
+                    })?;
             }
         }
 
@@ -431,13 +438,17 @@ impl Drop for AcpAgentHandle {
     fn drop(&mut self) {
         let client_arc = Arc::clone(&self.client);
         let agent = self.agent_name.clone();
-        // Spawn async task to take and drop the client — Drop can't do async
-        tokio::spawn(async move {
-            if let Some(client) = client_arc.lock().await.take() {
-                drop(client);
-                debug!(agent = %agent, "ACP agent cleaned up on drop");
-            }
-        });
+        // try_current() returns None if tokio runtime is gone (shutdown, sync context).
+        // In that case CrucibleAcpClient drops synchronously — child process gets
+        // SIGKILL when its stdin/stdout handles close.
+        if let Ok(handle) = tokio::runtime::Handle::try_current() {
+            handle.spawn(async move {
+                if let Some(client) = client_arc.lock().await.take() {
+                    drop(client);
+                    debug!(agent = %agent, "ACP agent cleaned up on drop");
+                }
+            });
+        }
     }
 }
 
@@ -476,13 +487,16 @@ fn build_client_config(
     })
 }
 
+/// Resolved command, arguments, and environment variables for an ACP agent.
+type ResolvedCommand = (String, Vec<String>, Vec<(String, String)>);
+
 /// Resolve agent name to (command, args, env_vars) using known agents list
 /// and any profile overrides from AcpConfig.
 fn resolve_agent_command(
     agent_name: &str,
     agent_config: &SessionAgent,
     acp_config: Option<&AcpConfig>,
-) -> Result<(String, Vec<String>, Vec<(String, String)>), AcpHandleError> {
+) -> Result<ResolvedCommand, AcpHandleError> {
     let known: &[(&str, &str, &[&str])] = &[
         ("opencode", "opencode", &["acp"]),
         ("claude", "npx", &["@zed-industries/claude-code-acp"]),
