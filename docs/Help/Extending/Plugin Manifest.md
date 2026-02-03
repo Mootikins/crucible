@@ -49,8 +49,6 @@ version: "2.1.0"
 description: Task management with TASKS.md format
 author: Your Name <you@example.com>
 license: MIT
-homepage: https://github.com/you/crucible-task-manager
-repository: https://github.com/you/crucible-task-manager
 
 main: lua/init.lua
 init: setup
@@ -86,12 +84,6 @@ config:
     auto_archive:
       type: boolean
       default: true
-  required: []
-
-keywords:
-  - tasks
-  - productivity
-  - todo
 
 enabled: true
 ```
@@ -112,9 +104,6 @@ enabled: true
 | `description` | string | "" | Brief description |
 | `author` | string | "" | Author name and email |
 | `license` | string | null | License identifier (MIT, Apache-2.0, etc.) |
-| `homepage` | string | null | Project homepage URL |
-| `repository` | string | null | Source repository URL |
-| `keywords` | string[] | [] | Searchable keywords |
 
 ### Entry Point Fields
 
@@ -195,8 +184,6 @@ config:
       default: 10
     enabled_features:
       type: array
-  required:
-    - api_key
 ```
 
 Supported types: `string`, `number`, `boolean`, `array`, `object`
