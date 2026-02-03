@@ -1,19 +1,19 @@
-//! Vault API module for Lua scripts
+//! Kiln API module for Lua scripts
 //!
-//! Provides `cru.vault.*` functions for accessing notes and knowledge graph
-//! from Lua scripts with a clean, user-friendly API.
+//! Provides `cru.kiln.*` functions for accessing notes and knowledge graph
+//! from Lua scripts. Also available as `cru.vault.*` for backwards compatibility.
 //!
 //! ## Usage in Lua
 //!
 //! ```lua
 //! -- List notes (async)
-//! local notes = cru.vault.list(10)  -- optional limit
+//! local notes = cru.kiln.list(10)  -- optional limit
 //! for _, note in ipairs(notes) do
 //!     print(note.title, note.path)
 //! end
 //!
 //! -- Get a specific note (async)
-//! local note = cru.vault.get("path/to/note.md")
+//! local note = cru.kiln.get("path/to/note.md")
 //! if note then
 //!     print(note.title)
 //!     print(note.content_hash)
@@ -23,19 +23,19 @@
 //! end
 //!
 //! -- Search notes (async) - semantic search
-//! local results = cru.vault.search("machine learning", {limit = 5})
+//! local results = cru.kiln.search("machine learning", {limit = 5})
 //! for _, result in ipairs(results) do
 //!     print(result.path, result.score)
 //! end
 //!
 //! -- Get outgoing links from a note (sync)
-//! local links = cru.vault.outlinks("path/to/note.md")
+//! local links = cru.kiln.outlinks("path/to/note.md")
 //!
 //! -- Get incoming links to a note (sync)
-//! local backlinks = cru.vault.backlinks("path/to/note.md")
+//! local backlinks = cru.kiln.backlinks("path/to/note.md")
 //!
 //! -- Get neighbors within depth (sync)
-//! local nearby = cru.vault.neighbors("path/to/note.md", 2)
+//! local nearby = cru.kiln.neighbors("path/to/note.md", 2)
 //! ```
 
 use crate::error::LuaError;
@@ -44,9 +44,9 @@ use crucible_core::storage::{GraphView, NoteStore};
 use mlua::{Lua, LuaSerdeExt, Table, Value};
 use std::sync::Arc;
 
-/// Register the vault module with a Lua state
+/// Register the kiln/vault module with a Lua state
 ///
-/// This creates the `cru.vault` namespace with stub functions.
+/// This creates the `cru.kiln` namespace (and `cru.vault` alias) with stub functions.
 /// Use `register_vault_module_with_store` to add database-backed functionality.
 pub fn register_vault_module(lua: &Lua) -> Result<(), LuaError> {
     let vault = lua.create_table()?;
@@ -85,6 +85,7 @@ pub fn register_vault_module(lua: &Lua) -> Result<(), LuaError> {
     })?;
     vault.set("neighbors", neighbors_stub)?;
 
+    register_in_namespaces(lua, "kiln", vault.clone())?;
     register_in_namespaces(lua, "vault", vault)?;
 
     Ok(())
@@ -267,6 +268,34 @@ mod tests {
         assert!(vault.contains_key("outlinks").unwrap());
         assert!(vault.contains_key("backlinks").unwrap());
         assert!(vault.contains_key("neighbors").unwrap());
+    }
+
+    #[test]
+    fn test_kiln_alias_exists() {
+        let lua = setup_lua();
+
+        let cru: Table = lua.globals().get("cru").expect("cru should exist");
+        let kiln: Table = cru.get("kiln").expect("cru.kiln should exist");
+
+        assert!(kiln.contains_key("list").unwrap());
+        assert!(kiln.contains_key("get").unwrap());
+        assert!(kiln.contains_key("search").unwrap());
+    }
+
+    #[test]
+    fn test_kiln_and_vault_share_same_table() {
+        let lua = setup_lua();
+
+        let cru: Table = lua.globals().get("cru").expect("cru should exist");
+        let _kiln: Table = cru.get("kiln").expect("cru.kiln should exist");
+        let _vault: Table = cru.get("vault").expect("cru.vault should exist");
+
+        // Both point to the same Lua table — modifying one affects the other
+        let result: bool = lua
+            .load(r#"return cru.kiln.list == cru.vault.list"#)
+            .eval()
+            .unwrap();
+        assert!(result, "cru.kiln and cru.vault should share the same functions");
     }
 
     #[test]
