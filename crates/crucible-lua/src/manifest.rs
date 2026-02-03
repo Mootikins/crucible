@@ -101,7 +101,6 @@ pub enum Capability {
     Filesystem,
     Network,
     Shell,
-    #[serde(rename = "kiln", alias = "vault")]
     Kiln,
     Agent,
     Ui,
@@ -436,7 +435,7 @@ init: setup
 capabilities:
   - filesystem
   - shell
-  - vault
+  - kiln
 
 dependencies:
   - name: other-plugin
