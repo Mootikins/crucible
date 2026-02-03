@@ -1,0 +1,199 @@
+# cargo-dist release workflow
+# Triggered on version tags (v*)
+# Builds pre-built binaries for cru and cru-server with SQLite storage
+
+name: Release
+
+permissions:
+  contents: write
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to release (e.g. v0.1.0)'
+        required: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # Create the GitHub release
+  create-release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v6
+      - name: Get tag
+        id: tag
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "tag=${{ github.event.inputs.tag }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ steps.tag.outputs.tag }}" \
+            --title "${{ steps.tag.outputs.tag }}" \
+            --draft \
+            --generate-notes
+
+  # Build binaries for each target
+  build:
+    name: Build (${{ matrix.target }})
+    needs: create-release
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-latest
+          - target: x86_64-apple-darwin
+            os: macos-13
+          - target: aarch64-apple-darwin
+            os: macos-14
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      # Cross-compilation toolchain for aarch64-linux
+      - name: Install cross-compilation tools
+        if: matrix.target == 'aarch64-unknown-linux-gnu'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
+
+      - name: Install protoc
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+
+      - name: Install protoc (macOS)
+        if: runner.os == 'macOS'
+        run: brew install protobuf
+
+      - name: Create web asset placeholder
+        run: mkdir -p crates/crucible-web/web/dist && echo "<html></html>" > crates/crucible-web/web/dist/index.html
+
+      # Build cru (CLI)
+      - name: Build cru
+        env:
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
+        run: |
+          cargo build --release --target ${{ matrix.target }} \
+            -p crucible-cli --no-default-features --features storage-sqlite
+
+      # Build cru-server (daemon)
+      - name: Build cru-server
+        env:
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
+        run: |
+          cargo build --release --target ${{ matrix.target }} \
+            -p crucible-daemon --no-default-features --features storage-sqlite
+
+      # Package the binaries
+      - name: Package (Unix)
+        shell: bash
+        run: |
+          tag="${{ needs.create-release.outputs.tag }}"
+          archive="crucible-${tag}-${{ matrix.target }}"
+          mkdir -p "$archive"
+          cp "target/${{ matrix.target }}/release/cru" "$archive/"
+          cp "target/${{ matrix.target }}/release/cru-server" "$archive/"
+          cp README.md LICENSE* "$archive/" 2>/dev/null || true
+          tar czf "${archive}.tar.gz" "$archive"
+          echo "ARCHIVE=${archive}.tar.gz" >> "$GITHUB_ENV"
+
+      - name: Upload artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload "${{ needs.create-release.outputs.tag }}" "${{ env.ARCHIVE }}"
+
+  # Generate install scripts and publish release
+  publish:
+    name: Publish Release
+    needs: [create-release, build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Generate installer script
+        run: |
+          tag="${{ needs.create-release.outputs.tag }}"
+          cat > install.sh << 'INSTALLER'
+          #!/bin/sh
+          # Crucible installer — downloads pre-built cru + cru-server
+          set -eu
+
+          REPO="Mootikins/crucible"
+
+          # Determine latest tag if not specified
+          if [ -z "${CRUCIBLE_VERSION:-}" ]; then
+            CRUCIBLE_VERSION=$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" | grep '"tag_name"' | sed -E 's/.*"([^"]+)".*/\1/')
+          fi
+
+          # Detect platform
+          OS=$(uname -s | tr '[:upper:]' '[:lower:]')
+          ARCH=$(uname -m)
+          case "$ARCH" in
+            x86_64|amd64) ARCH="x86_64" ;;
+            arm64|aarch64) ARCH="aarch64" ;;
+            *) echo "Unsupported architecture: $ARCH"; exit 1 ;;
+          esac
+          case "$OS" in
+            linux)  TARGET="${ARCH}-unknown-linux-gnu" ;;
+            darwin) TARGET="${ARCH}-apple-darwin" ;;
+            *) echo "Unsupported OS: $OS"; exit 1 ;;
+          esac
+
+          ARCHIVE="crucible-${CRUCIBLE_VERSION}-${TARGET}.tar.gz"
+          URL="https://github.com/${REPO}/releases/download/${CRUCIBLE_VERSION}/${ARCHIVE}"
+
+          INSTALL_DIR="${CRUCIBLE_INSTALL_DIR:-$HOME/.local/bin}"
+          mkdir -p "$INSTALL_DIR"
+
+          echo "Installing Crucible ${CRUCIBLE_VERSION} for ${TARGET}..."
+          TMPDIR=$(mktemp -d)
+          trap 'rm -rf "$TMPDIR"' EXIT
+
+          curl -fsSL "$URL" -o "$TMPDIR/$ARCHIVE"
+          tar xzf "$TMPDIR/$ARCHIVE" -C "$TMPDIR"
+          cp "$TMPDIR/crucible-${CRUCIBLE_VERSION}-${TARGET}/cru" "$INSTALL_DIR/"
+          cp "$TMPDIR/crucible-${CRUCIBLE_VERSION}-${TARGET}/cru-server" "$INSTALL_DIR/"
+          chmod +x "$INSTALL_DIR/cru" "$INSTALL_DIR/cru-server"
+
+          echo "Installed cru and cru-server to $INSTALL_DIR"
+
+          # Check if install dir is in PATH
+          case ":$PATH:" in
+            *":$INSTALL_DIR:"*) ;;
+            *) echo "Add $INSTALL_DIR to your PATH to use cru" ;;
+          esac
+          INSTALLER
+
+          gh release upload "${{ needs.create-release.outputs.tag }}" install.sh
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release edit "${{ needs.create-release.outputs.tag }}" --draft=false

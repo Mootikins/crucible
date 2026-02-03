@@ -182,10 +182,34 @@ oq = "0.1"
 # Workspace-level test feature flags
 # These control which test tiers are enabled
 # Usage: cargo test --features test-fixtures
+[workspace.metadata.dist]
+# Build only packages that opt-in
+precise-builds = true
+# Install scripts
+installers = ["shell", "powershell"]
+# Target platforms
+targets = [
+    "x86_64-unknown-linux-gnu",
+    "aarch64-unknown-linux-gnu",
+    "x86_64-apple-darwin",
+    "aarch64-apple-darwin",
+]
+# CI settings
+ci = "github"
+# Trigger on version tags
+tag-namespace = "v"
+# Don't build all workspace members by default
+cargo-dist-version = "0.27.0"
+
 [workspace.metadata.test-tiers]
 # test-fixtures: Tests using docs/ kiln or examples/test-kiln
 # test-infrastructure: Tests requiring Ollama, ACP agents (opencode/claude)
 # test-slow: Performance benchmarks and timing-sensitive tests
+
+# The profile that 'cargo dist' will build with
+[profile.dist]
+inherits = "release"
+lto = "thin"
 
 [profile.release]
 opt-level = 3
