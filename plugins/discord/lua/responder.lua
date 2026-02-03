@@ -45,47 +45,46 @@ local function chunk_text(text, max_len)
     return chunks
 end
 
---- Collect the full agent response from a session's event stream.
---- Subscribes, reads streaming events until completion or timeout, and unsubscribes.
----@param session_id string Crucible session ID
+--- Collect the full agent response using a pre-created event iterator.
+--- Reads streaming events until completion or timeout, then unsubscribes.
+---@param next_event function Event iterator from cru.sessions.subscribe
+---@param session_id string Crucible session ID (for unsubscribe)
 ---@param opts table|nil Optional: { timeout = number, on_waiting = function }
 ---@return string response The collected response text
----@return string|nil error Error message if subscription failed
-function M.collect_response(session_id, opts)
+---@return string|nil error Error message if failed
+function M.collect_response_with_iterator(next_event, session_id, opts)
     opts = opts or {}
     local timeout = opts.timeout or RESPONSE_TIMEOUT
 
-    local next_event, sub_err = cru.sessions.subscribe(session_id)
-    if not next_event then
-        return "", sub_err or "Failed to subscribe to session events"
-    end
-
     local parts = {}
-    local start_time = os.clock()
+    local start_time = cru.timer.clock()
 
     while true do
         if opts.on_waiting then
             opts.on_waiting()
         end
 
-        if os.clock() - start_time > timeout then
+        if cru.timer.clock() - start_time > timeout then
             cru.log("warn", "Response timeout for session " .. session_id)
             break
         end
 
-        local ok, event = pcall(function()
-            return cru.timer.timeout(TYPING_INTERVAL, function()
-                return next_event()
-            end)
-        end)
+        -- Call next_event() directly — it's an async function that yields to tokio.
+        -- Do NOT wrap in cru.timer.timeout() since async functions can't yield
+        -- through a regular Lua function boundary.
+        local event, event_err = next_event()
 
-        if not ok then
-            -- Timeout on receive, loop continues
-            goto continue_loop
+        if event_err then
+            cru.log("warn", "Collector: event error: " .. tostring(event_err))
+            break
         end
 
-        if not event then
-            break
+        -- nil means stream ended
+        if event == nil then break end
+
+        -- Skip non-table values
+        if type(event) ~= "table" then
+            goto continue_loop
         end
 
         local event_type = event.type or event.event
@@ -95,7 +94,7 @@ function M.collect_response(session_id, opts)
             if type(text) == "string" then
                 table.insert(parts, text)
             end
-        elseif event_type == "response_complete" or event_type == "response_done" then
+        elseif event_type == "message_complete" or event_type == "response_complete" or event_type == "response_done" then
             break
         elseif event_type == "error" then
             local err_msg = event.data and event.data.message or "Unknown error"
@@ -122,26 +121,44 @@ end
 ---@param user_message string The user's message content
 ---@param reply_to_msg_id string|nil Discord message ID to reply to
 function M.respond(session_id, channel_id, user_message, reply_to_msg_id)
+    cru.log("info", "Responder: starting for session " .. session_id)
     pcall(api.trigger_typing, channel_id)
+
+    -- Subscribe BEFORE sending the message to avoid missing early events
+    cru.log("info", "Responder: subscribing to events")
+    local next_event, sub_err = cru.sessions.subscribe(session_id)
+    if not next_event then
+        cru.log("warn", "Responder: subscribe failed: " .. tostring(sub_err))
+        api.send_message(channel_id, "Sorry, I couldn't connect to the session: " .. tostring(sub_err), {
+            reply_to = reply_to_msg_id,
+        })
+        return
+    end
+    cru.log("info", "Responder: subscribed, sending message")
 
     local msg_id, err = cru.sessions.send_message(session_id, user_message)
     if not msg_id then
+        cru.log("warn", "Responder: send_message failed: " .. tostring(err))
+        pcall(cru.sessions.unsubscribe, session_id)
         api.send_message(channel_id, "Sorry, I couldn't process that: " .. tostring(err), {
             reply_to = reply_to_msg_id,
         })
         return
     end
+    cru.log("info", "Responder: message sent (id=" .. msg_id .. "), collecting response")
 
     -- Keep typing indicator alive while collecting the response
-    local last_typing = os.clock()
-    local response, collect_err = M.collect_response(session_id, {
+    local last_typing = cru.timer.clock()
+    local response, collect_err = M.collect_response_with_iterator(next_event, session_id, {
         on_waiting = function()
-            if os.clock() - last_typing > TYPING_INTERVAL then
+            if cru.timer.clock() - last_typing > TYPING_INTERVAL then
                 pcall(api.trigger_typing, channel_id)
-                last_typing = os.clock()
+                last_typing = cru.timer.clock()
             end
         end,
     })
+
+    cru.log("info", "Responder: collected response (" .. #(response or "") .. " chars)")
 
     if collect_err then
         api.send_message(channel_id, "Sorry, I lost the connection to the agent.", {
