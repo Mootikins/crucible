@@ -12,7 +12,7 @@ use std::path::Path;
 use std::process::Command;
 use std::sync::Arc;
 
-use crate::acp::ContextEnricher;
+use crate::context_enricher::ContextEnricher;
 use crate::chat::bridge::AgentEventBridge;
 use crate::chat::handlers;
 use crate::chat::mode_registry::ModeRegistry;

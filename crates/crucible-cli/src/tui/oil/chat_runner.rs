@@ -22,7 +22,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc;
 
-use crate::acp::context::ContextEnricher;
+use crate::context_enricher::ContextEnricher;
 
 pub struct OilChatRunner {
     terminal: Terminal,
