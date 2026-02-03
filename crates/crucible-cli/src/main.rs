@@ -159,8 +159,9 @@ async fn main() -> Result<()> {
             };
 
             let log_file_path = std::env::var("CRUCIBLE_LOG_FILE").unwrap_or_else(|_| {
-                let home = dirs::home_dir().expect("Failed to get home directory");
-                home.join(".crucible")
+                dirs::home_dir()
+                    .unwrap_or_else(|| std::path::PathBuf::from("/tmp"))
+                    .join(".crucible")
                     .join(log_file_name)
                     .to_string_lossy()
                     .to_string()
