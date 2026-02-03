@@ -99,7 +99,7 @@ dependencies:
 # Optional: request capabilities
 capabilities:
   - filesystem
-  - vault
+  - kiln
 ```
 
 See [[Help/Extending/Plugin Manifest]] for the complete manifest specification.

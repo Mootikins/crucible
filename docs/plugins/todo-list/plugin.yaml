@@ -8,7 +8,7 @@ main: init.lua
 
 capabilities:
   - filesystem
-  - vault
+  - kiln
 
 exports:
   tools:

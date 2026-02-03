@@ -12,7 +12,7 @@
   "Recursively collect links from a note"
   (when (and (< depth max-depth) (not (. visited note-name)))
     (tset visited note-name true)
-    (let [outlinks (or (cru.vault.outlinks note-name) [])
+    (let [outlinks (or (cru.kiln.outlinks note-name) [])
           nodes [{:name note-name :depth depth}]
           edges []]
       (each [_ link (ipairs outlinks)]
@@ -31,7 +31,7 @@
         visited {}
         forward (or (collect-links center-note visited 0 max-depth)
                     {:nodes [] :edges []})
-        backlinks (or (cru.vault.backlinks center-note) [])]
+        backlinks (or (cru.kiln.backlinks center-note) [])]
     (each [_ link (ipairs backlinks)]
       (when (not (. visited link))
         (table.insert forward.nodes {:name link :depth -1})
