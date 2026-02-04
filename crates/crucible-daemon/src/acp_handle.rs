@@ -107,7 +107,10 @@ impl AcpAgentHandle {
                     Some(host)
                 }
                 Err(e) => {
-                    warn!("Failed to start in-process MCP server: {}, falling back to stdio", e);
+                    warn!(
+                        "Failed to start in-process MCP server: {}, falling back to stdio",
+                        e
+                    );
                     None
                 }
             }
@@ -216,7 +219,11 @@ impl AgentHandle for AcpAgentHandle {
             mpsc::UnboundedReceiver<StreamingChunk>,
             tokio::sync::oneshot::Receiver<
                 Result<
-                    (String, Vec<crucible_acp::ToolCallInfo>, agent_client_protocol::PromptResponse),
+                    (
+                        String,
+                        Vec<crucible_acp::ToolCallInfo>,
+                        agent_client_protocol::PromptResponse,
+                    ),
                     crucible_acp::ClientError,
                 >,
             >,
@@ -285,60 +292,54 @@ impl AgentHandle for AcpAgentHandle {
                         };
                         Some((Ok(chat_chunk), Some((rx, result_rx, tool_calls))))
                     }
-                    None => {
-                        match result_rx.await {
-                            Ok(Ok((_content, acp_tool_calls, _response))) => {
-                                let acp_tool_calls: Vec<crucible_acp::ToolCallInfo> =
-                                    acp_tool_calls;
-                                debug!(
-                                    tool_count = acp_tool_calls.len(),
-                                    "ACP stream completed"
-                                );
+                    None => match result_rx.await {
+                        Ok(Ok((_content, acp_tool_calls, _response))) => {
+                            let acp_tool_calls: Vec<crucible_acp::ToolCallInfo> = acp_tool_calls;
+                            debug!(tool_count = acp_tool_calls.len(), "ACP stream completed");
 
-                                let final_tool_calls: Vec<ChatToolCall> = acp_tool_calls
-                                    .into_iter()
-                                    .map(|t| ChatToolCall {
-                                        name: t.title,
-                                        arguments: t.arguments,
-                                        id: t.id,
-                                    })
-                                    .collect();
+                            let final_tool_calls: Vec<ChatToolCall> = acp_tool_calls
+                                .into_iter()
+                                .map(|t| ChatToolCall {
+                                    name: t.title,
+                                    arguments: t.arguments,
+                                    id: t.id,
+                                })
+                                .collect();
 
-                                Some((
-                                    Ok(ChatChunk {
-                                        delta: String::new(),
-                                        done: true,
-                                        tool_calls: if final_tool_calls.is_empty() {
-                                            None
-                                        } else {
-                                            Some(final_tool_calls)
-                                        },
-                                        tool_results: None,
-                                        reasoning: None,
-                                        usage: None,
-                                        subagent_events: None,
-                                    }),
-                                    None,
-                                ))
-                            }
-                            Ok(Err(e)) => {
-                                warn!(error = %e, "ACP stream error");
-                                Some((
-                                    Err(ChatError::Communication(format!("ACP error: {}", e))),
-                                    None,
-                                ))
-                            }
-                            Err(_) => {
-                                warn!("ACP streaming task dropped (oneshot cancelled)");
-                                Some((
-                                    Err(ChatError::Communication(
-                                        "ACP streaming task failed".to_string(),
-                                    )),
-                                    None,
-                                ))
-                            }
+                            Some((
+                                Ok(ChatChunk {
+                                    delta: String::new(),
+                                    done: true,
+                                    tool_calls: if final_tool_calls.is_empty() {
+                                        None
+                                    } else {
+                                        Some(final_tool_calls)
+                                    },
+                                    tool_results: None,
+                                    reasoning: None,
+                                    usage: None,
+                                    subagent_events: None,
+                                }),
+                                None,
+                            ))
                         }
-                    }
+                        Ok(Err(e)) => {
+                            warn!(error = %e, "ACP stream error");
+                            Some((
+                                Err(ChatError::Communication(format!("ACP error: {}", e))),
+                                None,
+                            ))
+                        }
+                        Err(_) => {
+                            warn!("ACP streaming task dropped (oneshot cancelled)");
+                            Some((
+                                Err(ChatError::Communication(
+                                    "ACP streaming task failed".to_string(),
+                                )),
+                                None,
+                            ))
+                        }
+                    },
                 }
             },
         ))
@@ -461,10 +462,7 @@ fn build_client_config(
     workspace: &Path,
     acp_config: Option<&AcpConfig>,
 ) -> Result<ClientConfig, AcpHandleError> {
-    let agent_name = agent_config
-        .agent_name
-        .as_deref()
-        .unwrap_or("acp");
+    let agent_name = agent_config.agent_name.as_deref().unwrap_or("acp");
 
     let (command, args, env_vars) = resolve_agent_command(agent_name, agent_config, acp_config)?;
 
@@ -509,9 +507,7 @@ fn resolve_agent_command(
         .iter()
         .find(|(name, _, _)| *name == agent_name)
         .map(|(_, cmd, ag)| (cmd.to_string(), ag.iter().map(|s| s.to_string()).collect()))
-        .unwrap_or_else(|| {
-            (agent_name.to_string(), Vec::new())
-        });
+        .unwrap_or_else(|| (agent_name.to_string(), Vec::new()));
 
     if let Some(config) = acp_config {
         if let Some(profile) = config.agents.get(agent_name) {
@@ -603,7 +599,10 @@ mod tests {
 
         let (_, _, env) = resolve_agent_command("opencode", &config, None).unwrap();
         assert_eq!(env.len(), 1);
-        assert_eq!(env[0], ("OPENCODE_MODEL".to_string(), "ollama/llama3.2".to_string()));
+        assert_eq!(
+            env[0],
+            ("OPENCODE_MODEL".to_string(), "ollama/llama3.2".to_string())
+        );
     }
 
     #[test]
@@ -635,8 +634,7 @@ mod tests {
         let mut acp_config = AcpConfig::default();
         acp_config.streaming_timeout_minutes = 30;
 
-        let config =
-            build_client_config(&agent, Path::new("/tmp"), Some(&acp_config)).unwrap();
+        let config = build_client_config(&agent, Path::new("/tmp"), Some(&acp_config)).unwrap();
         assert_eq!(config.timeout_ms, Some(180_000));
     }
 }

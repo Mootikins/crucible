@@ -131,6 +131,7 @@ pub enum ChatAppMsg {
         response: InteractionResponse,
     },
     LoadHistory(Vec<ChatItem>),
+    ReloadPlugin(String),
     /// Forward an unrecognized slash command to the runner for registry-based execution
     ExecuteSlashCommand(String),
     /// Export session to markdown file via observe renderer
@@ -347,6 +348,8 @@ pub struct OilChatApp {
     show_thinking: bool,
     /// Whether to auto-enrich user messages with knowledge base context (precognition / auto-RAG)
     precognition: bool,
+    /// Number of context results to inject per precognition query (1-20)
+    precognition_results: usize,
     /// Current terminal size (width, height) — updated in view()
     terminal_size: Cell<(u16, u16)>,
 
@@ -413,7 +416,8 @@ impl Default for OilChatApp {
             spinner_frame: 0,
             needs_full_redraw: false,
             show_thinking: true,
-            precognition: false,
+            precognition: true,
+            precognition_results: 5,
             terminal_size: Cell::new((80, 24)),
             permission_queue: VecDeque::new(),
             perm_show_diff: true,
@@ -708,10 +712,9 @@ impl App for OilChatApp {
                 // Handled by the runner — starts agent stream with enriched content
                 Action::Continue
             }
-            ChatAppMsg::ExecuteSlashCommand(_) | ChatAppMsg::ExportSession(_) => {
-                // Handled by the runner — TUI just forwards
-                Action::Continue
-            }
+            ChatAppMsg::ExecuteSlashCommand(_)
+            | ChatAppMsg::ExportSession(_)
+            | ChatAppMsg::ReloadPlugin(_) => Action::Continue,
         }
     }
 
@@ -779,6 +782,10 @@ impl OilChatApp {
 
     pub fn precognition(&self) -> bool {
         self.precognition
+    }
+
+    pub fn precognition_results(&self) -> usize {
+        self.precognition_results
     }
 
     pub fn perm_show_diff(&self) -> bool {
@@ -1438,7 +1445,7 @@ impl OilChatApp {
                     .collect::<Vec<_>>()
                     .join(" ");
                 self.add_system_message(format!(
-                    "[system] :quit :help :clear :palette :model :set :export <path> :messages :mcp :plugins\n[agent] {}",
+                    "[system] :quit :help :clear :palette :model :set :export <path> :messages :mcp :plugins :reload <name>\n[agent] {}",
                     slash_list
                 ));
                 Action::Continue
@@ -1502,6 +1509,28 @@ impl OilChatApp {
             "clear" => {
                 self.reset_session();
                 Action::Send(ChatAppMsg::ClearHistory)
+            }
+            _ if command.starts_with("reload ") => {
+                let plugin_name = command
+                    .strip_prefix("reload ")
+                    .expect("starts_with guard")
+                    .trim();
+                if plugin_name.is_empty() {
+                    self.notification_area
+                        .add(crucible_core::types::Notification::warning(
+                            "Usage: :reload <plugin_name>".to_string(),
+                        ));
+                    Action::Continue
+                } else {
+                    Action::Send(ChatAppMsg::ReloadPlugin(plugin_name.to_string()))
+                }
+            }
+            "reload" => {
+                self.notification_area
+                    .add(crucible_core::types::Notification::warning(
+                        "Usage: :reload <plugin_name>".to_string(),
+                    ));
+                Action::Continue
             }
             _ if command.starts_with("export ") => {
                 let path = command
@@ -1739,6 +1768,28 @@ impl OilChatApp {
                             return self.handle_perm_set(&key, &value);
                         }
 
+                        if key == "precognition.results" {
+                            match value.parse::<usize>() {
+                                Ok(n) if (1..=20).contains(&n) => {
+                                    self.runtime_config
+                                        .set_str(&key, &value, ModSource::Command);
+                                    self.precognition_results = n;
+                                    self.add_system_message(format!(
+                                        "  precognition.results={}",
+                                        n
+                                    ));
+                                }
+                                _ => {
+                                    self.notification_area.add(
+                                        crucible_core::types::Notification::warning(
+                                            "precognition.results must be 1-20".to_string(),
+                                        ),
+                                    );
+                                }
+                            }
+                            return Action::Continue;
+                        }
+
                         self.runtime_config
                             .set_str(&key, &value, ModSource::Command);
                         self.sync_runtime_to_fields(&key);
@@ -1784,6 +1835,12 @@ impl OilChatApp {
             .get("mode")
             .unwrap_or(ConfigValue::String("normal".to_string()));
         output.push_str(&format!("  mode: {}\n", mode));
+
+        output.push_str(&format!("  precognition: {}\n", self.precognition));
+        output.push_str(&format!(
+            "  precognition.results: {}\n",
+            self.precognition_results
+        ));
 
         self.add_system_message(output);
         Action::Continue
@@ -1855,7 +1912,14 @@ impl OilChatApp {
             }
             "precognition" => {
                 if let Some(val) = self.runtime_config.get("precognition") {
-                    self.precognition = val.as_bool().unwrap_or(false);
+                    self.precognition = val.as_bool().unwrap_or(true);
+                }
+            }
+            "precognition.results" => {
+                if let Some(val) = self.runtime_config.get("precognition.results") {
+                    if let Some(n) = val.as_int() {
+                        self.precognition_results = (n as usize).clamp(1, 20);
+                    }
                 }
             }
             _ => {}
@@ -3601,24 +3665,24 @@ mod tests {
     }
 
     #[test]
-    fn precognition_default_off() {
+    fn precognition_default_on() {
         let app = OilChatApp::init();
-        assert!(!app.precognition());
+        assert!(app.precognition());
     }
 
     #[test]
     fn precognition_toggle_via_set_command() {
         let mut app = OilChatApp::init();
-        assert!(!app.precognition());
-
-        app.handle_set_command("set precognition");
         assert!(app.precognition());
 
         app.handle_set_command("set noprecognition");
         assert!(!app.precognition());
 
-        app.handle_set_command("set precognition!");
+        app.handle_set_command("set precognition");
         assert!(app.precognition());
+
+        app.handle_set_command("set precognition!");
+        assert!(!app.precognition());
     }
 
     #[test]

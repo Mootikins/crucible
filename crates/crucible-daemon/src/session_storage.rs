@@ -737,18 +737,15 @@ not json at all
         storage.save(&session).await.unwrap();
 
         // Verify file is at {home}/sessions/{id}/meta.json (no .crucible prefix)
-        let meta_path = home
-            .join("sessions")
-            .join(&session_id)
-            .join("meta.json");
+        let meta_path = home.join("sessions").join(&session_id).join("meta.json");
         assert!(meta_path.exists(), "meta.json should be at {:?}", meta_path);
 
         // Verify the double-nested path does NOT exist
-        let bad_path = home
-            .join(".crucible")
-            .join("sessions")
-            .join(&session_id);
-        assert!(!bad_path.exists(), "should NOT have double .crucible nesting");
+        let bad_path = home.join(".crucible").join("sessions").join(&session_id);
+        assert!(
+            !bad_path.exists(),
+            "should NOT have double .crucible nesting"
+        );
 
         // Load should work
         let loaded = storage.load(&session_id, &home).await.unwrap();

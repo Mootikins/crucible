@@ -1,5 +1,5 @@
 [package]
-name = "crucible-daemon-client"
+name = "crucible-rpc"
 version.workspace = true
 edition.workspace = true
 description = "Client library for Crucible daemon"

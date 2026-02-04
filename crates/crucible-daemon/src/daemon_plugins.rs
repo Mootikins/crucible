@@ -11,9 +11,9 @@ use crucible_core::storage::NoteStore;
 use crucible_lua::{
     register_graph_module, register_graph_module_with_store, register_oq_module,
     register_paths_module, register_sessions_module, register_sessions_module_with_api,
-    register_shell_module, register_vault_module, register_vault_module_with_store,
-    register_ws_module, DaemonSessionApi, LuaExecutor, PathsContext, PluginManager, PluginSpec,
-    ShellPolicy,
+    register_shell_module, register_tools_module, register_tools_module_with_api,
+    register_vault_module, register_vault_module_with_store, register_ws_module, DaemonSessionApi,
+    DaemonToolsApi, LuaExecutor, PathsContext, PluginManager, PluginSpec, ShellPolicy,
 };
 use mlua::LuaSerdeExt;
 use std::collections::HashMap;
@@ -49,9 +49,7 @@ impl DaemonPluginLoader {
     ///
     /// **Not** registered (UI-only):
     /// - `cru.oil`, `cru.popup`, `cru.panel`, `cru.statusline`
-    pub fn new(
-        plugin_config: HashMap<String, serde_json::Value>,
-    ) -> anyhow::Result<Self> {
+    pub fn new(plugin_config: HashMap<String, serde_json::Value>) -> anyhow::Result<Self> {
         let executor = LuaExecutor::new().map_err(|e| anyhow::anyhow!("LuaExecutor init: {e}"))?;
 
         // LuaExecutor::new() already registers: http, fs, timer, ratelimit, lua_stdlib.
@@ -67,6 +65,7 @@ impl DaemonPluginLoader {
         register_graph_module(lua).map_err(|e| anyhow::anyhow!("graph module: {e}"))?;
         register_vault_module(lua).map_err(|e| anyhow::anyhow!("vault module: {e}"))?;
         register_sessions_module(lua).map_err(|e| anyhow::anyhow!("sessions module: {e}"))?;
+        register_tools_module(lua).map_err(|e| anyhow::anyhow!("tools module: {e}"))?;
         Self::register_plugin_config(lua, plugin_config)
             .map_err(|e| anyhow::anyhow!("config module: {e}"))?;
 
@@ -153,7 +152,10 @@ impl DaemonPluginLoader {
             }
         }
 
-        info!("Lua graph/vault modules upgraded with storage (kiln: {})", kiln_path.display());
+        info!(
+            "Lua graph/vault modules upgraded with storage (kiln: {})",
+            kiln_path.display()
+        );
         Ok(())
     }
 
@@ -168,12 +170,26 @@ impl DaemonPluginLoader {
         Ok(())
     }
 
+    /// Upgrade tools module with real daemon-backed implementations.
+    ///
+    /// Call after workspace tools are available. Replaces stub `cru.tools.*`
+    /// functions with implementations that delegate to the provided API.
+    pub fn upgrade_with_tools(&self, api: Arc<dyn DaemonToolsApi>) -> anyhow::Result<()> {
+        register_tools_module_with_api(self.executor.lua(), api)
+            .map_err(|e| anyhow::anyhow!("tools upgrade: {e}"))?;
+        info!("Lua tools module upgraded with daemon API");
+        Ok(())
+    }
+
     /// Discover and load plugins from the given search paths.
     ///
     /// Returns the list of [`PluginSpec`]s extracted from successfully loaded
     /// plugins. Service functions are stored internally and can be retrieved
     /// via [`take_service_fns`].
-    pub async fn load_plugins(&mut self, plugin_paths: &[PathBuf]) -> anyhow::Result<Vec<PluginSpec>> {
+    pub async fn load_plugins(
+        &mut self,
+        plugin_paths: &[PathBuf],
+    ) -> anyhow::Result<Vec<PluginSpec>> {
         for path in plugin_paths {
             self.plugin_manager.add_search_path(path.clone());
         }
@@ -255,12 +271,18 @@ impl DaemonPluginLoader {
         match self.execute_plugin(&main_path).await {
             Ok(services) => {
                 for (svc_name, func) in services {
-                    debug!("Extracted service function '{}' from plugin '{}'", svc_name, name);
+                    debug!(
+                        "Extracted service function '{}' from plugin '{}'",
+                        svc_name, name
+                    );
                     self.service_fns.push((svc_name, func));
                 }
             }
             Err(e) => {
-                warn!("Failed to execute plugin '{}' in daemon runtime: {}", name, e);
+                warn!(
+                    "Failed to execute plugin '{}' in daemon runtime: {}",
+                    name, e
+                );
             }
         }
 
@@ -286,11 +308,11 @@ impl DaemonPluginLoader {
         let lua_dir = plugin_dir.join("lua");
 
         // Add plugin's lua/ dir to package.path so require() works
-        let lua_dir_str = lua_dir.to_string_lossy().replace('\\', "\\\\").replace('"', "\\\"");
-        let setup_code = format!(
-            r#"package.path = "{}/?.lua;" .. package.path"#,
-            lua_dir_str
-        );
+        let lua_dir_str = lua_dir
+            .to_string_lossy()
+            .replace('\\', "\\\\")
+            .replace('"', "\\\"");
+        let setup_code = format!(r#"package.path = "{}/?.lua;" .. package.path"#, lua_dir_str);
         lua.load(&setup_code)
             .exec()
             .map_err(|e| anyhow::anyhow!("package.path setup: {e}"))?;
@@ -309,11 +331,9 @@ impl DaemonPluginLoader {
         let mut services = Vec::new();
         if let mlua::Value::Table(spec) = return_val {
             if let Ok(svc_table) = spec.get::<mlua::Table>("services") {
-                for pair in svc_table.pairs::<String, mlua::Table>() {
-                    if let Ok((name, entry)) = pair {
-                        if let Ok(func) = entry.get::<mlua::Function>("fn") {
-                            services.push((name, func));
-                        }
+                for (name, entry) in svc_table.pairs::<String, mlua::Table>().flatten() {
+                    if let Ok(func) = entry.get::<mlua::Function>("fn") {
+                        services.push((name, func));
                     }
                 }
             }
@@ -326,6 +346,75 @@ impl DaemonPluginLoader {
     #[allow(dead_code)]
     pub fn loaded_specs(&self) -> &[PluginSpec] {
         &self.loaded_specs
+    }
+
+    /// Reload a plugin: clear its Lua module cache, unload registrations,
+    /// re-execute `init.lua`, and re-extract service functions.
+    pub async fn reload_plugin(&mut self, name: &str) -> anyhow::Result<PluginSpec> {
+        let plugin = self
+            .plugin_manager
+            .get(name)
+            .ok_or_else(|| anyhow::anyhow!("plugin '{}' not found", name))?;
+
+        let main_path = plugin.main_path();
+        let plugin_dir = main_path
+            .parent()
+            .ok_or_else(|| anyhow::anyhow!("plugin main path has no parent"))?;
+        let lua_dir = plugin_dir.join("lua");
+
+        self.clear_plugin_lua_cache(&lua_dir)?;
+
+        self.plugin_manager
+            .unload(name)
+            .map_err(|e| anyhow::anyhow!("unload plugin '{}': {e}", name))?;
+
+        self.plugin_manager
+            .load(name)
+            .map_err(|e| anyhow::anyhow!("reload plugin '{}': {e}", name))?;
+
+        let spec = self.load_plugin_spec(name).await?;
+
+        let spec_name = spec.name.clone();
+        if let Some(existing) = self.loaded_specs.iter_mut().find(|s| s.name == spec_name) {
+            *existing = spec.clone();
+        } else {
+            self.loaded_specs.push(spec.clone());
+        }
+
+        info!("Reloaded plugin '{}' successfully", name);
+        Ok(spec)
+    }
+
+    /// Clear `package.loaded` entries for modules whose `.lua` file lives under `lua_dir`.
+    fn clear_plugin_lua_cache(&self, lua_dir: &std::path::Path) -> anyhow::Result<()> {
+        let lua = self.executor.lua();
+        let lua_dir_str = lua_dir
+            .to_string_lossy()
+            .replace('\\', "\\\\")
+            .replace('"', "\\\"");
+
+        lua.load(format!(
+            r#"
+            local dir = "{lua_dir_str}"
+            for mod_name, _ in pairs(package.loaded) do
+                local path = dir .. "/" .. mod_name:gsub("%.", "/") .. ".lua"
+                local f = io.open(path, "r")
+                if f then
+                    f:close()
+                    package.loaded[mod_name] = nil
+                end
+            end
+            "#,
+        ))
+        .exec()
+        .map_err(|e| anyhow::anyhow!("clear lua cache: {e}"))
+    }
+
+    pub fn loaded_plugin_names(&self) -> Vec<String> {
+        self.loaded_specs
+            .iter()
+            .filter_map(|s| s.name.clone())
+            .collect()
     }
 
     /// Borrow the underlying [`LuaExecutor`].
@@ -384,10 +473,6 @@ mod tests {
         let has_plugins = paths
             .iter()
             .any(|p| p.to_string_lossy().contains("plugins"));
-        assert!(
-            has_plugins,
-            "Expected plugins path in {:?}",
-            paths
-        );
+        assert!(has_plugins, "Expected plugins path in {:?}", paths);
     }
 }

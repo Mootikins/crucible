@@ -82,73 +82,77 @@ impl UserData for WsConnection {
 
         // receive(timeout_secs?) — optional timeout in seconds
         // Returns message table on success, nil on timeout, error on failure
-        methods.add_async_method("receive", |lua, this, timeout_secs: Option<f64>| async move {
-            let closed = *this.closed.lock().await;
-            if closed {
-                return Err(mlua::Error::runtime("WebSocket connection is closed"));
-            }
+        methods.add_async_method(
+            "receive",
+            |lua, this, timeout_secs: Option<f64>| async move {
+                let closed = *this.closed.lock().await;
+                if closed {
+                    return Err(mlua::Error::runtime("WebSocket connection is closed"));
+                }
 
-            let mut stream_guard = this.stream.lock().await;
-            let stream = stream_guard
-                .as_mut()
-                .ok_or_else(|| mlua::Error::runtime("WebSocket connection is closed"))?;
+                let mut stream_guard = this.stream.lock().await;
+                let stream = stream_guard
+                    .as_mut()
+                    .ok_or_else(|| mlua::Error::runtime("WebSocket connection is closed"))?;
 
-            let deadline = timeout_secs.map(|s| tokio::time::Instant::now() + std::time::Duration::from_secs_f64(s));
+                let deadline = timeout_secs
+                    .map(|s| tokio::time::Instant::now() + std::time::Duration::from_secs_f64(s));
 
-            loop {
-                let next_msg = if let Some(dl) = deadline {
-                    match tokio::time::timeout_at(dl, stream.next()).await {
-                        Ok(msg) => msg,
-                        Err(_) => return Ok(mlua::Value::Nil), // timeout
-                    }
-                } else {
-                    stream.next().await
-                };
-
-                match next_msg {
-                    Some(Ok(tungstenite::Message::Text(text))) => {
-                        let result = lua.create_table()?;
-                        result.set("type", "text")?;
-                        result.set("data", text.to_string())?;
-                        return Ok(mlua::Value::Table(result));
-                    }
-                    Some(Ok(tungstenite::Message::Binary(data))) => {
-                        let result = lua.create_table()?;
-                        result.set("type", "binary")?;
-                        result.set("data", BASE64.encode(&data))?;
-                        return Ok(mlua::Value::Table(result));
-                    }
-                    Some(Ok(tungstenite::Message::Close(_))) => {
-                        *this.closed.lock().await = true;
-                        let result = lua.create_table()?;
-                        result.set("type", "close")?;
-                        return Ok(mlua::Value::Table(result));
-                    }
-                    Some(Ok(tungstenite::Message::Ping(data))) => {
-                        // Respond with Pong to keep the connection alive
-                        let mut sink_guard = this.sink.lock().await;
-                        if let Some(sink) = sink_guard.as_mut() {
-                            let _ = sink.send(tungstenite::Message::Pong(data)).await;
+                loop {
+                    let next_msg = if let Some(dl) = deadline {
+                        match tokio::time::timeout_at(dl, stream.next()).await {
+                            Ok(msg) => msg,
+                            Err(_) => return Ok(mlua::Value::Nil), // timeout
                         }
-                        continue;
-                    }
-                    Some(Ok(tungstenite::Message::Pong(_))) => {
-                        continue;
-                    }
-                    Some(Ok(tungstenite::Message::Frame(_))) => {
-                        continue;
-                    }
-                    Some(Err(e)) => {
-                        *this.closed.lock().await = true;
-                        return Err(mlua::Error::runtime(format!("WebSocket error: {e}")));
-                    }
-                    None => {
-                        *this.closed.lock().await = true;
-                        return Err(mlua::Error::runtime("WebSocket connection is closed"));
+                    } else {
+                        stream.next().await
+                    };
+
+                    match next_msg {
+                        Some(Ok(tungstenite::Message::Text(text))) => {
+                            let result = lua.create_table()?;
+                            result.set("type", "text")?;
+                            result.set("data", text.to_string())?;
+                            return Ok(mlua::Value::Table(result));
+                        }
+                        Some(Ok(tungstenite::Message::Binary(data))) => {
+                            let result = lua.create_table()?;
+                            result.set("type", "binary")?;
+                            result.set("data", BASE64.encode(&data))?;
+                            return Ok(mlua::Value::Table(result));
+                        }
+                        Some(Ok(tungstenite::Message::Close(_))) => {
+                            *this.closed.lock().await = true;
+                            let result = lua.create_table()?;
+                            result.set("type", "close")?;
+                            return Ok(mlua::Value::Table(result));
+                        }
+                        Some(Ok(tungstenite::Message::Ping(data))) => {
+                            // Respond with Pong to keep the connection alive
+                            let mut sink_guard = this.sink.lock().await;
+                            if let Some(sink) = sink_guard.as_mut() {
+                                let _ = sink.send(tungstenite::Message::Pong(data)).await;
+                            }
+                            continue;
+                        }
+                        Some(Ok(tungstenite::Message::Pong(_))) => {
+                            continue;
+                        }
+                        Some(Ok(tungstenite::Message::Frame(_))) => {
+                            continue;
+                        }
+                        Some(Err(e)) => {
+                            *this.closed.lock().await = true;
+                            return Err(mlua::Error::runtime(format!("WebSocket error: {e}")));
+                        }
+                        None => {
+                            *this.closed.lock().await = true;
+                            return Err(mlua::Error::runtime("WebSocket connection is closed"));
+                        }
                     }
                 }
-            }
-        });
+            },
+        );
 
         methods.add_async_method("close", |_lua, this, ()| async move {
             let mut already_closed = this.closed.lock().await;

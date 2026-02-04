@@ -36,7 +36,7 @@
 | `crucible-watch` | File system watching | Change detection |
 | `crucible-acp` | Agent Context Protocol | Protocol types |
 | `crucible-daemon` | Daemon server (cru-server) | `Server`, `SessionManager`, `AgentManager` |
-| `crucible-daemon-client` | Daemon client library | `DaemonClient`, `DaemonStorageClient` |
+| `crucible-rpc` | Daemon RPC client library | `DaemonClient`, `DaemonStorageClient` |
 
 See `crates/` for additional crates (lance, query, sqlite, skills, plugins, pipeline, etc.)
 
@@ -84,13 +84,13 @@ When implementing features that affect agent/session behavior (not just UI displ
 | TUI-local | theme, show_thinking, verbose | `InkChatApp` fields, no RPC needed |
 
 **Before Implementing:**
-- [ ] Check if daemon already has RPC for this (`crucible-daemon-client/src/client.rs`)
+- [ ] Check if daemon already has RPC for this (`crucible-rpc/src/client.rs`)
 - [ ] Check if `SessionAgent` has a field for this (`crucible-core/src/session/types.rs`)
 - [ ] Determine scope: Does this need multi-client consistency? If yes → session-scoped
 
 **Implementation (session-scoped features):**
 - [ ] Add method to `AgentHandle` trait (`crucible-core/src/traits/chat.rs`)
-- [ ] Implement in `DaemonAgentHandle` (`crucible-daemon-client/src/agent.rs`)
+- [ ] Implement in `DaemonAgentHandle` (`crucible-rpc/src/agent.rs`)
 - [ ] Add `ChatAppMsg` variant (`crucible-cli/src/tui/oil/chat_app.rs`)
 - [ ] Handle in `chat_runner` (`crucible-cli/src/tui/oil/chat_runner.rs`)
 - [ ] Wire TUI command (`:set`, etc.) to emit the `ChatAppMsg`
@@ -177,7 +177,7 @@ crucible/
 │   ├── crucible-web/            # Browser-based chat UI
 │   ├── crucible-tools/          # MCP server and tools
 │   ├── crucible-daemon/         # Daemon server (cru-server)
-│   ├── crucible-daemon-client/  # Daemon client library
+│   ├── crucible-rpc/            # Daemon RPC client library
 │   ├── crucible-surrealdb/      # Database layer
 │   ├── crucible-lua/            # Lua/Luau with Fennel
 │   ├── crucible-llm/            # Embedding backends

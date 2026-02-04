@@ -1064,6 +1064,23 @@ impl DaemonClient {
         Ok(temperature)
     }
 
+    pub async fn plugin_reload(&self, name: &str) -> Result<serde_json::Value> {
+        self.call("plugin.reload", serde_json::json!({ "name": name }))
+            .await
+    }
+
+    pub async fn plugin_list(&self) -> Result<Vec<String>> {
+        let result = self.call("plugin.list", serde_json::json!({})).await?;
+        Ok(result["plugins"]
+            .as_array()
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str().map(String::from))
+                    .collect()
+            })
+            .unwrap_or_default())
+    }
+
     pub async fn session_set_max_tokens(
         &self,
         session_id: &str,

@@ -63,10 +63,19 @@ impl ContextEnricher {
     /// # Returns
     /// EnrichmentResult containing the enriched prompt and found notes
     pub async fn enrich_with_results(&self, query: &str) -> Result<EnrichmentResult> {
-        debug!("Enriching query with {} context results", self.context_size);
+        self.enrich_with_results_n(query, self.context_size).await
+    }
+
+    /// Like `enrich_with_results` but with an explicit result count override.
+    pub async fn enrich_with_results_n(
+        &self,
+        query: &str,
+        top_k: usize,
+    ) -> Result<EnrichmentResult> {
+        debug!("Enriching query with {} context results", top_k);
 
         // Perform semantic search
-        let results = self.core.semantic_search(query, self.context_size).await?;
+        let results = self.core.semantic_search(query, top_k).await?;
 
         if results.is_empty() {
             info!("No context found for query");

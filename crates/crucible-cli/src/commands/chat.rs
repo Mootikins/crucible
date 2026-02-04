@@ -12,8 +12,8 @@ use tracing::{debug, info, warn};
 
 use colored::Colorize;
 
-use crate::context_enricher::ContextEnricher;
 use crate::config::CliConfig;
+use crate::context_enricher::ContextEnricher;
 use crate::core_facade::KilnContext;
 use crate::factories;
 use crate::kiln_discover::{discover_kiln, DiscoverySource};
@@ -579,11 +579,16 @@ async fn run_oneshot_chat(
         status.update("Initializing LLM provider with kiln tools...");
         #[cfg(feature = "storage-surrealdb")]
         {
-            let storage_client = storage_client.as_ref().expect("storage-surrealdb required for internal agent");
+            let storage_client = storage_client
+                .as_ref()
+                .expect("storage-surrealdb required for internal agent");
             let embedding_provider = factories::get_or_create_embedding_provider(&config).await?;
             let knowledge_repo = storage_client.as_knowledge_repository();
-            let kiln_ctx =
-                crucible_rig::KilnContext::new(&config.kiln_path, knowledge_repo, embedding_provider);
+            let kiln_ctx = crucible_rig::KilnContext::new(
+                &config.kiln_path,
+                knowledge_repo,
+                embedding_provider,
+            );
             let agent_params = agent_params.with_kiln_context(kiln_ctx);
             factories::create_agent(&config, agent_params).await?
         }
@@ -599,69 +604,71 @@ async fn run_oneshot_chat(
     let bg_progress: Option<BackgroundProgress> = if !no_process && !no_context {
         #[cfg(feature = "storage-surrealdb")]
         {
-        use crate::sync::quick_sync_check;
+            use crate::sync::quick_sync_check;
 
-        let storage_client = storage_client.as_ref().expect("storage required for sync");
-        status.update("Checking for file changes...");
-        let sync_status = quick_sync_check(storage_client, &config.kiln_path).await?;
+            let storage_client = storage_client.as_ref().expect("storage required for sync");
+            status.update("Checking for file changes...");
+            let sync_status = quick_sync_check(storage_client, &config.kiln_path).await?;
 
-        if sync_status.needs_processing() {
-            let pending = sync_status.pending_count();
-            status.update(&format!(
-                "Starting background indexing ({pending} files)..."
-            ));
+            if sync_status.needs_processing() {
+                let pending = sync_status.pending_count();
+                status.update(&format!(
+                    "Starting background indexing ({pending} files)..."
+                ));
 
-            let note_store = storage_handle.note_store().ok_or_else(|| {
-                anyhow::anyhow!("Storage mode does not support background indexing")
-            })?;
-            let pipeline = factories::create_pipeline(note_store, &config, false).await?;
-            let files_to_process = sync_status.files_to_process();
-            let bg_pipeline = Arc::new(pipeline);
-            let progress = BackgroundProgress::new(pending);
+                let note_store = storage_handle.note_store().ok_or_else(|| {
+                    anyhow::anyhow!("Storage mode does not support background indexing")
+                })?;
+                let pipeline = factories::create_pipeline(note_store, &config, false).await?;
+                let files_to_process = sync_status.files_to_process();
+                let bg_pipeline = Arc::new(pipeline);
+                let progress = BackgroundProgress::new(pending);
 
-            let bg_pipeline_clone = bg_pipeline.clone();
-            let progress_clone = progress.clone();
-            tokio::spawn(async move {
-                for file in files_to_process {
-                    match bg_pipeline_clone.process(&file).await {
-                        Ok(_) => progress_clone.inc_completed(),
-                        Err(e) => {
-                            tracing::warn!(
-                                "Background process failed for {}: {}",
-                                file.display(),
-                                e
-                            );
-                            progress_clone.inc_failed();
+                let bg_pipeline_clone = bg_pipeline.clone();
+                let progress_clone = progress.clone();
+                tokio::spawn(async move {
+                    for file in files_to_process {
+                        match bg_pipeline_clone.process(&file).await {
+                            Ok(_) => progress_clone.inc_completed(),
+                            Err(e) => {
+                                tracing::warn!(
+                                    "Background process failed for {}: {}",
+                                    file.display(),
+                                    e
+                                );
+                                progress_clone.inc_failed();
+                            }
                         }
                     }
-                }
-            });
+                });
 
-            let watch_config = config.clone();
-            let watch_pipeline = bg_pipeline;
-            tokio::spawn(async move {
-                if let Err(e) = spawn_background_watch(watch_config, watch_pipeline).await {
-                    tracing::error!("Background watch failed: {}", e);
-                }
-            });
-
-            Some(progress)
-        } else {
-            if let Some(note_store) = storage_handle.note_store() {
-                let pipeline = factories::create_pipeline(note_store, &config, false).await?;
                 let watch_config = config.clone();
-                let watch_pipeline = Arc::new(pipeline);
+                let watch_pipeline = bg_pipeline;
                 tokio::spawn(async move {
                     if let Err(e) = spawn_background_watch(watch_config, watch_pipeline).await {
                         tracing::error!("Background watch failed: {}", e);
                     }
                 });
+
+                Some(progress)
+            } else {
+                if let Some(note_store) = storage_handle.note_store() {
+                    let pipeline = factories::create_pipeline(note_store, &config, false).await?;
+                    let watch_config = config.clone();
+                    let watch_pipeline = Arc::new(pipeline);
+                    tokio::spawn(async move {
+                        if let Err(e) = spawn_background_watch(watch_config, watch_pipeline).await {
+                            tracing::error!("Background watch failed: {}", e);
+                        }
+                    });
+                }
+                None
             }
-            None
-        }
         }
         #[cfg(not(feature = "storage-surrealdb"))]
-        { None }
+        {
+            None
+        }
     } else {
         None
     };
@@ -782,7 +789,7 @@ async fn fetch_resume_history(
     session_id: &str,
     kiln_path: &std::path::Path,
 ) -> Result<Vec<ChatItem>> {
-    use crucible_daemon_client::DaemonClient;
+    use crucible_rpc::DaemonClient;
 
     let client = DaemonClient::connect().await?;
     let result = client
