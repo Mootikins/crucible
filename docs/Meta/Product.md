@@ -102,10 +102,12 @@ A knowledge management system where:
 - [x] **Scripted Agent Control** `P0` — Lua API for temperature, max_tokens, thinking_budget, model, mode; daemon getters use local cache · `crucible-lua`
 - [x] **Session Event Handlers** `P0` — Lua hooks on `turn:complete` can inject follow-up messages · `crucible-lua`, `crucible-daemon`
 
-### Lua Session Primitives (Planned)
+### Lua Session & Tool Primitives (Planned)
 
 > These fill gaps so autonomous loops, fan-out, and context control are trivial plugins — not bespoke features.
 
+- [ ] **`cru.tools.call(name, args)`** `P1` — Programmatic tool calling from Lua; returns results synchronously; respects session permission scope; the bridge between "plugins that react" and "plugins that do intelligent work" · `crucible-lua`, `crucible-tools`
+- [ ] **`cru.tools.batch({...})`** `P1` — Concurrent multi-tool calls; `batch({{"semantic_search", {query="X"}}, {"list_notes", {tag="Y"}}})` runs in parallel via async runtime; essential for digest/summarization plugins · `crucible-lua`, `crucible-tools`
 - [ ] **`session.messages()`** `P1` — Read conversation history from Lua; enables context windowing, summarization, checkpoint detection · `crucible-lua`
 - [ ] **`session.inject(role, content)`** `P1` — Insert messages mid-conversation; enables fan-out result collection, context injection at checkpoints · `crucible-lua`
 - [ ] **`session.fork()`** `P1` — Branch conversation state; enables parallel exploration, A/B approach testing · `crucible-lua`
@@ -197,6 +199,56 @@ A knowledge management system where:
 - [x] **HTTP Module** `P0` — HTTP client for plugins · [[Help/Extending/HTTP Module]] · `crucible-lua`
 - [-] **Lua Integration (full)** `P1` — Complete scripting API for custom workflows and callout handlers · `crucible-lua`
 - [ ] **Hook Documentation** `P1` — Comprehensive guide on extending Crucible · [[Help/Extending/Event Hooks]]
+
+### Plugin Developer Experience
+
+> The Discord plugin proved Crucible's plugin system works for real integrations (376-line multi-module plugin with WebSocket, REST, streaming, permissions). But the dev loop has friction: no hot reload, no IDE hints, no REPL, no scaffolding. These items close the gap between "works" and "easy to write."
+>
+> **Guiding insight**: Neovim's plugin ecosystem exploded when LuaLS type stubs + lazy.nvim hot reload made Lua plugins as ergonomic as TypeScript. Crucible needs the same inflection point.
+
+- [ ] **LuaCATS Type Stubs** `P1` — Generate `---@meta` files from Rust API surface (`cru.fs`, `cru.session`, `cru.http`, etc.); ship with binary, write to `~/.config/crucible/luals/`; enables IDE autocomplete and type checking via LuaLS · `crucible-lua`
+- [ ] **Plugin Hot Reload** `P1` — `:reload <plugin>` command; invalidate `package.loaded`, re-require, call optional `on_reload()` hook; file watcher mode (`--watch`) for auto-reload on save during development · `crucible-lua`, `crucible-daemon`
+- [ ] **`:lua` REPL** `P1` — Evaluate Lua expressions in running daemon context; `=expr` prints result (Neovim pattern); inspect plugin state, test API calls, debug interactively · `crucible-cli`, `crucible-lua`
+- [ ] **`cru plugin new`** `P1` — Scaffold plugin from template: `plugin.yaml`, `init.lua` with annotated example tool, `.luarc.json` for LuaLS, optional `tests/` directory; symlinks into plugin path · `crucible-cli`
+- [ ] **Clean Error Messages** `P1` — `xpcall` wrapper strips Rust FFI frames from stack traces; errors include plugin name + file path + line number; user sees `Error in 'discord' at responder.lua:42` not raw mlua backtrace · `crucible-lua`
+- [ ] **Plugin Test Harness** `P2` — `cru plugin test <name>` runs plugin tests with mock `cru.*` API; busted-compatible test runner; enables CI for plugins · `crucible-lua`, `crucible-cli`
+- [ ] **`.luarc.json` Generation** `P2` — `cru plugin new` and `cru plugin init` emit LuaLS config pointing to type stubs; zero-config IDE setup · `crucible-cli`
+
+### Plugin Abstractions (Planned)
+
+> Extracted from building the Discord plugin (376 lines, 7 modules). These abstractions target the plugin types we expect to be most common: messaging bots, autonomous loops, content transformers, and long-running services.
+
+- [ ] **`cru.service`** `P1` — Service lifecycle for long-running plugins; declarative descriptor with `start(ctx)`, `stop(ctx)`, `health(ctx)` hooks; config schema with automatic validation and secret resolution (`secret=true` → check `CRUCIBLE_<PLUGIN>_<KEY>` env var first); supervised restart with backoff (replaces hand-rolled reconnect logic); health exposed via `:service status` and HTTP; graceful shutdown sequencing · `crucible-lua`, `crucible-daemon`
+- [ ] **`cru.messaging`** `P2` — Adapter trait for chat platform integrations; normalizes the receive → should_respond → session → send_and_collect → format → reply loop that is identical across Discord/Telegram/Slack/Matrix; platform provides `connect()`, `normalize(raw)`, `send(channel, text)`, `typing(channel)`; framework handles session-per-channel lifecycle, chunking for platform message limits, typing indicator cadence, rate limiting; builds on `cru.service`; **extract from two concrete implementations** (Discord + one more), don't speculate the shape · `crucible-lua`
+- [ ] **`cru.transform`** `P2` — Content transform pipeline; `register(name, fn)` + `pipeline({name1, name2, ...})` composes pure text→text functions; convention wrapper for table formatting, mermaid rendering, citation insertion, import normalization, platform-specific markdown cleanup; pipeline is the unit messaging adapters plug into for `format_response` · `crucible-lua`
+
+### Fennel for Plugins
+
+> Crucible ships both Lua and Fennel (`FennelCompiler` in `crucible-lua`). Fennel compiles to Lua with zero runtime overhead. The question is whether to **actively promote** Fennel for plugins or keep it as an opt-in power tool.
+
+**Strengths for plugin authors:**
+
+| Feature | Benefit | Example |
+|---------|---------|---------|
+| **Macros** | DSLs that eliminate boilerplate; a `defservice` or `deftool` macro could reduce a plugin to its essential logic | `(defservice :discord {:token (secret)} (fn [ctx] ...))` |
+| **Pattern matching** | Cleaner event dispatch than if/elseif chains; natural fit for `MESSAGE_CREATE` / `INTERACTION_CREATE` routing | `(match event.t :MESSAGE_CREATE (handle-msg event.d) :READY (on-ready event.d))` |
+| **Destructuring** | Concise argument extraction; Lua plugins repeat `local x = args.x` lines | `(fn [{: query : limit}] ...)` |
+| **Immutable locals** | Fewer mutation bugs in stateful plugins (services, session managers) | `(local config (validate schema opts))` — can't accidentally reassign |
+| **Data literal syntax** | Tables-as-data read naturally; good for config, schemas, API payloads | `{:name "discord" :capabilities [:network :websocket]}` |
+| **Lisp composition** | Threading macros (`->`, `->>`) make transform pipelines readable | `(->> text (strip-mentions) (transform-tables) (chunk 2000))` |
+
+**Weaknesses for plugin authors:**
+
+| Issue | Impact | Mitigation |
+|-------|--------|------------|
+| **LuaLS doesn't understand Fennel** | Type stubs, autocomplete, diagnostics — all DX investments are Lua-only; Fennel devs get no IDE support | Fennel LSP (`fennel-ls`) exists but immature; alternatively, generate Fennel type stubs alongside Lua ones |
+| **Smaller community** | Fewer examples, less Stack Overflow help, harder to onboard contributors | Good docs + example plugins can compensate; Fennel community is small but high-quality |
+| **Compilation indirection** | Error line numbers reference compiled Lua, not source Fennel; debugging is harder | Fennel has source maps; `FennelCompiler` could propagate them |
+| **Parenthetical syntax** | Polarizing; barrier for developers without Lisp experience | Keep Lua as default; Fennel is opt-in for those who prefer it |
+| **Hot reload complexity** | Fennel files need recompilation before reload; adds a step vs. pure Lua | `FennelCompiler` already handles this; `:reload` command should compile-then-load transparently |
+| **Macro debugging** | Macros can produce opaque errors; `macrodebug` helps but adds friction | Document macro patterns; keep macros simple |
+
+**Recommendation:** Keep Fennel as an **opt-in power tool**, not the default path. Lua examples first in all docs, Fennel alternatives shown alongside. Invest in Fennel-specific DX only after Lua DX is solid (type stubs, hot reload, REPL all working). The macro system is genuinely valuable for reducing plugin boilerplate — a `defservice` macro alone could justify Fennel for service plugin authors. But the LuaLS gap means Fennel developers trade IDE ergonomics for language ergonomics; that's an informed choice, not a default.
 
 ## Agent Protocols (ACP & MCP)
 
@@ -348,17 +400,59 @@ HTTP Gateway (crucible-web wired to daemon)
 
 ## Web & Desktop
 
-> Builds on the HTTP gateway (P1). Messaging integrations are the daily-driver interface; web UI adds richer interactions (graph visualization, multi-panel layouts, file previews, workflow configuration). Serve over Tailscale/Cloudflare Tunnel for self-hosted remote access; PWA for mobile without app store friction.
+> Builds on the HTTP gateway (P1). The web UI is a **thin client to the daemon** (same as TUI — just a different renderer). Serve over Tailscale/Cloudflare Tunnel for self-hosted remote access; PWA for mobile without app store friction.
+>
+> **Design principles** (informed by OpenClaw, Codex Desktop, Claude Artifacts, Obsidian):
+> 1. **Gateway-centric** — all state lives in daemon; web is stateless view layer (matches OpenClaw's architecture)
+> 2. **Agent inbox first** — single place to see all running agents, approve permissions, review results (Codex's command center pattern)
+> 3. **Knowledge graph is the differentiator** — visual graph exploration that no competitor has in-browser
+> 4. **Easy primitives** — Lua plugins can define UI panels, not just tools; agent-driven UI (like OpenClaw's A2UI / Claude's Artifacts)
+> 5. **Good API docs** — interactive playground for the HTTP API; self-documenting
 
-- [-] **Web Chat UI** `P3` — SolidJS frontend on the same `crucible-web` server as the HTTP gateway; chat + search + kiln browsing · `crucible-web` · depends: [[#HTTP Gateway|HTTP-to-RPC Bridge]]
-- [ ] **PWA Support** `P3` — Progressive Web App manifest + service worker; enables mobile access without app store, installable from browser · `crucible-web`
-- [ ] **Oil Node Serialization** `P3` — Oil Node → JSON for web rendering · `crucible-oil`
-- [ ] **SolidJS Renderer** `P3` — `<OilNode>` component for browser rendering · `crucible-web`
-- [ ] **Shared Component Model** `P3` — Unified TUI/Web rendering from same Oil nodes · `crucible-oil`, `crucible-web`
-- [ ] **Tauri Desktop** `P3` — Native desktop app wrapping web UI · depends: [[#Web & Desktop|Web Chat UI]]
-- [ ] **Canvas / Flowcharts** `P3` — WebGL-based visual workflow editor · depends: [[#Web & Desktop|Web Chat UI]]
-- [ ] **Rich Rendering** `P3` — Mermaid diagrams, LaTeX rendering, image OCR · `crucible-web`
-- [ ] **Document Preview** `P3` — PDF and image rendering in notes · `crucible-web`
+### Rust Primitives (P1 — the 5 things core must provide)
+
+> Neovim insight: core provides primitives (buffers, windows, events, highlights). Plugins compose them. These are Crucible's web equivalents.
+
+- [-] **HTTP → RPC Bridge** `P1` — Proxy daemon JSON-RPC methods to REST + SSE endpoints; thin translation layer, no domain logic · **Core Rust** · `crucible-web` · depends: [[#HTTP Gateway|HTTP-to-RPC Bridge]]
+- [ ] **SSE Event Streaming** `P1` — Stream chat tokens, log lines, and daemon events to browser via Server-Sent Events; backpressure handling · **Core Rust** · `crucible-web`
+- [ ] **Oil Node Serialization** `P1` — `impl Serialize for Node` — Oil nodes to JSON for browser rendering; foundational primitive for all rich display · **Core Rust** · `crucible-oil`
+- [ ] **Plugin Panel Hosting** `P1` — iframe sandbox + message-passing protocol for Lua-registered web panels; the "floating window" primitive that P2 features compose on · **Core Rust** · `crucible-web`, `crucible-lua`
+- [ ] **Static File Serving** `P1` — Serve SolidJS bundle, PWA manifest, service worker; infrastructure · **Core Rust** · `crucible-web`
+
+### Foundation UI (P1 — ships with HTTP gateway)
+
+- [-] **Web Chat UI** `P1` — SolidJS frontend: streaming chat, markdown rendering, tool output cards, permission modals; Rust owns SSE streaming + message framing, SolidJS owns rendering, Lua can extend tool card definitions · **Hybrid** · `crucible-web`
+- [ ] **Agent Inbox / Overview** `P1` — Dashboard of active sessions, pending permissions, recent completions; the landing page; composes existing `session.list` + event subscription RPCs · **Lua extension** · `crucible-web`
+- [ ] **Permission Approval UI** `P1` — Approve/deny from browser with diff preview; Rust owns the approval RPC (security-critical), Lua owns diff formatting + approval policy hooks · **Hybrid** · `crucible-web`
+- [ ] **Session Management** `P1` — List, switch, resume, end sessions; pure HTTP→RPC proxy, already exists as daemon methods · **Core Rust** · `crucible-web`
+- [ ] **PWA Support** `P1` — Manifest + service worker; installable from browser, mobile access without app store · **Core Rust** · `crucible-web`
+- [ ] **SolidJS Oil Renderer** `P1` — `<OilNode>` component tree for browser; foundational rendering like Neovim's terminal grid — everything else depends on it · **Core Rust** (frontend) · `crucible-web`, `crucible-oil`
+
+### Knowledge & Search (P2 — Crucible's unique strength)
+
+- [ ] **Knowledge Graph Visualization** `P2` — Interactive force-directed wikilink graph; Lua provides data query, SolidJS + d3 renders; no new Rust primitives needed · **Lua extension** · `crucible-web`
+- [ ] **Note Browser** `P2` — Browse notes with frontmatter, wikilinks, backlinks; users want custom columns/sort/filters — classic plugin territory · **Lua extension** · `crucible-web`
+- [ ] **Search UI** `P2` — Unified semantic + full-text + property search; Rust owns the search RPC (perf-critical), Lua owns result formatting + custom scopes · **Hybrid** · `crucible-web`
+- [ ] **Structured Data Views** `P3` — Obsidian Bases-style tables/kanban from frontmatter; the canonical "plugin not core" feature; depends on mature plugin system · **Lua extension** · `crucible-web`, `crucible-query`
+
+### Plugin UI & Artifacts (P2 — easy primitives to _make_ things)
+
+- [ ] **Agent Artifacts** `P2` — Agent responses produce rendered outputs (code, documents, diagrams) in side panel; artifact extraction is domain logic, rendering uses panel system · **Lua extension** · `crucible-web`
+- [ ] **Skills Browser** `P2` — Browse/enable/disable plugins with documentation; CRUD over plugin registry · **Lua extension** · `crucible-web`, `crucible-lua`
+- [ ] **Rich Content Renderers** `P2` — Mermaid diagrams, LaTeX, syntax highlighting; each renderer is a plugin registering a content-type handler · **Lua extension** · `crucible-web`
+
+### Configuration & System (P2)
+
+- [ ] **Config Editor** `P2` — Schema-driven form for `config.toml`; form UI is plugin work, schema generated from config types · **Lua extension** · `crucible-web`, `crucible-config`
+- [ ] **OpenAPI Spec** `P2` — Machine-readable API spec file (generated from routes); ship the spec, let users use Swagger UI / curl / httpie — zero maintenance vs custom playground · **Core Rust** · `crucible-web`
+- [ ] **System Info** `P2` — Daemon health, kilns, MCP status, plugin status, embedding stats; health checks over existing RPCs · **Lua extension** · `crucible-web`
+- [ ] **Log Viewer** `P2` — Real-time daemon log streaming; Rust owns the SSE log endpoint (backpressure), Lua owns filtering/formatting · **Hybrid** · `crucible-web`
+
+### Canvas & Desktop (P3)
+
+- [ ] **Canvas** `P3` — Infinite spatial workspace for notes + agent sessions; massive scope, low adoption in note apps; if built, it's a plugin with a custom panel · **Lua extension** · `crucible-web`
+- [ ] **Workflow Visual Editor** `P3` — DAG editor for workflow markup; domain logic over workflow system · **Lua extension** · `crucible-web` · depends: [[#Workflow Automation]]
+- [ ] **Tauri Desktop** `P3` — Native desktop app wrapping web UI; menu bar agent status, system notifications · **Core Rust** · depends: [[#Web & Desktop|Web Chat UI]]
 
 ## Collaboration & Scale
 
@@ -393,10 +487,19 @@ HTTP Gateway (crucible-web wired to daemon)
 | 2026-02-03 | Remote access via Cloudflare/Tailscale at P2 | Agents can't be on every device; `cru tunnel` wraps cloudflared/tailscale funnel; self-host > paid hosting for positioning |
 | 2026-02-03 | Paid hosting deferred | Multi-tenant needs daemon isolation, billing, ops; defer until demand is clear; free self-host + tunnel is more aligned with local-first positioning |
 | 2026-02-03 | Obsidian plugin dropped | HTTP gateway + messaging + web covers the progression; Obsidian plugin is a separate TypeScript project with maintenance burden for a subset of users |
-| 2026-02-03 | Web UI deprioritized to P3 | Messaging covers daily interaction; web serves richer interactions later, via Tailscale for privacy, PWA for mobile |
+| 2026-02-03 | Web UI core promoted to P1, rich features at P2 | Chat + agent inbox + permission approval are foundational (ship with HTTP gateway); knowledge graph viz, config editor, plugin panels at P2; canvas/desktop at P3. Informed by OpenClaw (gateway-centric thin client), Codex Desktop (multi-agent command center), Claude Artifacts (side-panel rendered output), Obsidian Bases/Canvas (structured data + spatial workspace) |
+| 2026-02-03 | Agent inbox is web UI landing page | Codex Desktop's key insight: users need a command center to supervise multiple agents, not just a chat window. The inbox shows all sessions, pending permissions, recent completions |
+| 2026-02-03 | Plugin-defined web panels at P2 | Lua plugins should be able to register browser panels (HTML/JS), not just TUI modals. This is the "easy primitives to make UI" principle — inspired by OpenClaw's A2UI and Claude Artifacts |
+| 2026-02-03 | Knowledge graph viz is the web "wow" feature | No competitor renders a knowledge graph in-browser. Crucible's wikilink graph + semantic search is the differentiator; visual exploration is the demo moment |
+| 2026-02-03 | ~~Web UI deprioritized to P3~~ | ~~Messaging covers daily interaction; web serves richer interactions later, via Tailscale for privacy, PWA for mobile~~ (superseded: core web UI promoted to P1) |
 | 2026-02-03 | Precognition should default to on | Core differentiator shouldn't be opt-in; knowledge-graph-aware context is the product's value proposition |
 | 2026-02-03 | Proactive kiln digest at P2 | Matches OpenClaw's most viral feature (heartbeat) using Crucible's strength (knowledge graph); delivered via messaging integrations |
 | 2026-02-03 | Discord as daemon-side plugin, not separate crate | Direct REST API + Gateway integration via Lua plugin with `config`, `network`, `websocket` capabilities; avoids HTTP gateway dependency; validates plugin system for real integrations |
+| 2026-02-03 | Plugin DX (type stubs, hot reload, REPL, scaffolding) at P1 | Discord plugin proved the system works but exposed dev loop friction: daemon restart per change, no IDE hints, no interactive debugging. Neovim's plugin ecosystem inflection point was LuaLS stubs + lazy.nvim hot reload; Crucible needs the same. Type stubs and hot reload are highest priority; test harness at P2 |
+| 2026-02-03 | `cru.tools.call` is highest-priority plugin primitive | Low effort (tools exist on Rust side, this is Lua binding + permission check) but unlocks the most new plugin categories: autonomous loops, smart importers, digest generators. Without it, plugins can only react to events — not do intelligent work |
+| 2026-02-03 | `cru.service` lifecycle before `cru.messaging` adapter | Service lifecycle (start/stop/health, supervised restart, config validation) is the foundation messaging adapters compose on. Discord, Telegram, calendar pollers, auto-linkers are all services. Build the general pattern first |
+| 2026-02-03 | `cru.messaging` adapter: extract from two implementations | Don't speculate the adapter shape from Discord alone. Build Telegram or Matrix adapter, then extract the common trait. The receive→respond→format loop is identical; platform variance is in transport and API shape |
+| 2026-02-03 | Fennel is opt-in power tool, not default path | Lua examples first in all docs; Fennel shown alongside. Macros are genuinely valuable (`defservice`, `deftool` could halve plugin boilerplate) but LuaLS doesn't understand Fennel — devs trade IDE ergonomics for language ergonomics. Invest in Fennel DX only after Lua DX is solid |
 
 ## Archived / Cut
 
