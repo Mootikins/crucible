@@ -119,7 +119,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release upload "${{ needs.create-release.outputs.tag }}" "${{ env.ARCHIVE }}"
+          gh release upload "${{ needs.create-release.outputs.tag }}" "${{ env.ARCHIVE }}" --clobber
 
   # Generate install scripts and publish release
   publish:
