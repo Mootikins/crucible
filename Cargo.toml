@@ -44,6 +44,7 @@ categories = ["development-tools", "text-processing", "database"]
 
 [workspace.dependencies]
 openssl = { version = "0.10", features = ["vendored"] }
+openssl-sys = { version = "0.9", features = ["vendored"] }
 yrs = "0.25"
 tokio = { version = "1.49", features = ["full"] }
 serde = { version = "1.0", features = ["derive"] }

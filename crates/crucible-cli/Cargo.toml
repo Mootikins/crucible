@@ -25,7 +25,7 @@ storage-surrealdb = ["dep:crucible-surrealdb"]
 storage-sqlite = ["dep:crucible-sqlite"]
 
 # Vendor OpenSSL for cross-compilation (release builds)
-vendored-openssl = ["dep:openssl"]
+vendored-openssl = ["dep:openssl", "dep:openssl-sys"]
 
 # Rendering pipeline selection
 taffy-render = []  # Use new Taffy-based layout pipeline (experimental)
@@ -41,6 +41,7 @@ crucible-core = { path = "../crucible-core" }
 crucible-surrealdb = { path = "../crucible-surrealdb", optional = true }
 crucible-sqlite = { path = "../crucible-sqlite", optional = true }
 openssl = { workspace = true, optional = true }
+openssl-sys = { workspace = true, optional = true }
 crucible-config = { path = "../crucible-config", features = ["toml"] }
 crucible-llm = { path = "../crucible-llm" }
 crucible-lua = { path = "../crucible-lua" }
