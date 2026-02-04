@@ -6,6 +6,7 @@ use crate::tui::oil::chat_runner::OilChatRunner;
 use crate::tui::oil::event::Event;
 use crate::tui::oil::focus::FocusContext;
 use crate::tui::oil::render::render_to_string;
+use crate::tui::oil::terminal::Terminal;
 use async_trait::async_trait;
 use crossterm::event::{
     Event as CtEvent, KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind,
@@ -221,14 +222,14 @@ fn process_action_helper(action: Action<ChatAppMsg>, app: &mut OilChatApp) -> bo
 
 #[test]
 fn chat_runner_new_creates_with_defaults() {
-    let runner = OilChatRunner::new();
-    assert!(runner.is_ok(), "Should create runner successfully");
+    let terminal = Terminal::with_size(80, 24);
+    let _runner = OilChatRunner::with_terminal(terminal);
 }
 
 #[test]
 fn chat_runner_with_mode_sets_initial_mode() {
-    // Just verifies with_mode chains without panicking
-    let _runner = OilChatRunner::new().unwrap().with_mode(ChatMode::Plan);
+    let terminal = Terminal::with_size(80, 24);
+    let _runner = OilChatRunner::with_terminal(terminal).with_mode(ChatMode::Plan);
 }
 
 // =============================================================================

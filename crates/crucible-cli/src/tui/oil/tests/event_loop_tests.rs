@@ -17,7 +17,7 @@ fn view_with_default_ctx(app: &OilChatApp) -> Node {
 
 #[tokio::test]
 async fn event_loop_does_not_freeze_without_input() {
-    let mut terminal = Terminal::new().unwrap();
+    let mut terminal = Terminal::with_size(80, 24);
     let mut app = OilChatApp::default();
     let (_msg_tx, mut msg_rx) = mpsc::unbounded_channel::<ChatAppMsg>();
 
@@ -49,7 +49,7 @@ async fn event_loop_does_not_freeze_without_input() {
 
 #[tokio::test]
 async fn render_loop_completes_many_iterations() {
-    let mut terminal = Terminal::new().unwrap();
+    let mut terminal = Terminal::with_size(80, 24);
     let mut app = OilChatApp::default();
 
     let start = Instant::now();
@@ -73,7 +73,7 @@ async fn render_loop_completes_many_iterations() {
 /// 10s threshold allows ~5ms per parse which is reasonable without caching.
 #[tokio::test]
 async fn render_with_messages_does_not_accumulate() {
-    let mut terminal = Terminal::new().unwrap();
+    let mut terminal = Terminal::with_size(80, 24);
     let mut app = OilChatApp::default();
 
     for i in 0..20 {

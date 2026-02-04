@@ -48,8 +48,12 @@ pub struct OilChatRunner {
 
 impl OilChatRunner {
     pub fn new() -> io::Result<Self> {
-        Ok(Self {
-            terminal: Terminal::new()?,
+        Ok(Self::with_terminal(Terminal::new()?))
+    }
+
+    pub(crate) fn with_terminal(terminal: Terminal) -> Self {
+        Self {
+            terminal,
             tick_rate: Duration::from_millis(50),
             mode: ChatMode::Normal,
             model: String::new(),
@@ -68,7 +72,7 @@ impl OilChatRunner {
             session_cmd_rx: None,
             slash_commands: Vec::new(),
             enricher: None,
-        })
+        }
     }
 
     pub fn with_session_command_receiver(
