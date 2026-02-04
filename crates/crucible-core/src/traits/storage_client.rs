@@ -21,7 +21,7 @@ use serde_json::Value;
 ///
 /// ## Implementations
 ///
-/// - `DaemonStorageClient` (in crucible-daemon-client) - queries through daemon
+/// - `DaemonStorageClient` (in crucible-rpc) - queries through daemon
 /// - `DirectStorageClient` (future) - direct SurrealDB access for testing
 #[async_trait]
 pub trait StorageClient: Send + Sync {

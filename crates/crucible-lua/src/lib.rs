@@ -60,6 +60,7 @@ mod http;
 mod interaction;
 mod json_query;
 pub mod lifecycle;
+mod lua_stdlib;
 mod lua_util;
 pub mod manifest;
 mod mcp;
@@ -68,16 +69,16 @@ mod oil;
 mod panel;
 mod paths;
 mod popup;
+mod ratelimit;
 mod registry;
 pub mod schema;
 pub mod session;
 mod session_api;
 mod sessions;
-mod lua_stdlib;
-mod ratelimit;
 mod shell;
 pub mod statusline;
 mod timer;
+mod tools_api;
 mod types;
 mod vault;
 mod views;
@@ -118,12 +119,14 @@ pub use json_query::{
     detect_format, encode_to_format, json_to_lua, lua_to_json, parse_auto, parse_with_format,
     register_oq_module, Format,
 };
+pub use lua_stdlib::register_lua_stdlib;
 pub use oil::{register_oil_module, LuaNode};
 pub use panel::{
     core_result_to_lua, lua_item_to_core, lua_panel_to_core, lua_result_to_core, register_ui_module,
 };
 pub use paths::{register_paths_module, PathsContext};
 pub use popup::{lua_entry_to_core, lua_request_to_core, register_popup_module};
+pub use ratelimit::register_ratelimit_module;
 pub use registry::LuaToolRegistry;
 pub use schema::{generate_input_schema, type_to_string, FunctionSignature, LuauType, TypedParam};
 pub use shell::{register_shell_module, ExecResult, ShellPolicy};
@@ -131,14 +134,12 @@ pub use statusline::{
     parse_statusline_config, register_statusline_module, ColorSpec, ModeStyleSpec,
     StatuslineComponent, StatuslineConfig, StyleSpec,
 };
+pub use timer::register_timer_module;
 pub use types::{LuaExecutionResult, LuaTool, ToolParam, ToolResult};
 pub use vault::{
     register_vault_module, register_vault_module_full, register_vault_module_with_graph,
     register_vault_module_with_store,
 };
-pub use lua_stdlib::register_lua_stdlib;
-pub use ratelimit::register_ratelimit_module;
-pub use timer::register_timer_module;
 pub use ws::register_ws_module;
 // Handler system
 pub use handlers::{
@@ -168,3 +169,4 @@ pub use session_api::{
 pub use sessions::{
     register_sessions_module, register_sessions_module_with_api, DaemonSessionApi, ResponsePart,
 };
+pub use tools_api::{register_tools_module, register_tools_module_with_api, DaemonToolsApi};

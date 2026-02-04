@@ -12,12 +12,12 @@ use std::path::Path;
 use std::process::Command;
 use std::sync::Arc;
 
-use crate::context_enricher::ContextEnricher;
 use crate::chat::bridge::AgentEventBridge;
 use crate::chat::handlers;
 use crate::chat::mode_registry::ModeRegistry;
 use crate::chat::slash_registry::{SlashCommandRegistry, SlashCommandRegistryBuilder};
 use crate::chat::{AgentHandle, ChatError, ChatResult};
+use crate::context_enricher::ContextEnricher;
 use crate::core_facade::KilnContext;
 use crate::tui::oil::{AgentSelection, ChatMode, OilChatRunner};
 use crucible_core::events::EventRing;

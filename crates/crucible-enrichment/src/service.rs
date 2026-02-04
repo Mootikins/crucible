@@ -809,7 +809,9 @@ mod tests {
         use crucible_core::parser::{Heading, Paragraph, ParsedNoteBuilder};
 
         let mut note = ParsedNoteBuilder::new(PathBuf::from("/test/note.md")).build();
-        note.content.headings.push(Heading::new(1, "Introduction", 0));
+        note.content
+            .headings
+            .push(Heading::new(1, "Introduction", 0));
         note.content.headings.push(Heading::new(2, "Details", 50));
         note.content.paragraphs.push(Paragraph::new(
             "A paragraph under Details heading with enough words.".to_string(),
@@ -843,9 +845,10 @@ mod tests {
         note.content
             .paragraphs
             .push(Paragraph::new("Hi".to_string(), 0));
-        note.content
-            .paragraphs
-            .push(Paragraph::new("One two three four five six".to_string(), 10));
+        note.content.paragraphs.push(Paragraph::new(
+            "One two three four five six".to_string(),
+            10,
+        ));
 
         let blocks = service.extract_block_texts(&note, &[]);
         assert_eq!(blocks.len(), 1, "short paragraph should be skipped");

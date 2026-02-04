@@ -215,12 +215,8 @@ pub trait DaemonSessionApi: Send + Sync + 'static {
         max_tool_result_len: Option<usize>,
     ) -> Pin<
         Box<
-            dyn Future<
-                    Output = Result<
-                        tokio::sync::mpsc::UnboundedReceiver<ResponsePart>,
-                        String,
-                    >,
-                > + Send,
+            dyn Future<Output = Result<tokio::sync::mpsc::UnboundedReceiver<ResponsePart>, String>>
+                + Send,
         >,
     >;
 }
@@ -261,7 +257,12 @@ pub fn register_sessions_module(lua: &Lua) -> Result<(), LuaError> {
     );
     stub_async!("subscribe", lua, sessions, String);
     stub_async!("unsubscribe", lua, sessions, String);
-    stub_async!("send_and_collect", lua, sessions, (String, String, mlua::Value));
+    stub_async!(
+        "send_and_collect",
+        lua,
+        sessions,
+        (String, String, mlua::Value)
+    );
 
     register_in_namespaces(lua, "sessions", sessions)?;
 
@@ -297,18 +298,21 @@ pub fn register_sessions_module_with_api(
                         .unwrap_or_else(|_| "chat".to_string());
                     let k: Option<String> = t.get("kiln").ok();
                     let ws: Option<String> = t.get("workspace").ok();
-                    let kilns: Vec<String> = t
-                        .get::<Vec<String>>("kilns")
-                        .unwrap_or_default();
+                    let kilns: Vec<String> = t.get::<Vec<String>>("kilns").unwrap_or_default();
                     (st, k, ws, kilns)
                 }
                 Value::String(ref s) => {
                     // Legacy positional: create("chat") — type only, no kiln
-                    let st = s.to_str().map(|s| s.to_string()).unwrap_or_else(|_| "chat".to_string());
+                    let st = s
+                        .to_str()
+                        .map(|s| s.to_string())
+                        .unwrap_or_else(|_| "chat".to_string());
                     (st, None, None, vec![])
                 }
                 _ => {
-                    let err = lua.create_string("create() expects a table argument, e.g. { type = \"chat\" }")?;
+                    let err = lua.create_string(
+                        "create() expects a table argument, e.g. { type = \"chat\" }",
+                    )?;
                     return Ok((Value::Nil, Value::String(err)));
                 }
             };
@@ -519,7 +523,8 @@ pub fn register_sessions_module_with_api(
                             tracing::debug!(call = n, "next_event: lock acquired, awaiting recv");
                             match guard.recv().await {
                                 Some(event) => {
-                                    let event_type = event.get("type")
+                                    let event_type = event
+                                        .get("type")
                                         .and_then(|v| v.as_str())
                                         .unwrap_or("unknown");
                                     tracing::debug!(
@@ -531,10 +536,7 @@ pub fn register_sessions_module_with_api(
                                     Ok((lua_val, Value::Nil))
                                 }
                                 None => {
-                                    tracing::debug!(
-                                        call = n,
-                                        "next_event: channel closed (None)"
-                                    );
+                                    tracing::debug!(call = n, "next_event: channel closed (None)");
                                     Ok((Value::Nil, Value::Nil))
                                 }
                             }
@@ -570,42 +572,47 @@ pub fn register_sessions_module_with_api(
     // send_and_collect(session_id, content, opts?) -> (next_part, nil) or (nil, err)
     // next_part() yields { type = "text"|"tool_call"|"tool_result"|"thinking", ... } or nil
     let a = Arc::clone(&api);
-    let collect_fn = lua.create_async_function(move |lua, (session_id, content, opts): (String, String, Value)| {
-        let a = Arc::clone(&a);
-        async move {
-            let (timeout_secs, max_tool_result_len) = match opts {
-                Value::Table(ref t) => (
-                    t.get::<f64>("timeout").ok(),
-                    t.get::<usize>("max_tool_result_len").ok(),
-                ),
-                Value::Number(n) => (Some(n), None),
-                _ => (None, None),
-            };
-            match a.send_and_collect(session_id, content, timeout_secs, max_tool_result_len).await {
-                Ok(rx) => {
-                    let rx = Arc::new(tokio::sync::Mutex::new(rx));
-                    let next_part = lua.create_async_function(move |lua, ()| {
-                        let rx = Arc::clone(&rx);
-                        async move {
-                            let mut guard = rx.lock().await;
-                            match guard.recv().await {
-                                Some(part) => {
-                                    let val = lua.to_value(&part)?;
-                                    Ok((val, Value::Nil))
+    let collect_fn = lua.create_async_function(
+        move |lua, (session_id, content, opts): (String, String, Value)| {
+            let a = Arc::clone(&a);
+            async move {
+                let (timeout_secs, max_tool_result_len) = match opts {
+                    Value::Table(ref t) => (
+                        t.get::<f64>("timeout").ok(),
+                        t.get::<usize>("max_tool_result_len").ok(),
+                    ),
+                    Value::Number(n) => (Some(n), None),
+                    _ => (None, None),
+                };
+                match a
+                    .send_and_collect(session_id, content, timeout_secs, max_tool_result_len)
+                    .await
+                {
+                    Ok(rx) => {
+                        let rx = Arc::new(tokio::sync::Mutex::new(rx));
+                        let next_part = lua.create_async_function(move |lua, ()| {
+                            let rx = Arc::clone(&rx);
+                            async move {
+                                let mut guard = rx.lock().await;
+                                match guard.recv().await {
+                                    Some(part) => {
+                                        let val = lua.to_value(&part)?;
+                                        Ok((val, Value::Nil))
+                                    }
+                                    None => Ok((Value::Nil, Value::Nil)),
                                 }
-                                None => Ok((Value::Nil, Value::Nil)),
                             }
-                        }
-                    })?;
-                    Ok((Value::Function(next_part), Value::Nil))
-                }
-                Err(e) => {
-                    let err = lua.create_string(&e)?;
-                    Ok((Value::Nil, Value::String(err)))
+                        })?;
+                        Ok((Value::Function(next_part), Value::Nil))
+                    }
+                    Err(e) => {
+                        let err = lua.create_string(&e)?;
+                        Ok((Value::Nil, Value::String(err)))
+                    }
                 }
             }
-        }
-    })?;
+        },
+    )?;
     sessions.set("send_and_collect", collect_fn)?;
 
     Ok(())
@@ -879,10 +886,7 @@ mod api_tests {
         ) -> Pin<
             Box<
                 dyn Future<
-                        Output = Result<
-                            tokio::sync::mpsc::UnboundedReceiver<ResponsePart>,
-                            String,
-                        >,
+                        Output = Result<tokio::sync::mpsc::UnboundedReceiver<ResponsePart>, String>,
                     > + Send,
             >,
         > {
@@ -989,9 +993,7 @@ mod api_tests {
         let lua = setup_lua_with_api(api);
 
         let result: (Value, Value) = lua
-            .load(
-                r#"return cru.sessions.create(42)"#,
-            )
+            .load(r#"return cru.sessions.create(42)"#)
             .eval_async()
             .await
             .unwrap();
@@ -1183,9 +1185,7 @@ mod api_tests {
     /// after subscribe() returns.
     struct AsyncMockDaemonApi {
         /// Shared sender — tests inject events after subscribe returns.
-        event_tx: std::sync::Mutex<
-            Option<tokio::sync::mpsc::UnboundedSender<serde_json::Value>>,
-        >,
+        event_tx: std::sync::Mutex<Option<tokio::sync::mpsc::UnboundedSender<serde_json::Value>>>,
         /// Notify when subscribe() has been called and the sender is available.
         subscribe_barrier: Arc<tokio::sync::Notify>,
     }
@@ -1199,9 +1199,7 @@ mod api_tests {
         }
 
         /// Get a clone of the event sender (waits until subscribe is called).
-        fn get_sender(
-            &self,
-        ) -> Option<tokio::sync::mpsc::UnboundedSender<serde_json::Value>> {
+        fn get_sender(&self) -> Option<tokio::sync::mpsc::UnboundedSender<serde_json::Value>> {
             self.event_tx.lock().unwrap().clone()
         }
     }
@@ -1213,22 +1211,19 @@ mod api_tests {
             _: Option<String>,
             _: Option<String>,
             _: Vec<String>,
-        ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, String>> + Send>>
-        {
+        ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, String>> + Send>> {
             Box::pin(async { Ok(serde_json::json!({"id": "s1"})) })
         }
         fn get_session(
             &self,
             _: String,
-        ) -> Pin<
-            Box<dyn Future<Output = Result<Option<serde_json::Value>, String>> + Send>,
-        > {
+        ) -> Pin<Box<dyn Future<Output = Result<Option<serde_json::Value>, String>> + Send>>
+        {
             Box::pin(async { Ok(None) })
         }
         fn list_sessions(
             &self,
-        ) -> Pin<Box<dyn Future<Output = Result<Vec<serde_json::Value>, String>> + Send>>
-        {
+        ) -> Pin<Box<dyn Future<Output = Result<Vec<serde_json::Value>, String>> + Send>> {
             Box::pin(async { Ok(vec![]) })
         }
         fn configure_agent(
@@ -1245,22 +1240,13 @@ mod api_tests {
         ) -> Pin<Box<dyn Future<Output = Result<String, String>> + Send>> {
             Box::pin(async { Ok("msg-001".to_string()) })
         }
-        fn cancel(
-            &self,
-            _: String,
-        ) -> Pin<Box<dyn Future<Output = Result<bool, String>> + Send>> {
+        fn cancel(&self, _: String) -> Pin<Box<dyn Future<Output = Result<bool, String>> + Send>> {
             Box::pin(async { Ok(true) })
         }
-        fn pause(
-            &self,
-            _: String,
-        ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send>> {
+        fn pause(&self, _: String) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send>> {
             Box::pin(async { Ok(()) })
         }
-        fn resume(
-            &self,
-            _: String,
-        ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send>> {
+        fn resume(&self, _: String) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send>> {
             Box::pin(async { Ok(()) })
         }
         fn end_session(
@@ -1314,10 +1300,7 @@ mod api_tests {
         ) -> Pin<
             Box<
                 dyn Future<
-                        Output = Result<
-                            tokio::sync::mpsc::UnboundedReceiver<ResponsePart>,
-                            String,
-                        >,
+                        Output = Result<tokio::sync::mpsc::UnboundedReceiver<ResponsePart>, String>,
                     > + Send,
             >,
         > {

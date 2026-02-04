@@ -15,7 +15,7 @@ use crucible_config::StorageMode;
 use crucible_core::enrichment::{EnrichedNote, EnrichedNoteStore};
 use crucible_core::storage::NoteStore;
 use crucible_core::traits::StorageClient;
-use crucible_daemon_client::{lifecycle, DaemonClient, DaemonNoteStore, DaemonStorageClient};
+use crucible_rpc::{lifecycle, DaemonClient, DaemonNoteStore, DaemonStorageClient};
 #[cfg(feature = "storage-surrealdb")]
 use crucible_surrealdb::{adapters, SurrealDbConfig};
 #[cfg(feature = "storage-surrealdb")]

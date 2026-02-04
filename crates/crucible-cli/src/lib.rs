@@ -15,11 +15,11 @@
 #![allow(dead_code, unused_imports)]
 
 pub mod chat;
-pub mod context_enricher;
 pub mod cli;
 pub mod commands;
 pub mod common;
 pub mod config;
+pub mod context_enricher;
 pub mod core_facade;
 pub mod event_system;
 pub mod factories;

@@ -542,7 +542,7 @@ pub async fn create_daemon_agent(
     params: &AgentInitParams,
 ) -> Result<Box<dyn AgentHandle + Send + Sync>> {
     use crucible_core::session::SessionAgent;
-    use crucible_daemon_client::{DaemonAgentHandle, DaemonClient};
+    use crucible_rpc::{DaemonAgentHandle, DaemonClient};
     use std::sync::Arc;
 
     info!("Connecting to daemon (auto-start if needed)");
@@ -731,7 +731,7 @@ pub async fn create_daemon_agent(
 }
 
 async fn create_new_daemon_session(
-    client: &crucible_daemon_client::DaemonClient,
+    client: &crucible_rpc::DaemonClient,
     config: &CliAppConfig,
     workspace: &std::path::Path,
 ) -> Result<String> {
@@ -794,9 +794,7 @@ pub async fn create_agent(
             Ok(InitializedAgent(handle))
         }
         AgentType::Acp => {
-            anyhow::bail!(
-                "ACP agents require the daemon. Start cru-server or remove --force-local"
-            )
+            anyhow::bail!("ACP agents require the daemon. Start cru-server or remove --force-local")
         }
     }
 }

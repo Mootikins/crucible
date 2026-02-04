@@ -26,7 +26,7 @@ impl Default for ChatServiceConfig {
 ///
 /// Currently stubbed. The web chat interface will be implemented on top of
 /// the daemon's session management (RPC over Unix socket), matching how
-/// the CLI works. See `crucible-daemon-client` for the client API.
+/// the CLI works. See `crucible-rpc` for the client API.
 pub struct ChatService {
     event_tx: broadcast::Sender<ChatEvent>,
     #[allow(dead_code)]

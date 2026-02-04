@@ -6,7 +6,7 @@
 use anyhow::Result;
 use crucible_core::traits::chat::AgentHandle;
 use crucible_daemon::Server;
-use crucible_daemon_client::DaemonClient;
+use crucible_rpc::DaemonClient;
 use std::path::PathBuf;
 use std::time::Duration;
 use tempfile::TempDir;
@@ -68,7 +68,7 @@ async fn test_client_ping_with_real_daemon() {
 async fn test_interaction_event_flows_to_receiver() {
     use crucible_core::interaction::InteractionRequest;
     use crucible_core::traits::chat::AgentHandle;
-    use crucible_daemon_client::DaemonAgentHandle;
+    use crucible_rpc::DaemonAgentHandle;
     use std::time::Duration;
 
     let server = TestServer::start().await.expect("Failed to start server");
@@ -413,7 +413,7 @@ async fn test_get_note_by_name_rpc() {
 #[tokio::test]
 async fn test_daemon_storage_client_multi_session() {
     use crucible_core::traits::KnowledgeRepository;
-    use crucible_daemon_client::DaemonStorageClient;
+    use crucible_rpc::DaemonStorageClient;
     use std::sync::Arc;
 
     let server = TestServer::start().await.expect("Failed to start server");
@@ -501,7 +501,7 @@ async fn test_search_vectors_rpc() {
 #[tokio::test]
 async fn test_search_vectors_via_knowledge_repository() {
     use crucible_core::traits::KnowledgeRepository;
-    use crucible_daemon_client::DaemonStorageClient;
+    use crucible_rpc::DaemonStorageClient;
     use std::sync::Arc;
 
     let server = TestServer::start().await.expect("Failed to start server");
@@ -817,7 +817,7 @@ async fn test_session_subscribe_and_unsubscribe() {
 #[tokio::test]
 async fn test_daemon_agent_handle_creation() {
     use crucible_core::traits::chat::AgentHandle;
-    use crucible_daemon_client::DaemonAgentHandle;
+    use crucible_rpc::DaemonAgentHandle;
 
     let server = TestServer::start().await.expect("Failed to start server");
     let kiln_dir = tempfile::tempdir().expect("Failed to create kiln dir");
@@ -1103,11 +1103,7 @@ async fn test_tui_daemon_agent_full_flow() {
         .await
         .expect("configure_agent failed");
 
-    let handle = crucible_daemon_client::DaemonAgentHandle::new(
-        client.clone(),
-        session_id.clone(),
-        event_rx,
-    );
+    let handle = crucible_rpc::DaemonAgentHandle::new(client.clone(), session_id.clone(), event_rx);
 
     assert_eq!(handle.session_id(), session_id);
     assert!(handle.is_connected());
@@ -1224,7 +1220,7 @@ async fn test_daemon_agent_error_produces_chat_error() {
 // =============================================================================
 
 mod event_flow_tests {
-    use crucible_daemon_client::SessionEvent;
+    use crucible_rpc::SessionEvent;
     use serde_json::json;
 
     fn simulate_daemon_event(event_type: &str, data: serde_json::Value) -> SessionEvent {
@@ -1472,7 +1468,7 @@ async fn test_session_switch_model() {
 async fn test_daemon_agent_handle_switch_model() {
     use crucible_core::session::SessionAgent;
     use crucible_core::traits::chat::AgentHandle;
-    use crucible_daemon_client::DaemonAgentHandle;
+    use crucible_rpc::DaemonAgentHandle;
 
     let server = TestServer::start().await.expect("Failed to start server");
     let kiln_dir = tempfile::tempdir().expect("Failed to create kiln dir");

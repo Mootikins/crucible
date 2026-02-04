@@ -86,10 +86,7 @@ impl DaemonSessionApi for DaemonSessionBridge {
         })
     }
 
-    fn get_session(
-        &self,
-        session_id: String,
-    ) -> BoxFut<Option<serde_json::Value>> {
+    fn get_session(&self, session_id: String) -> BoxFut<Option<serde_json::Value>> {
         bridge_async!(self.session_manager, |sm| async move {
             Ok(sm.get_session(&session_id).map(|s| {
                 serde_json::json!({
@@ -121,31 +118,26 @@ impl DaemonSessionApi for DaemonSessionBridge {
         })
     }
 
-    fn configure_agent(
-        &self,
-        session_id: String,
-        agent_config: serde_json::Value,
-    ) -> BoxFut<()> {
+    fn configure_agent(&self, session_id: String, agent_config: serde_json::Value) -> BoxFut<()> {
         bridge_async!(self.agent_manager, |am| async move {
-            let agent: crucible_core::session::SessionAgent =
-                serde_json::from_value(agent_config)
-                    .map_err(|e| format!("Invalid agent config: {}", e))?;
+            let agent: crucible_core::session::SessionAgent = serde_json::from_value(agent_config)
+                .map_err(|e| format!("Invalid agent config: {}", e))?;
             am.configure_agent(&session_id, agent)
                 .await
                 .map_err(|e| e.to_string())
         })
     }
 
-    fn send_message(
-        &self,
-        session_id: String,
-        content: String,
-    ) -> BoxFut<String> {
-        bridge_async!(self.agent_manager, self.event_tx, |am, event_tx| async move {
-            am.send_message(&session_id, content, &event_tx)
-                .await
-                .map_err(|e| e.to_string())
-        })
+    fn send_message(&self, session_id: String, content: String) -> BoxFut<String> {
+        bridge_async!(
+            self.agent_manager,
+            self.event_tx,
+            |am, event_tx| async move {
+                am.send_message(&session_id, content, &event_tx)
+                    .await
+                    .map_err(|e| e.to_string())
+            }
+        )
     }
 
     fn cancel(&self, session_id: String) -> BoxFut<bool> {
@@ -173,13 +165,17 @@ impl DaemonSessionApi for DaemonSessionBridge {
     }
 
     fn end_session(&self, session_id: String) -> BoxFut<()> {
-        bridge_async!(self.session_manager, self.agent_manager, |sm, am| async move {
-            sm.end_session(&session_id)
-                .await
-                .map_err(|e| e.to_string())?;
-            am.cleanup_session(&session_id);
-            Ok(())
-        })
+        bridge_async!(
+            self.session_manager,
+            self.agent_manager,
+            |sm, am| async move {
+                sm.end_session(&session_id)
+                    .await
+                    .map_err(|e| e.to_string())?;
+                am.cleanup_session(&session_id);
+                Ok(())
+            }
+        )
     }
 
     fn respond_to_permission(
@@ -304,9 +300,14 @@ impl DaemonSessionApi for DaemonSessionBridge {
                     };
                 }
 
-                let flush_text = |buf: &mut String, tx: &tokio::sync::mpsc::UnboundedSender<ResponsePart>| -> bool {
+                let flush_text = |buf: &mut String,
+                                  tx: &tokio::sync::mpsc::UnboundedSender<ResponsePart>|
+                 -> bool {
                     if !buf.is_empty() {
-                        tx.send(ResponsePart::Text { content: std::mem::take(buf) }).is_ok()
+                        tx.send(ResponsePart::Text {
+                            content: std::mem::take(buf),
+                        })
+                        .is_ok()
                     } else {
                         true
                     }
@@ -323,25 +324,33 @@ impl DaemonSessionApi for DaemonSessionBridge {
                         Ok(Ok(event)) if event.session_id == session_id => {
                             match event.event.as_str() {
                                 "text_delta" => {
-                                    if let Some(c) = event.data.get("content").and_then(|v| v.as_str()) {
+                                    if let Some(c) =
+                                        event.data.get("content").and_then(|v| v.as_str())
+                                    {
                                         text_buf.push_str(c);
                                     }
                                 }
                                 "tool_call" => {
-                                    if !flush_text(&mut text_buf, &part_tx) { return; }
-                                    let tool = event.data.get("tool")
+                                    if !flush_text(&mut text_buf, &part_tx) {
+                                        return;
+                                    }
+                                    let tool = event
+                                        .data
+                                        .get("tool")
                                         .and_then(|v| v.as_str())
                                         .unwrap_or("unknown")
                                         .to_string();
-                                    let args_brief = truncate_json_preview(
-                                        event.data.get("args"),
-                                        500,
-                                    );
+                                    let args_brief =
+                                        truncate_json_preview(event.data.get("args"), 500);
                                     emit!(ResponsePart::ToolCall { tool, args_brief });
                                 }
                                 "tool_result" => {
-                                    if !flush_text(&mut text_buf, &part_tx) { return; }
-                                    let tool = event.data.get("tool")
+                                    if !flush_text(&mut text_buf, &part_tx) {
+                                        return;
+                                    }
+                                    let tool = event
+                                        .data
+                                        .get("tool")
                                         .and_then(|v| v.as_str())
                                         .unwrap_or("unknown")
                                         .to_string();
@@ -360,8 +369,12 @@ impl DaemonSessionApi for DaemonSessionBridge {
                                     });
                                 }
                                 "thinking" => {
-                                    if !flush_text(&mut text_buf, &part_tx) { return; }
-                                    if let Some(content) = event.data.get("content")
+                                    if !flush_text(&mut text_buf, &part_tx) {
+                                        return;
+                                    }
+                                    if let Some(content) = event
+                                        .data
+                                        .get("content")
                                         .and_then(|v| v.as_str())
                                         .filter(|s| !s.is_empty())
                                     {
@@ -371,10 +384,14 @@ impl DaemonSessionApi for DaemonSessionBridge {
                                     }
                                 }
                                 "interaction_requested" => {
-                                    if !flush_text(&mut text_buf, &part_tx) { return; }
+                                    if !flush_text(&mut text_buf, &part_tx) {
+                                        return;
+                                    }
                                     // Reset deadline — user needs time to respond to the prompt
                                     deadline = tokio::time::Instant::now() + timeout;
-                                    let request_id = event.data.get("request_id")
+                                    let request_id = event
+                                        .data
+                                        .get("request_id")
                                         .and_then(|v| v.as_str())
                                         .unwrap_or("")
                                         .to_string();
@@ -387,7 +404,8 @@ impl DaemonSessionApi for DaemonSessionBridge {
                                         });
                                     }
                                 }
-                                "message_complete" | "response_complete" | "response_done" | "ended" => {
+                                "message_complete" | "response_complete" | "response_done"
+                                | "ended" => {
                                     let _ = flush_text(&mut text_buf, &part_tx);
                                     break;
                                 }
@@ -446,9 +464,15 @@ fn extract_permission_info(data: &serde_json::Value) -> (String, String) {
                 .and_then(|a| a.get("name"))
                 .and_then(|v| v.as_str())
                 .unwrap_or("unknown");
-            (name.to_string(), truncate_json_preview(action.and_then(|a| a.get("args")), 200))
+            (
+                name.to_string(),
+                truncate_json_preview(action.and_then(|a| a.get("args")), 200),
+            )
         }
-        _ => ("unknown".to_string(), "unrecognized action type".to_string()),
+        _ => (
+            "unknown".to_string(),
+            "unrecognized action type".to_string(),
+        ),
     }
 }
 

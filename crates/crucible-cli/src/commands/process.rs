@@ -24,7 +24,7 @@ use walkdir::WalkDir;
 use crate::config::CliConfig;
 use crate::event_system::initialize_event_system;
 use crate::{factories, output};
-use crucible_daemon_client::DaemonClient;
+use crucible_rpc::DaemonClient;
 use crucible_watch::traits::{DebounceConfig, HandlerConfig, WatchConfig};
 use crucible_watch::{EventFilter, WatchMode};
 

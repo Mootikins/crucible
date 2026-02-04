@@ -18,7 +18,7 @@ members = [
     "crates/crucible-lua",
     "crates/crucible-web",
     "crates/crucible-daemon",
-    "crates/crucible-daemon-client",
+    "crates/crucible-rpc",
     "crates/crucible-skills",
     "crates/crucible-rig",
     "crates/crucible-query",
@@ -175,7 +175,7 @@ crucible-rig = { path = "crates/crucible-rig" }
 crucible-web = { path = "crates/crucible-web" }
 crucible-observe = { path = "crates/crucible-observe" }
 crucible-daemon = { path = "crates/crucible-daemon" }
-crucible-daemon-client = { path = "crates/crucible-daemon-client" }
+crucible-rpc = { path = "crates/crucible-rpc" }
 crucible-oil = { path = "crates/crucible-oil" }
 oq = "0.1"
 

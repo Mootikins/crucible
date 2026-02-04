@@ -119,7 +119,7 @@ See the [docs](./docs/Help/Concepts/Scripting%20Languages.md) for the full plugi
 ```
 crucible-cli             Terminal UI, REPL, commands
 crucible-daemon          Background server (auto-spawned, Unix socket)
-crucible-daemon-client   Client library with auto-reconnect
+crucible-rpc             RPC client library with auto-reconnect
 crucible-tools           MCP server, tool implementations
 crucible-core            Domain logic, traits, parser types
 crucible-surrealdb       Storage with EAV graph schema

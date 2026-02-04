@@ -102,11 +102,9 @@ impl UserData for LuaRateLimiter {
         });
 
         // remaining() — sync, returns current token count
-        methods.add_method("remaining", |_lua, this, ()| {
-            match this.bucket.try_lock() {
-                Ok(mut bucket) => Ok(bucket.remaining()),
-                Err(_) => Ok(0.0),
-            }
+        methods.add_method("remaining", |_lua, this, ()| match this.bucket.try_lock() {
+            Ok(mut bucket) => Ok(bucket.remaining()),
+            Err(_) => Ok(0.0),
         });
     }
 }
@@ -123,10 +121,14 @@ pub fn register_ratelimit_module(lua: &Lua) -> Result<()> {
             let interval: f64 = opts.get::<f64>("interval").unwrap_or(1.0);
 
             if !capacity.is_finite() || capacity <= 0.0 {
-                return Err(mlua::Error::runtime("capacity must be a finite positive number"));
+                return Err(mlua::Error::runtime(
+                    "capacity must be a finite positive number",
+                ));
             }
             if !interval.is_finite() || interval <= 0.0 {
-                return Err(mlua::Error::runtime("interval must be a finite positive number"));
+                return Err(mlua::Error::runtime(
+                    "interval must be a finite positive number",
+                ));
             }
 
             let bucket = TokenBucket::new(capacity, Duration::from_secs_f64(interval));

@@ -696,9 +696,10 @@ impl OilChatRunner {
                                 let enricher =
                                     self.enricher.clone().expect("checked is_some above");
                                 let content = content.clone();
+                                let top_k = app.precognition_results();
                                 let tx = msg_tx.clone();
                                 tokio::spawn(async move {
-                                    match enricher.enrich_with_results(&content).await {
+                                    match enricher.enrich_with_results_n(&content, top_k).await {
                                         Ok(result) => {
                                             let notes_count = result.notes_found.len();
                                             if notes_count > 0 {
@@ -729,6 +730,43 @@ impl OilChatRunner {
                                 *active_stream = Some(stream);
                             }
                         }
+                    }
+                    ChatAppMsg::ReloadPlugin(ref name) => {
+                        tracing::info!(plugin = %name, "Plugin reload requested");
+                        let name = name.clone();
+                        let tx = msg_tx.clone();
+                        tokio::spawn(async move {
+                            match crucible_rpc::DaemonClient::connect().await {
+                                Ok(client) => match client.plugin_reload(&name).await {
+                                    Ok(result) => {
+                                        let tools = result
+                                            .get("tools")
+                                            .and_then(|v| v.as_u64())
+                                            .unwrap_or(0);
+                                        let services = result
+                                            .get("services")
+                                            .and_then(|v| v.as_u64())
+                                            .unwrap_or(0);
+                                        let _ = tx.send(ChatAppMsg::Status(format!(
+                                            "Reloaded '{}' ({} tools, {} services)",
+                                            name, tools, services
+                                        )));
+                                    }
+                                    Err(e) => {
+                                        let _ = tx.send(ChatAppMsg::Error(format!(
+                                            "Plugin reload failed: {}",
+                                            e
+                                        )));
+                                    }
+                                },
+                                Err(e) => {
+                                    let _ = tx.send(ChatAppMsg::Error(format!(
+                                        "Cannot connect to daemon: {}",
+                                        e
+                                    )));
+                                }
+                            }
+                        });
                     }
                     ChatAppMsg::ExecuteSlashCommand(ref cmd) => {
                         tracing::info!(command = %cmd, "Forwarding slash command as user message");
