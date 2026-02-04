@@ -28,7 +28,11 @@ pub struct Terminal {
 impl Terminal {
     pub fn new() -> io::Result<Self> {
         let (width, height) = terminal::size()?;
-        Ok(Self {
+        Ok(Self::with_size(width, height))
+    }
+
+    pub fn with_size(width: u16, height: u16) -> Self {
+        Self {
             stdout: io::stdout(),
             width,
             height,
@@ -37,7 +41,7 @@ impl Terminal {
             output: OutputBuffer::new(width as usize, height as usize),
             keyboard_enhanced: false,
             last_cursor: None,
-        })
+        }
     }
 
     pub fn with_alternate_screen(mut self, use_alt: bool) -> Self {
