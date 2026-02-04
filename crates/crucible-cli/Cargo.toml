@@ -18,11 +18,14 @@ dist = true
 features = ["storage-sqlite"]
 
 [features]
-default = ["storage-surrealdb"]
+default = ["storage-surrealdb", "fastembed"]
 
 # Storage backend selection (mutually exclusive in practice)
 storage-surrealdb = ["dep:crucible-surrealdb"]
 storage-sqlite = ["dep:crucible-sqlite"]
+
+# Local embedding support (includes ONNX Runtime download)
+fastembed = ["crucible-llm/fastembed", "crucible-tools/fastembed"]
 
 # Rendering pipeline selection
 taffy-render = []  # Use new Taffy-based layout pipeline (experimental)
@@ -38,7 +41,7 @@ crucible-core = { path = "../crucible-core" }
 crucible-surrealdb = { path = "../crucible-surrealdb", optional = true }
 crucible-sqlite = { path = "../crucible-sqlite", optional = true }
 crucible-config = { path = "../crucible-config", features = ["toml"] }
-crucible-llm = { path = "../crucible-llm" }
+crucible-llm = { path = "../crucible-llm", default-features = false }
 crucible-lua = { path = "../crucible-lua" }
 crucible-pipeline = { path = "../crucible-pipeline" }
 crucible-tools = { path = "../crucible-tools" }

@@ -92,6 +92,7 @@ crucible-surrealdb = { workspace = true }
 [features]
 default = ["embeddings"]
 embeddings = []
+fastembed = ["crucible-skills/fastembed"]
 database = []
 search = []
 kiln = []

@@ -167,7 +167,7 @@ crucible-core = { path = "crates/crucible-core" }
 crucible-config = { path = "crates/crucible-config" }
 crucible-acp = { path = "crates/crucible-acp" }
 crucible-tools = { path = "crates/crucible-tools" }
-crucible-llm = { path = "crates/crucible-llm" }
+crucible-llm = { path = "crates/crucible-llm", default-features = false }
 crucible-skills = { path = "crates/crucible-skills" }
 crucible-surrealdb = { path = "crates/crucible-surrealdb" }
 crucible-lua = { path = "crates/crucible-lua" }
