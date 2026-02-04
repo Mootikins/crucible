@@ -43,8 +43,6 @@ keywords = ["knowledge-management", "ai", "collaboration", "crdt", "rust"]
 categories = ["development-tools", "text-processing", "database"]
 
 [workspace.dependencies]
-openssl = { version = "0.10", features = ["vendored"] }
-openssl-sys = { version = "0.9", features = ["vendored"] }
 yrs = "0.25"
 tokio = { version = "1.49", features = ["full"] }
 serde = { version = "1.0", features = ["derive"] }
@@ -70,7 +68,7 @@ futures = "0.3"
 # Database dependencies
 
 # HTTP client
-reqwest = { version = "0.12", features = ["json", "rustls-tls", "stream"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream", "charset", "http2", "system-proxy"] }
 urlencoding = "2.1"
 
 # Vector operations
@@ -107,7 +105,7 @@ markdown-it = "0.6"
 toml = "0.9"
 futures-util = "0.3"
 tokio-stream = "0.1"
-tokio-tungstenite = { version = "0.26", features = ["native-tls"] }
+tokio-tungstenite = { version = "0.26", features = ["rustls-tls-webpki-roots"] }
 hostname = "0.4"
 
 # Metrics and monitoring
