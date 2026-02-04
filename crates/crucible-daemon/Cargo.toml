@@ -43,6 +43,7 @@ agent-client-protocol = "0.9.3"
 mlua = { workspace = true }
 scopeguard = "1"
 reqwest = { workspace = true }
+openssl = { workspace = true, optional = true }
 
 [features]
 default = ["storage-sqlite"]
@@ -50,6 +51,7 @@ default = ["storage-sqlite"]
 # Storage backend selection (mutually exclusive in practice)
 storage-surrealdb = ["dep:crucible-surrealdb"]
 storage-sqlite = ["dep:crucible-sqlite"]
+vendored-openssl = ["dep:openssl"]
 
 # Test tier flags (see justfile for usage)
 test-fixtures = []       # Tests using docs/ kiln or examples/test-kiln

@@ -43,6 +43,7 @@ keywords = ["knowledge-management", "ai", "collaboration", "crdt", "rust"]
 categories = ["development-tools", "text-processing", "database"]
 
 [workspace.dependencies]
+openssl = { version = "0.10", features = ["vendored"] }
 yrs = "0.25"
 tokio = { version = "1.49", features = ["full"] }
 serde = { version = "1.0", features = ["derive"] }
