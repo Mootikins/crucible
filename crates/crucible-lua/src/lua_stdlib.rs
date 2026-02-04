@@ -156,6 +156,137 @@ do
 
     cru.check = check
 end
+
+-- ============================================================================
+-- cru.service — Supervised service lifecycle
+-- ============================================================================
+
+do
+    local Service = {}
+    Service._services = {}
+
+    function Service.define(spec)
+        cru.check.table(spec, "spec")
+        cru.check.string(spec.name, "spec.name")
+        cru.check.string(spec.desc, "spec.desc")
+        cru.check.func(spec.start, "spec.start")
+        cru.check.func(spec.stop, "spec.stop", { optional = true })
+        cru.check.func(spec.health, "spec.health", { optional = true })
+
+        local name = spec.name
+        local restart = spec.restart or {}
+        local max_retries  = restart.max_retries or 10
+        local base_delay   = restart.base_delay  or 1.0
+        local max_delay    = restart.max_delay    or 60.0
+
+        -- Resolve config schema defaults and secrets
+        local resolved_config = nil
+        if spec.config then
+            resolved_config = {}
+            local plugin_upper = name:upper():gsub("[^A-Z0-9]", "_")
+            for key, schema in pairs(spec.config) do
+                local val = nil
+                -- Secret resolution: env var first
+                if schema.secret then
+                    local env_key = "CRUCIBLE_" .. plugin_upper .. "_" .. key:upper():gsub("[^A-Z0-9]", "_")
+                    val = os.getenv(env_key)
+                end
+                -- Fall back to plugin config
+                if val == nil then
+                    local ok, cfg_val = pcall(function()
+                        return crucible.config.get(name .. "." .. key)
+                    end)
+                    if ok and cfg_val ~= nil then val = cfg_val end
+                end
+                -- Fall back to schema default
+                if val == nil and schema.default ~= nil then
+                    val = schema.default
+                end
+                resolved_config[key] = val
+            end
+        end
+
+        local entry = {
+            name      = name,
+            desc      = spec.desc,
+            running   = false,
+            healthy   = nil,
+            start_fn  = spec.start,
+            stop_fn   = spec.stop,
+            health_fn = spec.health,
+            config    = resolved_config,
+        }
+        Service._services[name] = entry
+
+        -- Build the wrapper function the daemon spawns
+        local function wrapped()
+            entry.running = true
+            cru.log("info", "service '" .. name .. "' starting")
+
+            local ok, err = pcall(function()
+                cru.retry(function()
+                    entry.running = true
+                    spec.start()
+                end, {
+                    max_retries = max_retries,
+                    base_delay  = base_delay,
+                    max_delay   = max_delay,
+                    retryable   = function(e)
+                        return type(e) ~= "table" or e.retryable ~= false
+                    end,
+                })
+            end)
+
+            entry.running = false
+            if not ok then
+                cru.log("warn", "service '" .. name .. "' stopped: " .. tostring(err))
+            else
+                cru.log("info", "service '" .. name .. "' completed")
+            end
+        end
+
+        return { desc = spec.desc, fn = wrapped }
+    end
+
+    function Service.status(name)
+        local entry = Service._services[name]
+        if not entry then return nil end
+        local healthy = nil
+        if entry.health_fn then
+            local ok, h = pcall(entry.health_fn)
+            healthy = ok and h or false
+        end
+        return { running = entry.running, healthy = healthy, name = entry.name, desc = entry.desc }
+    end
+
+    function Service.list()
+        local out = {}
+        for _, entry in pairs(Service._services) do
+            local healthy = nil
+            if entry.health_fn then
+                local ok, h = pcall(entry.health_fn)
+                healthy = ok and h or false
+            end
+            out[#out + 1] = { name = entry.name, desc = entry.desc, running = entry.running, healthy = healthy }
+        end
+        return out
+    end
+
+    function Service.stop(name)
+        local entry = Service._services[name]
+        if not entry then return false end
+        if entry.stop_fn then
+            local ok, err = pcall(entry.stop_fn)
+            if not ok then
+                cru.log("warn", "service '" .. name .. "' stop error: " .. tostring(err))
+            end
+        end
+        entry.running = false
+        return true
+    end
+
+    cru.service = Service
+end
 "#;
 
 /// Register the pure Lua standard library (retry, emitter, check).
@@ -176,13 +307,21 @@ mod tests {
         // Create cru namespace
         lua.load("cru = cru or {}").exec().unwrap();
         // Need a mock cru.log for emitter error handling
-        lua.load(r#"
+        lua.load(
+            r#"
             cru.log = function(level, msg) end
-        "#).exec().unwrap();
+        "#,
+        )
+        .exec()
+        .unwrap();
         // Need cru.timer.sleep for retry (mock it for fast tests)
-        lua.load(r#"
+        lua.load(
+            r#"
             cru.timer = { sleep = function(secs) end }
-        "#).exec().unwrap();
+        "#,
+        )
+        .exec()
+        .unwrap();
         register_lua_stdlib(&lua).unwrap();
         lua
     }
@@ -327,35 +466,58 @@ mod tests {
     fn test_check_string() {
         let lua = setup_lua();
         // Valid
-        lua.load(r#"cru.check.string("hello", "name")"#).exec().unwrap();
+        lua.load(r#"cru.check.string("hello", "name")"#)
+            .exec()
+            .unwrap();
         // Invalid
         assert!(lua.load(r#"cru.check.string(42, "name")"#).exec().is_err());
         // Optional nil
-        lua.load(r#"cru.check.string(nil, "name", { optional = true })"#).exec().unwrap();
+        lua.load(r#"cru.check.string(nil, "name", { optional = true })"#)
+            .exec()
+            .unwrap();
         // Optional non-nil wrong type
-        assert!(lua.load(r#"cru.check.string(42, "name", { optional = true })"#).exec().is_err());
+        assert!(lua
+            .load(r#"cru.check.string(42, "name", { optional = true })"#)
+            .exec()
+            .is_err());
     }
 
     #[test]
     fn test_check_number_with_range() {
         let lua = setup_lua();
-        lua.load(r#"cru.check.number(5, "count", { min = 1, max = 10 })"#).exec().unwrap();
-        assert!(lua.load(r#"cru.check.number(0, "count", { min = 1 })"#).exec().is_err());
-        assert!(lua.load(r#"cru.check.number(11, "count", { max = 10 })"#).exec().is_err());
+        lua.load(r#"cru.check.number(5, "count", { min = 1, max = 10 })"#)
+            .exec()
+            .unwrap();
+        assert!(lua
+            .load(r#"cru.check.number(0, "count", { min = 1 })"#)
+            .exec()
+            .is_err());
+        assert!(lua
+            .load(r#"cru.check.number(11, "count", { max = 10 })"#)
+            .exec()
+            .is_err());
     }
 
     #[test]
     fn test_check_one_of() {
         let lua = setup_lua();
-        lua.load(r#"cru.check.one_of("json", {"json", "text"}, "format")"#).exec().unwrap();
-        assert!(lua.load(r#"cru.check.one_of("xml", {"json", "text"}, "format")"#).exec().is_err());
+        lua.load(r#"cru.check.one_of("json", {"json", "text"}, "format")"#)
+            .exec()
+            .unwrap();
+        assert!(lua
+            .load(r#"cru.check.one_of("xml", {"json", "text"}, "format")"#)
+            .exec()
+            .is_err());
     }
 
     #[test]
     fn test_check_table() {
         let lua = setup_lua();
         lua.load(r#"cru.check.table({}, "opts")"#).exec().unwrap();
-        assert!(lua.load(r#"cru.check.table("string", "opts")"#).exec().is_err());
+        assert!(lua
+            .load(r#"cru.check.table("string", "opts")"#)
+            .exec()
+            .is_err());
     }
 
     #[test]
@@ -417,5 +579,120 @@ mod tests {
         assert_eq!(result.1, 3);
         // Verify real async sleep was used (at least some time passed)
         assert!(start.elapsed().as_millis() >= 10);
+    }
+
+    #[test]
+    fn test_service_define_returns_descriptor() {
+        let lua = setup_lua();
+        let result: (String, bool) = lua
+            .load(
+                r#"
+                local started = false
+                local svc = cru.service.define({
+                    name = "test",
+                    desc = "Test service",
+                    start = function() started = true end,
+                })
+                return svc.desc, type(svc.fn) == "function"
+                "#,
+            )
+            .eval()
+            .unwrap();
+        assert_eq!(result.0, "Test service");
+        assert!(result.1);
+    }
+
+    #[test]
+    fn test_service_define_validates_required_fields() {
+        let lua = setup_lua();
+        // Missing start fn
+        assert!(lua
+            .load(r#"cru.service.define({ name = "x", desc = "x" })"#)
+            .exec()
+            .is_err());
+        // Missing name
+        assert!(lua
+            .load(r#"cru.service.define({ desc = "x", start = function() end })"#)
+            .exec()
+            .is_err());
+    }
+
+    #[test]
+    fn test_service_list_and_status() {
+        let lua = setup_lua();
+        let (count, name, running): (i32, String, bool) = lua
+            .load(
+                r#"
+                cru.service.define({
+                    name = "svc1",
+                    desc = "Service One",
+                    start = function() end,
+                    health = function() return true end,
+                })
+                local list = cru.service.list()
+                local st = cru.service.status("svc1")
+                return #list, st.name, st.running
+                "#,
+            )
+            .eval()
+            .unwrap();
+        assert!(count >= 1);
+        assert_eq!(name, "svc1");
+        assert!(!running); // Not started yet, just defined
+    }
+
+    #[test]
+    fn test_service_stop() {
+        let lua = setup_lua();
+        let stopped: bool = lua
+            .load(
+                r#"
+                local was_stopped = false
+                cru.service.define({
+                    name = "stoppable",
+                    desc = "Can stop",
+                    start = function() end,
+                    stop = function() was_stopped = true end,
+                })
+                cru.service.stop("stoppable")
+                return was_stopped
+                "#,
+            )
+            .eval()
+            .unwrap();
+        assert!(stopped);
+    }
+
+    #[test]
+    fn test_service_config_resolution() {
+        let lua = setup_lua();
+        // Mock crucible.config.get to return nil (no config file)
+        lua.load(
+            r#"
+            crucible = crucible or {}
+            crucible.config = { get = function() return nil end }
+            "#,
+        )
+        .exec()
+        .unwrap();
+
+        let val: i32 = lua
+            .load(
+                r#"
+                cru.service.define({
+                    name = "cfgtest",
+                    desc = "Config test",
+                    start = function() end,
+                    config = {
+                        port = { type = "number", default = 8080 },
+                    },
+                })
+                local entry = cru.service._services["cfgtest"]
+                return entry.config.port
+                "#,
+            )
+            .eval()
+            .unwrap();
+        assert_eq!(val, 8080);
     }
 }

@@ -38,6 +38,7 @@ pub mod session_bridge;
 pub mod session_manager;
 pub mod session_storage;
 pub mod subscription;
+pub mod tools_bridge;
 
 pub use acp_handle::{AcpAgentHandle, AcpHandleError};
 pub use agent_factory::{create_agent_from_session_config, AgentFactoryError};
@@ -56,3 +57,4 @@ pub use session_bridge::DaemonSessionBridge;
 pub use session_manager::{SessionError, SessionManager};
 pub use session_storage::{FileSessionStorage, SessionStorage};
 pub use subscription::{ClientId, SubscriptionManager};
+pub use tools_bridge::DaemonToolsBridge;

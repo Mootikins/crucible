@@ -253,7 +253,9 @@ impl KilnContext {
         {
             // Fall back to basic semantic search (daemon, sqlite, lightweight modes)
             // Reranking is not supported via RPC yet
-            tracing::debug!("Reranking not available in this storage mode, using basic semantic search");
+            tracing::debug!(
+                "Reranking not available in this storage mode, using basic semantic search"
+            );
             self.semantic_search(query, limit).await
         }
     }

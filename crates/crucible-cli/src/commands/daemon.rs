@@ -3,8 +3,8 @@
 use anyhow::Result;
 use clap::Subcommand;
 use crucible_daemon::{socket_path, Server};
-use crucible_daemon_client::lifecycle::is_daemon_running;
-use crucible_daemon_client::DaemonClient;
+use crucible_rpc::lifecycle::is_daemon_running;
+use crucible_rpc::DaemonClient;
 use std::process::Stdio;
 use tracing::info;
 

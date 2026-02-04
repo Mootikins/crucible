@@ -62,16 +62,9 @@ pub async fn create_agent_from_session_config(
     mcp_gateway: Option<Arc<tokio::sync::RwLock<crucible_tools::mcp_gateway::McpGatewayManager>>>,
 ) -> Result<Box<dyn AgentHandle + Send + Sync>, AgentFactoryError> {
     if agent_config.agent_type == "acp" {
-        let handle = AcpAgentHandle::new(
-            agent_config,
-            workspace,
-            None,
-            None,
-            None,
-            None,
-        )
-        .await
-        .map_err(|e| AgentFactoryError::AgentBuild(e.to_string()))?;
+        let handle = AcpAgentHandle::new(agent_config, workspace, None, None, None, None)
+            .await
+            .map_err(|e| AgentFactoryError::AgentBuild(e.to_string()))?;
         return Ok(Box::new(handle));
     }
 

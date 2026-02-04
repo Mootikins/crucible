@@ -223,6 +223,16 @@ impl Server {
                     warn!("Failed to upgrade Lua sessions module: {}", e);
                 }
 
+                let workspace_root = crucible_config::crucible_home();
+                let workspace_tools = Arc::new(crucible_tools::workspace::WorkspaceTools::new(
+                    &workspace_root,
+                ));
+                let tools_api: Arc<dyn crucible_lua::DaemonToolsApi> =
+                    Arc::new(crate::tools_bridge::DaemonToolsBridge::new(workspace_tools));
+                if let Err(e) = loader.upgrade_with_tools(tools_api) {
+                    warn!("Failed to upgrade Lua tools module: {}", e);
+                }
+
                 let paths = crate::daemon_plugins::default_daemon_plugin_paths();
                 match loader.load_plugins(&paths).await {
                     Ok(specs) => {
@@ -607,6 +617,8 @@ async fn handle_legacy_request(
         }
         "session.get_max_tokens" => handle_session_get_max_tokens(req, agent_manager).await,
         "session.test_interaction" => handle_session_test_interaction(req, event_tx).await,
+        "plugin.reload" => handle_plugin_reload(req, plugin_loader).await,
+        "plugin.list" => handle_plugin_list(req, plugin_loader).await,
         _ => {
             tracing::warn!("Unknown RPC method: {:?}", req.method);
             Response::error(
@@ -1652,6 +1664,65 @@ async fn handle_session_get_max_tokens(req: Request, am: &Arc<AgentManager>) -> 
         }
         Err(e) => internal_error(req.id, e),
     }
+}
+
+async fn handle_plugin_reload(
+    req: Request,
+    plugin_loader: &Arc<Mutex<Option<DaemonPluginLoader>>>,
+) -> Response {
+    let name = require_str_param!(req, "name");
+
+    let mut loader_guard = plugin_loader.lock().await;
+    let loader = match loader_guard.as_mut() {
+        Some(l) => l,
+        None => return internal_error(req.id, "Plugin loader not initialized"),
+    };
+
+    match loader.reload_plugin(name).await {
+        Ok(spec) => {
+            let service_fns = loader.take_service_fns();
+            for (svc_name, func) in service_fns {
+                info!("Re-spawning service after reload: {}", svc_name);
+                tokio::spawn(async move {
+                    match func.call_async::<()>(()).await {
+                        Ok(()) => info!("Service '{}' completed", svc_name),
+                        Err(e) => warn!("Service '{}' failed: {}", svc_name, e),
+                    }
+                });
+            }
+
+            Response::success(
+                req.id,
+                serde_json::json!({
+                    "name": name,
+                    "reloaded": true,
+                    "tools": spec.tools.len(),
+                    "commands": spec.commands.len(),
+                    "handlers": spec.handlers.len(),
+                    "services": spec.services.len(),
+                }),
+            )
+        }
+        Err(e) => internal_error(req.id, e),
+    }
+}
+
+async fn handle_plugin_list(
+    req: Request,
+    plugin_loader: &Arc<Mutex<Option<DaemonPluginLoader>>>,
+) -> Response {
+    let loader_guard = plugin_loader.lock().await;
+    let names = match loader_guard.as_ref() {
+        Some(l) => l.loaded_plugin_names(),
+        None => Vec::new(),
+    };
+
+    Response::success(
+        req.id,
+        serde_json::json!({
+            "plugins": names,
+        }),
+    )
 }
 
 #[cfg(test)]

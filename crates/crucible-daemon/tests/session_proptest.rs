@@ -93,12 +93,20 @@ async fn state_transitions_follow_rules_fuzz() {
                 );
             }
 
-            let actual = manager.get_session(&session.id).unwrap();
-            assert_eq!(
-                actual.state, expected_state,
-                "State mismatch after {:?}: expected {:?}, got {:?}",
-                op, expected_state, actual.state
-            );
+            if expected_state == SessionState::Ended {
+                // end_session removes the session from memory
+                assert!(
+                    manager.get_session(&session.id).is_none(),
+                    "Ended session should be removed from memory"
+                );
+            } else {
+                let actual = manager.get_session(&session.id).unwrap();
+                assert_eq!(
+                    actual.state, expected_state,
+                    "State mismatch after {:?}: expected {:?}, got {:?}",
+                    op, expected_state, actual.state
+                );
+            }
         }
     }
 }
@@ -129,21 +137,18 @@ async fn ended_sessions_reject_all_state_changes_fuzz() {
             let op = *ops.choose(&mut rng).unwrap();
             let result = apply_op(&manager, &session.id, op).await;
 
-            match op {
-                SessionOp::End => {
-                    assert!(
-                        matches!(result, Err(SessionError::AlreadyEnded(_))),
-                        "End on ended session should return AlreadyEnded, got {:?}",
-                        result
-                    );
-                }
-                _ => {
-                    assert!(result.is_err(), "Op {:?} on ended session should fail", op);
-                }
-            }
+            assert!(
+                result.is_err(),
+                "Op {:?} on ended session should fail, got {:?}",
+                op,
+                result
+            );
 
-            let actual = manager.get_session(&session.id).unwrap();
-            assert_eq!(actual.state, SessionState::Ended);
+            // end_session removes the session from memory, so get_session returns None
+            assert!(
+                manager.get_session(&session.id).is_none(),
+                "Ended session should be removed from memory"
+            );
         }
     }
 }
@@ -230,10 +235,15 @@ async fn concurrent_different_ops_maintain_consistency() {
 
     let (_pause_result, _end_result) = tokio::join!(pause_handle, end_handle);
 
-    let final_state = manager.get_session(&session_id).unwrap().state;
-    assert!(
-        final_state == SessionState::Paused || final_state == SessionState::Ended,
-        "Final state should be Paused or Ended, got {:?}",
-        final_state
-    );
+    // end_session removes from memory, so get_session may return None if End won the race
+    match manager.get_session(&session_id) {
+        Some(s) => assert_eq!(
+            s.state,
+            SessionState::Paused,
+            "If session still in memory, it must be Paused (End removes it)"
+        ),
+        None => {
+            // End won the race and removed the session
+        }
+    }
 }
