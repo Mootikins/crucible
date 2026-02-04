@@ -93,14 +93,18 @@ jobs:
       # Build cru (CLI)
       - name: Build cru
         run: |
+          features="storage-sqlite"
+          if [ "${{ matrix.use_cross }}" = "true" ]; then features="storage-sqlite,vendored-openssl"; fi
           ${{ matrix.use_cross && 'cross' || 'cargo' }} build --release --target ${{ matrix.target }} \
-            -p crucible-cli --no-default-features --features storage-sqlite
+            -p crucible-cli --no-default-features --features "$features"
 
       # Build cru-server (daemon)
       - name: Build cru-server
         run: |
+          features="storage-sqlite"
+          if [ "${{ matrix.use_cross }}" = "true" ]; then features="storage-sqlite,vendored-openssl"; fi
           ${{ matrix.use_cross && 'cross' || 'cargo' }} build --release --target ${{ matrix.target }} \
-            -p crucible-daemon --no-default-features --features storage-sqlite
+            -p crucible-daemon --no-default-features --features "$features"
 
       # Package the binaries
       - name: Package (Unix)
