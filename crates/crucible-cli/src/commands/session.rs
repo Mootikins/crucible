@@ -7,11 +7,11 @@ use crate::config::CliConfig;
 use anyhow::{anyhow, Result};
 use chrono::{Duration, Utc};
 use crucible_core::storage::NoteStore;
-use crucible_daemon_client::DaemonClient;
 use crucible_observe::{
     extract_session_content, list_sessions, load_events, render_to_markdown, LogEvent,
     RenderOptions, SessionId, SessionType,
 };
+use crucible_rpc::DaemonClient;
 use std::path::PathBuf;
 use tokio::fs;
 
@@ -696,7 +696,7 @@ async fn daemon_send(
     message: &str,
     raw: bool,
 ) -> Result<()> {
-    use crucible_daemon_client::DaemonClient;
+    use crucible_rpc::DaemonClient;
     use std::io::Write;
 
     let (client, mut event_rx) = DaemonClient::connect_or_start_with_events().await?;
@@ -841,7 +841,7 @@ async fn daemon_configure(
 }
 
 async fn daemon_subscribe(session_ids: &[String]) -> Result<()> {
-    use crucible_daemon_client::DaemonClient;
+    use crucible_rpc::DaemonClient;
 
     let (client, mut event_rx) = DaemonClient::connect_or_start_with_events().await?;
 

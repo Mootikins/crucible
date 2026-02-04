@@ -401,8 +401,8 @@ impl NotePipelineOrchestrator for NotePipeline {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crucible_core::enrichment::{EnrichedNote, EnrichmentService, InferredRelation};
     use crucible_core::enrichment::EnrichmentMetadata;
+    use crucible_core::enrichment::{EnrichedNote, EnrichmentService, InferredRelation};
     use crucible_core::events::SessionEvent;
     use crucible_core::parser::{BlockHash, ParsedNote};
     use crucible_core::processing::InMemoryChangeDetectionStore;
@@ -461,9 +461,15 @@ mod tests {
             Ok(Vec::new())
         }
 
-        fn min_words_for_embedding(&self) -> usize { 5 }
-        fn max_batch_size(&self) -> usize { 10 }
-        fn has_embedding_provider(&self) -> bool { false }
+        fn min_words_for_embedding(&self) -> usize {
+            5
+        }
+        fn max_batch_size(&self) -> usize {
+            10
+        }
+        fn has_embedding_provider(&self) -> bool {
+            false
+        }
     }
 
     // -- Mock NoteStore --
@@ -494,17 +500,11 @@ mod tests {
             Ok(vec![])
         }
 
-        async fn get(
-            &self,
-            _path: &str,
-        ) -> std::result::Result<Option<NoteRecord>, StorageError> {
+        async fn get(&self, _path: &str) -> std::result::Result<Option<NoteRecord>, StorageError> {
             Ok(None)
         }
 
-        async fn delete(
-            &self,
-            _path: &str,
-        ) -> std::result::Result<SessionEvent, StorageError> {
+        async fn delete(&self, _path: &str) -> std::result::Result<SessionEvent, StorageError> {
             Ok(SessionEvent::NoteDeleted {
                 path: std::path::PathBuf::new(),
                 existed: false,
@@ -577,8 +577,7 @@ mod tests {
             force_reprocess: false,
             ..Default::default()
         };
-        let pipeline =
-            NotePipeline::with_config(change_detector, enrichment, store, config);
+        let pipeline = NotePipeline::with_config(change_detector, enrichment, store, config);
 
         let tmp = write_temp_note("# Test\n\nParagraph.\n");
 
@@ -588,7 +587,10 @@ mod tests {
 
         // Second pass with same content should skip
         let r2 = pipeline.process(tmp.path()).await.unwrap();
-        assert!(r2.is_skipped(), "unchanged file should be skipped on second pass");
+        assert!(
+            r2.is_skipped(),
+            "unchanged file should be skipped on second pass"
+        );
     }
 
     #[tokio::test]
@@ -616,7 +618,10 @@ mod tests {
         let err = pipeline.process(tmp.path()).await.unwrap_err();
         let msg = format!("{:#}", err);
         assert!(
-            msg.contains("Phase 4") || msg.contains("store") || msg.contains("storage") || msg.contains("Storage"),
+            msg.contains("Phase 4")
+                || msg.contains("store")
+                || msg.contains("storage")
+                || msg.contains("Storage"),
             "error should mention storage phase, got: {msg}"
         );
     }
@@ -624,8 +629,7 @@ mod tests {
     #[tokio::test]
     async fn pipeline_skip_enrichment_config_bypasses_enrichment() {
         let change_detector = Arc::new(InMemoryChangeDetectionStore::new());
-        let enrichment: Arc<dyn EnrichmentService> =
-            Arc::new(MockEnrichmentService::failing());
+        let enrichment: Arc<dyn EnrichmentService> = Arc::new(MockEnrichmentService::failing());
         let store: Arc<dyn NoteStore> = Arc::new(MockNoteStore::new());
 
         let config = NotePipelineConfig {
@@ -633,8 +637,7 @@ mod tests {
             force_reprocess: true,
             ..Default::default()
         };
-        let pipeline =
-            NotePipeline::with_config(change_detector, enrichment, store, config);
+        let pipeline = NotePipeline::with_config(change_detector, enrichment, store, config);
 
         let tmp = write_temp_note("# Skip enrichment\n\nBody text.\n");
         // Should succeed even though enrichment would fail,

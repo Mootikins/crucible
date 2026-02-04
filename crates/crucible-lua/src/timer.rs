@@ -34,9 +34,7 @@ pub fn register_timer_module(lua: &Lua) -> Result<()> {
     // advances even when the Lua VM is yielded at async points.
     timer.set(
         "clock",
-        lua.create_function(move |_lua, ()| {
-            Ok(epoch.elapsed().as_secs_f64())
-        })?,
+        lua.create_function(move |_lua, ()| Ok(epoch.elapsed().as_secs_f64()))?,
     )?;
 
     // timer.sleep(seconds) — async, yields until duration elapses
@@ -126,10 +124,7 @@ mod tests {
         register_timer_module(&lua).unwrap();
 
         let start = std::time::Instant::now();
-        let result = lua
-            .load("cru.timer.sleep(0.05)")
-            .exec_async()
-            .await;
+        let result = lua.load("cru.timer.sleep(0.05)").exec_async().await;
 
         assert!(result.is_ok());
         let elapsed = start.elapsed();
@@ -145,10 +140,7 @@ mod tests {
         let lua = Lua::new();
         register_timer_module(&lua).unwrap();
 
-        let result = lua
-            .load("cru.timer.sleep(0)")
-            .exec_async()
-            .await;
+        let result = lua.load("cru.timer.sleep(0)").exec_async().await;
         assert!(result.is_ok());
     }
 
@@ -157,10 +149,7 @@ mod tests {
         let lua = Lua::new();
         register_timer_module(&lua).unwrap();
 
-        let result = lua
-            .load("cru.timer.sleep(-1)")
-            .exec_async()
-            .await;
+        let result = lua.load("cru.timer.sleep(-1)").exec_async().await;
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
         assert!(err.contains("non-negative"), "Got: {err}");

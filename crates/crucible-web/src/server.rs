@@ -45,8 +45,6 @@ impl WebConfig {
         self.web_dir = Some(dir.into());
         self
     }
-
-
 }
 
 /// Start the web server

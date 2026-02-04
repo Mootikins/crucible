@@ -105,7 +105,10 @@ pub async fn execute(config: CliConfig, args: McpArgs) -> Result<()> {
     #[cfg(not(feature = "storage-surrealdb"))]
     let core = {
         let storage_handle = factories::get_storage(&config).await?;
-        Arc::new(KilnContext::from_storage_handle(storage_handle, config.clone()))
+        Arc::new(KilnContext::from_storage_handle(
+            storage_handle,
+            config.clone(),
+        ))
     };
 
     // Get embedding config and create provider

@@ -48,7 +48,7 @@ crucible-rig = { path = "../crucible-rig" }
 crucible-enrichment = { path = "../crucible-enrichment" }
 crucible-watch = { path = "../crucible-watch" }
 crucible-daemon = { path = "../crucible-daemon" }
-crucible-daemon-client = { path = "../crucible-daemon-client" }
+crucible-rpc = { path = "../crucible-rpc" }
 crucible-skills = { path = "../crucible-skills" }
 crucible-lance = { path = "../crucible-lance" }
 crucible-observe = { path = "../crucible-observe" }
