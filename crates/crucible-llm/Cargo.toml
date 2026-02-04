@@ -31,7 +31,7 @@ test-infrastructure = [] # Tests requiring Ollama, embedding endpoints
 test-slow = []           # Performance benchmarks and timing tests
 
 # FastEmbed local embedding provider (CPU, easy setup, no API keys needed)
-fastembed = ["dep:fastembed"]
+fastembed = ["dep:fastembed", "dep:ort"]
 
 # Burn embedding provider with different backend options
 burn = ["dep:burn", "dep:burn-tensor", "dep:burn-import"]
@@ -120,7 +120,12 @@ uuid = { workspace = true }
 tracing = { workspace = true }
 
 # FastEmbed for local embeddings and reranking (optional, feature-gated)
-fastembed = { version = "5.8", optional = true }
+# Use default-features=false to avoid native-tls (OpenSSL) dependency;
+# we manually enable rustls-based TLS via hf-hub-rustls-tls + ort features below
+fastembed = { version = "5.8", optional = true, default-features = false, features = ["hf-hub-rustls-tls", "image-models"] }
+
+# ORT runtime binary downloads use rustls instead of native-tls (avoids OpenSSL)
+ort = { version = "=2.0.0-rc.11", default-features = false, features = ["std", "ndarray", "download-binaries", "tls-rustls", "copy-dylibs"], optional = true }
 
 # Path expansion (for tilde expansion)
 shellexpand = "3.1"
