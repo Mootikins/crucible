@@ -56,10 +56,13 @@ jobs:
         include:
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
+            use_cross: false
           - target: aarch64-unknown-linux-gnu
             os: ubuntu-latest
+            use_cross: true
           - target: aarch64-apple-darwin
             os: macos-14
+            use_cross: false
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v6
@@ -72,12 +75,9 @@ jobs:
         with:
           key: ${{ matrix.target }}
 
-      # Cross-compilation toolchain for aarch64-linux
-      - name: Install cross-compilation tools
-        if: matrix.target == 'aarch64-unknown-linux-gnu'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
+      - name: Install cross
+        if: matrix.use_cross
+        run: cargo install cross --git https://github.com/cross-rs/cross
 
       - name: Install protoc
         if: runner.os == 'Linux'
@@ -90,34 +90,17 @@ jobs:
       - name: Create web asset placeholder
         run: mkdir -p crates/crucible-web/web/dist && echo "<html></html>" > crates/crucible-web/web/dist/index.html
 
-      - name: Set build features
-        id: features
-        run: |
-          features="storage-sqlite"
-          if [ "${{ matrix.target }}" = "aarch64-unknown-linux-gnu" ]; then
-            features="storage-sqlite,vendored-openssl"
-          fi
-          echo "features=$features" >> "$GITHUB_OUTPUT"
-
       # Build cru (CLI)
       - name: Build cru
-        env:
-          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
-          CC_aarch64_unknown_linux_gnu: aarch64-linux-gnu-gcc
-          CXX_aarch64_unknown_linux_gnu: aarch64-linux-gnu-g++
         run: |
-          cargo build --release --target ${{ matrix.target }} \
-            -p crucible-cli --no-default-features --features ${{ steps.features.outputs.features }}
+          ${{ matrix.use_cross && 'cross' || 'cargo' }} build --release --target ${{ matrix.target }} \
+            -p crucible-cli --no-default-features --features storage-sqlite
 
       # Build cru-server (daemon)
       - name: Build cru-server
-        env:
-          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
-          CC_aarch64_unknown_linux_gnu: aarch64-linux-gnu-gcc
-          CXX_aarch64_unknown_linux_gnu: aarch64-linux-gnu-g++
         run: |
-          cargo build --release --target ${{ matrix.target }} \
-            -p crucible-daemon --no-default-features --features ${{ steps.features.outputs.features }}
+          ${{ matrix.use_cross && 'cross' || 'cargo' }} build --release --target ${{ matrix.target }} \
+            -p crucible-daemon --no-default-features --features storage-sqlite
 
       # Package the binaries
       - name: Package (Unix)
