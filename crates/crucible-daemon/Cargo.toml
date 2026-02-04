@@ -44,6 +44,7 @@ mlua = { workspace = true }
 scopeguard = "1"
 reqwest = { workspace = true }
 openssl = { workspace = true, optional = true }
+openssl-sys = { workspace = true, optional = true }
 
 [features]
 default = ["storage-sqlite"]
@@ -51,7 +52,7 @@ default = ["storage-sqlite"]
 # Storage backend selection (mutually exclusive in practice)
 storage-surrealdb = ["dep:crucible-surrealdb"]
 storage-sqlite = ["dep:crucible-sqlite"]
-vendored-openssl = ["dep:openssl"]
+vendored-openssl = ["dep:openssl", "dep:openssl-sys"]
 
 # Test tier flags (see justfile for usage)
 test-fixtures = []       # Tests using docs/ kiln or examples/test-kiln
