@@ -3,7 +3,7 @@ source: crates/crucible-cli/src/tui/oil/tests/chat_app_snapshot_tests.rs
 expression: render_app(&app)
 ---
  * [system] :quit :help :clear :palette :model :set :export
-<path> :messages :mcp :plugins
+<path> :messages :mcp :plugins :reload <name>
 [agent] /mode /default /plan /auto /search /commit /agent /new /resume /view /
 models
  

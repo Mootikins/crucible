@@ -23,7 +23,7 @@ This document defines the orthogonal systems that make up Crucible. Each system 
 | **plugins** | Extension points, hooks, scripting (Lua) | `crucible-lua` |
 | **apis** | HTTP REST, WebSocket, events | `crucible-web` |
 | **cli** | Commands, REPL, TUI, configuration | `crucible-cli`, `crucible-config` |
-| **daemon** | Multi-session server, RPC, agent management | `crucible-daemon`, `crucible-daemon-client` |
+| **daemon** | Multi-session server, RPC, agent management | `crucible-daemon`, `crucible-rpc` |
 
 ## System Descriptions
 

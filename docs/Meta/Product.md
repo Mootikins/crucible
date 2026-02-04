@@ -70,7 +70,7 @@ A knowledge management system where:
 - [x] **Interactive Chat** `P0` — Conversational AI with streaming text, thinking, tool calls, and subagent events · [[Help/CLI/chat]] · `crucible-cli`, `crucible-rig`
 - [x] **Agent Cards** `P0` — Configurable agent personas with system prompts, model, temperature, tools · [[Help/Extending/Agent Cards]] · [[Help/Config/agents]] · `crucible-config`
 - [x] **Session Persistence** `P0` — Conversations saved as markdown + JSONL in kiln · [[Help/Core/Sessions]] · `crucible-daemon`
-- [x] **Session Resume** `P0` — Load and continue previous sessions with full history · [[Help/Core/Sessions]] · `crucible-daemon`, `crucible-daemon-client`
+- [x] **Session Resume** `P0` — Load and continue previous sessions with full history · [[Help/Core/Sessions]] · `crucible-daemon`, `crucible-rpc`
 - [x] **Conversation History** `P0` — Clear history (`:clear`), resume with prior messages; TUI viewport hydrated from daemon session events · `crucible-rig`
 - [x] **Message Queueing** `P0` — Type and queue messages during streaming; Ctrl+Enter force-sends · `crucible-cli`
 
@@ -106,8 +106,8 @@ A knowledge management system where:
 
 > These fill gaps so autonomous loops, fan-out, and context control are trivial plugins — not bespoke features.
 
-- [ ] **`cru.tools.call(name, args)`** `P1` — Programmatic tool calling from Lua; returns results synchronously; respects session permission scope; the bridge between "plugins that react" and "plugins that do intelligent work" · `crucible-lua`, `crucible-tools`
-- [ ] **`cru.tools.batch({...})`** `P1` — Concurrent multi-tool calls; `batch({{"semantic_search", {query="X"}}, {"list_notes", {tag="Y"}}})` runs in parallel via async runtime; essential for digest/summarization plugins · `crucible-lua`, `crucible-tools`
+- [x] **`cru.tools.call(name, args)`** `P1` — Programmatic tool calling from Lua; returns results synchronously; respects session permission scope; the bridge between "plugins that react" and "plugins that do intelligent work" · `crucible-lua`, `crucible-tools`
+- [x] **`cru.tools.batch({...})`** `P1` — Concurrent multi-tool calls; `batch({{"semantic_search", {query="X"}}, {"list_notes", {tag="Y"}}})` runs in parallel via async runtime; essential for digest/summarization plugins · `crucible-lua`, `crucible-tools`
 - [ ] **`session.messages()`** `P1` — Read conversation history from Lua; enables context windowing, summarization, checkpoint detection · `crucible-lua`
 - [ ] **`session.inject(role, content)`** `P1` — Insert messages mid-conversation; enables fan-out result collection, context injection at checkpoints · `crucible-lua`
 - [ ] **`session.fork()`** `P1` — Branch conversation state; enables parallel exploration, A/B approach testing · `crucible-lua`
@@ -115,7 +115,7 @@ A knowledge management system where:
 
 ### In Progress / Planned
 - [x] **MCP Tool System** `P0` — Permission prompts via `PermissionGate` trait, ACP integration, `McpProxyTool` injection · `crucible-tools`, `crucible-acp`
-- [x] **Error Handling UX** `P0` — Toast notifications, contextual messages, graceful degradation for DB lock/search/kiln fallback, `BackendError::is_retryable()` + `retry_delay_secs()`, RPC `call_with_retry()` for idempotent daemon ops, recovery suggestions in error messages · `crucible-cli`, `crucible-core`, `crucible-daemon-client`
+- [x] **Error Handling UX** `P0` — Toast notifications, contextual messages, graceful degradation for DB lock/search/kiln fallback, `BackendError::is_retryable()` + `retry_delay_secs()`, RPC `call_with_retry()` for idempotent daemon ops, recovery suggestions in error messages · `crucible-cli`, `crucible-core`, `crucible-rpc`
 - [x] **Per-session MCP Servers** `P0` — Agent cards define MCP servers; `mcp_servers` propagated to `SessionAgent` and wired in daemon · `crucible-acp`
 - [ ] **Grammar + Lua Integration** `P1` — Constrained generation for structured agent outputs · `crucible-core`
 
@@ -207,7 +207,7 @@ A knowledge management system where:
 > **Guiding insight**: Neovim's plugin ecosystem exploded when LuaLS type stubs + lazy.nvim hot reload made Lua plugins as ergonomic as TypeScript. Crucible needs the same inflection point.
 
 - [ ] **LuaCATS Type Stubs** `P1` — Generate `---@meta` files from Rust API surface (`cru.fs`, `cru.session`, `cru.http`, etc.); ship with binary, write to `~/.config/crucible/luals/`; enables IDE autocomplete and type checking via LuaLS · `crucible-lua`
-- [ ] **Plugin Hot Reload** `P1` — `:reload <plugin>` command; invalidate `package.loaded`, re-require, call optional `on_reload()` hook; file watcher mode (`--watch`) for auto-reload on save during development · `crucible-lua`, `crucible-daemon`
+- [x] **Plugin Hot Reload** `P1` — `:reload <plugin>` command; invalidate `package.loaded`, re-require, re-extract services; `plugin.reload` RPC + `plugin.list` RPC · `crucible-lua`, `crucible-daemon`, `crucible-cli`
 - [ ] **`:lua` REPL** `P1` — Evaluate Lua expressions in running daemon context; `=expr` prints result (Neovim pattern); inspect plugin state, test API calls, debug interactively · `crucible-cli`, `crucible-lua`
 - [ ] **`cru plugin new`** `P1` — Scaffold plugin from template: `plugin.yaml`, `init.lua` with annotated example tool, `.luarc.json` for LuaLS, optional `tests/` directory; symlinks into plugin path · `crucible-cli`
 - [ ] **Clean Error Messages** `P1` — `xpcall` wrapper strips Rust FFI frames from stack traces; errors include plugin name + file path + line number; user sees `Error in 'discord' at responder.lua:42` not raw mlua backtrace · `crucible-lua`
@@ -218,7 +218,7 @@ A knowledge management system where:
 
 > Extracted from building the Discord plugin (376 lines, 7 modules). These abstractions target the plugin types we expect to be most common: messaging bots, autonomous loops, content transformers, and long-running services.
 
-- [ ] **`cru.service`** `P1` — Service lifecycle for long-running plugins; declarative descriptor with `start(ctx)`, `stop(ctx)`, `health(ctx)` hooks; config schema with automatic validation and secret resolution (`secret=true` → check `CRUCIBLE_<PLUGIN>_<KEY>` env var first); supervised restart with backoff (replaces hand-rolled reconnect logic); health exposed via `:service status` and HTTP; graceful shutdown sequencing · `crucible-lua`, `crucible-daemon`
+- [x] **`cru.service`** `P1` — Service lifecycle for long-running plugins; declarative descriptor with `start`, `stop`, `health` hooks; config schema with automatic validation and secret resolution (`secret=true` → check `CRUCIBLE_<PLUGIN>_<KEY>` env var first); supervised restart with backoff via `cru.retry`; `cru.service.status(name)`, `cru.service.list()`, `cru.service.stop(name)` · `crucible-lua`
 - [ ] **`cru.messaging`** `P2` — Adapter trait for chat platform integrations; normalizes the receive → should_respond → session → send_and_collect → format → reply loop that is identical across Discord/Telegram/Slack/Matrix; platform provides `connect()`, `normalize(raw)`, `send(channel, text)`, `typing(channel)`; framework handles session-per-channel lifecycle, chunking for platform message limits, typing indicator cadence, rate limiting; builds on `cru.service`; **extract from two concrete implementations** (Discord + one more), don't speculate the shape · `crucible-lua`
 - [ ] **`cru.transform`** `P2` — Content transform pipeline; `register(name, fn)` + `pipeline({name1, name2, ...})` composes pure text→text functions; convention wrapper for table formatting, mermaid rendering, citation insertion, import normalization, platform-specific markdown cleanup; pipeline is the unit messaging adapters plug into for `format_response` · `crucible-lua`
 
@@ -296,7 +296,7 @@ Crucible acts as an **ACP host**, spawning and controlling external AI agents (C
 ### Install & Onboarding (P0 — #1 adoption blocker)
 
 - [ ] **One-Line Install** `P0` — Pre-built binaries via GitHub Releases (linux x86_64/aarch64, macOS Intel/Apple Silicon, Windows); `curl|sh`, `brew install crucible`, `cargo binstall crucible`, AUR, Nix flake; target: working `cru` binary in <60 seconds · `crucible-cli`
-- [ ] **Precognition Default-On** `P0` — Change default from opt-in to on; the knowledge-graph-aware context is the core differentiator and should not be hidden behind `:set precognition on` · `crucible-cli`, `crucible-config`
+- [x] **Precognition Default-On** `P0` — Changed default from opt-in to on; the knowledge-graph-aware context is the core differentiator · `crucible-cli`
 
 ### HTTP Gateway (P1 — platform layer for everything external)
 
@@ -310,7 +310,7 @@ HTTP Gateway (crucible-web wired to daemon)
          └── Remote access (Tailscale / Cloudflare Tunnel)
 ```
 
-- [ ] **HTTP-to-RPC Bridge** `P1` — Wire `DaemonClient` into `crucible-web` Axum routes; translate HTTP requests to daemon JSON-RPC calls; ~1,000-1,500 lines of Rust · `crucible-web`, `crucible-daemon-client`
+- [ ] **HTTP-to-RPC Bridge** `P1` — Wire `DaemonClient` into `crucible-web` Axum routes; translate HTTP requests to daemon JSON-RPC calls; ~1,000-1,500 lines of Rust · `crucible-web`, `crucible-rpc`
 - [ ] **SSE/WebSocket Event Bridge** `P1` — Subscribe to daemon session events, stream to HTTP clients via SSE or WebSocket; the only non-trivial part of the gateway · `crucible-web`
 - [ ] **Chat HTTP API** `P1` — `POST /api/chat/send` + SSE stream for responses; `POST /api/session/create`, `/resume`, `/list`, `/end` · `crucible-web`
 - [ ] **Search HTTP API** `P1` — `POST /api/search` (semantic + full-text + property); `GET /api/notes`, `GET /api/notes/:name` · `crucible-web`
@@ -371,7 +371,7 @@ HTTP Gateway (crucible-web wired to daemon)
 - [x] **Task Storage** `P0` — Task records, history, dependencies, file associations · `crucible-surrealdb`
 - [x] **Kiln Statistics** `P0` — Note counts, link analysis, storage metrics · [[Help/CLI/stats]] · `crucible-cli`
 - [x] **Daemon Server** `P0` — Unix socket server with 35 RPC methods · `crucible-daemon`
-- [x] **Daemon Client** `P0` — Auto-spawn, reconnect, RPC client library · `crucible-daemon-client`
+- [x] **Daemon Client** `P0` — Auto-spawn, reconnect, RPC client library · `crucible-rpc`
 - [x] **Event Subscriptions** `P0` — Per-session and wildcard event streaming via daemon · `crucible-daemon`
 - [x] **Notification RPC** `P0` — Add, list, dismiss notifications via daemon · `crucible-daemon`
 - [x] **File Watching** `P0` — File change detection (notify/polling, debouncing, daemon bridge) with auto-reprocessing: `file_changed` events trigger `pipeline.process()` via daemon reprocess task; enrichment disabled for now (parsing + storage only) · `crucible-watch`, `crucible-daemon`

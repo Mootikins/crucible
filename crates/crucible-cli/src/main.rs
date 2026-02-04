@@ -4,13 +4,13 @@ use tracing::{debug, error, info, warn};
 use tracing_subscriber::filter::LevelFilter;
 use tracing_subscriber::prelude::*; // For SubscriberExt trait
 
+#[cfg(feature = "storage-surrealdb")]
+use crucible_cli::sync::quick_sync_check;
 use crucible_cli::{
     cli::{Cli, Commands},
     commands, config, factories,
     sync::SyncStatus,
 };
-#[cfg(feature = "storage-surrealdb")]
-use crucible_cli::sync::quick_sync_check;
 
 /// Process files with change detection on startup
 ///

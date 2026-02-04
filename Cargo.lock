@@ -3599,7 +3599,6 @@ dependencies = [
  "crucible-context",
  "crucible-core",
  "crucible-daemon",
- "crucible-daemon-client",
  "crucible-enrichment",
  "crucible-lance",
  "crucible-llm",
@@ -3608,6 +3607,7 @@ dependencies = [
  "crucible-oil",
  "crucible-pipeline",
  "crucible-rig",
+ "crucible-rpc",
  "crucible-skills",
  "crucible-sqlite",
  "crucible-surrealdb",
@@ -3766,26 +3766,6 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "uuid",
-]
-
-[[package]]
-name = "crucible-daemon-client"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-stream",
- "async-trait",
- "chrono",
- "crucible-core",
- "crucible-daemon",
- "crucible-sqlite",
- "futures",
- "libc",
- "serde",
- "serde_json",
- "tempfile",
- "tokio",
- "tracing",
 ]
 
 [[package]]
@@ -4011,6 +3991,26 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "uuid",
+]
+
+[[package]]
+name = "crucible-rpc"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-stream",
+ "async-trait",
+ "chrono",
+ "crucible-core",
+ "crucible-daemon",
+ "crucible-sqlite",
+ "futures",
+ "libc",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]

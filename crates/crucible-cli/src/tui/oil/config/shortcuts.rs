@@ -97,6 +97,18 @@ pub static SHORTCUTS: &[ConfigShortcut] = &[
         completions: CompletionSource::None,
         description: "Verbose output",
     },
+    ConfigShortcut {
+        short: "precognition",
+        target: ShortcutTarget::Virtual,
+        completions: CompletionSource::None,
+        description: "Auto-inject knowledge base context (auto-RAG)",
+    },
+    ConfigShortcut {
+        short: "precognition.results",
+        target: ShortcutTarget::Virtual,
+        completions: CompletionSource::None,
+        description: "Number of context results to inject (1-20)",
+    },
     // Permission settings (session-scoped, TUI-only)
     ConfigShortcut {
         short: "perm.show_diff",
@@ -287,7 +299,7 @@ mod tests {
 
         // Should have all defined shortcuts
         assert_eq!(all.len(), SHORTCUTS.len());
-        assert_eq!(all.len(), 7);
+        assert_eq!(all.len(), 9);
 
         // Verify we have expected shortcuts
         let shorts: Vec<_> = all.iter().map(|s| s.short).collect();
@@ -296,6 +308,8 @@ mod tests {
         assert!(shorts.contains(&"thinkingbudget"));
         assert!(shorts.contains(&"theme"));
         assert!(shorts.contains(&"verbose"));
+        assert!(shorts.contains(&"precognition"));
+        assert!(shorts.contains(&"precognition.results"));
         assert!(shorts.contains(&"perm.show_diff"));
         assert!(shorts.contains(&"perm.autoconfirm_session"));
     }
