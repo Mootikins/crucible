@@ -14,7 +14,7 @@ crucible-query = { path = "../crucible-query" }
 
 # Enrichment types
 crucible-enrichment = { path = "../crucible-enrichment" }
-crucible-llm = { workspace = true, optional = true }
+crucible-llm = { workspace = true, optional = true, default-features = false }
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde_yaml = "0.9"
@@ -47,7 +47,7 @@ bincode = { version = "2.0", features = ["serde"] }
 default = ["embeddings"]
 # Enable embedding functionality (brings in LLM dependencies including ort-sys)
 embeddings = ["crucible-llm"]
-# Test utilities - optionally enables LLM test-utils if embeddings feature is enabled
+fastembed = ["crucible-llm?/fastembed"]
 test-utils = ["crucible-llm?/test-utils"]
 
 # Test tier flags (see justfile for usage)
