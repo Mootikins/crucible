@@ -184,28 +184,36 @@ export const DockLayout: Component<DockLayoutProps> = (props) => {
     const savedLayout = loadLayout();
     if (savedLayout?.grid) {
       try {
-        api.fromJSON(savedLayout.grid as SerializedDockview);
+        // Validate that saved layout has the expected panel IDs
+        const serialized = savedLayout.grid as SerializedDockview;
+        const hasPanels = serialized.panels && Object.keys(serialized.panels).length > 0;
         
-        if (savedLayout.panels) {
-          setEdgeCollapsed({
-            left: savedLayout.panels.files?.visible === false,
-            right: savedLayout.panels.chat?.visible === false,
-            bottom: savedLayout.panels.bottom?.visible !== true,
-          });
-        }
-        
-        setTimeout(() => {
-          const panels = api.panels;
-          for (const panel of panels) {
-            if (panel.id === 'files') leftGroupId = panel.group?.id ?? null;
-            if (panel.id === 'chat') rightGroupId = panel.group?.id ?? null;
-            if (panel.id === 'bottom') bottomGroupId = panel.group?.id ?? null;
+        if (hasPanels) {
+          api.fromJSON(serialized);
+          
+          if (savedLayout.panels) {
+            setEdgeCollapsed({
+              left: savedLayout.panels.files?.visible === false,
+              right: savedLayout.panels.chat?.visible === false,
+              bottom: savedLayout.panels.bottom?.visible !== true,
+            });
           }
-        }, 0);
-        
-        return;
+          
+          setTimeout(() => {
+            const panels = api.panels;
+            for (const panel of panels) {
+              if (panel.id === 'files') leftGroupId = panel.group?.id ?? null;
+              if (panel.id === 'chat') rightGroupId = panel.group?.id ?? null;
+              if (panel.id === 'bottom') bottomGroupId = panel.group?.id ?? null;
+            }
+          }, 0);
+          
+          return;
+        }
       } catch (e) {
         console.warn('Failed to restore layout, using default:', e);
+        // Clear invalid layout
+        localStorage.removeItem('crucible:layout');
       }
     }
   };
