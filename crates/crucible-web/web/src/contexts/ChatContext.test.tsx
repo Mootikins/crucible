@@ -142,6 +142,74 @@ describe('ChatContext', () => {
   });
 });
 
+describe('session switching', () => {
+  const mockSession2: Session = {
+    id: 'test-session-2',
+    session_type: 'chat',
+    kiln: '/tmp/test-kiln',
+    workspace: '/tmp/test-workspace',
+    state: 'active',
+    title: 'Test Session 2',
+    agent_model: 'test-model',
+    started_at: new Date().toISOString(),
+    event_count: 0,
+  };
+
+  function DynamicTestWrapper(props: { children: any }) {
+    const [session, setSession] = createSignal<Session | null>(mockSession);
+    return (
+      <ChatProvider session={session} setSessionTitle={async () => {}}>
+        {props.children}
+        <button data-testid="switch-session" onClick={() => setSession(mockSession2)}>Switch</button>
+        <button data-testid="clear-session" onClick={() => setSession(null)}>Clear</button>
+      </ChatProvider>
+    );
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockSubscribeToEvents.mockReturnValue(() => {});
+  });
+
+  it('does not clear messages on initial mount', async () => {
+    mockSendChatMessage.mockResolvedValue('msg_server_1');
+
+    render(() => (
+      <DynamicTestWrapper>
+        <TestConsumer />
+      </DynamicTestWrapper>
+    ));
+
+    screen.getByText('Send').click();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('count').textContent).toBe('2');
+    });
+  });
+
+  it('clears messages when switching to different session', async () => {
+    mockSendChatMessage.mockResolvedValue('msg_server_1');
+
+    render(() => (
+      <DynamicTestWrapper>
+        <TestConsumer />
+      </DynamicTestWrapper>
+    ));
+
+    screen.getByText('Send').click();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('count').textContent).toBe('2');
+    });
+
+    screen.getByTestId('switch-session').click();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('count').textContent).toBe('0');
+    });
+  });
+});
+
 describe('useChatSafe', () => {
   function SafeTestConsumer() {
     const { messages, isLoading, isStreaming, sendMessage } = useChatSafe();
