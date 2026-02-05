@@ -152,3 +152,22 @@ export function useProject(): ProjectContextValue {
   }
   return context;
 }
+
+const noopAsync = async () => {};
+const noopPromise = <T,>() => Promise.resolve(undefined as unknown as T);
+
+const fallbackProjectContext: ProjectContextValue = {
+  currentProject: () => null,
+  projects: () => [],
+  isLoading: () => false,
+  error: () => null,
+  refreshProjects: noopAsync,
+  selectProject: noopAsync,
+  registerProject: noopPromise,
+  clearProject: () => {},
+};
+
+export function useProjectSafe(): ProjectContextValue {
+  const context = useContext(ProjectContext);
+  return context ?? fallbackProjectContext;
+}

@@ -296,3 +296,22 @@ export function useChat(): ChatContextValue {
   }
   return context;
 }
+
+const noopAsync = async () => {};
+
+const fallbackChatContext: ChatContextValue = {
+  messages: () => [],
+  isLoading: () => false,
+  isStreaming: () => false,
+  pendingInteraction: () => null,
+  error: () => null,
+  sendMessage: noopAsync,
+  respondToInteraction: noopAsync,
+  clearMessages: () => {},
+  cancelStream: noopAsync,
+};
+
+export function useChatSafe(): ChatContextValue {
+  const context = useContext(ChatContext);
+  return context ?? fallbackChatContext;
+}
