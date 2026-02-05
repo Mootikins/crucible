@@ -19,11 +19,11 @@ test.describe('Project and Session Management', () => {
     await input.fill('./crucible');
     await page.click('text=Add');
     
-    await expect(page.locator('text=./crucible')).toBeVisible();
+    await expect(page.getByText('./crucible')).toBeVisible();
   });
 
   test('displays sessions section when project selected', async ({ page }) => {
-    const projectButton = page.locator('text=./crucible').first();
+    const projectButton = page.getByText('./crucible').first();
     if (await projectButton.isVisible()) {
       await projectButton.click();
       await expect(page.locator('text=Sessions')).toBeVisible();
@@ -32,7 +32,7 @@ test.describe('Project and Session Management', () => {
   });
 
   test('can create a new session', async ({ page }) => {
-    const projectButton = page.locator('text=./crucible').first();
+    const projectButton = page.getByText('./crucible').first();
     if (await projectButton.isVisible()) {
       await projectButton.click();
       
@@ -46,7 +46,7 @@ test.describe('Project and Session Management', () => {
   });
 
   test('displays session state indicator', async ({ page }) => {
-    const projectButton = page.locator('text=./crucible').first();
+    const projectButton = page.getByText('./crucible').first();
     if (await projectButton.isVisible()) {
       await projectButton.click();
       
@@ -58,7 +58,7 @@ test.describe('Project and Session Management', () => {
   });
 
   test('can switch between sessions', async ({ page }) => {
-    const projectButton = page.locator('text=./crucible').first();
+    const projectButton = page.getByText('./crucible').first();
     if (await projectButton.isVisible()) {
       await projectButton.click();
       
@@ -76,7 +76,7 @@ test.describe('Project and Session Management', () => {
   });
 
   test('displays session controls when session active', async ({ page }) => {
-    const projectButton = page.locator('text=./crucible').first();
+    const projectButton = page.getByText('./crucible').first();
     if (await projectButton.isVisible()) {
       await projectButton.click();
       
