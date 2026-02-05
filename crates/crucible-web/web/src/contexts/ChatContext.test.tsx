@@ -1,7 +1,7 @@
 import { render, screen, waitFor } from '@solidjs/testing-library';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createSignal } from 'solid-js';
-import { ChatProvider, useChat } from './ChatContext';
+import { ChatProvider, useChat, useChatSafe } from './ChatContext';
 import * as api from '@/lib/api';
 import type { Session } from '@/lib/types';
 
@@ -139,5 +139,48 @@ describe('ChatContext', () => {
     await waitFor(() => {
       expect(screen.getByTestId('loading').textContent).toBe('idle');
     });
+  });
+});
+
+describe('useChatSafe', () => {
+  function SafeTestConsumer() {
+    const { messages, isLoading, isStreaming, sendMessage } = useChatSafe();
+
+    return (
+      <div>
+        <span data-testid="loading">{isLoading() ? 'loading' : 'idle'}</span>
+        <span data-testid="streaming">{isStreaming() ? 'yes' : 'no'}</span>
+        <span data-testid="count">{messages().length}</span>
+        <button onClick={() => sendMessage('test')}>Send</button>
+      </div>
+    );
+  }
+
+  it('returns fallback values when used outside provider', () => {
+    // This simulates dockview rendering panels outside the context tree
+    render(() => <SafeTestConsumer />);
+
+    expect(screen.getByTestId('loading').textContent).toBe('idle');
+    expect(screen.getByTestId('streaming').textContent).toBe('no');
+    expect(screen.getByTestId('count').textContent).toBe('0');
+  });
+
+  it('does not throw when sendMessage called outside provider', async () => {
+    render(() => <SafeTestConsumer />);
+
+    // Should not throw - fallback is a noop
+    const sendButton = screen.getByText('Send');
+    expect(() => sendButton.click()).not.toThrow();
+  });
+
+  it('uses real context when inside provider', () => {
+    render(() => (
+      <TestWrapper>
+        <SafeTestConsumer />
+      </TestWrapper>
+    ));
+
+    expect(screen.getByTestId('count').textContent).toBe('0');
+    expect(screen.getByTestId('loading').textContent).toBe('idle');
   });
 });

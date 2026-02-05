@@ -10,7 +10,7 @@ const mockTranscribe = vi.fn();
 const mockLoadModel = vi.fn();
 
 vi.mock('@/contexts/WhisperContext', () => ({
-  useWhisper: () => ({
+  useWhisperSafe: () => ({
     status: () => 'ready',
     progress: () => 100,
     error: () => null,
