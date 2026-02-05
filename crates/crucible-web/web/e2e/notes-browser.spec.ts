@@ -4,7 +4,7 @@ test.describe('Notes Browser', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/');
     
-    const projectButton = page.locator('text=./crucible').first();
+    const projectButton = page.getByText('./crucible').first();
     if (await projectButton.isVisible()) {
       await projectButton.click();
     }
