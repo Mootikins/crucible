@@ -4,6 +4,7 @@ import type { DockviewComponent, SerializedDockview } from 'dockview-core';
 import { SettingsPanel } from '@/components/SettingsPanel';
 import { SessionPanel } from '@/components/SessionPanel';
 import { FilesPanel } from '@/components/FilesPanel';
+import { EditorPanel } from '@/components/EditorPanel';
 import { BreadcrumbNav } from '@/components/BreadcrumbNav';
 import { loadLayout, saveLayout, type LayoutState } from '@/lib/layout';
 import 'dockview-core/dist/styles/dockview.css';
@@ -58,17 +59,7 @@ export const PreviewPanel: Component = () => {
   );
 };
 
-export const EditorPanel: Component = () => {
-  return (
-    <div class="h-full flex items-center justify-center bg-neutral-900 text-neutral-500">
-      <div class="text-center">
-        <div class="text-4xl mb-2">✏️</div>
-        <div>Editor</div>
-        <div class="text-sm text-neutral-600">Coming soon</div>
-      </div>
-    </div>
-  );
-};
+
 
 export const CanvasPanel: Component = () => {
   return (
