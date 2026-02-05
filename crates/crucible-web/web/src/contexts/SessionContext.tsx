@@ -227,9 +227,10 @@ export const SessionProvider: ParentComponent<SessionProviderProps> = (props) =>
   };
 
   createEffect(() => {
-    if (props.initialKiln || props.initialWorkspace) {
-      refreshSessions();
-    }
+    refreshSessions({
+      kiln: props.initialKiln,
+      workspace: props.initialWorkspace,
+    });
   });
 
   const value: SessionContextValue = {
