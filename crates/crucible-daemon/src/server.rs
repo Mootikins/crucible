@@ -1477,8 +1477,15 @@ async fn handle_session_list_models(req: Request, am: &Arc<AgentManager>) -> Res
         Err(crate::agent_manager::AgentError::SessionNotFound(id)) => {
             session_not_found(req.id, &id)
         }
-        Err(crate::agent_manager::AgentError::NoAgentConfigured(id)) => {
-            agent_not_configured(req.id, &id)
+        Err(crate::agent_manager::AgentError::NoAgentConfigured(_)) => {
+            // Return empty models list if no agent is configured
+            Response::success(
+                req.id,
+                serde_json::json!({
+                    "session_id": session_id,
+                    "models": Vec::<String>::new(),
+                }),
+            )
         }
         Err(e) => internal_error(req.id, e),
     }
