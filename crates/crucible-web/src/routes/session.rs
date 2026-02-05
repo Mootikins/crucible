@@ -2,7 +2,7 @@ use crate::services::daemon::AppState;
 use crate::WebError;
 use axum::{
     extract::{Path, State},
-    routing::{get, post},
+    routing::{get, post, put},
     Json, Router,
 };
 use serde::Deserialize;
@@ -19,6 +19,7 @@ pub fn session_routes() -> Router<AppState> {
         .route("/api/session/{id}/cancel", post(cancel_session))
         .route("/api/session/{id}/models", get(list_models))
         .route("/api/session/{id}/model", post(switch_model))
+        .route("/api/session/{id}/title", put(set_session_title))
 }
 
 #[derive(Debug, Deserialize)]
@@ -185,6 +186,25 @@ async fn switch_model(
     state
         .daemon
         .session_switch_model(&id, &req.model_id)
+        .await
+        .map_err(|e| WebError::Daemon(e.to_string()))?;
+
+    Ok(Json(serde_json::json!({ "ok": true })))
+}
+
+#[derive(Debug, Deserialize)]
+struct SetTitleRequest {
+    title: String,
+}
+
+async fn set_session_title(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    Json(req): Json<SetTitleRequest>,
+) -> Result<Json<serde_json::Value>, WebError> {
+    state
+        .daemon
+        .session_set_title(&id, &req.title)
         .await
         .map_err(|e| WebError::Daemon(e.to_string()))?;
 

@@ -321,7 +321,6 @@ impl SessionManager {
     }
 
     /// Update session title and persist the change.
-    #[allow(dead_code)]
     pub async fn set_title(&self, session_id: &str, title: String) -> Result<(), SessionError> {
         let session = {
             let mut entry = self

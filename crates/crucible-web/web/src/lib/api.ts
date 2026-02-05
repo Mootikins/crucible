@@ -167,7 +167,8 @@ export async function listSessions(filters?: {
     throw new Error(`Failed to list sessions: HTTP ${res.status}`);
   }
 
-  return (await res.json()) as Session[];
+  const data = (await res.json()) as { sessions: Session[]; total: number };
+  return data.sessions;
 }
 
 /** Get a session by ID. */

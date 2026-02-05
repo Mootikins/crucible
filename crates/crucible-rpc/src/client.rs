@@ -972,6 +972,18 @@ impl DaemonClient {
         Ok(())
     }
 
+    pub async fn session_set_title(&self, session_id: &str, title: &str) -> Result<()> {
+        self.call_with_retry(
+            "session.set_title",
+            serde_json::json!({
+                "session_id": session_id,
+                "title": title
+            }),
+        )
+        .await?;
+        Ok(())
+    }
+
     pub async fn session_list_models(&self, session_id: &str) -> Result<Vec<String>> {
         let result = self
             .call_with_retry(
