@@ -292,4 +292,4 @@ size_aware_prompts = false  # Give small model all tools
 - [[Help/Config/embedding|Embedding Configuration]] - Text embeddings
 - [[Help/Config/workspaces|Workspace Configuration]] - Multi-workspace setup
 - [[Rules Files]] - Project-specific agent instructions
-- [[Internal Agents]] - Built-in agent configuration
+- [[Help/Extending/Internal Agent]] - Built-in agent configuration
