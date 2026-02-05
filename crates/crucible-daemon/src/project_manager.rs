@@ -97,9 +97,48 @@ impl ProjectManager {
     }
 
     pub fn list(&self) -> Vec<Project> {
-        let mut projects: Vec<Project> = self.projects.iter().map(|r| r.value().clone()).collect();
+        let mut projects: Vec<Project> = self
+            .projects
+            .iter()
+            .filter_map(|r| {
+                let project = r.value().clone();
+                // Filter out invalid entries
+                if self.is_valid_project(&project) {
+                    Some(project)
+                } else {
+                    None
+                }
+            })
+            .collect();
         projects.sort_by(|a, b| b.last_accessed.cmp(&a.last_accessed));
         projects
+    }
+
+    /// Check if a project is valid for listing.
+    /// Filters out:
+    /// - Paths ending with `.crucible` (kiln subdirectories)
+    /// - Non-existent paths
+    /// - Known temp paths like `/tmp` or `/tmp/test-kiln`
+    fn is_valid_project(&self, project: &Project) -> bool {
+        let path = &project.path;
+
+        // Filter out paths ending with .crucible
+        if path.ends_with(".crucible") {
+            return false;
+        }
+
+        // Filter out non-existent paths
+        if !path.exists() {
+            return false;
+        }
+
+        // Filter out known temp paths
+        let path_str = path.to_string_lossy();
+        if path_str == "/tmp" || path_str == "/tmp/test-kiln" {
+            return false;
+        }
+
+        true
     }
 
     pub fn get(&self, path: &Path) -> Option<Project> {
@@ -357,5 +396,38 @@ path = "./notes"
             assert_eq!(manager.list().len(), 1);
             assert_eq!(manager.list()[0].name, "persist-test");
         }
+    }
+
+    #[test]
+    fn list_filters_nonexistent_paths() {
+        let tmp = TempDir::new().unwrap();
+        let storage = tmp.path().join("projects.json");
+        let project_dir = tmp.path().join("valid-project");
+        fs::create_dir(&project_dir).unwrap();
+
+        let manager = ProjectManager::new(storage);
+        manager.register(&project_dir).unwrap();
+        assert_eq!(manager.list().len(), 1);
+
+        fs::remove_dir(&project_dir).unwrap();
+        assert_eq!(manager.list().len(), 0);
+    }
+
+    #[test]
+    fn list_filters_crucible_subdirs() {
+        let tmp = TempDir::new().unwrap();
+        let storage = tmp.path().join("projects.json");
+        let project_dir = tmp.path().join("my-project");
+        let crucible_dir = project_dir.join(".crucible");
+        fs::create_dir_all(&crucible_dir).unwrap();
+
+        let manager = ProjectManager::new(storage);
+        manager.register(&project_dir).unwrap();
+        assert_eq!(manager.list().len(), 1);
+
+        manager.register(&crucible_dir).unwrap();
+        let list = manager.list();
+        assert_eq!(list.len(), 1);
+        assert!(!list[0].path.ends_with(".crucible"));
     }
 }
