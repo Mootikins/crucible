@@ -139,7 +139,7 @@ bench:
 
 # Build Svelte frontend and run web server (for production-like dev)
 web: web-build
-    cargo run -p crucible-cli -- serve --host 0.0.0.0 --port 3000
+    cargo run -p crucible-cli -- web --host 0.0.0.0 --port 3000
 
 # Build only the Svelte frontend
 web-build:
@@ -155,7 +155,7 @@ web-vite-host:
 
 # Run web server pointing to Vite dev server (for API + hot reload)
 web-dev:
-    cargo run -p crucible-cli -- serve --host 0.0.0.0 --port 3000 --web-dir crates/crucible-web/web/dist
+    cargo run -p crucible-cli -- web --host 0.0.0.0 --port 3000 --static-dir crates/crucible-web/web/dist
 
 # Build release with embedded web assets
 release-web: web-build
