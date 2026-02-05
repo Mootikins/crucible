@@ -2,10 +2,14 @@ use crate::services::daemon::AppState;
 use crate::WebError;
 use axum::{
     extract::{Path, State},
-    routing::{get, post},
+    routing::{get, post, put},
     Json, Router,
 };
+use chrono::Utc;
+use crucible_core::parser::types::BlockHash;
+use crucible_core::storage::NoteRecord;
 use serde::Deserialize;
+use std::collections::HashMap;
 use std::path::PathBuf;
 
 pub fn search_routes() -> Router<AppState> {
@@ -13,6 +17,7 @@ pub fn search_routes() -> Router<AppState> {
         .route("/api/kilns", get(list_kilns))
         .route("/api/notes", get(list_notes))
         .route("/api/notes/{name}", get(get_note))
+        .route("/api/notes/{name}", put(put_note))
         .route("/api/search/vectors", post(search_vectors))
 }
 
@@ -78,6 +83,66 @@ async fn get_note(
 #[derive(Debug, Deserialize)]
 struct KilnQuery {
     kiln: PathBuf,
+}
+
+#[derive(Debug, Deserialize)]
+struct PutNoteRequest {
+    kiln: PathBuf,
+    content: String,
+}
+
+async fn put_note(
+    State(state): State<AppState>,
+    Path(name): Path<String>,
+    Json(req): Json<PutNoteRequest>,
+) -> Result<Json<serde_json::Value>, WebError> {
+    let title = extract_title(&req.content);
+    let now = Utc::now();
+
+    let note = NoteRecord {
+        path: name.clone(),
+        content_hash: BlockHash::default(),
+        embedding: None,
+        title: title.clone(),
+        tags: vec![],
+        links_to: vec![],
+        properties: HashMap::new(),
+        updated_at: now,
+    };
+
+    state
+        .daemon
+        .note_upsert(&req.kiln, &note)
+        .await
+        .map_err(|e| WebError::Daemon(e.to_string()))?;
+
+    Ok(Json(serde_json::json!({
+        "success": true,
+        "name": name,
+        "title": title,
+        "updated_at": now
+    })))
+}
+
+fn extract_title(content: &str) -> String {
+    content
+        .lines()
+        .find(|line| line.starts_with('#'))
+        .and_then(|line| {
+            let trimmed = line.trim_start_matches('#').trim();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed.to_string())
+            }
+        })
+        .unwrap_or_else(|| {
+            content
+                .lines()
+                .next()
+                .unwrap_or("Untitled")
+                .to_string()
+        })
 }
 
 #[derive(Debug, Deserialize)]

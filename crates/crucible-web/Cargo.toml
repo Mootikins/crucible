@@ -23,6 +23,9 @@ futures-util = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 
+# Date/time
+chrono = { workspace = true }
+
 # Error handling
 anyhow = { workspace = true }
 thiserror = { workspace = true }
