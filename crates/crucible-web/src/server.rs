@@ -8,12 +8,12 @@ use axum::http::{header, Method};
 use std::net::SocketAddr;
 use tower_http::cors::{AllowOrigin, CorsLayer};
 
-pub use crucible_config::WebConfig;
+pub use crucible_config::{CliAppConfig, WebConfig};
 
 const MAX_BODY_SIZE_10MB: usize = 10 * 1024 * 1024;
 
-pub async fn start_server(config: &WebConfig) -> Result<()> {
-    let state = daemon::init_daemon().await?;
+pub async fn start_server(web_config: &WebConfig, app_config: &CliAppConfig) -> Result<()> {
+    let state = daemon::init_daemon(app_config.clone()).await?;
 
     let cors = CorsLayer::new()
         .allow_origin(AllowOrigin::list([
@@ -38,11 +38,11 @@ pub async fn start_server(config: &WebConfig) -> Result<()> {
         .merge(search_routes())
         .with_state(state)
         .merge(health_routes())
-        .merge(static_routes(config.static_dir.as_deref()))
+        .merge(static_routes(web_config.static_dir.as_deref()))
         .layer(DefaultBodyLimit::max(MAX_BODY_SIZE_10MB))
         .layer(cors);
 
-    let addr: SocketAddr = format!("{}:{}", config.host, config.port)
+    let addr: SocketAddr = format!("{}:{}", web_config.host, web_config.port)
         .parse()
         .map_err(|e| WebError::Config(format!("Invalid address: {e}")))?;
 
