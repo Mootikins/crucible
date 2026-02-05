@@ -3,6 +3,7 @@ import type {
   CreateSessionParams,
   Session,
   Project,
+  FileEntry,
 } from './types';
 
 // =============================================================================
@@ -359,6 +360,32 @@ export async function getProject(path: string): Promise<Project | null> {
   }
 
   return (await res.json()) as Project;
+}
+
+/** List files in a directory (mocked for now). */
+export async function listFiles(path: string): Promise<FileEntry[]> {
+  const mockFiles: FileEntry[] = [
+    { name: 'src', path: `${path}/src`, is_dir: true },
+    { name: 'package.json', path: `${path}/package.json`, is_dir: false },
+    { name: 'README.md', path: `${path}/README.md`, is_dir: false },
+    { name: 'tsconfig.json', path: `${path}/tsconfig.json`, is_dir: false },
+  ];
+  
+  await new Promise(resolve => setTimeout(resolve, 100));
+  return mockFiles;
+}
+
+/** List kiln notes (mocked for now). */
+export async function listKilnNotes(kilnPath: string): Promise<FileEntry[]> {
+  const mockNotes: FileEntry[] = [
+    { name: 'Daily', path: `${kilnPath}/Daily`, is_dir: true },
+    { name: 'Projects', path: `${kilnPath}/Projects`, is_dir: true },
+    { name: 'Index.md', path: `${kilnPath}/Index.md`, is_dir: false },
+    { name: 'TODO.md', path: `${kilnPath}/TODO.md`, is_dir: false },
+  ];
+  
+  await new Promise(resolve => setTimeout(resolve, 100));
+  return mockNotes;
 }
 
 // =============================================================================
