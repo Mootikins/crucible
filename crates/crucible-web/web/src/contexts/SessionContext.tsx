@@ -18,6 +18,7 @@ import {
   cancelSession as apiCancelSession,
   listModels as apiListModels,
   switchModel as apiSwitchModel,
+  setSessionTitle as apiSetSessionTitle,
 } from '@/lib/api';
 
 export interface SessionContextValue {
@@ -35,6 +36,7 @@ export interface SessionContextValue {
   cancelCurrentOperation: () => Promise<boolean>;
   switchModel: (modelId: string) => Promise<void>;
   refreshModels: () => Promise<void>;
+  setSessionTitle: (title: string) => Promise<void>;
 }
 
 interface SessionProviderProps {
@@ -226,6 +228,29 @@ export const SessionProvider: ParentComponent<SessionProviderProps> = (props) =>
     }
   };
 
+  const setSessionTitle = async (title: string) => {
+    const session = currentSession();
+    if (!session) return;
+
+    setError(null);
+    try {
+      await apiSetSessionTitle(session.id, title);
+      const updated = { ...session, title };
+      setCurrentSession(updated);
+      
+      setSessions(produce((list) => {
+        const idx = list.findIndex((s) => s.id === session.id);
+        if (idx !== -1) {
+          list[idx] = updated;
+        }
+      }));
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to set session title';
+      setError(msg);
+      console.error('Failed to set session title:', err);
+    }
+  };
+
   createEffect(() => {
     refreshSessions({
       kiln: props.initialKiln,
@@ -248,6 +273,7 @@ export const SessionProvider: ParentComponent<SessionProviderProps> = (props) =>
     cancelCurrentOperation,
     switchModel,
     refreshModels,
+    setSessionTitle,
   };
 
   return (

@@ -8,10 +8,10 @@ import { EditorProvider } from '@/contexts/EditorContext';
 import { DockLayout, ChatContent } from '@/components';
 
 const ChatWithSession: Component = () => {
-  const { currentSession } = useSession();
+  const { currentSession, setSessionTitle } = useSession();
   
   return (
-    <ChatProvider session={currentSession}>
+    <ChatProvider session={currentSession} setSessionTitle={setSessionTitle}>
       <DockLayout chatContent={ChatContent} />
     </ChatProvider>
   );
