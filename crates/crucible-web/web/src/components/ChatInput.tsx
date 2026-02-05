@@ -1,12 +1,12 @@
 import { Component, createSignal, Show, For, createEffect, onCleanup } from 'solid-js';
-import { useChat } from '@/contexts/ChatContext';
-import { useSession } from '@/contexts/SessionContext';
+import { useChatSafe } from '@/contexts/ChatContext';
+import { useSessionSafe } from '@/contexts/SessionContext';
 import { useMediaRecorder } from '@/hooks/useMediaRecorder';
 import { MicButton } from './MicButton';
 
 export const ChatInput: Component = () => {
-  const { sendMessage, isLoading, isStreaming, cancelStream, error } = useChat();
-  const { currentSession, cancelCurrentOperation, availableModels, switchModel, refreshModels } = useSession();
+  const { sendMessage, isLoading, isStreaming, cancelStream, error } = useChatSafe();
+  const { currentSession, cancelCurrentOperation, availableModels, switchModel, refreshModels } = useSessionSafe();
   const [input, setInput] = createSignal('');
   const [isModelPickerOpen, setIsModelPickerOpen] = createSignal(false);
   const { isRecording, audioLevel, startRecording, stopRecording } = useMediaRecorder();

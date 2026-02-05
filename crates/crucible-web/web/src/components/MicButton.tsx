@@ -1,5 +1,5 @@
 import { Component, createSignal, Show, Accessor } from 'solid-js';
-import { useWhisper } from '@/contexts/WhisperContext';
+import { useWhisperSafe } from '@/contexts/WhisperContext';
 import { playRecordingStartSound, playRecordingEndSound } from '@/lib/sounds';
 
 interface MicButtonProps {
@@ -16,7 +16,7 @@ export type RecordingState = 'idle' | 'recording' | 'processing' | 'error';
 export const MicButton: Component<MicButtonProps> = (props) => {
   const [state, setState] = createSignal<RecordingState>('idle');
   const [errorMessage, setErrorMessage] = createSignal<string | null>(null);
-  const { status: whisperStatus, transcribe, loadModel, progress, error: whisperError } = useWhisper();
+  const { status: whisperStatus, transcribe, loadModel, progress, error: whisperError } = useWhisperSafe();
 
   // Preload model on first interaction
   const ensureModelLoaded = async () => {
