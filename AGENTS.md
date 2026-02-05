@@ -27,7 +27,8 @@
 | `crucible-oil` | Terminal rendering primitives | `Node`, `render_to_string` |
 | `crucible-web` | Browser chat UI (SolidJS + Axum) | HTTP/SSE endpoints |
 | `crucible-tools` | MCP server and tools | Tool implementations |
-| `crucible-surrealdb` | SurrealDB storage with EAV schema | `SurrealStorage`, `EavGraph` |
+| `crucible-sqlite` | SQLite storage (default); fast, lightweight | `SqliteStorage` |
+| `crucible-surrealdb` | SurrealDB storage (advanced); EAV schema | `SurrealStorage`, `EavGraph` |
 | `crucible-lua` | Lua/Luau with Fennel support | `LuaExecutor`, `FennelCompiler` |
 | `crucible-llm` | Embedding backends | `EmbeddingBackend` (FastEmbed, Burn, LlamaCpp) |
 | `crucible-rig` | LLM chat via Rig | Ollama, OpenAI, Anthropic adapters |
@@ -38,7 +39,7 @@
 | `crucible-daemon` | Daemon server (cru-server) | `Server`, `SessionManager`, `AgentManager` |
 | `crucible-rpc` | Daemon RPC client library | `DaemonClient`, `DaemonStorageClient` |
 
-See `crates/` for additional crates (lance, query, sqlite, skills, plugins, pipeline, etc.)
+See `crates/` for additional crates (lance, query, skills, plugins, pipeline, etc.)
 
 ### Daemon Architecture
 
@@ -160,7 +161,7 @@ See **[docs/Meta/Systems.md](./docs/Meta/Systems.md)** for full details.
 | **chat** | TUI/Web interfaces, session persistence |
 | **agents** | Agent cards, LLM providers, tools |
 | **parser** | Markdown → structured data |
-| **storage** | SurrealDB, EAV graph, Merkle trees |
+| **storage** | SQLite (default), SurrealDB (advanced), Merkle trees |
 | **scripting** | Lua/Fennel runtimes |
 | **workflows** | Definitions + sessions |
 | **apis** | HTTP, WebSocket, MCP, events |
