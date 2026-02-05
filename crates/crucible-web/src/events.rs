@@ -1,15 +1,13 @@
-//! SSE event types for chat streaming
-
+use crucible_rpc::SessionEvent;
 use serde::{Deserialize, Serialize};
 
-/// Events sent to the browser via SSE
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ChatEvent {
-    /// A token/chunk of the response
-    Token { content: String },
+    Token {
+        content: String,
+    },
 
-    /// A tool call is being made
     ToolCall {
         id: String,
         title: String,
@@ -17,17 +15,16 @@ pub enum ChatEvent {
         arguments: Option<serde_json::Value>,
     },
 
-    /// Tool call result
     ToolResult {
         id: String,
         #[serde(skip_serializing_if = "Option::is_none")]
         result: Option<String>,
     },
 
-    /// Agent is thinking/reasoning
-    Thinking { content: String },
+    Thinking {
+        content: String,
+    },
 
-    /// Message is complete
     MessageComplete {
         id: String,
         content: String,
@@ -35,18 +32,23 @@ pub enum ChatEvent {
         tool_calls: Vec<ToolCallSummary>,
     },
 
-    /// An error occurred
-    Error { code: String, message: String },
+    Error {
+        code: String,
+        message: String,
+    },
 
-    /// An interaction is requested from the user
     InteractionRequested {
         id: String,
         #[serde(flatten)]
         request: serde_json::Value,
     },
+
+    SessionEvent {
+        event_type: String,
+        data: serde_json::Value,
+    },
 }
 
-/// Summary of a tool call for the complete message
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ToolCallSummary {
     pub id: String,
@@ -54,9 +56,8 @@ pub struct ToolCallSummary {
 }
 
 impl ChatEvent {
-    /// Format as SSE event string
-    pub fn to_sse(&self) -> String {
-        let event_type = match self {
+    pub fn event_name(&self) -> &'static str {
+        match self {
             ChatEvent::Token { .. } => "token",
             ChatEvent::ToolCall { .. } => "tool_call",
             ChatEvent::ToolResult { .. } => "tool_result",
@@ -64,10 +65,68 @@ impl ChatEvent {
             ChatEvent::MessageComplete { .. } => "message_complete",
             ChatEvent::Error { .. } => "error",
             ChatEvent::InteractionRequested { .. } => "interaction_requested",
-        };
+            ChatEvent::SessionEvent { .. } => "session_event",
+        }
+    }
 
-        let data = serde_json::to_string(self).unwrap_or_else(|_| "{}".to_string());
+    pub fn from_daemon_event(event: &SessionEvent) -> Self {
+        let data = &event.data;
 
-        format!("event: {}\ndata: {}\n\n", event_type, data)
+        match event.event_type.as_str() {
+            "text_delta" => ChatEvent::Token {
+                content: data["content"].as_str().unwrap_or("").to_string(),
+            },
+
+            "thinking_delta" => ChatEvent::Thinking {
+                content: data["content"].as_str().unwrap_or("").to_string(),
+            },
+
+            "tool_call_start" | "tool_call" => ChatEvent::ToolCall {
+                id: data["id"].as_str().unwrap_or("").to_string(),
+                title: data["name"]
+                    .as_str()
+                    .or_else(|| data["title"].as_str())
+                    .unwrap_or("")
+                    .to_string(),
+                arguments: data.get("arguments").cloned(),
+            },
+
+            "tool_result" => ChatEvent::ToolResult {
+                id: data["id"].as_str().unwrap_or("").to_string(),
+                result: data["result"].as_str().map(String::from),
+            },
+
+            "turn_complete" | "message_complete" => ChatEvent::MessageComplete {
+                id: data["message_id"]
+                    .as_str()
+                    .or_else(|| data["id"].as_str())
+                    .unwrap_or("")
+                    .to_string(),
+                content: data["content"].as_str().unwrap_or("").to_string(),
+                tool_calls: Vec::new(),
+            },
+
+            "error" => ChatEvent::Error {
+                code: data["code"].as_str().unwrap_or("unknown").to_string(),
+                message: data["message"]
+                    .as_str()
+                    .unwrap_or("Unknown error")
+                    .to_string(),
+            },
+
+            "interaction_requested" => ChatEvent::InteractionRequested {
+                id: data["request_id"]
+                    .as_str()
+                    .or_else(|| data["id"].as_str())
+                    .unwrap_or("")
+                    .to_string(),
+                request: data.clone(),
+            },
+
+            _ => ChatEvent::SessionEvent {
+                event_type: event.event_type.clone(),
+                data: data.clone(),
+            },
+        }
     }
 }
