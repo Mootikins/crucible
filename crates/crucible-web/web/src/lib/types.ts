@@ -49,6 +49,23 @@ export interface FileEntry {
   is_dir: boolean;
 }
 
+export interface NoteEntry {
+  name: string;
+  path: string;
+  title: string | null;
+  tags: string[];
+  updated_at: string;
+}
+
+export interface NoteContent {
+  name: string;
+  path: string;
+  content: string;
+  title: string | null;
+  tags: string[];
+  updated_at: string;
+}
+
 // =============================================================================
 // Project Types
 // =============================================================================

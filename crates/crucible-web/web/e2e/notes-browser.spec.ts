@@ -5,9 +5,8 @@ test.describe('Notes Browser', () => {
     await page.goto('/');
     
     const projectButton = page.getByText('/home/moot/crucible').first();
-    if (await projectButton.isVisible()) {
-      await projectButton.click();
-    }
+    await expect(projectButton).toBeVisible();
+    await projectButton.click();
   });
 
   test('displays notes panel header', async ({ page }) => {
@@ -31,9 +30,7 @@ test.describe('Notes Browser', () => {
     await page.reload();
     
     const loadingIndicator = page.locator('text=Loading..., [class*="animate-spin"]');
-    if (await loadingIndicator.count() > 0) {
-      await expect(loadingIndicator.first()).toBeVisible();
-    }
+    await expect(loadingIndicator.first()).toBeVisible();
   });
 
   test('displays file tree with icons', async ({ page }) => {
@@ -52,9 +49,7 @@ test.describe('Notes Browser', () => {
     await page.waitForTimeout(500);
     
     const fileItem = page.locator('text=Index.md');
-    if (await fileItem.isVisible()) {
-      await expect(fileItem).toBeVisible();
-    }
+    await expect(fileItem).toBeVisible();
   });
 
   test('can click on a note to open it', async ({ page }) => {
@@ -80,10 +75,9 @@ test.describe('Notes Browser', () => {
     await page.waitForTimeout(500);
     
     const noteLink = page.locator('text=Test.md');
-    if (await noteLink.isVisible()) {
-      await noteLink.click();
-      await page.waitForTimeout(500);
-    }
+    await expect(noteLink).toBeVisible();
+    await noteLink.click();
+    await page.waitForTimeout(500);
   });
 
   test('can expand and collapse folders', async ({ page }) => {
@@ -108,16 +102,13 @@ test.describe('Notes Browser', () => {
     await page.waitForTimeout(500);
     
     const folderButton = page.locator('text=Guides').first();
-    if (await folderButton.isVisible()) {
-      await folderButton.click();
-      
-      await page.waitForTimeout(300);
-      
-      const childNote = page.locator('text=Getting Started.md');
-      if (await childNote.count() > 0) {
-        await expect(childNote).toBeVisible();
-      }
-    }
+    await expect(folderButton).toBeVisible();
+    await folderButton.click();
+    
+    await page.waitForTimeout(300);
+    
+    const childNote = page.locator('text=Getting Started.md');
+    await expect(childNote).toBeVisible();
   });
 
   test('displays empty state when no notes', async ({ page }) => {
@@ -133,9 +124,7 @@ test.describe('Notes Browser', () => {
     await page.waitForTimeout(500);
     
     const emptyMessage = page.locator('text=No files');
-    if (await emptyMessage.isVisible()) {
-      await expect(emptyMessage).toBeVisible();
-    }
+    await expect(emptyMessage).toBeVisible();
   });
 
   test('displays error state on API failure', async ({ page }) => {
@@ -151,8 +140,6 @@ test.describe('Notes Browser', () => {
     await page.waitForTimeout(500);
     
     const errorMessage = page.locator('[class*="text-red"]');
-    if (await errorMessage.count() > 0) {
-      await expect(errorMessage.first()).toBeVisible();
-    }
+    await expect(errorMessage.first()).toBeVisible();
   });
 });

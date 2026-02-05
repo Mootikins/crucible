@@ -54,6 +54,7 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
   let currentStreamingMessageId: string | null = null;
   let firstUserMessage: string | null = null;
   let hasReceivedFirstResponse = false;
+  let previousSessionId: string | null = null;
 
   const addMessage = (message: Message) => {
     setMessages((prev) => [...prev, message]);
@@ -152,6 +153,7 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
 
    createEffect(() => {
      const session = props.session();
+     const newSessionId = session?.id ?? null;
      
      // Clean up old SSE subscription
      if (eventSourceCleanup) {
@@ -159,10 +161,11 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
        eventSourceCleanup = null;
      }
      
-     // Clear messages when switching sessions
-     if (session) {
+     // Only clear messages when SWITCHING sessions (not on initial mount)
+     if (newSessionId !== previousSessionId && previousSessionId !== null) {
        clearMessages();
      }
+     previousSessionId = newSessionId;
      
      // Subscribe to new session's events
      if (session && session.state === 'active') {
