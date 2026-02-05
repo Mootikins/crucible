@@ -2,7 +2,7 @@ import { Component, For, Show, createSignal, createEffect, createMemo } from 'so
 import { Collapsible } from '@ark-ui/solid';
 import { useProjectSafe } from '@/contexts/ProjectContext';
 import { useEditorSafe } from '@/contexts/EditorContext';
-import { listFiles, listKilnNotes } from '@/lib/api';
+import { listKilnNotes } from '@/lib/api';
 import type { FileEntry } from '@/lib/types';
 
 interface FileNode {
@@ -187,34 +187,16 @@ const filesToNodes = (files: FileEntry[]): FileNode[] => {
 export const FilesPanel: Component = () => {
   const { currentProject } = useProjectSafe();
   const { openFile } = useEditorSafe();
-  const [workspaceFiles, setWorkspaceFiles] = createSignal<FileNode[]>([]);
   const [kilnFiles, setKilnFiles] = createSignal<FileNode[]>([]);
-  const [loadingWorkspace, setLoadingWorkspace] = createSignal(false);
   const [loadingKiln, setLoadingKiln] = createSignal(false);
-  const [workspaceError, setWorkspaceError] = createSignal<string | null>(null);
   const [kilnError, setKilnError] = createSignal<string | null>(null);
 
   createEffect(async () => {
     const project = currentProject();
     if (!project) {
-      setWorkspaceFiles([]);
       setKilnFiles([]);
-      setWorkspaceError(null);
       setKilnError(null);
       return;
-    }
-
-    setLoadingWorkspace(true);
-    setWorkspaceError(null);
-    try {
-      const files = await listFiles(project.path);
-      setWorkspaceFiles(filesToNodes(files));
-    } catch (err) {
-      console.error('Failed to load workspace files:', err);
-      setWorkspaceFiles([]);
-      setWorkspaceError(err instanceof Error ? err.message : 'Failed to load files');
-    } finally {
-      setLoadingWorkspace(false);
     }
 
     if (project.kilns.length > 0) {
@@ -243,26 +225,18 @@ export const FilesPanel: Component = () => {
   return (
     <div class="h-full flex flex-col bg-neutral-900 text-neutral-100 overflow-hidden">
       <div class="p-3 border-b border-neutral-800 shrink-0">
-        <h2 class="text-sm font-semibold text-neutral-400 uppercase tracking-wide">Files</h2>
+        <h2 class="text-sm font-semibold text-neutral-400 uppercase tracking-wide">Notes</h2>
       </div>
 
       <div class="flex-1 overflow-y-auto py-2">
         <Show
           when={currentProject()}
-          fallback={
-            <div class="px-3 py-8 text-center text-neutral-500 text-sm">
-              Select a project to browse files
-            </div>
-          }
+           fallback={
+             <div class="px-3 py-8 text-center text-neutral-500 text-sm">
+               Select a project to browse notes
+             </div>
+           }
         >
-          <FileTree
-            title="Workspace"
-            files={workspaceFiles()}
-            onFileClick={handleFileClick}
-            loading={loadingWorkspace()}
-            error={workspaceError()}
-          />
-
           <FileTree
             title="Kiln"
             files={kilnFiles()}
