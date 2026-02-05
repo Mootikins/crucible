@@ -168,9 +168,9 @@ export const DockLayout: Component<DockLayoutProps> = (props) => {
     }
 
     if (groupId) {
-      const group = api.getGroup(groupId);
+      const group = api.getGroupPanel(groupId);
       if (group) {
-        api.setVisible(group, !newState[edge]);
+        group.api.setVisible(!newState[edge]);
       }
     }
 
@@ -331,9 +331,9 @@ export const DockLayout: Component<DockLayoutProps> = (props) => {
             setTimeout(() => {
               const api = dockviewApi();
               if (api && bottomGroupId) {
-                const group = api.getGroup(bottomGroupId);
+                const group = api.getGroupPanel(bottomGroupId);
                 if (group) {
-                  api.setVisible(group, false);
+                  group.api.setVisible(false);
                 }
               }
             }, 0);

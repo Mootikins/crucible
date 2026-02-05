@@ -1,11 +1,11 @@
 import { Component, For, Show, createEffect } from 'solid-js';
 import { Message } from './Message';
-import { useChat } from '@/contexts/ChatContext';
-import { useSession } from '@/contexts/SessionContext';
+import { useChatSafe } from '@/contexts/ChatContext';
+import { useSessionSafe } from '@/contexts/SessionContext';
 
 export const MessageList: Component = () => {
-  const { messages, isStreaming } = useChat();
-  const { currentSession } = useSession();
+  const { messages, isStreaming } = useChatSafe();
+  const { currentSession } = useSessionSafe();
   let containerRef: HTMLDivElement | undefined;
 
   const scrollToBottom = () => {

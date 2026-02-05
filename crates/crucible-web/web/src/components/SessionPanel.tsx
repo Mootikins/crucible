@@ -1,6 +1,6 @@
 import { Component, For, Show, createSignal } from 'solid-js';
-import { useSession } from '@/contexts/SessionContext';
-import { useProject } from '@/contexts/ProjectContext';
+import { useSessionSafe } from '@/contexts/SessionContext';
+import { useProjectSafe } from '@/contexts/ProjectContext';
 import type { Session, Project } from '@/lib/types';
 
 const StateIndicator: Component<{ state: Session['state'] }> = (props) => {
@@ -48,7 +48,7 @@ const SessionItem: Component<{ session: Session; selected: boolean; onSelect: ()
       <div class="flex items-center gap-2">
         <StateIndicator state={props.session.state} />
         <span class="font-medium truncate flex-1">
-          {props.session.title || `Session ${props.session.id.slice(0, 8)}`}
+          {props.session.title || `Session ${props.session.id?.slice(0, 8) ?? 'unknown'}`}
         </span>
       </div>
       <div class="text-xs text-neutral-500 mt-1">
@@ -59,7 +59,7 @@ const SessionItem: Component<{ session: Session; selected: boolean; onSelect: ()
 };
 
 export const SessionPanel: Component = () => {
-  const { currentProject, projects, selectProject, registerProject } = useProject();
+  const { currentProject, projects, selectProject, registerProject } = useProjectSafe();
   const {
     currentSession,
     sessions,
@@ -70,7 +70,7 @@ export const SessionPanel: Component = () => {
     resumeSession,
     endSession,
     refreshSessions,
-  } = useSession();
+  } = useSessionSafe();
 
   const [showNewProject, setShowNewProject] = createSignal(false);
   const [newProjectPath, setNewProjectPath] = createSignal('');

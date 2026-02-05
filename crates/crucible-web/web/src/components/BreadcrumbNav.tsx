@@ -156,8 +156,10 @@ export const BreadcrumbNav: Component = () => {
   const projectCtx = useProject();
   const sessionCtx = useSession();
 
-  const handleProjectSelect = async (project: { path: string; name: string }) => {
+  const handleProjectSelect = async (project: { path: string; name: string; kilns?: string[] }) => {
     await projectCtx.selectProject(project.path);
+    const kiln = project.kilns?.[0] ?? project.path;
+    await sessionCtx.refreshSessions({ kiln, workspace: project.path });
   };
 
   const handleSessionSelect = async (session: { id: string }) => {
@@ -176,7 +178,7 @@ export const BreadcrumbNav: Component = () => {
   };
 
   const sessionLabel = (session: { title: string | null; id: string }) => {
-    return session.title ?? `Session ${session.id.slice(0, 8)}`;
+    return session.title ?? `Session ${session.id?.slice(0, 8) ?? 'unknown'}`;
   };
 
   return (

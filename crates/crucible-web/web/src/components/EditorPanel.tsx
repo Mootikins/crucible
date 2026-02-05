@@ -14,7 +14,7 @@ import { oneDark } from '@codemirror/theme-one-dark';
 import { markdown } from '@codemirror/lang-markdown';
 import { javascript } from '@codemirror/lang-javascript';
 import { rust } from '@codemirror/lang-rust';
-import { useEditor } from '@/contexts/EditorContext';
+import { useEditorSafe } from '@/contexts/EditorContext';
 
 type LanguageSupport = ReturnType<typeof markdown>;
 
@@ -156,7 +156,7 @@ const CodeMirrorEditor: Component<{
 };
 
 export const EditorPanel: Component = () => {
-  const { openFiles, activeFile, setActiveFile, closeFile, updateFileContent, isLoading, error } = useEditor();
+  const { openFiles, activeFile, setActiveFile, closeFile, updateFileContent, isLoading, error } = useEditorSafe();
 
   const activeFileData = () => {
     const path = activeFile();

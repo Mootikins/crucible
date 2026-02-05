@@ -224,3 +224,16 @@ export function useWhisper(): WhisperContextValue {
   }
   return context;
 }
+
+const fallbackWhisperContext: WhisperContextValue = {
+  status: () => 'idle',
+  progress: () => 0,
+  error: () => null,
+  transcribe: () => Promise.resolve(''),
+  loadModel: () => Promise.resolve(),
+};
+
+export function useWhisperSafe(): WhisperContextValue {
+  const context = useContext(WhisperContext);
+  return context ?? fallbackWhisperContext;
+}

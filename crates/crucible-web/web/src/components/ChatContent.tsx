@@ -2,10 +2,10 @@ import { Component, Show } from 'solid-js';
 import { MessageList } from './MessageList';
 import { ChatInput } from './ChatInput';
 import { InteractionHandler } from './interactions';
-import { useChat } from '@/contexts/ChatContext';
+import { useChatSafe } from '@/contexts/ChatContext';
 
 export const ChatContent: Component = () => {
-  const { pendingInteraction, respondToInteraction } = useChat();
+  const { pendingInteraction, respondToInteraction } = useChatSafe();
 
   return (
     <div class="h-full flex flex-col">
