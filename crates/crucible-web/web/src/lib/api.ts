@@ -132,7 +132,32 @@ export async function respondToInteraction(
 // Session Endpoints
 // =============================================================================
 
-/** Create a new session. */
+interface RawSession {
+  session_id: string;
+  type: Session['session_type'];
+  kiln: string;
+  workspace: string;
+  state: Session['state'];
+  title: string | null;
+  agent_model?: string | null;
+  started_at: string;
+  event_count?: number;
+}
+
+function mapSession(raw: RawSession): Session {
+  return {
+    id: raw.session_id,
+    session_type: raw.type,
+    kiln: raw.kiln,
+    workspace: raw.workspace,
+    state: raw.state,
+    title: raw.title,
+    agent_model: raw.agent_model ?? null,
+    started_at: raw.started_at,
+    event_count: raw.event_count ?? 0,
+  };
+}
+
 export async function createSession(params: CreateSessionParams): Promise<Session> {
   const res = await fetch('/api/session', {
     method: 'POST',
@@ -144,7 +169,8 @@ export async function createSession(params: CreateSessionParams): Promise<Sessio
     throw new Error(`Failed to create session: HTTP ${res.status}`);
   }
 
-  return (await res.json()) as Session;
+  const raw = (await res.json()) as RawSession;
+  return mapSession(raw);
 }
 
 /** List sessions with optional filters. */
@@ -168,18 +194,18 @@ export async function listSessions(filters?: {
     throw new Error(`Failed to list sessions: HTTP ${res.status}`);
   }
 
-  const data = (await res.json()) as { sessions: Session[]; total: number };
-  return data.sessions;
+  const data = (await res.json()) as { sessions: RawSession[]; total: number };
+  return data.sessions.map(mapSession);
 }
 
-/** Get a session by ID. */
 export async function getSession(id: string): Promise<Session> {
   const res = await fetch(`/api/session/${encodeURIComponent(id)}`);
   if (!res.ok) {
     throw new Error(`Failed to get session: HTTP ${res.status}`);
   }
 
-  return (await res.json()) as Session;
+  const raw = (await res.json()) as RawSession;
+  return mapSession(raw);
 }
 
 /** Pause a session. */
