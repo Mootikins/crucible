@@ -4,6 +4,7 @@ import { SessionProvider, useSession } from '@/contexts/SessionContext';
 import { ChatProvider } from '@/contexts/ChatContext';
 import { WhisperProvider } from '@/contexts/WhisperContext';
 import { SettingsProvider } from '@/contexts/SettingsContext';
+import { EditorProvider } from '@/contexts/EditorContext';
 import { DockLayout, ChatContent } from '@/components';
 
 const ChatWithSession: Component = () => {
@@ -20,11 +21,13 @@ const App: Component = () => {
   return (
     <SettingsProvider>
       <ProjectProvider>
-        <SessionProvider>
-          <WhisperProvider>
-            <ChatWithSession />
-          </WhisperProvider>
-        </SessionProvider>
+        <EditorProvider>
+          <SessionProvider>
+            <WhisperProvider>
+              <ChatWithSession />
+            </WhisperProvider>
+          </SessionProvider>
+        </EditorProvider>
       </ProjectProvider>
     </SettingsProvider>
   );
