@@ -36,6 +36,7 @@ uuid = { workspace = true }
 # Daemon RPC client
 crucible-rpc = { path = "../crucible-rpc" }
 crucible-core = { workspace = true }
+crucible-config = { path = "../crucible-config" }
 
 # Asset embedding (release builds)
 rust-embed = { version = "8", features = ["interpolate-folder-path"] }

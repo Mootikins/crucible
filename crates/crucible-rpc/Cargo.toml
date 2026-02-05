@@ -15,8 +15,7 @@ async-stream = "0.3"
 futures = { workspace = true }
 chrono = { workspace = true }
 
-# Re-use protocol and lifecycle from daemon
-crucible-daemon = { workspace = true }
+crucible-protocol = { path = "../crucible-protocol" }
 crucible-core = { workspace = true }
 
 [target.'cfg(unix)'.dependencies]
@@ -25,3 +24,4 @@ libc = "0.2"
 [dev-dependencies]
 tempfile = { workspace = true }
 crucible-sqlite = { path = "../crucible-sqlite" }
+crucible-daemon = { path = "../crucible-daemon" }

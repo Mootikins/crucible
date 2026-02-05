@@ -10,6 +10,8 @@ pub mod process;
 pub mod session;
 pub mod skills;
 pub mod tasks;
+#[cfg(feature = "web")]
+pub mod web;
 
 // Existing commands (kept for compatibility)
 pub mod config;

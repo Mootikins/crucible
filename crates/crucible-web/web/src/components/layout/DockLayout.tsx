@@ -1,6 +1,7 @@
 import { Component, ParentComponent, createSignal, Show } from 'solid-js';
 import { DockView, DockPanel } from 'solid-dockview';
 import { SettingsPanel } from '@/components/SettingsPanel';
+import { SessionPanel } from '@/components/SessionPanel';
 import 'dockview-core/dist/styles/dockview.css';
 
 /** Gear icon SVG component for settings button */
@@ -88,6 +89,9 @@ export const DockLayout: Component<DockLayoutProps> = (props) => {
         class="dockview-theme-abyss"
         style="height: 100vh; width: 100vw;"
       >
+        <DockPanel id="sessions" title="Sessions" position={{ direction: 'left' }}>
+          <SessionPanel />
+        </DockPanel>
         <DockPanel id="chat" title="Chat">
           <props.chatContent />
         </DockPanel>
