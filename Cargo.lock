@@ -4171,6 +4171,8 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "axum",
+ "crucible-core",
+ "crucible-rpc",
  "futures",
  "futures-util",
  "mime_guess",
