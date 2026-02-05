@@ -388,6 +388,31 @@ export async function listKilnNotes(kilnPath: string): Promise<FileEntry[]> {
   return mockNotes;
 }
 
+/** Get file content (mocked for now). */
+export async function getFileContent(path: string): Promise<string> {
+  await new Promise(resolve => setTimeout(resolve, 100));
+  
+  const ext = path.split('.').pop()?.toLowerCase() ?? '';
+  const filename = path.split('/').pop() ?? 'file';
+  
+  const mockContent: Record<string, string> = {
+    md: `# ${filename}\n\nThis is mock content for **${filename}**.\n\n## Section\n\nSome text here with [[wikilinks]].\n`,
+    ts: `export function example(): string {\n  return 'Hello from ${filename}';\n}\n`,
+    tsx: `import { Component } from 'solid-js';\n\nexport const Example: Component = () => {\n  return <div>Hello from ${filename}</div>;\n};\n`,
+    js: `function example() {\n  return 'Hello from ${filename}';\n}\n\nmodule.exports = { example };\n`,
+    rs: `pub fn example() -> &'static str {\n    "Hello from ${filename}"\n}\n`,
+    json: `{\n  "name": "${filename}",\n  "version": "1.0.0"\n}\n`,
+  };
+  
+  return mockContent[ext] ?? `// Content of ${filename}\n`;
+}
+
+/** Save file content (mocked for now). */
+export async function saveFileContent(path: string, _content: string): Promise<void> {
+  await new Promise(resolve => setTimeout(resolve, 100));
+  console.log('Mock save:', path);
+}
+
 // =============================================================================
 // Utilities
 // =============================================================================

@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@ark-ui/solid": "^3.5.0",
+    "@codemirror/commands": "^6.10.1",
     "@codemirror/lang-javascript": "^6.2.2",
     "@codemirror/lang-markdown": "^6.2.5",
     "@codemirror/lang-rust": "^6.0.2",
