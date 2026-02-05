@@ -26,7 +26,7 @@ The `process` command parses all markdown files in your kiln and stores structur
 - Extracts tags (including nested tags)
 - Splits content into searchable blocks
 - Generates embeddings for semantic search
-- Stores everything in SurrealDB
+- Stores everything in the local database (SQLite by default)
 
 ## Options
 
@@ -114,7 +114,7 @@ Pipeline processing complete!
 
 Processed data is stored at:
 ```
-<kiln_path>/.crucible/kiln.db/
+<kiln_path>/.crucible/crucible-sqlite.db
 ```
 
 This is derived data - your markdown files remain the source of truth.
@@ -160,7 +160,8 @@ For large kilns (>1000 files):
 **Source code:** `crates/crucible-cli/src/commands/process.rs`
 
 **Related modules:**
-- `crates/crucible-surrealdb/src/kiln_store.rs` - Kiln storage layer
+- `crates/crucible-sqlite/` - SQLite storage layer (default)
+- `crates/crucible-surrealdb/` - SurrealDB storage layer (advanced)
 - `crates/crucible-parser/` - Markdown parsing
 - `crates/crucible-llm/src/embeddings/` - Embedding generation
 
