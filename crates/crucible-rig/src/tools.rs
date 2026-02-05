@@ -109,7 +109,7 @@ pub async fn discover_crucible_tools(
 ) -> McpToolResult<(Vec<rmcp::model::Tool>, rmcp::service::ServerSink)> {
     // TODO: This will require spawning the crucible-tools MCP server
     // and connecting via stdio. For now, return an error.
-    Err(McpMcpToolError::Discovery(
+    Err(McpToolError::Discovery(
         "Not implemented: requires crucible-tools binary integration".to_string(),
     ))
 }

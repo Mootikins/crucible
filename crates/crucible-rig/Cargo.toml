@@ -9,7 +9,7 @@ description = "Rig LLM framework integration for Crucible"
 
 [dependencies]
 # Rig framework
-rig-core = { version = "0.27", features = [] }
+rig-core = { version = "0.30", features = [] }
 
 # Crucible dependencies
 crucible-config = { path = "../crucible-config" }
@@ -47,7 +47,7 @@ reqwest = { workspace = true, features = ["stream", "json"] }
 
 # MCP/RMCP - needed for workspace tools result types
 # Base features always enabled; server/client features gated behind rmcp-full feature
-rmcp = { version = "0.9.1", features = ["macros"] }
+rmcp = { version = "0.13", features = ["macros"] }
 
 [dev-dependencies]
 tokio-test = { workspace = true }
@@ -57,6 +57,6 @@ tracing-subscriber = { workspace = true, features = ["env-filter"] }
 [features]
 default = []
 # Enable full MCP server/client integration
-rmcp-full = ["rmcp/server", "rmcp/client", "rmcp/transport-io", "rmcp/transport-sse-server", "rmcp/transport-child-process", "rig-core/rmcp"]
+rmcp-full = ["rmcp/server", "rmcp/client", "rmcp/transport-io", "rmcp/transport-streamable-http-server", "rmcp/transport-child-process", "rig-core/rmcp"]
 # Enable test utilities
 test-utils = []

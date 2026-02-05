@@ -117,7 +117,7 @@ axum = "0.8"
 tower = "0.5"
 
 # MCP protocol
-rmcp = { version = "0.9.1", features = ["macros", "server"] }
+rmcp = { version = "0.13", features = ["macros", "server"] }
 
 # Testing utilities
 criterion = { version = "0.8", features = ["html_reports"] }
