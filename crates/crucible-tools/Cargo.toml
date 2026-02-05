@@ -15,7 +15,10 @@ crucible-skills = { workspace = true, features = ["storage", "embeddings"] }
 oq = { workspace = true }
 
 # MCP support (server for hosting, client for calling upstream)
-rmcp = { version = "0.9.1", features = ["macros", "server", "client", "transport-io", "transport-sse-server", "transport-child-process", "transport-sse-client"] }
+rmcp = { version = "0.13", features = ["macros", "server", "client", "transport-io", "transport-streamable-http-server", "transport-child-process", "transport-streamable-http-client-reqwest"] }
+
+# HTTP server for streamable HTTP MCP transport
+axum = "0.8"
 
 # Serialization
 serde = { workspace = true }

@@ -129,6 +129,7 @@ impl McpToolExecutor for RmcpExecutor {
             .call_tool(CallToolRequestParam {
                 name: tool_name_owned.into(),
                 arguments: arguments.as_object().cloned(),
+                task: None,
             })
             .await
             .map_err(|e| McpError::Execution(e.to_string()))?;

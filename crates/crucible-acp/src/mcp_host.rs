@@ -1,16 +1,16 @@
 //! In-Process MCP Server Host
 //!
 //! This module hosts an MCP server within the same process as the ACP client,
-//! using SSE transport on localhost. This avoids DB lock contention that would
-//! occur with subprocess-based MCP servers.
+//! using streamable HTTP transport on localhost. This avoids DB lock contention
+//! that would occur with subprocess-based MCP servers.
 //!
 //! ## Architecture
 //!
 //! When `cru chat` starts, it:
-//! 1. Creates an `InProcessMcpHost` which starts an SSE server on `127.0.0.1:0`
-//! 2. Gets the bound address and constructs an SSE URL
+//! 1. Creates an `InProcessMcpHost` which starts an HTTP server on `127.0.0.1:0`
+//! 2. Gets the bound address and constructs an endpoint URL
 //! 3. Passes that URL to the agent via `McpServer::Sse` in `NewSessionRequest`
-//! 4. The agent connects to the SSE endpoint and discovers Crucible's tools
+//! 4. The agent connects to the endpoint and discovers Crucible's tools
 //!
 //! This keeps all tool execution in-process, sharing the same database connection.
 
@@ -26,37 +26,23 @@ use crucible_core::enrichment::EmbeddingProvider;
 use crucible_core::traits::KnowledgeRepository;
 use crucible_tools::CrucibleMcpServer;
 
-/// Hosts an MCP server in-process using SSE transport
-///
-/// This struct manages the lifecycle of an SSE-based MCP server that runs
-/// within the same process as the chat session.
+/// Hosts an MCP server in-process using streamable HTTP transport
 pub struct InProcessMcpHost {
-    /// Handle to the server task
     _server_handle: JoinHandle<()>,
-    /// Bound address of the SSE server
     address: SocketAddr,
-    /// Cancellation token for graceful shutdown
     shutdown: CancellationToken,
 }
 
 impl InProcessMcpHost {
-    /// Start an in-process MCP server on localhost
-    ///
-    /// # Arguments
-    ///
-    /// * `kiln_path` - Path to the kiln directory
-    /// * `knowledge_repo` - Repository for semantic search
-    /// * `embedding_provider` - Provider for generating embeddings
-    ///
-    /// # Returns
-    ///
-    /// An `InProcessMcpHost` that can be used to get the SSE URL
     pub async fn start(
         kiln_path: PathBuf,
         knowledge_repo: Arc<dyn KnowledgeRepository>,
         embedding_provider: Arc<dyn EmbeddingProvider>,
     ) -> Result<Self> {
-        use rmcp::transport::sse_server::{SseServer, SseServerConfig};
+        use rmcp::transport::streamable_http_server::{
+            session::local::LocalSessionManager, tower::StreamableHttpService,
+        };
+        use rmcp::transport::StreamableHttpServerConfig;
         use tracing::Instrument;
 
         info!(
@@ -64,76 +50,52 @@ impl InProcessMcpHost {
             kiln_path.display()
         );
 
-        // Create cancellation token for shutdown
         let shutdown = CancellationToken::new();
 
-        // Bind to localhost with random port - we need to get the actual address
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
             .await
-            .map_err(|e| ClientError::Connection(format!("Failed to bind SSE server: {}", e)))?;
+            .map_err(|e| ClientError::Connection(format!("Failed to bind MCP server: {}", e)))?;
 
         let actual_addr = listener
             .local_addr()
             .map_err(|e| ClientError::Connection(format!("Failed to get local address: {}", e)))?;
 
-        info!("MCP SSE server bound to {}", actual_addr);
+        info!("MCP streamable HTTP server bound to {}", actual_addr);
 
-        // Create the SSE server config with the actual bound address
-        let config = SseServerConfig {
-            bind: actual_addr,
-            sse_path: "/sse".to_string(),
-            post_path: "/message".to_string(),
-            ct: shutdown.clone(),
-            // 30s keepalive prevents silent connection drops on long-lived SSE streams
-            sse_keep_alive: Some(std::time::Duration::from_secs(30)),
-        };
-
-        // Create the SSE server and router
-        let (mut sse_server, router) = SseServer::new(config);
-
-        // Start the axum server with our listener
-        let ct = shutdown.child_token();
-        let server = axum::serve(listener, router).with_graceful_shutdown(async move {
-            ct.cancelled().await;
-            info!("SSE server cancelled");
-        });
-
-        tokio::spawn(
-            async move {
-                if let Err(e) = server.await {
-                    error!(error = %e, "SSE server shutdown with error");
-                }
-            }
-            .instrument(tracing::info_span!("sse-server", bind_address = %actual_addr)),
-        );
-
-        // Create the Crucible MCP server
         let mcp_server = CrucibleMcpServer::new(
             kiln_path.to_string_lossy().to_string(),
             knowledge_repo,
             embedding_provider,
         );
 
-        // Spawn the transport handler task - it will handle incoming SSE connections
-        // and serve the MCP protocol using our CrucibleMcpServer
-        let server_handle = {
-            use rmcp::ServiceExt;
+        let service = StreamableHttpService::new(
+            move || Ok(mcp_server.clone()),
+            LocalSessionManager::default().into(),
+            StreamableHttpServerConfig {
+                sse_keep_alive: Some(std::time::Duration::from_secs(30)),
+                cancellation_token: shutdown.clone(),
+                ..Default::default()
+            },
+        );
 
-            let ct = shutdown.child_token();
-            tokio::spawn(async move {
-                while let Some(transport) = sse_server.next_transport().await {
-                    let service = mcp_server.clone();
-                    let ct = ct.child_token();
-                    tokio::spawn(async move {
-                        if let Ok(server) = service.serve_with_ct(transport, ct).await {
-                            let _ = server.waiting().await;
-                        }
-                    });
+        let router = axum::Router::new().nest_service("/mcp", service);
+
+        let ct = shutdown.child_token();
+        let server = axum::serve(listener, router).with_graceful_shutdown(async move {
+            ct.cancelled().await;
+            info!("MCP server cancelled");
+        });
+
+        let server_handle = tokio::spawn(
+            async move {
+                if let Err(e) = server.await {
+                    error!(error = %e, "MCP server shutdown with error");
                 }
-            })
-        };
+            }
+            .instrument(tracing::info_span!("mcp-server", bind_address = %actual_addr)),
+        );
 
-        info!("In-process MCP server started with 12 tools");
+        info!("In-process MCP server started");
 
         Ok(Self {
             _server_handle: server_handle,
@@ -142,25 +104,17 @@ impl InProcessMcpHost {
         })
     }
 
-    /// Get the SSE endpoint URL that agents should connect to
-    ///
-    /// # Returns
-    ///
-    /// The full URL to the SSE endpoint (e.g., "http://127.0.0.1:12345/sse")
     pub fn sse_url(&self) -> String {
-        format!("http://{}/sse", self.address)
+        format!("http://{}/mcp", self.address)
     }
 
-    /// Get the bound address of the SSE server
     pub fn address(&self) -> SocketAddr {
         self.address
     }
 
-    /// Shut down the MCP server gracefully
     pub async fn shutdown(self) {
         info!("Shutting down in-process MCP server");
         self.shutdown.cancel();
-        // The server handle will complete when cancelled
     }
 }
 
@@ -258,7 +212,7 @@ mod tests {
             "URL should be localhost: {}",
             url
         );
-        assert!(url.ends_with("/sse"), "URL should end with /sse: {}", url);
+        assert!(url.ends_with("/mcp"), "URL should end with /mcp: {}", url);
 
         // Port should be non-zero
         let port = host.address().port();
