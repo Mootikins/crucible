@@ -79,7 +79,7 @@ Use Anthropic's Claude models:
 ```toml
 [llm]
 provider = "anthropic"
-model = "claude-3-5-sonnet"
+model = "claude-sonnet-4-5-20250929"
 ```
 
 **Environment variable:**
@@ -88,8 +88,8 @@ export ANTHROPIC_API_KEY=your-api-key
 ```
 
 **Available models:**
-- `claude-3-5-sonnet` - Claude 3.5 Sonnet
-- `claude-3-haiku` - Fast, efficient
+- `claude-sonnet-4-5-20250929` - Claude Sonnet 4.5
+- `claude-haiku-4-5-20251001` - Fast, efficient
 
 ## Parameters
 

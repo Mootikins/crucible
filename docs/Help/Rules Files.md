@@ -86,4 +86,4 @@ rules_files = ["AGENTS.md", "CLAUDE.md", ".rules", ".cursorrules"]
 ## See Also
 
 - [[Configuration]] - Full config reference
-- [[Internal Agents]] - How agents use rules files
+- [[Help/Extending/Internal Agent]] - How agents use rules files
