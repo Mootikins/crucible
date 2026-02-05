@@ -108,13 +108,23 @@ impl ProjectManager {
     }
 
     pub fn touch(&self, path: &Path) {
-        if let Ok(canonical) = path.canonicalize() {
+        let should_persist = if let Ok(canonical) = path.canonicalize() {
             if let Some(mut entry) = self.projects.get_mut(&canonical) {
                 entry.touch();
                 debug!(path = %canonical.display(), "Project touched");
-                if let Err(e) = self.persist() {
-                    warn!("Failed to persist after touch: {}", e);
-                }
+                true
+            } else {
+                false
+            }
+            // `entry` guard is dropped here, releasing the shard lock
+        } else {
+            false
+        };
+
+        // Now safe to call persist() - no DashMap locks held
+        if should_persist {
+            if let Err(e) = self.persist() {
+                warn!("Failed to persist after touch: {}", e);
             }
         }
     }
