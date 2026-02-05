@@ -153,7 +153,9 @@ impl SessionManager {
             .collect()
     }
 
-    /// List sessions filtered by criteria.
+    /// List sessions filtered by criteria (in-memory only).
+    ///
+    /// For listing that includes persisted sessions, use `list_sessions_filtered_async`.
     pub fn list_sessions_filtered(
         &self,
         kiln: Option<&PathBuf>,
@@ -172,6 +174,55 @@ impl SessionManager {
             })
             .map(|r| SessionSummary::from(r.value()))
             .collect()
+    }
+
+    /// List sessions filtered by criteria, including persisted sessions from storage.
+    ///
+    /// This merges in-memory sessions with persisted sessions from storage.
+    /// In-memory sessions take precedence over storage (they have the latest state).
+    pub async fn list_sessions_filtered_async(
+        &self,
+        kiln: Option<&PathBuf>,
+        workspace: Option<&PathBuf>,
+        session_type: Option<SessionType>,
+        state: Option<SessionState>,
+    ) -> Vec<SessionSummary> {
+        use std::collections::HashSet;
+
+        let mut results = Vec::new();
+        let mut seen_ids: HashSet<String> = HashSet::new();
+
+        // First, collect in-memory sessions (they have the latest state)
+        for entry in self.sessions.iter() {
+            let s = entry.value();
+            if kiln.is_none_or(|k| &s.kiln == k)
+                && workspace.is_none_or(|w| &s.workspace == w)
+                && session_type.is_none_or(|t| s.session_type == t)
+                && state.is_none_or(|st| s.state == st)
+            {
+                seen_ids.insert(s.id.clone());
+                results.push(SessionSummary::from(s));
+            }
+        }
+
+        // Then, load persisted sessions from storage (if kiln is specified)
+        if let Some(kiln_path) = kiln {
+            if let Ok(persisted) = self.storage.list(kiln_path).await {
+                for summary in persisted {
+                    if seen_ids.contains(&summary.id) {
+                        continue;
+                    }
+                    if workspace.is_none_or(|w| &summary.workspace == w)
+                        && session_type.is_none_or(|t| summary.session_type == t)
+                        && state.is_none_or(|st| summary.state == st)
+                    {
+                        results.push(summary);
+                    }
+                }
+            }
+        }
+
+        results
     }
 
     /// Pause a session and persist the state change.
@@ -682,5 +733,73 @@ mod tests {
         manager.end_session(&session_id).await.unwrap();
         let loaded = storage.load(&session_id, tmp.path()).await.unwrap();
         assert_eq!(loaded.state, SessionState::Ended);
+    }
+
+    #[tokio::test]
+    async fn test_list_sessions_includes_persisted_sessions() {
+        let tmp = TempDir::new().unwrap();
+        let storage = Arc::new(FileSessionStorage::new());
+
+        let manager1 = SessionManager::with_storage(storage.clone());
+        let session = manager1
+            .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![])
+            .await
+            .unwrap();
+        let session_id = session.id.clone();
+
+        manager1.pause_session(&session_id).await.unwrap();
+        drop(manager1);
+
+        let manager2 = SessionManager::with_storage(storage);
+        let sessions = manager2
+            .list_sessions_filtered_async(Some(&tmp.path().to_path_buf()), None, None, None)
+            .await;
+        
+        assert_eq!(sessions.len(), 1, "Persisted session should be visible after daemon restart");
+        assert_eq!(sessions[0].id, session_id);
+    }
+
+    #[tokio::test]
+    async fn test_list_sessions_storage_includes_all_states() {
+        let tmp = TempDir::new().unwrap();
+        let storage = Arc::new(FileSessionStorage::new());
+
+        let manager1 = SessionManager::with_storage(storage.clone());
+        
+        let _active_session = manager1
+            .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![])
+            .await
+            .unwrap();
+        
+        let paused_session = manager1
+            .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![])
+            .await
+            .unwrap();
+        manager1.pause_session(&paused_session.id).await.unwrap();
+        
+        let _ended_session = manager1
+            .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![])
+            .await
+            .unwrap();
+        manager1.end_session(&_ended_session.id).await.unwrap();
+
+        drop(manager1);
+        let manager2 = SessionManager::with_storage(storage);
+
+        let sessions = manager2
+            .list_sessions_filtered_async(Some(&tmp.path().to_path_buf()), None, None, None)
+            .await;
+        assert_eq!(sessions.len(), 3, "All persisted sessions should be visible");
+        
+        let paused = manager2
+            .list_sessions_filtered_async(
+                Some(&tmp.path().to_path_buf()), 
+                None, 
+                None, 
+                Some(SessionState::Paused)
+            )
+            .await;
+        assert_eq!(paused.len(), 1);
+        assert_eq!(paused[0].id, paused_session.id);
     }
 }
