@@ -1,1 +1,1 @@
-export { DockLayout, ChatPanel, PreviewPanel, EditorPanel, CanvasPanel, GraphPanel } from './DockLayout';
+export { DockLayout, ChatPanel, PreviewPanel, CanvasPanel, GraphPanel } from './DockLayout';
