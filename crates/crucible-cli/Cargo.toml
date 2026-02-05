@@ -23,7 +23,7 @@ bin-dir = "crucible-v{ version }-{ target }/{ bin }{ binary-ext }"
 pkg-fmt = "tgz"
 
 [features]
-default = ["storage-surrealdb", "fastembed"]
+default = ["storage-surrealdb", "fastembed", "web"]
 
 # Web UI integration
 web = ["dep:crucible-web"]
