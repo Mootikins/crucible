@@ -47,7 +47,7 @@ Crucible enhances your files without changing them:
 | Portable markdown | Local database |
 | Always accessible | Rebuilt anytime |
 
-The database (SurrealDB) is a cache. Delete it and Crucible rebuilds it from your files. Your notes are never modified unless you ask.
+The database (SQLite by default) is a cache. Delete it and Crucible rebuilds it from your files. Your notes are never modified unless you ask.
 
 ## The Markdown Contract
 

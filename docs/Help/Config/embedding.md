@@ -130,9 +130,9 @@ cru process --force
 
 ## Storage
 
-Embeddings are stored in the SurrealDB database at:
+Embeddings are stored in the local database (SQLite by default) at:
 ```
-<kiln_path>/.crucible/kiln.db/
+<kiln_path>/.crucible/crucible-sqlite.db
 ```
 
 Changing embedding provider requires reprocessing with `--force`.
