@@ -6,11 +6,8 @@
 use std::path::{Path, PathBuf};
 use tracing::debug;
 
-/// Get the default socket path for the daemon
-///
-/// Delegates to `crucible_daemon::socket_path()` which is the canonical source.
 pub fn default_socket_path() -> PathBuf {
-    crucible_daemon::socket_path()
+    crucible_protocol::socket_path()
 }
 
 /// Check if daemon is running (socket exists and accepts connections)

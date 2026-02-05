@@ -13,12 +13,16 @@
   "dependencies": {
     "@huggingface/transformers": "^3.8.1",
     "dockview-core": "1.8.5",
+    "dompurify": "^3.3.1",
+    "marked": "^17.0.1",
     "solid-dockview": "^1.0.1",
     "solid-js": "^1.9.3"
   },
   "devDependencies": {
     "@solidjs/testing-library": "^0.8.10",
+    "@tailwindcss/typography": "^0.5.19",
     "@testing-library/jest-dom": "^6.6.3",
+    "@types/dompurify": "^3.2.0",
     "autoprefixer": "^10.4.20",
     "jsdom": "^25.0.1",
     "postcss": "^8.4.49",

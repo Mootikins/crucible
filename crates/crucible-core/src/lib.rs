@@ -21,6 +21,7 @@ pub mod merkle;
 pub mod note;
 pub mod parser;
 pub mod processing;
+pub mod project;
 pub mod prompts;
 pub mod properties;
 pub mod serde_md;
@@ -206,6 +207,9 @@ pub use interaction_registry::InteractionRegistry;
 
 // Re-export session types (daemon session management)
 pub use session::{Session, SessionState, SessionSummary, SessionType};
+
+// Re-export project types (workspace registration)
+pub use project::Project;
 
 pub use background::{generate_job_id, JobError, JobId, JobInfo, JobKind, JobResult, JobStatus};
 

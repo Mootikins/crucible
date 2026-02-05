@@ -380,6 +380,11 @@ async fn main() -> Result<()> {
             commands::auth::execute(command).await?;
         }
 
+        #[cfg(feature = "web")]
+        Some(Commands::Web(cmd)) => {
+            commands::web::handle(cmd).await?;
+        }
+
         None => {
             commands::chat::execute(
                 config,

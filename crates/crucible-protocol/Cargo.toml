@@ -1,0 +1,14 @@
+[package]
+name = "crucible-protocol"
+version.workspace = true
+edition.workspace = true
+description = "Shared protocol types for Crucible daemon communication"
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+dirs = { workspace = true }
+crucible-core = { path = "../crucible-core" }
+
+[dev-dependencies]
+tempfile = { workspace = true }
