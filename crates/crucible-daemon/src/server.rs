@@ -627,7 +627,7 @@ async fn handle_legacy_request(
         "note.list" => handle_note_list(req, kiln_manager).await,
         "process_file" => handle_process_file(req, kiln_manager).await,
         "process_batch" => handle_process_batch(req, kiln_manager).await,
-        "session.create" => handle_session_create(req, session_manager).await,
+        "session.create" => handle_session_create(req, session_manager, project_manager).await,
         "session.list" => handle_session_list(req, session_manager).await,
         "session.get" => handle_session_get(req, session_manager).await,
         "session.pause" => handle_session_pause(req, session_manager).await,
@@ -977,8 +977,11 @@ async fn handle_process_batch(req: Request, km: &Arc<KilnManager>) -> Response {
 
 use crucible_core::session::{SessionState, SessionType};
 
-async fn handle_session_create(req: Request, sm: &Arc<SessionManager>) -> Response {
-    // Parse session type (optional, defaults to "chat")
+async fn handle_session_create(
+    req: Request,
+    sm: &Arc<SessionManager>,
+    pm: &Arc<ProjectManager>,
+) -> Response {
     let session_type_str = optional_str_param!(req, "type").unwrap_or("chat");
     let session_type = match session_type_str {
         "chat" => SessionType::Chat,
@@ -993,15 +996,12 @@ async fn handle_session_create(req: Request, sm: &Arc<SessionManager>) -> Respon
         }
     };
 
-    // Parse kiln path (optional, defaults to crucible home)
     let kiln = optional_str_param!(req, "kiln")
         .map(PathBuf::from)
         .unwrap_or_else(crucible_config::crucible_home);
 
-    // Parse optional workspace
     let workspace = optional_str_param!(req, "workspace").map(PathBuf::from);
 
-    // Parse optional connected kilns
     let connected_kilns: Vec<PathBuf> = req
         .params
         .get("connect_kilns")
@@ -1012,6 +1012,11 @@ async fn handle_session_create(req: Request, sm: &Arc<SessionManager>) -> Respon
                 .collect()
         })
         .unwrap_or_default();
+
+    let project_path = workspace.as_ref().unwrap_or(&kiln);
+    if let Err(e) = pm.register_if_missing(project_path) {
+        tracing::warn!(path = %project_path.display(), error = %e, "Failed to auto-register project");
+    }
 
     match sm
         .create_session(session_type, kiln, workspace, connected_kilns)

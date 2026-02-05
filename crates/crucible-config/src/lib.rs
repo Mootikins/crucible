@@ -49,7 +49,7 @@ pub use components::*;
 pub use config::{
     crucible_home, is_crucible_home, CacheConfig, CacheType, CliAppConfig, Config, ConfigError,
     ConfigValidationError, DatabaseConfig, DatabaseType, EffectiveLlmConfig, LoggingConfig,
-    ProcessingConfig, ServerConfig, WebConfig,
+    ProcessingConfig, ScmConfig, ServerConfig, WebConfig,
 };
 #[cfg(feature = "keyring")]
 pub use credentials::KeyringStore;
