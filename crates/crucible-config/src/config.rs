@@ -206,6 +206,10 @@ pub struct Config {
     /// Server configuration.
     pub server: Option<ServerConfig>,
 
+    /// Web UI server configuration.
+    #[serde(default)]
+    pub web: Option<WebConfig>,
+
     /// Logging configuration.
     pub logging: Option<LoggingConfig>,
 
@@ -248,6 +252,7 @@ impl Default for Config {
             chat: Some(ChatConfig::default()),
             llm: None,
             server: None,
+            web: None,
             logging: None,
             discovery: None,
             gateway: None,
@@ -714,6 +719,10 @@ pub struct CliAppConfig {
     #[serde(default)]
     pub plugins: HashMap<String, serde_json::Value>,
 
+    /// Web UI server configuration
+    #[serde(default)]
+    pub web: Option<WebConfig>,
+
     /// Value source tracking for configuration provenance
     ///
     /// Tracks where each configuration value came from (file, environment, CLI, default).
@@ -743,6 +752,7 @@ impl Default for CliAppConfig {
             storage: None,
             mcp: None,
             plugins: HashMap::new(),
+            web: None,
             source_map: None,
         }
     }
@@ -1830,6 +1840,45 @@ impl Default for ServerConfig {
             key_file: None,
             max_body_size: Some(10 * 1024 * 1024), // 10MB
             timeout_seconds: Some(30),
+        }
+    }
+}
+
+/// Web UI server configuration.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WebConfig {
+    /// Enable the web UI server.
+    #[serde(default)]
+    pub enabled: bool,
+
+    /// Web server port.
+    #[serde(default = "default_web_port")]
+    pub port: u16,
+
+    /// Web server host address.
+    #[serde(default = "default_web_host")]
+    pub host: String,
+
+    /// Path to static web assets directory (optional, uses embedded assets if not set).
+    #[serde(default)]
+    pub static_dir: Option<String>,
+}
+
+fn default_web_port() -> u16 {
+    3000
+}
+
+fn default_web_host() -> String {
+    "127.0.0.1".to_string()
+}
+
+impl Default for WebConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            port: default_web_port(),
+            host: default_web_host(),
+            static_dir: None,
         }
     }
 }

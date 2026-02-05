@@ -88,7 +88,7 @@ impl Drop for DaemonClient {
 impl DaemonClient {
     /// Connect to the daemon at the default socket path (simple mode)
     pub async fn connect() -> Result<Self> {
-        let path = crucible_daemon::socket_path();
+        let path = crucible_protocol::socket_path();
         Self::connect_to(&path).await
     }
 
@@ -242,7 +242,7 @@ impl DaemonClient {
     /// }
     /// ```
     pub async fn connect_with_events() -> Result<(Self, mpsc::UnboundedReceiver<SessionEvent>)> {
-        let path = crucible_daemon::socket_path();
+        let path = crucible_protocol::socket_path();
         Self::connect_to_with_events(&path).await
     }
 
@@ -1110,6 +1110,47 @@ impl DaemonClient {
             .map(|v| v as u32);
 
         Ok(max_tokens)
+    }
+
+    pub async fn project_register(&self, path: &Path) -> Result<crucible_core::Project> {
+        let result = self
+            .call_with_retry(
+                "project.register",
+                serde_json::json!({ "path": path.to_string_lossy() }),
+            )
+            .await?;
+        Ok(serde_json::from_value(result)?)
+    }
+
+    pub async fn project_unregister(&self, path: &Path) -> Result<()> {
+        self.call_with_retry(
+            "project.unregister",
+            serde_json::json!({ "path": path.to_string_lossy() }),
+        )
+        .await?;
+        Ok(())
+    }
+
+    pub async fn project_list(&self) -> Result<Vec<crucible_core::Project>> {
+        let result = self
+            .call_with_retry("project.list", serde_json::json!({}))
+            .await?;
+        Ok(serde_json::from_value(result)?)
+    }
+
+    pub async fn project_get(&self, path: &Path) -> Result<Option<crucible_core::Project>> {
+        let result = self
+            .call_with_retry(
+                "project.get",
+                serde_json::json!({ "path": path.to_string_lossy() }),
+            )
+            .await?;
+
+        if result.is_null() {
+            Ok(None)
+        } else {
+            Ok(Some(serde_json::from_value(result)?))
+        }
     }
 }
 
