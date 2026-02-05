@@ -422,9 +422,15 @@ HTTP Gateway (crucible-web wired to daemon)
 ### Foundation UI (P1 — ships with HTTP gateway)
 
 - [-] **Web Chat UI** `P1` — SolidJS frontend: streaming chat, markdown rendering, tool output cards, permission modals; Rust owns SSE streaming + message framing, SolidJS owns rendering, Lua can extend tool card definitions · **Hybrid** · `crucible-web`
+- [-] **Flexible Panel System** `P1` — 4-edge dockable layout (left, right, bottom, center) with collapsible panels; drag-and-drop positioning; layout persistence to localStorage · **SolidJS** · `crucible-web`
+- [-] **Breadcrumb Navigation** `P1` — Project dropdown with selection, Session dropdown with search, New Session button; dark theme header bar · **SolidJS** · `crucible-web`
+- [-] **File Tree** `P1` — Ark UI Collapsible-based tree with Workspace files + Kiln notes sections; extension-based file icons; loading/error states · **SolidJS** · `crucible-web`
+- [-] **CodeMirror 6 Editor** `P1` — Multi-file tabs with dirty indicator; language detection (markdown, rust, typescript, javascript); one-dark theme; load/save via API · **SolidJS** · `crucible-web`
+- [-] **Model Picker** `P1` — Cursor-style dropdown below textarea; shows available models; switch model during conversation · **SolidJS** · `crucible-web`
+- [-] **Session Auto-Naming** `P1` — Auto-generates title from first user message; never overwrites existing titles · **SolidJS** · `crucible-web`
 - [ ] **Agent Inbox / Overview** `P1` — Dashboard of active sessions, pending permissions, recent completions; the landing page; composes existing `session.list` + event subscription RPCs · **Lua extension** · `crucible-web`
 - [ ] **Permission Approval UI** `P1` — Approve/deny from browser with diff preview; Rust owns the approval RPC (security-critical), Lua owns diff formatting + approval policy hooks · **Hybrid** · `crucible-web`
-- [ ] **Session Management** `P1` — List, switch, resume, end sessions; pure HTTP→RPC proxy, already exists as daemon methods · **Core Rust** · `crucible-web`
+- [-] **Session Management** `P1` — List, switch, resume, end sessions; pure HTTP→RPC proxy, already exists as daemon methods · **Core Rust** · `crucible-web`
 - [ ] **PWA Support** `P1` — Manifest + service worker; installable from browser, mobile access without app store · **Core Rust** · `crucible-web`
 - [ ] **SolidJS Oil Renderer** `P1` — `<OilNode>` component tree for browser; foundational rendering like Neovim's terminal grid — everything else depends on it · **Core Rust** (frontend) · `crucible-web`, `crucible-oil`
 
