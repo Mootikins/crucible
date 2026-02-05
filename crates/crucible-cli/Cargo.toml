@@ -25,6 +25,9 @@ pkg-fmt = "tgz"
 [features]
 default = ["storage-surrealdb", "fastembed"]
 
+# Web UI integration
+web = ["dep:crucible-web"]
+
 # Storage backend selection (mutually exclusive in practice)
 storage-surrealdb = ["dep:crucible-surrealdb"]
 storage-sqlite = ["dep:crucible-sqlite"]
@@ -61,6 +64,7 @@ crucible-skills = { path = "../crucible-skills" }
 crucible-lance = { path = "../crucible-lance" }
 crucible-observe = { path = "../crucible-observe" }
 crucible-oil = { path = "../crucible-oil" }
+crucible-web = { path = "../crucible-web", optional = true }
 
 # CLI framework
 clap = { workspace = true, features = ["derive", "env", "string"] }

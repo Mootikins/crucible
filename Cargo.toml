@@ -19,6 +19,7 @@ members = [
     "crates/crucible-web",
     "crates/crucible-daemon",
     "crates/crucible-rpc",
+    "crates/crucible-protocol",
     "crates/crucible-skills",
     "crates/crucible-rig",
     "crates/crucible-query",

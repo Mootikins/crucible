@@ -14,14 +14,40 @@ export interface ToolCallSummary {
   title: string;
 }
 
-/** Chat context value exposed to components */
-export interface ChatContextValue {
-  messages: () => Message[];
-  isLoading: () => boolean;
-  pendingInteraction: () => InteractionRequest | null;
-  sendMessage: (content: string) => Promise<void>;
-  respondToInteraction: (response: InteractionResponse) => void;
-  clearMessages: () => void;
+// =============================================================================
+// Session Types (matching Rust SessionSummary)
+// =============================================================================
+
+export type SessionState = 'active' | 'paused' | 'compacting' | 'ended';
+export type SessionType = 'chat' | 'agent' | 'workflow';
+
+export interface Session {
+  id: string;
+  session_type: SessionType;
+  kiln: string;
+  workspace: string;
+  state: SessionState;
+  title: string | null;
+  agent_model: string | null;
+  started_at: string; // ISO datetime
+  event_count: number;
+}
+
+export interface CreateSessionParams {
+  session_type?: SessionType;
+  kiln: string;
+  workspace?: string;
+}
+
+// =============================================================================
+// Project Types
+// =============================================================================
+
+export interface Project {
+  path: string;
+  name: string;
+  kilns: string[];
+  last_accessed: string; // ISO datetime
 }
 
 // =============================================================================
@@ -77,6 +103,13 @@ export interface InteractionRequestedEvent {
   [key: string]: unknown;
 }
 
+/** A session-level event (state change, etc.) */
+export interface SessionEventData {
+  type: 'session_event';
+  event_type: string;
+  data: unknown;
+}
+
 /** Union of all SSE event types */
 export type ChatEvent =
   | TokenEvent
@@ -85,7 +118,8 @@ export type ChatEvent =
   | ThinkingEvent
   | MessageCompleteEvent
   | ErrorEvent
-  | InteractionRequestedEvent;
+  | InteractionRequestedEvent
+  | SessionEventData;
 
 /** SSE event type discriminator */
 export type ChatEventType = ChatEvent['type'];
@@ -95,7 +129,7 @@ export type ChatEventType = ChatEvent['type'];
 // =============================================================================
 
 export interface AskRequest {
-  type: 'ask';
+  kind: 'ask';
   id: string;
   question: string;
   choices?: string[];
@@ -110,7 +144,7 @@ export interface PopupEntry {
 }
 
 export interface PopupRequest {
-  type: 'popup';
+  kind: 'popup';
   id: string;
   title: string;
   entries: PopupEntry[];
@@ -120,7 +154,7 @@ export interface PopupRequest {
 export type PermActionType = 'bash' | 'read' | 'write' | 'tool';
 
 export interface PermRequest {
-  type: 'permission';
+  kind: 'permission';
   id: string;
   action_type: PermActionType;
   tokens: string[];
@@ -149,3 +183,36 @@ export interface PermResponse {
 }
 
 export type InteractionResponse = AskResponse | PopupResponse | PermResponse;
+
+// =============================================================================
+// Session Context Types
+// =============================================================================
+
+export interface SessionContextValue {
+  currentSession: () => Session | null;
+  sessions: () => Session[];
+  isLoading: () => boolean;
+  error: () => string | null;
+  availableModels: () => string[];
+  createSession: (params: CreateSessionParams) => Promise<Session>;
+  selectSession: (id: string) => Promise<void>;
+  refreshSessions: (filters?: { kiln?: string; workspace?: string }) => Promise<void>;
+  pauseSession: () => Promise<void>;
+  resumeSession: () => Promise<void>;
+  endSession: () => Promise<void>;
+  cancelCurrentOperation: () => Promise<boolean>;
+  switchModel: (modelId: string) => Promise<void>;
+  refreshModels: () => Promise<void>;
+}
+
+export interface ProjectContextValue {
+  currentProject: () => Project | null;
+  projects: () => Project[];
+  isLoading: () => boolean;
+  error: () => string | null;
+  registerProject: (path: string) => Promise<Project>;
+  unregisterProject: (path: string) => Promise<void>;
+  selectProject: (path: string) => Promise<void>;
+  refreshProjects: () => Promise<void>;
+  clearProject: () => void;
+}

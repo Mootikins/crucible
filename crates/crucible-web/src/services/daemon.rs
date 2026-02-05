@@ -59,7 +59,10 @@ pub async fn init_daemon() -> Result<AppState> {
     })
 }
 
-fn spawn_event_router(mut event_rx: mpsc::UnboundedReceiver<SessionEvent>, broker: Arc<EventBroker>) {
+fn spawn_event_router(
+    mut event_rx: mpsc::UnboundedReceiver<SessionEvent>,
+    broker: Arc<EventBroker>,
+) {
     tokio::spawn(async move {
         while let Some(event) = event_rx.recv().await {
             broker.dispatch(event).await;

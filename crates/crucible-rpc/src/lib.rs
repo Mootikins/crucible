@@ -18,5 +18,4 @@ pub use agent::DaemonAgentHandle;
 pub use client::{DaemonCapabilities, DaemonClient, SessionEvent, VersionCheck};
 pub use storage::{DaemonNoteStore, DaemonStorageClient};
 
-// Re-export canonical socket path
-pub use crucible_daemon::socket_path;
+pub use crucible_protocol::socket_path;

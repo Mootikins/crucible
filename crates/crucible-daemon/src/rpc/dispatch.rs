@@ -54,6 +54,10 @@ pub const METHODS: &[&str] = &[
     "session.test_interaction",
     "plugin.reload",
     "plugin.list",
+    "project.register",
+    "project.unregister",
+    "project.list",
+    "project.get",
 ];
 
 fn to_response(id: Option<RequestId>, result: RpcResult<serde_json::Value>) -> Response {
@@ -237,7 +241,7 @@ mod tests {
 
     #[test]
     fn methods_count() {
-        assert_eq!(METHODS.len(), 43, "Update when adding RPC methods");
+        assert_eq!(METHODS.len(), 47, "Update when adding RPC methods");
     }
 
     #[tokio::test]

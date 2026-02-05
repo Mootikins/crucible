@@ -1,17 +1,32 @@
 import { render, screen, waitFor } from '@solidjs/testing-library';
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { createSignal } from 'solid-js';
 import { ChatProvider, useChat } from './ChatContext';
 import * as api from '@/lib/api';
-import type { ChatEvent } from '@/lib/types';
+import type { Session } from '@/lib/types';
 
 vi.mock('@/lib/api', () => ({
   sendChatMessage: vi.fn(),
+  subscribeToEvents: vi.fn(() => () => {}),
+  respondToInteraction: vi.fn(),
   generateMessageId: () => `msg_${Date.now()}_test`,
 }));
 
 const mockSendChatMessage = api.sendChatMessage as ReturnType<typeof vi.fn>;
+const mockSubscribeToEvents = api.subscribeToEvents as ReturnType<typeof vi.fn>;
 
-// Test component that uses the context
+const mockSession: Session = {
+  id: 'test-session-1',
+  session_type: 'chat',
+  kiln: '/tmp/test-kiln',
+  workspace: '/tmp/test-workspace',
+  state: 'active',
+  title: 'Test Session',
+  agent_model: 'test-model',
+  started_at: new Date().toISOString(),
+  event_count: 0,
+};
+
 function TestConsumer() {
   const { messages, isLoading, sendMessage } = useChat();
 
@@ -31,12 +46,23 @@ function TestConsumer() {
   );
 }
 
+function TestWrapper(props: { children: any; session?: Session | null }) {
+  // Use explicit check - null means "no session", undefined means "use default"
+  const [session] = createSignal(props.session !== undefined ? props.session : mockSession);
+  return <ChatProvider session={session}>{props.children}</ChatProvider>;
+}
+
 describe('ChatContext', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockSubscribeToEvents.mockReturnValue(() => {});
+  });
+
   it('starts with empty messages', () => {
     render(() => (
-      <ChatProvider>
+      <TestWrapper>
         <TestConsumer />
-      </ChatProvider>
+      </TestWrapper>
     ));
 
     expect(screen.getByTestId('count').textContent).toBe('0');
@@ -44,16 +70,12 @@ describe('ChatContext', () => {
   });
 
   it('adds user message when sending', async () => {
-    mockSendChatMessage.mockImplementation(
-      async (_msg: string, onEvent: (event: ChatEvent) => void) => {
-        onEvent({ type: 'message_complete', id: 'msg_1', content: 'ok', tool_calls: [] });
-      }
-    );
+    mockSendChatMessage.mockResolvedValue('msg_server_1');
 
     render(() => (
-      <ChatProvider>
+      <TestWrapper>
         <TestConsumer />
-      </ChatProvider>
+      </TestWrapper>
     ));
 
     const sendButton = screen.getByText('Send');
@@ -68,52 +90,37 @@ describe('ChatContext', () => {
     expect(items[0].textContent).toBe('test message');
   });
 
-  it('streams assistant response', async () => {
-    mockSendChatMessage.mockImplementation(
-      async (_msg: string, onEvent: (event: ChatEvent) => void) => {
-        onEvent({ type: 'token', content: 'This is a ' });
-        onEvent({ type: 'token', content: 'test response' });
-        onEvent({
-          type: 'message_complete',
-          id: 'msg_1',
-          content: 'This is a test response',
-          tool_calls: [],
-        });
-      }
-    );
+  it('does not send without session', async () => {
+    mockSendChatMessage.mockResolvedValue('msg_server_1');
 
     render(() => (
-      <ChatProvider>
+      <TestWrapper session={null}>
         <TestConsumer />
-      </ChatProvider>
+      </TestWrapper>
     ));
 
-    screen.getByText('Send').click();
+    const sendButton = screen.getByText('Send');
+    sendButton.click();
 
-    await waitFor(() => {
-      const items = screen.getAllByRole('listitem');
-      expect(items[1].getAttribute('data-role')).toBe('assistant');
-      expect(items[1].textContent).toContain('test response');
-    });
+    await new Promise((r) => setTimeout(r, 50));
+
+    expect(screen.getByTestId('count').textContent).toBe('0');
+    expect(mockSendChatMessage).not.toHaveBeenCalled();
   });
 
   it('shows loading state while sending', async () => {
-    let resolveMessage: () => void;
-    const messagePromise = new Promise<void>((resolve) => {
-      resolveMessage = resolve;
+    let eventCallback: ((event: any) => void) | null = null;
+    
+    mockSubscribeToEvents.mockImplementation((_sessionId: string, callback: (event: any) => void) => {
+      eventCallback = callback;
+      return () => { eventCallback = null; };
     });
-
-    mockSendChatMessage.mockImplementation(
-      async (_msg: string, onEvent: (event: ChatEvent) => void) => {
-        await messagePromise;
-        onEvent({ type: 'message_complete', id: 'msg_1', content: 'done', tool_calls: [] });
-      }
-    );
+    mockSendChatMessage.mockResolvedValue('msg_server_1');
 
     render(() => (
-      <ChatProvider>
+      <TestWrapper>
         <TestConsumer />
-      </ChatProvider>
+      </TestWrapper>
     ));
 
     screen.getByText('Send').click();
@@ -122,7 +129,12 @@ describe('ChatContext', () => {
       expect(screen.getByTestId('loading').textContent).toBe('loading');
     });
 
-    resolveMessage!();
+    eventCallback!({
+      type: 'message_complete',
+      id: 'msg_server_1',
+      content: 'Response from assistant',
+      tool_calls: [],
+    });
 
     await waitFor(() => {
       expect(screen.getByTestId('loading').textContent).toBe('idle');

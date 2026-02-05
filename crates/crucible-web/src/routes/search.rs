@@ -16,9 +16,7 @@ pub fn search_routes() -> Router<AppState> {
         .route("/api/search/vectors", post(search_vectors))
 }
 
-async fn list_kilns(
-    State(state): State<AppState>,
-) -> Result<Json<serde_json::Value>, WebError> {
+async fn list_kilns(State(state): State<AppState>) -> Result<Json<serde_json::Value>, WebError> {
     let kilns = state
         .daemon
         .kiln_list()
