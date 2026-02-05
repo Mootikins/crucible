@@ -1,4 +1,4 @@
-import { Component, createSignal, For, Show, createMemo } from 'solid-js';
+import { Component, createSignal, For, Show, createEffect, onCleanup } from 'solid-js';
 import { useProject } from '@/contexts/ProjectContext';
 import { useSession } from '@/contexts/SessionContext';
 
@@ -53,53 +53,50 @@ function Dropdown<T>(props: DropdownProps<T>) {
   let dropdownRef: HTMLDivElement | undefined;
   let inputRef: HTMLInputElement | undefined;
 
-  const filteredItems = createMemo(() => {
+  const filteredItems = () => {
     const query = searchQuery().toLowerCase();
     if (!query) return props.items;
     return props.items.filter(item => 
       props.getLabel(item).toLowerCase().includes(query)
     );
-  });
-
-  const handleClickOutside = (e: MouseEvent) => {
-    if (dropdownRef && !dropdownRef.contains(e.target as Node)) {
-      setIsOpen(false);
-      setSearchQuery('');
-    }
   };
 
-  const handleOpen = () => {
-    setIsOpen(!isOpen());
-    if (!isOpen()) {
+  const handleOpen = (e: MouseEvent) => {
+    e.stopPropagation();
+    const willOpen = !isOpen();
+    setIsOpen(willOpen);
+    if (!willOpen) {
       setSearchQuery('');
     } else if (props.searchable) {
       setTimeout(() => inputRef?.focus(), 0);
     }
   };
 
-  const handleSelect = (item: T) => {
+  const handleSelect = (item: T, e: MouseEvent) => {
+    e.stopPropagation();
     props.onSelect(item);
     setIsOpen(false);
     setSearchQuery('');
   };
 
-  const setupClickOutside = () => {
-    if (isOpen()) {
-      document.addEventListener('click', handleClickOutside);
-    } else {
-      document.removeEventListener('click', handleClickOutside);
-    }
-  };
-
-  createMemo(() => {
-    isOpen();
-    setupClickOutside();
+  createEffect(() => {
+    if (!isOpen()) return;
+    
+    const handleClickOutside = (e: MouseEvent) => {
+      if (dropdownRef && !dropdownRef.contains(e.target as Node)) {
+        setIsOpen(false);
+        setSearchQuery('');
+      }
+    };
+    
+    document.addEventListener('mousedown', handleClickOutside);
+    onCleanup(() => document.removeEventListener('mousedown', handleClickOutside));
   });
 
   return (
     <div ref={dropdownRef} class="relative">
       <button
-        onClick={handleOpen}
+        onClick={(e) => handleOpen(e)}
         class="flex items-center gap-1.5 px-2 py-1 rounded hover:bg-neutral-700/50 transition-colors text-sm font-medium text-neutral-200"
       >
         <props.icon class="w-4 h-4 text-neutral-400" />
@@ -136,7 +133,7 @@ function Dropdown<T>(props: DropdownProps<T>) {
             <For each={filteredItems()}>
               {(item) => (
                 <button
-                  onClick={() => handleSelect(item)}
+                  onClick={(e) => handleSelect(item, e)}
                   class={`w-full px-3 py-2 text-left text-sm hover:bg-neutral-700/50 transition-colors flex items-center gap-2 ${
                     props.selected && props.getId(props.selected) === props.getId(item)
                       ? 'bg-neutral-700/30 text-white'
