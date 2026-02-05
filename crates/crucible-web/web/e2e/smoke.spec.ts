@@ -76,7 +76,7 @@ test.describe('Smoke Tests - Critical User Flows', () => {
 
     await expect(page.locator('text=Projects')).toBeVisible();
 
-    const projectButton = page.locator('text=/home/moot/crucible').first();
+    const projectButton = page.getByText('/home/moot/crucible').first();
     if (await projectButton.isVisible()) {
       await projectButton.click();
       await page.waitForTimeout(500);
