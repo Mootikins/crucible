@@ -6,6 +6,7 @@ import type {
   FileEntry,
   NoteEntry,
   NoteContent,
+  ProviderInfo,
 } from './types';
 
 // =============================================================================
@@ -280,6 +281,17 @@ export async function setSessionTitle(sessionId: string, title: string): Promise
   if (!res.ok) {
     throw new Error(`Failed to set session title: HTTP ${res.status}`);
   }
+}
+
+/** List available LLM providers and their models. */
+export async function listProviders(): Promise<ProviderInfo[]> {
+  const res = await fetch('/api/providers');
+  if (!res.ok) {
+    throw new Error(`Failed to list providers: HTTP ${res.status}`);
+  }
+
+  const data = (await res.json()) as { providers: ProviderInfo[] };
+  return data.providers;
 }
 
 // =============================================================================

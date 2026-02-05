@@ -89,6 +89,7 @@ export const SessionPanel: Component = () => {
       workspace: project.path,
       provider: provider?.provider_type ?? 'ollama',
       model: provider?.default_model ?? 'llama3.2',
+      endpoint: provider?.endpoint,
     });
   };
 
