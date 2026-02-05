@@ -52,6 +52,7 @@ pub const METHODS: &[&str] = &[
     "session.set_max_tokens",
     "session.get_max_tokens",
     "session.test_interaction",
+    "session.set_title",
     "plugin.reload",
     "plugin.list",
     "project.register",
@@ -98,6 +99,9 @@ impl RpcDispatcher {
             // Subscription handlers (need client_id)
             "session.subscribe" => to_response(id, self.handle_subscribe(client_id, &req)),
             "session.unsubscribe" => to_response(id, self.handle_unsubscribe(client_id, &req)),
+
+            // Session title handler
+            "session.set_title" => to_response(id, self.handle_set_title(&req).await),
 
             // For other methods, we return METHOD_NOT_FOUND here.
             // In production, server.rs will handle these until we migrate them.
@@ -184,6 +188,33 @@ impl RpcDispatcher {
             "client_id": format!("{:?}", client_id),
         }))
     }
+
+    async fn handle_set_title(&self, req: &Request) -> RpcResult<serde_json::Value> {
+        use crate::rpc::params::parse_params;
+        use serde::Deserialize;
+
+        #[derive(Deserialize)]
+        struct Params {
+            session_id: String,
+            title: String,
+        }
+        let p: Params = parse_params(req)?;
+
+        self.ctx
+            .sessions
+            .set_title(&p.session_id, p.title.clone())
+            .await
+            .map_err(|e| RpcError {
+                code: crate::protocol::INVALID_PARAMS,
+                message: format!("Failed to set title: {}", e),
+                data: None,
+            })?;
+
+        Ok(serde_json::json!({
+            "session_id": p.session_id,
+            "title": p.title,
+        }))
+    }
 }
 
 #[cfg(test)]
@@ -241,7 +272,7 @@ mod tests {
 
     #[test]
     fn methods_count() {
-        assert_eq!(METHODS.len(), 47, "Update when adding RPC methods");
+        assert_eq!(METHODS.len(), 48, "Update when adding RPC methods");
     }
 
     #[tokio::test]
