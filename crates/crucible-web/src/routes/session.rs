@@ -512,3 +512,148 @@ async fn fetch_openai_models() -> Vec<String> {
         Err(_) => Vec::new(),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crucible_config::LlmProvider;
+    use serial_test::serial;
+
+    #[test]
+    fn test_llm_provider_to_str_ollama() {
+        assert_eq!(llm_provider_to_str(&LlmProvider::Ollama), "ollama");
+    }
+
+    #[test]
+    fn test_llm_provider_to_str_openai() {
+        assert_eq!(llm_provider_to_str(&LlmProvider::OpenAI), "openai");
+    }
+
+    #[test]
+    fn test_llm_provider_to_str_anthropic() {
+        assert_eq!(llm_provider_to_str(&LlmProvider::Anthropic), "anthropic");
+    }
+
+    #[test]
+    fn test_format_provider_name_ollama() {
+        assert_eq!(format_provider_name("local", "ollama"), "Ollama (local)");
+        assert_eq!(format_provider_name("remote", "ollama"), "Ollama (remote)");
+    }
+
+    #[test]
+    fn test_format_provider_name_openai_ignores_name() {
+        assert_eq!(format_provider_name("anything", "openai"), "OpenAI");
+        assert_eq!(format_provider_name("custom", "openai"), "OpenAI");
+    }
+
+    #[test]
+    fn test_format_provider_name_anthropic_ignores_name() {
+        assert_eq!(format_provider_name("anything", "anthropic"), "Anthropic");
+    }
+
+    #[test]
+    fn test_format_provider_name_unknown_uses_name() {
+        assert_eq!(format_provider_name("my-custom", "custom"), "my-custom");
+        assert_eq!(format_provider_name("cohere", "cohere"), "cohere");
+    }
+
+    #[test]
+    fn test_default_endpoint_for_ollama() {
+        assert_eq!(default_endpoint_for("ollama"), "http://localhost:11434");
+    }
+
+    #[test]
+    fn test_default_endpoint_for_openai() {
+        assert_eq!(default_endpoint_for("openai"), "https://api.openai.com/v1");
+    }
+
+    #[test]
+    fn test_default_endpoint_for_anthropic() {
+        assert_eq!(default_endpoint_for("anthropic"), "https://api.anthropic.com");
+    }
+
+    #[test]
+    fn test_default_endpoint_for_unknown_is_empty() {
+        assert_eq!(default_endpoint_for("custom"), "");
+        assert_eq!(default_endpoint_for("unknown"), "");
+    }
+
+    #[test]
+    #[serial]
+    fn test_ollama_endpoint_from_env_default() {
+        std::env::remove_var("OLLAMA_HOST");
+        assert_eq!(ollama_endpoint_from_env(), "http://localhost:11434");
+    }
+
+    #[test]
+    #[serial]
+    fn test_ollama_endpoint_from_env_host_port() {
+        std::env::set_var("OLLAMA_HOST", "myhost:11435");
+        assert_eq!(ollama_endpoint_from_env(), "http://myhost:11435");
+        std::env::remove_var("OLLAMA_HOST");
+    }
+
+    #[test]
+    #[serial]
+    fn test_ollama_endpoint_from_env_full_url() {
+        std::env::set_var("OLLAMA_HOST", "http://custom.local:8080");
+        assert_eq!(ollama_endpoint_from_env(), "http://custom.local:8080");
+        std::env::remove_var("OLLAMA_HOST");
+    }
+
+    #[test]
+    #[serial]
+    fn test_ollama_endpoint_from_env_https() {
+        std::env::set_var("OLLAMA_HOST", "https://secure.ollama.io");
+        assert_eq!(ollama_endpoint_from_env(), "https://secure.ollama.io");
+        std::env::remove_var("OLLAMA_HOST");
+    }
+
+    #[test]
+    fn test_anthropic_models_contains_expected() {
+        let models = anthropic_models();
+        assert!(models.contains(&"claude-sonnet-4-20250514".to_string()));
+        assert!(models.contains(&"claude-3-5-sonnet-20241022".to_string()));
+        assert!(models.contains(&"claude-3-opus-20240229".to_string()));
+    }
+
+    #[test]
+    fn test_anthropic_models_not_empty() {
+        assert!(!anthropic_models().is_empty());
+    }
+
+    #[test]
+    fn test_provider_info_serialization() {
+        let info = ProviderInfo {
+            name: "Test".to_string(),
+            provider_type: "ollama".to_string(),
+            available: true,
+            default_model: Some("llama3".to_string()),
+            models: vec!["llama3".to_string(), "mistral".to_string()],
+            endpoint: Some("http://localhost:11434".to_string()),
+        };
+
+        let json = serde_json::to_value(&info).unwrap();
+        assert_eq!(json["name"], "Test");
+        assert_eq!(json["provider_type"], "ollama");
+        assert_eq!(json["available"], true);
+        assert_eq!(json["default_model"], "llama3");
+        assert_eq!(json["models"].as_array().unwrap().len(), 2);
+        assert_eq!(json["endpoint"], "http://localhost:11434");
+    }
+
+    #[test]
+    fn test_provider_info_endpoint_none_skipped() {
+        let info = ProviderInfo {
+            name: "Test".to_string(),
+            provider_type: "ollama".to_string(),
+            available: true,
+            default_model: None,
+            models: vec![],
+            endpoint: None,
+        };
+
+        let json = serde_json::to_value(&info).unwrap();
+        assert!(json.get("endpoint").is_none());
+    }
+}
