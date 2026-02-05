@@ -12,26 +12,13 @@ import { EditorState, Extension } from '@codemirror/state';
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';
 import { oneDark } from '@codemirror/theme-one-dark';
 import { markdown } from '@codemirror/lang-markdown';
-import { javascript } from '@codemirror/lang-javascript';
-import { rust } from '@codemirror/lang-rust';
 import { useEditorSafe } from '@/contexts/EditorContext';
 
 type LanguageSupport = ReturnType<typeof markdown>;
 
 const getLanguageExtension = (path: string): LanguageSupport | null => {
   const ext = path.split('.').pop()?.toLowerCase() ?? '';
-  
-  const langMap: Record<string, () => LanguageSupport> = {
-    md: () => markdown(),
-    ts: () => javascript({ typescript: true }),
-    tsx: () => javascript({ typescript: true, jsx: true }),
-    js: () => javascript(),
-    jsx: () => javascript({ jsx: true }),
-    rs: () => rust(),
-  };
-  
-  const factory = langMap[ext];
-  return factory ? factory() : null;
+  return ext === 'md' ? markdown() : null;
 };
 
 const getFilename = (path: string): string => {
@@ -173,7 +160,7 @@ export const EditorPanel: Component = () => {
             <div class="text-center">
               <div class="text-4xl mb-4">📄</div>
               <div class="text-sm">No files open</div>
-              <div class="text-xs text-neutral-500 mt-1">Click a file in the sidebar to open it</div>
+               <div class="text-xs text-neutral-500 mt-1">Click a note in the sidebar to open it</div>
             </div>
           </div>
         }
