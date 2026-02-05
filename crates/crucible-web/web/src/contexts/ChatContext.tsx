@@ -79,80 +79,96 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
     });
   };
 
-  const handleEvent = (event: ChatEvent) => {
-    switch (event.type) {
-      case 'token':
-        if (currentStreamingMessageId) {
-          appendToMessage(currentStreamingMessageId, event.content);
-        }
-        break;
+   const clearMessages = () => {
+     setMessages([]);
+     setError(null);
+     setPendingInteraction(null);
+     currentStreamingMessageId = null;
+     firstUserMessage = null;
+     hasReceivedFirstResponse = false;
+   };
 
-      case 'tool_call':
-        console.log('[ToolCall]', event.title, event.id, event.arguments);
-        break;
+   const handleEvent = (event: ChatEvent) => {
+     switch (event.type) {
+       case 'token':
+         if (currentStreamingMessageId) {
+           appendToMessage(currentStreamingMessageId, event.content);
+         }
+         break;
 
-      case 'tool_result':
-        console.log('[ToolResult]', event.id, event.result);
-        break;
+       case 'tool_call':
+         console.log('[ToolCall]', event.title, event.id, event.arguments);
+         break;
 
-      case 'thinking':
-        console.log('[Thinking]', event.content);
-        break;
+       case 'tool_result':
+         console.log('[ToolResult]', event.id, event.result);
+         break;
 
-      case 'message_complete':
-        if (currentStreamingMessageId) {
-          updateMessage(currentStreamingMessageId, {
-            id: event.id,
-            content: event.content,
-            toolCalls: event.tool_calls,
-          });
-        }
-        setIsStreaming(false);
-        setIsLoading(false);
-        currentStreamingMessageId = null;
-        
-        if (!hasReceivedFirstResponse && firstUserMessage) {
-          hasReceivedFirstResponse = true;
-          autoGenerateTitle();
-        }
-        break;
+       case 'thinking':
+         console.log('[Thinking]', event.content);
+         break;
 
-      case 'error':
-        setError(`${event.message} (${event.code})`);
-        if (currentStreamingMessageId) {
-          updateMessage(currentStreamingMessageId, {
-            content: `Error: ${event.message}`,
-          });
-        }
-        setIsStreaming(false);
-        setIsLoading(false);
-        currentStreamingMessageId = null;
-        break;
+       case 'message_complete':
+         if (currentStreamingMessageId) {
+           updateMessage(currentStreamingMessageId, {
+             id: event.id,
+             content: event.content,
+             toolCalls: event.tool_calls,
+           });
+         }
+         setIsStreaming(false);
+         setIsLoading(false);
+         currentStreamingMessageId = null;
+         
+         if (!hasReceivedFirstResponse && firstUserMessage) {
+           hasReceivedFirstResponse = true;
+           autoGenerateTitle();
+         }
+         break;
 
-      case 'interaction_requested': {
-        const { type: _eventType, ...requestData } = event;
-        setPendingInteraction(requestData as InteractionRequest);
-        break;
-      }
+       case 'error':
+         setError(`${event.message} (${event.code})`);
+         if (currentStreamingMessageId) {
+           updateMessage(currentStreamingMessageId, {
+             content: `Error: ${event.message}`,
+           });
+         }
+         setIsStreaming(false);
+         setIsLoading(false);
+         currentStreamingMessageId = null;
+         break;
 
-      case 'session_event':
-        console.log('[SessionEvent]', event.event_type, event.data);
-        break;
-    }
-  };
+       case 'interaction_requested': {
+         const { type: _eventType, ...requestData } = event;
+         setPendingInteraction(requestData as InteractionRequest);
+         break;
+       }
 
-  createEffect(() => {
-    const session = props.session();
-    
-    if (eventSourceCleanup) {
-      eventSourceCleanup();
-      eventSourceCleanup = null;
-    }
-    
-    if (session && session.state === 'active') {
-      eventSourceCleanup = subscribeToEvents(session.id, handleEvent);
-    }
-  });
+       case 'session_event':
+         console.log('[SessionEvent]', event.event_type, event.data);
+         break;
+     }
+   };
+
+   createEffect(() => {
+     const session = props.session();
+     
+     // Clean up old SSE subscription
+     if (eventSourceCleanup) {
+       eventSourceCleanup();
+       eventSourceCleanup = null;
+     }
+     
+     // Clear messages when switching sessions
+     if (session) {
+       clearMessages();
+     }
+     
+     // Subscribe to new session's events
+     if (session && session.state === 'active') {
+       eventSourceCleanup = subscribeToEvents(session.id, handleEvent);
+     }
+   });
 
   onCleanup(() => {
     if (eventSourceCleanup) {
@@ -226,16 +242,7 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
     }
   };
 
-  const clearMessages = () => {
-    setMessages([]);
-    setError(null);
-    setPendingInteraction(null);
-    currentStreamingMessageId = null;
-    firstUserMessage = null;
-    hasReceivedFirstResponse = false;
-  };
-
-  const respondToInteraction = async (response: InteractionResponse) => {
+   const respondToInteraction = async (response: InteractionResponse) => {
     const session = props.session();
     const request = pendingInteraction();
     if (!request || !session) return;
