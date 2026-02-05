@@ -5,4 +5,4 @@
 
 mod types;
 
-pub use types::Project;
+pub use types::{Project, RepositoryInfo};
