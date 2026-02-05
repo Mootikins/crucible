@@ -1054,8 +1054,9 @@ async fn handle_session_list(req: Request, sm: &Arc<SessionManager>) -> Response
         _ => None,
     });
 
-    let sessions =
-        sm.list_sessions_filtered(kiln.as_ref(), workspace.as_ref(), session_type, state);
+    let sessions = sm
+        .list_sessions_filtered_async(kiln.as_ref(), workspace.as_ref(), session_type, state)
+        .await;
 
     let sessions_json: Vec<_> = sessions
         .iter()
