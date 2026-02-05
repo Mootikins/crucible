@@ -20,7 +20,7 @@ pub struct WebCommand {
 pub async fn handle(cmd: WebCommand) -> Result<()> {
     let config = CliAppConfig::load(None, None, None).unwrap_or_default();
 
-    let web_config = config.web.unwrap_or_else(|| WebConfig {
+    let web_config = config.web.clone().unwrap_or_else(|| WebConfig {
         enabled: true,
         port: 3000,
         host: "127.0.0.1".to_string(),
@@ -41,7 +41,7 @@ pub async fn handle(cmd: WebCommand) -> Result<()> {
         final_config.host, final_config.port
     );
 
-    crucible_web::start_server(&final_config).await?;
+    crucible_web::start_server(&final_config, &config).await?;
 
     Ok(())
 }
