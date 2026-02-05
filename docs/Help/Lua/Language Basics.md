@@ -183,4 +183,4 @@ Fennel is a Lisp that compiles to Lua. Use `.fnl` files if you prefer Lisp synta
 
 ## See Also
 
-- [[Help/Steel/Language Basics]] -- Steel reference
+- [[Help/Concepts/Scripting Languages]] -- Language comparison
