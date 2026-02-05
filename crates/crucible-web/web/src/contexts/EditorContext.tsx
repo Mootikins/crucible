@@ -56,9 +56,7 @@ export const EditorProvider: ParentComponent = (props) => {
       const kilnPath = currentProject.kilns[0];
       const noteName = extractNoteName(path, kilnPath);
       const noteData = await getNote(noteName, kilnPath);
-      const content = typeof noteData === 'object' && noteData !== null && 'content' in noteData
-        ? String((noteData as Record<string, unknown>).content)
-        : '';
+      const content = noteData.content ?? '';
 
       setOpenFiles(
         produce((files) => {

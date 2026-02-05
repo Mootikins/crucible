@@ -11,6 +11,7 @@ use crucible_core::storage::NoteRecord;
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::path::PathBuf;
+use tokio::fs;
 
 pub fn search_routes() -> Router<AppState> {
     Router::new()
@@ -91,17 +92,91 @@ struct PutNoteRequest {
     content: String,
 }
 
+/// Maximum note content size (10 MB)
+const MAX_NOTE_SIZE: usize = 10 * 1024 * 1024;
+
 async fn put_note(
     State(state): State<AppState>,
     Path(name): Path<String>,
     Json(req): Json<PutNoteRequest>,
 ) -> Result<Json<serde_json::Value>, WebError> {
+    // Security: Validate content size to prevent DoS
+    if req.content.len() > MAX_NOTE_SIZE {
+        return Err(WebError::Chat(format!(
+            "Note content too large: {} bytes (max {} bytes)",
+            req.content.len(),
+            MAX_NOTE_SIZE
+        )));
+    }
+
+    // Security: Validate note name doesn't contain path traversal
+    if name.contains("..") || name.starts_with('/') || name.contains('\0') {
+        return Err(WebError::Chat(
+            "Invalid note name: path traversal not allowed".to_string(),
+        ));
+    }
+
+    // Security: Validate kiln is registered/open
+    let kilns = state
+        .daemon
+        .kiln_list()
+        .await
+        .map_err(|e| WebError::Daemon(e.to_string()))?;
+
+    let canonical_kiln = req
+        .kiln
+        .canonicalize()
+        .map_err(|_| WebError::NotFound("Invalid kiln path".to_string()))?;
+
+    let kiln_registered = kilns.iter().any(|kiln_value| {
+        kiln_value
+            .get("path")
+            .and_then(|p| p.as_str())
+            .and_then(|p| PathBuf::from(p).canonicalize().ok())
+            .map(|p| p == canonical_kiln)
+            .unwrap_or(false)
+    });
+
+    if !kiln_registered {
+        return Err(WebError::NotFound(
+            "Kiln not registered. Please open the kiln first.".to_string(),
+        ));
+    }
+
+    // Build the full file path (ensure .md extension)
+    let note_filename = if name.ends_with(".md") {
+        name.clone()
+    } else {
+        format!("{}.md", name)
+    };
+    let file_path = canonical_kiln.join(&note_filename);
+
+    // Security: Verify the file path is still within the kiln after joining
+    if !file_path.starts_with(&canonical_kiln) {
+        return Err(WebError::Chat(
+            "Invalid note name: path escapes kiln directory".to_string(),
+        ));
+    }
+
+    // Create parent directories if needed
+    if let Some(parent) = file_path.parent() {
+        fs::create_dir_all(parent)
+            .await
+            .map_err(|e| WebError::Io(e))?;
+    }
+
+    // Write content to filesystem (source of truth)
+    fs::write(&file_path, &req.content)
+        .await
+        .map_err(|e| WebError::Io(e))?;
+
+    // Extract metadata and update database
     let title = extract_title(&req.content);
     let now = Utc::now();
 
     let note = NoteRecord {
-        path: name.clone(),
-        content_hash: BlockHash::default(),
+        path: note_filename.clone(),
+        content_hash: BlockHash::default(), // TODO: compute actual hash
         embedding: None,
         title: title.clone(),
         tags: vec![],
@@ -118,7 +193,7 @@ async fn put_note(
 
     Ok(Json(serde_json::json!({
         "success": true,
-        "name": name,
+        "name": note_filename,
         "title": title,
         "updated_at": now
     })))
