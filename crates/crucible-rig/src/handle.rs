@@ -766,7 +766,7 @@ where
                                     }
                                 }
                             }
-                            StreamedAssistantContent::ToolCall(tc) => {
+                            StreamedAssistantContent::ToolCall { tool_call: tc, .. } => {
                                 info!(
                                     tool = %tc.function.name,
                                     id = %tc.id,
@@ -873,7 +873,7 @@ where
                         use rig::streaming::StreamedUserContent;
                         use rig::message::ToolResultContent;
                         // Capture tool results for history building and emit to TUI
-                        let StreamedUserContent::ToolResult(tr) = ui;
+                        let StreamedUserContent::ToolResult { tool_result: tr, .. } = ui;
 
                         // Extract text from OneOrMany<ToolResultContent>
                         let result_text: String = tr.content.iter()
