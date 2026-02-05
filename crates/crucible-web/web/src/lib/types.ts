@@ -226,3 +226,26 @@ export interface ProjectContextValue {
   refreshProjects: () => Promise<void>;
   clearProject: () => void;
 }
+
+// =============================================================================
+// Editor Types
+// =============================================================================
+
+/** A file open in the editor */
+export interface EditorFile {
+  path: string;
+  content: string;
+  dirty: boolean;
+}
+
+export interface EditorContextValue {
+  openFiles: () => EditorFile[];
+  activeFile: () => string | null;
+  openFile: (path: string) => Promise<void>;
+  closeFile: (path: string) => void;
+  saveFile: (path: string) => Promise<void>;
+  setActiveFile: (path: string) => void;
+  updateFileContent: (path: string, content: string) => void;
+  isLoading: () => boolean;
+  error: () => string | null;
+}

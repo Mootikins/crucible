@@ -1,4 +1,4 @@
-import { Component, createSignal, Show } from 'solid-js';
+import { Component, createSignal, Show, For, createEffect, onCleanup } from 'solid-js';
 import { useChat } from '@/contexts/ChatContext';
 import { useSession } from '@/contexts/SessionContext';
 import { useMediaRecorder } from '@/hooks/useMediaRecorder';
@@ -6,9 +6,11 @@ import { MicButton } from './MicButton';
 
 export const ChatInput: Component = () => {
   const { sendMessage, isLoading, isStreaming, cancelStream, error } = useChat();
-  const { currentSession, cancelCurrentOperation } = useSession();
+  const { currentSession, cancelCurrentOperation, availableModels, switchModel, refreshModels } = useSession();
   const [input, setInput] = createSignal('');
+  const [isModelPickerOpen, setIsModelPickerOpen] = createSignal(false);
   const { isRecording, audioLevel, startRecording, stopRecording } = useMediaRecorder();
+  let modelPickerRef: HTMLDivElement | undefined;
 
   const session = () => currentSession();
   const canSend = () => {
@@ -48,6 +50,42 @@ export const ChatInput: Component = () => {
 
   const fillPercent = () => Math.round(audioLevel() * 100);
 
+  // Refresh models when session changes
+  createEffect(() => {
+    if (currentSession()) {
+      refreshModels();
+    }
+  });
+
+  // Close dropdown when clicking outside
+  createEffect(() => {
+    if (!isModelPickerOpen()) return;
+    
+    const handleClickOutside = (e: MouseEvent) => {
+      if (modelPickerRef && !modelPickerRef.contains(e.target as Node)) {
+        setIsModelPickerOpen(false);
+      }
+    };
+    
+    document.addEventListener('mousedown', handleClickOutside);
+    onCleanup(() => document.removeEventListener('mousedown', handleClickOutside));
+  });
+
+  const currentModel = () => {
+    const s = currentSession();
+    return s?.agent_model ?? 'Select model';
+  };
+
+  const handleModelSelect = async (model: string) => {
+    setIsModelPickerOpen(false);
+    await switchModel(model);
+  };
+
+  const truncateModel = (model: string, maxLen = 20) => {
+    if (model.length <= maxLen) return model;
+    return model.slice(0, maxLen - 1) + '…';
+  };
+
   const containerStyle = () => {
     if (!isRecording()) return {};
     return {
@@ -78,7 +116,7 @@ export const ChatInput: Component = () => {
       </Show>
 
       <div
-        class="relative flex items-end gap-2 bg-neutral-900 rounded-xl p-2 border-2 border-transparent transition-[border-color]"
+        class="relative flex flex-col gap-2 bg-neutral-900 rounded-xl p-2 border-2 border-transparent transition-[border-color]"
         style={containerStyle()}
       >
         <textarea
@@ -92,22 +130,94 @@ export const ChatInput: Component = () => {
           data-testid="chat-input"
         />
 
-        <MicButton
-          onTranscription={handleTranscription}
-          disabled={!session() || isLoading()}
-          startRecording={startRecording}
-          stopRecording={stopRecording}
-          isRecording={isRecording}
-        />
-
-        <Show
-          when={isStreaming()}
-          fallback={
+        <div class="flex items-center gap-2">
+          <div ref={modelPickerRef} class="relative">
             <button
-              type="submit"
-              disabled={!canSend()}
-              class="p-2 rounded-lg bg-blue-600 text-white disabled:opacity-50 disabled:cursor-not-allowed hover:bg-blue-700 transition-colors"
-              data-testid="send-button"
+              type="button"
+              onClick={() => setIsModelPickerOpen(!isModelPickerOpen())}
+              disabled={!session() || isLoading()}
+              class="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-neutral-300 bg-neutral-800 hover:bg-neutral-700 rounded-lg border border-neutral-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              data-testid="model-picker-button"
+            >
+              <span class="max-w-[140px] truncate">{truncateModel(currentModel())}</span>
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 20 20"
+                fill="currentColor"
+                class="w-3.5 h-3.5 transition-transform"
+                classList={{ 'rotate-180': isModelPickerOpen() }}
+              >
+                <path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clip-rule="evenodd" />
+              </svg>
+            </button>
+
+            <Show when={isModelPickerOpen()}>
+              <div class="absolute bottom-full left-0 mb-1 w-56 max-h-64 overflow-y-auto bg-neutral-800 border border-neutral-700 rounded-lg shadow-xl z-50">
+                <Show
+                  when={availableModels().length > 0}
+                  fallback={
+                    <div class="px-3 py-2 text-xs text-neutral-500">No models available</div>
+                  }
+                >
+                  <For each={availableModels()}>
+                    {(model) => (
+                      <button
+                        type="button"
+                        onClick={() => handleModelSelect(model)}
+                        class="w-full px-3 py-2 text-left text-sm text-neutral-200 hover:bg-neutral-700 transition-colors first:rounded-t-lg last:rounded-b-lg"
+                        classList={{ 'bg-neutral-700/50': model === currentSession()?.agent_model }}
+                      >
+                        <span class="flex items-center gap-2">
+                          <Show when={model === currentSession()?.agent_model}>
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-4 h-4 text-blue-400">
+                              <path fill-rule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z" clip-rule="evenodd" />
+                            </svg>
+                          </Show>
+                          <span class="truncate">{model}</span>
+                        </span>
+                      </button>
+                    )}
+                  </For>
+                </Show>
+              </div>
+            </Show>
+          </div>
+
+          <div class="flex-1" />
+
+          <MicButton
+            onTranscription={handleTranscription}
+            disabled={!session() || isLoading()}
+            startRecording={startRecording}
+            stopRecording={stopRecording}
+            isRecording={isRecording}
+          />
+
+          <Show
+            when={isStreaming()}
+            fallback={
+              <button
+                type="submit"
+                disabled={!canSend()}
+                class="p-2 rounded-lg bg-blue-600 text-white disabled:opacity-50 disabled:cursor-not-allowed hover:bg-blue-700 transition-colors"
+                data-testid="send-button"
+              >
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  viewBox="0 0 24 24"
+                  fill="currentColor"
+                  class="w-5 h-5"
+                >
+                  <path d="M3.478 2.405a.75.75 0 00-.926.94l2.432 7.905H13.5a.75.75 0 010 1.5H4.984l-2.432 7.905a.75.75 0 00.926.94 60.519 60.519 0 0018.445-8.986.75.75 0 000-1.218A60.517 60.517 0 003.478 2.405z" />
+                </svg>
+              </button>
+            }
+          >
+            <button
+              type="button"
+              onClick={handleCancel}
+              class="p-2 rounded-lg bg-red-600 text-white hover:bg-red-700 transition-colors"
+              data-testid="cancel-button"
             >
               <svg
                 xmlns="http://www.w3.org/2000/svg"
@@ -115,27 +225,11 @@ export const ChatInput: Component = () => {
                 fill="currentColor"
                 class="w-5 h-5"
               >
-                <path d="M3.478 2.405a.75.75 0 00-.926.94l2.432 7.905H13.5a.75.75 0 010 1.5H4.984l-2.432 7.905a.75.75 0 00.926.94 60.519 60.519 0 0018.445-8.986.75.75 0 000-1.218A60.517 60.517 0 003.478 2.405z" />
+                <path fill-rule="evenodd" d="M5.47 5.47a.75.75 0 011.06 0L12 10.94l5.47-5.47a.75.75 0 111.06 1.06L13.06 12l5.47 5.47a.75.75 0 11-1.06 1.06L12 13.06l-5.47 5.47a.75.75 0 01-1.06-1.06L10.94 12 5.47 6.53a.75.75 0 010-1.06z" clip-rule="evenodd" />
               </svg>
             </button>
-          }
-        >
-          <button
-            type="button"
-            onClick={handleCancel}
-            class="p-2 rounded-lg bg-red-600 text-white hover:bg-red-700 transition-colors"
-            data-testid="cancel-button"
-          >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              viewBox="0 0 24 24"
-              fill="currentColor"
-              class="w-5 h-5"
-            >
-              <path fill-rule="evenodd" d="M5.47 5.47a.75.75 0 011.06 0L12 10.94l5.47-5.47a.75.75 0 111.06 1.06L13.06 12l5.47 5.47a.75.75 0 11-1.06 1.06L12 13.06l-5.47 5.47a.75.75 0 01-1.06-1.06L10.94 12 5.47 6.53a.75.75 0 010-1.06z" clip-rule="evenodd" />
-            </svg>
-          </button>
-        </Show>
+          </Show>
+        </div>
       </div>
     </form>
   );
