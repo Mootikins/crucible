@@ -5,7 +5,7 @@
 //! persisted to a JSON file in the crucible home directory.
 
 use crucible_config::WorkspaceConfig;
-use crucible_core::Project;
+use crucible_core::{Project, RepositoryInfo};
 use dashmap::DashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -42,14 +42,44 @@ impl ProjectManager {
         }
 
         let (name, kilns) = self.read_project_metadata(&canonical);
+        let repository = self.detect_repository(&canonical);
 
-        let project = Project::new(canonical.clone(), name).with_kilns(kilns);
+        let mut project = Project::new(canonical.clone(), name).with_kilns(kilns);
+        if let Some(repo) = repository {
+            project = project.with_repository(repo);
+        }
 
         self.projects.insert(canonical.clone(), project.clone());
         self.persist()?;
 
-        info!(path = %canonical.display(), name = %project.name, "Project registered");
+        info!(
+            path = %canonical.display(),
+            name = %project.name,
+            has_repo = project.repository.is_some(),
+            "Project registered"
+        );
         Ok(project)
+    }
+
+    pub fn find_by_repository(&self, repo_root: &Path) -> Vec<Project> {
+        self.projects
+            .iter()
+            .filter(|entry| {
+                entry.value().repository.as_ref().map_or(false, |r| {
+                    let id = r.main_repo_git_dir.as_ref().unwrap_or(&r.root);
+                    id == repo_root
+                })
+            })
+            .map(|entry| entry.value().clone())
+            .collect()
+    }
+
+    pub fn register_if_missing(&self, path: &Path) -> Result<Project, ProjectError> {
+        if let Some(existing) = self.get(path) {
+            self.touch(path);
+            return Ok(existing);
+        }
+        self.register(path)
     }
 
     pub fn unregister(&self, path: &Path) -> Result<(), ProjectError> {
@@ -85,6 +115,49 @@ impl ProjectManager {
                 if let Err(e) = self.persist() {
                     warn!("Failed to persist after touch: {}", e);
                 }
+            }
+        }
+    }
+
+    fn detect_repository(&self, path: &Path) -> Option<RepositoryInfo> {
+        match gix::discover(path) {
+            Ok(repo) => {
+                let git_dir = repo.git_dir().to_path_buf();
+                let work_dir = repo.work_dir().map(|p| p.to_path_buf());
+
+                let common_dir = repo.common_dir().to_path_buf();
+                let is_worktree = git_dir != common_dir;
+
+                let root = work_dir.unwrap_or_else(|| git_dir.clone());
+
+                let remote_url: Option<String> = repo
+                    .find_default_remote(gix::remote::Direction::Fetch)
+                    .and_then(|r| r.ok())
+                    .and_then(|r: gix::Remote<'_>| {
+                        r.url(gix::remote::Direction::Fetch)
+                            .map(|u: &gix::Url| u.to_bstring().to_string())
+                    });
+
+                let main_repo_git_dir = if is_worktree { Some(common_dir) } else { None };
+
+                debug!(
+                    path = %path.display(),
+                    root = %root.display(),
+                    is_worktree,
+                    remote = ?remote_url,
+                    "Detected git repository"
+                );
+
+                Some(RepositoryInfo {
+                    root,
+                    remote_url,
+                    is_worktree,
+                    main_repo_git_dir,
+                })
+            }
+            Err(_) => {
+                debug!(path = %path.display(), "No git repository detected");
+                None
             }
         }
     }

@@ -210,6 +210,9 @@ pub struct Config {
     #[serde(default)]
     pub web: Option<WebConfig>,
 
+    #[serde(default)]
+    pub scm: Option<ScmConfig>,
+
     /// Logging configuration.
     pub logging: Option<LoggingConfig>,
 
@@ -253,6 +256,7 @@ impl Default for Config {
             llm: None,
             server: None,
             web: None,
+            scm: None,
             logging: None,
             discovery: None,
             gateway: None,
@@ -1881,6 +1885,17 @@ impl Default for WebConfig {
             static_dir: None,
         }
     }
+}
+
+/// SCM (git) integration configuration.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct ScmConfig {
+    /// Enable SCM detection for projects.
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    /// Detect and group git worktrees under their main repository.
+    #[serde(default)]
+    pub detect_worktrees: bool,
 }
 
 /// Logging configuration.
