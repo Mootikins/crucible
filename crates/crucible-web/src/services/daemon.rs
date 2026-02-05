@@ -12,6 +12,7 @@ pub struct AppState {
     pub daemon: Arc<DaemonClient>,
     pub events: Arc<EventBroker>,
     pub config: Arc<CliAppConfig>,
+    pub http_client: reqwest::Client,
 }
 
 pub struct EventBroker {
@@ -55,10 +56,16 @@ pub async fn init_daemon(config: CliAppConfig) -> Result<AppState> {
 
     spawn_event_router(event_rx, broker.clone());
 
+    let http_client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(5))
+        .build()
+        .map_err(|e| WebError::Config(format!("Failed to create HTTP client: {e}")))?;
+
     Ok(AppState {
         daemon,
         events: broker,
         config: Arc::new(config),
+        http_client,
     })
 }
 

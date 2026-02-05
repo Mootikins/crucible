@@ -7,7 +7,7 @@ import {
   Accessor,
 } from 'solid-js';
 import { createStore, produce } from 'solid-js/store';
-import type { Session, CreateSessionParams } from '@/lib/types';
+import type { Session, CreateSessionParams, ProviderInfo } from '@/lib/types';
 import {
   createSession as apiCreateSession,
   listSessions as apiListSessions,
@@ -19,6 +19,7 @@ import {
   listModels as apiListModels,
   switchModel as apiSwitchModel,
   setSessionTitle as apiSetSessionTitle,
+  listProviders as apiListProviders,
 } from '@/lib/api';
 
 export interface SessionContextValue {
@@ -27,6 +28,8 @@ export interface SessionContextValue {
   isLoading: Accessor<boolean>;
   error: Accessor<string | null>;
   availableModels: Accessor<string[]>;
+  providers: Accessor<ProviderInfo[]>;
+  selectedProvider: Accessor<ProviderInfo | null>;
   createSession: (params: CreateSessionParams) => Promise<Session>;
   selectSession: (id: string) => Promise<void>;
   refreshSessions: (filters?: { kiln?: string; workspace?: string }) => Promise<void>;
@@ -37,6 +40,8 @@ export interface SessionContextValue {
   switchModel: (modelId: string) => Promise<void>;
   refreshModels: () => Promise<void>;
   setSessionTitle: (title: string) => Promise<void>;
+  refreshProviders: () => Promise<void>;
+  selectProvider: (providerType: string) => void;
 }
 
 interface SessionProviderProps {
@@ -53,6 +58,8 @@ export const SessionProvider: ParentComponent<SessionProviderProps> = (props) =>
   const [isLoading, setIsLoading] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
   const [availableModels, setAvailableModels] = createSignal<string[]>([]);
+  const [providers, setProviders] = createSignal<ProviderInfo[]>([]);
+  const [selectedProvider, setSelectedProvider] = createSignal<ProviderInfo | null>(null);
 
   const refreshSessions = async (filters?: { kiln?: string; workspace?: string }) => {
     setIsLoading(true);
@@ -251,11 +258,31 @@ export const SessionProvider: ParentComponent<SessionProviderProps> = (props) =>
     }
   };
 
+  const refreshProviders = async () => {
+    try {
+      const providerList = await apiListProviders();
+      setProviders(providerList);
+      if (providerList.length > 0 && !selectedProvider()) {
+        setSelectedProvider(providerList[0]);
+      }
+    } catch (err) {
+      console.error('Failed to load providers:', err);
+    }
+  };
+
+  const selectProvider = (providerType: string) => {
+    const provider = providers().find((p) => p.provider_type === providerType);
+    if (provider) {
+      setSelectedProvider(provider);
+    }
+  };
+
   createEffect(() => {
     refreshSessions({
       kiln: props.initialKiln,
       workspace: props.initialWorkspace,
     });
+    refreshProviders();
   });
 
   const value: SessionContextValue = {
@@ -264,6 +291,8 @@ export const SessionProvider: ParentComponent<SessionProviderProps> = (props) =>
     isLoading,
     error,
     availableModels,
+    providers,
+    selectedProvider,
     createSession,
     selectSession,
     refreshSessions,
@@ -274,6 +303,8 @@ export const SessionProvider: ParentComponent<SessionProviderProps> = (props) =>
     switchModel,
     refreshModels,
     setSessionTitle,
+    refreshProviders,
+    selectProvider,
   };
 
   return (
@@ -299,6 +330,8 @@ const fallbackSessionContext: SessionContextValue = {
   isLoading: () => false,
   error: () => null,
   availableModels: () => [],
+  providers: () => [],
+  selectedProvider: () => null,
   createSession: () => Promise.reject(new Error('No session context')),
   selectSession: noopAsync,
   refreshSessions: noopAsync,
@@ -309,6 +342,8 @@ const fallbackSessionContext: SessionContextValue = {
   switchModel: noopAsync,
   refreshModels: noopAsync,
   setSessionTitle: noopAsync,
+  refreshProviders: noopAsync,
+  selectProvider: () => {},
 };
 
 export function useSessionSafe(): SessionContextValue {
