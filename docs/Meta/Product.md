@@ -61,8 +61,21 @@ A knowledge management system where:
 - [x] **Document Clustering** `P0` — Heuristic clustering and MoC detection · `crucible-surrealdb`
 - [ ] **K-Means Clustering** `P2` — K-means implementation (placeholder stub, needs ndarray or similar) · `crucible-surrealdb`
 - [x] **Block-level Embeddings** `P0` — Paragraph-granularity semantic indexing · `crucible-llm`, `crucible-surrealdb`
-- [x] **Precognition** `P0` — Auto-RAG: inject relevant kiln/session context before each agent turn; should default to on (`:set precognition`); the core differentiator — every conversation is knowledge-graph-aware · `crucible-cli`, `crucible-acp`
 - [x] **Session Search** `P0` — Past conversations indexed and searchable via session indexing pipeline; `cru session reindex` for batch processing · `crucible-observe`, `crucible-cli`
+
+## Agent Learning & Memory
+
+> Agents that get smarter over time. Learning is implemented as **notes in the kiln** — not opaque database stores. Entity facts, session summaries, and accumulated knowledge are all atomic zettelkasten-style markdown notes with wikilinks, tags, and frontmatter. This means agent memory is human-readable, editable, searchable via the existing knowledge graph, and available to precognition for future context injection.
+>
+> **Two-tier model**: Core Rust features (precognition, auto-linking) handle the fast path. Default runtime Lua plugins (entity-memory, session-digest) handle higher-level knowledge extraction. Both are toggleable and overridable. See [[#Core Agent Features]] and [[#Default Runtime Plugins]].
+>
+> **Informed by**: Agno framework analysis (2026-02). Agno uses six opaque DB-backed learning stores. Crucible's approach is strictly better — same learning capabilities but with human-readable, editable, wikilinked notes as the storage layer. Local embeddings, metadata (wikilinks, tags, frontmatter), and potential future LSP integration provide rich fetchable context without custom storage.
+
+- [x] **Precognition** `P0` — Auto-RAG: inject relevant kiln/session context before each agent turn; default on; `:set precognition`; the core differentiator — every conversation is knowledge-graph-aware · `crucible-cli`, `crucible-acp`
+- [x] **Session Persistence** `P0` — Conversations saved as markdown + JSONL in kiln; indexed for semantic search · `crucible-daemon`, `crucible-observe`
+- [ ] **Entity Memory Plugin** `P1` — Default runtime Lua plugin; extracts entities and structured facts from conversations → atomic notes in `Entities/` folder with wikilinks to source sessions; zettelkasten-style: one note per entity, updated across sessions; uses `turn:complete` hook + `cru.tools.call("semantic_search", ...)` to deduplicate · `runtime/entity-memory/`
+- [ ] **Session Digest Plugin** `P1` — Default runtime Lua plugin; summarizes completed sessions → linked notes in `Sessions/` folder; captures key decisions, topics discussed, entities mentioned; wikilinks to entity notes and source notes; builds the "what did we talk about?" knowledge layer · `runtime/session-digest/`
+- [ ] **Memory Scoping** `P2` — Namespace agent memory: per-user, per-workspace, or global; entity notes tagged with scope; precognition filters by active scope · `crucible-core`, `crucible-lua`
 
 ## AI Chat & Agents
 
@@ -97,6 +110,14 @@ A knowledge management system where:
 - [x] **Context Enrichment** `P0` — Inject kiln context into agent conversations · `crucible-context`, `crucible-enrichment`
 - [x] **File Attachment** `P0` — `@file` context attachment in chat · `crucible-cli`
 - [x] **Rules Files** `P0` — Project-level AI instructions (`.crucible/rules`) · [[Help/Rules Files]] · `crucible-config`
+
+### Core Agent Features (Toggleable via `:set`)
+
+> Core capabilities implemented in Rust for performance and reliability, toggleable like precognition (`:set autolink`, `:set noprecognition`). These expose hook points that Lua plugins can intercept and override. `:plugins` shows both core and Lua plugins in a unified view.
+
+- [x] **Precognition** `P0` — Auto-RAG: inject relevant kiln context before each agent turn; `:set precognition`; the core differentiator — every conversation is knowledge-graph-aware · `crucible-cli`, `crucible-acp`
+- [ ] **Auto-Linking** `P1` — Detect unlinked mentions of existing notes in agent output and conversation; suggest or apply wikilinks; emits `autolink:suggest` events for Lua override; `:set autolink` · `crucible-core`, `crucible-daemon`
+- [ ] **Team Patterns** `P1` — Multi-agent orchestration primitives in core Rust; supervisor (decompose → delegate → synthesize), router (route to specialist by topic), broadcast (parallel, gather perspectives); builds on existing subagent spawning infrastructure; `:set team.default_pattern=supervisor` · `crucible-daemon`
 
 ### Lua Session API
 - [x] **Scripted Agent Control** `P0` — Lua API for temperature, max_tokens, thinking_budget, model, mode; daemon getters use local cache · `crucible-lua`
@@ -342,9 +363,25 @@ HTTP Gateway (crucible-web wired to daemon)
 - [ ] **Scheduled Lua Hooks** `P2` — Cron-style callbacks for Lua plugins; enables daily briefings, orphan note detection, task reminders from `- [ ]` items · `crucible-lua`, `crucible-daemon`
 - [ ] **Daily Briefing Plugin** `P2` — Reference plugin: summarize recent kiln changes, pending tasks, orphaned notes; delivered via messaging or shown on TUI startup · `crucible-lua`
 
+### Default Runtime Plugins (P1 — Neovim-style bundled plugins)
+
+> Crucible ships a `runtime/` directory of Lua plugins alongside the binary, analogous to Neovim's `$VIMRUNTIME/plugin/`. These load automatically, are overridable, and their source code *is* the documentation for how to build plugins.
+>
+> **Plugin search path (priority order):**
+> 1. `CRUCIBLE_PLUGIN_PATH` — env override (highest priority)
+> 2. `~/.config/crucible/plugins/` — user global
+> 3. `KILN/.crucible/plugins/` — kiln personal (gitignored)
+> 4. `KILN/plugins/` — kiln shared (version-controlled)
+> 5. `$CRUCIBLE_RUNTIME/plugins/` — bundled default (lowest priority)
+>
+> Same-named user plugin at any higher path **shadows** the runtime version. `:plugins` shows provenance: `[core]`, `[runtime]`, `[user]`, `[kiln]`.
+
+- [ ] **Runtime Plugin Infrastructure** `P1` — `$CRUCIBLE_RUNTIME/plugins/` path added to plugin discovery; provenance tracking in `:plugins` display; shadow-by-name semantics · `crucible-lua`, `crucible-cli`
+- [ ] **`entity-memory` Runtime Plugin** `P1` — Extract entities/facts from conversations → atomic zettelkasten notes; wikilinks to source sessions; deduplicates against existing entity notes · `runtime/entity-memory/`
+- [ ] **`session-digest` Runtime Plugin** `P1` — Summarize completed sessions → linked notes; captures decisions, topics, entities; wikilinks to entity and source notes · `runtime/session-digest/`
+
 ### Ecosystem & Shareability (P1-P2)
 
-- [ ] **Example Plugin Pack** `P1` — Ship 3-5 reference plugins demonstrating key patterns: autonomous loops, scheduled tasks, fan-out, auto-linking · `crucible-lua`
 - [ ] **Plugin Install** `P1` — `cru plugin add <git-url>` or `cru plugin add <name>`; Git-native distribution (lazy.nvim model, not centralized marketplace) · `crucible-lua`, `crucible-cli`
 - [ ] **Agent Memory Branding** `P1` — Rename "Precognition" to "Agent Memory" in user-facing docs; communicates the value proposition directly · docs
 - [ ] **`cru share`** `P2` — Export sessions as self-contained HTML or shareable artifacts; `:export` exists for local markdown, this adds sharable formats · `crucible-cli`
@@ -361,8 +398,8 @@ HTTP Gateway (crucible-web wired to daemon)
 
 ## Storage & Processing
 
-- [x] **SurrealDB Backend** `P0` — Primary storage with RocksDB engine · [[Help/Config/storage]] · `crucible-surrealdb`
-- [x] **SQLite Backend** `P0` — Lightweight alternative storage · [[Help/Config/storage]] · `crucible-sqlite`
+- [x] **SQLite Backend** `P0` — Default storage; fast, lightweight, recommended for most users · [[Help/Config/storage]] · `crucible-sqlite`
+- [x] **SurrealDB Backend** `P0` — Advanced storage with EAV graph and RocksDB engine; richer queries, higher memory · [[Help/Config/storage]] · `crucible-surrealdb`
 - [x] **Vector Embeddings** `P0` — FastEmbed (ONNX) local embedding generation · [[Help/Config/embedding]] · `crucible-llm`
 - [x] **Embedding Reranking** `P0` — Search result reranking for relevance · `crucible-surrealdb`
 - [x] **File Processing** `P0` — Parse, enrich, and index notes via pipeline · [[Help/CLI/process]] · `crucible-pipeline`, `crucible-enrichment`
@@ -506,6 +543,11 @@ HTTP Gateway (crucible-web wired to daemon)
 | 2026-02-03 | `cru.service` lifecycle before `cru.messaging` adapter | Service lifecycle (start/stop/health, supervised restart, config validation) is the foundation messaging adapters compose on. Discord, Telegram, calendar pollers, auto-linkers are all services. Build the general pattern first |
 | 2026-02-03 | `cru.messaging` adapter: extract from two implementations | Don't speculate the adapter shape from Discord alone. Build Telegram or Matrix adapter, then extract the common trait. The receive→respond→format loop is identical; platform variance is in transport and API shape |
 | 2026-02-03 | Fennel is opt-in power tool, not default path | Lua examples first in all docs; Fennel shown alongside. Macros are genuinely valuable (`defservice`, `deftool` could halve plugin boilerplate) but LuaLS doesn't understand Fennel — devs trade IDE ergonomics for language ergonomics. Invest in Fennel DX only after Lua DX is solid |
+| 2026-02-05 | Agent learning as notes, not opaque DB | Informed by Agno framework analysis. Agno uses six opaque DB-backed learning stores. Crucible's approach: agent memory stored as wikilinked atomic notes (zettelkasten-style) in kiln. Human-readable, editable, searchable via existing graph. Strictly better — same capabilities plus human review/edit. Local embeddings + metadata (wikilinks, tags, frontmatter) provide rich fetchable context without custom storage |
+| 2026-02-05 | Two-tier extensibility: core Rust + runtime Lua | Core features (precognition, auto-linking, team patterns) in Rust for performance, toggleable via `:set`. Higher-level behaviors (entity-memory, session-digest) as default runtime Lua plugins. Both show in `:plugins` with provenance. Matches Neovim's architecture: C core + bundled Lua plugins |
+| 2026-02-05 | Default runtime plugins (Neovim-style) | Ship bundled Lua plugins at `$CRUCIBLE_RUNTIME/plugins/`; lowest-priority in discovery path; user plugins shadow by name. Source code serves as reference documentation. Plugins: `entity-memory` (facts → atomic notes), `session-digest` (session summaries → linked notes) |
+| 2026-02-05 | Team patterns as core Rust, not Lua plugins | Multi-agent orchestration (supervisor, router, broadcast) is fundamental infrastructure, not optional behavior. Implemented in Rust, builds on existing subagent spawning. Configurable via `:set team.default_pattern`. Lua hooks can intercept delegation decisions |
+| 2026-02-05 | SQLite is default storage | Product map updated to reflect SQLite as default, SurrealDB as advanced option. Docs (CLAUDE.md, Systems.md) corrected. SQLite is fast, lightweight, recommended for single-user local-first usage |
 
 ## Archived / Cut
 
