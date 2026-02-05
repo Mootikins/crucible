@@ -310,10 +310,10 @@ HTTP Gateway (crucible-web wired to daemon)
          └── Remote access (Tailscale / Cloudflare Tunnel)
 ```
 
-- [ ] **HTTP-to-RPC Bridge** `P1` — Wire `DaemonClient` into `crucible-web` Axum routes; translate HTTP requests to daemon JSON-RPC calls; ~1,000-1,500 lines of Rust · `crucible-web`, `crucible-rpc`
-- [ ] **SSE/WebSocket Event Bridge** `P1` — Subscribe to daemon session events, stream to HTTP clients via SSE or WebSocket; the only non-trivial part of the gateway · `crucible-web`
-- [ ] **Chat HTTP API** `P1` — `POST /api/chat/send` + SSE stream for responses; `POST /api/session/create`, `/resume`, `/list`, `/end` · `crucible-web`
-- [ ] **Search HTTP API** `P1` — `POST /api/search` (semantic + full-text + property); `GET /api/notes`, `GET /api/notes/:name` · `crucible-web`
+- [x] **HTTP-to-RPC Bridge** `P1` — Wire `DaemonClient` into `crucible-web` Axum routes; translate HTTP requests to daemon JSON-RPC calls · `crucible-web`, `crucible-rpc`
+- [x] **SSE/WebSocket Event Bridge** `P1` — Subscribe to daemon session events, stream to HTTP clients via SSE; `EventBroker` fans out per-session events · `crucible-web`
+- [x] **Chat HTTP API** `P1` — `POST /api/chat/send` + `GET /api/chat/events/:session_id` SSE stream; `POST /api/session`, `/list`, `/:id/pause`, `/:id/resume`, `/:id/end` · `crucible-web`
+- [x] **Search HTTP API** `P1` — `POST /api/search/vectors`; `GET /api/notes`, `GET /api/notes/:name`; `GET /api/kilns` · `crucible-web`
 - [ ] **API Auth** `P1` — Bearer token or API key auth; required the moment the gateway is exposed beyond localhost · `crucible-web`
 - [ ] **Webhook API** `P1` — `POST /api/webhook/:name` triggers named Lua handlers; enables GitHub webhooks, calendar events, IFTTT/Zapier/n8n integration; enriches payloads with kiln context (uniquely Crucible) · `crucible-web`, `crucible-lua`
 

@@ -1,115 +1,91 @@
-//! Chat API endpoints with SSE streaming
-
-use crate::services::ChatService;
-use crate::{ChatEvent, WebError};
+use crate::events::ChatEvent;
+use crate::services::daemon::AppState;
+use crate::WebError;
 use axum::{
-    extract::State,
+    extract::{Path, State},
     response::sse::{Event, Sse},
-    routing::post,
+    routing::{get, post},
     Json, Router,
 };
 use futures::stream::Stream;
 use serde::Deserialize;
 use std::convert::Infallible;
-use std::sync::Arc;
-use tokio_stream::wrappers::BroadcastStream;
 use tokio_stream::StreamExt;
 
-/// Shared state for chat routes
-pub type ChatState = Arc<ChatService>;
-
-/// Request body for chat messages
-#[derive(Debug, Deserialize)]
-pub struct ChatRequest {
-    pub message: String,
-}
-
-pub fn chat_routes(state: ChatState) -> Router {
+pub fn chat_routes() -> Router<AppState> {
     Router::new()
-        .route("/api/chat", post(chat_handler))
-        .route(
-            "/api/interaction/respond",
-            post(interaction_respond_handler),
-        )
-        .with_state(state)
+        .route("/api/chat/send", post(send_message))
+        .route("/api/chat/events/{session_id}", get(event_stream))
+        .route("/api/interaction/respond", post(interaction_respond))
 }
 
 #[derive(Debug, Deserialize)]
-struct InteractionResponseRequest {
-    request_id: String,
-    response: serde_json::Value,
+struct SendMessageRequest {
+    session_id: String,
+    content: String,
 }
 
-async fn interaction_respond_handler(
-    State(chat_service): State<ChatState>,
-    Json(request): Json<InteractionResponseRequest>,
-) -> Result<(), WebError> {
-    chat_service
-        .submit_interaction_response(request.request_id, request.response)
-        .await;
-    Ok(())
-}
-
-/// Handle chat message and return SSE stream
-async fn chat_handler(
-    State(chat_service): State<ChatState>,
-    Json(request): Json<ChatRequest>,
-) -> Result<Sse<impl Stream<Item = Result<Event, Infallible>>>, WebError> {
-    // Validate message
-    if request.message.trim().is_empty() {
+async fn send_message(
+    State(state): State<AppState>,
+    Json(req): Json<SendMessageRequest>,
+) -> Result<Json<serde_json::Value>, WebError> {
+    if req.content.trim().is_empty() {
         return Err(WebError::Chat("Message cannot be empty".to_string()));
     }
 
-    // Subscribe to events before sending message
-    let rx = chat_service.subscribe();
+    let message_id = state
+        .daemon
+        .session_send_message(&req.session_id, &req.content)
+        .await
+        .map_err(|e| WebError::Daemon(e.to_string()))?;
 
-    // Send message in background task
-    let service = chat_service.clone();
-    let message = request.message.clone();
-    tokio::spawn(async move {
-        if let Err(e) = service.send_message(message).await {
-            tracing::error!("Chat error: {}", e);
-            // Error will be sent via event channel
-            let _ = service.subscribe(); // Get a sender indirectly
-        }
-    });
+    Ok(Json(serde_json::json!({ "message_id": message_id })))
+}
 
-    // Convert broadcast receiver to SSE stream
-    let stream = BroadcastStream::new(rx)
-        .filter_map(|result| match result {
-            Ok(event) => Some(event),
-            Err(e) => {
-                tracing::warn!("Broadcast receive error: {}", e);
-                None
-            }
-        })
-        .map(|event: ChatEvent| {
-            Ok(Event::default()
-                .event(event_type(&event))
-                .data(serde_json::to_string(&event).unwrap_or_default()))
-        })
-        // Stop stream after MessageComplete or Error
-        .take_while(|result| {
-            if let Ok(event) = result {
-                // Check event type from the SSE event
-                let event_str = format!("{:?}", event);
-                !event_str.contains("message_complete") && !event_str.contains("error")
-            } else {
-                true
-            }
+async fn event_stream(
+    State(state): State<AppState>,
+    Path(session_id): Path<String>,
+) -> Result<Sse<impl Stream<Item = Result<Event, Infallible>>>, WebError> {
+    state
+        .daemon
+        .session_subscribe(&[session_id.as_str()])
+        .await
+        .map_err(|e| WebError::Daemon(e.to_string()))?;
+
+    let rx = state.events.subscribe(&session_id).await;
+
+    let stream = tokio_stream::wrappers::BroadcastStream::new(rx)
+        .filter_map(|result| result.ok())
+        .map(|event| {
+            let chat_event = ChatEvent::from_daemon_event(&event);
+            let event_name = chat_event.event_name();
+            let data = serde_json::to_string(&chat_event).unwrap_or_default();
+            Ok(Event::default().event(event_name).data(data))
         });
 
     Ok(Sse::new(stream))
 }
 
-fn event_type(event: &ChatEvent) -> &'static str {
-    match event {
-        ChatEvent::Token { .. } => "token",
-        ChatEvent::ToolCall { .. } => "tool_call",
-        ChatEvent::ToolResult { .. } => "tool_result",
-        ChatEvent::Thinking { .. } => "thinking",
-        ChatEvent::MessageComplete { .. } => "message_complete",
-        ChatEvent::Error { .. } => "error",
-        ChatEvent::InteractionRequested { .. } => "interaction_requested",
-    }
+#[derive(Debug, Deserialize)]
+struct InteractionResponseRequest {
+    session_id: String,
+    request_id: String,
+    response: serde_json::Value,
+}
+
+async fn interaction_respond(
+    State(state): State<AppState>,
+    Json(req): Json<InteractionResponseRequest>,
+) -> Result<Json<serde_json::Value>, WebError> {
+    let response: crucible_core::interaction::InteractionResponse =
+        serde_json::from_value(req.response)
+            .map_err(|e| WebError::Chat(format!("Invalid interaction response: {e}")))?;
+
+    state
+        .daemon
+        .session_interaction_respond(&req.session_id, &req.request_id, response)
+        .await
+        .map_err(|e| WebError::Daemon(e.to_string()))?;
+
+    Ok(Json(serde_json::json!({ "ok": true })))
 }
