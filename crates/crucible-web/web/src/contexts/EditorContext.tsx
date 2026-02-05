@@ -142,3 +142,22 @@ export function useEditor(): EditorContextValue {
   }
   return context;
 }
+
+const noopAsync = async () => {};
+
+const fallbackEditorContext: EditorContextValue = {
+  openFiles: () => [],
+  activeFile: () => null,
+  openFile: noopAsync,
+  closeFile: () => {},
+  saveFile: noopAsync,
+  setActiveFile: () => {},
+  updateFileContent: () => {},
+  isLoading: () => false,
+  error: () => null,
+};
+
+export function useEditorSafe(): EditorContextValue {
+  const context = useContext(EditorContext);
+  return context ?? fallbackEditorContext;
+}

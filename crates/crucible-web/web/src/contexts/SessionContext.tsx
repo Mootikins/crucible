@@ -81,7 +81,7 @@ export const SessionProvider: ParentComponent<SessionProviderProps> = (props) =>
       const session = await apiCreateSession(params);
       setSessions(produce((s) => s.unshift(session)));
       setCurrentSession(session);
-      await refreshModels();
+      await refreshModels(session);
       return session;
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to create session';
@@ -96,7 +96,7 @@ export const SessionProvider: ParentComponent<SessionProviderProps> = (props) =>
     const existing = sessions.find((s) => s.id === id);
     if (existing) {
       setCurrentSession(existing);
-      await refreshModels();
+      await refreshModels(existing);
       return;
     }
 
@@ -106,7 +106,7 @@ export const SessionProvider: ParentComponent<SessionProviderProps> = (props) =>
     try {
       const session = await apiGetSession(id);
       setCurrentSession(session);
-      await refreshModels();
+      await refreshModels(session);
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to load session';
       setError(msg);
@@ -189,9 +189,9 @@ export const SessionProvider: ParentComponent<SessionProviderProps> = (props) =>
     }
   };
 
-  const refreshModels = async () => {
-    const session = currentSession();
-    if (!session) {
+  const refreshModels = async (sessionOverride?: Session) => {
+    const session = sessionOverride ?? currentSession();
+    if (!session?.id) {
       setAvailableModels([]);
       return;
     }
@@ -289,4 +289,29 @@ export function useSession(): SessionContextValue {
     throw new Error('useSession must be used within a SessionProvider');
   }
   return context;
+}
+
+const noopAsync = async () => {};
+
+const fallbackSessionContext: SessionContextValue = {
+  currentSession: () => null,
+  sessions: () => [],
+  isLoading: () => false,
+  error: () => null,
+  availableModels: () => [],
+  createSession: () => Promise.reject(new Error('No session context')),
+  selectSession: noopAsync,
+  refreshSessions: noopAsync,
+  pauseSession: noopAsync,
+  resumeSession: noopAsync,
+  endSession: noopAsync,
+  cancelCurrentOperation: () => Promise.resolve(false),
+  switchModel: noopAsync,
+  refreshModels: noopAsync,
+  setSessionTitle: noopAsync,
+};
+
+export function useSessionSafe(): SessionContextValue {
+  const context = useContext(SessionContext);
+  return context ?? fallbackSessionContext;
 }
