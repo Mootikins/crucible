@@ -37,6 +37,18 @@ export interface CreateSessionParams {
   session_type?: SessionType;
   kiln: string;
   workspace?: string;
+  provider?: string;
+  model?: string;
+  endpoint?: string;
+}
+
+export interface ProviderInfo {
+  name: string;
+  provider_type: string;
+  available: boolean;
+  default_model: string | null;
+  models: string[];
+  endpoint?: string;
 }
 
 // =============================================================================

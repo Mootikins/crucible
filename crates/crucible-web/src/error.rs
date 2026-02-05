@@ -23,6 +23,9 @@ pub enum WebError {
     #[error("Daemon RPC error: {0}")]
     Daemon(String),
 
+    #[error("Validation error: {0}")]
+    Validation(String),
+
     #[error("Not found: {0}")]
     NotFound(String),
 
@@ -37,6 +40,7 @@ impl IntoResponse for WebError {
             WebError::Io(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()),
             WebError::Chat(e) => (StatusCode::BAD_REQUEST, e.clone()),
             WebError::Daemon(e) => (StatusCode::BAD_GATEWAY, e.clone()),
+            WebError::Validation(e) => (StatusCode::UNPROCESSABLE_ENTITY, e.clone()),
             WebError::NotFound(e) => (StatusCode::NOT_FOUND, e.clone()),
             WebError::Internal(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.clone()),
         };
