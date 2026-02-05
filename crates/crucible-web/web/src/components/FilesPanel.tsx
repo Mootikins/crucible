@@ -2,7 +2,7 @@ import { Component, For, Show, createSignal, createEffect, createMemo } from 'so
 import { Collapsible } from '@ark-ui/solid';
 import { useProjectSafe } from '@/contexts/ProjectContext';
 import { useEditorSafe } from '@/contexts/EditorContext';
-import { listKilnNotes } from '@/lib/api';
+import { listNotes } from '@/lib/api';
 import type { FileEntry } from '@/lib/types';
 
 interface FileNode {
@@ -191,32 +191,32 @@ export const FilesPanel: Component = () => {
   const [loadingKiln, setLoadingKiln] = createSignal(false);
   const [kilnError, setKilnError] = createSignal<string | null>(null);
 
-  createEffect(async () => {
-    const project = currentProject();
-    if (!project) {
-      setKilnFiles([]);
-      setKilnError(null);
-      return;
-    }
+   createEffect(async () => {
+     const project = currentProject();
+     if (!project) {
+       setKilnFiles([]);
+       setKilnError(null);
+       return;
+     }
 
-    if (project.kilns.length > 0) {
-      setLoadingKiln(true);
-      setKilnError(null);
-      try {
-        const notes = await listKilnNotes(project.kilns[0]);
-        setKilnFiles(filesToNodes(notes));
-      } catch (err) {
-        console.error('Failed to load kiln notes:', err);
-        setKilnFiles([]);
-        setKilnError(err instanceof Error ? err.message : 'Failed to load notes');
-      } finally {
-        setLoadingKiln(false);
-      }
-    } else {
-      setKilnFiles([]);
-      setKilnError(null);
-    }
-  });
+     if (project.kilns.length > 0) {
+       setLoadingKiln(true);
+       setKilnError(null);
+       try {
+         const notes = await listNotes(project.kilns[0]);
+         setKilnFiles(filesToNodes(notes as FileEntry[]));
+       } catch (err) {
+         console.error('Failed to load kiln notes:', err);
+         setKilnFiles([]);
+         setKilnError(err instanceof Error ? err.message : 'Failed to load notes');
+       } finally {
+         setLoadingKiln(false);
+       }
+     } else {
+       setKilnFiles([]);
+       setKilnError(null);
+     }
+   });
 
   const handleFileClick = (path: string) => {
     openFile(path);
