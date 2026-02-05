@@ -320,6 +320,19 @@ export async function getNote(name: string, kiln: string): Promise<unknown> {
   return await res.json();
 }
 
+/** Save a note by name. */
+export async function saveNote(name: string, kiln: string, content: string): Promise<void> {
+  const res = await fetch(`/api/notes/${encodeURIComponent(name)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ kiln, content }),
+  });
+
+  if (!res.ok) {
+    throw new Error(`Failed to save note: HTTP ${res.status}`);
+  }
+}
+
 /** Perform a vector search. */
 export async function searchVectors(
   kiln: string,
