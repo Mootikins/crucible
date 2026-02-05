@@ -40,9 +40,9 @@ Structure that aids discovery:
 
 CLI tools for finding content:
 
-- `cru search "query"` - Text search
-- `cru semantic "query"` - Find similar content
+- `cru chat` - Search through conversation with the AI agent
 - `cru stats` - Kiln overview ([[Help/CLI/stats]])
+- MCP tools - Programmatic search via the MCP server (`cru mcp`)
 
 ## Related
 
