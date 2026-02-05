@@ -5,7 +5,9 @@ use axum::{
     routing::{get, post, put},
     Json, Router,
 };
-use serde::Deserialize;
+use crucible_core::session::SessionAgent;
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::path::PathBuf;
 
 pub fn session_routes() -> Router<AppState> {
@@ -20,6 +22,7 @@ pub fn session_routes() -> Router<AppState> {
         .route("/api/session/{id}/models", get(list_models))
         .route("/api/session/{id}/model", post(switch_model))
         .route("/api/session/{id}/title", put(set_session_title))
+        .route("/api/providers", get(list_providers))
 }
 
 #[derive(Debug, Deserialize)]
@@ -28,10 +31,26 @@ struct CreateSessionRequest {
     session_type: String,
     kiln: PathBuf,
     workspace: Option<PathBuf>,
+    /// LLM provider (e.g., "ollama", "openai", "anthropic")
+    #[serde(default = "default_provider")]
+    provider: String,
+    /// Model name (e.g., "llama3.2", "gpt-4o", "claude-3-5-sonnet")
+    #[serde(default = "default_model")]
+    model: String,
+    /// Custom endpoint URL (optional, for self-hosted models)
+    endpoint: Option<String>,
 }
 
 fn default_session_type() -> String {
     "chat".to_string()
+}
+
+fn default_provider() -> String {
+    "ollama".to_string()
+}
+
+fn default_model() -> String {
+    "llama3.2".to_string()
 }
 
 async fn create_session(
@@ -50,6 +69,31 @@ async fn create_session(
         .map_err(|e| WebError::Daemon(e.to_string()))?;
 
     let session_id = result["session_id"].as_str().unwrap_or("");
+
+    // Configure agent for the session (required before sending messages)
+    let agent = SessionAgent {
+        agent_type: "internal".to_string(),
+        agent_name: None,
+        provider_key: Some(req.provider.clone()),
+        provider: req.provider,
+        model: req.model,
+        system_prompt: String::new(),
+        temperature: None,
+        max_tokens: None,
+        max_context_tokens: None,
+        thinking_budget: None,
+        endpoint: req.endpoint,
+        env_overrides: HashMap::new(),
+        mcp_servers: vec![],
+        agent_card_name: None,
+    };
+
+    state
+        .daemon
+        .session_configure_agent(session_id, &agent)
+        .await
+        .map_err(|e| WebError::Daemon(e.to_string()))?;
+
     state
         .daemon
         .session_subscribe(&[session_id])
@@ -209,4 +253,262 @@ async fn set_session_title(
         .map_err(|e| WebError::Daemon(e.to_string()))?;
 
     Ok(Json(serde_json::json!({ "ok": true })))
+}
+
+#[derive(Debug, Serialize)]
+struct ProviderInfo {
+    name: String,
+    provider_type: String,
+    available: bool,
+    default_model: Option<String>,
+    models: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    endpoint: Option<String>,
+}
+
+async fn list_providers(
+    State(state): State<AppState>,
+) -> Result<Json<serde_json::Value>, WebError> {
+    let mut providers = Vec::new();
+    let mut seen_types = std::collections::HashSet::new();
+
+    // 1. Check `providers` config (new format with named providers)
+    if state.config.providers.has_providers() {
+        for (name, provider_config) in state.config.providers.chat_providers() {
+            let provider_type = provider_config.backend.as_str();
+            seen_types.insert(provider_type.to_string());
+
+            let endpoint = provider_config
+                .endpoint()
+                .unwrap_or_else(|| default_endpoint_for(provider_type));
+
+            let models = fetch_models_for_provider(provider_type, &endpoint).await;
+
+            providers.push(ProviderInfo {
+                name: format_provider_name(name, provider_type),
+                provider_type: provider_type.to_string(),
+                available: !models.is_empty() || provider_type != "ollama",
+                default_model: provider_config
+                    .chat_model()
+                    .or_else(|| models.first().cloned()),
+                models,
+                endpoint: Some(endpoint),
+            });
+        }
+    }
+
+    // 2. Fall back to `chat` config (legacy format) if no providers found
+    if providers.is_empty() {
+        let chat = &state.config.chat;
+        let provider_type = llm_provider_to_str(&chat.provider);
+        let endpoint = chat
+            .endpoint
+            .clone()
+            .unwrap_or_else(|| default_endpoint_for(provider_type));
+
+        let models = fetch_models_for_provider(provider_type, &endpoint).await;
+
+        if !models.is_empty() || provider_type != "ollama" {
+            seen_types.insert(provider_type.to_string());
+            providers.push(ProviderInfo {
+                name: format_provider_name("default", provider_type),
+                provider_type: provider_type.to_string(),
+                available: true,
+                default_model: chat.model.clone().or_else(|| models.first().cloned()),
+                models,
+                endpoint: Some(endpoint),
+            });
+        }
+    }
+
+    // 3. Also detect providers from environment variables (that weren't already found)
+    if !seen_types.contains("ollama") && std::env::var("OLLAMA_HOST").is_ok() {
+        let endpoint = ollama_endpoint_from_env();
+        let models = fetch_ollama_models(&endpoint).await;
+        if !models.is_empty() {
+            providers.push(ProviderInfo {
+                name: "Ollama (Environment)".to_string(),
+                provider_type: "ollama".to_string(),
+                available: true,
+                default_model: models.first().cloned(),
+                models,
+                endpoint: Some(endpoint),
+            });
+        }
+    }
+
+    if !seen_types.contains("openai") && std::env::var("OPENAI_API_KEY").is_ok() {
+        let openai_models = fetch_openai_models().await;
+        providers.push(ProviderInfo {
+            name: "OpenAI".to_string(),
+            provider_type: "openai".to_string(),
+            available: true,
+            default_model: Some("gpt-4o-mini".to_string()),
+            models: if openai_models.is_empty() {
+                vec![
+                    "gpt-4o".to_string(),
+                    "gpt-4o-mini".to_string(),
+                    "gpt-4-turbo".to_string(),
+                    "o1".to_string(),
+                    "o1-mini".to_string(),
+                ]
+            } else {
+                openai_models
+            },
+            endpoint: Some("https://api.openai.com/v1".to_string()),
+        });
+    }
+
+    if !seen_types.contains("anthropic") && std::env::var("ANTHROPIC_API_KEY").is_ok() {
+        providers.push(ProviderInfo {
+            name: "Anthropic".to_string(),
+            provider_type: "anthropic".to_string(),
+            available: true,
+            default_model: Some("claude-sonnet-4-20250514".to_string()),
+            models: vec![
+                "claude-sonnet-4-20250514".to_string(),
+                "claude-3-7-sonnet-20250219".to_string(),
+                "claude-3-5-sonnet-20241022".to_string(),
+                "claude-3-5-haiku-20241022".to_string(),
+                "claude-3-opus-20240229".to_string(),
+            ],
+            endpoint: Some("https://api.anthropic.com".to_string()),
+        });
+    }
+
+    Ok(Json(serde_json::json!({ "providers": providers })))
+}
+
+fn llm_provider_to_str(provider: &crucible_config::LlmProvider) -> &'static str {
+    match provider {
+        crucible_config::LlmProvider::Ollama => "ollama",
+        crucible_config::LlmProvider::OpenAI => "openai",
+        crucible_config::LlmProvider::Anthropic => "anthropic",
+    }
+}
+
+fn format_provider_name(name: &str, provider_type: &str) -> String {
+    match provider_type {
+        "ollama" => format!("Ollama ({})", name),
+        "openai" => "OpenAI".to_string(),
+        "anthropic" => "Anthropic".to_string(),
+        _ => name.to_string(),
+    }
+}
+
+fn default_endpoint_for(provider_type: &str) -> String {
+    match provider_type {
+        "ollama" => "http://localhost:11434".to_string(),
+        "openai" => "https://api.openai.com/v1".to_string(),
+        "anthropic" => "https://api.anthropic.com".to_string(),
+        _ => String::new(),
+    }
+}
+
+fn ollama_endpoint_from_env() -> String {
+    std::env::var("OLLAMA_HOST")
+        .ok()
+        .map(|host| {
+            if host.starts_with("http://") || host.starts_with("https://") {
+                host
+            } else {
+                format!("http://{}", host)
+            }
+        })
+        .unwrap_or_else(|| "http://localhost:11434".to_string())
+}
+
+async fn fetch_models_for_provider(provider_type: &str, endpoint: &str) -> Vec<String> {
+    match provider_type {
+        "ollama" => fetch_ollama_models(endpoint).await,
+        "openai" => fetch_openai_models().await,
+        "anthropic" => anthropic_models(),
+        _ => Vec::new(),
+    }
+}
+
+fn anthropic_models() -> Vec<String> {
+    vec![
+        "claude-sonnet-4-20250514".to_string(),
+        "claude-3-7-sonnet-20250219".to_string(),
+        "claude-3-5-sonnet-20241022".to_string(),
+        "claude-3-5-haiku-20241022".to_string(),
+        "claude-3-opus-20240229".to_string(),
+    ]
+}
+
+async fn fetch_ollama_models(endpoint: &str) -> Vec<String> {
+    let client = match reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(3))
+        .build()
+    {
+        Ok(c) => c,
+        Err(_) => return Vec::new(),
+    };
+
+    let base = endpoint.trim_end_matches('/').trim_end_matches("/v1");
+    let url = format!("{}/api/tags", base);
+
+    let resp = match client.get(&url).send().await {
+        Ok(r) if r.status().is_success() => r,
+        _ => return Vec::new(),
+    };
+
+    #[derive(serde::Deserialize)]
+    struct TagsResponse {
+        models: Vec<ModelInfo>,
+    }
+    #[derive(serde::Deserialize)]
+    struct ModelInfo {
+        name: String,
+    }
+
+    match resp.json::<TagsResponse>().await {
+        Ok(tags) => tags.models.into_iter().map(|m| m.name).collect(),
+        Err(_) => Vec::new(),
+    }
+}
+
+async fn fetch_openai_models() -> Vec<String> {
+    let api_key = match std::env::var("OPENAI_API_KEY") {
+        Ok(k) => k,
+        Err(_) => return Vec::new(),
+    };
+
+    let client = match reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(5))
+        .build()
+    {
+        Ok(c) => c,
+        Err(_) => return Vec::new(),
+    };
+
+    let resp = match client
+        .get("https://api.openai.com/v1/models")
+        .header("Authorization", format!("Bearer {}", api_key))
+        .send()
+        .await
+    {
+        Ok(r) if r.status().is_success() => r,
+        _ => return Vec::new(),
+    };
+
+    #[derive(serde::Deserialize)]
+    struct ModelsResponse {
+        data: Vec<ModelData>,
+    }
+    #[derive(serde::Deserialize)]
+    struct ModelData {
+        id: String,
+    }
+
+    match resp.json::<ModelsResponse>().await {
+        Ok(models) => models
+            .data
+            .into_iter()
+            .filter(|m| m.id.starts_with("gpt-") || m.id.starts_with("o1") || m.id.starts_with("o3"))
+            .map(|m| m.id)
+            .collect(),
+        Err(_) => Vec::new(),
+    }
 }
