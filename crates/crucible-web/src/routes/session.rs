@@ -8,6 +8,7 @@ use axum::{
 use crucible_core::session::SessionAgent;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::net::IpAddr;
 use std::path::PathBuf;
 
 pub fn session_routes() -> Router<AppState> {
@@ -53,10 +54,56 @@ fn default_model() -> String {
     "llama3.2".to_string()
 }
 
+/// Validate that an endpoint URL is safe (no SSRF to internal networks).
+fn validate_endpoint(endpoint: &str) -> Result<(), WebError> {
+    let url = reqwest::Url::parse(endpoint)
+        .map_err(|e| WebError::Validation(format!("Invalid endpoint URL: {e}")))?;
+
+    match url.scheme() {
+        "http" | "https" => {}
+        scheme => {
+            return Err(WebError::Validation(format!(
+                "Unsupported URL scheme: {scheme}"
+            )));
+        }
+    }
+
+    let host = url
+        .host_str()
+        .ok_or_else(|| WebError::Validation("Endpoint URL must have a host".to_string()))?;
+
+    // Check if the host is an IP address in a private/internal range
+    if let Ok(ip) = host.parse::<IpAddr>() {
+        let is_private = match ip {
+            IpAddr::V4(v4) => {
+                v4.is_loopback()
+                    || v4.is_private()
+                    || v4.is_link_local()
+                    || v4.is_broadcast()
+                    || v4.is_unspecified()
+            }
+            IpAddr::V6(v6) => v6.is_loopback() || v6.is_unspecified(),
+        };
+
+        // Allow localhost for local-first development, but block other private ranges
+        if is_private && !ip.is_loopback() {
+            return Err(WebError::Validation(format!(
+                "Endpoint must not target private/internal IP: {host}"
+            )));
+        }
+    }
+
+    Ok(())
+}
+
 async fn create_session(
     State(state): State<AppState>,
     Json(req): Json<CreateSessionRequest>,
 ) -> Result<Json<serde_json::Value>, WebError> {
+    if let Some(ref endpoint) = req.endpoint {
+        validate_endpoint(endpoint)?;
+    }
+
     let result = state
         .daemon
         .session_create(
@@ -282,7 +329,8 @@ async fn list_providers(
                 .endpoint()
                 .unwrap_or_else(|| default_endpoint_for(provider_type));
 
-            let models = fetch_models_for_provider(provider_type, &endpoint).await;
+            let models =
+                fetch_models_for_provider(&state.http_client, provider_type, &endpoint).await;
 
             providers.push(ProviderInfo {
                 name: format_provider_name(name, provider_type),
@@ -306,7 +354,8 @@ async fn list_providers(
             .clone()
             .unwrap_or_else(|| default_endpoint_for(provider_type));
 
-        let models = fetch_models_for_provider(provider_type, &endpoint).await;
+        let models =
+            fetch_models_for_provider(&state.http_client, provider_type, &endpoint).await;
 
         if !models.is_empty() || provider_type != "ollama" {
             seen_types.insert(provider_type.to_string());
@@ -324,7 +373,7 @@ async fn list_providers(
     // 3. Also detect providers from environment variables (that weren't already found)
     if !seen_types.contains("ollama") && std::env::var("OLLAMA_HOST").is_ok() {
         let endpoint = ollama_endpoint_from_env();
-        let models = fetch_ollama_models(&endpoint).await;
+        let models = fetch_ollama_models(&state.http_client, &endpoint).await;
         if !models.is_empty() {
             providers.push(ProviderInfo {
                 name: "Ollama (Environment)".to_string(),
@@ -338,12 +387,14 @@ async fn list_providers(
     }
 
     if !seen_types.contains("openai") && std::env::var("OPENAI_API_KEY").is_ok() {
-        let openai_models = fetch_openai_models().await;
+        let openai_models = fetch_openai_models(&state.http_client).await;
         providers.push(ProviderInfo {
             name: "OpenAI".to_string(),
             provider_type: "openai".to_string(),
             available: true,
             default_model: Some("gpt-4o-mini".to_string()),
+            // Fallback model list when the OpenAI API is unreachable.
+            // Update periodically as new models are released.
             models: if openai_models.is_empty() {
                 vec![
                     "gpt-4o".to_string(),
@@ -360,18 +411,13 @@ async fn list_providers(
     }
 
     if !seen_types.contains("anthropic") && std::env::var("ANTHROPIC_API_KEY").is_ok() {
+        let models = anthropic_models();
         providers.push(ProviderInfo {
             name: "Anthropic".to_string(),
             provider_type: "anthropic".to_string(),
             available: true,
-            default_model: Some("claude-sonnet-4-20250514".to_string()),
-            models: vec![
-                "claude-sonnet-4-20250514".to_string(),
-                "claude-3-7-sonnet-20250219".to_string(),
-                "claude-3-5-sonnet-20241022".to_string(),
-                "claude-3-5-haiku-20241022".to_string(),
-                "claude-3-opus-20240229".to_string(),
-            ],
+            default_model: models.first().cloned(),
+            models,
             endpoint: Some("https://api.anthropic.com".to_string()),
         });
     }
@@ -388,11 +434,16 @@ fn llm_provider_to_str(provider: &crucible_config::LlmProvider) -> &'static str 
 }
 
 fn format_provider_name(name: &str, provider_type: &str) -> String {
-    match provider_type {
-        "ollama" => format!("Ollama ({})", name),
-        "openai" => "OpenAI".to_string(),
-        "anthropic" => "Anthropic".to_string(),
-        _ => name.to_string(),
+    let type_label = match provider_type {
+        "ollama" => "Ollama",
+        "openai" => "OpenAI",
+        "anthropic" => "Anthropic",
+        _ => return name.to_string(),
+    };
+    if name == "default" || name.eq_ignore_ascii_case(type_label) {
+        type_label.to_string()
+    } else {
+        format!("{type_label} ({name})")
     }
 }
 
@@ -418,15 +469,21 @@ fn ollama_endpoint_from_env() -> String {
         .unwrap_or_else(|| "http://localhost:11434".to_string())
 }
 
-async fn fetch_models_for_provider(provider_type: &str, endpoint: &str) -> Vec<String> {
+async fn fetch_models_for_provider(
+    client: &reqwest::Client,
+    provider_type: &str,
+    endpoint: &str,
+) -> Vec<String> {
     match provider_type {
-        "ollama" => fetch_ollama_models(endpoint).await,
-        "openai" => fetch_openai_models().await,
+        "ollama" => fetch_ollama_models(client, endpoint).await,
+        "openai" => fetch_openai_models(client).await,
         "anthropic" => anthropic_models(),
         _ => Vec::new(),
     }
 }
 
+/// Static Anthropic model list used when API enumeration is unavailable.
+/// Update periodically as new models are released.
 fn anthropic_models() -> Vec<String> {
     vec![
         "claude-sonnet-4-20250514".to_string(),
@@ -437,15 +494,7 @@ fn anthropic_models() -> Vec<String> {
     ]
 }
 
-async fn fetch_ollama_models(endpoint: &str) -> Vec<String> {
-    let client = match reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(3))
-        .build()
-    {
-        Ok(c) => c,
-        Err(_) => return Vec::new(),
-    };
-
+async fn fetch_ollama_models(client: &reqwest::Client, endpoint: &str) -> Vec<String> {
     let base = endpoint.trim_end_matches('/').trim_end_matches("/v1");
     let url = format!("{}/api/tags", base);
 
@@ -469,17 +518,9 @@ async fn fetch_ollama_models(endpoint: &str) -> Vec<String> {
     }
 }
 
-async fn fetch_openai_models() -> Vec<String> {
+async fn fetch_openai_models(client: &reqwest::Client) -> Vec<String> {
     let api_key = match std::env::var("OPENAI_API_KEY") {
         Ok(k) => k,
-        Err(_) => return Vec::new(),
-    };
-
-    let client = match reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(5))
-        .build()
-    {
-        Ok(c) => c,
         Err(_) => return Vec::new(),
     };
 
@@ -506,7 +547,13 @@ async fn fetch_openai_models() -> Vec<String> {
         Ok(models) => models
             .data
             .into_iter()
-            .filter(|m| m.id.starts_with("gpt-") || m.id.starts_with("o1") || m.id.starts_with("o3"))
+            .filter(|m| {
+                m.id.starts_with("gpt-")
+                    || m.id.starts_with("chatgpt-")
+                    || m.id.starts_with("o1")
+                    || m.id.starts_with("o3")
+                    || m.id.starts_with("o4")
+            })
             .map(|m| m.id)
             .collect(),
         Err(_) => Vec::new(),
@@ -541,14 +588,17 @@ mod tests {
     }
 
     #[test]
-    fn test_format_provider_name_openai_ignores_name() {
-        assert_eq!(format_provider_name("anything", "openai"), "OpenAI");
-        assert_eq!(format_provider_name("custom", "openai"), "OpenAI");
+    fn test_format_provider_name_openai_uses_configured_name() {
+        assert_eq!(format_provider_name("default", "openai"), "OpenAI");
+        assert_eq!(format_provider_name("OpenAI", "openai"), "OpenAI");
+        assert_eq!(format_provider_name("work", "openai"), "OpenAI (work)");
     }
 
     #[test]
-    fn test_format_provider_name_anthropic_ignores_name() {
-        assert_eq!(format_provider_name("anything", "anthropic"), "Anthropic");
+    fn test_format_provider_name_anthropic_uses_configured_name() {
+        assert_eq!(format_provider_name("default", "anthropic"), "Anthropic");
+        assert_eq!(format_provider_name("Anthropic", "anthropic"), "Anthropic");
+        assert_eq!(format_provider_name("research", "anthropic"), "Anthropic (research)");
     }
 
     #[test]
