@@ -295,7 +295,7 @@ Crucible acts as an **ACP host**, spawning and controlling external AI agents (C
 
 ### Install & Onboarding (P0 — #1 adoption blocker)
 
-- [ ] **One-Line Install** `P0` — Pre-built binaries via GitHub Releases (linux x86_64/aarch64, macOS Intel/Apple Silicon, Windows); `curl|sh`, `brew install crucible`, `cargo binstall crucible`, AUR, Nix flake; target: working `cru` binary in <60 seconds · `crucible-cli`
+- [x] **One-Line Install** `P0` — Pre-built binaries via GitHub Releases (linux x86_64/aarch64, macOS Intel/Apple Silicon); `curl|sh`, `brew install mootikins/crucible/crucible`, `cargo binstall crucible-cli`; target: working `cru` binary in <60 seconds · `crucible-cli`
 - [x] **Precognition Default-On** `P0` — Changed default from opt-in to on; the knowledge-graph-aware context is the core differentiator · `crucible-cli`
 
 ### HTTP Gateway (P1 — platform layer for everything external)
