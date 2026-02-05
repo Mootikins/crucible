@@ -3,6 +3,8 @@ import { DockView, DockPanel } from 'solid-dockview';
 import type { DockviewComponent, SerializedDockview } from 'dockview-core';
 import { SettingsPanel } from '@/components/SettingsPanel';
 import { SessionPanel } from '@/components/SessionPanel';
+import { FilesPanel } from '@/components/FilesPanel';
+import { BreadcrumbNav } from '@/components/BreadcrumbNav';
 import { loadLayout, saveLayout, type LayoutState } from '@/lib/layout';
 import 'dockview-core/dist/styles/dockview.css';
 
@@ -92,22 +94,7 @@ export const GraphPanel: Component = () => {
   );
 };
 
-export const FilesPanel: Component = () => {
-  return (
-    <div class="h-full flex flex-col bg-neutral-900 text-neutral-100">
-      <div class="p-3 border-b border-neutral-800">
-        <h2 class="text-sm font-semibold text-neutral-400 uppercase tracking-wide">Files</h2>
-      </div>
-      <div class="flex-1 flex items-center justify-center text-neutral-500">
-        <div class="text-center">
-          <div class="text-4xl mb-2">📁</div>
-          <div>File Browser</div>
-          <div class="text-sm text-neutral-600">Coming soon</div>
-        </div>
-      </div>
-    </div>
-  );
-};
+
 
 export const BottomPanel: Component = () => {
   return (
@@ -268,14 +255,17 @@ export const DockLayout: Component<DockLayoutProps> = (props) => {
   });
 
   return (
-    <div class="relative h-screen w-screen">
-      <button
-        onClick={() => setShowSettings(!showSettings())}
-        class="absolute top-2 right-2 z-50 p-2 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-400 hover:text-white transition-colors"
-        title="Settings"
-      >
-        <GearIcon />
-      </button>
+    <div class="relative h-screen w-screen flex flex-col">
+      <BreadcrumbNav />
+
+      <div class="relative flex-1">
+        <button
+          onClick={() => setShowSettings(!showSettings())}
+          class="absolute top-2 right-2 z-50 p-2 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-400 hover:text-white transition-colors"
+          title="Settings"
+        >
+          <GearIcon />
+        </button>
 
       <button
         onClick={() => toggleEdge('left')}
@@ -303,7 +293,7 @@ export const DockLayout: Component<DockLayoutProps> = (props) => {
 
       <DockView
         class="dockview-theme-abyss"
-        style="height: 100vh; width: 100vw;"
+        style="height: 100%; width: 100%;"
         onReady={handleReady}
         onDidLayoutChange={debouncedSave}
       >
@@ -367,6 +357,7 @@ export const DockLayout: Component<DockLayoutProps> = (props) => {
           </DockPanel>
         </Show>
       </DockView>
+      </div>
     </div>
   );
 };
