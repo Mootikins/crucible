@@ -19,6 +19,9 @@ tokio-stream = { workspace = true, features = ["sync"] }
 futures = { workspace = true }
 futures-util = { workspace = true }
 
+# HTTP client for provider discovery
+reqwest = { workspace = true }
+
 # Serialization
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -48,6 +51,7 @@ mime_guess = "2"
 [dev-dependencies]
 tokio-test = { workspace = true }
 tempfile = { workspace = true }
+serial_test = "3"
 
 [features]
 default = []
