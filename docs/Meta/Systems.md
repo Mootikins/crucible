@@ -42,8 +42,8 @@ See: [[Help/Concepts/The Knowledge Graph]]
 
 Persistence layer. Stores and retrieves structured data.
 
-- SurrealDB embedded database
-- EAV (Entity-Attribute-Value) graph model
+- SQLite (default) — fast, lightweight, recommended for most users
+- SurrealDB (advanced) — EAV graph model, richer queries, higher memory
 - Content-addressed block storage
 - Merkle tree integrity verification
 - Kiln management
