@@ -4,6 +4,8 @@ import type {
   Session,
   Project,
   FileEntry,
+  NoteEntry,
+  NoteContent,
 } from './types';
 
 // =============================================================================
@@ -295,32 +297,31 @@ export async function listKilns(): Promise<string[]> {
   return data.kilns;
 }
 
-/** List notes in a kiln. */
-export async function listNotes(kiln: string, pathFilter?: string): Promise<unknown[]> {
+export async function listNotes(kiln: string, pathFilter?: string): Promise<NoteEntry[]> {
   const params = new URLSearchParams({ kiln });
   if (pathFilter) params.set('path_filter', pathFilter);
 
   const res = await fetch(`/api/notes?${params.toString()}`);
   if (!res.ok) {
-    throw new Error(`Failed to list notes: HTTP ${res.status}`);
+    const errorText = await res.text().catch(() => '');
+    throw new Error(errorText || `Failed to list notes: HTTP ${res.status}`);
   }
 
-  const data = (await res.json()) as { notes: unknown[] };
+  const data = (await res.json()) as { notes: NoteEntry[] };
   return data.notes;
 }
 
-/** Get a note by name. */
-export async function getNote(name: string, kiln: string): Promise<unknown> {
+export async function getNote(name: string, kiln: string): Promise<NoteContent> {
   const params = new URLSearchParams({ kiln });
   const res = await fetch(`/api/notes/${encodeURIComponent(name)}?${params.toString()}`);
   if (!res.ok) {
-    throw new Error(`Failed to get note: HTTP ${res.status}`);
+    const errorText = await res.text().catch(() => '');
+    throw new Error(errorText || `Failed to get note: HTTP ${res.status}`);
   }
 
-  return await res.json();
+  return (await res.json()) as NoteContent;
 }
 
-/** Save a note by name. */
 export async function saveNote(name: string, kiln: string, content: string): Promise<void> {
   const res = await fetch(`/api/notes/${encodeURIComponent(name)}`, {
     method: 'PUT',
@@ -329,7 +330,8 @@ export async function saveNote(name: string, kiln: string, content: string): Pro
   });
 
   if (!res.ok) {
-    throw new Error(`Failed to save note: HTTP ${res.status}`);
+    const errorText = await res.text().catch(() => '');
+    throw new Error(errorText || `Failed to save note: HTTP ${res.status}`);
   }
 }
 

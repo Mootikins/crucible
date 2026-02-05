@@ -191,32 +191,40 @@ export const FilesPanel: Component = () => {
   const [loadingKiln, setLoadingKiln] = createSignal(false);
   const [kilnError, setKilnError] = createSignal<string | null>(null);
 
-   createEffect(async () => {
-     const project = currentProject();
-     if (!project) {
-       setKilnFiles([]);
-       setKilnError(null);
-       return;
-     }
+  createEffect(() => {
+    const project = currentProject();
+    if (!project) {
+      setKilnFiles([]);
+      setKilnError(null);
+      return;
+    }
 
-     if (project.kilns.length > 0) {
-       setLoadingKiln(true);
-       setKilnError(null);
-       try {
-         const notes = await listNotes(project.kilns[0]);
-         setKilnFiles(filesToNodes(notes as FileEntry[]));
-       } catch (err) {
-         console.error('Failed to load kiln notes:', err);
-         setKilnFiles([]);
-         setKilnError(err instanceof Error ? err.message : 'Failed to load notes');
-       } finally {
-         setLoadingKiln(false);
-       }
-     } else {
-       setKilnFiles([]);
-       setKilnError(null);
-     }
-   });
+    if (project.kilns.length > 0) {
+      setLoadingKiln(true);
+      setKilnError(null);
+
+      listNotes(project.kilns[0])
+        .then((notes) => {
+          const entries: FileEntry[] = notes.map((n) => ({
+            name: n.name,
+            path: n.path,
+            is_dir: false,
+          }));
+          setKilnFiles(filesToNodes(entries));
+        })
+        .catch((err) => {
+          console.error('Failed to load kiln notes:', err);
+          setKilnFiles([]);
+          setKilnError(err instanceof Error ? err.message : 'Failed to load notes');
+        })
+        .finally(() => {
+          setLoadingKiln(false);
+        });
+    } else {
+      setKilnFiles([]);
+      setKilnError(null);
+    }
+  });
 
   const handleFileClick = (path: string) => {
     openFile(path);

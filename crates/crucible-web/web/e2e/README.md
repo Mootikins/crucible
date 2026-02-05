@@ -132,6 +132,6 @@ bunx playwright show-trace trace.zip
 ## Notes
 
 - Tests expect the app to be running on `http://localhost:3000`
-- Most tests use conditional checks (`if (await element.isVisible())`) to handle dynamic UI states
+- Tests use explicit assertions (`await expect(element).toBeVisible()`) to ensure proper failures
 - Tests include reasonable timeouts for async operations
 - API mocking ensures tests are deterministic and fast
