@@ -33,6 +33,10 @@ tracing = { workspace = true }
 # UUID generation
 uuid = { workspace = true }
 
+# Daemon RPC client
+crucible-rpc = { path = "../crucible-rpc" }
+crucible-core = { workspace = true }
+
 # Asset embedding (release builds)
 rust-embed = { version = "8", features = ["interpolate-folder-path"] }
 mime_guess = "2"
