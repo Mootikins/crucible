@@ -69,6 +69,13 @@ async fn get_note(
     Path(name): Path<String>,
     axum::extract::Query(query): axum::extract::Query<KilnQuery>,
 ) -> Result<Json<serde_json::Value>, WebError> {
+    // Security: Validate note name doesn't contain path traversal
+    if name.contains("..") || name.starts_with('/') || name.starts_with('\\') || name.contains('\0') {
+        return Err(WebError::Chat(
+            "Invalid note name: path traversal not allowed".to_string(),
+        ));
+    }
+
     let note = state
         .daemon
         .get_note_by_name(&query.kiln, &name)
@@ -110,7 +117,7 @@ async fn put_note(
     }
 
     // Security: Validate note name doesn't contain path traversal
-    if name.contains("..") || name.starts_with('/') || name.contains('\0') {
+    if name.contains("..") || name.starts_with('/') || name.starts_with('\\') || name.contains('\0') {
         return Err(WebError::Chat(
             "Invalid note name: path traversal not allowed".to_string(),
         ));
@@ -259,9 +266,11 @@ async fn search_vectors(
 mod tests {
     use super::*;
 
-    // Helper to test note name validation logic (mirrors put_note validation)
     fn is_valid_note_name(name: &str) -> bool {
-        !name.contains("..") && !name.starts_with('/') && !name.contains('\0')
+        !name.contains("..")
+            && !name.starts_with('/')
+            && !name.starts_with('\\')
+            && !name.contains('\0')
     }
 
     // Helper to test path escape detection
@@ -280,13 +289,27 @@ mod tests {
             "../../../etc/passwd",
             "notes/../../../etc/passwd",
             "foo/../bar/../../../etc/passwd",
-            "..\\windows\\system32",
-            "notes\\..\\..\\secret",
         ];
         for attack in attacks {
             assert!(
                 !is_valid_note_name(attack),
                 "Should reject parent traversal: {}",
+                attack
+            );
+        }
+    }
+
+    #[test]
+    fn test_validate_note_name_rejects_backslash_paths() {
+        let attacks = vec![
+            "..\\windows\\system32",
+            "notes\\..\\..\\secret",
+            "\\etc\\passwd",
+        ];
+        for attack in attacks {
+            assert!(
+                !is_valid_note_name(attack),
+                "Should reject backslash path: {}",
                 attack
             );
         }
