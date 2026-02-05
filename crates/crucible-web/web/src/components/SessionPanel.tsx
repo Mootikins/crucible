@@ -1,7 +1,7 @@
 import { Component, For, Show, createSignal } from 'solid-js';
 import { useSessionSafe } from '@/contexts/SessionContext';
 import { useProjectSafe } from '@/contexts/ProjectContext';
-import type { Session, Project } from '@/lib/types';
+import type { Session, Project, ProviderInfo } from '@/lib/types';
 
 const StateIndicator: Component<{ state: Session['state'] }> = (props) => {
   const colorClass = () => {
@@ -70,6 +70,9 @@ export const SessionPanel: Component = () => {
     resumeSession,
     endSession,
     refreshSessions,
+    providers,
+    selectedProvider,
+    selectProvider,
   } = useSessionSafe();
 
   const [showNewProject, setShowNewProject] = createSignal(false);
@@ -79,9 +82,13 @@ export const SessionPanel: Component = () => {
     const project = currentProject();
     if (!project || project.kilns.length === 0) return;
 
+    const provider = selectedProvider();
+
     await createSession({
       kiln: project.kilns[0],
       workspace: project.path,
+      provider: provider?.provider_type ?? 'ollama',
+      model: provider?.default_model ?? 'llama3.2',
     });
   };
 
