@@ -241,6 +241,19 @@ export async function switchModel(sessionId: string, modelId: string): Promise<v
   }
 }
 
+/** Set the title for a session. */
+export async function setSessionTitle(sessionId: string, title: string): Promise<void> {
+  const res = await fetch(`/api/session/${encodeURIComponent(sessionId)}/title`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title }),
+  });
+
+  if (!res.ok) {
+    throw new Error(`Failed to set session title: HTTP ${res.status}`);
+  }
+}
+
 // =============================================================================
 // Search Endpoints
 // =============================================================================

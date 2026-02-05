@@ -37,6 +37,7 @@ export interface ChatContextValue {
 
 interface ChatProviderProps {
   session: Accessor<Session | null>;
+  setSessionTitle: (title: string) => Promise<void>;
   children: any;
 }
 
@@ -51,6 +52,8 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
   
   let eventSourceCleanup: (() => void) | null = null;
   let currentStreamingMessageId: string | null = null;
+  let firstUserMessage: string | null = null;
+  let hasReceivedFirstResponse = false;
 
   const addMessage = (message: Message) => {
     setMessages((prev) => [...prev, message]);
@@ -107,6 +110,11 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
         setIsStreaming(false);
         setIsLoading(false);
         currentStreamingMessageId = null;
+        
+        if (!hasReceivedFirstResponse && firstUserMessage) {
+          hasReceivedFirstResponse = true;
+          autoGenerateTitle();
+        }
         break;
 
       case 'error':
@@ -153,6 +161,25 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
     }
   });
 
+  const autoGenerateTitle = async () => {
+    const session = props.session();
+    if (!session || !firstUserMessage) return;
+    
+    if (session.title !== null && session.title.trim() !== '') {
+      return;
+    }
+    
+    const truncated = firstUserMessage.slice(0, 50);
+    const lastSpace = truncated.lastIndexOf(' ');
+    const title = lastSpace > 0 ? truncated.slice(0, lastSpace) + '...' : truncated;
+    
+    try {
+      await props.setSessionTitle(title);
+    } catch (err) {
+      console.error('Failed to auto-generate title:', err);
+    }
+  };
+
   const sendMessage = async (content: string) => {
     const session = props.session();
     if (!content.trim() || isLoading() || !session) return;
@@ -166,6 +193,10 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
       timestamp: Date.now(),
     };
     addMessage(userMessage);
+    
+    if (!firstUserMessage) {
+      firstUserMessage = content.trim();
+    }
 
     const assistantMessageId = generateMessageId();
     const assistantMessage: Message = {
@@ -200,6 +231,8 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
     setError(null);
     setPendingInteraction(null);
     currentStreamingMessageId = null;
+    firstUserMessage = null;
+    hasReceivedFirstResponse = false;
   };
 
   const respondToInteraction = async (response: InteractionResponse) => {
