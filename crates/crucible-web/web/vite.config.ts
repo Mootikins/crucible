@@ -9,6 +9,7 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src'),
     },
     conditions: ['development', 'browser'],
+    dedupe: ['solid-js', 'solid-js/web', 'solid-js/store'],
   },
   server: {
     port: 5173,
