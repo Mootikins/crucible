@@ -14,7 +14,7 @@ test-utils = ["dep:proptest"]
 [dependencies]
 crossterm = { workspace = true }
 unicode-width = "0.2"
-taffy = "0.7"
+taffy = "0.9"
 textwrap = "0.16.2"
 similar = "2.7"
 html_parser = "0.7"
