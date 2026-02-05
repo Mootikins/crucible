@@ -3612,6 +3612,7 @@ dependencies = [
  "crucible-surrealdb",
  "crucible-tools",
  "crucible-watch",
+ "crucible-web",
  "dialoguer",
  "dirs 6.0.0",
  "expectrl",
@@ -3744,11 +3745,13 @@ dependencies = [
  "crucible-lua",
  "crucible-observe",
  "crucible-pipeline",
+ "crucible-protocol",
  "crucible-rig",
  "crucible-sqlite",
  "crucible-surrealdb",
  "crucible-tools",
  "crucible-watch",
+ "crucible-web",
  "dashmap 6.1.0",
  "dirs 6.0.0",
  "futures",
@@ -3762,6 +3765,7 @@ dependencies = [
  "thiserror 2.0.17",
  "tokio",
  "tokio-util",
+ "toml 0.9.10+spec-1.1.0",
  "tracing",
  "tracing-subscriber",
  "uuid",
@@ -3953,6 +3957,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "crucible-protocol"
+version = "0.1.0"
+dependencies = [
+ "crucible-core",
+ "dirs 6.0.0",
+ "serde",
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
 name = "crucible-query"
 version = "0.1.0"
 dependencies = [
@@ -4003,6 +4018,7 @@ dependencies = [
  "chrono",
  "crucible-core",
  "crucible-daemon",
+ "crucible-protocol",
  "crucible-sqlite",
  "futures",
  "libc",
@@ -4171,6 +4187,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "axum",
+ "crucible-config",
  "crucible-core",
  "crucible-rpc",
  "futures",

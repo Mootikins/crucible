@@ -319,6 +319,13 @@ pub enum Commands {
         #[command(subcommand)]
         command: Option<AuthCommands>,
     },
+
+    /// Start the web UI server
+    #[cfg(feature = "web")]
+    #[command(
+        long_about = "Start the web UI server for browser-based chat interface.\n\nConnects to the Crucible daemon for session management and agent execution.\n\nExamples:\n  # Start web server with defaults from config\n  cru web\n\n  # Start on custom port\n  cru web --port 8080\n\n  # Bind to all interfaces\n  cru web --host 0.0.0.0"
+    )]
+    Web(crate::commands::web::WebCommand),
 }
 
 /// Session management subcommands

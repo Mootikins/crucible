@@ -1,31 +1,6 @@
-//! Daemon lifecycle: paths, socket management, shutdown
+pub use crucible_protocol::{remove_socket, socket_path};
 
 use anyhow::Result;
-use std::fs;
-use std::path::{Path, PathBuf};
-
-/// Get the socket path for the daemon
-///
-/// This is the canonical source of truth for the daemon socket path.
-/// All clients and the cru-server daemon should use this function.
-///
-/// Priority:
-/// 1. `CRUCIBLE_SOCKET` environment variable (if set)
-/// 2. `$XDG_RUNTIME_DIR/crucible.sock` (if XDG_RUNTIME_DIR is set)
-/// 3. `/tmp/crucible.sock` (fallback)
-pub fn socket_path() -> PathBuf {
-    if let Ok(path) = std::env::var("CRUCIBLE_SOCKET") {
-        return PathBuf::from(path);
-    }
-    dirs::runtime_dir()
-        .unwrap_or_else(|| PathBuf::from("/tmp"))
-        .join("crucible.sock")
-}
-
-/// Remove socket file if it exists
-pub fn remove_socket(path: &Path) {
-    let _ = fs::remove_file(path);
-}
 
 /// Wait for SIGTERM or SIGINT signal
 pub async fn wait_for_shutdown() -> Result<()> {
@@ -59,6 +34,7 @@ pub async fn wait_for_shutdown() -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
     use tempfile::TempDir;
 
     #[test]

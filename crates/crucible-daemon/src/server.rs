@@ -4,6 +4,7 @@ use crate::agent_manager::AgentManager;
 use crate::background_manager::BackgroundJobManager;
 use crate::daemon_plugins::DaemonPluginLoader;
 use crate::kiln_manager::KilnManager;
+use crate::project_manager::ProjectManager;
 use crate::protocol::{
     Request, Response, SessionEventMessage, INTERNAL_ERROR, INVALID_PARAMS, METHOD_NOT_FOUND,
     PARSE_ERROR,
@@ -82,9 +83,12 @@ pub struct Server {
     #[allow(dead_code)] // Stored for Arc lifetime; accessed via AgentManager
     background_manager: Arc<BackgroundJobManager>,
     subscription_manager: Arc<SubscriptionManager>,
+    project_manager: Arc<ProjectManager>,
     event_tx: broadcast::Sender<SessionEventMessage>,
     dispatcher: Arc<RpcDispatcher>,
     plugin_loader: Arc<Mutex<Option<DaemonPluginLoader>>>,
+    #[cfg(feature = "web")]
+    web_config: Option<crucible_config::WebConfig>,
 }
 
 impl Server {
@@ -98,6 +102,7 @@ impl Server {
             mcp_config,
             std::collections::HashMap::new(),
             crucible_config::ProvidersConfig::default(),
+            None,
         )
         .await
     }
@@ -108,6 +113,7 @@ impl Server {
         mcp_config: Option<&crucible_config::McpConfig>,
         plugin_config: std::collections::HashMap<String, serde_json::Value>,
         providers_config: crucible_config::ProvidersConfig,
+        #[allow(unused_variables)] web_config: Option<crucible_config::WebConfig>,
     ) -> Result<Self> {
         // Remove stale socket
         if path.exists() {
@@ -154,6 +160,9 @@ impl Server {
             providers_config,
         ));
         let subscription_manager = Arc::new(SubscriptionManager::new());
+        let project_manager = Arc::new(ProjectManager::new(
+            crucible_config::crucible_home().join("projects.json"),
+        ));
 
         let ctx = RpcContext::new(
             kiln_manager.clone(),
@@ -185,9 +194,12 @@ impl Server {
             agent_manager,
             background_manager,
             subscription_manager,
+            project_manager,
             event_tx,
             dispatcher,
             plugin_loader,
+            #[cfg(feature = "web")]
+            web_config,
         })
     }
 
@@ -264,6 +276,36 @@ impl Server {
                 }
             }
         }
+
+        #[cfg(feature = "web")]
+        let web_cancel = {
+            let cancel = CancellationToken::new();
+            if let Some(ref config) = self.web_config {
+                if config.enabled {
+                    let config = config.clone();
+                    let cancel_clone = cancel.clone();
+                    info!(
+                        "Starting embedded web server on http://{}:{}",
+                        config.host, config.port
+                    );
+                    tokio::spawn(async move {
+                        tokio::select! {
+                            biased;
+                            _ = cancel_clone.cancelled() => {
+                                info!("Web server shutting down");
+                            }
+                            result = crucible_web::start_server(&config) => {
+                                match result {
+                                    Ok(()) => info!("Web server stopped"),
+                                    Err(e) => warn!("Web server error: {}", e),
+                                }
+                            }
+                        }
+                    });
+                }
+            }
+            cancel
+        };
 
         // Spawn event persistence task with cancellation support
         let storage = FileSessionStorage::new();
@@ -387,11 +429,12 @@ impl Server {
                             let sm = self.session_manager.clone();
                             let am = self.agent_manager.clone();
                             let sub_m = self.subscription_manager.clone();
+                            let pm = self.project_manager.clone();
                             let event_tx = self.event_tx.clone();
                             let event_rx = self.event_tx.subscribe();
                             let pl = self.plugin_loader.clone();
                             tokio::spawn(async move {
-                                if let Err(e) = handle_client(stream, dispatcher, km, sm, am, sub_m, event_tx, event_rx, pl).await {
+                                if let Err(e) = handle_client(stream, dispatcher, km, sm, am, sub_m, pm, event_tx, event_rx, pl).await {
                                     error!("Client error: {}", e);
                                 }
                             });
@@ -409,6 +452,8 @@ impl Server {
         }
 
         // Graceful shutdown: signal cancellation, wait with timeout, then abort if needed
+        #[cfg(feature = "web")]
+        web_cancel.cancel();
         persist_cancel.cancel();
         reprocess_cancel.cancel();
         match tokio::time::timeout(std::time::Duration::from_secs(5), persist_task).await {
@@ -434,6 +479,7 @@ async fn handle_client(
     session_manager: Arc<SessionManager>,
     agent_manager: Arc<AgentManager>,
     subscription_manager: Arc<SubscriptionManager>,
+    project_manager: Arc<ProjectManager>,
     event_tx: broadcast::Sender<SessionEventMessage>,
     mut event_rx: broadcast::Receiver<SessionEventMessage>,
     plugin_loader: Arc<Mutex<Option<DaemonPluginLoader>>>,
@@ -495,6 +541,7 @@ async fn handle_client(
                     &session_manager,
                     &agent_manager,
                     &subscription_manager,
+                    &project_manager,
                     &event_tx,
                     &plugin_loader,
                 )
@@ -530,6 +577,7 @@ async fn handle_request(
     session_manager: &Arc<SessionManager>,
     agent_manager: &Arc<AgentManager>,
     _subscription_manager: &Arc<SubscriptionManager>,
+    project_manager: &Arc<ProjectManager>,
     event_tx: &broadcast::Sender<SessionEventMessage>,
     plugin_loader: &Arc<Mutex<Option<DaemonPluginLoader>>>,
 ) -> Response {
@@ -543,6 +591,7 @@ async fn handle_request(
                 kiln_manager,
                 session_manager,
                 agent_manager,
+                project_manager,
                 event_tx,
                 plugin_loader,
             )
@@ -559,6 +608,7 @@ async fn handle_legacy_request(
     kiln_manager: &Arc<KilnManager>,
     session_manager: &Arc<SessionManager>,
     agent_manager: &Arc<AgentManager>,
+    project_manager: &Arc<ProjectManager>,
     event_tx: &broadcast::Sender<SessionEventMessage>,
     plugin_loader: &Arc<Mutex<Option<DaemonPluginLoader>>>,
 ) -> Response {
@@ -619,6 +669,10 @@ async fn handle_legacy_request(
         "session.test_interaction" => handle_session_test_interaction(req, event_tx).await,
         "plugin.reload" => handle_plugin_reload(req, plugin_loader).await,
         "plugin.list" => handle_plugin_list(req, plugin_loader).await,
+        "project.register" => handle_project_register(req, project_manager).await,
+        "project.unregister" => handle_project_unregister(req, project_manager).await,
+        "project.list" => handle_project_list(req, project_manager).await,
+        "project.get" => handle_project_get(req, project_manager).await,
         _ => {
             tracing::warn!("Unknown RPC method: {:?}", req.method);
             Response::error(
@@ -1723,6 +1777,49 @@ async fn handle_plugin_list(
             "plugins": names,
         }),
     )
+}
+
+// --- Project handlers ---
+
+async fn handle_project_register(req: Request, pm: &Arc<ProjectManager>) -> Response {
+    let path = require_str_param!(req, "path");
+
+    match pm.register(Path::new(path)) {
+        Ok(project) => match serde_json::to_value(project) {
+            Ok(v) => Response::success(req.id, v),
+            Err(e) => Response::error(req.id, INTERNAL_ERROR, e.to_string()),
+        },
+        Err(e) => Response::error(req.id, INVALID_PARAMS, e.to_string()),
+    }
+}
+
+async fn handle_project_unregister(req: Request, pm: &Arc<ProjectManager>) -> Response {
+    let path = require_str_param!(req, "path");
+
+    match pm.unregister(Path::new(path)) {
+        Ok(()) => Response::success(req.id, serde_json::json!({"status": "ok"})),
+        Err(e) => Response::error(req.id, INVALID_PARAMS, e.to_string()),
+    }
+}
+
+async fn handle_project_list(req: Request, pm: &Arc<ProjectManager>) -> Response {
+    let projects = pm.list();
+    match serde_json::to_value(projects) {
+        Ok(v) => Response::success(req.id, v),
+        Err(e) => Response::error(req.id, INTERNAL_ERROR, e.to_string()),
+    }
+}
+
+async fn handle_project_get(req: Request, pm: &Arc<ProjectManager>) -> Response {
+    let path = require_str_param!(req, "path");
+
+    match pm.get(Path::new(path)) {
+        Some(project) => match serde_json::to_value(project) {
+            Ok(v) => Response::success(req.id, v),
+            Err(e) => Response::error(req.id, INTERNAL_ERROR, e.to_string()),
+        },
+        None => Response::success(req.id, serde_json::Value::Null),
+    }
 }
 
 #[cfg(test)]
