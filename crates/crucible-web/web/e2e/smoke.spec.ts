@@ -77,38 +77,32 @@ test.describe('Smoke Tests - Critical User Flows', () => {
     await expect(page.locator('text=Projects')).toBeVisible();
 
     const projectButton = page.getByText('/home/moot/crucible').first();
-    if (await projectButton.isVisible()) {
-      await projectButton.click();
-      await page.waitForTimeout(500);
+    await expect(projectButton).toBeVisible();
+    await projectButton.click();
+    await page.waitForTimeout(500);
 
-      await expect(page.locator('text=Sessions')).toBeVisible();
+    await expect(page.locator('text=Sessions')).toBeVisible();
 
-      const createSessionButton = page.locator('text=+ New Session');
-      if (await createSessionButton.isVisible()) {
-        await createSessionButton.click();
-        await page.waitForTimeout(1000);
-      }
+    const createSessionButton = page.locator('text=+ New Session');
+    await expect(createSessionButton).toBeVisible();
+    await createSessionButton.click();
+    await page.waitForTimeout(1000);
 
-      await expect(page.locator('text=Notes')).toBeVisible();
+    await expect(page.locator('text=Notes')).toBeVisible();
 
-      const noteLink = page.locator('text=Index.md').first();
-      if (await noteLink.isVisible()) {
-        await noteLink.click();
-        await page.waitForTimeout(1000);
+    const noteLink = page.locator('text=Index.md').first();
+    await expect(noteLink).toBeVisible();
+    await noteLink.click();
+    await page.waitForTimeout(1000);
 
-        const editor = page.locator('.cm-content');
-        if (await editor.isVisible()) {
-          await editor.click();
-          await page.keyboard.type('\n\nEdited content');
-          await page.waitForTimeout(500);
+    const editor = page.locator('.cm-content');
+    await expect(editor).toBeVisible();
+    await editor.click();
+    await page.keyboard.type('\n\nEdited content');
+    await page.waitForTimeout(500);
 
-          const dirtyIndicator = page.locator('text=●');
-          if (await dirtyIndicator.count() > 0) {
-            await expect(dirtyIndicator.first()).toBeVisible();
-          }
-        }
-      }
-    }
+    const dirtyIndicator = page.locator('text=●');
+    await expect(dirtyIndicator.first()).toBeVisible();
   });
 
   test('app loads without errors', async ({ page }) => {

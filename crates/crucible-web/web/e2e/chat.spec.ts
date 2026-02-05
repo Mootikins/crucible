@@ -5,14 +5,12 @@ test.describe('Chat Interface', () => {
     await page.goto('/');
     
     const projectButton = page.getByText('/home/moot/crucible').first();
-    if (await projectButton.isVisible()) {
-      await projectButton.click();
-      
-      const sessionButton = page.locator('button:has(span[class*="rounded-full"])').first();
-      if (await sessionButton.isVisible()) {
-        await sessionButton.click();
-      }
-    }
+    await expect(projectButton).toBeVisible();
+    await projectButton.click();
+    
+    const sessionButton = page.locator('button:has(span[class*="rounded-full"])').first();
+    await expect(sessionButton).toBeVisible();
+    await sessionButton.click();
   });
 
   test('displays chat input area', async ({ page }) => {
@@ -23,17 +21,14 @@ test.describe('Chat Interface', () => {
   test('can type in chat input', async ({ page }) => {
     const chatInput = page.locator('textarea, input[type="text"]').first();
     
-    if (await chatInput.isVisible()) {
-      await chatInput.fill('Hello, Crucible!');
-      await expect(chatInput).toHaveValue('Hello, Crucible!');
-    }
+    await expect(chatInput).toBeVisible();
+    await chatInput.fill('Hello, Crucible!');
+    await expect(chatInput).toHaveValue('Hello, Crucible!');
   });
 
   test('displays send button', async ({ page }) => {
     const sendButton = page.locator('button:has-text("Send"), button[type="submit"]').first();
-    if (await sendButton.isVisible()) {
-      await expect(sendButton).toBeVisible();
-    }
+    await expect(sendButton).toBeVisible();
   });
 
   test('displays message list area', async ({ page }) => {
@@ -52,18 +47,15 @@ test.describe('Chat Interface', () => {
 
     const chatInput = page.locator('textarea, input[type="text"]').first();
     
-    if (await chatInput.isVisible()) {
-      await chatInput.fill('Test message');
-      await chatInput.press('Enter');
-      
-      await page.waitForTimeout(500);
-    }
+    await expect(chatInput).toBeVisible();
+    await chatInput.fill('Test message');
+    await chatInput.press('Enter');
+    
+    await page.waitForTimeout(500);
   });
 
   test('displays microphone button for voice input', async ({ page }) => {
     const micButton = page.locator('button:has([class*="mic"]), button[aria-label*="microphone"]');
-    if (await micButton.count() > 0) {
-      await expect(micButton.first()).toBeVisible();
-    }
+    await expect(micButton.first()).toBeVisible();
   });
 });
