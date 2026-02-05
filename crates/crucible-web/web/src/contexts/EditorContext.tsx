@@ -7,7 +7,8 @@ import {
 } from 'solid-js';
 import { createStore, produce } from 'solid-js/store';
 import type { EditorFile } from '@/lib/types';
-import { getFileContent, saveFileContent } from '@/lib/api';
+import { getNote, saveNote } from '@/lib/api';
+import { useProjectSafe } from '@/contexts/ProjectContext';
 
 export interface EditorContextValue {
   openFiles: Accessor<EditorFile[]>;
@@ -23,7 +24,13 @@ export interface EditorContextValue {
 
 const EditorContext = createContext<EditorContextValue>();
 
+function extractNoteName(path: string, kilnPath: string): string {
+  const relative = path.replace(kilnPath + '/', '');
+  return relative.replace(/\.md$/, '');
+}
+
 export const EditorProvider: ParentComponent = (props) => {
+  const project = useProjectSafe();
   const [openFilesStore, setOpenFiles] = createStore<EditorFile[]>([]);
   const [activeFile, setActiveFileSignal] = createSignal<string | null>(null);
   const [isLoading, setIsLoading] = createSignal(false);
@@ -40,7 +47,19 @@ export const EditorProvider: ParentComponent = (props) => {
     setError(null);
 
     try {
-      const content = await getFileContent(path);
+      const currentProject = project.currentProject();
+      if (!currentProject || !currentProject.kilns[0]) {
+        setError('No project selected');
+        return;
+      }
+
+      const kilnPath = currentProject.kilns[0];
+      const noteName = extractNoteName(path, kilnPath);
+      const noteData = await getNote(noteName, kilnPath);
+      const content = typeof noteData === 'object' && noteData !== null && 'content' in noteData
+        ? String((noteData as Record<string, unknown>).content)
+        : '';
+
       setOpenFiles(
         produce((files) => {
           files.push({ path, content, dirty: false });
@@ -81,7 +100,16 @@ export const EditorProvider: ParentComponent = (props) => {
     setError(null);
 
     try {
-      await saveFileContent(path, file.content);
+      const currentProject = project.currentProject();
+      if (!currentProject || !currentProject.kilns[0]) {
+        setError('No project selected');
+        return;
+      }
+
+      const kilnPath = currentProject.kilns[0];
+      const noteName = extractNoteName(path, kilnPath);
+      await saveNote(noteName, kilnPath, file.content);
+
       setOpenFiles(
         produce((files) => {
           const f = files.find((x) => x.path === path);
