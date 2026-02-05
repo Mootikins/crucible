@@ -52,8 +52,8 @@ export const PreviewPanel: Component = () => {
     <div class="h-full flex items-center justify-center bg-neutral-900 text-neutral-500">
       <div class="text-center">
         <div class="text-4xl mb-2">📄</div>
-        <div>Markdown Preview</div>
-        <div class="text-sm text-neutral-600">Coming soon</div>
+        <div class="text-sm font-medium">Markdown Preview</div>
+        <div class="text-xs text-neutral-500 mt-1">Coming soon</div>
       </div>
     </div>
   );
@@ -66,8 +66,8 @@ export const CanvasPanel: Component = () => {
     <div class="h-full flex items-center justify-center bg-neutral-900 text-neutral-500">
       <div class="text-center">
         <div class="text-4xl mb-2">🎨</div>
-        <div>Canvas</div>
-        <div class="text-sm text-neutral-600">Coming soon</div>
+        <div class="text-sm font-medium">Canvas</div>
+        <div class="text-xs text-neutral-500 mt-1">Coming soon</div>
       </div>
     </div>
   );
@@ -78,8 +78,8 @@ export const GraphPanel: Component = () => {
     <div class="h-full flex items-center justify-center bg-neutral-900 text-neutral-500">
       <div class="text-center">
         <div class="text-4xl mb-2">🕸️</div>
-        <div>Knowledge Graph</div>
-        <div class="text-sm text-neutral-600">Coming soon</div>
+        <div class="text-sm font-medium">Knowledge Graph</div>
+        <div class="text-xs text-neutral-500 mt-1">Coming soon</div>
       </div>
     </div>
   );
@@ -92,8 +92,8 @@ export const BottomPanel: Component = () => {
     <div class="h-full flex items-center justify-center bg-neutral-900 text-neutral-500">
       <div class="text-center">
         <div class="text-4xl mb-2">📋</div>
-        <div>Output / Terminal</div>
-        <div class="text-sm text-neutral-600">Coming soon</div>
+        <div class="text-sm font-medium">Output / Terminal</div>
+        <div class="text-xs text-neutral-500 mt-1">Coming soon</div>
       </div>
     </div>
   );
