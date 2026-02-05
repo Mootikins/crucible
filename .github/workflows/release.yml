@@ -60,6 +60,9 @@ jobs:
           - target: aarch64-unknown-linux-gnu
             os: ubuntu-latest
             use_cross: true
+          - target: x86_64-apple-darwin
+            os: macos-13
+            use_cross: false
           - target: aarch64-apple-darwin
             os: macos-14
             use_cross: false
@@ -191,3 +194,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release edit "${{ needs.create-release.outputs.tag }}" --draft=false
+
+      - name: Update Homebrew tap
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api repos/Mootikins/homebrew-crucible/dispatches \
+            -f event_type=crucible-release \
+            -f 'client_payload[tag]=${{ needs.create-release.outputs.tag }}'
