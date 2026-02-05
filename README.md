@@ -21,16 +21,35 @@ Crucible is a local-first AI assistant where **every conversation becomes a sear
 
 **Plaintext First**: No proprietary formats. No cloud lock-in. Files are always the source of truth. The database is optional acceleration.
 
+## Install
+
+**Pre-built binaries** (Linux x86_64/aarch64, macOS Intel/Apple Silicon):
+
+```bash
+curl -fsSL https://github.com/Mootikins/crucible/releases/latest/download/install.sh | sh
+```
+
+**Homebrew** (macOS and Linux):
+
+```bash
+brew install mootikins/crucible/crucible
+```
+
+**cargo-binstall** (downloads pre-built binary):
+
+```bash
+cargo binstall crucible-cli
+```
+
+**From source:**
+
+```bash
+cargo install --git https://github.com/Mootikins/crucible.git crucible-cli
+```
+
 ## Quick Start
 
 ```bash
-# Install from source
-git clone https://github.com/mootikins/crucible.git
-cd crucible && cargo build --release
-
-# Or install directly via Cargo
-cargo install --git https://github.com/Mootikins/crucible.git crucible-cli
-
 # Start a chat session (first run triggers setup wizard)
 cru chat
 
