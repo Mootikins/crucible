@@ -144,7 +144,7 @@ crucible-cli = { path = ".", features = ["test-utils"] }  # Enable test utilitie
 crucible-config = { path = "../crucible-config", features = ["test-utils"] }
 rune = "0.14"  # For NoteStore integration tests
 # MCP client for testing examples
-rmcp = { version = "0.9.1", features = ["client", "transport-child-process"] }
+rmcp = { version = "0.13", features = ["client", "transport-child-process"] }
 tempfile = { workspace = true }
 assert_cmd = { workspace = true }
 predicates = { workspace = true }

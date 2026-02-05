@@ -28,7 +28,7 @@ crucible-tools = { path = "../crucible-tools" }
 oq = { workspace = true }
 
 # MCP server transport
-rmcp = { version = "0.9.1", features = ["macros", "server", "transport-sse-server"] }
+rmcp = { version = "0.13", features = ["macros", "server", "transport-streamable-http-server"] }
 
 # HTTP server for SSE (required for in-process MCP hosting)
 axum = "0.8"

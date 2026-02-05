@@ -610,17 +610,28 @@ impl ExtendedMcpService {
         Ok(())
     }
 
-    /// Serve via SSE transport on the specified address
-    ///
-    /// Returns when the server receives a shutdown signal (Ctrl+C).
+    /// Serve via streamable HTTP transport on the specified address.
     pub async fn serve_sse(self, addr: std::net::SocketAddr) -> Result<(), anyhow::Error> {
-        use rmcp::transport::SseServer;
+        use rmcp::transport::streamable_http_server::{
+            session::local::LocalSessionManager, tower::StreamableHttpService,
+        };
+        use rmcp::transport::StreamableHttpServerConfig;
 
-        let sse_server = SseServer::serve(addr).await?;
-        let _ct = sse_server.with_service(move || self.clone());
+        let service = StreamableHttpService::new(
+            move || Ok(self.clone()),
+            LocalSessionManager::default().into(),
+            StreamableHttpServerConfig::default(),
+        );
 
-        // Wait for shutdown signal
-        tokio::signal::ctrl_c().await?;
+        let router = axum::Router::new().nest_service("/mcp", service);
+        let listener = tokio::net::TcpListener::bind(addr).await?;
+
+        axum::serve(listener, router)
+            .with_graceful_shutdown(async {
+                tokio::signal::ctrl_c().await.ok();
+            })
+            .await?;
+
         Ok(())
     }
 }
@@ -658,6 +669,7 @@ impl ServerHandler for ExtendedMcpService {
         Ok(rmcp::model::ListToolsResult {
             tools,
             next_cursor: None,
+            meta: None,
         })
     }
 

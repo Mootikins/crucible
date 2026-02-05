@@ -171,7 +171,7 @@ where
                             StreamedAssistantContent::Text(text) => {
                                 yield Ok(BackendCompletionChunk::text(text.text));
                             }
-                            StreamedAssistantContent::ToolCall(tc) => {
+                            StreamedAssistantContent::ToolCall { tool_call: tc, .. } => {
                                 let tool_call = ToolCall {
                                     id: tc.id.clone(),
                                     r#type: "function".to_string(),
