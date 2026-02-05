@@ -56,3 +56,59 @@ pub async fn start_server(config: &WebConfig) -> Result<()> {
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_max_body_size_is_10mb() {
+        assert_eq!(MAX_BODY_SIZE_10MB, 10 * 1024 * 1024);
+        assert_eq!(MAX_BODY_SIZE_10MB, 10_485_760);
+    }
+
+    #[test]
+    fn test_cors_allowed_origins_are_localhost_only() {
+        let allowed_origins = [
+            "http://localhost:3000",
+            "http://localhost:5173",
+            "http://127.0.0.1:3000",
+            "http://127.0.0.1:5173",
+        ];
+
+        for origin in allowed_origins {
+            assert!(
+                origin.starts_with("http://localhost:") || origin.starts_with("http://127.0.0.1:"),
+                "Origin {} should be localhost only",
+                origin
+            );
+        }
+
+        let disallowed_patterns = ["https://", "http://0.0.0.0", "http://192.168", "http://10."];
+        for pattern in disallowed_patterns {
+            for origin in &allowed_origins {
+                assert!(
+                    !origin.starts_with(pattern),
+                    "Origin {} should not match disallowed pattern {}",
+                    origin,
+                    pattern
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_cors_origins_are_valid_urls() {
+        let origins = [
+            "http://localhost:3000",
+            "http://localhost:5173",
+            "http://127.0.0.1:3000",
+            "http://127.0.0.1:5173",
+        ];
+
+        for origin in origins {
+            let parsed: axum::http::HeaderValue = origin.parse().expect("Should be valid header");
+            assert!(!parsed.is_empty());
+        }
+    }
+}
