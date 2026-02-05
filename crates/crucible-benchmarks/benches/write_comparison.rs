@@ -19,9 +19,9 @@ use crucible_core::storage::NoteStore;
 #[cfg(any(feature = "sqlite", feature = "surrealdb"))]
 use rand::prelude::*;
 #[cfg(any(feature = "sqlite", feature = "surrealdb"))]
-use rand::SeedableRng;
+use rand::rngs::StdRng;
 #[cfg(any(feature = "sqlite", feature = "surrealdb"))]
-use rand_chacha::ChaCha8Rng;
+use rand::SeedableRng;
 #[cfg(feature = "sqlite")]
 use std::sync::Arc;
 #[cfg(any(feature = "sqlite", feature = "surrealdb"))]
@@ -34,7 +34,7 @@ use tempfile::TempDir;
 /// Generate a single note for insert testing
 #[cfg(any(feature = "sqlite", feature = "surrealdb"))]
 fn generate_note(id: usize) -> NoteRecord {
-    let mut rng = ChaCha8Rng::seed_from_u64(id as u64);
+    let mut rng = StdRng::seed_from_u64(id as u64);
     let hash_bytes: [u8; 32] = rng.random();
 
     NoteRecord::new(
@@ -270,7 +270,7 @@ fn bench_bulk_insert(c: &mut Criterion) {
 #[cfg(any(feature = "sqlite", feature = "surrealdb"))]
 fn generate_updated_note(id: usize, version: usize) -> NoteRecord {
     // Use combined seed for different content hash each version
-    let mut rng = ChaCha8Rng::seed_from_u64((id as u64) ^ ((version as u64) << 32));
+    let mut rng = StdRng::seed_from_u64((id as u64) ^ ((version as u64) << 32));
     let hash_bytes: [u8; 32] = rng.random();
 
     NoteRecord::new(

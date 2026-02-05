@@ -5,8 +5,8 @@
 use crucible_core::parser::BlockHash;
 use crucible_core::storage::NoteRecord;
 use rand::prelude::*;
+use rand::rngs::StdRng;
 use rand::SeedableRng;
-use rand_chacha::ChaCha8Rng;
 
 /// Default embedding dimension for benchmarks
 pub const EMBEDDING_DIM: usize = 384;
@@ -51,7 +51,7 @@ pub fn generate_graph(
     hub_percentage: f32,
     seed: u64,
 ) -> GraphFixture {
-    let mut rng = ChaCha8Rng::seed_from_u64(seed);
+    let mut rng = StdRng::seed_from_u64(seed);
 
     // Determine which notes are hubs
     let hub_count = ((note_count as f32) * hub_percentage).ceil() as usize;
