@@ -69,10 +69,32 @@
   --dv-activegroup-hiddenpanel-tab-color: #a3a3a3;
   --dv-inactivegroup-visiblepanel-tab-color: #d4d4d4;
   --dv-inactivegroup-hiddenpanel-tab-color: #737373;
-  --dv-background-color: #171717;
-  --dv-paneview-header-border-color: #404040;
-  --dv-tabs-and-actions-container-background-color: #171717;
+  --dv-background-color: #0a0a0a;
+  --dv-paneview-header-border-color: #262626;
+  --dv-tabs-and-actions-container-background-color: #0a0a0a;
   --dv-tabs-container-scrollbar-color: #525252;
-  --dv-group-view-background-color: #171717;
-  --dv-separator-border: #404040;
+  --dv-group-view-background-color: #0a0a0a;
+  --dv-separator-border: #262626;
+  --dv-drag-over-background-color: rgba(59, 130, 246, 0.2);
+  --dv-drag-over-border-color: #3b82f6;
+}
+
+.dockview-theme-abyss .tabs-container {
+  height: 32px;
+  min-height: 32px;
+}
+
+.dockview-theme-abyss .tab {
+  padding: 0 12px;
+  font-size: 13px;
+}
+
+.dockview-theme-abyss .dv-resize-handle-horizontal,
+.dockview-theme-abyss .dv-resize-handle-vertical {
+  background: transparent;
+}
+
+.dockview-theme-abyss .dv-resize-handle-horizontal:hover,
+.dockview-theme-abyss .dv-resize-handle-vertical:hover {
+  background: #3b82f6;
 }
