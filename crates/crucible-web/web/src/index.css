@@ -103,6 +103,25 @@
   background: #3b82f6;
 }
 
+.icon-rail {
+  width: 48px;
+  min-width: 48px;
+  max-width: 48px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background-color: #171717;
+}
+
+.icon-rail-left {
+  border-right: 1px solid #262626;
+}
+
+.icon-rail-right {
+  border-left: 1px solid #262626;
+}
+
 /* Reduced motion support for accessibility */
 @media (prefers-reduced-motion: reduce) {
   *,
