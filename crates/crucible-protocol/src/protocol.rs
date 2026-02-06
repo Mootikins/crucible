@@ -281,4 +281,15 @@ mod tests {
         let line = event.to_json_line().unwrap();
         assert!(line.ends_with('\n'));
     }
+
+    #[test]
+    fn test_session_event_message_complete() {
+        let event =
+            SessionEventMessage::message_complete("chat-test", "msg-123", "Hello World!", None);
+        let json = serde_json::to_string(&event).unwrap();
+        println!("message_complete JSON: {}", json);
+        assert!(json.contains("\"event\":\"message_complete\""));
+        assert!(json.contains("\"full_response\":\"Hello World!\""));
+        assert!(json.contains("\"message_id\":\"msg-123\""));
+    }
 }

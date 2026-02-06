@@ -102,7 +102,11 @@ impl ChatEvent {
                     .or_else(|| data["id"].as_str())
                     .unwrap_or("")
                     .to_string(),
-                content: data["content"].as_str().unwrap_or("").to_string(),
+                content: data["full_response"]
+                    .as_str()
+                    .or_else(|| data["content"].as_str())
+                    .unwrap_or("")
+                    .to_string(),
                 tool_calls: Vec::new(),
             },
 
