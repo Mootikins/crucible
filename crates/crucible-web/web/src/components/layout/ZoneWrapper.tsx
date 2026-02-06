@@ -1,10 +1,12 @@
 import { type JSXElement, type Component, Show } from 'solid-js';
+import { type Zone } from '@/lib/panel-registry';
 
 export interface ZoneWrapperProps {
-  zone: string;
+  zone: Zone;
   collapsed: boolean;
   width?: number;
   height?: number;
+  id?: string;
   ref?: HTMLDivElement | ((el: HTMLDivElement) => void);
   children?: JSXElement;
   onTransitionEnd?: (event: TransitionEvent) => void;
@@ -45,6 +47,7 @@ export const ZoneWrapper: Component<ZoneWrapperProps> = (props) => {
 
   return (
     <div
+      id={props.id}
       data-zone={props.zone}
       data-testid={`zone-${props.zone}`}
       ref={props.ref}
