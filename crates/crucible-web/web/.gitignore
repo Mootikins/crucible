@@ -1,0 +1,11 @@
+# Test artifacts
+test-results/
+playwright-report/
+
+# Build output
+dist/
+node_modules/
+
+# Local env
+.env.local
+.env.*.local
