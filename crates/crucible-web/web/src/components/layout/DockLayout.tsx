@@ -1,4 +1,4 @@
-import { Component, ParentComponent, onMount, onCleanup } from 'solid-js';
+import { Component, onMount, onCleanup } from 'solid-js';
 import { createSolidDockview, type DockviewInstance } from '@/lib/solid-dockview';
 import { getGlobalRegistry, type Zone } from '@/lib/panel-registry';
 import { setupCrossZoneDnD } from '@/lib/dnd-bridge';
@@ -10,10 +10,6 @@ import { FilesPanel } from '@/components/FilesPanel';
 import { EditorPanel } from '@/components/EditorPanel';
 import { ShellLayout } from './ShellLayout';
 import 'dockview-core/dist/styles/dockview.css';
-
-export const ChatPanel: ParentComponent = (props) => (
-  <div class="h-full flex flex-col bg-neutral-900">{props.children}</div>
-);
 
 export const BottomPanel: Component = () => (
   <div class="h-full flex items-center justify-center bg-neutral-900 text-neutral-500">
@@ -40,6 +36,7 @@ function registerDefaultPanels(chatContent: Component): void {
 function createFloatActionRenderer(
   zone: Zone,
   instances: Map<Zone, DockviewInstance>,
+  getCenterContainer?: () => HTMLElement | undefined,
 ): (group: DockviewGroupPanel) => IHeaderActionsRenderer {
   return (_group: DockviewGroupPanel) => {
     const el = document.createElement('div');
@@ -82,7 +79,7 @@ function createFloatActionRenderer(
       if (isFloating(panelId)) {
         dockPanel(panelId, centerInstance.api, instances);
       } else if (zone !== 'center') {
-        floatPanel(panelId, zone, centerInstance.api, instances);
+        floatPanel(panelId, zone, centerInstance.api, instances, getCenterContainer?.());
       }
     });
 
@@ -102,6 +99,7 @@ function createZoneDockview(
   container: HTMLElement,
   zone: Zone,
   instances: Map<Zone, DockviewInstance>,
+  getCenterContainer?: () => HTMLElement | undefined,
 ): DockviewInstance {
   const registry = getGlobalRegistry();
   const componentMap = registry.getComponentMap();
@@ -111,21 +109,25 @@ function createZoneDockview(
   const panelIds = defaultLayout[zone];
 
   const panels = panelIds.map((id, index) => {
-    const def = registry.get(id)!;
+    const def = registry.get(id);
+    if (!def) {
+      console.warn(`Panel definition not found for id: ${id}, skipping`);
+      return null;
+    }
     return {
       id: def.id,
       title: def.title,
       component: def.component,
       position: index > 0 ? { referencePanel: panelIds[0], direction: 'within' as const } : undefined,
     };
-  });
+  }).filter((p): p is NonNullable<typeof p> => p !== null);
 
   const instance = createSolidDockview({
     container,
     panels,
     componentMap,
     className: 'dockview-theme-abyss',
-    createRightHeaderActionComponent: createFloatActionRenderer(zone, instances),
+    createRightHeaderActionComponent: createFloatActionRenderer(zone, instances, getCenterContainer),
   });
 
   if (savedLayout) {
@@ -169,21 +171,27 @@ export const DockLayout: Component<DockLayoutProps> = (props) => {
       { zone: 'bottom', ref: bottomRef },
     ];
 
+    const layoutDisposables: Array<{ dispose(): void }> = [];
+
     for (const { zone, ref } of zones) {
       if (!ref) continue;
-      const instance = createZoneDockview(ref, zone, instances);
+      const instance = createZoneDockview(ref, zone, instances, () => centerRef);
       instances.set(zone, instance);
 
       // Save layout on every change
-      instance.api.onDidLayoutChange(() => {
+      const disposable = instance.api.onDidLayoutChange(() => {
         const serialized = JSON.stringify(instance.api.toJSON());
         saveZoneLayout(zone, serialized);
       });
+      layoutDisposables.push(disposable);
     }
 
     const cleanupDnD = setupCrossZoneDnD(instances);
 
     onCleanup(() => {
+      for (const d of layoutDisposables) {
+        d.dispose();
+      }
       cleanupDnD();
       for (const instance of instances.values()) {
         instance.dispose();

@@ -1,12 +1,10 @@
-import { type SerializedDockview } from 'dockview-core';
+import type { Zone } from './panel-registry';
 
 const LAYOUT_STORAGE_KEY = 'crucible:layout';
 const ZONE_STATE_KEY = 'crucible:zones';
 const ZONE_WIDTHS_KEY = 'crucible:zone-widths';
 
-export type { SerializedDockview };
-
-export type Zone = 'left' | 'center' | 'right' | 'bottom';
+export type { Zone };
 
 export type ZoneMode = 'visible' | 'hidden' | 'pinned';
 
@@ -57,23 +55,6 @@ export function migrateZoneState(value: unknown): ZoneState {
   return DEFAULT_ZONE_STATE;
 }
 
-export function isValidZoneState(value: unknown): value is ZoneState {
-  if (typeof value !== 'object' || value === null) return false;
-  const obj = value as Record<string, unknown>;
-  
-  if (!('left' in obj) || !('right' in obj) || !('bottom' in obj)) return false;
-  
-  if (isValidZoneMode(obj.left) && isValidZoneMode(obj.right) && isValidZoneMode(obj.bottom)) {
-    return true;
-  }
-  
-  if (typeof obj.left === 'boolean' && typeof obj.right === 'boolean' && typeof obj.bottom === 'boolean') {
-    return true;
-  }
-  
-  return false;
-}
-
 export function loadZoneState(): ZoneState {
   const stored = localStorage.getItem(ZONE_STATE_KEY);
   if (!stored) return DEFAULT_ZONE_STATE;
@@ -85,33 +66,8 @@ export function loadZoneState(): ZoneState {
   }
 }
 
-export function loadDockviewLayout(): SerializedDockview | null {
-  const stored = localStorage.getItem(LAYOUT_STORAGE_KEY);
-  if (!stored) return null;
-  try {
-    const parsed = JSON.parse(stored);
-    // Validate it has expected structure
-    if (parsed && typeof parsed.grid === 'object' && typeof parsed.panels === 'object') {
-      return parsed as SerializedDockview;
-    }
-    return null;
-  } catch {
-    return null;
-  }
-}
-
-export function saveDockviewLayout(state: SerializedDockview): void {
-  localStorage.setItem(LAYOUT_STORAGE_KEY, JSON.stringify(state));
-}
-
 export function saveZoneState(state: ZoneState): void {
   localStorage.setItem(ZONE_STATE_KEY, JSON.stringify(state));
-}
-
-export function clearLayout(): void {
-  localStorage.removeItem(LAYOUT_STORAGE_KEY);
-  localStorage.removeItem(ZONE_STATE_KEY);
-  localStorage.removeItem(ZONE_WIDTHS_KEY);
 }
 
 export interface ZoneWidths {
@@ -227,14 +183,3 @@ export function migrateOldLayout(): void {
   }
 }
 
-/**
- * Clear all layout data (old and new formats).
- * Used for reset/cleanup.
- */
-export function clearAllLayouts(): void {
-  localStorage.removeItem(LAYOUT_STORAGE_KEY);
-  localStorage.removeItem('crucible:layout:left');
-  localStorage.removeItem('crucible:layout:center');
-  localStorage.removeItem('crucible:layout:right');
-  localStorage.removeItem('crucible:layout:bottom');
-}
