@@ -12,6 +12,16 @@ import {
 } from 'dockview-core';
 import type { Component } from 'solid-js';
 
+interface Disposable {
+  dispose(): void;
+}
+
+export interface PanelParams {
+  api: DockviewApi;
+  panelId: string;
+  title: string;
+}
+
 export type { DockviewApi, DockviewComponent, SerializedDockview };
 
 export type Zone = 'left' | 'center' | 'right' | 'bottom';
@@ -32,7 +42,8 @@ class SolidContentRenderer implements IContentRenderer {
 
   constructor(
     private readonly componentName: string,
-    private readonly registry: PanelRegistry
+    private readonly registry: PanelRegistry,
+    private readonly getApi: () => DockviewApi
   ) {
     this._element = document.createElement('div');
     this._element.className = 'h-full w-full';
@@ -42,10 +53,15 @@ class SolidContentRenderer implements IContentRenderer {
     return this._element;
   }
 
-  init(_params: GroupPanelPartInitParameters): void {
+  init(params: GroupPanelPartInitParameters): void {
     const PanelComponent = this.registry.get(this.componentName);
     if (PanelComponent) {
-      this._dispose = render(() => createComponent(PanelComponent, {}), this._element);
+      const panelParams: PanelParams = {
+        api: this.getApi(),
+        panelId: params.params?.id as string ?? this.componentName,
+        title: params.title,
+      };
+      this._dispose = render(() => createComponent(PanelComponent, panelParams), this._element);
     }
   }
 
@@ -61,6 +77,7 @@ export interface CreateDockviewOptions {
   container: HTMLElement;
   panels: PanelConfig[];
   className?: string;
+  initialLayout?: SerializedDockview;
   onReady?: (api: DockviewApi) => void;
   onLayoutChange?: () => void;
 }
@@ -111,26 +128,41 @@ export function createSolidDockview(options: CreateDockviewOptions): DockviewIns
   const registry: PanelRegistry = new Map();
   const groupZoneMap = new Map<string, Zone>();
   const hiddenGroups = new Set<string>();
-  let isTogglingZone = false;
+  let toggleDepth = 0;
+  const disposables: Disposable[] = [];
+  let initTimeoutId: ReturnType<typeof setTimeout> | null = null;
 
   for (const panel of options.panels) {
     registry.set(panel.id, panel.component);
   }
 
+  let dockviewApi: DockviewApi | null = null;
+  const getApi = (): DockviewApi => {
+    if (!dockviewApi) throw new Error('Dockview API not initialized');
+    return dockviewApi;
+  };
+
   const dockview = new DockviewComponent(options.container, {
     createComponent: (opts: CreateComponentOptions) => {
-      return new SolidContentRenderer(opts.name, registry);
+      return new SolidContentRenderer(opts.name, registry, getApi);
     },
     disableFloatingGroups: false,
     floatingGroupBounds: 'boundedWithinViewport',
     className: options.className,
   });
+  
+  dockviewApi = dockview.api;
 
-  for (const { id, title, position, floating } of options.panels) {
-    const panelOpts: AddPanelOptions = { id, component: id, title };
-    if (position) panelOpts.position = position;
-    if (floating) panelOpts.floating = floating;
-    dockview.addPanel(panelOpts);
+  if (options.initialLayout) {
+    type FromJSONParam = Parameters<typeof dockview.fromJSON>[0];
+    dockview.fromJSON(options.initialLayout as FromJSONParam);
+  } else {
+    for (const { id, title, position, floating } of options.panels) {
+      const panelOpts: AddPanelOptions = { id, component: id, title };
+      if (position) panelOpts.position = position;
+      if (floating) panelOpts.floating = floating;
+      dockview.addPanel(panelOpts);
+    }
   }
 
   const recalculateZones = (): void => {
@@ -141,7 +173,12 @@ export function createSolidDockview(options: CreateDockviewOptions): DockviewIns
     
     for (const group of dockview.api.groups) {
       if (!hiddenGroups.has(group.id) && group.api.isVisible) {
-        groupZoneMap.set(group.id, detectGroupZone(group, containerRect));
+        const newZone = detectGroupZone(group, containerRect);
+        const previousZone = groupZoneMap.get(group.id);
+        if (newZone === 'center' && previousZone && previousZone !== 'center') {
+          continue;
+        }
+        groupZoneMap.set(group.id, newZone);
       }
     }
   };
@@ -155,7 +192,7 @@ export function createSolidDockview(options: CreateDockviewOptions): DockviewIns
   };
 
   const setZoneVisible = (zone: Zone, visible: boolean): void => {
-    isTogglingZone = true;
+    toggleDepth++;
     const groups = getGroupsInZone(zone);
     for (const group of groups) {
       if (visible) {
@@ -166,27 +203,30 @@ export function createSolidDockview(options: CreateDockviewOptions): DockviewIns
       group.api.setVisible(visible);
     }
     requestAnimationFrame(() => {
-      isTogglingZone = false;
+      requestAnimationFrame(() => {
+        toggleDepth--;
+      });
     });
   };
 
   const scheduleRecalculation = (): void => {
     requestAnimationFrame(() => {
-      if (!isTogglingZone) {
+      if (toggleDepth === 0) {
         recalculateZones();
       }
     });
   };
 
-  setTimeout(() => scheduleRecalculation(), 200);
+  initTimeoutId = setTimeout(() => scheduleRecalculation(), 200);
 
   if (options.onLayoutChange) {
-    dockview.onDidLayoutChange(() => {
-      if (!isTogglingZone) {
+    const layoutDisposable = dockview.onDidLayoutChange(() => {
+      if (toggleDepth === 0) {
         scheduleRecalculation();
       }
       options.onLayoutChange!();
     });
+    disposables.push(layoutDisposable);
   }
 
   if (options.onReady) {
@@ -201,6 +241,14 @@ export function createSolidDockview(options: CreateDockviewOptions): DockviewIns
     setZoneVisible,
     recalculateZones,
     dispose: () => {
+      if (initTimeoutId !== null) {
+        clearTimeout(initTimeoutId);
+        initTimeoutId = null;
+      }
+      for (const d of disposables) {
+        d.dispose();
+      }
+      disposables.length = 0;
       dockview.dispose();
     },
   };
