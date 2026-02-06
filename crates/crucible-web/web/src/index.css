@@ -122,6 +122,26 @@
   border-left: 1px solid #262626;
 }
 
+/* Zone visual styling - edge zones have subtle tint + inner border */
+.dockview-theme-abyss .dv-groupview[data-zone="left"] {
+  background-color: rgba(59, 130, 246, 0.02);
+  border-right: 2px solid rgba(59, 130, 246, 0.15);
+}
+
+.dockview-theme-abyss .dv-groupview[data-zone="right"] {
+  background-color: rgba(59, 130, 246, 0.02);
+  border-left: 2px solid rgba(59, 130, 246, 0.15);
+}
+
+.dockview-theme-abyss .dv-groupview[data-zone="bottom"] {
+  background-color: rgba(59, 130, 246, 0.02);
+  border-top: 2px solid rgba(59, 130, 246, 0.15);
+}
+
+.dockview-theme-abyss .dv-groupview[data-zone="center"] {
+  background-color: transparent;
+}
+
 /* Reduced motion support for accessibility */
 @media (prefers-reduced-motion: reduce) {
   *,
