@@ -1,3 +1,3 @@
-export { DockLayout, ChatPanel, BottomPanel } from './DockLayout';
+export { DockLayout, BottomPanel } from './DockLayout';
 export { ShellLayout } from './ShellLayout';
 export { ZoneWrapper } from './ZoneWrapper';

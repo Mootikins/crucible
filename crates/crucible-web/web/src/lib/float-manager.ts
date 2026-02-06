@@ -1,4 +1,4 @@
-import type { DockviewApi } from 'dockview-core';
+import type { DockviewApi, AddPanelOptions } from 'dockview-core';
 import type { Zone } from './panel-registry';
 import type { DockviewInstance } from './solid-dockview';
 
@@ -24,6 +24,7 @@ export function floatPanel(
   sourceZone: Zone,
   centerApi: DockviewApi,
   zoneApis: Map<Zone, DockviewInstance>,
+  containerEl?: HTMLElement,
 ): boolean {
   if (originalZones.has(panelId)) return false;
 
@@ -37,18 +38,17 @@ export function floatPanel(
   sourceInstance.api.removePanel(panel);
   originalZones.set(panelId, sourceZone);
 
-  const containerEl = (centerApi as any).element ?? (centerApi as any)._element;
   let x = 100;
   let y = 50;
   if (containerEl) {
-    const rect = containerEl.getBoundingClientRect?.();
+    const rect = containerEl.getBoundingClientRect();
     if (rect) {
       x = Math.max(0, Math.round((rect.width - FLOAT_WIDTH) / 2));
       y = Math.max(0, Math.round((rect.height - FLOAT_HEIGHT) / 2));
     }
   }
 
-  centerApi.addPanel({
+  const opts: AddPanelOptions = {
     id: panelId,
     component: panelId,
     title,
@@ -58,7 +58,8 @@ export function floatPanel(
       width: FLOAT_WIDTH,
       height: FLOAT_HEIGHT,
     },
-  } as any);
+  };
+  centerApi.addPanel(opts);
 
   return true;
 }
