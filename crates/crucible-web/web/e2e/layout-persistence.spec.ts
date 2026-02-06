@@ -19,6 +19,11 @@ test.describe('Layout Persistence', () => {
       msg.type === 'error' && (msg.text.includes('dockview') || msg.text.includes('pane'))
     );
     
+    // Filter for context provider errors (e.g., "useSettings must be used within a SettingsProvider")
+    const contextErrors = consoleMessages.filter(msg => 
+      msg.type === 'error' && msg.text.includes('must be used within')
+    );
+    
     // Log all console messages for debugging
     console.log('=== All Console Messages ===');
     consoleMessages.forEach(msg => {
@@ -34,7 +39,17 @@ test.describe('Layout Persistence', () => {
       });
     }
     
+    console.log('\n=== Context Provider Errors ===');
+    if (contextErrors.length === 0) {
+      console.log('✅ No context provider errors found');
+    } else {
+      contextErrors.forEach(err => {
+        console.log(`❌ ${err.text}`);
+      });
+    }
+    
     expect(dockviewErrors).toHaveLength(0);
+    expect(contextErrors).toHaveLength(0);
   });
 
   test('layout persists after refresh', async ({ page }) => {
