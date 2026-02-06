@@ -2,6 +2,7 @@ import { type SerializedDockview } from 'dockview-core';
 
 const LAYOUT_STORAGE_KEY = 'crucible:layout';
 const ZONE_STATE_KEY = 'crucible:zones';
+const ZONE_WIDTHS_KEY = 'crucible:zone-widths';
 
 export type { SerializedDockview };
 
@@ -108,4 +109,44 @@ export function saveZoneState(state: ZoneState): void {
 export function clearLayout(): void {
   localStorage.removeItem(LAYOUT_STORAGE_KEY);
   localStorage.removeItem(ZONE_STATE_KEY);
+  localStorage.removeItem(ZONE_WIDTHS_KEY);
+}
+
+export interface ZoneWidths {
+  left: number;
+  right: number;
+  bottom: number;
+}
+
+export const DEFAULT_ZONE_WIDTHS: ZoneWidths = {
+  left: 280,
+  right: 350,
+  bottom: 200,
+};
+
+export function loadZoneWidths(): ZoneWidths {
+  const stored = localStorage.getItem(ZONE_WIDTHS_KEY);
+  if (!stored) return { ...DEFAULT_ZONE_WIDTHS };
+  try {
+    const parsed = JSON.parse(stored);
+    if (
+      typeof parsed === 'object' &&
+      parsed !== null &&
+      typeof parsed.left === 'number' &&
+      typeof parsed.right === 'number' &&
+      typeof parsed.bottom === 'number' &&
+      parsed.left > 0 &&
+      parsed.right > 0 &&
+      parsed.bottom > 0
+    ) {
+      return { left: parsed.left, right: parsed.right, bottom: parsed.bottom };
+    }
+    return { ...DEFAULT_ZONE_WIDTHS };
+  } catch {
+    return { ...DEFAULT_ZONE_WIDTHS };
+  }
+}
+
+export function saveZoneWidths(widths: ZoneWidths): void {
+  localStorage.setItem(ZONE_WIDTHS_KEY, JSON.stringify(widths));
 }
