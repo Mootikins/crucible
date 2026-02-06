@@ -315,38 +315,47 @@ impl Server {
         let persist_cancel_clone = persist_cancel.clone();
 
         let persist_task = tokio::spawn(async move {
+            fn should_persist(event: &SessionEventMessage) -> bool {
+                matches!(
+                    event.event.as_str(),
+                    "user_message"
+                        | "message_complete"
+                        | "tool_call"
+                        | "tool_result"
+                        | "model_switched"
+                        | "ended"
+                )
+            }
+
+            async fn persist_event(
+                event: &SessionEventMessage,
+                sm: &SessionManager,
+                storage: &FileSessionStorage,
+            ) {
+                if !should_persist(event) {
+                    return;
+                }
+                if let Some(session) = sm.get_session(&event.session_id) {
+                    if let Ok(json) = serde_json::to_string(event) {
+                        let _ = storage.append_event(&session, &json).await;
+                    }
+                }
+            }
+
             loop {
                 tokio::select! {
                     biased;
                     _ = persist_cancel_clone.cancelled() => {
                         debug!("Persist task received shutdown signal, draining remaining events");
-                        // Drain any remaining events with a short timeout
                         while let Ok(event) = persist_rx.try_recv() {
-                            if let Some(session) = sm_clone.get_session(&event.session_id) {
-                                if let Ok(json) = serde_json::to_string(&event) {
-                                    let _ = storage.append_event(&session, &json).await;
-                                }
-                            }
+                            persist_event(&event, &sm_clone, &storage).await;
                         }
                         break;
                     }
                     result = persist_rx.recv() => {
                         match result {
                             Ok(event) => {
-                                // Try to get the session and persist the event
-                                if let Some(session) = sm_clone.get_session(&event.session_id) {
-                                    let json = match serde_json::to_string(&event) {
-                                        Ok(j) => j,
-                                        Err(e) => {
-                                            tracing::warn!("Failed to serialize event: {}", e);
-                                            continue;
-                                        }
-                                    };
-
-                                    if let Err(e) = storage.append_event(&session, &json).await {
-                                        tracing::warn!("Failed to persist event: {}", e);
-                                    }
-                                }
+                                persist_event(&event, &sm_clone, &storage).await;
                             }
                             Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
                                 tracing::warn!(
@@ -2483,7 +2492,8 @@ mod tests {
             .to_string();
 
         // Send event through broadcast channel
-        let event = SessionEventMessage::text_delta(&session_id, "hello world");
+        // Use user_message since text_delta is filtered out to reduce storage
+        let event = SessionEventMessage::user_message(&session_id, "msg-1", "hello world");
         event_tx.send(event).unwrap();
 
         // Wait for persistence
@@ -2498,7 +2508,7 @@ mod tests {
 
         let content = tokio::fs::read_to_string(&jsonl_path).await.unwrap();
         assert!(content.contains("hello world"));
-        assert!(content.contains("text_delta"));
+        assert!(content.contains("user_message"));
 
         let _ = shutdown_handle.send(());
         let _ = server_task.await;

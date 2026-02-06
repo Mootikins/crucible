@@ -158,10 +158,25 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
       const loadedMessages: Message[] = [];
       
       for (const evt of response.history) {
-        const rawEvt = evt as unknown as { event?: string; data?: { full_response?: string; message_id?: string } };
-        if (rawEvt.event === 'message_complete' && rawEvt.data?.full_response) {
+        const rawEvt = evt as unknown as { 
+          event?: string; 
+          data?: { 
+            full_response?: string; 
+            content?: string;
+            message_id?: string;
+          } 
+        };
+        
+        if (rawEvt.event === 'user_message' && rawEvt.data?.content) {
           loadedMessages.push({
-            id: rawEvt.data.message_id || `history-${loadedMessages.length}`,
+            id: rawEvt.data.message_id || `user-${loadedMessages.length}`,
+            role: 'user',
+            content: rawEvt.data.content,
+            timestamp: Date.now() - (response.history.length - loadedMessages.length) * 1000,
+          });
+        } else if (rawEvt.event === 'message_complete' && rawEvt.data?.full_response) {
+          loadedMessages.push({
+            id: rawEvt.data.message_id || `assistant-${loadedMessages.length}`,
             role: 'assistant',
             content: rawEvt.data.full_response,
             timestamp: Date.now() - (response.history.length - loadedMessages.length) * 1000,
@@ -172,6 +187,10 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
       setMessages(loadedMessages);
       if (loadedMessages.length > 0) {
         hasReceivedFirstResponse = true;
+        const userMsg = loadedMessages.find((m) => m.role === 'user');
+        if (userMsg) {
+          firstUserMessage = userMsg.content;
+        }
       }
     } catch (err) {
       console.error('Failed to load session history:', err);
