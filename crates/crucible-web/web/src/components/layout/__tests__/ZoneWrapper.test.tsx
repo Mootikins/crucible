@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { render } from '@solidjs/testing-library';
 import { ZoneWrapper } from '../ZoneWrapper';
 
@@ -94,5 +94,65 @@ describe('ZoneWrapper', () => {
     ));
     const el = getByTestId('zone-right');
     expect(el.style.flexBasis).toBe('350px');
+  });
+
+  it('applies transition on sidebar zones', () => {
+    const { getByTestId } = render(() => (
+      <ZoneWrapper zone="left" collapsed={false} width={280} />
+    ));
+    const el = getByTestId('zone-left');
+    expect(el.style.transition).toBe('flex-basis 200ms ease-out, opacity 150ms ease-out');
+  });
+
+  it('applies transition on bottom zone', () => {
+    const { getByTestId } = render(() => (
+      <ZoneWrapper zone="bottom" collapsed={false} height={200} />
+    ));
+    const el = getByTestId('zone-bottom');
+    expect(el.style.transition).toBe('flex-basis 200ms ease-out');
+  });
+
+  it('does not apply transition on center zone', () => {
+    const { getByTestId } = render(() => (
+      <ZoneWrapper zone="center" collapsed={false} />
+    ));
+    const el = getByTestId('zone-center');
+    expect(el.style.transition).toBe('');
+  });
+
+  it('sets opacity 0 when sidebar collapsed', () => {
+    const { getByTestId } = render(() => (
+      <ZoneWrapper zone="left" collapsed={true} width={280} />
+    ));
+    const el = getByTestId('zone-left');
+    expect(el.style.opacity).toBe('0');
+  });
+
+  it('sets opacity 1 when sidebar expanded', () => {
+    const { getByTestId } = render(() => (
+      <ZoneWrapper zone="right" collapsed={false} width={350} />
+    ));
+    const el = getByTestId('zone-right');
+    expect(el.style.opacity).toBe('1');
+  });
+
+  it('does not set opacity on bottom zone', () => {
+    const { getByTestId } = render(() => (
+      <ZoneWrapper zone="bottom" collapsed={true} height={200} />
+    ));
+    const el = getByTestId('zone-bottom');
+    expect(el.style.opacity).toBe('');
+  });
+
+  it('calls onTransitionEnd callback when transition ends', () => {
+    const handler = vi.fn();
+    const { getByTestId } = render(() => (
+      <ZoneWrapper zone="left" collapsed={false} width={280} onTransitionEnd={handler} />
+    ));
+    const el = getByTestId('zone-left');
+    const event = new Event('transitionend', { bubbles: true });
+    Object.defineProperty(event, 'propertyName', { value: 'flex-basis' });
+    el.dispatchEvent(event);
+    expect(handler).toHaveBeenCalledTimes(1);
   });
 });
