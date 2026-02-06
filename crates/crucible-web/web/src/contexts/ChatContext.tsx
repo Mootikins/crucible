@@ -21,6 +21,7 @@ import {
   respondToInteraction as apiRespondToInteraction,
   cancelSession as apiCancelSession,
   generateMessageId,
+  getSessionHistory,
 } from '@/lib/api';
 
 export interface ChatContextValue {
@@ -151,27 +152,53 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
      }
    };
 
-   createEffect(() => {
-     const session = props.session();
-     const newSessionId = session?.id ?? null;
-     
-     // Clean up old SSE subscription
-     if (eventSourceCleanup) {
-       eventSourceCleanup();
-       eventSourceCleanup = null;
-     }
-     
-     // Only clear messages when SWITCHING sessions (not on initial mount)
-     if (newSessionId !== previousSessionId && previousSessionId !== null) {
-       clearMessages();
-     }
-     previousSessionId = newSessionId;
-     
-     // Subscribe to new session's events
-     if (session && session.state === 'active') {
-       eventSourceCleanup = subscribeToEvents(session.id, handleEvent);
-     }
-   });
+  const loadHistory = async (session: Session) => {
+    try {
+      const response = await getSessionHistory(session.id, session.kiln);
+      const loadedMessages: Message[] = [];
+      
+      for (const evt of response.history) {
+        const rawEvt = evt as unknown as { event?: string; data?: { full_response?: string; message_id?: string } };
+        if (rawEvt.event === 'message_complete' && rawEvt.data?.full_response) {
+          loadedMessages.push({
+            id: rawEvt.data.message_id || `history-${loadedMessages.length}`,
+            role: 'assistant',
+            content: rawEvt.data.full_response,
+            timestamp: Date.now() - (response.history.length - loadedMessages.length) * 1000,
+          });
+        }
+      }
+      
+      setMessages(loadedMessages);
+      if (loadedMessages.length > 0) {
+        hasReceivedFirstResponse = true;
+      }
+    } catch (err) {
+      console.error('Failed to load session history:', err);
+    }
+  };
+
+  createEffect(() => {
+    const session = props.session();
+    const newSessionId = session?.id ?? null;
+    
+    if (eventSourceCleanup) {
+      eventSourceCleanup();
+      eventSourceCleanup = null;
+    }
+    
+    if (newSessionId !== previousSessionId && previousSessionId !== null) {
+      clearMessages();
+    }
+    previousSessionId = newSessionId;
+    
+    if (session) {
+      loadHistory(session);
+      if (session.state === 'active') {
+        eventSourceCleanup = subscribeToEvents(session.id, handleEvent);
+      }
+    }
+  });
 
   onCleanup(() => {
     if (eventSourceCleanup) {
