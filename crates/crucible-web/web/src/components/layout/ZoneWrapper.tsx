@@ -7,6 +7,7 @@ export interface ZoneWrapperProps {
   height?: number;
   ref?: HTMLDivElement | ((el: HTMLDivElement) => void);
   children?: JSXElement;
+  onTransitionEnd?: (event: TransitionEvent) => void;
 }
 
 export const ZoneWrapper: Component<ZoneWrapperProps> = (props) => {
@@ -22,29 +23,23 @@ export const ZoneWrapper: Component<ZoneWrapperProps> = (props) => {
       };
     }
 
-    if (props.collapsed) {
-      return {
-        'flex-basis': '0px',
-        'flex-shrink': '0',
-        'flex-grow': '0',
-        overflow: 'hidden',
-      };
-    }
-
     if (isBottom()) {
       return {
-        'flex-basis': `${props.height ?? 200}px`,
+        'flex-basis': props.collapsed ? '0px' : `${props.height ?? 200}px`,
         'flex-shrink': '0',
         'flex-grow': '0',
         overflow: 'hidden',
+        transition: 'flex-basis 200ms ease-out',
       };
     }
 
     return {
-      'flex-basis': `${props.width ?? 280}px`,
+      'flex-basis': props.collapsed ? '0px' : `${props.width ?? 280}px`,
       'flex-shrink': '0',
       'flex-grow': '0',
       overflow: 'hidden',
+      opacity: props.collapsed ? '0' : '1',
+      transition: 'flex-basis 200ms ease-out, opacity 150ms ease-out',
     };
   };
 
@@ -54,6 +49,7 @@ export const ZoneWrapper: Component<ZoneWrapperProps> = (props) => {
       data-testid={`zone-${props.zone}`}
       ref={props.ref}
       style={style()}
+      onTransitionEnd={props.onTransitionEnd}
     >
       <Show when={!props.collapsed || isCenter()}>
         {props.children}
