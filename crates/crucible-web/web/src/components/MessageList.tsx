@@ -6,12 +6,10 @@ import { useSessionSafe } from '@/contexts/SessionContext';
 export const MessageList: Component = () => {
   const { messages, isStreaming } = useChatSafe();
   const { currentSession } = useSessionSafe();
-  let containerRef: HTMLDivElement | undefined;
+  let bottomRef: HTMLDivElement | undefined;
 
   const scrollToBottom = () => {
-    if (containerRef) {
-      containerRef.scrollTop = containerRef.scrollHeight;
-    }
+    bottomRef?.scrollIntoView({ behavior: 'instant', block: 'end' });
   };
 
   createEffect(() => {
@@ -23,7 +21,6 @@ export const MessageList: Component = () => {
 
   return (
     <div
-      ref={containerRef}
       class="flex-1 overflow-y-auto px-4 py-6"
       data-testid="message-list"
     >
@@ -35,6 +32,7 @@ export const MessageList: Component = () => {
           />
         )}
       </For>
+      <div ref={bottomRef} class="h-px" />
 
       <Show when={messages().length === 0}>
         <div class="h-full flex flex-col items-center justify-center gap-4">

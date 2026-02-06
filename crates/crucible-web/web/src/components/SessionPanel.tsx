@@ -1,7 +1,46 @@
-import { Component, For, Show, createSignal } from 'solid-js';
+import { Component, For, Show, createSignal, createEffect } from 'solid-js';
 import { useSessionSafe } from '@/contexts/SessionContext';
 import { useProjectSafe } from '@/contexts/ProjectContext';
 import type { Session, Project, ProviderInfo } from '@/lib/types';
+
+const KilnSelector: Component<{
+  kilns: string[];
+  selected: string;
+  onSelect: (kiln: string) => void;
+}> = (props) => {
+  const getKilnName = (path: string) => {
+    const parts = path.split('/');
+    return parts[parts.length - 1] || path;
+  };
+
+  return (
+    <Show when={props.kilns.length > 0}>
+      <div class="px-3 py-2 border-b border-neutral-800">
+        <label class="text-xs text-neutral-500 block mb-1">Kiln</label>
+        <Show
+          when={props.kilns.length > 1}
+          fallback={
+            <div class="text-sm text-neutral-300 truncate" title={props.kilns[0]}>
+              {getKilnName(props.kilns[0])}
+            </div>
+          }
+        >
+          <select
+            value={props.selected}
+            onChange={(e) => props.onSelect(e.currentTarget.value)}
+            class="w-full bg-neutral-800 text-neutral-200 text-sm px-2 py-1.5 rounded border border-neutral-700 focus:border-blue-500 focus:outline-none"
+          >
+            <For each={props.kilns}>
+              {(kiln) => (
+                <option value={kiln}>{getKilnName(kiln)}</option>
+              )}
+            </For>
+          </select>
+        </Show>
+      </div>
+    </Show>
+  );
+};
 
 const StateIndicator: Component<{ state: Session['state'] }> = (props) => {
   const colorClass = () => {
@@ -77,20 +116,36 @@ export const SessionPanel: Component = () => {
 
   const [showNewProject, setShowNewProject] = createSignal(false);
   const [newProjectPath, setNewProjectPath] = createSignal('');
+  const [selectedKiln, setSelectedKiln] = createSignal<string>('');
+
+  createEffect(() => {
+    const project = currentProject();
+    if (project && project.kilns.length > 0) {
+      if (!selectedKiln() || !project.kilns.includes(selectedKiln())) {
+        setSelectedKiln(project.kilns[0]);
+      }
+    }
+  });
 
   const handleCreateSession = async () => {
     const project = currentProject();
-    if (!project || project.kilns.length === 0) return;
+    const kiln = selectedKiln();
+    if (!project || !kiln) return;
 
     const provider = selectedProvider();
 
     await createSession({
-      kiln: project.kilns[0],
+      kiln,
       workspace: project.path,
       provider: provider?.provider_type ?? 'ollama',
       model: provider?.default_model ?? 'llama3.2',
       endpoint: provider?.endpoint,
     });
+  };
+
+  const handleKilnSelect = async (kiln: string) => {
+    setSelectedKiln(kiln);
+    await refreshSessions({ kiln, workspace: currentProject()?.path });
   };
 
   const handleRegisterProject = async () => {
@@ -167,6 +222,12 @@ export const SessionPanel: Component = () => {
 
         <Show when={project()}>
           <div class="border-t border-neutral-800">
+            <KilnSelector
+              kilns={project()!.kilns}
+              selected={selectedKiln()}
+              onSelect={handleKilnSelect}
+            />
+
             <div class="p-3">
               <h2 class="text-sm font-semibold text-neutral-400 uppercase tracking-wide">Sessions</h2>
             </div>
@@ -188,7 +249,7 @@ export const SessionPanel: Component = () => {
 
               <button
                 onClick={handleCreateSession}
-                disabled={isLoading() || !project()?.kilns.length}
+                disabled={isLoading() || !selectedKiln()}
                 class="w-full mt-2 px-3 py-2 text-sm text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800 rounded-lg transition-colors disabled:opacity-50"
               >
                 + New Session
