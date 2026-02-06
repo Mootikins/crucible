@@ -63,10 +63,12 @@ test.describe('Layout Persistence', () => {
     });
 
     await page.goto('http://localhost:5173');
-    await page.waitForTimeout(1000);
+    
+    // Wait for the toggle button to be visible (indicates app has loaded)
+    const leftToggle = page.locator('[data-testid="toggle-left"]');
+    await expect(leftToggle).toBeVisible({ timeout: 10000 });
     
     // Collapse left panel
-    const leftToggle = page.locator('[data-testid="toggle-left"]');
     await leftToggle.click();
     
     // Wait for debounced save (300ms debounce + buffer)
