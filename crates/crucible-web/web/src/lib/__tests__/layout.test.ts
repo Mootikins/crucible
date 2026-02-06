@@ -3,7 +3,6 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import {
   loadZoneState,
   saveZoneState,
-  isValidZoneState,
   migrateZoneState,
   DEFAULT_ZONE_STATE,
   loadZoneWidths,
@@ -92,41 +91,6 @@ describe('layout - ZoneMode migration', () => {
     it('returns DEFAULT_ZONE_STATE for missing properties', () => {
       const migrated = migrateZoneState({ left: true });
       expect(migrated).toEqual(DEFAULT_ZONE_STATE);
-    });
-  });
-
-  describe('isValidZoneState', () => {
-    it('accepts new ZoneMode format', () => {
-      const state = { left: 'visible', right: 'pinned', bottom: 'hidden' };
-      expect(isValidZoneState(state)).toBe(true);
-    });
-
-    it('accepts old boolean format for backward compatibility', () => {
-      const state = { left: true, right: false, bottom: true };
-      expect(isValidZoneState(state)).toBe(true);
-    });
-
-    it('rejects mixed boolean and ZoneMode', () => {
-      const state = { left: true, right: 'visible', bottom: false };
-      expect(isValidZoneState(state)).toBe(false);
-    });
-
-    it('rejects invalid ZoneMode strings', () => {
-      const state = { left: 'invalid', right: 'visible', bottom: 'hidden' };
-      expect(isValidZoneState(state)).toBe(false);
-    });
-
-    it('rejects null', () => {
-      expect(isValidZoneState(null)).toBe(false);
-    });
-
-    it('rejects undefined', () => {
-      expect(isValidZoneState(undefined)).toBe(false);
-    });
-
-    it('rejects missing properties', () => {
-      const state = { left: 'visible', right: 'visible' };
-      expect(isValidZoneState(state)).toBe(false);
     });
   });
 

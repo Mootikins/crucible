@@ -14,13 +14,16 @@ function createMockPanel(id: string, title?: string) {
   return { id, title: title ?? id, group: { id: `group-${id}` } };
 }
 
+function createMockContainer(): HTMLElement {
+  return { getBoundingClientRect: () => ({ width: 800, height: 600 }) } as unknown as HTMLElement;
+}
+
 function createMockInstance(viewId: string, panels: ReturnType<typeof createMockPanel>[] = []) {
   const panelMap = new Map(panels.map(p => [p.id, p]));
   const addedPanels: any[] = [];
 
   const api = {
     id: viewId,
-    element: { getBoundingClientRect: () => ({ width: 800, height: 600 }) },
     get panels() { return [...panelMap.values()]; },
     getPanel: (id: string) => panelMap.get(id),
     removePanel: (panel: any) => { panelMap.delete(panel.id); },
@@ -82,7 +85,8 @@ describe('float-manager', () => {
     });
 
     it('centers the floating panel within the container', () => {
-      floatPanel('sessions', 'left', centerMock.instance.api, instances);
+      const container = createMockContainer();
+      floatPanel('sessions', 'left', centerMock.instance.api, instances, container);
 
       const floating = centerMock.addedPanels[0].floating;
       expect(floating.x).toBe(200);
