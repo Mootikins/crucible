@@ -224,7 +224,7 @@ export const DockLayout: Component<DockLayoutProps> = (props) => {
       case 'files':
         leftGroupId = groupId;
         break;
-      case 'chat':
+      case 'editor':
         rightGroupId = groupId;
         break;
       case 'bottom':
@@ -300,26 +300,28 @@ export const DockLayout: Component<DockLayoutProps> = (props) => {
           id="files" 
           title="Files" 
           position={{ direction: 'left' }}
+          initialWidth={240}
           onCreate={(e) => handlePanelCreate('files', e)}
         >
           <FilesPanel />
         </DockPanel>
 
         <DockPanel 
-          id="editor" 
-          title="Editor"
-          onCreate={(e) => handlePanelCreate('editor', e)}
-        >
-          <EditorPanel />
-        </DockPanel>
-
-        <DockPanel 
           id="chat" 
-          title="Chat" 
-          position={{ direction: 'right' }}
+          title="Chat"
           onCreate={(e) => handlePanelCreate('chat', e)}
         >
           <props.chatContent />
+        </DockPanel>
+
+        <DockPanel 
+          id="editor" 
+          title="Editor" 
+          position={{ direction: 'right' }}
+          initialWidth={400}
+          onCreate={(e) => handlePanelCreate('editor', e)}
+        >
+          <EditorPanel />
         </DockPanel>
 
         <DockPanel 
