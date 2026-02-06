@@ -2,7 +2,9 @@ import { Component, ParentComponent, onMount, onCleanup } from 'solid-js';
 import { createSolidDockview, type DockviewInstance } from '@/lib/solid-dockview';
 import { getGlobalRegistry, type Zone } from '@/lib/panel-registry';
 import { setupCrossZoneDnD } from '@/lib/dnd-bridge';
+import { floatPanel, dockPanel, isFloating } from '@/lib/float-manager';
 import { migrateOldLayout, loadZoneLayout, saveZoneLayout } from '@/lib/layout';
+import type { DockviewGroupPanel, IHeaderActionsRenderer, IGroupHeaderProps } from 'dockview-core';
 import { SessionPanel } from '@/components/SessionPanel';
 import { FilesPanel } from '@/components/FilesPanel';
 import { EditorPanel } from '@/components/EditorPanel';
@@ -35,17 +37,76 @@ function registerDefaultPanels(chatContent: Component): void {
   registry.register('terminal', 'Terminal', BottomPanel, 'bottom');
 }
 
+function createFloatActionRenderer(
+  zone: Zone,
+  instances: Map<Zone, DockviewInstance>,
+): (group: DockviewGroupPanel) => IHeaderActionsRenderer {
+  return (_group: DockviewGroupPanel) => {
+    const el = document.createElement('div');
+    el.className = 'dv-float-action';
+    el.style.display = 'flex';
+    el.style.alignItems = 'center';
+    el.style.paddingRight = '4px';
+
+    const btn = document.createElement('button');
+    btn.className = 'dv-float-action-btn';
+    btn.style.background = 'none';
+    btn.style.border = 'none';
+    btn.style.cursor = 'pointer';
+    btn.style.padding = '2px 4px';
+    btn.style.color = 'inherit';
+    btn.style.opacity = '0.6';
+    btn.style.fontSize = '11px';
+    btn.style.lineHeight = '1';
+    btn.title = zone === 'center' ? 'Dock panel' : 'Float panel';
+    btn.textContent = zone === 'center' ? '⊡' : '⊞';
+
+    btn.addEventListener('mouseenter', () => { btn.style.opacity = '1'; });
+    btn.addEventListener('mouseleave', () => { btn.style.opacity = '0.6'; });
+
+    el.appendChild(btn);
+
+    let headerParams: IGroupHeaderProps | null = null;
+
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (!headerParams) return;
+
+      const activePanel = headerParams.group.activePanel;
+      if (!activePanel) return;
+
+      const panelId = activePanel.id;
+      const centerInstance = instances.get('center');
+      if (!centerInstance) return;
+
+      if (isFloating(panelId)) {
+        dockPanel(panelId, centerInstance.api, instances);
+      } else if (zone !== 'center') {
+        floatPanel(panelId, zone, centerInstance.api, instances);
+      }
+    });
+
+    return {
+      element: el,
+      init(params: IGroupHeaderProps) {
+        headerParams = params;
+      },
+      dispose() {
+        headerParams = null;
+      },
+    };
+  };
+}
+
 function createZoneDockview(
   container: HTMLElement,
   zone: Zone,
+  instances: Map<Zone, DockviewInstance>,
 ): DockviewInstance {
   const registry = getGlobalRegistry();
   const componentMap = registry.getComponentMap();
 
-  // Try to load per-zone layout first
   const savedLayout = loadZoneLayout(zone);
-  
-  // If no saved layout, use default layout for this zone
   const defaultLayout = registry.getDefaultLayout();
   const panelIds = defaultLayout[zone];
 
@@ -64,15 +125,15 @@ function createZoneDockview(
     panels,
     componentMap,
     className: 'dockview-theme-abyss',
+    createRightHeaderActionComponent: createFloatActionRenderer(zone, instances),
   });
 
-  // If we have a saved layout, restore it
   if (savedLayout) {
     try {
       const parsed = JSON.parse(savedLayout);
       instance.api.fromJSON(parsed);
     } catch {
-      // If restore fails, keep default layout
+      /* keep default layout on restore failure */
     }
   }
 
@@ -110,7 +171,7 @@ export const DockLayout: Component<DockLayoutProps> = (props) => {
 
     for (const { zone, ref } of zones) {
       if (!ref) continue;
-      const instance = createZoneDockview(ref, zone);
+      const instance = createZoneDockview(ref, zone, instances);
       instances.set(zone, instance);
 
       // Save layout on every change
