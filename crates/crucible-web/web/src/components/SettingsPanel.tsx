@@ -1,9 +1,9 @@
 // src/components/SettingsPanel.tsx
-import { Component, Show } from 'solid-js';
+import { Component, Show, ErrorBoundary } from 'solid-js';
 import { useSettings } from '@/contexts/SettingsContext';
 import type { TranscriptionProvider } from '@/lib/settings';
 
-export const SettingsPanel: Component = () => {
+const SettingsPanelContent: Component = () => {
   const { settings, updateSetting } = useSettings();
 
   const handleProviderChange = (e: Event) => {
@@ -97,5 +97,24 @@ export const SettingsPanel: Component = () => {
         </tbody>
       </table>
     </div>
+  );
+};
+
+/**
+ * Wrapper component that safely renders SettingsPanel with error handling.
+ * Catches context errors and displays a fallback message.
+ */
+export const SettingsPanel: Component = () => {
+  return (
+    <ErrorBoundary fallback={(err) => (
+      <div class="h-full bg-neutral-900 p-4 flex items-center justify-center">
+        <div class="text-center text-neutral-400">
+          <div class="text-sm mb-2">⚠️ Settings Error</div>
+          <div class="text-xs text-neutral-500">{String(err)}</div>
+        </div>
+      </div>
+    )}>
+      <SettingsPanelContent />
+    </ErrorBoundary>
   );
 };
