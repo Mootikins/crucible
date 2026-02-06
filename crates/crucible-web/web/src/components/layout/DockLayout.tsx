@@ -2,6 +2,7 @@ import { Component, ParentComponent, onMount, onCleanup } from 'solid-js';
 import { createSolidDockview, type DockviewInstance } from '@/lib/solid-dockview';
 import { getGlobalRegistry, type Zone } from '@/lib/panel-registry';
 import { setupCrossZoneDnD } from '@/lib/dnd-bridge';
+import { migrateOldLayout, loadZoneLayout, saveZoneLayout } from '@/lib/layout';
 import { SessionPanel } from '@/components/SessionPanel';
 import { FilesPanel } from '@/components/FilesPanel';
 import { EditorPanel } from '@/components/EditorPanel';
@@ -39,9 +40,14 @@ function createZoneDockview(
   zone: Zone,
 ): DockviewInstance {
   const registry = getGlobalRegistry();
+  const componentMap = registry.getComponentMap();
+
+  // Try to load per-zone layout first
+  const savedLayout = loadZoneLayout(zone);
+  
+  // If no saved layout, use default layout for this zone
   const defaultLayout = registry.getDefaultLayout();
   const panelIds = defaultLayout[zone];
-  const componentMap = registry.getComponentMap();
 
   const panels = panelIds.map((id, index) => {
     const def = registry.get(id)!;
@@ -53,12 +59,24 @@ function createZoneDockview(
     };
   });
 
-  return createSolidDockview({
+  const instance = createSolidDockview({
     container,
     panels,
     componentMap,
     className: 'dockview-theme-abyss',
   });
+
+  // If we have a saved layout, restore it
+  if (savedLayout) {
+    try {
+      const parsed = JSON.parse(savedLayout);
+      instance.api.fromJSON(parsed);
+    } catch {
+      // If restore fails, keep default layout
+    }
+  }
+
+  return instance;
 }
 
 export const DockLayout: Component<DockLayoutProps> = (props) => {
@@ -80,6 +98,9 @@ export const DockLayout: Component<DockLayoutProps> = (props) => {
   onMount(() => {
     registerDefaultPanels(props.chatContent);
 
+    // Migrate old single-key layout to per-zone keys
+    migrateOldLayout();
+
     const zones: Array<{ zone: Zone; ref: HTMLDivElement | undefined }> = [
       { zone: 'left', ref: leftRef },
       { zone: 'center', ref: centerRef },
@@ -91,6 +112,12 @@ export const DockLayout: Component<DockLayoutProps> = (props) => {
       if (!ref) continue;
       const instance = createZoneDockview(ref, zone);
       instances.set(zone, instance);
+
+      // Save layout on every change
+      instance.api.onDidLayoutChange(() => {
+        const serialized = JSON.stringify(instance.api.toJSON());
+        saveZoneLayout(zone, serialized);
+      });
     }
 
     const cleanupDnD = setupCrossZoneDnD(instances);
