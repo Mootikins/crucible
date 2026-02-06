@@ -8,8 +8,8 @@ export const ChatContent: Component = () => {
   const { pendingInteraction, respondToInteraction } = useChatSafe();
 
   return (
-    <div class="h-full flex flex-col">
-      <div class="flex-1 overflow-hidden">
+    <div class="h-full flex flex-col overflow-hidden">
+      <div class="flex-1 min-h-0">
         <MessageList />
       </div>
 
