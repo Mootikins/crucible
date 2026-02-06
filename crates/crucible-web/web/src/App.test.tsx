@@ -1,26 +1,24 @@
 import { render, screen } from '@solidjs/testing-library';
 import { describe, it, expect, vi } from 'vitest';
 
-vi.mock('solid-dockview', () => ({
-  DockView: (props: { children: any }) => <div data-testid="dock-view">{props.children}</div>,
-  DockPanel: (props: { children: any; title: string }) => (
-    <div data-testid={`dock-panel-${props.title?.toLowerCase()}`}>{props.children}</div>
-  ),
+// Mock dockview-core to avoid DOM dependencies in unit tests
+vi.mock('dockview-core', () => ({
+  DockviewComponent: vi.fn(),
 }));
 
 import App from './App';
 
 describe('App', () => {
-  it('renders the chat interface', () => {
+  it('renders the shell layout with zone toggles', () => {
     render(() => <App />);
-    expect(screen.getByTestId('dock-view')).toBeInTheDocument();
-    expect(screen.getByTestId('message-list')).toBeInTheDocument();
-    expect(screen.getByTestId('chat-input-form')).toBeInTheDocument();
-    expect(screen.getByTestId('mic-button')).toBeInTheDocument();
+    expect(screen.getByTestId('toggle-left')).toBeInTheDocument();
+    expect(screen.getByTestId('toggle-right')).toBeInTheDocument();
+    expect(screen.getByTestId('toggle-bottom')).toBeInTheDocument();
   });
 
-  it('shows empty state message when no session', () => {
+  it('renders four zone containers', () => {
     render(() => <App />);
-    expect(screen.getByText(/Select or create a session/)).toBeInTheDocument();
+    const zones = document.querySelectorAll('[data-zone]');
+    expect(zones.length).toBe(4);
   });
 });
