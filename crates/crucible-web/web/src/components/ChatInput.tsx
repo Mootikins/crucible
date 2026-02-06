@@ -6,7 +6,7 @@ import { MicButton } from './MicButton';
 
 export const ChatInput: Component = () => {
   const { sendMessage, isLoading, isStreaming, cancelStream, error } = useChatSafe();
-  const { currentSession, cancelCurrentOperation, availableModels, switchModel, refreshModels } = useSessionSafe();
+  const { currentSession, cancelCurrentOperation, availableModels, switchModel, refreshModels, selectedProvider } = useSessionSafe();
   const [input, setInput] = createSignal('');
   const [isModelPickerOpen, setIsModelPickerOpen] = createSignal(false);
   const { isRecording, audioLevel, startRecording, stopRecording } = useMediaRecorder();
@@ -71,9 +71,19 @@ export const ChatInput: Component = () => {
     onCleanup(() => document.removeEventListener('mousedown', handleClickOutside));
   });
 
+  const providerPrefix = () => {
+    const provider = selectedProvider();
+    return provider?.provider_type ?? 'ollama';
+  };
+
+  const formatModelDisplay = (model: string) => {
+    return `${providerPrefix()}/${model}`;
+  };
+
   const currentModel = () => {
     const s = currentSession();
-    return s?.agent_model ?? 'Select model';
+    if (!s?.agent_model) return 'Select model';
+    return formatModelDisplay(s.agent_model);
   };
 
   const handleModelSelect = async (model: string) => {
@@ -173,7 +183,7 @@ export const ChatInput: Component = () => {
                               <path fill-rule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z" clip-rule="evenodd" />
                             </svg>
                           </Show>
-                          <span class="truncate">{model}</span>
+                          <span class="truncate">{formatModelDisplay(model)}</span>
                         </span>
                       </button>
                     )}

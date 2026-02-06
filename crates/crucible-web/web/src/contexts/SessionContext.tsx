@@ -205,10 +205,26 @@ export const SessionProvider: ParentComponent<SessionProviderProps> = (props) =>
 
     try {
       const models = await apiListModels(session.id);
-      setAvailableModels(models);
+      if (models.length > 0) {
+        setAvailableModels(models);
+        return;
+      }
+      // Fall back to provider models if session has no agent configured
+      const provider = selectedProvider() ?? providers()[0];
+      if (provider?.models) {
+        setAvailableModels(provider.models);
+      } else {
+        setAvailableModels([]);
+      }
     } catch (err) {
       console.error('Failed to load models:', err);
-      setAvailableModels([]);
+      // Fall back to provider models on error
+      const provider = selectedProvider() ?? providers()[0];
+      if (provider?.models) {
+        setAvailableModels(provider.models);
+      } else {
+        setAvailableModels([]);
+      }
     }
   };
 
