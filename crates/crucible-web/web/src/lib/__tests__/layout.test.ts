@@ -9,6 +9,9 @@ import {
   loadZoneWidths,
   saveZoneWidths,
   DEFAULT_ZONE_WIDTHS,
+  saveZoneLayout,
+  loadZoneLayout,
+  migrateOldLayout,
   type ZoneState,
   type ZoneWidths,
 } from '../layout';
@@ -277,6 +280,176 @@ describe('layout - Zone widths', () => {
       saveZoneWidths(widths);
       const loaded = loadZoneWidths();
       expect(loaded).toEqual(widths);
+    });
+  });
+});
+
+describe('layout - Per-zone serialization', () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  afterEach(() => {
+    localStorage.clear();
+  });
+
+  const mockLayout = {
+    grid: { root: { type: 'branch', size: 100 } },
+    panels: { panel1: { id: 'panel1', title: 'Test' } },
+  };
+
+  describe('saveZoneLayout', () => {
+    it('saves zone layout to zone-specific key', () => {
+      const serialized = JSON.stringify(mockLayout);
+      saveZoneLayout('left', serialized);
+      const stored = localStorage.getItem('crucible:layout:left');
+      expect(stored).toBe(serialized);
+    });
+
+    it('saves different zones to different keys', () => {
+      const leftLayout = JSON.stringify({ ...mockLayout, zone: 'left' });
+      const centerLayout = JSON.stringify({ ...mockLayout, zone: 'center' });
+      
+      saveZoneLayout('left', leftLayout);
+      saveZoneLayout('center', centerLayout);
+      
+      expect(localStorage.getItem('crucible:layout:left')).toBe(leftLayout);
+      expect(localStorage.getItem('crucible:layout:center')).toBe(centerLayout);
+    });
+
+    it('overwrites previous layout for same zone', () => {
+      const layout1 = JSON.stringify({ ...mockLayout, version: 1 });
+      const layout2 = JSON.stringify({ ...mockLayout, version: 2 });
+      
+      saveZoneLayout('right', layout1);
+      saveZoneLayout('right', layout2);
+      
+      expect(localStorage.getItem('crucible:layout:right')).toBe(layout2);
+    });
+  });
+
+  describe('loadZoneLayout', () => {
+    it('loads zone layout from zone-specific key', () => {
+      const serialized = JSON.stringify(mockLayout);
+      localStorage.setItem('crucible:layout:left', serialized);
+      
+      const loaded = loadZoneLayout('left');
+      expect(loaded).toBe(serialized);
+    });
+
+    it('returns null when zone layout does not exist', () => {
+      const loaded = loadZoneLayout('center');
+      expect(loaded).toBeNull();
+    });
+
+    it('returns null on invalid JSON', () => {
+      localStorage.setItem('crucible:layout:bottom', 'not valid json');
+      const loaded = loadZoneLayout('bottom');
+      expect(loaded).toBeNull();
+    });
+
+    it('returns null when layout missing grid property', () => {
+      const invalid = JSON.stringify({ panels: { panel1: {} } });
+      localStorage.setItem('crucible:layout:left', invalid);
+      const loaded = loadZoneLayout('left');
+      expect(loaded).toBeNull();
+    });
+
+    it('returns null when layout missing panels property', () => {
+      const invalid = JSON.stringify({ grid: { root: {} } });
+      localStorage.setItem('crucible:layout:left', invalid);
+      const loaded = loadZoneLayout('left');
+      expect(loaded).toBeNull();
+    });
+
+    it('validates each zone independently', () => {
+      const valid = JSON.stringify(mockLayout);
+      const invalid = JSON.stringify({ grid: {} });
+      
+      localStorage.setItem('crucible:layout:left', valid);
+      localStorage.setItem('crucible:layout:center', invalid);
+      
+      expect(loadZoneLayout('left')).toBe(valid);
+      expect(loadZoneLayout('center')).toBeNull();
+    });
+  });
+
+  describe('migrateOldLayout', () => {
+    it('migrates old layout to center zone', () => {
+      const oldLayout = JSON.stringify(mockLayout);
+      localStorage.setItem('crucible:layout', oldLayout);
+      
+      migrateOldLayout();
+      
+      expect(localStorage.getItem('crucible:layout:center')).toBe(oldLayout);
+      expect(localStorage.getItem('crucible:layout')).toBeNull();
+    });
+
+    it('does nothing when old layout does not exist', () => {
+      migrateOldLayout();
+      
+      expect(localStorage.getItem('crucible:layout')).toBeNull();
+      expect(localStorage.getItem('crucible:layout:center')).toBeNull();
+    });
+
+    it('clears old key after successful migration', () => {
+      const oldLayout = JSON.stringify(mockLayout);
+      localStorage.setItem('crucible:layout', oldLayout);
+      
+      migrateOldLayout();
+      
+      expect(localStorage.getItem('crucible:layout')).toBeNull();
+    });
+
+    it('clears old key on parse error', () => {
+      localStorage.setItem('crucible:layout', 'invalid json');
+      
+      migrateOldLayout();
+      
+      expect(localStorage.getItem('crucible:layout')).toBeNull();
+      expect(localStorage.getItem('crucible:layout:center')).toBeNull();
+    });
+
+    it('clears old key when layout missing grid property', () => {
+      const invalid = JSON.stringify({ panels: {} });
+      localStorage.setItem('crucible:layout', invalid);
+      
+      migrateOldLayout();
+      
+      expect(localStorage.getItem('crucible:layout')).toBeNull();
+    });
+
+    it('clears old key when layout missing panels property', () => {
+      const invalid = JSON.stringify({ grid: {} });
+      localStorage.setItem('crucible:layout', invalid);
+      
+      migrateOldLayout();
+      
+      expect(localStorage.getItem('crucible:layout')).toBeNull();
+    });
+
+    it('does not affect existing per-zone layouts', () => {
+      const oldLayout = JSON.stringify(mockLayout);
+      const existingLeft = JSON.stringify({ ...mockLayout, zone: 'left' });
+      
+      localStorage.setItem('crucible:layout', oldLayout);
+      localStorage.setItem('crucible:layout:left', existingLeft);
+      
+      migrateOldLayout();
+      
+      expect(localStorage.getItem('crucible:layout:left')).toBe(existingLeft);
+      expect(localStorage.getItem('crucible:layout:center')).toBe(oldLayout);
+    });
+
+    it('can be called multiple times safely', () => {
+      const oldLayout = JSON.stringify(mockLayout);
+      localStorage.setItem('crucible:layout', oldLayout);
+      
+      migrateOldLayout();
+      migrateOldLayout();
+      
+      expect(localStorage.getItem('crucible:layout')).toBeNull();
+      expect(localStorage.getItem('crucible:layout:center')).toBe(oldLayout);
     });
   });
 });
