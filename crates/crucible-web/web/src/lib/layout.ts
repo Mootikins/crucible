@@ -5,20 +5,70 @@ const ZONE_STATE_KEY = 'crucible:zones';
 
 export type { SerializedDockview };
 
+export type ZoneMode = 'visible' | 'hidden' | 'pinned';
+
 export interface ZoneState {
-  left: boolean;
-  right: boolean;
-  bottom: boolean;
+  left: ZoneMode;
+  right: ZoneMode;
+  bottom: ZoneMode;
 }
 
-const DEFAULT_ZONE_STATE: ZoneState = { left: true, right: true, bottom: false };
+export const DEFAULT_ZONE_STATE: ZoneState = { left: 'visible', right: 'visible', bottom: 'hidden' };
 
-function isValidZoneState(value: unknown): value is ZoneState {
+function isValidZoneMode(value: unknown): boolean {
+  return value === 'visible' || value === 'hidden' || value === 'pinned';
+}
+
+export function migrateZoneState(value: unknown): ZoneState {
+  // Handle null/undefined/garbage input
+  if (value === null || value === undefined || typeof value !== 'object') {
+    return DEFAULT_ZONE_STATE;
+  }
+  
+  const obj = value as Record<string, unknown>;
+  
+  // Check if all required properties exist
+  if (!('left' in obj) || !('right' in obj) || !('bottom' in obj)) {
+    return DEFAULT_ZONE_STATE;
+  }
+  
+  // If already in ZoneMode format, validate and return
+  if (isValidZoneMode(obj.left) && isValidZoneMode(obj.right) && isValidZoneMode(obj.bottom)) {
+    return {
+      left: obj.left as ZoneMode,
+      right: obj.right as ZoneMode,
+      bottom: obj.bottom as ZoneMode,
+    };
+  }
+  
+  // Convert from boolean format
+  if (typeof obj.left === 'boolean' && typeof obj.right === 'boolean' && typeof obj.bottom === 'boolean') {
+    return {
+      left: obj.left ? 'visible' : 'hidden',
+      right: obj.right ? 'visible' : 'hidden',
+      bottom: obj.bottom ? 'visible' : 'hidden',
+    };
+  }
+  
+  // Invalid format
+  return DEFAULT_ZONE_STATE;
+}
+
+export function isValidZoneState(value: unknown): value is ZoneState {
   if (typeof value !== 'object' || value === null) return false;
   const obj = value as Record<string, unknown>;
-  return typeof obj.left === 'boolean' && 
-         typeof obj.right === 'boolean' && 
-         typeof obj.bottom === 'boolean';
+  
+  if (!('left' in obj) || !('right' in obj) || !('bottom' in obj)) return false;
+  
+  if (isValidZoneMode(obj.left) && isValidZoneMode(obj.right) && isValidZoneMode(obj.bottom)) {
+    return true;
+  }
+  
+  if (typeof obj.left === 'boolean' && typeof obj.right === 'boolean' && typeof obj.bottom === 'boolean') {
+    return true;
+  }
+  
+  return false;
 }
 
 export function loadZoneState(): ZoneState {
@@ -26,7 +76,7 @@ export function loadZoneState(): ZoneState {
   if (!stored) return DEFAULT_ZONE_STATE;
   try {
     const parsed = JSON.parse(stored);
-    return isValidZoneState(parsed) ? parsed : DEFAULT_ZONE_STATE;
+    return migrateZoneState(parsed);
   } catch {
     return DEFAULT_ZONE_STATE;
   }
