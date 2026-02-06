@@ -15,16 +15,46 @@ const GearIcon: Component = () => (
   </svg>
 );
 
-export const ChatPanel: ParentComponent = (props) => {
-  return (
-    <div class="h-full flex flex-col bg-neutral-900">
-      {props.children}
+const SidebarIcon: Component<{ side: 'left' | 'right' }> = (props) => (
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-4 h-4">
+    <path
+      fill-rule="evenodd"
+      d={props.side === 'left'
+        ? "M2 4.75A.75.75 0 012.75 4h14.5a.75.75 0 010 1.5H2.75A.75.75 0 012 4.75zM2 10a.75.75 0 01.75-.75h7.5a.75.75 0 010 1.5h-7.5A.75.75 0 012 10zm0 5.25a.75.75 0 01.75-.75h14.5a.75.75 0 010 1.5H2.75a.75.75 0 01-.75-.75z"
+        : "M2 4.75A.75.75 0 012.75 4h14.5a.75.75 0 010 1.5H2.75A.75.75 0 012 4.75zm7.5 5.25a.75.75 0 01.75-.75h7a.75.75 0 010 1.5h-7a.75.75 0 01-.75-.75zM2 15.25a.75.75 0 01.75-.75h14.5a.75.75 0 010 1.5H2.75a.75.75 0 01-.75-.75z"
+      }
+      clip-rule="evenodd"
+    />
+  </svg>
+);
+
+const BottomPanelIcon: Component = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-4 h-4">
+    <path fill-rule="evenodd" d="M2 4.75A.75.75 0 012.75 4h14.5a.75.75 0 010 1.5H2.75A.75.75 0 012 4.75zM2 10a.75.75 0 01.75-.75h14.5a.75.75 0 010 1.5H2.75A.75.75 0 012 10zm0 5.25a.75.75 0 01.75-.75h7.5a.75.75 0 010 1.5h-7.5A.75.75 0 012 15.25z" clip-rule="evenodd" />
+  </svg>
+);
+
+export const ChatPanel: ParentComponent = (props) => (
+  <div class="h-full flex flex-col bg-neutral-900">{props.children}</div>
+);
+
+export const BottomPanel: Component = () => (
+  <div class="h-full flex items-center justify-center bg-neutral-900 text-neutral-500">
+    <div class="text-center">
+      <div class="text-2xl mb-1">📋</div>
+      <div class="text-xs">Output / Terminal</div>
     </div>
-  );
-};
+  </div>
+);
 
 interface DockLayoutProps {
   chatContent: Component;
+}
+
+interface PanelState {
+  left: boolean;
+  right: boolean;
+  bottom: boolean;
 }
 
 function debounce<T extends (...args: unknown[]) => void>(fn: T, delay: number): T {
@@ -38,6 +68,17 @@ function debounce<T extends (...args: unknown[]) => void>(fn: T, delay: number):
 export const DockLayout: Component<DockLayoutProps> = (props) => {
   const [showSettings, setShowSettings] = createSignal(false);
   const [dockviewApi, setDockviewApi] = createSignal<DockviewComponent | null>(null);
+  const [panelVisible, setPanelVisible] = createSignal<PanelState>({
+    left: true,
+    right: true,
+    bottom: false,
+  });
+
+  const groupIds: Record<string, string | null> = {
+    left: null,
+    right: null,
+    bottom: null,
+  };
 
   const debouncedSave = debounce(() => {
     const api = dockviewApi();
@@ -46,10 +87,30 @@ export const DockLayout: Component<DockLayoutProps> = (props) => {
     const serialized = api.toJSON() as SerializedDockview;
     const layoutState: LayoutState = {
       grid: serialized,
-      panels: {},
+      panels: {
+        left: { visible: panelVisible().left },
+        right: { visible: panelVisible().right },
+        bottom: { visible: panelVisible().bottom },
+      },
     };
     saveLayout(layoutState);
   }, 300);
+
+  const togglePanel = (panel: keyof PanelState) => {
+    const api = dockviewApi();
+    if (!api) return;
+
+    const newVisible = !panelVisible()[panel];
+    setPanelVisible(prev => ({ ...prev, [panel]: newVisible }));
+
+    const groupId = groupIds[panel];
+    if (groupId) {
+      const group = api.getGroupPanel(groupId);
+      group?.api.setVisible(newVisible);
+    }
+
+    debouncedSave();
+  };
 
   const handleReady = (event: { dockview: DockviewComponent }) => {
     const api = event.dockview;
@@ -59,17 +120,44 @@ export const DockLayout: Component<DockLayoutProps> = (props) => {
     if (savedLayout?.grid) {
       try {
         const serialized = savedLayout.grid as SerializedDockview;
-        const hasPanels = serialized.panels && Object.keys(serialized.panels).length > 0;
-        
-        if (hasPanels) {
+        if (serialized.panels && Object.keys(serialized.panels).length > 0) {
           api.fromJSON(serialized);
+          
+          if (savedLayout.panels) {
+            setPanelVisible({
+              left: savedLayout.panels.left?.visible !== false,
+              right: savedLayout.panels.right?.visible !== false,
+              bottom: savedLayout.panels.bottom?.visible === true,
+            });
+          }
+          
+          setTimeout(() => {
+            for (const panel of api.panels) {
+              if (panel.id === 'sessions' || panel.id === 'files') {
+                groupIds.left = panel.group?.id ?? null;
+              }
+              if (panel.id === 'editor') {
+                groupIds.right = panel.group?.id ?? null;
+              }
+              if (panel.id === 'bottom') {
+                groupIds.bottom = panel.group?.id ?? null;
+              }
+            }
+          }, 0);
+          
           return;
         }
       } catch (e) {
-        console.warn('Failed to restore layout, using default:', e);
+        console.warn('Failed to restore layout:', e);
         localStorage.removeItem('crucible:layout');
       }
     }
+  };
+
+  const trackGroup = (panelId: string, groupId: string | null) => {
+    if (panelId === 'sessions' || panelId === 'files') groupIds.left = groupId;
+    if (panelId === 'editor') groupIds.right = groupId;
+    if (panelId === 'bottom') groupIds.bottom = groupId;
   };
 
   onMount(() => {
@@ -77,76 +165,123 @@ export const DockLayout: Component<DockLayoutProps> = (props) => {
       const api = dockviewApi();
       if (api) {
         clearInterval(checkApi);
-        const disposable = api.onDidLayoutChange(() => {
-          debouncedSave();
-        });
-
-        onCleanup(() => {
-          disposable.dispose();
-        });
+        const disposable = api.onDidLayoutChange(() => debouncedSave());
+        onCleanup(() => disposable.dispose());
       }
     }, 100);
-
-    onCleanup(() => {
-      clearInterval(checkApi);
-    });
+    onCleanup(() => clearInterval(checkApi));
   });
 
   return (
-    <div class="relative h-screen w-screen flex flex-col bg-neutral-950">
+    <div class="h-screen w-screen flex flex-col bg-neutral-950">
       <BreadcrumbNav />
 
-      <div class="relative flex-1 overflow-hidden">
-        <button
-          onClick={() => setShowSettings(!showSettings())}
-          class="absolute top-2 right-2 z-50 p-2 rounded-lg bg-neutral-800/80 hover:bg-neutral-700 text-neutral-400 hover:text-white transition-colors backdrop-blur-sm"
-          title="Settings"
-        >
-          <GearIcon />
-        </button>
-
-        <DockView
-          class="dockview-theme-abyss"
-          style="height: 100%; width: 100%;"
-          onReady={handleReady}
-          onDidLayoutChange={debouncedSave}
-        >
-          <DockPanel 
-            id="sessions" 
-            title="Sessions" 
-            position={{ direction: 'left' }}
-            initialWidth={220}
+      <div class="flex-1 flex overflow-hidden">
+        <div class="flex flex-col justify-center border-r border-neutral-800 bg-neutral-900">
+          <button
+            onClick={() => togglePanel('left')}
+            class={`p-2 transition-colors ${panelVisible().left ? 'text-blue-400' : 'text-neutral-500 hover:text-neutral-300'}`}
+            title="Toggle left sidebar"
           >
-            <SessionPanel />
-          </DockPanel>
+            <SidebarIcon side="left" />
+          </button>
+        </div>
 
-          <DockPanel id="chat" title="Chat">
-            <props.chatContent />
-          </DockPanel>
+        <div class="flex-1 flex flex-col overflow-hidden">
+          <div class="flex-1 overflow-hidden relative">
+            <button
+              onClick={() => setShowSettings(!showSettings())}
+              class="absolute top-2 right-2 z-50 p-2 rounded-lg bg-neutral-800/80 hover:bg-neutral-700 text-neutral-400 hover:text-white transition-colors"
+              title="Settings"
+            >
+              <GearIcon />
+            </button>
 
-          <DockPanel 
-            id="files" 
-            title="Files" 
-            position={{ direction: 'right' }}
-            initialWidth={300}
+            <DockView
+              class="dockview-theme-abyss"
+              style="height: 100%; width: 100%;"
+              onReady={handleReady}
+              onDidLayoutChange={debouncedSave}
+            >
+              <DockPanel 
+                id="sessions" 
+                title="Sessions" 
+                position={{ direction: 'left' }}
+                initialWidth={260}
+                onCreate={(e) => trackGroup('sessions', e.panel.group?.id ?? null)}
+              >
+                <SessionPanel />
+              </DockPanel>
+
+              <DockPanel 
+                id="files" 
+                title="Files" 
+                position={{ referencePanel: 'sessions', direction: 'within' }}
+                onCreate={(e) => trackGroup('files', e.panel.group?.id ?? null)}
+              >
+                <FilesPanel />
+              </DockPanel>
+
+              <DockPanel id="chat" title="Chat">
+                <props.chatContent />
+              </DockPanel>
+
+              <DockPanel 
+                id="editor" 
+                title="Editor" 
+                position={{ direction: 'right' }}
+                initialWidth={400}
+                onCreate={(e) => trackGroup('editor', e.panel.group?.id ?? null)}
+              >
+                <EditorPanel />
+              </DockPanel>
+
+              <DockPanel 
+                id="bottom" 
+                title="Output" 
+                position={{ direction: 'below' }}
+                initialHeight={200}
+                onCreate={(e) => {
+                  trackGroup('bottom', e.panel.group?.id ?? null);
+                  setTimeout(() => {
+                    const api = dockviewApi();
+                    if (api && groupIds.bottom) {
+                      api.getGroupPanel(groupIds.bottom)?.api.setVisible(false);
+                    }
+                  }, 0);
+                }}
+              >
+                <BottomPanel />
+              </DockPanel>
+
+              <Show when={showSettings()}>
+                <DockPanel id="settings" title="Settings" floating={{ width: 400, height: 300 }}>
+                  <SettingsPanel />
+                </DockPanel>
+              </Show>
+            </DockView>
+          </div>
+
+          <div class="flex justify-center border-t border-neutral-800 bg-neutral-900">
+            <button
+              onClick={() => togglePanel('bottom')}
+              class={`p-1.5 transition-colors ${panelVisible().bottom ? 'text-blue-400' : 'text-neutral-500 hover:text-neutral-300'}`}
+              title="Toggle bottom panel"
+            >
+              <BottomPanelIcon />
+            </button>
+          </div>
+        </div>
+
+        <div class="flex flex-col justify-center border-l border-neutral-800 bg-neutral-900">
+          <button
+            onClick={() => togglePanel('right')}
+            class={`p-2 transition-colors ${panelVisible().right ? 'text-blue-400' : 'text-neutral-500 hover:text-neutral-300'}`}
+            title="Toggle right sidebar"
           >
-            <FilesPanel />
-          </DockPanel>
-
-          <DockPanel 
-            id="editor" 
-            title="Editor" 
-            position={{ referencePanel: 'files', direction: 'within' }}
-          >
-            <EditorPanel />
-          </DockPanel>
-
-          <Show when={showSettings()}>
-            <DockPanel id="settings" title="Settings" floating={{ width: 400, height: 300 }}>
-              <SettingsPanel />
-            </DockPanel>
-          </Show>
-        </DockView>
+            <SidebarIcon side="right" />
+          </button>
+        </div>
       </div>
     </div>
   );
