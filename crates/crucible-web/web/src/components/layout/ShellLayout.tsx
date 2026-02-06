@@ -1,6 +1,6 @@
 import { type Component, type JSXElement, createSignal, onMount, onCleanup } from 'solid-js';
 import { BreadcrumbNav } from '@/components/BreadcrumbNav';
-import { loadZoneState, saveZoneState, loadZoneWidths, saveZoneWidths, type ZoneState, type ZoneMode, type ZoneWidths } from '@/lib/layout';
+import { loadZoneState, saveZoneState, loadZoneWidths, type ZoneState, type ZoneMode, type ZoneWidths } from '@/lib/layout';
 import { ZoneWrapper } from './ZoneWrapper';
 
 const GearIcon: Component = () => (
@@ -50,21 +50,20 @@ export const ShellLayout: Component<ShellLayoutProps> = (props) => {
   const [zoneWidths] = createSignal<ZoneWidths>(loadZoneWidths());
   const [ariaLiveMessage, setAriaLiveMessage] = createSignal('');
 
-  const toggleZone = (zone: ToggleableZone) => {
-    const current = zoneState()[zone];
-    const next: ZoneMode = isZoneExpanded(current) ? 'hidden' : 'visible';
-    const newState = { ...zoneState(), [zone]: next };
-    setZoneState(newState);
-    saveZoneState(newState);
-    saveZoneWidths(zoneWidths());
+   const toggleZone = (zone: ToggleableZone) => {
+     const current = zoneState()[zone];
+     const next: ZoneMode = isZoneExpanded(current) ? 'hidden' : 'visible';
+     const newState = { ...zoneState(), [zone]: next };
+     setZoneState(newState);
+     saveZoneState(newState);
 
-    const zoneNames: Record<ToggleableZone, string> = {
-      left: 'Left zone',
-      right: 'Right zone',
-      bottom: 'Bottom zone',
-    };
-    setAriaLiveMessage(`${zoneNames[zone]} ${isZoneExpanded(next) ? 'expanded' : 'collapsed'}`);
-  };
+     const zoneNames: Record<ToggleableZone, string> = {
+       left: 'Left zone',
+       right: 'Right zone',
+       bottom: 'Bottom zone',
+     };
+     setAriaLiveMessage(`${zoneNames[zone]} ${isZoneExpanded(next) ? 'expanded' : 'collapsed'}`);
+   };
 
   const handleTransitionEnd = (zone: ToggleableZone) => (event: TransitionEvent) => {
     if (event.target !== event.currentTarget) return;
@@ -72,34 +71,41 @@ export const ShellLayout: Component<ShellLayoutProps> = (props) => {
     props.onZoneTransitionEnd?.(zone);
   };
 
-  onMount(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      const target = event.target;
-      const isEditable = target instanceof HTMLInputElement ||
-        target instanceof HTMLTextAreaElement ||
-        (target instanceof HTMLElement && target.contentEditable === 'true');
-      if (isEditable) return;
+   onMount(() => {
+     const handleKeyDown = (event: KeyboardEvent) => {
+       // Dismiss settings on Escape
+       if (event.code === 'Escape' && showSettings()) {
+         event.preventDefault();
+         setShowSettings(false);
+         return;
+       }
 
-      const userAgentData = (navigator as Navigator & { userAgentData?: { platform?: string } }).userAgentData;
-      const isMac = userAgentData?.platform === 'macOS' ||
-        /Mac|iPod|iPhone|iPad/.test(navigator.userAgent);
-      const modifier = isMac ? event.metaKey : event.ctrlKey;
-      if (!modifier) return;
+       const target = event.target;
+       const isEditable = target instanceof HTMLInputElement ||
+         target instanceof HTMLTextAreaElement ||
+         (target instanceof HTMLElement && target.contentEditable === 'true');
+       if (isEditable) return;
 
-      let zone: ToggleableZone | null = null;
-      if (event.code === 'KeyB' && !event.shiftKey) zone = 'left';
-      else if (event.code === 'KeyB' && event.shiftKey) zone = 'right';
-      else if (event.code === 'KeyJ') zone = 'bottom';
+       const userAgentData = (navigator as Navigator & { userAgentData?: { platform?: string } }).userAgentData;
+       const isMac = userAgentData?.platform === 'macOS' ||
+         /Mac|iPod|iPhone|iPad/.test(navigator.userAgent);
+       const modifier = isMac ? event.metaKey : event.ctrlKey;
+       if (!modifier) return;
 
-      if (zone) {
-        event.preventDefault();
-        toggleZone(zone);
-      }
-    };
+       let zone: ToggleableZone | null = null;
+       if (event.code === 'KeyB' && !event.shiftKey) zone = 'left';
+       else if (event.code === 'KeyB' && event.shiftKey) zone = 'right';
+       else if (event.code === 'KeyJ') zone = 'bottom';
 
-    document.addEventListener('keydown', handleKeyDown);
-    onCleanup(() => document.removeEventListener('keydown', handleKeyDown));
-  });
+       if (zone) {
+         event.preventDefault();
+         toggleZone(zone);
+       }
+     };
+
+     document.addEventListener('keydown', handleKeyDown);
+     onCleanup(() => document.removeEventListener('keydown', handleKeyDown));
+   });
 
   const leftExpanded = () => isZoneExpanded(zoneState().left);
   const rightExpanded = () => isZoneExpanded(zoneState().right);
@@ -112,17 +118,17 @@ export const ShellLayout: Component<ShellLayoutProps> = (props) => {
       <div class="flex-1 flex overflow-hidden">
         {/* Left icon rail toggle */}
         <div class="flex flex-col justify-center border-r border-neutral-800 bg-neutral-900">
-          <button
-            data-testid="toggle-left"
-            onClick={() => toggleZone('left')}
-            aria-label="Toggle left sidebar"
-            aria-expanded={leftExpanded()}
-            aria-controls="sessions"
-            class={`p-2 transition-colors ${leftExpanded() ? 'text-blue-400' : 'text-neutral-500 hover:text-neutral-300'}`}
-            title="Toggle left sidebar (⌘B)"
-          >
-            <SidebarIcon side="left" />
-          </button>
+           <button
+             data-testid="toggle-left"
+             onClick={() => toggleZone('left')}
+             aria-label="Toggle left sidebar"
+             aria-expanded={leftExpanded()}
+             aria-controls="zone-left"
+             class={`p-2 transition-colors ${leftExpanded() ? 'text-blue-400' : 'text-neutral-500 hover:text-neutral-300'}`}
+             title="Toggle left sidebar (⌘B)"
+           >
+             <SidebarIcon side="left" />
+           </button>
         </div>
 
         {/* Left collapsed icon rail */}
@@ -139,10 +145,10 @@ export const ShellLayout: Component<ShellLayoutProps> = (props) => {
           </div>
         )}
 
-        {/* Left zone */}
-        <ZoneWrapper zone="left" collapsed={!leftExpanded()} width={zoneWidths().left} ref={props.leftRef} onTransitionEnd={handleTransitionEnd('left')}>
-          {props.leftContent}
-        </ZoneWrapper>
+         {/* Left zone */}
+         <ZoneWrapper id="zone-left" zone="left" collapsed={!leftExpanded()} width={zoneWidths().left} ref={props.leftRef} onTransitionEnd={handleTransitionEnd('left')}>
+           {props.leftContent}
+         </ZoneWrapper>
 
         {/* Center column: center zone + bottom zone */}
         <div class="flex-1 flex flex-col overflow-hidden min-w-0">
@@ -150,30 +156,30 @@ export const ShellLayout: Component<ShellLayoutProps> = (props) => {
             {props.centerContent}
           </ZoneWrapper>
 
-          <ZoneWrapper zone="bottom" collapsed={!bottomExpanded()} height={zoneWidths().bottom} ref={props.bottomRef} onTransitionEnd={handleTransitionEnd('bottom')}>
-            {props.bottomContent}
-          </ZoneWrapper>
+           <ZoneWrapper id="zone-bottom" zone="bottom" collapsed={!bottomExpanded()} height={zoneWidths().bottom} ref={props.bottomRef} onTransitionEnd={handleTransitionEnd('bottom')}>
+             {props.bottomContent}
+           </ZoneWrapper>
 
           {/* Bottom toggle bar */}
           <div class="flex justify-center border-t border-neutral-800 bg-neutral-900">
-            <button
-              data-testid="toggle-bottom"
-              onClick={() => toggleZone('bottom')}
-              aria-label="Toggle bottom panel"
-              aria-expanded={bottomExpanded()}
-              aria-controls="bottom"
-              class={`p-1.5 transition-colors ${bottomExpanded() ? 'text-blue-400' : 'text-neutral-500 hover:text-neutral-300'}`}
-              title="Toggle bottom panel (⌘J)"
-            >
-              <BottomPanelIcon />
-            </button>
+             <button
+               data-testid="toggle-bottom"
+               onClick={() => toggleZone('bottom')}
+               aria-label="Toggle bottom panel"
+               aria-expanded={bottomExpanded()}
+               aria-controls="zone-bottom"
+               class={`p-1.5 transition-colors ${bottomExpanded() ? 'text-blue-400' : 'text-neutral-500 hover:text-neutral-300'}`}
+               title="Toggle bottom panel (⌘J)"
+             >
+               <BottomPanelIcon />
+             </button>
           </div>
         </div>
 
-        {/* Right zone */}
-        <ZoneWrapper zone="right" collapsed={!rightExpanded()} width={zoneWidths().right} ref={props.rightRef} onTransitionEnd={handleTransitionEnd('right')}>
-          {props.rightContent}
-        </ZoneWrapper>
+         {/* Right zone */}
+         <ZoneWrapper id="zone-right" zone="right" collapsed={!rightExpanded()} width={zoneWidths().right} ref={props.rightRef} onTransitionEnd={handleTransitionEnd('right')}>
+           {props.rightContent}
+         </ZoneWrapper>
 
         {/* Right collapsed icon rail */}
         {!rightExpanded() && (
@@ -191,24 +197,26 @@ export const ShellLayout: Component<ShellLayoutProps> = (props) => {
 
         {/* Right icon rail toggle */}
         <div class="flex flex-col justify-center border-l border-neutral-800 bg-neutral-900">
-          <button
-            data-testid="toggle-right"
-            onClick={() => toggleZone('right')}
-            aria-label="Toggle right sidebar"
-            aria-expanded={rightExpanded()}
-            aria-controls="editor"
-            class={`p-2 transition-colors ${rightExpanded() ? 'text-blue-400' : 'text-neutral-500 hover:text-neutral-300'}`}
-            title="Toggle right sidebar (⌘⇧B)"
-          >
-            <SidebarIcon side="right" />
-          </button>
+           <button
+             data-testid="toggle-right"
+             onClick={() => toggleZone('right')}
+             aria-label="Toggle right sidebar"
+             aria-expanded={rightExpanded()}
+             aria-controls="zone-right"
+             class={`p-2 transition-colors ${rightExpanded() ? 'text-blue-400' : 'text-neutral-500 hover:text-neutral-300'}`}
+             title="Toggle right sidebar (⌘⇧B)"
+           >
+             <SidebarIcon side="right" />
+           </button>
         </div>
       </div>
 
-      {/* Settings overlay — outermost level, overlays ALL zones */}
-      {showSettings() && (
-        <div class="absolute inset-0 z-50 bg-black/60 flex items-center justify-center">
-          <div class="bg-neutral-900 border border-neutral-700 rounded-lg p-6 max-w-lg w-full mx-4 shadow-2xl">
+       {/* Settings overlay — outermost level, overlays ALL zones */}
+       {showSettings() && (
+         <div class="absolute inset-0 z-50 bg-black/60 flex items-center justify-center" onClick={(e) => {
+           if (e.target === e.currentTarget) setShowSettings(false);
+         }}>
+           <div class="bg-neutral-900 border border-neutral-700 rounded-lg p-6 max-w-lg w-full mx-4 shadow-2xl">
             <div class="flex items-center justify-between mb-4">
               <h2 class="text-lg font-semibold text-white">Settings</h2>
               <button
