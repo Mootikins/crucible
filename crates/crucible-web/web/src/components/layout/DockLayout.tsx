@@ -67,6 +67,15 @@ export const DockLayout: Component<DockLayoutProps> = (props) => {
   let rightRef: HTMLDivElement | undefined;
   let bottomRef: HTMLDivElement | undefined;
 
+  const handleZoneTransitionEnd = (_zone: Zone) => {
+    for (const [z, instance] of instances.entries()) {
+      const ref = { left: leftRef, center: centerRef, right: rightRef, bottom: bottomRef }[z];
+      if (ref) {
+        instance.api.layout(ref.clientWidth, ref.clientHeight, true);
+      }
+    }
+  };
+
   onMount(() => {
     registerDefaultPanels(props.chatContent);
 
@@ -97,6 +106,7 @@ export const DockLayout: Component<DockLayoutProps> = (props) => {
       centerRef={(el) => { centerRef = el; }}
       rightRef={(el) => { rightRef = el; }}
       bottomRef={(el) => { bottomRef = el; }}
+      onZoneTransitionEnd={handleZoneTransitionEnd}
     />
   );
 };
