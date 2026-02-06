@@ -25,11 +25,11 @@ const KilnSelector: Component<{
             </div>
           }
         >
-          <select
-            value={props.selected}
-            onChange={(e) => props.onSelect(e.currentTarget.value)}
-            class="w-full bg-neutral-800 text-neutral-200 text-sm px-2 py-1.5 rounded border border-neutral-700 focus:border-blue-500 focus:outline-none"
-          >
+           <select
+             value={props.selected}
+             onChange={(e) => props.onSelect(e.currentTarget.value)}
+             class="w-full bg-surface-elevated text-neutral-200 text-sm px-2 py-1.5 rounded border border-neutral-700 focus:border-primary focus:outline-none"
+           >
             <For each={props.kilns}>
               {(kiln) => (
                 <option value={kiln}>{getKilnName(kiln)}</option>
@@ -59,15 +59,15 @@ const StateIndicator: Component<{ state: Session['state'] }> = (props) => {
 };
 
 const ProjectItem: Component<{ project: Project; selected: boolean; onSelect: () => void }> = (props) => {
-  return (
-    <button
-      onClick={props.onSelect}
-      class={`w-full text-left px-3 py-2 rounded-lg transition-colors ${
-        props.selected
-          ? 'bg-blue-900/50 text-blue-200'
-          : 'hover:bg-neutral-800 text-neutral-300'
-      }`}
-    >
+   return (
+     <button
+       onClick={props.onSelect}
+       class={`w-full text-left px-3 py-2 rounded-lg transition-colors ${
+         props.selected
+           ? 'bg-primary/20 text-primary-hover'
+           : 'hover:bg-surface-elevated text-neutral-300'
+       }`}
+     >
       <div class="font-medium truncate">{props.project.name}</div>
       <div class="text-xs text-neutral-500 truncate">{props.project.path}</div>
     </button>
@@ -75,15 +75,15 @@ const ProjectItem: Component<{ project: Project; selected: boolean; onSelect: ()
 };
 
 const SessionItem: Component<{ session: Session; selected: boolean; onSelect: () => void }> = (props) => {
-  return (
-    <button
-      onClick={props.onSelect}
-      class={`w-full text-left px-3 py-2 rounded-lg transition-colors ${
-        props.selected
-          ? 'bg-blue-900/50 text-blue-200'
-          : 'hover:bg-neutral-800 text-neutral-300'
-      }`}
-    >
+   return (
+     <button
+       onClick={props.onSelect}
+       class={`w-full text-left px-3 py-2 rounded-lg transition-colors ${
+         props.selected
+           ? 'bg-primary/20 text-primary-hover'
+           : 'hover:bg-surface-elevated text-neutral-300'
+       }`}
+     >
       <div class="flex items-center gap-2">
         <StateIndicator state={props.session.state} />
         <span class="font-medium truncate flex-1">

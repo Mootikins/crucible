@@ -113,11 +113,11 @@ export const ChatInput: Component = () => {
       class="border-t border-neutral-800 p-4"
       data-testid="chat-input-form"
     >
-      <Show when={error()}>
-        <div class="mb-2 px-2 py-1 text-sm text-red-400 bg-red-900/20 rounded">
-          {error()}
-        </div>
-      </Show>
+       <Show when={error()}>
+         <div class="mb-2 px-2 py-1 text-sm text-error bg-error-dark/20 rounded">
+           {error()}
+         </div>
+       </Show>
       
       <Show when={!session()}>
         <div class="mb-2 px-2 py-1 text-sm text-neutral-500 text-center">
@@ -126,7 +126,7 @@ export const ChatInput: Component = () => {
       </Show>
 
       <div
-        class="relative flex flex-col gap-2 bg-neutral-900 rounded-xl p-2 border-2 border-transparent transition-[border-color]"
+        class="relative flex flex-col gap-2 bg-surface-base rounded-xl p-2 border-2 border-transparent transition-[border-color]"
         style={containerStyle()}
       >
         <textarea
@@ -146,7 +146,7 @@ export const ChatInput: Component = () => {
               type="button"
               onClick={() => setIsModelPickerOpen(!isModelPickerOpen())}
               disabled={!session() || isLoading()}
-              class="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-neutral-300 bg-neutral-800 hover:bg-neutral-700 rounded-lg border border-neutral-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+               class="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-neutral-300 bg-surface-elevated hover:bg-surface-overlay rounded-lg border border-neutral-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               data-testid="model-picker-button"
             >
               <span class="max-w-[140px] truncate">{truncateModel(currentModel())}</span>
@@ -161,8 +161,8 @@ export const ChatInput: Component = () => {
               </svg>
             </button>
 
-            <Show when={isModelPickerOpen()}>
-              <div class="absolute bottom-full left-0 mb-1 w-56 max-h-64 overflow-y-auto bg-neutral-800 border border-neutral-700 rounded-lg shadow-xl z-50">
+             <Show when={isModelPickerOpen()}>
+               <div class="absolute bottom-full left-0 mb-1 w-56 max-h-64 overflow-y-auto bg-surface-elevated border border-neutral-700 rounded-lg shadow-xl z-50">
                 <Show
                   when={availableModels().length > 0}
                   fallback={
@@ -171,11 +171,11 @@ export const ChatInput: Component = () => {
                 >
                   <For each={availableModels()}>
                     {(model) => (
-                      <button
-                        type="button"
-                        onClick={() => handleModelSelect(model)}
-                        class="w-full px-3 py-2 text-left text-sm text-neutral-200 hover:bg-neutral-700 transition-colors first:rounded-t-lg last:rounded-b-lg"
-                        classList={{ 'bg-neutral-700/50': model === currentSession()?.agent_model }}
+                       <button
+                         type="button"
+                         onClick={() => handleModelSelect(model)}
+                         class="w-full px-3 py-2 text-left text-sm text-neutral-200 hover:bg-surface-overlay transition-colors first:rounded-t-lg last:rounded-b-lg"
+                         classList={{ 'bg-surface-overlay/50': model === currentSession()?.agent_model }}
                       >
                         <span class="flex items-center gap-2">
                           <Show when={model === currentSession()?.agent_model}>
@@ -206,12 +206,12 @@ export const ChatInput: Component = () => {
           <Show
             when={isStreaming()}
             fallback={
-              <button
-                type="submit"
-                disabled={!canSend()}
-                class="p-2 rounded-lg bg-blue-600 text-white disabled:opacity-50 disabled:cursor-not-allowed hover:bg-blue-700 transition-colors"
-                data-testid="send-button"
-              >
+               <button
+                 type="submit"
+                 disabled={!canSend()}
+                 class="p-2 rounded-lg bg-primary text-white disabled:opacity-50 disabled:cursor-not-allowed hover:bg-primary-hover transition-colors"
+                 data-testid="send-button"
+               >
                 <svg
                   xmlns="http://www.w3.org/2000/svg"
                   viewBox="0 0 24 24"
@@ -223,12 +223,12 @@ export const ChatInput: Component = () => {
               </button>
             }
           >
-            <button
-              type="button"
-              onClick={handleCancel}
-              class="p-2 rounded-lg bg-red-600 text-white hover:bg-red-700 transition-colors"
-              data-testid="cancel-button"
-            >
+             <button
+               type="button"
+               onClick={handleCancel}
+               class="p-2 rounded-lg bg-error text-white hover:bg-error-dark transition-colors"
+               data-testid="cancel-button"
+             >
               <svg
                 xmlns="http://www.w3.org/2000/svg"
                 viewBox="0 0 24 24"
