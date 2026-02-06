@@ -12,13 +12,14 @@ describe('PanelRegistry', () => {
   });
 
   it('registers and retrieves a panel by id', () => {
-    registry.register('chat', 'Chat', StubComponent, 'center');
+    registry.register('chat', 'Chat', StubComponent, 'center', 'message');
     const panel = registry.get('chat');
     expect(panel).toBeDefined();
     expect(panel!.id).toBe('chat');
     expect(panel!.title).toBe('Chat');
     expect(panel!.component).toBe(StubComponent);
     expect(panel!.defaultZone).toBe('center');
+    expect(panel!.icon).toBe('message');
   });
 
   it('returns undefined for unknown panel id', () => {
@@ -26,9 +27,9 @@ describe('PanelRegistry', () => {
   });
 
   it('lists all registered panels', () => {
-    registry.register('sessions', 'Sessions', StubComponent, 'left');
-    registry.register('files', 'Files', AnotherStub, 'left');
-    registry.register('chat', 'Chat', StubComponent, 'center');
+    registry.register('sessions', 'Sessions', StubComponent, 'left', 'list');
+    registry.register('files', 'Files', AnotherStub, 'left', 'folder');
+    registry.register('chat', 'Chat', StubComponent, 'center', 'message');
 
     const panels = registry.list();
     expect(panels).toHaveLength(3);
@@ -36,11 +37,11 @@ describe('PanelRegistry', () => {
   });
 
   it('returns default layout grouped by zone', () => {
-    registry.register('sessions', 'Sessions', StubComponent, 'left');
-    registry.register('files', 'Files', AnotherStub, 'left');
-    registry.register('chat', 'Chat', StubComponent, 'center');
-    registry.register('editor', 'Editor', StubComponent, 'right');
-    registry.register('terminal', 'Terminal', StubComponent, 'bottom');
+    registry.register('sessions', 'Sessions', StubComponent, 'left', 'list');
+    registry.register('files', 'Files', AnotherStub, 'left', 'folder');
+    registry.register('chat', 'Chat', StubComponent, 'center', 'message');
+    registry.register('editor', 'Editor', StubComponent, 'right', 'code');
+    registry.register('terminal', 'Terminal', StubComponent, 'bottom', 'terminal');
 
     const layout = registry.getDefaultLayout();
     expect(layout.left).toEqual(['sessions', 'files']);
@@ -50,7 +51,7 @@ describe('PanelRegistry', () => {
   });
 
   it('returns empty arrays for zones with no panels', () => {
-    registry.register('chat', 'Chat', StubComponent, 'center');
+    registry.register('chat', 'Chat', StubComponent, 'center', 'message');
 
     const layout = registry.getDefaultLayout();
     expect(layout.left).toEqual([]);
@@ -60,24 +61,53 @@ describe('PanelRegistry', () => {
   });
 
   it('overwrites panel when re-registered with same id', () => {
-    registry.register('chat', 'Chat', StubComponent, 'center');
-    registry.register('chat', 'Chat Updated', AnotherStub, 'right');
+    registry.register('chat', 'Chat', StubComponent, 'center', 'message');
+    registry.register('chat', 'Chat Updated', AnotherStub, 'right', 'chat');
 
     const panel = registry.get('chat');
     expect(panel!.title).toBe('Chat Updated');
     expect(panel!.component).toBe(AnotherStub);
     expect(panel!.defaultZone).toBe('right');
+    expect(panel!.icon).toBe('chat');
     expect(registry.list()).toHaveLength(1);
   });
 
   it('produces a component map keyed by panel id', () => {
-    registry.register('sessions', 'Sessions', StubComponent, 'left');
-    registry.register('chat', 'Chat', AnotherStub, 'center');
+    registry.register('sessions', 'Sessions', StubComponent, 'left', 'list');
+    registry.register('chat', 'Chat', AnotherStub, 'center', 'message');
 
     const map = registry.getComponentMap();
     expect(map.get('sessions')).toBe(StubComponent);
     expect(map.get('chat')).toBe(AnotherStub);
     expect(map.size).toBe(2);
+  });
+
+  it('all default panels have icons assigned', () => {
+    registry.register('sessions', 'Sessions', StubComponent, 'left', 'list');
+    registry.register('files', 'Files', StubComponent, 'left', 'folder');
+    registry.register('chat', 'Chat', StubComponent, 'center', 'message');
+    registry.register('editor', 'Editor', StubComponent, 'right', 'code');
+    registry.register('terminal', 'Terminal', StubComponent, 'bottom', 'terminal');
+
+    const panels = registry.list();
+    expect(panels).toHaveLength(5);
+    panels.forEach(panel => {
+      expect(panel.icon).toBeDefined();
+      expect(panel.icon.length).toBeGreaterThan(0);
+    });
+  });
+
+  it('icon field is preserved in registry operations', () => {
+    registry.register('test-panel', 'Test', StubComponent, 'center', 'star');
+    
+    const retrieved = registry.get('test-panel');
+    expect(retrieved).toBeDefined();
+    expect(retrieved!.icon).toBe('star');
+
+    const listed = registry.list();
+    const testPanel = listed.find(p => p.id === 'test-panel');
+    expect(testPanel).toBeDefined();
+    expect(testPanel!.icon).toBe('star');
   });
 });
 
@@ -94,7 +124,7 @@ describe('global registry singleton', () => {
 
   it('resets to a fresh instance', () => {
     const before = getGlobalRegistry();
-    before.register('x', 'X', StubComponent, 'center');
+    before.register('x', 'X', StubComponent, 'center', 'x');
     resetGlobalRegistry();
     const after = getGlobalRegistry();
     expect(after).not.toBe(before);
