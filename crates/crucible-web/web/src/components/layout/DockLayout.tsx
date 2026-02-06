@@ -15,30 +15,6 @@ const GearIcon: Component = () => (
   </svg>
 );
 
-const ChevronLeft: Component = () => (
-  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-4 h-4">
-    <path fill-rule="evenodd" d="M12.79 5.23a.75.75 0 01-.02 1.06L8.832 10l3.938 3.71a.75.75 0 11-1.04 1.08l-4.5-4.25a.75.75 0 010-1.08l4.5-4.25a.75.75 0 011.06.02z" clip-rule="evenodd" />
-  </svg>
-);
-
-const ChevronRight: Component = () => (
-  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-4 h-4">
-    <path fill-rule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clip-rule="evenodd" />
-  </svg>
-);
-
-const ChevronUp: Component = () => (
-  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-4 h-4">
-    <path fill-rule="evenodd" d="M14.77 12.79a.75.75 0 01-1.06-.02L10 8.832 6.29 12.77a.75.75 0 11-1.08-1.04l4.25-4.5a.75.75 0 011.08 0l4.25 4.5a.75.75 0 01-.02 1.06z" clip-rule="evenodd" />
-  </svg>
-);
-
-const ChevronDown: Component = () => (
-  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-4 h-4">
-    <path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clip-rule="evenodd" />
-  </svg>
-);
-
 export const ChatPanel: ParentComponent = (props) => {
   return (
     <div class="h-full flex flex-col bg-neutral-900">
@@ -47,66 +23,8 @@ export const ChatPanel: ParentComponent = (props) => {
   );
 };
 
-export const PreviewPanel: Component = () => {
-  return (
-    <div class="h-full flex items-center justify-center bg-neutral-900 text-neutral-500">
-      <div class="text-center">
-        <div class="text-4xl mb-2">📄</div>
-        <div class="text-sm font-medium">Markdown Preview</div>
-        <div class="text-xs text-neutral-500 mt-1">Coming soon</div>
-      </div>
-    </div>
-  );
-};
-
-
-
-export const CanvasPanel: Component = () => {
-  return (
-    <div class="h-full flex items-center justify-center bg-neutral-900 text-neutral-500">
-      <div class="text-center">
-        <div class="text-4xl mb-2">🎨</div>
-        <div class="text-sm font-medium">Canvas</div>
-        <div class="text-xs text-neutral-500 mt-1">Coming soon</div>
-      </div>
-    </div>
-  );
-};
-
-export const GraphPanel: Component = () => {
-  return (
-    <div class="h-full flex items-center justify-center bg-neutral-900 text-neutral-500">
-      <div class="text-center">
-        <div class="text-4xl mb-2">🕸️</div>
-        <div class="text-sm font-medium">Knowledge Graph</div>
-        <div class="text-xs text-neutral-500 mt-1">Coming soon</div>
-      </div>
-    </div>
-  );
-};
-
-
-
-export const BottomPanel: Component = () => {
-  return (
-    <div class="h-full flex items-center justify-center bg-neutral-900 text-neutral-500">
-      <div class="text-center">
-        <div class="text-4xl mb-2">📋</div>
-        <div class="text-sm font-medium">Output / Terminal</div>
-        <div class="text-xs text-neutral-500 mt-1">Coming soon</div>
-      </div>
-    </div>
-  );
-};
-
 interface DockLayoutProps {
   chatContent: Component;
-}
-
-interface EdgeState {
-  left: boolean;
-  right: boolean;
-  bottom: boolean;
 }
 
 function debounce<T extends (...args: unknown[]) => void>(fn: T, delay: number): T {
@@ -120,15 +38,6 @@ function debounce<T extends (...args: unknown[]) => void>(fn: T, delay: number):
 export const DockLayout: Component<DockLayoutProps> = (props) => {
   const [showSettings, setShowSettings] = createSignal(false);
   const [dockviewApi, setDockviewApi] = createSignal<DockviewComponent | null>(null);
-  const [edgeCollapsed, setEdgeCollapsed] = createSignal<EdgeState>({
-    left: false,
-    right: false,
-    bottom: true,
-  });
-
-  let leftGroupId: string | null = null;
-  let rightGroupId: string | null = null;
-  let bottomGroupId: string | null = null;
 
   const debouncedSave = debounce(() => {
     const api = dockviewApi();
@@ -137,45 +46,10 @@ export const DockLayout: Component<DockLayoutProps> = (props) => {
     const serialized = api.toJSON() as SerializedDockview;
     const layoutState: LayoutState = {
       grid: serialized,
-      panels: {
-        files: { visible: !edgeCollapsed().left },
-        editor: { visible: true },
-        chat: { visible: !edgeCollapsed().right },
-        bottom: { visible: !edgeCollapsed().bottom },
-      },
+      panels: {},
     };
     saveLayout(layoutState);
   }, 300);
-
-  const toggleEdge = (edge: keyof EdgeState) => {
-    const api = dockviewApi();
-    if (!api) return;
-
-    const newState = { ...edgeCollapsed(), [edge]: !edgeCollapsed()[edge] };
-    setEdgeCollapsed(newState);
-
-    let groupId: string | null = null;
-    switch (edge) {
-      case 'left':
-        groupId = leftGroupId;
-        break;
-      case 'right':
-        groupId = rightGroupId;
-        break;
-      case 'bottom':
-        groupId = bottomGroupId;
-        break;
-    }
-
-    if (groupId) {
-      const group = api.getGroupPanel(groupId);
-      if (group) {
-        group.api.setVisible(!newState[edge]);
-      }
-    }
-
-    debouncedSave();
-  };
 
   const handleReady = (event: { dockview: DockviewComponent }) => {
     const api = event.dockview;
@@ -184,52 +58,17 @@ export const DockLayout: Component<DockLayoutProps> = (props) => {
     const savedLayout = loadLayout();
     if (savedLayout?.grid) {
       try {
-        // Validate that saved layout has the expected panel IDs
         const serialized = savedLayout.grid as SerializedDockview;
         const hasPanels = serialized.panels && Object.keys(serialized.panels).length > 0;
         
         if (hasPanels) {
           api.fromJSON(serialized);
-          
-          if (savedLayout.panels) {
-            setEdgeCollapsed({
-              left: savedLayout.panels.files?.visible === false,
-              right: savedLayout.panels.chat?.visible === false,
-              bottom: savedLayout.panels.bottom?.visible !== true,
-            });
-          }
-          
-          setTimeout(() => {
-            const panels = api.panels;
-            for (const panel of panels) {
-              if (panel.id === 'files') leftGroupId = panel.group?.id ?? null;
-              if (panel.id === 'chat') rightGroupId = panel.group?.id ?? null;
-              if (panel.id === 'bottom') bottomGroupId = panel.group?.id ?? null;
-            }
-          }, 0);
-          
           return;
         }
       } catch (e) {
         console.warn('Failed to restore layout, using default:', e);
-        // Clear invalid layout
         localStorage.removeItem('crucible:layout');
       }
-    }
-  };
-
-  const handlePanelCreate = (panelId: string, event: { panel: { group?: { id: string } } }) => {
-    const groupId = event.panel.group?.id ?? null;
-    switch (panelId) {
-      case 'files':
-        leftGroupId = groupId;
-        break;
-      case 'editor':
-        rightGroupId = groupId;
-        break;
-      case 'bottom':
-        bottomGroupId = groupId;
-        break;
     }
   };
 
@@ -254,110 +93,60 @@ export const DockLayout: Component<DockLayoutProps> = (props) => {
   });
 
   return (
-    <div class="relative h-screen w-screen flex flex-col">
+    <div class="relative h-screen w-screen flex flex-col bg-neutral-950">
       <BreadcrumbNav />
 
-      <div class="relative flex-1">
+      <div class="relative flex-1 overflow-hidden">
         <button
           onClick={() => setShowSettings(!showSettings())}
-          class="absolute top-2 right-2 z-50 p-2 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-400 hover:text-white transition-colors"
+          class="absolute top-2 right-2 z-50 p-2 rounded-lg bg-neutral-800/80 hover:bg-neutral-700 text-neutral-400 hover:text-white transition-colors backdrop-blur-sm"
           title="Settings"
         >
           <GearIcon />
         </button>
 
-      <button
-        onClick={() => toggleEdge('left')}
-        class="absolute left-0 top-1/2 -translate-y-1/2 z-40 p-1 bg-neutral-800 hover:bg-neutral-700 text-neutral-400 hover:text-white transition-colors rounded-r-md border border-l-0 border-neutral-700"
-        title={edgeCollapsed().left ? 'Expand left panel' : 'Collapse left panel'}
-      >
-        {edgeCollapsed().left ? <ChevronRight /> : <ChevronLeft />}
-      </button>
-
-      <button
-        onClick={() => toggleEdge('right')}
-        class="absolute right-0 top-1/2 -translate-y-1/2 z-40 p-1 bg-neutral-800 hover:bg-neutral-700 text-neutral-400 hover:text-white transition-colors rounded-l-md border border-r-0 border-neutral-700"
-        title={edgeCollapsed().right ? 'Expand right panel' : 'Collapse right panel'}
-      >
-        {edgeCollapsed().right ? <ChevronLeft /> : <ChevronRight />}
-      </button>
-
-      <button
-        onClick={() => toggleEdge('bottom')}
-        class="absolute bottom-0 left-1/2 -translate-x-1/2 z-40 p-1 bg-neutral-800 hover:bg-neutral-700 text-neutral-400 hover:text-white transition-colors rounded-t-md border border-b-0 border-neutral-700"
-        title={edgeCollapsed().bottom ? 'Expand bottom panel' : 'Collapse bottom panel'}
-      >
-        {edgeCollapsed().bottom ? <ChevronUp /> : <ChevronDown />}
-      </button>
-
-      <DockView
-        class="dockview-theme-abyss"
-        style="height: 100%; width: 100%;"
-        onReady={handleReady}
-        onDidLayoutChange={debouncedSave}
-      >
-        <DockPanel 
-          id="files" 
-          title="Files" 
-          position={{ direction: 'left' }}
-          initialWidth={240}
-          onCreate={(e) => handlePanelCreate('files', e)}
+        <DockView
+          class="dockview-theme-abyss"
+          style="height: 100%; width: 100%;"
+          onReady={handleReady}
+          onDidLayoutChange={debouncedSave}
         >
-          <FilesPanel />
-        </DockPanel>
-
-        <DockPanel 
-          id="chat" 
-          title="Chat"
-          onCreate={(e) => handlePanelCreate('chat', e)}
-        >
-          <props.chatContent />
-        </DockPanel>
-
-        <DockPanel 
-          id="editor" 
-          title="Editor" 
-          position={{ direction: 'right' }}
-          initialWidth={400}
-          onCreate={(e) => handlePanelCreate('editor', e)}
-        >
-          <EditorPanel />
-        </DockPanel>
-
-        <DockPanel 
-          id="bottom" 
-          title="Output" 
-          position={{ direction: 'below' }}
-          onCreate={(e) => {
-            handlePanelCreate('bottom', e);
-            setTimeout(() => {
-              const api = dockviewApi();
-              if (api && bottomGroupId) {
-                const group = api.getGroupPanel(bottomGroupId);
-                if (group) {
-                  group.api.setVisible(false);
-                }
-              }
-            }, 0);
-          }}
-        >
-          <BottomPanel />
-        </DockPanel>
-
-        <DockPanel 
-          id="sessions" 
-          title="Sessions" 
-          position={{ referencePanel: 'files', direction: 'within' }}
-        >
-          <SessionPanel />
-        </DockPanel>
-
-        <Show when={showSettings()}>
-          <DockPanel id="settings" title="Settings" floating={{ width: 400, height: 300 }}>
-            <SettingsPanel />
+          <DockPanel 
+            id="sessions" 
+            title="Sessions" 
+            position={{ direction: 'left' }}
+            initialWidth={220}
+          >
+            <SessionPanel />
           </DockPanel>
-        </Show>
-      </DockView>
+
+          <DockPanel id="chat" title="Chat">
+            <props.chatContent />
+          </DockPanel>
+
+          <DockPanel 
+            id="files" 
+            title="Files" 
+            position={{ direction: 'right' }}
+            initialWidth={300}
+          >
+            <FilesPanel />
+          </DockPanel>
+
+          <DockPanel 
+            id="editor" 
+            title="Editor" 
+            position={{ referencePanel: 'files', direction: 'within' }}
+          >
+            <EditorPanel />
+          </DockPanel>
+
+          <Show when={showSettings()}>
+            <DockPanel id="settings" title="Settings" floating={{ width: 400, height: 300 }}>
+              <SettingsPanel />
+            </DockPanel>
+          </Show>
+        </DockView>
       </div>
     </div>
   );
