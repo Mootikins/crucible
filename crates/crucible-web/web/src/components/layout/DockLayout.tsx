@@ -1,9 +1,9 @@
 import { Component, ParentComponent, onMount, onCleanup } from 'solid-js';
-import { createSolidDockview, type DockviewInstance, type SerializedDockview } from '@/lib/solid-dockview';
+import { createSolidDockview, type DockviewInstance } from '@/lib/solid-dockview';
+import { getGlobalRegistry, type Zone } from '@/lib/panel-registry';
 import { SessionPanel } from '@/components/SessionPanel';
 import { FilesPanel } from '@/components/FilesPanel';
 import { EditorPanel } from '@/components/EditorPanel';
-import { loadDockviewLayout, loadZoneState, saveDockviewLayout } from '@/lib/layout';
 import { ShellLayout } from './ShellLayout';
 import 'dockview-core/dist/styles/dockview.css';
 
@@ -24,157 +24,79 @@ interface DockLayoutProps {
   chatContent: Component;
 }
 
-interface DebouncedFn {
-  (): void;
-  cancel(): void;
+function registerDefaultPanels(chatContent: Component): void {
+  const registry = getGlobalRegistry();
+  registry.register('sessions', 'Sessions', SessionPanel, 'left');
+  registry.register('files', 'Files', FilesPanel, 'left');
+  registry.register('chat', 'Chat', chatContent, 'center');
+  registry.register('editor', 'Editor', EditorPanel, 'right');
+  registry.register('terminal', 'Terminal', BottomPanel, 'bottom');
 }
 
-function createDebouncedSave(fn: () => void, delay: number): DebouncedFn {
-  let timeoutId: ReturnType<typeof setTimeout> | null = null;
-  const debouncedFn: DebouncedFn = Object.assign(
-    () => {
-      if (timeoutId !== null) clearTimeout(timeoutId);
-      timeoutId = setTimeout(fn, delay);
-    },
-    {
-      cancel: () => {
-        if (timeoutId !== null) {
-          clearTimeout(timeoutId);
-          timeoutId = null;
-        }
-      }
-    }
-  );
-  return debouncedFn;
+function createZoneDockview(
+  container: HTMLElement,
+  zone: Zone,
+): DockviewInstance {
+  const registry = getGlobalRegistry();
+  const defaultLayout = registry.getDefaultLayout();
+  const panelIds = defaultLayout[zone];
+  const componentMap = registry.getComponentMap();
+
+  const panels = panelIds.map((id, index) => {
+    const def = registry.get(id)!;
+    return {
+      id: def.id,
+      title: def.title,
+      component: def.component,
+      position: index > 0 ? { referencePanel: panelIds[0], direction: 'within' as const } : undefined,
+    };
+  });
+
+  return createSolidDockview({
+    container,
+    panels,
+    componentMap,
+    className: 'dockview-theme-abyss',
+  });
 }
 
 export const DockLayout: Component<DockLayoutProps> = (props) => {
-  let containerRef: HTMLDivElement | undefined;
-  let dockviewInstance: DockviewInstance | null = null;
-
-  const updateZoneDataAttributes = () => {
-    if (!dockviewInstance) return;
-    const zones = dockviewInstance.getGroupZones();
-    for (const group of dockviewInstance.api.groups) {
-      const zone = zones.get(group.id);
-      if (zone) {
-        group.element.setAttribute('data-zone', zone);
-      }
-    }
-  };
-
-  const debouncedSaveLayout = createDebouncedSave(() => {
-    if (!dockviewInstance) return;
-    const serialized = dockviewInstance.component.toJSON();
-    saveDockviewLayout(serialized);
-    updateZoneDataAttributes();
-  }, 300);
+  const instances = new Map<Zone, DockviewInstance>();
+  let leftRef: HTMLDivElement | undefined;
+  let centerRef: HTMLDivElement | undefined;
+  let rightRef: HTMLDivElement | undefined;
+  let bottomRef: HTMLDivElement | undefined;
 
   onMount(() => {
-    if (!containerRef) return;
+    registerDefaultPanels(props.chatContent);
 
-    const savedLayout = loadDockviewLayout();
-    const zoneVisible = loadZoneState();
+    const zones: Array<{ zone: Zone; ref: HTMLDivElement | undefined }> = [
+      { zone: 'left', ref: leftRef },
+      { zone: 'center', ref: centerRef },
+      { zone: 'right', ref: rightRef },
+      { zone: 'bottom', ref: bottomRef },
+    ];
 
-    try {
-      dockviewInstance = createSolidDockview({
-        container: containerRef,
-        className: 'dockview-theme-abyss',
-        initialLayout: savedLayout as SerializedDockview | undefined,
-        panels: [
-          {
-            id: 'sessions',
-            title: 'Sessions',
-            component: SessionPanel,
-            position: { direction: 'left' },
-          },
-          {
-            id: 'files',
-            title: 'Files',
-            component: FilesPanel,
-            position: { referencePanel: 'sessions', direction: 'within' },
-          },
-          {
-            id: 'editor',
-            title: 'Editor',
-            component: EditorPanel,
-          },
-          {
-            id: 'chat',
-            title: 'Chat',
-            component: props.chatContent,
-            position: { direction: 'right' },
-          },
-          {
-            id: 'terminal',
-            title: 'Terminal',
-            component: BottomPanel,
-            position: { direction: 'below' },
-          },
-        ],
-        onLayoutChange: debouncedSaveLayout,
-      });
-    } catch {
-      console.warn('Failed to restore layout, clearing corrupted data and retrying');
-      localStorage.removeItem('crucible:layout');
-      dockviewInstance = createSolidDockview({
-        container: containerRef,
-        className: 'dockview-theme-abyss',
-        panels: [
-          {
-            id: 'sessions',
-            title: 'Sessions',
-            component: SessionPanel,
-            position: { direction: 'left' },
-          },
-          {
-            id: 'files',
-            title: 'Files',
-            component: FilesPanel,
-            position: { referencePanel: 'sessions', direction: 'within' },
-          },
-          {
-            id: 'editor',
-            title: 'Editor',
-            component: EditorPanel,
-          },
-          {
-            id: 'chat',
-            title: 'Chat',
-            component: props.chatContent,
-            position: { direction: 'right' },
-          },
-          {
-            id: 'terminal',
-            title: 'Terminal',
-            component: BottomPanel,
-            position: { direction: 'below' },
-          },
-        ],
-        onLayoutChange: debouncedSaveLayout,
-      });
+    for (const { zone, ref } of zones) {
+      if (!ref) continue;
+      const instance = createZoneDockview(ref, zone);
+      instances.set(zone, instance);
     }
 
-    setTimeout(() => {
-      if (!dockviewInstance) return;
-      const zones: Array<'left' | 'right' | 'bottom'> = ['left', 'right', 'bottom'];
-      for (const zone of zones) {
-        if (zoneVisible[zone] !== 'visible' && zoneVisible[zone] !== 'pinned') {
-          dockviewInstance.setZoneVisible(zone, false);
-        }
-      }
-      updateZoneDataAttributes();
-    }, 50);
-
     onCleanup(() => {
-      debouncedSaveLayout.cancel();
-      dockviewInstance?.dispose();
+      for (const instance of instances.values()) {
+        instance.dispose();
+      }
+      instances.clear();
     });
   });
 
   return (
     <ShellLayout
-      centerContent={<div ref={(el) => { containerRef = el; }} class="h-full w-full" />}
+      leftRef={(el) => { leftRef = el; }}
+      centerRef={(el) => { centerRef = el; }}
+      rightRef={(el) => { rightRef = el; }}
+      bottomRef={(el) => { bottomRef = el; }}
     />
   );
 };
