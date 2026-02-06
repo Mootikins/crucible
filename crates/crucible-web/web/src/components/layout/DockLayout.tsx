@@ -1,5 +1,5 @@
 import { Component, ParentComponent, createSignal, onMount, onCleanup } from 'solid-js';
-import { createSolidDockview, type DockviewInstance, type Zone } from '@/lib/solid-dockview';
+import { createSolidDockview, type DockviewInstance, type Zone, type SerializedDockview } from '@/lib/solid-dockview';
 import { SessionPanel } from '@/components/SessionPanel';
 import { FilesPanel } from '@/components/FilesPanel';
 import { EditorPanel } from '@/components/EditorPanel';
@@ -49,12 +49,28 @@ interface DockLayoutProps {
   chatContent: Component;
 }
 
-function debounce<T extends (...args: unknown[]) => void>(fn: T, delay: number): T {
-  let timeoutId: ReturnType<typeof setTimeout>;
-  return ((...args: unknown[]) => {
-    clearTimeout(timeoutId);
-    timeoutId = setTimeout(() => fn(...args), delay);
-  }) as T;
+interface DebouncedFn {
+  (): void;
+  cancel(): void;
+}
+
+function createDebouncedSave(fn: () => void, delay: number): DebouncedFn {
+  let timeoutId: ReturnType<typeof setTimeout> | null = null;
+  const debouncedFn: DebouncedFn = Object.assign(
+    () => {
+      if (timeoutId !== null) clearTimeout(timeoutId);
+      timeoutId = setTimeout(fn, delay);
+    },
+    {
+      cancel: () => {
+        if (timeoutId !== null) {
+          clearTimeout(timeoutId);
+          timeoutId = null;
+        }
+      }
+    }
+  );
+  return debouncedFn;
 }
 
 type CollapseMode = 'hidden' | 'iconRail';
@@ -64,9 +80,11 @@ export const DockLayout: Component<DockLayoutProps> = (props) => {
   const [zoneVisible, setZoneVisible] = createSignal<ZoneState>(loadZoneState());
   const [ariaLiveMessage, setAriaLiveMessage] = createSignal('');
   
-  const [collapseMode] = createSignal<CollapseMode>(
-    (localStorage.getItem('crucible:collapse-mode') as CollapseMode) || 'hidden'
-  );
+  const storedCollapseMode = localStorage.getItem('crucible:collapse-mode');
+  const collapseMode: CollapseMode = 
+    storedCollapseMode === 'hidden' || storedCollapseMode === 'iconRail' 
+      ? storedCollapseMode 
+      : 'hidden';
 
   let containerRef: HTMLDivElement | undefined;
   let dockviewInstance: DockviewInstance | null = null;
@@ -82,7 +100,7 @@ export const DockLayout: Component<DockLayoutProps> = (props) => {
     }
   };
 
-  const debouncedSaveLayout = debounce(() => {
+  const debouncedSaveLayout = createDebouncedSave(() => {
     if (!dockviewInstance) return;
     const serialized = dockviewInstance.component.toJSON();
     saveDockviewLayout(serialized);
@@ -93,8 +111,9 @@ export const DockLayout: Component<DockLayoutProps> = (props) => {
     if (!dockviewInstance) return;
 
     const newVisible = !zoneVisible()[zone];
-    setZoneVisible(prev => ({ ...prev, [zone]: newVisible }));
-    saveZoneState({ ...zoneVisible(), [zone]: newVisible });
+    const newState = { ...zoneVisible(), [zone]: newVisible };
+    setZoneVisible(newState);
+    saveZoneState(newState);
 
     dockviewInstance.setZoneVisible(zone, newVisible);
 
@@ -111,50 +130,83 @@ export const DockLayout: Component<DockLayoutProps> = (props) => {
 
     const savedLayout = loadDockviewLayout();
     
-    dockviewInstance = createSolidDockview({
-      container: containerRef,
-      className: 'dockview-theme-abyss',
-      panels: [
-        {
-          id: 'sessions',
-          title: 'Sessions',
-          component: SessionPanel,
-          position: { direction: 'left' },
-        },
-        {
-          id: 'files',
-          title: 'Files',
-          component: FilesPanel,
-          position: { referencePanel: 'sessions', direction: 'within' },
-        },
-        {
-          id: 'editor',
-          title: 'Editor',
-          component: EditorPanel,
-        },
-        {
-          id: 'chat',
-          title: 'Chat',
-          component: props.chatContent,
-          position: { direction: 'right' },
-        },
-        {
-          id: 'terminal',
-          title: 'Terminal',
-          component: BottomPanel,
-          position: { direction: 'below' },
-        },
-      ],
-      onLayoutChange: debouncedSaveLayout,
-    });
-
-    if (savedLayout) {
-      try {
-        type FromJSONParam = Parameters<typeof dockviewInstance.component.fromJSON>[0];
-        dockviewInstance.component.fromJSON(savedLayout as FromJSONParam);
-      } catch {
-        console.warn('Failed to restore layout, using default');
-      }
+    try {
+      dockviewInstance = createSolidDockview({
+        container: containerRef,
+        className: 'dockview-theme-abyss',
+        initialLayout: savedLayout as SerializedDockview | undefined,
+        panels: [
+          {
+            id: 'sessions',
+            title: 'Sessions',
+            component: SessionPanel,
+            position: { direction: 'left' },
+          },
+          {
+            id: 'files',
+            title: 'Files',
+            component: FilesPanel,
+            position: { referencePanel: 'sessions', direction: 'within' },
+          },
+          {
+            id: 'editor',
+            title: 'Editor',
+            component: EditorPanel,
+          },
+          {
+            id: 'chat',
+            title: 'Chat',
+            component: props.chatContent,
+            position: { direction: 'right' },
+          },
+          {
+            id: 'terminal',
+            title: 'Terminal',
+            component: BottomPanel,
+            position: { direction: 'below' },
+          },
+        ],
+        onLayoutChange: debouncedSaveLayout,
+      });
+    } catch {
+      console.warn('Failed to restore layout, clearing corrupted data and retrying');
+      localStorage.removeItem('crucible:layout');
+      dockviewInstance = createSolidDockview({
+        container: containerRef,
+        className: 'dockview-theme-abyss',
+        panels: [
+          {
+            id: 'sessions',
+            title: 'Sessions',
+            component: SessionPanel,
+            position: { direction: 'left' },
+          },
+          {
+            id: 'files',
+            title: 'Files',
+            component: FilesPanel,
+            position: { referencePanel: 'sessions', direction: 'within' },
+          },
+          {
+            id: 'editor',
+            title: 'Editor',
+            component: EditorPanel,
+          },
+          {
+            id: 'chat',
+            title: 'Chat',
+            component: props.chatContent,
+            position: { direction: 'right' },
+          },
+          {
+            id: 'terminal',
+            title: 'Terminal',
+            component: BottomPanel,
+            position: { direction: 'below' },
+          },
+        ],
+        onLayoutChange: debouncedSaveLayout,
+      });
     }
 
     setTimeout(() => {
@@ -167,7 +219,10 @@ export const DockLayout: Component<DockLayoutProps> = (props) => {
       updateZoneDataAttributes();
     }, 50);
 
-    onCleanup(() => dockviewInstance?.dispose());
+    onCleanup(() => {
+      debouncedSaveLayout.cancel();
+      dockviewInstance?.dispose();
+    });
 
     const handleKeyDown = (event: KeyboardEvent) => {
       const target = event.target;
@@ -176,13 +231,16 @@ export const DockLayout: Component<DockLayoutProps> = (props) => {
           (target instanceof HTMLElement && target.contentEditable === 'true');
       if (isEditable) return;
 
-      const modifier = navigator.platform.includes('Mac') ? event.metaKey : event.ctrlKey;
+      const userAgentData = (navigator as Navigator & { userAgentData?: { platform?: string } }).userAgentData;
+      const isMac = userAgentData?.platform === 'macOS' || 
+                    /Mac|iPod|iPhone|iPad/.test(navigator.userAgent);
+      const modifier = isMac ? event.metaKey : event.ctrlKey;
       if (!modifier) return;
 
       let zone: Exclude<Zone, 'center'> | null = null;
-      if (event.key === 'b' && !event.shiftKey) zone = 'left';
-      else if (event.key === 'B' && event.shiftKey) zone = 'right';
-      else if (event.key === 'j') zone = 'bottom';
+      if (event.code === 'KeyB' && !event.shiftKey) zone = 'left';
+      else if (event.code === 'KeyB' && event.shiftKey) zone = 'right';
+      else if (event.code === 'KeyJ') zone = 'bottom';
 
       if (zone) {
         event.preventDefault();
@@ -213,7 +271,7 @@ export const DockLayout: Component<DockLayoutProps> = (props) => {
           </button>
         </div>
 
-        {!zoneVisible().left && collapseMode() === 'iconRail' && (
+        {!zoneVisible().left && collapseMode === 'iconRail' && (
           <div class="icon-rail icon-rail-left">
             <button
               data-testid="rail-expand-left"
@@ -258,7 +316,7 @@ export const DockLayout: Component<DockLayoutProps> = (props) => {
           </div>
         </div>
 
-        {!zoneVisible().right && collapseMode() === 'iconRail' && (
+        {!zoneVisible().right && collapseMode === 'iconRail' && (
           <div class="icon-rail icon-rail-right">
             <button
               data-testid="rail-expand-right"
