@@ -6,6 +6,8 @@ const ZONE_WIDTHS_KEY = 'crucible:zone-widths';
 
 export type { SerializedDockview };
 
+export type Zone = 'left' | 'center' | 'right' | 'bottom';
+
 export type ZoneMode = 'visible' | 'hidden' | 'pinned';
 
 export interface ZoneState {
@@ -149,4 +151,90 @@ export function loadZoneWidths(): ZoneWidths {
 
 export function saveZoneWidths(widths: ZoneWidths): void {
   localStorage.setItem(ZONE_WIDTHS_KEY, JSON.stringify(widths));
+}
+
+/**
+ * Save layout for a specific zone to localStorage.
+ * Each zone is stored independently with key: crucible:layout:{zone}
+ */
+export function saveZoneLayout(zone: Zone, serialized: string): void {
+  const key = `crucible:layout:${zone}`;
+  localStorage.setItem(key, serialized);
+}
+
+/**
+ * Load layout for a specific zone from localStorage.
+ * Returns null if zone layout doesn't exist or is invalid.
+ * Each zone validates independently.
+ */
+export function loadZoneLayout(zone: Zone): string | null {
+  const key = `crucible:layout:${zone}`;
+  const stored = localStorage.getItem(key);
+  if (!stored) return null;
+  
+  try {
+    // Validate it's valid JSON and has expected structure
+    const parsed = JSON.parse(stored);
+    if (parsed && typeof parsed.grid === 'object' && typeof parsed.panels === 'object') {
+      return stored;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Migrate old single-key layout format to per-zone keys.
+ * Old format: crucible:layout (single key with all zones)
+ * New format: crucible:layout:left, crucible:layout:center, crucible:layout:right, crucible:layout:bottom
+ * 
+ * Migration strategy:
+ * 1. Check if old key exists
+ * 2. Parse old layout JSON
+ * 3. Distribute panels to per-zone keys (or use defaults if parse fails)
+ * 4. Clear old key after successful migration
+ * 5. Fall back to defaults on error
+ */
+export function migrateOldLayout(): void {
+  const oldKey = LAYOUT_STORAGE_KEY;
+  const oldLayout = localStorage.getItem(oldKey);
+  
+  // No old layout to migrate
+  if (!oldLayout) return;
+  
+  try {
+    const parsed = JSON.parse(oldLayout);
+    
+    // Validate old layout has expected structure
+    if (!parsed || typeof parsed.grid !== 'object' || typeof parsed.panels !== 'object') {
+      // Invalid old layout, just clear it
+      localStorage.removeItem(oldKey);
+      return;
+    }
+    
+    // Distribute panels to per-zone keys
+    // For now, save the entire layout to center (main workspace)
+    // In future, could parse panel positions to distribute across zones
+    const centerKey = `crucible:layout:center`;
+    localStorage.setItem(centerKey, oldLayout);
+    
+    // Clear old key after successful migration
+    localStorage.removeItem(oldKey);
+  } catch {
+    // Parse error: clear old key and let zones use defaults
+    localStorage.removeItem(oldKey);
+  }
+}
+
+/**
+ * Clear all layout data (old and new formats).
+ * Used for reset/cleanup.
+ */
+export function clearAllLayouts(): void {
+  localStorage.removeItem(LAYOUT_STORAGE_KEY);
+  localStorage.removeItem('crucible:layout:left');
+  localStorage.removeItem('crucible:layout:center');
+  localStorage.removeItem('crucible:layout:right');
+  localStorage.removeItem('crucible:layout:bottom');
 }
