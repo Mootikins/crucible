@@ -1,6 +1,6 @@
 import { type Component, type JSXElement, createSignal, onMount, onCleanup } from 'solid-js';
 import { BreadcrumbNav } from '@/components/BreadcrumbNav';
-import { loadZoneState, saveZoneState, type ZoneState, type ZoneMode } from '@/lib/layout';
+import { loadZoneState, saveZoneState, loadZoneWidths, saveZoneWidths, type ZoneState, type ZoneMode, type ZoneWidths } from '@/lib/layout';
 import { ZoneWrapper } from './ZoneWrapper';
 
 const GearIcon: Component = () => (
@@ -29,7 +29,7 @@ const BottomPanelIcon: Component = () => (
 );
 
 type CollapseMode = 'hidden' | 'iconRail';
-type ToggleableZone = 'left' | 'right' | 'bottom';
+export type ToggleableZone = 'left' | 'right' | 'bottom';
 
 const isZoneExpanded = (mode: ZoneMode): boolean => mode === 'visible' || mode === 'pinned';
 
@@ -42,11 +42,13 @@ export interface ShellLayoutProps {
   centerRef?: HTMLDivElement | ((el: HTMLDivElement) => void);
   rightRef?: HTMLDivElement | ((el: HTMLDivElement) => void);
   bottomRef?: HTMLDivElement | ((el: HTMLDivElement) => void);
+  onZoneTransitionEnd?: (zone: ToggleableZone) => void;
 }
 
 export const ShellLayout: Component<ShellLayoutProps> = (props) => {
   const [showSettings, setShowSettings] = createSignal(false);
   const [zoneState, setZoneState] = createSignal<ZoneState>(loadZoneState());
+  const [zoneWidths] = createSignal<ZoneWidths>(loadZoneWidths());
   const [ariaLiveMessage, setAriaLiveMessage] = createSignal('');
 
   const storedCollapseMode = localStorage.getItem('crucible:collapse-mode');
@@ -61,6 +63,7 @@ export const ShellLayout: Component<ShellLayoutProps> = (props) => {
     const newState = { ...zoneState(), [zone]: next };
     setZoneState(newState);
     saveZoneState(newState);
+    saveZoneWidths(zoneWidths());
 
     const zoneNames: Record<ToggleableZone, string> = {
       left: 'Left zone',
@@ -68,6 +71,11 @@ export const ShellLayout: Component<ShellLayoutProps> = (props) => {
       bottom: 'Bottom zone',
     };
     setAriaLiveMessage(`${zoneNames[zone]} ${isZoneExpanded(next) ? 'expanded' : 'collapsed'}`);
+  };
+
+  const handleTransitionEnd = (zone: ToggleableZone) => (event: TransitionEvent) => {
+    if (event.propertyName !== 'flex-basis') return;
+    props.onZoneTransitionEnd?.(zone);
   };
 
   onMount(() => {
@@ -138,7 +146,7 @@ export const ShellLayout: Component<ShellLayoutProps> = (props) => {
         )}
 
         {/* Left zone */}
-        <ZoneWrapper zone="left" collapsed={!leftExpanded()} width={280} ref={props.leftRef}>
+        <ZoneWrapper zone="left" collapsed={!leftExpanded()} width={zoneWidths().left} ref={props.leftRef} onTransitionEnd={handleTransitionEnd('left')}>
           {props.leftContent}
         </ZoneWrapper>
 
@@ -148,7 +156,7 @@ export const ShellLayout: Component<ShellLayoutProps> = (props) => {
             {props.centerContent}
           </ZoneWrapper>
 
-          <ZoneWrapper zone="bottom" collapsed={!bottomExpanded()} height={200} ref={props.bottomRef}>
+          <ZoneWrapper zone="bottom" collapsed={!bottomExpanded()} height={zoneWidths().bottom} ref={props.bottomRef} onTransitionEnd={handleTransitionEnd('bottom')}>
             {props.bottomContent}
           </ZoneWrapper>
 
@@ -169,7 +177,7 @@ export const ShellLayout: Component<ShellLayoutProps> = (props) => {
         </div>
 
         {/* Right zone */}
-        <ZoneWrapper zone="right" collapsed={!rightExpanded()} width={350} ref={props.rightRef}>
+        <ZoneWrapper zone="right" collapsed={!rightExpanded()} width={zoneWidths().right} ref={props.rightRef} onTransitionEnd={handleTransitionEnd('right')}>
           {props.rightContent}
         </ZoneWrapper>
 
