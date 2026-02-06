@@ -184,7 +184,7 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
     const session = props.session();
     if (!session || !firstUserMessage) return;
     
-    if (session.title !== null && session.title.trim() !== '') {
+    if (session.title && session.title.trim() !== '') {
       return;
     }
     
