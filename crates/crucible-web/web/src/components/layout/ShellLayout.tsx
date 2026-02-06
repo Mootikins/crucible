@@ -28,7 +28,6 @@ const BottomPanelIcon: Component = () => (
   </svg>
 );
 
-type CollapseMode = 'hidden' | 'iconRail';
 export type ToggleableZone = 'left' | 'right' | 'bottom';
 
 const isZoneExpanded = (mode: ZoneMode): boolean => mode === 'visible' || mode === 'pinned';
@@ -50,12 +49,6 @@ export const ShellLayout: Component<ShellLayoutProps> = (props) => {
   const [zoneState, setZoneState] = createSignal<ZoneState>(loadZoneState());
   const [zoneWidths] = createSignal<ZoneWidths>(loadZoneWidths());
   const [ariaLiveMessage, setAriaLiveMessage] = createSignal('');
-
-  const storedCollapseMode = localStorage.getItem('crucible:collapse-mode');
-  const collapseMode: CollapseMode =
-    storedCollapseMode === 'hidden' || storedCollapseMode === 'iconRail'
-      ? storedCollapseMode
-      : 'hidden';
 
   const toggleZone = (zone: ToggleableZone) => {
     const current = zoneState()[zone];
@@ -132,7 +125,7 @@ export const ShellLayout: Component<ShellLayoutProps> = (props) => {
         </div>
 
         {/* Left collapsed icon rail */}
-        {!leftExpanded() && collapseMode === 'iconRail' && (
+        {!leftExpanded() && (
           <div class="icon-rail icon-rail-left">
             <button
               data-testid="rail-expand-left"
@@ -182,7 +175,7 @@ export const ShellLayout: Component<ShellLayoutProps> = (props) => {
         </ZoneWrapper>
 
         {/* Right collapsed icon rail */}
-        {!rightExpanded() && collapseMode === 'iconRail' && (
+        {!rightExpanded() && (
           <div class="icon-rail icon-rail-right">
             <button
               data-testid="rail-expand-right"
