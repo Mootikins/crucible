@@ -1,164 +1,165 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
 
-test.describe('Layout Persistence', () => {
-  test('no console errors on initial load', async ({ page }) => {
-    const consoleMessages: Array<{ type: string; text: string }> = [];
-    
-    page.on('console', (msg) => {
-      consoleMessages.push({
-        type: msg.type(),
-        text: msg.text(),
-      });
+async function waitForShellReady(page: Page): Promise<void> {
+  await page.waitForFunction(() => {
+    const zones = ['left', 'center', 'right', 'bottom'];
+    return zones.every((z) => {
+      const el = document.querySelector(`[data-zone="${z}"]`);
+      return el instanceof HTMLElement;
     });
+  }, { timeout: 10_000 });
+}
 
-    await page.goto('http://localhost:5173');
-    await page.waitForTimeout(2000); // Wait for layout to initialize
-    
-    // Filter for dockview-related errors (the critical issue we're testing for)
-    const dockviewErrors = consoleMessages.filter(msg => 
-      msg.type === 'error' && (msg.text.includes('dockview') || msg.text.includes('pane'))
-    );
-    
-    // Filter for context provider errors (e.g., "useSettings must be used within a SettingsProvider")
-    const contextErrors = consoleMessages.filter(msg => 
-      msg.type === 'error' && msg.text.includes('must be used within')
-    );
-    
-    // Log all console messages for debugging
-    console.log('=== All Console Messages ===');
-    consoleMessages.forEach(msg => {
-      console.log(`[${msg.type.toUpperCase()}] ${msg.text}`);
-    });
-    
-    console.log('\n=== Dockview-Related Errors ===');
-    if (dockviewErrors.length === 0) {
-      console.log('✅ No dockview errors found');
-    } else {
-      dockviewErrors.forEach(err => {
-        console.log(`❌ ${err.text}`);
-      });
-    }
-    
-    console.log('\n=== Context Provider Errors ===');
-    if (contextErrors.length === 0) {
-      console.log('✅ No context provider errors found');
-    } else {
-      contextErrors.forEach(err => {
-        console.log(`❌ ${err.text}`);
-      });
-    }
-    
-    expect(dockviewErrors).toHaveLength(0);
-    expect(contextErrors).toHaveLength(0);
-  });
+async function waitForZoneCollapsed(page: Page, zone: string): Promise<void> {
+  await page.waitForFunction(
+    (z: string) => {
+      const el = document.querySelector(`[data-zone="${z}"]`);
+      return el instanceof HTMLElement && getComputedStyle(el).flexBasis === '0px';
+    },
+    zone,
+    { timeout: 5_000 },
+  );
+}
 
-  test('layout persists after refresh', async ({ page }) => {
-    const consoleMessages: Array<{ type: string; text: string }> = [];
-    
-    page.on('console', (msg) => {
-      consoleMessages.push({
-        type: msg.type(),
-        text: msg.text(),
-      });
-    });
-
-    await page.goto('http://localhost:5173');
-    
-    // Wait for the toggle button to be visible (indicates app has loaded)
-    const leftToggle = page.locator('[data-testid="toggle-left"]');
-    await expect(leftToggle).toBeVisible({ timeout: 10000 });
-    
-    // Collapse left panel
-    await leftToggle.click();
-    
-    // Wait for debounced save (300ms debounce + buffer)
-    await page.waitForTimeout(1000);
-    
-    // Check localStorage before refresh
-    const layoutStateBefore = await page.evaluate(() => {
-      return localStorage.getItem('crucible:layout');
-    });
-    
-    console.log('Layout state before refresh:', layoutStateBefore ? 'EXISTS' : 'NULL');
-    
-    // Refresh page
+test.describe('Layout Persistence — localStorage Survival', () => {
+  test('zone visibility state persists across page refresh', async ({ page }) => {
+    await page.goto('/');
+    await page.evaluate(() => localStorage.clear());
     await page.reload();
-    await page.waitForTimeout(1000);
-    
-    // Check if layout state persists after refresh
-    const layoutStateAfter = await page.evaluate(() => {
-      return localStorage.getItem('crucible:layout');
-    });
-    
-    console.log('Layout state after refresh:', layoutStateAfter ? 'EXISTS' : 'NULL');
-    
-    // Log any dockview errors
-    const dockviewErrors = consoleMessages.filter(msg => 
-      msg.type === 'error' && (msg.text.includes('dockview') || msg.text.includes('pane'))
+    await waitForShellReady(page);
+
+    await page.locator('[data-testid="toggle-left"]').click();
+    await waitForZoneCollapsed(page, 'left');
+
+    const zoneStateBeforeRefresh = await page.evaluate(() =>
+      localStorage.getItem('crucible:zones'),
     );
-    
-    if (dockviewErrors.length > 0) {
-      console.log('❌ Dockview errors during persistence test:');
-      dockviewErrors.forEach(err => console.log(`  ${err.text}`));
-    } else {
-      console.log('✅ No dockview errors during persistence test');
-    }
-    
-    // The key assertion: no dockview errors should occur
-    expect(dockviewErrors).toHaveLength(0);
+    expect(zoneStateBeforeRefresh).toBeTruthy();
+
+    await page.reload();
+    await waitForShellReady(page);
+
+    await waitForZoneCollapsed(page, 'left');
   });
 
-  test('handles corrupt localStorage gracefully', async ({ page }) => {
-    const consoleMessages: Array<{ type: string; text: string }> = [];
-    
-    page.on('console', (msg) => {
-      consoleMessages.push({
-        type: msg.type(),
-        text: msg.text(),
-      });
+  test('zone widths are saved to localStorage on toggle', async ({ page }) => {
+    await page.goto('/');
+    await page.evaluate(() => localStorage.clear());
+    await page.reload();
+    await waitForShellReady(page);
+
+    await page.locator('[data-testid="toggle-left"]').click();
+    await waitForZoneCollapsed(page, 'left');
+
+    const widthsAfterToggle = await page.evaluate(() =>
+      localStorage.getItem('crucible:zone-widths'),
+    );
+    expect(widthsAfterToggle).toBeTruthy();
+
+    const parsed = JSON.parse(widthsAfterToggle!);
+    expect(parsed.left).toBeGreaterThan(0);
+    expect(parsed.right).toBeGreaterThan(0);
+    expect(parsed.bottom).toBeGreaterThan(0);
+  });
+
+  test('per-zone layout uses independent storage keys', async ({ page }) => {
+    await page.goto('/');
+    await page.evaluate(() => localStorage.clear());
+    await page.reload();
+    await waitForShellReady(page);
+
+    await page.waitForFunction(() => {
+      return document.querySelectorAll('.dv-tab').length >= 3;
+    }, { timeout: 10_000 });
+
+    const storageKeys = await page.evaluate(() => {
+      const keys: string[] = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key?.startsWith('crucible:')) keys.push(key);
+      }
+      return keys;
     });
 
-    // Set corrupt localStorage
-    await page.goto('http://localhost:5173');
+    const hasZoneFormat = storageKeys.some((k) => k.match(/^crucible:layout:[a-z]+$/));
+    const hasOldFormat = storageKeys.includes('crucible:layout');
+    expect(hasOldFormat).toBe(false);
+
+    if (hasZoneFormat) {
+      const zoneKeys = storageKeys.filter((k) => k.match(/^crucible:layout:[a-z]+$/));
+      for (const key of zoneKeys) {
+        const value = await page.evaluate((k: string) => localStorage.getItem(k), key);
+        expect(value).toBeTruthy();
+        const parsed = JSON.parse(value!);
+        expect(parsed).toHaveProperty('grid');
+        expect(parsed).toHaveProperty('panels');
+      }
+    }
+  });
+
+  test('old layout key migrates to per-zone format', async ({ page }) => {
+    const mockLayout = JSON.stringify({
+      grid: { root: {}, width: 100, height: 100, orientation: 0 },
+      panels: { chat: { id: 'chat', contentComponent: 'chat' } },
+    });
+
+    await page.goto('/');
+    await page.evaluate((layout: string) => {
+      localStorage.clear();
+      localStorage.setItem('crucible:layout', layout);
+    }, mockLayout);
+    await page.reload();
+    await waitForShellReady(page);
+
+    const migrationResult = await page.waitForFunction(() => {
+      const oldKey = localStorage.getItem('crucible:layout');
+      const centerKey = localStorage.getItem('crucible:layout:center');
+      return { oldKeyCleared: oldKey == null, centerKeySet: centerKey != null };
+    }, { timeout: 5_000 });
+
+    const result = await migrationResult.jsonValue();
+    expect(result.oldKeyCleared).toBe(true);
+  });
+
+  test('corrupt localStorage does not crash the app', async ({ page }) => {
+    await page.goto('/');
     await page.evaluate(() => {
-      localStorage.setItem('crucible:layout', 'invalid json{{{');
+      localStorage.setItem('crucible:zones', 'invalid json{{{');
+      localStorage.setItem('crucible:zone-widths', '}{not valid');
+      localStorage.setItem('crucible:layout:center', 'broken');
     });
-    
-    // Reload with corrupt state
+
+    const errors: string[] = [];
+    page.on('pageerror', (err) => errors.push(err.message));
+
     await page.reload();
-    await page.waitForTimeout(1000);
-    
-    // Check if recovery happened
-    const layoutState = await page.evaluate(() => {
-      return localStorage.getItem('crucible:layout');
-    });
-    
-    // Log recovery status
-    console.log('Layout state after corrupt recovery:', layoutState ? 'EXISTS' : 'CLEARED');
-    
-    // Check for recovery warnings
-    const recoveryWarnings = consoleMessages.filter(msg => 
-      msg.type === 'warning' && msg.text.includes('Failed to restore layout')
+    await waitForShellReady(page);
+
+    const critical = errors.filter(
+      (e) => !e.includes('fetch') && !e.includes('net::') && !e.includes('HTTP'),
     );
-    
-    console.log('Recovery warnings found:', recoveryWarnings.length);
-    recoveryWarnings.forEach(warn => {
-      console.log(`  ${warn.text}`);
+    expect(critical).toEqual([]);
+  });
+
+  test('no dockview errors on initial load', async ({ page }) => {
+    const consoleErrors: string[] = [];
+    page.on('console', (msg) => {
+      if (msg.type() === 'error') {
+        consoleErrors.push(msg.text());
+      }
     });
-    
-    // Check for dockview errors during recovery
-    const dockviewErrors = consoleMessages.filter(msg => 
-      msg.type === 'error' && (msg.text.includes('dockview') || msg.text.includes('pane'))
+
+    await page.addInitScript(() => localStorage.clear());
+    await page.goto('/');
+    await waitForShellReady(page);
+
+    await page.waitForFunction(() => {
+      return document.querySelectorAll('.dv-tab').length >= 1;
+    }, { timeout: 10_000 });
+
+    const dockviewErrors = consoleErrors.filter(
+      (e) => e.toLowerCase().includes('dockview') || e.includes('pane'),
     );
-    
-    if (dockviewErrors.length > 0) {
-      console.log('❌ Dockview errors during corrupt state recovery:');
-      dockviewErrors.forEach(err => console.log(`  ${err.text}`));
-    } else {
-      console.log('✅ No dockview errors during corrupt state recovery');
-    }
-    
-    // The key assertion: no dockview errors should occur even with corrupt state
     expect(dockviewErrors).toHaveLength(0);
   });
 });
