@@ -384,6 +384,18 @@ impl AgentManager {
         };
 
         let message_id = format!("msg-{}", uuid::Uuid::new_v4());
+        
+        if event_tx
+            .send(SessionEventMessage::user_message(
+                session_id,
+                &message_id,
+                &content,
+            ))
+            .is_err()
+        {
+            warn!(session_id = %session_id, "No subscribers for user_message event");
+        }
+        
         let session_id_owned = session_id.to_string();
         let message_id_clone = message_id.clone();
         let request_state = self.request_state.clone();
