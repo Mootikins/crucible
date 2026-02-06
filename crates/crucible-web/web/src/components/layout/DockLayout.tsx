@@ -1,4 +1,4 @@
-import { Component, ParentComponent, createSignal, Show, onMount, onCleanup } from 'solid-js';
+import { Component, ParentComponent, createSignal, onMount, onCleanup } from 'solid-js';
 import { DockView, DockPanel } from 'solid-dockview';
 import type { DockviewComponent, SerializedDockview } from 'dockview-core';
 import { SettingsPanel } from '@/components/SettingsPanel';
@@ -123,53 +123,72 @@ export const DockLayout: Component<DockLayoutProps> = (props) => {
      debouncedSave();
    };
 
-  const handleReady = (event: { dockview: DockviewComponent }) => {
-    const api = event.dockview;
-    setDockviewApi(api);
+   const handleReady = (event: { dockview: DockviewComponent }) => {
+     const api = event.dockview;
+     setDockviewApi(api);
 
-    const savedLayout = loadLayout();
-    if (savedLayout?.grid) {
-      try {
-        const serialized = savedLayout.grid as SerializedDockview;
-        if (serialized.panels && Object.keys(serialized.panels).length > 0) {
-          api.fromJSON(serialized);
-          
-          if (savedLayout.panels) {
-            setPanelVisible({
-              left: savedLayout.panels.left?.visible !== false,
-              right: savedLayout.panels.right?.visible !== false,
-              bottom: savedLayout.panels.bottom?.visible === true,
-            });
-          }
-          
-          const newGroupIds: Record<string, string | null> = {
-            left: null,
-            right: null,
-            bottom: null,
-          };
-          
-          for (const panel of api.panels) {
-            if (panel.id === 'sessions' || panel.id === 'files') {
-              newGroupIds.left = panel.group?.id ?? null;
-            }
-            if (panel.id === 'editor') {
-              newGroupIds.right = panel.group?.id ?? null;
-            }
-            if (panel.id === 'bottom') {
-              newGroupIds.bottom = panel.group?.id ?? null;
-            }
-          }
-          
-          setGroupIds(newGroupIds);
-          
-          return;
-        }
-      } catch (e) {
-        console.warn('Failed to restore layout:', e);
-        localStorage.removeItem('crucible:layout');
-      }
-    }
-  };
+     const savedLayout = loadLayout();
+     if (savedLayout?.grid) {
+       try {
+         const serialized = savedLayout.grid as SerializedDockview;
+         if (serialized.panels && Object.keys(serialized.panels).length > 0) {
+           try {
+             api.fromJSON(serialized);
+           } catch (jsonError) {
+             // fromJSON failed - likely due to missing panels or corrupt state
+             console.warn('Failed to restore layout from JSON:', jsonError);
+             // Clear the corrupt layout and use default
+             localStorage.removeItem('crucible:layout');
+             // Reset to default state
+             setPanelVisible({
+               left: true,
+               right: true,
+               bottom: false,
+             });
+             setGroupIds({
+               left: null,
+               right: null,
+               bottom: null,
+             });
+             return;
+           }
+           
+           if (savedLayout.panels) {
+             setPanelVisible({
+               left: savedLayout.panels.left?.visible !== false,
+               right: savedLayout.panels.right?.visible !== false,
+               bottom: savedLayout.panels.bottom?.visible === true,
+             });
+           }
+           
+           const newGroupIds: Record<string, string | null> = {
+             left: null,
+             right: null,
+             bottom: null,
+           };
+           
+           for (const panel of api.panels) {
+             if (panel.id === 'sessions' || panel.id === 'files') {
+               newGroupIds.left = panel.group?.id ?? null;
+             }
+             if (panel.id === 'editor') {
+               newGroupIds.right = panel.group?.id ?? null;
+             }
+             if (panel.id === 'bottom') {
+               newGroupIds.bottom = panel.group?.id ?? null;
+             }
+           }
+           
+           setGroupIds(newGroupIds);
+           
+           return;
+         }
+       } catch (e) {
+         console.warn('Failed to restore layout:', e);
+         localStorage.removeItem('crucible:layout');
+       }
+     }
+   };
 
   const trackGroup = (panelId: string, groupId: string | null) => {
     setGroupIds(prev => {
@@ -315,11 +334,9 @@ export const DockLayout: Component<DockLayoutProps> = (props) => {
                  <BottomPanel />
                </DockPanel>
 
-              <Show when={showSettings()}>
-                <DockPanel id="settings" title="Settings" floating={{ width: 400, height: 300 }}>
-                  <SettingsPanel />
-                </DockPanel>
-              </Show>
+               <DockPanel id="settings" title="Settings" floating={{ width: 400, height: 300 }}>
+                 <SettingsPanel />
+               </DockPanel>
             </DockView>
           </div>
 
