@@ -88,13 +88,13 @@ describe('ShellLayout - drawer animation', () => {
     expect(handler).not.toHaveBeenCalled();
   });
 
-  it('saves zone widths to localStorage on toggle', async () => {
+  it('does not save zone widths on toggle (widths only change via resize)', async () => {
     const { getByTestId } = render(() => <ShellLayout />);
     const toggleLeft = getByTestId('toggle-left');
     await fireEvent.click(toggleLeft);
 
-    const stored = JSON.parse(localStorage.getItem('crucible:zone-widths')!);
-    expect(stored).toEqual({ left: 280, right: 350, bottom: 200 });
+    const stored = localStorage.getItem('crucible:zone-widths');
+    expect(stored).toBeNull();
   });
 
   it('handles rapid toggle without stuck states', async () => {
