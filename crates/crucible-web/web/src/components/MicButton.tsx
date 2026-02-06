@@ -94,20 +94,20 @@ export const MicButton: Component<MicButtonProps> = (props) => {
     setState('idle');
   };
 
-  const stateStyles = () => {
-    switch (state()) {
-      case 'recording':
-        return 'bg-white'; // Inverted: white bg, black icon
-      case 'processing':
-        return 'bg-blue-500';
-      case 'error':
-        return 'bg-red-800';
-      default:
-        return whisperStatus() === 'loading'
-          ? 'bg-blue-600'
-          : 'bg-neutral-700 hover:bg-neutral-600';
-    }
-  };
+   const stateStyles = () => {
+     switch (state()) {
+       case 'recording':
+         return 'bg-white'; // Inverted: white bg, black icon
+       case 'processing':
+         return 'bg-primary-hover';
+       case 'error':
+         return 'bg-error-dark';
+       default:
+         return whisperStatus() === 'loading'
+           ? 'bg-primary'
+           : 'bg-surface-elevated hover:bg-surface-overlay';
+     }
+   };
 
   const iconColor = () => {
     return state() === 'recording' ? 'text-neutral-900' : 'text-white';

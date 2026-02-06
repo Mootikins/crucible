@@ -34,27 +34,27 @@ export const Message: Component<MessageProps> = (props) => {
   return (
     <div
       class={`flex ${isUser() ? 'justify-end' : 'justify-start'} mb-4`}
-      data-testid={`message-${props.message.id}`}
+      data-testid={`message-${props.message.role}`}
       data-role={props.message.role}
     >
       <div
-        class={`max-w-[80%] rounded-2xl px-4 py-2 ${
+        class={
           isUser()
-            ? 'bg-blue-600 text-white rounded-br-md'
-            : 'bg-neutral-800 text-neutral-100 rounded-bl-md'
-        }`}
+            ? 'message-bubble message-bubble-user'
+            : 'message-assistant'
+        }
       >
         <Show
           when={!isEmpty() || hasToolCalls()}
           fallback={
             <span class="inline-flex items-center gap-1">
-              <span class="w-2 h-2 bg-neutral-500 rounded-full animate-pulse" />
+              <span class="w-2 h-2 bg-muted rounded-full animate-pulse" />
               <span
-                class="w-2 h-2 bg-neutral-500 rounded-full animate-pulse"
+                class="w-2 h-2 bg-muted rounded-full animate-pulse"
                 style={{ 'animation-delay': '75ms' }}
               />
               <span
-                class="w-2 h-2 bg-neutral-500 rounded-full animate-pulse"
+                class="w-2 h-2 bg-muted rounded-full animate-pulse"
                 style={{ 'animation-delay': '150ms' }}
               />
             </span>
@@ -87,9 +87,9 @@ export const Message: Component<MessageProps> = (props) => {
             </Show>
           </Show>
           
-          <Show when={props.isStreaming}>
-            <span class="inline-block w-2 h-4 bg-blue-400 animate-pulse ml-0.5" />
-          </Show>
+           <Show when={props.isStreaming}>
+             <span class="inline-block w-2 h-4 bg-primary-hover animate-pulse ml-0.5" />
+           </Show>
         </Show>
       </div>
     </div>
