@@ -68,17 +68,18 @@ function debounce<T extends (...args: unknown[]) => void>(fn: T, delay: number):
 export const DockLayout: Component<DockLayoutProps> = (props) => {
   const [showSettings, setShowSettings] = createSignal(false);
   const [dockviewApi, setDockviewApi] = createSignal<DockviewComponent | null>(null);
-  const [panelVisible, setPanelVisible] = createSignal<PanelState>({
-    left: true,
-    right: true,
-    bottom: false,
-  });
+   const [panelVisible, setPanelVisible] = createSignal<PanelState>({
+     left: true,
+     right: true,
+     bottom: false,
+   });
+   const [ariaLiveMessage, setAriaLiveMessage] = createSignal('');
 
-  const groupIds: Record<string, string | null> = {
+   const [groupIds, setGroupIds] = createSignal<Record<string, string | null>>({
     left: null,
     right: null,
     bottom: null,
-  };
+  });
 
   const debouncedSave = debounce(() => {
     const api = dockviewApi();
@@ -96,21 +97,31 @@ export const DockLayout: Component<DockLayoutProps> = (props) => {
     saveLayout(layoutState);
   }, 300);
 
-  const togglePanel = (panel: keyof PanelState) => {
-    const api = dockviewApi();
-    if (!api) return;
+   const togglePanel = (panel: keyof PanelState) => {
+     const api = dockviewApi();
+     if (!api) return;
 
-    const newVisible = !panelVisible()[panel];
-    setPanelVisible(prev => ({ ...prev, [panel]: newVisible }));
+     const newVisible = !panelVisible()[panel];
+     setPanelVisible(prev => ({ ...prev, [panel]: newVisible }));
 
-    const groupId = groupIds[panel];
-    if (groupId) {
-      const group = api.getGroup(groupId);
-      group?.api.setVisible(newVisible);
-    }
+     const groups = groupIds();
+     const groupId = groups[panel];
+     if (groupId) {
+       const group = api.getGroup(groupId);
+       group?.api.setVisible(newVisible);
+     }
 
-    debouncedSave();
-  };
+     // Announce state change for screen readers
+     const panelNames: Record<keyof PanelState, string> = {
+       left: 'Left panel',
+       right: 'Right panel',
+       bottom: 'Bottom panel',
+     };
+     const message = `${panelNames[panel]} ${newVisible ? 'expanded' : 'collapsed'}`;
+     setAriaLiveMessage(message);
+
+     debouncedSave();
+   };
 
   const handleReady = (event: { dockview: DockviewComponent }) => {
     const api = event.dockview;
@@ -131,19 +142,25 @@ export const DockLayout: Component<DockLayoutProps> = (props) => {
             });
           }
           
-          setTimeout(() => {
-            for (const panel of api.panels) {
-              if (panel.id === 'sessions' || panel.id === 'files') {
-                groupIds.left = panel.group?.id ?? null;
-              }
-              if (panel.id === 'editor') {
-                groupIds.right = panel.group?.id ?? null;
-              }
-              if (panel.id === 'bottom') {
-                groupIds.bottom = panel.group?.id ?? null;
-              }
+          const newGroupIds: Record<string, string | null> = {
+            left: null,
+            right: null,
+            bottom: null,
+          };
+          
+          for (const panel of api.panels) {
+            if (panel.id === 'sessions' || panel.id === 'files') {
+              newGroupIds.left = panel.group?.id ?? null;
             }
-          }, 0);
+            if (panel.id === 'editor') {
+              newGroupIds.right = panel.group?.id ?? null;
+            }
+            if (panel.id === 'bottom') {
+              newGroupIds.bottom = panel.group?.id ?? null;
+            }
+          }
+          
+          setGroupIds(newGroupIds);
           
           return;
         }
@@ -155,47 +172,93 @@ export const DockLayout: Component<DockLayoutProps> = (props) => {
   };
 
   const trackGroup = (panelId: string, groupId: string | null) => {
-    if (panelId === 'sessions' || panelId === 'files') groupIds.left = groupId;
-    if (panelId === 'editor') groupIds.right = groupId;
-    if (panelId === 'bottom') groupIds.bottom = groupId;
+    setGroupIds(prev => {
+      const updated = { ...prev };
+      if (panelId === 'sessions' || panelId === 'files') updated.left = groupId;
+      if (panelId === 'editor') updated.right = groupId;
+      if (panelId === 'bottom') updated.bottom = groupId;
+      return updated;
+    });
   };
 
-  onMount(() => {
-    const checkApi = setInterval(() => {
-      const api = dockviewApi();
-      if (api) {
-        clearInterval(checkApi);
-        const disposable = api.onDidLayoutChange(() => debouncedSave());
-        onCleanup(() => disposable.dispose());
-      }
-    }, 100);
-    onCleanup(() => clearInterval(checkApi));
-  });
+   onMount(() => {
+     const checkApi = setInterval(() => {
+       const api = dockviewApi();
+       if (api) {
+         clearInterval(checkApi);
+         const disposable = api.onDidLayoutChange(() => debouncedSave());
+         onCleanup(() => disposable.dispose());
+       }
+     }, 100);
+     onCleanup(() => clearInterval(checkApi));
+
+     // Keyboard shortcuts for panel toggles
+     const handleKeyDown = (event: KeyboardEvent) => {
+       // Don't trigger shortcuts when input/textarea is focused
+       if (event.target instanceof HTMLInputElement || 
+           event.target instanceof HTMLTextAreaElement ||
+           (event.target instanceof HTMLElement && event.target.contentEditable === 'true')) {
+         return;
+       }
+
+       const isMac = navigator.platform.includes('Mac');
+       const modifier = isMac ? event.metaKey : event.ctrlKey;
+
+       if (!modifier) return;
+
+       // Cmd+B / Ctrl+B: Toggle left panel
+       if (event.key === 'b' && !event.shiftKey) {
+         event.preventDefault();
+         togglePanel('left');
+       }
+       // Cmd+Shift+B / Ctrl+Shift+B: Toggle right panel
+       else if (event.key === 'B' && event.shiftKey) {
+         event.preventDefault();
+         togglePanel('right');
+       }
+       // Cmd+J / Ctrl+J: Toggle bottom panel
+       else if (event.key === 'j') {
+         event.preventDefault();
+         togglePanel('bottom');
+       }
+     };
+
+     document.addEventListener('keydown', handleKeyDown);
+     onCleanup(() => document.removeEventListener('keydown', handleKeyDown));
+   });
 
   return (
     <div class="h-screen w-screen flex flex-col bg-neutral-950">
       <BreadcrumbNav />
 
       <div class="flex-1 flex overflow-hidden">
-        <div class="flex flex-col justify-center border-r border-neutral-800 bg-neutral-900">
-          <button
-            onClick={() => togglePanel('left')}
-            class={`p-2 transition-colors ${panelVisible().left ? 'text-blue-400' : 'text-neutral-500 hover:text-neutral-300'}`}
-            title="Toggle left sidebar"
-          >
-            <SidebarIcon side="left" />
-          </button>
-        </div>
+         <div class="flex flex-col justify-center border-r border-neutral-800 bg-neutral-900">
+            <button
+              data-testid="toggle-left"
+              onClick={() => togglePanel('left')}
+              aria-label="Toggle left sidebar"
+              aria-expanded={panelVisible().left}
+              aria-controls="sessions"
+              class={`p-2 transition-colors ${panelVisible().left ? 'text-blue-400' : 'text-neutral-500 hover:text-neutral-300'}`}
+              title="Toggle left sidebar (⌘B)"
+            >
+              <SidebarIcon side="left" />
+            </button>
+         </div>
 
         <div class="flex-1 flex flex-col overflow-hidden">
           <div class="flex-1 overflow-hidden relative">
-            <button
-              onClick={() => setShowSettings(!showSettings())}
-              class="absolute top-2 right-2 z-50 p-2 rounded-lg bg-neutral-800/80 hover:bg-neutral-700 text-neutral-400 hover:text-white transition-colors"
-              title="Settings"
-            >
-              <GearIcon />
-            </button>
+             <button
+               data-testid="toggle-settings"
+               onClick={() => setShowSettings(!showSettings())}
+               aria-label="Toggle settings panel"
+               aria-expanded={showSettings()}
+               aria-controls="settings"
+               class="absolute top-2 right-2 z-50 p-2 rounded-lg bg-neutral-800/80 hover:bg-neutral-700 text-neutral-400 hover:text-white transition-colors"
+               title="Settings"
+             >
+               <GearIcon />
+             </button>
 
             <DockView
               class="dockview-theme-abyss"
@@ -236,23 +299,21 @@ export const DockLayout: Component<DockLayoutProps> = (props) => {
                 <EditorPanel />
               </DockPanel>
 
-              <DockPanel 
-                id="bottom" 
-                title="Output" 
-                position={{ direction: 'below' }}
-                initialHeight={200}
-                onCreate={(e) => {
-                  trackGroup('bottom', e.panel.group?.id ?? null);
-                  setTimeout(() => {
-                    const api = dockviewApi();
-                    if (api && groupIds.bottom) {
-                      api.getGroup(groupIds.bottom)?.api.setVisible(false);
-                    }
-                  }, 0);
-                }}
-              >
-                <BottomPanel />
-              </DockPanel>
+               <DockPanel 
+                 id="bottom" 
+                 title="Output" 
+                 position={{ direction: 'below' }}
+                 initialHeight={200}
+                 onCreate={(e) => {
+                   trackGroup('bottom', e.panel.group?.id ?? null);
+                   const api = dockviewApi();
+                   if (api && e.panel.group?.id) {
+                     api.getGroup(e.panel.group.id)?.api.setVisible(false);
+                   }
+                 }}
+               >
+                 <BottomPanel />
+               </DockPanel>
 
               <Show when={showSettings()}>
                 <DockPanel id="settings" title="Settings" floating={{ width: 400, height: 300 }}>
@@ -262,27 +323,44 @@ export const DockLayout: Component<DockLayoutProps> = (props) => {
             </DockView>
           </div>
 
-          <div class="flex justify-center border-t border-neutral-800 bg-neutral-900">
-            <button
-              onClick={() => togglePanel('bottom')}
-              class={`p-1.5 transition-colors ${panelVisible().bottom ? 'text-blue-400' : 'text-neutral-500 hover:text-neutral-300'}`}
-              title="Toggle bottom panel"
-            >
-              <BottomPanelIcon />
-            </button>
-          </div>
+            <div class="flex justify-center border-t border-neutral-800 bg-neutral-900">
+              <button
+                data-testid="toggle-bottom"
+                onClick={() => togglePanel('bottom')}
+                aria-label="Toggle bottom panel"
+                aria-expanded={panelVisible().bottom}
+                aria-controls="bottom"
+                class={`p-1.5 transition-colors ${panelVisible().bottom ? 'text-blue-400' : 'text-neutral-500 hover:text-neutral-300'}`}
+                title="Toggle bottom panel (⌘J)"
+              >
+                <BottomPanelIcon />
+              </button>
+            </div>
         </div>
 
-        <div class="flex flex-col justify-center border-l border-neutral-800 bg-neutral-900">
-          <button
-            onClick={() => togglePanel('right')}
-            class={`p-2 transition-colors ${panelVisible().right ? 'text-blue-400' : 'text-neutral-500 hover:text-neutral-300'}`}
-            title="Toggle right sidebar"
-          >
-            <SidebarIcon side="right" />
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-};
+          <div class="flex flex-col justify-center border-l border-neutral-800 bg-neutral-900">
+            <button
+              data-testid="toggle-right"
+              onClick={() => togglePanel('right')}
+              aria-label="Toggle right sidebar"
+              aria-expanded={panelVisible().right}
+              aria-controls="editor"
+              class={`p-2 transition-colors ${panelVisible().right ? 'text-blue-400' : 'text-neutral-500 hover:text-neutral-300'}`}
+              title="Toggle right sidebar (⌘⇧B)"
+            >
+              <SidebarIcon side="right" />
+            </button>
+           </div>
+       </div>
+
+       <div
+         aria-live="polite"
+         aria-atomic="true"
+         class="sr-only"
+         role="status"
+       >
+         {ariaLiveMessage()}
+       </div>
+     </div>
+   );
+ };
