@@ -5,9 +5,11 @@ import {
   type DockviewApi,
   type AddPanelOptions,
   type IContentRenderer,
+  type IHeaderActionsRenderer,
   type GroupPanelPartInitParameters,
   type CreateComponentOptions,
   type SerializedDockview,
+  type DockviewGroupPanel,
 } from 'dockview-core';
 import type { Component } from 'solid-js';
 
@@ -78,6 +80,7 @@ export interface CreateDockviewOptions {
   initialLayout?: SerializedDockview;
   onReady?: (api: DockviewApi) => void;
   onLayoutChange?: () => void;
+  createRightHeaderActionComponent?: (group: DockviewGroupPanel) => IHeaderActionsRenderer;
 }
 
 export interface DockviewInstance {
@@ -106,6 +109,7 @@ export function createSolidDockview(options: CreateDockviewOptions): DockviewIns
     createComponent: (opts: CreateComponentOptions) => {
       return new SolidContentRenderer(opts.name, registry, getApi);
     },
+    createRightHeaderActionComponent: options.createRightHeaderActionComponent,
     disableFloatingGroups: false,
     floatingGroupBounds: 'boundedWithinViewport',
     className: options.className,
