@@ -7,7 +7,6 @@ import {
   type IContentRenderer,
   type GroupPanelPartInitParameters,
   type CreateComponentOptions,
-  type DockviewGroupPanel,
   type SerializedDockview,
 } from 'dockview-core';
 import type { Component } from 'solid-js';
@@ -24,8 +23,6 @@ export interface PanelParams {
 
 export type { DockviewApi, DockviewComponent, SerializedDockview };
 
-export type Zone = 'left' | 'center' | 'right' | 'bottom';
-
 export interface PanelConfig {
   id: string;
   title: string;
@@ -34,7 +31,7 @@ export interface PanelConfig {
   floating?: AddPanelOptions['floating'];
 }
 
-type PanelRegistry = Map<string, Component>;
+type ComponentMap = Map<string, Component>;
 
 class SolidContentRenderer implements IContentRenderer {
   private _element: HTMLElement;
@@ -42,7 +39,7 @@ class SolidContentRenderer implements IContentRenderer {
 
   constructor(
     private readonly componentName: string,
-    private readonly registry: PanelRegistry,
+    private readonly registry: ComponentMap,
     private readonly getApi: () => DockviewApi
   ) {
     this._element = document.createElement('div');
@@ -76,6 +73,7 @@ class SolidContentRenderer implements IContentRenderer {
 export interface CreateDockviewOptions {
   container: HTMLElement;
   panels: PanelConfig[];
+  componentMap?: ComponentMap;
   className?: string;
   initialLayout?: SerializedDockview;
   onReady?: (api: DockviewApi) => void;
@@ -85,55 +83,17 @@ export interface CreateDockviewOptions {
 export interface DockviewInstance {
   api: DockviewApi;
   component: DockviewComponent;
-  getGroupZones: () => Map<string, Zone>;
-  getGroupsInZone: (zone: Zone) => DockviewGroupPanel[];
-  setZoneVisible: (zone: Zone, visible: boolean) => void;
-  recalculateZones: () => void;
   dispose: () => void;
 }
 
-export function detectGroupZone(
-  group: DockviewGroupPanel,
-  containerRect: DOMRect,
-): Zone {
-  const groupRect = group.element.getBoundingClientRect();
-  
-  const relativeLeft = (groupRect.left - containerRect.left) / containerRect.width;
-  const relativeRight = (groupRect.right - containerRect.left) / containerRect.width;
-  const relativeTop = (groupRect.top - containerRect.top) / containerRect.height;
-  const relativeBottom = (groupRect.bottom - containerRect.top) / containerRect.height;
-  
-  const EDGE_TOLERANCE = 0.02;
-  const touchesLeft = relativeLeft < EDGE_TOLERANCE;
-  const touchesRight = relativeRight > (1 - EDGE_TOLERANCE);
-  const touchesBottom = relativeBottom > (1 - EDGE_TOLERANCE);
-  const touchesTop = relativeTop < EDGE_TOLERANCE;
-  
-  if (touchesBottom && !touchesTop) {
-    return 'bottom';
-  }
-  
-  if (touchesLeft && !touchesRight) {
-    return 'left';
-  }
-  
-  if (touchesRight && !touchesLeft) {
-    return 'right';
-  }
-  
-  return 'center';
-}
-
 export function createSolidDockview(options: CreateDockviewOptions): DockviewInstance {
-  const registry: PanelRegistry = new Map();
-  const groupZoneMap = new Map<string, Zone>();
-  const hiddenGroups = new Set<string>();
-  let toggleDepth = 0;
+  const registry: ComponentMap = options.componentMap ?? new Map();
   const disposables: Disposable[] = [];
-  let initTimeoutId: ReturnType<typeof setTimeout> | null = null;
 
-  for (const panel of options.panels) {
-    registry.set(panel.id, panel.component);
+  if (!options.componentMap) {
+    for (const panel of options.panels) {
+      registry.set(panel.id, panel.component);
+    }
   }
 
   let dockviewApi: DockviewApi | null = null;
@@ -150,7 +110,7 @@ export function createSolidDockview(options: CreateDockviewOptions): DockviewIns
     floatingGroupBounds: 'boundedWithinViewport',
     className: options.className,
   });
-  
+
   dockviewApi = dockview.api;
 
   if (options.initialLayout) {
@@ -165,65 +125,8 @@ export function createSolidDockview(options: CreateDockviewOptions): DockviewIns
     }
   }
 
-  const recalculateZones = (): void => {
-    const containerRect = options.container.getBoundingClientRect();
-    if (containerRect.width === 0 || containerRect.height === 0) {
-      return;
-    }
-    
-    for (const group of dockview.api.groups) {
-      if (!hiddenGroups.has(group.id) && group.api.isVisible) {
-        const newZone = detectGroupZone(group, containerRect);
-        const previousZone = groupZoneMap.get(group.id);
-        if (newZone === 'center' && previousZone && previousZone !== 'center') {
-          continue;
-        }
-        groupZoneMap.set(group.id, newZone);
-      }
-    }
-  };
-
-  const getGroupZones = (): Map<string, Zone> => {
-    return new Map(groupZoneMap);
-  };
-
-  const getGroupsInZone = (zone: Zone): DockviewGroupPanel[] => {
-    return dockview.api.groups.filter(group => groupZoneMap.get(group.id) === zone);
-  };
-
-  const setZoneVisible = (zone: Zone, visible: boolean): void => {
-    toggleDepth++;
-    const groups = getGroupsInZone(zone);
-    for (const group of groups) {
-      if (visible) {
-        hiddenGroups.delete(group.id);
-      } else {
-        hiddenGroups.add(group.id);
-      }
-      group.api.setVisible(visible);
-    }
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        toggleDepth--;
-      });
-    });
-  };
-
-  const scheduleRecalculation = (): void => {
-    requestAnimationFrame(() => {
-      if (toggleDepth === 0) {
-        recalculateZones();
-      }
-    });
-  };
-
-  initTimeoutId = setTimeout(() => scheduleRecalculation(), 200);
-
   if (options.onLayoutChange) {
     const layoutDisposable = dockview.onDidLayoutChange(() => {
-      if (toggleDepth === 0) {
-        scheduleRecalculation();
-      }
       options.onLayoutChange!();
     });
     disposables.push(layoutDisposable);
@@ -236,15 +139,7 @@ export function createSolidDockview(options: CreateDockviewOptions): DockviewIns
   return {
     api: dockview.api,
     component: dockview,
-    getGroupZones,
-    getGroupsInZone,
-    setZoneVisible,
-    recalculateZones,
     dispose: () => {
-      if (initTimeoutId !== null) {
-        clearTimeout(initTimeoutId);
-        initTimeoutId = null;
-      }
       for (const d of disposables) {
         d.dispose();
       }
