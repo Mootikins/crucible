@@ -99,7 +99,7 @@ colored = { workspace = true }
 
 # Interactive UI
 indicatif = { workspace = true }
-dialoguer = "0.11"
+dialoguer = "0.12"
 
 # Logging
 tracing = { workspace = true }
@@ -143,7 +143,7 @@ syntect = { version = "5.2", default-features = false, features = ["default-fanc
 textwrap = "0.16.2"
 
 # Flexbox layout for ink TUI
-taffy = "0.7"
+taffy = "0.9"
 
 # Lua scripting (for lua_view)
 mlua = { workspace = true }
@@ -153,7 +153,7 @@ crucible-cli = { path = ".", features = ["test-utils"] }  # Enable test utilitie
 crucible-config = { path = "../crucible-config", features = ["test-utils"] }
 rune = "0.14"  # For NoteStore integration tests
 # MCP client for testing examples
-rmcp = { version = "0.13", features = ["client", "transport-child-process"] }
+rmcp = { version = "0.14", features = ["client", "transport-child-process"] }
 tempfile = { workspace = true }
 assert_cmd = { workspace = true }
 predicates = { workspace = true }
@@ -167,14 +167,14 @@ scopeguard = "1.2"  # For RAII-style cleanup in tests
 insta = { version = "1.46", features = ["filters"] }  # Snapshot testing for TUI
 expectrl = { workspace = true }  # PTY-based TUI testing
 vt100 = "0.15"  # Terminal emulation for queryable screen buffer in E2E tests
-proptest = "1.8"  # Property-based testing for graduation invariants
+proptest = "1.10"  # Property-based testing for graduation invariants
 test-case = "3.3"  # Parameterized tests
 
 # Additional dependencies for resource constraint testing
 rand = "0.9"
 # Unix-only resource constraint testing
 [target.'cfg(unix)'.dev-dependencies]
-nix = { version = "0.30", features = ["fs"] }
+nix = { version = "0.31", features = ["fs"] }
 
 # File locking for concurrent test serialization
 fs2 = "0.4"

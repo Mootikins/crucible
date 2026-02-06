@@ -50,7 +50,7 @@ serde = { version = "1.0", features = ["derive"] }
 crucible-parser = { path = "crates/crucible-parser" }
 serde_json = "1.0"
 serde_yaml = "0.9"
-uuid = { version = "1.19", features = ["v4", "serde"] }
+uuid = { version = "1.20", features = ["v4", "serde"] }
 anyhow = "1.0"
 thiserror = "2.0.17"
 # Rune (commented out - not needed for MVP)
@@ -96,7 +96,7 @@ rayon = "1.10"
 
 # File system watching
 notify = "8.2"
-notify-debouncer-full = "0.6"
+notify-debouncer-full = "0.7"
 
 # Additional utilities
 globset = "0.4"
@@ -106,7 +106,7 @@ markdown-it = "0.6"
 toml = "0.9"
 futures-util = "0.3"
 tokio-stream = "0.1"
-tokio-tungstenite = { version = "0.26", features = ["rustls-tls-webpki-roots"] }
+tokio-tungstenite = { version = "0.28", features = ["rustls-tls-webpki-roots"] }
 hostname = "0.4"
 
 # Metrics and monitoring
@@ -118,11 +118,11 @@ axum = "0.8"
 tower = "0.5"
 
 # MCP protocol
-rmcp = { version = "0.13", features = ["macros", "server"] }
+rmcp = { version = "0.14", features = ["macros", "server"] }
 
 # Testing utilities
 criterion = { version = "0.8", features = ["html_reports"] }
-proptest = "1.8"
+proptest = "1.10"
 trybuild = "1.0"
 tokio-test = "0.4"
 mockito = "1.7"
@@ -149,7 +149,7 @@ base64 = "0.22"
 # Additional dependencies
 rustc_version = "0.4"
 clap = { version = "4.5", features = ["derive"] }
-colored = "3.0"
+colored = "3.1"
 
 # CLI specific dependencies
 indicatif = "0.18"

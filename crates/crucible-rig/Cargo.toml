@@ -47,7 +47,7 @@ reqwest = { workspace = true, features = ["stream", "json"] }
 
 # MCP/RMCP - needed for workspace tools result types
 # Base features always enabled; server/client features gated behind rmcp-full feature
-rmcp = { version = "0.13", features = ["macros"] }
+rmcp = { version = "0.14", features = ["macros"] }
 
 [dev-dependencies]
 tokio-test = { workspace = true }
