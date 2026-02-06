@@ -283,6 +283,44 @@ export async function setSessionTitle(sessionId: string, title: string): Promise
   }
 }
 
+export interface SessionHistoryEvent {
+  role: 'user' | 'assistant' | 'system' | 'tool';
+  content: string;
+  timestamp?: string;
+  tool_calls?: Array<{
+    id: string;
+    name: string;
+    arguments?: unknown;
+  }>;
+  tool_call_id?: string;
+}
+
+export interface SessionHistoryResponse {
+  session_id: string;
+  history: SessionHistoryEvent[];
+  total_events: number;
+}
+
+export async function getSessionHistory(
+  sessionId: string,
+  kiln: string,
+  limit?: number,
+  offset?: number,
+): Promise<SessionHistoryResponse> {
+  const params = new URLSearchParams({ kiln });
+  if (limit !== undefined) params.set('limit', limit.toString());
+  if (offset !== undefined) params.set('offset', offset.toString());
+
+  const res = await fetch(
+    `/api/session/${encodeURIComponent(sessionId)}/history?${params.toString()}`,
+  );
+  if (!res.ok) {
+    throw new Error(`Failed to load session history: HTTP ${res.status}`);
+  }
+
+  return (await res.json()) as SessionHistoryResponse;
+}
+
 /** List available LLM providers and their models. */
 export async function listProviders(): Promise<ProviderInfo[]> {
   const res = await fetch('/api/providers');

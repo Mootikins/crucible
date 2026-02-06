@@ -16,6 +16,7 @@ pub fn session_routes() -> Router<AppState> {
         .route("/api/session", post(create_session))
         .route("/api/session/list", get(list_sessions))
         .route("/api/session/{id}", get(get_session))
+        .route("/api/session/{id}/history", get(get_session_history))
         .route("/api/session/{id}/pause", post(pause_session))
         .route("/api/session/{id}/resume", post(resume_session))
         .route("/api/session/{id}/end", post(end_session))
@@ -184,6 +185,27 @@ async fn get_session(
     let result = state
         .daemon
         .session_get(&id)
+        .await
+        .map_err(|e| WebError::Daemon(e.to_string()))?;
+
+    Ok(Json(result))
+}
+
+#[derive(Debug, Deserialize)]
+struct HistoryQuery {
+    kiln: PathBuf,
+    limit: Option<usize>,
+    offset: Option<usize>,
+}
+
+async fn get_session_history(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    axum::extract::Query(query): axum::extract::Query<HistoryQuery>,
+) -> Result<Json<serde_json::Value>, WebError> {
+    let result = state
+        .daemon
+        .session_resume_from_storage(&id, &query.kiln, query.limit, query.offset)
         .await
         .map_err(|e| WebError::Daemon(e.to_string()))?;
 
