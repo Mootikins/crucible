@@ -16,18 +16,6 @@ export type { DockviewApi, DockviewComponent, SerializedDockview };
 
 export type Zone = 'left' | 'center' | 'right' | 'bottom';
 
-export interface ZoneThresholds {
-  leftWidth: number;    // 0-1, groups with right edge <= this are "left"
-  rightStart: number;   // 0-1, groups with left edge >= this are "right"  
-  bottomStart: number;  // 0-1, groups with top edge >= this are "bottom"
-}
-
-const DEFAULT_THRESHOLDS: ZoneThresholds = {
-  leftWidth: 0.35,
-  rightStart: 0.65,
-  bottomStart: 0.60,
-};
-
 export interface PanelConfig {
   id: string;
   title: string;
@@ -73,7 +61,6 @@ export interface CreateDockviewOptions {
   container: HTMLElement;
   panels: PanelConfig[];
   className?: string;
-  thresholds?: Partial<ZoneThresholds>;
   onReady?: (api: DockviewApi) => void;
   onLayoutChange?: () => void;
 }
@@ -91,7 +78,6 @@ export interface DockviewInstance {
 export function detectGroupZone(
   group: DockviewGroupPanel,
   containerRect: DOMRect,
-  _thresholds: ZoneThresholds
 ): Zone {
   const groupRect = group.element.getBoundingClientRect();
   
@@ -123,8 +109,6 @@ export function detectGroupZone(
 
 export function createSolidDockview(options: CreateDockviewOptions): DockviewInstance {
   const registry: PanelRegistry = new Map();
-  const thresholds: ZoneThresholds = { ...DEFAULT_THRESHOLDS, ...options.thresholds };
-  
   const groupZoneMap = new Map<string, Zone>();
   const hiddenGroups = new Set<string>();
   let isTogglingZone = false;
@@ -142,22 +126,11 @@ export function createSolidDockview(options: CreateDockviewOptions): DockviewIns
     className: options.className,
   });
 
-  for (const panel of options.panels) {
-    const addOpts: AddPanelOptions = {
-      id: panel.id,
-      component: panel.id,
-      title: panel.title,
-    };
-
-    if (panel.position) {
-      addOpts.position = panel.position;
-    }
-
-    if (panel.floating) {
-      addOpts.floating = panel.floating;
-    }
-
-    dockview.addPanel(addOpts);
+  for (const { id, title, position, floating } of options.panels) {
+    const panelOpts: AddPanelOptions = { id, component: id, title };
+    if (position) panelOpts.position = position;
+    if (floating) panelOpts.floating = floating;
+    dockview.addPanel(panelOpts);
   }
 
   const recalculateZones = (): void => {
@@ -168,7 +141,7 @@ export function createSolidDockview(options: CreateDockviewOptions): DockviewIns
     
     for (const group of dockview.api.groups) {
       if (!hiddenGroups.has(group.id) && group.api.isVisible) {
-        groupZoneMap.set(group.id, detectGroupZone(group, containerRect, thresholds));
+        groupZoneMap.set(group.id, detectGroupZone(group, containerRect));
       }
     }
   };
@@ -231,11 +204,4 @@ export function createSolidDockview(options: CreateDockviewOptions): DockviewIns
       dockview.dispose();
     },
   };
-}
-
-export function setGroupVisibleById(api: DockviewApi, groupId: string, visible: boolean): void {
-  const group = api.getGroup(groupId);
-  if (group) {
-    group.api.setVisible(visible);
-  }
 }

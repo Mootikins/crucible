@@ -160,35 +160,33 @@ export const DockLayout: Component<DockLayoutProps> = (props) => {
     setTimeout(() => {
       if (!dockviewInstance) return;
       const visible = zoneVisible();
-      if (!visible.left) dockviewInstance.setZoneVisible('left', false);
-      if (!visible.right) dockviewInstance.setZoneVisible('right', false);
-      if (!visible.bottom) dockviewInstance.setZoneVisible('bottom', false);
+      const zones: Array<'left' | 'right' | 'bottom'> = ['left', 'right', 'bottom'];
+      for (const zone of zones) {
+        if (!visible[zone]) dockviewInstance.setZoneVisible(zone, false);
+      }
       updateZoneDataAttributes();
     }, 50);
 
     onCleanup(() => dockviewInstance?.dispose());
 
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.target instanceof HTMLInputElement || 
-          event.target instanceof HTMLTextAreaElement ||
-          (event.target instanceof HTMLElement && event.target.contentEditable === 'true')) {
-        return;
-      }
+      const target = event.target;
+      const isEditable = target instanceof HTMLInputElement || 
+          target instanceof HTMLTextAreaElement ||
+          (target instanceof HTMLElement && target.contentEditable === 'true');
+      if (isEditable) return;
 
-      const isMac = navigator.platform.includes('Mac');
-      const modifier = isMac ? event.metaKey : event.ctrlKey;
-
+      const modifier = navigator.platform.includes('Mac') ? event.metaKey : event.ctrlKey;
       if (!modifier) return;
 
-      if (event.key === 'b' && !event.shiftKey) {
+      let zone: Exclude<Zone, 'center'> | null = null;
+      if (event.key === 'b' && !event.shiftKey) zone = 'left';
+      else if (event.key === 'B' && event.shiftKey) zone = 'right';
+      else if (event.key === 'j') zone = 'bottom';
+
+      if (zone) {
         event.preventDefault();
-        toggleZone('left');
-      } else if (event.key === 'B' && event.shiftKey) {
-        event.preventDefault();
-        toggleZone('right');
-      } else if (event.key === 'j') {
-        event.preventDefault();
-        toggleZone('bottom');
+        toggleZone(zone);
       }
     };
 
