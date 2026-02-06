@@ -1,12 +1,10 @@
 import { Component, ParentComponent, createSignal, onMount, onCleanup } from 'solid-js';
-import { DockView, DockPanel } from 'solid-dockview';
-import type { DockviewComponent, SerializedDockview } from 'dockview-core';
-import { SettingsPanel } from '@/components/SettingsPanel';
+import { createSolidDockview, type DockviewInstance, type Zone } from '@/lib/solid-dockview';
 import { SessionPanel } from '@/components/SessionPanel';
 import { FilesPanel } from '@/components/FilesPanel';
 import { EditorPanel } from '@/components/EditorPanel';
 import { BreadcrumbNav } from '@/components/BreadcrumbNav';
-import { loadLayout, saveLayout, type LayoutState } from '@/lib/layout';
+import { loadZoneState, saveZoneState, saveDockviewLayout, loadDockviewLayout, type ZoneState } from '@/lib/layout';
 import 'dockview-core/dist/styles/dockview.css';
 
 const GearIcon: Component = () => (
@@ -51,12 +49,6 @@ interface DockLayoutProps {
   chatContent: Component;
 }
 
-interface PanelState {
-  left: boolean;
-  right: boolean;
-  bottom: boolean;
-}
-
 function debounce<T extends (...args: unknown[]) => void>(fn: T, delay: number): T {
   let timeoutId: ReturnType<typeof setTimeout>;
   return ((...args: unknown[]) => {
@@ -69,352 +61,241 @@ type CollapseMode = 'hidden' | 'iconRail';
 
 export const DockLayout: Component<DockLayoutProps> = (props) => {
   const [showSettings, setShowSettings] = createSignal(false);
-  const [dockviewApi, setDockviewApi] = createSignal<DockviewComponent | null>(null);
-   const [panelVisible, setPanelVisible] = createSignal<PanelState>({
-     left: true,
-     right: true,
-     bottom: false,
-   });
-   const [ariaLiveMessage, setAriaLiveMessage] = createSignal('');
-   
-   const [collapseMode] = createSignal<CollapseMode>(
-     (localStorage.getItem('crucible:collapse-mode') as CollapseMode) || 'hidden'
-   );
+  const [zoneVisible, setZoneVisible] = createSignal<ZoneState>(loadZoneState());
+  const [ariaLiveMessage, setAriaLiveMessage] = createSignal('');
+  
+  const [collapseMode] = createSignal<CollapseMode>(
+    (localStorage.getItem('crucible:collapse-mode') as CollapseMode) || 'hidden'
+  );
 
-   const [groupIds, setGroupIds] = createSignal<Record<string, string | null>>({
-    left: null,
-    right: null,
-    bottom: null,
-  });
+  let containerRef: HTMLDivElement | undefined;
+  let dockviewInstance: DockviewInstance | null = null;
 
-  const debouncedSave = debounce(() => {
-    const api = dockviewApi();
-    if (!api) return;
-    
-    const serialized = api.toJSON() as SerializedDockview;
-    const layoutState: LayoutState = {
-      grid: serialized,
-      panels: {
-        left: { visible: panelVisible().left },
-        right: { visible: panelVisible().right },
-        bottom: { visible: panelVisible().bottom },
-      },
-    };
-    saveLayout(layoutState);
-  }, 300);
-
-   const togglePanel = (panel: keyof PanelState) => {
-     const api = dockviewApi();
-     if (!api) return;
-
-     const newVisible = !panelVisible()[panel];
-     setPanelVisible(prev => ({ ...prev, [panel]: newVisible }));
-
-     const groups = groupIds();
-     const groupId = groups[panel];
-     if (groupId) {
-       const group = api.groups.find(g => g.id === groupId);
-       if (group) {
-         group.api.setVisible(newVisible);
-       }
-     }
-
-     // Announce state change for screen readers
-     const panelNames: Record<keyof PanelState, string> = {
-       left: 'Left panel',
-       right: 'Right panel',
-       bottom: 'Bottom panel',
-     };
-     const message = `${panelNames[panel]} ${newVisible ? 'expanded' : 'collapsed'}`;
-     setAriaLiveMessage(message);
-
-     debouncedSave();
-   };
-
-   const handleReady = (event: { dockview: DockviewComponent }) => {
-     const api = event.dockview;
-     setDockviewApi(api);
-
-     const savedLayout = loadLayout();
-     if (savedLayout?.grid) {
-       try {
-         const serialized = savedLayout.grid as SerializedDockview;
-         if (serialized.panels && Object.keys(serialized.panels).length > 0) {
-           try {
-             api.fromJSON(serialized);
-           } catch (jsonError) {
-             // fromJSON failed - likely due to missing panels or corrupt state
-             console.warn('Failed to restore layout from JSON:', jsonError);
-             // Clear the corrupt layout and use default
-             localStorage.removeItem('crucible:layout');
-             // Reset to default state
-             setPanelVisible({
-               left: true,
-               right: true,
-               bottom: false,
-             });
-             setGroupIds({
-               left: null,
-               right: null,
-               bottom: null,
-             });
-             return;
-           }
-           
-           if (savedLayout.panels) {
-             setPanelVisible({
-               left: savedLayout.panels.left?.visible !== false,
-               right: savedLayout.panels.right?.visible !== false,
-               bottom: savedLayout.panels.bottom?.visible === true,
-             });
-           }
-           
-           const newGroupIds: Record<string, string | null> = {
-             left: null,
-             right: null,
-             bottom: null,
-           };
-           
-           for (const panel of api.panels) {
-             if (panel.id === 'sessions' || panel.id === 'files') {
-               newGroupIds.left = panel.group?.id ?? null;
-             }
-             if (panel.id === 'editor') {
-               newGroupIds.right = panel.group?.id ?? null;
-             }
-             if (panel.id === 'bottom') {
-               newGroupIds.bottom = panel.group?.id ?? null;
-             }
-           }
-           
-           setGroupIds(newGroupIds);
-           
-           return;
-         }
-       } catch (e) {
-         console.warn('Failed to restore layout:', e);
-         localStorage.removeItem('crucible:layout');
-       }
-     }
-   };
-
-  const trackGroup = (panelId: string, groupId: string | null) => {
-    setGroupIds(prev => {
-      const updated = { ...prev };
-      if (panelId === 'sessions' || panelId === 'files') updated.left = groupId;
-      if (panelId === 'editor') updated.right = groupId;
-      if (panelId === 'bottom') updated.bottom = groupId;
-      return updated;
-    });
+  const updateZoneDataAttributes = () => {
+    if (!dockviewInstance) return;
+    const zones = dockviewInstance.getGroupZones();
+    for (const group of dockviewInstance.api.groups) {
+      const zone = zones.get(group.id);
+      if (zone) {
+        group.element.setAttribute('data-zone', zone);
+      }
+    }
   };
 
-   onMount(() => {
-     const checkApi = setInterval(() => {
-       const api = dockviewApi();
-       if (api) {
-         clearInterval(checkApi);
-         const disposable = api.onDidLayoutChange(() => debouncedSave());
-         onCleanup(() => disposable.dispose());
-       }
-     }, 100);
-     onCleanup(() => clearInterval(checkApi));
+  const debouncedSaveLayout = debounce(() => {
+    if (!dockviewInstance) return;
+    const serialized = dockviewInstance.component.toJSON();
+    saveDockviewLayout(serialized);
+    updateZoneDataAttributes();
+  }, 300);
 
-     // Keyboard shortcuts for panel toggles
-     const handleKeyDown = (event: KeyboardEvent) => {
-       // Don't trigger shortcuts when input/textarea is focused
-       if (event.target instanceof HTMLInputElement || 
-           event.target instanceof HTMLTextAreaElement ||
-           (event.target instanceof HTMLElement && event.target.contentEditable === 'true')) {
-         return;
-       }
+  const toggleZone = (zone: Exclude<Zone, 'center'>) => {
+    if (!dockviewInstance) return;
 
-       const isMac = navigator.platform.includes('Mac');
-       const modifier = isMac ? event.metaKey : event.ctrlKey;
+    const newVisible = !zoneVisible()[zone];
+    setZoneVisible(prev => ({ ...prev, [zone]: newVisible }));
+    saveZoneState({ ...zoneVisible(), [zone]: newVisible });
 
-       if (!modifier) return;
+    dockviewInstance.setZoneVisible(zone, newVisible);
 
-       // Cmd+B / Ctrl+B: Toggle left panel
-       if (event.key === 'b' && !event.shiftKey) {
-         event.preventDefault();
-         togglePanel('left');
-       }
-       // Cmd+Shift+B / Ctrl+Shift+B: Toggle right panel
-       else if (event.key === 'B' && event.shiftKey) {
-         event.preventDefault();
-         togglePanel('right');
-       }
-       // Cmd+J / Ctrl+J: Toggle bottom panel
-       else if (event.key === 'j') {
-         event.preventDefault();
-         togglePanel('bottom');
-       }
-     };
+    const zoneNames: Record<Exclude<Zone, 'center'>, string> = {
+      left: 'Left zone',
+      right: 'Right zone',
+      bottom: 'Bottom zone',
+    };
+    setAriaLiveMessage(`${zoneNames[zone]} ${newVisible ? 'expanded' : 'collapsed'}`);
+  };
 
-     document.addEventListener('keydown', handleKeyDown);
-     onCleanup(() => document.removeEventListener('keydown', handleKeyDown));
-   });
+  onMount(() => {
+    if (!containerRef) return;
+
+    const savedLayout = loadDockviewLayout();
+    
+    dockviewInstance = createSolidDockview({
+      container: containerRef,
+      className: 'dockview-theme-abyss',
+      panels: [
+        {
+          id: 'sessions',
+          title: 'Sessions',
+          component: SessionPanel,
+          position: { direction: 'left' },
+        },
+        {
+          id: 'files',
+          title: 'Files',
+          component: FilesPanel,
+          position: { referencePanel: 'sessions', direction: 'within' },
+        },
+        {
+          id: 'editor',
+          title: 'Editor',
+          component: EditorPanel,
+        },
+        {
+          id: 'chat',
+          title: 'Chat',
+          component: props.chatContent,
+          position: { direction: 'right' },
+        },
+        {
+          id: 'terminal',
+          title: 'Terminal',
+          component: BottomPanel,
+          position: { direction: 'below' },
+        },
+      ],
+      onLayoutChange: debouncedSaveLayout,
+    });
+
+    if (savedLayout) {
+      try {
+        type FromJSONParam = Parameters<typeof dockviewInstance.component.fromJSON>[0];
+        dockviewInstance.component.fromJSON(savedLayout as FromJSONParam);
+      } catch {
+        console.warn('Failed to restore layout, using default');
+      }
+    }
+
+    setTimeout(() => {
+      if (!dockviewInstance) return;
+      const visible = zoneVisible();
+      if (!visible.left) dockviewInstance.setZoneVisible('left', false);
+      if (!visible.right) dockviewInstance.setZoneVisible('right', false);
+      if (!visible.bottom) dockviewInstance.setZoneVisible('bottom', false);
+      updateZoneDataAttributes();
+    }, 50);
+
+    onCleanup(() => dockviewInstance?.dispose());
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.target instanceof HTMLInputElement || 
+          event.target instanceof HTMLTextAreaElement ||
+          (event.target instanceof HTMLElement && event.target.contentEditable === 'true')) {
+        return;
+      }
+
+      const isMac = navigator.platform.includes('Mac');
+      const modifier = isMac ? event.metaKey : event.ctrlKey;
+
+      if (!modifier) return;
+
+      if (event.key === 'b' && !event.shiftKey) {
+        event.preventDefault();
+        toggleZone('left');
+      } else if (event.key === 'B' && event.shiftKey) {
+        event.preventDefault();
+        toggleZone('right');
+      } else if (event.key === 'j') {
+        event.preventDefault();
+        toggleZone('bottom');
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    onCleanup(() => document.removeEventListener('keydown', handleKeyDown));
+  });
 
   return (
     <div class="h-screen w-screen flex flex-col bg-neutral-950">
       <BreadcrumbNav />
 
       <div class="flex-1 flex overflow-hidden">
-         <div class="flex flex-col justify-center border-r border-neutral-800 bg-neutral-900">
+        <div class="flex flex-col justify-center border-r border-neutral-800 bg-neutral-900">
+          <button
+            data-testid="toggle-left"
+            onClick={() => toggleZone('left')}
+            aria-label="Toggle left sidebar"
+            aria-expanded={zoneVisible().left}
+            aria-controls="sessions"
+            class={`p-2 transition-colors ${zoneVisible().left ? 'text-blue-400' : 'text-neutral-500 hover:text-neutral-300'}`}
+            title="Toggle left sidebar (⌘B)"
+          >
+            <SidebarIcon side="left" />
+          </button>
+        </div>
+
+        {!zoneVisible().left && collapseMode() === 'iconRail' && (
+          <div class="icon-rail icon-rail-left">
             <button
-              data-testid="toggle-left"
-              onClick={() => togglePanel('left')}
-              aria-label="Toggle left sidebar"
-              aria-expanded={panelVisible().left}
-              aria-controls="sessions"
-              class={`p-2 transition-colors ${panelVisible().left ? 'text-blue-400' : 'text-neutral-500 hover:text-neutral-300'}`}
-              title="Toggle left sidebar (⌘B)"
+              data-testid="rail-expand-left"
+              onClick={() => toggleZone('left')}
+              aria-label="Expand left sidebar"
+              class="p-2 text-neutral-400 hover:text-white transition-colors"
             >
               <SidebarIcon side="left" />
             </button>
-         </div>
-
-         {!panelVisible().left && collapseMode() === 'iconRail' && (
-           <div class="icon-rail icon-rail-left">
-             <button
-               data-testid="rail-expand-left"
-               onClick={() => togglePanel('left')}
-               aria-label="Expand left sidebar"
-               class="p-2 text-neutral-400 hover:text-white transition-colors"
-             >
-               <SidebarIcon side="left" />
-             </button>
-           </div>
-         )}
+          </div>
+        )}
 
         <div class="flex-1 flex flex-col overflow-hidden">
           <div class="flex-1 overflow-hidden relative">
-             <button
-               data-testid="toggle-settings"
-               onClick={() => setShowSettings(!showSettings())}
-               aria-label="Toggle settings panel"
-               aria-expanded={showSettings()}
-               aria-controls="settings"
-               class="absolute top-2 right-2 z-50 p-2 rounded-lg bg-neutral-800/80 hover:bg-neutral-700 text-neutral-400 hover:text-white transition-colors"
-               title="Settings"
-             >
-               <GearIcon />
-             </button>
-
-            <DockView
-              class="dockview-theme-abyss"
-              style="height: 100%; width: 100%;"
-              onReady={handleReady}
-              onDidLayoutChange={debouncedSave}
+            <button
+              data-testid="toggle-settings"
+              onClick={() => setShowSettings(!showSettings())}
+              aria-label="Toggle settings panel"
+              aria-expanded={showSettings()}
+              aria-controls="settings"
+              class="absolute top-2 right-2 z-50 p-2 rounded-lg bg-neutral-800/80 hover:bg-neutral-700 text-neutral-400 hover:text-white transition-colors"
+              title="Settings"
             >
-              <DockPanel 
-                id="sessions" 
-                title="Sessions" 
-                position={{ direction: 'left' }}
-                initialWidth={260}
-                onCreate={(e) => trackGroup('sessions', e.panel.group?.id ?? null)}
-              >
-                <SessionPanel />
-              </DockPanel>
+              <GearIcon />
+            </button>
 
-              <DockPanel 
-                id="files" 
-                title="Files" 
-                position={{ referencePanel: 'sessions', direction: 'within' }}
-                onCreate={(e) => trackGroup('files', e.panel.group?.id ?? null)}
-              >
-                <FilesPanel />
-              </DockPanel>
-
-              <DockPanel id="chat" title="Chat">
-                <props.chatContent />
-              </DockPanel>
-
-              <DockPanel 
-                id="editor" 
-                title="Editor" 
-                position={{ direction: 'right' }}
-                initialWidth={400}
-                onCreate={(e) => trackGroup('editor', e.panel.group?.id ?? null)}
-              >
-                <EditorPanel />
-              </DockPanel>
-
-               <DockPanel 
-                 id="bottom" 
-                 title="Output" 
-                 position={{ direction: 'below' }}
-                 initialHeight={200}
-                 onCreate={(e) => {
-                   trackGroup('bottom', e.panel.group?.id ?? null);
-                   const api = dockviewApi();
-                   if (api && e.panel.group?.id) {
-                     const group = api.groups.find(g => g.id === e.panel.group?.id);
-                     if (group) {
-                       group.api.setVisible(false);
-                     }
-                   }
-                 }}
-               >
-                 <BottomPanel />
-               </DockPanel>
-
-               <DockPanel id="settings" title="Settings" floating={{ width: 400, height: 300 }}>
-                 <SettingsPanel />
-               </DockPanel>
-            </DockView>
+            <div ref={containerRef} class="h-full w-full" />
           </div>
 
-            <div class="flex justify-center border-t border-neutral-800 bg-neutral-900">
-              <button
-                data-testid="toggle-bottom"
-                onClick={() => togglePanel('bottom')}
-                aria-label="Toggle bottom panel"
-                aria-expanded={panelVisible().bottom}
-                aria-controls="bottom"
-                class={`p-1.5 transition-colors ${panelVisible().bottom ? 'text-blue-400' : 'text-neutral-500 hover:text-neutral-300'}`}
-                title="Toggle bottom panel (⌘J)"
-              >
-                <BottomPanelIcon />
-              </button>
-            </div>
+          <div class="flex justify-center border-t border-neutral-800 bg-neutral-900">
+            <button
+              data-testid="toggle-bottom"
+              onClick={() => toggleZone('bottom')}
+              aria-label="Toggle bottom panel"
+              aria-expanded={zoneVisible().bottom}
+              aria-controls="bottom"
+              class={`p-1.5 transition-colors ${zoneVisible().bottom ? 'text-blue-400' : 'text-neutral-500 hover:text-neutral-300'}`}
+              title="Toggle bottom panel (⌘J)"
+            >
+              <BottomPanelIcon />
+            </button>
+          </div>
         </div>
 
-          {!panelVisible().right && collapseMode() === 'iconRail' && (
-            <div class="icon-rail icon-rail-right">
-              <button
-                data-testid="rail-expand-right"
-                onClick={() => togglePanel('right')}
-                aria-label="Expand right sidebar"
-                class="p-2 text-neutral-400 hover:text-white transition-colors"
-              >
-                <SidebarIcon side="right" />
-              </button>
-            </div>
-          )}
-
-          <div class="flex flex-col justify-center border-l border-neutral-800 bg-neutral-900">
+        {!zoneVisible().right && collapseMode() === 'iconRail' && (
+          <div class="icon-rail icon-rail-right">
             <button
-              data-testid="toggle-right"
-              onClick={() => togglePanel('right')}
-              aria-label="Toggle right sidebar"
-              aria-expanded={panelVisible().right}
-              aria-controls="editor"
-              class={`p-2 transition-colors ${panelVisible().right ? 'text-blue-400' : 'text-neutral-500 hover:text-neutral-300'}`}
-              title="Toggle right sidebar (⌘⇧B)"
+              data-testid="rail-expand-right"
+              onClick={() => toggleZone('right')}
+              aria-label="Expand right sidebar"
+              class="p-2 text-neutral-400 hover:text-white transition-colors"
             >
               <SidebarIcon side="right" />
             </button>
-           </div>
-       </div>
+          </div>
+        )}
 
-       <div
-         aria-live="polite"
-         aria-atomic="true"
-         class="sr-only"
-         role="status"
-       >
-         {ariaLiveMessage()}
-       </div>
-     </div>
-   );
- };
+        <div class="flex flex-col justify-center border-l border-neutral-800 bg-neutral-900">
+          <button
+            data-testid="toggle-right"
+            onClick={() => toggleZone('right')}
+            aria-label="Toggle right sidebar"
+            aria-expanded={zoneVisible().right}
+            aria-controls="editor"
+            class={`p-2 transition-colors ${zoneVisible().right ? 'text-blue-400' : 'text-neutral-500 hover:text-neutral-300'}`}
+            title="Toggle right sidebar (⌘⇧B)"
+          >
+            <SidebarIcon side="right" />
+          </button>
+        </div>
+      </div>
+
+      <div
+        aria-live="polite"
+        aria-atomic="true"
+        class="sr-only"
+        role="status"
+      >
+        {ariaLiveMessage()}
+      </div>
+    </div>
+  );
+};
