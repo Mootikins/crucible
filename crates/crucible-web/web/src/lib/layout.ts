@@ -1,7 +1,9 @@
+import { type SerializedDockview } from 'dockview-core';
+
 const LAYOUT_STORAGE_KEY = 'crucible:layout';
 const ZONE_STATE_KEY = 'crucible:zones';
 
-export type SerializedDockview = unknown;
+export type { SerializedDockview };
 
 export interface ZoneState {
   left: boolean;
@@ -11,11 +13,20 @@ export interface ZoneState {
 
 const DEFAULT_ZONE_STATE: ZoneState = { left: true, right: true, bottom: false };
 
+function isValidZoneState(value: unknown): value is ZoneState {
+  if (typeof value !== 'object' || value === null) return false;
+  const obj = value as Record<string, unknown>;
+  return typeof obj.left === 'boolean' && 
+         typeof obj.right === 'boolean' && 
+         typeof obj.bottom === 'boolean';
+}
+
 export function loadZoneState(): ZoneState {
   const stored = localStorage.getItem(ZONE_STATE_KEY);
   if (!stored) return DEFAULT_ZONE_STATE;
   try {
-    return JSON.parse(stored);
+    const parsed = JSON.parse(stored);
+    return isValidZoneState(parsed) ? parsed : DEFAULT_ZONE_STATE;
   } catch {
     return DEFAULT_ZONE_STATE;
   }
