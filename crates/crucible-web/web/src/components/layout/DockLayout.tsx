@@ -65,6 +65,8 @@ function debounce<T extends (...args: unknown[]) => void>(fn: T, delay: number):
   }) as T;
 }
 
+type CollapseMode = 'hidden' | 'iconRail';
+
 export const DockLayout: Component<DockLayoutProps> = (props) => {
   const [showSettings, setShowSettings] = createSignal(false);
   const [dockviewApi, setDockviewApi] = createSignal<DockviewComponent | null>(null);
@@ -74,6 +76,10 @@ export const DockLayout: Component<DockLayoutProps> = (props) => {
      bottom: false,
    });
    const [ariaLiveMessage, setAriaLiveMessage] = createSignal('');
+   
+   const [collapseMode] = createSignal<CollapseMode>(
+     (localStorage.getItem('crucible:collapse-mode') as CollapseMode) || 'hidden'
+   );
 
    const [groupIds, setGroupIds] = createSignal<Record<string, string | null>>({
     left: null,
@@ -107,8 +113,10 @@ export const DockLayout: Component<DockLayoutProps> = (props) => {
      const groups = groupIds();
      const groupId = groups[panel];
      if (groupId) {
-       const group = api.getGroup(groupId);
-       group?.api.setVisible(newVisible);
+       try {
+         const group = (api as unknown as { getGroup: (id: string) => { api: { setVisible: (v: boolean) => void } } | undefined }).getGroup(groupId);
+         group?.api.setVisible(newVisible);
+       } catch { /* noop */ }
      }
 
      // Announce state change for screen readers
@@ -265,6 +273,19 @@ export const DockLayout: Component<DockLayoutProps> = (props) => {
             </button>
          </div>
 
+         {!panelVisible().left && collapseMode() === 'iconRail' && (
+           <div class="icon-rail icon-rail-left">
+             <button
+               data-testid="rail-expand-left"
+               onClick={() => togglePanel('left')}
+               aria-label="Expand left sidebar"
+               class="p-2 text-neutral-400 hover:text-white transition-colors"
+             >
+               <SidebarIcon side="left" />
+             </button>
+           </div>
+         )}
+
         <div class="flex-1 flex flex-col overflow-hidden">
           <div class="flex-1 overflow-hidden relative">
              <button
@@ -327,7 +348,9 @@ export const DockLayout: Component<DockLayoutProps> = (props) => {
                    trackGroup('bottom', e.panel.group?.id ?? null);
                    const api = dockviewApi();
                    if (api && e.panel.group?.id) {
-                     api.getGroup(e.panel.group.id)?.api.setVisible(false);
+                     try {
+                       (api as unknown as { getGroup: (id: string) => { api: { setVisible: (v: boolean) => void } } | undefined }).getGroup(e.panel.group.id)?.api.setVisible(false);
+                     } catch { /* noop */ }
                    }
                  }}
                >
@@ -354,6 +377,19 @@ export const DockLayout: Component<DockLayoutProps> = (props) => {
               </button>
             </div>
         </div>
+
+          {!panelVisible().right && collapseMode() === 'iconRail' && (
+            <div class="icon-rail icon-rail-right">
+              <button
+                data-testid="rail-expand-right"
+                onClick={() => togglePanel('right')}
+                aria-label="Expand right sidebar"
+                class="p-2 text-neutral-400 hover:text-white transition-colors"
+              >
+                <SidebarIcon side="right" />
+              </button>
+            </div>
+          )}
 
           <div class="flex flex-col justify-center border-l border-neutral-800 bg-neutral-900">
             <button
