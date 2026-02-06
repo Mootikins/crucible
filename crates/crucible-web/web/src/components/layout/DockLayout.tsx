@@ -1,6 +1,7 @@
 import { Component, ParentComponent, onMount, onCleanup } from 'solid-js';
 import { createSolidDockview, type DockviewInstance } from '@/lib/solid-dockview';
 import { getGlobalRegistry, type Zone } from '@/lib/panel-registry';
+import { setupCrossZoneDnD } from '@/lib/dnd-bridge';
 import { SessionPanel } from '@/components/SessionPanel';
 import { FilesPanel } from '@/components/FilesPanel';
 import { EditorPanel } from '@/components/EditorPanel';
@@ -92,7 +93,10 @@ export const DockLayout: Component<DockLayoutProps> = (props) => {
       instances.set(zone, instance);
     }
 
+    const cleanupDnD = setupCrossZoneDnD(instances);
+
     onCleanup(() => {
+      cleanupDnD();
       for (const instance of instances.values()) {
         instance.dispose();
       }
