@@ -67,6 +67,7 @@ export const ShellLayout: Component<ShellLayoutProps> = (props) => {
   };
 
   const handleTransitionEnd = (zone: ToggleableZone) => (event: TransitionEvent) => {
+    if (event.target !== event.currentTarget) return;
     if (event.propertyName !== 'flex-basis') return;
     props.onZoneTransitionEnd?.(zone);
   };
