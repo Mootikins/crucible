@@ -485,6 +485,18 @@ export class DockviewComponent
         return this._dockedGroups.filter(g => g.side === side);
     }
 
+    toggleDockedSide(side: DockedSide): void {
+        const groups = this.getDockedGroups(side);
+        
+        if (groups.length === 0) {
+            return;
+        }
+
+        for (const group of groups) {
+            group.setCollapsed(!group.collapsed);
+        }
+    }
+
     /**
      * Promise that resolves when all popout groups from the last fromJSON call are restored.
      * Useful for tests that need to wait for delayed popout creation.
