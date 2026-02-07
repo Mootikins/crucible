@@ -51,5 +51,11 @@
     "rebuild": "npm run clean && npm run build",
     "test": "cross-env ../../node_modules/.bin/jest --selectProjects dockview-core",
     "test:cov": "cross-env ../../node_modules/.bin/jest --selectProjects dockview-core --coverage"
+  },
+  "devDependencies": {
+    "@testing-library/dom": "^10.4.1",
+    "@total-typescript/shoehorn": "^0.1.2",
+    "jsdom": "^28.0.0",
+    "vitest": "^4.0.18"
   }
 }
