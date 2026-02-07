@@ -3,37 +3,172 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>FlexLayout Smoke Test</title>
+    <title>FlexLayout Demo</title>
     <style>
       * { margin: 0; padding: 0; box-sizing: border-box; }
       html, body { width: 100%; height: 100%; overflow: hidden; }
 
+      /* Layout root */
       .flexlayout__layout { width: 100%; height: 100%; }
       .flexlayout__layout_main { width: 100%; height: 100%; }
+      .flexlayout__layout_overlay { pointer-events: none; }
+      .flexlayout__layout_moveables { position: absolute; inset: 0; pointer-events: none; }
+      .flexlayout__layout_tab_stamps { display: none; }
+      .flexlayout__layout_border_container { position: absolute; }
+      .flexlayout__layout_border_container_inner { position: absolute; }
+
+      /* Row */
       .flexlayout__row { display: flex; overflow: hidden; }
+
+      /* Tabset */
       .flexlayout__tabset_container { display: flex; flex-direction: column; overflow: hidden; }
       .flexlayout__tabset { display: flex; flex-direction: column; flex: 1; overflow: hidden; }
       .flexlayout__tabset_content { flex: 1; position: relative; }
+      .flexlayout__tabset_header { display: flex; align-items: center; padding: 3px 3px 3px 5px; background: #16213e; border-bottom: 1px solid #0f3460; }
+      .flexlayout__tabset_header_content { flex: 1; }
+      .flexlayout__tabset-selected .flexlayout__tabset_tabbar_outer { border-bottom-color: #e94560; }
+      .flexlayout__tabset-maximized { z-index: 100; }
       .flexlayout__tabset_tabbar_outer { display: flex; align-items: center; background: #16213e; border-bottom: 1px solid #0f3460; min-height: 32px; }
+      .flexlayout__tabset_tabbar_outer_top { border-bottom: 1px solid #0f3460; }
+      .flexlayout__tabset_tabbar_outer_bottom { border-top: 1px solid #0f3460; }
       .flexlayout__tabset_tabbar_inner { display: flex; flex: 1; overflow-x: auto; overflow-y: hidden; }
       .flexlayout__tabset_tabbar_inner_tab_container { display: flex; }
-      .flexlayout__tab_button { padding: 4px 12px; cursor: pointer; white-space: nowrap; color: #8899aa; border-bottom: 2px solid transparent; user-select: none; }
+      .flexlayout__tabset_tabbar_inner_tab_container_top { flex-direction: row; }
+      .flexlayout__tabset_tabbar_inner_tab_container_bottom { flex-direction: row; }
+      .flexlayout__tabset_tab_divider { width: 1px; background: #0f3460; margin: 4px 0; }
+      .flexlayout__tabset_leading { display: flex; align-items: center; }
+
+      /* Tab button */
+      .flexlayout__tab_button { padding: 4px 12px; cursor: pointer; white-space: nowrap; color: #8899aa; border-bottom: 2px solid transparent; user-select: none; display: flex; align-items: center; }
       .flexlayout__tab_button:hover { color: #e0e0e0; }
       .flexlayout__tab_button--selected { color: #e0e0e0; border-bottom-color: #e94560; background: rgba(233, 69, 96, 0.1); }
       .flexlayout__tab_button--unselected { opacity: 0.7; }
+      .flexlayout__tab_button_stretch { flex: 1; }
       .flexlayout__tab_button_content { display: flex; align-items: center; }
-      .flexlayout__tab { position: absolute; overflow: auto; }
-      .flexlayout__tab_toolbar { display: flex; align-items: center; padding: 0 4px; }
-      .flexlayout__tab_toolbar_button { cursor: pointer; padding: 2px 4px; color: #8899aa; background: none; border: none; }
-      .flexlayout__tab_toolbar_button:hover { color: #e0e0e0; }
-      .flexlayout__tabset-selected .flexlayout__tabset_tabbar_outer { border-bottom-color: #e94560; }
-      .flexlayout__tabset_tab_divider { width: 1px; background: #0f3460; margin: 4px 0; }
-      .flexlayout__tab_button_trailing { cursor: pointer; margin-left: 6px; opacity: 0.5; }
+      .flexlayout__tab_button_leading { display: flex; align-items: center; margin-right: 4px; }
+      .flexlayout__tab_button_trailing { cursor: pointer; margin-left: 6px; opacity: 0.5; display: flex; align-items: center; }
       .flexlayout__tab_button_trailing:hover { opacity: 1; }
-      .flexlayout__splitter { background: #0f3460; }
+      .flexlayout__tab_button_overflow { cursor: pointer; padding: 2px 4px; color: #8899aa; }
+      .flexlayout__tab_button_overflow:hover { color: #e0e0e0; }
+      .flexlayout__tab_button_textbox { border: 1px solid #0f3460; background: #1a1a2e; color: #e0e0e0; padding: 2px 4px; font-size: inherit; }
+      .flexlayout__tab_button_stamp { visibility: hidden; position: absolute; }
+
+      /* Tab content */
+      .flexlayout__tab { position: absolute; overflow: auto; }
+      .flexlayout__tab_position { position: absolute; }
+      .flexlayout__tab_moveable { position: absolute; }
+      .flexlayout__tab_overlay { position: absolute; inset: 0; z-index: 10; pointer-events: none; }
+
+      /* Tab toolbar */
+      .flexlayout__tab_toolbar { display: flex; align-items: center; padding: 0 4px; }
+      .flexlayout__tab_toolbar_button { cursor: pointer; padding: 2px 4px; color: #8899aa; background: none; border: none; display: flex; align-items: center; }
+      .flexlayout__tab_toolbar_button:hover { color: #e0e0e0; }
+      .flexlayout__tab_toolbar_button-close { cursor: pointer; padding: 2px 4px; color: #8899aa; background: none; border: none; }
+      .flexlayout__tab_toolbar_button-close:hover { color: #e94560; }
+      .flexlayout__tab_toolbar_button-float { cursor: pointer; padding: 2px 4px; color: #8899aa; background: none; border: none; }
+      .flexlayout__tab_toolbar_sticky_buttons_container { display: flex; align-items: center; }
+      .flexlayout__tab_toolbar_icon { width: 1em; height: 1em; }
+
+      /* Splitter */
+      .flexlayout__splitter { background: #0f3460; z-index: 10; }
       .flexlayout__splitter:hover { background: #e94560; }
-      .flexlayout__layout_overlay { pointer-events: none; }
-      .flexlayout__outline_rect { position: absolute; border: 2px dashed #e94560; pointer-events: none; }
+      .flexlayout__splitter_border { background: #0f3460; }
+      .flexlayout__splitter_border:hover { background: #e94560; }
+      .flexlayout__splitter_extra { position: absolute; z-index: 100; }
+      .flexlayout__splitter_handle { position: absolute; background: #0f3460; border-radius: 2px; }
+      .flexlayout__splitter_handle_horz { width: 30px; height: 4px; top: 50%; left: 50%; transform: translate(-50%, -50%); }
+      .flexlayout__splitter_handle_vert { width: 4px; height: 30px; top: 50%; left: 50%; transform: translate(-50%, -50%); }
+      .flexlayout__splitter_drag { position: absolute; z-index: 1000; }
+
+      /* Outline / drag */
+      .flexlayout__outline_rect { position: absolute; border: 2px dashed #e94560; pointer-events: none; z-index: 1000; }
+      .flexlayout__outline_rect_edge { position: absolute; border: 2px dashed #e94560; pointer-events: none; z-index: 1000; }
+      .flexlayout__drag_rect { position: absolute; cursor: move; background: rgba(233, 69, 96, 0.3); border: 1px solid #e94560; z-index: 1000; }
+
+      /* Edge rects */
+      .flexlayout__edge_rect { position: absolute; z-index: 1001; background: rgba(233, 69, 96, 0.15); border: 1px solid rgba(233, 69, 96, 0.4); }
+      .flexlayout__edge_rect_top { top: 0; left: 0; right: 0; height: 10px; }
+      .flexlayout__edge_rect_left { top: 0; left: 0; bottom: 0; width: 10px; }
+      .flexlayout__edge_rect_bottom { bottom: 0; left: 0; right: 0; height: 10px; }
+      .flexlayout__edge_rect_right { top: 0; right: 0; bottom: 0; width: 10px; }
+
+      /* Border */
+      .flexlayout__border { display: flex; overflow: hidden; background: #16213e; }
+      .flexlayout__border_top { border-bottom: 1px solid #0f3460; flex-direction: column; }
+      .flexlayout__border_bottom { border-top: 1px solid #0f3460; flex-direction: column; }
+      .flexlayout__border_left { border-right: 1px solid #0f3460; flex-direction: row; }
+      .flexlayout__border_right { border-left: 1px solid #0f3460; flex-direction: row; }
+      .flexlayout__border_inner { display: flex; overflow: hidden; }
+      .flexlayout__border_inner_top { flex-direction: row; }
+      .flexlayout__border_inner_bottom { flex-direction: row; }
+      .flexlayout__border_inner_left { flex-direction: column; }
+      .flexlayout__border_inner_right { flex-direction: column; }
+      .flexlayout__border_inner_tab_container { display: flex; }
+      .flexlayout__border_inner_tab_container_top { flex-direction: row; }
+      .flexlayout__border_inner_tab_container_bottom { flex-direction: row; }
+      .flexlayout__border_inner_tab_container_left { flex-direction: column; }
+      .flexlayout__border_inner_tab_container_right { flex-direction: column; }
+      .flexlayout__border_tab_contents { position: absolute; overflow: auto; }
+      .flexlayout__border_tab_divider { background: #0f3460; }
+      .flexlayout__border_leading { display: flex; align-items: center; }
+
+      /* Border button */
+      .flexlayout__border_button { padding: 4px 8px; cursor: pointer; white-space: nowrap; color: #8899aa; user-select: none; display: flex; align-items: center; }
+      .flexlayout__border_button:hover { color: #e0e0e0; }
+      .flexlayout__border_button--selected { color: #e0e0e0; background: rgba(233, 69, 96, 0.1); }
+      .flexlayout__border_button--unselected { opacity: 0.7; }
+      .flexlayout__border_button_content { display: flex; align-items: center; }
+      .flexlayout__border_button_leading { display: flex; align-items: center; margin-right: 4px; }
+      .flexlayout__border_button_trailing { cursor: pointer; margin-left: 6px; opacity: 0.5; }
+      .flexlayout__border_button_trailing:hover { opacity: 1; }
+
+      /* Border toolbar */
+      .flexlayout__border_toolbar { display: flex; align-items: center; padding: 0 4px; }
+      .flexlayout__border_toolbar_top { flex-direction: row; }
+      .flexlayout__border_toolbar_bottom { flex-direction: row; }
+      .flexlayout__border_toolbar_left { flex-direction: column; }
+      .flexlayout__border_toolbar_right { flex-direction: column; }
+      .flexlayout__border_toolbar_button { cursor: pointer; padding: 2px 4px; color: #8899aa; background: none; border: none; }
+      .flexlayout__border_toolbar_button:hover { color: #e0e0e0; }
+      .flexlayout__border_toolbar_button-float { cursor: pointer; padding: 2px 4px; }
+      .flexlayout__border_toolbar_button_overflow { cursor: pointer; padding: 2px 4px; color: #8899aa; }
+      .flexlayout__border_toolbar_button_overflow:hover { color: #e0e0e0; }
+      .flexlayout__border_toolbar_button_overflow_top { }
+      .flexlayout__border_toolbar_button_overflow_bottom { }
+      .flexlayout__border_toolbar_button_overflow_left { }
+      .flexlayout__border_toolbar_button_overflow_right { }
+
+      /* Border sizer */
+      .flexlayout__border_sizer { cursor: col-resize; background: #0f3460; }
+      .flexlayout__border_sizer:hover { background: #e94560; }
+
+      /* Popup menu */
+      .flexlayout__popup_menu { position: absolute; z-index: 10000; background: #16213e; border: 1px solid #0f3460; border-radius: 4px; box-shadow: 0 4px 12px rgba(0,0,0,0.5); padding: 4px 0; min-width: 100px; }
+      .flexlayout__popup_menu_container { position: fixed; inset: 0; z-index: 9999; }
+      .flexlayout__popup_menu_item { padding: 6px 12px; cursor: pointer; color: #e0e0e0; white-space: nowrap; }
+      .flexlayout__popup_menu_item:hover { background: rgba(233, 69, 96, 0.2); }
+      .flexlayout__popup_menu_item--selected { background: rgba(233, 69, 96, 0.3); }
+
+      /* Error boundary */
+      .flexlayout__error_boundary_container { padding: 16px; color: #e94560; }
+      .flexlayout__error_boundary_content { font-family: monospace; white-space: pre-wrap; }
+
+      /* Floating window */
+      .flexlayout__floating_window_content { width: 100%; height: 100%; }
+
+      /* Mini scrollbar */
+      .flexlayout__mini_scrollbar { position: absolute; opacity: 0; transition: opacity 0.3s; }
+      .flexlayout__mini_scrollbar_container { position: relative; overflow: hidden; }
+
+      /* Tab border */
+      .flexlayout__tab_border { position: absolute; overflow: auto; }
+      .flexlayout__tab_border_top { }
+      .flexlayout__tab_border_bottom { }
+      .flexlayout__tab_border_left { }
+      .flexlayout__tab_border_right { }
+
+      /* Overflow count */
+      .flexlayout__tab_button_overflow_count { font-size: 0.75em; margin-left: 2px; }
     </style>
   </head>
   <body>

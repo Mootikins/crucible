@@ -18,6 +18,7 @@ export const Row: Component<IRowProps> = (props) => {
     const horizontal = () => props.node.getOrientation() === Orientation.HORZ;
 
     const items = (): JSX.Element[] => {
+        void props.layout.getRevision();
         const result: JSX.Element[] = [];
         const children = props.node.getChildren();
 
@@ -49,14 +50,17 @@ export const Row: Component<IRowProps> = (props) => {
         return result;
     };
 
-    const style = (): Record<string, any> => ({
-        "flex-grow": Math.max(1, props.node.getWeight() * 1000),
-        "min-width": props.node.getMinWidth() + "px",
-        "min-height": props.node.getMinHeight() + "px",
-        "max-width": props.node.getMaxWidth() + "px",
-        "max-height": props.node.getMaxHeight() + "px",
-        "flex-direction": horizontal() ? "row" : "column",
-    });
+    const style = (): Record<string, any> => {
+        void props.layout.getRevision();
+        return {
+            "flex-grow": Math.max(1, props.node.getWeight() * 1000),
+            "min-width": props.node.getMinWidth() + "px",
+            "min-height": props.node.getMinHeight() + "px",
+            "max-width": props.node.getMaxWidth() + "px",
+            "max-height": props.node.getMaxHeight() + "px",
+            "flex-direction": horizontal() ? "row" : "column",
+        };
+    };
 
     return (
         <div
