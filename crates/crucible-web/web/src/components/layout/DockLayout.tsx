@@ -1,5 +1,5 @@
 import { Component, onMount, onCleanup } from 'solid-js';
-import { createSolidDockview, type DockviewInstance, type DockviewApi } from '@/lib/solid-dockview';
+import { createSolidDockview, type DockviewInstance, type DockviewApi, type DockedSide } from '@/lib/solid-dockview';
 import { getGlobalRegistry } from '@/lib/panel-registry';
 import { loadZoneLayout, saveZoneLayout } from '@/lib/layout';
 import { SessionPanel } from '@/components/SessionPanel';
@@ -43,8 +43,8 @@ export const DockLayout: Component<DockLayoutProps> = (props) => {
     const registry = getGlobalRegistry();
     const componentMap = registry.getComponentMap();
     const defaultLayout = registry.getDefaultLayout();
-    const centerPanelIds = defaultLayout.center;
 
+    const centerPanelIds = defaultLayout.center;
     const panels = centerPanelIds.map((id, index) => {
       const def = registry.get(id);
       if (!def) {
@@ -77,6 +77,52 @@ export const DockLayout: Component<DockLayoutProps> = (props) => {
       }
     }
 
+    const zoneToSide: Record<string, DockedSide> = {
+      left: 'left',
+      right: 'right',
+      bottom: 'bottom',
+    };
+
+    for (const [zone, side] of Object.entries(zoneToSide)) {
+      const panelIds = defaultLayout[zone as keyof typeof defaultLayout];
+      if (panelIds.length === 0) continue;
+
+      const firstPanelId = panelIds[0];
+      const firstDef = registry.get(firstPanelId);
+      if (!firstDef) continue;
+
+      const firstPanel = instance.api.addPanel({
+        id: firstDef.id,
+        component: firstDef.id,
+        title: firstDef.title,
+      });
+
+      instance.component.addDockedGroup(firstPanel, {
+        side,
+        size: 300,
+        collapsed: false,
+      });
+
+      for (let i = 1; i < panelIds.length; i++) {
+        const def = registry.get(panelIds[i]);
+        if (!def) continue;
+
+        const dockedGroups = instance.component.getDockedGroups(side);
+        if (dockedGroups.length === 0) continue;
+
+        const group = dockedGroups[0].group;
+        instance.api.addPanel({
+          id: def.id,
+          component: def.id,
+          title: def.title,
+          position: {
+            referenceGroup: group.id,
+            direction: 'within',
+          },
+        });
+      }
+    }
+
     const layoutDisposable = instance.api.onDidLayoutChange(() => {
       if (instance) {
         const serialized = JSON.stringify(instance.api.toJSON());
@@ -84,9 +130,36 @@ export const DockLayout: Component<DockLayoutProps> = (props) => {
       }
     });
 
+    const handleKeyDown = (event: KeyboardEvent) => {
+      const target = event.target;
+      const isEditable = target instanceof HTMLInputElement ||
+        target instanceof HTMLTextAreaElement ||
+        (target instanceof HTMLElement && target.contentEditable === 'true');
+      if (isEditable) return;
+
+      const userAgentData = (navigator as Navigator & { userAgentData?: { platform?: string } }).userAgentData;
+      const isMac = userAgentData?.platform === 'macOS' ||
+        /Mac|iPod|iPhone|iPad/.test(navigator.userAgent);
+      const modifier = isMac ? event.metaKey : event.ctrlKey;
+      if (!modifier) return;
+
+      let side: DockedSide | null = null;
+      if (event.code === 'KeyB' && !event.shiftKey) side = 'left';
+      else if (event.code === 'KeyB' && event.shiftKey) side = 'right';
+      else if (event.code === 'KeyJ') side = 'bottom';
+
+      if (side && instance) {
+        event.preventDefault();
+        instance.component.toggleDockedSide(side);
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+
     props.onReady?.(instance.api);
 
     onCleanup(() => {
+      document.removeEventListener('keydown', handleKeyDown);
       layoutDisposable.dispose();
       instance?.dispose();
       instance = undefined;
