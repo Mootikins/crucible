@@ -45,7 +45,7 @@ export class PanelRegistry {
   }
 }
 
-/** Singleton registry shared across all dockview instances */
+/** Singleton registry shared across all layout instances */
 let globalRegistry: PanelRegistry | null = null;
 
 export function getGlobalRegistry(): PanelRegistry {
