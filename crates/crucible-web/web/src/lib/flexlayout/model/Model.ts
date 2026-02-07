@@ -22,7 +22,6 @@ export class Model {
 	private nodeRegistry = new Map<string, Node>();
 	private nextIdNum = 0;
 	private maximizedTabset?: TabSetNode;
-	private activeTabset?: TabSetNode;
 
 	constructor(json?: IJsonModel) {
 		this.borderSet = new BorderSet(this);
@@ -251,75 +250,95 @@ export class Model {
 	}
 
 	private actionMoveNode(data: any): void {
-		const { fromNodeId, toNodeId, index } = data;
+		const { fromNode: fromNodeId, toNode: toNodeId, location, index, select } = data;
 		const fromNode = this.getNodeById(fromNodeId);
 		const toNode = this.getNodeById(toNodeId);
 
 		if (!fromNode || !toNode) return;
 
-		const parent = fromNode.getParent();
-		if (parent) {
-			(parent as any).removeChild(fromNode);
+		if (fromNode instanceof TabNode || fromNode instanceof TabSetNode || fromNode instanceof RowNode) {
+			if (fromNode === this.getMaximizedTabset(fromNode.getWindowId())) {
+				const fromWindow = this.windowsMap.get(fromNode.getWindowId());
+				if (fromWindow) {
+					fromWindow.maximizedTabSet = undefined;
+				}
+			}
+			if (toNode instanceof TabSetNode || toNode instanceof BorderNode || toNode instanceof RowNode) {
+				(toNode as any).drop(fromNode, DockLocation.getByName(location), index, select);
+			}
 		}
-
-		if (toNode.getType() === "tabset" || toNode.getType() === "border") {
-			const insertIndex = index === -1 ? toNode.getChildren().length : index;
-			(toNode as any).addChild(fromNode, insertIndex);
-		}
+		this.removeEmptyWindows();
 	}
 
 	private actionDeleteTab(data: any): void {
-		const { tabId } = data;
-		const tab = this.getNodeById(tabId) as TabNode;
-		if (!tab) return;
-
-		const parent = tab.getParent();
-		if (parent) {
-			tab.fireEvent("close", {});
-			(parent as any).removeChild(tab);
-			this.nodeRegistry.delete(tabId);
+		const { node } = data;
+		const tab = this.getNodeById(node);
+		if (tab instanceof TabNode) {
+			tab.delete();
 		}
+		this.removeEmptyWindows();
 	}
 
 	private actionDeleteTabset(data: any): void {
-		const { tabsetId } = data;
-		const tabset = this.getNodeById(tabsetId);
-		if (!tabset) return;
+		const { node } = data;
+		const tabset = this.getNodeById(node);
 
-		const parent = tabset.getParent();
-		if (parent) {
-			(parent as any).removeChild(tabset);
-			this.nodeRegistry.delete(tabsetId);
+		if (tabset instanceof TabSetNode) {
+			// first delete all child tabs that are closeable
+			const children = [...tabset.getChildren()];
+			for (let i = 0; i < children.length; i++) {
+				const child = children[i];
+				if ((child as TabNode).isEnableClose()) {
+					(child as TabNode).delete();
+				}
+			}
+
+			if (tabset.getChildren().length === 0) {
+				tabset.delete();
+			}
+			this.tidy();
 		}
+		this.removeEmptyWindows();
 	}
 
 	private actionRenameTab(data: any): void {
-		const { tabId, newName } = data;
-		const tab = this.getNodeById(tabId) as TabNode;
+		const { node, text } = data;
+		const tab = this.getNodeById(node) as TabNode;
 		if (tab) {
-			tab.setName(newName);
+			tab.setName(text);
 		}
 	}
 
 	private actionSelectTab(data: any): void {
-		const { tabId } = data;
-		const tab = this.getNodeById(tabId) as TabNode;
-		if (!tab) return;
+		const { tabNode, windowId } = data;
+		const tab = this.getNodeById(tabNode) as TabNode;
+		const wId = windowId || Model.MAIN_WINDOW_ID;
+		const window = this.windowsMap.get(wId);
 
-		const parent = tab.getParent() as TabSetNode;
-		if (parent && parent.getType() === "tabset") {
-			const index = parent.getChildren().indexOf(tab);
-			if (index !== -1) {
-				(parent as any).setSelected(index);
+		if (tab && window) {
+			const parent = tab.getParent() as Node;
+			const pos = parent.getChildren().indexOf(tab);
+
+			if (parent instanceof BorderNode) {
+				if (parent.getSelected() === pos) {
+					parent.setSelected(-1);
+				} else {
+					parent.setSelected(pos);
+				}
+			} else if (parent instanceof TabSetNode) {
+				if (parent.getSelected() !== pos) {
+					parent.setSelected(pos);
+				}
+				window.activeTabSet = parent;
 			}
 		}
 	}
 
 	private actionSetActiveTabset(data: any): void {
-		const { tabsetId } = data;
-		const tabset = this.getNodeById(tabsetId) as TabSetNode;
+		const { tabsetNode, windowId } = data;
+		const tabset = this.getNodeById(tabsetNode) as TabSetNode;
 		if (tabset && tabset.getType() === "tabset") {
-			this.activeTabset = tabset;
+			this.setActiveTabset(tabset, windowId || Model.MAIN_WINDOW_ID);
 		}
 	}
 
@@ -438,16 +457,23 @@ export class Model {
 		return this.windowsMap;
 	}
 
-	getMaximizedTabset(): TabSetNode | undefined {
-		return this.maximizedTabset;
+	getMaximizedTabset(windowId: string = Model.MAIN_WINDOW_ID): TabSetNode | undefined {
+		return this.windowsMap.get(windowId)?.maximizedTabSet;
 	}
 
-	getActiveTabset(): TabSetNode | undefined {
-		return this.activeTabset;
+	getActiveTabset(windowId: string = Model.MAIN_WINDOW_ID): TabSetNode | undefined {
+		return this.windowsMap.get(windowId)?.activeTabSet;
 	}
 
-	setActiveTabset(tabset: TabSetNode): void {
-		this.activeTabset = tabset;
+	setActiveTabset(tabset: TabSetNode | undefined, windowId: string = Model.MAIN_WINDOW_ID): void {
+		const window = this.windowsMap.get(windowId);
+		if (window) {
+			if (tabset) {
+				window.activeTabSet = tabset;
+			} else {
+				window.activeTabSet = undefined;
+			}
+		}
 	}
 
 	getRoot(): Node | undefined {
@@ -468,11 +494,98 @@ export class Model {
 	}
 
 	tidy(): void {
-		// Placeholder for tidying layout
+		for (const [_, window] of this.windowsMap) {
+			if (window.root) {
+				window.root.tidy();
+			}
+		}
+	}
+
+	private visitWindowNodes(windowId: string, fn: (node: Node, level: number) => void): void {
+		if (this.windowsMap.has(windowId)) {
+			if (windowId === Model.MAIN_WINDOW_ID) {
+				this.borderSet.forEachNode(fn);
+			}
+			this.windowsMap.get(windowId)?.visitNodes(fn);
+		}
+	}
+
+	private removeEmptyWindows(): void {
+		const emptyWindows = new Set<string>();
+		for (const [windowId] of this.windowsMap) {
+			if (windowId !== Model.MAIN_WINDOW_ID) {
+				let count = 0;
+				this.visitWindowNodes(windowId, (node: Node) => {
+					if (node instanceof TabNode) {
+						count++;
+					}
+				});
+				if (count === 0) {
+					emptyWindows.add(windowId);
+				}
+			}
+		}
+
+		for (const windowId of emptyWindows) {
+			this.windowsMap.delete(windowId);
+		}
 	}
 
 	getAttribute(name: string): any {
-		return this.attributes[name];
+		const value = this.attributes[name];
+		if (value !== undefined) {
+			return value;
+		}
+
+		// Return default values for global attributes
+		switch (name) {
+			case "tabSetEnableDeleteWhenEmpty":
+				return true;
+			case "tabSetEnableDrop":
+				return true;
+			case "tabSetEnableDrag":
+				return true;
+			case "tabSetEnableDivide":
+				return true;
+			case "tabSetEnableMaximize":
+				return true;
+			case "tabSetEnableClose":
+				return false;
+			case "tabSetEnableSingleTabStretch":
+				return false;
+			case "tabSetAutoSelectTab":
+				return true;
+			case "tabSetEnableActiveIcon":
+				return false;
+			case "tabEnableClose":
+				return true;
+			case "tabEnableDrag":
+				return true;
+			case "tabEnableRename":
+				return true;
+			case "tabEnableRenderOnDemand":
+				return true;
+			case "tabDragSpeed":
+				return 0.3;
+			case "tabBorderWidth":
+				return -1;
+			case "tabBorderHeight":
+				return -1;
+			case "enableEdgeDock":
+				return true;
+			case "rootOrientationVertical":
+				return false;
+			case "enableRotateBorderIcons":
+				return true;
+			case "splitterSize":
+				return 8;
+			case "splitterExtra":
+				return 0;
+			case "splitterEnableHandle":
+				return false;
+			default:
+				return undefined;
+		}
 	}
 
 	getSplitterSize(): number {
