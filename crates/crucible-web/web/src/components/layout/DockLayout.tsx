@@ -46,84 +46,92 @@ export const DockLayout: Component<DockLayoutProps> = (props) => {
     const componentMap = registry.getComponentMap();
     const defaultLayout = registry.getDefaultLayout();
 
-    const centerPanelIds = defaultLayout.center;
-    const panels = centerPanelIds.map((id, index) => {
-      const def = registry.get(id);
-      if (!def) {
-        console.warn(`Panel definition not found for id: ${id}, skipping`);
-        return null;
-      }
-      return {
-        id: def.id,
-        title: def.title,
-        component: def.component,
-        position: index > 0 ? { referencePanel: centerPanelIds[0], direction: 'within' as const } : undefined,
-      };
-    }).filter((p): p is NonNullable<typeof p> => p !== null);
-
     const savedLayout = localStorage.getItem('crucible:layout');
-
-    instance = createSolidDockview({
-      container: containerRef,
-      panels,
-      componentMap,
-      className: 'dockview-theme-abyss',
-    });
+    let restored = false;
 
     if (savedLayout) {
+      instance = createSolidDockview({
+        container: containerRef,
+        panels: [],
+        componentMap,
+        className: 'dockview-theme-abyss',
+      });
+
       try {
-        const parsed = JSON.parse(savedLayout);
-        instance.api.fromJSON(parsed);
+        instance.api.fromJSON(JSON.parse(savedLayout));
+        restored = true;
       } catch {
-        /* keep default layout on restore failure */
+        instance.dispose();
+        instance = undefined;
       }
     }
 
-    const zoneToSide: Record<string, DockedSide> = {
-      left: 'left',
-      right: 'right',
-      bottom: 'bottom',
-    };
-
-    for (const [zone, side] of Object.entries(zoneToSide)) {
-      const panelIds = defaultLayout[zone as keyof typeof defaultLayout];
-      if (panelIds.length === 0) continue;
-
-      const firstPanelId = panelIds[0];
-      const firstDef = registry.get(firstPanelId);
-      if (!firstDef) continue;
-
-      const firstPanel = instance.api.addPanel({
-        id: firstDef.id,
-        component: firstDef.id,
-        title: firstDef.title,
-      });
-
-      instance.component.addDockedGroup(firstPanel, {
-        side,
-        size: 300,
-        collapsed: false,
-      });
-
-      for (let i = 1; i < panelIds.length; i++) {
-        const def = registry.get(panelIds[i]);
-        if (!def) continue;
-
-        const dockedGroups = instance.component.getDockedGroups(side);
-        if (dockedGroups.length === 0) continue;
-
-        const group = dockedGroups[0].group;
-        instance.api.addPanel({
+    if (!restored) {
+      const centerPanelIds = defaultLayout.center;
+      const panels = centerPanelIds.map((id, index) => {
+        const def = registry.get(id);
+        if (!def) return null;
+        return {
           id: def.id,
-          component: def.id,
           title: def.title,
-          position: {
-            referenceGroup: group.id,
-            direction: 'within',
-          },
+          component: def.component,
+          position: index > 0 ? { referencePanel: centerPanelIds[0], direction: 'within' as const } : undefined,
+        };
+      }).filter((p): p is NonNullable<typeof p> => p !== null);
+
+      instance = createSolidDockview({
+        container: containerRef,
+        panels,
+        componentMap,
+        className: 'dockview-theme-abyss',
+      });
+
+      const zoneToSide: Record<string, DockedSide> = {
+        left: 'left',
+        right: 'right',
+        bottom: 'bottom',
+      };
+
+      for (const [zone, side] of Object.entries(zoneToSide)) {
+        const panelIds = defaultLayout[zone as keyof typeof defaultLayout];
+        if (panelIds.length === 0) continue;
+
+        const firstDef = registry.get(panelIds[0]);
+        if (!firstDef) continue;
+
+        const firstPanel = instance.api.addPanel({
+          id: firstDef.id,
+          component: firstDef.id,
+          title: firstDef.title,
         });
+
+        instance.component.addDockedGroup(firstPanel, {
+          side,
+          size: 300,
+          collapsed: false,
+        });
+
+        for (let i = 1; i < panelIds.length; i++) {
+          const def = registry.get(panelIds[i]);
+          if (!def) continue;
+
+          const dockedGroups = instance.component.getDockedGroups(side);
+          if (dockedGroups.length === 0) continue;
+
+          instance.api.addPanel({
+            id: def.id,
+            component: def.id,
+            title: def.title,
+            position: {
+              referenceGroup: dockedGroups[0].group.id,
+              direction: 'within',
+            },
+          });
+        }
       }
     }
+
+    if (!instance) return;
 
     const layoutDisposable = instance.api.onDidLayoutChange(() => {
       if (instance) {
