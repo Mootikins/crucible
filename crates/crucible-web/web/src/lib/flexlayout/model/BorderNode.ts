@@ -140,6 +140,9 @@ export class BorderNode extends Node implements IDropTarget {
     toJson(): IJsonBorderNode {
         const json: any = {};
         BorderNode.attributeDefinitions.toJson(json, this.attributes);
+        if (json.id && /^\d+$/.test(json.id)) {
+            delete json.id;
+        }
         json.location = this.location.getName();
         json.children = this.children.map((child) => (child as TabNode).toJson());
         return json;
