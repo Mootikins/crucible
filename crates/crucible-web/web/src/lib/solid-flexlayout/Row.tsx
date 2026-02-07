@@ -32,7 +32,6 @@ export const Row: Component<IRowProps> = (props) => {
         for (let i = 0; i < children.length; i++) {
             const child = children[i];
 
-            // Add splitter before each child except the first
             if (i > 0) {
                 result.push({
                     type: 'splitter',
@@ -41,7 +40,6 @@ export const Row: Component<IRowProps> = (props) => {
                 });
             }
 
-            // Add the child (Row or TabSet)
             if (child instanceof RowNode) {
                 result.push({
                     type: 'row',
