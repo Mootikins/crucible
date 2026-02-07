@@ -892,6 +892,9 @@ export class DockviewComponent
                                     ?.overlay.toJSON();
 
                                 this.removeGroup(referenceGroup);
+                                break;
+                            case 'docked':
+                                this.removeGroup(referenceGroup);
 
                                 break;
                         }
@@ -1899,6 +1902,7 @@ export class DockviewComponent
                 });
             } else if (
                 referenceGroup.api.location.type === 'floating' ||
+                referenceGroup.api.location.type === 'docked' ||
                 target === 'center'
             ) {
                 panel = this.createPanel(options, referenceGroup);
@@ -2187,6 +2191,29 @@ export class DockviewComponent
 
                 remove(this._floatingGroups, floatingGroup);
                 floatingGroup.dispose();
+
+                if (!options?.skipActive && this._activeGroup === group) {
+                    const groups = Array.from(this._groups.values());
+
+                    this.doSetGroupAndPanelActive(
+                        groups.length > 0 ? groups[0].value : undefined
+                    );
+                }
+            }
+        } else if (group.api.location.type === 'docked') {
+            const dockedGroup = this._dockedGroups.find(
+                (_) => _.group === group
+            );
+
+            if (dockedGroup) {
+                if (!options?.skipDispose) {
+                    dockedGroup.group.dispose();
+                    this._groups.delete(group.id);
+                    this._onDidRemoveGroup.fire(group);
+                }
+
+                remove(this._dockedGroups, dockedGroup);
+                dockedGroup.dispose();
 
                 if (!options?.skipActive && this._activeGroup === group) {
                     const groups = Array.from(this._groups.values());
@@ -2567,6 +2594,18 @@ export class DockviewComponent
                     selectedFloatingGroup.dispose();
                     break;
                 }
+                case 'docked': {
+                    const selectedDockedGroup = this._dockedGroups.find(
+                        (x) => x.group === from
+                    );
+                    if (!selectedDockedGroup) {
+                        throw new Error(
+                            'dockview: failed to find docked group'
+                        );
+                    }
+                    selectedDockedGroup.dispose();
+                    break;
+                }
                 case 'popout': {
                     const selectedPopoutGroup = this._popoutGroups.find(
                         (x) => x.popoutGroup === from
@@ -2612,6 +2651,12 @@ export class DockviewComponent
                         from.model.dropTargetContainer =
                             this.rootDropTargetContainer;
                         from.model.location = { type: 'floating' };
+                    } else if (to.api.location.type === 'docked') {
+                        from.model.renderContainer =
+                            this.overlayRenderContainer;
+                        from.model.dropTargetContainer =
+                            this.rootDropTargetContainer;
+                        from.model.location = { type: 'docked', side: to.api.location.side };
                     }
 
                     break;

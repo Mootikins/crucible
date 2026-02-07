@@ -194,10 +194,15 @@ export class Tabs extends CompositeDisposable {
                 const isFloatingWithOnePanel =
                     this.group.api.location.type === 'floating' &&
                     this.size === 1;
+                
+                const isDockedWithOnePanel =
+                    this.group.api.location.type === 'docked' &&
+                    this.size === 1;
 
                 if (
                     isFloatingGroupsEnabled &&
                     !isFloatingWithOnePanel &&
+                    !isDockedWithOnePanel &&
                     event.shiftKey
                 ) {
                     event.preventDefault();
