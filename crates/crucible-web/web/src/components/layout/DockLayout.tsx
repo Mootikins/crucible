@@ -1,7 +1,7 @@
 import { Component, onMount, onCleanup } from 'solid-js';
 import { createSolidDockview, type DockviewInstance, type DockviewApi, type DockedSide } from '@/lib/solid-dockview';
 import { getGlobalRegistry } from '@/lib/panel-registry';
-import { loadZoneLayout, saveZoneLayout } from '@/lib/layout';
+import { migrateToDockedLayout } from '@/lib/layout';
 import { SessionPanel } from '@/components/SessionPanel';
 import { FilesPanel } from '@/components/FilesPanel';
 import { EditorPanel } from '@/components/EditorPanel';
@@ -40,6 +40,8 @@ export const DockLayout: Component<DockLayoutProps> = (props) => {
 
     if (!containerRef) return;
 
+    migrateToDockedLayout();
+
     const registry = getGlobalRegistry();
     const componentMap = registry.getComponentMap();
     const defaultLayout = registry.getDefaultLayout();
@@ -59,7 +61,7 @@ export const DockLayout: Component<DockLayoutProps> = (props) => {
       };
     }).filter((p): p is NonNullable<typeof p> => p !== null);
 
-    const savedLayout = loadZoneLayout('center');
+    const savedLayout = localStorage.getItem('crucible:layout');
 
     instance = createSolidDockview({
       container: containerRef,
@@ -126,7 +128,7 @@ export const DockLayout: Component<DockLayoutProps> = (props) => {
     const layoutDisposable = instance.api.onDidLayoutChange(() => {
       if (instance) {
         const serialized = JSON.stringify(instance.api.toJSON());
-        saveZoneLayout('center', serialized);
+        localStorage.setItem('crucible:layout', serialized);
       }
     });
 
