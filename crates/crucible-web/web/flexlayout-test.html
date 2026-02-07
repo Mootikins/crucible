@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>FlexLayout Smoke Test</title>
+    <style>
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      html, body { width: 100%; height: 100%; overflow: hidden; }
+
+      .flexlayout__layout { width: 100%; height: 100%; }
+      .flexlayout__layout_main { width: 100%; height: 100%; }
+      .flexlayout__row { display: flex; overflow: hidden; }
+      .flexlayout__tabset_container { display: flex; flex-direction: column; overflow: hidden; }
+      .flexlayout__tabset { display: flex; flex-direction: column; flex: 1; overflow: hidden; }
+      .flexlayout__tabset_content { flex: 1; position: relative; }
+      .flexlayout__tabset_tabbar_outer { display: flex; align-items: center; background: #16213e; border-bottom: 1px solid #0f3460; min-height: 32px; }
+      .flexlayout__tabset_tabbar_inner { display: flex; flex: 1; overflow-x: auto; overflow-y: hidden; }
+      .flexlayout__tabset_tabbar_inner_tab_container { display: flex; }
+      .flexlayout__tab_button { padding: 4px 12px; cursor: pointer; white-space: nowrap; color: #8899aa; border-bottom: 2px solid transparent; user-select: none; }
+      .flexlayout__tab_button:hover { color: #e0e0e0; }
+      .flexlayout__tab_button--selected { color: #e0e0e0; border-bottom-color: #e94560; background: rgba(233, 69, 96, 0.1); }
+      .flexlayout__tab_button--unselected { opacity: 0.7; }
+      .flexlayout__tab_button_content { display: flex; align-items: center; }
+      .flexlayout__tab { position: absolute; overflow: auto; }
+      .flexlayout__tab_toolbar { display: flex; align-items: center; padding: 0 4px; }
+      .flexlayout__tab_toolbar_button { cursor: pointer; padding: 2px 4px; color: #8899aa; background: none; border: none; }
+      .flexlayout__tab_toolbar_button:hover { color: #e0e0e0; }
+      .flexlayout__tabset-selected .flexlayout__tabset_tabbar_outer { border-bottom-color: #e94560; }
+      .flexlayout__tabset_tab_divider { width: 1px; background: #0f3460; margin: 4px 0; }
+      .flexlayout__tab_button_trailing { cursor: pointer; margin-left: 6px; opacity: 0.5; }
+      .flexlayout__tab_button_trailing:hover { opacity: 1; }
+      .flexlayout__splitter { background: #0f3460; }
+      .flexlayout__splitter:hover { background: #e94560; }
+      .flexlayout__layout_overlay { pointer-events: none; }
+      .flexlayout__outline_rect { position: absolute; border: 2px dashed #e94560; pointer-events: none; }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/pages/flexlayout-test.tsx"></script>
+  </body>
+</html>

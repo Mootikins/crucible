@@ -328,15 +328,24 @@ export const Layout: Component<ILayoutProps> = (props) => {
                     display: "flex",
                 }}
             >
-                {rect().width > 0 && props.model.getRoot() && (
-                    <Row
-                        layout={layoutContext()}
-                        node={props.model.getRoot() as RowNode}
-                    />
-                )}
+                {(() => {
+                    void revision();
+                    if (rect().width > 0 && props.model.getRoot()) {
+                        return (
+                            <Row
+                                layout={layoutContext()}
+                                node={props.model.getRoot() as RowNode}
+                            />
+                        );
+                    }
+                    return null;
+                }) as unknown as JSX.Element}
             </div>
 
-            {rect().width > 0 && renderTabs()}
+            {(() => {
+                void revision();
+                return rect().width > 0 ? renderTabs() : null;
+            }) as unknown as JSX.Element}
         </div>
     );
 
