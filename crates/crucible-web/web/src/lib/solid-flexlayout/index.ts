@@ -23,4 +23,6 @@ export { Overlay } from "./Overlay";
 export type { IOverlayProps } from "./Overlay";
 export { ErrorBoundary } from "./ErrorBoundary";
 export type { IErrorBoundaryProps } from "./ErrorBoundary";
+export { PopoutWindow } from "./PopoutWindow";
+export type { IPopoutWindowProps } from "./PopoutWindow";
 export { CloseIcon, MaximizeIcon, OverflowIcon, EdgeIcon, PopoutIcon, RestoreIcon, AsterickIcon, AddIcon, MenuIcon, SettingsIcon } from "./Icons";
