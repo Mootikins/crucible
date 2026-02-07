@@ -45,6 +45,7 @@ import {
     GroupPanelViewState,
     DockviewDidDropEvent,
     DockviewWillDropEvent,
+    DockedSide,
 } from './dockviewGroupPanelModel';
 import { DockviewWillShowOverlayLocationEvent } from './events';
 import { DockviewGroupPanel } from './dockviewGroupPanel';
@@ -62,6 +63,7 @@ import {
     watchElementResize,
 } from '../dom';
 import { DockviewFloatingGroupPanel } from './dockviewFloatingGroupPanel';
+import { DockviewDockedGroupPanel } from './dockviewDockedGroupPanel';
 import {
     GroupDragEvent,
     TabDragEvent,
@@ -140,6 +142,14 @@ export interface SerializedPopoutGroup {
     position: Box | null;
 }
 
+// NOTE(crucible): docked pane support - serialization interface
+export interface SerializedDockedGroup {
+    data: GroupPanelViewState;
+    side: DockedSide;
+    size: number;
+    collapsed: boolean;
+}
+
 export interface SerializedDockview {
     grid: {
         root: SerializedGridObject<GroupPanelViewState>;
@@ -190,6 +200,14 @@ export interface FloatingGroupOptionsInternal extends FloatingGroupOptions {
     skipRemoveGroup?: boolean;
     inDragMode?: boolean;
     skipActiveGroup?: boolean;
+}
+
+// NOTE(crucible): docked pane support - options interface
+export interface DockedGroupOptions {
+    side: DockedSide;
+    size?: number;
+    collapsed?: boolean;
+    index?: number;
 }
 
 export interface DockviewMaximizedGroupChanged {
@@ -347,6 +365,7 @@ export class DockviewComponent
     readonly onDidMaximizedGroupChange = this._onDidMaximizedGroupChange.event;
 
     private readonly _floatingGroups: DockviewFloatingGroupPanel[] = [];
+    private readonly _dockedGroups: DockviewDockedGroupPanel[] = [];
     private readonly _popoutGroups: {
         window: PopoutWindow;
         popoutGroup: DockviewGroupPanel;
@@ -409,6 +428,25 @@ export class DockviewComponent
 
     get floatingGroups(): DockviewFloatingGroupPanel[] {
         return this._floatingGroups;
+    }
+
+    get dockedGroups(): ReadonlyArray<DockviewDockedGroupPanel> {
+        return this._dockedGroups;
+    }
+
+    addDockedGroup(
+        item: IDockviewPanel | DockviewGroupPanel,
+        options: DockedGroupOptions
+    ): DockviewDockedGroupPanel {
+        throw new Error('Not implemented - Task 3');
+    }
+
+    removeDockedGroup(group: DockviewDockedGroupPanel): void {
+        throw new Error('Not implemented - Task 3');
+    }
+
+    getDockedGroups(side: DockedSide): DockviewDockedGroupPanel[] {
+        return this._dockedGroups.filter(g => g.side === side);
     }
 
     /**
@@ -663,6 +701,19 @@ export class DockviewComponent
 
                 if (item) {
                     item.overlay.setVisible(visible);
+                    panel.api._onDidVisibilityChange.fire({
+                        isVisible: visible,
+                    });
+                }
+                break;
+            }
+            case 'docked': {
+                const item = this._dockedGroups.find(
+                    (dockedGroup) => dockedGroup.group === panel
+                );
+
+                if (item) {
+                    item.element.style.display = visible ? '' : 'none';
                     panel.api._onDidVisibilityChange.fire({
                         isVisible: visible,
                     });
