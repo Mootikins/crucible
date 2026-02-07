@@ -2384,10 +2384,10 @@ export class DockviewComponent
                     );
                 }
 
-                return floatingGroup.group;
+                return dockedGroup.group;
             }
 
-            throw new Error('dockview: failed to find floating group');
+            throw new Error('dockview: failed to find docked group');
         }
 
         if (group.api.location.type === 'popout') {
