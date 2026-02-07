@@ -1,4 +1,4 @@
-import { Component, JSX } from "solid-js";
+import { Component, JSX, createEffect } from "solid-js";
 import { TabNode } from "../flexlayout/model/TabNode";
 import { TabSetNode } from "../flexlayout/model/TabSetNode";
 import { CLASSES } from "../flexlayout/core/Types";
@@ -14,10 +14,28 @@ export interface ITabSetProps {
 export const TabSet: Component<ITabSetProps> = (props) => {
     let selfRef: HTMLDivElement | undefined;
     let contentRef: HTMLDivElement | undefined;
+    let tabStripRef: HTMLDivElement | undefined;
 
     const cm = props.layout.getClassName;
     const node = props.node;
     const path = () => node.getPath();
+
+    createEffect(() => {
+        void props.layout.getRevision();
+        if (selfRef) {
+            node.setRect(props.layout.getBoundingClientRect(selfRef));
+        }
+        if (tabStripRef) {
+            node.setTabStripRect(props.layout.getBoundingClientRect(tabStripRef));
+        }
+        if (contentRef) {
+            const newContentRect = props.layout.getBoundingClientRect(contentRef);
+            if (!node.getContentRect().equals(newContentRect) && !isNaN(newContentRect.x)) {
+                node.setContentRect(newContentRect);
+                props.layout.redraw();
+            }
+        }
+    });
 
     const onPointerDown = () => {
         props.layout.doAction(
@@ -57,6 +75,7 @@ export const TabSet: Component<ITabSetProps> = (props) => {
     };
 
     const renderTabStrip = (): JSX.Element => {
+        void props.layout.getRevision();
         const tabs: JSX.Element[] = [];
         const children = node.getChildren();
 
@@ -147,6 +166,7 @@ export const TabSet: Component<ITabSetProps> = (props) => {
 
         return (
             <div
+                ref={tabStripRef}
                 class={tabStripClasses}
                 data-layout-path={path() + "/tabstrip"}
                 onPointerDown={onPointerDown}
@@ -170,6 +190,7 @@ export const TabSet: Component<ITabSetProps> = (props) => {
     };
 
     const style = (): Record<string, any> => {
+        void props.layout.getRevision();
         const s: Record<string, any> = {
             "flex-grow": Math.max(1, node.getWeight() * 1000),
             "min-width": node.getMinWidth() + "px",
