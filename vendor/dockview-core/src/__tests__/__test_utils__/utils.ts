@@ -1,4 +1,4 @@
-import React from 'react';
+// NOTE(crucible): Removed React import and setMockRefElement (React-specific, not used in dockview-core tests)
 
 /**
  * useful utility type to erase readonly signatures for testing purposes
@@ -8,19 +8,6 @@ import React from 'react';
 export type Writable<T> = T extends object
     ? { -readonly [K in keyof T]: Writable<T[K]> }
     : T;
-
-export function setMockRefElement(node: Partial<HTMLElement>): void {
-    const mockRef = {
-        get current() {
-            return node;
-        },
-        set current(_value) {
-            //noop
-        },
-    };
-
-    jest.spyOn(React, 'useRef').mockReturnValueOnce(mockRef);
-}
 
 export function createOffsetDragOverEvent(params: {
     clientX: number;
