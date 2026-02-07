@@ -3,11 +3,16 @@ import { twoTabs, withBorders, threeTabs } from "./fixtures";
 import { Model } from "../model/Model";
 import { Action } from "../model/Action";
 
+// Global variables for pathMap and tabs
+let pathMap: Record<string, any> = {};
+let tabs = "";
+
 /**
  * textRender converts a model tree to a path string format for test assertions
  * Format: /ts0/t0[TabName]* where * indicates selected tab
  */
 function textRender(model: Model): string {
+  pathMap = {};
   const tabsArray: string[] = [];
 
   // Process borders first
@@ -26,7 +31,8 @@ function textRender(model: Model): string {
     textRenderNode(model.getRoot(), "", tabsArray);
   }
 
-  return tabsArray.join(",");
+  tabs = tabsArray.join(",");
+  return tabs;
 }
 
 function textRenderBorder(
@@ -34,9 +40,11 @@ function textRenderBorder(
   path: string,
   tabsArray: string[]
 ): void {
+  pathMap[path] = border;
   let index = 0;
   for (const tab of border.getChildren()) {
     const tabPath = `${path}/t${index}`;
+    pathMap[tabPath] = tab;
     const name = tab.getName() || "";
     const isSelected = index === (border as any).getSelected();
     tabsArray.push(`${tabPath}[${name}]${isSelected ? "*" : ""}`);
@@ -45,6 +53,7 @@ function textRenderBorder(
 }
 
 function textRenderNode(node: any, path: string, tabsArray: string[]): void {
+  pathMap[path] = node;
   const type = node.getType();
 
   if (type === "row") {
@@ -66,9 +75,11 @@ function textRenderNode(node: any, path: string, tabsArray: string[]): void {
 }
 
 function textRenderTabset(tabset: any, path: string, tabsArray: string[]): void {
+  pathMap[path] = tabset;
   let tabIndex = 0;
   for (const tab of tabset.getChildren()) {
     const tabPath = `${path}/t${tabIndex}`;
+    pathMap[tabPath] = tab;
     const name = tab.getName() || "";
     const isSelected = tabIndex === tabset.getSelected();
     tabsArray.push(`${tabPath}[${name}]${isSelected ? "*" : ""}`);
@@ -106,8 +117,9 @@ describe("Tree > Actions > Add", () => {
 
   it("add to tabset center", () => {
     model = Model.fromJson(twoTabs);
-    const ts0 = model.getNodeById("ts0");
-    const ts1 = model.getNodeById("ts1");
+    textRender(model);
+    const ts0 = tabset("/ts0");
+    const ts1 = tabset("/ts1");
 
     model.doAction(
       Action.addNode(
@@ -146,7 +158,8 @@ describe("Tree > Actions > Add", () => {
 
   it("add to tabset at position", () => {
     model = Model.fromJson(twoTabs);
-    const ts0 = model.getNodeById("ts0");
+    textRender(model);
+    const ts0 = tabset("/ts0");
 
     model.doAction(
       Action.addNode(
@@ -203,7 +216,8 @@ describe("Tree > Actions > Add", () => {
 
   it("add to tabset top", () => {
     model = Model.fromJson(twoTabs);
-    const ts0 = model.getNodeById("ts0");
+    textRender(model);
+    const ts0 = tabset("/ts0");
 
     model.doAction(
       Action.addNode(
@@ -228,7 +242,7 @@ describe("Tree > Actions > Add", () => {
           name: "newtab2",
           component: "grid",
         },
-        model.getNodeById("ts1")?.getId() || "",
+        tabset("/ts1")?.getId() || "",
         "top",
         -1
       )
@@ -242,7 +256,8 @@ describe("Tree > Actions > Add", () => {
 
   it("add to tabset bottom", () => {
     model = Model.fromJson(twoTabs);
-    const ts0 = model.getNodeById("ts0");
+    textRender(model);
+    const ts0 = tabset("/ts0");
 
     model.doAction(
       Action.addNode(
@@ -267,7 +282,7 @@ describe("Tree > Actions > Add", () => {
           name: "newtab2",
           component: "grid",
         },
-        model.getNodeById("ts1")?.getId() || "",
+        tabset("/ts1")?.getId() || "",
         "bottom",
         -1
       )
@@ -281,7 +296,8 @@ describe("Tree > Actions > Add", () => {
 
   it("add to tabset left", () => {
     model = Model.fromJson(twoTabs);
-    const ts0 = model.getNodeById("ts0");
+    textRender(model);
+    const ts0 = tabset("/ts0");
 
     model.doAction(
       Action.addNode(
@@ -306,7 +322,7 @@ describe("Tree > Actions > Add", () => {
           name: "newtab2",
           component: "grid",
         },
-        model.getNodeById("ts2")?.getId() || "",
+        tabset("/ts2")?.getId() || "",
         "left",
         -1
       )
@@ -320,7 +336,8 @@ describe("Tree > Actions > Add", () => {
 
   it("add to tabset right", () => {
     model = Model.fromJson(twoTabs);
-    const ts0 = model.getNodeById("ts0");
+    textRender(model);
+    const ts0 = tabset("/ts0");
 
     model.doAction(
       Action.addNode(
@@ -345,7 +362,7 @@ describe("Tree > Actions > Add", () => {
           name: "newtab2",
           component: "grid",
         },
-        model.getNodeById("ts2")?.getId() || "",
+        tabset("/ts2")?.getId() || "",
         "right",
         -1
       )
@@ -589,11 +606,12 @@ describe("Tree > Actions > Move", () => {
 
   it("move to center", () => {
     model = Model.fromJson(threeTabs);
-    const ts1 = model.getNodeById("ts1");
-    const t1 = ts1?.getChildren()[0];
+    textRender(model);
+    const ts0 = tabset("/ts0");
+    const t0 = ts0?.getChildren()[0];
 
     model.doAction(
-      Action.moveNode(t1?.getId() || "", model.getNodeById("ts0")?.getId() || "", "center", -1)
+      Action.moveNode(t0?.getId() || "", tabset("/ts1")?.getId() || "", "center", -1)
     );
 
     const tabs = textRender(model);
@@ -602,22 +620,22 @@ describe("Tree > Actions > Move", () => {
 
   it("move to center position", () => {
     model = Model.fromJson(threeTabs);
-    const ts1 = model.getNodeById("ts1");
-    const t1 = ts1?.getChildren()[0];
+    textRender(model);
+    const ts0 = tabset("/ts0");
+    const t0 = ts0?.getChildren()[0];
 
     model.doAction(
-      Action.moveNode(t1?.getId() || "", model.getNodeById("ts0")?.getId() || "", "center", 1)
+      Action.moveNode(t0?.getId() || "", tabset("/ts1")?.getId() || "", "center", 0)
     );
 
     let tabs = textRender(model);
     expect(tabs).equal("/ts0/t0[One]*,/ts0/t1[Two],/ts1/t0[Three]*");
 
-    model = Model.fromJson(threeTabs);
-    const ts2 = model.getNodeById("ts2");
-    const t2 = ts2?.getChildren()[0];
+    const ts1_after = tabset("/ts1");
+    const t1_after = ts1_after?.getChildren()[0];
 
     model.doAction(
-      Action.moveNode(t2?.getId() || "", model.getNodeById("ts0")?.getId() || "", "center", 2)
+      Action.moveNode(t1_after?.getId() || "", tabset("/ts0")?.getId() || "", "center", 1)
     );
 
     tabs = textRender(model);
@@ -626,11 +644,12 @@ describe("Tree > Actions > Move", () => {
 
   it("move to top", () => {
     model = Model.fromJson(threeTabs);
-    const ts1 = model.getNodeById("ts1");
-    const t1 = ts1?.getChildren()[0];
+    textRender(model);
+    const ts0 = tabset("/ts0");
+    const t0 = ts0?.getChildren()[0];
 
     model.doAction(
-      Action.moveNode(t1?.getId() || "", model.getNodeById("ts0")?.getId() || "", "top", -1)
+      Action.moveNode(t0?.getId() || "", tabset("/ts1")?.getId() || "", "top", -1)
     );
 
     const tabs = textRender(model);
@@ -639,11 +658,12 @@ describe("Tree > Actions > Move", () => {
 
   it("move to bottom", () => {
     model = Model.fromJson(threeTabs);
-    const ts1 = model.getNodeById("ts1");
-    const t1 = ts1?.getChildren()[0];
+    textRender(model);
+    const ts0 = tabset("/ts0");
+    const t0 = ts0?.getChildren()[0];
 
     model.doAction(
-      Action.moveNode(t1?.getId() || "", model.getNodeById("ts0")?.getId() || "", "bottom", -1)
+      Action.moveNode(t0?.getId() || "", tabset("/ts1")?.getId() || "", "bottom", -1)
     );
 
     const tabs = textRender(model);
@@ -652,11 +672,12 @@ describe("Tree > Actions > Move", () => {
 
   it("move to left", () => {
     model = Model.fromJson(threeTabs);
-    const ts1 = model.getNodeById("ts1");
-    const t1 = ts1?.getChildren()[0];
+    textRender(model);
+    const ts0 = tabset("/ts0");
+    const t0 = ts0?.getChildren()[0];
 
     model.doAction(
-      Action.moveNode(t1?.getId() || "", model.getNodeById("ts0")?.getId() || "", "left", -1)
+      Action.moveNode(t0?.getId() || "", tabset("/ts1")?.getId() || "", "left", -1)
     );
 
     const tabs = textRender(model);
@@ -665,11 +686,12 @@ describe("Tree > Actions > Move", () => {
 
   it("move to right", () => {
     model = Model.fromJson(threeTabs);
-    const ts0 = model.getNodeById("ts0");
+    textRender(model);
+    const ts0 = tabset("/ts0");
     const t0 = ts0?.getChildren()[0];
 
     model.doAction(
-      Action.moveNode(t0?.getId() || "", model.getNodeById("ts1")?.getId() || "", "center", -1)
+      Action.moveNode(t0?.getId() || "", tabset("/ts1")?.getId() || "", "right", -1)
     );
 
     const tabs = textRender(model);
@@ -682,7 +704,8 @@ describe("Tree > Actions > Move to/from borders", () => {
 
   it("move to border top", () => {
     model = Model.fromJson(withBorders);
-    const ts0 = model.getNodeById("ts0");
+    textRender(model);
+    const ts0 = tabset("/ts0");
     const t0 = ts0?.getChildren()[0];
 
     model.doAction(
@@ -702,7 +725,8 @@ describe("Tree > Actions > Move to/from borders", () => {
 
   it("move to border bottom", () => {
     model = Model.fromJson(withBorders);
-    const ts0 = model.getNodeById("ts0");
+    textRender(model);
+    const ts0 = tabset("/ts0");
     const t0 = ts0?.getChildren()[0];
 
     model.doAction(
@@ -722,7 +746,8 @@ describe("Tree > Actions > Move to/from borders", () => {
 
   it("move to border left", () => {
     model = Model.fromJson(withBorders);
-    const ts0 = model.getNodeById("ts0");
+    textRender(model);
+    const ts0 = tabset("/ts0");
     const t0 = ts0?.getChildren()[0];
 
     model.doAction(
@@ -742,7 +767,8 @@ describe("Tree > Actions > Move to/from borders", () => {
 
   it("move to border right", () => {
     model = Model.fromJson(withBorders);
-    const ts0 = model.getNodeById("ts0");
+    textRender(model);
+    const ts0 = tabset("/ts0");
     const t0 = ts0?.getChildren()[0];
 
     model.doAction(
@@ -762,6 +788,7 @@ describe("Tree > Actions > Move to/from borders", () => {
 
   it("move from border top", () => {
     model = Model.fromJson(withBorders);
+    textRender(model);
     const topBorder = model.getBorderSet().getBorder("top");
     const t0 = topBorder?.getChildren()[0];
 
@@ -776,12 +803,13 @@ describe("Tree > Actions > Move to/from borders", () => {
 
     const tabs = textRender(model);
     expect(tabs).equal(
-      "/b/bottom/t0[bottom1],/b/bottom/t1[bottom2],/b/left/t0[left1],/b/right/t0[right1],/ts0/t0[One],/ts0/t1[top1]*"
+      "/b/bottom/t0[bottom1],/b/bottom/t1[bottom2],/b/left/t0[left1],/b/right/t0[right1],/ts0/t0[One]*,/ts1/t0[top1]*"
     );
   });
 
   it("move from border bottom", () => {
     model = Model.fromJson(withBorders);
+    textRender(model);
     const bottomBorder = model.getBorderSet().getBorder("bottom");
     const t0 = bottomBorder?.getChildren()[0];
 
@@ -796,12 +824,13 @@ describe("Tree > Actions > Move to/from borders", () => {
 
     const tabs = textRender(model);
     expect(tabs).equal(
-      "/b/top/t0[top1],/b/bottom/t0[bottom2],/b/left/t0[left1],/b/right/t0[right1],/ts0/t0[One],/ts0/t1[bottom1]*"
+      "/b/top/t0[top1],/b/bottom/t0[bottom2],/b/left/t0[left1],/b/right/t0[right1],/ts0/t0[One]*,/ts1/t0[bottom1]*"
     );
   });
 
   it("move from border left", () => {
     model = Model.fromJson(withBorders);
+    textRender(model);
     const leftBorder = model.getBorderSet().getBorder("left");
     const t0 = leftBorder?.getChildren()[0];
 
@@ -816,12 +845,13 @@ describe("Tree > Actions > Move to/from borders", () => {
 
     const tabs = textRender(model);
     expect(tabs).equal(
-      "/b/top/t0[top1],/b/bottom/t0[bottom1],/b/bottom/t1[bottom2],/b/right/t0[right1],/ts0/t0[One],/ts0/t1[left1]*"
+      "/b/top/t0[top1],/b/bottom/t0[bottom1],/b/bottom/t1[bottom2],/b/right/t0[right1],/ts0/t0[One]*,/ts1/t0[left1]*"
     );
   });
 
   it("move from border right", () => {
     model = Model.fromJson(withBorders);
+    textRender(model);
     const rightBorder = model.getBorderSet().getBorder("right");
     const t0 = rightBorder?.getChildren()[0];
 
@@ -836,7 +866,7 @@ describe("Tree > Actions > Move to/from borders", () => {
 
     const tabs = textRender(model);
     expect(tabs).equal(
-      "/b/top/t0[top1],/b/bottom/t0[bottom1],/b/bottom/t1[bottom2],/b/left/t0[left1],/ts0/t0[One],/ts0/t1[right1]*"
+      "/b/top/t0[top1],/b/bottom/t0[bottom1],/b/bottom/t1[bottom2],/b/left/t0[left1],/ts0/t0[One]*,/ts1/t0[right1]*"
     );
   });
 });
@@ -846,7 +876,8 @@ describe("Tree > Actions > Delete", () => {
 
   it("delete from tabset with 1 tab", () => {
     model = Model.fromJson(threeTabs);
-    const ts0 = model.getNodeById("ts0");
+    textRender(model);
+    const ts0 = tabset("/ts0");
     const t0 = ts0?.getChildren()[0];
 
     model.doAction(Action.deleteTab(t0?.getId() || ""));
@@ -857,23 +888,34 @@ describe("Tree > Actions > Delete", () => {
 
   it("delete tab from tabset with 3 tabs", () => {
     model = Model.fromJson(threeTabs);
-    const ts0 = model.getNodeById("ts0");
+    textRender(model);
+    const ts0 = tabset("/ts0");
+    const t0 = ts0?.getChildren()[0];
 
     model.doAction(
-      Action.addNode(
-        {
-          type: "tab",
-          name: "Four",
-          component: "grid",
-        },
-        ts0?.getId() || "",
+      Action.moveNode(
+        t0?.getId() || "",
+        tabset("/ts1")?.getId() || "",
         "center",
         -1
       )
     );
 
-    const t0 = ts0?.getChildren()[0];
-    model.doAction(Action.deleteTab(t0?.getId() || ""));
+    textRender(model);
+    const ts1_2 = tabset("/ts1");
+    const t1_2 = ts1_2?.getChildren()[0];
+
+    model.doAction(
+      Action.moveNode(
+        t1_2?.getId() || "",
+        tabset("/ts0")?.getId() || "",
+        "center",
+        -1
+      )
+    );
+
+    textRender(model);
+    model.doAction(Action.deleteTab(tabset("/ts0")?.getChildren()[1]?.getId() || ""));
 
     const tabs = textRender(model);
     expect(tabs).equal("/ts0/t0[Two],/ts0/t1[Three]*");
@@ -881,9 +923,21 @@ describe("Tree > Actions > Delete", () => {
 
   it("delete tabset", () => {
     model = Model.fromJson(threeTabs);
-    const ts0 = model.getNodeById("ts0");
+    textRender(model);
+    const ts0 = tabset("/ts0");
+    const ts1 = tabset("/ts1");
 
-    model.doAction(Action.deleteTabset(ts0?.getId() || ""));
+    model.doAction(
+      Action.moveNode(
+        ts0?.getChildren()[0]?.getId() || "",
+        ts1?.getId() || "",
+        "center",
+        -1
+      )
+    );
+
+    textRender(model);
+    model.doAction(Action.deleteTabset(tabset("/ts0")?.getId() || ""));
 
     const tabs = textRender(model);
     expect(tabs).equal("/ts0/t0[Three]*");
@@ -891,6 +945,7 @@ describe("Tree > Actions > Delete", () => {
 
   it("delete tab from borders", () => {
     model = Model.fromJson(withBorders);
+    textRender(model);
     const topBorder = model.getBorderSet().getBorder("top");
     const t0 = topBorder?.getChildren()[0];
 
@@ -910,8 +965,8 @@ describe("Tree > Actions > Delete", () => {
       "/b/bottom/t0[bottom2],/b/left/t0[left1],/b/right/t0[right1],/ts0/t0[One]*"
     );
 
-    const leftBorder = model.getBorderSet().getBorder("left");
-    const t2 = leftBorder?.getChildren()[0];
+    const bottomBorder2 = model.getBorderSet().getBorder("bottom");
+    const t2 = bottomBorder2?.getChildren()[0];
     model.doAction(Action.deleteTab(t2?.getId() || ""));
 
     tabs = textRender(model);
@@ -919,13 +974,14 @@ describe("Tree > Actions > Delete", () => {
       "/b/left/t0[left1],/b/right/t0[right1],/ts0/t0[One]*"
     );
 
-    const rightBorder = model.getBorderSet().getBorder("right");
-    const t3 = rightBorder?.getChildren()[0];
+    const leftBorder = model.getBorderSet().getBorder("left");
+    const t3 = leftBorder?.getChildren()[0];
     model.doAction(Action.deleteTab(t3?.getId() || ""));
 
     tabs = textRender(model);
     expect(tabs).equal("/b/right/t0[right1],/ts0/t0[One]*");
 
+    const rightBorder = model.getBorderSet().getBorder("right");
     const t4 = rightBorder?.getChildren()[0];
     model.doAction(Action.deleteTab(t4?.getId() || ""));
 
@@ -939,7 +995,8 @@ describe("Tree > Actions > Other Actions", () => {
 
   it("rename tab", () => {
     model = Model.fromJson(twoTabs);
-    const ts0 = model.getNodeById("ts0");
+    textRender(model);
+    const ts0 = tabset("/ts0");
     const t0 = ts0?.getChildren()[0];
 
     model.doAction(Action.renameTab(t0?.getId() || "", "renamed"));
@@ -950,7 +1007,8 @@ describe("Tree > Actions > Other Actions", () => {
 
   it("select tab", () => {
     model = Model.fromJson(twoTabs);
-    const ts0 = model.getNodeById("ts0");
+    textRender(model);
+    const ts0 = tabset("/ts0");
 
     model.doAction(
       Action.addNode(
@@ -974,8 +1032,9 @@ describe("Tree > Actions > Other Actions", () => {
 
   it("set active tabset", () => {
     model = Model.fromJson(twoTabs);
-    const ts0 = model.getNodeById("ts0") as any;
-    const ts1 = model.getNodeById("ts1") as any;
+    textRender(model);
+    const ts0 = tabset("/ts0") as any;
+    const ts1 = tabset("/ts1") as any;
 
     expect(ts0?.isActive()).equal(false);
     expect(ts1?.isActive()).equal(false);
@@ -995,19 +1054,21 @@ describe("Tree > Actions > Other Actions", () => {
 
   it("maximize tabset", () => {
     model = Model.fromJson(twoTabs);
-    const ts0 = model.getNodeById("ts0");
-    const ts1 = model.getNodeById("ts1");
+    textRender(model);
+    const ts0 = tabset("/ts0");
+    const ts1 = tabset("/ts1");
 
     model.doAction(Action.maximizeToggle(ts0?.getId() || ""));
 
-    expect(tabset(ts0)?.isMaximized()).equals(false);
-    expect(tabset(ts1)?.isMaximized()).equals(false);
+    expect(ts0?.isMaximized()).equals(false);
+    expect(ts1?.isMaximized()).equals(false);
     expect(model.getMaximizedTabset()).equals(undefined);
   });
 
   it("set tab attributes", () => {
     model = Model.fromJson(twoTabs);
-    const ts1 = model.getNodeById("ts1");
+    textRender(model);
+    const ts1 = tabset("/ts1");
     const t0 = ts1?.getChildren()[0];
 
     model.doAction(
@@ -1016,7 +1077,7 @@ describe("Tree > Actions > Other Actions", () => {
       })
     );
 
-    expect(tab(t0)?.getConfig()).equals("newConfig");
+    expect(t0?.getConfig()).equals("newConfig");
   });
 
   it("set model attributes", () => {
@@ -1037,7 +1098,8 @@ describe("Tree > Node events", () => {
 
   it("close tab", () => {
     model = Model.fromJson(twoTabs);
-    const ts0 = model.getNodeById("ts0");
+    textRender(model);
+    const ts0 = tabset("/ts0");
     const t0 = ts0?.getChildren()[0];
 
     let closed = false;
@@ -1052,7 +1114,8 @@ describe("Tree > Node events", () => {
 
   it("save tab", () => {
     model = Model.fromJson(twoTabs);
-    const ts0 = model.getNodeById("ts0");
+    textRender(model);
+    const ts0 = tabset("/ts0");
     const t0 = ts0?.getChildren()[0];
 
     let saved = false;
@@ -1066,11 +1129,6 @@ describe("Tree > Node events", () => {
   });
 });
 
-// Helper functions
-function tab(node: any): any {
-  return node;
-}
-
-function tabset(node: any): any {
-  return node;
+function tabset(path: string): any {
+  return pathMap[path];
 }
