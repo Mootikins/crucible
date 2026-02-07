@@ -1,3 +1,4 @@
+/// <reference lib="dom" />
 import { describe, it, expect, beforeEach } from 'vitest';
 import { DockedPanel, DockedSide } from '../docked/DockedPanel';
 
