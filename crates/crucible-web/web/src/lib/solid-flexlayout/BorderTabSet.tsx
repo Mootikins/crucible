@@ -1,4 +1,4 @@
-import { Component, JSX } from "solid-js";
+import { Component, JSX, createEffect } from "solid-js";
 import { BorderNode } from "../flexlayout/model/BorderNode";
 import { TabNode } from "../flexlayout/model/TabNode";
 import { DockLocation } from "../flexlayout/core/DockLocation";
@@ -14,8 +14,16 @@ export interface IBorderTabSetProps {
 }
 
 export const BorderTabSet: Component<IBorderTabSetProps> = (props) => {
+    let selfRef: HTMLDivElement | undefined;
     const cm = props.layout.getClassName;
     const border = props.border;
+
+    createEffect(() => {
+        void props.layout.getRevision();
+        if (selfRef) {
+            border.setTabHeaderRect(props.layout.getBoundingClientRect(selfRef));
+        }
+    });
 
     const borderClasses = (): string => {
         let classes = cm(CLASSES.FLEXLAYOUT__BORDER) + " " + cm(CLASSES.FLEXLAYOUT__BORDER_ + border.getLocation().getName());
@@ -89,6 +97,7 @@ export const BorderTabSet: Component<IBorderTabSetProps> = (props) => {
 
     return (
         <div
+            ref={selfRef}
             style={{
                 display: "flex",
                 "flex-direction": border.getOrientation() === Orientation.VERT ? "row" : "column",

@@ -9,13 +9,13 @@
       html, body { width: 100%; height: 100%; overflow: hidden; }
 
       /* Layout root */
-      .flexlayout__layout { width: 100%; height: 100%; }
-      .flexlayout__layout_main { width: 100%; height: 100%; }
+      .flexlayout__layout { width: 100%; height: 100%; display: flex; overflow: hidden; position: relative; }
+      .flexlayout__layout_main { display: flex; flex-basis: 0px; min-width: 0; min-height: 0; flex-grow: 1; position: relative; }
       .flexlayout__layout_overlay { pointer-events: none; }
       .flexlayout__layout_moveables { position: absolute; inset: 0; pointer-events: none; }
       .flexlayout__layout_tab_stamps { display: none; }
-      .flexlayout__layout_border_container { position: absolute; }
-      .flexlayout__layout_border_container_inner { position: absolute; }
+      .flexlayout__layout_border_container { display: flex; flex-basis: 0px; min-width: 0; min-height: 0; flex-grow: 1; }
+      .flexlayout__layout_border_container_inner { display: flex; flex-basis: 0px; min-width: 0; min-height: 0; flex-grow: 1; }
 
       /* Row */
       .flexlayout__row { display: flex; overflow: hidden; }
@@ -108,7 +108,7 @@
       .flexlayout__border_inner_tab_container_bottom { flex-direction: row; }
       .flexlayout__border_inner_tab_container_left { flex-direction: column; }
       .flexlayout__border_inner_tab_container_right { flex-direction: column; }
-      .flexlayout__border_tab_contents { position: absolute; overflow: auto; }
+      .flexlayout__border_tab_contents { overflow: auto; box-sizing: border-box; }
       .flexlayout__border_tab_divider { background: #0f3460; }
       .flexlayout__border_leading { display: flex; align-items: center; }
 
