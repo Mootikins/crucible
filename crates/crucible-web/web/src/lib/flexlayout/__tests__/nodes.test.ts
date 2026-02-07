@@ -1,3 +1,4 @@
+/// <reference lib="dom" />
 import { describe, it, expect, beforeEach } from "vitest";
 import { TabNode } from "../model/TabNode";
 import { TabSetNode } from "../model/TabSetNode";

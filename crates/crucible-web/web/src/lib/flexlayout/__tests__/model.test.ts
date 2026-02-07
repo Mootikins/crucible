@@ -108,11 +108,11 @@ describe("Tree > Actions > Add", () => {
     });
 
     const tabs = textRender(model);
-    expect(tabs).equal("/ts0/t0[newtab1]*");
+    expect(tabs).toBe("/ts0/t0[newtab1]*");
 
     const tab = model.getNodeById("2") as any;
-    expect(tab?.getId()).equal("2");
-    expect(tab?.getComponent()).equal("grid");
+    expect(tab?.getId()).toBe("2");
+    expect(tab?.getComponent()).toBe("grid");
   });
 
   it("add to tabset center", () => {
@@ -135,7 +135,7 @@ describe("Tree > Actions > Add", () => {
     );
 
     let tabs = textRender(model);
-    expect(tabs).equal("/ts0/t0[One],/ts0/t1[newtab1]*,/ts1/t0[Two]*");
+    expect(tabs).toBe("/ts0/t0[One],/ts0/t1[newtab1]*,/ts1/t0[Two]*");
 
     model.doAction(
       Action.addNode(
@@ -151,7 +151,7 @@ describe("Tree > Actions > Add", () => {
     );
 
     tabs = textRender(model);
-    expect(tabs).equal(
+    expect(tabs).toBe(
       "/ts0/t0[One],/ts0/t1[newtab1]*,/ts1/t0[Two],/ts1/t1[newtab2]*"
     );
   });
@@ -175,7 +175,7 @@ describe("Tree > Actions > Add", () => {
     );
 
     let tabs = textRender(model);
-    expect(tabs).equal("/ts0/t0[newtab1]*,/ts0/t1[One],/ts1/t0[Two]*");
+    expect(tabs).toBe("/ts0/t0[newtab1]*,/ts0/t1[One],/ts1/t0[Two]*");
 
     model.doAction(
       Action.addNode(
@@ -191,7 +191,7 @@ describe("Tree > Actions > Add", () => {
     );
 
     tabs = textRender(model);
-    expect(tabs).equal(
+    expect(tabs).toBe(
       "/ts0/t0[newtab1],/ts0/t1[newtab2]*,/ts0/t2[One],/ts1/t0[Two]*"
     );
 
@@ -209,7 +209,7 @@ describe("Tree > Actions > Add", () => {
     );
 
     tabs = textRender(model);
-    expect(tabs).equal(
+    expect(tabs).toBe(
       "/ts0/t0[newtab1],/ts0/t1[newtab2],/ts0/t2[One],/ts0/t3[newtab3]*,/ts1/t0[Two]*"
     );
   });
@@ -233,7 +233,7 @@ describe("Tree > Actions > Add", () => {
     );
 
     let tabs = textRender(model);
-    expect(tabs).equal("/r0/ts0/t0[newtab1]*,/r0/ts1/t0[One]*,/ts1/t0[Two]*");
+    expect(tabs).toBe("/r0/ts0/t0[newtab1]*,/r0/ts1/t0[One]*,/ts1/t0[Two]*");
 
     model.doAction(
       Action.addNode(
@@ -249,7 +249,7 @@ describe("Tree > Actions > Add", () => {
     );
 
     tabs = textRender(model);
-    expect(tabs).equal(
+    expect(tabs).toBe(
       "/r0/ts0/t0[newtab1]*,/r0/ts1/t0[One]*,/r1/ts0/t0[newtab2]*,/r1/ts1/t0[Two]*"
     );
   });
@@ -273,7 +273,7 @@ describe("Tree > Actions > Add", () => {
     );
 
     let tabs = textRender(model);
-    expect(tabs).equal("/r0/ts0/t0[One]*,/r0/ts1/t0[newtab1]*,/ts1/t0[Two]*");
+    expect(tabs).toBe("/r0/ts0/t0[One]*,/r0/ts1/t0[newtab1]*,/ts1/t0[Two]*");
 
     model.doAction(
       Action.addNode(
@@ -289,7 +289,7 @@ describe("Tree > Actions > Add", () => {
     );
 
     tabs = textRender(model);
-    expect(tabs).equal(
+    expect(tabs).toBe(
       "/r0/ts0/t0[One]*,/r0/ts1/t0[newtab1]*,/r1/ts0/t0[Two]*,/r1/ts1/t0[newtab2]*"
     );
   });
@@ -313,7 +313,7 @@ describe("Tree > Actions > Add", () => {
     );
 
     let tabs = textRender(model);
-    expect(tabs).equal("/ts0/t0[newtab1]*,/ts1/t0[One]*,/ts2/t0[Two]*");
+    expect(tabs).toBe("/ts0/t0[newtab1]*,/ts1/t0[One]*,/ts2/t0[Two]*");
 
     model.doAction(
       Action.addNode(
@@ -329,7 +329,7 @@ describe("Tree > Actions > Add", () => {
     );
 
     tabs = textRender(model);
-    expect(tabs).equal(
+    expect(tabs).toBe(
       "/ts0/t0[newtab1]*,/ts1/t0[One]*,/ts2/t0[newtab2]*,/ts3/t0[Two]*"
     );
   });
@@ -353,7 +353,7 @@ describe("Tree > Actions > Add", () => {
     );
 
     let tabs = textRender(model);
-    expect(tabs).equal("/ts0/t0[One]*,/ts1/t0[newtab1]*,/ts2/t0[Two]*");
+    expect(tabs).toBe("/ts0/t0[One]*,/ts1/t0[newtab1]*,/ts2/t0[Two]*");
 
     model.doAction(
       Action.addNode(
@@ -369,7 +369,7 @@ describe("Tree > Actions > Add", () => {
     );
 
     tabs = textRender(model);
-    expect(tabs).equal(
+    expect(tabs).toBe(
       "/ts0/t0[One]*,/ts1/t0[newtab1]*,/ts2/t0[Two]*,/ts3/t0[newtab2]*"
     );
   });
@@ -392,7 +392,7 @@ describe("Tree > Actions > Add", () => {
     );
 
     let tabs = textRender(model);
-    expect(tabs).equal("/b/top/t0[top1],/b/top/t1[newtab1]*,/b/bottom/t0[bottom1],/b/bottom/t1[bottom2],/b/left/t0[left1],/b/right/t0[right1],/ts0/t0[One]*");
+    expect(tabs).toBe("/b/top/t0[top1],/b/top/t1[newtab1]*,/b/bottom/t0[bottom1],/b/bottom/t1[bottom2],/b/left/t0[left1],/b/right/t0[right1],/ts0/t0[One]*");
 
     model.doAction(
       Action.addNode(
@@ -408,7 +408,7 @@ describe("Tree > Actions > Add", () => {
     );
 
     tabs = textRender(model);
-    expect(tabs).equal("/b/top/t0[newtab2]*,/b/top/t1[top1],/b/top/t2[newtab1],/b/bottom/t0[bottom1],/b/bottom/t1[bottom2],/b/left/t0[left1],/b/right/t0[right1],/ts0/t0[One]*");
+    expect(tabs).toBe("/b/top/t0[newtab2]*,/b/top/t1[top1],/b/top/t2[newtab1],/b/bottom/t0[bottom1],/b/bottom/t1[bottom2],/b/left/t0[left1],/b/right/t0[right1],/ts0/t0[One]*");
 
     model.doAction(
       Action.addNode(
@@ -424,7 +424,7 @@ describe("Tree > Actions > Add", () => {
     );
 
     tabs = textRender(model);
-    expect(tabs).equal(
+    expect(tabs).toBe(
       "/b/top/t0[newtab2],/b/top/t1[newtab3]*,/b/top/t2[top1],/b/top/t3[newtab1],/b/bottom/t0[bottom1],/b/bottom/t1[bottom2],/b/left/t0[left1],/b/right/t0[right1],/ts0/t0[One]*"
     );
   });
@@ -447,7 +447,7 @@ describe("Tree > Actions > Add", () => {
     );
 
     let tabs = textRender(model);
-    expect(tabs).equal(
+    expect(tabs).toBe(
       "/b/top/t0[top1],/b/bottom/t0[bottom1],/b/bottom/t1[bottom2],/b/bottom/t2[newtab1]*,/b/left/t0[left1],/b/right/t0[right1],/ts0/t0[One]*"
     );
 
@@ -465,7 +465,7 @@ describe("Tree > Actions > Add", () => {
     );
 
     tabs = textRender(model);
-    expect(tabs).equal(
+    expect(tabs).toBe(
       "/b/top/t0[top1],/b/bottom/t0[newtab2]*,/b/bottom/t1[bottom1],/b/bottom/t2[bottom2],/b/bottom/t3[newtab1],/b/left/t0[left1],/b/right/t0[right1],/ts0/t0[One]*"
     );
 
@@ -483,7 +483,7 @@ describe("Tree > Actions > Add", () => {
     );
 
     tabs = textRender(model);
-    expect(tabs).equal(
+    expect(tabs).toBe(
       "/b/top/t0[top1],/b/bottom/t0[newtab2],/b/bottom/t1[newtab3]*,/b/bottom/t2[bottom1],/b/bottom/t3[bottom2],/b/bottom/t4[newtab1],/b/left/t0[left1],/b/right/t0[right1],/ts0/t0[One]*"
     );
   });
@@ -506,7 +506,7 @@ describe("Tree > Actions > Add", () => {
     );
 
     let tabs = textRender(model);
-    expect(tabs).equal("/b/top/t0[top1],/b/bottom/t0[bottom1],/b/bottom/t1[bottom2],/b/left/t0[left1],/b/left/t1[newtab1]*,/b/right/t0[right1],/ts0/t0[One]*");
+    expect(tabs).toBe("/b/top/t0[top1],/b/bottom/t0[bottom1],/b/bottom/t1[bottom2],/b/left/t0[left1],/b/left/t1[newtab1]*,/b/right/t0[right1],/ts0/t0[One]*");
 
     model.doAction(
       Action.addNode(
@@ -522,7 +522,7 @@ describe("Tree > Actions > Add", () => {
     );
 
     tabs = textRender(model);
-    expect(tabs).equal("/b/top/t0[top1],/b/bottom/t0[bottom1],/b/bottom/t1[bottom2],/b/left/t0[newtab2]*,/b/left/t1[left1],/b/left/t2[newtab1],/b/right/t0[right1],/ts0/t0[One]*");
+    expect(tabs).toBe("/b/top/t0[top1],/b/bottom/t0[bottom1],/b/bottom/t1[bottom2],/b/left/t0[newtab2]*,/b/left/t1[left1],/b/left/t2[newtab1],/b/right/t0[right1],/ts0/t0[One]*");
 
     model.doAction(
       Action.addNode(
@@ -538,7 +538,7 @@ describe("Tree > Actions > Add", () => {
     );
 
     tabs = textRender(model);
-    expect(tabs).equal(
+    expect(tabs).toBe(
       "/b/top/t0[top1],/b/bottom/t0[bottom1],/b/bottom/t1[bottom2],/b/left/t0[newtab2],/b/left/t1[newtab3]*,/b/left/t2[left1],/b/left/t3[newtab1],/b/right/t0[right1],/ts0/t0[One]*"
     );
   });
@@ -561,7 +561,7 @@ describe("Tree > Actions > Add", () => {
     );
 
     let tabs = textRender(model);
-    expect(tabs).equal("/b/top/t0[top1],/b/bottom/t0[bottom1],/b/bottom/t1[bottom2],/b/left/t0[left1],/b/right/t0[right1],/b/right/t1[newtab1]*,/ts0/t0[One]*");
+    expect(tabs).toBe("/b/top/t0[top1],/b/bottom/t0[bottom1],/b/bottom/t1[bottom2],/b/left/t0[left1],/b/right/t0[right1],/b/right/t1[newtab1]*,/ts0/t0[One]*");
 
     model.doAction(
       Action.addNode(
@@ -577,7 +577,7 @@ describe("Tree > Actions > Add", () => {
     );
 
     tabs = textRender(model);
-    expect(tabs).equal(
+    expect(tabs).toBe(
       "/b/top/t0[top1],/b/bottom/t0[bottom1],/b/bottom/t1[bottom2],/b/left/t0[left1],/b/right/t0[newtab2]*,/b/right/t1[right1],/b/right/t2[newtab1],/ts0/t0[One]*"
     );
 
@@ -595,7 +595,7 @@ describe("Tree > Actions > Add", () => {
     );
 
     tabs = textRender(model);
-    expect(tabs).equal(
+    expect(tabs).toBe(
       "/b/top/t0[top1],/b/bottom/t0[bottom1],/b/bottom/t1[bottom2],/b/left/t0[left1],/b/right/t0[newtab2],/b/right/t1[newtab3]*,/b/right/t2[right1],/b/right/t3[newtab1],/ts0/t0[One]*"
     );
   });
@@ -615,7 +615,7 @@ describe("Tree > Actions > Move", () => {
     );
 
     const tabs = textRender(model);
-    expect(tabs).equal("/ts0/t0[Two],/ts0/t1[One]*,/ts1/t0[Three]*");
+    expect(tabs).toBe("/ts0/t0[Two],/ts0/t1[One]*,/ts1/t0[Three]*");
   });
 
   it("move to center position", () => {
@@ -629,7 +629,7 @@ describe("Tree > Actions > Move", () => {
     );
 
     let tabs = textRender(model);
-    expect(tabs).equal("/ts0/t0[One]*,/ts0/t1[Two],/ts1/t0[Three]*");
+    expect(tabs).toBe("/ts0/t0[One]*,/ts0/t1[Two],/ts1/t0[Three]*");
 
     const ts1_after = tabset("/ts1");
     const t1_after = ts1_after?.getChildren()[0];
@@ -639,7 +639,7 @@ describe("Tree > Actions > Move", () => {
     );
 
     tabs = textRender(model);
-    expect(tabs).equal("/ts0/t0[One],/ts0/t1[Three]*,/ts0/t2[Two]");
+    expect(tabs).toBe("/ts0/t0[One],/ts0/t1[Three]*,/ts0/t2[Two]");
   });
 
   it("move to top", () => {
@@ -653,7 +653,7 @@ describe("Tree > Actions > Move", () => {
     );
 
     const tabs = textRender(model);
-    expect(tabs).equal("/r0/ts0/t0[One]*,/r0/ts1/t0[Two]*,/ts1/t0[Three]*");
+    expect(tabs).toBe("/r0/ts0/t0[One]*,/r0/ts1/t0[Two]*,/ts1/t0[Three]*");
   });
 
   it("move to bottom", () => {
@@ -667,7 +667,7 @@ describe("Tree > Actions > Move", () => {
     );
 
     const tabs = textRender(model);
-    expect(tabs).equal("/r0/ts0/t0[Two]*,/r0/ts1/t0[One]*,/ts1/t0[Three]*");
+    expect(tabs).toBe("/r0/ts0/t0[Two]*,/r0/ts1/t0[One]*,/ts1/t0[Three]*");
   });
 
   it("move to left", () => {
@@ -681,7 +681,7 @@ describe("Tree > Actions > Move", () => {
     );
 
     const tabs = textRender(model);
-    expect(tabs).equal("/ts0/t0[One]*,/ts1/t0[Two]*,/ts2/t0[Three]*");
+    expect(tabs).toBe("/ts0/t0[One]*,/ts1/t0[Two]*,/ts2/t0[Three]*");
   });
 
   it("move to right", () => {
@@ -695,7 +695,7 @@ describe("Tree > Actions > Move", () => {
     );
 
     const tabs = textRender(model);
-    expect(tabs).equal("/ts0/t0[Two]*,/ts1/t0[One]*,/ts2/t0[Three]*");
+    expect(tabs).toBe("/ts0/t0[Two]*,/ts1/t0[One]*,/ts2/t0[Three]*");
   });
 });
 
@@ -718,7 +718,7 @@ describe("Tree > Actions > Move to/from borders", () => {
     );
 
     const tabs = textRender(model);
-    expect(tabs).equal(
+    expect(tabs).toBe(
       "/b/top/t0[top1],/b/top/t1[One],/b/bottom/t0[bottom1],/b/bottom/t1[bottom2],/b/left/t0[left1],/b/right/t0[right1]"
     );
   });
@@ -739,7 +739,7 @@ describe("Tree > Actions > Move to/from borders", () => {
     );
 
     const tabs = textRender(model);
-    expect(tabs).equal(
+    expect(tabs).toBe(
       "/b/top/t0[top1],/b/bottom/t0[bottom1],/b/bottom/t1[bottom2],/b/bottom/t2[One],/b/left/t0[left1],/b/right/t0[right1]"
     );
   });
@@ -760,7 +760,7 @@ describe("Tree > Actions > Move to/from borders", () => {
     );
 
     const tabs = textRender(model);
-    expect(tabs).equal(
+    expect(tabs).toBe(
       "/b/top/t0[top1],/b/bottom/t0[bottom1],/b/bottom/t1[bottom2],/b/left/t0[left1],/b/left/t1[One],/b/right/t0[right1]"
     );
   });
@@ -781,7 +781,7 @@ describe("Tree > Actions > Move to/from borders", () => {
     );
 
     const tabs = textRender(model);
-    expect(tabs).equal(
+    expect(tabs).toBe(
       "/b/top/t0[top1],/b/bottom/t0[bottom1],/b/bottom/t1[bottom2],/b/left/t0[left1],/b/right/t0[right1],/b/right/t1[One]"
     );
   });
@@ -802,7 +802,7 @@ describe("Tree > Actions > Move to/from borders", () => {
     );
 
     const tabs = textRender(model);
-    expect(tabs).equal(
+    expect(tabs).toBe(
       "/b/bottom/t0[bottom1],/b/bottom/t1[bottom2],/b/left/t0[left1],/b/right/t0[right1],/ts0/t0[One]*,/ts1/t0[top1]*"
     );
   });
@@ -823,7 +823,7 @@ describe("Tree > Actions > Move to/from borders", () => {
     );
 
     const tabs = textRender(model);
-    expect(tabs).equal(
+    expect(tabs).toBe(
       "/b/top/t0[top1],/b/bottom/t0[bottom2],/b/left/t0[left1],/b/right/t0[right1],/ts0/t0[One]*,/ts1/t0[bottom1]*"
     );
   });
@@ -844,7 +844,7 @@ describe("Tree > Actions > Move to/from borders", () => {
     );
 
     const tabs = textRender(model);
-    expect(tabs).equal(
+    expect(tabs).toBe(
       "/b/top/t0[top1],/b/bottom/t0[bottom1],/b/bottom/t1[bottom2],/b/right/t0[right1],/ts0/t0[One]*,/ts1/t0[left1]*"
     );
   });
@@ -865,7 +865,7 @@ describe("Tree > Actions > Move to/from borders", () => {
     );
 
     const tabs = textRender(model);
-    expect(tabs).equal(
+    expect(tabs).toBe(
       "/b/top/t0[top1],/b/bottom/t0[bottom1],/b/bottom/t1[bottom2],/b/left/t0[left1],/ts0/t0[One]*,/ts1/t0[right1]*"
     );
   });
@@ -883,7 +883,7 @@ describe("Tree > Actions > Delete", () => {
     model.doAction(Action.deleteTab(t0?.getId() || ""));
 
     const tabs = textRender(model);
-    expect(tabs).equal("/ts0/t0[Two]*,/ts1/t0[Three]*");
+    expect(tabs).toBe("/ts0/t0[Two]*,/ts1/t0[Three]*");
   });
 
   it("delete tab from tabset with 3 tabs", () => {
@@ -918,7 +918,7 @@ describe("Tree > Actions > Delete", () => {
     model.doAction(Action.deleteTab(tabset("/ts0")?.getChildren()[1]?.getId() || ""));
 
     const tabs = textRender(model);
-    expect(tabs).equal("/ts0/t0[Two],/ts0/t1[Three]*");
+    expect(tabs).toBe("/ts0/t0[Two],/ts0/t1[Three]*");
   });
 
   it("delete tabset", () => {
@@ -940,7 +940,7 @@ describe("Tree > Actions > Delete", () => {
     model.doAction(Action.deleteTabset(tabset("/ts0")?.getId() || ""));
 
     const tabs = textRender(model);
-    expect(tabs).equal("/ts0/t0[Three]*");
+    expect(tabs).toBe("/ts0/t0[Three]*");
   });
 
   it("delete tab from borders", () => {
@@ -952,7 +952,7 @@ describe("Tree > Actions > Delete", () => {
     model.doAction(Action.deleteTab(t0?.getId() || ""));
 
     let tabs = textRender(model);
-    expect(tabs).equal(
+    expect(tabs).toBe(
       "/b/bottom/t0[bottom1],/b/bottom/t1[bottom2],/b/left/t0[left1],/b/right/t0[right1],/ts0/t0[One]*"
     );
 
@@ -961,7 +961,7 @@ describe("Tree > Actions > Delete", () => {
     model.doAction(Action.deleteTab(t1?.getId() || ""));
 
     tabs = textRender(model);
-    expect(tabs).equal(
+    expect(tabs).toBe(
       "/b/bottom/t0[bottom2],/b/left/t0[left1],/b/right/t0[right1],/ts0/t0[One]*"
     );
 
@@ -970,7 +970,7 @@ describe("Tree > Actions > Delete", () => {
     model.doAction(Action.deleteTab(t2?.getId() || ""));
 
     tabs = textRender(model);
-    expect(tabs).equal(
+    expect(tabs).toBe(
       "/b/left/t0[left1],/b/right/t0[right1],/ts0/t0[One]*"
     );
 
@@ -979,14 +979,14 @@ describe("Tree > Actions > Delete", () => {
     model.doAction(Action.deleteTab(t3?.getId() || ""));
 
     tabs = textRender(model);
-    expect(tabs).equal("/b/right/t0[right1],/ts0/t0[One]*");
+    expect(tabs).toBe("/b/right/t0[right1],/ts0/t0[One]*");
 
     const rightBorder = model.getBorderSet().getBorder("right");
     const t4 = rightBorder?.getChildren()[0];
     model.doAction(Action.deleteTab(t4?.getId() || ""));
 
     tabs = textRender(model);
-    expect(tabs).equal("/ts0/t0[One]*");
+    expect(tabs).toBe("/ts0/t0[One]*");
   });
 });
 
@@ -1002,7 +1002,7 @@ describe("Tree > Actions > Other Actions", () => {
     model.doAction(Action.renameTab(t0?.getId() || "", "renamed"));
 
     const tabs = textRender(model);
-    expect(tabs).equal("/ts0/t0[renamed]*,/ts1/t0[Two]*");
+    expect(tabs).toBe("/ts0/t0[renamed]*,/ts1/t0[Two]*");
   });
 
   it("select tab", () => {
@@ -1027,7 +1027,7 @@ describe("Tree > Actions > Other Actions", () => {
     model.doAction(Action.selectTab(t0?.getId() || ""));
 
     const tabs = textRender(model);
-    expect(tabs).equal("/ts0/t0[One]*,/ts0/t1[newtab1],/ts1/t0[Two]*");
+    expect(tabs).toBe("/ts0/t0[One]*,/ts0/t1[newtab1],/ts1/t0[Two]*");
   });
 
   it("set active tabset", () => {
@@ -1036,20 +1036,20 @@ describe("Tree > Actions > Other Actions", () => {
     const ts0 = tabset("/ts0") as any;
     const ts1 = tabset("/ts1") as any;
 
-    expect(ts0?.isActive()).equal(false);
-    expect(ts1?.isActive()).equal(false);
+    expect(ts0?.isActive()).toBe(false);
+    expect(ts1?.isActive()).toBe(false);
 
     model.doAction(Action.selectTab(ts0?.getChildren()[0]?.getId() || ""));
-    expect(ts0?.isActive()).equal(true);
-    expect(ts1?.isActive()).equal(false);
+    expect(ts0?.isActive()).toBe(true);
+    expect(ts1?.isActive()).toBe(false);
 
     model.doAction(Action.selectTab(ts1?.getChildren()[0]?.getId() || ""));
-    expect(ts0?.isActive()).equal(false);
-    expect(ts1?.isActive()).equal(true);
+    expect(ts0?.isActive()).toBe(false);
+    expect(ts1?.isActive()).toBe(true);
 
     model.doAction(Action.setActiveTabset(ts0?.getId() || ""));
-    expect(ts0?.isActive()).equal(true);
-    expect(ts1?.isActive()).equal(false);
+    expect(ts0?.isActive()).toBe(true);
+    expect(ts1?.isActive()).toBe(false);
   });
 
   it("maximize tabset", () => {
@@ -1060,9 +1060,9 @@ describe("Tree > Actions > Other Actions", () => {
 
     model.doAction(Action.maximizeToggle(ts0?.getId() || ""));
 
-    expect(ts0?.isMaximized()).equals(false);
-    expect(ts1?.isMaximized()).equals(false);
-    expect(model.getMaximizedTabset()).equals(undefined);
+    expect(ts0?.isMaximized()).toBe(false);
+    expect(ts1?.isMaximized()).toBe(false);
+    expect(model.getMaximizedTabset()).toBe(undefined);
   });
 
   it("set tab attributes", () => {
@@ -1077,7 +1077,7 @@ describe("Tree > Actions > Other Actions", () => {
       })
     );
 
-    expect(t0?.getConfig()).equals("newConfig");
+    expect(t0?.getConfig()).toBe("newConfig");
   });
 
   it("set model attributes", () => {
@@ -1089,7 +1089,7 @@ describe("Tree > Actions > Other Actions", () => {
       })
     );
 
-    expect(model.getSplitterSize()).equals(10);
+    expect(model.getSplitterSize()).toBe(10);
   });
 });
 
@@ -1109,7 +1109,7 @@ describe("Tree > Node events", () => {
 
     model.doAction(Action.deleteTab(t0?.getId() || ""));
 
-    expect(closed).equals(true);
+    expect(closed).toBe(true);
   });
 
   it("save tab", () => {
@@ -1125,7 +1125,7 @@ describe("Tree > Node events", () => {
 
     model.doAction(Action.updateNodeAttributes(t0?.getId() || "", {}));
 
-    expect(saved).equals(true);
+    expect(saved).toBe(true);
   });
 });
 
