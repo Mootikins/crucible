@@ -376,7 +376,7 @@ describe("Tree > Actions > Add", () => {
     );
 
     let tabs = textRender(model);
-    expect(tabs).equal("/b/top/t0[top1],/b/top/t1[newtab1]");
+    expect(tabs).equal("/b/top/t0[top1],/b/top/t1[newtab1]*,/b/bottom/t0[bottom1],/b/bottom/t1[bottom2],/b/left/t0[left1],/b/right/t0[right1],/ts0/t0[One]*");
 
     model.doAction(
       Action.addNode(
@@ -392,7 +392,7 @@ describe("Tree > Actions > Add", () => {
     );
 
     tabs = textRender(model);
-    expect(tabs).equal("/b/top/t0[newtab2],/b/top/t1[top1],/b/top/t2[newtab1]");
+    expect(tabs).equal("/b/top/t0[newtab2]*,/b/top/t1[top1],/b/top/t2[newtab1],/b/bottom/t0[bottom1],/b/bottom/t1[bottom2],/b/left/t0[left1],/b/right/t0[right1],/ts0/t0[One]*");
 
     model.doAction(
       Action.addNode(
@@ -403,13 +403,13 @@ describe("Tree > Actions > Add", () => {
         },
         topBorder?.getId() || "",
         "center",
-        2
+        1
       )
     );
 
     tabs = textRender(model);
     expect(tabs).equal(
-      "/b/top/t0[newtab2],/b/top/t1[newtab3],/b/top/t2[top1],/b/top/t3[newtab1]"
+      "/b/top/t0[newtab2],/b/top/t1[newtab3]*,/b/top/t2[top1],/b/top/t3[newtab1],/b/bottom/t0[bottom1],/b/bottom/t1[bottom2],/b/left/t0[left1],/b/right/t0[right1],/ts0/t0[One]*"
     );
   });
 
@@ -432,7 +432,7 @@ describe("Tree > Actions > Add", () => {
 
     let tabs = textRender(model);
     expect(tabs).equal(
-      "/b/bottom/t0[bottom1],/b/bottom/t1[bottom2],/b/bottom/t2[newtab1]"
+      "/b/top/t0[top1],/b/bottom/t0[bottom1],/b/bottom/t1[bottom2],/b/bottom/t2[newtab1]*,/b/left/t0[left1],/b/right/t0[right1],/ts0/t0[One]*"
     );
 
     model.doAction(
@@ -450,7 +450,7 @@ describe("Tree > Actions > Add", () => {
 
     tabs = textRender(model);
     expect(tabs).equal(
-      "/b/bottom/t0[newtab2],/b/bottom/t1[bottom1],/b/bottom/t2[bottom2],/b/bottom/t3[newtab1]"
+      "/b/top/t0[top1],/b/bottom/t0[newtab2]*,/b/bottom/t1[bottom1],/b/bottom/t2[bottom2],/b/bottom/t3[newtab1],/b/left/t0[left1],/b/right/t0[right1],/ts0/t0[One]*"
     );
 
     model.doAction(
@@ -462,13 +462,13 @@ describe("Tree > Actions > Add", () => {
         },
         bottomBorder?.getId() || "",
         "center",
-        2
+        1
       )
     );
 
     tabs = textRender(model);
     expect(tabs).equal(
-      "/b/bottom/t0[newtab2],/b/bottom/t1[newtab3],/b/bottom/t2[bottom1],/b/bottom/t3[bottom2],/b/bottom/t4[newtab1]"
+      "/b/top/t0[top1],/b/bottom/t0[newtab2],/b/bottom/t1[newtab3]*,/b/bottom/t2[bottom1],/b/bottom/t3[bottom2],/b/bottom/t4[newtab1],/b/left/t0[left1],/b/right/t0[right1],/ts0/t0[One]*"
     );
   });
 
@@ -490,7 +490,7 @@ describe("Tree > Actions > Add", () => {
     );
 
     let tabs = textRender(model);
-    expect(tabs).equal("/b/left/t0[left1],/b/left/t1[newtab1]");
+    expect(tabs).equal("/b/top/t0[top1],/b/bottom/t0[bottom1],/b/bottom/t1[bottom2],/b/left/t0[left1],/b/left/t1[newtab1]*,/b/right/t0[right1],/ts0/t0[One]*");
 
     model.doAction(
       Action.addNode(
@@ -506,7 +506,7 @@ describe("Tree > Actions > Add", () => {
     );
 
     tabs = textRender(model);
-    expect(tabs).equal("/b/left/t0[newtab2],/b/left/t1[left1],/b/left/t2[newtab1]");
+    expect(tabs).equal("/b/top/t0[top1],/b/bottom/t0[bottom1],/b/bottom/t1[bottom2],/b/left/t0[newtab2]*,/b/left/t1[left1],/b/left/t2[newtab1],/b/right/t0[right1],/ts0/t0[One]*");
 
     model.doAction(
       Action.addNode(
@@ -517,13 +517,13 @@ describe("Tree > Actions > Add", () => {
         },
         leftBorder?.getId() || "",
         "center",
-        2
+        1
       )
     );
 
     tabs = textRender(model);
     expect(tabs).equal(
-      "/b/left/t0[newtab2],/b/left/t1[newtab3],/b/left/t2[left1],/b/left/t3[newtab1]"
+      "/b/top/t0[top1],/b/bottom/t0[bottom1],/b/bottom/t1[bottom2],/b/left/t0[newtab2],/b/left/t1[newtab3]*,/b/left/t2[left1],/b/left/t3[newtab1],/b/right/t0[right1],/ts0/t0[One]*"
     );
   });
 
@@ -545,7 +545,7 @@ describe("Tree > Actions > Add", () => {
     );
 
     let tabs = textRender(model);
-    expect(tabs).equal("/b/right/t0[right1],/b/right/t1[newtab1]");
+    expect(tabs).equal("/b/top/t0[top1],/b/bottom/t0[bottom1],/b/bottom/t1[bottom2],/b/left/t0[left1],/b/right/t0[right1],/b/right/t1[newtab1]*,/ts0/t0[One]*");
 
     model.doAction(
       Action.addNode(
@@ -562,7 +562,7 @@ describe("Tree > Actions > Add", () => {
 
     tabs = textRender(model);
     expect(tabs).equal(
-      "/b/right/t0[newtab2],/b/right/t1[right1],/b/right/t2[newtab1]"
+      "/b/top/t0[top1],/b/bottom/t0[bottom1],/b/bottom/t1[bottom2],/b/left/t0[left1],/b/right/t0[newtab2]*,/b/right/t1[right1],/b/right/t2[newtab1],/ts0/t0[One]*"
     );
 
     model.doAction(
@@ -574,13 +574,13 @@ describe("Tree > Actions > Add", () => {
         },
         rightBorder?.getId() || "",
         "center",
-        2
+        1
       )
     );
 
     tabs = textRender(model);
     expect(tabs).equal(
-      "/b/right/t0[newtab2],/b/right/t1[newtab3],/b/right/t2[right1],/b/right/t3[newtab1]"
+      "/b/top/t0[top1],/b/bottom/t0[bottom1],/b/bottom/t1[bottom2],/b/left/t0[left1],/b/right/t0[newtab2],/b/right/t1[newtab3]*,/b/right/t2[right1],/b/right/t3[newtab1],/ts0/t0[One]*"
     );
   });
 });
