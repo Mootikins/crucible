@@ -54,7 +54,9 @@
 
 **Files modified:**
 - `src/dockview/dockviewDockedGroupPanel.ts`
-  - Added `transition: flex-basis 200ms ease-out` to element
+  - Added `transition: flex-basis {duration} ease-out` to element (respects prefers-reduced-motion)
+  - Checks `window.matchMedia('(prefers-reduced-motion: reduce)')` for accessibility
+  - Duration: 200ms (normal) or 0.01ms (reduced motion)
   - `setCollapsed()` updates flex-basis (0 vs size) and overflow
   - `setSize()` updates flex-basis when not collapsed
   - Initial state applied in constructor
