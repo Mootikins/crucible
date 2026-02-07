@@ -30,6 +30,16 @@ export class DockviewDockedGroupPanel
         
         this.element = document.createElement('div');
         this.element.className = `dv-docked-panel dv-docked-${side}`;
+        this.element.style.transition = 'flex-basis 200ms ease-out';
+        this.element.style.display = 'flex';
+        this.element.style.flexDirection = 'column';
+        
+        if (this._collapsed) {
+            this.element.style.flexBasis = '0';
+            this.element.style.overflow = 'hidden';
+        } else {
+            this.element.style.flexBasis = `${this._size}px`;
+        }
         
         this.addDisposables(group);
     }
@@ -44,9 +54,21 @@ export class DockviewDockedGroupPanel
 
     setCollapsed(collapsed: boolean): void {
         this._collapsed = collapsed;
+        
+        if (collapsed) {
+            this.element.style.flexBasis = '0';
+            this.element.style.overflow = 'hidden';
+        } else {
+            this.element.style.flexBasis = `${this._size}px`;
+            this.element.style.overflow = '';
+        }
     }
 
     setSize(size: number): void {
         this._size = size;
+        
+        if (!this._collapsed) {
+            this.element.style.flexBasis = `${size}px`;
+        }
     }
 }
