@@ -611,6 +611,10 @@ export class Model {
 		return this.attributes.rootOrientationVertical ?? false;
 	}
 
+	isEnableEdgeDock(): boolean {
+		return this.getAttribute("enableEdgeDock") ?? true;
+	}
+
 	toJson(): IJsonModel {
 		const layout = this.getRoot()?.toJson();
 		return {
