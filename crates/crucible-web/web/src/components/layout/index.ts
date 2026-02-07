@@ -1,1 +1,1 @@
-export { DockLayout, BottomPanel } from './DockLayout';
+export { FlexLayout, BottomPanel } from './FlexLayout';
