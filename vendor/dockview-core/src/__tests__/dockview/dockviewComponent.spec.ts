@@ -5851,7 +5851,8 @@ describe('dockviewComponent', () => {
         test('grid -> floating -> popout -> popout closed', async () => {
             const container = document.createElement('div');
 
-            window.open = () => setupMockWindow();
+            // NOTE(crucible): vitest spy intercepts property assignment; use mockImplementation
+            jest.spyOn(window, 'open').mockImplementation(() => setupMockWindow() as any);
 
             const dockview = new DockviewComponent(container, {
                 createComponent(options) {
@@ -6097,7 +6098,8 @@ describe('dockviewComponent', () => {
         test('add a popout group', async () => {
             const container = document.createElement('div');
 
-            window.open = () => setupMockWindow();
+            // NOTE(crucible): vitest spy intercepts property assignment; use mockImplementation
+            jest.spyOn(window, 'open').mockImplementation(() => setupMockWindow() as any);
 
             const dockview = new DockviewComponent(container, {
                 createComponent(options) {
@@ -6253,8 +6255,9 @@ describe('dockviewComponent', () => {
         test('close popout window object', async () => {
             const container = document.createElement('div');
 
+            // NOTE(crucible): vitest spy intercepts property assignment; use mockImplementation
             const mockWindow = setupMockWindow();
-            window.open = () => mockWindow;
+            jest.spyOn(window, 'open').mockImplementation(() => mockWindow as any);
 
             const dockview = new DockviewComponent(container, {
                 createComponent(options) {
@@ -6535,7 +6538,8 @@ describe('dockviewComponent', () => {
             jest.useFakeTimers();
             const container = document.createElement('div');
 
-            window.open = () => setupMockWindow();
+            // NOTE(crucible): vitest spy intercepts property assignment; use mockImplementation
+            jest.spyOn(window, 'open').mockImplementation(() => setupMockWindow() as any);
 
             const dockview = new DockviewComponent(container, {
                 createComponent(options) {
