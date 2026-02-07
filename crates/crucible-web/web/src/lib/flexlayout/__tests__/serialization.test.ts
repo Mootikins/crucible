@@ -133,8 +133,8 @@ describe("JSON Serialization/Deserialization", () => {
       const serialized = model.toJson();
       
       const children = serialized.layout?.children || [];
-      // Second tabset has id "#1" in fixture
-      expect(children[1]?.id).toBe("#1");
+      // Second tabset has id "ts1" in fixture
+      expect(children[1]?.id).toBe("ts1");
     });
   });
 
