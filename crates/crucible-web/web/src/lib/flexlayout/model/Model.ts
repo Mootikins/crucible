@@ -461,6 +461,13 @@ export class Model {
 		return this.windowsMap.get(windowId)?.maximizedTabSet;
 	}
 
+	setMaximizedTabset(tabsetNode: TabSetNode | undefined, windowId: string = Model.MAIN_WINDOW_ID): void {
+		const window = this.windowsMap.get(windowId);
+		if (window) {
+			window.maximizedTabSet = tabsetNode;
+		}
+	}
+
 	getActiveTabset(windowId: string = Model.MAIN_WINDOW_ID): TabSetNode | undefined {
 		return this.windowsMap.get(windowId)?.activeTabSet;
 	}
@@ -557,6 +564,14 @@ export class Model {
 				return true;
 			case "tabSetEnableActiveIcon":
 				return false;
+			case "tabSetMinWidth":
+				return DefaultMin;
+			case "tabSetMinHeight":
+				return DefaultMin;
+			case "tabSetMaxWidth":
+				return DefaultMax;
+			case "tabSetMaxHeight":
+				return DefaultMax;
 			case "tabEnableClose":
 				return true;
 			case "tabEnableDrag":
