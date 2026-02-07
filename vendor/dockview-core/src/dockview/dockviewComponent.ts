@@ -450,8 +450,16 @@ export class DockviewComponent
         let group: DockviewGroupPanel;
 
         if (item instanceof DockviewPanel) {
+            // NOTE(crucible): remove panel from its current group before docking
+            const oldGroup = item.group;
+            if (oldGroup) {
+                oldGroup.model.removePanel(item);
+            }
             group = this.createGroup({ skipSetActive: true });
             group.model.openPanel(item);
+            if (oldGroup && oldGroup.size === 0) {
+                this.removeGroup(oldGroup);
+            }
         } else if (item instanceof DockviewGroupPanel) {
             group = item;
         } else {
@@ -2364,8 +2372,15 @@ export class DockviewComponent
                         groups.length > 0 ? groups[0].value : undefined
                     );
                 }
+
+                return floatingGroup.group;
             }
-        } else if (group.api.location.type === 'docked') {
+
+            throw new Error('dockview: failed to find floating group');
+        }
+
+        // NOTE(crucible): docked pane removal - mirrors floating/popout pattern
+        if (group.api.location.type === 'docked') {
             const dockedGroup = this._dockedGroups.find(
                 (_) => _.group === group
             );
