@@ -26,46 +26,47 @@ export const Action = {
     fromNodeId: string,
     toNodeId: string,
     location: string,
-    index: number
+    index: number,
+    select?: boolean
   ): IAction {
     return {
       type: "MOVE_NODE",
-      data: { fromNodeId, toNodeId, location, index },
+      data: { fromNode: fromNodeId, toNode: toNodeId, location, index, select },
     };
   },
 
-  deleteTab(tabId: string): IAction {
+  deleteTab(node: string): IAction {
     return {
       type: "DELETE_TAB",
-      data: { tabId },
+      data: { node },
     };
   },
 
-  deleteTabset(tabsetId: string): IAction {
+  deleteTabset(node: string): IAction {
     return {
       type: "DELETE_TABSET",
-      data: { tabsetId },
+      data: { node },
     };
   },
 
-  renameTab(tabId: string, newName: string): IAction {
+  renameTab(node: string, text: string): IAction {
     return {
       type: "RENAME_TAB",
-      data: { tabId, newName },
+      data: { node, text },
     };
   },
 
-  selectTab(tabId: string): IAction {
+  selectTab(tabNode: string, windowId?: string): IAction {
     return {
       type: "SELECT_TAB",
-      data: { tabId },
+      data: { tabNode, windowId },
     };
   },
 
-  setActiveTabset(tabsetId: string): IAction {
+  setActiveTabset(tabsetNode: string, windowId?: string): IAction {
     return {
       type: "SET_ACTIVE_TABSET",
-      data: { tabsetId },
+      data: { tabsetNode, windowId },
     };
   },
 
