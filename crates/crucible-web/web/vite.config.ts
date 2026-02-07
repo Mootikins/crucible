@@ -22,9 +22,7 @@ export default defineConfig({
       },
     },
   },
-  optimizeDeps: {
-    exclude: ['dockview-core'],
-  },
+  optimizeDeps: {},
   build: {
     outDir: 'dist',
     sourcemap: true,
