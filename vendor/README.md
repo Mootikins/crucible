@@ -44,3 +44,25 @@ markdown-it = { path = "vendor/markdown-it" }
 ```
 
 The `vendor/markdown-it` directory is excluded from the workspace via `workspace.exclude`.
+
+## dockview-core
+
+**Source:** https://github.com/mathuo/dockview
+**Upstream version:** 4.13.1
+**Reason:** Add "docked" as 4th location type for sliding side panels
+
+### Patches Applied
+
+(To be documented in subsequent tasks)
+
+### Updating
+
+See `vendor/dockview-core/CRUCIBLE.md` for update instructions.
+
+### Package Configuration
+
+The web `package.json` uses a `file:` dependency:
+
+```json
+"dockview-core": "file:../../../vendor/dockview-core"
+```
