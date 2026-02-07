@@ -30,7 +30,12 @@ export class DockviewDockedGroupPanel
         
         this.element = document.createElement('div');
         this.element.className = `dv-docked-panel dv-docked-${side}`;
-        this.element.style.transition = 'flex-basis 200ms ease-out';
+        
+        // NOTE(crucible): Respect prefers-reduced-motion for accessibility
+        const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        const transitionDuration = prefersReducedMotion ? '0.01ms' : '200ms';
+        this.element.style.transition = `flex-basis ${transitionDuration} ease-out`;
+        
         this.element.style.display = 'flex';
         this.element.style.flexDirection = 'column';
         
