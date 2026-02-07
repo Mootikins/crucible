@@ -10,6 +10,8 @@ import {
   type CreateComponentOptions,
   type SerializedDockview,
   type DockviewGroupPanel,
+  type DockedSide,
+  type DockedGroupOptions,
 } from 'dockview-core';
 import type { Component } from 'solid-js';
 
@@ -23,7 +25,7 @@ export interface PanelParams {
   title: string;
 }
 
-export type { DockviewApi, DockviewComponent, SerializedDockview };
+export type { DockviewApi, DockviewComponent, SerializedDockview, DockedSide, DockedGroupOptions };
 
 export interface PanelConfig {
   id: string;
