@@ -13,6 +13,7 @@ export const twoTabs: IJsonModel = {
     children: [
       {
         type: "tabset",
+        id: "ts0",
         weight: 50,
         children: [
           {
@@ -24,7 +25,7 @@ export const twoTabs: IJsonModel = {
       },
       {
         type: "tabset",
-        id: "#1",
+        id: "ts1",
         weight: 50,
         children: [
           {
@@ -101,6 +102,7 @@ export const withBorders: IJsonModel = {
     children: [
       {
         type: "tabset",
+        id: "ts0",
         weight: 50,
         children: [
           {
@@ -127,6 +129,7 @@ export const threeTabs: IJsonModel = {
     children: [
       {
         type: "tabset",
+        id: "ts0",
         weight: 50,
         children: [
           {
@@ -138,6 +141,7 @@ export const threeTabs: IJsonModel = {
       },
       {
         type: "tabset",
+        id: "ts1",
         weight: 50,
         name: "TheHeader",
         children: [
@@ -151,6 +155,7 @@ export const threeTabs: IJsonModel = {
       },
       {
         type: "tabset",
+        id: "ts2",
         weight: 50,
         children: [
           {
