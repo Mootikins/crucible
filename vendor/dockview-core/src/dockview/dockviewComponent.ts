@@ -2633,6 +2633,39 @@ export class DockviewComponent
                     return;
                 }
 
+                if (sourceGroup.api.location.type === 'docked') {
+                    const dockedGroup = this._dockedGroups.find(
+                        (group) => group.group === sourceGroup
+                    )!;
+
+                    const removedPanel: IDockviewPanel | undefined =
+                        this.movingLock(() =>
+                            dockedGroup.group.model.removePanel(
+                                dockedGroup.group.panels[0],
+                                {
+                                    skipSetActive: true,
+                                    skipSetActiveGroup: true,
+                                }
+                            )
+                        );
+
+                    this.removeDockedGroup(dockedGroup);
+
+                    const newGroup = this.createGroupAtLocation(targetLocation);
+                    this.movingLock(() =>
+                        newGroup.model.openPanel(removedPanel, {
+                            skipSetActive: true,
+                        })
+                    );
+                    this.doSetGroupAndPanelActive(newGroup);
+
+                    this._onDidMovePanel.fire({
+                        panel: this.getGroupPanel(sourceItemId)!,
+                        from: sourceGroup,
+                    });
+                    return;
+                }
+
                 // source group will become empty so delete the group
                 const targetGroup = this.movingLock(() =>
                     this.doRemoveGroup(sourceGroup, {
@@ -2887,6 +2920,17 @@ export class DockviewComponent
                             left,
                             top,
                         },
+                    });
+                }
+            } else if (to.api.location.type === 'docked') {
+                const targetDockedGroup = this._dockedGroups.find(
+                    (x) => x.group === to
+                );
+                if (targetDockedGroup) {
+                    this.addDockedGroup(from, {
+                        side: targetDockedGroup.side,
+                        size: targetDockedGroup.size,
+                        collapsed: targetDockedGroup.collapsed,
                     });
                 }
             }
