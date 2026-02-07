@@ -66,10 +66,6 @@ export function loadZoneState(): ZoneState {
   }
 }
 
-export function saveZoneState(state: ZoneState): void {
-  localStorage.setItem(ZONE_STATE_KEY, JSON.stringify(state));
-}
-
 export interface ZoneWidths {
   left: number;
   right: number;
@@ -102,41 +98,6 @@ export function loadZoneWidths(): ZoneWidths {
     return { ...DEFAULT_ZONE_WIDTHS };
   } catch {
     return { ...DEFAULT_ZONE_WIDTHS };
-  }
-}
-
-export function saveZoneWidths(widths: ZoneWidths): void {
-  localStorage.setItem(ZONE_WIDTHS_KEY, JSON.stringify(widths));
-}
-
-/**
- * Save layout for a specific zone to localStorage.
- * Each zone is stored independently with key: crucible:layout:{zone}
- */
-export function saveZoneLayout(zone: Zone, serialized: string): void {
-  const key = `crucible:layout:${zone}`;
-  localStorage.setItem(key, serialized);
-}
-
-/**
- * Load layout for a specific zone from localStorage.
- * Returns null if zone layout doesn't exist or is invalid.
- * Each zone validates independently.
- */
-export function loadZoneLayout(zone: Zone): string | null {
-  const key = `crucible:layout:${zone}`;
-  const stored = localStorage.getItem(key);
-  if (!stored) return null;
-  
-  try {
-    // Validate it's valid JSON and has expected structure
-    const parsed = JSON.parse(stored);
-    if (parsed && typeof parsed.grid === 'object' && typeof parsed.panels === 'object') {
-      return stored;
-    }
-    return null;
-  } catch {
-    return null;
   }
 }
 
@@ -232,30 +193,5 @@ export function migrateToDockedLayout(): void {
   }
 }
 
-/**
- * Migrate old single-key layout format to per-zone keys.
- * @deprecated Use migrateToDockedLayout() instead
- */
-export function migrateOldLayout(): void {
-  const oldKey = LAYOUT_STORAGE_KEY;
-  const oldLayout = localStorage.getItem(oldKey);
-  
-  if (!oldLayout) return;
-  
-  try {
-    const parsed = JSON.parse(oldLayout);
-    
-    if (!parsed || typeof parsed.grid !== 'object' || typeof parsed.panels !== 'object') {
-      localStorage.removeItem(oldKey);
-      return;
-    }
-    
-    const centerKey = `crucible:layout:center`;
-    localStorage.setItem(centerKey, oldLayout);
-    
-    localStorage.removeItem(oldKey);
-  } catch {
-    localStorage.removeItem(oldKey);
-  }
-}
+
 
