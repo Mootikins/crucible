@@ -52,3 +52,12 @@ export interface IJsonPopout extends IJsonNode {
 	window?: Window;
 	[key: string]: unknown;
 }
+
+export interface AnchoredBox {
+	width: number;
+	height: number;
+	top?: number;
+	bottom?: number;
+	left?: number;
+	right?: number;
+}
