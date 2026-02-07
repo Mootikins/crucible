@@ -190,10 +190,15 @@ export interface IDockviewGroupPanelModel extends IPanel {
     ): boolean;
 }
 
+// NOTE(crucible): docked pane support - side enum
+export type DockedSide = 'left' | 'right' | 'top' | 'bottom';
+
 export type DockviewGroupLocation =
     | { type: 'grid' }
     | { type: 'floating' }
-    | { type: 'popout'; getWindow: () => Window; popoutUrl?: string };
+    | { type: 'popout'; getWindow: () => Window; popoutUrl?: string }
+    // NOTE(crucible): docked pane support - 4th location type
+    | { type: 'docked'; side: DockedSide };
 
 
 export class DockviewGroupPanelModel
@@ -364,6 +369,12 @@ export class DockviewGroupPanelModel
                 );
 
                 toggleClass(this.container, 'dv-groupview-floating', true);
+
+                break;
+            case 'docked':
+                this.contentContainer.dropTarget.setTargetZones(['center']);
+
+                toggleClass(this.container, 'dv-groupview-docked', true);
 
                 break;
             case 'popout':
