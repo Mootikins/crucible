@@ -1,3 +1,6 @@
+// NOTE(crucible): Added `type` annotations on all interface/type re-exports
+// for esbuild/Vite isolatedModules compatibility.
+
 export {
     getPaneData,
     getPanelData,
@@ -10,9 +13,10 @@ export {
  * to export them for dockview framework packages to use.
  * To be a good citizen these are exported with a `Dockview` prefix to prevent accidental use by others.
  */
-export { Emitter as DockviewEmitter, Event as DockviewEvent } from './events';
+export { Emitter as DockviewEmitter } from './events';
+export type { Event as DockviewEvent } from './events';
+export type { IDisposable as DockviewIDisposable } from './lifecycle';
 export {
-    IDisposable as DockviewIDisposable,
     MutableDisposable as DockviewMutableDisposable,
     CompositeDisposable as DockviewCompositeDisposable,
     Disposable as DockviewDisposable,
@@ -21,28 +25,26 @@ export {
 export * from './panel/types';
 
 export * from './splitview/splitview';
-export {
+export type {
     SplitviewComponentOptions,
     PanelViewInitParameters,
     SplitviewOptions,
     SplitviewFrameworkOptions,
-    PROPERTY_KEYS_SPLITVIEW,
 } from './splitview/options';
+export { PROPERTY_KEYS_SPLITVIEW } from './splitview/options';
 
 export * from './paneview/paneview';
 export * from './gridview/gridview';
-export {
+export type {
     GridviewComponentOptions,
     GridviewOptions,
     GridviewFrameworkOptions,
-    PROPERTY_KEYS_GRIDVIEW,
 } from './gridview/options';
+export { PROPERTY_KEYS_GRIDVIEW } from './gridview/options';
 export * from './gridview/baseComponentGridview';
 
-export {
-    DraggablePaneviewPanel,
-    PaneviewDidDropEvent as PaneviewDropEvent,
-} from './paneview/draggablePaneviewPanel';
+export { DraggablePaneviewPanel } from './paneview/draggablePaneviewPanel';
+export type { PaneviewDidDropEvent as PaneviewDropEvent } from './paneview/draggablePaneviewPanel';
 
 export * from './dockview/components/panel/content';
 export * from './dockview/components/tab/tab';
@@ -50,16 +52,20 @@ export {
     DockviewGroupPanelModel,
     DockviewDidDropEvent,
     DockviewWillDropEvent,
+} from './dockview/dockviewGroupPanelModel';
+export type {
     DockviewGroupChangeEvent,
+    DockedSide,
+    DockviewGroupLocation,
 } from './dockview/dockviewGroupPanelModel';
 export { DockviewWillShowOverlayLocationEvent } from './dockview/events';
-export {
+export type {
     TabDragEvent,
     GroupDragEvent,
 } from './dockview/components/titlebar/tabsContainer';
 export * from './dockview/types';
 export * from './dockview/dockviewGroupPanel';
-export {
+export type {
     IGroupPanelBaseProps,
     IDockviewPanelHeaderProps,
     IDockviewPanelProps,
@@ -73,70 +79,73 @@ export * from './dockview/options';
 export * from './dockview/theme';
 export * from './dockview/dockviewPanel';
 export { DefaultTab } from './dockview/components/tab/defaultTab';
-export {
-    DefaultDockviewDeserialzier,
-    IPanelDeserializer,
-} from './dockview/deserializer';
+export { DefaultDockviewDeserialzier } from './dockview/deserializer';
+export type { IPanelDeserializer } from './dockview/deserializer';
 
 export * from './dockview/dockviewComponent';
 export * from './gridview/gridviewComponent';
 export * from './splitview/splitviewComponent';
 export * from './paneview/paneviewComponent';
-export {
+export type {
     PaneviewComponentOptions,
     PaneviewOptions,
     PaneviewFrameworkOptions,
+    PaneviewDndOverlayEvent,
+} from './paneview/options';
+export {
     PROPERTY_KEYS_PANEVIEW,
     PaneviewUnhandledDragOverEvent,
-    PaneviewDndOverlayEvent,
 } from './paneview/options';
 
 export * from './gridview/gridviewPanel';
-export { SplitviewPanel, ISplitviewPanel } from './splitview/splitviewPanel';
+export { SplitviewPanel } from './splitview/splitviewPanel';
+export type { ISplitviewPanel } from './splitview/splitviewPanel';
 export * from './paneview/paneviewPanel';
 export * from './dockview/types';
 
-export { DockviewPanelRenderer } from './overlay/overlayRenderContainer';
+export type { DockviewPanelRenderer } from './overlay/overlayRenderContainer';
 
 export {
-    Position,
     positionToDirection,
     directionToPosition,
+} from './dnd/droptarget';
+export type {
+    Position,
     MeasuredValue,
     DroptargetOverlayModel,
 } from './dnd/droptarget';
 
-export {
+export type {
     FocusEvent,
     PanelDimensionChangeEvent,
     VisibilityEvent,
     ActiveEvent,
     PanelApi,
 } from './api/panelApi';
-export {
+export type {
     SizeEvent,
     GridviewPanelApi,
     GridConstraintChangeEvent,
 } from './api/gridviewPanelApi';
-export {
+export type {
     TitleEvent,
     RendererChangedEvent,
     DockviewPanelApi,
     DockviewPanelMoveParams,
 } from './api/dockviewPanelApi';
-export {
+export type {
     PanelSizeEvent,
     PanelConstraintChangeEvent,
     SplitviewPanelApi,
 } from './api/splitviewPanelApi';
-export { ExpansionEvent, PaneviewPanelApi } from './api/paneviewPanelApi';
-export {
+export type { ExpansionEvent, PaneviewPanelApi } from './api/paneviewPanelApi';
+export type {
     DockviewGroupPanelApi,
     DockviewGroupPanelFloatingChangeEvent,
     DockviewGroupMoveParams,
 } from './api/dockviewGroupPanelApi';
+export type { CommonApi } from './api/component.api';
 export {
-    CommonApi,
     SplitviewApi,
     PaneviewApi,
     GridviewApi,
