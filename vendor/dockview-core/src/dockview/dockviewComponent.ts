@@ -473,6 +473,9 @@ export class DockviewComponent
 
         const container = this._getDockedContainer(options.side);
         container.appendChild(dockedGroup.element);
+        // NOTE(crucible): group element must fill the docked panel
+        group.element.style.flex = '1';
+        group.element.style.overflow = 'hidden';
         dockedGroup.element.appendChild(group.element);
 
         this._onDidAddGroup.fire(group);
@@ -550,10 +553,11 @@ export class DockviewComponent
         const gridviewElement = this.gridview.element;
         gridviewElement.remove();
 
+        // NOTE(crucible): docked pane DOM structure - containers use display:contents
+        // so docked panels participate directly in parent flex layout
         this._dockedLeftContainer = document.createElement('div');
         this._dockedLeftContainer.className = 'dv-docked-container dv-docked-left-container';
-        this._dockedLeftContainer.style.display = 'flex';
-        this._dockedLeftContainer.style.flexDirection = 'column';
+        this._dockedLeftContainer.style.display = 'contents';
 
         this._centerContainer = document.createElement('div');
         this._centerContainer.className = 'dv-center-container';
@@ -562,27 +566,27 @@ export class DockviewComponent
         this._centerContainer.style.flex = '1';
         this._centerContainer.style.minWidth = '200px';
         this._centerContainer.style.minHeight = '100px';
+        this._centerContainer.style.overflow = 'hidden';
 
         this._dockedTopContainer = document.createElement('div');
         this._dockedTopContainer.className = 'dv-docked-container dv-docked-top-container';
-        this._dockedTopContainer.style.display = 'flex';
-        this._dockedTopContainer.style.flexDirection = 'row';
+        this._dockedTopContainer.style.display = 'contents';
 
         this._gridContainer = document.createElement('div');
         this._gridContainer.className = 'dv-grid-container';
         this._gridContainer.style.flex = '1';
         this._gridContainer.style.minWidth = '200px';
         this._gridContainer.style.minHeight = '100px';
+        this._gridContainer.style.overflow = 'hidden';
+        this._gridContainer.style.position = 'relative';
 
         this._dockedBottomContainer = document.createElement('div');
         this._dockedBottomContainer.className = 'dv-docked-container dv-docked-bottom-container';
-        this._dockedBottomContainer.style.display = 'flex';
-        this._dockedBottomContainer.style.flexDirection = 'row';
+        this._dockedBottomContainer.style.display = 'contents';
 
         this._dockedRightContainer = document.createElement('div');
         this._dockedRightContainer.className = 'dv-docked-container dv-docked-right-container';
-        this._dockedRightContainer.style.display = 'flex';
-        this._dockedRightContainer.style.flexDirection = 'column';
+        this._dockedRightContainer.style.display = 'contents';
 
         this.element.style.display = 'flex';
         this.element.style.flexDirection = 'row';
