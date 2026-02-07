@@ -1,0 +1,48 @@
+/**
+ * JSON model interfaces for FlexLayout serialization/deserialization
+ */
+
+export interface IJsonModel {
+  global?: IGlobalAttributes;
+  borders?: IJsonBorderNode[];
+  layout?: IJsonRowNode | IJsonTabSetNode;
+}
+
+export interface IGlobalAttributes {
+  [key: string]: unknown;
+}
+
+export interface IJsonNode {
+  type: string;
+  id?: string;
+  [key: string]: unknown;
+}
+
+export interface IJsonRowNode extends IJsonNode {
+  type: "row";
+  weight?: number;
+  children?: (IJsonRowNode | IJsonTabSetNode | IJsonTabNode)[];
+}
+
+export interface IJsonTabSetNode extends IJsonNode {
+  type: "tabset";
+  weight?: number;
+  name?: string;
+  children?: IJsonTabNode[];
+  [key: string]: unknown;
+}
+
+export interface IJsonTabNode extends IJsonNode {
+  type: "tab";
+  name?: string;
+  component?: string;
+  icon?: string;
+  config?: unknown;
+  [key: string]: unknown;
+}
+
+export interface IJsonBorderNode extends IJsonNode {
+  type: "border";
+  location?: string;
+  children?: IJsonTabNode[];
+}
