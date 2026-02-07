@@ -51,6 +51,7 @@ export const Layout: Component<ILayoutProps> = (props) => {
 
     const [rect, setRect] = createSignal<Rect>(Rect.empty());
     const [revision, setRevision] = createSignal(0);
+    const [layoutVersion, setLayoutVersion] = createSignal(0);
     const [, setShowEdges] = createSignal(false);
     const [showOverlay, setShowOverlay] = createSignal(false);
 
@@ -77,6 +78,7 @@ export const Layout: Component<ILayoutProps> = (props) => {
         redraw,
         setDragNode,
         clearDragMain,
+        getRevision: () => layoutVersion(),
     }));
 
     onMount(() => {
@@ -107,6 +109,7 @@ export const Layout: Component<ILayoutProps> = (props) => {
                 root.setPaths("");
                 model.getBorderSet().setPaths();
                 LayoutEngine.calculateLayout(root, _rect);
+                setLayoutVersion((v) => v + 1);
             }
         }
     });
@@ -330,6 +333,7 @@ export const Layout: Component<ILayoutProps> = (props) => {
             >
                 {(() => {
                     void revision();
+                    void layoutVersion();
                     if (rect().width > 0 && props.model.getRoot()) {
                         return (
                             <Row
@@ -344,6 +348,7 @@ export const Layout: Component<ILayoutProps> = (props) => {
 
             {(() => {
                 void revision();
+                void layoutVersion();
                 return rect().width > 0 ? renderTabs() : null;
             }) as unknown as JSX.Element}
         </div>
@@ -442,4 +447,5 @@ export interface ILayoutContext {
     redraw: () => void;
     setDragNode: (event: DragEvent, node: Node) => void;
     clearDragMain: () => void;
+    getRevision: () => number;
 }
