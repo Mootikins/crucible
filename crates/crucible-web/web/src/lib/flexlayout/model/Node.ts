@@ -47,6 +47,10 @@ export abstract class Node {
 		return id as string;
 	}
 
+	getIdIfSet() {
+		return this.attributes.id as string | undefined;
+	}
+
 	getModel() {
 		return this.model;
 	}
