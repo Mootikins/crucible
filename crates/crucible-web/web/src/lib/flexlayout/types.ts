@@ -42,7 +42,13 @@ export interface IJsonTabNode extends IJsonNode {
 }
 
 export interface IJsonBorderNode extends IJsonNode {
-  type: "border";
-  location?: string;
-  children?: IJsonTabNode[];
+	type: "border";
+	location?: string;
+	children?: IJsonTabNode[];
+}
+
+export interface IJsonPopout extends IJsonNode {
+	type: "popout";
+	window?: Window;
+	[key: string]: unknown;
 }

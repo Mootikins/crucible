@@ -110,17 +110,29 @@ export class Rect {
     return prefSize;
   }
 
-  toString() {
-    return (
-      "(Rect: x=" +
-      this.x +
-      ", y=" +
-      this.y +
-      ", width=" +
-      this.width +
-      ", height=" +
-      this.height +
-      ")"
-    );
-  }
+	styleWithPosition(style?: Record<string, any>, position: string = "absolute") {
+		if (style == null) {
+			style = {};
+		}
+		style.left = this.x + "px";
+		style.top = this.y + "px";
+		style.width = Math.max(0, this.width) + "px";
+		style.height = Math.max(0, this.height) + "px";
+		style.position = position;
+		return style;
+	}
+
+	toString() {
+		return (
+			"(Rect: x=" +
+			this.x +
+			", y=" +
+			this.y +
+			", width=" +
+			this.width +
+			", height=" +
+			this.height +
+			")"
+		);
+	}
 }
