@@ -8,9 +8,17 @@ import { TabSetNode } from "@/lib/flexlayout/model/TabSetNode";
 import { BorderNode } from "@/lib/flexlayout/model/BorderNode";
 import { Action } from "@/lib/flexlayout/model/Action";
 
+const defaultGlobal = {
+  tabMinWidth: 0,
+  tabMinHeight: 0,
+  tabMaxWidth: 100000,
+  tabMaxHeight: 100000,
+  tabCloseType: 1,
+};
+
 const layouts: Record<string, any> = {
   test_two_tabs: {
-    global: {},
+    global: { ...defaultGlobal },
     borders: [],
     layout: {
       type: "row",
@@ -32,7 +40,7 @@ const layouts: Record<string, any> = {
   },
 
   test_three_tabs: {
-    global: {},
+    global: { ...defaultGlobal },
     borders: [],
     layout: {
       type: "row",
@@ -66,7 +74,7 @@ const layouts: Record<string, any> = {
   },
 
   test_with_borders: {
-    global: {},
+    global: { ...defaultGlobal },
     borders: [
       {
         type: "border",
@@ -114,7 +122,7 @@ const layouts: Record<string, any> = {
   },
 
   test_with_onRenderTab: {
-    global: {},
+    global: { ...defaultGlobal },
     borders: [
       {
         type: "border",
@@ -187,6 +195,7 @@ const layouts: Record<string, any> = {
 
   test_with_min_size: {
     global: {
+      ...defaultGlobal,
       tabSetMinHeight: 100,
       tabSetMinWidth: 100,
       borderMinSize: 100,
