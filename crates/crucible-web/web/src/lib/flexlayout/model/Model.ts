@@ -560,6 +560,8 @@ export class Model {
 				return false;
 			case "tabSetEnableSingleTabStretch":
 				return false;
+			case "tabSetEnableTabStrip":
+				return true;
 			case "tabSetAutoSelectTab":
 				return true;
 			case "tabSetEnableActiveIcon":
