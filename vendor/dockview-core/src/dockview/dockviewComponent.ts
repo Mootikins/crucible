@@ -438,11 +438,46 @@ export class DockviewComponent
         item: IDockviewPanel | DockviewGroupPanel,
         options: DockedGroupOptions
     ): DockviewDockedGroupPanel {
-        throw new Error('Not implemented - Task 3');
+        let group: DockviewGroupPanel;
+
+        if (item instanceof DockviewPanel) {
+            group = this.createGroup({ skipSetActive: true });
+            group.model.openPanel(item);
+        } else if (item instanceof DockviewGroupPanel) {
+            group = item;
+        } else {
+            throw new Error('Invalid item type');
+        }
+
+        const dockedGroup = new DockviewDockedGroupPanel(
+            group,
+            options.side,
+            {
+                size: options.size,
+                collapsed: options.collapsed,
+            }
+        );
+
+        group.model.location = { type: 'docked', side: options.side };
+
+        this._dockedGroups.push(dockedGroup);
+        this.element.appendChild(dockedGroup.element);
+        dockedGroup.element.appendChild(group.element);
+
+        this._onDidAddGroup.fire(group);
+
+        return dockedGroup;
     }
 
     removeDockedGroup(group: DockviewDockedGroupPanel): void {
-        throw new Error('Not implemented - Task 3');
+        const index = this._dockedGroups.indexOf(group);
+        if (index === -1) {
+            return;
+        }
+
+        this._dockedGroups.splice(index, 1);
+        group.element.remove();
+        group.dispose();
     }
 
     getDockedGroups(side: DockedSide): DockviewDockedGroupPanel[] {
