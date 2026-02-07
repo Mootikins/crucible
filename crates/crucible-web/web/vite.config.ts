@@ -28,6 +28,12 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     sourcemap: true,
+    rollupOptions: {
+      input: {
+        main: path.resolve(__dirname, 'index.html'),
+        'flexlayout-test': path.resolve(__dirname, 'flexlayout-test.html'),
+      },
+    },
   },
   test: {
     environment: 'jsdom',
