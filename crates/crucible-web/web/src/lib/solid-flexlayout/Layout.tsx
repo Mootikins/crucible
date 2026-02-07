@@ -1,4 +1,4 @@
-import { Component, JSX, createSignal, createEffect, onMount, onCleanup, createMemo } from "solid-js";
+import { Component, JSX, createSignal, createEffect, onMount, onCleanup, createMemo, Show, For } from "solid-js";
 import { Model } from "../flexlayout/model/Model";
 import { TabNode } from "../flexlayout/model/TabNode";
 import { TabSetNode } from "../flexlayout/model/TabSetNode";
@@ -300,6 +300,36 @@ export const Layout: Component<ILayoutProps> = (props) => {
         dragEnterCount = 0;
     }
 
+    const allTabNodes = createMemo(() => {
+        void revision();  // Track model changes
+        void layoutVersion();  // Track layout changes
+        const tabs: Array<{node: TabNode, parent: TabSetNode | BorderNode}> = [];
+        
+        // Walk root tree
+        const visitNode = (n: Node) => {
+            if (n instanceof TabNode) {
+                tabs.push({node: n, parent: n.getParent() as TabSetNode | BorderNode});
+            }
+            for (const child of n.getChildren()) {
+                visitNode(child);
+            }
+        };
+        
+        const root = props.model.getRoot();
+        if (root) visitNode(root);
+        
+        // Walk borders
+        for (const border of props.model.getBorderSet().getBorders()) {
+            for (const child of border.getChildren()) {
+                if (child instanceof TabNode) {
+                    tabs.push({node: child, parent: border});
+                }
+            }
+        }
+        
+        return tabs;
+    });
+
     return (
         <div
             ref={selfRef}
@@ -331,98 +361,49 @@ export const Layout: Component<ILayoutProps> = (props) => {
                     display: "flex",
                 }}
             >
-                {(() => {
-                    void revision();
-                    void layoutVersion();
-                    if (rect().width > 0 && props.model.getRoot()) {
-                        return (
-                            <Row
-                                layout={layoutContext()}
-                                node={props.model.getRoot() as RowNode}
-                            />
-                        );
-                    }
-                    return null;
-                }) as unknown as JSX.Element}
+                <Show when={rect().width > 0 && props.model.getRoot()}>
+                    <Row layout={layoutContext()} node={props.model.getRoot() as RowNode} />
+                </Show>
             </div>
 
-            {(() => {
-                void revision();
-                void layoutVersion();
-                return rect().width > 0 ? renderTabs() : null;
-            }) as unknown as JSX.Element}
+            <Show when={rect().width > 0}>
+                <For each={allTabNodes()}>
+                    {(tabEntry) => {
+                        const parent = tabEntry.parent;
+                        const contentRect = parent instanceof TabSetNode
+                            ? parent.getContentRect()
+                            : parent.getRect();
+                        const style: Record<string, any> = {};
+                        contentRect.styleWithPosition(style);
+                        if (!tabEntry.node.isSelected()) {
+                            style.display = "none";
+                        }
+                        return (
+                            <div
+                                class={getClassName(CLASSES.FLEXLAYOUT__TAB)}
+                                data-layout-path={tabEntry.node.getPath()}
+                                style={style}
+                                onPointerDown={() => {
+                                    const p = tabEntry.node.getParent();
+                                    if (p instanceof TabSetNode) {
+                                        if (!p.isActive()) {
+                                            doAction(
+                                                Action.setActiveTabset(p.getId(), Model.MAIN_WINDOW_ID),
+                                            );
+                                        }
+                                    }
+                                }}
+                            >
+                                {props.factory(tabEntry.node)}
+                            </div>
+                        );
+                    }}
+                </For>
+            </Show>
         </div>
     );
 
-    function renderTabs(): JSX.Element[] {
-        const tabs: JSX.Element[] = [];
-        const model = props.model;
-        const root = model.getRoot();
-        if (!root) return tabs;
 
-        const visitNode = (node: Node) => {
-            if (node instanceof TabNode) {
-                const tabNode = node;
-                const selected = tabNode.isSelected();
-                const parent = tabNode.getParent() as TabSetNode | BorderNode;
-                const contentRect = parent instanceof TabSetNode
-                    ? parent.getContentRect()
-                    : parent.getRect();
-
-                const style: Record<string, any> = {};
-                contentRect.styleWithPosition(style);
-
-                if (!selected) {
-                    style.display = "none";
-                }
-
-                tabs.push(
-                    <div
-                        class={getClassName(CLASSES.FLEXLAYOUT__TAB)}
-                        data-layout-path={tabNode.getPath()}
-                        style={style}
-                    >
-                        {props.factory(tabNode)}
-                    </div>,
-                );
-            }
-
-            for (const child of node.getChildren()) {
-                visitNode(child);
-            }
-        };
-
-        visitNode(root);
-
-        for (const border of model.getBorderSet().getBorders()) {
-            for (const child of border.getChildren()) {
-                if (child instanceof TabNode) {
-                    const tabNode = child;
-                    const selected = tabNode.isSelected();
-                    const contentRect = border.getRect();
-
-                    const style: Record<string, any> = {};
-                    contentRect.styleWithPosition(style);
-
-                    if (!selected) {
-                        style.display = "none";
-                    }
-
-                    tabs.push(
-                        <div
-                            class={getClassName(CLASSES.FLEXLAYOUT__TAB)}
-                            data-layout-path={tabNode.getPath()}
-                            style={style}
-                        >
-                            {props.factory(tabNode)}
-                        </div>,
-                    );
-                }
-            }
-        }
-
-        return tabs;
-    }
 };
 
 /** Layout context type passed to child components */
