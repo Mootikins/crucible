@@ -41,7 +41,7 @@ export class LayoutEngine {
         }
 
         const isHorizontal = row.getOrientation() === Orientation.HORZ;
-        const splitterSize = 0;
+        const splitterSize = row.getModel().getSplitterSize();
 
         const availableSpace = isHorizontal ? rect.width : rect.height;
         const totalSplitterSpace = Math.max(0, (children.length - 1) * splitterSize);

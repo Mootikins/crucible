@@ -1,4 +1,4 @@
-import { Component, JSX } from "solid-js";
+import { Component, JSX, createEffect } from "solid-js";
 import { TabNode } from "../flexlayout/model/TabNode";
 import { CLASSES } from "../flexlayout/core/Types";
 import { Action } from "../flexlayout/model/Action";
@@ -19,6 +19,13 @@ export const BorderButton: Component<IBorderButtonProps> = (props) => {
 
     const cm = props.layout.getClassName;
     const node = props.node;
+
+    createEffect(() => {
+        void props.layout.getRevision();
+        if (selfRef) {
+            node.setTabRect(props.layout.getBoundingClientRect(selfRef));
+        }
+    });
 
     const onDragStart = (event: DragEvent) => {
         if (node.isEnableDrag()) {
@@ -99,7 +106,7 @@ export const BorderButton: Component<IBorderButtonProps> = (props) => {
 
     const renderContent = (): { leading: JSX.Element | undefined; content: JSX.Element | undefined; buttons: JSX.Element[] } => {
         let iconAngle = 0;
-        if (node.getModel().isEnableRotateBorderIcons() === false) {
+        if (node.getModel().getAttribute("enableRotateBorderIcons") === false) {
             if (props.border === "left") {
                 iconAngle = 90;
             } else if (props.border === "right") {

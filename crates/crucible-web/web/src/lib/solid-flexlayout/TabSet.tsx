@@ -97,7 +97,7 @@ export const TabSet: Component<ITabSetProps> = (props) => {
         return classes;
     };
 
-    const renderButtons = () => {
+    const getRenderState = () => {
         void props.layout.getRevision();
         const renderState: ITabSetRenderValues = {
             leading: undefined,
@@ -123,6 +123,7 @@ export const TabSet: Component<ITabSetProps> = (props) => {
                                 (node.isMaximized() ? "max" : "min"),
                         )
                     }
+                    onPointerDown={(e) => e.stopPropagation()}
                     onClick={onMaximizeToggle}
                 >
                     {node.isMaximized() ? "⊡" : "⊞"}
@@ -140,6 +141,7 @@ export const TabSet: Component<ITabSetProps> = (props) => {
                         " " +
                         cm(CLASSES.FLEXLAYOUT__TAB_TOOLBAR_BUTTON_CLOSE)
                     }
+                    onPointerDown={(e) => e.stopPropagation()}
                     onClick={onClose}
                 >
                     ✕
@@ -147,10 +149,11 @@ export const TabSet: Component<ITabSetProps> = (props) => {
             );
         }
 
-        return buttons;
+        return { buttons, stickyButtons: renderState.stickyButtons };
     };
 
     const renderTabStrip = (): JSX.Element => {
+        const state = getRenderState();
         return (
             <div
                 ref={tabStripRef}
@@ -183,10 +186,19 @@ export const TabSet: Component<ITabSetProps> = (props) => {
                                 </>
                             )}
                         </For>
+                        {state.stickyButtons.length > 0 && (
+                            <div
+                                class={cm(CLASSES.FLEXLAYOUT__TAB_TOOLBAR_STICKY_BUTTONS_CONTAINER)}
+                                onPointerDown={(e) => e.stopPropagation()}
+                                onDragStart={(e) => e.preventDefault()}
+                            >
+                                {state.stickyButtons}
+                            </div>
+                        )}
                     </div>
                 </div>
                 <div class={cm(CLASSES.FLEXLAYOUT__TAB_TOOLBAR)}>
-                    {renderButtons()}
+                    {state.buttons}
                 </div>
             </div>
         );
@@ -194,8 +206,9 @@ export const TabSet: Component<ITabSetProps> = (props) => {
 
     const style = (): Record<string, any> => {
         void props.layout.getRevision();
+        const weight = node.getWeight();
         const s: Record<string, any> = {
-            "flex-grow": Math.max(1, node.getWeight() * 1000),
+            "flex-grow": Math.max(1, weight * 1000),
             "min-width": node.getMinWidth() + "px",
             "min-height": node.getMinHeight() + "px",
             "max-width": node.getMaxWidth() + "px",
