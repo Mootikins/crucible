@@ -14,7 +14,6 @@
         "@codemirror/theme-one-dark": "^6.1.2",
         "@codemirror/view": "^6.28.4",
         "@huggingface/transformers": "^3.8.1",
-        "dockview-core": "file:../../../vendor/dockview-core",
         "dompurify": "^3.3.1",
         "marked": "^17.0.1",
         "solid-js": "^1.9.3",
@@ -602,8 +601,6 @@
     "didyoumean": ["didyoumean@1.2.2", "", {}, "sha512-gxtyfqMg7GKyhQmb056K7M3xszy/myH8w+B4RT+QXBQsvAOdc3XymqDDPHx1BgPgsdAA5SIifona89YtRATDzw=="],
 
     "dlv": ["dlv@1.1.3", "", {}, "sha512-+HlytyjlPKnIG8XuRG8WvmBP8xs8P71y+SKKS6ZXWoEgLuePxtDoUEiH7WkdePWrQ5JBpE6aoVqfZfJUQkjXwA=="],
-
-    "dockview-core": ["dockview-core@file:../../../vendor/dockview-core", {}],
 
     "dom-accessibility-api": ["dom-accessibility-api@0.6.3", "", {}, "sha512-7ZgogeTnjuHbo+ct10G9Ffp0mif17idi0IyWNVA/wcwcm7NPOD/WEHVP3n7n3MhXqxoIYm8d6MuZohYWIZ4T3w=="],
 
