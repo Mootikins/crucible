@@ -161,6 +161,7 @@ export interface SerializedDockview {
     activeGroup?: string;
     floatingGroups?: SerializedFloatingGroup[];
     popoutGroups?: SerializedPopoutGroup[];
+    dockedGroups?: SerializedDockedGroup[];
 }
 
 export interface MovePanelEvent {
@@ -1516,6 +1517,17 @@ export class DockviewComponent
             }
         );
 
+        const dockedGroups: SerializedDockedGroup[] = this._dockedGroups.map(
+            (group) => {
+                return {
+                    data: group.group.toJSON() as GroupPanelViewState,
+                    side: group.side,
+                    size: group.size,
+                    collapsed: group.collapsed,
+                };
+            }
+        );
+
         const result: SerializedDockview = {
             grid: data,
             panels,
@@ -1528,6 +1540,10 @@ export class DockviewComponent
 
         if (popoutGroups.length > 0) {
             result.popoutGroups = popoutGroups;
+        }
+
+        if (dockedGroups.length > 0) {
+            result.dockedGroups = dockedGroups;
         }
 
         return result;
@@ -1737,6 +1753,27 @@ export class DockviewComponent
             this._popoutRestorationPromise = Promise.all(popoutPromises).then(
                 () => void 0
             );
+
+            const serializedDockedGroups = data.dockedGroups ?? [];
+
+            for (const serializedDockedGroup of serializedDockedGroups) {
+                const { data, side, size, collapsed } = serializedDockedGroup;
+
+                try {
+                    const group = createGroupFromSerializedState(data);
+
+                    this.addDockedGroup(group, {
+                        side,
+                        size,
+                        collapsed,
+                    });
+                } catch (err) {
+                    console.warn(
+                        'dockview: failed to deserialize docked group, skipping',
+                        err
+                    );
+                }
+            }
 
             for (const floatingGroup of this._floatingGroups) {
                 floatingGroup.overlay.setBounds();
