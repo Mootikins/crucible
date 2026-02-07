@@ -55,12 +55,17 @@ export const Layout: Component<ILayoutProps> = (props) => {
     const [, setShowEdges] = createSignal(false);
     const [showOverlay, setShowOverlay] = createSignal(false);
 
+    const [editingTab, setEditingTab] = createSignal<TabNode | undefined>(undefined);
+
     let dropInfo: DropInfo | undefined;
     let outlineDiv: HTMLDivElement | undefined;
     let dragEnterCount = 0;
     let dragging = false;
 
-    const layoutContext = createMemo(() => ({
+    // Stable object — NOT a createMemo. A createMemo recreates the object on any
+    // signal change (including editingTab), which destroys all child components
+    // that receive it as props. Closures capture the signals reactively.
+    const layoutContextObj: ILayoutContext = {
         model: props.model,
         factory: props.factory,
         getClassName,
@@ -72,14 +77,15 @@ export const Layout: Component<ILayoutProps> = (props) => {
         getDomRect,
         getBoundingClientRect: getBoundingClientRectFn,
         getWindowId: () => Model.MAIN_WINDOW_ID,
-        setEditingTab: (_tab?: TabNode) => {},
-        getEditingTab: () => undefined as TabNode | undefined,
+        setEditingTab: (tab?: TabNode) => setEditingTab(tab),
+        getEditingTab: () => editingTab(),
         isRealtimeResize: () => false,
         redraw,
         setDragNode,
         clearDragMain,
         getRevision: () => layoutVersion(),
-    }));
+    };
+    const layoutContext = () => layoutContextObj;
 
     onMount(() => {
         updateRect();

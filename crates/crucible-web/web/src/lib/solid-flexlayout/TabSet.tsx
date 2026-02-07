@@ -1,4 +1,4 @@
-import { Component, JSX, createEffect } from "solid-js";
+import { Component, JSX, createEffect, createMemo, For } from "solid-js";
 import { TabNode } from "../flexlayout/model/TabNode";
 import { TabSetNode } from "../flexlayout/model/TabSetNode";
 import { CLASSES } from "../flexlayout/core/Types";
@@ -38,9 +38,11 @@ export const TabSet: Component<ITabSetProps> = (props) => {
     });
 
     const onPointerDown = () => {
-        props.layout.doAction(
-            Action.setActiveTabset(node.getId(), props.layout.getWindowId()),
-        );
+        if (!node.isActive()) {
+            props.layout.doAction(
+                Action.setActiveTabset(node.getId(), props.layout.getWindowId()),
+            );
+        }
     };
 
     const onMaximizeToggle = (event: MouseEvent) => {
@@ -74,31 +76,29 @@ export const TabSet: Component<ITabSetProps> = (props) => {
         }
     };
 
-    const renderTabStrip = (): JSX.Element => {
+    const tabChildren = createMemo(() => {
         void props.layout.getRevision();
-        const tabs: JSX.Element[] = [];
-        const children = node.getChildren();
+        return [...node.getChildren()] as TabNode[];
+    });
 
-        if (node.isEnableTabStrip()) {
-            for (let i = 0; i < children.length; i++) {
-                const child = children[i] as TabNode;
-                const isSelected = node.getSelected() === i;
-                tabs.push(
-                    <TabButton
-                        layout={props.layout}
-                        node={child}
-                        path={path() + "/tb" + i}
-                        selected={isSelected}
-                    />,
-                );
-                if (i < children.length - 1) {
-                    tabs.push(
-                        <div class={cm(CLASSES.FLEXLAYOUT__TABSET_TAB_DIVIDER)} />,
-                    );
-                }
-            }
+    const tabStripClasses = () => {
+        void props.layout.getRevision();
+        let classes = cm(CLASSES.FLEXLAYOUT__TABSET_TABBAR_OUTER);
+        classes += " " + CLASSES.FLEXLAYOUT__TABSET_TABBAR_OUTER_ + (node.getTabLocation() || "top");
+
+        if (node.isActive()) {
+            classes += " " + cm(CLASSES.FLEXLAYOUT__TABSET_SELECTED);
         }
 
+        if (node.isMaximized()) {
+            classes += " " + cm(CLASSES.FLEXLAYOUT__TABSET_MAXIMIZED);
+        }
+
+        return classes;
+    };
+
+    const renderButtons = () => {
+        void props.layout.getRevision();
         const renderState: ITabSetRenderValues = {
             leading: undefined,
             stickyButtons: [],
@@ -147,27 +147,14 @@ export const TabSet: Component<ITabSetProps> = (props) => {
             );
         }
 
-        const buttonbar = (
-            <div class={cm(CLASSES.FLEXLAYOUT__TAB_TOOLBAR)}>
-                {buttons}
-            </div>
-        );
+        return buttons;
+    };
 
-        let tabStripClasses = cm(CLASSES.FLEXLAYOUT__TABSET_TABBAR_OUTER);
-        tabStripClasses += " " + CLASSES.FLEXLAYOUT__TABSET_TABBAR_OUTER_ + (node.getTabLocation() || "top");
-
-        if (node.isActive()) {
-            tabStripClasses += " " + cm(CLASSES.FLEXLAYOUT__TABSET_SELECTED);
-        }
-
-        if (node.isMaximized()) {
-            tabStripClasses += " " + cm(CLASSES.FLEXLAYOUT__TABSET_MAXIMIZED);
-        }
-
+    const renderTabStrip = (): JSX.Element => {
         return (
             <div
                 ref={tabStripRef}
-                class={tabStripClasses}
+                class={tabStripClasses()}
                 data-layout-path={path() + "/tabstrip"}
                 onPointerDown={onPointerDown}
                 onDblClick={onDoubleClick}
@@ -181,10 +168,26 @@ export const TabSet: Component<ITabSetProps> = (props) => {
                     <div
                         class={cm(CLASSES.FLEXLAYOUT__TABSET_TABBAR_INNER_TAB_CONTAINER) + " " + cm(CLASSES.FLEXLAYOUT__TABSET_TABBAR_INNER_TAB_CONTAINER_ + (node.getTabLocation() || "top"))}
                     >
-                        {tabs}
+                        <For each={tabChildren()}>
+                            {(child, index) => (
+                                <>
+                                    <TabButton
+                                        layout={props.layout}
+                                        node={child}
+                                        path={path() + "/tb" + index()}
+                                        selected={node.getSelected() === index()}
+                                    />
+                                    {index() < tabChildren().length - 1 && (
+                                        <div class={cm(CLASSES.FLEXLAYOUT__TABSET_TAB_DIVIDER)} />
+                                    )}
+                                </>
+                            )}
+                        </For>
                     </div>
                 </div>
-                {buttonbar}
+                <div class={cm(CLASSES.FLEXLAYOUT__TAB_TOOLBAR)}>
+                    {renderButtons()}
+                </div>
             </div>
         );
     };

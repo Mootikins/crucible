@@ -1,4 +1,4 @@
-import { Component, JSX } from "solid-js";
+import { Component, Show, createMemo } from "solid-js";
 import { TabNode } from "../flexlayout/model/TabNode";
 import { TabSetNode } from "../flexlayout/model/TabSetNode";
 import { CLASSES } from "../flexlayout/core/Types";
@@ -18,14 +18,40 @@ export const TabButton: Component<ITabButtonProps> = (props) => {
     const cm = props.layout.getClassName;
     const node = props.node;
 
+    const isEditing = createMemo(() => {
+        void props.layout.getRevision();
+        return props.layout.getEditingTab() === node;
+    });
+
+    const tabName = () => {
+        void props.layout.getRevision();
+        return node.getName();
+    };
+
     const onClick = () => {
-        props.layout.doAction(Action.selectTab(node.getId()));
+        if (!props.selected) {
+            props.layout.doAction(Action.selectTab(node.getId()));
+        }
     };
 
     const onDoubleClick = (event: MouseEvent) => {
         if (node.isEnableRename()) {
             event.stopPropagation();
+            props.layout.setEditingTab(node);
         }
+    };
+
+    const onTextBoxKeyPress = (event: KeyboardEvent) => {
+        if (event.code === "Escape") {
+            props.layout.setEditingTab(undefined);
+        } else if (event.code === "Enter" || event.code === "NumpadEnter") {
+            props.layout.doAction(Action.renameTab(node.getId(), (event.target as HTMLInputElement).value));
+            props.layout.setEditingTab(undefined);
+        }
+    };
+
+    const onTextBoxPointerDown = (event: PointerEvent) => {
+        event.stopPropagation();
     };
 
     const onDragStart = (event: DragEvent) => {
@@ -77,10 +103,10 @@ export const TabButton: Component<ITabButtonProps> = (props) => {
         return classes;
     };
 
-    const renderContent = (): { leading: JSX.Element | undefined; content: JSX.Element | undefined; buttons: JSX.Element[] } => {
+    const renderContent = (): ITabRenderValues => {
         const renderState: ITabRenderValues = {
             leading: undefined,
-            content: <span>{node.getName()}</span>,
+            content: undefined,
             buttons: [],
         };
 
@@ -114,6 +140,8 @@ export const TabButton: Component<ITabButtonProps> = (props) => {
         return renderState;
     };
 
+    const initialState = renderContent();
+
     return (
         <div
             ref={selfRef}
@@ -126,24 +154,30 @@ export const TabButton: Component<ITabButtonProps> = (props) => {
             onDragStart={onDragStart}
             onDragEnd={onDragEnd}
         >
-            {(() => {
-                const state = renderContent();
-                return (
-                    <>
-                        {state.leading && (
-                            <div class={cm(CLASSES.FLEXLAYOUT__TAB_BUTTON_LEADING)}>
-                                {state.leading}
-                            </div>
-                        )}
-                        {state.content && (
-                            <div class={cm(CLASSES.FLEXLAYOUT__TAB_BUTTON_CONTENT)}>
-                                {state.content}
-                            </div>
-                        )}
-                        {state.buttons}
-                    </>
-                );
-            })()}
+            {initialState.leading && (
+                <div class={cm(CLASSES.FLEXLAYOUT__TAB_BUTTON_LEADING)}>
+                    {initialState.leading}
+                </div>
+            )}
+            <Show
+                when={isEditing()}
+                fallback={
+                    <div class={cm(CLASSES.FLEXLAYOUT__TAB_BUTTON_CONTENT)}>
+                        {tabName()}
+                    </div>
+                }
+            >
+                <input
+                    ref={(el) => requestAnimationFrame(() => { el.focus(); el.select(); })}
+                    class={cm(CLASSES.FLEXLAYOUT__TAB_BUTTON_TEXTBOX)}
+                    data-layout-path={props.path + "/textbox"}
+                    type="text"
+                    value={tabName()}
+                    onKeyDown={onTextBoxKeyPress}
+                    onPointerDown={onTextBoxPointerDown}
+                />
+            </Show>
+            {initialState.buttons}
         </div>
     );
 };
