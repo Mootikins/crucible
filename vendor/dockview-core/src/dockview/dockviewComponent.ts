@@ -376,6 +376,14 @@ export class DockviewComponent
     private readonly _rootDropTarget: Droptarget;
     private _popoutRestorationPromise: Promise<void> = Promise.resolve();
 
+    // NOTE(crucible): docked pane support - DOM containers for layout
+    private readonly _dockedLeftContainer: HTMLElement;
+    private readonly _dockedRightContainer: HTMLElement;
+    private readonly _centerContainer: HTMLElement;
+    private readonly _dockedTopContainer: HTMLElement;
+    private readonly _dockedBottomContainer: HTMLElement;
+    private readonly _gridContainer: HTMLElement;
+
     private readonly _onDidRemoveGroup = new Emitter<DockviewGroupPanel>();
     readonly onDidRemoveGroup: Event<DockviewGroupPanel> =
         this._onDidRemoveGroup.event;
@@ -462,12 +470,29 @@ export class DockviewComponent
         group.model.location = { type: 'docked', side: options.side };
 
         this._dockedGroups.push(dockedGroup);
-        this.element.appendChild(dockedGroup.element);
+
+        const container = this._getDockedContainer(options.side);
+        container.appendChild(dockedGroup.element);
         dockedGroup.element.appendChild(group.element);
 
         this._onDidAddGroup.fire(group);
 
+        this.layout(this.gridview.width, this.gridview.height, true);
+
         return dockedGroup;
+    }
+
+    private _getDockedContainer(side: DockedSide): HTMLElement {
+        switch (side) {
+            case 'left':
+                return this._dockedLeftContainer;
+            case 'right':
+                return this._dockedRightContainer;
+            case 'top':
+                return this._dockedTopContainer;
+            case 'bottom':
+                return this._dockedBottomContainer;
+        }
     }
 
     removeDockedGroup(group: DockviewDockedGroupPanel): void {
@@ -479,6 +504,8 @@ export class DockviewComponent
         this._dockedGroups.splice(index, 1);
         group.element.remove();
         group.dispose();
+
+        this.layout(this.gridview.width, this.gridview.height, true);
     }
 
     getDockedGroups(side: DockedSide): DockviewDockedGroupPanel[] {
@@ -520,6 +547,56 @@ export class DockviewComponent
 
         this._options = options;
 
+        const gridviewElement = this.gridview.element;
+        gridviewElement.remove();
+
+        this._dockedLeftContainer = document.createElement('div');
+        this._dockedLeftContainer.className = 'dv-docked-container dv-docked-left-container';
+        this._dockedLeftContainer.style.display = 'flex';
+        this._dockedLeftContainer.style.flexDirection = 'column';
+
+        this._centerContainer = document.createElement('div');
+        this._centerContainer.className = 'dv-center-container';
+        this._centerContainer.style.display = 'flex';
+        this._centerContainer.style.flexDirection = 'column';
+        this._centerContainer.style.flex = '1';
+        this._centerContainer.style.minWidth = '200px';
+        this._centerContainer.style.minHeight = '100px';
+
+        this._dockedTopContainer = document.createElement('div');
+        this._dockedTopContainer.className = 'dv-docked-container dv-docked-top-container';
+        this._dockedTopContainer.style.display = 'flex';
+        this._dockedTopContainer.style.flexDirection = 'row';
+
+        this._gridContainer = document.createElement('div');
+        this._gridContainer.className = 'dv-grid-container';
+        this._gridContainer.style.flex = '1';
+        this._gridContainer.style.minWidth = '200px';
+        this._gridContainer.style.minHeight = '100px';
+
+        this._dockedBottomContainer = document.createElement('div');
+        this._dockedBottomContainer.className = 'dv-docked-container dv-docked-bottom-container';
+        this._dockedBottomContainer.style.display = 'flex';
+        this._dockedBottomContainer.style.flexDirection = 'row';
+
+        this._dockedRightContainer = document.createElement('div');
+        this._dockedRightContainer.className = 'dv-docked-container dv-docked-right-container';
+        this._dockedRightContainer.style.display = 'flex';
+        this._dockedRightContainer.style.flexDirection = 'column';
+
+        this.element.style.display = 'flex';
+        this.element.style.flexDirection = 'row';
+
+        this._centerContainer.appendChild(this._dockedTopContainer);
+        this._centerContainer.appendChild(this._gridContainer);
+        this._centerContainer.appendChild(this._dockedBottomContainer);
+
+        this.element.appendChild(this._dockedLeftContainer);
+        this.element.appendChild(this._centerContainer);
+        this.element.appendChild(this._dockedRightContainer);
+
+        this._gridContainer.appendChild(gridviewElement);
+
         this.popupService = new PopupService(this.element);
         this._themeClassnames = new Classnames(this.element);
         this._api = new DockviewApi(this);
@@ -529,7 +606,7 @@ export class DockviewComponent
             { disabled: true }
         );
         this.overlayRenderContainer = new OverlayRenderContainer(
-            this.gridview.element,
+            this.element,
             this
         );
 
