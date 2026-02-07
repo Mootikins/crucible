@@ -48,17 +48,16 @@ function textRenderNode(node: any, path: string, tabsArray: string[]): void {
   const type = node.getType();
 
   if (type === "row") {
-    let rowIndex = 0;
-    let tsIndex = 0;
+    let index = 0;
     for (const child of node.getChildren()) {
       if (child.getType() === "row") {
-        const newPath = `${path}/r${rowIndex}`;
+        const newPath = `${path}/r${index}`;
         textRenderNode(child, newPath, tabsArray);
-        rowIndex++;
+        index++;
       } else if (child.getType() === "tabset") {
-        const tsPath = `${path}/ts${tsIndex}`;
+        const tsPath = `${path}/ts${index}`;
         textRenderTabset(child, tsPath, tabsArray);
-        tsIndex++;
+        index++;
       }
     }
   } else if (type === "tabset") {
