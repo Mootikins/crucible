@@ -49,6 +49,15 @@ export class BorderSet {
     }
 
     /** @internal */
+    getBorder(location: DockLocation | string): BorderNode | undefined {
+        if (typeof location === "string") {
+            const loc = DockLocation.getByName(location);
+            return this.borderMap.get(loc);
+        }
+        return this.borderMap.get(location);
+    }
+
+    /** @internal */
     forEachNode(fn: (node: Node, level: number) => void) {
         for (const borderNode of this.borders) {
             fn(borderNode, 0);
