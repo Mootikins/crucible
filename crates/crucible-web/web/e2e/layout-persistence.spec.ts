@@ -1,76 +1,84 @@
 import { test, expect, type Page } from '@playwright/test';
 
-async function waitForShellReady(page: Page): Promise<void> {
+async function waitForDockviewReady(page: Page): Promise<void> {
+  await page.waitForSelector('.dockview-theme-abyss', { timeout: 10_000 });
   await page.waitForFunction(() => {
-    const zones = ['left', 'center', 'right', 'bottom'];
-    return zones.every((z) => {
-      const el = document.querySelector(`[data-zone="${z}"]`);
-      return el instanceof HTMLElement;
-    });
+    const dockview = document.querySelector('.dockview-theme-abyss');
+    return dockview instanceof HTMLElement && dockview.children.length > 0;
   }, { timeout: 10_000 });
 }
 
-async function waitForZoneCollapsed(page: Page, zone: string): Promise<void> {
-  await page.waitForFunction(
-    (z: string) => {
-      const el = document.querySelector(`[data-zone="${z}"]`);
-      return el instanceof HTMLElement && getComputedStyle(el).flexBasis === '0px';
-    },
-    zone,
-    { timeout: 5_000 },
-  );
-}
-
-test.describe('Layout Persistence — localStorage Survival', () => {
-  test('zone visibility state persists across page refresh', async ({ page }) => {
+test.describe('Layout Persistence — Docked Panel State', () => {
+  test('docked panel visibility persists across page refresh', async ({ page }) => {
     await page.goto('/');
     await page.evaluate(() => localStorage.clear());
     await page.reload();
-    await waitForShellReady(page);
+    await waitForDockviewReady(page);
 
-    await page.locator('[data-testid="toggle-left"]').click();
-    await waitForZoneCollapsed(page, 'left');
+    const isMac = process.platform === 'darwin';
+    const modifier = isMac ? 'Meta' : 'Control';
 
-    const zoneStateBeforeRefresh = await page.evaluate(() =>
-      localStorage.getItem('crucible:zones'),
-    );
-    expect(zoneStateBeforeRefresh).toBeTruthy();
-
-    await page.reload();
-    await waitForShellReady(page);
-
-    await waitForZoneCollapsed(page, 'left');
-  });
-
-  test('zone widths are saved to localStorage on toggle', async ({ page }) => {
-    await page.goto('/');
-    await page.evaluate(() => localStorage.clear());
-    await page.reload();
-    await waitForShellReady(page);
-
-    await page.locator('[data-testid="toggle-left"]').click();
-    await waitForZoneCollapsed(page, 'left');
-
-    const widthsAfterToggle = await page.evaluate(() =>
-      localStorage.getItem('crucible:zone-widths'),
-    );
-    expect(widthsAfterToggle).toBeTruthy();
-
-    const parsed = JSON.parse(widthsAfterToggle!);
-    expect(parsed.left).toBeGreaterThan(0);
-    expect(parsed.right).toBeGreaterThan(0);
-    expect(parsed.bottom).toBeGreaterThan(0);
-  });
-
-  test('per-zone layout uses independent storage keys', async ({ page }) => {
-    await page.goto('/');
-    await page.evaluate(() => localStorage.clear());
-    await page.reload();
-    await waitForShellReady(page);
+    await page.keyboard.press(`${modifier}+KeyB`);
 
     await page.waitForFunction(() => {
-      return document.querySelectorAll('.dv-tab').length >= 3;
-    }, { timeout: 10_000 });
+      const el = document.querySelector('.dv-docked-left-container');
+      if (!el) return false;
+      return getComputedStyle(el).flexBasis === '0px';
+    }, { timeout: 5000 });
+
+    const layoutBeforeRefresh = await page.evaluate(() =>
+      localStorage.getItem('crucible:layout'),
+    );
+    expect(layoutBeforeRefresh).toBeTruthy();
+
+    const parsed = JSON.parse(layoutBeforeRefresh!);
+    expect(parsed).toHaveProperty('dockedGroups');
+
+    await page.reload();
+    await waitForDockviewReady(page);
+
+    await page.waitForFunction(() => {
+      const el = document.querySelector('.dv-docked-left-container');
+      if (!el) return false;
+      return getComputedStyle(el).flexBasis === '0px';
+    }, { timeout: 5000 });
+
+    const leftCollapsed = await page.evaluate(() => {
+      const el = document.querySelector('.dv-docked-left-container');
+      return el ? getComputedStyle(el).flexBasis === '0px' : false;
+    });
+    expect(leftCollapsed).toBe(true);
+  });
+
+  test('docked panel sizes persist across page refresh', async ({ page }) => {
+    await page.goto('/');
+    await page.evaluate(() => localStorage.clear());
+    await page.reload();
+    await waitForDockviewReady(page);
+
+    const initialWidth = await page.evaluate(() => {
+      const el = document.querySelector('.dv-docked-right-container');
+      return el ? getComputedStyle(el).flexBasis : null;
+    });
+    expect(initialWidth).toMatch(/\d+px/);
+
+    await page.reload();
+    await waitForDockviewReady(page);
+
+    const restoredWidth = await page.evaluate(() => {
+      const el = document.querySelector('.dv-docked-right-container');
+      return el ? getComputedStyle(el).flexBasis : null;
+    });
+    expect(restoredWidth).toBe(initialWidth);
+  });
+
+  test('single layout key stores all docked panel state', async ({ page }) => {
+    await page.goto('/');
+    await page.evaluate(() => localStorage.clear());
+    await page.reload();
+    await waitForDockviewReady(page);
+
+    await page.waitForTimeout(1000);
 
     const storageKeys = await page.evaluate(() => {
       const keys: string[] = [];
@@ -81,24 +89,21 @@ test.describe('Layout Persistence — localStorage Survival', () => {
       return keys;
     });
 
-    const hasZoneFormat = storageKeys.some((k) => k.match(/^crucible:layout:[a-z]+$/));
-    const hasOldFormat = storageKeys.includes('crucible:layout');
-    expect(hasOldFormat).toBe(false);
+    const hasNewFormat = storageKeys.includes('crucible:layout');
+    expect(hasNewFormat).toBe(true);
 
-    if (hasZoneFormat) {
-      const zoneKeys = storageKeys.filter((k) => k.match(/^crucible:layout:[a-z]+$/));
-      for (const key of zoneKeys) {
-        const value = await page.evaluate((k: string) => localStorage.getItem(k), key);
-        expect(value).toBeTruthy();
-        const parsed = JSON.parse(value!);
-        expect(parsed).toHaveProperty('grid');
-        expect(parsed).toHaveProperty('panels');
-      }
-    }
+    const hasOldZoneKeys = storageKeys.some((k) => k.match(/^crucible:layout:(left|right|bottom|center)$/));
+    expect(hasOldZoneKeys).toBe(false);
+
+    const hasOldZoneState = storageKeys.includes('crucible:zones');
+    expect(hasOldZoneState).toBe(false);
+
+    const hasOldZoneWidths = storageKeys.includes('crucible:zone-widths');
+    expect(hasOldZoneWidths).toBe(false);
   });
 
-  test('old layout key migrates to per-zone format', async ({ page }) => {
-    const mockLayout = JSON.stringify({
+  test('old layout keys migrate to new format', async ({ page }) => {
+    const mockCenterLayout = JSON.stringify({
       grid: { root: {}, width: 100, height: 100, orientation: 0 },
       panels: { chat: { id: 'chat', contentComponent: 'chat' } },
     });
@@ -106,34 +111,46 @@ test.describe('Layout Persistence — localStorage Survival', () => {
     await page.goto('/');
     await page.evaluate((layout: string) => {
       localStorage.clear();
-      localStorage.setItem('crucible:layout', layout);
-    }, mockLayout);
+      localStorage.setItem('crucible:layout:center', layout);
+      localStorage.setItem('crucible:zones', JSON.stringify({ left: 'visible', right: 'visible', bottom: 'hidden' }));
+      localStorage.setItem('crucible:zone-widths', JSON.stringify({ left: 280, right: 350, bottom: 200 }));
+    }, mockCenterLayout);
     await page.reload();
-    await waitForShellReady(page);
+    await waitForDockviewReady(page);
 
     const migrationResult = await page.waitForFunction(() => {
-      const oldKey = localStorage.getItem('crucible:layout');
-      const centerKey = localStorage.getItem('crucible:layout:center');
-      return { oldKeyCleared: oldKey == null, centerKeySet: centerKey != null };
+      const newKey = localStorage.getItem('crucible:layout');
+      const oldCenterKey = localStorage.getItem('crucible:layout:center');
+      const oldZonesKey = localStorage.getItem('crucible:zones');
+      return {
+        newKeySet: newKey != null,
+        oldCenterKeyCleared: oldCenterKey == null,
+        oldZonesKeyCleared: oldZonesKey == null,
+      };
     }, { timeout: 5_000 });
 
     const result = await migrationResult.jsonValue();
-    expect(result.oldKeyCleared).toBe(true);
+    expect(result.newKeySet).toBe(true);
+    expect(result.oldCenterKeyCleared).toBe(true);
+    expect(result.oldZonesKeyCleared).toBe(true);
+
+    const newLayout = await page.evaluate(() => localStorage.getItem('crucible:layout'));
+    const parsed = JSON.parse(newLayout!);
+    expect(parsed).toHaveProperty('dockedGroups');
+    expect(Array.isArray(parsed.dockedGroups)).toBe(true);
   });
 
   test('corrupt localStorage does not crash the app', async ({ page }) => {
     await page.goto('/');
     await page.evaluate(() => {
-      localStorage.setItem('crucible:zones', 'invalid json{{{');
-      localStorage.setItem('crucible:zone-widths', '}{not valid');
-      localStorage.setItem('crucible:layout:center', 'broken');
+      localStorage.setItem('crucible:layout', 'invalid json{{{');
     });
 
     const errors: string[] = [];
     page.on('pageerror', (err) => errors.push(err.message));
 
     await page.reload();
-    await waitForShellReady(page);
+    await waitForDockviewReady(page);
 
     const critical = errors.filter(
       (e) => !e.includes('fetch') && !e.includes('net::') && !e.includes('HTTP'),
@@ -151,14 +168,14 @@ test.describe('Layout Persistence — localStorage Survival', () => {
 
     await page.addInitScript(() => localStorage.clear());
     await page.goto('/');
-    await waitForShellReady(page);
+    await waitForDockviewReady(page);
 
     await page.waitForFunction(() => {
       return document.querySelectorAll('.dv-tab').length >= 1;
     }, { timeout: 10_000 });
 
     const dockviewErrors = consoleErrors.filter(
-      (e) => e.toLowerCase().includes('dockview') || e.includes('pane'),
+      (e) => e.toLowerCase().includes('dockview') || e.includes('docked'),
     );
     expect(dockviewErrors).toHaveLength(0);
   });
