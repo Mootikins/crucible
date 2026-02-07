@@ -237,25 +237,16 @@ export class Model {
 	}
 
 	private actionAddNode(data: any): void {
-		const { json, toNodeId, index } = data;
+		const { json, toNodeId, location, index } = data;
 		const toNode = this.getNodeById(toNodeId);
 		if (!toNode) return;
 
-		if (toNode.getType() === "tabset" || toNode.getType() === "border") {
-			const tab = new TabNode(this, json);
-			const insertIndex = index === -1 ? toNode.getChildren().length : index;
-			(toNode as any).addChild(tab, insertIndex);
-			this.registerNode(tab);
-		} else if (toNode.getType() === "row") {
-			const newTabset = new TabSetNode(this, { type: "tabset", weight: 50 });
-			const tab = new TabNode(this, json);
-			(newTabset as any).addChild(tab);
-			this.registerNode(newTabset);
-			this.registerNode(tab);
+		const newTab = new TabNode(this, json);
+		this.registerNode(newTab);
 
-			const row = toNode as RowNode;
-			const insertIndex = index === -1 ? row.getChildren().length : index;
-			(row as any).addChild(newTabset, insertIndex);
+		const dockLocation = DockLocation.getByName(location);
+		if (toNode.getType() === "tabset" || toNode.getType() === "border" || toNode.getType() === "row") {
+			(toNode as any).drop(newTab, dockLocation, index, true);
 		}
 	}
 
@@ -489,7 +480,7 @@ export class Model {
 	}
 
 	isRootOrientationVertical(): boolean {
-		return true;
+		return this.attributes.rootOrientationVertical ?? false;
 	}
 
 	toJson(): IJsonModel {
