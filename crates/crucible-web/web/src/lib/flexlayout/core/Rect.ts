@@ -110,6 +110,10 @@ export class Rect {
     return prefSize;
   }
 
+	positionElement(element: HTMLElement, position?: string) {
+		this.styleWithPosition(element.style, position);
+	}
+
 	styleWithPosition(style?: Record<string, any>, position: string = "absolute") {
 		if (style == null) {
 			style = {};
