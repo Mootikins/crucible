@@ -297,7 +297,8 @@
 }
 
 .flexlayout__border_button {
-  padding: 4px 10px;
+  padding: 3px 0.5em;
+  margin: 2px 0px;
   cursor: pointer;
   white-space: nowrap;
   color: #737373;
@@ -305,7 +306,8 @@
   font-size: 12px;
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 0.3em;
+  box-sizing: border-box;
   transition: color 0.15s, background 0.15s;
 }
 

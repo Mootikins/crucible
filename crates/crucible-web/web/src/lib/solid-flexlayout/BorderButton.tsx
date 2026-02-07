@@ -1,5 +1,6 @@
 import { Component, JSX, createEffect } from "solid-js";
 import { TabNode } from "../flexlayout/model/TabNode";
+import { Rect } from "../flexlayout/core/Rect";
 import { CLASSES } from "../flexlayout/core/Types";
 import { Action } from "../flexlayout/model/Action";
 import { ICloseType } from "../flexlayout/model/ICloseType";
@@ -23,7 +24,15 @@ export const BorderButton: Component<IBorderButtonProps> = (props) => {
     createEffect(() => {
         void props.layout.getRevision();
         if (selfRef) {
-            node.setTabRect(props.layout.getBoundingClientRect(selfRef));
+            const r = props.layout.getBoundingClientRect(selfRef);
+            // Add 1px to the stacking dimension so canDrop's center calculation
+            // (which uses strict '<') doesn't hit an exact integer boundary when
+            // HTML5 drag events round clientX/clientY to integers.
+            if (props.border === "left" || props.border === "right") {
+                node.setTabRect(new Rect(r.x, r.y, r.width, r.height + 1));
+            } else {
+                node.setTabRect(new Rect(r.x, r.y, r.width + 1, r.height));
+            }
         }
     });
 
