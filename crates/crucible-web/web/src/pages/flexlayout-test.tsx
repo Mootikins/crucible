@@ -14,6 +14,8 @@ const defaultGlobal = {
   tabMaxWidth: 100000,
   tabMaxHeight: 100000,
   tabCloseType: 1,
+  borderAutoSelectTabWhenOpen: true,
+  borderAutoSelectTabWhenClosed: false,
 };
 
 const layouts: Record<string, any> = {
