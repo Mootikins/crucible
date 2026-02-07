@@ -966,8 +966,8 @@ describe("Tree > Actions > Other Actions", () => {
       )
     );
 
-    const t1 = ts0?.getChildren()[1];
-    model.doAction(Action.selectTab(t1?.getId() || ""));
+    const t0 = ts0?.getChildren()[0];
+    model.doAction(Action.selectTab(t0?.getId() || ""));
 
     const tabs = textRender(model);
     expect(tabs).equal("/ts0/t0[One]*,/ts0/t1[newtab1],/ts1/t0[Two]*");
@@ -978,8 +978,18 @@ describe("Tree > Actions > Other Actions", () => {
     const ts0 = model.getNodeById("ts0") as any;
     const ts1 = model.getNodeById("ts1") as any;
 
-    model.doAction(Action.setActiveTabset(ts1?.getId() || ""));
+    expect(ts0?.isActive()).equal(false);
+    expect(ts1?.isActive()).equal(false);
 
+    model.doAction(Action.selectTab(ts0?.getChildren()[0]?.getId() || ""));
+    expect(ts0?.isActive()).equal(true);
+    expect(ts1?.isActive()).equal(false);
+
+    model.doAction(Action.selectTab(ts1?.getChildren()[0]?.getId() || ""));
+    expect(ts0?.isActive()).equal(false);
+    expect(ts1?.isActive()).equal(true);
+
+    model.doAction(Action.setActiveTabset(ts0?.getId() || ""));
     expect(ts0?.isActive()).equal(true);
     expect(ts1?.isActive()).equal(false);
   });
