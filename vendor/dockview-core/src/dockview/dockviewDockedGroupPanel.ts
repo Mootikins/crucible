@@ -38,10 +38,12 @@ export class DockviewDockedGroupPanel
         
         this.element.style.display = 'flex';
         this.element.style.flexDirection = 'column';
+        this.element.style.flexShrink = '0';
+        this.element.style.flexGrow = '0';
+        this.element.style.overflow = 'hidden';
         
         if (this._collapsed) {
             this.element.style.flexBasis = '0';
-            this.element.style.overflow = 'hidden';
         } else {
             this.element.style.flexBasis = `${this._size}px`;
         }
@@ -62,10 +64,8 @@ export class DockviewDockedGroupPanel
         
         if (collapsed) {
             this.element.style.flexBasis = '0';
-            this.element.style.overflow = 'hidden';
         } else {
             this.element.style.flexBasis = `${this._size}px`;
-            this.element.style.overflow = '';
         }
     }
 
