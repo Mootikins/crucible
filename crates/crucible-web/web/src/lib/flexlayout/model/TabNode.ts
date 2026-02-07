@@ -183,6 +183,9 @@ export class TabNode extends Node implements IDraggable {
 	toJson(): IJsonTabNode {
 		const json: any = {};
 		TabNode.attributeDefinitions.toJson(json, this.attributes);
+		if (json.id && /^\d+$/.test(json.id)) {
+			delete json.id;
+		}
 		return json as IJsonTabNode;
 	}
 

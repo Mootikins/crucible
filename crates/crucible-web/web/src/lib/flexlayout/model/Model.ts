@@ -496,7 +496,7 @@ export class Model {
 		const layout = this.getRoot()?.toJson();
 		return {
 			global: this.attributes,
-			borders: [],
+			borders: this.borderSet.toJson(),
 			layout: layout as any,
 		};
 	}

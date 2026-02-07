@@ -227,6 +227,9 @@ export class TabSetNode extends Node implements IDraggable, IDropTarget {
     toJson(): IJsonTabSetNode {
         const json: any = {};
         TabSetNode.attributeDefinitions.toJson(json, this.attributes);
+        if (json.id && /^\d+$/.test(json.id)) {
+            delete json.id;
+        }
         json.children = this.children.map((child) => child.toJson());
 
         if (this.isActive()) {
@@ -516,7 +519,7 @@ export class TabSetNode extends Node implements IDraggable, IDropTarget {
         attributeDefinitions.add("id", undefined).setType(Attribute.STRING).setDescription(
             `the unique id of the tab set, if left undefined a uuid will be assigned`
         );
-        attributeDefinitions.add("weight", 100).setType(Attribute.NUMBER).setDescription(
+        attributeDefinitions.add("weight", 100, true).setType(Attribute.NUMBER).setDescription(
             `relative weight for sizing of this tabset in parent row`
         );
         attributeDefinitions.add("selected", 0).setType(Attribute.NUMBER).setDescription(

@@ -73,6 +73,9 @@ export class RowNode extends Node implements IDropTarget {
     toJson(): IJsonRowNode {
         const json: any = {};
         RowNode.attributeDefinitions.toJson(json, this.attributes);
+        if (json.id && /^\d+$/.test(json.id)) {
+            delete json.id;
+        }
 
         json.children = [];
         for (const child of this.children) {
@@ -551,7 +554,7 @@ export class RowNode extends Node implements IDropTarget {
         attributeDefinitions.add("id", undefined).setType(Attribute.STRING).setDescription(
             `the unique id of the row, if left undefined a uuid will be assigned`
         );
-        attributeDefinitions.add("weight", 100).setType(Attribute.NUMBER).setDescription(
+        attributeDefinitions.add("weight", 100, true).setType(Attribute.NUMBER).setDescription(
             `relative weight for sizing of this row in parent row`
         );
 
