@@ -1,4 +1,4 @@
-import { Component, Show, createMemo } from "solid-js";
+import { Component, Show, createMemo, createEffect } from "solid-js";
 import { TabNode } from "../flexlayout/model/TabNode";
 import { TabSetNode } from "../flexlayout/model/TabSetNode";
 import { CLASSES } from "../flexlayout/core/Types";
@@ -17,6 +17,13 @@ export const TabButton: Component<ITabButtonProps> = (props) => {
 
     const cm = props.layout.getClassName;
     const node = props.node;
+
+    createEffect(() => {
+        void props.layout.getRevision();
+        if (selfRef) {
+            node.setTabRect(props.layout.getBoundingClientRect(selfRef));
+        }
+    });
 
     const isEditing = createMemo(() => {
         void props.layout.getRevision();

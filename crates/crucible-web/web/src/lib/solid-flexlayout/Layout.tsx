@@ -7,10 +7,13 @@ import { RowNode } from "../flexlayout/model/RowNode";
 import { Node } from "../flexlayout/model/Node";
 import { Rect } from "../flexlayout/core/Rect";
 import { CLASSES } from "../flexlayout/core/Types";
+import { DockLocation } from "../flexlayout/core/DockLocation";
 import { DropInfo } from "../flexlayout/core/DropInfo";
 import { LayoutEngine } from "../flexlayout/layout/LayoutEngine";
 import { Action } from "../flexlayout/model/Action";
 import { Row } from "./Row";
+import { BorderTabSet } from "./BorderTabSet";
+import { BorderTab } from "./BorderTab";
 
 export interface ILayoutProps {
     /** The model for this layout */
@@ -52,7 +55,7 @@ export const Layout: Component<ILayoutProps> = (props) => {
     const [rect, setRect] = createSignal<Rect>(Rect.empty());
     const [revision, setRevision] = createSignal(0);
     const [layoutVersion, setLayoutVersion] = createSignal(0);
-    const [, setShowEdges] = createSignal(false);
+    const [showEdges, setShowEdges] = createSignal(false);
     const [showOverlay, setShowOverlay] = createSignal(false);
 
     const [editingTab, setEditingTab] = createSignal<TabNode | undefined>(undefined);
@@ -142,6 +145,7 @@ export const Layout: Component<ILayoutProps> = (props) => {
             const outcome = props.onAction(action);
             if (outcome !== undefined) {
                 props.model.doAction(outcome);
+                syncMaximizeState();
                 redraw();
                 if (props.onModelChange) {
                     props.onModelChange(props.model, outcome);
@@ -151,12 +155,21 @@ export const Layout: Component<ILayoutProps> = (props) => {
             return undefined;
         } else {
             props.model.doAction(action);
+            syncMaximizeState();
             redraw();
             if (props.onModelChange) {
                 props.onModelChange(props.model, action);
             }
             return undefined;
         }
+    }
+
+    // Workaround: actionMaximizeToggle sets Model.maximizedTabset (private field)
+    // but getMaximizedTabset() reads from windowsMap. Sync the two after every action.
+    function syncMaximizeState() {
+        const model = props.model;
+        const maxTs = (model as any).maximizedTabset as TabSetNode | undefined;
+        model.setMaximizedTabset(maxTs, Model.MAIN_WINDOW_ID);
     }
 
     function redraw() {
@@ -266,12 +279,15 @@ export const Layout: Component<ILayoutProps> = (props) => {
             if (dragNode) {
                 const root = props.model.getRoot();
                 if (root) {
-                    const di = root.findDropTargetNode(
+                    let di = root.findDropTargetNode(
                         Model.MAIN_WINDOW_ID,
                         dragNode,
                         pos.x,
                         pos.y,
                     );
+                    if (di === undefined) {
+                        di = props.model.getBorderSet().findDropTargetNode(dragNode, pos.x, pos.y);
+                    }
                     if (di) {
                         dropInfo = di;
                         if (outlineDiv) {
@@ -336,6 +352,44 @@ export const Layout: Component<ILayoutProps> = (props) => {
         return tabs;
     });
 
+    const BORDER_BAR_SIZE = 29;
+
+    const hasBorders = createMemo(() => {
+        void layoutVersion();
+        return props.model.getBorderSet().getBorderMap().size > 0;
+    });
+
+    const borderData = createMemo(() => {
+        void layoutVersion();
+        if (!hasBorders()) return null;
+        const borders = props.model.getBorderSet().getBorderMap();
+        const strips = new Map<string, {border: BorderNode, show: boolean}>();
+        for (const [_, location] of DockLocation.values) {
+            const border = borders.get(location);
+            if (border && border.isShowing() && (
+                !border.isAutoHide() ||
+                (border.isAutoHide() && border.getChildren().length > 0))) {
+                strips.set(location.getName(), { border, show: border.getSelected() !== -1 });
+            }
+        }
+        return {
+            strips,
+            isHorizontal: props.model.getBorderSet().getLayoutHorizontal(),
+        };
+    });
+
+    const borderStrip = (loc: DockLocation) => {
+        const data = borderData();
+        const entry = data?.strips.get(loc.getName());
+        return entry ? <BorderTabSet layout={layoutContext()} border={entry.border} size={BORDER_BAR_SIZE} /> : undefined;
+    };
+
+    const borderContent = (loc: DockLocation) => {
+        const data = borderData();
+        const entry = data?.strips.get(loc.getName());
+        return entry ? <BorderTab layout={layoutContext()} border={entry.border} show={entry.show} /> : undefined;
+    };
+
     return (
         <div
             ref={selfRef}
@@ -354,23 +408,142 @@ export const Layout: Component<ILayoutProps> = (props) => {
                 />
             )}
 
-            <div
-                ref={mainRef}
-                class={getClassName(CLASSES.FLEXLAYOUT__LAYOUT_MAIN)}
-                data-layout-path="/main"
-                style={{
-                    position: "absolute",
-                    top: "0",
-                    left: "0",
-                    bottom: "0",
-                    right: "0",
-                    display: "flex",
-                }}
-            >
-                <Show when={rect().width > 0 && props.model.getRoot()}>
-                    <Row layout={layoutContext()} node={props.model.getRoot() as RowNode} />
-                </Show>
-            </div>
+            <Show when={showEdges()}>
+                {(() => {
+                    const edgeLength = 100;
+                    const edgeWidth = 10;
+                    const offset = edgeLength / 2;
+                    const r = rect();
+                    const cls = getClassName(CLASSES.FLEXLAYOUT__EDGE_RECT);
+                    const radius = 50;
+                    return (
+                        <>
+                            <div
+                                class={cls + " " + getClassName(CLASSES.FLEXLAYOUT__EDGE_RECT_TOP)}
+                                style={{
+                                    position: "absolute",
+                                    top: "0px",
+                                    left: (r.width / 2 - offset) + "px",
+                                    width: edgeLength + "px",
+                                    height: edgeWidth + "px",
+                                    "border-bottom-left-radius": radius + "%",
+                                    "border-bottom-right-radius": radius + "%",
+                                    "z-index": 1001,
+                                }}
+                            />
+                            <div
+                                class={cls + " " + getClassName(CLASSES.FLEXLAYOUT__EDGE_RECT_LEFT)}
+                                style={{
+                                    position: "absolute",
+                                    top: (r.height / 2 - offset) + "px",
+                                    left: "0px",
+                                    width: edgeWidth + "px",
+                                    height: edgeLength + "px",
+                                    "border-top-right-radius": radius + "%",
+                                    "border-bottom-right-radius": radius + "%",
+                                    "z-index": 1001,
+                                }}
+                            />
+                            <div
+                                class={cls + " " + getClassName(CLASSES.FLEXLAYOUT__EDGE_RECT_BOTTOM)}
+                                style={{
+                                    position: "absolute",
+                                    top: (r.height - edgeWidth) + "px",
+                                    left: (r.width / 2 - offset) + "px",
+                                    width: edgeLength + "px",
+                                    height: edgeWidth + "px",
+                                    "border-top-left-radius": radius + "%",
+                                    "border-top-right-radius": radius + "%",
+                                    "z-index": 1001,
+                                }}
+                            />
+                            <div
+                                class={cls + " " + getClassName(CLASSES.FLEXLAYOUT__EDGE_RECT_RIGHT)}
+                                style={{
+                                    position: "absolute",
+                                    top: (r.height / 2 - offset) + "px",
+                                    left: (r.width - edgeWidth) + "px",
+                                    width: edgeWidth + "px",
+                                    height: edgeLength + "px",
+                                    "border-top-left-radius": radius + "%",
+                                    "border-bottom-left-radius": radius + "%",
+                                    "z-index": 1001,
+                                }}
+                            />
+                        </>
+                    );
+                })()}
+            </Show>
+
+            <Show when={hasBorders()} fallback={
+                <div
+                    ref={mainRef}
+                    class={getClassName(CLASSES.FLEXLAYOUT__LAYOUT_MAIN)}
+                    data-layout-path="/main"
+                    style={{ position: "absolute", top: "0", left: "0", bottom: "0", right: "0", display: "flex" }}
+                >
+                    <Show when={rect().width > 0 && props.model.getRoot()}>
+                        <Row layout={layoutContext()} node={props.model.getRoot() as RowNode} />
+                    </Show>
+                </div>
+            }>
+                {(() => {
+                    const classBorderOuter = getClassName(CLASSES.FLEXLAYOUT__LAYOUT_BORDER_CONTAINER);
+                    const classBorderInner = getClassName(CLASSES.FLEXLAYOUT__LAYOUT_BORDER_CONTAINER_INNER);
+
+                    const mainContent = (
+                        <div
+                            ref={mainRef}
+                            class={getClassName(CLASSES.FLEXLAYOUT__LAYOUT_MAIN)}
+                            data-layout-path="/main"
+                        >
+                            <Show when={rect().width > 0 && props.model.getRoot()}>
+                                <Row layout={layoutContext()} node={props.model.getRoot() as RowNode} />
+                            </Show>
+                        </div>
+                    );
+
+                    return (
+                        <Show when={borderData()?.isHorizontal} fallback={
+                            <div class={classBorderOuter} style={{ "flex-direction": "row" }}>
+                                {borderStrip(DockLocation.LEFT)}
+                                <div class={classBorderInner} style={{ "flex-direction": "column" }}>
+                                    {borderStrip(DockLocation.TOP)}
+                                    <div class={classBorderInner} style={{ "flex-direction": "row" }}>
+                                        {borderContent(DockLocation.LEFT)}
+                                        <div class={classBorderInner} style={{ "flex-direction": "column" }}>
+                                            {borderContent(DockLocation.TOP)}
+                                            {mainContent}
+                                            {borderContent(DockLocation.BOTTOM)}
+                                        </div>
+                                        {borderContent(DockLocation.RIGHT)}
+                                    </div>
+                                    {borderStrip(DockLocation.BOTTOM)}
+                                </div>
+                                {borderStrip(DockLocation.RIGHT)}
+                            </div>
+                        }>
+                            <div class={classBorderOuter} style={{ "flex-direction": "column" }}>
+                                {borderStrip(DockLocation.TOP)}
+                                <div class={classBorderInner} style={{ "flex-direction": "row" }}>
+                                    {borderStrip(DockLocation.LEFT)}
+                                    <div class={classBorderInner} style={{ "flex-direction": "column" }}>
+                                        {borderContent(DockLocation.TOP)}
+                                        <div class={classBorderInner} style={{ "flex-direction": "row" }}>
+                                            {borderContent(DockLocation.LEFT)}
+                                            {mainContent}
+                                            {borderContent(DockLocation.RIGHT)}
+                                        </div>
+                                        {borderContent(DockLocation.BOTTOM)}
+                                    </div>
+                                    {borderStrip(DockLocation.RIGHT)}
+                                </div>
+                                {borderStrip(DockLocation.BOTTOM)}
+                            </div>
+                        </Show>
+                    );
+                })()}
+            </Show>
 
             <Show when={rect().width > 0}>
                 <For each={allTabNodes()}>
@@ -408,8 +581,6 @@ export const Layout: Component<ILayoutProps> = (props) => {
             </Show>
         </div>
     );
-
-
 };
 
 /** Layout context type passed to child components */
