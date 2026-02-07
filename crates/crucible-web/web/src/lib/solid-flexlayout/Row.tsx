@@ -1,4 +1,4 @@
-import { Component, JSX } from "solid-js";
+import { Component, createMemo, For } from "solid-js";
 import { RowNode } from "../flexlayout/model/RowNode";
 import { TabSetNode } from "../flexlayout/model/TabSetNode";
 import { Orientation } from "../flexlayout/core/Orientation";
@@ -12,43 +12,53 @@ export interface IRowProps {
     node: RowNode;
 }
 
+interface FlatChild {
+    type: 'row' | 'tabset' | 'splitter';
+    node?: RowNode | TabSetNode;
+    key: string;
+    splitterIndex?: number;
+}
+
 export const Row: Component<IRowProps> = (props) => {
     let selfRef: HTMLDivElement | undefined;
 
     const horizontal = () => props.node.getOrientation() === Orientation.HORZ;
 
-    const items = (): JSX.Element[] => {
+    const flatChildren = createMemo(() => {
         void props.layout.getRevision();
-        const result: JSX.Element[] = [];
         const children = props.node.getChildren();
+        const result: FlatChild[] = [];
 
         for (let i = 0; i < children.length; i++) {
             const child = children[i];
 
+            // Add splitter before each child except the first
             if (i > 0) {
-                result.push(
-                    <Splitter
-                        layout={props.layout}
-                        node={props.node}
-                        index={i}
-                        horizontal={horizontal()}
-                    />,
-                );
+                result.push({
+                    type: 'splitter',
+                    key: `splitter-${i}`,
+                    splitterIndex: i,
+                });
             }
 
+            // Add the child (Row or TabSet)
             if (child instanceof RowNode) {
-                result.push(
-                    <Row layout={props.layout} node={child} />,
-                );
+                result.push({
+                    type: 'row',
+                    node: child,
+                    key: child.getId(),
+                });
             } else if (child instanceof TabSetNode) {
-                result.push(
-                    <TabSet layout={props.layout} node={child} />,
-                );
+                result.push({
+                    type: 'tabset',
+                    node: child,
+                    key: child.getId(),
+                });
             }
         }
 
         return result;
-    };
+    });
 
     const style = (): Record<string, any> => {
         void props.layout.getRevision();
@@ -69,7 +79,34 @@ export const Row: Component<IRowProps> = (props) => {
             data-layout-path={props.node.getPath()}
             style={style()}
         >
-            {items()}
+            <For each={flatChildren()}>
+                {(item) => {
+                    if (item.type === 'splitter') {
+                        return (
+                            <Splitter
+                                layout={props.layout}
+                                node={props.node}
+                                index={item.splitterIndex!}
+                                horizontal={horizontal()}
+                            />
+                        );
+                    } else if (item.type === 'row') {
+                        return (
+                            <Row
+                                layout={props.layout}
+                                node={item.node as RowNode}
+                            />
+                        );
+                    } else {
+                        return (
+                            <TabSet
+                                layout={props.layout}
+                                node={item.node as TabSetNode}
+                            />
+                        );
+                    }
+                }}
+            </For>
         </div>
     );
 };
