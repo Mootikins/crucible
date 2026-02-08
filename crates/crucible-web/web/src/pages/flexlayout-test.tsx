@@ -6,7 +6,14 @@ import { Model } from "@/lib/flexlayout/model/Model";
 import { TabNode } from "@/lib/flexlayout/model/TabNode";
 import { TabSetNode } from "@/lib/flexlayout/model/TabSetNode";
 import { BorderNode } from "@/lib/flexlayout/model/BorderNode";
-import { Action } from "@/lib/flexlayout/model/Action";
+import { Action, type IAction } from "@/lib/flexlayout/model/Action";
+
+type LayoutDef = {
+  global?: Record<string, unknown>;
+  borders?: Array<Record<string, unknown>>;
+  layout: Record<string, unknown>;
+  windows?: Record<string, unknown>;
+};
 
 const defaultGlobal = {
   tabMinWidth: 0,
@@ -23,7 +30,7 @@ const defaultGlobal = {
   borderEnableAutoHide: false,
 };
 
-const layouts: Record<string, any> = {
+const layouts: Record<string, LayoutDef> = {
   test_two_tabs: {
     global: { ...defaultGlobal },
     borders: [],
@@ -2033,13 +2040,18 @@ const FlexLayoutTest: Component = () => {
   const params = new URLSearchParams(window.location.search);
   const layoutName = params.get("layout") || "test_two_tabs";
 
+  // Intentionally a plain `let` — only used inside event handlers,
+  // never rendered in JSX. No reactivity needed.
   let nextIndex = 1;
 
   const currentLayout = () => layouts[layoutName] || layouts.test_two_tabs;
-  const [model, setModel] = createSignal(Model.fromJson(currentLayout()), { equals: false });
+  // FlexLayout mutates model in place via doAction(),
+  // so we disable SolidJS equality check to force re-renders
+  // when setModel(sameRef) is called after mutation.
+  const [model, setModel] = createSignal(Model.fromJson(currentLayout() as any), { equals: false });
 
   const reload = () => {
-    const newModel = Model.fromJson(currentLayout());
+    const newModel = Model.fromJson(currentLayout() as any);
     const root = newModel.getRoot();
     if (root) {
       root.setPaths("");
@@ -2070,6 +2082,9 @@ const FlexLayoutTest: Component = () => {
     const tempNode = TabNode.fromJson(tabJson, model(), false);
     const layoutDiv = document.querySelector(".flexlayout__layout");
     if (layoutDiv) {
+      // FlexLayout's internal drag handling reads __dragNode from the layout DOM element.
+      // This is the library's expected mechanism for external drag integration.
+      // See: FlexLayout DragDrop.ts — looks for (element as any).__dragNode
       (layoutDiv as any).__dragNode = tempNode;
     }
     event.dataTransfer!.setData("text/plain", "--flexlayout--");
@@ -2151,6 +2166,9 @@ const FlexLayoutTest: Component = () => {
     const tempNode = TabNode.fromJson(tabJson, model(), false);
     const layoutDiv = document.querySelector(".flexlayout__layout");
     if (layoutDiv) {
+      // FlexLayout's internal drag handling reads __dragNode from the layout DOM element.
+      // This is the library's expected mechanism for external drag integration.
+      // See: FlexLayout DragDrop.ts — looks for (element as any).__dragNode
       (layoutDiv as any).__dragNode = tempNode;
     }
     event.dataTransfer!.setData("text/plain", "--flexlayout--");
@@ -2352,7 +2370,7 @@ const FlexLayoutTest: Component = () => {
        }
 
        case "nested": {
-         const nestedLayout: any = {
+         const nestedLayout: LayoutDef = {
            global: { ...defaultGlobal },
            borders: [],
            layout: {
@@ -2369,7 +2387,7 @@ const FlexLayoutTest: Component = () => {
              ],
            },
          };
-         const nestedModel = Model.fromJson(nestedLayout);
+         const nestedModel = Model.fromJson(nestedLayout as any);
          const root = nestedModel.getRoot();
          if (root) {
            root.setPaths("");
@@ -2411,7 +2429,7 @@ const FlexLayoutTest: Component = () => {
      }
    };
 
-  const onAction = (action: any) => {
+  const onAction = (action: IAction) => {
     if (layoutName === "render_action_intercept" && action.type === "FlexLayout_DeleteTab") {
       console.log("[render_action_intercept] Blocked action:", action);
       return undefined;
