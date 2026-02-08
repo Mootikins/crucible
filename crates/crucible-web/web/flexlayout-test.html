@@ -32,7 +32,7 @@
       .flexlayout__tabset_tabbar_outer_top { border-bottom: 1px solid #0f3460; }
       .flexlayout__tabset_tabbar_outer_bottom { border-top: 1px solid #0f3460; }
       .flexlayout__tabset_tabbar_inner { display: flex; flex: 1; overflow-x: auto; overflow-y: hidden; }
-      .flexlayout__tabset_tabbar_inner_tab_container { display: flex; }
+      .flexlayout__tabset_tabbar_inner_tab_container { position: relative; display: flex; padding-left: 4px; padding-right: 4px; box-sizing: border-box; }
       .flexlayout__tabset_tabbar_inner_tab_container_top { flex-direction: row; }
       .flexlayout__tabset_tabbar_inner_tab_container_bottom { flex-direction: row; }
       .flexlayout__tabset_tab_divider { width: 1px; background: #0f3460; margin: 4px 0; }
@@ -78,7 +78,7 @@
       .flexlayout__splitter_handle { position: absolute; background: #0f3460; border-radius: 2px; }
       .flexlayout__splitter_handle_horz { width: 30px; height: 4px; top: 50%; left: 50%; transform: translate(-50%, -50%); }
       .flexlayout__splitter_handle_vert { width: 4px; height: 30px; top: 50%; left: 50%; transform: translate(-50%, -50%); }
-      .flexlayout__splitter_drag { position: absolute; z-index: 1000; }
+      .flexlayout__splitter_drag { position: absolute; z-index: 1000; background: #e94560; opacity: 0.7; }
 
       /* Outline / drag */
       .flexlayout__outline_rect { position: absolute; border: 2px dashed #e94560; pointer-events: none; z-index: 1000; }
@@ -155,6 +155,25 @@
 
       /* Floating window */
       .flexlayout__floating_window_content { width: 100%; height: 100%; }
+
+      /* Floating panel (in-DOM overlay) */
+      .flexlayout__floating_panel { position: absolute; z-index: 1000; display: flex; flex-direction: column; border: 1px solid #0f3460; border-radius: 4px; background: #1a1a2e; box-shadow: 0 4px 16px rgba(0,0,0,0.4); overflow: hidden; }
+      .flexlayout__floating_panel_titlebar { display: flex; align-items: center; justify-content: space-between; padding: 2px 6px; background: #16213e; cursor: move; user-select: none; min-height: 24px; font-size: 12px; color: #8899aa; }
+      .flexlayout__floating_panel_titlebar_title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .flexlayout__floating_panel_titlebar_buttons { display: flex; gap: 4px; align-items: center; }
+      .flexlayout__floating_panel_titlebar_buttons button { background: none; border: none; color: inherit; cursor: pointer; padding: 0 4px; font-size: 12px; opacity: 0.7; }
+      .flexlayout__floating_panel_titlebar_buttons button:hover { opacity: 1; }
+      .flexlayout__floating_panel_content { flex: 1; position: relative; overflow: hidden; display: flex; }
+      .flexlayout__floating_panel_resize_handle { position: absolute; bottom: 0; right: 0; width: 12px; height: 12px; cursor: nwse-resize; opacity: 0.5; background: linear-gradient(135deg, transparent 50%, #555 50%, transparent 55%, #555 60%, transparent 65%, #555 70%); }
+      .flexlayout__floating_panel_resize_n { position: absolute; top: -3px; left: 6px; right: 6px; height: 6px; cursor: ns-resize; }
+      .flexlayout__floating_panel_resize_s { position: absolute; bottom: -3px; left: 6px; right: 6px; height: 6px; cursor: ns-resize; }
+      .flexlayout__floating_panel_resize_e { position: absolute; top: 6px; right: -3px; bottom: 6px; width: 6px; cursor: ew-resize; }
+      .flexlayout__floating_panel_resize_w { position: absolute; top: 6px; left: -3px; bottom: 6px; width: 6px; cursor: ew-resize; }
+      .flexlayout__floating_panel_resize_nw { position: absolute; top: -3px; left: -3px; width: 10px; height: 10px; cursor: nwse-resize; }
+      .flexlayout__floating_panel_resize_ne { position: absolute; top: -3px; right: -3px; width: 10px; height: 10px; cursor: nesw-resize; }
+      .flexlayout__floating_panel_resize_sw { position: absolute; bottom: -3px; left: -3px; width: 10px; height: 10px; cursor: nesw-resize; }
+      .flexlayout__floating_panel_resize_se { position: absolute; bottom: -3px; right: -3px; width: 10px; height: 10px; cursor: nwse-resize; }
+      .flexlayout__floating_panel_outline { position: absolute; z-index: 10000; border: 2px dashed #e94560; background: rgba(233, 69, 96, 0.08); pointer-events: none; border-radius: 4px; }
 
       /* Mini scrollbar */
       .flexlayout__mini_scrollbar { position: absolute; opacity: 0; transition: opacity 0.3s; }

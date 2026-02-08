@@ -171,6 +171,13 @@ export const Action = {
     };
   },
 
+  moveWindow(windowId: string, x: number, y: number, width: number, height: number): IAction {
+    return {
+      type: "MOVE_WINDOW",
+      data: { windowId, x, y, width, height },
+    };
+  },
+
   undoAction(): IAction {
     return {
       type: "UNDO",

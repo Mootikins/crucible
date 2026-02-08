@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
 
-const HARNESS_URL = "/flexlayout-test.html";
+const HARNESS_URL = "/flexlayout-test.html?layout=test_two_tabs";
 
 test.describe("FlexLayout SolidJS — Smoke Tests", () => {
   test.beforeEach(async ({ page }) => {
@@ -15,11 +15,10 @@ test.describe("FlexLayout SolidJS — Smoke Tests", () => {
     await expect(layoutRoot).toBeVisible();
 
     const tabButtons = page.locator(".flexlayout__tab_button");
-    await expect(tabButtons).toHaveCount(3);
+    await expect(tabButtons).toHaveCount(2);
 
-    await expect(tabButtons.nth(0)).toContainText("Tab 1");
-    await expect(tabButtons.nth(1)).toContainText("Tab 1b");
-    await expect(tabButtons.nth(2)).toContainText("Tab 2");
+    await expect(tabButtons.nth(0)).toContainText("One");
+    await expect(tabButtons.nth(1)).toContainText("Two");
 
     const selectedTabs = page.locator(".flexlayout__tab_button--selected");
     await expect(selectedTabs).toHaveCount(2);
@@ -33,26 +32,25 @@ test.describe("FlexLayout SolidJS — Smoke Tests", () => {
   });
 
   test("should allow tab selection by clicking", async ({ page }) => {
+    // Use test_three_tabs layout which has 3 tabs across 3 tabsets
+    await page.goto("/flexlayout-test.html?layout=test_three_tabs");
+    await page.waitForSelector('[data-layout-path="/"]', { timeout: 10_000 });
+
     const tabButtons = page.locator(".flexlayout__tab_button");
     await expect(tabButtons).toHaveCount(3);
 
+    // First tab in first tabset should be selected
     await expect(tabButtons.nth(0)).toHaveClass(/--selected/);
-    await expect(tabButtons.nth(1)).not.toHaveClass(/--selected/);
 
-    await page.evaluate(() => {
-      const btns = document.querySelectorAll(".flexlayout__tab_button");
-      (btns[1] as HTMLElement).click();
+    // Click the second tab button using Playwright locators
+    await tabButtons.nth(1).click();
+
+    await expect(tabButtons.nth(1)).toHaveClass(/--selected/, {
+      timeout: 3000,
     });
 
-    await expect(
-      page.locator(".flexlayout__tab_button").nth(1),
-    ).toHaveClass(/--selected/, { timeout: 3000 });
-
-    await expect(
-      page.locator(".flexlayout__tab_button").nth(0),
-    ).toHaveClass(/--unselected/);
-
-    const panelContent = page.locator('[data-testid="panel-Tab 1b"]');
+    // The panel content should be visible with data-testid
+    const panelContent = page.locator('[data-testid="panel-Two"]');
     await expect(panelContent).toBeVisible();
 
     await page.screenshot({

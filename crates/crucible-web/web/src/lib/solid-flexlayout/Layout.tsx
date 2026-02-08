@@ -1,4 +1,5 @@
 import { Component, JSX, createSignal, createEffect, onMount, onCleanup, createMemo, Show, For } from "solid-js";
+import { Portal } from "solid-js/web";
 import { Model } from "../flexlayout/model/Model";
 import { TabNode } from "../flexlayout/model/TabNode";
 import { TabSetNode } from "../flexlayout/model/TabSetNode";
@@ -14,6 +15,7 @@ import { Action } from "../flexlayout/model/Action";
 import { Row } from "./Row";
 import { BorderTabSet } from "./BorderTabSet";
 import { BorderTab } from "./BorderTab";
+import { FloatingPanel } from "./FloatingPanel";
 
 export interface ILayoutProps {
     /** The model for this layout */
@@ -48,6 +50,41 @@ export interface ITabRenderValues {
     buttons: JSX.Element[];
 }
 
+function createWindowContext(
+    windowId: string,
+    baseContext: ILayoutContext,
+    containerRef: () => HTMLDivElement | undefined,
+): ILayoutContext {
+    return {
+        ...baseContext,
+        getWindowId: () => windowId,
+        getRootDiv: containerRef,
+        getMainElement: containerRef,
+        getDomRect: () => {
+            const el = containerRef();
+            if (el) {
+                const r = el.getBoundingClientRect();
+                return new Rect(r.x, r.y, r.width, r.height);
+            }
+            return Rect.empty();
+        },
+        getBoundingClientRect: (div: HTMLElement) => {
+            const el = containerRef();
+            if (el) {
+                const containerRect = el.getBoundingClientRect();
+                const divRect = div.getBoundingClientRect();
+                return new Rect(
+                    divRect.x - containerRect.x,
+                    divRect.y - containerRect.y,
+                    divRect.width,
+                    divRect.height,
+                );
+            }
+            return Rect.empty();
+        },
+    };
+}
+
 export const Layout: Component<ILayoutProps> = (props) => {
     let selfRef: HTMLDivElement | undefined;
     let mainRef: HTMLDivElement | undefined;
@@ -57,20 +94,29 @@ export const Layout: Component<ILayoutProps> = (props) => {
     const [layoutVersion, setLayoutVersion] = createSignal(0);
     const [showEdges, setShowEdges] = createSignal(false);
     const [showOverlay, setShowOverlay] = createSignal(false);
+    const [floatZOrder, setFloatZOrder] = createSignal<string[]>([]);
 
     const [editingTab, setEditingTab] = createSignal<TabNode | undefined>(undefined);
+    const [showHiddenBorder, setShowHiddenBorder] = createSignal<DockLocation>(DockLocation.CENTER);
+    const [popupMenu, setPopupMenu] = createSignal<{
+        items: { index: number; node: TabNode }[];
+        onSelect: (item: { index: number; node: TabNode }) => void;
+        position: { left?: string; right?: string; top?: string; bottom?: string };
+        parentNode: TabSetNode | BorderNode;
+    } | undefined>(undefined);
 
     let dropInfo: DropInfo | undefined;
     let outlineDiv: HTMLDivElement | undefined;
     let dragEnterCount = 0;
     let dragging = false;
+    let popupCleanup: (() => void) | undefined;
 
     // Stable object — NOT a createMemo. A createMemo recreates the object on any
     // signal change (including editingTab), which destroys all child components
     // that receive it as props. Closures capture the signals reactively.
     const layoutContextObj: ILayoutContext = {
-        model: props.model,
-        factory: props.factory,
+        get model() { return props.model; },
+        get factory() { return props.factory; },
         getClassName,
         doAction,
         customizeTab,
@@ -82,11 +128,13 @@ export const Layout: Component<ILayoutProps> = (props) => {
         getWindowId: () => Model.MAIN_WINDOW_ID,
         setEditingTab: (tab?: TabNode) => setEditingTab(tab),
         getEditingTab: () => editingTab(),
-        isRealtimeResize: () => false,
+        isRealtimeResize: () => props.model.isRealtimeResize(),
+        getLayoutRootDiv: () => selfRef,
         redraw,
         setDragNode,
         clearDragMain,
         getRevision: () => layoutVersion(),
+        showPopup,
     };
     const layoutContext = () => layoutContextObj;
 
@@ -106,6 +154,10 @@ export const Layout: Component<ILayoutProps> = (props) => {
         });
     });
 
+    onCleanup(() => {
+        if (popupCleanup) popupCleanup();
+    });
+
     createEffect(() => {
         void revision();
         const _rect = rect();
@@ -118,7 +170,35 @@ export const Layout: Component<ILayoutProps> = (props) => {
                 root.setPaths("");
                 model.getBorderSet().setPaths();
                 LayoutEngine.calculateLayout(root, _rect);
+
+                for (const [wid, lw] of model.getwindowsMap()) {
+                    if (wid !== Model.MAIN_WINDOW_ID && lw.root) {
+                        const innerRect = new Rect(0, 0, lw.rect.width, lw.rect.height);
+                        (lw.root as RowNode).calcMinMaxSize();
+                        lw.root.setPaths(`/window/${wid}`);
+                        LayoutEngine.calculateLayout(lw.root, innerRect);
+                    }
+                }
+
                 setLayoutVersion((v) => v + 1);
+            }
+        }
+    });
+
+    createEffect(() => {
+        void layoutVersion();
+        if (mainRef) {
+            const mainDomRect = mainRef.getBoundingClientRect();
+            if (mainDomRect.width > 0 && mainDomRect.height > 0) {
+                const mainRect = new Rect(0, 0, mainDomRect.width, mainDomRect.height);
+                const root = props.model.getRoot();
+                if (root) {
+                    const currentRect = root.getRect();
+                    if (!currentRect.equalSize(mainRect)) {
+                        LayoutEngine.calculateLayout(root, mainRect);
+                        setLayoutVersion((v) => v + 1);
+                    }
+                }
             }
         }
     });
@@ -145,17 +225,14 @@ export const Layout: Component<ILayoutProps> = (props) => {
             const outcome = props.onAction(action);
             if (outcome !== undefined) {
                 props.model.doAction(outcome);
-                syncMaximizeState();
                 redraw();
                 if (props.onModelChange) {
                     props.onModelChange(props.model, outcome);
                 }
-                return undefined;
             }
             return undefined;
         } else {
             props.model.doAction(action);
-            syncMaximizeState();
             redraw();
             if (props.onModelChange) {
                 props.onModelChange(props.model, action);
@@ -163,15 +240,6 @@ export const Layout: Component<ILayoutProps> = (props) => {
             return undefined;
         }
     }
-
-    // Workaround: actionMaximizeToggle sets Model.maximizedTabset (private field)
-    // but getMaximizedTabset() reads from windowsMap. Sync the two after every action.
-    function syncMaximizeState() {
-        const model = props.model;
-        const maxTs = (model as any).maximizedTabset as TabSetNode | undefined;
-        model.setMaximizedTabset(maxTs, Model.MAIN_WINDOW_ID);
-    }
-
     function redraw() {
         setRevision((r) => r + 1);
     }
@@ -189,6 +257,61 @@ export const Layout: Component<ILayoutProps> = (props) => {
         if (props.onRenderTabSet) {
             props.onRenderTabSet(tabSetNode, renderValues);
         }
+    }
+
+    function showPopup(
+        triggerElement: HTMLElement,
+        parentNode: TabSetNode | BorderNode,
+        items: { index: number; node: TabNode }[],
+        onSelect: (item: { index: number; node: TabNode }) => void,
+    ) {
+        const layoutRect = selfRef?.getBoundingClientRect();
+        const triggerRect = triggerElement.getBoundingClientRect();
+        if (!layoutRect) return;
+
+        const position: { left?: string; right?: string; top?: string; bottom?: string } = {};
+        if (triggerRect.left < layoutRect.left + layoutRect.width / 2) {
+            position.left = (triggerRect.left - layoutRect.left) + "px";
+        } else {
+            position.right = (layoutRect.right - triggerRect.right) + "px";
+        }
+        if (triggerRect.top < layoutRect.top + layoutRect.height / 2) {
+            position.top = (triggerRect.top - layoutRect.top) + "px";
+        } else {
+            position.bottom = (layoutRect.bottom - triggerRect.bottom) + "px";
+        }
+
+        if (popupCleanup) popupCleanup();
+
+        setPopupMenu({ items, onSelect, position, parentNode });
+
+        const onDocPointerDown = (e: PointerEvent) => {
+            const popupEl = selfRef?.querySelector('[data-layout-path="/popup-menu"]');
+            if (popupEl && popupEl.contains(e.target as globalThis.Node)) {
+                return;
+            }
+            cleanup();
+        };
+        const onDocKeyDown = (e: KeyboardEvent) => {
+            if (e.key === "Escape") cleanup();
+        };
+        const cleanup = () => {
+            hidePopup();
+            document.removeEventListener("pointerdown", onDocPointerDown);
+            document.removeEventListener("keydown", onDocKeyDown);
+            popupCleanup = undefined;
+        };
+        popupCleanup = cleanup;
+        // keydown can be registered immediately — only pointerdown needs
+        // the rAF delay to prevent the opening click from closing the popup.
+        document.addEventListener("keydown", onDocKeyDown);
+        requestAnimationFrame(() => {
+            document.addEventListener("pointerdown", onDocPointerDown);
+        });
+    }
+
+    function hidePopup() {
+        setPopupMenu(undefined);
     }
 
     function getDomRect(): Rect {
@@ -213,6 +336,77 @@ export const Layout: Component<ILayoutProps> = (props) => {
         return Rect.empty();
     }
 
+    function syncBorderRects() {
+        if (!selfRef) return;
+        // Force layout reflow so newly-added border elements have valid rects
+        void selfRef.offsetHeight;
+        const borders = props.model.getBorderSet().getBorderMap();
+        for (const [_, location] of DockLocation.values) {
+            const border = borders.get(location);
+            if (border) {
+                const borderPath = border.getPath();
+                const el = selfRef.querySelector(`[data-layout-path="${borderPath}"]`) as HTMLElement | null;
+                if (el) {
+                    border.setTabHeaderRect(getBoundingClientRectFn(el));
+                }
+            }
+        }
+    }
+
+    function checkForBorderToShow(x: number, y: number) {
+        if (!mainRef) return;
+        const mainDomRect = mainRef.getBoundingClientRect();
+        const layoutDomRect = selfRef?.getBoundingClientRect();
+        if (!layoutDomRect) return;
+
+        // mainRef rect relative to layout
+        const r = new Rect(
+            mainDomRect.x - layoutDomRect.x,
+            mainDomRect.y - layoutDomRect.y,
+            mainDomRect.width,
+            mainDomRect.height,
+        );
+
+        const edgeRectWidth = 10;
+        const edgeRectLength = 100;
+        const offset = edgeRectLength / 2;
+        const cx = r.x + r.width / 2;
+        const cy = r.y + r.height / 2;
+
+        let overEdge = false;
+        if (props.model.isEnableEdgeDock() && showHiddenBorder() === DockLocation.CENTER) {
+            if ((y > cy - offset && y < cy + offset) ||
+                (x > cx - offset && x < cx + offset)) {
+                overEdge = true;
+            }
+        }
+
+        let location = DockLocation.CENTER;
+        if (!overEdge) {
+            if (x <= r.x + edgeRectWidth) {
+                location = DockLocation.LEFT;
+            } else if (x >= r.x + r.width - edgeRectWidth) {
+                location = DockLocation.RIGHT;
+            } else if (y <= r.y + edgeRectWidth) {
+                location = DockLocation.TOP;
+            } else if (y >= r.y + r.height - edgeRectWidth) {
+                location = DockLocation.BOTTOM;
+            }
+        }
+
+        if (location !== DockLocation.CENTER) {
+            const borders = props.model.getBorderSet().getBorderMap();
+            const border = borders.get(location);
+            if (!border || !border.isAutoHide() || border.getChildren().length > 0) {
+                location = DockLocation.CENTER;
+            }
+        }
+
+        if (location !== showHiddenBorder()) {
+            setShowHiddenBorder(location);
+        }
+    }
+
     function setDragNode(event: DragEvent, node: Node) {
             event.dataTransfer!.setData("text/plain", "--flexlayout--");
         event.dataTransfer!.effectAllowed = "copyMove";
@@ -225,6 +419,7 @@ export const Layout: Component<ILayoutProps> = (props) => {
         (selfRef as any).__dragNode = undefined;
         setShowEdges(false);
         setShowOverlay(false);
+        setShowHiddenBorder(DockLocation.CENTER);
         dragEnterCount = 0;
         dragging = false;
         if (outlineDiv && selfRef) {
@@ -275,19 +470,35 @@ export const Layout: Component<ILayoutProps> = (props) => {
                 y: event.clientY - (clientRect?.top ?? 0),
             };
 
+            checkForBorderToShow(pos.x, pos.y);
+
             const dragNode = (selfRef as any)?.__dragNode;
             if (dragNode) {
                 const root = props.model.getRoot();
                 if (root) {
-                    let di = root.findDropTargetNode(
-                        Model.MAIN_WINDOW_ID,
-                        dragNode,
-                        pos.x,
-                        pos.y,
-                    );
+                    let di: DropInfo | undefined;
+
+                    // Check borders first when a hidden border is being shown,
+                    // since the root rect hasn't been recalculated yet
+                    const hiddenBorderActive = showHiddenBorder() !== DockLocation.CENTER;
+                    if (hiddenBorderActive) {
+                        syncBorderRects();
+                        di = props.model.getBorderSet().findDropTargetNode(dragNode, pos.x, pos.y);
+                    }
+
+                    if (di === undefined) {
+                        di = root.findDropTargetNode(
+                            Model.MAIN_WINDOW_ID,
+                            dragNode,
+                            pos.x,
+                            pos.y,
+                        );
+                    }
+
                     if (di === undefined) {
                         di = props.model.getBorderSet().findDropTargetNode(dragNode, pos.x, pos.y);
                     }
+
                     if (di) {
                         dropInfo = di;
                         if (outlineDiv) {
@@ -305,8 +516,24 @@ export const Layout: Component<ILayoutProps> = (props) => {
         if (dragging) {
             event.preventDefault();
             const dragNode = (selfRef as any)?.__dragNode;
+
             if (dropInfo && dragNode) {
-                if (dragNode instanceof TabNode || dragNode instanceof TabSetNode) {
+                if (dragNode instanceof TabNode && dragNode.getParent() === undefined) {
+                    const targetNode = dropInfo.node;
+                    const savedSelected = targetNode instanceof BorderNode ? targetNode.getSelected() : -1;
+                    doAction(
+                        Action.addNode(
+                            dragNode.toJson(),
+                            targetNode.getId(),
+                            dropInfo.location.getName(),
+                            dropInfo.index,
+                        ),
+                    );
+                    if (targetNode instanceof BorderNode && !targetNode.isAutoSelectTab(savedSelected !== -1)) {
+                        targetNode.setSelected(savedSelected);
+                        redraw();
+                    }
+                } else if (dragNode instanceof TabNode || dragNode instanceof TabSetNode) {
                     doAction(
                         Action.moveNode(
                             dragNode.getId(),
@@ -322,12 +549,11 @@ export const Layout: Component<ILayoutProps> = (props) => {
         dragEnterCount = 0;
     }
 
-    const allTabNodes = createMemo(() => {
-        void revision();  // Track model changes
-        void layoutVersion();  // Track layout changes
+    const mainTabNodes = createMemo(() => {
+        void revision();
+        void layoutVersion();
         const tabs: Array<{node: TabNode, parent: TabSetNode | BorderNode}> = [];
-        
-        // Walk root tree
+
         const visitNode = (n: Node) => {
             if (n instanceof TabNode) {
                 tabs.push({node: n, parent: n.getParent() as TabSetNode | BorderNode});
@@ -336,11 +562,10 @@ export const Layout: Component<ILayoutProps> = (props) => {
                 visitNode(child);
             }
         };
-        
+
         const root = props.model.getRoot();
         if (root) visitNode(root);
-        
-        // Walk borders
+
         for (const border of props.model.getBorderSet().getBorders()) {
             for (const child of border.getChildren()) {
                 if (child instanceof TabNode) {
@@ -348,9 +573,49 @@ export const Layout: Component<ILayoutProps> = (props) => {
                 }
             }
         }
-        
+
         return tabs;
     });
+
+    const floatWindows = createMemo(() => {
+        void revision();
+        void layoutVersion();
+        return [...props.model.getwindowsMap().values()].filter(
+            (w) => w.windowType === "float",
+        );
+    });
+
+    const popoutWindows = createMemo(() => {
+        void revision();
+        void layoutVersion();
+        return [...props.model.getwindowsMap().values()].filter(
+            (w) => w.windowType === "popout",
+        );
+    });
+
+    const windowContexts = new Map<string, ILayoutContext>();
+
+    const getWindowContext = (windowId: string, containerRef: () => HTMLDivElement | undefined): ILayoutContext => {
+        let ctx = windowContexts.get(windowId);
+        if (!ctx) {
+            ctx = createWindowContext(windowId, layoutContextObj, containerRef);
+            windowContexts.set(windowId, ctx);
+        }
+        return ctx;
+    };
+
+    const bringToFront = (windowId: string) => {
+        setFloatZOrder((order) => {
+            const filtered = order.filter((id) => id !== windowId);
+            return [...filtered, windowId];
+        });
+    };
+
+    const getFloatZIndex = (windowId: string): number => {
+        const order = floatZOrder();
+        const idx = order.indexOf(windowId);
+        return 1000 + (idx >= 0 ? idx : 0);
+    };
 
     const BORDER_BAR_SIZE = 29;
 
@@ -361,6 +626,7 @@ export const Layout: Component<ILayoutProps> = (props) => {
 
     const borderData = createMemo(() => {
         void layoutVersion();
+        const hiddenBorderLoc = showHiddenBorder();
         if (!hasBorders()) return null;
         const borders = props.model.getBorderSet().getBorderMap();
         const strips = new Map<string, {border: BorderNode, show: boolean}>();
@@ -368,7 +634,7 @@ export const Layout: Component<ILayoutProps> = (props) => {
             const border = borders.get(location);
             if (border && border.isShowing() && (
                 !border.isAutoHide() ||
-                (border.isAutoHide() && border.getChildren().length > 0))) {
+                (border.isAutoHide() && (border.getChildren().length > 0 || hiddenBorderLoc === location)))) {
                 strips.set(location.getName(), { border, show: border.getSelected() !== -1 });
             }
         }
@@ -546,22 +812,33 @@ export const Layout: Component<ILayoutProps> = (props) => {
             </Show>
 
             <Show when={rect().width > 0}>
-                <For each={allTabNodes()}>
+                <For each={mainTabNodes()}>
                     {(tabEntry) => {
-                        const parent = tabEntry.parent;
-                        const contentRect = parent instanceof TabSetNode
-                            ? parent.getContentRect()
-                            : parent.getRect();
-                        const style: Record<string, any> = {};
-                        contentRect.styleWithPosition(style);
-                        if (!tabEntry.node.isSelected()) {
-                            style.display = "none";
-                        }
+                        const tabStyle = (): Record<string, any> => {
+                            void revision();
+                            void layoutVersion();
+                            const parent = tabEntry.parent;
+                            const contentRect = parent.getContentRect();
+                            const s: Record<string, any> = {};
+                            if (contentRect.width > 0 && contentRect.height > 0) {
+                                contentRect.styleWithPosition(s);
+                            } else {
+                                s.display = "none";
+                            }
+                            if (!tabEntry.node.isSelected()) {
+                                s.display = "none";
+                            }
+                            return s;
+                        };
+                        const tabPath = () => {
+                            void revision();
+                            return tabEntry.node.getPath();
+                        };
                         return (
                             <div
                                 class={getClassName(CLASSES.FLEXLAYOUT__TAB)}
-                                data-layout-path={tabEntry.node.getPath()}
-                                style={style}
+                                data-layout-path={tabPath()}
+                                style={tabStyle()}
                                 onPointerDown={() => {
                                     const p = tabEntry.node.getParent();
                                     if (p instanceof TabSetNode) {
@@ -578,6 +855,194 @@ export const Layout: Component<ILayoutProps> = (props) => {
                         );
                     }}
                 </For>
+            </Show>
+
+            <For each={floatWindows()}>
+                {(lw) => {
+                    let panelContentRef: HTMLDivElement | undefined;
+                    const ctx = getWindowContext(lw.windowId, () => panelContentRef);
+                    return (
+                        <FloatingPanel
+                            layoutWindow={lw}
+                            layoutContext={ctx}
+                            onBringToFront={bringToFront}
+                            onContentRef={(el: HTMLDivElement) => { panelContentRef = el; }}
+                            zIndex={getFloatZIndex(lw.windowId)}
+                        />
+                    );
+                }}
+            </For>
+
+            <For each={popoutWindows()}>
+                {(lw) => {
+                    const [mountEl, setMountEl] = createSignal<HTMLElement | null>(null);
+
+                    createEffect(() => {
+                        const r = lw.rect;
+                        const popup = window.open(
+                            "",
+                            lw.windowId,
+                            `width=${r.width},height=${r.height},left=${r.x},top=${r.y}`,
+                        );
+                        if (!popup) {
+                            console.warn("Popup blocked for window", lw.windowId);
+                            doAction(Action.closeWindow(lw.windowId));
+                            return;
+                        }
+
+                        const setup = () => {
+                            if (!popup) return;
+                            const parentStyles = document.querySelectorAll('link[rel="stylesheet"], style');
+                            parentStyles.forEach((style) => {
+                                popup.document.head.appendChild(style.cloneNode(true));
+                            });
+
+                            const container = popup.document.createElement("div");
+                            container.id = "flexlayout-popout-root";
+                            container.style.cssText = "position:relative;width:100%;height:100%;overflow:hidden;";
+                            popup.document.body.style.margin = "0";
+                            popup.document.body.appendChild(container);
+
+                            lw.window = popup;
+                            setMountEl(container);
+                        };
+
+                        if (popup.document.readyState === "complete") {
+                            setup();
+                        } else {
+                            popup.addEventListener("load", setup);
+                        }
+
+                        const handleParentUnload = () => {
+                            if (!popup.closed) popup.close();
+                        };
+                        window.addEventListener("beforeunload", handleParentUnload);
+
+                        popup.addEventListener("beforeunload", () => {
+                            doAction(Action.closeWindow(lw.windowId));
+                        });
+
+                        onCleanup(() => {
+                            window.removeEventListener("beforeunload", handleParentUnload);
+                            setMountEl(null);
+                            if (!popup.closed) popup.close();
+                            lw.window = undefined;
+                        });
+                    });
+
+                    const popoutCtx = getWindowContext(lw.windowId, () => mountEl() as HTMLDivElement | undefined);
+
+                    const popoutTabNodes = createMemo(() => {
+                        void revision();
+                        void layoutVersion();
+                        const tabs: Array<{ node: TabNode; parent: TabSetNode | BorderNode }> = [];
+                        if (!lw.root) return tabs;
+                        const visitNode = (n: Node) => {
+                            if (n instanceof TabNode) {
+                                tabs.push({ node: n, parent: n.getParent() as TabSetNode | BorderNode });
+                            }
+                            for (const child of n.getChildren()) {
+                                visitNode(child);
+                            }
+                        };
+                        visitNode(lw.root);
+                        return tabs;
+                    });
+
+                    return (
+                        <Show when={mountEl()}>
+                            {(el) => (
+                                <Portal mount={el()}>
+                                    <Show when={lw.root}>
+                                        <Row layout={popoutCtx} node={lw.root as RowNode} />
+                                    </Show>
+                                    <For each={popoutTabNodes()}>
+                                        {(tabEntry) => {
+                                            const tabStyle = (): Record<string, any> => {
+                                                const parent = tabEntry.parent;
+                                                const contentRect = parent.getContentRect();
+                                                const s: Record<string, any> = {};
+                                                if (contentRect.width > 0 && contentRect.height > 0) {
+                                                    contentRect.styleWithPosition(s);
+                                                } else {
+                                                    s.display = "none";
+                                                }
+                                                if (!tabEntry.node.isSelected()) {
+                                                    s.display = "none";
+                                                }
+                                                return s;
+                                            };
+                                            return (
+                                                <div
+                                                    class={getClassName(CLASSES.FLEXLAYOUT__TAB)}
+                                                    data-layout-path={tabEntry.node.getPath()}
+                                                    style={tabStyle()}
+                                                    onPointerDown={() => {
+                                                        const p = tabEntry.node.getParent();
+                                                        if (p instanceof TabSetNode && !p.isActive()) {
+                                                            doAction(Action.setActiveTabset(p.getId(), lw.windowId));
+                                                        }
+                                                    }}
+                                                >
+                                                    {props.factory(tabEntry.node)}
+                                                </div>
+                                            );
+                                        }}
+                                    </For>
+                                </Portal>
+                            )}
+                        </Show>
+                    );
+                }}
+            </For>
+
+            <Show when={popupMenu()}>
+                {(menu) => {
+                    const pos = menu().position;
+                    return (
+                        <div
+                            class={getClassName(CLASSES.FLEXLAYOUT__POPUP_MENU_CONTAINER)}
+                            style={{
+                                position: "absolute",
+                                "z-index": 1002,
+                                left: pos.left,
+                                right: pos.right,
+                                top: pos.top,
+                                bottom: pos.bottom,
+                            }}
+                            onPointerDown={(e) => e.stopPropagation()}
+                        >
+                        <div
+                            class={getClassName(CLASSES.FLEXLAYOUT__POPUP_MENU)}
+                            data-layout-path="/popup-menu"
+                            tabIndex={0}
+                            ref={(el: HTMLDivElement) => requestAnimationFrame(() => el.focus())}
+                        >
+                                <For each={menu().items}>
+                                    {(item, i) => {
+                                        let classes = getClassName(CLASSES.FLEXLAYOUT__POPUP_MENU_ITEM);
+                                        if (menu().parentNode.getSelected() === item.index) {
+                                            classes += " " + getClassName(CLASSES.FLEXLAYOUT__POPUP_MENU_ITEM__SELECTED);
+                                        }
+                                        return (
+                                            <div
+                                                class={classes}
+                                                data-layout-path={"/popup-menu/tb" + i()}
+                                                onClick={(event) => {
+                                                    menu().onSelect(item);
+                                                    hidePopup();
+                                                    event.stopPropagation();
+                                                }}
+                                            >
+                                                {item.node.getName()}
+                                            </div>
+                                        );
+                                    }}
+                                </For>
+                            </div>
+                        </div>
+                    );
+                }}
             </Show>
         </div>
     );
@@ -602,8 +1067,18 @@ export interface ILayoutContext {
     setEditingTab: (tab?: TabNode) => void;
     getEditingTab: () => TabNode | undefined;
     isRealtimeResize: () => boolean;
+    getLayoutRootDiv: () => HTMLDivElement | undefined;
+    onFloatDragStart?: (e: PointerEvent) => void;
+    onFloatDock?: () => void;
+    onFloatClose?: () => void;
     redraw: () => void;
     setDragNode: (event: DragEvent, node: Node) => void;
     clearDragMain: () => void;
     getRevision: () => number;
+    showPopup: (
+        triggerElement: HTMLElement,
+        parentNode: TabSetNode | BorderNode,
+        items: { index: number; node: TabNode }[],
+        onSelect: (item: { index: number; node: TabNode }) => void,
+    ) => void;
 }

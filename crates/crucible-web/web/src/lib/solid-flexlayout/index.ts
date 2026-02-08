@@ -25,4 +25,6 @@ export { ErrorBoundary } from "./ErrorBoundary";
 export type { IErrorBoundaryProps } from "./ErrorBoundary";
 export { PopoutWindow } from "./PopoutWindow";
 export type { IPopoutWindowProps } from "./PopoutWindow";
+export { FloatingPanel } from "./FloatingPanel";
+export type { IFloatingPanelProps } from "./FloatingPanel";
 export { CloseIcon, MaximizeIcon, OverflowIcon, EdgeIcon, PopoutIcon, RestoreIcon, AsterickIcon, AddIcon, MenuIcon, SettingsIcon } from "./Icons";

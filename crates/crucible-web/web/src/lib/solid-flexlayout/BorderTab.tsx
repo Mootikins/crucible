@@ -1,4 +1,4 @@
-import { Component } from "solid-js";
+import { Component, createEffect } from "solid-js";
 import { Orientation } from "../flexlayout/core/Orientation";
 import { DockLocation } from "../flexlayout/core/DockLocation";
 import { CLASSES } from "../flexlayout/core/Types";
@@ -15,7 +15,15 @@ export interface IBorderTabProps {
 export const BorderTab: Component<IBorderTabProps> = (props) => {
     let selfRef: HTMLDivElement | undefined;
 
+    createEffect(() => {
+        void props.layout.getRevision();
+        if (selfRef && props.show) {
+            props.border.setContentRect(props.layout.getBoundingClientRect(selfRef));
+        }
+    });
+
     const style = (): Record<string, any> => {
+        void props.layout.getRevision();
         const s: Record<string, any> = {};
 
         if (props.border.getOrientation() === Orientation.HORZ) {

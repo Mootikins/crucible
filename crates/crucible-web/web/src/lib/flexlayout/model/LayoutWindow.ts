@@ -5,8 +5,11 @@ import { Node } from "./Node";
 import { TabSetNode } from "./TabSetNode";
 
 
+export type WindowType = "main" | "float" | "popout";
+
 export class LayoutWindow {
     private _windowId: string;
+    private _windowType: WindowType;
     private _layout: any | undefined;
     private _rect: Rect;
     private _window?: Window | undefined;
@@ -15,8 +18,9 @@ export class LayoutWindow {
     private _activeTabSet?: TabSetNode | undefined;
     private _toScreenRectFunction: (rect: Rect) => Rect;
 
-    constructor(windowId: string, rect: Rect) {
+    constructor(windowId: string, rect: Rect, windowType: WindowType = "main") {
         this._windowId = windowId;
+        this._windowType = windowType;
         this._rect = rect;
         this._toScreenRectFunction = (r) => r;
     }
@@ -27,6 +31,10 @@ export class LayoutWindow {
 
     public get windowId(): string {
         return this._windowId;
+    }
+
+    public get windowType(): WindowType {
+        return this._windowType;
     }
 
     public get rect(): Rect {
@@ -104,14 +112,15 @@ export class LayoutWindow {
 			);
 		}
 
-		return { layout: this.root!.toJson(), rect: this.rect.toJson() };
+		return { layout: this.root!.toJson(), rect: this.rect.toJson(), windowType: this._windowType };
 	}
 
 	static fromJson(windowJson: any, model: Model, windowId: string): LayoutWindow {
 		const count = model.getwindowsMap().size;
 		const rect = windowJson.rect ? Rect.fromJson(windowJson.rect) : new Rect(50 + 50 * count, 50 + 50 * count, 600, 400);
 		rect.snap(10);
-		const layoutWindow = new LayoutWindow(windowId, rect);
+		const windowType: WindowType = windowJson.windowType ?? "popout";
+		const layoutWindow = new LayoutWindow(windowId, rect, windowType);
 		if (windowJson.layout) {
 			layoutWindow.root = RowNode.fromJson(windowJson.layout, model, layoutWindow);
 		}
