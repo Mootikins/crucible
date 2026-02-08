@@ -2874,6 +2874,43 @@ const layouts: Record<string, LayoutDef> = {
       ],
     },
   },
+
+  test_tiled_borders: {
+    global: { ...defaultGlobal },
+    borders: [
+      {
+        type: "border",
+        location: "bottom",
+        selected: 0,
+        visibleTabs: [0, 1],
+        children: [
+          { type: "tab", name: "Terminal", component: "testing" },
+          { type: "tab", name: "Output", component: "testing" },
+        ],
+      },
+      {
+        type: "border",
+        location: "left",
+        selected: 0,
+        visibleTabs: [0, 1],
+        children: [
+          { type: "tab", name: "Explorer", component: "testing" },
+          { type: "tab", name: "Search", component: "testing" },
+        ],
+      },
+    ],
+    layout: {
+      type: "row",
+      weight: 100,
+      children: [
+        {
+          type: "tabset",
+          weight: 100,
+          children: [{ type: "tab", name: "Editor", component: "testing" }],
+        },
+      ],
+    },
+  },
 };
 
 const FlexLayoutTest: Component = () => {
