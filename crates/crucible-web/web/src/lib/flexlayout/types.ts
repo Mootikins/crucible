@@ -47,6 +47,9 @@ export interface IJsonBorderNode extends IJsonNode {
 	type: "border";
 	location?: string;
 	children?: IJsonTabNode[];
+	dockState?: "expanded" | "collapsed" | "minimized";
+	visibleTabs?: number[];
+	enableDock?: boolean;
 }
 
 export interface IJsonPopout extends IJsonNode {
