@@ -1,4 +1,4 @@
-import { Component, createSignal, JSX } from "solid-js";
+import { Component, createSignal } from "solid-js";
 import { render } from "solid-js/web";
 import { Layout } from "@/lib/solid-flexlayout";
 import type { ITabRenderValues, ITabSetRenderValues } from "@/lib/solid-flexlayout";
@@ -2179,28 +2179,14 @@ const FlexLayoutTest: Component = () => {
   };
 
   const onRenderTab = (node: TabNode, renderValues: ITabRenderValues) => {
-    if (node.getId() === "onRenderTab1") {
+    if (["onRenderTab1", "onRenderTab2"].includes(node.getId())) {
       renderValues.leading = (
         <img
           src="images/settings.svg"
           style={{ width: "1em", height: "1em" }}
         />
-      ) as JSX.Element;
-      renderValues.content = "onRenderTab1" as unknown as JSX.Element;
-      renderValues.buttons.push(
-        <img
-          src="images/folder.svg"
-          style={{ width: "1em", height: "1em" }}
-        />,
       );
-    } else if (node.getId() === "onRenderTab2") {
-      renderValues.leading = (
-        <img
-          src="images/settings.svg"
-          style={{ width: "1em", height: "1em" }}
-        />
-      ) as JSX.Element;
-      renderValues.content = "onRenderTab2" as unknown as JSX.Element;
+      renderValues.content = <span>{node.getId()}</span>;
       renderValues.buttons.push(
         <img
           src="images/folder.svg"
@@ -2208,8 +2194,8 @@ const FlexLayoutTest: Component = () => {
         />,
       );
     } else if (layoutName === "render_custom_tab" && node.getId() === "render_tab_a") {
-      renderValues.leading = (<span data-testid="custom-leading" style={{ "font-size": "1.1em" }}>★</span>) as JSX.Element;
-      renderValues.content = ("Custom Tab A") as unknown as JSX.Element;
+      renderValues.leading = <span data-testid="custom-leading" style={{ "font-size": "1.1em" }}>★</span>;
+      renderValues.content = <span>Custom Tab A</span>;
       renderValues.buttons.push(<span data-testid="custom-btn" style={{ cursor: "pointer" }}>✎</span>);
     } else if (layoutName === "render_custom_tab" && node.getId() === "render_tab_b") {
       renderValues.buttons.push(<span data-testid="extra-btn-1" style={{ cursor: "pointer" }}>📌</span>);
@@ -2221,10 +2207,7 @@ const FlexLayoutTest: Component = () => {
     node: TabSetNode | BorderNode,
     renderValues: ITabSetRenderValues,
   ) => {
-    if (node.getId() === "onRenderTabSet1") {
-      renderValues.buttons.push(<img src="images/folder.svg" />);
-      renderValues.buttons.push(<img src="images/settings.svg" />);
-    } else if (node.getId() === "onRenderTabSet2") {
+    if (["onRenderTabSet1", "onRenderTabSet2"].includes(node.getId())) {
       renderValues.buttons.push(<img src="images/folder.svg" />);
       renderValues.buttons.push(<img src="images/settings.svg" />);
     } else if (node.getId() === "onRenderTabSet3") {
@@ -2440,6 +2423,9 @@ const FlexLayoutTest: Component = () => {
     ? (defaultClassName: string) => `demo-mapped ${defaultClassName}`
     : undefined;
 
+  const needsCustomTab = ["render_custom_tab", "test_with_min_size"].includes(layoutName);
+  const needsCustomTabSet = ["render_custom_tabset", "test_with_min_size"].includes(layoutName);
+
   return (
     <div
       style={{
@@ -2530,8 +2516,8 @@ const FlexLayoutTest: Component = () => {
           model={model()}
           factory={factory}
           onAction={onAction}
-          onRenderTab={onRenderTab}
-          onRenderTabSet={onRenderTabSet}
+          onRenderTab={needsCustomTab ? onRenderTab : undefined}
+          onRenderTabSet={needsCustomTabSet ? onRenderTabSet : undefined}
           classNameMapper={classNameMapper}
         />
       </div>
