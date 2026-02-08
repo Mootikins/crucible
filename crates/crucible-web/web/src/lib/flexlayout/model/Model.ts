@@ -251,6 +251,12 @@ export class Model {
 			case "SET_TAB_ENABLE_CLOSE":
 				this.actionSetTabEnableClose(data);
 				break;
+			case "SET_DOCK_STATE":
+				this.actionSetDockState(data);
+				break;
+			case "SET_VISIBLE_TABS":
+				this.actionSetVisibleTabs(data);
+				break;
 		}
 	}
 
@@ -594,6 +600,22 @@ export class Model {
 		}
 	}
 
+	private actionSetDockState(data: any): void {
+		const { nodeId, state } = data;
+		const node = this.getNodeById(nodeId) as BorderNode;
+		if (node && node instanceof BorderNode) {
+			(node as any).attributes.dockState = state;
+		}
+	}
+
+	private actionSetVisibleTabs(data: any): void {
+		const { nodeId, tabs } = data;
+		const node = this.getNodeById(nodeId) as BorderNode;
+		if (node && node instanceof BorderNode) {
+			(node as any).attributes.visibleTabs = tabs;
+		}
+	}
+
 	getwindowsMap(): Map<string, LayoutWindow> {
 		return this.windowsMap;
 	}
@@ -745,6 +767,10 @@ export class Model {
 				return false;
 			case "realtimeResize":
 				return false;
+			case "borderDockState":
+				return "expanded";
+			case "borderEnableDock":
+				return true;
 			default:
 				return undefined;
 		}

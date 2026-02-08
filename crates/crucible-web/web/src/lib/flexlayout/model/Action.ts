@@ -219,4 +219,18 @@ export const Action = {
       data: { tabId, enableClose },
     };
   },
+
+  setDockState(nodeId: string, state: "expanded" | "collapsed" | "minimized"): IAction {
+    return {
+      type: "SET_DOCK_STATE",
+      data: { nodeId, state },
+    };
+  },
+
+  setVisibleTabs(nodeId: string, tabs: number[]): IAction {
+    return {
+      type: "SET_VISIBLE_TABS",
+      data: { nodeId, tabs },
+    };
+  },
 };
