@@ -28,11 +28,10 @@ export default defineConfig({
     },
   ],
 
-  // Uncomment to auto-start server (requires build first)
-  // webServer: {
-  //   command: 'bun run preview',
-  //   url: 'http://localhost:3000',
-  //   reuseExistingServer: !process.env.CI,
-  //   timeout: 120 * 1000,
-  // },
+  webServer: {
+    command: 'bun run dev',
+    port: 5173,
+    reuseExistingServer: !process.env.CI,
+    timeout: 30_000,
+  },
 });

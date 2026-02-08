@@ -8,7 +8,7 @@ describe("LayoutEngine", () => {
     describe("weight distribution", () => {
         it("should distribute equal weights equally", () => {
             const model = Model.fromJson({
-                global: {},
+                global: { splitterSize: 0 },
                 borders: [],
                 layout: {
                     type: "row",
@@ -37,7 +37,7 @@ describe("LayoutEngine", () => {
 
         it("should distribute unequal weights proportionally", () => {
             const model = Model.fromJson({
-                global: {},
+                global: { splitterSize: 0 },
                 borders: [],
                 layout: {
                     type: "row",
@@ -65,7 +65,7 @@ describe("LayoutEngine", () => {
 
         it("should respect min/max constraints", () => {
             const model = Model.fromJson({
-                global: {},
+                global: { splitterSize: 0 },
                 borders: [],
                 layout: {
                     type: "row",
@@ -93,7 +93,7 @@ describe("LayoutEngine", () => {
 
         it("should handle vertical orientation", () => {
             const model = Model.fromJson({
-                global: { rootOrientationVertical: true },
+                global: { rootOrientationVertical: true, splitterSize: 0 },
                 borders: [],
                 layout: {
                     type: "row",
@@ -122,7 +122,7 @@ describe("LayoutEngine", () => {
 
         it("should handle nested rows", () => {
             const model = Model.fromJson({
-                global: {},
+                global: { splitterSize: 0 },
                 borders: [],
                 layout: {
                     type: "row",
@@ -160,7 +160,7 @@ describe("LayoutEngine", () => {
 
         it("should handle maximize state", () => {
             const model = Model.fromJson({
-                global: {},
+                global: { splitterSize: 0 },
                 borders: [],
                 layout: {
                     type: "row",
@@ -193,7 +193,7 @@ describe("LayoutEngine", () => {
     describe("rect positioning", () => {
         it("should position rects correctly in horizontal layout", () => {
             const model = Model.fromJson({
-                global: {},
+                global: { splitterSize: 0 },
                 borders: [],
                 layout: {
                     type: "row",
@@ -223,7 +223,7 @@ describe("LayoutEngine", () => {
 
         it("should position rects correctly in vertical layout", () => {
             const model = Model.fromJson({
-                global: { rootOrientationVertical: true },
+                global: { rootOrientationVertical: true, splitterSize: 0 },
                 borders: [],
                 layout: {
                     type: "row",
@@ -251,10 +251,70 @@ describe("LayoutEngine", () => {
         });
     });
 
+    describe("splitter size", () => {
+        it("should use default splitter size of 8 when not specified", () => {
+            const model = Model.fromJson({
+                global: {},
+                borders: [],
+                layout: {
+                    type: "row",
+                    orientation: "HORZ",
+                    weight: 100,
+                    children: [
+                        { type: "tabset", weight: 100, children: [] },
+                        { type: "tabset", weight: 100, children: [] }
+                    ]
+                }
+            });
+
+            expect(model.getSplitterSize()).toBe(8);
+
+            const root = model.getRoot()!;
+            const ts1 = root.getChildren()[0];
+            const ts2 = root.getChildren()[1];
+
+            const containerRect = new Rect(0, 0, 400, 400);
+            LayoutEngine.calculateLayout(root, containerRect);
+
+            // 400 - 8 (one splitter) = 392 / 2 = 196 each
+            expect(ts1.getRect().width).toBe(196);
+            expect(ts2.getRect().width).toBe(196);
+        });
+
+        it("should respect custom splitter size", () => {
+            const model = Model.fromJson({
+                global: { splitterSize: 10 },
+                borders: [],
+                layout: {
+                    type: "row",
+                    orientation: "HORZ",
+                    weight: 100,
+                    children: [
+                        { type: "tabset", weight: 100, children: [] },
+                        { type: "tabset", weight: 100, children: [] }
+                    ]
+                }
+            });
+
+            expect(model.getSplitterSize()).toBe(10);
+
+            const root = model.getRoot()!;
+            const ts1 = root.getChildren()[0];
+            const ts2 = root.getChildren()[1];
+
+            const containerRect = new Rect(0, 0, 400, 400);
+            LayoutEngine.calculateLayout(root, containerRect);
+
+            // 400 - 10 (one splitter) = 390 / 2 = 195 each
+            expect(ts1.getRect().width).toBe(195);
+            expect(ts2.getRect().width).toBe(195);
+        });
+    });
+
     describe("splitter adjustment", () => {
         it("should recalculate weights after splitter drag", () => {
             const model = Model.fromJson({
-                global: {},
+                global: { splitterSize: 0 },
                 borders: [],
                 layout: {
                     type: "row",

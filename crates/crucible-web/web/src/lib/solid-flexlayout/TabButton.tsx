@@ -147,7 +147,10 @@ export const TabButton: Component<ITabButtonProps> = (props) => {
         return renderState;
     };
 
-    const initialState = renderContent();
+    const currentRender = () => {
+        void props.layout.getRevision();
+        return renderContent();
+    };
 
     return (
         <div
@@ -161,11 +164,14 @@ export const TabButton: Component<ITabButtonProps> = (props) => {
             onDragStart={onDragStart}
             onDragEnd={onDragEnd}
         >
-            {initialState.leading && (
-                <div class={cm(CLASSES.FLEXLAYOUT__TAB_BUTTON_LEADING)}>
-                    {initialState.leading}
-                </div>
-            )}
+            {(() => {
+                const state = currentRender();
+                return state.leading ? (
+                    <div class={cm(CLASSES.FLEXLAYOUT__TAB_BUTTON_LEADING)}>
+                        {state.leading}
+                    </div>
+                ) : undefined;
+            })()}
             <Show
                 when={isEditing()}
                 fallback={
@@ -184,7 +190,7 @@ export const TabButton: Component<ITabButtonProps> = (props) => {
                     onPointerDown={onTextBoxPointerDown}
                 />
             </Show>
-            {initialState.buttons}
+            {(() => currentRender().buttons)()}
         </div>
     );
 };

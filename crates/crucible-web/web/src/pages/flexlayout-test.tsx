@@ -16,6 +16,11 @@ const defaultGlobal = {
   tabCloseType: 1,
   borderAutoSelectTabWhenOpen: true,
   borderAutoSelectTabWhenClosed: false,
+  borderSize: 200,
+  borderMinSize: 0,
+  borderMaxSize: 99999,
+  borderEnableDrop: true,
+  borderEnableAutoHide: false,
 };
 
 const layouts: Record<string, any> = {
@@ -270,6 +275,47 @@ const layouts: Record<string, any> = {
       ],
     },
   },
+  test_with_float: {
+    global: { ...defaultGlobal },
+    borders: [],
+    layout: {
+      type: "row",
+      weight: 100,
+      children: [
+        {
+          type: "tabset",
+          weight: 50,
+          children: [
+            { type: "tab", name: "Main", component: "testing" },
+            { type: "tab", name: "Editor", component: "testing" },
+          ],
+        },
+        {
+          type: "tabset",
+          weight: 50,
+          id: "#1",
+          children: [{ type: "tab", name: "Preview", component: "testing" }],
+        },
+      ],
+    },
+    windows: {
+      "float1": {
+        windowType: "float",
+        rect: { x: 100, y: 100, width: 300, height: 200 },
+        layout: {
+          type: "row",
+          weight: 100,
+          children: [
+            {
+              type: "tabset",
+              weight: 100,
+              children: [{ type: "tab", name: "Floating", component: "testing" }],
+            },
+          ],
+        },
+      },
+    },
+  },
 };
 
 const FlexLayoutTest: Component = () => {
@@ -290,6 +336,18 @@ const FlexLayoutTest: Component = () => {
     }
     setModel(newModel);
     nextIndex = 1;
+  };
+
+  const onFloatActive = () => {
+    const m = model();
+    const activeTabset = m.getActiveTabset();
+    if (activeTabset) {
+      const r = activeTabset.getRect();
+      m.doAction(
+        Action.floatTabset(activeTabset.getId(), r.x + 20, r.y + 20, r.width, r.height),
+      );
+      setModel(m);
+    }
   };
 
   const onDragStart = (event: DragEvent) => {
@@ -320,13 +378,7 @@ const FlexLayoutTest: Component = () => {
           -1,
         ),
       );
-      const newModel = Model.fromJson(m.toJson());
-      const root = newModel.getRoot();
-      if (root) {
-        root.setPaths("");
-        newModel.getBorderSet().setPaths();
-      }
-      setModel(newModel);
+      setModel(m);
     }
   };
 
@@ -393,6 +445,7 @@ const FlexLayoutTest: Component = () => {
 
   const factory = (node: TabNode) => (
     <div
+      data-testid={`panel-${node.getName()}`}
       style={{
         padding: "16px",
         height: "100%",
@@ -427,6 +480,9 @@ const FlexLayoutTest: Component = () => {
         </button>
         <button data-id="add-active" onClick={onAddActive}>
           Add Active
+        </button>
+        <button data-id="float-active" onClick={onFloatActive}>
+          Float Active
         </button>
       </div>
       <div style={{ flex: 1, position: "relative" }}>
