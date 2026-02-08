@@ -29,6 +29,7 @@ export default defineConfig({
     rollupOptions: {
       input: {
         main: path.resolve(__dirname, 'index.html'),
+        'flexlayout-index': path.resolve(__dirname, 'flexlayout-index.html'),
         'flexlayout-test': path.resolve(__dirname, 'flexlayout-test.html'),
       },
     },
