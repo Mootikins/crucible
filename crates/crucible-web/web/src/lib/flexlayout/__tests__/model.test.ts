@@ -3,6 +3,9 @@ import { twoTabs, withBorders, threeTabs } from "./fixtures";
 import { Model } from "../model/Model";
 import { Action } from "../model/Action";
 import { TabNode } from "../model/TabNode";
+import { RowNode } from "../model/RowNode";
+import { TabSetNode } from "../model/TabSetNode";
+import { canDockToWindow } from "../model/Utils";
 import type { IJsonModel } from "../types";
 
 // Global variables for pathMap and tabs
@@ -1803,5 +1806,187 @@ describe("MOVE_WINDOW action", () => {
       testModel.setFloatZOrder(["a", "b"]);
       expect(testModel.getFloatZOrder()).toEqual(["a", "b"]);
     });
+  });
+});
+
+describe("cross-window moves", () => {
+  function collectRowNodes(node: any): RowNode[] {
+    const rows: RowNode[] = [];
+    if (node instanceof RowNode) {
+      rows.push(node);
+    }
+    for (const child of node.getChildren()) {
+      rows.push(...collectRowNodes(child));
+    }
+    return rows;
+  }
+
+  it("propagates windowId when moving tab from float to main", () => {
+    const model = Model.fromJson(twoTabs);
+    textRender(model);
+    const ts0 = tabset("/ts0");
+    const tab = ts0.getChildren()[0] as TabNode;
+    const tabId = tab.getId();
+
+    model.doAction(Action.floatTab(tabId, 100, 100, 400, 300));
+    const floatWindowIds = nonMainWindowIds(model);
+    expect(floatWindowIds.length).toBe(1);
+    expect(tabNamesInWindow(model, floatWindowIds[0])).toContain("One");
+
+    const mainRoot = model.getRoot(Model.MAIN_WINDOW_ID)!;
+    let mainTabsetId = "";
+    mainRoot.forEachNode((node: any) => {
+      if (node instanceof TabSetNode && !mainTabsetId) {
+        mainTabsetId = node.getId();
+      }
+    }, 0);
+
+    model.doAction(Action.moveNode(tabId, mainTabsetId, "center", -1));
+
+    expect(tab.getWindowId()).toBe(Model.MAIN_WINDOW_ID);
+  });
+
+  it("propagates windowId on nested RowNodes after cross-window move", () => {
+    const withFloat: IJsonModel = {
+      global: {},
+      borders: [],
+      layout: {
+        type: "row",
+        weight: 100,
+        children: [
+          {
+            type: "tabset",
+            id: "main-ts",
+            weight: 100,
+            children: [
+              { type: "tab", name: "MainTab", component: "text" },
+            ],
+          },
+        ],
+      },
+      windows: {
+        float1: {
+          layout: {
+            type: "row",
+            weight: 100,
+            children: [
+              {
+                type: "row",
+                weight: 50,
+                children: [
+                  {
+                    type: "tabset",
+                    id: "float-ts1",
+                    weight: 50,
+                    children: [
+                      { type: "tab", name: "FloatA", component: "text" },
+                    ],
+                  },
+                  {
+                    type: "tabset",
+                    id: "float-ts2",
+                    weight: 50,
+                    children: [
+                      { type: "tab", name: "FloatB", component: "text" },
+                    ],
+                  },
+                ],
+              },
+            ],
+          },
+          rect: { x: 100, y: 100, width: 400, height: 300 },
+          windowType: "float",
+        },
+      },
+    };
+
+    const model = Model.fromJson(withFloat);
+
+    const floatRoot = model.getRoot("float1")!;
+    const floatRows = collectRowNodes(floatRoot);
+    expect(floatRows.length).toBeGreaterThan(0);
+    for (const row of floatRows) {
+      expect(row.getWindowId()).toBe("float1");
+    }
+
+    const floatTabA = model.getNodeById("float-ts1")! as TabSetNode;
+    const floatTab = floatTabA.getChildren()[0] as TabNode;
+    const floatTabId = floatTab.getId();
+
+    model.doAction(Action.moveNode(floatTabId, "main-ts", "left", -1));
+
+    expect(floatTab.getWindowId()).toBe(Model.MAIN_WINDOW_ID);
+
+    const mainRoot = model.getRoot(Model.MAIN_WINDOW_ID)!;
+    const mainRows = collectRowNodes(mainRoot);
+    for (const row of mainRows) {
+      expect(row.getWindowId()).toBe(Model.MAIN_WINDOW_ID);
+    }
+  });
+
+  it("removes empty float window after moving last tab out", () => {
+    const model = Model.fromJson(twoTabs);
+    textRender(model);
+    const ts0 = tabset("/ts0");
+    const tab = ts0.getChildren()[0] as TabNode;
+    const tabId = tab.getId();
+
+    model.doAction(Action.floatTab(tabId, 100, 100, 400, 300));
+    expect(model.getwindowsMap().size).toBe(2);
+
+    const floatWindowIds = nonMainWindowIds(model);
+    expect(floatWindowIds.length).toBe(1);
+
+    const mainRoot = model.getRoot(Model.MAIN_WINDOW_ID)!;
+    let mainTabsetId = "";
+    mainRoot.forEachNode((node: any) => {
+      if (node instanceof TabSetNode && !mainTabsetId) {
+        mainTabsetId = node.getId();
+      }
+    }, 0);
+
+    model.doAction(Action.moveNode(tabId, mainTabsetId, "center", -1));
+
+    expect(model.getwindowsMap().size).toBe(1);
+    expect(model.getwindowsMap().has(Model.MAIN_WINDOW_ID)).toBe(true);
+  });
+
+  it("canDockToWindow returns true for tabs with default attributes", () => {
+    const model = Model.fromJson(twoTabs);
+    textRender(model);
+    const ts0 = tabset("/ts0");
+    const tab = ts0.getChildren()[0] as TabNode;
+
+    expect(canDockToWindow(tab)).toBe(true);
+  });
+
+  it("canDockToWindow returns false for tabs with enablePopout explicitly false", () => {
+    const model = Model.fromJson({
+      global: {},
+      borders: [],
+      layout: {
+        type: "tabset",
+        weight: 100,
+        children: [
+          {
+            type: "tab",
+            name: "NoDock",
+            component: "text",
+            enablePopout: false,
+          },
+        ],
+      },
+    });
+
+    const root = model.getRoot()!;
+    let tab: TabNode | undefined;
+    root.forEachNode((node: any) => {
+      if (node instanceof TabNode && !tab) {
+        tab = node;
+      }
+    }, 0);
+
+    expect(tab).toBeDefined();
+    expect(canDockToWindow(tab!)).toBe(false);
   });
 });
