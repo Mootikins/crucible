@@ -415,6 +415,13 @@
   transition: top 0.15s, left 0.15s, width 0.15s, height 0.15s;
 }
 
+.flexlayout__outline_rect_tab_reorder {
+  border: none;
+  background: #3b82f6;
+  border-radius: 1px;
+  transition: top 0.1s, left 0.1s, height 0.1s;
+}
+
 .flexlayout__outline_rect_edge {
   position: absolute;
   border: 2px dashed #3b82f6;
