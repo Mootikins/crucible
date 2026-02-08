@@ -15,15 +15,19 @@
       .card h2 { font-size: 1rem; margin-bottom: 6px; color: #e0e0e0; }
       .card .tags { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
       .card .tag { font-size: 0.7rem; padding: 2px 8px; border-radius: 9999px; background: rgba(233, 69, 96, 0.15); color: #e94560; }
-      .card p { font-size: 0.85rem; color: #8899aa; line-height: 1.4; }
-    </style>
+       .card p { font-size: 0.85rem; color: #8899aa; line-height: 1.4; }
+       .section-header { grid-column: 1 / -1; margin-top: 24px; margin-bottom: 8px; font-size: 1.2rem; color: #e94560; }
+       @media (max-width: 600px) {
+         body { padding: 16px; }
+       }
+     </style>
   </head>
   <body>
     <h1>FlexLayout Demos</h1>
     <p class="subtitle">SolidJS port of FlexLayout — click a demo to open it</p>
     <div class="grid">
       <!-- Existing Demos -->
-      <h2 style="grid-column: 1 / -1; margin-top: 24px; margin-bottom: 8px; font-size: 1.2rem; color: #e94560;">Existing Demos</h2>
+      <h2 class="section-header">Existing Demos</h2>
       <a class="card" href="/flexlayout-test.html?layout=test_two_tabs">
         <h2>Two Tabs</h2>
         <div class="tags"><span class="tag">basic</span><span class="tag">drag</span></div>
@@ -51,7 +55,7 @@
       </a>
 
       <!-- Basic & Layout -->
-      <h2 style="grid-column: 1 / -1; margin-top: 24px; margin-bottom: 8px; font-size: 1.2rem; color: #e94560;">Basic &amp; Layout</h2>
+      <h2 class="section-header">Basic &amp; Layout</h2>
       <a class="card" href="/flexlayout-test.html?layout=basic_simple">
         <h2>Simple</h2>
         <div class="tags"><span class="tag">basic</span><span class="tag">layout</span></div>
@@ -129,7 +133,7 @@
       </a>
 
       <!-- TabSet & Tab Attributes -->
-      <h2 style="grid-column: 1 / -1; margin-top: 24px; margin-bottom: 8px; font-size: 1.2rem; color: #e94560;">TabSet &amp; Tab Attributes</h2>
+      <h2 class="section-header">TabSet &amp; Tab Attributes</h2>
       <a class="card" href="/flexlayout-test.html?layout=tabset_tab_wrap">
         <h2>Tab Wrap</h2>
         <div class="tags"><span class="tag">tabs</span><span class="tag">layout</span></div>
@@ -182,7 +186,7 @@
       </a>
 
       <!-- Border & Splitter -->
-      <h2 style="grid-column: 1 / -1; margin-top: 24px; margin-bottom: 8px; font-size: 1.2rem; color: #e94560;">Border &amp; Splitter</h2>
+      <h2 class="section-header">Border &amp; Splitter</h2>
       <a class="card" href="/flexlayout-test.html?layout=border_autohide">
         <h2>Auto Hide</h2>
         <div class="tags"><span class="tag">borders</span><span class="tag">autohide</span></div>
@@ -215,7 +219,7 @@
       </a>
 
       <!-- Callback & Rendering -->
-      <h2 style="grid-column: 1 / -1; margin-top: 24px; margin-bottom: 8px; font-size: 1.2rem; color: #e94560;">Callback &amp; Rendering</h2>
+      <h2 class="section-header">Callback &amp; Rendering</h2>
       <a class="card" href="/flexlayout-test.html?layout=render_custom_tab">
         <h2>Custom Tab</h2>
         <div class="tags"><span class="tag">rendering</span><span class="tag">callback</span></div>
@@ -253,7 +257,7 @@
       </a>
 
       <!-- Actions & Interactivity -->
-      <h2 style="grid-column: 1 / -1; margin-top: 24px; margin-bottom: 8px; font-size: 1.2rem; color: #e94560;">Actions &amp; Interactivity</h2>
+      <h2 class="section-header">Actions &amp; Interactivity</h2>
       <a class="card" href="/flexlayout-test.html?layout=action_add_remove">
         <h2>Add/Remove</h2>
         <div class="tags"><span class="tag">actions</span><span class="tag">dynamic</span></div>
@@ -276,22 +280,22 @@
       </a>
 
       <!-- Stress & Advanced -->
-      <h2 style="grid-column: 1 / -1; margin-top: 24px; margin-bottom: 8px; font-size: 1.2rem; color: #e94560;">Stress &amp; Advanced</h2>
-      <a class="card" href="/flexlayout-test.html?layout=stress_complex">
-        <h2>Complex</h2>
-        <div class="tags"><span class="tag">stress</span><span class="tag">performance</span></div>
-        <p>Complex layout with 30+ tabs across multiple panes. Tests performance and stability.</p>
-      </a>
-      <a class="card" href="/flexlayout-test.html?layout=stress_sub_layout">
-        <h2>Sub Layout</h2>
-        <div class="tags"><span class="tag">stress</span><span class="tag">nested</span></div>
-        <p>Nested layouts within tabs. Tests recursive layout composition.</p>
-      </a>
-      <a class="card" href="/flexlayout-test.html?layout=stress_state_preservation">
-        <h2>State Preservation</h2>
-        <div class="tags"><span class="tag">stress</span><span class="tag">state</span></div>
-        <p>Complex state preservation across operations. Tests state consistency.</p>
-      </a>
+      <h2 class="section-header">Stress &amp; Advanced</h2>
+       <a class="card" href="/flexlayout-test.html?layout=stress_complex" aria-label="Complex — Complex layout with 30+ tabs for performance testing">
+         <h2>Complex</h2>
+         <div class="tags"><span class="tag">stress</span><span class="tag">performance</span></div>
+         <p>Complex layout with 30+ tabs across multiple panes. Tests performance and stability.</p>
+       </a>
+       <a class="card" href="/flexlayout-test.html?layout=stress_sub_layout" aria-label="Sub Layout — Nested layouts within tabs for recursive composition">
+         <h2>Sub Layout</h2>
+         <div class="tags"><span class="tag">stress</span><span class="tag">nested</span></div>
+         <p>Nested layouts within tabs. Tests recursive layout composition.</p>
+       </a>
+       <a class="card" href="/flexlayout-test.html?layout=stress_state_preservation" aria-label="State Preservation — Complex state preservation across operations">
+         <h2>State Preservation</h2>
+         <div class="tags"><span class="tag">stress</span><span class="tag">state</span></div>
+         <p>Complex state preservation across operations. Tests state consistency.</p>
+       </a>
     </div>
   </body>
 </html>
