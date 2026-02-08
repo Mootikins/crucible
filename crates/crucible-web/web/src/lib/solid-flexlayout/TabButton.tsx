@@ -12,8 +12,11 @@ export interface ITabButtonProps {
     path: string;
 }
 
+const DRAG_THRESHOLD = 5;
+
 export const TabButton: Component<ITabButtonProps> = (props) => {
     let selfRef: HTMLDivElement | undefined;
+    let dragStartPos: { x: number; y: number } | null = null;
 
     const cm = props.layout.getClassName;
     const node = props.node;
@@ -61,6 +64,27 @@ export const TabButton: Component<ITabButtonProps> = (props) => {
         event.stopPropagation();
     };
 
+    const onPointerDown = (event: PointerEvent) => {
+        if (!node.isEnableDrag() || !selfRef) return;
+        dragStartPos = { x: event.clientX, y: event.clientY };
+        selfRef.draggable = false;
+    };
+
+    const onPointerMove = (event: PointerEvent) => {
+        if (!dragStartPos || !selfRef) return;
+        const dx = event.clientX - dragStartPos.x;
+        const dy = event.clientY - dragStartPos.y;
+        if (dx * dx + dy * dy >= DRAG_THRESHOLD * DRAG_THRESHOLD) {
+            selfRef.draggable = true;
+            dragStartPos = null;
+        }
+    };
+
+    const onPointerUp = () => {
+        dragStartPos = null;
+        if (selfRef) selfRef.draggable = true;
+    };
+
     const onDragStart = (event: DragEvent) => {
         if (node.isEnableDrag()) {
             event.stopPropagation();
@@ -71,6 +95,8 @@ export const TabButton: Component<ITabButtonProps> = (props) => {
     };
 
     const onDragEnd = () => {
+        dragStartPos = null;
+        if (selfRef) selfRef.draggable = true;
         props.layout.clearDragMain();
     };
 
@@ -159,6 +185,9 @@ export const TabButton: Component<ITabButtonProps> = (props) => {
             class={classNames()}
             onClick={onClick}
             onDblClick={onDoubleClick}
+            onPointerDown={onPointerDown}
+            onPointerMove={onPointerMove}
+            onPointerUp={onPointerUp}
             title={node.getHelpText()}
             draggable={true}
             onDragStart={onDragStart}
