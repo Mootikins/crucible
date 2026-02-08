@@ -443,18 +443,180 @@ const FlexLayoutTest: Component = () => {
     }
   };
 
-  const factory = (node: TabNode) => (
-    <div
-      data-testid={`panel-${node.getName()}`}
-      style={{
-        padding: "16px",
-        height: "100%",
-        "box-sizing": "border-box",
-      }}
-    >
-      {node.getName()}
-    </div>
-  );
+   const factory = (node: TabNode) => {
+     const componentType = node.getComponent();
+     const config = node.getConfig();
+
+     switch (componentType) {
+       case "info": {
+         const description = config?.description || "No description provided";
+         return (
+           <div
+             data-testid={`panel-${node.getName()}`}
+             style={{
+               padding: "16px",
+               height: "100%",
+               "box-sizing": "border-box",
+               "overflow-y": "auto",
+             }}
+           >
+             <p style={{ margin: 0 }}>{description}</p>
+           </div>
+         );
+       }
+
+       case "counter": {
+         const [count, setCount] = createSignal(0);
+         return (
+           <div
+             data-testid={`panel-${node.getName()}`}
+             style={{
+               padding: "16px",
+               height: "100%",
+               "box-sizing": "border-box",
+               display: "flex",
+               "flex-direction": "column",
+               gap: "8px",
+             }}
+           >
+             <p>Count: {count()}</p>
+             <button onClick={() => setCount(count() + 1)}>
+               Increment
+             </button>
+           </div>
+         );
+       }
+
+       case "color": {
+         const bgColor = config?.color || "#f0f0f0";
+         return (
+           <div
+             data-testid={`panel-${node.getName()}`}
+             style={{
+               padding: "16px",
+               height: "100%",
+               "box-sizing": "border-box",
+               "background-color": bgColor,
+             }}
+           >
+             <p>Color: {bgColor}</p>
+           </div>
+         );
+       }
+
+       case "form": {
+         const [text, setText] = createSignal("");
+         const [checked, setChecked] = createSignal(false);
+         return (
+           <div
+             data-testid={`panel-${node.getName()}`}
+             style={{
+               padding: "16px",
+               height: "100%",
+               "box-sizing": "border-box",
+               display: "flex",
+               "flex-direction": "column",
+               gap: "8px",
+             }}
+           >
+             <input
+               type="text"
+               value={text()}
+               onInput={(e) => setText(e.currentTarget.value)}
+               placeholder="Enter text"
+             />
+             <label>
+               <input
+                 type="checkbox"
+                 checked={checked()}
+                 onChange={(e) => setChecked(e.currentTarget.checked)}
+               />
+               {" "}Agree
+             </label>
+             <p>Text: {text()}, Checked: {checked() ? "yes" : "no"}</p>
+           </div>
+         );
+       }
+
+       case "heavy": {
+         return (
+           <div
+             data-testid={`panel-${node.getName()}`}
+             style={{
+               padding: "16px",
+               height: "100%",
+               "box-sizing": "border-box",
+               "overflow-y": "auto",
+             }}
+           >
+             {Array.from({ length: 50 }, (_, i) => (
+               <div style={{ padding: "4px" }}>
+                 Item {i + 1}
+               </div>
+             ))}
+           </div>
+         );
+       }
+
+       case "nested": {
+         const nestedLayout: any = {
+           global: { ...defaultGlobal },
+           borders: [],
+           layout: {
+             type: "row",
+             weight: 100,
+             children: [
+               {
+                 type: "tabset",
+                 weight: 100,
+                 children: [
+                   { type: "tab", name: "Nested Tab", component: "testing" },
+                 ],
+               },
+             ],
+           },
+         };
+         const nestedModel = Model.fromJson(nestedLayout);
+         const root = nestedModel.getRoot();
+         if (root) {
+           root.setPaths("");
+           nestedModel.getBorderSet().setPaths();
+         }
+         return (
+           <div
+             data-testid={`panel-${node.getName()}`}
+             style={{
+               padding: "16px",
+               height: "100%",
+               "box-sizing": "border-box",
+               position: "relative",
+             }}
+           >
+             <Layout
+               model={nestedModel}
+               factory={factory}
+               onAction={onAction}
+             />
+           </div>
+         );
+       }
+
+       default: {
+         return (
+           <div
+             data-testid={`panel-${node.getName()}`}
+             style={{
+               padding: "16px",
+               height: "100%",
+               "box-sizing": "border-box",
+             }}
+           >
+             {node.getName()}
+           </div>
+         );
+       }
+     }
+   };
 
   const onAction = (action: any) => action;
 
