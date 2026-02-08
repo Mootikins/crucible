@@ -1,5 +1,6 @@
-import { Component, createSignal } from "solid-js";
+import { Component } from "solid-js";
 import { RowNode } from "../flexlayout/model/RowNode";
+import { BorderNode } from "../flexlayout/model/BorderNode";
 import { Orientation } from "../flexlayout/core/Orientation";
 import { Rect } from "../flexlayout/core/Rect";
 import { CLASSES } from "../flexlayout/core/Types";
@@ -15,8 +16,6 @@ export interface ISplitterProps {
 
 export const Splitter: Component<ISplitterProps> = (props) => {
     let selfRef: HTMLDivElement | undefined;
-
-    const [, setIsDragging] = createSignal(false);
 
     const size = () => props.node.getModel().getSplitterSize();
 
@@ -39,11 +38,7 @@ export const Splitter: Component<ISplitterProps> = (props) => {
         }
 
         pBounds = props.node.getSplitterBounds(props.index);
-        const rootdiv = props.layout.getRootDiv();
-        outlineDiv = document.createElement("div");
-        outlineDiv.style.flexDirection = props.horizontal ? "row" : "column";
-        outlineDiv.className = props.layout.getClassName(CLASSES.FLEXLAYOUT__SPLITTER_DRAG);
-        outlineDiv.style.cursor = props.node.getOrientation() === Orientation.VERT ? "ns-resize" : "ew-resize";
+        const isRealtime = props.layout.isRealtimeResize();
 
         const r = selfRef?.getBoundingClientRect()!;
         const layoutRect = props.layout.getDomRect();
@@ -57,39 +52,28 @@ export const Splitter: Component<ISplitterProps> = (props) => {
         dragStartX = event.clientX - r.x;
         dragStartY = event.clientY - r.y;
 
-        rect.positionElement(outlineDiv);
-        if (rootdiv) {
-            rootdiv.appendChild(outlineDiv);
+        if (!isRealtime) {
+            const rootdiv = props.layout.getRootDiv();
+            outlineDiv = document.createElement("div");
+            outlineDiv.style.flexDirection = props.horizontal ? "row" : "column";
+            outlineDiv.className = props.layout.getClassName(CLASSES.FLEXLAYOUT__SPLITTER_DRAG);
+            outlineDiv.style.cursor = props.node.getOrientation() === Orientation.VERT ? "ns-resize" : "ew-resize";
+            rect.positionElement(outlineDiv);
+            if (rootdiv) {
+                rootdiv.appendChild(outlineDiv);
+            }
         }
 
-        setIsDragging(true);
-
-        const onMove = (e: PointerEvent) => {
-            if (outlineDiv) {
-                const clientRect = props.layout.getDomRect();
-                if (props.node.getOrientation() === Orientation.VERT) {
-                    outlineDiv.style.top = getBoundPosition(e.clientY - clientRect.y - dragStartY) + "px";
-                } else {
-                    outlineDiv.style.left = getBoundPosition(e.clientX - clientRect.x - dragStartX) + "px";
-                }
-            }
-        };
-
-        const onUp = () => {
-            document.removeEventListener("pointermove", onMove);
-            document.removeEventListener("pointerup", onUp);
-
-            if (outlineDiv) {
-                let value = 0;
-                if (props.node.getOrientation() === Orientation.VERT) {
-                    value = outlineDiv.offsetTop;
-                } else {
-                    value = outlineDiv.offsetLeft;
-                }
-
+        const applyAtPosition = (position: number) => {
+            if (props.node instanceof BorderNode) {
+                const pos = props.node.calculateSplit(props.node, position);
+                props.layout.doAction(
+                    Action.adjustBorderSplit(props.node.getId(), pos),
+                );
+            } else {
                 const weights = props.node.calculateSplit(
                     props.index,
-                    value,
+                    position,
                     initialSizes.initialSizes,
                     initialSizes.sum,
                     initialSizes.startPosition,
@@ -101,6 +85,38 @@ export const Splitter: Component<ISplitterProps> = (props) => {
                         props.node.getOrientation().getName(),
                     ),
                 );
+            }
+        };
+
+        const onMove = (e: PointerEvent) => {
+            const clientRect = props.layout.getDomRect();
+            const position = props.node.getOrientation() === Orientation.VERT
+                ? getBoundPosition(e.clientY - clientRect.y - dragStartY)
+                : getBoundPosition(e.clientX - clientRect.x - dragStartX);
+
+            if (isRealtime) {
+                applyAtPosition(position);
+            } else if (outlineDiv) {
+                if (props.node.getOrientation() === Orientation.VERT) {
+                    outlineDiv.style.top = position + "px";
+                } else {
+                    outlineDiv.style.left = position + "px";
+                }
+            }
+        };
+
+        const onUp = (_e: PointerEvent) => {
+            document.removeEventListener("pointermove", onMove);
+            document.removeEventListener("pointerup", onUp);
+
+            if (!isRealtime && outlineDiv) {
+                let value = 0;
+                if (props.node.getOrientation() === Orientation.VERT) {
+                    value = outlineDiv.offsetTop;
+                } else {
+                    value = outlineDiv.offsetLeft;
+                }
+                applyAtPosition(value);
 
                 const rootdiv = props.layout.getRootDiv();
                 if (rootdiv && outlineDiv) {
@@ -108,8 +124,6 @@ export const Splitter: Component<ISplitterProps> = (props) => {
                 }
                 outlineDiv = undefined;
             }
-
-            setIsDragging(false);
         };
 
         document.addEventListener("pointermove", onMove);
@@ -126,6 +140,7 @@ export const Splitter: Component<ISplitterProps> = (props) => {
     const cm = props.layout.getClassName;
 
     const style = (): Record<string, any> => {
+        void props.layout.getRevision();
         const s: Record<string, any> = {
             cursor: props.horizontal ? "ew-resize" : "ns-resize",
             "flex-direction": props.horizontal ? "column" : "row",
@@ -165,7 +180,7 @@ export const Splitter: Component<ISplitterProps> = (props) => {
             ref={selfRef}
             class={className()}
             style={style()}
-            data-layout-path={props.node.getPath() + "/s" + (props.index - 1)}
+            data-layout-path={(() => { void props.layout.getRevision(); return props.node.getPath() + "/s" + (props.index - 1); })()}
             onPointerDown={onPointerDown}
         />
     );

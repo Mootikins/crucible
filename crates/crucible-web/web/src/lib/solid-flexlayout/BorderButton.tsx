@@ -53,13 +53,6 @@ export const BorderButton: Component<IBorderButtonProps> = (props) => {
         props.layout.doAction(Action.selectTab(node.getId()));
     };
 
-    const onEndEdit = (event: Event) => {
-        if (event.target !== contentRef!) {
-            document.body.removeEventListener("pointerdown", onEndEdit);
-            props.layout.setEditingTab(undefined);
-        }
-    };
-
     const isClosable = (): boolean => {
         const closeType = node.getCloseType();
         if (props.selected || closeType === ICloseType.Always) {

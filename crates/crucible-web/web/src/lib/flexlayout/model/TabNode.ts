@@ -307,6 +307,26 @@ export class TabNode extends Node implements IDraggable {
 	}
 
 	/** @internal */
+	setIcon(icon: string | undefined) {
+		this.attributes.icon = icon;
+	}
+
+	/** @internal */
+	setComponent(component: string | undefined) {
+		this.attributes.component = component;
+	}
+
+	/** @internal */
+	setConfig(config: any) {
+		this.attributes.config = config;
+	}
+
+	/** @internal */
+	setEnableClose(enableClose: boolean) {
+		this.attributes.enableClose = enableClose;
+	}
+
+	/** @internal */
 	delete() {
 		(this.getParent() as TabSetNode | BorderNode).remove(this);
 		this.fireEvent("close", {});
