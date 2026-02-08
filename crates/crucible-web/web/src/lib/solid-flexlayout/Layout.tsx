@@ -413,6 +413,29 @@ export const Layout: Component<ILayoutProps> = (props) => {
         event.dataTransfer!.dropEffect = "move";
         dragEnterCount = 0;
             (selfRef as any).__dragNode = node;
+
+        // Custom drag preview — styled div instead of browser default
+        if (node instanceof TabNode) {
+            const dragImg = document.createElement("div");
+            dragImg.className = getClassName(CLASSES.FLEXLAYOUT__TAB_BUTTON) + " " + getClassName(CLASSES.FLEXLAYOUT__TAB_BUTTON + "--selected");
+            dragImg.style.position = "absolute";
+            dragImg.style.left = "-10000px";
+            dragImg.style.top = "-10000px";
+            dragImg.style.padding = "4px 12px";
+            dragImg.style.fontSize = "12px";
+            dragImg.style.whiteSpace = "nowrap";
+            dragImg.style.pointerEvents = "none";
+            dragImg.textContent = (node as TabNode).getName();
+            document.body.appendChild(dragImg);
+            event.dataTransfer!.setDragImage(dragImg, 0, 0);
+            setTimeout(() => document.body.removeChild(dragImg), 0);
+        }
+    }
+
+    function onEscapeKey(event: KeyboardEvent) {
+        if (event.key === "Escape") {
+            clearDragMain();
+        }
     }
 
     function clearDragMain() {
@@ -422,6 +445,7 @@ export const Layout: Component<ILayoutProps> = (props) => {
         setShowHiddenBorder(DockLocation.CENTER);
         dragEnterCount = 0;
         dragging = false;
+        document.removeEventListener("keydown", onEscapeKey);
         if (outlineDiv && selfRef) {
             selfRef.removeChild(outlineDiv);
             outlineDiv = undefined;
@@ -454,6 +478,7 @@ export const Layout: Component<ILayoutProps> = (props) => {
             outlineDiv.style.transition = `top ${speed}s, left ${speed}s, width ${speed}s, height ${speed}s`;
             selfRef!.appendChild(outlineDiv);
             dragging = true;
+            document.addEventListener("keydown", onEscapeKey);
             setShowOverlay(true);
             if (props.model.getMaximizedTabset(Model.MAIN_WINDOW_ID) === undefined) {
                 setShowEdges(props.model.isEnableEdgeDock());
@@ -502,7 +527,11 @@ export const Layout: Component<ILayoutProps> = (props) => {
                     if (di) {
                         dropInfo = di;
                         if (outlineDiv) {
-                            outlineDiv.className = getClassName(di.className);
+                            let cls = getClassName(di.className);
+                            if (di.rect.width <= 5) {
+                                cls += " " + getClassName(CLASSES.FLEXLAYOUT__OUTLINE_RECT + "_tab_reorder");
+                            }
+                            outlineDiv.className = cls;
                             di.rect.positionElement(outlineDiv);
                             outlineDiv.style.visibility = "visible";
                         }
