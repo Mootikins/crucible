@@ -1,9 +1,10 @@
-import { Component, JSX, createEffect } from "solid-js";
+import { Component, JSX, createEffect, Show } from "solid-js";
 import { BorderNode } from "../flexlayout/model/BorderNode";
 import { TabNode } from "../flexlayout/model/TabNode";
 import { DockLocation } from "../flexlayout/core/DockLocation";
 import { Orientation } from "../flexlayout/core/Orientation";
 import { CLASSES } from "../flexlayout/core/Types";
+import { Action } from "../flexlayout/model/Action";
 import { BorderButton } from "./BorderButton";
 import type { ILayoutContext, ITabSetRenderValues } from "./Layout";
 
@@ -25,10 +26,24 @@ export const BorderTabSet: Component<IBorderTabSetProps> = (props) => {
         }
     });
 
+    const dockState = (): string => {
+        void props.layout.getRevision();
+        return border.getDockState();
+    };
+
+    const isCollapsed = () => dockState() === "collapsed";
+    const isMinimized = () => dockState() === "minimized";
+
     const borderClasses = (): string => {
         let classes = cm(CLASSES.FLEXLAYOUT__BORDER) + " " + cm(CLASSES.FLEXLAYOUT__BORDER_ + border.getLocation().getName());
         if (border.getClassName() !== undefined) {
             classes += " " + border.getClassName();
+        }
+        const state = dockState();
+        if (state === "collapsed") {
+            classes += " " + cm(CLASSES.FLEXLAYOUT__BORDER__COLLAPSED);
+        } else if (state === "minimized") {
+            classes += " " + cm(CLASSES.FLEXLAYOUT__BORDER__MINIMIZED);
         }
         return classes;
     };
@@ -60,6 +75,58 @@ export const BorderTabSet: Component<IBorderTabSetProps> = (props) => {
         return buttons;
     };
 
+    const collapsedLabels = (): JSX.Element[] => {
+        const labels: JSX.Element[] = [];
+        const children = border.getChildren();
+        for (let i = 0; i < children.length; i++) {
+            const child = children[i] as TabNode;
+            labels.push(
+                <div class={cm(CLASSES.FLEXLAYOUT__BORDER_COLLAPSED_LABEL)}>
+                    {child.getName()}
+                </div>,
+            );
+        }
+        return labels;
+    };
+
+    const onDockToggle = (event: MouseEvent) => {
+        event.stopPropagation();
+        const current = dockState();
+        let next: "expanded" | "collapsed" | "minimized";
+        if (current === "expanded") {
+            next = "collapsed";
+        } else if (current === "collapsed") {
+            next = "minimized";
+        } else {
+            next = "expanded";
+        }
+        props.layout.doAction(Action.setDockState(border.getId(), next));
+    };
+
+    // Arrow direction: minimized = away from edge, expanded/collapsed = toward edge
+    const dockIcon = (): string => {
+        const state = dockState();
+        const loc = border.getLocation();
+
+        if (state === "minimized") {
+            if (loc === DockLocation.LEFT) return "▶";
+            if (loc === DockLocation.RIGHT) return "◀";
+            if (loc === DockLocation.TOP) return "▼";
+            return "▲";
+        }
+        if (loc === DockLocation.LEFT) return "◀";
+        if (loc === DockLocation.RIGHT) return "▶";
+        if (loc === DockLocation.TOP) return "▲";
+        return "▼";
+    };
+
+    const dockTitle = (): string => {
+        const state = dockState();
+        if (state === "expanded") return "Collapse";
+        if (state === "collapsed") return "Minimize";
+        return "Expand";
+    };
+
     const toolbarButtons = (): JSX.Element[] => {
         let buttons: JSX.Element[] = [];
         let stickyButtons: JSX.Element[] = [];
@@ -72,6 +139,20 @@ export const BorderTabSet: Component<IBorderTabSetProps> = (props) => {
         props.layout.customizeTabSet(border, renderState);
         stickyButtons = renderState.stickyButtons;
         buttons = renderState.buttons;
+
+        if (border.isEnableDock()) {
+            buttons.push(
+                <button
+                    data-layout-path={border.getPath() + "/button/dock"}
+                    title={dockTitle()}
+                    class={cm(CLASSES.FLEXLAYOUT__BORDER_DOCK_BUTTON)}
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onClick={onDockToggle}
+                >
+                    {dockIcon()}
+                </button>,
+            );
+        }
 
         return buttons;
     };
@@ -105,19 +186,23 @@ export const BorderTabSet: Component<IBorderTabSetProps> = (props) => {
             class={borderClasses()}
             data-layout-path={border.getPath()}
         >
-            <div class={cm(CLASSES.FLEXLAYOUT__MINI_SCROLLBAR_CONTAINER)}>
-                <div
-                    class={cm(CLASSES.FLEXLAYOUT__BORDER_INNER) + " " + cm(CLASSES.FLEXLAYOUT__BORDER_INNER_ + border.getLocation().getName())}
-                    style={outerStyle()}
-                >
+            <Show when={!isMinimized()}>
+                <div class={cm(CLASSES.FLEXLAYOUT__MINI_SCROLLBAR_CONTAINER)}>
                     <div
-                        style={innerStyle()}
-                        class={cm(CLASSES.FLEXLAYOUT__BORDER_INNER_TAB_CONTAINER) + " " + cm(CLASSES.FLEXLAYOUT__BORDER_INNER_TAB_CONTAINER_ + border.getLocation().getName())}
+                        class={cm(CLASSES.FLEXLAYOUT__BORDER_INNER) + " " + cm(CLASSES.FLEXLAYOUT__BORDER_INNER_ + border.getLocation().getName())}
+                        style={outerStyle()}
                     >
-                        {tabButtons()}
+                        <div
+                            style={innerStyle()}
+                            class={cm(CLASSES.FLEXLAYOUT__BORDER_INNER_TAB_CONTAINER) + " " + cm(CLASSES.FLEXLAYOUT__BORDER_INNER_TAB_CONTAINER_ + border.getLocation().getName())}
+                        >
+                            <Show when={!isCollapsed()} fallback={collapsedLabels()}>
+                                {tabButtons()}
+                            </Show>
+                        </div>
                     </div>
                 </div>
-            </div>
+            </Show>
             <div class={cm(CLASSES.FLEXLAYOUT__BORDER_TOOLBAR) + " " + cm(CLASSES.FLEXLAYOUT__BORDER_TOOLBAR_ + border.getLocation().getName())}>
                 {toolbarButtons()}
             </div>

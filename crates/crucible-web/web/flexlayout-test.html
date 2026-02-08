@@ -188,6 +188,67 @@
 
       /* Overflow count */
       .flexlayout__tab_button_overflow_count { font-size: 0.75em; margin-left: 2px; }
+
+      /* Border dock button */
+      .flexlayout__border_dock_button {
+        cursor: pointer;
+        padding: 2px 6px;
+        color: #8899aa;
+        background: none;
+        border: none;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 12px;
+        line-height: 1;
+        opacity: 0.7;
+        transition: opacity 0.15s ease, color 0.15s ease;
+      }
+      .flexlayout__border_dock_button:hover { opacity: 1; color: #e0e0e0; }
+
+      /* Border collapsed state */
+      .flexlayout__border--collapsed .flexlayout__border_tab_contents {
+        display: none !important;
+      }
+      .flexlayout__border--collapsed .flexlayout__splitter_border {
+        display: none !important;
+      }
+
+      /* Border minimized state */
+      .flexlayout__border--minimized .flexlayout__border_tab_contents {
+        display: none !important;
+      }
+      .flexlayout__border--minimized .flexlayout__splitter_border {
+        display: none !important;
+      }
+      .flexlayout__border--minimized .flexlayout__border_inner {
+        display: none !important;
+      }
+      .flexlayout__border--minimized .flexlayout__mini_scrollbar_container {
+        display: none !important;
+      }
+
+      /* Collapsed label (tab names shown in collapsed state) */
+      .flexlayout__border_collapsed_label {
+        padding: 3px 0.5em;
+        color: #8899aa;
+        white-space: nowrap;
+        font-size: 12px;
+        user-select: none;
+        display: flex;
+        align-items: center;
+      }
+      /* Vertical edges: rotate text */
+      .flexlayout__border_left .flexlayout__border_collapsed_label,
+      .flexlayout__border_right .flexlayout__border_collapsed_label {
+        writing-mode: vertical-rl;
+        padding: 0.5em 3px;
+      }
+
+      /* Smooth transition for border content area */
+      .flexlayout__border_tab_contents {
+        transition: flex-basis 0.2s ease, width 0.2s ease, height 0.2s ease;
+      }
     </style>
   </head>
   <body>
