@@ -22,6 +22,8 @@
     <h1>FlexLayout Demos</h1>
     <p class="subtitle">SolidJS port of FlexLayout — click a demo to open it</p>
     <div class="grid">
+      <!-- Existing Demos -->
+      <h2 style="grid-column: 1 / -1; margin-top: 24px; margin-bottom: 8px; font-size: 1.2rem; color: #e94560;">Existing Demos</h2>
       <a class="card" href="/flexlayout-test.html?layout=test_two_tabs">
         <h2>Two Tabs</h2>
         <div class="tags"><span class="tag">basic</span><span class="tag">drag</span></div>
@@ -37,11 +39,6 @@
         <div class="tags"><span class="tag">borders</span><span class="tag">drag</span></div>
         <p>Three tabsets plus top/bottom/left/right border panels. Tests border tab selection, drag to/from borders.</p>
       </a>
-      <a class="card" href="/flexlayout-test.html?layout=test_with_onRenderTab">
-        <h2>Custom Render</h2>
-        <div class="tags"><span class="tag">borders</span><span class="tag">callbacks</span></div>
-        <p>Demonstrates onRenderTab and onRenderTabSet callbacks — custom icons, buttons, and sticky buttons in toolbars.</p>
-      </a>
       <a class="card" href="/flexlayout-test.html?layout=test_with_min_size">
         <h2>Min Size &amp; AutoHide</h2>
         <div class="tags"><span class="tag">constraints</span><span class="tag">borders</span><span class="tag">close</span></div>
@@ -51,6 +48,249 @@
         <h2>Float Windows</h2>
         <div class="tags"><span class="tag">float</span><span class="tag">DnD</span></div>
         <p>Pre-loaded floating panel. Tests float↔main drag, dock/close buttons, panel move &amp; resize, z-order.</p>
+      </a>
+
+      <!-- Basic & Layout -->
+      <h2 style="grid-column: 1 / -1; margin-top: 24px; margin-bottom: 8px; font-size: 1.2rem; color: #e94560;">Basic &amp; Layout</h2>
+      <a class="card" href="/flexlayout-test.html?layout=basic_simple">
+        <h2>Simple</h2>
+        <div class="tags"><span class="tag">basic</span><span class="tag">layout</span></div>
+        <p>Two-pane layout with single tab stretch. Demonstrates basic tabset configuration and responsive sizing.</p>
+      </a>
+      <a class="card" href="/flexlayout-test.html?layout=basic_vertical_root">
+        <h2>Vertical Root</h2>
+        <div class="tags"><span class="tag">layout</span><span class="tag">orientation</span></div>
+        <p>Three vertical tabsets stacked on top of each other. Tests vertical root orientation.</p>
+      </a>
+      <a class="card" href="/flexlayout-test.html?layout=basic_edge_dock">
+        <h2>Edge Dock</h2>
+        <div class="tags"><span class="tag">docking</span><span class="tag">drag</span></div>
+        <p>Demonstrates edge docking — drag tabs to screen edges to dock them as floating panels.</p>
+      </a>
+      <a class="card" href="/flexlayout-test.html?layout=basic_maximize">
+        <h2>Maximize</h2>
+        <div class="tags"><span class="tag">buttons</span><span class="tag">interaction</span></div>
+        <p>Tabset with maximize button. Click to expand a tab to full layout, click again to restore.</p>
+      </a>
+      <a class="card" href="/flexlayout-test.html?layout=basic_realtime_resize">
+        <h2>Realtime Resize</h2>
+        <div class="tags"><span class="tag">performance</span><span class="tag">resize</span></div>
+        <p>Live resize feedback as you drag splitters. Useful for performance-sensitive layouts.</p>
+      </a>
+      <a class="card" href="/flexlayout-test.html?layout=basic_serialization">
+        <h2>Serialization</h2>
+        <div class="tags"><span class="tag">state</span><span class="tag">persistence</span></div>
+        <p>Save and load layout state. Demonstrates model serialization and restoration.</p>
+      </a>
+      <a class="card" href="/flexlayout-test.html?layout=basic_overflow">
+        <h2>Overflow</h2>
+        <div class="tags"><span class="tag">tabs</span><span class="tag">menu</span></div>
+        <p>Twelve tabs in one tabset to force overflow menu. Tests tab scrolling and menu behavior.</p>
+      </a>
+      <a class="card" href="/flexlayout-test.html?layout=basic_drop_disabled">
+        <h2>Drop Disabled</h2>
+        <div class="tags"><span class="tag">constraints</span><span class="tag">drag</span></div>
+        <p>Middle pane has drop disabled. Demonstrates per-tabset drag-and-drop constraints.</p>
+      </a>
+      <a class="card" href="/flexlayout-test.html?layout=basic_delete_when_empty">
+        <h2>Delete When Empty</h2>
+        <div class="tags"><span class="tag">cleanup</span><span class="tag">close</span></div>
+        <p>Tabsets auto-delete when last tab is closed. Keeps layout clean and organized.</p>
+      </a>
+      <a class="card" href="/flexlayout-test.html?layout=basic_divide">
+        <h2>Divide</h2>
+        <div class="tags"><span class="tag">split</span><span class="tag">interaction</span></div>
+        <p>Divide button splits a tabset into two. Tests dynamic layout modification.</p>
+      </a>
+      <a class="card" href="/flexlayout-test.html?layout=basic_drag_disabled">
+        <h2>Drag Disabled</h2>
+        <div class="tags"><span class="tag">constraints</span><span class="tag">lock</span></div>
+        <p>One tab has drag disabled (locked). Demonstrates per-tab drag constraints.</p>
+      </a>
+      <a class="card" href="/flexlayout-test.html?layout=basic_close_disabled">
+        <h2>Close Disabled</h2>
+        <div class="tags"><span class="tag">constraints</span><span class="tag">lock</span></div>
+        <p>One tab cannot be closed (permanent). Tests per-tab close constraints.</p>
+      </a>
+      <a class="card" href="/flexlayout-test.html?layout=basic_tab_rename">
+        <h2>Tab Rename</h2>
+        <div class="tags"><span class="tag">editing</span><span class="tag">interaction</span></div>
+        <p>Double-click tabs to rename them inline. Tests tab editing capabilities.</p>
+      </a>
+      <a class="card" href="/flexlayout-test.html?layout=basic_icons">
+        <h2>Icons</h2>
+        <div class="tags"><span class="tag">tabs</span><span class="tag">visual</span></div>
+        <p>Tabs with emoji icons. Demonstrates custom tab icons and visual indicators.</p>
+      </a>
+      <a class="card" href="/flexlayout-test.html?layout=basic_help_text">
+        <h2>Help Text</h2>
+        <div class="tags"><span class="tag">tooltips</span><span class="tag">ux</span></div>
+        <p>Tabs with help text tooltips. Hover over tabs to see helpful descriptions.</p>
+      </a>
+
+      <!-- TabSet & Tab Attributes -->
+      <h2 style="grid-column: 1 / -1; margin-top: 24px; margin-bottom: 8px; font-size: 1.2rem; color: #e94560;">TabSet &amp; Tab Attributes</h2>
+      <a class="card" href="/flexlayout-test.html?layout=tabset_tab_wrap">
+        <h2>Tab Wrap</h2>
+        <div class="tags"><span class="tag">tabs</span><span class="tag">layout</span></div>
+        <p>Nine tabs with wrapping enabled. Tests multi-line tab strips.</p>
+      </a>
+      <a class="card" href="/flexlayout-test.html?layout=tabset_closeable">
+        <h2>Closeable</h2>
+        <div class="tags"><span class="tag">tabs</span><span class="tag">close</span></div>
+        <p>Three closeable tabsets. Each tab has a close button.</p>
+      </a>
+      <a class="card" href="/flexlayout-test.html?layout=tabset_tab_scrollbar">
+        <h2>Tab Scrollbar</h2>
+        <div class="tags"><span class="tag">tabs</span><span class="tag">scroll</span></div>
+        <p>Nine tabs with horizontal scrollbar. Tests tab scrolling behavior.</p>
+      </a>
+      <a class="card" href="/flexlayout-test.html?layout=tabset_active_icon">
+        <h2>Active Icon</h2>
+        <div class="tags"><span class="tag">tabs</span><span class="tag">visual</span></div>
+        <p>Three tabsets with active tab indicator icon. Visual feedback for active tab.</p>
+      </a>
+      <a class="card" href="/flexlayout-test.html?layout=tabset_bottom_tabs">
+        <h2>Bottom Tabs</h2>
+        <div class="tags"><span class="tag">tabs</span><span class="tag">layout</span></div>
+        <p>One tabset with tabs at top, one with tabs at bottom. Tests tab location options.</p>
+      </a>
+      <a class="card" href="/flexlayout-test.html?layout=tabset_hidden_strip">
+        <h2>Hidden Strip</h2>
+        <div class="tags"><span class="tag">tabs</span><span class="tag">layout</span></div>
+        <p>Two tabsets with hidden tab strips. Creates split-pane effect without visible tabs.</p>
+      </a>
+      <a class="card" href="/flexlayout-test.html?layout=tabset_custom_class">
+        <h2>Custom Class</h2>
+        <div class="tags"><span class="tag">styling</span><span class="tag">css</span></div>
+        <p>Two tabsets with different custom CSS classes. Tests custom styling per tabset.</p>
+      </a>
+      <a class="card" href="/flexlayout-test.html?layout=tabset_min_max">
+        <h2>Min/Max Constraints</h2>
+        <div class="tags"><span class="tag">constraints</span><span class="tag">sizing</span></div>
+        <p>Tabsets with min/max width and height constraints. Tests size constraints.</p>
+      </a>
+      <a class="card" href="/flexlayout-test.html?layout=tab_border_size">
+        <h2>Tab Border Size</h2>
+        <div class="tags"><span class="tag">tabs</span><span class="tag">styling</span></div>
+        <p>Tabs with custom border widths and heights. Tests per-tab border sizing.</p>
+      </a>
+      <a class="card" href="/flexlayout-test.html?layout=tab_close_types">
+        <h2>Close Types</h2>
+        <div class="tags"><span class="tag">tabs</span><span class="tag">close</span></div>
+        <p>Tabs with different close button types (0, 1, 2). Tests close button variations.</p>
+      </a>
+
+      <!-- Border & Splitter -->
+      <h2 style="grid-column: 1 / -1; margin-top: 24px; margin-bottom: 8px; font-size: 1.2rem; color: #e94560;">Border &amp; Splitter</h2>
+      <a class="card" href="/flexlayout-test.html?layout=border_autohide">
+        <h2>Auto Hide</h2>
+        <div class="tags"><span class="tag">borders</span><span class="tag">autohide</span></div>
+        <p>Borders auto-hide when empty. Click border buttons to show/hide panels.</p>
+      </a>
+      <a class="card" href="/flexlayout-test.html?layout=border_scrollbar">
+        <h2>Scrollbar</h2>
+        <div class="tags"><span class="tag">borders</span><span class="tag">scroll</span></div>
+        <p>Borders with many tabs to force scrollbar. Tests border tab scrolling.</p>
+      </a>
+      <a class="card" href="/flexlayout-test.html?layout=border_sizing">
+        <h2>Sizing</h2>
+        <div class="tags"><span class="tag">borders</span><span class="tag">constraints</span></div>
+        <p>Borders with custom min/max sizes. Tests border size constraints.</p>
+      </a>
+      <a class="card" href="/flexlayout-test.html?layout=border_config">
+        <h2>Configuration</h2>
+        <div class="tags"><span class="tag">borders</span><span class="tag">config</span></div>
+        <p>Borders with per-border configuration. Tests border-specific settings.</p>
+      </a>
+      <a class="card" href="/flexlayout-test.html?layout=splitter_handle">
+        <h2>Splitter Handle</h2>
+        <div class="tags"><span class="tag">splitter</span><span class="tag">resize</span></div>
+        <p>Visible splitter handles for resizing. Tests splitter visibility and interaction.</p>
+      </a>
+      <a class="card" href="/flexlayout-test.html?layout=splitter_extra">
+        <h2>Splitter Extra</h2>
+        <div class="tags"><span class="tag">splitter</span><span class="tag">ux</span></div>
+        <p>Thin splitters with extended hit area. Tests splitter extra for better UX.</p>
+      </a>
+
+      <!-- Callback & Rendering -->
+      <h2 style="grid-column: 1 / -1; margin-top: 24px; margin-bottom: 8px; font-size: 1.2rem; color: #e94560;">Callback &amp; Rendering</h2>
+      <a class="card" href="/flexlayout-test.html?layout=render_custom_tab">
+        <h2>Custom Tab</h2>
+        <div class="tags"><span class="tag">rendering</span><span class="tag">callback</span></div>
+        <p>Custom tab rendering via callback. Tests onRenderTab callback functionality.</p>
+      </a>
+      <a class="card" href="/flexlayout-test.html?layout=render_custom_tabset">
+        <h2>Custom TabSet</h2>
+        <div class="tags"><span class="tag">rendering</span><span class="tag">callback</span></div>
+        <p>Custom tabset rendering via callback. Tests onRenderTabSet callback functionality.</p>
+      </a>
+      <a class="card" href="/flexlayout-test.html?layout=render_drag_rect">
+        <h2>Drag Rect</h2>
+        <div class="tags"><span class="tag">rendering</span><span class="tag">drag</span></div>
+        <p>Custom drag rectangle rendering. Tests onRenderDragRect callback.</p>
+      </a>
+      <a class="card" href="/flexlayout-test.html?layout=render_tab_placeholder">
+        <h2>Tab Placeholder</h2>
+        <div class="tags"><span class="tag">rendering</span><span class="tag">drag</span></div>
+        <p>Custom tab placeholder rendering. Tests onRenderTabPlaceholder callback.</p>
+      </a>
+      <a class="card" href="/flexlayout-test.html?layout=render_context_menu">
+        <h2>Context Menu</h2>
+        <div class="tags"><span class="tag">rendering</span><span class="tag">menu</span></div>
+        <p>Custom context menu rendering. Tests onRenderContextMenu callback.</p>
+      </a>
+      <a class="card" href="/flexlayout-test.html?layout=render_class_mapper">
+        <h2>Class Mapper</h2>
+        <div class="tags"><span class="tag">rendering</span><span class="tag">styling</span></div>
+        <p>Custom CSS class mapping. Tests onClassNameMapper callback for dynamic styling.</p>
+      </a>
+      <a class="card" href="/flexlayout-test.html?layout=render_action_intercept">
+        <h2>Action Intercept</h2>
+        <div class="tags"><span class="tag">rendering</span><span class="tag">actions</span></div>
+        <p>Custom action interception. Tests onAction callback for custom behavior.</p>
+      </a>
+
+      <!-- Actions & Interactivity -->
+      <h2 style="grid-column: 1 / -1; margin-top: 24px; margin-bottom: 8px; font-size: 1.2rem; color: #e94560;">Actions &amp; Interactivity</h2>
+      <a class="card" href="/flexlayout-test.html?layout=action_add_remove">
+        <h2>Add/Remove</h2>
+        <div class="tags"><span class="tag">actions</span><span class="tag">dynamic</span></div>
+        <p>Programmatically add and remove tabs. Tests dynamic layout modification.</p>
+      </a>
+      <a class="card" href="/flexlayout-test.html?layout=action_model_update">
+        <h2>Model Update</h2>
+        <div class="tags"><span class="tag">actions</span><span class="tag">state</span></div>
+        <p>Update model state programmatically. Tests model mutation and reactivity.</p>
+      </a>
+      <a class="card" href="/flexlayout-test.html?layout=action_external_drag">
+        <h2>External Drag</h2>
+        <div class="tags"><span class="tag">drag</span><span class="tag">external</span></div>
+        <p>Drag items from outside the layout. Tests external drag-and-drop integration.</p>
+      </a>
+      <a class="card" href="/flexlayout-test.html?layout=action_weights">
+        <h2>Weights</h2>
+        <div class="tags"><span class="tag">sizing</span><span class="tag">distribution</span></div>
+        <p>Weighted pane distribution. Tests weight-based sizing for flexible layouts.</p>
+      </a>
+
+      <!-- Stress & Advanced -->
+      <h2 style="grid-column: 1 / -1; margin-top: 24px; margin-bottom: 8px; font-size: 1.2rem; color: #e94560;">Stress &amp; Advanced</h2>
+      <a class="card" href="/flexlayout-test.html?layout=stress_complex">
+        <h2>Complex</h2>
+        <div class="tags"><span class="tag">stress</span><span class="tag">performance</span></div>
+        <p>Complex layout with 30+ tabs across multiple panes. Tests performance and stability.</p>
+      </a>
+      <a class="card" href="/flexlayout-test.html?layout=stress_sub_layout">
+        <h2>Sub Layout</h2>
+        <div class="tags"><span class="tag">stress</span><span class="tag">nested</span></div>
+        <p>Nested layouts within tabs. Tests recursive layout composition.</p>
+      </a>
+      <a class="card" href="/flexlayout-test.html?layout=stress_state_preservation">
+        <h2>State Preservation</h2>
+        <div class="tags"><span class="tag">stress</span><span class="tag">state</span></div>
+        <p>Complex state preservation across operations. Tests state consistency.</p>
       </a>
     </div>
   </body>
