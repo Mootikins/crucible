@@ -6,6 +6,7 @@ import { LayoutWindow } from "../flexlayout/model/LayoutWindow";
 import { Rect } from "../flexlayout/core/Rect";
 import { CLASSES } from "../flexlayout/core/Types";
 import { Action } from "../flexlayout/model/Action";
+import { DropInfo } from "../flexlayout/core/DropInfo";
 import { Row } from "./Row";
 import type { ILayoutContext } from "./Layout";
 import { RowNode } from "../flexlayout/model/RowNode";
@@ -264,6 +265,123 @@ export const FloatingPanel: Component<IFloatingPanelProps> = (props) => {
         props.onBringToFront(props.layoutWindow.windowId);
     };
 
+    let floatDragEnterCount = 0;
+    let floatDragging = false;
+    let floatOutlineDiv: HTMLDivElement | undefined;
+    let floatDropInfo: DropInfo | undefined;
+
+    function onFloatDragEnterRaw(event: DragEvent) {
+        floatDragEnterCount++;
+        if (floatDragEnterCount === 1) {
+            onFloatDragEnter(event);
+        }
+    }
+
+    function onFloatDragLeaveRaw(_event: DragEvent) {
+        floatDragEnterCount--;
+        if (floatDragEnterCount === 0) {
+            clearFloatDrag();
+        }
+    }
+
+    function onFloatDragEnter(event: DragEvent) {
+        const layoutRoot = props.layoutContext.getLayoutRootDiv();
+        const dragNode = layoutRoot ? (layoutRoot as any).__dragNode : undefined;
+        if (dragNode) {
+            event.preventDefault();
+            event.stopPropagation();
+            floatDropInfo = undefined;
+            floatOutlineDiv = document.createElement("div");
+            floatOutlineDiv.className = props.layoutContext.getClassName(CLASSES.FLEXLAYOUT__OUTLINE_RECT);
+            floatOutlineDiv.style.visibility = "hidden";
+            const speed = props.layoutContext.model.getAttribute("tabDragSpeed") as number || 0.3;
+            floatOutlineDiv.style.transition = `top ${speed}s, left ${speed}s, width ${speed}s, height ${speed}s`;
+            const contentEl = panelRef?.querySelector('.' + props.layoutContext.getClassName(CLASSES.FLEXLAYOUT__FLOATING_PANEL_CONTENT));
+            if (contentEl) {
+                (contentEl as HTMLElement).style.position = "relative";
+                contentEl.appendChild(floatOutlineDiv);
+            }
+            floatDragging = true;
+        }
+    }
+
+    function onFloatDragOver(event: DragEvent) {
+        if (!floatDragging) return;
+        event.preventDefault();
+        event.stopPropagation();
+
+        const layoutRoot = props.layoutContext.getLayoutRootDiv();
+        const dragNode = layoutRoot ? (layoutRoot as any).__dragNode : undefined;
+        if (!dragNode) return;
+
+        const root = props.layoutWindow.root;
+        if (!root) return;
+
+        const contentEl = panelRef?.querySelector('.' + props.layoutContext.getClassName(CLASSES.FLEXLAYOUT__FLOATING_PANEL_CONTENT));
+        if (!contentEl) return;
+        const contentRect = contentEl.getBoundingClientRect();
+        const localX = event.clientX - contentRect.left;
+        const localY = event.clientY - contentRect.top;
+
+        const di = root.findDropTargetNode(
+            props.layoutWindow.windowId,
+            dragNode,
+            localX,
+            localY,
+        );
+
+        if (di) {
+            floatDropInfo = di;
+            if (floatOutlineDiv) {
+                let cls = props.layoutContext.getClassName(di.className);
+                if (di.rect.width <= 5) {
+                    cls += " " + props.layoutContext.getClassName(CLASSES.FLEXLAYOUT__OUTLINE_RECT + "_tab_reorder");
+                }
+                floatOutlineDiv.className = cls;
+                di.rect.positionElement(floatOutlineDiv);
+                floatOutlineDiv.style.visibility = "visible";
+            }
+        } else {
+            if (floatOutlineDiv) {
+                floatOutlineDiv.style.visibility = "hidden";
+            }
+        }
+    }
+
+    function onFloatDrop(event: DragEvent) {
+        if (!floatDragging) return;
+        event.preventDefault();
+        event.stopPropagation();
+
+        const layoutRoot = props.layoutContext.getLayoutRootDiv();
+        const dragNode = layoutRoot ? (layoutRoot as any).__dragNode : undefined;
+
+        if (floatDropInfo && dragNode) {
+            if (dragNode instanceof TabNode || dragNode instanceof TabSetNode) {
+                props.layoutContext.doAction(
+                    Action.moveNode(
+                        dragNode.getId(),
+                        floatDropInfo.node.getId(),
+                        floatDropInfo.location.getName(),
+                        floatDropInfo.index,
+                    ),
+                );
+            }
+        }
+        clearFloatDrag();
+        props.layoutContext.clearDragMain();
+    }
+
+    function clearFloatDrag() {
+        floatDragEnterCount = 0;
+        floatDragging = false;
+        floatDropInfo = undefined;
+        if (floatOutlineDiv && floatOutlineDiv.parentElement) {
+            floatOutlineDiv.parentElement.removeChild(floatOutlineDiv);
+        }
+        floatOutlineDiv = undefined;
+    }
+
     const cm = props.layoutContext.getClassName;
 
     return (
@@ -285,6 +403,10 @@ export const FloatingPanel: Component<IFloatingPanelProps> = (props) => {
                     if (props.onContentRef) props.onContentRef(el);
                 }}
                 class={cm(CLASSES.FLEXLAYOUT__FLOATING_PANEL_CONTENT)}
+                onDragEnter={onFloatDragEnterRaw}
+                onDragLeave={onFloatDragLeaveRaw}
+                onDragOver={onFloatDragOver}
+                onDrop={onFloatDrop}
             >
                 <Show when={props.layoutWindow.root}>
                     <Row

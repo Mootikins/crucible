@@ -436,6 +436,21 @@ export const Layout: Component<ILayoutProps> = (props) => {
             event.dataTransfer!.setDragImage(dragImg, 0, 0);
             setTimeout(() => document.body.removeChild(dragImg), 0);
         }
+
+        // Set up drag UI immediately (not in onDragEnter) so it works for float panel drags
+        dropInfo = undefined;
+        outlineDiv = document.createElement("div");
+        outlineDiv.className = getClassName(CLASSES.FLEXLAYOUT__OUTLINE_RECT);
+        outlineDiv.style.visibility = "hidden";
+        const speed = props.model.getAttribute("tabDragSpeed") as number || 0.3;
+        outlineDiv.style.transition = `top ${speed}s, left ${speed}s, width ${speed}s, height ${speed}s`;
+        selfRef!.appendChild(outlineDiv);
+        dragging = true;
+        document.addEventListener("keydown", onEscapeKey);
+        setShowOverlay(true);
+        if (props.model.getMaximizedTabset(Model.MAIN_WINDOW_ID) === undefined) {
+            setShowEdges(props.model.isEnableEdgeDock());
+        }
     }
 
     function onEscapeKey(event: KeyboardEvent) {
@@ -465,16 +480,20 @@ export const Layout: Component<ILayoutProps> = (props) => {
         }
     }
 
-    function onDragLeaveRaw(_event: DragEvent) {
+    function onDragLeaveRaw(event: DragEvent) {
         dragEnterCount--;
         if (dragEnterCount === 0) {
-            clearDragMain();
+            if (!selfRef?.contains(event.relatedTarget as globalThis.Node | null)) {
+                clearDragMain();
+            } else {
+                dragEnterCount = 1;
+            }
         }
     }
 
     function onDragEnter(event: DragEvent) {
         const dragNode = (selfRef as any)?.__dragNode;
-        if (dragNode) {
+        if (dragNode && !dragging) {
             event.preventDefault();
             dropInfo = undefined;
             outlineDiv = document.createElement("div");
@@ -707,7 +726,7 @@ export const Layout: Component<ILayoutProps> = (props) => {
             {showOverlay() && (
                 <div
                     class={getClassName(CLASSES.FLEXLAYOUT__LAYOUT_OVERLAY)}
-                    style={{ position: "absolute", inset: 0, "z-index": 1000 }}
+                    style={{ position: "absolute", inset: 0, "z-index": 998 }}
                 />
             )}
 
@@ -731,7 +750,7 @@ export const Layout: Component<ILayoutProps> = (props) => {
                                     height: edgeWidth + "px",
                                     "border-bottom-left-radius": radius + "%",
                                     "border-bottom-right-radius": radius + "%",
-                                    "z-index": 1001,
+                                    "z-index": 999,
                                 }}
                             />
                             <div
@@ -744,7 +763,7 @@ export const Layout: Component<ILayoutProps> = (props) => {
                                     height: edgeLength + "px",
                                     "border-top-right-radius": radius + "%",
                                     "border-bottom-right-radius": radius + "%",
-                                    "z-index": 1001,
+                                    "z-index": 999,
                                 }}
                             />
                             <div
@@ -757,7 +776,7 @@ export const Layout: Component<ILayoutProps> = (props) => {
                                     height: edgeWidth + "px",
                                     "border-top-left-radius": radius + "%",
                                     "border-top-right-radius": radius + "%",
-                                    "z-index": 1001,
+                                    "z-index": 999,
                                 }}
                             />
                             <div
@@ -770,7 +789,7 @@ export const Layout: Component<ILayoutProps> = (props) => {
                                     height: edgeLength + "px",
                                     "border-top-left-radius": radius + "%",
                                     "border-bottom-left-radius": radius + "%",
-                                    "z-index": 1001,
+                                    "z-index": 999,
                                 }}
                             />
                         </>
