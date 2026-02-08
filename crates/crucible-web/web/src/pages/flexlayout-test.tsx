@@ -2911,6 +2911,72 @@ const layouts: Record<string, LayoutDef> = {
       ],
     },
   },
+
+  // ═══ Docked Panes Demo ═══
+
+  docked_panes: {
+    global: {
+      ...defaultGlobal,
+      borderEnableDock: true,
+      tabEnableClose: false,
+      tabEnableDrag: false,
+    },
+    borders: [
+      {
+        type: "border",
+        location: "left",
+        selected: 0,
+        visibleTabs: [0, 1],
+        children: [
+          { type: "tab", name: "Explorer", component: "info", config: { description: "File explorer — browse project files and folders. Tiled with Search below." } },
+          { type: "tab", name: "Search", component: "info", config: { description: "Search panel — find text across the workspace. Tiled with Explorer above." } },
+        ],
+      },
+      {
+        type: "border",
+        location: "right",
+        selected: 0,
+        visibleTabs: [0],
+        children: [
+          { type: "tab", name: "Properties", component: "info", config: { description: "Properties panel — inspect attributes of the selected item." } },
+          { type: "tab", name: "Outline", component: "info", config: { description: "Document outline — navigate headings and symbols in the active file." } },
+        ],
+      },
+      {
+        type: "border",
+        location: "bottom",
+        selected: 0,
+        visibleTabs: [0, 1],
+        children: [
+          { type: "tab", name: "Terminal", component: "info", config: { description: "Integrated terminal — run commands without leaving the editor. Tiled with Output." } },
+          { type: "tab", name: "Output", component: "info", config: { description: "Build output — compiler messages and task logs. Tiled with Terminal." } },
+          { type: "tab", name: "Problems", component: "info", config: { description: "Problems panel — errors, warnings, and diagnostics from the workspace." } },
+        ],
+      },
+      {
+        type: "border",
+        location: "top",
+        selected: 0,
+        visibleTabs: [0],
+        children: [
+          { type: "tab", name: "Toolbar", component: "info", config: { description: "Toolbar — quick actions, run configurations, and navigation breadcrumbs." } },
+        ],
+      },
+    ],
+    layout: {
+      type: "row",
+      weight: 100,
+      children: [
+        {
+          type: "tabset",
+          weight: 100,
+          enableClose: false,
+          enableDrag: false,
+          children: [{ type: "tab", name: "Main Editor", component: "info", config: { description: "Main editor area — all four borders are docked around this center panel. Tabs are locked (no close, no drag). Borders use visibleTabs for tiled panes. Collapse any border to give the editor more space." } }],
+        },
+      ],
+    },
+  },
 };
 
 const FlexLayoutTest: Component = () => {
