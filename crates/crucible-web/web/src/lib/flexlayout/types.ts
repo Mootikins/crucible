@@ -7,6 +7,7 @@ export interface IJsonModel {
   borders?: IJsonBorderNode[];
   layout?: IJsonRowNode | IJsonTabSetNode;
   windows?: Record<string, any>;
+  floatZOrder?: string[];
 }
 
 export interface IGlobalAttributes {

@@ -21,6 +21,7 @@ export class Model {
 	private borderSet: BorderSet;
 	private nodeRegistry = new Map<string, Node>();
 	private nextIdNum = 0;
+	private floatZOrder: string[] = [];
 
 	constructor(json?: IJsonModel) {
 		this.borderSet = new BorderSet(this);
@@ -79,6 +80,12 @@ export class Model {
 					this.registerNode(layoutWindow.root);
 				}
 			}
+		}
+
+		if (json.floatZOrder) {
+			this.floatZOrder = [...json.floatZOrder];
+		} else {
+			this.floatZOrder = [];
 		}
 	}
 
@@ -276,10 +283,30 @@ export class Model {
 				}
 			}
 			if (toNode instanceof TabSetNode || toNode instanceof BorderNode || toNode instanceof RowNode) {
+				let targetWindowId: string;
+				if (toNode instanceof BorderNode) {
+					targetWindowId = Model.MAIN_WINDOW_ID;
+				} else if (toNode instanceof TabSetNode) {
+					targetWindowId = toNode.getWindowId();
+				} else {
+					targetWindowId = (toNode as RowNode).getWindowId();
+				}
+
 				(toNode as any).drop(fromNode, DockLocation.getByName(location), index, select);
+
+				this.propagateWindowId(fromNode, targetWindowId);
 			}
 		}
 		this.removeEmptyWindows();
+	}
+
+	private propagateWindowId(node: Node, windowId: string): void {
+		if (node instanceof RowNode) {
+			node.setWindowId(windowId);
+		}
+		for (const child of node.getChildren()) {
+			this.propagateWindowId(child, windowId);
+		}
 	}
 
 	private actionDeleteTab(data: any): void {
@@ -696,6 +723,8 @@ export class Model {
 				return true;
 			case "tabEnableRenderOnDemand":
 				return true;
+			case "tabEnablePopout":
+				return true;
 			case "tabDragSpeed":
 				return 0.3;
 			case "tabBorderWidth":
@@ -737,6 +766,14 @@ export class Model {
 		return this.getAttribute("realtimeResize") ?? false;
 	}
 
+	getFloatZOrder(): string[] {
+		return this.floatZOrder;
+	}
+
+	setFloatZOrder(order: string[]): void {
+		this.floatZOrder = order;
+	}
+
 	toJson(): IJsonModel {
 		const layout = this.getRoot()?.toJson();
 		const windows: Record<string, any> = {};
@@ -752,6 +789,9 @@ export class Model {
 		};
 		if (Object.keys(windows).length > 0) {
 			result.windows = windows;
+		}
+		if (this.floatZOrder.length > 0) {
+			result.floatZOrder = [...this.floatZOrder];
 		}
 		return result;
 	}
