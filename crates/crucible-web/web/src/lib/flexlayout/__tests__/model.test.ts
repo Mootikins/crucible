@@ -3,6 +3,7 @@ import { twoTabs, withBorders, threeTabs } from "./fixtures";
 import { Model } from "../model/Model";
 import { Action } from "../model/Action";
 import { TabNode } from "../model/TabNode";
+import type { IJsonModel } from "../types";
 
 // Global variables for pathMap and tabs
 let pathMap: Record<string, any> = {};
@@ -1672,5 +1673,135 @@ describe("MOVE_WINDOW action", () => {
     const tabsAfter = tabNamesInWindow(model, windowId);
     expect(tabsAfter).toEqual(tabsBefore);
     expect(tabsAfter).toContain(tabName);
+  });
+
+  describe("float z-order serialization", () => {
+    it("serializes floatZOrder in toJson when float windows exist", () => {
+      const modelJson: IJsonModel = {
+        global: {},
+        borders: [],
+        layout: {
+          type: "row",
+          weight: 100,
+          children: [
+            {
+              type: "tabset",
+              weight: 50,
+              children: [{ type: "tab", name: "Main" }],
+            },
+          ],
+        } as any,
+        windows: {
+          float1: {
+            layout: {
+              type: "row",
+              weight: 100,
+              children: [
+                {
+                  type: "tabset",
+                  weight: 100,
+                  children: [{ type: "tab", name: "Float1" }],
+                },
+              ],
+            },
+            rect: { x: 100, y: 100, width: 400, height: 300 },
+            windowType: "float",
+          },
+          float2: {
+            layout: {
+              type: "row",
+              weight: 100,
+              children: [
+                {
+                  type: "tabset",
+                  weight: 100,
+                  children: [{ type: "tab", name: "Float2" }],
+                },
+              ],
+            },
+            rect: { x: 200, y: 200, width: 400, height: 300 },
+            windowType: "float",
+          },
+        },
+        floatZOrder: ["float1", "float2"],
+      };
+
+      const testModel = Model.fromJson(modelJson);
+      const json = testModel.toJson();
+      expect(json.floatZOrder).toEqual(["float1", "float2"]);
+    });
+
+    it("does not include floatZOrder when no float windows", () => {
+      const testModel = Model.fromJson(twoTabs);
+      const json = testModel.toJson();
+      expect(json.floatZOrder).toBeUndefined();
+    });
+
+    it("roundtrips floatZOrder through toJson/fromJson", () => {
+      const original: IJsonModel = {
+        global: {},
+        borders: [],
+        layout: {
+          type: "row",
+          weight: 100,
+          children: [
+            {
+              type: "tabset",
+              weight: 50,
+              children: [{ type: "tab", name: "Main" }],
+            },
+          ],
+        } as any,
+        windows: {
+          w5: {
+            layout: {
+              type: "row",
+              weight: 100,
+              children: [
+                {
+                  type: "tabset",
+                  weight: 100,
+                  children: [{ type: "tab", name: "F1" }],
+                },
+              ],
+            },
+            rect: { x: 100, y: 100, width: 400, height: 300 },
+            windowType: "float",
+          },
+          w6: {
+            layout: {
+              type: "row",
+              weight: 100,
+              children: [
+                {
+                  type: "tabset",
+                  weight: 100,
+                  children: [{ type: "tab", name: "F2" }],
+                },
+              ],
+            },
+            rect: { x: 200, y: 200, width: 400, height: 300 },
+            windowType: "float",
+          },
+        },
+        floatZOrder: ["w6", "w5"],
+      };
+
+      const testModel = Model.fromJson(original);
+      const json = testModel.toJson();
+      expect(json.floatZOrder).toEqual(["w6", "w5"]);
+
+      const testModel2 = Model.fromJson(json);
+      const json2 = testModel2.toJson();
+      expect(json2.floatZOrder).toEqual(["w6", "w5"]);
+    });
+
+    it("getter and setter work correctly", () => {
+      const testModel = Model.fromJson(twoTabs);
+      expect(testModel.getFloatZOrder()).toEqual([]);
+
+      testModel.setFloatZOrder(["a", "b"]);
+      expect(testModel.getFloatZOrder()).toEqual(["a", "b"]);
+    });
   });
 });
