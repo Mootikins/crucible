@@ -3087,120 +3087,125 @@ const FlexLayoutTest: Component = () => {
         /** Read-only info panel — displays descriptive text explaining what the demo tests */
         case "info": {
          const description = config?.description || "No description provided";
-         return (
-           <div
-             data-testid={`panel-${node.getName()}`}
-             style={{
-               padding: "16px",
-               height: "100%",
-               "box-sizing": "border-box",
-               "overflow-y": "auto",
-             }}
-           >
-             <p style={{ margin: 0 }}>{description}</p>
-           </div>
-         );
+          return (
+            <div
+              data-testid={`panel-${node.getName()}`}
+              style={{
+                padding: "16px",
+                height: "100%",
+                "box-sizing": "border-box",
+                "overflow-y": "auto",
+                color: "#333",
+              }}
+            >
+              <p style={{ margin: 0 }}>{description}</p>
+            </div>
+          );
         }
 
         /** Interactive counter — verifies state preservation across tab drag/move */
         case "counter": {
-         const [count, setCount] = createSignal(0);
-         return (
-           <div
-             data-testid={`panel-${node.getName()}`}
-             style={{
-               padding: "16px",
-               height: "100%",
-               "box-sizing": "border-box",
-               display: "flex",
-               "flex-direction": "column",
-               gap: "8px",
-             }}
-           >
-             <p>Count: {count()}</p>
-             <button onClick={() => setCount(count() + 1)}>
-               Increment
-             </button>
-           </div>
-         );
+          const [count, setCount] = createSignal(0);
+          return (
+            <div
+              data-testid={`panel-${node.getName()}`}
+              style={{
+                padding: "16px",
+                height: "100%",
+                "box-sizing": "border-box",
+                display: "flex",
+                "flex-direction": "column",
+                gap: "8px",
+                color: "#333",
+              }}
+            >
+              <p>Count: {count()}</p>
+              <button onClick={() => setCount(count() + 1)}>
+                Increment
+              </button>
+            </div>
+          );
         }
 
         /** Color swatch — visual fill for multi-tab layouts */
         case "color": {
-         const bgColor = config?.color || "#f0f0f0";
-         return (
-           <div
-             data-testid={`panel-${node.getName()}`}
-             style={{
-               padding: "16px",
-               height: "100%",
-               "box-sizing": "border-box",
-               "background-color": bgColor,
-             }}
-           >
-             <p>Color: {bgColor}</p>
-           </div>
-         );
+          const bgColor = config?.color || "#f0f0f0";
+          return (
+            <div
+              data-testid={`panel-${node.getName()}`}
+              style={{
+                padding: "16px",
+                height: "100%",
+                "box-sizing": "border-box",
+                "background-color": bgColor,
+                color: "#333",
+              }}
+            >
+              <p>Color: {bgColor}</p>
+            </div>
+          );
         }
 
         /** Form with inputs — tests input focus preservation during layout changes */
         case "form": {
-         const [text, setText] = createSignal("");
-         const [checked, setChecked] = createSignal(false);
-         return (
-           <div
-             data-testid={`panel-${node.getName()}`}
-             style={{
-               padding: "16px",
-               height: "100%",
-               "box-sizing": "border-box",
-               display: "flex",
-               "flex-direction": "column",
-               gap: "8px",
-             }}
-           >
-             <input
-               type="text"
-               value={text()}
-               onInput={(e) => setText(e.currentTarget.value)}
-               placeholder="Enter text"
-             />
-             <label>
-               <input
-                 type="checkbox"
-                 checked={checked()}
-                 onChange={(e) => setChecked(e.currentTarget.checked)}
-               />
-               {" "}Agree
-             </label>
-             <p>Text: {text()}, Checked: {checked() ? "yes" : "no"}</p>
-           </div>
-         );
+          const [text, setText] = createSignal("");
+          const [checked, setChecked] = createSignal(false);
+          return (
+            <div
+              data-testid={`panel-${node.getName()}`}
+              style={{
+                padding: "16px",
+                height: "100%",
+                "box-sizing": "border-box",
+                display: "flex",
+                "flex-direction": "column",
+                gap: "8px",
+                color: "#333",
+              }}
+            >
+              <input
+                type="text"
+                value={text()}
+                onInput={(e) => setText(e.currentTarget.value)}
+                placeholder="Enter text"
+              />
+              <label>
+                <input
+                  type="checkbox"
+                  checked={checked()}
+                  onChange={(e) => setChecked(e.currentTarget.checked)}
+                />
+                {" "}Agree
+              </label>
+              <p>Text: {text()}, Checked: {checked() ? "yes" : "no"}</p>
+            </div>
+          );
         }
 
         /** Heavy render — stress test with large DOM content */
         case "heavy": {
-         return (
-           <div
-             data-testid={`panel-${node.getName()}`}
-             style={{
-               padding: "16px",
-               height: "100%",
-               "box-sizing": "border-box",
-               "overflow-y": "auto",
-             }}
-           >
-             {Array.from({ length: 50 }, (_, i) => (
-               <div style={{ padding: "4px" }}>
-                 Item {i + 1}
-               </div>
-             ))}
-           </div>
-         );
-        }
+          return (
+            <div
+              data-testid={`panel-${node.getName()}`}
+              style={{
+                padding: "16px",
+                height: "100%",
+                "box-sizing": "border-box",
+                "overflow-y": "auto",
+                color: "#333",
+              }}
+            >
+              {Array.from({ length: 50 }, (_, i) => (
+                <div style={{ padding: "4px" }}>
+                  Item {i + 1}
+                </div>
+              ))}
+            </div>
+          );
+         }
 
-        /** Nested sub-layout — recursive Layout component inside a tab */
-        case "nested": {
+         /** Nested sub-layout — recursive Layout component inside a tab */
+         case "nested": {
          const nestedLayout: LayoutDef = {
            global: { ...defaultGlobal },
            borders: [],
@@ -3224,39 +3229,41 @@ const FlexLayoutTest: Component = () => {
            root.setPaths("");
            nestedModel.getBorderSet().setPaths();
          }
-         return (
-           <div
-             data-testid={`panel-${node.getName()}`}
-             style={{
-               padding: "16px",
-               height: "100%",
-               "box-sizing": "border-box",
-               position: "relative",
-             }}
-           >
-             <Layout
-               model={nestedModel}
-               factory={factory}
-               onAction={onAction}
-             />
-           </div>
-         );
-       }
+          return (
+            <div
+              data-testid={`panel-${node.getName()}`}
+              style={{
+                padding: "16px",
+                height: "100%",
+                "box-sizing": "border-box",
+                position: "relative",
+                color: "#333",
+              }}
+            >
+              <Layout
+                model={nestedModel}
+                factory={factory}
+                onAction={onAction}
+              />
+            </div>
+          );
+        }
 
-       default: {
-         return (
-           <div
-             data-testid={`panel-${node.getName()}`}
-             style={{
-               padding: "16px",
-               height: "100%",
-               "box-sizing": "border-box",
-             }}
-           >
-             {node.getName()}
-           </div>
-         );
-       }
+        default: {
+          return (
+            <div
+              data-testid={`panel-${node.getName()}`}
+              style={{
+                padding: "16px",
+                height: "100%",
+                "box-sizing": "border-box",
+                color: "#333",
+              }}
+            >
+              {node.getName()}
+            </div>
+          );
+        }
      }
    };
 
