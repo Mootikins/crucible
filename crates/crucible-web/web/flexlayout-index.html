@@ -179,15 +179,104 @@
         <div class="tags"><span class="tag">tabs</span><span class="tag">styling</span></div>
         <p>Tabs with custom border widths and heights. Tests per-tab border sizing.</p>
       </a>
-      <a class="card" href="/flexlayout-test.html?layout=tab_close_types">
-        <h2>Close Types</h2>
-        <div class="tags"><span class="tag">tabs</span><span class="tag">close</span></div>
-        <p>Tabs with different close button types (0, 1, 2). Tests close button variations.</p>
-      </a>
+       <a class="card" href="/flexlayout-test.html?layout=tab_close_types">
+         <h2>Close Types</h2>
+         <div class="tags"><span class="tag">tabs</span><span class="tag">close</span></div>
+         <p>Tabs with different close button types (0, 1, 2). Tests close button variations.</p>
+       </a>
 
-      <!-- Border & Splitter -->
-      <h2 class="section-header">Border &amp; Splitter</h2>
-      <a class="card" href="/flexlayout-test.html?layout=border_autohide">
+       <!-- Tab Attributes (New) -->
+       <h2 class="section-header">Tab Attributes (New)</h2>
+       <a class="card" href="/flexlayout-test.html?layout=tab_alt_name" aria-label="Tab Alt Name — Alternative short names for tabs in overflow menu">
+         <h2>Alt Name</h2>
+         <div class="tags"><span class="tag">tabs</span><span class="tag">overflow</span></div>
+         <p>Tabs with alternative short names displayed in overflow menu. Tests altName attribute.</p>
+       </a>
+       <a class="card" href="/flexlayout-test.html?layout=tab_css_class" aria-label="Tab CSS Class — Per-tab custom CSS class styling">
+         <h2>CSS Class</h2>
+         <div class="tags"><span class="tag">tabs</span><span class="tag">styling</span></div>
+         <p>Tabs with custom CSS classes for per-tab styling. Tests className attribute.</p>
+       </a>
+       <a class="card" href="/flexlayout-test.html?layout=tab_content_class" aria-label="Tab Content Class — Custom CSS class for tab content area">
+         <h2>Content Class</h2>
+         <div class="tags"><span class="tag">tabs</span><span class="tag">styling</span></div>
+         <p>Tabs with custom content area CSS classes. Tests contentClassName attribute.</p>
+       </a>
+       <a class="card" href="/flexlayout-test.html?layout=tab_render_on_demand" aria-label="Tab Render On Demand — Lazy render tabs only when active">
+         <h2>Render On Demand</h2>
+         <div class="tags"><span class="tag">tabs</span><span class="tag">performance</span></div>
+         <p>Tabs rendered only when active. Tests enableRenderOnDemand for performance.</p>
+       </a>
+       <a class="card" href="/flexlayout-test.html?layout=tab_window_remount" aria-label="Tab Window Remount — Remount tab when window changes">
+         <h2>Window Remount</h2>
+         <div class="tags"><span class="tag">tabs</span><span class="tag">float</span></div>
+         <p>Tab remounts when moved between windows. Tests enableWindowReMount attribute.</p>
+       </a>
+       <a class="card" href="/flexlayout-test.html?layout=tab_popout_enabled" aria-label="Tab Popout Enabled — Enable popout window capability for tabs">
+         <h2>Popout Enabled</h2>
+         <div class="tags"><span class="tag">tabs</span><span class="tag">float</span></div>
+         <p>Tabs with popout window capability enabled. Tests enablePopout attribute.</p>
+       </a>
+       <a class="card" href="/flexlayout-test.html?layout=tab_set_component" aria-label="Tab Set Component — Programmatically change tab component type">
+         <h2>Set Component</h2>
+         <div class="tags"><span class="tag">tabs</span><span class="tag">actions</span></div>
+         <p>Buttons to programmatically change tab component type. Tests setComponent action.</p>
+       </a>
+       <a class="card" href="/flexlayout-test.html?layout=tab_set_config" aria-label="Tab Set Config — Programmatically update tab configuration">
+         <h2>Set Config</h2>
+         <div class="tags"><span class="tag">tabs</span><span class="tag">actions</span></div>
+         <p>Buttons to update tab configuration at runtime. Tests setConfig action.</p>
+       </a>
+       <a class="card" href="/flexlayout-test.html?layout=tab_programmatic_attrs" aria-label="Tab Programmatic Attrs — Set icon and close state programmatically">
+         <h2>Programmatic Attrs</h2>
+         <div class="tags"><span class="tag">tabs</span><span class="tag">actions</span></div>
+         <p>Buttons to set tab icon and close state programmatically. Tests setTabIcon and setTabEnableClose.</p>
+       </a>
+
+       <!-- TabSet Attributes (New) -->
+       <h2 class="section-header">TabSet Attributes (New)</h2>
+       <a class="card" href="/flexlayout-test.html?layout=tabset_auto_select" aria-label="TabSet Auto Select — Auto-select tab when tabset becomes active">
+         <h2>Auto Select</h2>
+         <div class="tags"><span class="tag">tabset</span><span class="tag">behavior</span></div>
+         <p>Demonstrates tabSetAutoSelectTab behavior. Tests auto-selection when tabset gains focus.</p>
+       </a>
+       <a class="card" href="/flexlayout-test.html?layout=tabset_config" aria-label="TabSet Config — Custom configuration data for tabsets">
+         <h2>Config</h2>
+         <div class="tags"><span class="tag">tabset</span><span class="tag">config</span></div>
+         <p>TabSets with custom configuration data. Tests arbitrary config attribute.</p>
+       </a>
+       <a class="card" href="/flexlayout-test.html?layout=tabset_selected_index" aria-label="TabSet Selected Index — Set initial active tab by index">
+         <h2>Selected Index</h2>
+         <div class="tags"><span class="tag">tabset</span><span class="tag">state</span></div>
+         <p>TabSet with non-default selected tab index. Tests selected attribute.</p>
+       </a>
+
+       <!-- Border Features (New) -->
+       <h2 class="section-header">Border Features (New)</h2>
+       <a class="card" href="/flexlayout-test.html?layout=border_show_hide" aria-label="Border Show Hide — Toggle border visibility">
+         <h2>Show/Hide</h2>
+         <div class="tags"><span class="tag">borders</span><span class="tag">visibility</span></div>
+         <p>Borders with show/hide capability. Tests border visibility control.</p>
+       </a>
+       <a class="card" href="/flexlayout-test.html?layout=border_auto_select_open" aria-label="Border Auto Select Open — Auto-select tab when border opens">
+         <h2>Auto Select Open</h2>
+         <div class="tags"><span class="tag">borders</span><span class="tag">behavior</span></div>
+         <p>Auto-select tab when border panel opens. Tests borderAutoSelectTabWhenOpen.</p>
+       </a>
+       <a class="card" href="/flexlayout-test.html?layout=border_auto_select_closed" aria-label="Border Auto Select Closed — Auto-select tab when border closes">
+         <h2>Auto Select Closed</h2>
+         <div class="tags"><span class="tag">borders</span><span class="tag">behavior</span></div>
+         <p>Auto-select tab when border panel closes. Tests borderAutoSelectTabWhenClosed.</p>
+       </a>
+       <a class="card" href="/flexlayout-test.html?layout=border_config_data" aria-label="Border Config Data — Custom configuration for borders">
+         <h2>Config Data</h2>
+         <div class="tags"><span class="tag">borders</span><span class="tag">config</span></div>
+         <p>Borders with custom configuration data. Tests border config attribute.</p>
+       </a>
+
+       <!-- Border & Splitter -->
+       <h2 class="section-header">Border &amp; Splitter</h2>
+       <a class="card" href="/flexlayout-test.html?layout=border_autohide">
         <h2>Auto Hide</h2>
         <div class="tags"><span class="tag">borders</span><span class="tag">autohide</span></div>
         <p>Borders auto-hide when empty. Click border buttons to show/hide panels.</p>
@@ -212,13 +301,26 @@
         <div class="tags"><span class="tag">splitter</span><span class="tag">resize</span></div>
         <p>Visible splitter handles for resizing. Tests splitter visibility and interaction.</p>
       </a>
-      <a class="card" href="/flexlayout-test.html?layout=splitter_extra">
-        <h2>Splitter Extra</h2>
-        <div class="tags"><span class="tag">splitter</span><span class="tag">ux</span></div>
-        <p>Thin splitters with extended hit area. Tests splitter extra for better UX.</p>
-      </a>
+       <a class="card" href="/flexlayout-test.html?layout=splitter_extra">
+         <h2>Splitter Extra</h2>
+         <div class="tags"><span class="tag">splitter</span><span class="tag">ux</span></div>
+         <p>Thin splitters with extended hit area. Tests splitter extra for better UX.</p>
+       </a>
 
-      <!-- Callback & Rendering -->
+       <!-- Splitter Features (New) -->
+       <h2 class="section-header">Splitter Features (New)</h2>
+       <a class="card" href="/flexlayout-test.html?layout=splitter_adjust_border" aria-label="Splitter Adjust Border — Programmatically adjust border split position">
+         <h2>Adjust Border</h2>
+         <div class="tags"><span class="tag">splitter</span><span class="tag">actions</span></div>
+         <p>Button to adjust border split position. Tests adjustBorderSplit action.</p>
+       </a>
+       <a class="card" href="/flexlayout-test.html?layout=splitter_sash_color" aria-label="Splitter Sash Color — Custom color for active splitter sash">
+         <h2>Sash Color</h2>
+         <div class="tags"><span class="tag">splitter</span><span class="tag">styling</span></div>
+         <p>Splitter with custom sash color via CSS. Tests sash color customization.</p>
+       </a>
+
+       <!-- Callback & Rendering -->
       <h2 class="section-header">Callback &amp; Rendering</h2>
       <a class="card" href="/flexlayout-test.html?layout=render_custom_tab">
         <h2>Custom Tab</h2>
@@ -250,13 +352,26 @@
         <div class="tags"><span class="tag">rendering</span><span class="tag">styling</span></div>
         <p>Custom CSS class mapping. Tests onClassNameMapper callback for dynamic styling.</p>
       </a>
-      <a class="card" href="/flexlayout-test.html?layout=render_action_intercept">
-        <h2>Action Intercept</h2>
-        <div class="tags"><span class="tag">rendering</span><span class="tag">actions</span></div>
-        <p>Custom action interception. Tests onAction callback for custom behavior.</p>
-      </a>
+       <a class="card" href="/flexlayout-test.html?layout=render_action_intercept">
+         <h2>Action Intercept</h2>
+         <div class="tags"><span class="tag">rendering</span><span class="tag">actions</span></div>
+         <p>Custom action interception. Tests onAction callback for custom behavior.</p>
+       </a>
 
-      <!-- Actions & Interactivity -->
+       <!-- DnD Features (New) -->
+       <h2 class="section-header">DnD Features (New)</h2>
+       <a class="card" href="/flexlayout-test.html?layout=dnd_add_with_drag" aria-label="DnD Add With Drag — Add tabs via drag and drop">
+         <h2>Add With Drag</h2>
+         <div class="tags"><span class="tag">drag</span><span class="tag">external</span></div>
+         <p>Drag external items to add tabs. Tests addTabWithDragAndDrop method.</p>
+       </a>
+       <a class="card" href="/flexlayout-test.html?layout=dnd_move_with_drag" aria-label="DnD Move With Drag — Move tabs via drag and drop">
+         <h2>Move With Drag</h2>
+         <div class="tags"><span class="tag">drag</span><span class="tag">reorder</span></div>
+         <p>Move tabs between tabsets via drag. Tests moveTabWithDragAndDrop method.</p>
+       </a>
+
+       <!-- Actions & Interactivity -->
       <h2 class="section-header">Actions &amp; Interactivity</h2>
       <a class="card" href="/flexlayout-test.html?layout=action_add_remove">
         <h2>Add/Remove</h2>
@@ -273,15 +388,64 @@
         <div class="tags"><span class="tag">drag</span><span class="tag">external</span></div>
         <p>Drag items from outside the layout. Tests external drag-and-drop integration.</p>
       </a>
-      <a class="card" href="/flexlayout-test.html?layout=action_weights">
-        <h2>Weights</h2>
-        <div class="tags"><span class="tag">sizing</span><span class="tag">distribution</span></div>
-        <p>Weighted pane distribution. Tests weight-based sizing for flexible layouts.</p>
-      </a>
+       <a class="card" href="/flexlayout-test.html?layout=action_weights">
+         <h2>Weights</h2>
+         <div class="tags"><span class="tag">sizing</span><span class="tag">distribution</span></div>
+         <p>Weighted pane distribution. Tests weight-based sizing for flexible layouts.</p>
+       </a>
 
-      <!-- Stress & Advanced -->
-      <h2 class="section-header">Stress &amp; Advanced</h2>
-       <a class="card" href="/flexlayout-test.html?layout=stress_complex" aria-label="Complex — Complex layout with 30+ tabs for performance testing">
+       <!-- Actions Features (New) -->
+       <h2 class="section-header">Actions Features (New)</h2>
+       <a class="card" href="/flexlayout-test.html?layout=action_adjust_border" aria-label="Action Adjust Border — Adjust border split via action">
+         <h2>Adjust Border</h2>
+         <div class="tags"><span class="tag">actions</span><span class="tag">borders</span></div>
+         <p>Button to adjust border split position. Tests adjustBorderSplit action.</p>
+       </a>
+       <a class="card" href="/flexlayout-test.html?layout=action_dock_tabset" aria-label="Action Dock TabSet — Dock floating tabset back to main layout">
+         <h2>Dock TabSet</h2>
+         <div class="tags"><span class="tag">actions</span><span class="tag">float</span></div>
+         <p>Button to dock a floating tabset. Tests dockTabset action.</p>
+       </a>
+       <a class="card" href="/flexlayout-test.html?layout=action_move_window" aria-label="Action Move Window — Reposition floating window">
+         <h2>Move Window</h2>
+         <div class="tags"><span class="tag">actions</span><span class="tag">float</span></div>
+         <p>Button to move floating window. Tests moveWindow action.</p>
+       </a>
+       <a class="card" href="/flexlayout-test.html?layout=action_create_window" aria-label="Action Create Window — Create new floating window">
+         <h2>Create Window</h2>
+         <div class="tags"><span class="tag">actions</span><span class="tag">float</span></div>
+         <p>Button to create new floating window. Tests createWindow action.</p>
+       </a>
+       <a class="card" href="/flexlayout-test.html?layout=action_set_tab_attrs" aria-label="Action Set Tab Attrs — Set tab icon, component, config, and close state">
+         <h2>Set Tab Attrs</h2>
+         <div class="tags"><span class="tag">actions</span><span class="tag">tabs</span></div>
+         <p>Buttons to set tab attributes programmatically. Tests setTabIcon, setComponent, setConfig, setTabEnableClose.</p>
+       </a>
+
+       <!-- Serialization (New) -->
+       <h2 class="section-header">Serialization (New)</h2>
+       <a class="card" href="/flexlayout-test.html?layout=serial_on_model_change" aria-label="Serialization On Model Change — Track model changes via callback">
+         <h2>On Model Change</h2>
+         <div class="tags"><span class="tag">serialization</span><span class="tag">callbacks</span></div>
+         <p>Callback fires on every model change. Tests onModelChange for tracking layout mutations.</p>
+       </a>
+
+       <!-- Styling (New) -->
+       <h2 class="section-header">Styling (New)</h2>
+       <a class="card" href="/flexlayout-test.html?layout=style_tab_class" aria-label="Styling Tab Class — Global tab CSS class configuration">
+         <h2>Tab Class</h2>
+         <div class="tags"><span class="tag">styling</span><span class="tag">config</span></div>
+         <p>Global tab CSS class configuration. Tests tabClassName in global config.</p>
+       </a>
+
+       <!-- Stress & Advanced -->
+       <h2 class="section-header">Stress &amp; Advanced</h2>
+        <a class="card" href="/flexlayout-test.html?layout=advanced_render_on_demand" aria-label="Advanced Render On Demand — Global render on demand configuration">
+          <h2>Render On Demand</h2>
+          <div class="tags"><span class="tag">advanced</span><span class="tag">performance</span></div>
+          <p>Global render on demand configuration. Tests tabEnableRenderOnDemand in global config.</p>
+        </a>
+        <a class="card" href="/flexlayout-test.html?layout=stress_complex" aria-label="Complex — Complex layout with 30+ tabs for performance testing">
          <h2>Complex</h2>
          <div class="tags"><span class="tag">stress</span><span class="tag">performance</span></div>
          <p>Complex layout with 30+ tabs across multiple panes. Tests performance and stability.</p>
