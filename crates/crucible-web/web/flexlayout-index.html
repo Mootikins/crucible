@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>FlexLayout Demos</title>
+    <style>
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      body { background: #1a1a2e; color: #e0e0e0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; padding: 40px; }
+      h1 { font-size: 1.6rem; margin-bottom: 8px; color: #e94560; }
+      p.subtitle { color: #8899aa; margin-bottom: 32px; font-size: 0.9rem; }
+      .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px; }
+      .card { background: #16213e; border: 1px solid #0f3460; border-radius: 8px; padding: 20px; transition: border-color 0.15s, box-shadow 0.15s; text-decoration: none; color: inherit; display: block; }
+      .card:hover { border-color: #e94560; box-shadow: 0 2px 12px rgba(233, 69, 96, 0.15); }
+      .card h2 { font-size: 1rem; margin-bottom: 6px; color: #e0e0e0; }
+      .card .tags { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
+      .card .tag { font-size: 0.7rem; padding: 2px 8px; border-radius: 9999px; background: rgba(233, 69, 96, 0.15); color: #e94560; }
+      .card p { font-size: 0.85rem; color: #8899aa; line-height: 1.4; }
+    </style>
+  </head>
+  <body>
+    <h1>FlexLayout Demos</h1>
+    <p class="subtitle">SolidJS port of FlexLayout — click a demo to open it</p>
+    <div class="grid">
+      <a class="card" href="/flexlayout-test.html?layout=test_two_tabs">
+        <h2>Two Tabs</h2>
+        <div class="tags"><span class="tag">basic</span><span class="tag">drag</span></div>
+        <p>Minimal layout with two side-by-side tabsets. Good for testing tab-to-tab drag, splits, and edge docking.</p>
+      </a>
+      <a class="card" href="/flexlayout-test.html?layout=test_three_tabs">
+        <h2>Three Tabs</h2>
+        <div class="tags"><span class="tag">basic</span><span class="tag">icons</span></div>
+        <p>Three tabsets in a row. Includes a tab with a custom icon and a tabset header.</p>
+      </a>
+      <a class="card" href="/flexlayout-test.html?layout=test_with_borders">
+        <h2>With Borders</h2>
+        <div class="tags"><span class="tag">borders</span><span class="tag">drag</span></div>
+        <p>Three tabsets plus top/bottom/left/right border panels. Tests border tab selection, drag to/from borders.</p>
+      </a>
+      <a class="card" href="/flexlayout-test.html?layout=test_with_onRenderTab">
+        <h2>Custom Render</h2>
+        <div class="tags"><span class="tag">borders</span><span class="tag">callbacks</span></div>
+        <p>Demonstrates onRenderTab and onRenderTabSet callbacks — custom icons, buttons, and sticky buttons in toolbars.</p>
+      </a>
+      <a class="card" href="/flexlayout-test.html?layout=test_with_min_size">
+        <h2>Min Size &amp; AutoHide</h2>
+        <div class="tags"><span class="tag">constraints</span><span class="tag">borders</span><span class="tag">close</span></div>
+        <p>Tabset min width/height, border min size, auto-hide borders, and closeable tabsets. Nested row with 7 tabs.</p>
+      </a>
+      <a class="card" href="/flexlayout-test.html?layout=test_with_float">
+        <h2>Float Windows</h2>
+        <div class="tags"><span class="tag">float</span><span class="tag">DnD</span></div>
+        <p>Pre-loaded floating panel. Tests float↔main drag, dock/close buttons, panel move &amp; resize, z-order.</p>
+      </a>
+    </div>
+  </body>
+</html>
