@@ -105,7 +105,10 @@ export const TabSet: Component<ITabSetProps> = (props) => {
             );
         }
         if (isFloating() && props.layout.onFloatDragStart) {
-            props.layout.onFloatDragStart(e);
+            const target = e.target as HTMLElement;
+            if (!target.closest('.flexlayout__tab_button')) {
+                props.layout.onFloatDragStart(e);
+            }
         }
     };
 
