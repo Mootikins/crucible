@@ -2051,6 +2051,829 @@ const layouts: Record<string, LayoutDef> = {
       ],
     },
   },
+
+  // ═══ Tab Features (Extended) ═══
+
+  tab_alt_name: {
+    global: { ...defaultGlobal },
+    borders: [],
+    layout: {
+      type: "row",
+      weight: 100,
+      children: [
+        {
+          type: "tabset",
+          weight: 100,
+          children: [
+            { type: "tab", name: "Very Long Tab Name For Testing", altName: "Short", component: "info", config: { description: "altName: 'Short' — when the tab strip is narrow, this tab shows 'Short' instead of its long name." } },
+            { type: "tab", name: "Another Lengthy Tab Title Here", altName: "Alt", component: "info", config: { description: "altName: 'Alt' — provides a compact alternative label for constrained spaces." } },
+            { type: "tab", name: "Normal Name", component: "info", config: { description: "No altName set — this tab always shows its full name regardless of available space." } },
+          ],
+        },
+      ],
+    },
+  },
+
+  tab_css_class: {
+    global: { ...defaultGlobal },
+    borders: [],
+    layout: {
+      type: "row",
+      weight: 100,
+      children: [
+        {
+          type: "tabset",
+          weight: 100,
+          children: [
+            { type: "tab", name: "Styled Tab", className: "custom-tab", component: "info", config: { description: "className: 'custom-tab' — this tab has a custom CSS class applied to its tab header element." } },
+            { type: "tab", name: "Another Styled", className: "custom-tab-alt", component: "info", config: { description: "className: 'custom-tab-alt' — a different custom class for styling variation." } },
+            { type: "tab", name: "Default Tab", component: "info", config: { description: "No className — uses default FlexLayout tab styling. Inspect DOM to compare class attributes." } },
+          ],
+        },
+      ],
+    },
+  },
+
+  tab_content_class: {
+    global: { ...defaultGlobal },
+    borders: [],
+    layout: {
+      type: "row",
+      weight: 100,
+      children: [
+        {
+          type: "tabset",
+          weight: 100,
+          children: [
+            { type: "tab", name: "Custom Content", contentClassName: "custom-content", component: "info", config: { description: "contentClassName: 'custom-content' — applies a CSS class to the tab content container (not the tab header)." } },
+            { type: "tab", name: "Alt Content", contentClassName: "custom-content-alt", component: "info", config: { description: "contentClassName: 'custom-content-alt' — different content wrapper class." } },
+            { type: "tab", name: "Default Content", component: "info", config: { description: "No contentClassName — uses default content container styling." } },
+          ],
+        },
+      ],
+    },
+  },
+
+  tab_render_on_demand: {
+    global: { ...defaultGlobal, tabEnableRenderOnDemand: true },
+    borders: [],
+    layout: {
+      type: "row",
+      weight: 100,
+      children: [
+        {
+          type: "tabset",
+          weight: 50,
+          children: [
+            { type: "tab", name: "Lazy A", component: "counter", config: { description: "tabEnableRenderOnDemand: true — this tab's content is only rendered when selected. Switch away and back to test." } },
+            { type: "tab", name: "Lazy B", component: "counter", config: { description: "Counter tab — increment, switch away, switch back. With render-on-demand, state may reset." } },
+            { type: "tab", name: "Lazy C", component: "counter", config: { description: "Third lazy tab. Compare state preservation with eager rendering." } },
+          ],
+        },
+        {
+          type: "tabset",
+          weight: 50,
+          children: [
+            { type: "tab", name: "Reference", component: "info", config: { description: "Reference panel — use this to compare with the lazy-rendered tabs on the left." } },
+          ],
+        },
+      ],
+    },
+  },
+
+  tab_window_remount: {
+    global: { ...defaultGlobal },
+    borders: [],
+    layout: {
+      type: "row",
+      weight: 100,
+      children: [
+        {
+          type: "tabset",
+          weight: 50,
+          children: [
+            { type: "tab", name: "Remountable", enableWindowReMount: true, component: "counter", config: { description: "enableWindowReMount: true — when moved to a float window, the component remounts (fresh state)." } },
+            { type: "tab", name: "No Remount", enableWindowReMount: false, component: "counter", config: { description: "enableWindowReMount: false — preserves state when moved to a float window." } },
+          ],
+        },
+        {
+          type: "tabset",
+          weight: 50,
+          children: [
+            { type: "tab", name: "Instructions", component: "info", config: { description: "Float tabs to a window (right-click → float). Compare counter state between remountable and non-remountable tabs." } },
+          ],
+        },
+      ],
+    },
+  },
+
+  tab_popout_enabled: {
+    global: { ...defaultGlobal },
+    borders: [],
+    layout: {
+      type: "row",
+      weight: 100,
+      children: [
+        {
+          type: "tabset",
+          weight: 50,
+          children: [
+            { type: "tab", name: "Popout Enabled", enablePopout: true, component: "info", config: { description: "enablePopout: true — config flag indicating this tab supports popout to a separate window (config only, no window.open)." } },
+            { type: "tab", name: "No Popout", enablePopout: false, component: "info", config: { description: "enablePopout: false — this tab cannot be popped out to a separate window." } },
+          ],
+        },
+        {
+          type: "tabset",
+          weight: 50,
+          children: [
+            { type: "tab", name: "Info", component: "info", config: { description: "Popout is a config-only feature here. The enablePopout flag controls whether the popout option appears in menus." } },
+          ],
+        },
+      ],
+    },
+  },
+
+  tab_set_component: {
+    global: { ...defaultGlobal },
+    borders: [],
+    layout: {
+      type: "row",
+      weight: 100,
+      children: [
+        {
+          type: "tabset",
+          id: "ts-set-comp",
+          weight: 50,
+          children: [
+            { type: "tab", id: "tab-set-comp", name: "Morphable Tab", component: "info", config: { description: "Click 'Set Component' button to change this tab's component type from 'info' to 'counter' via Action.setTabComponent." } },
+          ],
+        },
+        {
+          type: "tabset",
+          weight: 50,
+          children: [
+            { type: "tab", name: "Reference", component: "info", config: { description: "Watch the left tab change its component type when the action button is clicked." } },
+          ],
+        },
+      ],
+    },
+  },
+
+  tab_set_config: {
+    global: { ...defaultGlobal },
+    borders: [],
+    layout: {
+      type: "row",
+      weight: 100,
+      children: [
+        {
+          type: "tabset",
+          id: "ts-set-cfg",
+          weight: 50,
+          children: [
+            { type: "tab", id: "tab-set-cfg", name: "Config Tab", component: "info", config: { description: "Click 'Update Config' to change this tab's config.description via Action.setTabConfig." } },
+          ],
+        },
+        {
+          type: "tabset",
+          weight: 50,
+          children: [
+            { type: "tab", name: "Reference", component: "info", config: { description: "The left tab's description text will change when config is updated programmatically." } },
+          ],
+        },
+      ],
+    },
+  },
+
+  tab_programmatic_attrs: {
+    global: { ...defaultGlobal },
+    borders: [],
+    layout: {
+      type: "row",
+      weight: 100,
+      children: [
+        {
+          type: "tabset",
+          id: "ts-prog-attrs",
+          weight: 50,
+          children: [
+            { type: "tab", id: "tab-prog-attrs", name: "Target Tab", icon: "📄", enableClose: true, component: "info", config: { description: "Use action buttons to toggle this tab's icon (setTabIcon) and close button (setTabEnableClose) programmatically." } },
+          ],
+        },
+        {
+          type: "tabset",
+          weight: 50,
+          children: [
+            { type: "tab", name: "Reference", component: "info", config: { description: "Watch the left tab's icon and close button change when action buttons are clicked." } },
+          ],
+        },
+      ],
+    },
+  },
+
+  // ═══ TabSet Features (Extended) ═══
+
+  tabset_auto_select: {
+    global: { ...defaultGlobal },
+    borders: [],
+    layout: {
+      type: "row",
+      weight: 100,
+      children: [
+        {
+          type: "tabset",
+          weight: 50,
+          tabSetAutoSelectTab: true,
+          children: [
+            { type: "tab", name: "Auto-Select ON", component: "info", config: { description: "tabSetAutoSelectTab: true — newly added tabs are automatically selected in this tabset." } },
+            { type: "tab", name: "Tab B", component: "info", config: { description: "Add a new tab here via drag — it will auto-select." } },
+          ],
+        },
+        {
+          type: "tabset",
+          weight: 50,
+          tabSetAutoSelectTab: false,
+          children: [
+            { type: "tab", name: "Auto-Select OFF", component: "info", config: { description: "tabSetAutoSelectTab: false — newly added tabs are NOT auto-selected. The current tab stays selected." } },
+            { type: "tab", name: "Tab D", component: "info", config: { description: "Add a new tab here — the current tab should remain selected." } },
+          ],
+        },
+      ],
+    },
+  },
+
+  tabset_config: {
+    global: { ...defaultGlobal },
+    borders: [],
+    layout: {
+      type: "row",
+      weight: 100,
+      children: [
+        {
+          type: "tabset",
+          weight: 50,
+          config: { role: "editor" },
+          children: [
+            { type: "tab", name: "Editor Area", component: "info", config: { description: "This tabset has config: { role: 'editor' }. Arbitrary JSON metadata stored on the tabset node." } },
+          ],
+        },
+        {
+          type: "tabset",
+          weight: 50,
+          config: { role: "sidebar", priority: 2 },
+          children: [
+            { type: "tab", name: "Sidebar", component: "info", config: { description: "config: { role: 'sidebar', priority: 2 }. TabSet config is accessible via node.getConfig() in callbacks." } },
+          ],
+        },
+      ],
+    },
+  },
+
+  tabset_selected_index: {
+    global: { ...defaultGlobal },
+    borders: [],
+    layout: {
+      type: "row",
+      weight: 100,
+      children: [
+        {
+          type: "tabset",
+          weight: 50,
+          selected: 1,
+          children: [
+            { type: "tab", name: "Tab 0 (not selected)", component: "info", config: { description: "This tab is index 0 but NOT initially selected — selected: 1 makes Tab 1 the default." } },
+            { type: "tab", name: "Tab 1 (selected)", component: "info", config: { description: "selected: 1 — this tab (index 1) is initially active instead of the default index 0." } },
+            { type: "tab", name: "Tab 2", component: "info", config: { description: "Third tab at index 2. Not initially selected." } },
+          ],
+        },
+        {
+          type: "tabset",
+          weight: 50,
+          children: [
+            { type: "tab", name: "Default (index 0)", component: "info", config: { description: "No selected property — defaults to index 0. Compare with the left tabset." } },
+            { type: "tab", name: "Not default", component: "info", config: { description: "This tab is at index 1 and not initially selected (default behavior)." } },
+          ],
+        },
+      ],
+    },
+  },
+
+  // ═══ Border Features (Extended) ═══
+
+  border_show_hide: {
+    global: { ...defaultGlobal },
+    borders: [
+      {
+        type: "border",
+        location: "top",
+        show: true,
+        children: [{ type: "tab", name: "Top Visible", component: "info", config: { description: "show: true — this border is visible (default)." } }],
+      },
+      {
+        type: "border",
+        location: "bottom",
+        show: false,
+        children: [{ type: "tab", name: "Bottom Hidden", component: "info", config: { description: "show: false — this border and its tabs are completely hidden." } }],
+      },
+      {
+        type: "border",
+        location: "left",
+        show: true,
+        children: [{ type: "tab", name: "Left Visible", component: "info", config: { description: "Visible left border for comparison." } }],
+      },
+      {
+        type: "border",
+        location: "right",
+        show: false,
+        children: [{ type: "tab", name: "Right Hidden", component: "info", config: { description: "show: false — hidden right border." } }],
+      },
+    ],
+    layout: {
+      type: "row",
+      weight: 100,
+      children: [
+        {
+          type: "tabset",
+          weight: 100,
+          children: [{ type: "tab", name: "Main", component: "info", config: { description: "Top and left borders are visible. Bottom and right borders are hidden (show: false)." } }],
+        },
+      ],
+    },
+  },
+
+  border_auto_select_open: {
+    global: {
+      ...defaultGlobal,
+      borderAutoSelectTabWhenOpen: true,
+    },
+    borders: [
+      {
+        type: "border",
+        location: "bottom",
+        children: [
+          { type: "tab", name: "Console", component: "info", config: { description: "borderAutoSelectTabWhenOpen: true — opening this border auto-selects the first tab." } },
+          { type: "tab", name: "Output", component: "info", config: { description: "Second border tab — auto-select applies when border opens." } },
+        ],
+      },
+      {
+        type: "border",
+        location: "left",
+        children: [
+          { type: "tab", name: "Explorer", component: "info", config: { description: "Left border with auto-select on open." } },
+        ],
+      },
+    ],
+    layout: {
+      type: "row",
+      weight: 100,
+      children: [
+        {
+          type: "tabset",
+          weight: 100,
+          children: [{ type: "tab", name: "Main", component: "info", config: { description: "borderAutoSelectTabWhenOpen: true — click a border tab to open it, and the tab auto-selects." } }],
+        },
+      ],
+    },
+  },
+
+  border_auto_select_closed: {
+    global: {
+      ...defaultGlobal,
+      borderAutoSelectTabWhenClosed: true,
+    },
+    borders: [
+      {
+        type: "border",
+        location: "bottom",
+        children: [
+          { type: "tab", name: "Terminal", component: "info", config: { description: "borderAutoSelectTabWhenClosed: true — closing this border auto-selects the next available tab." } },
+          { type: "tab", name: "Problems", component: "info", config: { description: "Second border tab — selected automatically when the first tab's border closes." } },
+        ],
+      },
+      {
+        type: "border",
+        location: "left",
+        children: [
+          { type: "tab", name: "Files", component: "info", config: { description: "Left border with auto-select on close." } },
+        ],
+      },
+    ],
+    layout: {
+      type: "row",
+      weight: 100,
+      children: [
+        {
+          type: "tabset",
+          weight: 100,
+          children: [{ type: "tab", name: "Main", component: "info", config: { description: "borderAutoSelectTabWhenClosed: true — when a border tab loses selection, another auto-selects." } }],
+        },
+      ],
+    },
+  },
+
+  border_config_data: {
+    global: { ...defaultGlobal },
+    borders: [
+      {
+        type: "border",
+        location: "bottom",
+        config: { position: "primary" },
+        children: [{ type: "tab", name: "Primary Border", component: "info", config: { description: "Border config: { position: 'primary' }. Arbitrary JSON metadata on the border node." } }],
+      },
+      {
+        type: "border",
+        location: "left",
+        config: { position: "secondary", collapsible: true },
+        children: [{ type: "tab", name: "Secondary Border", component: "info", config: { description: "Border config: { position: 'secondary', collapsible: true }. Access via node.getConfig()." } }],
+      },
+    ],
+    layout: {
+      type: "row",
+      weight: 100,
+      children: [
+        {
+          type: "tabset",
+          weight: 100,
+          children: [{ type: "tab", name: "Main", component: "info", config: { description: "Borders have custom config data attached. Inspect via node.getConfig() in callbacks." } }],
+        },
+      ],
+    },
+  },
+
+  // ═══ Splitter Features (Extended) ═══
+
+  splitter_adjust_border: {
+    global: { ...defaultGlobal },
+    borders: [
+      {
+        type: "border",
+        location: "bottom",
+        id: "border-bottom-adj",
+        size: 200,
+        children: [
+          { type: "tab", name: "Bottom Panel", component: "info", config: { description: "Click 'Adjust Border' to resize this border split programmatically via Action.adjustBorderSplit." } },
+        ],
+      },
+      {
+        type: "border",
+        location: "left",
+        id: "border-left-adj",
+        size: 200,
+        children: [
+          { type: "tab", name: "Left Panel", component: "info", config: { description: "Another border that can be adjusted programmatically." } },
+        ],
+      },
+    ],
+    layout: {
+      type: "row",
+      weight: 100,
+      children: [
+        {
+          type: "tabset",
+          weight: 100,
+          children: [{ type: "tab", name: "Main", component: "info", config: { description: "Use the 'Adjust Border' button to programmatically resize the bottom border to 300px." } }],
+        },
+      ],
+    },
+  },
+
+  splitter_sash_color: {
+    global: {
+      ...defaultGlobal,
+      splitterSize: 8,
+      splitterEnableHandle: true,
+    },
+    borders: [],
+    layout: {
+      type: "row",
+      weight: 100,
+      children: [
+        {
+          type: "tabset",
+          weight: 33,
+          children: [{ type: "tab", name: "Left", component: "info", config: { description: "Sash color demo — the splitter between panels uses custom CSS. Apply --flexlayout-splitter-color to change color." } }],
+        },
+        {
+          type: "tabset",
+          weight: 34,
+          children: [{ type: "tab", name: "Center", component: "info", config: { description: "splitterSize: 8 with splitterEnableHandle: true. Use CSS custom property --flexlayout-splitter-color for styling." } }],
+        },
+        {
+          type: "tabset",
+          weight: 33,
+          children: [{ type: "tab", name: "Right", component: "info", config: { description: "Three-pane layout with visible splitter sashes. Inspect CSS to see custom property usage." } }],
+        },
+      ],
+    },
+  },
+
+  // ═══ Drag & Drop Features (Extended) ═══
+
+  dnd_add_with_drag: {
+    global: { ...defaultGlobal },
+    borders: [],
+    layout: {
+      type: "row",
+      weight: 100,
+      children: [
+        {
+          type: "tabset",
+          id: "dnd-add-target",
+          weight: 50,
+          children: [
+            { type: "tab", name: "Drop Target A", component: "info", config: { description: "Drag the external source (button above) into this tabset to add a tab via the drag-and-drop API." } },
+          ],
+        },
+        {
+          type: "tabset",
+          id: "dnd-add-target-2",
+          weight: 50,
+          children: [
+            { type: "tab", name: "Drop Target B", component: "info", config: { description: "Alternative drop target. Drag external items here to add tabs." } },
+          ],
+        },
+      ],
+    },
+  },
+
+  dnd_move_with_drag: {
+    global: { ...defaultGlobal },
+    borders: [],
+    layout: {
+      type: "row",
+      weight: 100,
+      children: [
+        {
+          type: "tabset",
+          weight: 50,
+          children: [
+            { type: "tab", name: "Move Me", component: "counter", config: { description: "Drag this tab to the other tabset. The moveTabWithDragAndDrop API handles the transfer." } },
+            { type: "tab", name: "Also Move", component: "counter", config: { description: "Another moveable tab with counter state. Check if state persists after drag-move." } },
+          ],
+        },
+        {
+          type: "tabset",
+          weight: 50,
+          children: [
+            { type: "tab", name: "Destination", component: "info", config: { description: "Drop tabs here. Counter state should transfer with the tab via drag-and-drop." } },
+          ],
+        },
+      ],
+    },
+  },
+
+  // ═══ Serialization Features ═══
+
+  serial_on_model_change: {
+    global: { ...defaultGlobal },
+    borders: [],
+    layout: {
+      type: "row",
+      weight: 100,
+      children: [
+        {
+          type: "tabset",
+          weight: 50,
+          children: [
+            { type: "tab", name: "Interact Here", component: "counter", config: { description: "Perform actions (click counter, drag tabs, resize) — each triggers onModelChange callback logged to console." } },
+            { type: "tab", name: "Tab B", component: "info", config: { description: "Switch between tabs to trigger onModelChange. Check browser console for change logs." } },
+          ],
+        },
+        {
+          type: "tabset",
+          weight: 50,
+          children: [
+            { type: "tab", name: "Change Log", component: "info", config: { description: "Open browser console to see onModelChange events. Each layout mutation triggers a callback with the model and action." } },
+          ],
+        },
+      ],
+    },
+  },
+
+  // ═══ Action Demos (Extended) ═══
+
+  action_adjust_border: {
+    global: { ...defaultGlobal },
+    borders: [
+      {
+        type: "border",
+        location: "bottom",
+        id: "action-border-bottom",
+        size: 150,
+        children: [
+          { type: "tab", name: "Adjustable Panel", component: "info", config: { description: "Click 'Adjust Border' button to programmatically resize this border to 300px via Action.adjustBorderSplit." } },
+        ],
+      },
+      {
+        type: "border",
+        location: "left",
+        id: "action-border-left",
+        size: 150,
+        children: [
+          { type: "tab", name: "Left Adjustable", component: "info", config: { description: "Another adjustable border. The action programmatically sets border sizes." } },
+        ],
+      },
+    ],
+    layout: {
+      type: "row",
+      weight: 100,
+      children: [
+        {
+          type: "tabset",
+          weight: 100,
+          children: [{ type: "tab", name: "Main Content", component: "info", config: { description: "Use action buttons to adjust border sizes. Borders expand/contract via Action.adjustBorderSplit." } }],
+        },
+      ],
+    },
+  },
+
+  action_dock_tabset: {
+    global: { ...defaultGlobal },
+    borders: [],
+    layout: {
+      type: "row",
+      weight: 100,
+      children: [
+        {
+          type: "tabset",
+          id: "ts-dock-main",
+          weight: 50,
+          children: [
+            { type: "tab", name: "Main Panel", component: "info", config: { description: "Click 'Dock Tabset' button to dock the floating tabset back into the main layout via Action.dockTabset." } },
+          ],
+        },
+        {
+          type: "tabset",
+          id: "ts-dock-target",
+          weight: 50,
+          children: [
+            { type: "tab", name: "Dock Target", component: "info", config: { description: "Float this tabset first, then click 'Dock Tabset' to dock it back." } },
+          ],
+        },
+      ],
+    },
+  },
+
+  action_move_window: {
+    global: { ...defaultGlobal },
+    borders: [],
+    layout: {
+      type: "row",
+      weight: 100,
+      children: [
+        {
+          type: "tabset",
+          id: "ts-move-win",
+          weight: 50,
+          children: [
+            { type: "tab", name: "Panel A", component: "info", config: { description: "Float a tabset, then click 'Move Window' to reposition the float window via Action.moveWindow." } },
+          ],
+        },
+        {
+          type: "tabset",
+          weight: 50,
+          children: [
+            { type: "tab", name: "Panel B", component: "info", config: { description: "Reference panel. The move action repositions float windows programmatically." } },
+          ],
+        },
+      ],
+    },
+    windows: {
+      "move-win-float": {
+        windowType: "float",
+        rect: { x: 50, y: 50, width: 250, height: 180 },
+        layout: {
+          type: "row",
+          weight: 100,
+          children: [
+            {
+              type: "tabset",
+              id: "ts-float-move",
+              weight: 100,
+              children: [{ type: "tab", name: "Floating", component: "info", config: { description: "This float window can be repositioned via the Move Window action button." } }],
+            },
+          ],
+        },
+      },
+    },
+  },
+
+  action_create_window: {
+    global: { ...defaultGlobal },
+    borders: [],
+    layout: {
+      type: "row",
+      weight: 100,
+      children: [
+        {
+          type: "tabset",
+          id: "ts-create-win",
+          weight: 50,
+          children: [
+            { type: "tab", name: "Main", component: "info", config: { description: "Click 'Create Window' to programmatically create a new float window via Action.floatTab." } },
+            { type: "tab", id: "tab-floatable", name: "Float Me", component: "counter", config: { description: "This tab will be floated to a new window when the action button is clicked." } },
+          ],
+        },
+        {
+          type: "tabset",
+          weight: 50,
+          children: [
+            { type: "tab", name: "Reference", component: "info", config: { description: "Watch a float window appear when the action button is clicked." } },
+          ],
+        },
+      ],
+    },
+  },
+
+  action_set_tab_attrs: {
+    global: { ...defaultGlobal },
+    borders: [],
+    layout: {
+      type: "row",
+      weight: 100,
+      children: [
+        {
+          type: "tabset",
+          weight: 50,
+          children: [
+            { type: "tab", id: "tab-attrs-target", name: "Target Tab", icon: "📝", enableClose: true, component: "info", config: { description: "Use action buttons to: set icon (🎯→🔥), change component (info→counter), update config, toggle close." } },
+          ],
+        },
+        {
+          type: "tabset",
+          weight: 50,
+          children: [
+            { type: "tab", name: "Instructions", component: "info", config: { description: "Combined demo of setTabIcon, setTabComponent, setTabConfig, setTabEnableClose actions on the target tab." } },
+          ],
+        },
+      ],
+    },
+  },
+
+  // ═══ Styling Features ═══
+
+  style_tab_class: {
+    global: {
+      ...defaultGlobal,
+      tabClassName: "global-tab-class",
+    },
+    borders: [],
+    layout: {
+      type: "row",
+      weight: 100,
+      children: [
+        {
+          type: "tabset",
+          weight: 100,
+          children: [
+            { type: "tab", name: "Globally Styled", component: "info", config: { description: "tabClassName: 'global-tab-class' — applied to ALL tabs via global config. Inspect DOM to see the class." } },
+            { type: "tab", name: "Also Styled", component: "info", config: { description: "Every tab in this layout has the global-tab-class applied from the global tabClassName config." } },
+            { type: "tab", name: "Third Styled", component: "info", config: { description: "Third tab — all tabs share the same global CSS class. Per-tab className can override if set." } },
+          ],
+        },
+      ],
+    },
+  },
+
+  // ═══ Advanced Features ═══
+
+  advanced_render_on_demand: {
+    global: {
+      ...defaultGlobal,
+      tabEnableRenderOnDemand: true,
+    },
+    borders: [
+      {
+        type: "border",
+        location: "bottom",
+        children: [
+          { type: "tab", name: "Lazy Border", component: "counter", config: { description: "Global tabEnableRenderOnDemand: true — border tabs are also lazy-rendered." } },
+        ],
+      },
+    ],
+    layout: {
+      type: "row",
+      weight: 100,
+      children: [
+        {
+          type: "tabset",
+          weight: 50,
+          children: [
+            { type: "tab", name: "Lazy Tab A", component: "counter", config: { description: "Global tabEnableRenderOnDemand: true — tabs only render when selected. Increment counter, switch away, switch back." } },
+            { type: "tab", name: "Lazy Tab B", component: "counter", config: { description: "Second lazy tab. Counter resets each time if render-on-demand unmounts components." } },
+            { type: "tab", name: "Lazy Tab C", component: "info", config: { description: "Info tab — lightweight. Render-on-demand saves memory for complex components." } },
+          ],
+        },
+        {
+          type: "tabset",
+          weight: 50,
+          children: [
+            { type: "tab", name: "Reference", component: "info", config: { description: "Reference panel. Compare with counters on the left to verify render-on-demand behavior." } },
+          ],
+        },
+      ],
+    },
+  },
 };
 
 const FlexLayoutTest: Component = () => {
@@ -2451,6 +3274,97 @@ const FlexLayoutTest: Component = () => {
 
    const needsCustomTab = ["render_custom_tab", "test_with_min_size"].includes(layoutName);
    const needsCustomTabSet = ["render_custom_tabset", "test_with_min_size"].includes(layoutName);
+   const needsModelChange = ["serial_on_model_change"].includes(layoutName);
+
+  const onSetTabComponent = () => {
+    const m = model();
+    m.doAction(Action.setTabComponent("tab-set-comp", "counter"));
+    setModel(m);
+  };
+
+  const onSetTabConfig = () => {
+    const m = model();
+    m.doAction(Action.setTabConfig("tab-set-cfg", { description: "Config updated at " + new Date().toLocaleTimeString() }));
+    setModel(m);
+  };
+
+  const [iconToggle, setIconToggle] = createSignal(false);
+  const [closeToggle, setCloseToggle] = createSignal(true);
+
+  const onSetTabIcon = () => {
+    const m = model();
+    const newIcon = iconToggle() ? "📄" : "🔥";
+    m.doAction(Action.setTabIcon("tab-prog-attrs", newIcon));
+    setIconToggle(!iconToggle());
+    setModel(m);
+  };
+
+  const onSetTabEnableClose = () => {
+    const m = model();
+    const newVal = !closeToggle();
+    m.doAction(Action.setTabEnableClose("tab-prog-attrs", newVal));
+    setCloseToggle(newVal);
+    setModel(m);
+  };
+
+  const onAdjustBorderSplit = (borderId: string, size: number) => {
+    const m = model();
+    m.doAction(Action.adjustBorderSplit(borderId, size));
+    setModel(m);
+  };
+
+  const onDockTabset = () => {
+    const m = model();
+    m.doAction(Action.dockTabset("ts-dock-target", "center"));
+    setModel(m);
+  };
+
+  const onMoveWindow = () => {
+    const m = model();
+    m.doAction(Action.moveWindow("move-win-float", 200, 200, 300, 220));
+    setModel(m);
+  };
+
+  const onCreateFloatWindow = () => {
+    const m = model();
+    m.doAction(Action.floatTab("tab-floatable", 100, 100, 280, 200));
+    setModel(m);
+  };
+
+  const [attrsIconToggle, setAttrsIconToggle] = createSignal(false);
+  const [attrsCloseToggle, setAttrsCloseToggle] = createSignal(true);
+
+  const onSetAttrsIcon = () => {
+    const m = model();
+    const newIcon = attrsIconToggle() ? "📝" : "🎯";
+    m.doAction(Action.setTabIcon("tab-attrs-target", newIcon));
+    setAttrsIconToggle(!attrsIconToggle());
+    setModel(m);
+  };
+
+  const onSetAttrsComponent = () => {
+    const m = model();
+    m.doAction(Action.setTabComponent("tab-attrs-target", "counter"));
+    setModel(m);
+  };
+
+  const onSetAttrsConfig = () => {
+    const m = model();
+    m.doAction(Action.setTabConfig("tab-attrs-target", { description: "Updated at " + new Date().toLocaleTimeString() }));
+    setModel(m);
+  };
+
+  const onSetAttrsClose = () => {
+    const m = model();
+    const newVal = !attrsCloseToggle();
+    m.doAction(Action.setTabEnableClose("tab-attrs-target", newVal));
+    setAttrsCloseToggle(newVal);
+    setModel(m);
+  };
+
+  const onModelChange = needsModelChange
+    ? (_m: Model, action: any) => { console.log("[onModelChange]", action.type, action); }
+    : undefined;
 
    const actionButtons: Record<string, () => JSX.Element> = {
      action_add_remove: () => (
@@ -2486,11 +3400,110 @@ const FlexLayoutTest: Component = () => {
          </button>
        </>
      ),
-      action_external_drag: () => (
+       action_external_drag: () => (
+         <div
+           data-id="external-drag-source"
+           draggable={true}
+           onDragStart={onExternalDragStart}
+           style={{
+             padding: "6px 12px",
+             background: "#4a90d9",
+             color: "#fff",
+             "border-radius": "4px",
+             cursor: "grab",
+             "user-select": "none",
+             "font-size": "13px",
+           }}
+         >
+           Drag me into the layout
+         </div>
+       ),
+      tab_set_component: () => (
+        <>
+          <span style={{ "border-left": "1px solid #666", height: "20px", margin: "0 4px" }} />
+          <button data-id="action-set-component" onClick={onSetTabComponent} aria-label="Set component to counter">
+            Set Component → Counter
+          </button>
+        </>
+      ),
+      tab_set_config: () => (
+        <>
+          <span style={{ "border-left": "1px solid #666", height: "20px", margin: "0 4px" }} />
+          <button data-id="action-set-config" onClick={onSetTabConfig} aria-label="Update tab config">
+            Update Config
+          </button>
+        </>
+      ),
+      tab_programmatic_attrs: () => (
+        <>
+          <span style={{ "border-left": "1px solid #666", height: "20px", margin: "0 4px" }} />
+          <button data-id="action-set-icon" onClick={onSetTabIcon} aria-label="Toggle tab icon">
+            Toggle Icon
+          </button>
+          <button data-id="action-set-close" onClick={onSetTabEnableClose} aria-label="Toggle enable close">
+            Toggle Close: {closeToggle() ? "ON" : "OFF"}
+          </button>
+        </>
+      ),
+      splitter_adjust_border: () => (
+        <>
+          <span style={{ "border-left": "1px solid #666", height: "20px", margin: "0 4px" }} />
+          <button data-id="action-adjust-border" onClick={() => onAdjustBorderSplit("border-bottom-adj", 300)} aria-label="Adjust bottom border to 300px">
+            Adjust Border → 300px
+          </button>
+        </>
+      ),
+      action_adjust_border: () => (
+        <>
+          <span style={{ "border-left": "1px solid #666", height: "20px", margin: "0 4px" }} />
+          <button data-id="action-adjust-bottom" onClick={() => onAdjustBorderSplit("action-border-bottom", 300)} aria-label="Adjust bottom border">
+            Bottom → 300px
+          </button>
+          <button data-id="action-adjust-left" onClick={() => onAdjustBorderSplit("action-border-left", 250)} aria-label="Adjust left border">
+            Left → 250px
+          </button>
+        </>
+      ),
+      action_dock_tabset: () => (
+        <>
+          <span style={{ "border-left": "1px solid #666", height: "20px", margin: "0 4px" }} />
+          <button data-id="action-dock-tabset" onClick={onDockTabset} aria-label="Dock floating tabset">
+            Dock Tabset
+          </button>
+        </>
+      ),
+      action_move_window: () => (
+        <>
+          <span style={{ "border-left": "1px solid #666", height: "20px", margin: "0 4px" }} />
+          <button data-id="action-move-window" onClick={onMoveWindow} aria-label="Move float window">
+            Move Window → (200,200)
+          </button>
+        </>
+      ),
+      action_create_window: () => (
+        <>
+          <span style={{ "border-left": "1px solid #666", height: "20px", margin: "0 4px" }} />
+          <button data-id="action-create-window" onClick={onCreateFloatWindow} aria-label="Create float window">
+            Create Float Window
+          </button>
+        </>
+      ),
+      action_set_tab_attrs: () => (
+        <>
+          <span style={{ "border-left": "1px solid #666", height: "20px", margin: "0 4px" }} />
+          <button data-id="action-attrs-icon" onClick={onSetAttrsIcon} aria-label="Toggle tab icon">Icon</button>
+          <button data-id="action-attrs-comp" onClick={onSetAttrsComponent} aria-label="Set component">Component</button>
+          <button data-id="action-attrs-cfg" onClick={onSetAttrsConfig} aria-label="Update config">Config</button>
+          <button data-id="action-attrs-close" onClick={onSetAttrsClose} aria-label="Toggle close">
+            Close: {attrsCloseToggle() ? "ON" : "OFF"}
+          </button>
+        </>
+      ),
+      dnd_add_with_drag: () => (
         <div
-          data-id="external-drag-source"
+          data-id="dnd-external-drag"
           draggable={true}
-          onDragStart={onExternalDragStart}
+          onDragStart={(e: DragEvent) => startDrag(e, "DnD ")}
           style={{
             padding: "6px 12px",
             background: "#4a90d9",
@@ -2501,7 +3514,7 @@ const FlexLayoutTest: Component = () => {
             "font-size": "13px",
           }}
         >
-          Drag me into the layout
+          Drag into layout (addTab)
         </div>
       ),
    };
@@ -2542,11 +3555,12 @@ const FlexLayoutTest: Component = () => {
          </div>
        )}
 
-      <div style={{ flex: 1, position: "relative" }}>
+       <div style={{ flex: 1, position: "relative" }}>
         <Layout
           model={model()}
           factory={factory}
           onAction={onAction}
+          onModelChange={onModelChange}
           onRenderTab={needsCustomTab ? onRenderTab : undefined}
           onRenderTabSet={needsCustomTabSet ? onRenderTabSet : undefined}
           classNameMapper={classNameMapper}
