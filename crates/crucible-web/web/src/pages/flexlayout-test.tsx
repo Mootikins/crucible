@@ -1,4 +1,4 @@
-import { Component, createSignal } from "solid-js";
+import { Component, createSignal, type JSX } from "solid-js";
 import { render } from "solid-js/web";
 import { Layout } from "@/lib/solid-flexlayout";
 import type { ITabRenderValues, ITabSetRenderValues } from "@/lib/solid-flexlayout";
@@ -31,6 +31,11 @@ const defaultGlobal = {
 };
 
 const layouts: Record<string, LayoutDef> = {
+  // ═══════════════════════════════════════
+  // Original Test Layouts (use "testing" component — retained for backward compat)
+  // New layouts below use "info", "counter", "heavy", "nested" component types
+  // ═══════════════════════════════════════
+
   test_two_tabs: {
     global: { ...defaultGlobal },
     borders: [],
@@ -281,9 +286,11 @@ const layouts: Record<string, LayoutDef> = {
         },
       ],
     },
-  },
+   },
 
-  tabset_tab_wrap: {
+   // ═══ TabSet Features ═══
+
+   tabset_tab_wrap: {
     global: {
       ...defaultGlobal,
       tabSetEnableTabWrap: true,
@@ -554,9 +561,11 @@ const layouts: Record<string, LayoutDef> = {
         },
       ],
     },
-  },
+   },
 
-  tab_border_size: {
+   // ═══ Tab Features ═══
+
+   tab_border_size: {
     global: { ...defaultGlobal },
     borders: [
       {
@@ -612,9 +621,11 @@ const layouts: Record<string, LayoutDef> = {
         },
       ],
     },
-  },
+   },
 
-  border_autohide: {
+   // ═══ Border Features ═══
+
+   border_autohide: {
     global: {
       ...defaultGlobal,
       borderEnableAutoHide: true,
@@ -780,9 +791,11 @@ const layouts: Record<string, LayoutDef> = {
         },
       ],
     },
-  },
+   },
 
-  splitter_handle: {
+   // ═══ Splitter Features ═══
+
+   splitter_handle: {
     global: {
       ...defaultGlobal,
       splitterEnableHandle: true,
@@ -888,9 +901,11 @@ const layouts: Record<string, LayoutDef> = {
         },
       },
     },
-  },
+   },
 
-  action_add_remove: {
+   // ═══ Action Demos ═══
+
+   action_add_remove: {
     global: { ...defaultGlobal },
     borders: [],
     layout: {
@@ -1001,9 +1016,11 @@ const layouts: Record<string, LayoutDef> = {
         },
       ],
     },
-  },
+   },
 
-  stress_complex: {
+   // ═══ Stress Tests ═══
+
+   stress_complex: {
     global: {
       ...defaultGlobal,
       tabSetMinHeight: 50,
@@ -1146,32 +1163,32 @@ const layouts: Record<string, LayoutDef> = {
     },
   },
 
-  stress_sub_layout: {
-    global: { ...defaultGlobal },
-    borders: [],
-    layout: {
-      type: "row",
-      weight: 100,
-      children: [
-        {
-          type: "tabset",
-          weight: 50,
-          children: [
-            { type: "tab", name: "NestedLeft", component: "nested" },
-            { type: "tab", name: "InfoLeft", component: "testing" },
-          ],
-        },
-        {
-          type: "tabset",
-          weight: 50,
-          children: [
-            { type: "tab", name: "NestedRight", component: "nested" },
-            { type: "tab", name: "InfoRight", component: "testing" },
-          ],
-        },
-      ],
-    },
-  },
+   stress_sub_layout: {
+     global: { ...defaultGlobal },
+     borders: [],
+     layout: {
+       type: "row",
+       weight: 100,
+       children: [
+         {
+           type: "tabset",
+           weight: 50,
+           children: [
+             { type: "tab", name: "NestedLeft", component: "nested" },
+             { type: "tab", name: "InfoLeft", component: "info", config: { description: "Left info panel" } },
+           ],
+         },
+         {
+           type: "tabset",
+           weight: 50,
+           children: [
+             { type: "tab", name: "NestedRight", component: "nested" },
+             { type: "tab", name: "InfoRight", component: "info", config: { description: "Right info panel" } },
+           ],
+         },
+       ],
+     },
+   },
 
   stress_state_preservation: {
     global: { ...defaultGlobal },
@@ -2073,24 +2090,26 @@ const FlexLayoutTest: Component = () => {
     }
   };
 
-  const onDragStart = (event: DragEvent) => {
-    const tabJson = {
-      type: "tab",
-      name: "Text" + nextIndex++,
-      component: "testing",
-    };
-    const tempNode = TabNode.fromJson(tabJson, model(), false);
-    const layoutDiv = document.querySelector(".flexlayout__layout");
-    if (layoutDiv) {
-      // FlexLayout's internal drag handling reads __dragNode from the layout DOM element.
-      // This is the library's expected mechanism for external drag integration.
-      // See: FlexLayout DragDrop.ts — looks for (element as any).__dragNode
-      (layoutDiv as any).__dragNode = tempNode;
-    }
-    event.dataTransfer!.setData("text/plain", "--flexlayout--");
-    event.dataTransfer!.effectAllowed = "copyMove";
-    event.dataTransfer!.dropEffect = "move";
-  };
+   const startDrag = (event: DragEvent, prefix: string) => {
+     const tabJson = {
+       type: "tab",
+       name: prefix + nextIndex++,
+       component: "testing",
+     };
+     const tempNode = TabNode.fromJson(tabJson, model(), false);
+     const layoutDiv = document.querySelector(".flexlayout__layout");
+     if (layoutDiv) {
+       // FlexLayout's internal drag handling reads __dragNode from the layout DOM element.
+       // This is the library's expected mechanism for external drag integration.
+       // See: FlexLayout DragDrop.ts — looks for (element as any).__dragNode
+       (layoutDiv as any).__dragNode = tempNode;
+     }
+     event.dataTransfer!.setData("text/plain", "--flexlayout--");
+     event.dataTransfer!.effectAllowed = "copyMove";
+     event.dataTransfer!.dropEffect = "move";
+   };
+
+   const onDragStart = (event: DragEvent) => startDrag(event, "Text");
 
   const onAddActive = () => {
     const m = model();
@@ -2157,24 +2176,7 @@ const FlexLayoutTest: Component = () => {
     setModel(m);
   };
 
-  const onExternalDragStart = (event: DragEvent) => {
-    const tabJson = {
-      type: "tab",
-      name: "External " + nextIndex++,
-      component: "testing",
-    };
-    const tempNode = TabNode.fromJson(tabJson, model(), false);
-    const layoutDiv = document.querySelector(".flexlayout__layout");
-    if (layoutDiv) {
-      // FlexLayout's internal drag handling reads __dragNode from the layout DOM element.
-      // This is the library's expected mechanism for external drag integration.
-      // See: FlexLayout DragDrop.ts — looks for (element as any).__dragNode
-      (layoutDiv as any).__dragNode = tempNode;
-    }
-    event.dataTransfer!.setData("text/plain", "--flexlayout--");
-    event.dataTransfer!.effectAllowed = "copyMove";
-    event.dataTransfer!.dropEffect = "move";
-  };
+   const onExternalDragStart = (event: DragEvent) => startDrag(event, "External ");
 
   const onEqualWeights = () => {
     const m = model();
@@ -2254,12 +2256,13 @@ const FlexLayoutTest: Component = () => {
     }
   };
 
-   const factory = (node: TabNode) => {
-     const componentType = node.getComponent();
-     const config = node.getConfig();
+    const factory = (node: TabNode): JSX.Element => {
+      const componentType = node.getComponent();
+      const config = node.getConfig();
 
-     switch (componentType) {
-       case "info": {
+      switch (componentType) {
+        /** Read-only info panel — displays descriptive text explaining what the demo tests */
+        case "info": {
          const description = config?.description || "No description provided";
          return (
            <div
@@ -2274,9 +2277,10 @@ const FlexLayoutTest: Component = () => {
              <p style={{ margin: 0 }}>{description}</p>
            </div>
          );
-       }
+        }
 
-       case "counter": {
+        /** Interactive counter — verifies state preservation across tab drag/move */
+        case "counter": {
          const [count, setCount] = createSignal(0);
          return (
            <div
@@ -2296,9 +2300,10 @@ const FlexLayoutTest: Component = () => {
              </button>
            </div>
          );
-       }
+        }
 
-       case "color": {
+        /** Color swatch — visual fill for multi-tab layouts */
+        case "color": {
          const bgColor = config?.color || "#f0f0f0";
          return (
            <div
@@ -2313,9 +2318,10 @@ const FlexLayoutTest: Component = () => {
              <p>Color: {bgColor}</p>
            </div>
          );
-       }
+        }
 
-       case "form": {
+        /** Form with inputs — tests input focus preservation during layout changes */
+        case "form": {
          const [text, setText] = createSignal("");
          const [checked, setChecked] = createSignal(false);
          return (
@@ -2347,9 +2353,10 @@ const FlexLayoutTest: Component = () => {
              <p>Text: {text()}, Checked: {checked() ? "yes" : "no"}</p>
            </div>
          );
-       }
+        }
 
-       case "heavy": {
+        /** Heavy render — stress test with large DOM content */
+        case "heavy": {
          return (
            <div
              data-testid={`panel-${node.getName()}`}
@@ -2367,9 +2374,10 @@ const FlexLayoutTest: Component = () => {
              ))}
            </div>
          );
-       }
+        }
 
-       case "nested": {
+        /** Nested sub-layout — recursive Layout component inside a tab */
+        case "nested": {
          const nestedLayout: LayoutDef = {
            global: { ...defaultGlobal },
            borders: [],
@@ -2441,10 +2449,64 @@ const FlexLayoutTest: Component = () => {
     ? (defaultClassName: string) => `demo-mapped ${defaultClassName}`
     : undefined;
 
-  const needsCustomTab = ["render_custom_tab", "test_with_min_size"].includes(layoutName);
-  const needsCustomTabSet = ["render_custom_tabset", "test_with_min_size"].includes(layoutName);
+   const needsCustomTab = ["render_custom_tab", "test_with_min_size"].includes(layoutName);
+   const needsCustomTabSet = ["render_custom_tabset", "test_with_min_size"].includes(layoutName);
 
-  return (
+   const actionButtons: Record<string, () => JSX.Element> = {
+     action_add_remove: () => (
+       <>
+         <span style={{ "border-left": "1px solid #666", height: "20px", margin: "0 4px" }} />
+         <button data-id="action-add-tab" onClick={onActionAddTab} aria-label="Add tab">
+           Add Tab
+         </button>
+         <button data-id="action-delete-active" onClick={onActionDeleteActive} aria-label="Delete active tab">
+           Delete Active
+         </button>
+       </>
+     ),
+     action_model_update: () => (
+       <>
+         <span style={{ "border-left": "1px solid #666", height: "20px", margin: "0 4px" }} />
+         <button data-id="action-toggle-edge-dock" onClick={onToggleEdgeDock} aria-label="Toggle edge dock">
+           Edge Dock: {edgeDockEnabled() ? "ON" : "OFF"}
+         </button>
+         <button data-id="action-toggle-vertical" onClick={onToggleVertical} aria-label="Toggle vertical orientation">
+           Vertical: {verticalOrientation() ? "ON" : "OFF"}
+         </button>
+       </>
+     ),
+     action_weights: () => (
+       <>
+         <span style={{ "border-left": "1px solid #666", height: "20px", margin: "0 4px" }} />
+         <button data-id="action-equal-weights" onClick={onEqualWeights} aria-label="Set equal weights">
+           Equal Weights
+         </button>
+         <button data-id="action-weights-8020" onClick={onWeights8020} aria-label="Set 80/20 weights">
+           80/20
+         </button>
+       </>
+     ),
+      action_external_drag: () => (
+        <div
+          data-id="external-drag-source"
+          draggable={true}
+          onDragStart={onExternalDragStart}
+          style={{
+            padding: "6px 12px",
+            background: "#4a90d9",
+            color: "#fff",
+            "border-radius": "4px",
+            cursor: "grab",
+            "user-select": "none",
+            "font-size": "13px",
+          }}
+        >
+          Drag me into the layout
+        </div>
+      ),
+   };
+
+   return (
     <div
       style={{
         width: "100vw",
@@ -2467,67 +2529,18 @@ const FlexLayoutTest: Component = () => {
         <button data-id="add-active" onClick={onAddActive}>
           Add Active
         </button>
-        <button data-id="float-active" onClick={onFloatActive}>
-          Float Active
-        </button>
+         <button data-id="float-active" onClick={onFloatActive}>
+           Float Active
+         </button>
 
-        {layoutName === "action_add_remove" && (
-          <>
-            <span style={{ "border-left": "1px solid #666", height: "20px", margin: "0 4px" }} />
-            <button data-id="action-add-tab" onClick={onActionAddTab}>
-              Add Tab
-            </button>
-            <button data-id="action-delete-active" onClick={onActionDeleteActive}>
-              Delete Active
-            </button>
-          </>
-        )}
+         {actionButtons[layoutName]?.()}
+       </div>
 
-        {layoutName === "action_model_update" && (
-          <>
-            <span style={{ "border-left": "1px solid #666", height: "20px", margin: "0 4px" }} />
-            <button data-id="action-toggle-edge-dock" onClick={onToggleEdgeDock}>
-              Edge Dock: {edgeDockEnabled() ? "ON" : "OFF"}
-            </button>
-            <button data-id="action-toggle-vertical" onClick={onToggleVertical}>
-              Vertical: {verticalOrientation() ? "ON" : "OFF"}
-            </button>
-          </>
-        )}
-
-        {layoutName === "action_weights" && (
-          <>
-            <span style={{ "border-left": "1px solid #666", height: "20px", margin: "0 4px" }} />
-            <button data-id="action-equal-weights" onClick={onEqualWeights}>
-              Equal Weights
-            </button>
-            <button data-id="action-weights-8020" onClick={onWeights8020}>
-              80/20
-            </button>
-          </>
-        )}
-      </div>
-
-      {layoutName === "action_external_drag" && (
-        <div style={{ padding: "4px", display: "flex", gap: "4px", "align-items": "center" }}>
-          <div
-            data-id="external-drag-source"
-            draggable={true}
-            onDragStart={onExternalDragStart}
-            style={{
-              padding: "6px 12px",
-              background: "#4a90d9",
-              color: "#fff",
-              "border-radius": "4px",
-              cursor: "grab",
-              "user-select": "none",
-              "font-size": "13px",
-            }}
-          >
-            Drag me into the layout
-          </div>
-        </div>
-      )}
+       {layoutName === "action_external_drag" && (
+         <div style={{ padding: "4px", display: "flex", gap: "4px", "align-items": "center" }}>
+           {actionButtons[layoutName]?.()}
+         </div>
+       )}
 
       <div style={{ flex: 1, position: "relative" }}>
         <Layout
