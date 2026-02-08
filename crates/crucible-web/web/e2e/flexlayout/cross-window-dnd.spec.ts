@@ -47,6 +47,27 @@ test.describe('Cross-Window DnD: Float to Main', () => {
     await expect(tabContent).toBeVisible();
     await expect(tabContent).toContainText('Floating');
   });
+
+  test('can drag float tab into main layout tabset', async ({ page }) => {
+    const floatPanel = page.locator('.flexlayout__floating_panel');
+    await expect(floatPanel).toBeVisible();
+
+    const mainTabsBefore = await findPath(page, '/ts0').locator('.flexlayout__tab_button').count();
+
+    const floatTab = floatPanel.locator('.flexlayout__tab_button').first();
+    await expect(floatTab).toContainText('Floating');
+
+    const mainTabContent = findPath(page, '/ts0/t0');
+    await drag(page, floatTab, mainTabContent, Location.CENTER);
+
+    await expect(floatPanel).toHaveCount(0, { timeout: 5000 });
+
+    const mainTabsAfter = await findPath(page, '/ts0').locator('.flexlayout__tab_button').count();
+    expect(mainTabsAfter).toBe(mainTabsBefore + 1);
+
+    const floatingInMain = page.locator('.flexlayout__tab_button_content:text("Floating")');
+    await expect(floatingInMain).toBeVisible();
+  });
 });
 
 // ─── Main → Float ─────────────────────────────────────────────────────
