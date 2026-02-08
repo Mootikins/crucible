@@ -137,6 +137,22 @@ export class BorderNode extends Node implements IDropTarget {
         return this.attributes.show as boolean;
     }
 
+    getDockState(): string {
+        return this.getAttr("dockState") as string;
+    }
+
+    getVisibleTabs(): number[] {
+        const val = this.attributes.visibleTabs;
+        if (Array.isArray(val) && val.length > 0) {
+            return val;
+        }
+        return [];
+    }
+
+    isEnableDock(): boolean {
+        return this.getAttr("enableDock") as boolean;
+    }
+
     toJson(): IJsonBorderNode {
         const json: any = {};
         BorderNode.attributeDefinitions.toJson(json, this.attributes);
@@ -443,6 +459,15 @@ export class BorderNode extends Node implements IDropTarget {
         );
         attributeDefinitions.addInherited("enableTabScrollbar", "borderEnableTabScrollbar").setType(Attribute.BOOLEAN).setDescription(
             `whether to show a mini scrollbar for the tabs`
+        );
+        attributeDefinitions.addInherited("dockState", "borderDockState").setType(Attribute.STRING).setDescription(
+            `dock state of the border: "expanded" | "collapsed" | "minimized"`
+        );
+        attributeDefinitions.add("visibleTabs", []).setType("any").setDescription(
+            `array of tab indices visible/tiled simultaneously; empty means fallback to [selected]`
+        );
+        attributeDefinitions.addInherited("enableDock", "borderEnableDock").setType(Attribute.BOOLEAN).setDescription(
+            `whether the collapse/expand/minimize dock button appears`
         );
         return attributeDefinitions;
     }
