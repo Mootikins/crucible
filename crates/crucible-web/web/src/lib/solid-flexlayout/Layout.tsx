@@ -141,6 +141,12 @@ export const Layout: Component<ILayoutProps> = (props) => {
     onMount(() => {
         updateRect();
 
+        // Initialize floatZOrder from model
+        const savedZOrder = props.model.getFloatZOrder();
+        if (savedZOrder.length > 0) {
+            setFloatZOrder(savedZOrder);
+        }
+
         const observer = new ResizeObserver(() => {
             requestAnimationFrame(updateRect);
         });
@@ -636,7 +642,9 @@ export const Layout: Component<ILayoutProps> = (props) => {
     const bringToFront = (windowId: string) => {
         setFloatZOrder((order) => {
             const filtered = order.filter((id) => id !== windowId);
-            return [...filtered, windowId];
+            const newOrder = [...filtered, windowId];
+            props.model.setFloatZOrder(newOrder);
+            return newOrder;
         });
     };
 
