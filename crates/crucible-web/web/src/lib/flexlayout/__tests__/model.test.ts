@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { twoTabs, withBorders, threeTabs } from "./fixtures";
 import { Model } from "../model/Model";
 import { Action } from "../model/Action";
+import { TabNode } from "../model/TabNode";
 
 // Global variables for pathMap and tabs
 let pathMap: Record<string, any> = {};
@@ -1058,6 +1059,14 @@ describe("Tree > Actions > Other Actions", () => {
     const ts0 = tabset("/ts0");
     const ts1 = tabset("/ts1");
 
+    // First toggle: maximize ts0
+    model.doAction(Action.maximizeToggle(ts0?.getId() || ""));
+
+    expect(ts0?.isMaximized()).toBe(true);
+    expect(ts1?.isMaximized()).toBe(false);
+    expect(model.getMaximizedTabset()).toBe(ts0);
+
+    // Second toggle: un-maximize ts0
     model.doAction(Action.maximizeToggle(ts0?.getId() || ""));
 
     expect(ts0?.isMaximized()).toBe(false);
@@ -1078,6 +1087,43 @@ describe("Tree > Actions > Other Actions", () => {
     );
 
     expect(t0?.getConfig()).toBe("newConfig");
+  });
+
+  it("set tab icon", () => {
+    model = Model.fromJson(twoTabs);
+    textRender(model);
+    const ts0 = tabset("/ts0");
+    const tab = ts0?.getChildren()[0] as TabNode;
+    model.doAction(Action.setTabIcon(tab.getId(), "new-icon"));
+    expect(tab.getIcon()).toBe("new-icon");
+  });
+
+  it("set tab component", () => {
+    model = Model.fromJson(twoTabs);
+    textRender(model);
+    const ts0 = tabset("/ts0");
+    const tab = ts0?.getChildren()[0] as TabNode;
+    model.doAction(Action.setTabComponent(tab.getId(), "new-component"));
+    expect(tab.getComponent()).toBe("new-component");
+  });
+
+  it("set tab config", () => {
+    model = Model.fromJson(twoTabs);
+    textRender(model);
+    const ts0 = tabset("/ts0");
+    const tab = ts0?.getChildren()[0] as TabNode;
+    const newConfig = { key: "value", nested: { data: 123 } };
+    model.doAction(Action.setTabConfig(tab.getId(), newConfig));
+    expect(tab.getConfig()).toEqual(newConfig);
+  });
+
+  it("set tab enable close", () => {
+    model = Model.fromJson(twoTabs);
+    textRender(model);
+    const ts0 = tabset("/ts0");
+    const tab = ts0?.getChildren()[0] as TabNode;
+    model.doAction(Action.setTabEnableClose(tab.getId(), false));
+    expect(tab.isEnableClose()).toBe(false);
   });
 
   it("set model attributes", () => {
@@ -1132,3 +1178,499 @@ describe("Tree > Node events", () => {
 function tabset(path: string): any {
   return pathMap[path];
 }
+
+describe("Model > getRoot", () => {
+  it("getRoot with default windowId", () => {
+    const model = Model.fromJson(twoTabs);
+    const root = model.getRoot();
+    expect(root).toBeDefined();
+    expect(root?.getType()).toBe("row");
+  });
+
+  it("getRoot with explicit MAIN_WINDOW_ID", () => {
+    const model = Model.fromJson(twoTabs);
+    const root = model.getRoot(Model.MAIN_WINDOW_ID);
+    expect(root).toBeDefined();
+    expect(root?.getType()).toBe("row");
+  });
+
+  it("getRoot with default and explicit windowId return same result", () => {
+    const model = Model.fromJson(twoTabs);
+    const rootDefault = model.getRoot();
+    const rootExplicit = model.getRoot(Model.MAIN_WINDOW_ID);
+    expect(rootDefault).toBe(rootExplicit);
+  });
+
+  it("getRoot with non-existent windowId returns undefined", () => {
+    const model = Model.fromJson(twoTabs);
+    const root = model.getRoot("non-existent-window");
+    expect(root).toBeUndefined();
+  });
+});
+
+function countTabs(model: Model, windowId?: string): number {
+  let count = 0;
+  const windows = model.getwindowsMap();
+  for (const [wId, lw] of windows) {
+    if (windowId && wId !== windowId) continue;
+    if (lw.root) {
+      lw.root.forEachNode((node) => {
+        if (node instanceof TabNode) count++;
+      }, 0);
+    }
+  }
+  return count;
+}
+
+function tabNamesInWindow(model: Model, windowId: string): string[] {
+  const names: string[] = [];
+  const lw = model.getwindowsMap().get(windowId);
+  if (lw?.root) {
+    lw.root.forEachNode((node) => {
+      if (node instanceof TabNode) names.push((node as TabNode).getName());
+    }, 0);
+  }
+  return names;
+}
+
+function nonMainWindowIds(model: Model): string[] {
+  const ids: string[] = [];
+  for (const [wId] of model.getwindowsMap()) {
+    if (wId !== Model.MAIN_WINDOW_ID) ids.push(wId);
+  }
+  return ids;
+}
+
+describe("popout actions", () => {
+  it("popoutTab moves a tab to a new window", () => {
+    const model = Model.fromJson(twoTabs);
+    textRender(model);
+    const ts0 = tabset("/ts0");
+    const tab = ts0.getChildren()[0] as TabNode;
+    const tabId = tab.getId();
+
+    expect(model.getwindowsMap().size).toBe(1);
+
+    model.doAction(Action.popoutTab(tabId));
+
+    expect(model.getwindowsMap().size).toBe(2);
+    const newWindowIds = nonMainWindowIds(model);
+    expect(newWindowIds.length).toBe(1);
+    const newNames = tabNamesInWindow(model, newWindowIds[0]);
+    expect(newNames).toContain("One");
+
+    const mainNames = tabNamesInWindow(model, Model.MAIN_WINDOW_ID);
+    expect(mainNames).not.toContain("One");
+    expect(mainNames).toContain("Two");
+  });
+
+  it("popoutTab with nonexistent tab is a no-op", () => {
+    const model = Model.fromJson(twoTabs);
+    model.doAction(Action.popoutTab("nonexistent"));
+    expect(model.getwindowsMap().size).toBe(1);
+  });
+
+  it("popoutTabset moves a tabset to a new window", () => {
+    const model = Model.fromJson(twoTabs);
+    textRender(model);
+    const ts0 = tabset("/ts0");
+    const tabsetId = ts0.getId();
+
+    expect(model.getwindowsMap().size).toBe(1);
+
+    model.doAction(Action.popoutTabset(tabsetId));
+
+    expect(model.getwindowsMap().size).toBe(2);
+    const newWindowIds = nonMainWindowIds(model);
+    expect(newWindowIds.length).toBe(1);
+    const newNames = tabNamesInWindow(model, newWindowIds[0]);
+    expect(newNames).toContain("One");
+
+    const mainNames = tabNamesInWindow(model, Model.MAIN_WINDOW_ID);
+    expect(mainNames).not.toContain("One");
+    expect(mainNames).toContain("Two");
+  });
+
+  it("popoutTabset clears maximized state when popping maximized tabset", () => {
+    const model = Model.fromJson(twoTabs);
+    textRender(model);
+    const ts0 = tabset("/ts0");
+    const tabsetId = ts0.getId();
+
+    model.doAction(Action.maximizeToggle(tabsetId));
+    expect(model.getMaximizedTabset()).toBe(ts0);
+
+    model.doAction(Action.popoutTabset(tabsetId));
+
+    expect(model.getMaximizedTabset()).toBeUndefined();
+  });
+
+  it("popoutTabset with nonexistent tabset is a no-op", () => {
+    const model = Model.fromJson(twoTabs);
+    model.doAction(Action.popoutTabset("nonexistent"));
+    expect(model.getwindowsMap().size).toBe(1);
+  });
+});
+
+describe("float actions", () => {
+  it("floatTab moves a tab to a new floating window with given rect", () => {
+    const model = Model.fromJson(twoTabs);
+    textRender(model);
+    const ts0 = tabset("/ts0");
+    const tab = ts0.getChildren()[0] as TabNode;
+    const tabId = tab.getId();
+
+    model.doAction(Action.floatTab(tabId, 100, 200, 400, 300));
+
+    expect(model.getwindowsMap().size).toBe(2);
+    const newWindowIds = nonMainWindowIds(model);
+    expect(newWindowIds.length).toBe(1);
+    const newNames = tabNamesInWindow(model, newWindowIds[0]);
+    expect(newNames).toContain("One");
+
+    const newWindow = model.getwindowsMap().get(newWindowIds[0])!;
+    expect(newWindow.rect.x).toBe(100);
+    expect(newWindow.rect.y).toBe(200);
+    expect(newWindow.rect.width).toBe(400);
+    expect(newWindow.rect.height).toBe(300);
+
+    const mainNames = tabNamesInWindow(model, Model.MAIN_WINDOW_ID);
+    expect(mainNames).not.toContain("One");
+  });
+
+  it("floatTab with nonexistent tab is a no-op", () => {
+    const model = Model.fromJson(twoTabs);
+    model.doAction(Action.floatTab("nonexistent", 0, 0, 100, 100));
+    expect(model.getwindowsMap().size).toBe(1);
+  });
+
+  it("floatTabset moves a tabset to a new floating window", () => {
+    const model = Model.fromJson(twoTabs);
+    textRender(model);
+    const ts0 = tabset("/ts0");
+    const tabsetId = ts0.getId();
+
+    model.doAction(Action.floatTabset(tabsetId, 50, 75, 600, 400));
+
+    expect(model.getwindowsMap().size).toBe(2);
+    const newWindowIds = nonMainWindowIds(model);
+    const newNames = tabNamesInWindow(model, newWindowIds[0]);
+    expect(newNames).toContain("One");
+
+    const newWindow = model.getwindowsMap().get(newWindowIds[0])!;
+    expect(newWindow.rect.x).toBe(50);
+    expect(newWindow.rect.y).toBe(75);
+    expect(newWindow.rect.width).toBe(600);
+    expect(newWindow.rect.height).toBe(400);
+  });
+
+  it("floatTabset clears maximized state when floating maximized tabset", () => {
+    const model = Model.fromJson(twoTabs);
+    textRender(model);
+    const ts0 = tabset("/ts0");
+    const tabsetId = ts0.getId();
+
+    model.doAction(Action.maximizeToggle(tabsetId));
+    expect(model.getMaximizedTabset()).toBe(ts0);
+
+    model.doAction(Action.floatTabset(tabsetId, 0, 0, 500, 400));
+
+    expect(model.getMaximizedTabset()).toBeUndefined();
+  });
+
+  it("floatTabset with nonexistent tabset is a no-op", () => {
+    const model = Model.fromJson(twoTabs);
+    model.doAction(Action.floatTabset("nonexistent", 0, 0, 100, 100));
+    expect(model.getwindowsMap().size).toBe(1);
+  });
+});
+
+describe("dock actions", () => {
+  it("dockTab moves a floating tab back to main window", () => {
+    const model = Model.fromJson(twoTabs);
+    textRender(model);
+    const ts0 = tabset("/ts0");
+    const tab = ts0.getChildren()[0] as TabNode;
+    const tabId = tab.getId();
+
+    model.doAction(Action.floatTab(tabId, 100, 100, 400, 300));
+    expect(model.getwindowsMap().size).toBe(2);
+    expect(tabNamesInWindow(model, Model.MAIN_WINDOW_ID)).not.toContain("One");
+
+    model.doAction(Action.dockTab(tabId, "center"));
+
+    expect(model.getwindowsMap().size).toBe(1);
+    const mainNames = tabNamesInWindow(model, Model.MAIN_WINDOW_ID);
+    expect(mainNames).toContain("One");
+    expect(mainNames).toContain("Two");
+  });
+
+  it("dockTab with nonexistent tab is a no-op", () => {
+    const model = Model.fromJson(twoTabs);
+    model.doAction(Action.dockTab("nonexistent", "center"));
+    expect(model.getwindowsMap().size).toBe(1);
+  });
+
+  it("dockTabset moves a floating tabset back to main window", () => {
+    const model = Model.fromJson(twoTabs);
+    textRender(model);
+    const ts0 = tabset("/ts0");
+    const tabsetId = ts0.getId();
+
+    model.doAction(Action.floatTabset(tabsetId, 50, 50, 600, 400));
+    expect(model.getwindowsMap().size).toBe(2);
+
+    model.doAction(Action.dockTabset(tabsetId, "center"));
+
+    expect(model.getwindowsMap().size).toBe(1);
+    const mainNames = tabNamesInWindow(model, Model.MAIN_WINDOW_ID);
+    expect(mainNames).toContain("One");
+    expect(mainNames).toContain("Two");
+  });
+
+  it("dockTabset with nonexistent tabset is a no-op", () => {
+    const model = Model.fromJson(twoTabs);
+    model.doAction(Action.dockTabset("nonexistent", "center"));
+    expect(model.getwindowsMap().size).toBe(1);
+  });
+
+  it("dockTab to left creates new split in main", () => {
+    const model = Model.fromJson(twoTabs);
+    textRender(model);
+    const ts0 = tabset("/ts0");
+    const tab = ts0.getChildren()[0] as TabNode;
+    const tabId = tab.getId();
+
+    model.doAction(Action.floatTab(tabId, 100, 100, 400, 300));
+    model.doAction(Action.dockTab(tabId, "left"));
+
+    expect(model.getwindowsMap().size).toBe(1);
+    const mainNames = tabNamesInWindow(model, Model.MAIN_WINDOW_ID);
+    expect(mainNames).toContain("One");
+    expect(mainNames).toContain("Two");
+  });
+
+  it("round-trip: float tab then dock preserves tab count", () => {
+    const model = Model.fromJson(threeTabs);
+    const totalBefore = countTabs(model);
+
+    textRender(model);
+    const ts0 = tabset("/ts0");
+    const tab = ts0.getChildren()[0] as TabNode;
+    const tabId = tab.getId();
+
+    model.doAction(Action.floatTab(tabId, 0, 0, 300, 200));
+    const totalDuring = countTabs(model);
+    expect(totalDuring).toBe(totalBefore);
+
+    model.doAction(Action.dockTab(tabId, "center"));
+    const totalAfter = countTabs(model);
+    expect(totalAfter).toBe(totalBefore);
+  });
+});
+
+describe("windowType", () => {
+  it("main window has windowType 'main'", () => {
+    const model = Model.fromJson(twoTabs);
+    const mainWindow = model.getwindowsMap().get(Model.MAIN_WINDOW_ID)!;
+    expect(mainWindow.windowType).toBe("main");
+  });
+
+  it("popoutTab creates a window with windowType 'popout'", () => {
+    const model = Model.fromJson(twoTabs);
+    textRender(model);
+    const ts0 = tabset("/ts0");
+    const tab = ts0.getChildren()[0] as TabNode;
+
+    model.doAction(Action.popoutTab(tab.getId()));
+
+    const newIds = nonMainWindowIds(model);
+    expect(newIds.length).toBe(1);
+    const newWindow = model.getwindowsMap().get(newIds[0])!;
+    expect(newWindow.windowType).toBe("popout");
+  });
+
+  it("popoutTabset creates a window with windowType 'popout'", () => {
+    const model = Model.fromJson(twoTabs);
+    textRender(model);
+    const ts0 = tabset("/ts0");
+
+    model.doAction(Action.popoutTabset(ts0.getId()));
+
+    const newIds = nonMainWindowIds(model);
+    expect(newIds.length).toBe(1);
+    const newWindow = model.getwindowsMap().get(newIds[0])!;
+    expect(newWindow.windowType).toBe("popout");
+  });
+
+  it("floatTab creates a window with windowType 'float'", () => {
+    const model = Model.fromJson(twoTabs);
+    textRender(model);
+    const ts0 = tabset("/ts0");
+    const tab = ts0.getChildren()[0] as TabNode;
+
+    model.doAction(Action.floatTab(tab.getId(), 10, 20, 300, 200));
+
+    const newIds = nonMainWindowIds(model);
+    expect(newIds.length).toBe(1);
+    const newWindow = model.getwindowsMap().get(newIds[0])!;
+    expect(newWindow.windowType).toBe("float");
+  });
+
+  it("floatTabset creates a window with windowType 'float'", () => {
+    const model = Model.fromJson(twoTabs);
+    textRender(model);
+    const ts0 = tabset("/ts0");
+
+    model.doAction(Action.floatTabset(ts0.getId(), 10, 20, 300, 200));
+
+    const newIds = nonMainWindowIds(model);
+    expect(newIds.length).toBe(1);
+    const newWindow = model.getwindowsMap().get(newIds[0])!;
+    expect(newWindow.windowType).toBe("float");
+  });
+});
+
+describe("toJson multi-window serialization", () => {
+  it("toJson with only main window has no 'windows' key", () => {
+    const model = Model.fromJson(twoTabs);
+    const json = model.toJson();
+    expect(json.windows).toBeUndefined();
+  });
+
+  it("toJson includes floating windows", () => {
+    const model = Model.fromJson(twoTabs);
+    textRender(model);
+    const ts0 = tabset("/ts0");
+    const tab = ts0.getChildren()[0] as TabNode;
+
+    model.doAction(Action.floatTab(tab.getId(), 100, 200, 400, 300));
+
+    const json = model.toJson();
+    expect(json.windows).toBeDefined();
+    const windowEntries = Object.entries(json.windows!);
+    expect(windowEntries.length).toBe(1);
+
+    const [, windowJson] = windowEntries[0];
+    expect(windowJson.windowType).toBe("float");
+    expect(windowJson.rect).toBeDefined();
+    expect(windowJson.layout).toBeDefined();
+  });
+
+  it("toJson includes popout windows", () => {
+    const model = Model.fromJson(twoTabs);
+    textRender(model);
+    const ts0 = tabset("/ts0");
+    const tab = ts0.getChildren()[0] as TabNode;
+
+    model.doAction(Action.popoutTab(tab.getId()));
+
+    const json = model.toJson();
+    expect(json.windows).toBeDefined();
+    const windowEntries = Object.entries(json.windows!);
+    expect(windowEntries.length).toBe(1);
+
+    const [, windowJson] = windowEntries[0];
+    expect(windowJson.windowType).toBe("popout");
+  });
+
+  it("fromJson roundtrip preserves floating windows", () => {
+    const model = Model.fromJson(twoTabs);
+    textRender(model);
+    const ts0 = tabset("/ts0");
+    const tab = ts0.getChildren()[0] as TabNode;
+
+    model.doAction(Action.floatTab(tab.getId(), 100, 200, 400, 300));
+    const totalTabs = countTabs(model);
+
+    const json = model.toJson();
+    const restored = Model.fromJson(json);
+
+    expect(restored.getwindowsMap().size).toBe(2);
+    expect(countTabs(restored)).toBe(totalTabs);
+
+    const mainNames = tabNamesInWindow(restored, Model.MAIN_WINDOW_ID);
+    expect(mainNames).toContain("Two");
+    expect(mainNames).not.toContain("One");
+
+    const restoredWindowIds = nonMainWindowIds(restored);
+    expect(restoredWindowIds.length).toBe(1);
+    const restoredWindow = restored.getwindowsMap().get(restoredWindowIds[0])!;
+    expect(restoredWindow.windowType).toBe("float");
+
+    const floatNames = tabNamesInWindow(restored, restoredWindowIds[0]);
+    expect(floatNames).toContain("One");
+  });
+
+  it("fromJson roundtrip preserves multiple non-main windows", () => {
+    const model = Model.fromJson(threeTabs);
+    textRender(model);
+    const tab1Id = (tabset("/ts0").getChildren()[0] as TabNode).getId();
+    const tab2Id = (tabset("/ts1").getChildren()[0] as TabNode).getId();
+
+    model.doAction(Action.floatTab(tab1Id, 10, 10, 300, 200));
+    model.doAction(Action.popoutTab(tab2Id));
+
+    expect(model.getwindowsMap().size).toBe(3);
+    const totalTabs = countTabs(model);
+
+    const json = model.toJson();
+    const restored = Model.fromJson(json);
+
+    expect(restored.getwindowsMap().size).toBe(3);
+    expect(countTabs(restored)).toBe(totalTabs);
+
+    const restoredWindowIds = nonMainWindowIds(restored);
+    expect(restoredWindowIds.length).toBe(2);
+    const types = restoredWindowIds.map(id => restored.getwindowsMap().get(id)!.windowType);
+    expect(types).toContain("float");
+    expect(types).toContain("popout");
+  });
+});
+
+describe("MOVE_WINDOW action", () => {
+  it("updates float window rect via moveWindow action", () => {
+    const model = Model.fromJson(twoTabs);
+    textRender(model);
+    const ts0 = tabset("/ts0");
+    const tab = ts0.getChildren()[0] as TabNode;
+
+    model.doAction(Action.floatTab(tab.getId(), 10, 20, 300, 200));
+
+    const windowIds = nonMainWindowIds(model);
+    expect(windowIds.length).toBe(1);
+    const windowId = windowIds[0];
+
+    model.doAction(Action.moveWindow(windowId, 50, 100, 400, 300));
+
+    const lw = model.getwindowsMap().get(windowId)!;
+    expect(lw.rect.x).toBe(50);
+    expect(lw.rect.y).toBe(100);
+    expect(lw.rect.width).toBe(400);
+    expect(lw.rect.height).toBe(300);
+  });
+
+  it("moveWindow is no-op for non-existent window", () => {
+    const model = Model.fromJson(twoTabs);
+    model.doAction(Action.moveWindow("nonexistent", 50, 100, 400, 300));
+    expect(model.getwindowsMap().size).toBe(1);
+  });
+
+  it("moveWindow preserves window contents", () => {
+    const model = Model.fromJson(twoTabs);
+    textRender(model);
+    const ts0 = tabset("/ts0");
+    const tab = ts0.getChildren()[0] as TabNode;
+    const tabName = tab.getName();
+
+    model.doAction(Action.floatTab(tab.getId(), 10, 20, 300, 200));
+    const windowId = nonMainWindowIds(model)[0];
+    const tabsBefore = tabNamesInWindow(model, windowId);
+
+    model.doAction(Action.moveWindow(windowId, 200, 300, 500, 400));
+
+    const tabsAfter = tabNamesInWindow(model, windowId);
+    expect(tabsAfter).toEqual(tabsBefore);
+    expect(tabsAfter).toContain(tabName);
+  });
+});

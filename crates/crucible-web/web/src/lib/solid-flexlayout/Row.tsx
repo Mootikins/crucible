@@ -33,25 +33,13 @@ export const Row: Component<IRowProps> = (props) => {
             const child = children[i];
 
             if (i > 0) {
-                result.push({
-                    type: 'splitter',
-                    key: `splitter-${i}`,
-                    splitterIndex: i,
-                });
+                result.push({ type: 'splitter', key: `splitter-${i}`, splitterIndex: i });
             }
 
             if (child instanceof RowNode) {
-                result.push({
-                    type: 'row',
-                    node: child,
-                    key: child.getId(),
-                });
+                result.push({ type: 'row', node: child, key: child.getId() });
             } else if (child instanceof TabSetNode) {
-                result.push({
-                    type: 'tabset',
-                    node: child,
-                    key: child.getId(),
-                });
+                result.push({ type: 'tabset', node: child, key: child.getId() });
             }
         }
 
@@ -60,8 +48,13 @@ export const Row: Component<IRowProps> = (props) => {
 
     const style = (): Record<string, any> => {
         void props.layout.getRevision();
+        const nodeRect = props.node.getRect();
+        const parent = props.node.getParent();
+        const isNested = parent instanceof RowNode;
+        const parentHorizontal = isNested && parent.getOrientation() === Orientation.HORZ;
+        const flexSize = parentHorizontal ? nodeRect.width : nodeRect.height;
         return {
-            "flex-grow": Math.max(1, props.node.getWeight() * 1000),
+            "flex": isNested && flexSize > 0 ? `0 0 ${flexSize}px` : `1 1 0%`,
             "min-width": props.node.getMinWidth() + "px",
             "min-height": props.node.getMinHeight() + "px",
             "max-width": props.node.getMaxWidth() + "px",
@@ -74,7 +67,7 @@ export const Row: Component<IRowProps> = (props) => {
         <div
             ref={selfRef}
             class={props.layout.getClassName(CLASSES.FLEXLAYOUT__ROW)}
-            data-layout-path={props.node.getPath()}
+            data-layout-path={(() => { void props.layout.getRevision(); return props.node.getPath(); })()}
             style={style()}
         >
             <For each={flatChildren()}>

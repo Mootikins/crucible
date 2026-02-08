@@ -6,6 +6,7 @@ export interface IJsonModel {
   global?: IGlobalAttributes;
   borders?: IJsonBorderNode[];
   layout?: IJsonRowNode | IJsonTabSetNode;
+  windows?: Record<string, any>;
 }
 
 export interface IGlobalAttributes {

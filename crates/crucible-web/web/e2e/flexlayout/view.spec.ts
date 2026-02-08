@@ -889,7 +889,7 @@ test.describe('Extended layout2', () => {
     await expect(findPath(page, '/border/left')).not.toBeVisible();
 
     const from = findTabButton(page, '/ts0', 0);
-    const to = findTabButton(page, '/ts0', 0);
+    const to = findPath(page, '/main');
     await drag(page, from, to, Location.LEFTEDGE);
     await expect(findPath(page, '/border/left')).toBeVisible();
   });
