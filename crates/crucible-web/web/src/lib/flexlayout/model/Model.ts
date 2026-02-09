@@ -364,13 +364,11 @@ export class Model {
 			const parent = tab.getParent() as Node;
 			const pos = parent.getChildren().indexOf(tab);
 
-			if (parent instanceof BorderNode) {
-				if (parent.getSelected() === pos) {
-					parent.setSelected(-1);
-				} else {
-					parent.setSelected(pos);
-				}
-			} else if (parent instanceof TabSetNode) {
+		if (parent instanceof BorderNode) {
+			if (parent.getSelected() !== pos) {
+				parent.setSelected(pos);
+			}
+		} else if (parent instanceof TabSetNode) {
 				if (parent.getSelected() !== pos) {
 					parent.setSelected(pos);
 				}
