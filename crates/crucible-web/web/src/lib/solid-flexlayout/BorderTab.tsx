@@ -37,10 +37,14 @@ export const BorderTab: Component<IBorderTabProps> = (props) => {
 
     const [tileWeights, setTileWeights] = createSignal<number[]>([]);
 
+    const dockState = (): string => {
+        void props.layout.getRevision();
+        return props.border.getDockState();
+    };
+
     const isContentVisible = (): boolean => {
         if (!props.show) return false;
-        const state = props.border.getDockState();
-        return state === "expanded";
+        return dockState() === "expanded";
     };
 
     const visibleIndices = createMemo(() => {
@@ -179,12 +183,12 @@ export const BorderTab: Component<IBorderTabProps> = (props) => {
     const isBeforeSplitter = location === DockLocation.LEFT || location === DockLocation.TOP;
 
     const isExpanded = (): boolean => {
-        return props.border.getDockState() === "expanded";
+        return dockState() === "expanded";
     };
 
     const onDockToggle = (event: MouseEvent) => {
         event.stopPropagation();
-        const current = props.border.getDockState();
+        const current = dockState();
         let next: "expanded" | "collapsed" | "hidden";
         if (current === "expanded") {
             next = "collapsed";
@@ -197,7 +201,7 @@ export const BorderTab: Component<IBorderTabProps> = (props) => {
     };
 
     const dockIcon = (): string => {
-        const state = props.border.getDockState();
+        const state = dockState();
         const loc = props.border.getLocation();
         if (state === "hidden") {
             if (loc === DockLocation.LEFT) return "▶";
@@ -212,7 +216,7 @@ export const BorderTab: Component<IBorderTabProps> = (props) => {
     };
 
     const dockTitle = (): string => {
-        const state = props.border.getDockState();
+        const state = dockState();
         if (state === "expanded") return "Collapse";
         if (state === "collapsed") return "Hide";
         return "Expand";
