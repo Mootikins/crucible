@@ -229,6 +229,8 @@ export const BorderTabSet: Component<IBorderTabSetProps> = (props) => {
         return style;
     };
 
+    const isExpanded = () => dockState() === "expanded";
+
     return (
         <div
             ref={selfRef}
@@ -236,7 +238,7 @@ export const BorderTabSet: Component<IBorderTabSetProps> = (props) => {
             class={borderClasses()}
             data-layout-path={border.getPath()}
         >
-            <Show when={!isHidden()}>
+            <Show when={!isHidden() && !isExpanded()}>
                 <div class={cm(CLASSES.FLEXLAYOUT__MINI_SCROLLBAR_CONTAINER)} style={isCollapsed() && (border.getLocation() === DockLocation.LEFT || border.getLocation() === DockLocation.RIGHT) ? { flex: "1", overflow: "visible" } : {}}>
                     <div
                         class={cm(CLASSES.FLEXLAYOUT__BORDER_INNER) + " " + cm(CLASSES.FLEXLAYOUT__BORDER_INNER_ + border.getLocation().getName())}
@@ -253,9 +255,11 @@ export const BorderTabSet: Component<IBorderTabSetProps> = (props) => {
                     </div>
                 </div>
             </Show>
-            <div class={cm(CLASSES.FLEXLAYOUT__BORDER_TOOLBAR) + " " + cm(CLASSES.FLEXLAYOUT__BORDER_TOOLBAR_ + border.getLocation().getName())}>
-                {toolbarButtons()}
-            </div>
+            <Show when={!isExpanded()}>
+                <div class={cm(CLASSES.FLEXLAYOUT__BORDER_TOOLBAR) + " " + cm(CLASSES.FLEXLAYOUT__BORDER_TOOLBAR_ + border.getLocation().getName())}>
+                    {toolbarButtons()}
+                </div>
+            </Show>
         </div>
     );
 };
