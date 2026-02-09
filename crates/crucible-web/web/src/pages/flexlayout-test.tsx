@@ -2991,6 +2991,7 @@ const layouts: Record<string, LayoutDef> = {
         type: "border",
         location: "bottom",
         size: 200,
+        selected: 0,
         children: [
           { type: "tab", name: "Terminal", component: "info", config: { description: "Drag me out of this border, or drag other tabs here" } },
         ],
@@ -2999,6 +3000,7 @@ const layouts: Record<string, LayoutDef> = {
         type: "border",
         location: "left",
         size: 200,
+        selected: 0,
         children: [
           { type: "tab", name: "Explorer", component: "info", config: { description: "Drag me to another border or to the main area" } },
           { type: "tab", name: "Search", component: "info", config: { description: "Try dragging tabs between borders" } },
