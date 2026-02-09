@@ -3,6 +3,8 @@ import { Rect } from "../core/Rect";
 import { LayoutEngine } from "../layout/LayoutEngine";
 import { Model } from "../model/Model";
 import { RowNode } from "../model/RowNode";
+import { computeNestingOrder } from "../../solid-flexlayout/Layout";
+import type { IJsonModel } from "../types";
 
 describe("LayoutEngine", () => {
     describe("weight distribution", () => {
@@ -308,6 +310,136 @@ describe("LayoutEngine", () => {
             // 400 - 10 (one splitter) = 390 / 2 = 195 each
             expect(ts1.getRect().width).toBe(195);
             expect(ts2.getRect().width).toBe(195);
+        });
+    });
+
+    describe("computeNestingOrder", () => {
+        const makeModel = (borders: IJsonModel["borders"]): Model =>
+            new Model({
+                global: { splitterSize: 0 },
+                borders: borders ?? [],
+                layout: {
+                    type: "row",
+                    weight: 100,
+                    children: [{ type: "tabset", weight: 100, children: [{ type: "tab", name: "Main", component: "text" }] }],
+                },
+            });
+
+        it("should return empty array for no borders", () => {
+            const result = computeNestingOrder([]);
+            expect(result).toEqual([]);
+        });
+
+        it("should return single border as-is", () => {
+            const model = makeModel([
+                { type: "border", location: "left", selected: 0, priority: 1, children: [{ type: "tab", name: "L", component: "text" }] },
+            ]);
+            const borders = model.getBorderSet().getBorders();
+            const result = computeNestingOrder(borders);
+            expect(result.length).toBe(1);
+            expect(result[0].getLocation().getName()).toBe("left");
+        });
+
+        it("should sort by priority descending (highest = outermost first)", () => {
+            const model = makeModel([
+                { type: "border", location: "top", selected: 0, priority: 0, children: [{ type: "tab", name: "T", component: "text" }] },
+                { type: "border", location: "bottom", selected: 0, priority: 0, children: [{ type: "tab", name: "B", component: "text" }] },
+                { type: "border", location: "left", selected: 0, priority: 1, children: [{ type: "tab", name: "L", component: "text" }] },
+                { type: "border", location: "right", selected: 0, priority: 1, children: [{ type: "tab", name: "R", component: "text" }] },
+            ]);
+            const borders = model.getBorderSet().getBorders();
+            const result = computeNestingOrder(borders);
+
+            // left(1) and right(1) before top(0) and bottom(0)
+            expect(result[0].getPriority()).toBeGreaterThanOrEqual(result[1].getPriority());
+            expect(result[1].getPriority()).toBeGreaterThanOrEqual(result[2].getPriority());
+            expect(result[2].getPriority()).toBeGreaterThanOrEqual(result[3].getPriority());
+        });
+
+        it("should break ties by location order [top, right, bottom, left]", () => {
+            const model = makeModel([
+                { type: "border", location: "top", selected: 0, priority: 1, children: [{ type: "tab", name: "T", component: "text" }] },
+                { type: "border", location: "bottom", selected: 0, priority: 1, children: [{ type: "tab", name: "B", component: "text" }] },
+                { type: "border", location: "left", selected: 0, priority: 1, children: [{ type: "tab", name: "L", component: "text" }] },
+                { type: "border", location: "right", selected: 0, priority: 1, children: [{ type: "tab", name: "R", component: "text" }] },
+            ]);
+            const borders = model.getBorderSet().getBorders();
+            const result = computeNestingOrder(borders);
+
+            expect(result[0].getLocation().getName()).toBe("top");
+            expect(result[1].getLocation().getName()).toBe("right");
+            expect(result[2].getLocation().getName()).toBe("bottom");
+            expect(result[3].getLocation().getName()).toBe("left");
+        });
+
+        it("default priorities (left=1, right=1, top=0, bottom=0) preserve left/right outer nesting", () => {
+            const model = makeModel([
+                { type: "border", location: "top", selected: 0, priority: 0, children: [{ type: "tab", name: "T", component: "text" }] },
+                { type: "border", location: "bottom", selected: 0, priority: 0, children: [{ type: "tab", name: "B", component: "text" }] },
+                { type: "border", location: "left", selected: 0, priority: 1, children: [{ type: "tab", name: "L", component: "text" }] },
+                { type: "border", location: "right", selected: 0, priority: 1, children: [{ type: "tab", name: "R", component: "text" }] },
+            ]);
+            const borders = model.getBorderSet().getBorders();
+            const result = computeNestingOrder(borders);
+
+            // left/right (priority 1) should be outermost
+            const names = result.map(b => b.getLocation().getName());
+            const leftIdx = names.indexOf("left");
+            const rightIdx = names.indexOf("right");
+            const topIdx = names.indexOf("top");
+            const bottomIdx = names.indexOf("bottom");
+
+            // left and right should come before top and bottom
+            expect(leftIdx).toBeLessThan(topIdx);
+            expect(leftIdx).toBeLessThan(bottomIdx);
+            expect(rightIdx).toBeLessThan(topIdx);
+            expect(rightIdx).toBeLessThan(bottomIdx);
+        });
+
+        it("swapped priorities (top=2, bottom=2) put horizontal borders outermost", () => {
+            const model = makeModel([
+                { type: "border", location: "top", selected: 0, priority: 2, children: [{ type: "tab", name: "T", component: "text" }] },
+                { type: "border", location: "bottom", selected: 0, priority: 2, children: [{ type: "tab", name: "B", component: "text" }] },
+                { type: "border", location: "left", selected: 0, priority: 1, children: [{ type: "tab", name: "L", component: "text" }] },
+                { type: "border", location: "right", selected: 0, priority: 1, children: [{ type: "tab", name: "R", component: "text" }] },
+            ]);
+            const borders = model.getBorderSet().getBorders();
+            const result = computeNestingOrder(borders);
+
+            // top/bottom (priority 2) should be outermost
+            const names = result.map(b => b.getLocation().getName());
+            expect(names.indexOf("top")).toBeLessThan(names.indexOf("left"));
+            expect(names.indexOf("top")).toBeLessThan(names.indexOf("right"));
+            expect(names.indexOf("bottom")).toBeLessThan(names.indexOf("left"));
+            expect(names.indexOf("bottom")).toBeLessThan(names.indexOf("right"));
+        });
+
+        it("mixed priorities: unique ordering per border", () => {
+            const model = makeModel([
+                { type: "border", location: "top", selected: 0, priority: 2, children: [{ type: "tab", name: "T", component: "text" }] },
+                { type: "border", location: "bottom", selected: 0, priority: 0, children: [{ type: "tab", name: "B", component: "text" }] },
+                { type: "border", location: "left", selected: 0, priority: 3, children: [{ type: "tab", name: "L", component: "text" }] },
+                { type: "border", location: "right", selected: 0, priority: 1, children: [{ type: "tab", name: "R", component: "text" }] },
+            ]);
+            const borders = model.getBorderSet().getBorders();
+            const result = computeNestingOrder(borders);
+
+            expect(result[0].getLocation().getName()).toBe("left");   // priority 3
+            expect(result[1].getLocation().getName()).toBe("top");    // priority 2
+            expect(result[2].getLocation().getName()).toBe("right");  // priority 1
+            expect(result[3].getLocation().getName()).toBe("bottom"); // priority 0
+        });
+
+        it("should not mutate the input array", () => {
+            const model = makeModel([
+                { type: "border", location: "top", selected: 0, priority: 0, children: [{ type: "tab", name: "T", component: "text" }] },
+                { type: "border", location: "left", selected: 0, priority: 1, children: [{ type: "tab", name: "L", component: "text" }] },
+            ]);
+            const borders = model.getBorderSet().getBorders();
+            const originalOrder = borders.map(b => b.getLocation().getName());
+            computeNestingOrder(borders);
+            const afterOrder = borders.map(b => b.getLocation().getName());
+            expect(afterOrder).toEqual(originalOrder);
         });
     });
 
