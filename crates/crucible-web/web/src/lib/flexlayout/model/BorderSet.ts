@@ -58,6 +58,20 @@ export class BorderSet {
     }
 
     /** @internal */
+    getBordersByPriority(): BorderNode[] {
+        const locationOrder = ["top", "right", "bottom", "left"];
+        return [...this.borders].sort((a, b) => {
+            const priorityDiff = b.getPriority() - a.getPriority();
+            if (priorityDiff !== 0) {
+                return priorityDiff;
+            }
+            const aIndex = locationOrder.indexOf(a.getLocation().getName());
+            const bIndex = locationOrder.indexOf(b.getLocation().getName());
+            return aIndex - bIndex;
+        });
+    }
+
+    /** @internal */
     forEachNode(fn: (node: Node, level: number) => void) {
         for (const borderNode of this.borders) {
             fn(borderNode, 0);

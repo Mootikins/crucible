@@ -32,7 +32,7 @@ export const BorderTabSet: Component<IBorderTabSetProps> = (props) => {
     };
 
     const isCollapsed = () => dockState() === "collapsed";
-    const isMinimized = () => dockState() === "minimized";
+    const isHidden = () => dockState() === "hidden";
 
     const borderClasses = (): string => {
         let classes = cm(CLASSES.FLEXLAYOUT__BORDER) + " " + cm(CLASSES.FLEXLAYOUT__BORDER_ + border.getLocation().getName());
@@ -42,8 +42,8 @@ export const BorderTabSet: Component<IBorderTabSetProps> = (props) => {
         const state = dockState();
         if (state === "collapsed") {
             classes += " " + cm(CLASSES.FLEXLAYOUT__BORDER__COLLAPSED);
-        } else if (state === "minimized") {
-            classes += " " + cm(CLASSES.FLEXLAYOUT__BORDER__MINIMIZED);
+        } else if (state === "hidden") {
+            classes += " " + cm(CLASSES.FLEXLAYOUT__BORDER__HIDDEN);
         }
         return classes;
     };
@@ -92,23 +92,23 @@ export const BorderTabSet: Component<IBorderTabSetProps> = (props) => {
     const onDockToggle = (event: MouseEvent) => {
         event.stopPropagation();
         const current = dockState();
-        let next: "expanded" | "collapsed" | "minimized";
+        let next: "expanded" | "collapsed" | "hidden";
         if (current === "expanded") {
             next = "collapsed";
         } else if (current === "collapsed") {
-            next = "minimized";
+            next = "hidden";
         } else {
             next = "expanded";
         }
         props.layout.doAction(Action.setDockState(border.getId(), next));
     };
 
-    // Arrow direction: minimized = away from edge, expanded/collapsed = toward edge
+    // Arrow direction: hidden = away from edge, expanded/collapsed = toward edge
     const dockIcon = (): string => {
         const state = dockState();
         const loc = border.getLocation();
 
-        if (state === "minimized") {
+        if (state === "hidden") {
             if (loc === DockLocation.LEFT) return "▶";
             if (loc === DockLocation.RIGHT) return "◀";
             if (loc === DockLocation.TOP) return "▼";
@@ -123,7 +123,7 @@ export const BorderTabSet: Component<IBorderTabSetProps> = (props) => {
     const dockTitle = (): string => {
         const state = dockState();
         if (state === "expanded") return "Collapse";
-        if (state === "collapsed") return "Minimize";
+        if (state === "collapsed") return "Hide";
         return "Expand";
     };
 
@@ -186,7 +186,7 @@ export const BorderTabSet: Component<IBorderTabSetProps> = (props) => {
             class={borderClasses()}
             data-layout-path={border.getPath()}
         >
-            <Show when={!isMinimized()}>
+            <Show when={!isHidden()}>
                 <div class={cm(CLASSES.FLEXLAYOUT__MINI_SCROLLBAR_CONTAINER)}>
                     <div
                         class={cm(CLASSES.FLEXLAYOUT__BORDER_INNER) + " " + cm(CLASSES.FLEXLAYOUT__BORDER_INNER_ + border.getLocation().getName())}
