@@ -206,18 +206,86 @@ test.describe('Docked Panes > Collapsed state', () => {
     await page.screenshot({ path: `${evidencePath}/dock-e2e-collapsed-labels.png` });
   });
 
-  test('collapsed left border has vertical writing mode on labels', async ({ page }) => {
+  test('collapsed left border has rotate(-90deg) on inner tab container', async ({ page }) => {
     await page.goto(baseURL + '?layout=docked_panes');
     await page.waitForSelector('[data-layout-path="/"]', { timeout: 10_000 });
 
     const dockButton = page.locator('[data-layout-path="/border/left/button/dock"]');
     await dockButton.click();
 
-    const collapsedLabels = page.locator('.flexlayout__border_left .flexlayout__border_collapsed_label');
-    const labelCount = await collapsedLabels.count();
-    expect(labelCount).toBeGreaterThanOrEqual(1);
+    const borderLeft = page.locator('.flexlayout__border_left');
+    await expect(borderLeft.first()).toHaveClass(/flexlayout__border--collapsed/);
 
-    await page.screenshot({ path: `${evidencePath}/dock-e2e-collapsed-vertical.png` });
+    const container = page.locator('.flexlayout__border_left .flexlayout__border_inner_tab_container_left');
+    const transform = await container.evaluate((el) => getComputedStyle(el).transform);
+    // rotate(-90deg) produces a matrix with cos(-90)=0, sin(-90)=-1
+    // matrix(0, -1, 1, 0, tx, ty)
+    expect(transform).toMatch(/matrix\(0,\s*-1,\s*1,\s*0/);
+
+    await page.screenshot({ path: `${evidencePath}/task-5-left-vertical.png` });
+  });
+
+  test('collapsed right border has rotate(90deg) on inner tab container', async ({ page }) => {
+    await page.goto(baseURL + '?layout=docked_panes');
+    await page.waitForSelector('[data-layout-path="/"]', { timeout: 10_000 });
+
+    const dockButton = page.locator('[data-layout-path="/border/right/button/dock"]');
+    await dockButton.click();
+
+    const borderRight = page.locator('.flexlayout__border_right');
+    await expect(borderRight.first()).toHaveClass(/flexlayout__border--collapsed/);
+
+    const container = page.locator('.flexlayout__border_right .flexlayout__border_inner_tab_container_right');
+    const transform = await container.evaluate((el) => getComputedStyle(el).transform);
+    // rotate(90deg) produces matrix(0, 1, -1, 0, tx, ty)
+    expect(transform).toMatch(/matrix\(0,\s*1,\s*-1,\s*0/);
+
+    await page.screenshot({ path: `${evidencePath}/task-5-right-vertical.png` });
+  });
+
+  test('collapsed top border has no rotation on inner tab container', async ({ page }) => {
+    await page.goto(baseURL + '?layout=docked_panes');
+    await page.waitForSelector('[data-layout-path="/"]', { timeout: 10_000 });
+
+    const dockButton = page.locator('[data-layout-path="/border/top/button/dock"]');
+    await dockButton.click();
+
+    const borderTop = page.locator('.flexlayout__border_top');
+    await expect(borderTop.first()).toHaveClass(/flexlayout__border--collapsed/);
+
+    const container = page.locator('.flexlayout__border_top .flexlayout__border_inner_tab_container_top');
+    const transform = await container.evaluate((el) => getComputedStyle(el).transform);
+    // No rotation = "none" or identity matrix
+    expect(transform === 'none' || transform === 'matrix(1, 0, 0, 1, 0, 0)').toBe(true);
+
+    await page.screenshot({ path: `${evidencePath}/task-5-top-horizontal.png` });
+  });
+
+  test('collapsed bottom border has no rotation on inner tab container', async ({ page }) => {
+    await page.goto(baseURL + '?layout=docked_panes');
+    await page.waitForSelector('[data-layout-path="/"]', { timeout: 10_000 });
+
+    const dockButton = page.locator('[data-layout-path="/border/bottom/button/dock"]');
+    await dockButton.click();
+
+    const borderBottom = page.locator('.flexlayout__border_bottom');
+    await expect(borderBottom.first()).toHaveClass(/flexlayout__border--collapsed/);
+
+    const container = page.locator('.flexlayout__border_bottom .flexlayout__border_inner_tab_container_bottom');
+    const transform = await container.evaluate((el) => getComputedStyle(el).transform);
+    expect(transform === 'none' || transform === 'matrix(1, 0, 0, 1, 0, 0)').toBe(true);
+  });
+
+  test('collapsed left border labels use flex-direction: row-reverse', async ({ page }) => {
+    await page.goto(baseURL + '?layout=docked_panes');
+    await page.waitForSelector('[data-layout-path="/"]', { timeout: 10_000 });
+
+    const dockButton = page.locator('[data-layout-path="/border/left/button/dock"]');
+    await dockButton.click();
+
+    const container = page.locator('.flexlayout__border_left .flexlayout__border_inner_tab_container_left');
+    const flexDir = await container.evaluate((el) => getComputedStyle(el).flexDirection);
+    expect(flexDir).toBe('row-reverse');
   });
 });
 

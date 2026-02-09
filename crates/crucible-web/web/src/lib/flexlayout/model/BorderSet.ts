@@ -20,22 +20,13 @@ export class BorderSet {
     /** @internal */
     private borderMap: Map<DockLocation, BorderNode>;
     /** @internal */
-    private layoutHorizontal: boolean;
-
-    /** @internal */
     constructor(_model: Model) {
         this.borders = [];
         this.borderMap = new Map<DockLocation, BorderNode>();
-        this.layoutHorizontal = true;
     }
 
     toJson() {
         return this.borders.map((borderNode) => borderNode.toJson());
-    }
-
-    /** @internal */
-    getLayoutHorizontal () {
-        return this.layoutHorizontal;
     }
 
     /** @internal */
