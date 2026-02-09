@@ -380,17 +380,23 @@ test.describe('Docked Panes > Expanded tabs-on-top', () => {
     const explorerButton = page.locator('[data-border-tabbar] .flexlayout__border_button').filter({ hasText: 'Explorer' });
     await expect(explorerButton).toBeVisible();
 
+    // Per-tile headers: each tile has its own tabbar with exactly 1 button
     const tabBarInner = explorerButton.locator('..');
     const tabButtons = tabBarInner.locator('.flexlayout__border_button');
     const count = await tabButtons.count();
-    expect(count).toBeGreaterThanOrEqual(2);
+    expect(count).toBe(1);
 
     const tabBar = tabBarInner.locator('..');
     const flexDir = await tabBar.evaluate((el) => getComputedStyle(el).flexDirection);
     expect(flexDir).toBe('row');
 
+    // Dock button appears on first tile's header (Explorer is tile 0)
     const dockButton = tabBar.locator('.flexlayout__border_dock_button');
     await expect(dockButton).toBeVisible();
+
+    // Search tab also has its own per-tile tabbar
+    const searchButton = page.locator('[data-border-tabbar] .flexlayout__border_button').filter({ hasText: 'Search' });
+    await expect(searchButton).toBeVisible();
 
     await page.screenshot({ path: `${evidencePath}/task-6-tabs-on-top.png` });
   });
