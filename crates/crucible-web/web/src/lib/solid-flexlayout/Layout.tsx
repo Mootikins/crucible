@@ -116,11 +116,17 @@ export const Layout: Component<ILayoutProps> = (props) => {
         parentNode: TabSetNode | BorderNode;
     } | undefined>(undefined);
 
+    const [contextMenu, setContextMenu] = createSignal<{
+        items: { label: string; action: () => void }[];
+        position: { x: number; y: number };
+    } | undefined>(undefined);
+
     let dropInfo: DropInfo | undefined;
     let outlineDiv: HTMLDivElement | undefined;
     let dragEnterCount = 0;
     let dragging = false;
     let popupCleanup: (() => void) | undefined;
+    let contextMenuCleanup: (() => void) | undefined;
 
     // Stable object — NOT a createMemo. A createMemo recreates the object on any
     // signal change (including editingTab), which destroys all child components
@@ -146,6 +152,7 @@ export const Layout: Component<ILayoutProps> = (props) => {
         clearDragMain,
         getRevision: () => layoutVersion(),
         showPopup,
+        showContextMenu,
     };
     const layoutContext = () => layoutContextObj;
 
@@ -173,6 +180,7 @@ export const Layout: Component<ILayoutProps> = (props) => {
 
     onCleanup(() => {
         if (popupCleanup) popupCleanup();
+        if (contextMenuCleanup) contextMenuCleanup();
     });
 
     createEffect(() => {
@@ -329,6 +337,51 @@ export const Layout: Component<ILayoutProps> = (props) => {
 
     function hidePopup() {
         setPopupMenu(undefined);
+    }
+
+    function showContextMenu(
+        event: MouseEvent,
+        items: { label: string; action: () => void }[],
+    ) {
+        event.preventDefault();
+        event.stopPropagation();
+
+        if (contextMenuCleanup) contextMenuCleanup();
+
+        const layoutRect = selfRef?.getBoundingClientRect();
+        if (!layoutRect) return;
+
+        setContextMenu({
+            items,
+            position: {
+                x: event.clientX - layoutRect.left,
+                y: event.clientY - layoutRect.top,
+            },
+        });
+
+        const onDocPointerDown = (e: PointerEvent) => {
+            const menuEl = selfRef?.querySelector('[data-layout-path="/context-menu"]');
+            if (menuEl && menuEl.contains(e.target as globalThis.Node)) return;
+            cleanup();
+        };
+        const onDocKeyDown = (e: KeyboardEvent) => {
+            if (e.key === "Escape") cleanup();
+        };
+        const cleanup = () => {
+            hideContextMenu();
+            document.removeEventListener("pointerdown", onDocPointerDown);
+            document.removeEventListener("keydown", onDocKeyDown);
+            contextMenuCleanup = undefined;
+        };
+        contextMenuCleanup = cleanup;
+        document.addEventListener("keydown", onDocKeyDown);
+        requestAnimationFrame(() => {
+            document.addEventListener("pointerdown", onDocPointerDown);
+        });
+    }
+
+    function hideContextMenu() {
+        setContextMenu(undefined);
     }
 
     function getDomRect(): Rect {
@@ -711,13 +764,72 @@ export const Layout: Component<ILayoutProps> = (props) => {
     const borderStrip = (loc: DockLocation) => {
         const data = borderData();
         const entry = data?.strips.get(loc.getName());
-        return entry ? <BorderTabSet layout={layoutContext()} border={entry.border} size={BORDER_BAR_SIZE} /> : undefined;
+        if (!entry) return undefined;
+        const stripSize = entry.border.getDockState() === "expanded" ? 0 : BORDER_BAR_SIZE;
+        return <BorderTabSet layout={layoutContext()} border={entry.border} size={stripSize} />;
     };
 
     const borderContent = (loc: DockLocation) => {
         const data = borderData();
         const entry = data?.strips.get(loc.getName());
         return entry ? <BorderTab layout={layoutContext()} border={entry.border} show={entry.show} /> : undefined;
+    };
+
+    const fabArrow = (loc: DockLocation): string => {
+        if (loc === DockLocation.LEFT) return "▶";
+        if (loc === DockLocation.RIGHT) return "◀";
+        if (loc === DockLocation.TOP) return "▼";
+        return "▲";
+    };
+
+    const fabStyle = (loc: DockLocation): Record<string, any> => {
+        const r = rect();
+        const size = 20;
+        const base: Record<string, any> = {
+            position: "absolute",
+            width: size + "px",
+            height: size + "px",
+            "z-index": 50,
+        };
+        if (loc === DockLocation.LEFT) {
+            base.left = "0px";
+            base.top = (r.height / 2 - size / 2) + "px";
+        } else if (loc === DockLocation.RIGHT) {
+            base.right = "0px";
+            base.top = (r.height / 2 - size / 2) + "px";
+        } else if (loc === DockLocation.TOP) {
+            base.top = "0px";
+            base.left = (r.width / 2 - size / 2) + "px";
+        } else {
+            base.bottom = "0px";
+            base.left = (r.width / 2 - size / 2) + "px";
+        }
+        return base;
+    };
+
+    const hiddenBorderFabs = () => {
+        void layoutVersion();
+        void revision();
+        if (!hasBorders()) return null;
+        const borders = props.model.getBorderSet().getBorderMap();
+        const fabs: JSX.Element[] = [];
+        for (const [_, location] of DockLocation.values) {
+            const border = borders.get(location);
+            if (border && border.isShowing() && border.getDockState() === "hidden" && border.getChildren().length > 0) {
+                const loc = border.getLocation();
+                fabs.push(
+                    <button
+                        class={getClassName(CLASSES.FLEXLAYOUT__BORDER_FAB)}
+                        data-layout-path={border.getPath() + "/fab"}
+                        style={fabStyle(loc)}
+                        onClick={() => doAction(Action.setDockState(border.getId(), "expanded"))}
+                    >
+                        {fabArrow(loc)}
+                    </button>
+                );
+            }
+        }
+        return fabs;
     };
 
     return (
@@ -877,6 +989,8 @@ export const Layout: Component<ILayoutProps> = (props) => {
                     return buildNestedBorders();
                 })()}
             </Show>
+
+            {hiddenBorderFabs()}
 
             <Show when={rect().width > 0}>
                 <For each={mainTabNodes()}>
@@ -1111,6 +1225,60 @@ export const Layout: Component<ILayoutProps> = (props) => {
                     );
                 }}
             </Show>
+
+            <Show when={contextMenu()}>
+                {(menu) => (
+                    <div
+                        class={getClassName(CLASSES.FLEXLAYOUT__POPUP_MENU_CONTAINER)}
+                        style={{ position: "absolute", inset: 0, "z-index": 1002 }}
+                        onPointerDown={() => {
+                            if (contextMenuCleanup) contextMenuCleanup();
+                            else hideContextMenu();
+                        }}
+                    >
+                        <div
+                            class={getClassName(CLASSES.FLEXLAYOUT__POPUP_MENU)}
+                            data-layout-path="/context-menu"
+                            tabIndex={0}
+                            ref={(el: HTMLDivElement) => requestAnimationFrame(() => el.focus())}
+                            style={{
+                                position: "absolute",
+                                left: menu().position.x + "px",
+                                top: menu().position.y + "px",
+                            }}
+                            onPointerDown={(e) => e.stopPropagation()}
+                        >
+                            <Show when={menu().items.length === 0}>
+                                <div
+                                    class={getClassName(CLASSES.FLEXLAYOUT__POPUP_MENU_ITEM)}
+                                    style={{ opacity: 0.5, cursor: "default" }}
+                                >
+                                    No actions available
+                                </div>
+                            </Show>
+                            <For each={menu().items}>
+                                {(item) => (
+                                    <div
+                                        class={getClassName(CLASSES.FLEXLAYOUT__POPUP_MENU_ITEM)}
+                                        data-context-menu-item
+                                        onClick={(event) => {
+                                            item.action();
+                                            if (contextMenuCleanup) {
+                                                contextMenuCleanup();
+                                            } else {
+                                                hideContextMenu();
+                                            }
+                                            event.stopPropagation();
+                                        }}
+                                    >
+                                        {item.label}
+                                    </div>
+                                )}
+                            </For>
+                        </div>
+                    </div>
+                )}
+            </Show>
         </div>
     );
 };
@@ -1147,5 +1315,9 @@ export interface ILayoutContext {
         parentNode: TabSetNode | BorderNode,
         items: { index: number; node: TabNode }[],
         onSelect: (item: { index: number; node: TabNode }) => void,
+    ) => void;
+    showContextMenu: (
+        event: MouseEvent,
+        items: { label: string; action: () => void }[],
     ) => void;
 }

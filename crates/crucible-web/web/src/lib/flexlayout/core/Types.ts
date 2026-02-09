@@ -131,4 +131,6 @@ export enum CLASSES {
   FLEXLAYOUT__BORDER__COLLAPSED = "flexlayout__border--collapsed",
   FLEXLAYOUT__BORDER__HIDDEN = "flexlayout__border--hidden",
   FLEXLAYOUT__BORDER_COLLAPSED_LABEL = "flexlayout__border_collapsed_label",
+  FLEXLAYOUT__BORDER_FAB = "flexlayout__border_fab",
+  FLEXLAYOUT__BORDER_TABBAR = "flexlayout__border_tabbar",
 }

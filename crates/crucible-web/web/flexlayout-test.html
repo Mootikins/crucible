@@ -247,6 +247,46 @@
       .flexlayout__border_tab_contents {
         transition: flex-basis 0.2s ease, width 0.2s ease, height 0.2s ease;
       }
+
+      /* FAB overlay for hidden borders */
+      .flexlayout__border_fab {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 20px;
+        height: 20px;
+        padding: 0;
+        margin: 0;
+        border: 1px solid #0f3460;
+        border-radius: 3px;
+        background: #16213e;
+        color: #8899aa;
+        font-size: 10px;
+        line-height: 1;
+        cursor: pointer;
+        box-sizing: border-box;
+      }
+      .flexlayout__border_fab:hover {
+        color: #e0e0e0;
+        background: #1a2744;
+      }
+      .flexlayout__border_fab:focus-visible {
+        outline: 2px solid #e94560;
+        outline-offset: 1px;
+      }
+
+      /* Border tab bar (tabs-on-top for expanded borders) */
+      .flexlayout__border_tabbar {
+        display: flex;
+        flex-direction: row;
+        align-items: center;
+        background: #16213e;
+        border-bottom: 1px solid #0f3460;
+        min-height: 32px;
+        flex-shrink: 0;
+        position: relative;
+        z-index: 1;
+      }
     </style>
   </head>
   <body>
