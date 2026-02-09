@@ -129,6 +129,6 @@ export enum CLASSES {
 
   FLEXLAYOUT__BORDER_DOCK_BUTTON = "flexlayout__border_dock_button",
   FLEXLAYOUT__BORDER__COLLAPSED = "flexlayout__border--collapsed",
-  FLEXLAYOUT__BORDER__MINIMIZED = "flexlayout__border--minimized",
+  FLEXLAYOUT__BORDER__HIDDEN = "flexlayout__border--hidden",
   FLEXLAYOUT__BORDER_COLLAPSED_LABEL = "flexlayout__border_collapsed_label",
 }
