@@ -238,11 +238,9 @@
         display: flex;
         align-items: center;
       }
-      /* Vertical edges: rotate text */
-      .flexlayout__border_left .flexlayout__border_collapsed_label,
-      .flexlayout__border_right .flexlayout__border_collapsed_label {
-        writing-mode: vertical-rl;
-        padding: 0.5em 3px;
+      /* Collapsed labels: horizontal layout for rotated containers */
+      .flexlayout__border_collapsed_label {
+        white-space: nowrap;
       }
 
       /* Smooth transition for border content area */
