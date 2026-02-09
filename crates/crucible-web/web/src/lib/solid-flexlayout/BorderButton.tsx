@@ -1,5 +1,6 @@
 import { Component, JSX, createEffect } from "solid-js";
 import { TabNode } from "../flexlayout/model/TabNode";
+import { BorderNode } from "../flexlayout/model/BorderNode";
 import { Rect } from "../flexlayout/core/Rect";
 import { CLASSES } from "../flexlayout/core/Types";
 import { Action } from "../flexlayout/model/Action";
@@ -51,6 +52,49 @@ export const BorderButton: Component<IBorderButtonProps> = (props) => {
 
     const onClick = () => {
         props.layout.doAction(Action.selectTab(node.getId()));
+    };
+
+    const onContextMenu = (event: MouseEvent) => {
+        const parent = node.getParent();
+        if (!(parent instanceof BorderNode)) return;
+
+        const dockState = parent.getDockState();
+        if (dockState !== "expanded") return;
+
+        const children = parent.getChildren() as TabNode[];
+        const visibleTabs = parent.getVisibleTabs();
+        const myIndex = children.indexOf(node);
+        const isTiled = visibleTabs.length > 1;
+        const borderId = parent.getId();
+
+        const items: { label: string; action: () => void }[] = [];
+
+        if (isTiled) {
+            items.push({
+                label: "Untile",
+                action: () => {
+                    props.layout.doAction(Action.setVisibleTabs(borderId, []));
+                },
+            });
+        }
+
+        for (let i = 0; i < children.length; i++) {
+            if (i === myIndex) continue;
+            if (visibleTabs.includes(i)) continue;
+            const targetTab = children[i];
+            const targetIndex = i;
+            items.push({
+                label: `Split with ${targetTab.getName()}`,
+                action: () => {
+                    const newVisible = isTiled
+                        ? [...visibleTabs, targetIndex]
+                        : [myIndex, targetIndex];
+                    props.layout.doAction(Action.setVisibleTabs(borderId, newVisible));
+                },
+            });
+        }
+
+        props.layout.showContextMenu(event, items);
     };
 
     const isClosable = (): boolean => {
@@ -170,6 +214,7 @@ export const BorderButton: Component<IBorderButtonProps> = (props) => {
             data-layout-path={props.path}
             class={classNames()}
             onClick={onClick}
+            onContextMenu={onContextMenu}
             title={node.getHelpText()}
             draggable={true}
             onDragStart={onDragStart}
