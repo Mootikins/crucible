@@ -48,6 +48,10 @@ export class BorderNode extends Node implements IDropTarget {
         this.location = location;
         this.attributes.id = `border_${location.getName()}`;
         BorderNode.attributeDefinitions.fromJson(json, this.attributes);
+        // Backward compat: convert "minimized" to "hidden"
+        if (this.attributes.dockState === "minimized") {
+            this.attributes.dockState = "hidden";
+        }
         model.addNode(this);
     }
 
@@ -149,6 +153,10 @@ export class BorderNode extends Node implements IDropTarget {
         return [];
     }
 
+    getPriority(): number {
+        return this.getAttr("priority") as number;
+    }
+
     isEnableDock(): boolean {
         return this.getAttr("enableDock") as boolean;
     }
@@ -246,6 +254,49 @@ export class BorderNode extends Node implements IDropTarget {
         if (this.getSelected() !== -1) {
             adjustSelectedIndex(this, removedIndex);
         }
+        this.adjustVisibleTabs(removedIndex);
+    }
+
+    private adjustVisibleTabs(removedIndex: number) {
+        const visibleTabs = this.getVisibleTabs();
+        if (visibleTabs.length === 0) {
+            return;
+        }
+
+        const adjusted: number[] = [];
+        for (const idx of visibleTabs) {
+            if (idx === removedIndex) {
+                continue;
+            } else if (idx > removedIndex) {
+                adjusted.push(idx - 1);
+            } else {
+                adjusted.push(idx);
+            }
+        }
+
+        if (adjusted.length === 0) {
+            this.attributes.visibleTabs = [];
+        } else {
+            this.attributes.visibleTabs = adjusted;
+        }
+    }
+
+    private shiftVisibleTabs(insertedIndex: number) {
+        const visibleTabs = this.getVisibleTabs();
+        if (visibleTabs.length === 0) {
+            return;
+        }
+
+        const shifted: number[] = [];
+        for (const idx of visibleTabs) {
+            if (idx >= insertedIndex) {
+                shifted.push(idx + 1);
+            } else {
+                shifted.push(idx);
+            }
+        }
+
+        this.attributes.visibleTabs = shifted;
     }
 
     /** @internal */
@@ -357,6 +408,7 @@ export class BorderNode extends Node implements IDropTarget {
 
         if (dragNode instanceof TabNode) {
             this.addChild(dragNode, insertPos);
+            this.shiftVisibleTabs(insertPos);
         }
 
         if (select || (select !== false && this.isAutoSelectTab())) {
@@ -461,10 +513,13 @@ export class BorderNode extends Node implements IDropTarget {
             `whether to show a mini scrollbar for the tabs`
         );
         attributeDefinitions.addInherited("dockState", "borderDockState").setType(Attribute.STRING).setDescription(
-            `dock state of the border: "expanded" | "collapsed" | "minimized"`
+            `dock state of the border: "expanded" | "collapsed" | "hidden"`
         );
         attributeDefinitions.add("visibleTabs", []).setType("any").setDescription(
             `array of tab indices visible/tiled simultaneously; empty means fallback to [selected]`
+        );
+        attributeDefinitions.addInherited("priority", "borderPriority").setType(Attribute.NUMBER).setDescription(
+            `priority for border spanning; higher priority borders span full edge`
         );
         attributeDefinitions.addInherited("enableDock", "borderEnableDock").setType(Attribute.BOOLEAN).setDescription(
             `whether the collapse/expand/minimize dock button appears`
