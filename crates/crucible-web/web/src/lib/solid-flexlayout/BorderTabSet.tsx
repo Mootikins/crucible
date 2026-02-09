@@ -52,15 +52,6 @@ export const BorderTabSet: Component<IBorderTabSetProps> = (props) => {
         const buttons: JSX.Element[] = [];
         const children = border.getChildren();
 
-        if (children.length === 0 && border.isEnableDrop()) {
-            buttons.push(
-                <div class={cm(CLASSES.FLEXLAYOUT__BORDER_EMPTY_PLACEHOLDER)}>
-                    Drop tabs here
-                </div>,
-            );
-            return buttons;
-        }
-
         for (let i = 0; i < children.length; i++) {
             const isSelected = border.getSelected() === i;
             const child = children[i] as TabNode;
@@ -87,15 +78,6 @@ export const BorderTabSet: Component<IBorderTabSetProps> = (props) => {
     const collapsedLabels = (): JSX.Element[] => {
         const labels: JSX.Element[] = [];
         const children = border.getChildren();
-
-        if (children.length === 0 && border.isEnableDrop()) {
-            labels.push(
-                <div class={cm(CLASSES.FLEXLAYOUT__BORDER_EMPTY_PLACEHOLDER)}>
-                    Drop tabs here
-                </div>,
-            );
-            return labels;
-        }
 
         for (let i = 0; i < children.length; i++) {
             const child = children[i] as TabNode;
