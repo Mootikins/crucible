@@ -284,6 +284,33 @@ export const BorderTab: Component<IBorderTabProps> = (props) => {
         </div>
     );
 
+    const tileTabBar = (node: TabNode, tileIndex: number): JSX.Element => {
+        const children = props.border.getChildren();
+        const childIndex = children.indexOf(node);
+        const isSelected = props.border.getSelected() === childIndex;
+        return (
+            <div
+                class={cm(CLASSES.FLEXLAYOUT__BORDER_TABBAR)}
+                data-border-tabbar
+            >
+                <div style={{ display: "flex", flex: "1", "overflow-x": "auto", "align-items": "center", "padding-left": "4px" }}>
+                    <BorderButton
+                        layout={props.layout}
+                        border={props.border.getLocation().getName()}
+                        node={node}
+                        path={props.border.getPath() + "/tb" + childIndex}
+                        selected={isSelected}
+                    />
+                </div>
+                {tileIndex === 0 && (
+                    <div style={{ display: "flex", "align-items": "center", "padding": "0 4px" }}>
+                        {expandedToolbarButtons()}
+                    </div>
+                )}
+            </div>
+        );
+    };
+
     const flatItems = createMemo(() => {
         void props.layout.getRevision();
         const nodes = visibleNodes();
@@ -320,47 +347,95 @@ export const BorderTab: Component<IBorderTabProps> = (props) => {
         };
 
         if (isExpanded()) {
-            return (
-                <div style={expandedWrapperStyle()} data-border-content>
-                    {tabBar()}
-                    <div
-                        ref={selfRef}
-                        style={{ ...style(), display: isContentVisible() ? "flex" : "none", flex: "1", width: "auto", height: "auto", "min-width": "0", "min-height": "0", "max-width": "none", "max-height": "none" }}
-                        class={className}
-                    >
-                        <For each={flatItems()}>
-                            {(item) => {
-                                if (item.type === "splitter") {
-                                    const splitterIdx = item.index;
-                                    return (
-                                        <div
-                                            class={
-                                                cm(CLASSES.FLEXLAYOUT__SPLITTER) +
-                                                " " +
-                                                cm(CLASSES.FLEXLAYOUT__SPLITTER_ + (tileHorizontal() ? "horz" : "vert"))
-                                            }
-                                            style={internalSplitterStyle()}
-                                            data-border-tile-splitter={splitterIdx}
-                                            onPointerDown={(e: PointerEvent) => onSplitterPointerDown(splitterIdx, e)}
-                                        />
-                                    );
-                                } else {
-                                    const tileIdx = item.index;
-                                    return (
-                                        <div
-                                            class={cm(CLASSES.FLEXLAYOUT__TAB) + " " + cm(CLASSES.FLEXLAYOUT__TAB_BORDER)}
-                                            style={tileStyle(tileIdx)}
-                                            data-border-tile={tileIdx}
-                                        >
-                                            {props.layout.factory(item.node)}
-                                        </div>
-                                    );
-                                }
-                            }}
-                        </For>
+            if (isTiled()) {
+                return (
+                    <div style={expandedWrapperStyle()} data-border-content>
+                        <div
+                            ref={selfRef}
+                            style={{ ...style(), display: isContentVisible() ? "flex" : "none", flex: "1", width: "auto", height: "auto", "min-width": "0", "min-height": "0", "max-width": "none", "max-height": "none" }}
+                            class={className}
+                        >
+                            <For each={flatItems()}>
+                                {(item) => {
+                                    if (item.type === "splitter") {
+                                        const splitterIdx = item.index;
+                                        return (
+                                            <div
+                                                class={
+                                                    cm(CLASSES.FLEXLAYOUT__SPLITTER) +
+                                                    " " +
+                                                    cm(CLASSES.FLEXLAYOUT__SPLITTER_ + (tileHorizontal() ? "horz" : "vert"))
+                                                }
+                                                style={internalSplitterStyle()}
+                                                data-border-tile-splitter={splitterIdx}
+                                                onPointerDown={(e: PointerEvent) => onSplitterPointerDown(splitterIdx, e)}
+                                            />
+                                        );
+                                    } else {
+                                        const tileIdx = item.index;
+                                        return (
+                                            <div
+                                                style={{ ...tileStyle(tileIdx), display: "flex", "flex-direction": "column" }}
+                                                data-border-tile={tileIdx}
+                                            >
+                                                {tileTabBar(item.node, tileIdx)}
+                                                <div
+                                                    class={cm(CLASSES.FLEXLAYOUT__TAB) + " " + cm(CLASSES.FLEXLAYOUT__TAB_BORDER)}
+                                                    style={{ flex: "1", position: "relative", overflow: "hidden" }}
+                                                >
+                                                    {props.layout.factory(item.node)}
+                                                </div>
+                                            </div>
+                                        );
+                                    }
+                                }}
+                            </For>
+                        </div>
                     </div>
-                </div>
-            );
+                );
+            } else {
+                return (
+                    <div style={expandedWrapperStyle()} data-border-content>
+                        {tabBar()}
+                        <div
+                            ref={selfRef}
+                            style={{ ...style(), display: isContentVisible() ? "flex" : "none", flex: "1", width: "auto", height: "auto", "min-width": "0", "min-height": "0", "max-width": "none", "max-height": "none" }}
+                            class={className}
+                        >
+                            <For each={flatItems()}>
+                                {(item) => {
+                                    if (item.type === "splitter") {
+                                        const splitterIdx = item.index;
+                                        return (
+                                            <div
+                                                class={
+                                                    cm(CLASSES.FLEXLAYOUT__SPLITTER) +
+                                                    " " +
+                                                    cm(CLASSES.FLEXLAYOUT__SPLITTER_ + (tileHorizontal() ? "horz" : "vert"))
+                                                }
+                                                style={internalSplitterStyle()}
+                                                data-border-tile-splitter={splitterIdx}
+                                                onPointerDown={(e: PointerEvent) => onSplitterPointerDown(splitterIdx, e)}
+                                            />
+                                        );
+                                    } else {
+                                        const tileIdx = item.index;
+                                        return (
+                                            <div
+                                                class={cm(CLASSES.FLEXLAYOUT__TAB) + " " + cm(CLASSES.FLEXLAYOUT__TAB_BORDER)}
+                                                style={tileStyle(tileIdx)}
+                                                data-border-tile={tileIdx}
+                                            >
+                                                {props.layout.factory(item.node)}
+                                            </div>
+                                        );
+                                    }
+                                }}
+                            </For>
+                        </div>
+                    </div>
+                );
+            }
         }
 
         return (
