@@ -158,9 +158,34 @@ export const BorderTabSet: Component<IBorderTabSetProps> = (props) => {
     };
 
     const innerStyle = (): Record<string, any> => {
-        if (border.getLocation() === DockLocation.LEFT) {
+        const loc = border.getLocation();
+        const collapsed = isCollapsed();
+
+        if (loc === DockLocation.LEFT) {
+            if (collapsed) {
+                return {
+                    position: "absolute",
+                    top: "0",
+                    left: "0",
+                    "white-space": "nowrap",
+                    transform: "rotate(-90deg) translateX(-100%)",
+                    "transform-origin": "top left",
+                    "flex-direction": "row-reverse",
+                };
+            }
             return { right: "100%", top: "0" };
-        } else if (border.getLocation() === DockLocation.RIGHT) {
+        } else if (loc === DockLocation.RIGHT) {
+            if (collapsed) {
+                return {
+                    position: "absolute",
+                    top: "0",
+                    right: "0",
+                    "white-space": "nowrap",
+                    transform: "rotate(90deg) translateX(-100%)",
+                    "transform-origin": "top right",
+                    "flex-direction": "row",
+                };
+            }
             return { left: "100%", top: "0" };
         } else {
             return { left: "0" };
@@ -169,25 +194,50 @@ export const BorderTabSet: Component<IBorderTabSetProps> = (props) => {
 
     const outerStyle = (): Record<string, any> => {
         const borderHeight = props.size - 1;
-        if (border.getLocation() === DockLocation.LEFT || border.getLocation() === DockLocation.RIGHT) {
-            return { width: borderHeight + "px", "overflow-y": "auto" };
+        const loc = border.getLocation();
+        const isVertical = loc === DockLocation.LEFT || loc === DockLocation.RIGHT;
+
+        if (isVertical) {
+            const style: Record<string, any> = { width: borderHeight + "px" };
+            if (isCollapsed()) {
+                style.position = "relative";
+                style.overflow = "visible";
+                style.flex = "1";
+            } else {
+                style["overflow-y"] = "auto";
+            }
+            return style;
         } else {
             return { height: borderHeight + "px", "overflow-x": "auto" };
         }
     };
 
+    const rootStyle = (): Record<string, any> => {
+        const isVert = border.getOrientation() === Orientation.VERT;
+        const loc = border.getLocation();
+        const isVerticalBorder = loc === DockLocation.LEFT || loc === DockLocation.RIGHT;
+        const style: Record<string, any> = {
+            display: "flex",
+            "flex-direction": isVert ? "row" : "column",
+        };
+        if (isCollapsed() && isVerticalBorder) {
+            style["align-self"] = "stretch";
+            style.overflow = "visible";
+            style.position = "relative";
+            style["z-index"] = "1";
+        }
+        return style;
+    };
+
     return (
         <div
             ref={selfRef}
-            style={{
-                display: "flex",
-                "flex-direction": border.getOrientation() === Orientation.VERT ? "row" : "column",
-            }}
+            style={rootStyle()}
             class={borderClasses()}
             data-layout-path={border.getPath()}
         >
             <Show when={!isHidden()}>
-                <div class={cm(CLASSES.FLEXLAYOUT__MINI_SCROLLBAR_CONTAINER)}>
+                <div class={cm(CLASSES.FLEXLAYOUT__MINI_SCROLLBAR_CONTAINER)} style={isCollapsed() && (border.getLocation() === DockLocation.LEFT || border.getLocation() === DockLocation.RIGHT) ? { flex: "1", overflow: "visible" } : {}}>
                     <div
                         class={cm(CLASSES.FLEXLAYOUT__BORDER_INNER) + " " + cm(CLASSES.FLEXLAYOUT__BORDER_INNER_ + border.getLocation().getName())}
                         style={outerStyle()}
