@@ -17,6 +17,17 @@ import { BorderTabSet } from "./BorderTabSet";
 import { BorderTab } from "./BorderTab";
 import { FloatingPanel } from "./FloatingPanel";
 
+const LOCATION_TIE_ORDER: Record<string, number> = { top: 0, right: 1, bottom: 2, left: 3 };
+
+export function computeNestingOrder(borders: BorderNode[]): BorderNode[] {
+    return [...borders].sort((a, b) => {
+        const priorityDiff = b.getPriority() - a.getPriority();
+        if (priorityDiff !== 0) return priorityDiff;
+        return (LOCATION_TIE_ORDER[a.getLocation().getName()] ?? 4)
+             - (LOCATION_TIE_ORDER[b.getLocation().getName()] ?? 4);
+    });
+}
+
 export interface ILayoutProps {
     /** The model for this layout */
     model: Model;
@@ -694,10 +705,7 @@ export const Layout: Component<ILayoutProps> = (props) => {
                 strips.set(location.getName(), { border, show: border.getSelected() !== -1 });
             }
         }
-        return {
-            strips,
-            isHorizontal: props.model.getBorderSet().getLayoutHorizontal(),
-        };
+        return { strips };
     });
 
     const borderStrip = (loc: DockLocation) => {
@@ -825,45 +833,48 @@ export const Layout: Component<ILayoutProps> = (props) => {
                         </div>
                     );
 
-                    return (
-                        <Show when={borderData()?.isHorizontal} fallback={
-                            <div class={classBorderOuter} style={{ "flex-direction": "row" }}>
-                                {borderStrip(DockLocation.LEFT)}
-                                <div class={classBorderInner} style={{ "flex-direction": "column" }}>
-                                    {borderStrip(DockLocation.TOP)}
-                                    <div class={classBorderInner} style={{ "flex-direction": "row" }}>
-                                        {borderContent(DockLocation.LEFT)}
-                                        <div class={classBorderInner} style={{ "flex-direction": "column" }}>
-                                            {borderContent(DockLocation.TOP)}
-                                            {mainContent}
-                                            {borderContent(DockLocation.BOTTOM)}
-                                        </div>
-                                        {borderContent(DockLocation.RIGHT)}
-                                    </div>
-                                    {borderStrip(DockLocation.BOTTOM)}
+                    const buildNestedBorders = (): JSX.Element => {
+                        const data = borderData();
+                        if (!data) return mainContent;
+
+                        const visibleBorders = props.model.getBorderSet().getBordersByPriority();
+                        const sorted = computeNestingOrder(
+                            visibleBorders.filter(b => data.strips.has(b.getLocation().getName()))
+                        );
+
+                        let current: JSX.Element = mainContent;
+
+                        for (let i = sorted.length - 1; i >= 0; i--) {
+                            const border = sorted[i];
+                            const loc = border.getLocation();
+                            const isHorz = loc === DockLocation.TOP || loc === DockLocation.BOTTOM;
+                            const flexDir = isHorz ? "column" : "row";
+                            const isStart = loc === DockLocation.LEFT || loc === DockLocation.TOP;
+
+                            const content = borderContent(loc);
+                            current = (
+                                <div class={classBorderInner} style={{ "flex-direction": flexDir }}>
+                                    {isStart ? content : null}
+                                    {current}
+                                    {!isStart ? content : null}
                                 </div>
-                                {borderStrip(DockLocation.RIGHT)}
-                            </div>
-                        }>
-                            <div class={classBorderOuter} style={{ "flex-direction": "column" }}>
-                                {borderStrip(DockLocation.TOP)}
-                                <div class={classBorderInner} style={{ "flex-direction": "row" }}>
-                                    {borderStrip(DockLocation.LEFT)}
-                                    <div class={classBorderInner} style={{ "flex-direction": "column" }}>
-                                        {borderContent(DockLocation.TOP)}
-                                        <div class={classBorderInner} style={{ "flex-direction": "row" }}>
-                                            {borderContent(DockLocation.LEFT)}
-                                            {mainContent}
-                                            {borderContent(DockLocation.RIGHT)}
-                                        </div>
-                                        {borderContent(DockLocation.BOTTOM)}
-                                    </div>
-                                    {borderStrip(DockLocation.RIGHT)}
+                            );
+
+                            const strip = borderStrip(loc);
+                            const wrapperClass = i === 0 ? classBorderOuter : classBorderInner;
+                            current = (
+                                <div class={wrapperClass} style={{ "flex-direction": flexDir }}>
+                                    {isStart ? strip : null}
+                                    {current}
+                                    {!isStart ? strip : null}
                                 </div>
-                                {borderStrip(DockLocation.BOTTOM)}
-                            </div>
-                        </Show>
-                    );
+                            );
+                        }
+
+                        return current;
+                    };
+
+                    return buildNestedBorders();
                 })()}
             </Show>
 
