@@ -275,6 +275,23 @@
         outline-offset: 1px;
       }
 
+      /* Empty border placeholder (drop zone indicator) */
+      .flexlayout__border_empty_placeholder {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 4px 12px;
+        color: #556677;
+        font-size: 12px;
+        font-style: italic;
+        white-space: nowrap;
+        border: 1px dashed #334455;
+        border-radius: 4px;
+        margin: 3px 6px;
+        min-width: 80px;
+        user-select: none;
+      }
+
       /* Border tab bar (tabs-on-top for expanded borders) */
       .flexlayout__border_tabbar {
         display: flex;
