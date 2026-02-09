@@ -370,7 +370,11 @@ export class BorderNode extends Node implements IDropTarget {
             if (!dragNode.canDockInto(dragNode, dropInfo)) {
                 return undefined;
             }
-        } else if (this.getSelected() !== -1 && this.contentRect!.contains(x, y)) {
+        } else if (this.getSelected() !== -1 && this.contentRect!.width > 0 && this.contentRect!.height > 0 && this.contentRect!.contains(x, y)) {
+            const splitResult = this.contentAreaSplitDrop(dragNode, x, y);
+            if (splitResult) {
+                return splitResult;
+            }
             const outlineRect = this.contentRect;
             dropInfo = new DropInfo(this, outlineRect!, dockLocation, -1, CLASSES.FLEXLAYOUT__OUTLINE_RECT);
             if (!dragNode.canDockInto(dragNode, dropInfo)) {
@@ -381,13 +385,58 @@ export class BorderNode extends Node implements IDropTarget {
         return dropInfo;
     }
 
+    /**
+     * Split indicator for content-area drops. Direction is perpendicular to border orientation:
+     * VERT borders → LEFT/RIGHT halves, HORZ borders → TOP/BOTTOM halves.
+     * Non-CENTER DockLocation signals tiling intent to the drop handler.
+     * @internal
+     */
+    private contentAreaSplitDrop(dragNode: Node & IDraggable, x: number, y: number): DropInfo | undefined {
+        const cr = this.contentRect;
+        if (!cr || cr.width === 0 || cr.height === 0) return undefined;
+        if (this.getSelected() === -1) return undefined;
+
+        const splitHorizontally = this.location.orientation === Orientation.VERT;
+        let splitLocation: DockLocation;
+        let outlineRect: Rect;
+
+        if (splitHorizontally) {
+            const midX = cr.x + cr.width / 2;
+            if (x < midX) {
+                splitLocation = DockLocation.LEFT;
+                outlineRect = new Rect(cr.x, cr.y, cr.width / 2, cr.height);
+            } else {
+                splitLocation = DockLocation.RIGHT;
+                outlineRect = new Rect(cr.x + cr.width / 2, cr.y, cr.width / 2, cr.height);
+            }
+        } else {
+            const midY = cr.y + cr.height / 2;
+            if (y < midY) {
+                splitLocation = DockLocation.TOP;
+                outlineRect = new Rect(cr.x, cr.y, cr.width, cr.height / 2);
+            } else {
+                splitLocation = DockLocation.BOTTOM;
+                outlineRect = new Rect(cr.x, cr.y + cr.height / 2, cr.width, cr.height / 2);
+            }
+        }
+
+        const dropInfo = new DropInfo(this, outlineRect, splitLocation, -1, CLASSES.FLEXLAYOUT__OUTLINE_RECT);
+        if (!dragNode.canDockInto(dragNode, dropInfo)) {
+            return undefined;
+        }
+        return dropInfo;
+    }
+
     /** @internal */
     drop(dragNode: Node & IDraggable, location: DockLocation, index: number, select?: boolean): void {
+        const isTilingDrop = location !== DockLocation.CENTER && index === -1;
+
+        const currentVisibleIndices = isTilingDrop ? this.resolveCurrentVisibleIndices() : [];
+
         let fromIndex = 0;
         const dragParent = dragNode.getParent() as BorderNode | TabSetNode;
         if (dragParent !== undefined) {
             fromIndex = dragParent.removeChild(dragNode);
-            // if selected node in border is being docked into a different border then deselect border tabs
             if (dragParent !== this && dragParent instanceof BorderNode && dragParent.getSelected() === fromIndex) {
                 dragParent.setSelected(-1);
             } else {
@@ -395,12 +444,10 @@ export class BorderNode extends Node implements IDropTarget {
             }
         }
 
-        // if dropping a tab back to same tabset and moving to forward position then reduce insertion index
         if (dragNode instanceof TabNode && dragParent === this && fromIndex < index && index > 0) {
             index--;
         }
 
-        // simple_bundled dock to existing tabset
         let insertPos = index;
         if (insertPos === -1) {
             insertPos = this.children.length;
@@ -408,10 +455,25 @@ export class BorderNode extends Node implements IDropTarget {
 
         if (dragNode instanceof TabNode) {
             this.addChild(dragNode, insertPos);
-            this.shiftVisibleTabs(insertPos);
+
+            if (isTilingDrop) {
+                const adjustedExisting = currentVisibleIndices.map(
+                    (i) => (dragParent === this && fromIndex <= i ? i - 1 : i)
+                ).map(
+                    (i) => (i >= insertPos ? i + 1 : i)
+                );
+
+                const draggedFirst = location === DockLocation.LEFT || location === DockLocation.TOP;
+                this.attributes.visibleTabs = draggedFirst
+                    ? [insertPos, ...adjustedExisting]
+                    : [...adjustedExisting, insertPos];
+                this.setSelected(adjustedExisting[0] ?? insertPos);
+            } else {
+                this.shiftVisibleTabs(insertPos);
+            }
         }
 
-        if (select || (select !== false && this.isAutoSelectTab())) {
+        if (!isTilingDrop && (select || (select !== false && this.isAutoSelectTab()))) {
             this.setSelected(insertPos);
         }
 
@@ -419,7 +481,15 @@ export class BorderNode extends Node implements IDropTarget {
     }
 
     /** @internal */
-    getSplitterBounds(index: number, useMinSize: boolean = false) {
+    private resolveCurrentVisibleIndices(): number[] {
+        const explicit = this.getVisibleTabs();
+        if (explicit.length > 0) return [...explicit];
+        const sel = this.getSelected();
+        return sel >= 0 ? [sel] : [];
+    }
+
+    /** @internal */
+    getSplitterBounds(_index: number, useMinSize: boolean = false) {
         const pBounds = [0, 0];
         const minSize = useMinSize ? this.getMinSize() : 0;
         const maxSize = useMinSize ? this.getMaxSize() : 99999;
@@ -451,7 +521,7 @@ export class BorderNode extends Node implements IDropTarget {
     }
 
     /** @internal */
-    calculateSplit(splitter: BorderNode, splitterPos: number) {
+    calculateSplit(_splitter: BorderNode, splitterPos: number) {
         const pBounds = this.getSplitterBounds(splitterPos);
         if (this.location === DockLocation.BOTTOM || this.location === DockLocation.RIGHT) {
             return Math.max(0, pBounds[1] - splitterPos);
