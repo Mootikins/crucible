@@ -307,28 +307,28 @@
 }
 
 .flexlayout__border_button {
-  padding: 3px 0.5em;
-  margin: 2px 0px;
+  padding: 4px 12px;
   cursor: pointer;
   white-space: nowrap;
-  color: #737373;
+  color: #a3a3a3;
+  border-bottom: 2px solid transparent;
   user-select: none;
-  font-size: 12px;
+  font-size: 13px;
   display: flex;
   align-items: center;
-  gap: 0.3em;
+  gap: 4px;
   box-sizing: border-box;
-  transition: color 0.15s, background 0.15s;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
 }
 
 .flexlayout__border_button:hover {
-  color: #d4d4d4;
-  background: rgba(255, 255, 255, 0.04);
+  color: #fafafa;
 }
 
 .flexlayout__border_button--selected {
   color: #fafafa;
-  background: rgba(59, 130, 246, 0.1);
+  background: rgba(59, 130, 246, 0.08);
+  border-bottom-color: #3b82f6;
 }
 
 .flexlayout__border_button--unselected {
