@@ -326,18 +326,46 @@ describe("BorderNode > JSON round-trip serialization", () => {
   });
 });
 
-describe("BorderNode > backward compatibility", () => {
-  it("old JSON without dockState/visibleTabs/enableDock loads with correct defaults", () => {
-    const model = Model.fromJson(legacyFixture);
+describe("BorderNode > selectTab behavior", () => {
+  it("selectTab on already-selected border tab does not deselect", () => {
+    const model = Model.fromJson(dockFixture);
     const bottom = getBorder(model, "bottom");
-    const left = getBorder(model, "left");
 
-    expect(bottom.getDockState()).toBe("expanded");
-    expect(left.getDockState()).toBe("expanded");
+    // Initial state: tab 0 is selected
+    expect(bottom.getSelected()).toBe(0);
 
-    expect(bottom.getVisibleTabs()).toEqual([]);
-    expect(left.getVisibleTabs()).toEqual([]);
+    // Click the already-selected tab again
+    model.doAction(Action.selectTab(bottom.getChildren()[0].getId()));
+
+    // Should remain selected (not toggle to -1)
+    expect(bottom.getSelected()).toBe(0);
   });
+
+  it("selectTab switches to different border tab", () => {
+    const model = Model.fromJson(dockFixture);
+    const bottom = getBorder(model, "bottom");
+
+    expect(bottom.getSelected()).toBe(0);
+
+    // Click tab 1
+    model.doAction(Action.selectTab(bottom.getChildren()[1].getId()));
+
+    expect(bottom.getSelected()).toBe(1);
+  });
+});
+
+describe("BorderNode > backward compatibility", () => {
+   it("old JSON without dockState/visibleTabs/enableDock loads with correct defaults", () => {
+     const model = Model.fromJson(legacyFixture);
+     const bottom = getBorder(model, "bottom");
+     const left = getBorder(model, "left");
+
+     expect(bottom.getDockState()).toBe("expanded");
+     expect(left.getDockState()).toBe("expanded");
+
+     expect(bottom.getVisibleTabs()).toEqual([]);
+     expect(left.getVisibleTabs()).toEqual([]);
+   });
 
   it("old JSON round-trips without adding new fields that break old parsers", () => {
     const model = Model.fromJson(legacyFixture);
