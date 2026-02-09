@@ -220,7 +220,7 @@ export const Action = {
     };
   },
 
-  setDockState(nodeId: string, state: "expanded" | "collapsed" | "minimized"): IAction {
+  setDockState(nodeId: string, state: "expanded" | "collapsed" | "hidden"): IAction {
     return {
       type: "SET_DOCK_STATE",
       data: { nodeId, state },
