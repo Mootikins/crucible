@@ -193,29 +193,162 @@ describe("Tiled borders > splitter count", () => {
 });
 
 describe("Tiled borders > tile weights", () => {
-  it("default weights are equal (1 per tile)", () => {
+   it("default weights are equal (1 per tile)", () => {
+     const model = Model.fromJson(tiledFixture);
+     const bottom = getBorder(model, "bottom");
+     const resolved = resolveVisibleTabs(bottom);
+     const defaultWeights = Array(resolved.length).fill(1);
+     expect(defaultWeights).toEqual([1, 1]);
+     const totalWeight = defaultWeights.reduce((a, b) => a + b, 0);
+     expect(totalWeight).toBe(2);
+     for (const w of defaultWeights) {
+       expect(w / totalWeight).toBeCloseTo(0.5);
+     }
+   });
+
+   it("3 tiles have equal 1/3 proportions by default", () => {
+     const model = Model.fromJson(tiledFixture);
+     const bottom = getBorder(model, "bottom");
+     model.doAction(Action.setVisibleTabs(bottom.getId(), [0, 1, 2]));
+     const resolved = resolveVisibleTabs(bottom);
+     const weights = Array(resolved.length).fill(1);
+     expect(weights).toEqual([1, 1, 1]);
+     const totalWeight = weights.reduce((a, b) => a + b, 0);
+     for (const w of weights) {
+       expect(w / totalWeight).toBeCloseTo(1 / 3);
+     }
+   });
+});
+
+describe("Tiled borders > visibleTabs index adjustment on removal", () => {
+  it("removing tab at index 0 decrements all indices > 0", () => {
     const model = Model.fromJson(tiledFixture);
     const bottom = getBorder(model, "bottom");
-    const resolved = resolveVisibleTabs(bottom);
-    const defaultWeights = Array(resolved.length).fill(1);
-    expect(defaultWeights).toEqual([1, 1]);
-    const totalWeight = defaultWeights.reduce((a, b) => a + b, 0);
-    expect(totalWeight).toBe(2);
-    for (const w of defaultWeights) {
-      expect(w / totalWeight).toBeCloseTo(0.5);
-    }
+    // Start: 4 tabs, visibleTabs: [0, 1]
+    expect(bottom.getChildren().length).toBe(3);
+    expect(bottom.getVisibleTabs()).toEqual([0, 1]);
+    
+    // Remove tab at index 0
+    const tabToRemove = bottom.getChildren()[0];
+    model.doAction(Action.deleteTab(tabToRemove.getId()));
+    
+    // After removal: 2 tabs, visibleTabs should be [0] (was [0, 1], index 0 removed, index 1 becomes 0)
+    expect(bottom.getChildren().length).toBe(2);
+    expect(bottom.getVisibleTabs()).toEqual([0]);
   });
 
-  it("3 tiles have equal 1/3 proportions by default", () => {
+  it("removing tab at index 1 adjusts indices correctly", () => {
     const model = Model.fromJson(tiledFixture);
     const bottom = getBorder(model, "bottom");
-    model.doAction(Action.setVisibleTabs(bottom.getId(), [0, 1, 2]));
-    const resolved = resolveVisibleTabs(bottom);
-    const weights = Array(resolved.length).fill(1);
-    expect(weights).toEqual([1, 1, 1]);
-    const totalWeight = weights.reduce((a, b) => a + b, 0);
-    for (const w of weights) {
-      expect(w / totalWeight).toBeCloseTo(1 / 3);
-    }
+    // Start: 3 tabs, visibleTabs: [0, 1]
+    expect(bottom.getVisibleTabs()).toEqual([0, 1]);
+    
+    // Remove tab at index 1
+    const tabToRemove = bottom.getChildren()[1];
+    model.doAction(Action.deleteTab(tabToRemove.getId()));
+    
+    // After removal: 2 tabs, visibleTabs should be [0] (index 1 removed, index 0 stays)
+    expect(bottom.getChildren().length).toBe(2);
+    expect(bottom.getVisibleTabs()).toEqual([0]);
+  });
+
+  it("removing a visible tab shrinks the array", () => {
+    const model = Model.fromJson(tiledFixture);
+    const bottom = getBorder(model, "bottom");
+    // Start: 3 tabs, visibleTabs: [0, 1]
+    expect(bottom.getVisibleTabs()).toEqual([0, 1]);
+    
+    // Remove tab at index 0 (which is in visibleTabs)
+    const tabToRemove = bottom.getChildren()[0];
+    model.doAction(Action.deleteTab(tabToRemove.getId()));
+    
+    // After removal: visibleTabs should be [0] (index 0 removed, index 1 becomes 0)
+    expect(bottom.getVisibleTabs()).toEqual([0]);
+  });
+
+  it("removing all visible tabs reverts to single-tab mode", () => {
+    const model = Model.fromJson(tiledFixture);
+    const left = getBorder(model, "left");
+    // Start: 2 tabs, visibleTabs: [0]
+    expect(left.getVisibleTabs()).toEqual([0]);
+    
+    // Remove tab at index 0
+    const tabToRemove = left.getChildren()[0];
+    model.doAction(Action.deleteTab(tabToRemove.getId()));
+    
+    // After removal: 1 tab, visibleTabs should be empty (fallback to selected)
+    expect(left.getChildren().length).toBe(1);
+    expect(left.getVisibleTabs()).toEqual([]);
+  });
+
+  it("removing tab at index > visibleTabs indices leaves them unchanged", () => {
+    const model = Model.fromJson(tiledFixture);
+    const bottom = getBorder(model, "bottom");
+    // Start: 3 tabs, visibleTabs: [0, 1]
+    expect(bottom.getVisibleTabs()).toEqual([0, 1]);
+    
+    // Remove tab at index 2 (not in visibleTabs)
+    const tabToRemove = bottom.getChildren()[2];
+    model.doAction(Action.deleteTab(tabToRemove.getId()));
+    
+    // After removal: visibleTabs should stay [0, 1] (index 2 removed, doesn't affect [0, 1])
+    expect(bottom.getChildren().length).toBe(2);
+    expect(bottom.getVisibleTabs()).toEqual([0, 1]);
+  });
+});
+
+describe("Tiled borders > visibleTabs index adjustment on insertion", () => {
+  it("inserting tab at index 0 shifts all indices up", () => {
+    const model = Model.fromJson(tiledFixture);
+    const bottom = getBorder(model, "bottom");
+    expect(bottom.getVisibleTabs()).toEqual([0, 1]);
+    
+    model.doAction(
+      Action.addNode(
+        { type: "tab", name: "NewTab", component: "text" },
+        bottom.getId(),
+        "center",
+        0
+      )
+    );
+    
+    expect(bottom.getChildren().length).toBe(4);
+    expect(bottom.getVisibleTabs()).toEqual([1, 2]);
+  });
+
+  it("inserting tab at index 1 shifts indices >= 1", () => {
+    const model = Model.fromJson(tiledFixture);
+    const bottom = getBorder(model, "bottom");
+    expect(bottom.getVisibleTabs()).toEqual([0, 1]);
+    
+    model.doAction(
+      Action.addNode(
+        { type: "tab", name: "NewTab", component: "text" },
+        bottom.getId(),
+        "center",
+        1
+      )
+    );
+    
+    expect(bottom.getChildren().length).toBe(4);
+    expect(bottom.getVisibleTabs()).toEqual([0, 2]);
+  });
+
+  it("inserting tab at end doesn't affect visibleTabs", () => {
+    const model = Model.fromJson(tiledFixture);
+    const bottom = getBorder(model, "bottom");
+    expect(bottom.getVisibleTabs()).toEqual([0, 1]);
+    
+    model.doAction(
+      Action.addNode(
+        { type: "tab", name: "NewTab", component: "text" },
+        bottom.getId(),
+        "center",
+        3
+      )
+    );
+    
+    expect(bottom.getChildren().length).toBe(4);
+    expect(bottom.getVisibleTabs()).toEqual([0, 1]);
   });
 });

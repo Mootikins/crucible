@@ -83,12 +83,12 @@ test.describe('Docked Panes > Collapse/Expand/Minimize cycle', () => {
 
     // collapsed → minimized
     await dockButton.click();
-    await expect(borderBottom.first()).toHaveClass(/flexlayout__border--minimized/);
+    await expect(borderBottom.first()).toHaveClass(/flexlayout__border--hidden/);
 
     // minimized → expanded
     await dockButton.click();
     await expect(borderBottom.first()).not.toHaveClass(/flexlayout__border--collapsed/);
-    await expect(borderBottom.first()).not.toHaveClass(/flexlayout__border--minimized/);
+    await expect(borderBottom.first()).not.toHaveClass(/flexlayout__border--hidden/);
 
     await page.screenshot({ path: `${evidencePath}/dock-e2e-bottom-cycle.png` });
   });
@@ -105,11 +105,11 @@ test.describe('Docked Panes > Collapse/Expand/Minimize cycle', () => {
     await expect(borderLeft.first()).toHaveClass(/flexlayout__border--collapsed/);
 
     await dockButton.click();
-    await expect(borderLeft.first()).toHaveClass(/flexlayout__border--minimized/);
+    await expect(borderLeft.first()).toHaveClass(/flexlayout__border--hidden/);
 
     await dockButton.click();
     await expect(borderLeft.first()).not.toHaveClass(/flexlayout__border--collapsed/);
-    await expect(borderLeft.first()).not.toHaveClass(/flexlayout__border--minimized/);
+    await expect(borderLeft.first()).not.toHaveClass(/flexlayout__border--hidden/);
   });
 
   test('right border dock cycle works', async ({ page }) => {
@@ -124,11 +124,11 @@ test.describe('Docked Panes > Collapse/Expand/Minimize cycle', () => {
     await expect(borderRight.first()).toHaveClass(/flexlayout__border--collapsed/);
 
     await dockButton.click();
-    await expect(borderRight.first()).toHaveClass(/flexlayout__border--minimized/);
+    await expect(borderRight.first()).toHaveClass(/flexlayout__border--hidden/);
 
     await dockButton.click();
     await expect(borderRight.first()).not.toHaveClass(/flexlayout__border--collapsed/);
-    await expect(borderRight.first()).not.toHaveClass(/flexlayout__border--minimized/);
+    await expect(borderRight.first()).not.toHaveClass(/flexlayout__border--hidden/);
   });
 
   test('top border dock cycle works', async ({ page }) => {
@@ -143,11 +143,11 @@ test.describe('Docked Panes > Collapse/Expand/Minimize cycle', () => {
     await expect(borderTop.first()).toHaveClass(/flexlayout__border--collapsed/);
 
     await dockButton.click();
-    await expect(borderTop.first()).toHaveClass(/flexlayout__border--minimized/);
+    await expect(borderTop.first()).toHaveClass(/flexlayout__border--hidden/);
 
     await dockButton.click();
     await expect(borderTop.first()).not.toHaveClass(/flexlayout__border--collapsed/);
-    await expect(borderTop.first()).not.toHaveClass(/flexlayout__border--minimized/);
+    await expect(borderTop.first()).not.toHaveClass(/flexlayout__border--hidden/);
   });
 });
 
@@ -231,7 +231,7 @@ test.describe('Docked Panes > Minimized state', () => {
     await dockButton.click(); // → minimized
 
     const borderBottom = page.locator('.flexlayout__border_bottom');
-    await expect(borderBottom.first()).toHaveClass(/flexlayout__border--minimized/);
+    await expect(borderBottom.first()).toHaveClass(/flexlayout__border--hidden/);
 
     const tabButtons = borderBottom.locator('.flexlayout__border_button');
     await expect(tabButtons).toHaveCount(0);
@@ -252,7 +252,7 @@ test.describe('Docked Panes > Minimized state', () => {
     await dockButton.click(); // → expanded
 
     const borderBottom = page.locator('.flexlayout__border_bottom');
-    await expect(borderBottom.first()).not.toHaveClass(/flexlayout__border--minimized/);
+    await expect(borderBottom.first()).not.toHaveClass(/flexlayout__border--hidden/);
     await expect(borderBottom.first()).not.toHaveClass(/flexlayout__border--collapsed/);
 
     const tabButtons = borderBottom.locator('.flexlayout__border_button');

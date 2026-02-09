@@ -767,12 +767,14 @@ export class Model {
 				return false;
 			case "realtimeResize":
 				return false;
-			case "borderDockState":
-				return "expanded";
-			case "borderEnableDock":
-				return true;
-			default:
-				return undefined;
+		case "borderDockState":
+			return "expanded";
+		case "borderPriority":
+			return 0;
+		case "borderEnableDock":
+			return true;
+		default:
+			return undefined;
 		}
 	}
 
