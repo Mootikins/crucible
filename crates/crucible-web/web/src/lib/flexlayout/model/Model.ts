@@ -757,8 +757,8 @@ export class Model {
 				return false;
 			case "enableRotateBorderIcons":
 				return true;
-			case "splitterSize":
-				return 8;
+		case "splitterSize":
+			return 4;
 			case "splitterExtra":
 				return 0;
 			case "splitterEnableHandle":

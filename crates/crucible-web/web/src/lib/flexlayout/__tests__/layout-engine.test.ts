@@ -254,7 +254,7 @@ describe("LayoutEngine", () => {
     });
 
     describe("splitter size", () => {
-        it("should use default splitter size of 8 when not specified", () => {
+        it("should use default splitter size of 4 when not specified", () => {
             const model = Model.fromJson({
                 global: {},
                 borders: [],
@@ -269,7 +269,7 @@ describe("LayoutEngine", () => {
                 }
             });
 
-            expect(model.getSplitterSize()).toBe(8);
+            expect(model.getSplitterSize()).toBe(4);
 
             const root = model.getRoot()!;
             const ts1 = root.getChildren()[0];
@@ -278,9 +278,9 @@ describe("LayoutEngine", () => {
             const containerRect = new Rect(0, 0, 400, 400);
             LayoutEngine.calculateLayout(root, containerRect);
 
-            // 400 - 8 (one splitter) = 392 / 2 = 196 each
-            expect(ts1.getRect().width).toBe(196);
-            expect(ts2.getRect().width).toBe(196);
+            // 400 - 4 (one splitter) = 396 / 2 = 198 each
+            expect(ts1.getRect().width).toBe(198);
+            expect(ts2.getRect().width).toBe(198);
         });
 
         it("should respect custom splitter size", () => {
