@@ -2977,6 +2977,66 @@ const layouts: Record<string, LayoutDef> = {
       ],
     },
   },
+
+  // ═══ Border DnD + Empty Borders Demo ═══
+
+  border_dnd_empty: {
+    global: {
+      ...defaultGlobal,
+      tabEnableDrag: true,
+      borderEnableDrop: true,
+    },
+    borders: [
+      {
+        type: "border",
+        location: "bottom",
+        size: 200,
+        children: [
+          { type: "tab", name: "Terminal", component: "info", config: { description: "Drag me out of this border, or drag other tabs here" } },
+        ],
+      },
+      {
+        type: "border",
+        location: "left",
+        size: 200,
+        children: [
+          { type: "tab", name: "Explorer", component: "info", config: { description: "Drag me to another border or to the main area" } },
+          { type: "tab", name: "Search", component: "info", config: { description: "Try dragging tabs between borders" } },
+        ],
+      },
+      {
+        type: "border",
+        location: "right",
+        size: 200,
+        children: [],
+      },
+      {
+        type: "border",
+        location: "top",
+        size: 150,
+        children: [],
+      },
+    ],
+    layout: {
+      type: "row",
+      children: [
+        {
+          type: "tabset",
+          children: [
+            { type: "tab", name: "Main Panel", component: "info", config: { description: "Drag tabs from borders here, or drag these tabs to borders" } },
+            { type: "tab", name: "Document", component: "text" },
+            { type: "tab", name: "Counter", component: "counter" },
+          ],
+        },
+        {
+          type: "tabset",
+          children: [
+            { type: "tab", name: "Side Panel", component: "info", config: { description: "Try dragging this tab to the empty right border" } },
+          ],
+        },
+      ],
+    },
+  },
 };
 
 const FlexLayoutTest: Component = () => {
