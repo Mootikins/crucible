@@ -12,6 +12,71 @@ function borderTabButtonContent(page: Page, border: string, index: number) {
   return findTabButton(page, `/border/${border}`, index).locator('.flexlayout__border_button_content').first();
 }
 
+// ── Test Group J: Drag-without-click regression ─────────────────────────────
+
+test.describe('Drag-without-click regression', () => {
+  test('J1: dragstart on unselected border tab auto-selects it', async ({ page }) => {
+    await page.goto(baseURL + '?layout=border_dnd_dock');
+    await page.waitForSelector('[data-layout-path="/"]', { timeout: 10_000 });
+
+    // "Search" is index 1 in the left border, unselected (selected: 0 = Explorer)
+    const searchBtn = findTabButton(page, '/border/left', 1);
+    await expect(searchBtn).toHaveClass(/flexlayout__border_button--unselected/);
+
+    const sourcePath = await searchBtn.getAttribute('data-layout-path');
+
+    // Fire dragstart only — verify tab becomes selected without completing the drag
+    await page.evaluate((path) => {
+      const el = document.querySelector(`[data-layout-path="${path}"]`);
+      if (!el) throw new Error('Source element not found');
+      const dt = new DataTransfer();
+      dt.setData('text/plain', '--flexlayout--');
+      el.dispatchEvent(new DragEvent('dragstart', { bubbles: true, cancelable: true, dataTransfer: dt }));
+    }, sourcePath);
+
+    await expect(searchBtn).toHaveClass(/flexlayout__border_button--selected/);
+
+    // Clean up: dispatch dragend
+    await page.evaluate((path) => {
+      const el = document.querySelector(`[data-layout-path="${path}"]`);
+      if (!el) throw new Error('Source element not found');
+      el.dispatchEvent(new DragEvent('dragend', { bubbles: true, cancelable: true }));
+    }, sourcePath);
+
+    await page.screenshot({ path: `${evidencePath}/drag-inv-J1-auto-select.png` });
+  });
+
+  test('J2: dragstart on unselected bottom border tab auto-selects it', async ({ page }) => {
+    await page.goto(baseURL + '?layout=border_dnd_dock');
+    await page.waitForSelector('[data-layout-path="/"]', { timeout: 10_000 });
+
+    // "Output" is index 1 in the bottom border, unselected (selected: 0 = Terminal)
+    const outputBtn = findTabButton(page, '/border/bottom', 1);
+    await expect(outputBtn).toHaveClass(/flexlayout__border_button--unselected/);
+
+    const sourcePath = await outputBtn.getAttribute('data-layout-path');
+
+    await page.evaluate((path) => {
+      const el = document.querySelector(`[data-layout-path="${path}"]`);
+      if (!el) throw new Error('Source element not found');
+      const dt = new DataTransfer();
+      dt.setData('text/plain', '--flexlayout--');
+      el.dispatchEvent(new DragEvent('dragstart', { bubbles: true, cancelable: true, dataTransfer: dt }));
+    }, sourcePath);
+
+    await expect(outputBtn).toHaveClass(/flexlayout__border_button--selected/);
+
+    await page.evaluate((path) => {
+      const el = document.querySelector(`[data-layout-path="${path}"]`);
+      if (!el) throw new Error('Source element not found');
+      el.dispatchEvent(new DragEvent('dragend', { bubbles: true, cancelable: true }));
+    }, sourcePath);
+
+    await page.screenshot({ path: `${evidencePath}/drag-inv-J2-auto-select-bottom.png` });
+  });
+
+});
+
 // ── Test Group F: Drag-out visual behavior ──────────────────────────────────
 
 test.describe('Drag-out visual behavior', () => {
