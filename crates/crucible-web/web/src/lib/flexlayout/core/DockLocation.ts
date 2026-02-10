@@ -51,51 +51,58 @@ export class DockLocation {
   }
 
   getDockRect(r: Rect) {
-    if (this === DockLocation.TOP) {
-      return new Rect(r.x, r.y, r.width, r.height / 2);
-    } else if (this === DockLocation.BOTTOM) {
-      return new Rect(r.x, r.getBottom() - r.height / 2, r.width, r.height / 2);
-    }
-    if (this === DockLocation.LEFT) {
-      return new Rect(r.x, r.y, r.width / 2, r.height);
-    } else if (this === DockLocation.RIGHT) {
-      return new Rect(r.getRight() - r.width / 2, r.y, r.width / 2, r.height);
-    } else {
-      return r.clone();
+    switch (this) {
+      case DockLocation.TOP:
+        return new Rect(r.x, r.y, r.width, r.height / 2);
+      case DockLocation.BOTTOM:
+        return new Rect(r.x, r.getBottom() - r.height / 2, r.width, r.height / 2);
+      case DockLocation.LEFT:
+        return new Rect(r.x, r.y, r.width / 2, r.height);
+      case DockLocation.RIGHT:
+        return new Rect(r.getRight() - r.width / 2, r.y, r.width / 2, r.height);
+      default:
+        return r.clone();
     }
   }
 
   split(rect: Rect, size: number) {
-    if (this === DockLocation.TOP) {
-      const r1 = new Rect(rect.x, rect.y, rect.width, size);
-      const r2 = new Rect(rect.x, rect.y + size, rect.width, rect.height - size);
-      return { start: r1, end: r2 };
-    } else if (this === DockLocation.LEFT) {
-      const r1 = new Rect(rect.x, rect.y, size, rect.height);
-      const r2 = new Rect(rect.x + size, rect.y, rect.width - size, rect.height);
-      return { start: r1, end: r2 };
-    }
-    if (this === DockLocation.RIGHT) {
-      const r1 = new Rect(rect.getRight() - size, rect.y, size, rect.height);
-      const r2 = new Rect(rect.x, rect.y, rect.width - size, rect.height);
-      return { start: r1, end: r2 };
-    } else {
-      const r1 = new Rect(rect.x, rect.getBottom() - size, rect.width, size);
-      const r2 = new Rect(rect.x, rect.y, rect.width, rect.height - size);
-      return { start: r1, end: r2 };
+    switch (this) {
+      case DockLocation.TOP: {
+        const r1 = new Rect(rect.x, rect.y, rect.width, size);
+        const r2 = new Rect(rect.x, rect.y + size, rect.width, rect.height - size);
+        return { start: r1, end: r2 };
+      }
+      case DockLocation.LEFT: {
+        const r1 = new Rect(rect.x, rect.y, size, rect.height);
+        const r2 = new Rect(rect.x + size, rect.y, rect.width - size, rect.height);
+        return { start: r1, end: r2 };
+      }
+      case DockLocation.RIGHT: {
+        const r1 = new Rect(rect.getRight() - size, rect.y, size, rect.height);
+        const r2 = new Rect(rect.x, rect.y, rect.width - size, rect.height);
+        return { start: r1, end: r2 };
+      }
+      default: {
+        // BOTTOM
+        const r1 = new Rect(rect.x, rect.getBottom() - size, rect.width, size);
+        const r2 = new Rect(rect.x, rect.y, rect.width, rect.height - size);
+        return { start: r1, end: r2 };
+      }
     }
   }
 
   reflect() {
-    if (this === DockLocation.TOP) {
-      return DockLocation.BOTTOM;
-    } else if (this === DockLocation.LEFT) {
-      return DockLocation.RIGHT;
-    }
-    if (this === DockLocation.RIGHT) {
-      return DockLocation.LEFT;
-    } else {
-      return DockLocation.TOP;
+    switch (this) {
+      case DockLocation.TOP:
+        return DockLocation.BOTTOM;
+      case DockLocation.BOTTOM:
+        return DockLocation.TOP;
+      case DockLocation.LEFT:
+        return DockLocation.RIGHT;
+      case DockLocation.RIGHT:
+        return DockLocation.LEFT;
+      default:
+        return DockLocation.TOP;
     }
   }
 
