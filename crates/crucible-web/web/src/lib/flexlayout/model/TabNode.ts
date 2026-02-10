@@ -33,6 +33,7 @@ export class TabNode extends Node implements IDraggable {
 	private visible: boolean;
 	/** @internal */
 	private rendered: boolean;
+	private _pinned: boolean = false;
 	/** @internal */
 	private scrollTop?: number;
 	/** @internal */
@@ -49,6 +50,7 @@ export class TabNode extends Node implements IDraggable {
 		this.visible = false;
 
 		TabNode.attributeDefinitions.fromJson(json, this.attributes);
+		this._pinned = json.pinned === true;
 		if (addToModel === true) {
 			model.addNode(this);
 		}
@@ -114,6 +116,15 @@ export class TabNode extends Node implements IDraggable {
 
 	isEnableClose() {
 		return this.getAttr("enableClose") as boolean;
+	}
+
+	isPinned(): boolean {
+		return this._pinned;
+	}
+
+	/** @internal */
+	setPinned(pinned: boolean): void {
+		this._pinned = pinned;
 	}
 
 	getCloseType() {
@@ -185,6 +196,9 @@ export class TabNode extends Node implements IDraggable {
 		TabNode.attributeDefinitions.toJson(json, this.attributes);
 		if (json.id && /^\d+$/.test(json.id)) {
 			delete json.id;
+		}
+		if (this._pinned) {
+			json.pinned = true;
 		}
 		return json as IJsonTabNode;
 	}

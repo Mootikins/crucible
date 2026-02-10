@@ -59,6 +59,7 @@ export class TabSetNode extends Node implements IDraggable, IDropTarget {
     private calculatedMaxHeight: number;
     /** @internal */
     private calculatedMaxWidth: number;
+    private _mode: "tabs" | "paneview" = "tabs";
 
     /** @internal */
     constructor(model: Model, json: any) {
@@ -69,6 +70,7 @@ export class TabSetNode extends Node implements IDraggable, IDropTarget {
         this.calculatedMaxWidth = 0;
 
         TabSetNode.attributeDefinitions.fromJson(json, this.attributes);
+        this._mode = json.mode === "paneview" ? "paneview" : "tabs";
         model.addNode(this);
     }
 
@@ -221,7 +223,13 @@ export class TabSetNode extends Node implements IDraggable, IDropTarget {
         return this.getAttr("tabLocation") as string;
     }
 
+    getMode(): "tabs" | "paneview" {
+        return this._mode;
+    }
 
+    setMode(mode: "tabs" | "paneview"): void {
+        this._mode = mode;
+    }
 
     toJson(): IJsonTabSetNode {
         const json: any = {};
@@ -237,6 +245,10 @@ export class TabSetNode extends Node implements IDraggable, IDropTarget {
 
         if (this.isMaximized()) {
             json.maximized = true;
+        }
+
+        if (this._mode !== "tabs") {
+            json.mode = this._mode;
         }
 
         return json;

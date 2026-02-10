@@ -40,6 +40,8 @@ export class BorderNode extends Node implements IDropTarget {
     private tabHeaderRect: Rect = Rect.empty();
     /** @internal */
     private location: DockLocation;
+    private _pinned: boolean = false;
+    private _flyoutTabId: string | null = null;
 
     /** @internal */
     constructor(location: DockLocation, json: any, model: Model) {
@@ -52,6 +54,8 @@ export class BorderNode extends Node implements IDropTarget {
         if (this.attributes.dockState === "minimized") {
             this.attributes.dockState = "hidden";
         }
+        this._pinned = json.pinned === true;
+        this._flyoutTabId = json.flyoutTabId ?? null;
         model.addNode(this);
     }
 
@@ -166,6 +170,22 @@ export class BorderNode extends Node implements IDropTarget {
         return this.getAttr("enableDock") as boolean;
     }
 
+    isPinned(): boolean {
+        return this._pinned;
+    }
+
+    setPinned(pinned: boolean): void {
+        this._pinned = pinned;
+    }
+
+    getFlyoutTabId(): string | null {
+        return this._flyoutTabId;
+    }
+
+    setFlyoutTabId(tabId: string | null): void {
+        this._flyoutTabId = tabId;
+    }
+
     toJson(): IJsonBorderNode {
         const json: any = {};
         BorderNode.attributeDefinitions.toJson(json, this.attributes);
@@ -174,6 +194,12 @@ export class BorderNode extends Node implements IDropTarget {
         }
         json.location = this.location.getName();
         json.children = this.children.map((child) => (child as TabNode).toJson());
+        if (this._pinned) {
+            json.pinned = true;
+        }
+        if (this._flyoutTabId !== null) {
+            json.flyoutTabId = this._flyoutTabId;
+        }
         return json;
     }
 
