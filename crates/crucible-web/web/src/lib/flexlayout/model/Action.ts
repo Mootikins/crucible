@@ -30,7 +30,7 @@ export type LayoutAction =
   | { type: "SET_TAB_COMPONENT"; data: { tabId: string; component: string } }
   | { type: "SET_TAB_CONFIG"; data: { tabId: string; config: any } }
   | { type: "SET_TAB_ENABLE_CLOSE"; data: { tabId: string; enableClose: boolean } }
-  | { type: "SET_DOCK_STATE"; data: { nodeId: string; state: "expanded" | "collapsed" | "hidden" } }
+  | { type: "SET_DOCK_STATE"; data: { nodeId: string; state: "expanded" | "collapsed" } }
   | { type: "SET_VISIBLE_TABS"; data: { nodeId: string; tabs: number[] } }
   | { type: "PIN_TAB"; data: { tabId: string } }
   | { type: "UNPIN_TAB"; data: { tabId: string } }
@@ -261,7 +261,7 @@ export const Action = {
     };
   },
 
-  setDockState(nodeId: string, state: "expanded" | "collapsed" | "hidden"): Extract<LayoutAction, { type: "SET_DOCK_STATE" }> {
+  setDockState(nodeId: string, state: "expanded" | "collapsed"): Extract<LayoutAction, { type: "SET_DOCK_STATE" }> {
     return {
       type: "SET_DOCK_STATE",
       data: { nodeId, state },

@@ -225,7 +225,7 @@ describe("Auto-hide for empty borders", () => {
     model.doAction(Action.moveNode(tab1.getId(), tabset.getId(), "center", -1));
 
     expect(bottom.getChildren().length).toBe(0);
-    expect(bottom.getDockState()).toBe("hidden");
+    expect(bottom.getDockState()).toBe("collapsed");
   });
 
   it("drag non-last tab preserves dockState expanded", () => {
@@ -240,7 +240,7 @@ describe("Auto-hide for empty borders", () => {
     expect(left.getDockState()).toBe("expanded");
   });
 
-  it("auto-hidden border has zero children", () => {
+  it("emptied border transitions to collapsed", () => {
     const model = Model.fromJson(dragDockFixture);
     const bottom = getBorder(model, "bottom");
     const tabset = getFirstTabSet(model);
@@ -250,7 +250,7 @@ describe("Auto-hide for empty borders", () => {
     const tab1 = bottom.getChildren()[0] as TabNode;
     model.doAction(Action.moveNode(tab1.getId(), tabset.getId(), "center", -1));
 
-    expect(bottom.getDockState()).toBe("hidden");
+    expect(bottom.getDockState()).toBe("collapsed");
     expect(bottom.getChildren().length).toBe(0);
     expect(bottom.getSelected()).toBe(-1);
   });
@@ -286,13 +286,13 @@ describe("Drop into border", () => {
     expect(left.getChildren().length).toBe(3);
   });
 
-  it("drop into hidden border auto-expands", () => {
+  it("drop into collapsed border auto-expands (legacy hidden normalized)", () => {
     const model = Model.fromJson(dragDockFixture);
     const left = getBorder(model, "left");
     const tabset = getFirstTabSet(model);
 
-    model.doAction(Action.setDockState(left.getId(), "hidden"));
-    expect(left.getDockState()).toBe("hidden");
+    model.doAction(Action.setDockState(left.getId(), "collapsed"));
+    expect(left.getDockState()).toBe("collapsed");
 
     const mainTab = tabset.getChildren()[0] as TabNode;
     model.doAction(Action.moveNode(mainTab.getId(), left.getId(), "center", -1));
