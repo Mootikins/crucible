@@ -880,6 +880,8 @@ export class Model {
 			return "full";
 		case "borderFabPosition":
 			return "start";
+		case "borderAnimateTransition":
+			return false;
 		default:
 			return undefined;
 		}
