@@ -693,3 +693,39 @@ test.describe('Docked Panes > Context menu tiling', () => {
     await expect(contextMenu).not.toBeVisible();
   });
 });
+
+test.describe('Docked Panes > Collapsed border layout bounds', () => {
+  test('main content fills space between all collapsed border strips', async ({ page }) => {
+    await page.goto(baseURL + '?layout=docked_panes');
+    await page.waitForSelector('[data-layout-path="/"]', { timeout: 10_000 });
+
+    for (const edge of ['top', 'bottom', 'left', 'right']) {
+      const dockButton = page.locator(`[data-layout-path="/border/${edge}/button/dock"]`).first();
+      const title = await dockButton.getAttribute('title');
+      if (title === 'Collapse') {
+        await dockButton.click();
+      }
+    }
+
+    await page.waitForTimeout(200);
+
+    const main = await page.locator('[data-layout-path="/ts0"]').boundingBox();
+    const topStrip = await page.locator('.flexlayout__border_top[data-collapsed-strip="true"]').boundingBox();
+    const leftStrip = await page.locator('.flexlayout__border_left[data-collapsed-strip="true"]').boundingBox();
+    const rightStrip = await page.locator('.flexlayout__border_right[data-collapsed-strip="true"]').boundingBox();
+    const bottomStrip = await page.locator('.flexlayout__border_bottom[data-collapsed-strip="true"]').boundingBox();
+
+    expect(main).not.toBeNull();
+    expect(topStrip).not.toBeNull();
+    expect(leftStrip).not.toBeNull();
+    expect(rightStrip).not.toBeNull();
+    expect(bottomStrip).not.toBeNull();
+
+    expect(main!.y).toBeGreaterThanOrEqual(topStrip!.y + topStrip!.height - 2);
+    expect(main!.x).toBeGreaterThanOrEqual(leftStrip!.x + leftStrip!.width - 2);
+    expect(main!.x + main!.width).toBeLessThanOrEqual(rightStrip!.x + 2);
+    expect(main!.y + main!.height).toBeLessThanOrEqual(bottomStrip!.y + 2);
+
+    await page.screenshot({ path: `${evidencePath}/bug-3-7-after.png` });
+  });
+});

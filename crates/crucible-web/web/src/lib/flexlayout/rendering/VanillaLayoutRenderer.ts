@@ -307,7 +307,36 @@ export class VanillaLayoutRenderer {
         (root as RowNode).calcMinMaxSize();
         root.setPaths("");
         model.getBorderSet().setPaths();
-        LayoutEngine.calculateLayout(root, this.rect);
+
+        let insetTop = 0;
+        let insetRight = 0;
+        let insetBottom = 0;
+        let insetLeft = 0;
+
+        for (const border of model.getBorderSet().getBorders()) {
+            if (!border.isShowing() || border.getDockState() !== "collapsed") {
+                continue;
+            }
+
+            const location = border.getLocation();
+            if (location === DockLocation.TOP) {
+                insetTop = BORDER_BAR_SIZE;
+            } else if (location === DockLocation.RIGHT) {
+                insetRight = BORDER_BAR_SIZE;
+            } else if (location === DockLocation.BOTTOM) {
+                insetBottom = BORDER_BAR_SIZE;
+            } else if (location === DockLocation.LEFT) {
+                insetLeft = BORDER_BAR_SIZE;
+            }
+        }
+
+        const layoutRect = new Rect(
+            0,
+            0,
+            Math.max(0, this.rect.width - insetLeft - insetRight),
+            Math.max(0, this.rect.height - insetTop - insetBottom),
+        );
+        LayoutEngine.calculateLayout(root, layoutRect);
 
         for (const [windowId, win] of model.getwindowsMap()) {
             if (windowId !== Model.MAIN_WINDOW_ID && win.root) {
