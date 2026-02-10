@@ -536,6 +536,36 @@
   outline-offset: 1px;
 }
 
+.flexlayout__border_fab[data-dock-context="empty-border"] {
+  position: absolute;
+  pointer-events: auto;
+  z-index: 910;
+}
+
+.flexlayout__border_fab[data-dock-context="empty-border"][data-dock-location="left"] {
+  left: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.flexlayout__border_fab[data-dock-context="empty-border"][data-dock-location="right"] {
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.flexlayout__border_fab[data-dock-context="empty-border"][data-dock-location="top"] {
+  top: 4px;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.flexlayout__border_fab[data-dock-context="empty-border"][data-dock-location="bottom"] {
+  bottom: 4px;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
 /* Border dock button (chevron in collapsed strips — expand/collapse toggle) */
 .flexlayout__border_dock_button {
   cursor: pointer;

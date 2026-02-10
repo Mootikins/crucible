@@ -1303,7 +1303,7 @@ export class VanillaLayoutRenderer {
         }
 
         if (border.isEnableDock()) {
-            children.push(this.createCollapsedStripFab(border));
+            children.push(this.createDockButton(border, "collapsed-strip"));
         }
 
         strip.replaceChildren(...children);
@@ -1703,20 +1703,69 @@ export class VanillaLayoutRenderer {
             return buttons;
         }
 
+        buttons.push(this.createDockButton(border, "expanded-toolbar"));
+        return buttons;
+    }
+
+    private createDockButton(
+        border: BorderNode,
+        context: "collapsed-strip" | "empty-border" | "expanded-toolbar",
+    ): HTMLButtonElement {
+        const loc = border.getLocation();
+        const isVertical = loc === DockLocation.LEFT || loc === DockLocation.RIGHT;
+
         const button = document.createElement("button");
         button.type = "button";
-        button.dataset.layoutPath = `${border.getPath()}/button/dock`;
-        button.title = border.getDockState() === "expanded" ? "Collapse" : "Expand";
-        button.className = this.options.getClassName(CLASSES.FLEXLAYOUT__BORDER_DOCK_BUTTON);
-        button.textContent = this.getBorderDockIcon(border);
-        button.onpointerdown = (event) => event.stopPropagation();
-        button.onclick = (event) => {
-            event.stopPropagation();
-            this.doAction(Action.setDockState(border.getId(), border.getDockState() === "expanded" ? "collapsed" : "expanded"));
-        };
+        button.dataset.dockContext = context;
+        button.dataset.dockLocation = loc.getName();
 
-        buttons.push(button);
-        return buttons;
+        if (context === "empty-border") {
+            button.className = this.options.getClassName(CLASSES.FLEXLAYOUT__BORDER_FAB);
+            button.dataset.layoutPath = `${border.getPath()}/fab`;
+            button.dataset.emptyBorderFab = "true";
+        } else {
+            button.className = this.options.getClassName(CLASSES.FLEXLAYOUT__BORDER_DOCK_BUTTON);
+            button.dataset.layoutPath = `${border.getPath()}/button/dock`;
+            if (context === "collapsed-strip") {
+                button.dataset.collapsedFab = "true";
+                button.title = "Expand";
+            } else {
+                button.title = border.getDockState() === "expanded" ? "Collapse" : "Expand";
+            }
+        }
+
+        if (context === "collapsed-strip") {
+            button.style[isVertical ? "marginTop" : "marginLeft"] = "auto";
+        }
+
+        button.textContent = this.getBorderDockIcon(border);
+
+        button.addEventListener("pointerdown", (e) => e.stopPropagation());
+        button.addEventListener("click", (event) => {
+            event.stopPropagation();
+            if (context === "expanded-toolbar") {
+                this.doAction(
+                    Action.setDockState(border.getId(), border.getDockState() === "expanded" ? "collapsed" : "expanded"),
+                );
+            } else {
+                this.doAction(Action.setDockState(border.getId(), "expanded"));
+            }
+        });
+
+        if (context === "empty-border") {
+            button.addEventListener("dragover", (e) => {
+                e.preventDefault();
+                if (e.dataTransfer) {
+                    e.dataTransfer.dropEffect = "move";
+                }
+            });
+            button.addEventListener("drop", (e) => {
+                e.preventDefault();
+                this.doAction(Action.setDockState(border.getId(), "expanded"));
+            });
+        }
+
+        return button;
     }
 
     private getBorderDockIcon(border: BorderNode): string {
@@ -2101,96 +2150,13 @@ export class VanillaLayoutRenderer {
                 continue;
             }
             if (border.getChildren().length === 0 && border.isAutoHide()) {
-                this.renderEmptyBorderFab(container, border);
+                container.appendChild(this.createDockButton(border, "empty-border"));
             }
         }
 
         if (!existing) {
             this.rootDiv.appendChild(container);
         }
-    }
-
-    private createCollapsedStripFab(border: BorderNode): HTMLButtonElement {
-        const loc = border.getLocation();
-        const isVertical = loc === DockLocation.LEFT || loc === DockLocation.RIGHT;
-        const fab = document.createElement("button");
-        fab.type = "button";
-        fab.dataset.layoutPath = `${border.getPath()}/button/dock`;
-        fab.dataset.collapsedFab = "true";
-        fab.className = this.options.getClassName(CLASSES.FLEXLAYOUT__BORDER_DOCK_BUTTON);
-        fab.title = "Expand";
-
-        fab.style[isVertical ? "marginTop" : "marginLeft"] = "auto";
-
-        let arrow: string;
-        if (loc === DockLocation.LEFT) arrow = "▶";
-        else if (loc === DockLocation.RIGHT) arrow = "◀";
-        else if (loc === DockLocation.TOP) arrow = "▼";
-        else arrow = "▲";
-        fab.textContent = arrow;
-
-        fab.addEventListener("pointerdown", (e) => e.stopPropagation());
-        fab.addEventListener("click", (event) => {
-            event.stopPropagation();
-            this.doAction(Action.setDockState(border.getId(), "expanded"));
-        });
-
-        return fab;
-    }
-
-    private renderEmptyBorderFab(container: HTMLElement, border: BorderNode): void {
-        const loc = border.getLocation();
-        const fab = document.createElement("button");
-        fab.type = "button";
-        fab.dataset.layoutPath = `${border.getPath()}/fab`;
-        fab.dataset.emptyBorderFab = "true";
-        fab.className = this.options.getClassName(CLASSES.FLEXLAYOUT__BORDER_FAB);
-        fab.style.position = "absolute";
-        fab.style.pointerEvents = "auto";
-        fab.style.zIndex = "910";
-
-        if (loc === DockLocation.LEFT) {
-            fab.style.left = "4px";
-            fab.style.top = "50%";
-            fab.style.transform = "translateY(-50%)";
-        } else if (loc === DockLocation.RIGHT) {
-            fab.style.right = "4px";
-            fab.style.top = "50%";
-            fab.style.transform = "translateY(-50%)";
-        } else if (loc === DockLocation.TOP) {
-            fab.style.top = "4px";
-            fab.style.left = "50%";
-            fab.style.transform = "translateX(-50%)";
-        } else {
-            fab.style.bottom = "4px";
-            fab.style.left = "50%";
-            fab.style.transform = "translateX(-50%)";
-        }
-
-        let arrow: string;
-        if (loc === DockLocation.LEFT) arrow = "▶";
-        else if (loc === DockLocation.RIGHT) arrow = "◀";
-        else if (loc === DockLocation.TOP) arrow = "▼";
-        else arrow = "▲";
-        fab.textContent = arrow;
-
-        fab.addEventListener("click", (event) => {
-            event.stopPropagation();
-            this.doAction(Action.setDockState(border.getId(), "expanded"));
-        });
-
-        fab.addEventListener("dragover", (e) => {
-            e.preventDefault();
-            if (e.dataTransfer) {
-                e.dataTransfer.dropEffect = "move";
-            }
-        });
-        fab.addEventListener("drop", (e) => {
-            e.preventDefault();
-            this.doAction(Action.setDockState(border.getId(), "expanded"));
-        });
-
-        container.appendChild(fab);
     }
 
     private updateFlyoutState(): void {
