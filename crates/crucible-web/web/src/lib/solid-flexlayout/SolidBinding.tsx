@@ -129,6 +129,8 @@ export const SolidBinding: Component<ILayoutProps> = (props) => {
             },
             onModelChange: props.onModelChange,
             onAction: props.onAction,
+            onContextMenu: props.onContextMenu,
+            onAllowDrop: props.onAllowDrop,
             createContentRenderer: () => new SolidContentRenderer(props.factory),
         });
 
