@@ -784,3 +784,47 @@ test.describe('Docked Panes > Splitter drag accuracy (Bug #4)', () => {
     await page.screenshot({ path: `${evidencePath}/bug-4-after.png` });
   });
 });
+
+test.describe('Docked Panes > Collapsed flyout bounds (Bug #5)', () => {
+  test('left collapsed flyout stays within inner content area and is not full height', async ({ page }) => {
+    await page.goto(baseURL + '?layout=docked_panes');
+    await page.waitForSelector('[data-layout-path="/"]', { timeout: 10_000 });
+
+    for (const edge of ['top', 'bottom', 'left', 'right']) {
+      const dockButton = page.locator(`[data-layout-path="/border/${edge}/button/dock"]`).first();
+      const title = await dockButton.getAttribute('title');
+      if (title === 'Collapse') {
+        await dockButton.click();
+      }
+    }
+
+    await page.waitForTimeout(200);
+    await page.screenshot({ path: `${evidencePath}/bug-5-before.png` });
+
+    await findTabButton(page, '/border/left', 0).click();
+    const flyoutPanel = page.locator('.flexlayout__flyout_panel');
+    await expect(flyoutPanel).toBeVisible({ timeout: 5_000 });
+
+    const flyout = await flyoutPanel.boundingBox();
+    const layout = await findPath(page, '/').boundingBox();
+    const topStrip = await page.locator('.flexlayout__border_top[data-collapsed-strip="true"]').boundingBox();
+    const leftStrip = await page.locator('.flexlayout__border_left[data-collapsed-strip="true"]').boundingBox();
+    const rightStrip = await page.locator('.flexlayout__border_right[data-collapsed-strip="true"]').boundingBox();
+    const bottomStrip = await page.locator('.flexlayout__border_bottom[data-collapsed-strip="true"]').boundingBox();
+
+    expect(flyout).not.toBeNull();
+    expect(layout).not.toBeNull();
+    expect(topStrip).not.toBeNull();
+    expect(leftStrip).not.toBeNull();
+    expect(rightStrip).not.toBeNull();
+    expect(bottomStrip).not.toBeNull();
+
+    expect(flyout!.height).toBeLessThan(layout!.height);
+    expect(flyout!.y).toBeGreaterThanOrEqual(topStrip!.y + topStrip!.height - 2);
+    expect(flyout!.y + flyout!.height).toBeLessThanOrEqual(bottomStrip!.y + 2);
+    expect(flyout!.x).toBeGreaterThanOrEqual(leftStrip!.x + leftStrip!.width - 2);
+    expect(flyout!.x + flyout!.width).toBeLessThanOrEqual(rightStrip!.x + 2);
+
+    await page.screenshot({ path: `${evidencePath}/bug-5-after.png` });
+  });
+});
