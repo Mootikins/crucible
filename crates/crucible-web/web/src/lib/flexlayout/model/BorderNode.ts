@@ -50,9 +50,9 @@ export class BorderNode extends Node implements IDropTarget {
         this.location = location;
         this.attributes.id = `border_${location.getName()}`;
         BorderNode.attributeDefinitions.fromJson(json, this.attributes);
-        // Backward compat: convert "minimized" to "hidden"
-        if (this.attributes.dockState === "minimized") {
-            this.attributes.dockState = "hidden";
+        // Backward compat: convert legacy states to 2-state system
+        if (this.attributes.dockState === "minimized" || this.attributes.dockState === "hidden") {
+            this.attributes.dockState = "collapsed";
         }
         this._pinned = json.pinned === true;
         this._flyoutTabId = json.flyoutTabId ?? null;
@@ -168,6 +168,14 @@ export class BorderNode extends Node implements IDropTarget {
 
     isEnableDock(): boolean {
         return this.getAttr("enableDock") as boolean;
+    }
+
+    getCollapsedSize(): "fit" | "full" {
+        return (this.getAttr("collapsedSize") as string || "full") as "fit" | "full";
+    }
+
+    getFabPosition(): "start" | "end" {
+        return (this.getAttr("fabPosition") as string || "start") as "start" | "end";
     }
 
     isPinned(): boolean {
@@ -473,7 +481,7 @@ export class BorderNode extends Node implements IDropTarget {
             if (dragParent instanceof BorderNode) {
                 dragParent.adjustVisibleTabs(fromIndex);
                 if (dragParent.getChildren().length === 0) {
-                    dragParent.setDockState("hidden");
+                    dragParent.setDockState("collapsed");
                 }
             }
         }
@@ -621,7 +629,13 @@ export class BorderNode extends Node implements IDropTarget {
             `whether to show a mini scrollbar for the tabs`
         );
         attributeDefinitions.addInherited("dockState", "borderDockState").setType(Attribute.STRING).setDescription(
-            `dock state of the border: "expanded" | "collapsed" | "hidden"`
+            `dock state of the border: "expanded" | "collapsed"`
+        );
+        attributeDefinitions.addInherited("collapsedSize", "borderCollapsedSize").setType(Attribute.STRING).setDescription(
+            `collapsed strip sizing: "fit" (shrink-to-fit) or "full" (full edge)`
+        );
+        attributeDefinitions.addInherited("fabPosition", "borderFabPosition").setType(Attribute.STRING).setDescription(
+            `FAB button position in collapsed strip: "start" or "end"`
         );
         attributeDefinitions.add("visibleTabs", []).setType("any").setDescription(
             `array of tab indices visible/tiled simultaneously; empty means fallback to [selected]`

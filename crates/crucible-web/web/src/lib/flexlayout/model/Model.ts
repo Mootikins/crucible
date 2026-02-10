@@ -643,8 +643,9 @@ export class Model {
 		const { nodeId, state } = data;
 		const node = this.getNodeById(nodeId) as BorderNode;
 		if (node && node instanceof BorderNode) {
-			(node as any).attributes.dockState = state;
-			if (state === "expanded") {
+			const normalizedState = state === "hidden" ? "collapsed" : state;
+			(node as any).attributes.dockState = normalizedState;
+			if (normalizedState === "expanded") {
 				node.setFlyoutTabId(null);
 			}
 		}
@@ -875,6 +876,10 @@ export class Model {
 			return 0;
 		case "borderEnableDock":
 			return true;
+		case "borderCollapsedSize":
+			return "full";
+		case "borderFabPosition":
+			return "start";
 		default:
 			return undefined;
 		}

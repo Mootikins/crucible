@@ -189,21 +189,14 @@ export const BorderTab: Component<IBorderTabProps> = (props) => {
     const onDockToggle = (event: MouseEvent) => {
         event.stopPropagation();
         const current = dockState();
-        let next: "expanded" | "collapsed" | "hidden";
-        if (current === "expanded") {
-            next = "collapsed";
-        } else if (current === "collapsed") {
-            next = "hidden";
-        } else {
-            next = "expanded";
-        }
+        const next: "expanded" | "collapsed" = current === "expanded" ? "collapsed" : "expanded";
         props.layout.doAction(Action.setDockState(props.border.getId(), next));
     };
 
     const dockIcon = (): string => {
         const state = dockState();
         const loc = props.border.getLocation();
-        if (state === "hidden") {
+        if (state === "collapsed") {
             if (loc === DockLocation.LEFT) return "▶";
             if (loc === DockLocation.RIGHT) return "◀";
             if (loc === DockLocation.TOP) return "▼";
@@ -217,9 +210,7 @@ export const BorderTab: Component<IBorderTabProps> = (props) => {
 
     const dockTitle = (): string => {
         const state = dockState();
-        if (state === "expanded") return "Collapse";
-        if (state === "collapsed") return "Hide";
-        return "Expand";
+        return state === "expanded" ? "Collapse" : "Expand";
     };
 
     const expandedTabButtons = (): JSX.Element[] => {

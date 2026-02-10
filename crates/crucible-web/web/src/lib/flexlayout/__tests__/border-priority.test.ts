@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { Model } from "../model/Model";
+import { Action } from "../model/Action";
 import type { IJsonModel } from "../types";
 
 /** Fixture with explicit priority values */
@@ -230,8 +231,8 @@ describe("BorderSet.getBordersByPriority()", () => {
   });
 });
 
-describe("Dock state: hidden (renamed from minimized)", () => {
-  it("should accept 'hidden' as a valid dock state", () => {
+describe("Dock state: 2-state (expanded/collapsed)", () => {
+  it("should normalize legacy 'hidden' to 'collapsed' on load", () => {
     const fixture: IJsonModel = {
       global: {},
       borders: [
@@ -239,7 +240,7 @@ describe("Dock state: hidden (renamed from minimized)", () => {
           type: "border",
           location: "left",
           selected: 0,
-          dockState: "hidden",
+          dockState: "collapsed",
           children: [{ type: "tab", name: "Explorer", component: "text" }],
         },
       ],
@@ -257,23 +258,23 @@ describe("Dock state: hidden (renamed from minimized)", () => {
     };
     const model = new Model(fixture);
     const leftBorder = model.getBorderSet().getBorders()[0];
-    expect(leftBorder.getDockState()).toBe("hidden");
+    expect(leftBorder.getDockState()).toBe("collapsed");
   });
 
-  it("should load 'minimized' from JSON and convert to 'hidden'", () => {
+  it("should load 'minimized' from JSON and convert to 'collapsed'", () => {
     const model = new Model(legacyMinimizedFixture);
     const leftBorder = model.getBorderSet().getBorders()[0];
-    expect(leftBorder.getDockState()).toBe("hidden");
+    expect(leftBorder.getDockState()).toBe("collapsed");
   });
 
-  it("should serialize 'hidden' state back to JSON as 'hidden'", () => {
+  it("should serialize 'collapsed' state back to JSON", () => {
     const model = new Model(legacyMinimizedFixture);
     const json = model.toJson();
     const leftBorderJson = json.borders![0];
-    expect(leftBorderJson.dockState).toBe("hidden");
+    expect(leftBorderJson.dockState).toBe("collapsed");
   });
 
-  it("should cycle through dock states: expanded → collapsed → hidden → expanded", () => {
+  it("should cycle through 2 dock states: expanded → collapsed → expanded", () => {
     const fixture: IJsonModel = {
       global: { borderEnableDock: true },
       borders: [
@@ -302,25 +303,46 @@ describe("Dock state: hidden (renamed from minimized)", () => {
 
     expect(leftBorder.getDockState()).toBe("expanded");
 
-    // Cycle to collapsed
-    const action1 = { type: "SET_DOCK_STATE", data: { nodeId: leftBorder.getId(), state: "collapsed" } };
-    model.doAction(action1);
+    model.doAction(Action.setDockState(leftBorder.getId(), "collapsed"));
     expect(leftBorder.getDockState()).toBe("collapsed");
 
-    // Cycle to hidden
-    const action2 = { type: "SET_DOCK_STATE", data: { nodeId: leftBorder.getId(), state: "hidden" } };
-    model.doAction(action2);
-    expect(leftBorder.getDockState()).toBe("hidden");
-
-    // Cycle back to expanded
-    const action3 = { type: "SET_DOCK_STATE", data: { nodeId: leftBorder.getId(), state: "expanded" } };
-    model.doAction(action3);
+    model.doAction(Action.setDockState(leftBorder.getId(), "expanded"));
     expect(leftBorder.getDockState()).toBe("expanded");
+  });
+
+  it("should normalize 'hidden' action to 'collapsed'", () => {
+    const fixture: IJsonModel = {
+      global: {},
+      borders: [
+        {
+          type: "border",
+          location: "left",
+          selected: 0,
+          children: [{ type: "tab", name: "Explorer", component: "text" }],
+        },
+      ],
+      layout: {
+        type: "row",
+        weight: 100,
+        children: [
+          {
+            type: "tabset",
+            weight: 100,
+            children: [{ type: "tab", name: "Main", component: "text" }],
+          },
+        ],
+      },
+    };
+    const model = new Model(fixture);
+    const leftBorder = model.getBorderSet().getBorders()[0];
+
+    model.doAction({ type: "SET_DOCK_STATE", data: { nodeId: leftBorder.getId(), state: "hidden" } } as any);
+    expect(leftBorder.getDockState()).toBe("collapsed");
   });
 });
 
-describe("Serialization round-trip with priority and hidden", () => {
-  it("should preserve priority and hidden state through JSON round-trip", () => {
+describe("Serialization round-trip with priority and collapsed", () => {
+  it("should preserve priority through JSON round-trip", () => {
     const model1 = new Model(priorityFixture);
     const json = model1.toJson();
     const model2 = new Model(json);
@@ -333,16 +355,14 @@ describe("Serialization round-trip with priority and hidden", () => {
     }
   });
 
-  it("should convert legacy minimized to hidden in round-trip", () => {
+  it("should convert legacy minimized to collapsed in round-trip", () => {
     const model1 = new Model(legacyMinimizedFixture);
     const json = model1.toJson();
 
-    // JSON should now have "hidden", not "minimized"
-    expect(json.borders![0].dockState).toBe("hidden");
+    expect(json.borders![0].dockState).toBe("collapsed");
 
-    // Loading again should still work
     const model2 = new Model(json);
     const leftBorder = model2.getBorderSet().getBorders()[0];
-    expect(leftBorder.getDockState()).toBe("hidden");
+    expect(leftBorder.getDockState()).toBe("collapsed");
   });
 });

@@ -435,7 +435,7 @@ export class RowNode extends Node implements IDropTarget {
             if (parent instanceof BorderNode) {
                 parent.adjustVisibleTabs(fromIndex);
                 if (parent.getChildren().length === 0) {
-                    parent.setDockState("hidden");
+                    parent.setDockState("collapsed");
                 }
             }
         }

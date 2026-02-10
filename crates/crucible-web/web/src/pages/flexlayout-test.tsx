@@ -1223,6 +1223,36 @@ const layouts: Record<string, LayoutDef> = {
     },
   },
 
+  paneview_basic: {
+    global: { ...defaultGlobal },
+    borders: [],
+    layout: {
+      type: "row",
+      weight: 100,
+      children: [
+        {
+          type: "tabset",
+          id: "pv0",
+          weight: 40,
+          mode: "paneview",
+          children: [
+            { type: "tab", name: "Explorer", component: "info", config: { description: "File explorer pane content" } },
+            { type: "tab", name: "Search", component: "info", config: { description: "Search pane content" } },
+            { type: "tab", name: "Source Control", component: "info", config: { description: "Git source control pane" } },
+          ],
+        } as any,
+        {
+          type: "tabset",
+          id: "ts_main",
+          weight: 60,
+          children: [
+            { type: "tab", name: "Editor", component: "info", config: { description: "Main editor area" } },
+          ],
+        },
+      ],
+    },
+  },
+
   // ── Basic & Layout Structure Demos ──────────────────────────────────
 
   basic_simple: {
