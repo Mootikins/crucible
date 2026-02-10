@@ -6,7 +6,7 @@ import { RowNode } from "./RowNode";
 import { BorderNode } from "./BorderNode";
 import { BorderSet } from "./BorderSet";
 import { LayoutWindow } from "./LayoutWindow";
-import type { IAction } from "./Action";
+import type { LayoutAction } from "./Action";
 import { Rect } from "../core/Rect";
 import { DockLocation } from "../core/DockLocation";
 
@@ -171,7 +171,7 @@ export class Model {
 		return this.nodeRegistry.get(id);
 	}
 
-	doAction(action: IAction): void {
+	doAction(action: LayoutAction): void {
 		const type = action.type;
 		const data = action.data || {};
 
