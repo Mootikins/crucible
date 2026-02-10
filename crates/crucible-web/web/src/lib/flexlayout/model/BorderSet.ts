@@ -2,13 +2,12 @@ import { DockLocation } from "../core/DockLocation";
 import { DropInfo } from "../core/DropInfo";
 import { BorderNode } from "./BorderNode";
 import { IDraggable } from "./IDraggable";
-import { Model } from "./Model";
 import { Node } from "./Node";
 
 export class BorderSet {
     /** @internal */
-    static fromJson(json: any, model: Model) {
-        const borderSet = new BorderSet(model);
+    static fromJson(json: any, model: any) {
+        const borderSet = new BorderSet();
         borderSet.borders = json.map((borderJson: any) => BorderNode.fromJson(borderJson, model));
         for (const border of borderSet.borders) {
             borderSet.borderMap.set(border.getLocation(), border);
@@ -20,7 +19,7 @@ export class BorderSet {
     /** @internal */
     private borderMap: Map<DockLocation, BorderNode>;
     /** @internal */
-    constructor(_model: Model) {
+    constructor() {
         this.borders = [];
         this.borderMap = new Map<DockLocation, BorderNode>();
     }

@@ -636,11 +636,7 @@ export class Model {
 	setActiveTabset(tabset: TabSetNode | undefined, windowId: string = Model.MAIN_WINDOW_ID): void {
 		const window = this.windowsMap.get(windowId);
 		if (window) {
-			if (tabset) {
-				window.activeTabSet = tabset;
-			} else {
-				window.activeTabSet = undefined;
-			}
+			window.activeTabSet = tabset;
 		}
 	}
 
