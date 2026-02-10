@@ -80,12 +80,8 @@ export class Rect {
     return { x: this.x + this.width / 2, y: this.y + this.height / 2 };
   }
 
-  contains(x: number, y: number) {
-    if (this.x <= x && x <= this.getRight() && this.y <= y && y <= this.getBottom()) {
-      return true;
-    } else {
-      return false;
-    }
+  contains(x: number, y: number): boolean {
+    return this.x <= x && x <= this.getRight() && this.y <= y && y <= this.getBottom();
   }
 
   removeInsets(insets: { top: number; left: number; bottom: number; right: number }) {
@@ -102,12 +98,8 @@ export class Rect {
     this.y = (outerRect.height - this.height) / 2;
   }
 
-  _getSize(orientation: Orientation) {
-    let prefSize = this.width;
-    if (orientation === Orientation.VERT) {
-      prefSize = this.height;
-    }
-    return prefSize;
+  _getSize(orientation: Orientation): number {
+    return orientation === Orientation.VERT ? this.height : this.width;
   }
 
 	positionElement(element: HTMLElement, position?: string) {
