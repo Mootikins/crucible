@@ -50,6 +50,10 @@ export class VanillaLayoutRenderer {
     private flyoutPanel: HTMLDivElement | undefined;
     private flyoutBackdrop: HTMLDivElement | undefined;
 
+    private flyoutExitTimer: ReturnType<typeof setTimeout> | undefined;
+    private previousBorderDockStates = new Map<string, string>();
+    private borderTransitionStates = new Map<string, string>();
+
     private readonly paneviewExpanded = new Map<string, boolean>();
     private readonly paneviewContainers = new Map<string, HTMLDivElement>();
     private paneviewDragState: { tabsetId: string; dragTabId: string; placeholder: HTMLDivElement } | undefined;
@@ -172,6 +176,12 @@ export class VanillaLayoutRenderer {
         this.flyoutPanel = undefined;
         this.flyoutBackdrop = undefined;
         this.flyoutState = undefined;
+        if (this.flyoutExitTimer) {
+            clearTimeout(this.flyoutExitTimer);
+            this.flyoutExitTimer = undefined;
+        }
+        this.previousBorderDockStates.clear();
+        this.borderTransitionStates.clear();
 
         for (const [, container] of this.paneviewContainers) {
             container.remove();
@@ -277,12 +287,48 @@ export class VanillaLayoutRenderer {
         }
 
         this.renderEdges();
+        this.updateBorderDockStates();
         this.renderCollapsedBorderStrips();
         this.updateFlyoutState();
         this.renderFlyout();
         this.renderPaneviews();
         this.renderTabContents();
         this.floatingWindowManager?.render();
+    }
+
+    private updateBorderDockStates(): void {
+        for (const border of this.options.model.getBorderSet().getBorders()) {
+            const id = border.getId();
+            const currentState = border.getDockState();
+            const previousState = this.previousBorderDockStates.get(id);
+            this.previousBorderDockStates.set(id, currentState);
+
+            if (previousState === undefined) {
+                continue;
+            }
+
+            if (previousState === "expanded" && currentState === "collapsed") {
+                this.borderTransitionStates.set(id, "collapsing");
+                if (border.isAnimateTransition()) {
+                    setTimeout(() => {
+                        this.borderTransitionStates.set(id, "collapsed");
+                        this.render();
+                    }, 250);
+                } else {
+                    this.borderTransitionStates.set(id, "collapsed");
+                }
+            } else if (previousState === "collapsed" && currentState === "expanded") {
+                this.borderTransitionStates.set(id, "expanding");
+                if (border.isAnimateTransition()) {
+                    setTimeout(() => {
+                        this.borderTransitionStates.set(id, "expanded");
+                        this.render();
+                    }, 250);
+                } else {
+                    this.borderTransitionStates.set(id, "expanded");
+                }
+            }
+        }
     }
 
     private renderEdges(): void {
@@ -409,7 +455,9 @@ export class VanillaLayoutRenderer {
             const strip = document.createElement("div");
             strip.dataset.layoutPath = border.getPath();
             strip.dataset.collapsedStrip = "true";
-            strip.dataset.state = "collapsed";
+            strip.dataset.state = this.borderTransitionStates.get(border.getId()) || "collapsed";
+            strip.dataset.animate = border.isAnimateTransition() ? "true" : "false";
+            strip.dataset.edge = locationName;
             strip.className = [
                 this.options.getClassName(CLASSES.FLEXLAYOUT__BORDER),
                 this.options.getClassName(`${CLASSES.FLEXLAYOUT__BORDER_}${locationName}`),
@@ -633,23 +681,59 @@ export class VanillaLayoutRenderer {
         }
     }
 
+    private getFlyoutEdgeName(): string {
+        if (!this.flyoutState) {
+            return "left";
+        }
+        const loc = this.flyoutState.border.getLocation();
+        if (loc === DockLocation.LEFT) return "left";
+        if (loc === DockLocation.RIGHT) return "right";
+        if (loc === DockLocation.TOP) return "top";
+        return "bottom";
+    }
+
     private renderFlyout(): void {
         if (!this.rootDiv) {
             return;
         }
 
         if (!this.flyoutState) {
-            this.flyoutBackdrop?.remove();
-            this.flyoutPanel?.remove();
-            this.flyoutBackdrop = undefined;
-            this.flyoutPanel = undefined;
+            if (this.flyoutPanel && this.flyoutBackdrop) {
+                this.flyoutPanel.dataset.state = "exiting";
+                this.flyoutBackdrop.dataset.state = "exiting";
+
+                if (this.flyoutExitTimer) {
+                    clearTimeout(this.flyoutExitTimer);
+                }
+
+                const panel = this.flyoutPanel;
+                const backdrop = this.flyoutBackdrop;
+                this.flyoutPanel = undefined;
+                this.flyoutBackdrop = undefined;
+
+                const cleanup = () => {
+                    panel.remove();
+                    backdrop.remove();
+                };
+
+                panel.addEventListener("transitionend", cleanup, { once: true });
+                this.flyoutExitTimer = setTimeout(cleanup, 300);
+            }
             return;
         }
+
+        if (this.flyoutExitTimer) {
+            clearTimeout(this.flyoutExitTimer);
+            this.flyoutExitTimer = undefined;
+        }
+
+        const edgeName = this.getFlyoutEdgeName();
 
         if (!this.flyoutBackdrop) {
             this.flyoutBackdrop = document.createElement("div");
             this.flyoutBackdrop.dataset.layoutPath = "/flyout/backdrop";
             this.flyoutBackdrop.className = "flexlayout__flyout_backdrop";
+            this.flyoutBackdrop.dataset.state = "exited";
             this.flyoutBackdrop.style.position = "absolute";
             this.flyoutBackdrop.style.inset = "0";
             this.flyoutBackdrop.style.zIndex = "850";
@@ -664,6 +748,8 @@ export class VanillaLayoutRenderer {
             this.flyoutPanel = document.createElement("div");
             this.flyoutPanel.dataset.layoutPath = "/flyout/panel";
             this.flyoutPanel.className = "flexlayout__flyout_panel";
+            this.flyoutPanel.dataset.state = "exited";
+            this.flyoutPanel.dataset.edge = edgeName;
             this.flyoutPanel.style.position = "absolute";
             this.flyoutPanel.style.zIndex = "900";
             this.flyoutPanel.addEventListener("pointerdown", (event) => {
@@ -672,9 +758,33 @@ export class VanillaLayoutRenderer {
             this.rootDiv.appendChild(this.flyoutPanel);
         }
 
+        this.flyoutPanel.dataset.edge = edgeName;
+
         const style: Record<string, string> = {};
         this.flyoutState.rect.styleWithPosition(style);
         Object.assign(this.flyoutPanel.style, style);
+
+        if (this.flyoutPanel.dataset.state === "exited") {
+            requestAnimationFrame(() => {
+                if (this.flyoutPanel) {
+                    this.flyoutPanel.dataset.state = "entering";
+                }
+                if (this.flyoutBackdrop) {
+                    this.flyoutBackdrop.dataset.state = "entering";
+                }
+                requestAnimationFrame(() => {
+                    if (this.flyoutPanel) {
+                        this.flyoutPanel.dataset.state = "entered";
+                    }
+                    if (this.flyoutBackdrop) {
+                        this.flyoutBackdrop.dataset.state = "entered";
+                    }
+                });
+            });
+        } else {
+            this.flyoutPanel.dataset.state = "entered";
+            this.flyoutBackdrop.dataset.state = "entered";
+        }
     }
 
     private collectPaneviewTabSets(): TabSetNode[] {
