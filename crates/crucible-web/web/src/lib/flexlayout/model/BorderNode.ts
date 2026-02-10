@@ -178,6 +178,10 @@ export class BorderNode extends Node implements IDropTarget {
         return (this.getAttr("fabPosition") as string || "start") as "start" | "end";
     }
 
+    isAnimateTransition(): boolean {
+        return this.getAttr("animateTransition") as boolean ?? false;
+    }
+
     isPinned(): boolean {
         return this._pinned;
     }
@@ -645,6 +649,9 @@ export class BorderNode extends Node implements IDropTarget {
         );
         attributeDefinitions.addInherited("enableDock", "borderEnableDock").setType(Attribute.BOOLEAN).setDescription(
             `whether the collapse/expand/minimize dock button appears`
+        );
+        attributeDefinitions.addInherited("animateTransition", "borderAnimateTransition").setType(Attribute.BOOLEAN).setDescription(
+            `whether collapse/expand transitions are animated`
         );
         return attributeDefinitions;
     }
