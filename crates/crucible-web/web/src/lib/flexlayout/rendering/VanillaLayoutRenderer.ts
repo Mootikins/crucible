@@ -1825,11 +1825,13 @@ export class VanillaLayoutRenderer {
             className += ` ${node.getClassName()}`;
         }
 
-        button.className = className;
-        button.dataset.layoutPath = path;
-        button.dataset.state = selected ? "selected" : "unselected";
-        button.title = node.getHelpText() ?? "";
-        button.draggable = true;
+         button.className = className;
+         button.dataset.layoutPath = path;
+         button.dataset.state = selected ? "selected" : "unselected";
+         button.dataset.border = "true";
+         button.dataset.borderLocation = borderName;
+         button.title = node.getHelpText() ?? "";
+         button.draggable = true;
 
         button.onclick = () => {
             this.doAction(Action.selectTab(node.getId()));
