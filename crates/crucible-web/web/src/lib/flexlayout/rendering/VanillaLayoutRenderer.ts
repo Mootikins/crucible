@@ -1738,12 +1738,10 @@ export class VanillaLayoutRenderer {
             domRect.height,
         );
 
-        const dragStartPointer = border.getOrientation() === Orientation.VERT ? event.clientY : event.clientX;
-        const dragStartPosition = (
-            border.getLocation() === DockLocation.BOTTOM || border.getLocation() === DockLocation.RIGHT
-        )
-            ? bounds[1] - border.getSize()
-            : bounds[0] + border.getSize();
+        // DOM-based offset (matches row splitter pattern) — prevents jump on first move
+        const dragStartOffset = border.getOrientation() === Orientation.VERT
+            ? event.clientY - domRect.y
+            : event.clientX - domRect.x;
         let outlineDiv: HTMLDivElement | undefined;
 
         if (!isRealtime && this.rootDiv) {
@@ -1766,7 +1764,8 @@ export class VanillaLayoutRenderer {
 
         const onMove = (moveEvent: PointerEvent): void => {
             const pointer = border.getOrientation() === Orientation.VERT ? moveEvent.clientY : moveEvent.clientX;
-            const position = clampPosition(dragStartPosition + (pointer - dragStartPointer));
+            const origin = border.getOrientation() === Orientation.VERT ? layoutRect.y : layoutRect.x;
+            const position = clampPosition(pointer - origin - dragStartOffset);
 
             if (isRealtime) {
                 applyAtPosition(position);
