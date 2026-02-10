@@ -25,9 +25,11 @@ export class Model {
 	private floatZOrder: string[] = [];
 	private changeEmitter = new Emitter<void>();
 	private actionEmitter = new Emitter<LayoutAction>();
+	private onAllowDropCallback?: (dragNode: Node, dropInfo: any) => boolean;
+	private onCreateTabSetCallback?: (dragNode: TabNode) => any;
 
 	constructor(json?: IJsonModel) {
-		this.borderSet = new BorderSet(this);
+		this.borderSet = new BorderSet();
 		if (json) {
 			this.loadFromJson(json);
 		} else {
@@ -759,11 +761,19 @@ export class Model {
 	}
 
 	getOnAllowDrop(): any {
-		return undefined;
+		return this.onAllowDropCallback;
+	}
+
+	setOnAllowDrop(callback: ((dragNode: Node, dropInfo: any) => boolean) | undefined): void {
+		this.onAllowDropCallback = callback;
 	}
 
 	getOnCreateTabSet(): any {
-		return undefined;
+		return this.onCreateTabSetCallback;
+	}
+
+	setOnCreateTabSet(callback: ((dragNode: TabNode) => any) | undefined): void {
+		this.onCreateTabSetCallback = callback;
 	}
 
 	tidy(): void {
