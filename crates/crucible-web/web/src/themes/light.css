@@ -1,0 +1,38 @@
+:root[data-theme="light"],
+[data-theme="light"] {
+  --fl-color-bg-primary: #f5f5f5;
+  --fl-color-bg-surface: #ffffff;
+  --fl-color-bg-elevated: #e5e5e5;
+
+  --fl-color-text-primary: #171717;
+  --fl-color-text-secondary: #525252;
+  --fl-color-text-muted: #737373;
+  --fl-color-text-tertiary: #404040;
+
+  --fl-color-accent: #2563eb;
+  --fl-color-accent-subtle: rgba(37, 99, 235, 0.06);
+  --fl-color-accent-light: rgba(37, 99, 235, 0.08);
+  --fl-color-accent-medium: rgba(37, 99, 235, 0.12);
+  --fl-color-accent-strong: rgba(37, 99, 235, 0.18);
+  --fl-color-accent-selection: rgba(37, 99, 235, 0.3);
+
+  --fl-color-border-primary: #d4d4d4;
+  --fl-color-border-secondary: #a3a3a3;
+  --fl-color-border-floating: #a3a3a3;
+
+  --fl-color-scrollbar-track: #f5f5f5;
+  --fl-color-scrollbar-thumb: #a3a3a3;
+  --fl-color-scrollbar-thumb-hover: #737373;
+
+  --fl-color-error: #dc2626;
+  --fl-color-overlay-bg: rgba(0, 0, 0, 0.25);
+  --fl-color-toolbar-hover-bg: rgba(0, 0, 0, 0.06);
+
+  --fl-color-floating-bg: #ffffff;
+  --fl-color-floating-titlebar-bg: #e5e5e5;
+  --fl-color-floating-titlebar-text: #404040;
+  --fl-color-floating-resize-grip: #a3a3a3;
+
+  --fl-shadow-popup: 0 4px 12px rgba(0, 0, 0, 0.15);
+  --fl-shadow-floating: 0 4px 16px rgba(0, 0, 0, 0.15);
+}
