@@ -110,42 +110,57 @@ export const TabButton: Component<ITabButtonProps> = (props) => {
         return classes;
     };
 
-    const renderContent = (): ITabRenderValues => {
-        const renderState: ITabRenderValues = {
-            leading: undefined,
-            content: undefined,
-            buttons: [],
-        };
+     const renderContent = (): ITabRenderValues => {
+         const renderState: ITabRenderValues = {
+             leading: undefined,
+             content: undefined,
+             buttons: [],
+         };
 
-        if (node.getIcon()) {
-            renderState.leading = (
-                <img src={node.getIcon()} alt="" />
-            );
-        }
+         // Render icon if present
+         if (node.getIcon()) {
+             renderState.leading = (
+                 <img src={node.getIcon()} alt="" />
+             );
+         }
 
-        props.layout.customizeTab(node, renderState);
+         props.layout.customizeTab(node, renderState);
 
-        if (node.isEnableClose()) {
-            const isStretch =
-                parentNode().isEnableSingleTabStretch() &&
-                parentNode().getChildren().length === 1;
-            if (!isStretch) {
-                renderState.buttons.push(
-                    <div
-                        data-layout-path={props.path + "/button/close"}
-                        title="Close"
-                        class={cm(CLASSES.FLEXLAYOUT__TAB_BUTTON_TRAILING)}
-                        onPointerDown={onClosePointerDown}
-                        onClick={onClose}
-                    >
-                        ✕
-                    </div>,
-                );
-            }
-        }
+         // Render pin indicator if pinned
+         if (node.isPinned()) {
+             renderState.buttons.push(
+                 <div
+                     data-layout-path={props.path + "/indicator/pin"}
+                     title="Pinned"
+                     class={cm(CLASSES.FLEXLAYOUT__TAB_BUTTON_TRAILING)}
+                     style={{ "pointer-events": "none" }}
+                 >
+                     📌
+                 </div>,
+             );
+         }
 
-        return renderState;
-    };
+         if (node.isEnableClose()) {
+             const isStretch =
+                 parentNode().isEnableSingleTabStretch() &&
+                 parentNode().getChildren().length === 1;
+             if (!isStretch) {
+                 renderState.buttons.push(
+                     <div
+                         data-layout-path={props.path + "/button/close"}
+                         title="Close"
+                         class={cm(CLASSES.FLEXLAYOUT__TAB_BUTTON_TRAILING)}
+                         onPointerDown={onClosePointerDown}
+                         onClick={onClose}
+                     >
+                         ✕
+                     </div>,
+                 );
+             }
+         }
+
+         return renderState;
+     };
 
     const currentRender = () => {
         void props.layout.getRevision();
@@ -157,6 +172,7 @@ export const TabButton: Component<ITabButtonProps> = (props) => {
             ref={selfRef}
             data-layout-path={props.path}
             data-state={props.selected ? "selected" : "unselected"}
+            data-pinned={node.isPinned() ? "true" : "false"}
             class={classNames()}
             onClick={onClick}
             onDblClick={onDoubleClick}
