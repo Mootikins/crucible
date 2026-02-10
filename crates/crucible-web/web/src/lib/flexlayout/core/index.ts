@@ -5,4 +5,6 @@ export { Attribute } from './Attribute';
 export { AttributeDefinitions } from './AttributeDefinitions';
 export { DropInfo } from './DropInfo';
 export { I18nLabel } from './I18nLabel';
+export { computeFlyoutRect } from './flyout-rect';
+export type { FlyoutRectParams } from './flyout-rect';
 export * from './Types';
