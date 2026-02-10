@@ -1,6 +1,5 @@
 import { Component, onCleanup, onMount } from "solid-js";
 import { render } from "solid-js/web";
-import { Layout as LegacyLayout } from "../solid-flexlayout-legacy/Layout";
 import type { ILayoutProps } from "./LayoutTypes";
 import { VanillaLayoutRenderer } from "../flexlayout/rendering/VanillaLayoutRenderer";
 import type { IContentRenderer, IRenderParams } from "../flexlayout/rendering/IContentRenderer";
@@ -111,13 +110,8 @@ export const SolidBinding: Component<ILayoutProps> = (props) => {
     let containerRef: HTMLDivElement | undefined;
     let renderer: VanillaLayoutRenderer | undefined;
 
-    const useVanilla = () => {
-        const config = window as Window & { __FLEXLAYOUT_VANILLA__?: string };
-        return config.__FLEXLAYOUT_VANILLA__ === "1";
-    };
-
     onMount(() => {
-        if (!useVanilla() || !containerRef) {
+        if (!containerRef) {
             return;
         }
 
@@ -141,10 +135,6 @@ export const SolidBinding: Component<ILayoutProps> = (props) => {
         renderer?.unmount();
         renderer = undefined;
     });
-
-    if (!useVanilla()) {
-        return <LegacyLayout {...props} />;
-    }
 
     return <div ref={containerRef} style={{ width: "100%", height: "100%", position: "relative" }} />;
 };
