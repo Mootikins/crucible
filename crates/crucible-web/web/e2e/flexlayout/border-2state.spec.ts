@@ -4,9 +4,6 @@ const baseURL = '/flexlayout-test.html?layout=docked_panes';
 
 test.describe('Vanilla 2-state border', () => {
   test.beforeEach(async ({ page }) => {
-    await page.addInitScript(() => {
-      (window as Window & { __FLEXLAYOUT_VANILLA__?: string }).__FLEXLAYOUT_VANILLA__ = '1';
-    });
     await page.goto(baseURL);
     await page.waitForSelector('[data-layout-path="/"]', { timeout: 10_000 });
   });
