@@ -28,6 +28,8 @@ export interface IVanillaLayoutRendererOptions {
     doAction(action: LayoutAction): void;
     onModelChange?(model: Model, action: LayoutAction): void;
     onAction?(action: LayoutAction): LayoutAction | undefined;
+    onContextMenu?(node: TabNode, event: MouseEvent): Array<{ label: string; action: () => void }>;
+    onAllowDrop?(dragNode: Node, dropInfo: any): boolean;
     createContentRenderer(node: TabNode): IContentRenderer;
 }
 
@@ -90,6 +92,11 @@ export class VanillaLayoutRenderer {
             doAction: (action) => this.doAction(action),
             redraw: () => this.redraw(),
         });
+
+        // Wire callbacks to model
+        if (this.options.onAllowDrop) {
+            this.options.model.setOnAllowDrop(this.options.onAllowDrop);
+        }
     }
 
     mount(container: HTMLElement): void {

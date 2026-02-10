@@ -6,6 +6,11 @@ import { Node } from "../flexlayout/model/Node";
 import { TabNode } from "../flexlayout/model/TabNode";
 import { TabSetNode } from "../flexlayout/model/TabSetNode";
 
+export interface IMenuItem {
+    label: string;
+    action: () => void;
+}
+
 export interface ILayoutProps {
     model: Model;
     factory: (node: TabNode) => JSX.Element;
@@ -16,6 +21,8 @@ export interface ILayoutProps {
         tabSetNode: TabSetNode | BorderNode,
         renderValues: ITabSetRenderValues,
     ) => void;
+    onContextMenu?: (node: TabNode, event: MouseEvent) => IMenuItem[];
+    onAllowDrop?: (dragNode: Node, dropInfo: any) => boolean;
     classNameMapper?: (defaultClassName: string) => string;
 }
 
