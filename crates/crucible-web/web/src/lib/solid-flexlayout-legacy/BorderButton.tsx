@@ -215,6 +215,7 @@ export const BorderButton: Component<IBorderButtonProps> = (props) => {
         <div
             ref={selfRef}
             data-layout-path={props.path}
+            data-state={props.selected ? "selected" : "unselected"}
             class={classNames()}
             onClick={onClick}
             onContextMenu={onContextMenu}

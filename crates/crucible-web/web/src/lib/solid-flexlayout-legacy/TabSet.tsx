@@ -408,6 +408,12 @@ export const TabSet: Component<ITabSetProps> = (props) => {
 
     const tabLocation = () => node.getTabLocation() || "top";
 
+    const tabsetDataState = (): string => {
+        if (node.isMaximized()) return "maximized";
+        if (node.isActive()) return "active";
+        return "inactive";
+    };
+
     return (
         <div
             ref={selfRef}
@@ -417,6 +423,7 @@ export const TabSet: Component<ITabSetProps> = (props) => {
             <div
                 class={cm(CLASSES.FLEXLAYOUT__TABSET)}
                 data-layout-path={path()}
+                data-state={tabsetDataState()}
             >
                 {tabLocation() === "top" && renderTabStrip()}
                 <div
