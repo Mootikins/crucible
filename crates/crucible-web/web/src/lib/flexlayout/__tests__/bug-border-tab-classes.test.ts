@@ -63,9 +63,46 @@ function mountRenderer(model: Model): { host: HTMLElement; renderer: VanillaLayo
 }
 
 describe("Bug #2: Expanded border tab buttons should have same base classes as tabset tab buttons", () => {
-    it.todo("expanded border toolbar dock button uses FLEXLAYOUT__BORDER_DOCK_BUTTON class");
+    it("expanded border toolbar dock button uses FLEXLAYOUT__BORDER_DOCK_BUTTON class", () => {
+        const model = Model.fromJson(expandedBorderFixture);
+        const { host, renderer } = mountRenderer(model);
 
-    it.todo("expanded border tab buttons in per-tile tabbar include border location class");
+        try {
+            const dockButton = host.querySelector(
+                ".flexlayout__border_dock_button"
+            );
+            expect(dockButton).toBeTruthy();
+            expect(dockButton?.className).toContain("flexlayout__border_dock_button");
+        } finally {
+            renderer.unmount();
+            host.remove();
+        }
+    });
+
+    it("expanded border tab buttons in per-tile tabbar include border location class", () => {
+        const model = Model.fromJson(expandedBorderFixture);
+        const { host, renderer } = mountRenderer(model);
+
+        try {
+            const tabbarButtons = host.querySelectorAll(
+                "[data-border-tabbar] .flexlayout__border_button"
+            );
+
+            expect(tabbarButtons.length).toBeGreaterThan(0);
+
+            for (const button of tabbarButtons) {
+                expect(button.className).toContain("flexlayout__border_button");
+                // Check for border location class (e.g., flexlayout__border_button_left)
+                expect(button.className).toMatch(
+                    /flexlayout__border_button_(left|right|top|bottom)/
+                );
+            }
+        } finally {
+            renderer.unmount();
+            host.remove();
+        }
+    });
+
 
     it("collapsed strip tab buttons include FLEXLAYOUT__BORDER_BUTTON base class", () => {
         const model = Model.fromJson(expandedBorderFixture);
