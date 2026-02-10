@@ -1204,12 +1204,7 @@ export class VanillaLayoutRenderer {
             this.doAction(Action.setDockState(border.getId(), "expanded"));
         };
 
-        const fabPosition = border.getFabPosition();
         const children: HTMLElement[] = [];
-
-        if (border.isEnableDock() && fabPosition === "start") {
-            children.push(this.createCollapsedStripFab(border));
-        }
 
         const tabs = border.getChildren();
         for (let i = 0; i < tabs.length; i++) {
@@ -1270,7 +1265,7 @@ export class VanillaLayoutRenderer {
             children.push(button);
         }
 
-        if (border.isEnableDock() && fabPosition === "end") {
+        if (border.isEnableDock()) {
             children.push(this.createCollapsedStripFab(border));
         }
 
@@ -2141,7 +2136,6 @@ export class VanillaLayoutRenderer {
     private createCollapsedStripFab(border: BorderNode): HTMLButtonElement {
         const loc = border.getLocation();
         const isVertical = loc === DockLocation.LEFT || loc === DockLocation.RIGHT;
-        const fabPosition = border.getFabPosition();
         const fab = document.createElement("button");
         fab.type = "button";
         fab.dataset.layoutPath = `${border.getPath()}/button/dock`;
@@ -2149,11 +2143,7 @@ export class VanillaLayoutRenderer {
         fab.className = this.options.getClassName(CLASSES.FLEXLAYOUT__BORDER_DOCK_BUTTON);
         fab.title = "Expand";
 
-        if (fabPosition === "start") {
-            fab.style[isVertical ? "marginBottom" : "marginRight"] = "auto";
-        } else {
-            fab.style[isVertical ? "marginTop" : "marginLeft"] = "auto";
-        }
+        fab.style[isVertical ? "marginTop" : "marginLeft"] = "auto";
 
         let arrow: string;
         if (loc === DockLocation.LEFT) arrow = "▶";
