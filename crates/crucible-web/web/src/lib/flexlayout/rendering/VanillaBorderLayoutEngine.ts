@@ -1,5 +1,7 @@
 import { DockLocation } from "../core/DockLocation";
+import { Action, type LayoutAction } from "../model/Action";
 import { BorderNode } from "../model/BorderNode";
+import { TabNode } from "../model/TabNode";
 
 const LOCATION_TIE_ORDER: Record<string, number> = {
     top: 0,
@@ -54,4 +56,23 @@ export function collectVisibleBorderStrips(
     }
 
     return strips;
+}
+
+export function handleCollapsedBorderTabClick(
+    border: BorderNode,
+    tab: TabNode,
+    doAction: (action: LayoutAction) => void,
+): void {
+    for (const other of border.getModel().getBorderSet().getBorders()) {
+        if (other.getId() !== border.getId() && other.getFlyoutTabId() !== null) {
+            doAction(Action.closeFlyout(other.getId()));
+        }
+    }
+
+    if (border.getFlyoutTabId() === tab.getId()) {
+        doAction(Action.closeFlyout(border.getId()));
+        return;
+    }
+
+    doAction(Action.openFlyout(border.getId(), tab.getId()));
 }
