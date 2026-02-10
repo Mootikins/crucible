@@ -167,16 +167,16 @@ describe("BorderNode > dockState attribute", () => {
     expect(top.getDockState()).toBe("collapsed");
   });
 
-  it("Action.setDockState changes dockState to minimized", () => {
+  it("Action.setDockState normalizes hidden to collapsed (2-state)", () => {
     const model = Model.fromJson(dockFixture);
     const right = getBorder(model, "right");
     expect(right.getDockState()).toBe("expanded");
 
-    model.doAction(Action.setDockState(right.getId(), "hidden"));
-    expect(right.getDockState()).toBe("hidden");
+    model.doAction({ type: "SET_DOCK_STATE", data: { nodeId: right.getId(), state: "hidden" } } as any);
+    expect(right.getDockState()).toBe("collapsed");
   });
 
-  it("Action.setDockState full cycle: expanded → collapsed → hidden → expanded", () => {
+  it("Action.setDockState 2-state cycle: expanded → collapsed → expanded", () => {
     const model = Model.fromJson(dockFixture);
     const bottom = getBorder(model, "bottom");
 
@@ -184,9 +184,6 @@ describe("BorderNode > dockState attribute", () => {
 
     model.doAction(Action.setDockState(bottom.getId(), "collapsed"));
     expect(bottom.getDockState()).toBe("collapsed");
-
-    model.doAction(Action.setDockState(bottom.getId(), "hidden"));
-    expect(bottom.getDockState()).toBe("hidden");
 
     model.doAction(Action.setDockState(bottom.getId(), "expanded"));
     expect(bottom.getDockState()).toBe("expanded");
@@ -297,13 +294,13 @@ describe("BorderNode > JSON round-trip serialization", () => {
     const model = Model.fromJson(dockFixture);
     const top = getBorder(model, "top");
 
-    model.doAction(Action.setDockState(top.getId(), "hidden"));
+    model.doAction(Action.setDockState(top.getId(), "collapsed"));
     model.doAction(Action.setVisibleTabs(top.getId(), [0]));
 
     const json = model.toJson();
     const restored = Model.fromJson(json);
     const restoredTop = getBorder(restored, "top");
-    expect(restoredTop.getDockState()).toBe("hidden");
+    expect(restoredTop.getDockState()).toBe("collapsed");
     expect(restoredTop.getVisibleTabs()).toEqual([0]);
   });
 
@@ -311,7 +308,7 @@ describe("BorderNode > JSON round-trip serialization", () => {
     const model = Model.fromJson(dockFixture);
 
     model.doAction(Action.setDockState(getBorder(model, "top").getId(), "collapsed"));
-    model.doAction(Action.setDockState(getBorder(model, "right").getId(), "hidden"));
+    model.doAction(Action.setDockState(getBorder(model, "right").getId(), "collapsed"));
     model.doAction(Action.setVisibleTabs(getBorder(model, "right").getId(), [0]));
 
     const json = model.toJson();
@@ -320,7 +317,7 @@ describe("BorderNode > JSON round-trip serialization", () => {
     expect(getBorder(restored, "top").getDockState()).toBe("collapsed");
     expect(getBorder(restored, "bottom").getDockState()).toBe("expanded");
     expect(getBorder(restored, "left").getDockState()).toBe("collapsed");
-    expect(getBorder(restored, "right").getDockState()).toBe("hidden");
+    expect(getBorder(restored, "right").getDockState()).toBe("collapsed");
     expect(getBorder(restored, "right").getVisibleTabs()).toEqual([0]);
     expect(getBorder(restored, "bottom").getVisibleTabs()).toEqual([0, 1]);
   });
