@@ -145,6 +145,11 @@ export class BorderNode extends Node implements IDropTarget {
         return this.getAttr("dockState") as string;
     }
 
+    /** @internal */
+    setDockState(state: string) {
+        this.attributes.dockState = state;
+    }
+
     getVisibleTabs(): number[] {
         const val = this.attributes.visibleTabs;
         if (Array.isArray(val) && val.length > 0) {
@@ -257,7 +262,8 @@ export class BorderNode extends Node implements IDropTarget {
         this.adjustVisibleTabs(removedIndex);
     }
 
-    private adjustVisibleTabs(removedIndex: number) {
+    /** @internal */
+    adjustVisibleTabs(removedIndex: number) {
         const visibleTabs = this.getVisibleTabs();
         if (visibleTabs.length === 0) {
             return;
@@ -437,10 +443,12 @@ export class BorderNode extends Node implements IDropTarget {
         const dragParent = dragNode.getParent() as BorderNode | TabSetNode;
         if (dragParent !== undefined) {
             fromIndex = dragParent.removeChild(dragNode);
-            if (dragParent !== this && dragParent instanceof BorderNode && dragParent.getSelected() === fromIndex) {
-                dragParent.setSelected(-1);
-            } else {
-                adjustSelectedIndex(dragParent, fromIndex);
+            adjustSelectedIndex(dragParent, fromIndex);
+            if (dragParent instanceof BorderNode) {
+                dragParent.adjustVisibleTabs(fromIndex);
+                if (dragParent.getChildren().length === 0) {
+                    dragParent.setDockState("hidden");
+                }
             }
         }
 
@@ -475,6 +483,10 @@ export class BorderNode extends Node implements IDropTarget {
 
         if (!isTilingDrop && (select || (select !== false && this.isAutoSelectTab()))) {
             this.setSelected(insertPos);
+        }
+
+        if (this.getDockState() !== "expanded") {
+            this.setDockState("expanded");
         }
 
         this.model.tidy();
