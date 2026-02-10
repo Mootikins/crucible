@@ -532,14 +532,65 @@ export class VanillaLayoutRenderer {
         horizontal: boolean,
         splitter: HTMLDivElement,
     ): void {
+        const initialSizes = row.getSplitterInitials(index);
+        this.startSplitterDrag({
+            event,
+            element: splitter,
+            orientation: row.getOrientation(),
+            horizontal,
+            getBounds: () => row.getSplitterBounds(index),
+            applyPosition: (position) => {
+                const weights = row.calculateSplit(
+                    index,
+                    position,
+                    initialSizes.initialSizes,
+                    initialSizes.sum,
+                    initialSizes.startPosition,
+                );
+                this.doAction(
+                    Action.adjustWeights(
+                        row.getId(),
+                        weights,
+                        row.getOrientation().getName(),
+                    ),
+                );
+            },
+        });
+    }
+
+    /**
+     * Shared splitter drag handler for row and border-edge splitters.
+     *
+     * Both use the same DOM-based coordinate pattern:
+     * - dragOffset = pointer - elementDomRect (offset within the splitter element)
+     * - position = pointer - layoutOrigin - dragOffset (layout-relative position)
+     *
+     * This ensures the resize indicator and the applied resize position use
+     * identical coordinate systems. The outline div (non-realtime mode) is
+     * positioned at layout-relative coords, and its offsetTop/offsetLeft
+     * is read on release to apply the final position.
+     *
+     * NOTE: The border-tile splitter (onBorderTileSplitterPointerDown) uses a
+     * fundamentally different pattern — relative pixel deltas adjusting local
+     * weight ratios — and cannot be unified with this helper.
+     */
+    private startSplitterDrag(config: {
+        event: PointerEvent;
+        element: HTMLDivElement;
+        orientation: Orientation;
+        horizontal: boolean;
+        getBounds: () => number[];
+        applyPosition: (position: number) => void;
+    }): void {
+        const { event, element, orientation, horizontal, getBounds, applyPosition } = config;
         event.stopPropagation();
         event.preventDefault();
 
-        const initialSizes = row.getSplitterInitials(index);
-        const bounds = row.getSplitterBounds(index);
+        const isVertical = orientation === Orientation.VERT;
+        const bounds = getBounds();
         const isRealtime = this.options.model.isRealtimeResize();
 
-        const domRect = splitter.getBoundingClientRect();
+        const domRect = element.getBoundingClientRect();
         const layoutRect = this.getDomRect();
         const splitterRect = new Rect(
             domRect.x - layoutRect.x,
@@ -548,15 +599,18 @@ export class VanillaLayoutRenderer {
             domRect.height,
         );
 
-        const dragStartX = event.clientX - domRect.x;
-        const dragStartY = event.clientY - domRect.y;
+        // DOM-based offset: distance from pointer to splitter element edge.
+        // This prevents the splitter from "jumping" on first move.
+        const dragOffset = isVertical
+            ? event.clientY - domRect.y
+            : event.clientX - domRect.x;
 
         let outlineDiv: HTMLDivElement | undefined;
         if (!isRealtime && this.rootDiv) {
             outlineDiv = document.createElement("div");
             outlineDiv.style.flexDirection = horizontal ? "row" : "column";
             outlineDiv.className = this.options.getClassName(CLASSES.FLEXLAYOUT__SPLITTER_DRAG);
-            outlineDiv.style.cursor = row.getOrientation() === Orientation.VERT ? "ns-resize" : "ew-resize";
+            outlineDiv.style.cursor = isVertical ? "ns-resize" : "ew-resize";
             splitterRect.positionElement(outlineDiv);
             this.rootDiv.appendChild(outlineDiv);
         }
@@ -565,32 +619,15 @@ export class VanillaLayoutRenderer {
             return Math.max(bounds[0], Math.min(bounds[1], position));
         };
 
-        const applyAtPosition = (position: number): void => {
-            const weights = row.calculateSplit(
-                index,
-                position,
-                initialSizes.initialSizes,
-                initialSizes.sum,
-                initialSizes.startPosition,
-            );
-            this.doAction(
-                Action.adjustWeights(
-                    row.getId(),
-                    weights,
-                    row.getOrientation().getName(),
-                ),
-            );
-        };
-
         const onMove = (moveEvent: PointerEvent): void => {
-            const position = row.getOrientation() === Orientation.VERT
-                ? clampPosition(moveEvent.clientY - layoutRect.y - dragStartY)
-                : clampPosition(moveEvent.clientX - layoutRect.x - dragStartX);
+            const pointer = isVertical ? moveEvent.clientY : moveEvent.clientX;
+            const origin = isVertical ? layoutRect.y : layoutRect.x;
+            const position = clampPosition(pointer - origin - dragOffset);
 
             if (isRealtime) {
-                applyAtPosition(position);
+                applyPosition(position);
             } else if (outlineDiv) {
-                if (row.getOrientation() === Orientation.VERT) {
+                if (isVertical) {
                     outlineDiv.style.top = `${position}px`;
                 } else {
                     outlineDiv.style.left = `${position}px`;
@@ -603,10 +640,10 @@ export class VanillaLayoutRenderer {
             document.removeEventListener("pointerup", onUp);
 
             if (!isRealtime && outlineDiv) {
-                const value = row.getOrientation() === Orientation.VERT
+                const value = isVertical
                     ? outlineDiv.offsetTop
                     : outlineDiv.offsetLeft;
-                applyAtPosition(value);
+                applyPosition(value);
                 outlineDiv.remove();
                 outlineDiv = undefined;
             }
@@ -1724,76 +1761,17 @@ export class VanillaLayoutRenderer {
         horizontal: boolean,
         splitter: HTMLDivElement,
     ): void {
-        event.stopPropagation();
-        event.preventDefault();
-
-        const bounds = border.getSplitterBounds(0);
-        const isRealtime = this.options.model.isRealtimeResize();
-        const domRect = splitter.getBoundingClientRect();
-        const layoutRect = this.getDomRect();
-        const splitterRect = new Rect(
-            domRect.x - layoutRect.x,
-            domRect.y - layoutRect.y,
-            domRect.width,
-            domRect.height,
-        );
-
-        // DOM-based offset (matches row splitter pattern) — prevents jump on first move
-        const dragStartOffset = border.getOrientation() === Orientation.VERT
-            ? event.clientY - domRect.y
-            : event.clientX - domRect.x;
-        let outlineDiv: HTMLDivElement | undefined;
-
-        if (!isRealtime && this.rootDiv) {
-            outlineDiv = document.createElement("div");
-            outlineDiv.style.flexDirection = horizontal ? "row" : "column";
-            outlineDiv.className = this.options.getClassName(CLASSES.FLEXLAYOUT__SPLITTER_DRAG);
-            outlineDiv.style.cursor = border.getOrientation() === Orientation.VERT ? "ns-resize" : "ew-resize";
-            splitterRect.positionElement(outlineDiv);
-            this.rootDiv.appendChild(outlineDiv);
-        }
-
-        const clampPosition = (position: number): number => {
-            return Math.max(bounds[0], Math.min(bounds[1], position));
-        };
-
-        const applyAtPosition = (position: number): void => {
-            const size = border.calculateSplit(border, position);
-            this.doAction(Action.adjustBorderSplit(border.getId(), size));
-        };
-
-        const onMove = (moveEvent: PointerEvent): void => {
-            const pointer = border.getOrientation() === Orientation.VERT ? moveEvent.clientY : moveEvent.clientX;
-            const origin = border.getOrientation() === Orientation.VERT ? layoutRect.y : layoutRect.x;
-            const position = clampPosition(pointer - origin - dragStartOffset);
-
-            if (isRealtime) {
-                applyAtPosition(position);
-            } else if (outlineDiv) {
-                if (border.getOrientation() === Orientation.VERT) {
-                    outlineDiv.style.top = `${position}px`;
-                } else {
-                    outlineDiv.style.left = `${position}px`;
-                }
-            }
-        };
-
-        const onUp = (): void => {
-            document.removeEventListener("pointermove", onMove);
-            document.removeEventListener("pointerup", onUp);
-
-            if (!isRealtime && outlineDiv) {
-                const value = border.getOrientation() === Orientation.VERT
-                    ? outlineDiv.offsetTop
-                    : outlineDiv.offsetLeft;
-                applyAtPosition(value);
-                outlineDiv.remove();
-                outlineDiv = undefined;
-            }
-        };
-
-        document.addEventListener("pointermove", onMove);
-        document.addEventListener("pointerup", onUp);
+        this.startSplitterDrag({
+            event,
+            element: splitter,
+            orientation: border.getOrientation(),
+            horizontal,
+            getBounds: () => border.getSplitterBounds(0),
+            applyPosition: (position) => {
+                const size = border.calculateSplit(border, position);
+                this.doAction(Action.adjustBorderSplit(border.getId(), size));
+            },
+        });
     }
 
     private renderBorderButton(
