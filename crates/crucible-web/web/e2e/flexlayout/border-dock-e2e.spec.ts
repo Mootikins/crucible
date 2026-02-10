@@ -48,7 +48,7 @@ test.describe('Docked Panes > Tab locking', () => {
   });
 });
 
-test.describe('Docked Panes > Collapse/Expand/Minimize cycle', () => {
+test.describe('Docked Panes > 2-State Collapse/Expand cycle', () => {
   test('bottom border has dock button', async ({ page }) => {
     await page.goto(baseURL + '?layout=docked_panes');
     await page.waitForSelector('[data-layout-path="/"]', { timeout: 10_000 });
@@ -70,30 +70,23 @@ test.describe('Docked Panes > Collapse/Expand/Minimize cycle', () => {
     await page.screenshot({ path: `${evidencePath}/dock-e2e-bottom-collapsed.png` });
   });
 
-  test('full cycle: expanded → collapsed → minimized → expanded on bottom', async ({ page }) => {
+  test('2-state cycle: expanded → collapsed → expanded on bottom', async ({ page }) => {
     await page.goto(baseURL + '?layout=docked_panes');
     await page.waitForSelector('[data-layout-path="/"]', { timeout: 10_000 });
 
     const dockButton = page.locator('[data-layout-path="/border/bottom/button/dock"]');
 
-    // expanded → collapsed
     await dockButton.click();
     const borderBottom = page.locator('.flexlayout__border_bottom');
     await expect(borderBottom.first()).toHaveClass(/flexlayout__border--collapsed/);
 
-    // collapsed → minimized
-    await dockButton.click();
-    await expect(borderBottom.first()).toHaveClass(/flexlayout__border--hidden/);
-
-    // minimized → expanded
     await dockButton.click();
     await expect(borderBottom.first()).not.toHaveClass(/flexlayout__border--collapsed/);
-    await expect(borderBottom.first()).not.toHaveClass(/flexlayout__border--hidden/);
 
     await page.screenshot({ path: `${evidencePath}/dock-e2e-bottom-cycle.png` });
   });
 
-  test('left border dock cycle works', async ({ page }) => {
+  test('left border 2-state cycle works', async ({ page }) => {
     await page.goto(baseURL + '?layout=docked_panes');
     await page.waitForSelector('[data-layout-path="/"]', { timeout: 10_000 });
 
@@ -105,14 +98,10 @@ test.describe('Docked Panes > Collapse/Expand/Minimize cycle', () => {
     await expect(borderLeft.first()).toHaveClass(/flexlayout__border--collapsed/);
 
     await dockButton.click();
-    await expect(borderLeft.first()).toHaveClass(/flexlayout__border--hidden/);
-
-    await dockButton.click();
     await expect(borderLeft.first()).not.toHaveClass(/flexlayout__border--collapsed/);
-    await expect(borderLeft.first()).not.toHaveClass(/flexlayout__border--hidden/);
   });
 
-  test('right border dock cycle works', async ({ page }) => {
+  test('right border 2-state cycle works', async ({ page }) => {
     await page.goto(baseURL + '?layout=docked_panes');
     await page.waitForSelector('[data-layout-path="/"]', { timeout: 10_000 });
 
@@ -124,14 +113,10 @@ test.describe('Docked Panes > Collapse/Expand/Minimize cycle', () => {
     await expect(borderRight.first()).toHaveClass(/flexlayout__border--collapsed/);
 
     await dockButton.click();
-    await expect(borderRight.first()).toHaveClass(/flexlayout__border--hidden/);
-
-    await dockButton.click();
     await expect(borderRight.first()).not.toHaveClass(/flexlayout__border--collapsed/);
-    await expect(borderRight.first()).not.toHaveClass(/flexlayout__border--hidden/);
   });
 
-  test('top border dock cycle works', async ({ page }) => {
+  test('top border 2-state cycle works', async ({ page }) => {
     await page.goto(baseURL + '?layout=docked_panes');
     await page.waitForSelector('[data-layout-path="/"]', { timeout: 10_000 });
 
@@ -143,11 +128,7 @@ test.describe('Docked Panes > Collapse/Expand/Minimize cycle', () => {
     await expect(borderTop.first()).toHaveClass(/flexlayout__border--collapsed/);
 
     await dockButton.click();
-    await expect(borderTop.first()).toHaveClass(/flexlayout__border--hidden/);
-
-    await dockButton.click();
     await expect(borderTop.first()).not.toHaveClass(/flexlayout__border--collapsed/);
-    await expect(borderTop.first()).not.toHaveClass(/flexlayout__border--hidden/);
   });
 });
 
@@ -289,38 +270,33 @@ test.describe('Docked Panes > Collapsed state', () => {
   });
 });
 
-test.describe('Docked Panes > Minimized state', () => {
-  test('minimized border shows only dock button (tiny arrow)', async ({ page }) => {
+test.describe('Docked Panes > Collapsed state shows labels', () => {
+  test('collapsed border shows tab labels', async ({ page }) => {
     await page.goto(baseURL + '?layout=docked_panes');
     await page.waitForSelector('[data-layout-path="/"]', { timeout: 10_000 });
 
     const dockButton = page.locator('[data-layout-path="/border/bottom/button/dock"]');
-    await dockButton.click(); // → collapsed
-    await dockButton.click(); // → minimized
+    await dockButton.click();
 
     const borderBottom = page.locator('.flexlayout__border_bottom');
-    await expect(borderBottom.first()).toHaveClass(/flexlayout__border--hidden/);
-
-    const tabButtons = borderBottom.locator('.flexlayout__border_button');
-    await expect(tabButtons).toHaveCount(0);
+    await expect(borderBottom.first()).toHaveClass(/flexlayout__border--collapsed/);
 
     const labels = borderBottom.locator('.flexlayout__border_collapsed_label');
-    await expect(labels).toHaveCount(0);
+    const labelCount = await labels.count();
+    expect(labelCount).toBeGreaterThanOrEqual(1);
 
-    await page.screenshot({ path: `${evidencePath}/dock-e2e-minimized.png` });
+    await page.screenshot({ path: `${evidencePath}/dock-e2e-collapsed-labels-2state.png` });
   });
 
-  test('minimized border dock button restores to expanded', async ({ page }) => {
+  test('collapsed border dock button restores to expanded', async ({ page }) => {
     await page.goto(baseURL + '?layout=docked_panes');
     await page.waitForSelector('[data-layout-path="/"]', { timeout: 10_000 });
 
     const dockButton = page.locator('[data-layout-path="/border/bottom/button/dock"]');
-    await dockButton.click(); // → collapsed
-    await dockButton.click(); // → minimized
-    await dockButton.click(); // → expanded
+    await dockButton.click();
+    await dockButton.click();
 
     const borderBottom = page.locator('.flexlayout__border_bottom');
-    await expect(borderBottom.first()).not.toHaveClass(/flexlayout__border--hidden/);
     await expect(borderBottom.first()).not.toHaveClass(/flexlayout__border--collapsed/);
 
     const terminalTab = page.locator('[data-border-tabbar] .flexlayout__border_button').filter({ hasText: 'Terminal' });
@@ -344,8 +320,8 @@ test.describe('Docked Panes > White content / dark chrome', () => {
   });
 });
 
-test.describe('Docked Panes > All minimized', () => {
-  test('minimizing all borders gives center most of the viewport', async ({ page }) => {
+test.describe('Docked Panes > All collapsed', () => {
+  test('collapsing all borders gives center most of the viewport', async ({ page }) => {
     await page.goto(baseURL + '?layout=docked_panes');
     await page.waitForSelector('[data-layout-path="/"]', { timeout: 10_000 });
 
@@ -354,8 +330,7 @@ test.describe('Docked Panes > All minimized', () => {
 
     for (const edge of ['top', 'bottom', 'left', 'right']) {
       const btn = page.locator(`[data-layout-path="/border/${edge}/button/dock"]`);
-      await btn.click(); // → collapsed
-      await btn.click(); // → minimized
+      await btn.click();
     }
 
     await page.waitForTimeout(300);
@@ -366,9 +341,9 @@ test.describe('Docked Panes > All minimized', () => {
 
     const layoutArea = layoutBox!.width * layoutBox!.height;
     const centerArea = centerBox!.width * centerBox!.height;
-    expect(centerArea / layoutArea).toBeGreaterThan(0.7);
+    expect(centerArea / layoutArea).toBeGreaterThan(0.5);
 
-    await page.screenshot({ path: `${evidencePath}/dock-e2e-all-minimized.png` });
+    await page.screenshot({ path: `${evidencePath}/dock-e2e-all-collapsed.png` });
   });
 });
 
@@ -515,94 +490,46 @@ test.describe('Docked Panes > Expanded tabs-on-top', () => {
   });
 });
 
-test.describe('Docked Panes > Hidden state FAB overlay', () => {
-  test('hidden left border shows FAB at expected position', async ({ page }) => {
+test.describe('Docked Panes > Collapsed strip has dock button', () => {
+  test('collapsed border shows dock button in strip', async ({ page }) => {
     await page.goto(baseURL + '?layout=docked_panes');
     await page.waitForSelector('[data-layout-path="/"]', { timeout: 10_000 });
 
-    // Cycle left border: expanded → collapsed → hidden
     const dockButton = page.locator('[data-layout-path="/border/left/button/dock"]');
-    await dockButton.click(); // → collapsed
-    await dockButton.click(); // → hidden
+    await dockButton.click();
 
     const borderLeft = page.locator('.flexlayout__border_left');
-    await expect(borderLeft.first()).toHaveClass(/flexlayout__border--hidden/);
+    await expect(borderLeft.first()).toHaveClass(/flexlayout__border--collapsed/);
 
-    // FAB should be visible
-    const fab = page.locator('[data-layout-path="/border/left/fab"]');
-    await expect(fab).toBeVisible();
+    await expect(dockButton).toBeVisible();
 
-    // FAB should be approximately 20x20px
-    const box = await fab.boundingBox();
-    expect(box).toBeTruthy();
-    expect(box!.width).toBeGreaterThanOrEqual(16);
-    expect(box!.width).toBeLessThanOrEqual(28);
-    expect(box!.height).toBeGreaterThanOrEqual(16);
-    expect(box!.height).toBeLessThanOrEqual(28);
-
-    // FAB arrow should point toward the left edge (▶ means "expand from left")
-    const text = await fab.textContent();
-    expect(text?.trim()).toBe('▶');
-
-    // FAB should overlay the main content area (positioned absolutely in layout root)
-    const layoutBox = await findPath(page, '/').boundingBox();
-    expect(layoutBox).toBeTruthy();
-    expect(box!.x).toBeGreaterThanOrEqual(layoutBox!.x);
-    expect(box!.y).toBeGreaterThanOrEqual(layoutBox!.y);
-
-    await page.screenshot({ path: `${evidencePath}/task-7-fab-hidden.png` });
+    await page.screenshot({ path: `${evidencePath}/dock-e2e-collapsed-dock-btn.png` });
   });
 
-  test('clicking FAB transitions to expanded state', async ({ page }) => {
+  test('clicking dock button in collapsed strip expands border', async ({ page }) => {
     await page.goto(baseURL + '?layout=docked_panes');
     await page.waitForSelector('[data-layout-path="/"]', { timeout: 10_000 });
 
-    // Cycle left border to hidden
     const dockButton = page.locator('[data-layout-path="/border/left/button/dock"]');
-    await dockButton.click(); // → collapsed
-    await dockButton.click(); // → hidden
+    await dockButton.click();
+    await dockButton.click();
 
-    const fab = page.locator('[data-layout-path="/border/left/fab"]');
-    await expect(fab).toBeVisible();
-
-    // Click FAB to expand
-    await fab.click();
-
-    // FAB should disappear after click
-    await expect(fab).not.toBeVisible({ timeout: 5000 });
-
-    // Border should now be expanded — use data-layout-path which is always in DOM
     const borderPath = page.locator('[data-layout-path="/border/left"]');
     await expect(borderPath).toHaveCount(1);
-    await expect(borderPath).not.toHaveClass(/flexlayout__border--hidden/);
     await expect(borderPath).not.toHaveClass(/flexlayout__border--collapsed/);
 
-    await page.screenshot({ path: `${evidencePath}/task-7-fab-click-expand.png` });
+    await page.screenshot({ path: `${evidencePath}/dock-e2e-collapsed-expand.png` });
   });
 
-  test('FAB not shown when border is expanded or collapsed', async ({ page }) => {
-    await page.goto(baseURL + '?layout=docked_panes');
-    await page.waitForSelector('[data-layout-path="/"]', { timeout: 10_000 });
-
-    // When border is expanded, no FAB
-    const fabLeft = page.locator('[data-layout-path="/border/left/fab"]');
-    await expect(fabLeft).not.toBeVisible();
-
-    // When collapsed, no FAB either
-    const dockButton = page.locator('[data-layout-path="/border/left/button/dock"]');
-    await dockButton.click(); // → collapsed
-    await expect(fabLeft).not.toBeVisible();
-  });
-
-  test('FAB for each border direction has correct arrow', async ({ page }) => {
+  test('dock button arrow direction correct for each edge', async ({ page }) => {
     await page.goto(baseURL + '?layout=docked_panes');
     await page.waitForSelector('[data-layout-path="/"]', { timeout: 10_000 });
 
     for (const edge of ['top', 'bottom', 'left', 'right']) {
       const btn = page.locator(`[data-layout-path="/border/${edge}/button/dock"]`);
       await btn.click();
-      await btn.click();
     }
+
     const expectedArrows: Record<string, string> = {
       left: '▶',
       right: '◀',
@@ -611,32 +538,24 @@ test.describe('Docked Panes > Hidden state FAB overlay', () => {
     };
 
     for (const [edge, arrow] of Object.entries(expectedArrows)) {
-      const fab = page.locator(`[data-layout-path="/border/${edge}/fab"]`);
-      await expect(fab).toBeVisible();
-      const text = await fab.textContent();
+      const btn = page.locator(`[data-layout-path="/border/${edge}/button/dock"]`);
+      const text = await btn.textContent();
       expect(text?.trim()).toBe(arrow);
     }
   });
 
-  test('FAB is keyboard accessible (button element)', async ({ page }) => {
+  test('dock button is keyboard accessible', async ({ page }) => {
     await page.goto(baseURL + '?layout=docked_panes');
     await page.waitForSelector('[data-layout-path="/"]', { timeout: 10_000 });
 
-    // Hide left border
     const dockButton = page.locator('[data-layout-path="/border/left/button/dock"]');
-    await dockButton.click(); // → collapsed
-    await dockButton.click(); // → hidden
+    await dockButton.click();
 
-    const fab = page.locator('[data-layout-path="/border/left/fab"]');
-    await expect(fab).toBeVisible();
-
-    // Verify it's a button element (keyboard accessible)
-    const tagName = await fab.evaluate((el) => el.tagName.toLowerCase());
+    const tagName = await dockButton.evaluate((el) => el.tagName.toLowerCase());
     expect(tagName).toBe('button');
 
-    // Verify it can receive focus
-    await fab.focus();
-    const isFocused = await fab.evaluate((el) => document.activeElement === el);
+    await dockButton.focus();
+    const isFocused = await dockButton.evaluate((el) => document.activeElement === el);
     expect(isFocused).toBe(true);
   });
 });
