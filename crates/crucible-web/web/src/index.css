@@ -178,6 +178,7 @@
   min-width: 0;
   min-height: 0;
   flex-grow: 1;
+  overflow: hidden;
   position: relative;
   z-index: var(--fl-z-main);
 }
@@ -597,6 +598,49 @@
   outline-offset: 1px;
 }
 
+/* Collapsed border strip — static layout styles */
+.flexlayout__border--collapsed[data-collapsed-strip] {
+  display: flex;
+  align-items: center;
+  position: relative;
+  z-index: 1;
+}
+
+.flexlayout__border--collapsed[data-collapsed-strip][data-edge="left"],
+.flexlayout__border--collapsed[data-collapsed-strip][data-edge="right"] {
+  flex-direction: column;
+  align-self: stretch;
+  overflow: visible;
+}
+
+.flexlayout__border--collapsed[data-collapsed-strip][data-edge="top"],
+.flexlayout__border--collapsed[data-collapsed-strip][data-edge="bottom"] {
+  flex-direction: row;
+}
+
+/* Expanded border strip — always flex */
+.flexlayout__border:not(.flexlayout__border--collapsed) {
+  display: flex;
+}
+
+/* Border content area — column layout */
+.flexlayout__border_tab_contents {
+  flex-direction: column;
+}
+
+/* Pin indicator — non-interactive */
+[data-pinned="true"] .flexlayout__tab_button_trailing[data-layout-path$="/indicator/pin"] {
+  pointer-events: none;
+}
+
+/* Border tile — flex column container */
+[data-border-tile] {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  position: relative;
+}
+
 /* Border collapsed state — hide content + splitter, show vertical labels */
 .flexlayout__border--collapsed .flexlayout__border_tab_contents {
   display: none !important;
@@ -711,6 +755,9 @@
 
 /* DnD overlay + outline */
 .flexlayout__layout_overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 998;
   pointer-events: none;
 }
 
