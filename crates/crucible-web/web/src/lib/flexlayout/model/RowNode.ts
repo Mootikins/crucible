@@ -12,10 +12,8 @@ import { IJsonRowNode } from "../types";
 import { DefaultMax, DefaultMin, Model } from "./Model";
 import { Node } from "./Node";
 import { TabSetNode } from "./TabSetNode";
-import { adjustSelectedIndex } from "./Utils";
-
 import { LayoutWindow } from "./LayoutWindow";
-import { canDockToWindow } from "./Utils";
+import { adjustSelectedIndex, canDockToWindow } from "./Utils";
 
 export class RowNode extends Node implements IDropTarget {
     static readonly TYPE = "row";
