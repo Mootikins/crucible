@@ -536,25 +536,35 @@
   outline-offset: 1px;
 }
 
-/* Border dock button (2-state: expanded ↔ collapsed) */
+/* Border dock button (chevron in collapsed strips — expand/collapse toggle) */
 .flexlayout__border_dock_button {
   cursor: pointer;
-  padding: var(--fl-spacing-floating-titlebar-v) var(--fl-spacing-floating-titlebar-h);
+  padding: 0;
   color: var(--fl-color-text-muted);
-  background: none;
-  border: none;
+  background: var(--fl-color-bg-elevated, var(--fl-color-bg-primary));
+  border: var(--fl-size-border-width) solid var(--fl-color-border-primary);
+  border-radius: var(--fl-size-fab-radius);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: var(--fl-size-dock-btn-font);
+  width: var(--fl-size-fab-size);
+  height: var(--fl-size-fab-size);
+  font-size: var(--fl-size-fab-font);
   line-height: 1;
-  opacity: var(--fl-opacity-unselected);
-  transition: opacity var(--fl-transition-fast) ease, color 0.15s ease;
+  flex-shrink: 0;
+  box-sizing: border-box;
+  transition: background var(--fl-transition-fast) ease, color 0.15s ease, border-color 0.15s ease;
 }
 
 .flexlayout__border_dock_button:hover {
-  opacity: 1;
   color: var(--fl-color-text-tertiary);
+  background: var(--fl-color-bg-hover, var(--fl-color-bg-primary));
+  border-color: var(--fl-color-accent, var(--fl-color-border-primary));
+}
+
+.flexlayout__border_dock_button:focus-visible {
+  outline: 2px solid var(--fl-color-accent);
+  outline-offset: 1px;
 }
 
 /* Border collapsed state — hide content + splitter, show vertical labels */
@@ -564,72 +574,6 @@
 
 .flexlayout__border--collapsed .flexlayout__splitter_border {
   display: none !important;
-}
-
-
-
-/* Collapsed label (tab names in collapsed left/right borders, rotated) */
-.flexlayout__border_collapsed_label {
-  padding: var(--fl-spacing-collapsed-label-v) var(--fl-spacing-collapsed-label-h);
-  color: var(--fl-color-text-muted);
-  white-space: nowrap;
-  font-size: var(--fl-size-dock-btn-font);
-  user-select: none;
-  display: flex;
-  align-items: center;
-  text-overflow: ellipsis;
-  overflow: hidden;
-}
-
-.flexlayout__collapsed_strip {
-  z-index: calc(var(--fl-z-flyout) + 5);
-  pointer-events: auto;
-  background: var(--fl-color-bg-primary);
-  border: var(--fl-size-border-width) solid var(--fl-color-border-primary);
-  gap: 2px;
-  padding: 2px;
-}
-
-.flexlayout__collapsed_strip[data-animate="true"] {
-  transition: opacity var(--fl-animation-duration, 200ms) ease-out;
-}
-
-.flexlayout__collapsed_strip[data-state="collapsing"] {
-  opacity: 0;
-}
-
-.flexlayout__collapsed_strip[data-state="collapsed"] {
-  opacity: 1;
-}
-
-.flexlayout__collapsed_strip[data-state="expanding"] {
-  opacity: 0;
-}
-
-.flexlayout__collapsed_strip .flexlayout__border_button {
-  margin: 0;
-  border: 0;
-  background: transparent;
-  cursor: pointer;
-  padding: 4px 8px;
-  white-space: nowrap;
-  font-size: var(--fl-size-dock-btn-font);
-  color: var(--fl-color-text-muted);
-  transition: color var(--fl-transition-fast) ease, background var(--fl-transition-fast) ease;
-}
-
-.flexlayout__collapsed_strip .flexlayout__border_button:hover {
-  color: var(--fl-color-text-tertiary);
-  background: var(--fl-color-bg-hover);
-}
-
-.flexlayout__collapsed_strip .flexlayout__border_button--selected {
-  color: var(--fl-color-text-primary);
-  background: var(--fl-color-accent-subtle);
-}
-
-.flexlayout__collapsed_strip .flexlayout__border_dock_button {
-  flex-shrink: 0;
 }
 
 .flexlayout__flyout_backdrop {
@@ -643,8 +587,8 @@
   position: absolute;
   z-index: var(--fl-z-flyout);
   overflow: hidden;
-  background: var(--fl-color-bg-surface);
-  border: var(--fl-size-border-width) solid var(--fl-color-border-primary);
+  background: var(--fl-color-bg-elevated);
+  border: var(--fl-size-border-width) solid var(--fl-color-border-floating);
   box-shadow: var(--fl-shadow-floating);
   transition: transform var(--fl-animation-duration, 200ms) ease-out,
               opacity var(--fl-animation-duration, 200ms) ease-out;
