@@ -356,7 +356,7 @@ describe("LayoutEngine", () => {
             expect(result[2].getPriority()).toBeGreaterThanOrEqual(result[3].getPriority());
         });
 
-        it("should break ties by location order [top, right, bottom, left]", () => {
+        it("should break ties by location order [top, bottom, left, right]", () => {
             const model = makeModel([
                 { type: "border", location: "top", selected: 0, priority: 1, children: [{ type: "tab", name: "T", component: "text" }] },
                 { type: "border", location: "bottom", selected: 0, priority: 1, children: [{ type: "tab", name: "B", component: "text" }] },
@@ -367,9 +367,9 @@ describe("LayoutEngine", () => {
             const result = computeNestingOrder(borders);
 
             expect(result[0].getLocation().getName()).toBe("top");
-            expect(result[1].getLocation().getName()).toBe("right");
-            expect(result[2].getLocation().getName()).toBe("bottom");
-            expect(result[3].getLocation().getName()).toBe("left");
+            expect(result[1].getLocation().getName()).toBe("bottom");
+            expect(result[2].getLocation().getName()).toBe("left");
+            expect(result[3].getLocation().getName()).toBe("right");
         });
 
         it("default priorities (left=1, right=1, top=0, bottom=0) preserve left/right outer nesting", () => {
