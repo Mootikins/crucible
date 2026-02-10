@@ -2,9 +2,7 @@ import { test, expect } from '@playwright/test';
 
 const baseURL = '/flexlayout-test.html?layout=docked_panes';
 
-// Vanilla renderer does not yet render the main layout structure (borders, rows, tabsets).
-// These tests require the full vanilla renderer — skip until vanilla mode renders border strips.
-test.describe.skip('Vanilla 2-state border', () => {
+test.describe('Vanilla 2-state border', () => {
   test.beforeEach(async ({ page }) => {
     await page.addInitScript(() => {
       (window as Window & { __FLEXLAYOUT_VANILLA__?: string }).__FLEXLAYOUT_VANILLA__ = '1';
