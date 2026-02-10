@@ -27,14 +27,12 @@ class AriaLevelTracker {
 const ariaLevelTracker = new AriaLevelTracker();
 
 export class Overlay {
-    private readonly element: HTMLElement = document.createElement('div');
+    readonly element: HTMLElement = document.createElement('div');
     private readonly onDidChangeCallbacks: (() => void)[] = [];
     private readonly onDidChangeEndCallbacks: (() => void)[] = [];
-    private isVisible: boolean;
+    isVisible: boolean;
     private verticalAlignment: 'top' | 'bottom' | undefined;
     private horizontalAlignment: 'left' | 'right' | undefined;
-    private static readonly MINIMUM_HEIGHT = 20;
-    private static readonly MINIMUM_WIDTH = 20;
 
     constructor(
         private readonly options: AnchoredBox & {
@@ -203,12 +201,6 @@ export class Overlay {
 
     private fireOnDidChange(): void {
         for (const callback of this.onDidChangeCallbacks) {
-            callback();
-        }
-    }
-
-    private fireOnDidChangeEnd(): void {
-        for (const callback of this.onDidChangeEndCallbacks) {
             callback();
         }
     }
