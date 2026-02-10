@@ -3,6 +3,8 @@ import { CLASSES } from "../flexlayout/core/Types";
 import type { ILayoutContext } from "./Layout";
 import { LayoutWindow } from "../flexlayout/model/LayoutWindow";
 
+console.warn("PopoutWindow is experimental and may be removed in a future version. Use at your own risk.");
+
 export interface IPopoutWindowProps {
     title: string;
     layout: ILayoutContext;
