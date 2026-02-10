@@ -144,5 +144,5 @@ export const SolidBinding: Component<ILayoutProps> = (props) => {
         return <LegacyLayout {...props} />;
     }
 
-    return <div ref={containerRef} />;
+    return <div ref={containerRef} style={{ width: "100%", height: "100%", position: "relative" }} />;
 };

@@ -95,6 +95,11 @@
   --fl-opacity-splitter-drag: 0.7;
   --fl-opacity-floating-btn: 0.7;
   --fl-opacity-resize-handle: 0.5;
+  --fl-z-main: 1;
+  --fl-z-flyout-backdrop: 850;
+  --fl-z-flyout: 900;
+  --fl-z-flyout-content: 901;
+  --fl-z-floating: 1000;
 }
 
 @layer base {
@@ -173,6 +178,7 @@
   min-height: 0;
   flex-grow: 1;
   position: relative;
+  z-index: var(--fl-z-main);
 }
 
 .flexlayout__row {
@@ -584,6 +590,45 @@
   overflow: hidden;
 }
 
+.flexlayout__flyout_strip {
+  z-index: calc(var(--fl-z-flyout) + 5);
+  pointer-events: auto;
+}
+
+.flexlayout__flyout_strip .flexlayout__border_button {
+  margin: 0;
+  border: 0;
+  background: transparent;
+}
+
+.flexlayout__flyout_backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: var(--fl-z-flyout-backdrop);
+  background: transparent;
+}
+
+.flexlayout__flyout_panel {
+  position: absolute;
+  z-index: var(--fl-z-flyout);
+  overflow: hidden;
+  background: var(--fl-color-bg-surface);
+  border: var(--fl-size-border-width) solid var(--fl-color-border-primary);
+  box-shadow: var(--fl-shadow-floating);
+  animation: flexlayout-flyout-in var(--fl-transition-medium) var(--fl-transition-timing);
+}
+
+@keyframes flexlayout-flyout-in {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 4px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
 /* Border content transition */
 .flexlayout__border_tab_contents {
   transition: flex-basis var(--fl-transition-medium) var(--fl-transition-timing), width var(--fl-transition-medium) var(--fl-transition-timing), height var(--fl-transition-medium) var(--fl-transition-timing);
@@ -714,7 +759,7 @@
 /* Floating panel (in-DOM overlay for float windows) */
 .flexlayout__floating_panel {
   position: absolute;
-  z-index: 1000;
+  z-index: var(--fl-z-floating);
   display: flex;
   flex-direction: column;
   border: var(--fl-size-border-width) solid var(--fl-color-border-floating);
