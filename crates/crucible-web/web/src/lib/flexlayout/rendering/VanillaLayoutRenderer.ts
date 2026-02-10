@@ -149,12 +149,7 @@ export class VanillaLayoutRenderer {
         this.mainDiv = document.createElement("div");
         this.mainDiv.className = this.options.getClassName(CLASSES.FLEXLAYOUT__LAYOUT_MAIN);
         this.mainDiv.dataset.layoutPath = "/main";
-        this.mainDiv.style.position = "absolute";
-        this.mainDiv.style.top = "0";
-        this.mainDiv.style.left = "0";
-        this.mainDiv.style.bottom = "0";
-        this.mainDiv.style.right = "0";
-        this.mainDiv.style.display = "flex";
+        this.mainDiv.style.overflow = "hidden";
         this.rootDiv.appendChild(this.mainDiv);
 
         this.floatingWindowManager = new VanillaFloatingWindowManager({
@@ -524,8 +519,10 @@ export class VanillaLayoutRenderer {
             domRect.height,
         );
 
-        const dragStartX = event.clientX - domRect.x;
-        const dragStartY = event.clientY - domRect.y;
+        // Use layout-relative coordinates for both dragStart and onMove
+        // so the reference frames match (both relative to layout root)
+        const dragStartX = event.clientX - layoutRect.x;
+        const dragStartY = event.clientY - layoutRect.y;
 
         let outlineDiv: HTMLDivElement | undefined;
         if (!isRealtime && this.rootDiv) {
@@ -1219,6 +1216,8 @@ export class VanillaLayoutRenderer {
                 }
             }
 
+            button.draggable = true;
+
             const content = document.createElement("span");
             content.className = this.options.getClassName(CLASSES.FLEXLAYOUT__BORDER_BUTTON_CONTENT);
             content.textContent = tab.getName();
@@ -1228,6 +1227,19 @@ export class VanillaLayoutRenderer {
                 event.stopPropagation();
                 handleCollapsedBorderTabClick(border, tab, (action) => this.doAction(action));
             });
+
+            button.ondragstart = (event) => {
+                if (tab.isEnableDrag()) {
+                    event.stopPropagation();
+                    this.dndManager.setDragNode(event, tab);
+                } else {
+                    event.preventDefault();
+                }
+            };
+
+            button.ondragend = () => {
+                this.dndManager.clearDragMain();
+            };
 
             children.push(button);
         }
@@ -1705,8 +1717,8 @@ export class VanillaLayoutRenderer {
             domRect.height,
         );
 
-        const dragStartX = event.clientX - domRect.x;
-        const dragStartY = event.clientY - domRect.y;
+        const dragStartX = event.clientX - layoutRect.x;
+        const dragStartY = event.clientY - layoutRect.y;
         let outlineDiv: HTMLDivElement | undefined;
 
         if (!isRealtime && this.rootDiv) {
@@ -2100,12 +2112,20 @@ export class VanillaLayoutRenderer {
 
     private createCollapsedStripFab(border: BorderNode): HTMLButtonElement {
         const loc = border.getLocation();
+        const isVertical = loc === DockLocation.LEFT || loc === DockLocation.RIGHT;
+        const fabPosition = border.getFabPosition();
         const fab = document.createElement("button");
         fab.type = "button";
         fab.dataset.layoutPath = `${border.getPath()}/button/dock`;
         fab.dataset.collapsedFab = "true";
         fab.className = this.options.getClassName(CLASSES.FLEXLAYOUT__BORDER_DOCK_BUTTON);
         fab.title = "Expand";
+
+        if (fabPosition === "start") {
+            fab.style[isVertical ? "marginBottom" : "marginRight"] = "auto";
+        } else {
+            fab.style[isVertical ? "marginTop" : "marginLeft"] = "auto";
+        }
 
         let arrow: string;
         if (loc === DockLocation.LEFT) arrow = "▶";
@@ -2193,20 +2213,39 @@ export class VanillaLayoutRenderer {
 
             const size = border.getSize();
             const location = border.getLocation();
+            const insets = this.getCollapsedBorderInsets();
             let rect: Rect;
             if (location === DockLocation.LEFT) {
-                rect = new Rect(BORDER_BAR_SIZE, 0, size, this.rect.height);
+                rect = new Rect(insets.left, insets.top, size, this.rect.height - insets.top - insets.bottom);
             } else if (location === DockLocation.RIGHT) {
-                rect = new Rect(this.rect.width - BORDER_BAR_SIZE - size, 0, size, this.rect.height);
+                rect = new Rect(this.rect.width - insets.right - size, insets.top, size, this.rect.height - insets.top - insets.bottom);
             } else if (location === DockLocation.TOP) {
-                rect = new Rect(0, BORDER_BAR_SIZE, this.rect.width, size);
+                rect = new Rect(insets.left, insets.top, this.rect.width - insets.left - insets.right, size);
             } else {
-                rect = new Rect(0, this.rect.height - BORDER_BAR_SIZE - size, this.rect.width, size);
+                rect = new Rect(insets.left, this.rect.height - insets.bottom - size, this.rect.width - insets.left - insets.right, size);
             }
 
             this.flyoutState = { border, tab, rect };
             return;
         }
+    }
+
+    private getCollapsedBorderInsets(): { top: number; right: number; bottom: number; left: number } {
+        let top = 0;
+        let right = 0;
+        let bottom = 0;
+        let left = 0;
+        for (const border of this.options.model.getBorderSet().getBorders()) {
+            if (!border.isShowing() || border.getDockState() !== "collapsed") {
+                continue;
+            }
+            const loc = border.getLocation();
+            if (loc === DockLocation.TOP) top = BORDER_BAR_SIZE;
+            else if (loc === DockLocation.BOTTOM) bottom = BORDER_BAR_SIZE;
+            else if (loc === DockLocation.LEFT) left = BORDER_BAR_SIZE;
+            else if (loc === DockLocation.RIGHT) right = BORDER_BAR_SIZE;
+        }
+        return { top, right, bottom, left };
     }
 
     private getFlyoutEdgeName(): string {
