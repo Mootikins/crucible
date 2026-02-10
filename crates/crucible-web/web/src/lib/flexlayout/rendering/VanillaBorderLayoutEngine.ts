@@ -3,11 +3,16 @@ import { Action, type LayoutAction } from "../model/Action";
 import { BorderNode } from "../model/BorderNode";
 import { TabNode } from "../model/TabNode";
 
+// Nesting order determines which borders "own" corner space.
+// Horizontal borders (top/bottom) sort first → nest outermost → span full width.
+// Vertical borders (left/right) sort later → nest inside → span between top and bottom.
+// This produces the standard IDE layout where top/bottom bars are full-width
+// and left/right sidebars fit between them.
 const LOCATION_TIE_ORDER: Record<string, number> = {
     top: 0,
-    right: 1,
-    bottom: 2,
-    left: 3,
+    bottom: 1,
+    left: 2,
+    right: 3,
 };
 
 export const BORDER_BAR_SIZE = 38;
