@@ -737,7 +737,7 @@ export const Layout: Component<ILayoutProps> = (props) => {
         return 1000 + (idx >= 0 ? idx : 0);
     };
 
-    const BORDER_BAR_SIZE = 29;
+    const BORDER_BAR_SIZE = 38;
 
     const hasBorders = createMemo(() => {
         void layoutVersion();

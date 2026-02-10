@@ -12,6 +12,7 @@ import { IJsonRowNode } from "../types";
 import { DefaultMax, DefaultMin, Model } from "./Model";
 import { Node } from "./Node";
 import { TabSetNode } from "./TabSetNode";
+import { adjustSelectedIndex } from "./Utils";
 
 import { LayoutWindow } from "./LayoutWindow";
 import { canDockToWindow } from "./Utils";
@@ -425,17 +426,20 @@ export class RowNode extends Node implements IDropTarget {
         const dockLocation = location;
 
         const parent = dragNode.getParent();
+        let fromIndex = 0;
 
         if (parent) {
-            parent.removeChild(dragNode);
+            fromIndex = parent.removeChild(dragNode);
         }
 
-        if (parent !== undefined && parent! instanceof TabSetNode) {
-            parent.setSelected(0);
-        }
-
-        if (parent !== undefined && parent! instanceof BorderNode) {
-            parent.setSelected(-1);
+        if (parent !== undefined) {
+            adjustSelectedIndex(parent as BorderNode | TabSetNode | RowNode, fromIndex);
+            if (parent instanceof BorderNode) {
+                parent.adjustVisibleTabs(fromIndex);
+                if (parent.getChildren().length === 0) {
+                    parent.setDockState("hidden");
+                }
+            }
         }
 
         let node: TabSetNode | RowNode | undefined;

@@ -399,11 +399,12 @@ export class TabSetNode extends Node implements IDraggable, IDropTarget {
         let fromIndex = 0;
         if (dragParent !== undefined) {
             fromIndex = dragParent.removeChild(dragNode);
-            // if selected node in border is being docked into tabset then deselect border tabs
-            if (dragParent instanceof BorderNode && dragParent.getSelected() === fromIndex) {
-                dragParent.setSelected(-1);
-            } else {
-                adjustSelectedIndex(dragParent, fromIndex);
+            adjustSelectedIndex(dragParent, fromIndex);
+            if (dragParent instanceof BorderNode) {
+                dragParent.adjustVisibleTabs(fromIndex);
+                if (dragParent.getChildren().length === 0) {
+                    dragParent.setDockState("hidden");
+                }
             }
         }
 

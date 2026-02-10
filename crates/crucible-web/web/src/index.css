@@ -485,6 +485,8 @@
   user-select: none;
   display: flex;
   align-items: center;
+  text-overflow: ellipsis;
+  overflow: hidden;
 }
 
 /* Border content transition */

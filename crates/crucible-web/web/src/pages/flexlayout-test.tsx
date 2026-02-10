@@ -3039,6 +3039,64 @@ const layouts: Record<string, LayoutDef> = {
       ],
     },
   },
+
+  // ═══ Border DnD + Dock Demo ═══
+
+  border_dnd_dock: {
+    global: {
+      ...defaultGlobal,
+      tabEnableDrag: true,
+      borderEnableDrop: true,
+      borderEnableDock: true,
+    },
+    borders: [
+      {
+        type: "border",
+        location: "left",
+        size: 200,
+        selected: 0,
+        visibleTabs: [0, 1],
+        children: [
+          { type: "tab", name: "Explorer", component: "info", config: { description: "Left border tab 1" } },
+          { type: "tab", name: "Search", component: "info", config: { description: "Left border tab 2" } },
+        ],
+      },
+      {
+        type: "border",
+        location: "bottom",
+        size: 200,
+        selected: 0,
+        children: [
+          { type: "tab", name: "Terminal", component: "info", config: { description: "Bottom border tab" } },
+          { type: "tab", name: "Output", component: "info", config: { description: "Bottom border tab 2" } },
+        ],
+      },
+      {
+        type: "border",
+        location: "right",
+        size: 200,
+        children: [],
+      },
+      {
+        type: "border",
+        location: "top",
+        size: 150,
+        children: [],
+      },
+    ],
+    layout: {
+      type: "row",
+      children: [
+        {
+          type: "tabset",
+          children: [
+            { type: "tab", name: "Main", component: "info", config: { description: "Center panel" } },
+            { type: "tab", name: "Document", component: "text" },
+          ],
+        },
+      ],
+    },
+  },
 };
 
 const FlexLayoutTest: Component = () => {
