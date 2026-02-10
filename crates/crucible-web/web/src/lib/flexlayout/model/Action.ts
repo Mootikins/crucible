@@ -32,6 +32,14 @@ export type LayoutAction =
   | { type: "SET_TAB_ENABLE_CLOSE"; data: { tabId: string; enableClose: boolean } }
   | { type: "SET_DOCK_STATE"; data: { nodeId: string; state: "expanded" | "collapsed" | "hidden" } }
   | { type: "SET_VISIBLE_TABS"; data: { nodeId: string; tabs: number[] } }
+  | { type: "PIN_TAB"; data: { tabId: string } }
+  | { type: "UNPIN_TAB"; data: { tabId: string } }
+  | { type: "PIN_BORDER"; data: { borderId: string } }
+  | { type: "UNPIN_BORDER"; data: { borderId: string } }
+  | { type: "OPEN_FLYOUT"; data: { borderId: string; tabId: string } }
+  | { type: "CLOSE_FLYOUT"; data: { borderId: string } }
+  | { type: "SET_FLYOUT_SIZE"; data: { borderId: string; size: number } }
+  | { type: "SET_TABSET_MODE"; data: { tabsetId: string; mode: "tabs" | "paneview" } }
   | { type: string; [key: string]: unknown };  // Escape hatch for extensibility
 
 /**
@@ -264,6 +272,62 @@ export const Action = {
     return {
       type: "SET_VISIBLE_TABS",
       data: { nodeId, tabs },
+    };
+  },
+
+  pinTab(tabId: string): Extract<LayoutAction, { type: "PIN_TAB" }> {
+    return {
+      type: "PIN_TAB",
+      data: { tabId },
+    };
+  },
+
+  unpinTab(tabId: string): Extract<LayoutAction, { type: "UNPIN_TAB" }> {
+    return {
+      type: "UNPIN_TAB",
+      data: { tabId },
+    };
+  },
+
+  pinBorder(borderId: string): Extract<LayoutAction, { type: "PIN_BORDER" }> {
+    return {
+      type: "PIN_BORDER",
+      data: { borderId },
+    };
+  },
+
+  unpinBorder(borderId: string): Extract<LayoutAction, { type: "UNPIN_BORDER" }> {
+    return {
+      type: "UNPIN_BORDER",
+      data: { borderId },
+    };
+  },
+
+  openFlyout(borderId: string, tabId: string): Extract<LayoutAction, { type: "OPEN_FLYOUT" }> {
+    return {
+      type: "OPEN_FLYOUT",
+      data: { borderId, tabId },
+    };
+  },
+
+  closeFlyout(borderId: string): Extract<LayoutAction, { type: "CLOSE_FLYOUT" }> {
+    return {
+      type: "CLOSE_FLYOUT",
+      data: { borderId },
+    };
+  },
+
+  setFlyoutSize(borderId: string, size: number): Extract<LayoutAction, { type: "SET_FLYOUT_SIZE" }> {
+    return {
+      type: "SET_FLYOUT_SIZE",
+      data: { borderId, size },
+    };
+  },
+
+  setTabsetMode(tabsetId: string, mode: "tabs" | "paneview"): Extract<LayoutAction, { type: "SET_TABSET_MODE" }> {
+    return {
+      type: "SET_TABSET_MODE",
+      data: { tabsetId, mode },
     };
   },
 };

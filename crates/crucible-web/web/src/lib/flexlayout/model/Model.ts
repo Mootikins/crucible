@@ -268,6 +268,30 @@ export class Model {
 			case "SET_VISIBLE_TABS":
 				this.actionSetVisibleTabs(data);
 				break;
+			case "PIN_TAB":
+				this.actionPinTab(data);
+				break;
+			case "UNPIN_TAB":
+				this.actionUnpinTab(data);
+				break;
+			case "PIN_BORDER":
+				this.actionPinBorder(data);
+				break;
+			case "UNPIN_BORDER":
+				this.actionUnpinBorder(data);
+				break;
+			case "OPEN_FLYOUT":
+				this.actionOpenFlyout(data);
+				break;
+			case "CLOSE_FLYOUT":
+				this.actionCloseFlyout(data);
+				break;
+			case "SET_FLYOUT_SIZE":
+				this.actionSetFlyoutSize(data);
+				break;
+			case "SET_TABSET_MODE":
+				this.actionSetTabsetMode(data);
+				break;
 		}
 
 		this.actionEmitter.fire(action);
@@ -294,6 +318,9 @@ export class Model {
 		const toNode = this.getNodeById(toNodeId);
 
 		if (!fromNode || !toNode) return;
+
+		if (fromNode instanceof TabNode && fromNode.isPinned()) return;
+		if (fromNode instanceof BorderNode && fromNode.isPinned()) return;
 
 		if (fromNode instanceof TabNode || fromNode instanceof TabSetNode || fromNode instanceof RowNode) {
 			if (fromNode === this.getMaximizedTabset(fromNode.getWindowId())) {
@@ -333,6 +360,7 @@ export class Model {
 		const { node } = data;
 		const tab = this.getNodeById(node);
 		if (tab instanceof TabNode) {
+			if (tab.isPinned()) return;
 			tab.delete();
 		}
 		this.removeEmptyWindows();
@@ -343,11 +371,10 @@ export class Model {
 		const tabset = this.getNodeById(node);
 
 		if (tabset instanceof TabSetNode) {
-			// first delete all child tabs that are closeable
 			const children = [...tabset.getChildren()];
 			for (let i = 0; i < children.length; i++) {
 				const child = children[i];
-				if ((child as TabNode).isEnableClose()) {
+				if ((child as TabNode).isEnableClose() && !(child as TabNode).isPinned()) {
 					(child as TabNode).delete();
 				}
 			}
@@ -617,6 +644,9 @@ export class Model {
 		const node = this.getNodeById(nodeId) as BorderNode;
 		if (node && node instanceof BorderNode) {
 			(node as any).attributes.dockState = state;
+			if (state === "expanded") {
+				node.setFlyoutTabId(null);
+			}
 		}
 	}
 
@@ -625,6 +655,70 @@ export class Model {
 		const node = this.getNodeById(nodeId) as BorderNode;
 		if (node && node instanceof BorderNode) {
 			(node as any).attributes.visibleTabs = tabs;
+		}
+	}
+
+	private actionPinTab(data: any): void {
+		const { tabId } = data;
+		const tab = this.getNodeById(tabId);
+		if (tab instanceof TabNode) {
+			tab.setPinned(true);
+		}
+	}
+
+	private actionUnpinTab(data: any): void {
+		const { tabId } = data;
+		const tab = this.getNodeById(tabId);
+		if (tab instanceof TabNode) {
+			tab.setPinned(false);
+		}
+	}
+
+	private actionPinBorder(data: any): void {
+		const { borderId } = data;
+		const border = this.getNodeById(borderId);
+		if (border instanceof BorderNode) {
+			border.setPinned(true);
+		}
+	}
+
+	private actionUnpinBorder(data: any): void {
+		const { borderId } = data;
+		const border = this.getNodeById(borderId);
+		if (border instanceof BorderNode) {
+			border.setPinned(false);
+		}
+	}
+
+	private actionOpenFlyout(data: any): void {
+		const { borderId, tabId } = data;
+		const border = this.getNodeById(borderId);
+		if (border instanceof BorderNode) {
+			border.setFlyoutTabId(tabId);
+		}
+	}
+
+	private actionCloseFlyout(data: any): void {
+		const { borderId } = data;
+		const border = this.getNodeById(borderId);
+		if (border instanceof BorderNode) {
+			border.setFlyoutTabId(null);
+		}
+	}
+
+	private actionSetFlyoutSize(data: any): void {
+		const { borderId, size } = data;
+		const border = this.getNodeById(borderId);
+		if (border instanceof BorderNode) {
+			border.setSize(size);
+		}
+	}
+
+	private actionSetTabsetMode(data: any): void {
+		const { tabsetId, mode } = data;
+		const tabset = this.getNodeById(tabsetId);
+		if (tabset instanceof TabSetNode) {
+			tabset.setMode(mode);
 		}
 	}
 
