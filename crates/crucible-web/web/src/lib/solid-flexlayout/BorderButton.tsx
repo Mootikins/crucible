@@ -40,6 +40,9 @@ export const BorderButton: Component<IBorderButtonProps> = (props) => {
     const onDragStart = (event: DragEvent) => {
         if (node.isEnableDrag()) {
             event.stopPropagation();
+            if (!props.selected) {
+                props.layout.doAction(Action.selectTab(node.getId()));
+            }
             props.layout.setDragNode(event, node);
         } else {
             event.preventDefault();

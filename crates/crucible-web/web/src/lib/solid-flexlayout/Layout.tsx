@@ -765,7 +765,9 @@ export const Layout: Component<ILayoutProps> = (props) => {
         const data = borderData();
         const entry = data?.strips.get(loc.getName());
         if (!entry) return undefined;
-        const stripSize = (entry.border.getDockState() === "expanded" && entry.show) ? 0 : BORDER_BAR_SIZE;
+        const isEmpty = entry.border.getChildren().length === 0;
+        const isExpanded = entry.border.getDockState() === "expanded";
+        const stripSize = (isExpanded && entry.show) || (isEmpty && !isExpanded) ? 0 : BORDER_BAR_SIZE;
         return <BorderTabSet layout={layoutContext()} border={entry.border} size={stripSize} />;
     };
 
