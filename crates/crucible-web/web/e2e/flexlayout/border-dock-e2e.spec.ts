@@ -828,3 +828,62 @@ test.describe('Docked Panes > Collapsed flyout bounds (Bug #5)', () => {
     await page.screenshot({ path: `${evidencePath}/bug-5-after.png` });
   });
 });
+
+test.describe('Docked Panes > Collapsed strip FAB placement (Bug #2 + #6)', () => {
+  test('collapsed strip FAB stays on strip edge and is not interleaved with tab buttons on all borders', async ({ page }) => {
+    await page.goto(baseURL + '?layout=docked_panes');
+    await page.waitForSelector('[data-layout-path="/"]', { timeout: 10_000 });
+
+    for (const edge of ['top', 'bottom', 'left', 'right']) {
+      const dockButton = page.locator(`[data-layout-path="/border/${edge}/button/dock"]`).first();
+      const title = await dockButton.getAttribute('title');
+      if (title === 'Collapse') {
+        await dockButton.click();
+      }
+    }
+
+    await page.waitForTimeout(200);
+
+    for (const edge of ['top', 'bottom', 'left', 'right'] as const) {
+      const strip = page.locator(`.flexlayout__border_${edge}[data-collapsed-strip="true"]`).first();
+      await expect(strip).toBeVisible();
+
+      const placement = await strip.evaluate((el, currentEdge) => {
+        const allButtons = Array.from(el.querySelectorAll('button')) as HTMLButtonElement[];
+        const fabIndex = allButtons.findIndex((button) => button.dataset.collapsedFab === 'true');
+        const tabButtons = allButtons.filter((button) => button.dataset.collapsedTabItem === 'true');
+
+        if (fabIndex < 0) {
+          return {
+            hasFab: false,
+            tabCount: tabButtons.length,
+            isAtTrailingDomEdge: false,
+            isAtTrailingVisualEdge: false,
+          };
+        }
+
+        const fabRect = allButtons[fabIndex].getBoundingClientRect();
+        const isVertical = currentEdge === 'left' || currentEdge === 'right';
+        const fabStart = isVertical ? fabRect.top : fabRect.left;
+
+        const tabRects = tabButtons.map((tabButton) => tabButton.getBoundingClientRect());
+        const maxTabEnd = Math.max(...tabRects.map((rect) => (isVertical ? rect.bottom : rect.right)));
+        const tolerance = 2;
+
+        return {
+          hasFab: true,
+          tabCount: tabButtons.length,
+          isAtTrailingDomEdge: fabIndex === allButtons.length - 1,
+          isAtTrailingVisualEdge: fabStart >= maxTabEnd - tolerance,
+        };
+      }, edge);
+
+      expect(placement.hasFab).toBe(true);
+      expect(placement.tabCount).toBeGreaterThan(0);
+      expect(placement.isAtTrailingDomEdge).toBe(true);
+      expect(placement.isAtTrailingVisualEdge).toBe(true);
+    }
+
+    await page.screenshot({ path: `${evidencePath}/bug-2-6-after.png` });
+  });
+});
