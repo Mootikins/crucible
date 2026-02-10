@@ -52,7 +52,7 @@ describe('overlayRenderContainer', () => {
             referenceElement,
         };
 
-        const containerEl = container.attach(panel);
+        container.attach(panel);
 
         expect(panelContentEl.parentElement?.parentElement).toBe(parentContainer);
 
@@ -253,7 +253,7 @@ describe('overlayRenderContainer', () => {
         );
 
         const containerEl1 = container.attach(panel1);
-        const containerEl2 = container.attach(panel2);
+        container.attach(panel2);
 
         await exhaustMicrotaskQueue();
         await exhaustAnimationFrame();
