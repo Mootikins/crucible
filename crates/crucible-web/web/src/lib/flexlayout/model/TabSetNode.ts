@@ -414,7 +414,7 @@ export class TabSetNode extends Node implements IDraggable, IDropTarget {
             if (dragParent instanceof BorderNode) {
                 dragParent.adjustVisibleTabs(fromIndex);
                 if (dragParent.getChildren().length === 0) {
-                    dragParent.setDockState("hidden");
+                    dragParent.setDockState("collapsed");
                 }
             }
         }

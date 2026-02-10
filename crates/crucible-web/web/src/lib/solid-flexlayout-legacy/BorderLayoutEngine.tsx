@@ -109,7 +109,7 @@ export const BorderLayoutEngine: Component<BorderLayoutEngineProps> = (props) =>
         return base;
     };
 
-    const hiddenBorderFabs = () => {
+    const emptyCollapsedBorderFabs = () => {
         void props.layoutVersion();
         void props.revision();
         if (!hasBorders()) return null;
@@ -120,8 +120,8 @@ export const BorderLayoutEngine: Component<BorderLayoutEngineProps> = (props) =>
             if (
                 border &&
                 border.isShowing() &&
-                border.getDockState() === "hidden" &&
-                border.getChildren().length > 0
+                border.getDockState() === "collapsed" &&
+                border.getChildren().length === 0
             ) {
                 const loc = border.getLocation();
                 fabs.push(
@@ -195,7 +195,7 @@ export const BorderLayoutEngine: Component<BorderLayoutEngineProps> = (props) =>
     return (
         <>
             {renderNestedBorders()}
-            {hiddenBorderFabs()}
+            {emptyCollapsedBorderFabs()}
         </>
     );
 };

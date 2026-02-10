@@ -14,7 +14,7 @@ import type { IContentRenderer } from "./IContentRenderer";
 import { VanillaDndManager } from "./VanillaDndManager";
 import { VanillaPopupManager } from "./VanillaPopupManager";
 import { VanillaFloatingWindowManager } from "./VanillaFloatingWindowManager";
-import { BORDER_BAR_SIZE, collectVisibleBorderStrips, handleCollapsedBorderTabClick } from "./VanillaBorderLayoutEngine";
+import { BORDER_BAR_SIZE, handleCollapsedBorderTabClick } from "./VanillaBorderLayoutEngine";
 
 interface IFlyoutState {
     border: BorderNode;
@@ -49,6 +49,10 @@ export class VanillaLayoutRenderer {
     private flyoutState: IFlyoutState | undefined;
     private flyoutPanel: HTMLDivElement | undefined;
     private flyoutBackdrop: HTMLDivElement | undefined;
+
+    private readonly paneviewExpanded = new Map<string, boolean>();
+    private readonly paneviewContainers = new Map<string, HTMLDivElement>();
+    private paneviewDragState: { tabsetId: string; dragTabId: string; placeholder: HTMLDivElement } | undefined;
 
     private readonly popupManager: VanillaPopupManager;
     private readonly dndManager: VanillaDndManager;
@@ -169,6 +173,13 @@ export class VanillaLayoutRenderer {
         this.flyoutBackdrop = undefined;
         this.flyoutState = undefined;
 
+        for (const [, container] of this.paneviewContainers) {
+            container.remove();
+        }
+        this.paneviewContainers.clear();
+        this.paneviewExpanded.clear();
+        this.paneviewDragState = undefined;
+
         this.rootDiv?.remove();
         this.rootDiv = undefined;
         this.mainDiv = undefined;
@@ -269,6 +280,7 @@ export class VanillaLayoutRenderer {
         this.renderCollapsedBorderStrips();
         this.updateFlyoutState();
         this.renderFlyout();
+        this.renderPaneviews();
         this.renderTabContents();
         this.floatingWindowManager?.render();
     }
@@ -366,10 +378,6 @@ export class VanillaLayoutRenderer {
         }
 
         const existing = this.rootDiv.querySelector('[data-layout-path="/collapsed-borders"]') as HTMLDivElement | null;
-        const strips = collectVisibleBorderStrips(
-            this.options.model.getBorderSet().getBorderMap(),
-            DockLocation.CENTER,
-        );
 
         const container = existing ?? document.createElement("div");
         container.dataset.layoutPath = "/collapsed-borders";
@@ -379,29 +387,47 @@ export class VanillaLayoutRenderer {
         container.replaceChildren();
 
         for (const border of this.options.model.getBorderSet().getBorders()) {
+            if (!border.isShowing()) {
+                continue;
+            }
+
+            const dockState = border.getDockState();
+            if (dockState !== "collapsed") {
+                continue;
+            }
+
             const location = border.getLocation();
             const locationName = location.getName();
-            if (!strips.has(locationName) || border.getChildren().length === 0) {
+            const isVertical = location === DockLocation.LEFT || location === DockLocation.RIGHT;
+            const hasTabs = border.getChildren().length > 0;
+
+            if (!hasTabs && border.isAutoHide()) {
+                this.renderEmptyBorderFab(container, border);
                 continue;
             }
 
             const strip = document.createElement("div");
             strip.dataset.layoutPath = border.getPath();
+            strip.dataset.collapsedStrip = "true";
+            strip.dataset.state = "collapsed";
             strip.className = [
                 this.options.getClassName(CLASSES.FLEXLAYOUT__BORDER),
                 this.options.getClassName(`${CLASSES.FLEXLAYOUT__BORDER_}${locationName}`),
                 this.options.getClassName(CLASSES.FLEXLAYOUT__BORDER__COLLAPSED),
-                "flexlayout__flyout_strip",
+                "flexlayout__collapsed_strip",
             ].join(" ");
 
             strip.style.position = "absolute";
             strip.style.display = "flex";
             strip.style.alignItems = "center";
-            strip.style.justifyContent = "center";
             strip.style.pointerEvents = "auto";
             strip.style.zIndex = "910";
-            if (location === DockLocation.LEFT || location === DockLocation.RIGHT) {
+
+            if (isVertical) {
                 strip.style.flexDirection = "column";
+                strip.style.justifyContent = "flex-start";
+            } else {
+                strip.style.justifyContent = "flex-start";
             }
 
             if (location === DockLocation.TOP) {
@@ -426,6 +452,22 @@ export class VanillaLayoutRenderer {
                 strip.style.width = `${BORDER_BAR_SIZE}px`;
             }
 
+            strip.addEventListener("dragover", (e) => {
+                e.preventDefault();
+                if (e.dataTransfer) {
+                    e.dataTransfer.dropEffect = "move";
+                }
+            });
+            strip.addEventListener("drop", (e) => {
+                e.preventDefault();
+                this.doAction(Action.setDockState(border.getId(), "expanded"));
+            });
+
+            const fabPosition = border.getFabPosition();
+            if (border.isEnableDock() && fabPosition === "start") {
+                strip.appendChild(this.createCollapsedStripFab(border));
+            }
+
             const tabs = border.getChildren();
             for (let i = 0; i < tabs.length; i++) {
                 const tab = tabs[i];
@@ -437,6 +479,7 @@ export class VanillaLayoutRenderer {
                 button.type = "button";
                 button.dataset.layoutPath = `${border.getPath()}/tb${i}`;
                 button.dataset.flyoutTabButton = "true";
+                button.dataset.collapsedTabItem = "true";
                 button.className = [
                     this.options.getClassName(CLASSES.FLEXLAYOUT__BORDER_BUTTON),
                     this.options.getClassName(
@@ -445,6 +488,13 @@ export class VanillaLayoutRenderer {
                             : CLASSES.FLEXLAYOUT__BORDER_BUTTON__UNSELECTED,
                     ),
                 ].join(" ");
+
+                if (isVertical) {
+                    button.style.writingMode = "vertical-rl";
+                    if (location === DockLocation.LEFT) {
+                        button.style.transform = "rotate(180deg)";
+                    }
+                }
 
                 const content = document.createElement("span");
                 content.className = this.options.getClassName(CLASSES.FLEXLAYOUT__BORDER_BUTTON_CONTENT);
@@ -459,6 +509,10 @@ export class VanillaLayoutRenderer {
                 strip.appendChild(button);
             }
 
+            if (border.isEnableDock() && fabPosition === "end") {
+                strip.appendChild(this.createCollapsedStripFab(border));
+            }
+
             container.appendChild(strip);
             border.setTabHeaderRect(this.getBoundingClientRect(strip));
         }
@@ -466,6 +520,86 @@ export class VanillaLayoutRenderer {
         if (!existing) {
             this.rootDiv.appendChild(container);
         }
+    }
+
+    private createCollapsedStripFab(border: BorderNode): HTMLButtonElement {
+        const loc = border.getLocation();
+        const fab = document.createElement("button");
+        fab.type = "button";
+        fab.dataset.layoutPath = `${border.getPath()}/button/dock`;
+        fab.dataset.collapsedFab = "true";
+        fab.className = this.options.getClassName(CLASSES.FLEXLAYOUT__BORDER_DOCK_BUTTON);
+        fab.title = "Expand";
+
+        let arrow: string;
+        if (loc === DockLocation.LEFT) arrow = "▶";
+        else if (loc === DockLocation.RIGHT) arrow = "◀";
+        else if (loc === DockLocation.TOP) arrow = "▼";
+        else arrow = "▲";
+        fab.textContent = arrow;
+
+        fab.addEventListener("pointerdown", (e) => e.stopPropagation());
+        fab.addEventListener("click", (event) => {
+            event.stopPropagation();
+            this.doAction(Action.setDockState(border.getId(), "expanded"));
+        });
+
+        return fab;
+    }
+
+    private renderEmptyBorderFab(container: HTMLElement, border: BorderNode): void {
+        const loc = border.getLocation();
+        const fab = document.createElement("button");
+        fab.type = "button";
+        fab.dataset.layoutPath = `${border.getPath()}/fab`;
+        fab.dataset.emptyBorderFab = "true";
+        fab.className = this.options.getClassName(CLASSES.FLEXLAYOUT__BORDER_FAB);
+        fab.style.position = "absolute";
+        fab.style.pointerEvents = "auto";
+        fab.style.zIndex = "910";
+
+        if (loc === DockLocation.LEFT) {
+            fab.style.left = "4px";
+            fab.style.top = "50%";
+            fab.style.transform = "translateY(-50%)";
+        } else if (loc === DockLocation.RIGHT) {
+            fab.style.right = "4px";
+            fab.style.top = "50%";
+            fab.style.transform = "translateY(-50%)";
+        } else if (loc === DockLocation.TOP) {
+            fab.style.top = "4px";
+            fab.style.left = "50%";
+            fab.style.transform = "translateX(-50%)";
+        } else {
+            fab.style.bottom = "4px";
+            fab.style.left = "50%";
+            fab.style.transform = "translateX(-50%)";
+        }
+
+        let arrow: string;
+        if (loc === DockLocation.LEFT) arrow = "▶";
+        else if (loc === DockLocation.RIGHT) arrow = "◀";
+        else if (loc === DockLocation.TOP) arrow = "▼";
+        else arrow = "▲";
+        fab.textContent = arrow;
+
+        fab.addEventListener("click", (event) => {
+            event.stopPropagation();
+            this.doAction(Action.setDockState(border.getId(), "expanded"));
+        });
+
+        fab.addEventListener("dragover", (e) => {
+            e.preventDefault();
+            if (e.dataTransfer) {
+                e.dataTransfer.dropEffect = "move";
+            }
+        });
+        fab.addEventListener("drop", (e) => {
+            e.preventDefault();
+            this.doAction(Action.setDockState(border.getId(), "expanded"));
+        });
+
+        container.appendChild(fab);
     }
 
     private updateFlyoutState(): void {
@@ -543,6 +677,217 @@ export class VanillaLayoutRenderer {
         Object.assign(this.flyoutPanel.style, style);
     }
 
+    private collectPaneviewTabSets(): TabSetNode[] {
+        const result: TabSetNode[] = [];
+        const root = this.options.model.getRoot();
+        if (!root) {
+            return result;
+        }
+        const visit = (node: Node): void => {
+            if (node instanceof TabSetNode && node.getMode() === "paneview") {
+                result.push(node);
+            }
+            for (const child of node.getChildren()) {
+                visit(child);
+            }
+        };
+        visit(root);
+        return result;
+    }
+
+    private isPaneviewTab(node: TabNode): boolean {
+        const parent = node.getParent();
+        return parent instanceof TabSetNode && parent.getMode() === "paneview";
+    }
+
+    private renderPaneviews(): void {
+        if (!this.rootDiv) {
+            return;
+        }
+
+        const paneviewTabSets = this.collectPaneviewTabSets();
+        const seenIds = new Set<string>();
+
+        for (const tabset of paneviewTabSets) {
+            const tsId = tabset.getId();
+            seenIds.add(tsId);
+            const tsRect = tabset.getRect();
+
+            let container = this.paneviewContainers.get(tsId);
+            if (!container) {
+                container = document.createElement("div");
+                container.className = this.options.getClassName("flexlayout__paneview");
+                container.dataset.layoutPath = tabset.getPath() + "/paneview";
+                this.rootDiv.appendChild(container);
+                this.paneviewContainers.set(tsId, container);
+            }
+
+            const posStyle: Record<string, string> = {};
+            tsRect.styleWithPosition(posStyle);
+            Object.assign(container.style, posStyle);
+            container.style.display = "flex";
+
+            const children = tabset.getChildren() as TabNode[];
+            const existingSections = new Map<string, HTMLElement>();
+            for (const sec of Array.from(container.children) as HTMLElement[]) {
+                const tabId = sec.dataset.paneviewTabId;
+                if (tabId) {
+                    existingSections.set(tabId, sec);
+                }
+            }
+
+            const sectionOrder: HTMLElement[] = [];
+
+            for (let i = 0; i < children.length; i++) {
+                const tab = children[i];
+                const tabId = tab.getId();
+
+                if (!this.paneviewExpanded.has(tabId)) {
+                    this.paneviewExpanded.set(tabId, i === 0);
+                }
+                const isExpanded = this.paneviewExpanded.get(tabId) ?? false;
+
+                let section = existingSections.get(tabId);
+                if (!section) {
+                    section = this.createPaneviewSection(tabset, tab, i);
+                }
+
+                existingSections.delete(tabId);
+
+                const header = section.querySelector("[data-paneview-header]") as HTMLElement;
+                if (header) {
+                    header.dataset.state = isExpanded ? "expanded" : "collapsed";
+                    const chevron = header.querySelector("[data-paneview-chevron]") as HTMLElement;
+                    if (chevron) {
+                        chevron.textContent = isExpanded ? "▾" : "▸";
+                    }
+                    const nameSpan = header.querySelector("[data-paneview-name]") as HTMLElement;
+                    if (nameSpan) {
+                        nameSpan.textContent = tab.getName();
+                    }
+                }
+
+                const contentWrapper = section.querySelector("[data-paneview-content]") as HTMLElement;
+                if (contentWrapper) {
+                    contentWrapper.style.display = isExpanded ? "block" : "none";
+                    contentWrapper.dataset.state = isExpanded ? "expanded" : "collapsed";
+                    if (isExpanded) {
+                        contentWrapper.style.flex = "1";
+                        contentWrapper.style.minHeight = "0";
+                    } else {
+                        contentWrapper.style.flex = "";
+                        contentWrapper.style.minHeight = "";
+                    }
+                }
+
+                section.dataset.paneviewTabId = tabId;
+                section.dataset.paneviewIndex = String(i);
+                section.dataset.layoutPath = tabset.getPath() + "/pane" + i;
+                sectionOrder.push(section);
+            }
+
+            for (const [, orphan] of existingSections) {
+                orphan.remove();
+            }
+
+            for (const sec of sectionOrder) {
+                container.appendChild(sec);
+            }
+        }
+
+        for (const [tsId, container] of this.paneviewContainers) {
+            if (!seenIds.has(tsId)) {
+                container.remove();
+                this.paneviewContainers.delete(tsId);
+            }
+        }
+    }
+
+    private createPaneviewSection(tabset: TabSetNode, tab: TabNode, index: number): HTMLElement {
+        const section = document.createElement("div");
+        section.className = this.options.getClassName("flexlayout__paneview_section");
+        section.dataset.paneviewTabId = tab.getId();
+
+        const header = document.createElement("div");
+        header.className = this.options.getClassName("flexlayout__paneview_header");
+        header.dataset.paneviewHeader = "true";
+        header.dataset.layoutPath = tabset.getPath() + "/pane" + index + "/header";
+        header.draggable = true;
+
+        const chevron = document.createElement("span");
+        chevron.dataset.paneviewChevron = "true";
+        chevron.className = this.options.getClassName("flexlayout__paneview_chevron");
+        chevron.textContent = "▾";
+
+        const name = document.createElement("span");
+        name.dataset.paneviewName = "true";
+        name.className = this.options.getClassName("flexlayout__paneview_name");
+        name.textContent = tab.getName();
+
+        header.appendChild(chevron);
+        header.appendChild(name);
+
+        header.addEventListener("click", () => {
+            const current = this.paneviewExpanded.get(tab.getId()) ?? false;
+            this.paneviewExpanded.set(tab.getId(), !current);
+            this.render();
+        });
+
+        header.addEventListener("dragstart", (e) => {
+            e.dataTransfer?.setData("text/plain", tab.getId());
+            section.style.opacity = "0.5";
+
+            const placeholder = document.createElement("div");
+            placeholder.className = this.options.getClassName("flexlayout__paneview_placeholder");
+            this.paneviewDragState = {
+                tabsetId: tabset.getId(),
+                dragTabId: tab.getId(),
+                placeholder,
+            };
+        });
+
+        header.addEventListener("dragend", () => {
+            section.style.opacity = "";
+            if (this.paneviewDragState?.placeholder.parentNode) {
+                this.paneviewDragState.placeholder.remove();
+            }
+            this.paneviewDragState = undefined;
+        });
+
+        section.addEventListener("dragover", (e) => {
+            if (!this.paneviewDragState || this.paneviewDragState.tabsetId !== tabset.getId()) {
+                return;
+            }
+            e.preventDefault();
+            e.dataTransfer!.dropEffect = "move";
+        });
+
+        section.addEventListener("drop", (e) => {
+            e.preventDefault();
+            if (!this.paneviewDragState || this.paneviewDragState.tabsetId !== tabset.getId()) {
+                return;
+            }
+            const dropIndex = Number.parseInt(section.dataset.paneviewIndex ?? "0", 10);
+            this.doAction(Action.moveNode(
+                this.paneviewDragState.dragTabId,
+                tabset.getId(),
+                "center",
+                dropIndex,
+            ));
+            this.paneviewDragState = undefined;
+        });
+
+        const contentWrapper = document.createElement("div");
+        contentWrapper.className = this.options.getClassName("flexlayout__paneview_content");
+        contentWrapper.dataset.paneviewContent = "true";
+        contentWrapper.dataset.layoutPath = tabset.getPath() + "/pane" + index + "/content";
+
+        section.appendChild(header);
+        section.appendChild(contentWrapper);
+
+        return section;
+    }
+
     private renderTabContents(): void {
         if (!this.rootDiv) {
             return;
@@ -555,6 +900,8 @@ export class VanillaLayoutRenderer {
             const tabId = node.getId();
             seen.add(tabId);
 
+            const inPaneview = this.isPaneviewTab(node);
+
             let container = this.contentContainers.get(tabId);
             if (!container) {
                 container = document.createElement("div");
@@ -566,7 +913,21 @@ export class VanillaLayoutRenderer {
                         this.doAction(Action.setActiveTabset(p.getId(), Model.MAIN_WINDOW_ID));
                     }
                 });
-                this.rootDiv.appendChild(container);
+
+                if (inPaneview) {
+                    const tsId = (parent as TabSetNode).getId();
+                    const paneContainer = this.paneviewContainers.get(tsId);
+                    const sections = paneContainer?.querySelectorAll(`[data-paneview-tab-id="${tabId}"] [data-paneview-content]`);
+                    const contentWrapper = sections?.[0] as HTMLElement | undefined;
+                    if (contentWrapper) {
+                        contentWrapper.appendChild(container);
+                    } else {
+                        this.rootDiv.appendChild(container);
+                    }
+                } else {
+                    this.rootDiv.appendChild(container);
+                }
+
                 this.contentContainers.set(tabId, container);
 
                 const renderer = this.options.createContentRenderer(node);
@@ -578,37 +939,61 @@ export class VanillaLayoutRenderer {
                 this.contentRenderers.set(tabId, renderer);
             }
 
-            let shouldShow = false;
-            let style: Record<string, string> = {};
-
-            if (parent instanceof BorderNode) {
-                const flyoutState = this.flyoutState;
-                if (flyoutState && flyoutState.border.getId() === parent.getId() && flyoutState.tab.getId() === node.getId()) {
-                    flyoutState.rect.styleWithPosition(style);
-                    shouldShow = true;
-                    container.style.zIndex = "901";
-                }
-            } else {
-                const contentRect = parent.getContentRect();
-                if (contentRect.width > 0 && contentRect.height > 0 && node.isSelected()) {
-                    contentRect.styleWithPosition(style);
-                    shouldShow = true;
+            if (inPaneview) {
+                const isExpanded = this.paneviewExpanded.get(tabId) ?? false;
+                if (isExpanded) {
+                    container.style.position = "relative";
+                    container.style.width = "100%";
+                    container.style.height = "100%";
+                    container.style.display = "block";
+                    container.style.top = "";
+                    container.style.left = "";
                     container.style.zIndex = "";
+                } else {
+                    container.style.display = "none";
                 }
-            }
 
-            if (shouldShow) {
-                Object.assign(container.style, style);
-                container.style.display = "block";
+                const tsId = (parent as TabSetNode).getId();
+                const paneContainer = this.paneviewContainers.get(tsId);
+                if (paneContainer && !container.parentElement?.hasAttribute("data-paneview-content")) {
+                    const contentWrapper = paneContainer.querySelector(`[data-paneview-tab-id="${tabId}"] [data-paneview-content]`) as HTMLElement | null;
+                    if (contentWrapper && container.parentElement !== contentWrapper) {
+                        contentWrapper.appendChild(container);
+                    }
+                }
             } else {
-                container.style.display = "none";
+                let shouldShow = false;
+                let style: Record<string, string> = {};
+
+                if (parent instanceof BorderNode) {
+                    const flyoutState = this.flyoutState;
+                    if (flyoutState && flyoutState.border.getId() === parent.getId() && flyoutState.tab.getId() === node.getId()) {
+                        flyoutState.rect.styleWithPosition(style);
+                        shouldShow = true;
+                        container.style.zIndex = "901";
+                    }
+                } else {
+                    const contentRect = parent.getContentRect();
+                    if (contentRect.width > 0 && contentRect.height > 0 && node.isSelected()) {
+                        contentRect.styleWithPosition(style);
+                        shouldShow = true;
+                        container.style.zIndex = "";
+                    }
+                }
+
+                if (shouldShow) {
+                    Object.assign(container.style, style);
+                    container.style.display = "block";
+                } else {
+                    container.style.display = "none";
+                }
             }
 
             container.dataset.layoutPath = node.getPath();
 
             const renderer = this.contentRenderers.get(tabId);
             renderer?.update({
-                selected: node.isSelected(),
+                selected: inPaneview ? (this.paneviewExpanded.get(tabId) ?? false) : node.isSelected(),
                 windowId: Model.MAIN_WINDOW_ID,
             });
         }
