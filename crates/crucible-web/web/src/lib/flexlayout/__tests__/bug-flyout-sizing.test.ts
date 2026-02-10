@@ -2,6 +2,8 @@ import { describe, it, expect } from "vitest";
 import { Model } from "../model/Model";
 import { Action } from "../model/Action";
 import { BorderNode } from "../model/BorderNode";
+import { DockLocation } from "../core/DockLocation";
+import { computeFlyoutRect } from "../core/flyout-rect";
 import type { IJsonModel } from "../types";
 
 const flyoutSizingFixture: IJsonModel = {
@@ -86,11 +88,72 @@ describe("Bug #5: Flyout sizing — left/right height ≤50% viewport, default ~
         expect(defaultSize).toBeLessThanOrEqual(500);
     });
 
-    it.todo("left/right flyout rect height should be ≤50% of layout height");
+    it("left/right flyout rect height should be ≤50% of layout height", () => {
+        const layoutWidth = 1200;
+        const layoutHeight = 800;
+        const insets = { top: 0, right: 0, bottom: 0, left: 0 };
 
-    it.todo("left/right flyout rect height defaults to ~25% of layout height");
+        const leftRect = computeFlyoutRect({
+            primarySize: 200,
+            location: DockLocation.LEFT,
+            layoutWidth,
+            layoutHeight,
+            insets,
+        });
+        expect(leftRect.height).toBeLessThanOrEqual(layoutHeight * 0.5);
+        expect(leftRect.height).toBeGreaterThanOrEqual(100);
 
-    it.todo("top/bottom flyout rect width should be ≤50% of layout width");
+        const rightRect = computeFlyoutRect({
+            primarySize: 200,
+            location: DockLocation.RIGHT,
+            layoutWidth,
+            layoutHeight,
+            insets,
+        });
+        expect(rightRect.height).toBeLessThanOrEqual(layoutHeight * 0.5);
+        expect(rightRect.height).toBeGreaterThanOrEqual(100);
+    });
+
+    it("left/right flyout rect height defaults to ~25% of layout height", () => {
+        const layoutWidth = 1200;
+        const layoutHeight = 800;
+        const insets = { top: 0, right: 0, bottom: 0, left: 0 };
+
+        const rect = computeFlyoutRect({
+            primarySize: 200,
+            location: DockLocation.LEFT,
+            layoutWidth,
+            layoutHeight,
+            insets,
+        });
+        expect(rect.height).toBe(layoutHeight * 0.25);
+    });
+
+    it("top/bottom flyout rect width should be ≤50% of layout width", () => {
+        const layoutWidth = 1200;
+        const layoutHeight = 800;
+        const insets = { top: 0, right: 0, bottom: 0, left: 0 };
+
+        const topRect = computeFlyoutRect({
+            primarySize: 150,
+            location: DockLocation.TOP,
+            layoutWidth,
+            layoutHeight,
+            insets,
+        });
+        expect(topRect.width).toBeLessThanOrEqual(layoutWidth * 0.5);
+        expect(topRect.width).toBeGreaterThanOrEqual(100);
+
+        const bottomRect = computeFlyoutRect({
+            primarySize: 150,
+            location: DockLocation.BOTTOM,
+            layoutWidth,
+            layoutHeight,
+            insets,
+        });
+        expect(bottomRect.width).toBeLessThanOrEqual(layoutWidth * 0.5);
+        expect(bottomRect.width).toBeGreaterThanOrEqual(100);
+    });
 
     it("flyout size can be set via action and persists", () => {
         const model = Model.fromJson(flyoutSizingFixture);
