@@ -14,6 +14,13 @@ import type { IContentRenderer } from "./IContentRenderer";
 import { VanillaDndManager } from "./VanillaDndManager";
 import { VanillaPopupManager } from "./VanillaPopupManager";
 import { VanillaFloatingWindowManager } from "./VanillaFloatingWindowManager";
+import { BORDER_BAR_SIZE, collectVisibleBorderStrips, handleCollapsedBorderTabClick } from "./VanillaBorderLayoutEngine";
+
+interface IFlyoutState {
+    border: BorderNode;
+    tab: TabNode;
+    rect: Rect;
+}
 
 export interface IVanillaLayoutRendererOptions {
     model: Model;
@@ -39,6 +46,9 @@ export class VanillaLayoutRenderer {
     private readonly contentContainers = new Map<string, HTMLElement>();
     private readonly disposables: IDisposable[] = [];
     private resizeObserver: ResizeObserver | undefined;
+    private flyoutState: IFlyoutState | undefined;
+    private flyoutPanel: HTMLDivElement | undefined;
+    private flyoutBackdrop: HTMLDivElement | undefined;
 
     private readonly popupManager: VanillaPopupManager;
     private readonly dndManager: VanillaDndManager;
@@ -116,9 +126,15 @@ export class VanillaLayoutRenderer {
             if (this.options.onModelChange) {
                 this.options.onModelChange(this.options.model, action);
             }
+
+            if (action.type === "OPEN_FLYOUT" || action.type === "CLOSE_FLYOUT") {
+                this.updateFlyoutState();
+                this.render();
+            }
         }));
 
         this.updateRect();
+        this.updateFlyoutState();
         this.render();
     }
 
@@ -148,6 +164,10 @@ export class VanillaLayoutRenderer {
         }
         this.contentRenderers.clear();
         this.contentContainers.clear();
+
+        this.flyoutPanel = undefined;
+        this.flyoutBackdrop = undefined;
+        this.flyoutState = undefined;
 
         this.rootDiv?.remove();
         this.rootDiv = undefined;
@@ -246,6 +266,9 @@ export class VanillaLayoutRenderer {
         }
 
         this.renderEdges();
+        this.renderCollapsedBorderStrips();
+        this.updateFlyoutState();
+        this.renderFlyout();
         this.renderTabContents();
         this.floatingWindowManager?.render();
     }
@@ -337,6 +360,189 @@ export class VanillaLayoutRenderer {
         }
     }
 
+    private renderCollapsedBorderStrips(): void {
+        if (!this.rootDiv) {
+            return;
+        }
+
+        const existing = this.rootDiv.querySelector('[data-layout-path="/collapsed-borders"]') as HTMLDivElement | null;
+        const strips = collectVisibleBorderStrips(
+            this.options.model.getBorderSet().getBorderMap(),
+            DockLocation.CENTER,
+        );
+
+        const container = existing ?? document.createElement("div");
+        container.dataset.layoutPath = "/collapsed-borders";
+        container.style.position = "absolute";
+        container.style.inset = "0";
+        container.style.pointerEvents = "none";
+        container.replaceChildren();
+
+        for (const border of this.options.model.getBorderSet().getBorders()) {
+            const location = border.getLocation();
+            const locationName = location.getName();
+            if (!strips.has(locationName) || border.getChildren().length === 0) {
+                continue;
+            }
+
+            const strip = document.createElement("div");
+            strip.dataset.layoutPath = border.getPath();
+            strip.className = [
+                this.options.getClassName(CLASSES.FLEXLAYOUT__BORDER),
+                this.options.getClassName(`${CLASSES.FLEXLAYOUT__BORDER_}${locationName}`),
+                this.options.getClassName(CLASSES.FLEXLAYOUT__BORDER__COLLAPSED),
+                "flexlayout__flyout_strip",
+            ].join(" ");
+
+            strip.style.position = "absolute";
+            strip.style.display = "flex";
+            strip.style.alignItems = "center";
+            strip.style.justifyContent = "center";
+            strip.style.pointerEvents = "auto";
+            strip.style.zIndex = "910";
+            if (location === DockLocation.LEFT || location === DockLocation.RIGHT) {
+                strip.style.flexDirection = "column";
+            }
+
+            if (location === DockLocation.TOP) {
+                strip.style.top = "0";
+                strip.style.left = "0";
+                strip.style.right = "0";
+                strip.style.height = `${BORDER_BAR_SIZE}px`;
+            } else if (location === DockLocation.BOTTOM) {
+                strip.style.bottom = "0";
+                strip.style.left = "0";
+                strip.style.right = "0";
+                strip.style.height = `${BORDER_BAR_SIZE}px`;
+            } else if (location === DockLocation.LEFT) {
+                strip.style.top = "0";
+                strip.style.bottom = "0";
+                strip.style.left = "0";
+                strip.style.width = `${BORDER_BAR_SIZE}px`;
+            } else {
+                strip.style.top = "0";
+                strip.style.bottom = "0";
+                strip.style.right = "0";
+                strip.style.width = `${BORDER_BAR_SIZE}px`;
+            }
+
+            const tabs = border.getChildren();
+            for (let i = 0; i < tabs.length; i++) {
+                const tab = tabs[i];
+                if (!(tab instanceof TabNode)) {
+                    continue;
+                }
+
+                const button = document.createElement("button");
+                button.type = "button";
+                button.dataset.layoutPath = `${border.getPath()}/tb${i}`;
+                button.dataset.flyoutTabButton = "true";
+                button.className = [
+                    this.options.getClassName(CLASSES.FLEXLAYOUT__BORDER_BUTTON),
+                    this.options.getClassName(
+                        border.getFlyoutTabId() === tab.getId()
+                            ? CLASSES.FLEXLAYOUT__BORDER_BUTTON__SELECTED
+                            : CLASSES.FLEXLAYOUT__BORDER_BUTTON__UNSELECTED,
+                    ),
+                ].join(" ");
+
+                const content = document.createElement("span");
+                content.className = this.options.getClassName(CLASSES.FLEXLAYOUT__BORDER_BUTTON_CONTENT);
+                content.textContent = tab.getName();
+                button.appendChild(content);
+
+                button.addEventListener("click", (event) => {
+                    event.stopPropagation();
+                    handleCollapsedBorderTabClick(border, tab, (action) => this.doAction(action));
+                });
+
+                strip.appendChild(button);
+            }
+
+            container.appendChild(strip);
+            border.setTabHeaderRect(this.getBoundingClientRect(strip));
+        }
+
+        if (!existing) {
+            this.rootDiv.appendChild(container);
+        }
+    }
+
+    private updateFlyoutState(): void {
+        this.flyoutState = undefined;
+        for (const border of this.options.model.getBorderSet().getBorders()) {
+            const flyoutTabId = border.getFlyoutTabId();
+            if (flyoutTabId === null) {
+                continue;
+            }
+
+            const tab = border.getChildren().find((child) => child instanceof TabNode && child.getId() === flyoutTabId);
+            if (!(tab instanceof TabNode)) {
+                continue;
+            }
+
+            const size = border.getSize();
+            const location = border.getLocation();
+            let rect: Rect;
+            if (location === DockLocation.LEFT) {
+                rect = new Rect(BORDER_BAR_SIZE, 0, size, this.rect.height);
+            } else if (location === DockLocation.RIGHT) {
+                rect = new Rect(this.rect.width - BORDER_BAR_SIZE - size, 0, size, this.rect.height);
+            } else if (location === DockLocation.TOP) {
+                rect = new Rect(0, BORDER_BAR_SIZE, this.rect.width, size);
+            } else {
+                rect = new Rect(0, this.rect.height - BORDER_BAR_SIZE - size, this.rect.width, size);
+            }
+
+            this.flyoutState = { border, tab, rect };
+            return;
+        }
+    }
+
+    private renderFlyout(): void {
+        if (!this.rootDiv) {
+            return;
+        }
+
+        if (!this.flyoutState) {
+            this.flyoutBackdrop?.remove();
+            this.flyoutPanel?.remove();
+            this.flyoutBackdrop = undefined;
+            this.flyoutPanel = undefined;
+            return;
+        }
+
+        if (!this.flyoutBackdrop) {
+            this.flyoutBackdrop = document.createElement("div");
+            this.flyoutBackdrop.dataset.layoutPath = "/flyout/backdrop";
+            this.flyoutBackdrop.className = "flexlayout__flyout_backdrop";
+            this.flyoutBackdrop.style.position = "absolute";
+            this.flyoutBackdrop.style.inset = "0";
+            this.flyoutBackdrop.style.zIndex = "850";
+            this.flyoutBackdrop.addEventListener("pointerdown", (event) => {
+                event.stopPropagation();
+                this.doAction(Action.closeFlyout(this.flyoutState!.border.getId()));
+            });
+            this.rootDiv.appendChild(this.flyoutBackdrop);
+        }
+
+        if (!this.flyoutPanel) {
+            this.flyoutPanel = document.createElement("div");
+            this.flyoutPanel.dataset.layoutPath = "/flyout/panel";
+            this.flyoutPanel.className = "flexlayout__flyout_panel";
+            this.flyoutPanel.style.position = "absolute";
+            this.flyoutPanel.style.zIndex = "900";
+            this.flyoutPanel.addEventListener("pointerdown", (event) => {
+                event.stopPropagation();
+            });
+            this.rootDiv.appendChild(this.flyoutPanel);
+        }
+
+        const style: Record<string, string> = {};
+        this.flyoutState.rect.styleWithPosition(style);
+        Object.assign(this.flyoutPanel.style, style);
+    }
+
     private renderTabContents(): void {
         if (!this.rootDiv) {
             return;
@@ -372,10 +578,26 @@ export class VanillaLayoutRenderer {
                 this.contentRenderers.set(tabId, renderer);
             }
 
-            const contentRect = parent.getContentRect();
-            if (contentRect.width > 0 && contentRect.height > 0 && node.isSelected()) {
-                const style: Record<string, string> = {};
-                contentRect.styleWithPosition(style);
+            let shouldShow = false;
+            let style: Record<string, string> = {};
+
+            if (parent instanceof BorderNode) {
+                const flyoutState = this.flyoutState;
+                if (flyoutState && flyoutState.border.getId() === parent.getId() && flyoutState.tab.getId() === node.getId()) {
+                    flyoutState.rect.styleWithPosition(style);
+                    shouldShow = true;
+                    container.style.zIndex = "901";
+                }
+            } else {
+                const contentRect = parent.getContentRect();
+                if (contentRect.width > 0 && contentRect.height > 0 && node.isSelected()) {
+                    contentRect.styleWithPosition(style);
+                    shouldShow = true;
+                    container.style.zIndex = "";
+                }
+            }
+
+            if (shouldShow) {
                 Object.assign(container.style, style);
                 container.style.display = "block";
             } else {
