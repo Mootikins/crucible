@@ -137,8 +137,6 @@ export class VanillaLayoutRenderer {
         this.rootDiv = document.createElement("div");
         this.rootDiv.className = this.options.getClassName(CLASSES.FLEXLAYOUT__LAYOUT);
         this.rootDiv.dataset.layoutPath = "/";
-        this.rootDiv.style.position = "relative";
-        this.rootDiv.style.overflow = "hidden";
         this.rootDiv.addEventListener("dragenter", (e) => this.dndManager.onDragEnterRaw(e));
         this.rootDiv.addEventListener("dragleave", (e) => this.dndManager.onDragLeaveRaw(e));
         this.rootDiv.addEventListener("dragover", (e) => this.dndManager.onDragOver(e));
@@ -149,7 +147,6 @@ export class VanillaLayoutRenderer {
         this.mainDiv = document.createElement("div");
         this.mainDiv.className = this.options.getClassName(CLASSES.FLEXLAYOUT__LAYOUT_MAIN);
         this.mainDiv.dataset.layoutPath = "/main";
-        this.mainDiv.style.overflow = "hidden";
         this.rootDiv.appendChild(this.mainDiv);
 
         this.floatingWindowManager = new VanillaFloatingWindowManager({
@@ -361,9 +358,6 @@ export class VanillaLayoutRenderer {
                 const nextOverlay = document.createElement("div");
                 nextOverlay.className = this.options.getClassName(CLASSES.FLEXLAYOUT__LAYOUT_OVERLAY);
                 nextOverlay.dataset.layoutPath = "/overlay";
-                nextOverlay.style.position = "absolute";
-                nextOverlay.style.inset = "0";
-                nextOverlay.style.zIndex = "998";
                 this.rootDiv.appendChild(nextOverlay);
             }
         } else if (overlay) {
@@ -733,8 +727,6 @@ export class VanillaLayoutRenderer {
         };
 
         refs.tabStripInner.className = `${this.options.getClassName(CLASSES.FLEXLAYOUT__TABSET_TABBAR_INNER)} ${this.options.getClassName(CLASSES.FLEXLAYOUT__TABSET_TABBAR_INNER_ + tabLocation)}`;
-        refs.tabStripInner.style.overflowX = "auto";
-        refs.tabStripInner.style.overflowY = "hidden";
 
         refs.tabContainer.className = `${this.options.getClassName(CLASSES.FLEXLAYOUT__TABSET_TABBAR_INNER_TAB_CONTAINER)} ${this.options.getClassName(CLASSES.FLEXLAYOUT__TABSET_TABBAR_INNER_TAB_CONTAINER_ + tabLocation)}`;
 
@@ -898,7 +890,6 @@ export class VanillaLayoutRenderer {
             pin.dataset.layoutPath = `${path}/indicator/pin`;
             pin.title = "Pinned";
             pin.className = this.options.getClassName(CLASSES.FLEXLAYOUT__TAB_BUTTON_TRAILING);
-            pin.style.pointerEvents = "none";
             pin.textContent = "📌";
             children.push(pin);
         }
@@ -1207,23 +1198,15 @@ export class VanillaLayoutRenderer {
         strip.dataset.state = this.borderTransitionStates.get(border.getId()) || "collapsed";
         strip.dataset.animate = border.isAnimateTransition() ? "true" : "false";
         strip.dataset.edge = locationName;
-        strip.style.display = "flex";
-        strip.style.alignItems = "center";
-        strip.style.position = "relative";
-        strip.style.zIndex = "1";
 
         if (isVertical) {
-            strip.style.flexDirection = "column";
             strip.style.justifyContent = "flex-start";
             strip.style.width = `${BORDER_BAR_SIZE}px`;
             strip.style.minWidth = `${BORDER_BAR_SIZE}px`;
             strip.style.height = "";
             strip.style.minHeight = "";
-            strip.style.alignSelf = "stretch";
-            strip.style.overflow = "visible";
         } else {
             strip.style.justifyContent = "flex-start";
-            strip.style.flexDirection = "row";
             strip.style.height = `${BORDER_BAR_SIZE}px`;
             strip.style.minHeight = `${BORDER_BAR_SIZE}px`;
             strip.style.width = "";
@@ -1345,7 +1328,6 @@ export class VanillaLayoutRenderer {
         strip.className = classes;
         strip.dataset.layoutPath = border.getPath();
         strip.dataset.state = dockState;
-        strip.style.display = "flex";
         strip.style.flexDirection = border.getOrientation() === Orientation.VERT ? "row" : "column";
         strip.style.position = isCollapsed ? "relative" : "";
         strip.style.zIndex = isCollapsed ? "1" : "";
@@ -1438,7 +1420,6 @@ export class VanillaLayoutRenderer {
         content.dataset.state = state;
         content.dataset.animate = border.isAnimateTransition() ? "true" : "false";
         content.style.display = isContentVisible ? "flex" : "none";
-        content.style.flexDirection = "column";
 
         if (border.getOrientation() === Orientation.HORZ) {
             content.style.width = `${border.getSize()}px`;
@@ -1558,10 +1539,6 @@ export class VanillaLayoutRenderer {
                 }
 
                 const tile = document.createElement("div");
-                tile.style.display = "flex";
-                tile.style.flexDirection = "column";
-                tile.style.overflow = "hidden";
-                tile.style.position = "relative";
                 const weight = weights[i] ?? 1;
                 const pct = (weight / totalWeight) * 100;
                 const splitterDeduction = splitterCount > 0
@@ -2273,9 +2250,6 @@ export class VanillaLayoutRenderer {
             this.flyoutBackdrop.dataset.layoutPath = "/flyout/backdrop";
             this.flyoutBackdrop.className = "flexlayout__flyout_backdrop";
             this.flyoutBackdrop.dataset.state = "exited";
-            this.flyoutBackdrop.style.position = "absolute";
-            this.flyoutBackdrop.style.inset = "0";
-            this.flyoutBackdrop.style.zIndex = "850";
             this.flyoutBackdrop.addEventListener("pointerdown", (event) => {
                 event.stopPropagation();
                 this.doAction(Action.closeFlyout(this.flyoutState!.border.getId()));
@@ -2289,8 +2263,6 @@ export class VanillaLayoutRenderer {
             this.flyoutPanel.className = "flexlayout__flyout_panel";
             this.flyoutPanel.dataset.state = "exited";
             this.flyoutPanel.dataset.edge = edgeName;
-            this.flyoutPanel.style.position = "absolute";
-            this.flyoutPanel.style.zIndex = "900";
             this.flyoutPanel.addEventListener("pointerdown", (event) => {
                 event.stopPropagation();
             });
