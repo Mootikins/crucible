@@ -3532,8 +3532,8 @@ const FlexLayoutTest: Component = () => {
     ? (defaultClassName: string) => `demo-mapped ${defaultClassName}`
     : undefined;
 
-   const needsCustomTab = ["render_custom_tab", "test_with_min_size"].includes(layoutName);
-   const needsCustomTabSet = ["render_custom_tabset", "test_with_min_size"].includes(layoutName);
+  const needsCustomTab = ["render_custom_tab", "test_with_min_size", "test_with_onRenderTab"].includes(layoutName);
+  const needsCustomTabSet = ["render_custom_tabset", "test_with_min_size", "test_with_onRenderTab"].includes(layoutName);
    const needsModelChange = ["serial_on_model_change"].includes(layoutName);
 
   const onSetTabComponent = () => {
