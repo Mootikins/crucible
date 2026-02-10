@@ -2948,6 +2948,7 @@ const layouts: Record<string, LayoutDef> = {
     global: {
       ...defaultGlobal,
       borderEnableDock: true,
+      borderDockState: "collapsed",
       tabEnableClose: false,
       tabEnableDrag: false,
     },
