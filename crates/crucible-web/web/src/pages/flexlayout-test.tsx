@@ -2950,7 +2950,7 @@ const layouts: Record<string, LayoutDef> = {
       borderEnableDock: true,
       borderDockState: "collapsed",
       tabEnableClose: false,
-      tabEnableDrag: false,
+      tabEnableDrag: true,
     },
     borders: [
       {
