@@ -729,3 +729,58 @@ test.describe('Docked Panes > Collapsed border layout bounds', () => {
     await page.screenshot({ path: `${evidencePath}/bug-3-7-after.png` });
   });
 });
+
+test.describe('Docked Panes > Splitter drag accuracy (Bug #4)', () => {
+  async function dragSplitterAndAssertXDelta(
+    page: import('@playwright/test').Page,
+    splitter: import('@playwright/test').Locator,
+    deltaX: number,
+  ) {
+    const before = await splitter.boundingBox();
+    expect(before).not.toBeNull();
+
+    const startX = before!.x + before!.width / 2;
+    const startY = before!.y + before!.height / 2;
+
+    await page.mouse.move(startX, startY);
+    await page.mouse.down();
+    await page.mouse.move(startX + deltaX, startY, { steps: 10 });
+    await page.mouse.up();
+    await page.waitForTimeout(150);
+
+    const after = await splitter.boundingBox();
+    expect(after).not.toBeNull();
+
+    const movedBy = after!.x - before!.x;
+    expect(Math.abs(movedBy - deltaX)).toBeLessThanOrEqual(2);
+  }
+
+  test('regular row splitter lands where cursor is released (50px +/- 2px)', async ({ page }) => {
+    await page.goto(baseURL + '?layout=default');
+    await page.waitForSelector('[data-layout-path="/"]', { timeout: 10_000 });
+
+    const splitter = findPath(page, '/s0');
+    await expect(splitter).toBeVisible();
+
+    await dragSplitterAndAssertXDelta(page, splitter, 50);
+  });
+
+  test('border edge splitter lands where cursor is released (50px +/- 2px)', async ({ page }) => {
+    await page.goto(baseURL + '?layout=docked_panes');
+    await page.waitForSelector('[data-layout-path="/"]', { timeout: 10_000 });
+
+    const leftDockButton = page.locator('[data-layout-path="/border/left/button/dock"]').first();
+    const leftDockTitle = await leftDockButton.getAttribute('title');
+    if (leftDockTitle === 'Expand') {
+      await leftDockButton.click();
+      await page.waitForTimeout(150);
+    }
+
+    const borderSplitter = page.locator('.flexlayout__splitter_border').first();
+    await expect(borderSplitter).toBeVisible();
+
+    await page.screenshot({ path: `${evidencePath}/bug-4-before.png` });
+    await dragSplitterAndAssertXDelta(page, borderSplitter, -50);
+    await page.screenshot({ path: `${evidencePath}/bug-4-after.png` });
+  });
+});

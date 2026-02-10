@@ -548,10 +548,8 @@ export class VanillaLayoutRenderer {
             domRect.height,
         );
 
-        // Use layout-relative coordinates for both dragStart and onMove
-        // so the reference frames match (both relative to layout root)
-        const dragStartX = event.clientX - layoutRect.x;
-        const dragStartY = event.clientY - layoutRect.y;
+        const dragStartX = event.clientX - domRect.x;
+        const dragStartY = event.clientY - domRect.y;
 
         let outlineDiv: HTMLDivElement | undefined;
         if (!isRealtime && this.rootDiv) {
@@ -585,10 +583,9 @@ export class VanillaLayoutRenderer {
         };
 
         const onMove = (moveEvent: PointerEvent): void => {
-            const clientRect = this.getDomRect();
             const position = row.getOrientation() === Orientation.VERT
-                ? clampPosition(moveEvent.clientY - clientRect.y - dragStartY)
-                : clampPosition(moveEvent.clientX - clientRect.x - dragStartX);
+                ? clampPosition(moveEvent.clientY - layoutRect.y - dragStartY)
+                : clampPosition(moveEvent.clientX - layoutRect.x - dragStartX);
 
             if (isRealtime) {
                 applyAtPosition(position);
@@ -1746,8 +1743,12 @@ export class VanillaLayoutRenderer {
             domRect.height,
         );
 
-        const dragStartX = event.clientX - layoutRect.x;
-        const dragStartY = event.clientY - layoutRect.y;
+        const dragStartPointer = border.getOrientation() === Orientation.VERT ? event.clientY : event.clientX;
+        const dragStartPosition = (
+            border.getLocation() === DockLocation.BOTTOM || border.getLocation() === DockLocation.RIGHT
+        )
+            ? bounds[1] - border.getSize()
+            : bounds[0] + border.getSize();
         let outlineDiv: HTMLDivElement | undefined;
 
         if (!isRealtime && this.rootDiv) {
@@ -1769,10 +1770,8 @@ export class VanillaLayoutRenderer {
         };
 
         const onMove = (moveEvent: PointerEvent): void => {
-            const clientRect = this.getDomRect();
-            const position = border.getOrientation() === Orientation.VERT
-                ? clampPosition(moveEvent.clientY - clientRect.y - dragStartY)
-                : clampPosition(moveEvent.clientX - clientRect.x - dragStartX);
+            const pointer = border.getOrientation() === Orientation.VERT ? moveEvent.clientY : moveEvent.clientX;
+            const position = clampPosition(dragStartPosition + (pointer - dragStartPointer));
 
             if (isRealtime) {
                 applyAtPosition(position);
