@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { twoTabs, withBorders, threeTabs } from "./fixtures";
 import { Model } from "../model/Model";
 import { Action } from "../model/Action";
@@ -1988,5 +1988,118 @@ describe("cross-window moves", () => {
 
     expect(tab).toBeDefined();
     expect(canDockToWindow(tab!)).toBe(false);
+  });
+});
+
+describe("Model Events", () => {
+  it("should fire onDidAction with typed action", () => {
+    const model = Model.fromJson(twoTabs);
+    const spy = vi.fn();
+    model.onDidAction(spy);
+
+    const action = Action.moveNode("t0", "ts1", "center", -1);
+    model.doAction(action);
+
+    expect(spy).toHaveBeenCalledOnce();
+    expect(spy).toHaveBeenCalledWith(action);
+  });
+
+  it("should fire onDidChange on every mutation", () => {
+    const model = Model.fromJson(twoTabs);
+    let count = 0;
+    model.onDidChange(() => count++);
+
+    textRender(model);
+    const ts0 = tabset("/ts0");
+    const t0 = ts0?.getChildren()[0];
+
+    model.doAction(Action.moveNode(t0?.getId() || "", tabset("/ts1")?.getId() || "", "center", -1));
+    model.doAction(Action.selectTab(t0?.getId() || ""));
+    model.doAction(Action.renameTab(t0?.getId() || "", "New Name"));
+
+    expect(count).toBe(3);
+  });
+
+  it("should clean up listeners on dispose", () => {
+    const model = Model.fromJson(twoTabs);
+    const spy = vi.fn();
+    const disposable = model.onDidAction(spy);
+
+    textRender(model);
+    const ts0 = tabset("/ts0");
+    const t0 = ts0?.getChildren()[0];
+
+    disposable.dispose();
+    model.doAction(Action.selectTab(t0?.getId() || ""));
+
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it("should fire events for all action types", () => {
+    const model = Model.fromJson(twoTabs);
+    const actionSpy = vi.fn();
+    const changeSpy = vi.fn();
+    model.onDidAction(actionSpy);
+    model.onDidChange(changeSpy);
+
+    textRender(model);
+    const ts0 = tabset("/ts0");
+
+    model.doAction(
+      Action.addNode(
+        {
+          type: "tab",
+          name: "newtab",
+          component: "grid",
+        },
+        ts0?.getId() || "",
+        "center",
+        -1
+      )
+    );
+
+    expect(actionSpy).toHaveBeenCalledOnce();
+    expect(changeSpy).toHaveBeenCalledOnce();
+  });
+
+  it("should support multiple listeners", () => {
+    const model = Model.fromJson(twoTabs);
+    const spy1 = vi.fn();
+    const spy2 = vi.fn();
+    const spy3 = vi.fn();
+
+    model.onDidAction(spy1);
+    model.onDidAction(spy2);
+    model.onDidChange(spy3);
+
+    textRender(model);
+    const ts0 = tabset("/ts0");
+    const t0 = ts0?.getChildren()[0];
+
+    model.doAction(Action.selectTab(t0?.getId() || ""));
+
+    expect(spy1).toHaveBeenCalledOnce();
+    expect(spy2).toHaveBeenCalledOnce();
+    expect(spy3).toHaveBeenCalledOnce();
+  });
+
+  it("should dispose all listeners when model is disposed", () => {
+    const model = Model.fromJson(twoTabs);
+    const actionSpy = vi.fn();
+    const changeSpy = vi.fn();
+
+    model.onDidAction(actionSpy);
+    model.onDidChange(changeSpy);
+
+    model.dispose();
+
+    textRender(model);
+    const ts0 = tabset("/ts0");
+    const t0 = ts0?.getChildren()[0];
+
+    model.doAction(Action.selectTab(t0?.getId() || ""));
+
+    expect(actionSpy).not.toHaveBeenCalled();
+    expect(changeSpy).not.toHaveBeenCalled();
   });
 });
