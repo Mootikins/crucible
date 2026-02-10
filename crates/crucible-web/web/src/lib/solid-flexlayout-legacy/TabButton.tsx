@@ -156,6 +156,7 @@ export const TabButton: Component<ITabButtonProps> = (props) => {
         <div
             ref={selfRef}
             data-layout-path={props.path}
+            data-state={props.selected ? "selected" : "unselected"}
             class={classNames()}
             onClick={onClick}
             onDblClick={onDoubleClick}

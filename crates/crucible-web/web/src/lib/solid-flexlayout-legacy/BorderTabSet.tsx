@@ -238,6 +238,7 @@ export const BorderTabSet: Component<IBorderTabSetProps> = (props) => {
             style={rootStyle()}
             class={borderClasses()}
             data-layout-path={border.getPath()}
+            data-state={dockState()}
         >
             <Show when={!isHidden() && (!isExpanded() || border.getSelected() === -1)}>
                 <div class={cm(CLASSES.FLEXLAYOUT__MINI_SCROLLBAR_CONTAINER)} style={isCollapsed() && (border.getLocation() === DockLocation.LEFT || border.getLocation() === DockLocation.RIGHT) ? { flex: "1", overflow: "visible" } : {}}>
