@@ -288,6 +288,11 @@
   opacity: 1;
 }
 
+/* Pin indicator for pinned tabs */
+[data-pinned="true"] .flexlayout__tab_button_trailing {
+  opacity: 1;
+}
+
 .flexlayout__tab {
   position: absolute;
   overflow: auto;
