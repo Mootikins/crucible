@@ -3,9 +3,6 @@ import { test, expect, type Page } from '@playwright/test';
 const baseURL = '/flexlayout-test.html?layout=paneview_basic';
 
 test.beforeEach(async ({ page }) => {
-  await page.addInitScript(() => {
-    (window as Window & { __FLEXLAYOUT_VANILLA__?: string }).__FLEXLAYOUT_VANILLA__ = '1';
-  });
   await page.goto(baseURL);
   await page.waitForSelector('[data-layout-path="/"]', { timeout: 10_000 });
 });

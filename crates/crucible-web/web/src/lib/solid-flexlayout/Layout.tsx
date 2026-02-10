@@ -4,7 +4,6 @@ import { SolidBinding } from "./SolidBinding";
 import type { ILayoutProps } from "./LayoutTypes";
 
 export type {
-    ILayoutContext,
     ITabRenderValues,
     ITabSetRenderValues,
 } from "./LayoutTypes";
