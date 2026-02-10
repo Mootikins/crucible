@@ -86,6 +86,7 @@ export class VanillaLayoutRenderer {
     private flyoutBackdrop: HTMLDivElement | undefined;
 
     private flyoutExitTimer: ReturnType<typeof setTimeout> | undefined;
+    private readonly borderTransitionTimers = new Set<ReturnType<typeof setTimeout>>();
     private previousBorderDockStates = new Map<string, string>();
     private borderTransitionStates = new Map<string, string>();
 
@@ -234,6 +235,10 @@ export class VanillaLayoutRenderer {
             clearTimeout(this.flyoutExitTimer);
             this.flyoutExitTimer = undefined;
         }
+        for (const timer of this.borderTransitionTimers) {
+            clearTimeout(timer);
+        }
+        this.borderTransitionTimers.clear();
         this.previousBorderDockStates.clear();
         this.borderTransitionStates.clear();
 
@@ -1165,16 +1170,16 @@ export class VanillaLayoutRenderer {
             strip.style.minWidth = "";
         }
 
-        strip.addEventListener("dragover", (e) => {
+        strip.ondragover = (e) => {
             e.preventDefault();
             if (e.dataTransfer) {
                 e.dataTransfer.dropEffect = "move";
             }
-        });
-        strip.addEventListener("drop", (e) => {
+        };
+        strip.ondrop = (e) => {
             e.preventDefault();
             this.doAction(Action.setDockState(border.getId(), "expanded"));
-        });
+        };
 
         const fabPosition = border.getFabPosition();
         const children: HTMLElement[] = [];
@@ -1954,20 +1959,24 @@ export class VanillaLayoutRenderer {
             if (previousState === "expanded" && currentState === "collapsed") {
                 this.borderTransitionStates.set(id, "collapsing");
                 if (border.isAnimateTransition()) {
-                    setTimeout(() => {
+                    const timer = setTimeout(() => {
+                        this.borderTransitionTimers.delete(timer);
                         this.borderTransitionStates.set(id, "collapsed");
                         this.render();
                     }, 250);
+                    this.borderTransitionTimers.add(timer);
                 } else {
                     this.borderTransitionStates.set(id, "collapsed");
                 }
             } else if (previousState === "collapsed" && currentState === "expanded") {
                 this.borderTransitionStates.set(id, "expanding");
                 if (border.isAnimateTransition()) {
-                    setTimeout(() => {
+                    const timer = setTimeout(() => {
+                        this.borderTransitionTimers.delete(timer);
                         this.borderTransitionStates.set(id, "expanded");
                         this.render();
                     }, 250);
+                    this.borderTransitionTimers.add(timer);
                 } else {
                     this.borderTransitionStates.set(id, "expanded");
                 }
