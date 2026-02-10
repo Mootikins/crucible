@@ -2,6 +2,7 @@ import { Rect } from "../core/Rect";
 import { DockLocation } from "../core/DockLocation";
 import { CLASSES } from "../core/Types";
 import { Orientation } from "../core/Orientation";
+import { computeFlyoutRect } from "../core/flyout-rect";
 import { Action, type LayoutAction } from "../model/Action";
 import { BorderNode } from "../model/BorderNode";
 import { Model } from "../model/Model";
@@ -2152,16 +2153,13 @@ export class VanillaLayoutRenderer {
             const size = border.getSize();
             const location = border.getLocation();
             const insets = this.getCollapsedBorderInsets();
-            let rect: Rect;
-            if (location === DockLocation.LEFT) {
-                rect = new Rect(insets.left, insets.top, size, this.rect.height - insets.top - insets.bottom);
-            } else if (location === DockLocation.RIGHT) {
-                rect = new Rect(this.rect.width - insets.right - size, insets.top, size, this.rect.height - insets.top - insets.bottom);
-            } else if (location === DockLocation.TOP) {
-                rect = new Rect(insets.left, insets.top, this.rect.width - insets.left - insets.right, size);
-            } else {
-                rect = new Rect(insets.left, this.rect.height - insets.bottom - size, this.rect.width - insets.left - insets.right, size);
-            }
+            const rect = computeFlyoutRect({
+                primarySize: size,
+                location,
+                layoutWidth: this.rect.width,
+                layoutHeight: this.rect.height,
+                insets,
+            });
 
             this.flyoutState = { border, tab, rect };
             return;
