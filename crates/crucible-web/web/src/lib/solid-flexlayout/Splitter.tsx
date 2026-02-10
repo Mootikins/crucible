@@ -131,10 +131,7 @@ export const Splitter: Component<ISplitterProps> = (props) => {
     };
 
     const getBoundPosition = (p: number): number => {
-        let rtn = p;
-        if (p < pBounds[0]) rtn = pBounds[0];
-        if (p > pBounds[1]) rtn = pBounds[1];
-        return rtn;
+        return Math.max(pBounds[0], Math.min(pBounds[1], p));
     };
 
     const cm = props.layout.getClassName;
@@ -168,11 +165,9 @@ export const Splitter: Component<ISplitterProps> = (props) => {
     };
 
     const className = (): string => {
-        let cls =
-            cm(CLASSES.FLEXLAYOUT__SPLITTER) +
+        return cm(CLASSES.FLEXLAYOUT__SPLITTER) +
             " " +
             cm(CLASSES.FLEXLAYOUT__SPLITTER_ + props.node.getOrientation().getName());
-        return cls;
     };
 
     return (

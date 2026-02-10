@@ -15,8 +15,7 @@ import { Model } from "./Model";
 import { Node } from "./Node";
 import { RowNode } from "./RowNode";
 import { TabNode } from "./TabNode";
-import { adjustSelectedIndex } from "./Utils";
-import { canDockToWindow } from "./Utils";
+import { adjustSelectedIndex, canDockToWindow } from "./Utils";
 
 export class TabSetNode extends Node implements IDraggable, IDropTarget {
     static readonly TYPE = "tabset";
@@ -427,7 +426,7 @@ export class TabSetNode extends Node implements IDraggable, IDropTarget {
                 }
                 // console.log("added child at : " + insertPos);
             } else if (dragNode instanceof RowNode) {
-                (dragNode as RowNode).forEachNode((child, level) => {
+                (dragNode as RowNode).forEachNode((child) => {
                     if (child instanceof TabNode) {
                         this.addChild(child, insertPos);
                         // console.log("added child at : " + insertPos);
