@@ -9,6 +9,7 @@ import { LayoutWindow } from "./LayoutWindow";
 import type { LayoutAction } from "./Action";
 import { Rect } from "../core/Rect";
 import { DockLocation } from "../core/DockLocation";
+import { Emitter, type Event } from "./Event";
 
 export const DefaultMax = 100000;
 export const DefaultMin = 0;
@@ -22,6 +23,8 @@ export class Model {
 	private nodeRegistry = new Map<string, Node>();
 	private nextIdNum = 0;
 	private floatZOrder: string[] = [];
+	private changeEmitter = new Emitter<void>();
+	private actionEmitter = new Emitter<LayoutAction>();
 
 	constructor(json?: IJsonModel) {
 		this.borderSet = new BorderSet(this);
@@ -31,6 +34,14 @@ export class Model {
 			const mainWindow = new LayoutWindow(Model.MAIN_WINDOW_ID, Rect.empty());
 			this.windowsMap.set(Model.MAIN_WINDOW_ID, mainWindow);
 		}
+	}
+
+	get onDidChange(): Event<void> {
+		return this.changeEmitter.event;
+	}
+
+	get onDidAction(): Event<LayoutAction> {
+		return this.actionEmitter.event;
 	}
 
 	static fromJson(json: IJsonModel): Model {
@@ -258,6 +269,9 @@ export class Model {
 				this.actionSetVisibleTabs(data);
 				break;
 		}
+
+		this.actionEmitter.fire(action);
+		this.changeEmitter.fire();
 	}
 
 	private actionAddNode(data: any): void {
@@ -816,5 +830,10 @@ export class Model {
 			result.floatZOrder = [...this.floatZOrder];
 		}
 		return result;
+	}
+
+	dispose(): void {
+		this.changeEmitter.dispose();
+		this.actionEmitter.dispose();
 	}
 }
