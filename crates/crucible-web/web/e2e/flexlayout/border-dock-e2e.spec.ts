@@ -887,3 +887,80 @@ test.describe('Docked Panes > Collapsed strip FAB placement (Bug #2 + #6)', () =
     await page.screenshot({ path: `${evidencePath}/bug-2-6-after.png` });
   });
 });
+
+test.describe('Docked Panes > Tab DnD (Bug #1)', () => {
+  test('collapsed-strip tab dragstart is enabled', async ({ page }) => {
+    await page.goto(baseURL + '?layout=docked_panes');
+    await page.waitForSelector('[data-layout-path="/"]', { timeout: 10_000 });
+
+    const dragState = await page.evaluate(() => {
+      const source = document.querySelector('[data-layout-path="/border/left/tb0"]');
+      const layoutRoot = document.querySelector('[data-layout-path="/"]');
+      if (!source || !layoutRoot) {
+        throw new Error('Required drag elements not found');
+      }
+
+      const dataTransfer = new DataTransfer();
+      dataTransfer.setData('text/plain', '--flexlayout--');
+      const dragStart = new DragEvent('dragstart', { bubbles: true, cancelable: true, dataTransfer });
+      source.dispatchEvent(dragStart);
+
+      const dragNode = (layoutRoot as { __dragNode?: { getName?: () => string } }).__dragNode;
+      const dragNodeName = dragNode && typeof dragNode.getName === 'function' ? dragNode.getName() : undefined;
+
+      source.dispatchEvent(new DragEvent('dragend', { bubbles: true, cancelable: true, dataTransfer }));
+
+      return {
+        dragStartPrevented: dragStart.defaultPrevented,
+        dragNodeName,
+      };
+    });
+
+    expect(dragState.dragStartPrevented).toBe(false);
+    expect(dragState.dragNodeName).toBe('Explorer');
+  });
+
+  test('expanded-border drag wires drag node and drop lifecycle', async ({ page }) => {
+    await page.goto(baseURL + '?layout=docked_panes');
+    await page.waitForSelector('[data-layout-path="/"]', { timeout: 10_000 });
+
+    const dragLifecycle = await page.evaluate(() => {
+      const source = document.querySelector('[data-layout-path="/border/right/tb0"]');
+      const target = document.querySelector('[data-layout-path="/border/bottom"]');
+      const layoutRoot = document.querySelector('[data-layout-path="/"]');
+      if (!source || !target || !layoutRoot) {
+        throw new Error('Required drag elements not found');
+      }
+
+      const targetRect = target.getBoundingClientRect();
+      const clientX = targetRect.left + targetRect.width / 2;
+      const clientY = targetRect.top + targetRect.height / 2;
+
+      const dataTransfer = new DataTransfer();
+      dataTransfer.setData('text/plain', '--flexlayout--');
+      const dragStart = new DragEvent('dragstart', { bubbles: true, cancelable: true, dataTransfer, clientX, clientY });
+      source.dispatchEvent(dragStart);
+
+      target.dispatchEvent(new DragEvent('dragenter', { bubbles: true, cancelable: true, dataTransfer, clientX, clientY }));
+      const dragOver = new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer, clientX, clientY });
+      target.dispatchEvent(dragOver);
+      const dropEvent = new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer, clientX, clientY });
+      target.dispatchEvent(dropEvent);
+
+      const dragNodeAfterDrop = (layoutRoot as { __dragNode?: unknown }).__dragNode;
+      source.dispatchEvent(new DragEvent('dragend', { bubbles: true, cancelable: true, dataTransfer, clientX, clientY }));
+
+      return {
+        dragStartPrevented: dragStart.defaultPrevented,
+        dragOverPrevented: dragOver.defaultPrevented,
+        dropPrevented: dropEvent.defaultPrevented,
+        dragNodeClearedAfterDrop: dragNodeAfterDrop === undefined,
+      };
+    });
+
+    expect(dragLifecycle.dragStartPrevented).toBe(false);
+    expect(dragLifecycle.dragOverPrevented).toBe(true);
+    expect(dragLifecycle.dropPrevented).toBe(true);
+    expect(dragLifecycle.dragNodeClearedAfterDrop).toBe(true);
+  });
+});
