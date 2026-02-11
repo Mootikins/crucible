@@ -429,8 +429,17 @@
   transition: color var(--fl-transition-fast), border-color var(--fl-transition-fast), background 0.15s;
 }
 
+
+
+.flexlayout__border_button[data-border-location="left"],
+.flexlayout__border_button[data-border-location="right"] {
+  padding: var(--fl-spacing-tab-h) var(--fl-spacing-tab-v);
+  border-radius: var(--fl-size-toolbar-btn-radius);
+}
+
 .flexlayout__border_button:hover {
   color: var(--fl-color-text-primary);
+  background: var(--fl-color-accent-subtle);
 }
 
 .flexlayout__border_button--selected {
@@ -609,13 +618,20 @@
 .flexlayout__border--collapsed[data-collapsed-strip][data-edge="left"],
 .flexlayout__border--collapsed[data-collapsed-strip][data-edge="right"] {
   flex-direction: column;
+  align-items: center;
   align-self: stretch;
-  overflow: visible;
+}
+
+.flexlayout__border--collapsed[data-collapsed-strip][data-edge="left"] .flexlayout__border_button,
+.flexlayout__border--collapsed[data-collapsed-strip][data-edge="right"] .flexlayout__border_button {
+  padding: var(--fl-spacing-tab-h) var(--fl-spacing-tab-v);
+  border-radius: var(--fl-size-toolbar-btn-radius);
 }
 
 .flexlayout__border--collapsed[data-collapsed-strip][data-edge="top"],
 .flexlayout__border--collapsed[data-collapsed-strip][data-edge="bottom"] {
   flex-direction: row;
+  align-items: center;
 }
 
 /* Expanded border strip — always flex */
