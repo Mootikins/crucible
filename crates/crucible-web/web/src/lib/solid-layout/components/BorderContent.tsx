@@ -263,11 +263,14 @@ export const BorderContent: Component<BorderContentProps> = (props) => {
     ctx.doAction(Action.selectTab(tabId));
   };
 
-  const renderTabContent = (
-    nodeId: string,
+  const renderTabContentByIndex = (
+    tabIndex: number,
     container: HTMLDivElement,
   ): (() => void) | undefined => {
-    const modelNode = ctx.model.getNodeById(nodeId) as TabNode | undefined;
+    const borderSet = ctx.model.getBorderSet();
+    const border = borderSet.getBorder(props.location);
+    if (!border) return undefined;
+    const modelNode = border.getChildren()[tabIndex] as TabNode | undefined;
     if (!modelNode) return undefined;
     return render(() => ctx.factory(modelNode), container);
   };
@@ -371,9 +374,9 @@ export const BorderContent: Component<BorderContentProps> = (props) => {
 
     onMount(() => {
       if (!hostRef) return;
-      const node = visibleNodes()[0];
-      if (node?.id) {
-        disposeFn = renderTabContent(node.id, hostRef);
+      const indices = visibleIndices();
+      if (indices.length > 0) {
+        disposeFn = renderTabContentByIndex(indices[0], hostRef);
       }
     });
 
@@ -436,10 +439,11 @@ export const BorderContent: Component<BorderContentProps> = (props) => {
           "flex-direction": tileHoriz() ? "row" : "column",
         }}
       >
-        <For each={visibleNodes()}>
-          {(node, index) => {
+        <For each={visibleIndices()}>
+          {(tabIndex, visibleIndex) => {
+            const node = createMemo(() => tabs()[tabIndex]);
             const weights = currentWeights;
-            const weight = createMemo(() => weights()[index()] ?? 1);
+            const weight = createMemo(() => weights()[visibleIndex()] ?? 1);
             const totalWeight = createMemo(() =>
               weights().reduce((s, w) => s + w, 0) || 1,
             );
@@ -447,30 +451,30 @@ export const BorderContent: Component<BorderContentProps> = (props) => {
               () => (weight() / totalWeight()) * 100,
             );
             const splitterCount = createMemo(
-              () => Math.max(0, visibleNodes().length - 1),
+              () => Math.max(0, visibleIndices().length - 1),
             );
             const splitterDeduction = createMemo(() =>
               splitterCount() > 0
-                ? splitterSize() * (splitterCount() / visibleNodes().length)
+                ? splitterSize() * (splitterCount() / visibleIndices().length)
                 : 0,
             );
 
             let tileHostRef: HTMLDivElement | undefined;
 
             onMount(() => {
-              if (!tileHostRef || !node.id) return;
-              const dispose = renderTabContent(node.id, tileHostRef);
+              if (!tileHostRef) return;
+              const dispose = renderTabContentByIndex(tabIndex, tileHostRef);
               if (dispose) disposeFns.push(dispose);
             });
 
-            const showToolbar = createMemo(() => index() === 0);
+            const showToolbar = createMemo(() => visibleIndex() === 0);
 
             return (
               <>
-                <Show when={index() > 0}>
+                <Show when={visibleIndex() > 0}>
                   <div
                     class={buildTileSplitterClass(props.location, mapClass)}
-                    data-border-tile-splitter={String(index() - 1)}
+                    data-border-tile-splitter={String(visibleIndex() - 1)}
                     style={{
                       cursor: tileSplitterCursor(props.location),
                       "flex-shrink": "0",
@@ -486,14 +490,14 @@ export const BorderContent: Component<BorderContentProps> = (props) => {
                     }}
                     onPointerDown={(e) => {
                       if (containerRef) {
-                        onTileSplitterPointerDown(index() - 1, e, containerRef);
+                        onTileSplitterPointerDown(visibleIndex() - 1, e, containerRef);
                       }
                     }}
                   />
                 </Show>
 
                 <div
-                  data-border-tile={String(index())}
+                  data-border-tile={String(visibleIndex())}
                   style={{
                     display: "flex",
                     "flex-direction": horizontal() ? "row" : "column",
@@ -504,14 +508,14 @@ export const BorderContent: Component<BorderContentProps> = (props) => {
                   }}
                 >
                   <TabBar
-                    tabNodes={[node]}
+                    tabNodes={[node()]}
                     showToolbar={showToolbar()}
-                    tileIndex={index()}
+                    tileIndex={visibleIndex()}
                   />
                   <div
                     ref={tileHostRef}
                     class={buildTileHostClass(mapClass)}
-                    data-border-tile-host={String(index())}
+                    data-border-tile-host={String(visibleIndex())}
                     style={{
                       flex: "1",
                       position: "relative",
