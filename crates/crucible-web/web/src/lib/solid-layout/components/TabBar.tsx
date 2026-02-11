@@ -6,7 +6,10 @@ import { useLayoutContext } from "../context";
 import { findTabSet } from "./TabSet";
 
 export interface TabBarProps {
-  tabsetId: string;
+  /** Direct node reference from the store (preferred) */
+  node?: IJsonTabSetNode;
+  /** Fallback: look up by ID */
+  tabsetId?: string;
 }
 
 export const TabBar: Component<TabBarProps> = (props) => {
@@ -14,6 +17,8 @@ export const TabBar: Component<TabBarProps> = (props) => {
   const mapClass = (cls: string) => ctx.classNameMapper?.(cls) ?? cls;
 
   const tabsetNode = createMemo((): IJsonTabSetNode | undefined => {
+    if (props.node) return props.node;
+    if (!props.tabsetId) return undefined;
     const layout = ctx.bridge.store.layout;
     if (!layout) return undefined;
     return findTabSet(layout, props.tabsetId);
