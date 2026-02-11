@@ -11,10 +11,15 @@ export interface FlyoutRectParams {
     layoutWidth: number;
     layoutHeight: number;
     insets: { top: number; right: number; bottom: number; left: number };
+    tabButtonRect?: { x: number; y: number; width: number; height: number };
+}
+
+function clamp(value: number, min: number, max: number): number {
+    return Math.max(min, Math.min(max, value));
 }
 
 export function computeFlyoutRect(params: FlyoutRectParams): Rect {
-    const { primarySize, location, layoutWidth, layoutHeight, insets } = params;
+    const { primarySize, location, layoutWidth, layoutHeight, insets, tabButtonRect } = params;
 
     if (location === DockLocation.LEFT || location === DockLocation.RIGHT) {
         const availableHeight = layoutHeight - insets.top - insets.bottom;
@@ -24,7 +29,13 @@ export function computeFlyoutRect(params: FlyoutRectParams): Rect {
         );
         const width = Math.max(MIN_FLYOUT_SIZE, primarySize);
         const height = secondarySize;
-        const y = insets.top + (availableHeight - height) / 2;
+
+        let y: number;
+        if (tabButtonRect) {
+            y = clamp(tabButtonRect.y, insets.top, insets.top + availableHeight - height);
+        } else {
+            y = insets.top + (availableHeight - height) / 2;
+        }
 
         if (location === DockLocation.LEFT) {
             return new Rect(insets.left, y, width, height);
@@ -39,7 +50,13 @@ export function computeFlyoutRect(params: FlyoutRectParams): Rect {
         );
         const width = secondarySize;
         const height = Math.max(MIN_FLYOUT_SIZE, primarySize);
-        const x = insets.left + (availableWidth - width) / 2;
+
+        let x: number;
+        if (tabButtonRect) {
+            x = clamp(tabButtonRect.x, insets.left, insets.left + availableWidth - width);
+        } else {
+            x = insets.left + (availableWidth - width) / 2;
+        }
 
         if (location === DockLocation.TOP) {
             return new Rect(x, insets.top, width, height);

@@ -312,7 +312,16 @@ export class VanillaLayoutRenderer {
         let insetLeft = 0;
 
         for (const border of model.getBorderSet().getBorders()) {
-            if (!border.isShowing() || border.getDockState() !== "collapsed") {
+            if (!border.isShowing()) {
+                continue;
+            }
+            if (border.isAutoHide() && border.getChildren().length === 0) {
+                continue;
+            }
+
+            const isCollapsed = border.getDockState() === "collapsed";
+            const isExpandedUnselected = border.getDockState() === "expanded" && border.getSelected() === -1;
+            if (!isCollapsed && !isExpandedUnselected) {
                 continue;
             }
 
@@ -1835,6 +1844,18 @@ export class VanillaLayoutRenderer {
          button.title = node.getHelpText() ?? "";
          button.draggable = true;
 
+         // When a left/right border is showing its tab bar strip (selected === -1),
+         // the strip is only BORDER_BAR_SIZE wide, so labels must be vertical.
+         // When a tab IS selected, the strip is hidden (size=0) so this is irrelevant.
+         const needsVerticalText = (borderName === "left" || borderName === "right") && border.getSelected() === -1;
+         if (needsVerticalText) {
+             button.style.writingMode = "vertical-rl";
+             button.style.transform = borderName === "left" ? "rotate(180deg)" : "";
+         } else {
+             button.style.writingMode = "";
+             button.style.transform = "";
+         }
+
         button.onclick = () => {
             this.doAction(Action.selectTab(node.getId()));
         };
@@ -2149,20 +2170,30 @@ export class VanillaLayoutRenderer {
                 continue;
             }
 
-            const tab = border.getChildren().find((child) => child instanceof TabNode && child.getId() === flyoutTabId);
-            if (!(tab instanceof TabNode)) {
+            const tabIndex = border.getChildren().findIndex((child) => child instanceof TabNode && child.getId() === flyoutTabId);
+            if (tabIndex === -1) {
                 continue;
             }
+            const tab = border.getChildren()[tabIndex] as TabNode;
 
             const size = border.getSize();
             const location = border.getLocation();
             const insets = this.getCollapsedBorderInsets();
+
+            let tabButtonRect: { x: number; y: number; width: number; height: number } | undefined;
+            const buttonPath = `${border.getPath()}/tb${tabIndex}`;
+            const buttonEl = this.rootDiv?.querySelector(`[data-layout-path="${buttonPath}"]`) as HTMLElement | null;
+            if (buttonEl) {
+                tabButtonRect = this.getBoundingClientRect(buttonEl);
+            }
+
             const rect = computeFlyoutRect({
                 primarySize: size,
                 location,
                 layoutWidth: this.rect.width,
                 layoutHeight: this.rect.height,
                 insets,
+                tabButtonRect,
             });
 
             this.flyoutState = { border, tab, rect };
@@ -2176,7 +2207,15 @@ export class VanillaLayoutRenderer {
         let bottom = 0;
         let left = 0;
         for (const border of this.options.model.getBorderSet().getBorders()) {
-            if (!border.isShowing() || border.getDockState() !== "collapsed") {
+            if (!border.isShowing()) {
+                continue;
+            }
+            if (border.isAutoHide() && border.getChildren().length === 0) {
+                continue;
+            }
+            const isCollapsed = border.getDockState() === "collapsed";
+            const isExpandedUnselected = border.getDockState() === "expanded" && border.getSelected() === -1;
+            if (!isCollapsed && !isExpandedUnselected) {
                 continue;
             }
             const loc = border.getLocation();
