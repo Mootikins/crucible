@@ -3,6 +3,7 @@ import { CLASSES } from "../../flexlayout/core/Types";
 import type { IJsonRowNode, IJsonTabSetNode } from "../../flexlayout/types";
 import { useLayoutContext } from "../context";
 import { Splitter } from "./Splitter";
+import { TabSet } from "./TabSet";
 
 export interface RowProps {
   node: IJsonRowNode;
@@ -128,7 +129,6 @@ interface RowChildProps {
 }
 
 const RowChild: Component<RowChildProps> = (props) => {
-  const ctx = useLayoutContext();
   const weight = () => props.child.weight ?? 100;
   const flexGrow = () => weight() / props.totalWeight;
   const path = () => childPath(props.parentPath, props.child, props.index);
@@ -145,11 +145,7 @@ const RowChild: Component<RowChildProps> = (props) => {
             position: "relative",
           }}
         >
-          {ctx.factory?.({
-            getId: () => (props.child as IJsonTabSetNode).id ?? "",
-            getType: () => "tabset",
-            getName: () => (props.child as IJsonTabSetNode).name,
-          } as any)}
+          <TabSet nodeId={(props.child as IJsonTabSetNode).id ?? ""} />
         </div>
       }
     >
