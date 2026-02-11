@@ -2,9 +2,13 @@ import "@/index.css";
 import { Component, createSignal, Show, type JSX } from "solid-js";
 import { render } from "solid-js/web";
 import { Layout } from "@/lib/solid-layout/components/Layout";
+import { BorderLayout } from "@/lib/solid-layout/components/BorderLayout";
+import { Row } from "@/lib/solid-layout/components/Row";
+import { useLayoutContext } from "@/lib/solid-layout/context";
 import { Model } from "@/lib/flexlayout/model/Model";
 import { TabNode } from "@/lib/flexlayout/model/TabNode";
 import { Action, type IAction } from "@/lib/flexlayout/model/Action";
+import type { IJsonRowNode } from "@/lib/flexlayout/types";
 
 type LayoutDef = {
   global?: Record<string, unknown>;
@@ -3130,6 +3134,12 @@ const layouts: Record<string, LayoutDef> = {
 
 const layoutKeys = Object.keys(layouts);
 
+const RootRow: Component = () => {
+  const ctx = useLayoutContext();
+  const rootNode = () => ctx.bridge.store.layout as IJsonRowNode;
+  return <Row node={rootNode()} path="/r0" />;
+};
+
 const FlexLayoutTest: Component = () => {
   const params = new URLSearchParams(window.location.search);
   const initial = params.get("layout") || "test_two_tabs";
@@ -3802,7 +3812,11 @@ const FlexLayoutTest: Component = () => {
               onAction={onAction}
               onModelChange={onModelChange}
               classNameMapper={classNameMapper()}
-            />
+            >
+              <BorderLayout>
+                <RootRow />
+              </BorderLayout>
+            </Layout>
           )}
         </Show>
       </div>
