@@ -519,7 +519,8 @@ export class BorderNode extends Node implements IDropTarget {
             }
         }
 
-        if (!isTilingDrop && (select || (select !== false && this.isAutoSelectTab()))) {
+        const willBeOpen = this.getDockState() !== "expanded" || this.getSelected() !== -1;
+        if (!isTilingDrop && (select || (select !== false && this.isAutoSelectTab(willBeOpen)))) {
             this.setSelected(insertPos);
         }
 
