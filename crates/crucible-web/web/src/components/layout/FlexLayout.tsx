@@ -1,5 +1,8 @@
 import { Component, onMount, onCleanup } from 'solid-js';
-import { Layout } from '@/lib/solid-flexlayout';
+import { Layout } from '@/lib/solid-layout/components/Layout';
+import { BorderLayout } from '@/lib/solid-layout/components/BorderLayout';
+import { Row } from '@/lib/solid-layout/components/Row';
+import { useLayoutContext } from '@/lib/solid-layout/context';
 import { Model } from '@/lib/flexlayout/model/Model';
 import { TabNode } from '@/lib/flexlayout/model/TabNode';
 import { Action } from '@/lib/flexlayout/model/Action';
@@ -7,7 +10,7 @@ import { getGlobalRegistry } from '@/lib/panel-registry';
 import { SessionPanel } from '@/components/SessionPanel';
 import { FilesPanel } from '@/components/FilesPanel';
 import { EditorPanel } from '@/components/EditorPanel';
-import type { IJsonModel } from '@/lib/flexlayout/types';
+import type { IJsonModel, IJsonRowNode } from '@/lib/flexlayout/types';
 
 export const BottomPanel: Component = () => (
   <div class="h-full flex items-center justify-center bg-neutral-900 text-neutral-500">
@@ -17,6 +20,12 @@ export const BottomPanel: Component = () => (
     </div>
   </div>
 );
+
+const RootRow: Component = () => {
+  const ctx = useLayoutContext();
+  const rootNode = () => ctx.bridge.store.layout as IJsonRowNode;
+  return <Row node={rootNode()} path="/r0" />;
+};
 
 const LAYOUT_STORAGE_KEY = 'crucible:flexlayout';
 
@@ -195,7 +204,11 @@ export const FlexLayout: Component<FlexLayoutProps> = (props) => {
         model={model}
         factory={factory}
         onModelChange={onModelChange}
-      />
+      >
+        <BorderLayout>
+          <RootRow />
+        </BorderLayout>
+      </Layout>
     </div>
   );
 };
