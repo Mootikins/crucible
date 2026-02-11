@@ -1,5 +1,5 @@
 import "@/index.css";
-import { Component, createSignal, type JSX } from "solid-js";
+import { Component, createSignal, Show, type JSX } from "solid-js";
 import { render } from "solid-js/web";
 import { Layout } from "@/lib/solid-flexlayout";
 import type { ITabRenderValues, ITabSetRenderValues } from "@/lib/solid-flexlayout";
@@ -3131,19 +3131,37 @@ const layouts: Record<string, LayoutDef> = {
   },
 };
 
+const layoutKeys = Object.keys(layouts);
+
 const FlexLayoutTest: Component = () => {
   const params = new URLSearchParams(window.location.search);
-  const layoutName = params.get("layout") || "test_two_tabs";
+  const initial = params.get("layout") || "test_two_tabs";
 
-  // Intentionally a plain `let` — only used inside event handlers,
-  // never rendered in JSX. No reactivity needed.
+  const [layoutName, setLayoutName] = createSignal(
+    layoutKeys.includes(initial) ? initial : "test_two_tabs",
+  );
+  const [layoutVersion, setLayoutVersion] = createSignal(0);
+
   let nextIndex = 1;
 
-  const currentLayout = () => layouts[layoutName] || layouts.test_two_tabs;
-  // FlexLayout mutates model in place via doAction(),
-  // so we disable SolidJS equality check to force re-renders
-  // when setModel(sameRef) is called after mutation.
+  const currentLayout = () => layouts[layoutName()] || layouts.test_two_tabs;
   const [model, setModel] = createSignal(Model.fromJson(currentLayout() as any), { equals: false });
+
+  const switchLayout = (name: string) => {
+    setLayoutName(name);
+    const url = new URL(window.location.href);
+    url.searchParams.set("layout", name);
+    window.history.replaceState(null, "", url.toString());
+    const newModel = Model.fromJson((layouts[name] || layouts.test_two_tabs) as any);
+    const root = newModel.getRoot();
+    if (root) {
+      root.setPaths("");
+      newModel.getBorderSet().setPaths();
+    }
+    setModel(newModel);
+    setLayoutVersion((v) => v + 1);
+    nextIndex = 1;
+  };
 
   const reload = () => {
     const newModel = Model.fromJson(currentLayout() as any);
@@ -3153,6 +3171,7 @@ const FlexLayoutTest: Component = () => {
       newModel.getBorderSet().setPaths();
     }
     setModel(newModel);
+    setLayoutVersion((v) => v + 1);
     nextIndex = 1;
   };
 
@@ -3291,11 +3310,11 @@ const FlexLayoutTest: Component = () => {
           style={{ width: "1em", height: "1em" }}
         />,
       );
-    } else if (layoutName === "render_custom_tab" && node.getId() === "render_tab_a") {
+    } else if (layoutName() === "render_custom_tab" && node.getId() === "render_tab_a") {
       renderValues.leading = <span data-testid="custom-leading" style={{ "font-size": "1.1em" }}>★</span>;
       renderValues.content = <span>Custom Tab A</span>;
       renderValues.buttons.push(<span data-testid="custom-btn" style={{ cursor: "pointer" }}>✎</span>);
-    } else if (layoutName === "render_custom_tab" && node.getId() === "render_tab_b") {
+    } else if (layoutName() === "render_custom_tab" && node.getId() === "render_tab_b") {
       renderValues.buttons.push(<span data-testid="extra-btn-1" style={{ cursor: "pointer" }}>📌</span>);
       renderValues.buttons.push(<span data-testid="extra-btn-2" style={{ cursor: "pointer" }}>🔒</span>);
     }
@@ -3324,10 +3343,10 @@ const FlexLayoutTest: Component = () => {
     } else if (node instanceof BorderNode) {
       renderValues.buttons.push(<img src="images/folder.svg" />);
       renderValues.buttons.push(<img src="images/settings.svg" />);
-    } else if (layoutName === "render_custom_tabset" && node.getId() === "render_ts_buttons") {
+    } else if (layoutName() === "render_custom_tabset" && node.getId() === "render_ts_buttons") {
       renderValues.buttons.push(<span data-testid="ts-btn-save" style={{ cursor: "pointer" }}>💾</span>);
       renderValues.buttons.push(<span data-testid="ts-btn-gear" style={{ cursor: "pointer" }}>⚙</span>);
-    } else if (layoutName === "render_custom_tabset" && node.getId() === "render_ts_sticky") {
+    } else if (layoutName() === "render_custom_tabset" && node.getId() === "render_ts_sticky") {
       renderValues.stickyButtons.push(
         <span data-testid="ts-sticky-add" style={{ cursor: "pointer", "margin-left": "4px" }} title="Add tab">＋</span>,
       );
@@ -3523,20 +3542,20 @@ const FlexLayoutTest: Component = () => {
    };
 
   const onAction = (action: IAction) => {
-    if (layoutName === "render_action_intercept" && action.type === "FlexLayout_DeleteTab") {
+    if (layoutName() === "render_action_intercept" && action.type === "FlexLayout_DeleteTab") {
       console.log("[render_action_intercept] Blocked action:", action);
       return undefined;
     }
     return action;
   };
 
-  const classNameMapper = layoutName === "render_class_mapper"
+  const classNameMapper = () => layoutName() === "render_class_mapper"
     ? (defaultClassName: string) => `demo-mapped ${defaultClassName}`
     : undefined;
 
-  const needsCustomTab = ["render_custom_tab", "test_with_min_size", "test_with_onRenderTab"].includes(layoutName);
-  const needsCustomTabSet = ["render_custom_tabset", "test_with_min_size", "test_with_onRenderTab"].includes(layoutName);
-   const needsModelChange = ["serial_on_model_change"].includes(layoutName);
+  const needsCustomTab = () => ["render_custom_tab", "test_with_min_size", "test_with_onRenderTab"].includes(layoutName());
+  const needsCustomTabSet = () => ["render_custom_tabset", "test_with_min_size", "test_with_onRenderTab"].includes(layoutName());
+  const needsModelChange = () => ["serial_on_model_change"].includes(layoutName());
 
   const onSetTabComponent = () => {
     const m = model();
@@ -3624,9 +3643,11 @@ const FlexLayoutTest: Component = () => {
     setModel(m);
   };
 
-  const onModelChange = needsModelChange
-    ? (_m: Model, action: any) => { console.log("[onModelChange]", action.type, action); }
-    : undefined;
+  const onModelChange = (_m: Model, action: any) => {
+    if (needsModelChange()) {
+      console.log("[onModelChange]", action.type, action);
+    }
+  };
 
    const actionButtons: Record<string, () => JSX.Element> = {
      action_add_remove: () => (
@@ -3791,6 +3812,23 @@ const FlexLayoutTest: Component = () => {
       }}
     >
       <div style={{ padding: "4px", display: "flex", gap: "4px", "flex-wrap": "wrap", "align-items": "center" }}>
+        <select
+          data-id="layout-selector"
+          value={layoutName()}
+          onChange={(e) => switchLayout(e.currentTarget.value)}
+          style={{
+            background: "#16213e",
+            color: "#e0e0e0",
+            border: "1px solid #0f3460",
+            "border-radius": "4px",
+            padding: "4px 8px",
+            "font-size": "13px",
+          }}
+        >
+          {layoutKeys.map((key) => (
+            <option value={key}>{key.replace(/_/g, " ")}</option>
+          ))}
+        </select>
         <button data-id="reload" onClick={reload}>
           Reload
         </button>
@@ -3808,25 +3846,29 @@ const FlexLayoutTest: Component = () => {
            Float Active
          </button>
 
-         {actionButtons[layoutName]?.()}
+         {actionButtons[layoutName()]?.()}
        </div>
 
-       {layoutName === "action_external_drag" && (
+       {layoutName() === "action_external_drag" && (
          <div style={{ padding: "4px", display: "flex", gap: "4px", "align-items": "center" }}>
-           {actionButtons[layoutName]?.()}
+           {actionButtons[layoutName()]?.()}
          </div>
        )}
 
        <div style={{ flex: 1, position: "relative" }}>
-        <Layout
-          model={model()}
-          factory={factory}
-          onAction={onAction}
-          onModelChange={onModelChange}
-          onRenderTab={needsCustomTab ? onRenderTab : undefined}
-          onRenderTabSet={needsCustomTabSet ? onRenderTabSet : undefined}
-          classNameMapper={classNameMapper}
-        />
+        <Show when={`${layoutName()}:${layoutVersion()}`} keyed>
+          {(_key) => (
+            <Layout
+              model={model()}
+              factory={factory}
+              onAction={onAction}
+              onModelChange={onModelChange}
+              onRenderTab={needsCustomTab() ? onRenderTab : undefined}
+              onRenderTabSet={needsCustomTabSet() ? onRenderTabSet : undefined}
+              classNameMapper={classNameMapper()}
+            />
+          )}
+        </Show>
       </div>
     </div>
   );
