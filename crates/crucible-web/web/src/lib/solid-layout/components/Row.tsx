@@ -143,18 +143,21 @@ const RowChild: Component<RowChildProps> = (props) => {
             flex: `${flexGrow()} 1 0%`,
             overflow: "hidden",
             position: "relative",
+            display: "flex",
+            width: "100%",
           }}
         >
-          <TabSet nodeId={(props.child as IJsonTabSetNode).id ?? ""} />
+          <TabSet node={props.child as IJsonTabSetNode} path={path()} />
         </div>
       }
-    >
+      >
       <div
         style={{
           flex: `${flexGrow()} 1 0%`,
           overflow: "hidden",
           position: "relative",
           display: "flex",
+          width: "100%",
         }}
       >
         <Row
