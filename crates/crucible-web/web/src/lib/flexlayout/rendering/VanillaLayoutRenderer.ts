@@ -1227,6 +1227,12 @@ export class VanillaLayoutRenderer {
 
         const children: HTMLElement[] = [];
 
+        // FAB goes first (leading edge) so it stays at a consistent position
+        // matching the expanded toolbar's dock button location
+        if (border.isEnableDock()) {
+            children.push(this.createDockButton(border, "collapsed-strip"));
+        }
+
         const tabs = border.getChildren();
         for (let i = 0; i < tabs.length; i++) {
             const tab = tabs[i];
@@ -1284,10 +1290,6 @@ export class VanillaLayoutRenderer {
             };
 
             children.push(button);
-        }
-
-        if (border.isEnableDock()) {
-            children.push(this.createDockButton(border, "collapsed-strip"));
         }
 
         strip.replaceChildren(...children);
@@ -1713,7 +1715,7 @@ export class VanillaLayoutRenderer {
         }
 
         if (context === "collapsed-strip") {
-            button.style[isVertical ? "marginTop" : "marginLeft"] = "auto";
+            button.style[isVertical ? "marginBottom" : "marginRight"] = "4px";
         }
 
         button.textContent = this.getBorderDockIcon(border);
