@@ -60,3 +60,26 @@ export function canDockToWindow(node: any): boolean {
 	}
 	return true;
 }
+
+// Nesting order determines which borders "own" corner space.
+// Horizontal borders (top/bottom) sort first → nest outermost → span full width.
+// Vertical borders (left/right) sort later → nest inside → span between top and bottom.
+// This produces the standard IDE layout where top/bottom bars are full-width
+// and left/right sidebars fit between them.
+const LOCATION_TIE_ORDER: Record<string, number> = {
+	top: 0,
+	bottom: 1,
+	left: 2,
+	right: 3,
+};
+
+export function computeNestingOrder(borders: BorderNode[]): BorderNode[] {
+	return [...borders].sort((a, b) => {
+		const priorityDiff = b.getPriority() - a.getPriority();
+		if (priorityDiff !== 0) {
+			return priorityDiff;
+		}
+		return (LOCATION_TIE_ORDER[a.getLocation().getName()] ?? 4)
+			- (LOCATION_TIE_ORDER[b.getLocation().getName()] ?? 4);
+	});
+}

@@ -3,7 +3,7 @@ import { Rect } from "../core/Rect";
 import { LayoutEngine } from "../layout/LayoutEngine";
 import { Model } from "../model/Model";
 import { RowNode } from "../model/RowNode";
-import { computeNestingOrder } from "../../solid-flexlayout/Layout";
+import { computeNestingOrder } from "../model/Utils";
 import type { IJsonModel } from "../types";
 
 describe("LayoutEngine", () => {
