@@ -1,12 +1,9 @@
 import "@/index.css";
 import { Component, createSignal, Show, type JSX } from "solid-js";
 import { render } from "solid-js/web";
-import { Layout } from "@/lib/solid-flexlayout";
-import type { ITabRenderValues, ITabSetRenderValues } from "@/lib/solid-flexlayout";
+import { Layout } from "@/lib/solid-layout/components/Layout";
 import { Model } from "@/lib/flexlayout/model/Model";
 import { TabNode } from "@/lib/flexlayout/model/TabNode";
-import { TabSetNode } from "@/lib/flexlayout/model/TabSetNode";
-import { BorderNode } from "@/lib/flexlayout/model/BorderNode";
 import { Action, type IAction } from "@/lib/flexlayout/model/Action";
 
 type LayoutDef = {
@@ -3295,63 +3292,6 @@ const FlexLayoutTest: Component = () => {
     }
   };
 
-  const onRenderTab = (node: TabNode, renderValues: ITabRenderValues) => {
-    if (["onRenderTab1", "onRenderTab2"].includes(node.getId())) {
-      renderValues.leading = (
-        <img
-          src="images/settings.svg"
-          style={{ width: "1em", height: "1em" }}
-        />
-      );
-      renderValues.content = <span>{node.getId()}</span>;
-      renderValues.buttons.push(
-        <img
-          src="images/folder.svg"
-          style={{ width: "1em", height: "1em" }}
-        />,
-      );
-    } else if (layoutName() === "render_custom_tab" && node.getId() === "render_tab_a") {
-      renderValues.leading = <span data-testid="custom-leading" style={{ "font-size": "1.1em" }}>★</span>;
-      renderValues.content = <span>Custom Tab A</span>;
-      renderValues.buttons.push(<span data-testid="custom-btn" style={{ cursor: "pointer" }}>✎</span>);
-    } else if (layoutName() === "render_custom_tab" && node.getId() === "render_tab_b") {
-      renderValues.buttons.push(<span data-testid="extra-btn-1" style={{ cursor: "pointer" }}>📌</span>);
-      renderValues.buttons.push(<span data-testid="extra-btn-2" style={{ cursor: "pointer" }}>🔒</span>);
-    }
-  };
-
-  const onRenderTabSet = (
-    node: TabSetNode | BorderNode,
-    renderValues: ITabSetRenderValues,
-  ) => {
-    if (["onRenderTabSet1", "onRenderTabSet2"].includes(node.getId())) {
-      renderValues.buttons.push(<img src="images/folder.svg" />);
-      renderValues.buttons.push(<img src="images/settings.svg" />);
-    } else if (node.getId() === "onRenderTabSet3") {
-      renderValues.stickyButtons.push(
-        <img
-          src="images/add.svg"
-          alt="Add"
-          title="Add Tab (using onRenderTabSet callback, see Demo)"
-          style={{
-            "margin-left": "5px",
-            width: "24px",
-            height: "24px",
-          }}
-        />,
-      );
-    } else if (node instanceof BorderNode) {
-      renderValues.buttons.push(<img src="images/folder.svg" />);
-      renderValues.buttons.push(<img src="images/settings.svg" />);
-    } else if (layoutName() === "render_custom_tabset" && node.getId() === "render_ts_buttons") {
-      renderValues.buttons.push(<span data-testid="ts-btn-save" style={{ cursor: "pointer" }}>💾</span>);
-      renderValues.buttons.push(<span data-testid="ts-btn-gear" style={{ cursor: "pointer" }}>⚙</span>);
-    } else if (layoutName() === "render_custom_tabset" && node.getId() === "render_ts_sticky") {
-      renderValues.stickyButtons.push(
-        <span data-testid="ts-sticky-add" style={{ cursor: "pointer", "margin-left": "4px" }} title="Add tab">＋</span>,
-      );
-    }
-  };
 
     const factory = (node: TabNode): JSX.Element => {
       const componentType = node.getComponent();
@@ -3553,8 +3493,6 @@ const FlexLayoutTest: Component = () => {
     ? (defaultClassName: string) => `demo-mapped ${defaultClassName}`
     : undefined;
 
-  const needsCustomTab = () => ["render_custom_tab", "test_with_min_size", "test_with_onRenderTab"].includes(layoutName());
-  const needsCustomTabSet = () => ["render_custom_tabset", "test_with_min_size", "test_with_onRenderTab"].includes(layoutName());
   const needsModelChange = () => ["serial_on_model_change"].includes(layoutName());
 
   const onSetTabComponent = () => {
@@ -3863,8 +3801,6 @@ const FlexLayoutTest: Component = () => {
               factory={factory}
               onAction={onAction}
               onModelChange={onModelChange}
-              onRenderTab={needsCustomTab() ? onRenderTab : undefined}
-              onRenderTabSet={needsCustomTabSet() ? onRenderTabSet : undefined}
               classNameMapper={classNameMapper()}
             />
           )}
