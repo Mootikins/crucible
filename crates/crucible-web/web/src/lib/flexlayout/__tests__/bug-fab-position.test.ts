@@ -114,7 +114,7 @@ describe("Bug #4: FAB dock button position consistency across border states", ()
         }
     });
 
-    it("collapsed strip FAB is the last child (trailing position)", () => {
+    it("collapsed strip FAB is the first child (leading position, matching expanded toolbar)", () => {
         const model = Model.fromJson(fabPositionFixture);
 
         for (const loc of ["left", "right", "top", "bottom"] as const) {
@@ -131,9 +131,8 @@ describe("Bug #4: FAB dock button position consistency across border states", ()
                 );
                 expect(strip).toBeTruthy();
 
-                const allButtons = strip!.querySelectorAll("button");
-                const lastButton = allButtons[allButtons.length - 1];
-                expect(lastButton?.dataset.collapsedFab).toBe("true");
+                const firstChild = strip!.children[0] as HTMLElement;
+                expect(firstChild?.dataset.collapsedFab).toBe("true");
             }
         } finally {
             renderer.unmount();
@@ -160,9 +159,34 @@ describe("Bug #4: FAB dock button position consistency across border states", ()
         }
     });
 
-    it.todo("collapsed FAB and expanded FAB use the same CSS class for consistent styling");
+    it("collapsed FAB and expanded FAB use the same CSS class for consistent styling", () => {
+        const model = Model.fromJson(fabPositionFixture);
 
-    it("collapsed strip FAB uses margin-auto to push to trailing edge", () => {
+        // Expanded state
+        const { host: expandedHost, renderer: expandedRenderer } = mountRenderer(model);
+        const expandedDockButton = expandedHost.querySelector(
+            '.flexlayout__border_dock_button[data-dock-context="expanded-toolbar"]'
+        );
+        expect(expandedDockButton).toBeTruthy();
+        const expandedClassName = expandedDockButton!.className;
+        expandedRenderer.unmount();
+        expandedHost.remove();
+
+        // Collapsed state
+        for (const loc of ["left", "right", "top", "bottom"] as const) {
+            model.doAction(Action.setDockState(getBorder(model, loc).getId(), "collapsed"));
+        }
+        const { host: collapsedHost, renderer: collapsedRenderer } = mountRenderer(model);
+        const collapsedDockButton = collapsedHost.querySelector(
+            '.flexlayout__border_dock_button[data-dock-context="collapsed-strip"]'
+        );
+        expect(collapsedDockButton).toBeTruthy();
+        expect(collapsedDockButton!.className).toBe(expandedClassName);
+        collapsedRenderer.unmount();
+        collapsedHost.remove();
+    });
+
+    it("vertical collapsed strip FAB has margin-bottom for spacing from tab buttons", () => {
         const model = Model.fromJson(fabPositionFixture);
 
         for (const loc of ["left", "right"] as const) {
@@ -177,20 +201,20 @@ describe("Bug #4: FAB dock button position consistency across border states", ()
                 '.flexlayout__border_left[data-collapsed-strip="true"] button[data-collapsed-fab="true"]'
             );
             expect(leftFab).toBeTruthy();
-            expect(leftFab!.style.marginTop).toBe("auto");
+            expect(leftFab!.style.marginBottom).toBe("4px");
 
             const rightFab = host.querySelector<HTMLElement>(
                 '.flexlayout__border_right[data-collapsed-strip="true"] button[data-collapsed-fab="true"]'
             );
             expect(rightFab).toBeTruthy();
-            expect(rightFab!.style.marginTop).toBe("auto");
+            expect(rightFab!.style.marginBottom).toBe("4px");
         } finally {
             renderer.unmount();
             host.remove();
         }
     });
 
-    it("horizontal collapsed strip FAB uses margin-left: auto", () => {
+    it("horizontal collapsed strip FAB has margin-right for spacing from tab buttons", () => {
         const model = Model.fromJson(fabPositionFixture);
 
         for (const loc of ["top", "bottom"] as const) {
@@ -205,13 +229,13 @@ describe("Bug #4: FAB dock button position consistency across border states", ()
                 '.flexlayout__border_top[data-collapsed-strip="true"] button[data-collapsed-fab="true"]'
             );
             expect(topFab).toBeTruthy();
-            expect(topFab!.style.marginLeft).toBe("auto");
+            expect(topFab!.style.marginRight).toBe("4px");
 
             const bottomFab = host.querySelector<HTMLElement>(
                 '.flexlayout__border_bottom[data-collapsed-strip="true"] button[data-collapsed-fab="true"]'
             );
             expect(bottomFab).toBeTruthy();
-            expect(bottomFab!.style.marginLeft).toBe("auto");
+            expect(bottomFab!.style.marginRight).toBe("4px");
         } finally {
             renderer.unmount();
             host.remove();
