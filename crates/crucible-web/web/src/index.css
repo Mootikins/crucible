@@ -367,15 +367,16 @@
   padding: 0 var(--fl-spacing-floating-btn-h);
 }
 
-/* Splitter */
+/* Splitter — no visible line; full-size hit area for drag/resize only */
 .flexlayout__splitter {
-  background: var(--fl-color-border-primary);
+  position: relative;
+  background: transparent;
   z-index: 1;
   transition: background var(--fl-transition-fast);
 }
 
-.flexlayout__splitter:hover {
-  background: var(--fl-color-accent-medium);
+.flexlayout__splitter::after {
+  display: none;
 }
 
 .flexlayout__splitter_drag {
@@ -386,14 +387,12 @@
 }
 
 .flexlayout__splitter_border {
-  background: var(--fl-color-border-primary);
+  position: relative;
+  background: transparent;
   z-index: 1;
   transition: background var(--fl-transition-fast);
 }
 
-.flexlayout__splitter_border:hover {
-  background: var(--fl-color-border-secondary);
-}
 
 .flexlayout__splitter_handle {
   display: none;
@@ -403,6 +402,11 @@
 .flexlayout__border {
   background: var(--fl-color-bg-surface);
   border: var(--fl-size-border-width) solid var(--fl-color-border-primary);
+}
+
+/* 0-height strip when expanded must not draw a line above/below the pane */
+.flexlayout__border[data-state="expanded"] {
+  border: none;
 }
 
 .flexlayout__border_top {
@@ -481,10 +485,30 @@
   align-items: center;
 }
 
+/* Icon/button panes: icon-only border tabs show only the leading icon slot */
+.flexlayout__border_button[data-icon-only="true"] {
+  min-width: var(--fl-size-tabbar-height);
+  justify-content: center;
+}
+
+.flexlayout__border_button[data-icon-only="true"] .flexlayout__border_button_content {
+  display: none;
+}
+
 .flexlayout__border_button_leading {
   margin-right: var(--fl-spacing-btn-leading-mr);
   display: flex;
   align-items: center;
+  min-width: 1em;
+}
+
+/* App can style icons via [data-icon="icon-name"] or .icon-* classes on the leading span */
+.flexlayout__border_button_leading[data-icon] {
+  flex-shrink: 0;
+}
+
+.flexlayout__border_button[data-icon-only="true"] .flexlayout__border_button_leading {
+  margin-right: 0;
 }
 
 .flexlayout__border_button_trailing {
@@ -813,17 +837,28 @@
   overflow: hidden;
 }
 
-/* Border tab bar (tabs-on-top for expanded borders) */
+/* Border tab bar (tabs-on-top for expanded borders) — separator line by edge only */
 .flexlayout__border_tabbar {
   display: flex;
   flex-direction: row;
   align-items: center;
   background: var(--fl-color-bg-surface);
-  border-bottom: var(--fl-size-border-width) solid var(--fl-color-border-primary);
   min-height: var(--fl-size-tabbar-height);
   flex-shrink: 0;
   position: relative;
   z-index: 1;
+}
+
+/* Top/left/right: line below the tab bar */
+.flexlayout__border_tabbar[data-edge="top"],
+.flexlayout__border_tabbar[data-edge="left"],
+.flexlayout__border_tabbar[data-edge="right"] {
+  border-bottom: var(--fl-size-border-width) solid var(--fl-color-border-primary);
+}
+
+/* Bottom: line above the tab bar (match line below top pane tab bar) */
+.flexlayout__border_tabbar[data-edge="bottom"] {
+  border-top: var(--fl-size-border-width) solid var(--fl-color-border-primary);
 }
 
 /* DnD overlay + outline */
