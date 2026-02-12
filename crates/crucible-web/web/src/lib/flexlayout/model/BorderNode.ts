@@ -201,6 +201,19 @@ export class BorderNode extends Node implements IDropTarget {
     toJson(): IJsonBorderNode {
         const json: any = {};
         BorderNode.attributeDefinitions.toJson(json, this.attributes);
+        // Resolve inherited attributes so the SolidJS bridge gets fully-resolved
+        // values. attributeDefinitions.toJson() only writes this.attributes[name],
+        // which is undefined for inherited attrs that weren't explicitly set on
+        // this border node. getAttr() falls back to the global model attribute,
+        // so we patch any still-undefined inherited values here.
+        for (const attr of BorderNode.attributeDefinitions.getAttributes()) {
+            if (attr.modelName !== undefined && json[attr.name] === undefined) {
+                const resolved = this.getAttr(attr.name);
+                if (resolved !== undefined) {
+                    json[attr.name] = resolved;
+                }
+            }
+        }
         if (json.id && /^\d+$/.test(json.id)) {
             delete json.id;
         }
