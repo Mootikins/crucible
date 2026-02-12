@@ -9,7 +9,7 @@
   --fl-color-bg-elevated: #262626;
   --fl-color-text-primary: #fafafa;
   --fl-color-text-secondary: #a3a3a3;
-  --fl-color-text-muted: #737373;
+  --fl-color-text-muted: #8a8a8a;
   --fl-color-text-tertiary: #d4d4d4;
   --fl-color-accent: #3b82f6;
   --fl-color-accent-subtle: rgba(59, 130, 246, 0.08);
@@ -17,7 +17,7 @@
   --fl-color-accent-medium: rgba(59, 130, 246, 0.15);
   --fl-color-accent-strong: rgba(59, 130, 246, 0.2);
   --fl-color-accent-selection: rgba(59, 130, 246, 0.4);
-  --fl-color-border-primary: #262626;
+  --fl-color-border-primary: #333333;
   --fl-color-border-secondary: #404040;
   --fl-color-border-floating: #555;
   --fl-color-scrollbar-track: #171717;
@@ -40,10 +40,10 @@
   --fl-size-popup-radius: 6px;
   --fl-size-toolbar-btn-radius: 3px;
   --fl-size-fab-size: 20px;
-  --fl-size-fab-font: 10px;
+  --fl-size-fab-font: 12px;
   --fl-size-fab-radius: 3px;
-  --fl-size-dock-btn-font: 12px;
-  --fl-size-collapsed-label-font: 12px;
+  --fl-size-dock-btn-font: 14px;
+  --fl-size-collapsed-label-font: 13px;
   --fl-size-header-font: 11px;
   --fl-size-overflow-count-font: 10px;
   --fl-size-textbox-font: 13px;
@@ -58,7 +58,7 @@
   --fl-spacing-tab-h: 12px;
   --fl-spacing-tab-v: 4px;
   --fl-spacing-tab-gap: 4px;
-  --fl-spacing-tab-container-h: 4px;
+  --fl-spacing-tab-container-h: 8px;
   --fl-spacing-toolbar-h: 4px;
   --fl-spacing-toolbar-gap: 2px;
   --fl-spacing-toolbar-btn-h: 4px;
@@ -90,8 +90,8 @@
   --fl-transition-medium: 0.2s;
   --fl-transition-timing: ease;
   --fl-opacity-unselected: 0.7;
-  --fl-opacity-trailing: 0.4;
-  --fl-opacity-dock-btn: 0.7;
+  --fl-opacity-trailing: 0.6;
+  --fl-opacity-dock-btn: 0.85;
   --fl-opacity-splitter-drag: 0.7;
   --fl-opacity-floating-btn: 0.7;
   --fl-opacity-resize-handle: 0.5;
@@ -210,7 +210,7 @@
 .flexlayout__tabset_tabbar_outer_top {
   display: flex;
   align-items: center;
-  background: var(--fl-color-bg-surface);
+  background: var(--fl-color-bg-primary);
   border-bottom: var(--fl-size-border-width) solid var(--fl-color-border-primary);
   min-height: var(--fl-size-tabbar-height);
 }
@@ -347,7 +347,7 @@
 
 /* Splitter */
 .flexlayout__splitter {
-  background: var(--fl-color-bg-primary);
+  background: var(--fl-color-border-primary);
   z-index: 1;
   transition: background var(--fl-transition-fast);
 }
@@ -364,7 +364,7 @@
 }
 
 .flexlayout__splitter_border {
-  background: var(--fl-color-bg-primary);
+  background: var(--fl-color-border-primary);
   z-index: 1;
 }
 
