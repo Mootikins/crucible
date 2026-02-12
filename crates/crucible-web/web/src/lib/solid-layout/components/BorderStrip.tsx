@@ -152,32 +152,6 @@ export const BorderStrip: Component<BorderStripProps> = (props) => {
       }}
     >
       <Show when={showTabButtons()}>
-        <Show when={enableDock()}>
-          <button
-            type="button"
-            class={mapClass(CLASSES.FLEXLAYOUT__BORDER_DOCK_BUTTON)}
-            data-layout-path={`${props.path}/button/dock`}
-            data-dock-context={isCollapsed() ? "collapsed-strip" : "expanded-toolbar"}
-            data-dock-location={props.location}
-            title={isCollapsed() ? "Expand" : "Collapse"}
-            style={{
-              [isVertical() ? "margin-bottom" : "margin-right"]: "4px",
-              ...(needsVerticalText()
-                ? {
-                    "writing-mode": "vertical-rl",
-                    transform: props.location === "left" ? "rotate(180deg)" : undefined,
-                  }
-                : {}),
-            }}
-            onPointerDown={(e) => e.stopPropagation()}
-            onClick={(e) => {
-              e.stopPropagation();
-              handleDockToggle();
-            }}
-          >
-            {getDockIcon(dockState(), props.location)}
-          </button>
-        </Show>
         <For each={tabs()}>
           {(tab, index) => {
             const isTabSelected = createMemo(() => index() === selected());
@@ -220,6 +194,32 @@ export const BorderStrip: Component<BorderStripProps> = (props) => {
             );
           }}
         </For>
+        <Show when={enableDock()}>
+          <button
+            type="button"
+            class={mapClass(CLASSES.FLEXLAYOUT__BORDER_DOCK_BUTTON)}
+            data-layout-path={`${props.path}/button/dock`}
+            data-dock-context={isCollapsed() ? "collapsed-strip" : "expanded-toolbar"}
+            data-dock-location={props.location}
+            title={isCollapsed() ? "Expand" : "Collapse"}
+            style={{
+              [isVertical() ? "margin-top" : "margin-left"]: "auto",
+              ...(needsVerticalText()
+                ? {
+                    "writing-mode": "vertical-rl",
+                    transform: props.location === "left" ? "rotate(180deg)" : undefined,
+                  }
+                : {}),
+            }}
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.stopPropagation();
+              handleDockToggle();
+            }}
+          >
+            {getDockIcon(dockState(), props.location)}
+          </button>
+        </Show>
       </Show>
     </div>
   );
