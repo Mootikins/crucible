@@ -100,21 +100,25 @@ const layouts: Record<string, LayoutDef> = {
       {
         type: "border",
         location: "top",
+        selected: 0,
         children: [{ type: "tab", name: "top1", component: "testing" }],
       },
       {
         type: "border",
         location: "bottom",
+        selected: 0,
         children: [{ type: "tab", name: "bottom1", component: "testing" }],
       },
       {
         type: "border",
         location: "left",
+        selected: 0,
         children: [{ type: "tab", name: "left1", component: "testing" }],
       },
       {
         type: "border",
         location: "right",
+        selected: 0,
         children: [{ type: "tab", name: "right1", component: "testing" }],
       },
     ],
