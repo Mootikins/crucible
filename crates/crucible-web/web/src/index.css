@@ -33,7 +33,7 @@
   --fl-shadow-popup: 0 4px 12px rgba(0, 0, 0, 0.4);
   --fl-shadow-floating: 0 4px 16px rgba(0, 0, 0, 0.4);
   --fl-size-scrollbar: 8px;
-  --fl-size-tabbar-height: 32px;
+   --fl-size-tabbar-height: 36px;
   --fl-size-tab-font: 13px;
   --fl-size-border-width: 1px;
   --fl-size-tab-indicator: 2px;
@@ -375,7 +375,7 @@
 }
 
 .flexlayout__splitter:hover {
-  background: var(--fl-color-border-secondary);
+  background: var(--fl-color-accent-medium);
 }
 
 .flexlayout__splitter_drag {
@@ -402,6 +402,7 @@
 /* Border panels */
 .flexlayout__border {
   background: var(--fl-color-bg-surface);
+  border: var(--fl-size-border-width) solid var(--fl-color-border-primary);
 }
 
 .flexlayout__border_top {
