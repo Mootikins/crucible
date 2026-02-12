@@ -5,9 +5,9 @@
   --fl-color-bg-elevated: #e5e5e5;
 
   --fl-color-text-primary: #171717;
-  --fl-color-text-secondary: #525252;
-  --fl-color-text-muted: #737373;
-  --fl-color-text-tertiary: #404040;
+   --fl-color-text-secondary: #525252;
+   --fl-color-text-muted: #8a8a8a;
+   --fl-color-text-tertiary: #404040;
 
   --fl-color-accent: #2563eb;
   --fl-color-accent-subtle: rgba(37, 99, 235, 0.06);
