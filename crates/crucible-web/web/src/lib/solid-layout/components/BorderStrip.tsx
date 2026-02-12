@@ -93,7 +93,7 @@ export const BorderStrip: Component<BorderStripProps> = (props) => {
   });
 
   const needsVerticalText = createMemo(
-    () => isVertical() && selected() === -1,
+    () => isVertical() && (isCollapsed() || selected() === -1),
   );
 
   const enableDock = createMemo(
