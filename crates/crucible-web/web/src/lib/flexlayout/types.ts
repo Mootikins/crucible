@@ -39,6 +39,8 @@ export interface IJsonTabNode extends IJsonNode {
   name?: string;
   component?: string;
   icon?: string;
+  /** When true, border tab shows only icon (and optional short label); useful for icon/button panes. */
+  iconOnly?: boolean;
   config?: unknown;
   [key: string]: unknown;
 }
@@ -51,6 +53,8 @@ export interface IJsonBorderNode extends IJsonNode {
 	visibleTabs?: number[];
 	priority?: number;
 	enableDock?: boolean;
+	/** Dock (collapse/expand) button position: "start" = top-inside corner, "end" = trailing edge. */
+	fabPosition?: "start" | "end";
 }
 
 export interface IJsonPopout extends IJsonNode {

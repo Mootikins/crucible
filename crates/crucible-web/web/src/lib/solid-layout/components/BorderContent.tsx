@@ -144,10 +144,7 @@ export const BorderContent: Component<BorderContentProps> = (props) => {
     () => (props.borderNode.maxSize as number | undefined) ?? 99999,
   );
 
-  const splitterSize = createMemo(() => {
-    const globalSplitterSize = (ctx.bridge.store.global as any)?.splitterSize;
-    return typeof globalSplitterSize === "number" ? globalSplitterSize : 8;
-  });
+  const splitterSize = createMemo(() => ctx.model.getSplitterSize());
 
   const sizeStyle = createMemo(() => {
     if (!isContentVisible()) return {};
@@ -275,6 +272,11 @@ export const BorderContent: Component<BorderContentProps> = (props) => {
     return render(() => ctx.factory(modelNode), container);
   };
 
+  const dockButtonFirst = createMemo(() => {
+    const pos = props.borderNode.fabPosition as string | undefined;
+    return pos !== "end";
+  });
+
   const TabBar: Component<{
     tabNodes: IJsonTabNode[];
     showToolbar: boolean;
@@ -284,10 +286,38 @@ export const BorderContent: Component<BorderContentProps> = (props) => {
       () => props.borderNode.enableDock !== false,
     );
 
+    const dockButtonEl = () => (
+      <Show when={barProps.showToolbar && enableDock()}>
+        <div
+          style={{
+            display: "flex",
+            "align-items": "center",
+            padding: "0 4px",
+            "flex-shrink": "0",
+          }}
+        >
+          <button
+            type="button"
+            class={mapClass(CLASSES.FLEXLAYOUT__BORDER_DOCK_BUTTON)}
+            data-dock-position={dockButtonFirst() ? "start" : "end"}
+            title={dockState() === "collapsed" ? "Expand" : "Collapse"}
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.stopPropagation();
+              handleDockToggle();
+            }}
+          >
+            {getDockIcon(dockState(), props.location)}
+          </button>
+        </div>
+      </Show>
+    );
+
     return (
       <div
         class={buildBorderTabBarClass(mapClass)}
         data-border-tabbar="true"
+        data-edge={props.location}
         data-layout-path={`${props.path}/tabbar${barProps.tileIndex != null ? `/${barProps.tileIndex}` : ""}`}
         style={{
           display: "flex",
@@ -296,6 +326,9 @@ export const BorderContent: Component<BorderContentProps> = (props) => {
         }}
         onPointerDown={onEdgeSashPointerDown}
       >
+        <Show when={dockButtonFirst()}>
+          {dockButtonEl()}
+        </Show>
         <div
           style={{
             display: "flex",
@@ -314,6 +347,9 @@ export const BorderContent: Component<BorderContentProps> = (props) => {
               const isTabSelected = createMemo(
                 () => childIndex() === selected(),
               );
+              const iconOnly = createMemo(
+                () => (tab as IJsonTabNode).iconOnly === true,
+              );
 
               return (
                 <>
@@ -326,12 +362,20 @@ export const BorderContent: Component<BorderContentProps> = (props) => {
                     )}
                     data-layout-path={`${props.path}/tb${childIndex()}`}
                     data-state={isTabSelected() ? "selected" : "unselected"}
+                    data-icon-only={iconOnly() ? "true" : undefined}
+                    data-icon={tab.icon ?? undefined}
+                    title={(tab.helpText as string) ?? (tab.name ?? "")}
                     onClick={() => tab.id && handleTabClick(tab.id)}
                     onPointerDown={(e) => e.stopPropagation()}
                   >
-                    <span class={mapClass(CLASSES.FLEXLAYOUT__BORDER_BUTTON_CONTENT)}>
-                      {tab.name ?? ""}
-                    </span>
+                    <Show when={tab.icon} fallback={<span class={mapClass(CLASSES.FLEXLAYOUT__BORDER_BUTTON_CONTENT)}>{tab.name ?? ""}</span>}>
+                      <span class={mapClass(CLASSES.FLEXLAYOUT__BORDER_BUTTON_LEADING)} data-icon={tab.icon} aria-hidden="true" />
+                      <Show when={!iconOnly()}>
+                        <span class={mapClass(CLASSES.FLEXLAYOUT__BORDER_BUTTON_CONTENT)}>
+                          {tab.name ?? ""}
+                        </span>
+                      </Show>
+                    </Show>
                   </div>
                   <Show when={index() < barProps.tabNodes.length - 1}>
                     <div class={mapClass(CLASSES.FLEXLAYOUT__BORDER_TAB_DIVIDER)} />
@@ -342,27 +386,8 @@ export const BorderContent: Component<BorderContentProps> = (props) => {
           </For>
         </div>
 
-        <Show when={barProps.showToolbar && enableDock()}>
-          <div
-            style={{
-              display: "flex",
-              "align-items": "center",
-              padding: "0 4px",
-            }}
-          >
-            <button
-              type="button"
-              class={mapClass(CLASSES.FLEXLAYOUT__BORDER_DOCK_BUTTON)}
-              title={dockState() === "collapsed" ? "Expand" : "Collapse"}
-              onPointerDown={(e) => e.stopPropagation()}
-              onClick={(e) => {
-                e.stopPropagation();
-                handleDockToggle();
-              }}
-            >
-              {getDockIcon(dockState(), props.location)}
-            </button>
-          </div>
+        <Show when={!dockButtonFirst()}>
+          {dockButtonEl()}
         </Show>
       </div>
     );
@@ -384,37 +409,44 @@ export const BorderContent: Component<BorderContentProps> = (props) => {
       disposeFn?.();
     });
 
+    const tabBarOutsideBottom = createMemo(() => props.location === "bottom");
+    const contentBlock = () => (
+      <div
+        style={{
+          display: "flex",
+          flex: "1",
+          "min-width": "0",
+          "min-height": "0",
+        }}
+      >
+        <div
+          ref={hostRef}
+          class={buildTileHostClass(mapClass)}
+          data-border-tile="0"
+          style={{
+            flex: "1",
+            position: "relative",
+            overflow: "hidden",
+          }}
+        />
+      </div>
+    );
+
     return (
       <div
         style={{
           display: "flex",
-          "flex-direction": horizontal() ? "row" : "column",
+          "flex-direction": horizontal() ? "column" : "column",
           flex: "1 1 0%",
           "min-width": "0",
           "min-height": "0",
           overflow: "hidden",
         }}
       >
-        <TabBar tabNodes={tabs()} showToolbar={true} />
-        <div
-          style={{
-            display: "flex",
-            flex: "1",
-            "min-width": "0",
-            "min-height": "0",
-          }}
-        >
-          <div
-            ref={hostRef}
-            class={buildTileHostClass(mapClass)}
-            data-border-tile="0"
-            style={{
-              flex: "1",
-              position: "relative",
-              overflow: "hidden",
-            }}
-          />
-        </div>
+        <Show when={!tabBarOutsideBottom()} fallback={<>{contentBlock()}<TabBar tabNodes={tabs()} showToolbar={true} /></>}>
+          <TabBar tabNodes={tabs()} showToolbar={true} />
+          {contentBlock()}
+        </Show>
       </div>
     );
   };
@@ -500,28 +532,51 @@ export const BorderContent: Component<BorderContentProps> = (props) => {
                   data-border-tile={String(visibleIndex())}
                   style={{
                     display: "flex",
-                    "flex-direction": horizontal() ? "row" : "column",
+                    "flex-direction": horizontal() ? "column" : "column",
                     flex: `0 0 calc(${pct()}% - ${splitterDeduction()}px)`,
                     "min-width": "0",
                     "min-height": "0",
                     overflow: "hidden",
                   }}
                 >
-                  <TabBar
-                    tabNodes={[node()]}
-                    showToolbar={showToolbar()}
-                    tileIndex={visibleIndex()}
-                  />
-                  <div
-                    ref={tileHostRef}
-                    class={buildTileHostClass(mapClass)}
-                    data-border-tile-host={String(visibleIndex())}
-                    style={{
-                      flex: "1",
-                      position: "relative",
-                      overflow: "hidden",
-                    }}
-                  />
+                  <Show
+                    when={props.location !== "bottom"}
+                    fallback={
+                      <>
+                        <div
+                          ref={tileHostRef}
+                          class={buildTileHostClass(mapClass)}
+                          data-border-tile-host={String(visibleIndex())}
+                          style={{
+                            flex: "1",
+                            position: "relative",
+                            overflow: "hidden",
+                          }}
+                        />
+                        <TabBar
+                          tabNodes={[node()]}
+                          showToolbar={showToolbar()}
+                          tileIndex={visibleIndex()}
+                        />
+                      </>
+                    }
+                  >
+                    <TabBar
+                      tabNodes={[node()]}
+                      showToolbar={showToolbar()}
+                      tileIndex={visibleIndex()}
+                    />
+                    <div
+                      ref={tileHostRef}
+                      class={buildTileHostClass(mapClass)}
+                      data-border-tile-host={String(visibleIndex())}
+                      style={{
+                        flex: "1",
+                        position: "relative",
+                        overflow: "hidden",
+                      }}
+                    />
+                  </Show>
                 </div>
               </>
             );
