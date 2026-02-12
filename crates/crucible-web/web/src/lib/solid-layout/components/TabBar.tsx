@@ -76,37 +76,65 @@ export const TabBar: Component<TabBarProps> = (props) => {
             e.stopPropagation();
           };
 
-          const enableClose = createMemo(() => tab.enableClose !== false);
+           const enableClose = createMemo(() => tab.enableClose !== false);
+           
+           const closeType = createMemo(() => {
+             const type = tab.closeType as number | undefined;
+             return type ?? 0;
+           });
+           
+           const shouldRenderCloseButton = createMemo(() => {
+             if (!enableClose()) return false;
+             const type = closeType();
+             if (type === 2) return false;
+             return true;
+           });
+           
+            const closeButtonClass = createMemo(() => {
+              const type = closeType();
+              if (type === 1) {
+                return `${mapClass(CLASSES.FLEXLAYOUT__TAB_BUTTON_TRAILING)} flexlayout__tab_button--close-on-hover`;
+              }
+              return mapClass(CLASSES.FLEXLAYOUT__TAB_BUTTON_TRAILING);
+            });
 
-          return (
-            <>
-              <div
-                class={buttonClass()}
-                data-layout-path={buttonPath()}
-                data-state={isSelected() ? "selected" : "unselected"}
-                title={tab.helpText as string ?? ""}
-                onClick={handleClick}
-              >
-                <Show when={tab.icon}>
-                  <div class={mapClass(CLASSES.FLEXLAYOUT__TAB_BUTTON_LEADING)}>
-                    <img src={tab.icon as string} alt="" />
-                  </div>
-                </Show>
-                <div class={mapClass(CLASSES.FLEXLAYOUT__TAB_BUTTON_CONTENT)}>
-                  {tab.name ?? ""}
-                </div>
-                <Show when={enableClose()}>
-                  <div
-                    class={mapClass(CLASSES.FLEXLAYOUT__TAB_BUTTON_TRAILING)}
-                    data-layout-path={buttonPath() ? `${buttonPath()}/button/close` : undefined}
-                    title="Close"
-                    onPointerDown={(e) => e.stopPropagation()}
-                    onClick={handleClose}
-                  >
-                    ✕
-                  </div>
-                </Show>
-              </div>
+            const isUrlIcon = createMemo(() => {
+              const icon = tab.icon as string | undefined;
+              if (!icon) return false;
+              return /^(https?:\/\/|\/|data:)/.test(icon);
+            });
+
+            return (
+              <>
+                <div
+                  class={buttonClass()}
+                  data-layout-path={buttonPath()}
+                  data-state={isSelected() ? "selected" : "unselected"}
+                  title={tab.helpText as string ?? ""}
+                  onClick={handleClick}
+                >
+                  <Show when={tab.icon}>
+                    <div class={mapClass(CLASSES.FLEXLAYOUT__TAB_BUTTON_LEADING)}>
+                      <Show when={isUrlIcon()} fallback={<span class={mapClass("flexlayout__tab_button_icon_text")}>{tab.icon as string}</span>}>
+                        <img src={tab.icon as string} alt="" />
+                      </Show>
+                    </div>
+                  </Show>
+                 <div class={mapClass(CLASSES.FLEXLAYOUT__TAB_BUTTON_CONTENT)}>
+                   {tab.name ?? ""}
+                 </div>
+                 <Show when={shouldRenderCloseButton()}>
+                   <div
+                     class={closeButtonClass()}
+                     data-layout-path={buttonPath() ? `${buttonPath()}/button/close` : undefined}
+                     title="Close"
+                     onPointerDown={(e) => e.stopPropagation()}
+                     onClick={handleClose}
+                   >
+                     ✕
+                   </div>
+                 </Show>
+               </div>
               <Show when={index() < tabs().length - 1}>
                 <div class={mapClass(CLASSES.FLEXLAYOUT__TABSET_TAB_DIVIDER)} />
               </Show>
