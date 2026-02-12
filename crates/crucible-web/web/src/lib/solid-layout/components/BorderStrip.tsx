@@ -100,6 +100,12 @@ export const BorderStrip: Component<BorderStripProps> = (props) => {
     () => props.borderNode.enableDock !== false,
   );
 
+  /** "start" = top-inside corner (button first); "end" = trailing (button last). */
+  const dockButtonFirst = createMemo(() => {
+    const pos = props.borderNode.fabPosition as string | undefined;
+    return pos !== "end";
+  });
+
   const stripClass = createMemo(() =>
     buildBorderStripClass(
       props.location,
@@ -152,10 +158,37 @@ export const BorderStrip: Component<BorderStripProps> = (props) => {
       }}
     >
       <Show when={showTabButtons()}>
+        <Show when={enableDock() && dockButtonFirst()}>
+          <button
+            type="button"
+            class={mapClass(CLASSES.FLEXLAYOUT__BORDER_DOCK_BUTTON)}
+            data-layout-path={`${props.path}/button/dock`}
+            data-dock-context={isCollapsed() ? "collapsed-strip" : "expanded-toolbar"}
+            data-dock-location={props.location}
+            data-dock-position="start"
+            title={isCollapsed() ? "Expand" : "Collapse"}
+            style={{
+              ...(needsVerticalText()
+                ? {
+                    "writing-mode": "vertical-rl",
+                    transform: props.location === "left" ? "rotate(180deg)" : undefined,
+                  }
+                : {}),
+            }}
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.stopPropagation();
+              handleDockToggle();
+            }}
+          >
+            {getDockIcon(dockState(), props.location)}
+          </button>
+        </Show>
         <For each={tabs()}>
           {(tab, index) => {
             const isTabSelected = createMemo(() => index() === selected());
             const buttonPath = createMemo(() => `${props.path}/tb${index()}`);
+            const iconOnly = createMemo(() => (tab as IJsonTabNode).iconOnly === true);
 
             const buttonClass = createMemo(() =>
               buildBorderButtonClass(
@@ -173,7 +206,9 @@ export const BorderStrip: Component<BorderStripProps> = (props) => {
                 data-state={isTabSelected() ? "selected" : "unselected"}
                 data-border="true"
                 data-border-location={props.location}
-                title={(tab.helpText as string) ?? ""}
+                data-icon-only={iconOnly() ? "true" : undefined}
+                data-icon={tab.icon ?? undefined}
+                title={(tab.helpText as string) ?? (tab.name ?? "")}
                 style={{
                   ...(needsVerticalText()
                     ? {
@@ -187,20 +222,26 @@ export const BorderStrip: Component<BorderStripProps> = (props) => {
                 }}
                 onClick={() => tab.id && handleTabClick(tab.id)}
               >
-                <span class={mapClass(CLASSES.FLEXLAYOUT__BORDER_BUTTON_CONTENT)}>
-                  {tab.name ?? ""}
-                </span>
+                <Show when={tab.icon} fallback={<span class={mapClass(CLASSES.FLEXLAYOUT__BORDER_BUTTON_CONTENT)}>{tab.name ?? ""}</span>}>
+                  <span class={mapClass(CLASSES.FLEXLAYOUT__BORDER_BUTTON_LEADING)} data-icon={tab.icon} aria-hidden="true" />
+                  <Show when={!iconOnly()}>
+                    <span class={mapClass(CLASSES.FLEXLAYOUT__BORDER_BUTTON_CONTENT)}>
+                      {tab.name ?? ""}
+                    </span>
+                  </Show>
+                </Show>
               </div>
             );
           }}
         </For>
-        <Show when={enableDock()}>
+        <Show when={enableDock() && !dockButtonFirst()}>
           <button
             type="button"
             class={mapClass(CLASSES.FLEXLAYOUT__BORDER_DOCK_BUTTON)}
             data-layout-path={`${props.path}/button/dock`}
             data-dock-context={isCollapsed() ? "collapsed-strip" : "expanded-toolbar"}
             data-dock-location={props.location}
+            data-dock-position="end"
             title={isCollapsed() ? "Expand" : "Collapse"}
             style={{
               [isVertical() ? "margin-top" : "margin-left"]: "auto",

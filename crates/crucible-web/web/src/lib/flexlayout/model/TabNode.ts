@@ -425,6 +425,9 @@ export class TabNode extends Node implements IDraggable {
 		attributeDefinitions.addInherited("icon", "tabIcon").setType(Attribute.STRING).setDescription(
 			`the tab icon`
 		);
+		attributeDefinitions.addInherited("iconOnly", "tabIconOnly").setType(Attribute.BOOLEAN).setDescription(
+			`when true, border tab shows only icon (icon/button pane style)`
+		);
 		attributeDefinitions.addInherited("enableRenderOnDemand", "tabEnableRenderOnDemand").setType(Attribute.BOOLEAN).setDescription(
 			`whether to avoid rendering component until tab is visible`
 		);
