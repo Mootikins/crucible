@@ -2,6 +2,7 @@ import { type Component, type JSX, createMemo, Show } from "solid-js";
 import { CLASSES } from "../../flexlayout/core/Types";
 import type { IJsonBorderNode } from "../../flexlayout/types";
 import { useLayoutContext } from "../context";
+import { BorderContent } from "./BorderContent";
 import { BorderStrip } from "./BorderStrip";
 
 export type BorderLocation = "left" | "right" | "top" | "bottom";
@@ -57,6 +58,14 @@ export const Border: Component<BorderProps> = (props) => {
     />
   );
 
+  const borderContent = () => (
+    <BorderContent
+      borderNode={props.borderNode}
+      location={props.location}
+      path={props.path}
+    />
+  );
+
   const innerContent = () => (
     <div
       class={innerClass()}
@@ -88,11 +97,13 @@ export const Border: Component<BorderProps> = (props) => {
         fallback={
           <>
             {innerContent()}
+            {borderContent()}
             {strip()}
           </>
         }
       >
         {strip()}
+        {borderContent()}
         {innerContent()}
       </Show>
     </div>
