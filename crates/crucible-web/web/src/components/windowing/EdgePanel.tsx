@@ -1,4 +1,5 @@
 import { Component, Show, For, onCleanup } from 'solid-js';
+import { Dynamic } from 'solid-js/web';
 import { windowStore, windowActions } from '@/stores/windowStore';
 import type { EdgePanelPosition } from '@/types/windowTypes';
 import {
@@ -8,6 +9,7 @@ import {
   IconGripVertical,
   IconGripHorizontal,
 } from './icons';
+import { getGlobalRegistry } from '@/lib/panel-registry';
 
 const EDGE_PANEL_MIN_WIDTH = 120;
 const EDGE_PANEL_MAX_WIDTH = 600;
@@ -211,9 +213,15 @@ export const EdgePanel: Component<{ position: EdgePanelPosition }> = (props) => 
               );
             })()}
           </div>
-          <div class="flex-1 overflow-auto p-2 text-xs text-zinc-400">
+          <div class="flex-1 overflow-auto p-2 text-xs text-zinc-400" data-testid={`panel-content-${activeTab()?.contentType ?? 'unknown'}`}>
             <Show when={activeTab()} fallback={<span>Select a tab</span>}>
-              {(tab) => <div>{tab().title} content</div>}
+              {(tab) => {
+                const panel = getGlobalRegistry().get(tab().contentType);
+                if (panel) {
+                  return <Dynamic component={panel.component} />;
+                }
+                return <div>{tab().title} content</div>;
+              }}
             </Show>
           </div>
         </div>
