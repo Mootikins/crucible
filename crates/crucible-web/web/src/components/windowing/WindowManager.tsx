@@ -96,10 +96,10 @@ function DragOverlayContent() {
   const data = () => draggable()?.data as DragSource | undefined;
 
   return (
-    <Show when={data()?.type === 'tab' || data()?.type === 'edgeTab'}>
+    <Show when={data()?.type === 'tab'}>
       <div class="px-2.5 py-1.5 bg-zinc-800 border border-zinc-600 rounded shadow-lg text-xs text-zinc-200 flex items-center gap-1.5 opacity-90">
         <span class="font-medium truncate max-w-[120px]">
-          {(() => { const d = data(); return (d?.type === 'tab' || d?.type === 'edgeTab') ? d.tab.title : ''; })()}
+          {(() => { const d = data(); return d?.type === 'tab' ? d.tab.title : ''; })()}
         </span>
       </div>
     </Show>
@@ -113,21 +113,12 @@ function InnerManager() {
   onDragEnd(({ draggable, droppable }) => {
     const source = draggable.data as DragSource | undefined;
     const target = droppable?.data as DropTarget | undefined;
-    console.log('[onDragEnd] source:', source, 'target:', target);
-    console.log('[onDragEnd] sourceType:', source?.type, 'targetType:', target?.type, 'targetData:',
-      target ? JSON.parse(JSON.stringify(target)) : null);
 
     const reorder = reorderState();
     setReorderState(null);
-    if (reorder && source) {
-      if (reorder.type === 'center' && source.type === 'tab' && reorder.groupId === source.sourceGroupId) {
-        windowActions.moveTab(source.sourceGroupId, source.sourceGroupId, source.tab.id, reorder.insertIndex);
-        return;
-      }
-      if (reorder.type === 'edge' && source.type === 'edgeTab' && reorder.position === source.sourcePosition) {
-        windowActions.reorderEdgeTab(source.sourcePosition, source.tab.id, reorder.insertIndex);
-        return;
-      }
+    if (reorder && source && source.type === 'tab' && reorder.groupId === source.sourceGroupId) {
+      windowActions.moveTab(source.sourceGroupId, source.sourceGroupId, source.tab.id, reorder.insertIndex);
+      return;
     }
 
     if (!source || !target) {
@@ -174,7 +165,8 @@ function InnerManager() {
         const targetPosition = target.panelId as 'left' | 'right' | 'bottom';
         const panel = windowStore.edgePanels[targetPosition];
         if (panel) {
-          windowActions.moveCenterTabToEdge(source.sourceGroupId, source.tab.id, targetPosition);
+          const edgeGroupId = panel.tabGroupId;
+          windowActions.moveTab(source.sourceGroupId, edgeGroupId, source.tab.id, target.insertIndex);
           // Expand panel if collapsed
           if (panel.isCollapsed) {
             windowActions.setEdgePanelCollapsed(targetPosition, false);
@@ -183,52 +175,6 @@ function InnerManager() {
       } else if (target.type === 'newFloating') {
         const newGroupId = windowActions.createTabGroup();
         windowActions.moveTab(source.sourceGroupId, newGroupId, source.tab.id);
-        windowActions.createFloatingWindow(newGroupId, 100, 100, 400, 300);
-      }
-    } else if (source.type === 'edgeTab') {
-      if (target.type === 'pane') {
-        const paneId = target.paneId;
-        const position = target.position;
-        if (
-          position &&
-          position !== 'center' &&
-          (position === 'left' || position === 'right' || position === 'top' || position === 'bottom')
-        ) {
-          // Edge tab → directional pane drop: promote to center first, then split
-          const tempGroupId = windowActions.createTabGroup();
-          windowActions.moveEdgeTabToCenter(source.sourcePosition, source.tab.id, tempGroupId);
-          windowActions.splitPaneAndDrop(paneId, position, tempGroupId, source.tab.id);
-        } else {
-          // Edge tab → center pane drop
-          const existingId = windowActions.getPaneTabGroupId(paneId);
-          if (existingId) {
-            windowActions.moveEdgeTabToCenter(source.sourcePosition, source.tab.id, existingId);
-          } else {
-            const newGroupId = windowActions.createTabGroup(paneId);
-            windowActions.moveEdgeTabToCenter(source.sourcePosition, source.tab.id, newGroupId);
-          }
-        }
-      } else if (target.type === 'tabGroup') {
-        windowActions.moveEdgeTabToCenter(source.sourcePosition, source.tab.id, target.groupId);
-      } else if (target.type === 'edgePanel') {
-        const targetPosition = target.panelId as 'left' | 'right' | 'bottom';
-        const panel = windowStore.edgePanels[targetPosition];
-        console.log('[onDragEnd] edgePanel branch, targetPos:', targetPosition, 'panel:', panel);
-        if (panel) {
-          // Same position → no-op
-          if (source.sourcePosition === targetPosition) {
-            return;
-          }
-          windowActions.moveEdgeTabToEdge(source.sourcePosition, source.tab.id, targetPosition);
-          // Expand panel if collapsed
-          if (panel.isCollapsed) {
-            windowActions.setEdgePanelCollapsed(targetPosition, false);
-          }
-        }
-      } else if (target.type === 'newFloating') {
-        // Edge tab → new floating window
-        const newGroupId = windowActions.createTabGroup();
-        windowActions.moveEdgeTabToCenter(source.sourcePosition, source.tab.id, newGroupId);
         windowActions.createFloatingWindow(newGroupId, 100, 100, 400, 300);
       }
     }
