@@ -1,0 +1,114 @@
+- generic [ref=e3]:
+  - generic [ref=e4]:
+    - button "Hide Left Panel" [ref=e5] [cursor=pointer]:
+      - img [ref=e6]
+    - generic [ref=e9] [cursor=pointer]:
+      - img [ref=e10]
+      - generic [ref=e12]: Command palette
+      - generic [ref=e13]: ⌘P
+    - generic [ref=e14]:
+      - button "Hide Bottom Panel" [ref=e15] [cursor=pointer]:
+        - img [ref=e16]
+      - button "Show Right Panel" [ref=e18] [cursor=pointer]:
+        - img [ref=e19]
+      - button [ref=e23] [cursor=pointer]:
+        - img [ref=e24]
+  - generic [ref=e27]:
+    - generic [ref=e28]:
+      - generic [ref=e29]:
+        - generic [ref=e30]:
+          - button "Explorer" [ref=e31] [cursor=pointer]:
+            - generic [ref=e32]: Explorer
+          - button "Search" [ref=e33] [cursor=pointer]:
+            - generic [ref=e34]: Search
+          - button "Source Control" [ref=e35] [cursor=pointer]:
+            - generic [ref=e36]: Source Control
+        - generic [ref=e38]: Explorer content
+      - separator [ref=e39]:
+        - img [ref=e41]
+    - generic [ref=e48]:
+      - generic [ref=e49]:
+        - generic [ref=e50]:
+          - button "Set ratio 0.25" [ref=e51] [cursor=pointer]
+          - button "Set ratio 0.5" [ref=e52] [cursor=pointer]
+        - generic [ref=e53]:
+          - generic [ref=e55]:
+            - generic [ref=e56]:
+              - generic [ref=e57]:
+                - generic [ref=e58] [cursor=pointer]:
+                  - img [ref=e60]
+                  - generic [ref=e67]: index.tsx
+                  - button [ref=e68]:
+                    - img [ref=e69]
+                - generic [ref=e71] [cursor=pointer]:
+                  - img [ref=e73]
+                  - generic [ref=e80]: App.tsx
+                  - button [ref=e82]:
+                    - img [ref=e83]
+                - generic [ref=e85] [cursor=pointer]:
+                  - img [ref=e87]
+                  - generic [ref=e94]: styles.css
+                  - button [ref=e95]:
+                    - img [ref=e96]
+                - generic [ref=e98] [cursor=pointer]:
+                  - img [ref=e100]
+                  - generic [ref=e107]: package.json
+                  - button [ref=e108]:
+                    - img [ref=e109]
+              - button "▼" [ref=e112] [cursor=pointer]
+              - button "Pop out to floating window" [ref=e114] [cursor=pointer]:
+                - img [ref=e115]
+            - generic [ref=e118]:
+              - generic [ref=e120]: index.tsx
+              - generic [ref=e121]: "// index.tsx import { createRoot } from 'solid-js/web' import App from './App' const root = document.getElementById('root') if (root) createRoot(root).render(() => <App />)"
+          - img [ref=e124]
+          - generic [ref=e132]:
+            - generic [ref=e133]:
+              - generic [ref=e134]:
+                - generic [ref=e135] [cursor=pointer]:
+                  - img [ref=e137]
+                  - generic [ref=e144]: README.md
+                  - button [ref=e145]:
+                    - img [ref=e146]
+                - generic [ref=e148] [cursor=pointer]:
+                  - img [ref=e150]
+                  - generic [ref=e157]: preview.png
+                  - button [ref=e158]:
+                    - img [ref=e159]
+              - button "▼" [ref=e162] [cursor=pointer]
+              - button "Pop out to floating window" [ref=e164] [cursor=pointer]:
+                - img [ref=e165]
+            - generic [ref=e168]:
+              - heading "Document Preview" [level=1] [ref=e169]
+              - paragraph [ref=e171]: This is a sample document. Drag tabs between panes, split panes, and pop out to floating windows.
+      - generic [ref=e172]:
+        - separator [ref=e173]:
+          - img [ref=e175]
+        - generic [ref=e182]:
+          - generic [ref=e183]:
+            - button "Terminal" [ref=e184] [cursor=pointer]:
+              - generic [ref=e185]: Terminal
+            - button "Terminal 2" [ref=e186] [cursor=pointer]:
+              - generic [ref=e187]: Terminal 2
+            - button "Problems" [ref=e188] [cursor=pointer]:
+              - generic [ref=e189]: Problems
+            - button "Output" [ref=e190] [cursor=pointer]:
+              - generic [ref=e191]: Output
+          - generic [ref=e193]: Terminal content
+    - generic [ref=e194]:
+      - button "O" [ref=e195] [cursor=pointer]:
+        - generic [ref=e196]: O
+      - button "D" [ref=e197] [cursor=pointer]:
+        - generic [ref=e198]: D
+      - button "Expand panel" [ref=e199] [cursor=pointer]:
+        - img [ref=e200]
+  - generic [ref=e203]:
+    - generic [ref=e204]:
+      - generic [ref=e205]: Ready
+      - generic [ref=e206]: 6 tabs
+    - generic [ref=e207]:
+      - generic [ref=e209]:
+        - img [ref=e210]
+        - generic [ref=e213]: New Window
+      - generic [ref=e215]: UTF-8
+      - generic [ref=e216]: TypeScript
