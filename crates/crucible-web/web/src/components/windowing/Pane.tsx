@@ -1,5 +1,5 @@
 import { Component, Show } from 'solid-js';
-import { createDroppable } from '@thisbeyond/solid-dnd';
+import { createDroppable, useDragDropContext } from '@thisbeyond/solid-dnd';
 import { TabBar } from './TabBar';
 import { windowStore, windowActions } from '@/stores/windowStore';
 import type { LayoutNode } from '@/types/windowTypes';
@@ -11,7 +11,32 @@ function findPaneInLayout(layout: LayoutNode, paneId: string): { tabGroupId: str
   return findPaneInLayout(layout.first, paneId) || findPaneInLayout(layout.second, paneId);
 }
 
+type PaneDropPosition = 'left' | 'right' | 'top' | 'bottom';
+
+function PaneDropZone(props: {
+  position: PaneDropPosition;
+  droppable: ReturnType<typeof createDroppable>;
+  class: string;
+}) {
+  const droppable = props.droppable;
+  return (
+    <div
+      use:droppable
+      classList={{
+        [props.class]: true,
+        'bg-blue-500/20 border-2 border-blue-500': droppable.isActiveDroppable,
+        'hover:bg-zinc-700/30 transition-colors': !droppable.isActiveDroppable,
+      }}
+    />
+  );
+}
+
 export const Pane: Component<{ paneId: string }> = (props) => {
+  const [dndState] = useDragDropContext();
+  const isTabDragging = () =>
+    typeof dndState.active.draggableId === 'string' &&
+    dndState.active.draggableId.startsWith('tab:');
+
   const paneInfo = () => findPaneInLayout(windowStore.layout, props.paneId);
   const tabGroupId = () => paneInfo()?.tabGroupId ?? null;
   const group = () => (tabGroupId() ? windowStore.tabGroups[tabGroupId()!] : null);
@@ -23,9 +48,31 @@ export const Pane: Component<{ paneId: string }> = (props) => {
   };
   const isActive = () => windowStore.activePaneId === props.paneId;
 
-  const droppable = createDroppable(`pane:${props.paneId}`, {
+  const centerDroppable = createDroppable(`pane:${props.paneId}:center`, {
     type: 'pane',
     paneId: props.paneId,
+    position: 'center',
+  });
+
+  const leftDroppable = createDroppable(`pane:${props.paneId}:left`, {
+    type: 'pane',
+    paneId: props.paneId,
+    position: 'left',
+  });
+  const rightDroppable = createDroppable(`pane:${props.paneId}:right`, {
+    type: 'pane',
+    paneId: props.paneId,
+    position: 'right',
+  });
+  const topDroppable = createDroppable(`pane:${props.paneId}:top`, {
+    type: 'pane',
+    paneId: props.paneId,
+    position: 'top',
+  });
+  const bottomDroppable = createDroppable(`pane:${props.paneId}:bottom`, {
+    type: 'pane',
+    paneId: props.paneId,
+    position: 'bottom',
   });
 
   const handlePopOut = () => {
@@ -115,11 +162,11 @@ export const Pane: Component<{ paneId: string }> = (props) => {
 
   return (
     <div
-      use:droppable
+      use:centerDroppable
       classList={{
         'relative flex flex-col h-full overflow-hidden transition-all': true,
         'ring-1 ring-blue-500/30': isActive(),
-        'bg-blue-500/5': droppable.isActiveDroppable,
+        'bg-blue-500/5': centerDroppable.isActiveDroppable,
       }}
       onClick={() => windowActions.setActivePane(props.paneId)}
     >
@@ -137,6 +184,32 @@ export const Pane: Component<{ paneId: string }> = (props) => {
           onPopOut={handlePopOut}
         />
         {renderContent()}
+      </Show>
+
+      {/* Drop zone overlays when dragging a tab: split left/right/top/bottom */}
+      <Show when={isTabDragging()}>
+        <div class="absolute inset-0 pointer-events-none">
+          <PaneDropZone
+            position="top"
+            droppable={topDroppable}
+            class="absolute top-0 left-0 right-0 h-1/5 min-h-[24px] pointer-events-auto"
+          />
+          <PaneDropZone
+            position="bottom"
+            droppable={bottomDroppable}
+            class="absolute bottom-0 left-0 right-0 h-1/5 min-h-[24px] pointer-events-auto"
+          />
+          <PaneDropZone
+            position="left"
+            droppable={leftDroppable}
+            class="absolute top-1/5 bottom-1/5 left-0 w-1/5 min-w-[24px] pointer-events-auto"
+          />
+          <PaneDropZone
+            position="right"
+            droppable={rightDroppable}
+            class="absolute top-1/5 bottom-1/5 right-0 w-1/5 min-w-[24px] pointer-events-auto"
+          />
+        </div>
       </Show>
     </div>
   );
