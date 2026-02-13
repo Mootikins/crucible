@@ -3,10 +3,12 @@ import {
   createDraggable,
   createDroppable,
 } from '@thisbeyond/solid-dnd';
-import type { Tab as TabType } from '@/types/windowTypes';
+import type { Tab as TabType, EdgePanelTab, EdgePanelPosition, TabBarProps } from '@/types/windowTypes';
 import { windowStore, windowActions } from '@/stores/windowStore';
 import { IconGripVertical, IconClose, IconLayout } from './icons';
 import { ChevronDown } from '@/lib/icons';
+
+// ── Center Tab (existing behavior, unchanged) ──────────────────────────
 
 const Tab: Component<{
   tab: TabType;
@@ -73,7 +75,51 @@ const Tab: Component<{
   );
 };
 
-export const TabBar: Component<{
+// ── Edge Tab (draggable, for edge panel mode) ───────────────────────────
+
+const EdgeTab: Component<{
+  tab: EdgePanelTab;
+  position: EdgePanelPosition;
+  isActive: boolean;
+  isFocused: boolean;
+  onActivate: () => void;
+}> = (props) => {
+  const id = () => `edgetab:${props.position}:${props.tab.id}`;
+  const draggable = createDraggable(id(), {
+    type: 'edgeTab',
+    tab: props.tab,
+    sourcePosition: props.position,
+  });
+
+  return (
+    <div
+      use:draggable
+      data-tab-id={props.tab.id}
+      data-testid={`edge-tab-${props.position}-${props.tab.id}`}
+      classList={{
+        'group relative flex items-center gap-1.5 px-2 py-1.5 cursor-pointer transition-all duration-150 border-b-2': true,
+        'opacity-40 border-transparent bg-zinc-800/50': draggable.isActiveDraggable,
+        'bg-zinc-800 text-zinc-100': props.isActive && !draggable.isActiveDraggable,
+        'border-blue-500': props.isActive && props.isFocused && !draggable.isActiveDraggable,
+        'border-zinc-600': props.isActive && !props.isFocused && !draggable.isActiveDraggable,
+        'border-transparent text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/50':
+          !props.isActive && !draggable.isActiveDraggable,
+      }}
+      onClick={() => props.onActivate()}
+    >
+      <div class="cursor-grab active:cursor-grabbing p-0.5 -ml-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+        <IconGripVertical class="w-3 h-3 text-zinc-500" />
+      </div>
+      <span class="text-xs font-medium truncate max-w-[100px]">
+        {props.tab.title}
+      </span>
+    </div>
+  );
+};
+
+// ── Center TabBar (existing behavior, unchanged) ────────────────────────
+
+const CenterTabBar: Component<{
   groupId: string;
   paneId: string;
   onPopOut?: () => void;
@@ -200,6 +246,68 @@ export const TabBar: Component<{
         <div class="absolute inset-x-0 bottom-0 h-0.5 bg-blue-500" />
       )}
     </div>
+  );
+};
+
+// ── Edge TabBar (droppable bar with draggable edge tabs) ────────────────
+
+const EdgeTabBar: Component<{
+  position: EdgePanelPosition;
+  tabs: EdgePanelTab[];
+  activeTabId: string | null;
+}> = (props) => {
+  const isFocused = () => windowStore.focusedRegion === props.position;
+
+  const droppable = createDroppable(`edgepanel:${props.position}`, {
+    type: 'edgePanel',
+    panelId: props.position,
+  });
+
+  return (
+    <div
+      use:droppable
+      data-testid={`edge-tabbar-${props.position}`}
+      classList={{
+        'flex flex-row border-b border-zinc-800 relative': true,
+        'bg-blue-500/5': droppable.isActiveDroppable,
+      }}
+    >
+      <For each={props.tabs}>
+        {(tab) => (
+          <EdgeTab
+            tab={tab}
+            position={props.position}
+            isActive={props.activeTabId === tab.id}
+            isFocused={isFocused()}
+            onActivate={() => windowActions.setEdgePanelActiveTab(props.position, tab.id)}
+          />
+        )}
+      </For>
+      {droppable.isActiveDroppable && (
+        <div class="absolute inset-x-0 bottom-0 h-0.5 bg-blue-500" />
+      )}
+    </div>
+  );
+};
+
+// ── Exported TabBar (discriminated union dispatcher) ────────────────────
+
+export const TabBar: Component<TabBarProps> = (props) => {
+  if (props.mode === 'center') {
+    return (
+      <CenterTabBar
+        groupId={props.groupId}
+        paneId={props.paneId}
+        onPopOut={props.onPopOut}
+      />
+    );
+  }
+  return (
+    <EdgeTabBar
+      position={props.position}
+      tabs={props.tabs}
+      activeTabId={props.activeTabId}
+    />
   );
 };
 
