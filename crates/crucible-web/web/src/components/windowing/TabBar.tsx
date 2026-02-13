@@ -322,8 +322,11 @@ const EdgeTabBar: Component<{
   const activeTabId = () => group()?.activeTabId ?? null;
   const isFocused = () => windowStore.focusedRegion === props.position;
 
+  const [isOverflowing, setIsOverflowing] = createSignal(false);
+  const [showDropdown, setShowDropdown] = createSignal(false);
   const [insertIdx, setInsertIdx] = createSignal<number | null>(null);
   let containerRef: HTMLDivElement | undefined;
+  let tabsContainerRef: HTMLDivElement | undefined;
 
   const droppable = createDroppable(`edgepanel:${props.position}`, {
     type: 'edgePanel',
@@ -349,7 +352,7 @@ const EdgeTabBar: Component<{
   // Read sensor coordinates reactively — onPointerMove doesn't fire during
   // drag because the DragOverlay portal intercepts pointer events.
   createEffect(() => {
-    if (!isSameBarDrag() || !containerRef) {
+    if (!isSameBarDrag() || !tabsContainerRef) {
       setInsertIdx(null);
       setReorderState(null);
       return;
@@ -358,14 +361,14 @@ const EdgeTabBar: Component<{
     const x = sensor?.coordinates?.current?.x;
     const y = sensor?.coordinates?.current?.y;
     if (x != null && y != null) {
-      const rect = containerRef.getBoundingClientRect();
+      const rect = tabsContainerRef.getBoundingClientRect();
       const inBounds = x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
       if (!inBounds) {
         setInsertIdx(null);
         setReorderState(null);
         return;
       }
-      const idx = computeInsertIndex(containerRef, x, draggedTabId());
+      const idx = computeInsertIndex(tabsContainerRef, x, draggedTabId());
       setInsertIdx(idx);
       if (idx != null) {
         setReorderState({ groupId: groupId(), insertIndex: idx });
@@ -382,38 +385,112 @@ const EdgeTabBar: Component<{
     }
   });
 
+  onMount(() => {
+    if (!tabsContainerRef) return;
+    const checkOverflow = () => {
+      if (tabsContainerRef) {
+        setIsOverflowing(tabsContainerRef.scrollWidth > tabsContainerRef.clientWidth);
+      }
+    };
+    const observer = new ResizeObserver(checkOverflow);
+    observer.observe(tabsContainerRef);
+    createEffect(() => {
+      tabs();
+      checkOverflow();
+    });
+    onCleanup(() => observer.disconnect());
+  });
+
+  createEffect(() => {
+    if (!showDropdown()) return;
+    const handleClickOutside = () => {
+      setShowDropdown(false);
+    };
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setShowDropdown(false);
+    };
+    setTimeout(() => {
+      document.addEventListener('click', handleClickOutside);
+      document.addEventListener('keydown', handleEscape);
+    }, 0);
+    onCleanup(() => {
+      document.removeEventListener('click', handleClickOutside);
+      document.removeEventListener('keydown', handleEscape);
+    });
+  });
+
   return (
     <div
       use:droppable
       ref={containerRef}
       data-testid={`edge-tabbar-${props.position}`}
       classList={{
-        'flex flex-row border-b border-zinc-800 relative': true,
+        'flex items-center h-9 bg-zinc-900 border-b border-zinc-800 relative': true,
         'bg-blue-500/5': droppable.isActiveDroppable,
       }}
     >
-      <For each={tabs()}>
-        {(tab, i) => (
-          <>
-            <Show when={insertIdx() === i()}>
-              <InsertIndicator />
-            </Show>
-            <TabItem
-              tab={tab}
-              draggableId={`edgetab:${props.position}:${tab.id}`}
-              draggableData={{ type: 'tab', tab, sourceGroupId: groupId() }}
-              isActive={activeTabId() === tab.id}
-              isFocused={isFocused()}
-              onClick={() => windowActions.setActiveTab(groupId(), tab.id)}
-              onClose={() => windowActions.removeTab(groupId(), tab.id)}
-              testId={`edge-tab-${props.position}-${tab.id}`}
-              onDragStart={() => { if (windowStore.flyoutState?.isOpen) windowActions.closeFlyout(); }}
-            />
-          </>
-        )}
-      </For>
-      <Show when={insertIdx() === tabs().length}>
-        <InsertIndicator />
+      <div
+        ref={tabsContainerRef}
+        class="flex-1 flex items-end gap-0.5 overflow-x-auto scrollbar-hide px-1 min-w-0 [scrollbar-width:none] [-ms-overflow-style:none]"
+      >
+        <For each={tabs()}>
+          {(tab, i) => (
+            <>
+              <Show when={insertIdx() === i()}>
+                <InsertIndicator />
+              </Show>
+              <TabItem
+                tab={tab}
+                draggableId={`edgetab:${props.position}:${tab.id}`}
+                draggableData={{ type: 'tab', tab, sourceGroupId: groupId() }}
+                isActive={activeTabId() === tab.id}
+                isFocused={isFocused()}
+                onClick={() => windowActions.setActiveTab(groupId(), tab.id)}
+                onClose={() => windowActions.removeTab(groupId(), tab.id)}
+                testId={`edge-tab-${props.position}-${tab.id}`}
+                onDragStart={() => { if (windowStore.flyoutState?.isOpen) windowActions.closeFlyout(); }}
+              />
+            </>
+          )}
+        </For>
+        <Show when={insertIdx() === tabs().length}>
+          <InsertIndicator />
+        </Show>
+      </div>
+      <Show when={isOverflowing()}>
+        <div class="relative flex-shrink-0">
+          <button
+            class="flex-shrink-0 w-6 h-6 flex items-center justify-center text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800 rounded transition-colors"
+            onClick={(e) => { e.stopPropagation(); setShowDropdown(!showDropdown()); }}
+            title="Show all tabs"
+          >
+            <ChevronDown class="w-3.5 h-3.5" />
+          </button>
+          <Show when={showDropdown()}>
+            <div class="absolute right-0 top-full mt-1 z-50 min-w-[160px] max-w-[280px] bg-zinc-800 border border-zinc-700 rounded-lg shadow-xl py-1 max-h-[300px] overflow-y-auto">
+              <For each={tabs()}>
+                {(tab) => (
+                  <button
+                    class={`w-full px-3 py-1.5 text-left text-xs truncate transition-colors ${
+                      tab.id === activeTabId()
+                        ? 'bg-blue-500/20 text-blue-300 font-medium'
+                        : 'text-zinc-300 hover:bg-zinc-700'
+                    }`}
+                    onClick={() => {
+                      windowActions.setActiveTab(groupId(), tab.id);
+                      setShowDropdown(false);
+                      const tabEl = tabsContainerRef?.querySelector(`[data-tab-id="${tab.id}"]`);
+                      tabEl?.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
+                    }}
+                  >
+                    {tab.title}
+                    {tab.isModified && <span class="ml-1 text-amber-500">●</span>}
+                  </button>
+                )}
+              </For>
+            </div>
+          </Show>
+        </div>
       </Show>
       {droppable.isActiveDroppable && (
         <div class="absolute inset-x-0 bottom-0 h-0.5 bg-blue-500" />
