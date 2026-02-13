@@ -5,7 +5,7 @@ import {
   useDragDropContext,
   DragOverlay,
 } from '@thisbeyond/solid-dnd';
-import { SplitPane } from './SplitPane';
+import { CenterTiling } from './CenterTiling';
 import { EdgePanel } from './EdgePanel';
 import { FlyoutPanel } from './FlyoutPanel';
 import { FloatingWindow } from './FloatingWindow';
@@ -121,12 +121,26 @@ function InnerManager() {
     if (source.type === 'tab') {
       if (target.type === 'pane') {
         const paneId = target.paneId;
-        const existingId = windowActions.getPaneTabGroupId(paneId);
-        if (existingId) {
-          windowActions.moveTab(source.sourceGroupId, existingId, source.tab.id);
+        const position = target.position;
+        if (
+          position &&
+          position !== 'center' &&
+          (position === 'left' || position === 'right' || position === 'top' || position === 'bottom')
+        ) {
+          windowActions.splitPaneAndDrop(
+            paneId,
+            position,
+            source.sourceGroupId,
+            source.tab.id
+          );
         } else {
-          const newGroupId = windowActions.createTabGroup(paneId);
-          windowActions.moveTab(source.sourceGroupId, newGroupId, source.tab.id);
+          const existingId = windowActions.getPaneTabGroupId(paneId);
+          if (existingId) {
+            windowActions.moveTab(source.sourceGroupId, existingId, source.tab.id);
+          } else {
+            const newGroupId = windowActions.createTabGroup(paneId);
+            windowActions.moveTab(source.sourceGroupId, newGroupId, source.tab.id);
+          }
         }
       } else if (target.type === 'tabGroup') {
         windowActions.moveTab(
@@ -160,26 +174,23 @@ function InnerManager() {
     onCleanup(() => document.removeEventListener('keydown', handleKeyDown));
   });
 
-  const layout = () => windowStore.layout;
   const floatingWindows = () =>
     windowStore.floatingWindows.filter((w) => !w.isMinimized);
 
   return (
     <div class="flex flex-col h-screen bg-zinc-950 text-zinc-100 overflow-hidden select-none">
       <HeaderBar />
-      <div class="flex flex-1 overflow-hidden min-h-0">
+      <div class="relative z-0 flex flex-1 overflow-hidden min-h-0">
         <EdgePanel position="left" />
         <div class="flex-1 flex flex-col overflow-hidden min-w-0">
-          <div class="flex-1 overflow-hidden min-h-0">
-            <SplitPane node={layout()} />
-          </div>
+          <CenterTiling />
           <EdgePanel position="bottom" />
         </div>
         <EdgePanel position="right" />
       </div>
       <StatusBar />
       <FlyoutPanel />
-      <div class="fixed inset-0 pointer-events-none">
+      <div class="fixed inset-0 z-30 pointer-events-none">
         <For each={floatingWindows()}>
           {(w) => (
             <div class="pointer-events-auto">
