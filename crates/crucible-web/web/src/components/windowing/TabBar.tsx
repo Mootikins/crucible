@@ -91,6 +91,13 @@ const EdgeTab: Component<{
     sourcePosition: props.position,
   });
 
+  // Close flyout when drag starts from edge panel
+  createEffect(() => {
+    if (draggable.isActiveDraggable && windowStore.flyoutState?.isOpen) {
+      windowActions.closeFlyout();
+    }
+  });
+
   return (
     <div
       use:draggable
