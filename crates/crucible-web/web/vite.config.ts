@@ -26,13 +26,6 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     sourcemap: true,
-    rollupOptions: {
-      input: {
-        main: path.resolve(__dirname, 'index.html'),
-        'flexlayout-test': path.resolve(__dirname, 'flexlayout-test.html'),
-        'reparenting-spike': path.resolve(__dirname, 'reparenting-spike.html'),
-      },
-    },
   },
   test: {
     environment: 'jsdom',
