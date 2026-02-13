@@ -20,9 +20,8 @@ export interface WhisperContextValue {
 
 const WhisperContext = createContext<WhisperContextValue>();
 
-// Dynamic import to avoid loading transformers.js until needed
-let pipeline: typeof import('@huggingface/transformers').pipeline | null = null;
-let transcriber: Awaited<ReturnType<typeof import('@huggingface/transformers').pipeline>> | null = null;
+let pipelineFactory: ((...args: unknown[]) => Promise<unknown>) | null = null;
+let transcriber: ((...args: unknown[]) => Promise<unknown>) | null = null;
 
 export const WhisperProvider: ParentComponent = (props) => {
   const { settings } = useSettings();
@@ -42,8 +41,7 @@ export const WhisperProvider: ParentComponent = (props) => {
 
   // Reset status when provider changes
   createEffect(() => {
-    const provider = settings.transcription.provider;
-    // Clear any error when switching providers
+    void settings.transcription.provider;
     setError(null);
   });
 
@@ -63,9 +61,9 @@ export const WhisperProvider: ParentComponent = (props) => {
 
     try {
       // Dynamic import of transformers.js
-      if (!pipeline) {
+      if (!pipelineFactory) {
         const transformers = await import('@huggingface/transformers');
-        pipeline = transformers.pipeline;
+        pipelineFactory = transformers.pipeline as (...args: unknown[]) => Promise<unknown>;
       }
 
       // Detect WebGPU support
@@ -75,7 +73,7 @@ export const WhisperProvider: ParentComponent = (props) => {
 
       // Load the Whisper model
       // Using whisper-tiny for faster loading, can upgrade to whisper-base for better quality
-      transcriber = await pipeline(
+      transcriber = (await pipelineFactory(
         'automatic-speech-recognition',
         'onnx-community/whisper-tiny.en',
         {
@@ -86,7 +84,7 @@ export const WhisperProvider: ParentComponent = (props) => {
             }
           },
         }
-      );
+      )) as (...args: unknown[]) => Promise<unknown>;
 
       setProgress(100);
       setLocalStatus('ready');

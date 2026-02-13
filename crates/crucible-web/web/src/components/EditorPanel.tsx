@@ -2,13 +2,12 @@ import {
   Component,
   For,
   Show,
-  createSignal,
   createEffect,
   onMount,
   onCleanup,
 } from 'solid-js';
 import { EditorView, keymap, lineNumbers, highlightActiveLine, highlightSpecialChars, drawSelection } from '@codemirror/view';
-import { EditorState, Extension } from '@codemirror/state';
+import { EditorState, StateEffect, Extension } from '@codemirror/state';
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';
 import { oneDark } from '@codemirror/theme-one-dark';
 import { markdown } from '@codemirror/lang-markdown';
@@ -129,7 +128,7 @@ const CodeMirrorEditor: Component<{
       const langExt = getLanguageExtension(currentPath);
       if (langExt) {
         view.dispatch({
-          effects: EditorView.reconfigure.of(createExtensions()),
+          effects: StateEffect.reconfigure.of(createExtensions()),
         });
       }
     }

@@ -1,9 +1,11 @@
+import { createSignal } from 'solid-js';
 import { createStore, produce } from 'solid-js/store';
 import type {
   LayoutNode,
   PaneNode,
   Tab,
   TabGroup,
+  EdgePanel as EdgePanelType,
   EdgePanelTab,
   EdgePanelPosition,
   FloatingWindow,
@@ -60,6 +62,25 @@ function replacePaneWithSplit(
 }
 
 export type PaneDropPosition = 'left' | 'right' | 'top' | 'bottom';
+
+export interface WindowState {
+  layout: LayoutNode;
+  tabGroups: Record<string, TabGroup>;
+  edgePanels: Record<EdgePanelPosition, EdgePanelType>;
+  floatingWindows: FloatingWindow[];
+  activePaneId: string | null;
+  dragState: {
+    isDragging: boolean;
+    source: DragSource | null;
+    target: DropTarget | null;
+  } | null;
+  flyoutState: {
+    isOpen: boolean;
+    panelPosition: EdgePanelPosition;
+    tabId: string | null;
+  } | null;
+  nextZIndex: number;
+}
 
 function insertPaneRelative(
   layout: LayoutNode,
@@ -122,7 +143,7 @@ const createBottomPanelTabs = (): EdgePanelTab[] => [
   { id: 'output-tab', title: 'Output', contentType: 'tool', panelPosition: 'bottom' },
 ];
 
-function createInitialState() {
+function createInitialState(): WindowState {
   const mainPaneId = generateId();
   const tabGroupId1 = generateId();
   const tabGroupId2 = generateId();
@@ -197,11 +218,17 @@ function createInitialState() {
   };
 }
 
-export type WindowState = ReturnType<typeof createInitialState>;
+const initialState = createInitialState();
+const [store, setStore] = createStore<WindowState>(initialState);
+const [centerLayout, setCenterLayout] = createSignal<LayoutNode>(initialState.layout);
 
-const [store, setStore] = createStore<WindowState>(createInitialState());
+export { store as windowStore, setStore, centerLayout, setCenterLayout };
 
-export { store as windowStore, setStore };
+/** Updates both store and center layout signal so the center UI re-renders. */
+export function updateCenterLayout(newLayout: LayoutNode) {
+  setStore(produce((s) => { s.layout = newLayout; }));
+  setCenterLayout(newLayout);
+}
 
 export const windowActions = {
   addTab(groupId: string, tab: Tab, insertIndex?: number) {
@@ -324,6 +351,7 @@ export const windowActions = {
         }
       })
     );
+    if (paneId) setCenterLayout(store.layout);
     return groupId;
   },
 
@@ -366,6 +394,7 @@ export const windowActions = {
         s.activePaneId = (newSplit as Extract<LayoutNode, { type: 'split' }>).second.id;
       })
     );
+    setCenterLayout(store.layout);
   },
 
   splitPaneAndDrop(
@@ -380,13 +409,7 @@ export const windowActions = {
     const newGroupId = generateId();
     setStore(
       produce((s) => {
-        s.layout = insertPaneRelative(
-          s.layout,
-          paneId,
-          position,
-          newPaneId,
-          newGroupId
-        );
+        s.layout = insertPaneRelative(s.layout, paneId, position, newPaneId, newGroupId);
         s.tabGroups[newGroupId] = {
           id: newGroupId,
           tabs: [],
@@ -395,6 +418,7 @@ export const windowActions = {
         s.activePaneId = newPaneId;
       })
     );
+    setCenterLayout(store.layout);
     windowActions.moveTab(sourceGroupId, newGroupId, tabId);
   },
 
@@ -574,6 +598,7 @@ export const windowActions = {
             s.activePaneId = targetPaneId;
           })
         );
+        setCenterLayout(store.layout);
         return;
       }
     }
@@ -597,6 +622,7 @@ export const windowActions = {
           s.activePaneId = firstEmpty.id;
         })
       );
+      setCenterLayout(store.layout);
       return;
     }
     const mainPane =
@@ -627,6 +653,7 @@ export const windowActions = {
           s.activePaneId = newPaneId;
         })
       );
+      setCenterLayout(store.layout);
     }
   },
 

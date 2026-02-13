@@ -14,8 +14,11 @@ export const StatusBar: Component = () => {
 
   const newFloatingId = 'newFloating';
   const dropNewFloatingId = 'dropNewFloating';
+  // SolidJS directives: variables referenced via use:draggable / use:droppable in JSX
   const draggable = createDraggable(newFloatingId, { type: 'newFloating' });
+  void draggable;
   const droppable = createDroppable(dropNewFloatingId, { type: 'newFloating' });
+  void droppable;
 
   return (
     <div class="flex items-center justify-between px-2 h-5 bg-zinc-950 border-t border-zinc-800 text-[10px] text-zinc-500 select-none">

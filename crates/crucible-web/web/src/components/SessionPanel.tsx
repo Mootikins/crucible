@@ -1,7 +1,7 @@
 import { Component, For, Show, createSignal, createEffect } from 'solid-js';
 import { useSessionSafe } from '@/contexts/SessionContext';
 import { useProjectSafe } from '@/contexts/ProjectContext';
-import type { Session, Project, ProviderInfo } from '@/lib/types';
+import type { Session, Project } from '@/lib/types';
 
 const KilnSelector: Component<{
   kilns: string[];
@@ -109,9 +109,7 @@ export const SessionPanel: Component = () => {
     resumeSession,
     endSession,
     refreshSessions,
-    providers,
     selectedProvider,
-    selectProvider,
   } = useSessionSafe();
 
   const [showNewProject, setShowNewProject] = createSignal(false);

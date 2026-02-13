@@ -1,5 +1,4 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { createRoot } from 'solid-js';
 
 // These tests verify the WhisperContext behavior with mocks.
 // Note: Full integration tests with the actual Whisper model would
@@ -41,7 +40,7 @@ describe('WhisperContext', () => {
 
       // The actual decoding happens inside WhisperContext, but we can
       // verify the pattern we expect
-      const ctx = new AudioContext({ sampleRate: 16000 });
+      new AudioContext({ sampleRate: 16000 });
       expect(AudioContextMock).toHaveBeenCalledWith({ sampleRate: 16000 });
     });
 
@@ -141,8 +140,7 @@ describe('WhisperContext', () => {
     });
 
     it('uses local transcription when provider setting is local', () => {
-      // Verifies the provider selection logic
-      const provider = 'local';
+      const provider: string = 'local';
       const useServerTranscription = provider === 'server';
       expect(useServerTranscription).toBe(false);
     });
@@ -156,8 +154,7 @@ describe('WhisperContext', () => {
     });
 
     it('local provider uses local status', () => {
-      // Local transcription requires model loading
-      const provider = 'local';
+      const provider: string = 'local';
       const localStatus = 'loading';
       const effectiveStatus = provider === 'server' ? 'ready' : localStatus;
       expect(effectiveStatus).toBe('loading');

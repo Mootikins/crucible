@@ -32,10 +32,13 @@ function PaneDropZone(props: {
 }
 
 export const Pane: Component<{ paneId: string }> = (props) => {
-  const [dndState] = useDragDropContext();
-  const isTabDragging = () =>
-    typeof dndState.active.draggableId === 'string' &&
-    dndState.active.draggableId.startsWith('tab:');
+  const dndContext = useDragDropContext();
+  const isTabDragging = () => {
+    if (!dndContext) return false;
+    const [dndState] = dndContext;
+    return typeof dndState.active.draggableId === 'string' &&
+      dndState.active.draggableId.startsWith('tab:');
+  };
 
   const paneInfo = () => findPaneInLayout(windowStore.layout, props.paneId);
   const tabGroupId = () => paneInfo()?.tabGroupId ?? null;
@@ -80,10 +83,6 @@ export const Pane: Component<{ paneId: string }> = (props) => {
     if (gid && tabs().length > 0) {
       windowActions.createFloatingWindow(gid, 150, 150, 500, 400);
     }
-  };
-
-  const handleSplit = (direction: 'horizontal' | 'vertical') => {
-    windowActions.splitPane(props.paneId, direction);
   };
 
   const renderContent = () => {

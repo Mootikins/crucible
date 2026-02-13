@@ -35,19 +35,15 @@ const Tab: Component<{
       onClick={() => {
         windowActions.setActiveTab(props.groupId, props.tab.id);
       }}
-      onMouseEnter={(e) => {}}
-      onMouseLeave={(e) => {}}
+      onMouseEnter={() => {}}
+      onMouseLeave={() => {}}
     >
       <div class="cursor-grab active:cursor-grabbing p-0.5 -ml-1 opacity-0 group-hover:opacity-100 transition-opacity">
         <IconGripVertical class="w-3 h-3 text-zinc-500" />
       </div>
       {Icon && (
         <Icon
-          classList={{
-            'w-3.5 h-3.5 flex-shrink-0': true,
-            'text-zinc-300': props.isActive,
-            'text-zinc-500': !props.isActive,
-          }}
+          class={`w-3.5 h-3.5 flex-shrink-0 ${props.isActive ? 'text-zinc-300' : 'text-zinc-500'}`}
         />
       )}
       <span class="text-xs font-medium truncate max-w-[120px]">

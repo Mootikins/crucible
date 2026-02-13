@@ -107,7 +107,7 @@ export const SplitPane: Component<{ node: LayoutNode }> = (props) => {
           'bg-blue-500': isDragging(),
           'bg-zinc-800 hover:bg-zinc-700 active:bg-blue-500': !isDragging(),
         }}
-        onPointerDownCapture={handlePointerDown}
+        on:pointerdown={handlePointerDown}
       >
         <div
           classList={{

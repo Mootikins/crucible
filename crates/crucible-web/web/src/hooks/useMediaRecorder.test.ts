@@ -11,10 +11,10 @@ class MockMediaRecorder {
 
   constructor(
     private stream: MediaStream,
-    private options?: { mimeType: string }
+    _options?: { mimeType: string }
   ) {}
 
-  start(timeslice?: number) {
+  start(_timeslice?: number) {
     this.state = 'recording';
     // Simulate some audio data
     setTimeout(() => {

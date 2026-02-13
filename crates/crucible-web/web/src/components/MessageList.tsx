@@ -13,7 +13,7 @@ export const MessageList: Component = () => {
   };
 
   createEffect(() => {
-    const _ = messages();
+    messages();
     queueMicrotask(scrollToBottom);
   });
 

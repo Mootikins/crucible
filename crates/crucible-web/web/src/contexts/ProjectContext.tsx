@@ -164,6 +164,7 @@ const fallbackProjectContext: ProjectContextValue = {
   refreshProjects: noopAsync,
   selectProject: noopAsync,
   registerProject: noopPromise,
+  unregisterProject: noopAsync,
   clearProject: () => {},
 };
 
