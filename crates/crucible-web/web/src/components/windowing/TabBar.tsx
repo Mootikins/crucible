@@ -404,8 +404,8 @@ const EdgeTabBar: Component<{
               draggableData={{ type: 'tab', tab, sourceGroupId: groupId() }}
               isActive={activeTabId() === tab.id}
               isFocused={isFocused()}
-              onClick={() => windowActions.setEdgePanelActiveTab(props.position, tab.id)}
-              onClose={() => windowActions.removeEdgePanelTab(props.position, tab.id)}
+              onClick={() => windowActions.setActiveTab(groupId(), tab.id)}
+              onClose={() => windowActions.removeTab(groupId(), tab.id)}
               testId={`edge-tab-${props.position}-${tab.id}`}
               onDragStart={() => { if (windowStore.flyoutState?.isOpen) windowActions.closeFlyout(); }}
             />
