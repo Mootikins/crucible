@@ -12,21 +12,21 @@ interface Props {
 export const InteractionHandler: Component<Props> = (props) => {
   return (
     <Switch>
-      <Match when={props.request.type === 'ask'}>
+      <Match when={props.request.kind === 'ask'}>
         <AskInteraction
-          request={props.request as Extract<InteractionRequest, { type: 'ask' }>}
+          request={props.request as Extract<InteractionRequest, { kind: 'ask' }>}
           onRespond={props.onRespond}
         />
       </Match>
-      <Match when={props.request.type === 'popup'}>
+      <Match when={props.request.kind === 'popup'}>
         <PopupInteraction
-          request={props.request as Extract<InteractionRequest, { type: 'popup' }>}
+          request={props.request as Extract<InteractionRequest, { kind: 'popup' }>}
           onRespond={props.onRespond}
         />
       </Match>
-      <Match when={props.request.type === 'permission'}>
+      <Match when={props.request.kind === 'permission'}>
         <PermissionInteraction
-          request={props.request as Extract<InteractionRequest, { type: 'permission' }>}
+          request={props.request as Extract<InteractionRequest, { kind: 'permission' }>}
           onRespond={props.onRespond}
         />
       </Match>
