@@ -18,6 +18,16 @@ import {
   deserializeLayout,
 } from '@/lib/layout-serializer';
 import type { SerializedLayout } from '@/lib/layout-serializer';
+import {
+  FolderTree,
+  Search,
+  GitBranch,
+  ListTree,
+  Bug,
+  Terminal,
+  AlertTriangle,
+  FileOutput,
+} from '@/lib/icons';
 
 const generateId = () => Math.random().toString(36).substring(2, 11);
 
@@ -162,21 +172,21 @@ const createSampleTabs2 = (): Tab[] => [
 ];
 
 const createLeftPanelTabs = (): EdgePanelTab[] => [
-  { id: 'explorer-tab', title: 'Explorer', contentType: 'tool', panelPosition: 'left' },
-  { id: 'search-tab', title: 'Search', contentType: 'tool', panelPosition: 'left' },
-  { id: 'git-tab', title: 'Source Control', contentType: 'tool', panelPosition: 'left' },
+  { id: 'explorer-tab', title: 'Explorer', contentType: 'tool', panelPosition: 'left', icon: FolderTree },
+  { id: 'search-tab', title: 'Search', contentType: 'tool', panelPosition: 'left', icon: Search },
+  { id: 'git-tab', title: 'Source Control', contentType: 'tool', panelPosition: 'left', icon: GitBranch },
 ];
 
 const createRightPanelTabs = (): EdgePanelTab[] => [
-  { id: 'outline-tab', title: 'Outline', contentType: 'tool', panelPosition: 'right' },
-  { id: 'debug-tab', title: 'Debug', contentType: 'tool', panelPosition: 'right' },
+  { id: 'outline-tab', title: 'Outline', contentType: 'tool', panelPosition: 'right', icon: ListTree },
+  { id: 'debug-tab', title: 'Debug', contentType: 'tool', panelPosition: 'right', icon: Bug },
 ];
 
 const createBottomPanelTabs = (): EdgePanelTab[] => [
-  { id: 'terminal-tab-1', title: 'Terminal', contentType: 'terminal', panelPosition: 'bottom' },
-  { id: 'terminal-tab-2', title: 'Terminal 2', contentType: 'terminal', panelPosition: 'bottom' },
-  { id: 'problems-tab', title: 'Problems', contentType: 'tool', panelPosition: 'bottom' },
-  { id: 'output-tab', title: 'Output', contentType: 'tool', panelPosition: 'bottom' },
+  { id: 'terminal-tab-1', title: 'Terminal', contentType: 'terminal', panelPosition: 'bottom', icon: Terminal },
+  { id: 'terminal-tab-2', title: 'Terminal 2', contentType: 'terminal', panelPosition: 'bottom', icon: Terminal },
+  { id: 'problems-tab', title: 'Problems', contentType: 'tool', panelPosition: 'bottom', icon: AlertTriangle },
+  { id: 'output-tab', title: 'Output', contentType: 'tool', panelPosition: 'bottom', icon: FileOutput },
 ];
 
 function createInitialState(): WindowState {
