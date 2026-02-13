@@ -69,7 +69,7 @@ const TabItem: Component<TabItemProps> = (props) => {
     <div
       use:draggable
       data-tab-id={props.tab.id}
-      data-testid={props.testId}
+      {...(props.testId ? { 'data-testid': props.testId } : {})}
       classList={{
         'group relative flex items-center gap-1 px-2.5 py-1.5 cursor-pointer transition-all duration-100 border-b-2 rounded-t-sm':
           true,
@@ -81,8 +81,6 @@ const TabItem: Component<TabItemProps> = (props) => {
           !props.isActive && !draggable.isActiveDraggable,
       }}
       onClick={() => props.onClick()}
-      onMouseEnter={() => {}}
-      onMouseLeave={() => {}}
     >
       <div class="cursor-grab active:cursor-grabbing p-0.5 -ml-1 opacity-0 group-hover:opacity-100 transition-opacity">
         <IconGripVertical class="w-3 h-3 text-zinc-500" />
@@ -135,7 +133,6 @@ const CenterTabBar: Component<{
   const [isOverflowing, setIsOverflowing] = createSignal(false);
   const [showDropdown, setShowDropdown] = createSignal(false);
   const [insertIdx, setInsertIdx] = createSignal<number | null>(null);
-  const [pointerX, setPointerX] = createSignal<number | null>(null);
   let tabsContainerRef: HTMLDivElement | undefined;
 
   const droppable = createDroppable(`tabgroup:${props.groupId}`, {
@@ -159,9 +156,24 @@ const CenterTabBar: Component<{
     return data?.type === 'tab' ? data.tab.id : undefined;
   };
 
+  // Read sensor coordinates reactively — onPointerMove doesn't fire during
+  // drag because the DragOverlay portal intercepts pointer events.
   createEffect(() => {
-    const x = pointerX();
-    if (x != null && tabsContainerRef && isSameBarDrag()) {
+    if (!isSameBarDrag() || !tabsContainerRef) {
+      setInsertIdx(null);
+      return;
+    }
+    const sensor = dndCtx?.[0]?.active?.sensor;
+    const x = sensor?.coordinates?.current?.x;
+    const y = sensor?.coordinates?.current?.y;
+    if (x != null && y != null) {
+      const rect = tabsContainerRef.getBoundingClientRect();
+      const inBounds = x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
+      if (!inBounds) {
+        setInsertIdx(null);
+        setReorderState(null);
+        return;
+      }
       const idx = computeInsertIndex(tabsContainerRef, x, draggedTabId());
       setInsertIdx(idx);
       if (idx != null) {
@@ -175,7 +187,7 @@ const CenterTabBar: Component<{
   createEffect(() => {
     if (!dndCtx?.[0]?.active?.draggable) {
       setInsertIdx(null);
-      setPointerX(null);
+      setReorderState(null);
     }
   });
 
@@ -224,8 +236,6 @@ const CenterTabBar: Component<{
       <div
         ref={tabsContainerRef}
         class="flex-1 flex items-end gap-0.5 overflow-x-auto scrollbar-hide px-1 min-w-0 [scrollbar-width:none] [-ms-overflow-style:none]"
-        onPointerMove={(e) => { if (isSameBarDrag()) setPointerX(e.clientX); }}
-        onPointerLeave={() => setPointerX(null)}
       >
         <For each={tabs()}>
           {(tab, i) => (
@@ -312,7 +322,6 @@ const EdgeTabBar: Component<{
   const isFocused = () => windowStore.focusedRegion === props.position;
 
   const [insertIdx, setInsertIdx] = createSignal<number | null>(null);
-  const [pointerX, setPointerX] = createSignal<number | null>(null);
   let containerRef: HTMLDivElement | undefined;
 
   const droppable = createDroppable(`edgepanel:${props.position}`, {
@@ -336,9 +345,24 @@ const EdgeTabBar: Component<{
     return data?.type === 'edgeTab' ? data.tab.id : undefined;
   };
 
+  // Read sensor coordinates reactively — onPointerMove doesn't fire during
+  // drag because the DragOverlay portal intercepts pointer events.
   createEffect(() => {
-    const x = pointerX();
-    if (x != null && containerRef && isSameBarDrag()) {
+    if (!isSameBarDrag() || !containerRef) {
+      setInsertIdx(null);
+      return;
+    }
+    const sensor = dndCtx?.[0]?.active?.sensor;
+    const x = sensor?.coordinates?.current?.x;
+    const y = sensor?.coordinates?.current?.y;
+    if (x != null && y != null) {
+      const rect = containerRef.getBoundingClientRect();
+      const inBounds = x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
+      if (!inBounds) {
+        setInsertIdx(null);
+        setReorderState(null);
+        return;
+      }
       const idx = computeInsertIndex(containerRef, x, draggedTabId());
       setInsertIdx(idx);
       if (idx != null) {
@@ -352,7 +376,7 @@ const EdgeTabBar: Component<{
   createEffect(() => {
     if (!dndCtx?.[0]?.active?.draggable) {
       setInsertIdx(null);
-      setPointerX(null);
+      setReorderState(null);
     }
   });
 
@@ -365,8 +389,6 @@ const EdgeTabBar: Component<{
         'flex flex-row border-b border-zinc-800 relative': true,
         'bg-blue-500/5': droppable.isActiveDroppable,
       }}
-      onPointerMove={(e) => { if (isSameBarDrag()) setPointerX(e.clientX); }}
-      onPointerLeave={() => setPointerX(null)}
     >
       <For each={props.tabs}>
         {(tab, i) => (
