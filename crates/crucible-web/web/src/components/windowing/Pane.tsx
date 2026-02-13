@@ -196,7 +196,6 @@ export const Pane: Component<{ paneId: string }> = (props) => {
         {renderContent()}
       </Show>
 
-      {/* Merge overlay when center drop zone is active */}
       <Show when={centerDroppable.isActiveDroppable}>
         <div class="absolute inset-0 bg-blue-500/10 flex items-center justify-center z-10 pointer-events-none border-2 border-blue-400 border-dashed rounded">
           <span class="text-sm font-medium text-blue-300 bg-blue-500/30 px-3 py-1.5 rounded-lg">
@@ -205,31 +204,34 @@ export const Pane: Component<{ paneId: string }> = (props) => {
         </div>
       </Show>
 
-      {/* Drop zone overlays when dragging a tab: split left/right/top/bottom */}
-      <Show when={isTabDragging()}>
-        <div class="absolute inset-0 pointer-events-none">
-          <PaneDropZone
-            position="top"
-            droppable={topDroppable}
-            class="absolute top-0 left-0 right-0 h-1/5 min-h-[24px] pointer-events-auto"
-          />
-          <PaneDropZone
-            position="bottom"
-            droppable={bottomDroppable}
-            class="absolute bottom-0 left-0 right-0 h-1/5 min-h-[24px] pointer-events-auto"
-          />
-          <PaneDropZone
-            position="left"
-            droppable={leftDroppable}
-            class="absolute top-1/5 bottom-1/5 left-0 w-1/5 min-w-[24px] pointer-events-auto"
-          />
-          <PaneDropZone
-            position="right"
-            droppable={rightDroppable}
-            class="absolute top-1/5 bottom-1/5 right-0 w-1/5 min-w-[24px] pointer-events-auto"
-          />
-        </div>
-      </Show>
+      <div
+        classList={{
+          'absolute inset-0 z-20': true,
+          'pointer-events-auto': isTabDragging(),
+          'pointer-events-none': !isTabDragging(),
+        }}
+      >
+        <PaneDropZone
+          position="top"
+          droppable={topDroppable}
+          class="absolute top-0 left-0 right-0 h-1/5 min-h-[24px]"
+        />
+        <PaneDropZone
+          position="bottom"
+          droppable={bottomDroppable}
+          class="absolute bottom-0 left-0 right-0 h-1/5 min-h-[24px]"
+        />
+        <PaneDropZone
+          position="left"
+          droppable={leftDroppable}
+          class="absolute top-0 bottom-0 left-0 w-1/5 min-w-[24px]"
+        />
+        <PaneDropZone
+          position="right"
+          droppable={rightDroppable}
+          class="absolute top-0 bottom-0 right-0 w-1/5 min-w-[24px]"
+        />
+      </div>
     </div>
   );
 };

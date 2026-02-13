@@ -1,0 +1,39 @@
+- generic [ref=e5]:
+  - generic [ref=e7]:
+    - generic [ref=e8]:
+      - button "◀" [ref=e9] [cursor=pointer]
+      - generic "Sessions" [ref=e10] [cursor=pointer]:
+        - generic [ref=e11]: Sessions
+      - generic "Files" [ref=e12] [cursor=pointer]:
+        - generic [ref=e13]: Files
+    - generic [ref=e15]:
+      - generic [ref=e20]:
+        - generic [ref=e21]:
+          - generic [ref=e24] [cursor=pointer]:
+            - generic [ref=e25]: Chat
+            - generic "Close" [ref=e26]: ✕
+          - button "⊞" [ref=e28] [cursor=pointer]
+        - generic [ref=e32]:
+          - generic [ref=e36]:
+            - img [ref=e38]
+            - paragraph [ref=e40]: Select or create a session to start chatting
+          - generic [ref=e41]:
+            - generic [ref=e42]: No active session. Create or select a session to start chatting.
+            - generic [ref=e43]:
+              - textbox "Select a session first..." [disabled] [ref=e44]
+              - generic [ref=e45]:
+                - button "Select model" [disabled] [ref=e47]:
+                  - generic [ref=e48]: Select model
+                  - img [ref=e49]
+                - button "Hold to record (or press Space)" [disabled] [ref=e51]:
+                  - img [ref=e52]
+                - button [disabled] [ref=e55]:
+                  - img [ref=e56]
+      - generic [ref=e58]:
+        - button "▼" [ref=e59] [cursor=pointer]
+        - generic "Terminal" [ref=e60] [cursor=pointer]:
+          - generic [ref=e61]: Terminal
+  - generic [ref=e62]:
+    - button "▶" [ref=e63] [cursor=pointer]
+    - generic "Editor" [ref=e64] [cursor=pointer]:
+      - generic [ref=e65]: Editor
