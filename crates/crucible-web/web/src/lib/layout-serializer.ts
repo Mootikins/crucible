@@ -3,7 +3,6 @@ import type {
   TabGroup,
   EdgePanel,
   EdgePanelPosition,
-  EdgePanelTab,
   FloatingWindow,
   Tab,
   TabContentType,
@@ -32,27 +31,15 @@ interface SerializedTab {
   metadata?: Record<string, unknown>;
 }
 
-interface SerializedEdgePanelTab extends SerializedTab {
-  panelPosition: EdgePanelPosition;
-}
-
 interface SerializedEdgePanel {
   id: string;
-  position: EdgePanelPosition;
-  tabs: SerializedEdgePanelTab[];
-  activeTabId: string | null;
+  tabGroupId: string;
   isCollapsed: boolean;
   width?: number;
   height?: number;
 }
 
 function stripIcon(tab: Tab): SerializedTab {
-  const { icon: _icon, ...rest } = tab;
-  void _icon;
-  return rest;
-}
-
-function stripEdgePanelTabIcon(tab: EdgePanelTab): SerializedEdgePanelTab {
   const { icon: _icon, ...rest } = tab;
   void _icon;
   return rest;
@@ -77,9 +64,7 @@ export function serializeLayout(state: {
   for (const [pos, panel] of Object.entries(state.edgePanels)) {
     serializedEdgePanels[pos as EdgePanelPosition] = {
       id: panel.id,
-      position: panel.position,
-      tabs: panel.tabs.map(stripEdgePanelTabIcon),
-      activeTabId: panel.activeTabId,
+      tabGroupId: panel.tabGroupId,
       isCollapsed: panel.isCollapsed,
       width: panel.width,
       height: panel.height,
@@ -87,11 +72,50 @@ export function serializeLayout(state: {
   }
 
   return {
-    version: 1,
+    version: 2,
     layout: JSON.parse(JSON.stringify(state.layout)) as LayoutNode,
     tabGroups: serializedGroups,
     edgePanels: serializedEdgePanels,
     floatingWindows: state.floatingWindows.map((w) => ({ ...w })),
+  };
+}
+
+function migrateV1toV2(v1: any): SerializedLayout {
+  const newTabGroups = { ...v1.tabGroups };
+
+  // Migrate each edge panel
+  for (const pos of ['left', 'right', 'bottom'] as const) {
+    const panel = v1.edgePanels[pos];
+    if (panel.tabs && Array.isArray(panel.tabs)) {
+      // Create new tab group from v1 inline tabs
+      const groupId = `edge-${pos}-${Date.now()}`;
+      const tabs = panel.tabs.map((tab: any) => {
+        const { panelPosition: _panelPosition, ...rest } = tab;
+        void _panelPosition;
+        return rest;
+      });
+
+      newTabGroups[groupId] = {
+        id: groupId,
+        tabs,
+        activeTabId: panel.activeTabId ?? (tabs.length > 0 ? tabs[0].id : null),
+      };
+
+      // Replace inline tabs with tabGroupId reference
+      v1.edgePanels[pos] = {
+        id: panel.id,
+        tabGroupId: groupId,
+        isCollapsed: panel.isCollapsed,
+        width: panel.width,
+        height: panel.height,
+      };
+    }
+  }
+
+  return {
+    ...v1,
+    version: 2,
+    tabGroups: newTabGroups,
   };
 }
 
@@ -101,12 +125,18 @@ export function deserializeLayout(json: SerializedLayout): {
   edgePanels: Record<EdgePanelPosition, EdgePanel>;
   floatingWindows: FloatingWindow[];
 } {
-  if (json.version !== 1) {
-    throw new Error(`Unknown layout version: ${json.version}`);
+  // Auto-migrate v1 to v2
+  let layout = json;
+  if (layout.version === 1) {
+    layout = migrateV1toV2(layout as any);
+  }
+
+  if (layout.version !== 2) {
+    throw new Error(`Unsupported layout version: ${layout.version}`);
   }
 
   const tabGroups: Record<string, TabGroup> = {};
-  for (const [id, group] of Object.entries(json.tabGroups)) {
+  for (const [id, group] of Object.entries(layout.tabGroups)) {
     tabGroups[id] = {
       id: group.id,
       tabs: group.tabs.map((t) => ({ ...t })),
@@ -115,12 +145,10 @@ export function deserializeLayout(json: SerializedLayout): {
   }
 
   const edgePanels = {} as Record<EdgePanelPosition, EdgePanel>;
-  for (const [pos, panel] of Object.entries(json.edgePanels)) {
+  for (const [pos, panel] of Object.entries(layout.edgePanels)) {
     edgePanels[pos as EdgePanelPosition] = {
       id: panel.id,
-      position: panel.position,
-      tabs: panel.tabs.map((t) => ({ ...t })),
-      activeTabId: panel.activeTabId,
+      tabGroupId: panel.tabGroupId,
       isCollapsed: panel.isCollapsed,
       width: panel.width,
       height: panel.height,
@@ -128,9 +156,9 @@ export function deserializeLayout(json: SerializedLayout): {
   }
 
   return {
-    layout: json.layout,
+    layout: layout.layout,
     tabGroups,
     edgePanels,
-    floatingWindows: json.floatingWindows.map((w) => ({ ...w })),
+    floatingWindows: layout.floatingWindows.map((w) => ({ ...w })),
   };
 }
