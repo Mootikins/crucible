@@ -15,6 +15,11 @@ function resetToState(overrides: Partial<{
   layout: LayoutNode;
   activePaneId: string | null;
   focusedRegion: 'left' | 'right' | 'bottom' | 'center';
+  flyoutState: {
+    isOpen: boolean;
+    panelPosition: EdgePanelPosition;
+    tabId: string | null;
+  } | null;
 }>) {
   setStore(
     produce((s) => {
@@ -23,8 +28,9 @@ function resetToState(overrides: Partial<{
       if (overrides.layout !== undefined) s.layout = overrides.layout;
       if (overrides.activePaneId !== undefined) s.activePaneId = overrides.activePaneId;
       if (overrides.focusedRegion !== undefined) s.focusedRegion = overrides.focusedRegion;
+      if (overrides.flyoutState !== undefined) s.flyoutState = overrides.flyoutState as any;
       s.dragState = null;
-      s.flyoutState = null;
+      if (!('flyoutState' in overrides)) s.flyoutState = null;
     })
   );
 }
@@ -133,7 +139,7 @@ describe('findEdgePanelForGroup', () => {
   });
 });
 
-describe('moveEdgeTabToCenter (legacy — tests cross-zone actions)', () => {
+describe('moveTab: edge → center', () => {
   beforeEach(() => {
     resetToState({
       tabGroups: {
@@ -160,7 +166,7 @@ describe('moveEdgeTabToCenter (legacy — tests cross-zone actions)', () => {
     });
   });
 
-  it('moves tab from edge group to center group via moveTab', () => {
+  it('moves tab from edge group to center group', () => {
     windowActions.moveTab('left-group', 'group-1', 'left-1');
 
     const leftGroup = windowStore.tabGroups['left-group'];
@@ -170,9 +176,86 @@ describe('moveEdgeTabToCenter (legacy — tests cross-zone actions)', () => {
     expect(windowStore.tabGroups['group-1']!.tabs.find((t) => t.id === 'left-1')).toBeDefined();
     expect(windowStore.tabGroups['group-1']!.activeTabId).toBe('left-1');
   });
+
+  it('sets focusedRegion to center when target is center group', () => {
+    windowActions.moveTab('left-group', 'group-1', 'left-1');
+    expect(windowStore.focusedRegion).toBe('center');
+  });
+
+  it('auto-collapses edge panel when last tab moves out', () => {
+    windowActions.moveTab('right-group', 'group-1', 'right-1');
+
+    expect(windowStore.tabGroups['right-group']).toBeDefined();
+    expect(windowStore.tabGroups['right-group']!.tabs).toHaveLength(0);
+    expect(windowStore.tabGroups['right-group']!.activeTabId).toBeNull();
+    expect(windowStore.edgePanels.right.isCollapsed).toBe(true);
+  });
+
+  it('preserves edge group when emptied', () => {
+    windowActions.moveTab('right-group', 'group-1', 'right-1');
+    expect(windowStore.tabGroups['right-group']).toBeDefined();
+    expect(windowStore.edgePanels.right.tabGroupId).toBe('right-group');
+  });
 });
 
-describe('moveEdgeTabToEdge (legacy — tests cross-zone via moveTab)', () => {
+describe('moveTab: center → edge', () => {
+  beforeEach(() => {
+    resetToState({
+      tabGroups: {
+        'group-1': makeTabGroup('group-1', [makeTab('center-1'), makeTab('center-2')], 'center-1'),
+        'group-2': makeTabGroup('group-2', [makeTab('center-3')], 'center-3'),
+        'left-group': makeTabGroup('left-group', [
+          { id: 'left-1', title: 'Explorer', contentType: 'tool' },
+        ], 'left-1'),
+        'right-group': makeTabGroup('right-group', [], null),
+        'bottom-group': makeTabGroup('bottom-group', [], null),
+      },
+      edgePanels: {
+        left: makeEdgePanel('left', 'left-group'),
+        right: makeEdgePanel('right', 'right-group', true),
+        bottom: makeEdgePanel('bottom', 'bottom-group'),
+      },
+      layout: splitLayout('pane-1', 'group-1', 'pane-2', 'group-2'),
+      activePaneId: 'pane-1',
+      focusedRegion: 'center',
+    });
+  });
+
+  it('moves tab from center group to edge group', () => {
+    windowActions.moveTab('group-1', 'left-group', 'center-1');
+
+    expect(windowStore.tabGroups['group-1']!.tabs).toHaveLength(1);
+    expect(windowStore.tabGroups['left-group']!.tabs).toHaveLength(2);
+    expect(windowStore.tabGroups['left-group']!.tabs.find((t) => t.id === 'center-1')).toBeDefined();
+  });
+
+  it('moves tab to empty edge group', () => {
+    windowActions.moveTab('group-1', 'right-group', 'center-1');
+
+    expect(windowStore.tabGroups['right-group']!.tabs).toHaveLength(1);
+    expect(windowStore.tabGroups['right-group']!.tabs[0]!.id).toBe('center-1');
+  });
+
+  it('sets focusedRegion to edge position when target is edge group', () => {
+    windowActions.moveTab('group-1', 'left-group', 'center-1');
+    expect(windowStore.focusedRegion).toBe('left');
+  });
+
+  it('expands collapsed edge panel when receiving a tab', () => {
+    expect(windowStore.edgePanels.right.isCollapsed).toBe(true);
+    windowActions.moveTab('group-1', 'right-group', 'center-1');
+    expect(windowStore.edgePanels.right.isCollapsed).toBe(false);
+  });
+
+  it('deletes center group and collapses layout when last center tab moves out', () => {
+    windowActions.moveTab('group-2', 'left-group', 'center-3');
+
+    expect(windowStore.tabGroups['group-2']).toBeUndefined();
+    expect(windowStore.layout.type).toBe('pane');
+  });
+});
+
+describe('moveTab: edge → edge', () => {
   beforeEach(() => {
     resetToState({
       tabGroups: {
@@ -189,6 +272,57 @@ describe('moveEdgeTabToEdge (legacy — tests cross-zone via moveTab)', () => {
       edgePanels: {
         left: makeEdgePanel('left', 'left-group'),
         right: makeEdgePanel('right', 'right-group'),
+        bottom: makeEdgePanel('bottom', 'bottom-group', true),
+      },
+      layout: simpleLayout('pane-1', 'group-1'),
+      activePaneId: 'pane-1',
+      focusedRegion: 'center',
+    });
+  });
+
+  it('moves tab between edge groups', () => {
+    windowActions.moveTab('left-group', 'bottom-group', 'left-1');
+
+    expect(windowStore.tabGroups['left-group']!.tabs).toHaveLength(1);
+    expect(windowStore.tabGroups['bottom-group']!.tabs).toHaveLength(1);
+    expect(windowStore.tabGroups['bottom-group']!.tabs[0]!.id).toBe('left-1');
+  });
+
+  it('sets focusedRegion to target edge position', () => {
+    windowActions.moveTab('left-group', 'right-group', 'left-1');
+    expect(windowStore.focusedRegion).toBe('right');
+  });
+
+  it('auto-collapses source edge panel when emptied', () => {
+    windowActions.moveTab('right-group', 'left-group', 'right-1');
+
+    expect(windowStore.tabGroups['right-group']!.tabs).toHaveLength(0);
+    expect(windowStore.edgePanels.right.isCollapsed).toBe(true);
+  });
+
+  it('expands collapsed target edge panel', () => {
+    expect(windowStore.edgePanels.bottom.isCollapsed).toBe(true);
+    windowActions.moveTab('left-group', 'bottom-group', 'left-1');
+    expect(windowStore.edgePanels.bottom.isCollapsed).toBe(false);
+  });
+});
+
+describe('moveTab: same-group reorder', () => {
+  beforeEach(() => {
+    resetToState({
+      tabGroups: {
+        'group-1': makeTabGroup('group-1', [makeTab('a'), makeTab('b'), makeTab('c')], 'a'),
+        'left-group': makeTabGroup('left-group', [
+          { id: 'l1', title: 'L1', contentType: 'tool' },
+          { id: 'l2', title: 'L2', contentType: 'tool' },
+          { id: 'l3', title: 'L3', contentType: 'tool' },
+        ], 'l1'),
+        'right-group': makeTabGroup('right-group', [], null),
+        'bottom-group': makeTabGroup('bottom-group', [], null),
+      },
+      edgePanels: {
+        left: makeEdgePanel('left', 'left-group'),
+        right: makeEdgePanel('right', 'right-group'),
         bottom: makeEdgePanel('bottom', 'bottom-group'),
       },
       layout: simpleLayout('pane-1', 'group-1'),
@@ -197,16 +331,59 @@ describe('moveEdgeTabToEdge (legacy — tests cross-zone via moveTab)', () => {
     });
   });
 
-  it('moves tab between edge groups via moveTab', () => {
-    windowActions.moveTab('left-group', 'bottom-group', 'left-1');
+  it('reorders within center group', () => {
+    windowActions.moveTab('group-1', 'group-1', 'c', 0);
 
-    expect(windowStore.tabGroups['left-group']!.tabs).toHaveLength(1);
-    expect(windowStore.tabGroups['bottom-group']!.tabs).toHaveLength(1);
-    expect(windowStore.tabGroups['bottom-group']!.tabs[0]!.id).toBe('left-1');
+    const tabs = windowStore.tabGroups['group-1']!.tabs;
+    expect(tabs.map(t => t.id)).toEqual(['c', 'a', 'b']);
+    expect(windowStore.tabGroups['group-1']!.activeTabId).toBe('c');
+  });
+
+  it('reorders within edge group', () => {
+    windowActions.moveTab('left-group', 'left-group', 'l3', 0);
+
+    const tabs = windowStore.tabGroups['left-group']!.tabs;
+    expect(tabs.map(t => t.id)).toEqual(['l3', 'l1', 'l2']);
   });
 });
 
-describe('moveCenterTabToEdge (legacy — tests cross-zone via moveTab)', () => {
+describe('moveTab: flyout guard', () => {
+  beforeEach(() => {
+    resetToState({
+      tabGroups: {
+        'group-1': makeTabGroup('group-1', [makeTab('center-1')]),
+        'left-group': makeTabGroup('left-group', [
+          { id: 'left-1', title: 'Explorer', contentType: 'tool' },
+          { id: 'left-2', title: 'Search', contentType: 'tool' },
+        ], 'left-1'),
+        'right-group': makeTabGroup('right-group', [], null),
+        'bottom-group': makeTabGroup('bottom-group', [], null),
+      },
+      edgePanels: {
+        left: makeEdgePanel('left', 'left-group'),
+        right: makeEdgePanel('right', 'right-group'),
+        bottom: makeEdgePanel('bottom', 'bottom-group'),
+      },
+      layout: simpleLayout('pane-1', 'group-1'),
+      activePaneId: 'pane-1',
+      focusedRegion: 'center',
+      flyoutState: { isOpen: true, panelPosition: 'left', tabId: 'left-1' },
+    });
+  });
+
+  it('dismisses flyout when moved tab matches flyoutState.tabId', () => {
+    expect(windowStore.flyoutState).not.toBeNull();
+    windowActions.moveTab('left-group', 'group-1', 'left-1');
+    expect(windowStore.flyoutState).toBeNull();
+  });
+
+  it('preserves flyout when moved tab does not match', () => {
+    windowActions.moveTab('left-group', 'group-1', 'left-2');
+    expect(windowStore.flyoutState).not.toBeNull();
+  });
+});
+
+describe('removeTab: edge-aware', () => {
   beforeEach(() => {
     resetToState({
       tabGroups: {
@@ -215,7 +392,10 @@ describe('moveCenterTabToEdge (legacy — tests cross-zone via moveTab)', () => 
         'left-group': makeTabGroup('left-group', [
           { id: 'left-1', title: 'Explorer', contentType: 'tool' },
         ], 'left-1'),
-        'right-group': makeTabGroup('right-group', [], null),
+        'right-group': makeTabGroup('right-group', [
+          { id: 'right-1', title: 'Outline', contentType: 'tool' },
+          { id: 'right-2', title: 'Debug', contentType: 'tool' },
+        ], 'right-1'),
         'bottom-group': makeTabGroup('bottom-group', [], null),
       },
       edgePanels: {
@@ -226,23 +406,67 @@ describe('moveCenterTabToEdge (legacy — tests cross-zone via moveTab)', () => 
       layout: splitLayout('pane-1', 'group-1', 'pane-2', 'group-2'),
       activePaneId: 'pane-1',
       focusedRegion: 'center',
+      flyoutState: { isOpen: true, panelPosition: 'left', tabId: 'left-1' },
     });
   });
 
-  it('moves tab from center group to edge group via moveTab', () => {
-    windowActions.moveTab('group-1', 'left-group', 'center-1');
+  it('collapses edge panel when last edge tab is removed', () => {
+    windowActions.removeTab('left-group', 'left-1');
 
-    expect(windowStore.tabGroups['group-1']!.tabs).toHaveLength(1);
-    expect(windowStore.tabGroups['left-group']!.tabs).toHaveLength(2);
-    expect(windowStore.tabGroups['left-group']!.tabs.find((t) => t.id === 'center-1')).toBeDefined();
+    expect(windowStore.tabGroups['left-group']).toBeDefined();
+    expect(windowStore.tabGroups['left-group']!.tabs).toHaveLength(0);
+    expect(windowStore.tabGroups['left-group']!.activeTabId).toBeNull();
+    expect(windowStore.edgePanels.left.isCollapsed).toBe(true);
   });
 
-  it('moves tab to empty edge group', () => {
-    windowActions.moveTab('group-1', 'right-group', 'center-1');
+  it('does not delete edge group when emptied', () => {
+    windowActions.removeTab('left-group', 'left-1');
+    expect(windowStore.tabGroups['left-group']).toBeDefined();
+    expect(windowStore.edgePanels.left.tabGroupId).toBe('left-group');
+  });
+
+  it('removes non-last edge tab without collapsing', () => {
+    windowActions.removeTab('right-group', 'right-1');
 
     expect(windowStore.tabGroups['right-group']!.tabs).toHaveLength(1);
-    expect(windowStore.tabGroups['right-group']!.tabs[0]!.id).toBe('center-1');
+    expect(windowStore.edgePanels.right.isCollapsed).toBe(false);
+  });
+
+  it('deletes center group and collapses layout when last center tab removed', () => {
+    windowActions.removeTab('group-2', 'center-3');
+
+    expect(windowStore.tabGroups['group-2']).toBeUndefined();
+    expect(windowStore.layout.type).toBe('pane');
+  });
+
+  it('removes non-last center tab normally', () => {
+    windowActions.removeTab('group-1', 'center-1');
+
+    expect(windowStore.tabGroups['group-1']!.tabs).toHaveLength(1);
+    expect(windowStore.tabGroups['group-1']!.activeTabId).toBe('center-2');
+  });
+
+  it('dismisses flyout when removed tab matches flyoutState.tabId', () => {
+    expect(windowStore.flyoutState).not.toBeNull();
+    windowActions.removeTab('left-group', 'left-1');
+    expect(windowStore.flyoutState).toBeNull();
+  });
+
+  it('preserves flyout when removed tab does not match', () => {
+    windowActions.removeTab('right-group', 'right-1');
+    expect(windowStore.flyoutState).not.toBeNull();
   });
 });
 
+describe('setEdgePanelActiveTab', () => {
+  it('sets activeTabId on the edge group via tabGroups', () => {
+    const leftGroupId = windowStore.edgePanels.left.tabGroupId;
+    const group = windowStore.tabGroups[leftGroupId]!;
+    const secondTab = group.tabs[1];
+    if (!secondTab) return;
 
+    windowActions.setEdgePanelActiveTab('left', secondTab.id);
+    expect(windowStore.tabGroups[leftGroupId]!.activeTabId).toBe(secondTab.id);
+    expect(windowStore.focusedRegion).toBe('left');
+  });
+});

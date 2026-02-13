@@ -4,7 +4,7 @@ import {
   createDroppable,
   useDragDropContext,
 } from '@thisbeyond/solid-dnd';
-import type { Tab as TabType, EdgePanelTab, EdgePanelPosition, TabBarProps, DragSource } from '@/types/windowTypes';
+import type { Tab as TabType, EdgePanelPosition, TabBarProps, DragSource } from '@/types/windowTypes';
 import { windowStore, windowActions } from '@/stores/windowStore';
 import { IconGripVertical, IconClose, IconLayout } from './icons';
 import { ChevronDown } from '@/lib/icons';
@@ -12,9 +12,7 @@ import { ChevronDown } from '@/lib/icons';
 // ── Module-level reorder state (shared with WindowManager) ──────────────
 
 export type ReorderState = {
-  type: 'center' | 'edge';
-  groupId?: string;
-  position?: EdgePanelPosition;
+  groupId: string;
   insertIndex: number;
 } | null;
 
@@ -43,7 +41,7 @@ function computeInsertIndex(
 // ── Unified TabItem (replaces Tab + EdgeTab) ────────────────────────────
 
 interface TabItemProps {
-  tab: TabType | EdgePanelTab;
+  tab: TabType;
   draggableId: string;
   draggableData: DragSource;
   isActive: boolean;
@@ -178,7 +176,7 @@ const CenterTabBar: Component<{
       const idx = computeInsertIndex(tabsContainerRef, x, draggedTabId());
       setInsertIdx(idx);
       if (idx != null) {
-        setReorderState({ type: 'center', groupId: props.groupId, insertIndex: idx });
+        setReorderState({ groupId: props.groupId, insertIndex: idx });
       }
     } else {
       setInsertIdx(null);
@@ -317,9 +315,11 @@ const CenterTabBar: Component<{
 
 const EdgeTabBar: Component<{
   position: EdgePanelPosition;
-  tabs: EdgePanelTab[];
-  activeTabId: string | null;
 }> = (props) => {
+  const groupId = () => windowStore.edgePanels[props.position].tabGroupId;
+  const group = () => windowStore.tabGroups[groupId()];
+  const tabs = () => group()?.tabs ?? [];
+  const activeTabId = () => group()?.activeTabId ?? null;
   const isFocused = () => windowStore.focusedRegion === props.position;
 
   const [insertIdx, setInsertIdx] = createSignal<number | null>(null);
@@ -336,14 +336,14 @@ const EdgeTabBar: Component<{
     const active = dndCtx?.[0]?.active?.draggable;
     if (!active) return false;
     const data = active.data as DragSource | undefined;
-    return data?.type === 'edgeTab' && data.sourcePosition === props.position;
+    return data?.type === 'tab' && data.sourceGroupId === groupId();
   };
 
   const draggedTabId = () => {
     const active = dndCtx?.[0]?.active?.draggable;
     if (!active) return undefined;
     const data = active.data as DragSource | undefined;
-    return data?.type === 'edgeTab' ? data.tab.id : undefined;
+    return data?.type === 'tab' ? data.tab.id : undefined;
   };
 
   // Read sensor coordinates reactively — onPointerMove doesn't fire during
@@ -368,7 +368,7 @@ const EdgeTabBar: Component<{
       const idx = computeInsertIndex(containerRef, x, draggedTabId());
       setInsertIdx(idx);
       if (idx != null) {
-        setReorderState({ type: 'edge', position: props.position, insertIndex: idx });
+        setReorderState({ groupId: groupId(), insertIndex: idx });
       }
     } else {
       setInsertIdx(null);
@@ -392,7 +392,7 @@ const EdgeTabBar: Component<{
         'bg-blue-500/5': droppable.isActiveDroppable,
       }}
     >
-      <For each={props.tabs}>
+      <For each={tabs()}>
         {(tab, i) => (
           <>
             <Show when={insertIdx() === i()}>
@@ -401,8 +401,8 @@ const EdgeTabBar: Component<{
             <TabItem
               tab={tab}
               draggableId={`edgetab:${props.position}:${tab.id}`}
-              draggableData={{ type: 'edgeTab', tab, sourcePosition: props.position }}
-              isActive={props.activeTabId === tab.id}
+              draggableData={{ type: 'tab', tab, sourceGroupId: groupId() }}
+              isActive={activeTabId() === tab.id}
               isFocused={isFocused()}
               onClick={() => windowActions.setEdgePanelActiveTab(props.position, tab.id)}
               onClose={() => windowActions.removeEdgePanelTab(props.position, tab.id)}
@@ -412,7 +412,7 @@ const EdgeTabBar: Component<{
           </>
         )}
       </For>
-      <Show when={insertIdx() === props.tabs.length}>
+      <Show when={insertIdx() === tabs().length}>
         <InsertIndicator />
       </Show>
       {droppable.isActiveDroppable && (
@@ -437,8 +437,6 @@ export const TabBar: Component<TabBarProps> = (props) => {
   return (
     <EdgeTabBar
       position={props.position}
-      tabs={props.tabs}
-      activeTabId={props.activeTabId}
     />
   );
 };

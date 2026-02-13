@@ -309,21 +309,32 @@ export const windowActions = {
       group.activeTabId === tabId
         ? (newTabs.length > 0 ? newTabs[newTabs.length - 1]!.id : null)
         : group.activeTabId;
-    if (newTabs.length === 0) {
-      setStore(
-        produce((s) => {
-          delete s.tabGroups[groupId];
-          s.layout = collapseEmptyNodes(s.layout, s.tabGroups);
-          const firstPane = findFirstPane(s.layout);
-          if (firstPane && (!s.activePaneId || !findPaneInLayout(s.layout, s.activePaneId))) {
-            s.activePaneId = firstPane.id;
-            s.focusedRegion = 'center';
+
+    setStore(
+      produce((s) => {
+        if (newTabs.length === 0) {
+          const pos = findEdgePanelForGroup(groupId);
+          if (pos) {
+            s.tabGroups[groupId] = { ...group, tabs: [], activeTabId: null };
+            s.edgePanels[pos].isCollapsed = true;
+          } else {
+            delete s.tabGroups[groupId];
+            s.layout = collapseEmptyNodes(s.layout, s.tabGroups);
+            const firstPane = findFirstPane(s.layout);
+            if (firstPane && (!s.activePaneId || !findPaneInLayout(s.layout, s.activePaneId))) {
+              s.activePaneId = firstPane.id;
+              s.focusedRegion = 'center';
+            }
           }
-        })
-      );
-      return;
-    }
-    setStore('tabGroups', groupId, { tabs: newTabs, activeTabId: newActiveTabId });
+        } else {
+          s.tabGroups[groupId] = { ...group, tabs: newTabs, activeTabId: newActiveTabId };
+        }
+
+        if (s.flyoutState?.tabId === tabId) {
+          s.flyoutState = null;
+        }
+      })
+    );
   },
 
   setActiveTab(groupId: string, tabId: string | null) {
@@ -358,19 +369,31 @@ export const windowActions = {
     }
 
     if (!targetGroup) return;
+    const clonedTab = { ...tab }; // clone to avoid produce() proxy issues
     const newTargetTabs =
       insertIndex !== undefined
         ? [
             ...targetGroup.tabs.slice(0, insertIndex),
-            tab,
+            clonedTab,
             ...targetGroup.tabs.slice(insertIndex),
           ]
-        : [...targetGroup.tabs, tab];
+        : [...targetGroup.tabs, clonedTab];
 
     setStore(
       produce((s) => {
         if (newSourceTabs.length === 0) {
-          delete s.tabGroups[sourceGroupId];
+          const sourcePos = findEdgePanelForGroup(sourceGroupId);
+          if (sourcePos) {
+            s.tabGroups[sourceGroupId] = { ...sourceGroup, tabs: [], activeTabId: null };
+            s.edgePanels[sourcePos].isCollapsed = true;
+          } else {
+            delete s.tabGroups[sourceGroupId];
+            s.layout = collapseEmptyNodes(s.layout, s.tabGroups);
+            const firstPane = findFirstPane(s.layout);
+            if (firstPane && (!s.activePaneId || !findPaneInLayout(s.layout, s.activePaneId))) {
+              s.activePaneId = firstPane.id;
+            }
+          }
         } else {
           s.tabGroups[sourceGroupId] = {
             ...sourceGroup,
@@ -378,18 +401,22 @@ export const windowActions = {
             activeTabId: newSourceActiveId,
           };
         }
+
         s.tabGroups[targetGroupId] = {
           ...targetGroup,
           tabs: newTargetTabs,
           activeTabId: tabId,
         };
-        if (newSourceTabs.length === 0) {
-          s.layout = collapseEmptyNodes(s.layout, s.tabGroups);
-          const firstPane = findFirstPane(s.layout);
-          if (firstPane && (!s.activePaneId || !findPaneInLayout(s.layout, s.activePaneId))) {
-            s.activePaneId = firstPane.id;
-            s.focusedRegion = 'center';
-          }
+
+        const targetPos = findEdgePanelForGroup(targetGroupId);
+        s.focusedRegion = targetPos ?? 'center';
+
+        if (targetPos && s.edgePanels[targetPos].isCollapsed) {
+          s.edgePanels[targetPos].isCollapsed = false;
+        }
+
+        if (s.flyoutState?.tabId === tabId) {
+          s.flyoutState = null;
         }
       })
     );
@@ -547,26 +574,16 @@ export const windowActions = {
     );
   },
 
+  /** @deprecated Use addTab(groupId, tab) with edgePanels[position].tabGroupId */
   addEdgePanelTab(position: EdgePanelPosition, tab: Tab) {
     const groupId = store.edgePanels[position].tabGroupId;
-    const group = store.tabGroups[groupId];
-    if (!group) return;
-    setStore('tabGroups', groupId, {
-      tabs: [...group.tabs, tab],
-      activeTabId: tab.id,
-    });
+    windowActions.addTab(groupId, tab);
   },
 
+  /** @deprecated Use removeTab(groupId, tabId) with edgePanels[position].tabGroupId */
   removeEdgePanelTab(position: EdgePanelPosition, tabId: string) {
     const groupId = store.edgePanels[position].tabGroupId;
-    const group = store.tabGroups[groupId];
-    if (!group) return;
-    const newTabs = group.tabs.filter((t) => t.id !== tabId);
-    const newActiveId =
-      group.activeTabId === tabId
-        ? (newTabs[0]?.id ?? null)
-        : group.activeTabId;
-    setStore('tabGroups', groupId, { tabs: newTabs, activeTabId: newActiveId });
+    windowActions.removeTab(groupId, tabId);
   },
 
   openFlyout(position: EdgePanelPosition, tabId: string) {
