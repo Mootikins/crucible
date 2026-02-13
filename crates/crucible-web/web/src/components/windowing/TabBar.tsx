@@ -1,4 +1,4 @@
-import { Component, For } from 'solid-js';
+import { Component, For, Show, createSignal, createEffect, onMount, onCleanup } from 'solid-js';
 import {
   createDraggable,
   createDroppable,
@@ -24,6 +24,7 @@ const Tab: Component<{
   return (
     <div
       use:draggable
+      data-tab-id={props.tab.id}
       classList={{
         'group relative flex items-center gap-1 px-2.5 py-1.5 cursor-pointer transition-all duration-100 border-b-2 rounded-t-sm':
           true,
@@ -74,9 +75,47 @@ export const TabBar: Component<{
   const tabs = () => group()?.tabs ?? [];
   const activeTabId = () => group()?.activeTabId ?? null;
 
+  const [isOverflowing, setIsOverflowing] = createSignal(false);
+  const [showDropdown, setShowDropdown] = createSignal(false);
+  let tabsContainerRef: HTMLDivElement | undefined;
+
   const droppable = createDroppable(`tabgroup:${props.groupId}`, {
     type: 'tabGroup',
     groupId: props.groupId,
+  });
+
+  onMount(() => {
+    if (!tabsContainerRef) return;
+    const checkOverflow = () => {
+      if (tabsContainerRef) {
+        setIsOverflowing(tabsContainerRef.scrollWidth > tabsContainerRef.clientWidth);
+      }
+    };
+    const observer = new ResizeObserver(checkOverflow);
+    observer.observe(tabsContainerRef);
+    createEffect(() => {
+      tabs();
+      checkOverflow();
+    });
+    onCleanup(() => observer.disconnect());
+  });
+
+  createEffect(() => {
+    if (!showDropdown()) return;
+    const handleClickOutside = () => {
+      setShowDropdown(false);
+    };
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setShowDropdown(false);
+    };
+    setTimeout(() => {
+      document.addEventListener('click', handleClickOutside);
+      document.addEventListener('keydown', handleEscape);
+    }, 0);
+    onCleanup(() => {
+      document.removeEventListener('click', handleClickOutside);
+      document.removeEventListener('keydown', handleEscape);
+    });
   });
 
   return (
@@ -87,7 +126,10 @@ export const TabBar: Component<{
         'bg-blue-500/5': droppable.isActiveDroppable,
       }}
     >
-      <div class="flex-1 flex items-end gap-0.5 overflow-x-auto scrollbar-hide px-1 min-w-0 [scrollbar-width:none] [-ms-overflow-style:none]">
+      <div
+        ref={tabsContainerRef}
+        class="flex-1 flex items-end gap-0.5 overflow-x-auto scrollbar-hide px-1 min-w-0 [scrollbar-width:none] [-ms-overflow-style:none]"
+      >
         <For each={tabs()}>
           {(tab) => (
             <Tab
@@ -99,6 +141,41 @@ export const TabBar: Component<{
           )}
         </For>
       </div>
+      <Show when={isOverflowing()}>
+        <div class="relative flex-shrink-0">
+          <button
+            class="flex-shrink-0 w-6 h-6 flex items-center justify-center text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800 rounded transition-colors text-xs"
+            onClick={(e) => { e.stopPropagation(); setShowDropdown(!showDropdown()); }}
+            title="Show all tabs"
+          >
+            ▼
+          </button>
+          <Show when={showDropdown()}>
+            <div class="absolute right-0 top-full mt-1 z-50 min-w-[160px] max-w-[280px] bg-zinc-800 border border-zinc-700 rounded-lg shadow-xl py-1 max-h-[300px] overflow-y-auto">
+              <For each={tabs()}>
+                {(tab) => (
+                  <button
+                    class={`w-full px-3 py-1.5 text-left text-xs truncate transition-colors ${
+                      tab.id === activeTabId()
+                        ? 'bg-blue-500/20 text-blue-300 font-medium'
+                        : 'text-zinc-300 hover:bg-zinc-700'
+                    }`}
+                    onClick={() => {
+                      windowActions.setActiveTab(props.groupId, tab.id);
+                      setShowDropdown(false);
+                      const tabEl = tabsContainerRef?.querySelector(`[data-tab-id="${tab.id}"]`);
+                      tabEl?.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
+                    }}
+                  >
+                    {tab.title}
+                    {tab.isModified && <span class="ml-1 text-amber-500">●</span>}
+                  </button>
+                )}
+              </For>
+            </div>
+          </Show>
+        </div>
+      </Show>
       <div class="flex-shrink-0 flex items-center gap-0.5 px-1">
         {props.onPopOut && tabs().length > 0 && (
           <button
