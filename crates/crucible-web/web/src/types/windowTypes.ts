@@ -176,6 +176,7 @@ export interface WindowManagerActions {
   executeDrop: () => void;
   moveEdgeTabToCenter: (sourcePosition: EdgePanelPosition, tabId: string, targetGroupId: string) => void;
   moveEdgeTabToEdge: (sourcePosition: EdgePanelPosition, tabId: string, targetPosition: EdgePanelPosition) => void;
+  moveCenterTabToEdge: (sourceGroupId: string, tabId: string, targetPosition: EdgePanelPosition) => void;
   getTabGroup: (groupId: string) => TabGroup | undefined;
   getPaneTabGroupId: (paneId: string) => string | null;
   findPaneById: (paneId: string) => PaneNode | null;

@@ -778,6 +778,110 @@ export const windowActions = {
     windowActions.endDrag();
   },
 
+  moveEdgeTabToCenter(sourcePosition: EdgePanelPosition, tabId: string, targetGroupId: string) {
+    const panel = store.edgePanels[sourcePosition];
+    if (!panel) return;
+    const tab = panel.tabs.find((t) => t.id === tabId);
+    if (!tab) return;
+    const targetGroup = store.tabGroups[targetGroupId];
+    if (!targetGroup) return;
+
+    const { panelPosition: _, ...plainTab } = tab;
+
+    setStore(
+      produce((s) => {
+        const srcPanel = s.edgePanels[sourcePosition];
+        srcPanel.tabs = srcPanel.tabs.filter((t) => t.id !== tabId);
+        srcPanel.activeTabId =
+          srcPanel.activeTabId === tabId
+            ? (srcPanel.tabs[0]?.id ?? null)
+            : srcPanel.activeTabId;
+        if (srcPanel.tabs.length === 0) {
+          srcPanel.isCollapsed = true;
+        }
+
+        s.tabGroups[targetGroupId] = {
+          ...s.tabGroups[targetGroupId]!,
+          tabs: [...s.tabGroups[targetGroupId]!.tabs, plainTab as Tab],
+          activeTabId: tabId,
+        };
+
+        s.focusedRegion = 'center';
+      })
+    );
+  },
+
+  moveEdgeTabToEdge(sourcePosition: EdgePanelPosition, tabId: string, targetPosition: EdgePanelPosition) {
+    if (sourcePosition === targetPosition) return;
+
+    const srcPanel = store.edgePanels[sourcePosition];
+    if (!srcPanel) return;
+    const tab = srcPanel.tabs.find((t) => t.id === tabId);
+    if (!tab) return;
+
+    setStore(
+      produce((s) => {
+        const src = s.edgePanels[sourcePosition];
+        src.tabs = src.tabs.filter((t) => t.id !== tabId);
+        src.activeTabId =
+          src.activeTabId === tabId
+            ? (src.tabs[0]?.id ?? null)
+            : src.activeTabId;
+        if (src.tabs.length === 0) {
+          src.isCollapsed = true;
+        }
+
+        const movedTab: EdgePanelTab = { ...tab, panelPosition: targetPosition };
+        const tgt = s.edgePanels[targetPosition];
+        tgt.tabs.push(movedTab);
+        tgt.activeTabId = tabId;
+
+        s.focusedRegion = targetPosition;
+      })
+    );
+  },
+
+  moveCenterTabToEdge(sourceGroupId: string, tabId: string, targetPosition: EdgePanelPosition) {
+    const sourceGroup = store.tabGroups[sourceGroupId];
+    if (!sourceGroup) return;
+    const tab = sourceGroup.tabs.find((t) => t.id === tabId);
+    if (!tab) return;
+
+    const edgeTab: EdgePanelTab = { ...tab, panelPosition: targetPosition };
+
+    setStore(
+      produce((s) => {
+        const group = s.tabGroups[sourceGroupId]!;
+        const newTabs = group.tabs.filter((t) => t.id !== tabId);
+        const newActiveId =
+          group.activeTabId === tabId
+            ? (newTabs.length > 0 ? newTabs[newTabs.length - 1]!.id : null)
+            : group.activeTabId;
+
+        if (newTabs.length === 0) {
+          delete s.tabGroups[sourceGroupId];
+          s.layout = collapseEmptyNodes(s.layout, s.tabGroups);
+          const firstPane = findFirstPane(s.layout);
+          if (firstPane && (!s.activePaneId || !findPaneInLayout(s.layout, s.activePaneId))) {
+            s.activePaneId = firstPane.id;
+          }
+        } else {
+          s.tabGroups[sourceGroupId] = {
+            ...group,
+            tabs: newTabs,
+            activeTabId: newActiveId,
+          };
+        }
+
+        const tgt = s.edgePanels[targetPosition];
+        tgt.tabs.push(edgeTab);
+        tgt.activeTabId = tabId;
+
+        s.focusedRegion = targetPosition;
+      })
+    );
+  },
+
   getTabGroup(groupId: string) {
     return store.tabGroups[groupId];
   },
