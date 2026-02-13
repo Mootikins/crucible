@@ -56,10 +56,10 @@ export const SplitPane: Component<{ node: LayoutNode }> = (props) => {
 
     const handleMouseUp = () => {
       const ratio = localRatio();
-      setIsDragging(false);
       const currentLayout = windowStore.layout;
       const newLayout = updateSplitRatio(currentLayout, splitId, ratio);
       setStore('layout', newLayout);
+      setIsDragging(false);
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
       cleanupRef = null;
@@ -105,7 +105,7 @@ export const SplitPane: Component<{ node: LayoutNode }> = (props) => {
           'bg-blue-500': isDragging(),
           'bg-zinc-800 hover:bg-zinc-700 active:bg-blue-500': !isDragging(),
         }}
-        onMouseDown={handleMouseDown}
+        onMouseDownCapture={handleMouseDown}
       >
         <div
           classList={{
@@ -113,9 +113,9 @@ export const SplitPane: Component<{ node: LayoutNode }> = (props) => {
           }}
         >
           {isHoriz ? (
-            <IconGripVertical class="w-3 h-6" />
+            <IconGripVertical class="w-1 h-4" />
           ) : (
-            <IconGripHorizontal class="w-6 h-3" />
+            <IconGripHorizontal class="w-4 h-1" />
           )}
         </div>
       </div>
