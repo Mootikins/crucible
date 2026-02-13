@@ -6,6 +6,7 @@ import {
 import type { Tab as TabType } from '@/types/windowTypes';
 import { windowStore, windowActions } from '@/stores/windowStore';
 import { IconGripVertical, IconClose, IconLayout } from './icons';
+import { ChevronDown } from '@/lib/icons';
 
 const Tab: Component<{
   tab: TabType;
@@ -146,15 +147,15 @@ export const TabBar: Component<{
           )}
         </For>
       </div>
-      <Show when={isOverflowing()}>
-        <div class="relative flex-shrink-0">
-          <button
-            class="flex-shrink-0 w-6 h-6 flex items-center justify-center text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800 rounded transition-colors text-xs"
-            onClick={(e) => { e.stopPropagation(); setShowDropdown(!showDropdown()); }}
-            title="Show all tabs"
-          >
-            ▼
-          </button>
+       <Show when={isOverflowing()}>
+         <div class="relative flex-shrink-0">
+           <button
+             class="flex-shrink-0 w-6 h-6 flex items-center justify-center text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800 rounded transition-colors"
+             onClick={(e) => { e.stopPropagation(); setShowDropdown(!showDropdown()); }}
+             title="Show all tabs"
+           >
+             <ChevronDown class="w-3.5 h-3.5" />
+           </button>
           <Show when={showDropdown()}>
             <div class="absolute right-0 top-full mt-1 z-50 min-w-[160px] max-w-[280px] bg-zinc-800 border border-zinc-700 rounded-lg shadow-xl py-1 max-h-[300px] overflow-y-auto">
               <For each={tabs()}>

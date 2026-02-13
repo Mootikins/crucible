@@ -133,7 +133,7 @@ export const EdgePanel: Component<{ position: EdgePanelPosition }> = (props) => 
                 title={tab.title}
                 onClick={() => windowActions.setEdgePanelActiveTab(props.position, tab.id)}
               >
-                <span class="text-xs truncate max-w-[2rem]">{tab.title[0]}</span>
+                {tab.icon ? <tab.icon class="w-4 h-4" /> : <span class="text-xs truncate max-w-[2rem]">{tab.title[0]}</span>}
               </button>
             )}
           </For>
