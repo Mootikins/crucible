@@ -179,7 +179,7 @@ export const FloatingWindow: Component<{ window: FloatingWindowType }> = (props)
         </div>
       </div>
       <div class="flex-1 flex flex-col min-h-0 overflow-hidden">
-        <TabBar groupId={w().tabGroupId} paneId="" />
+        <TabBar mode="center" groupId={w().tabGroupId} paneId="" />
         <div class="flex-1 bg-zinc-900 overflow-auto p-2 text-xs text-zinc-400" data-testid={`panel-content-${tabs()[0]?.contentType ?? 'unknown'}`}>
           {tabs().length > 0 ? (() => {
             const activeTab = tabs()[0];
