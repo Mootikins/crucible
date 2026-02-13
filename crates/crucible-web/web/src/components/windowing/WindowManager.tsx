@@ -113,6 +113,9 @@ function InnerManager() {
   onDragEnd(({ draggable, droppable }) => {
     const source = draggable.data as DragSource | undefined;
     const target = droppable?.data as DropTarget | undefined;
+    console.log('[onDragEnd] source:', source, 'target:', target);
+    console.log('[onDragEnd] sourceType:', source?.type, 'targetType:', target?.type, 'targetData:',
+      target ? JSON.parse(JSON.stringify(target)) : null);
 
     const reorder = reorderState();
     setReorderState(null);
@@ -210,6 +213,7 @@ function InnerManager() {
       } else if (target.type === 'edgePanel') {
         const targetPosition = target.panelId as 'left' | 'right' | 'bottom';
         const panel = windowStore.edgePanels[targetPosition];
+        console.log('[onDragEnd] edgePanel branch, targetPos:', targetPosition, 'panel:', panel);
         if (panel) {
           // Same position → no-op
           if (source.sourcePosition === targetPosition) {

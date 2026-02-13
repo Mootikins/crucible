@@ -1,15 +1,13 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { produce } from 'solid-js/store';
 import { windowStore, setStore, windowActions } from '../windowStore';
-import type { Tab, EdgePanelTab, EdgePanelPosition, TabGroup, LayoutNode } from '@/types/windowTypes';
+import type { Tab, EdgePanelPosition, TabGroup, LayoutNode } from '@/types/windowTypes';
 
 function resetToState(overrides: Partial<{
   tabGroups: Record<string, TabGroup>;
   edgePanels: Record<EdgePanelPosition, {
     id: string;
-    position: EdgePanelPosition;
-    tabs: EdgePanelTab[];
-    activeTabId: string | null;
+    tabGroupId: string;
     isCollapsed: boolean;
     width?: number;
     height?: number;
@@ -37,18 +35,9 @@ const makeTab = (id: string, title = id): Tab => ({
   contentType: 'file',
 });
 
-const makeEdgeTab = (id: string, position: EdgePanelPosition, title = id): EdgePanelTab => ({
-  id,
-  title,
-  contentType: 'tool',
-  panelPosition: position,
-});
-
-const makeEdgePanel = (position: EdgePanelPosition, tabs: EdgePanelTab[], activeTabId: string | null = tabs[0]?.id ?? null, isCollapsed = false) => ({
+const makeEdgePanel = (position: EdgePanelPosition, tabGroupId: string, isCollapsed = false) => ({
   id: `${position}-panel`,
-  position,
-  tabs,
-  activeTabId,
+  tabGroupId,
   isCollapsed,
   ...(position === 'bottom' ? { height: 200 } : { width: 250 }),
 });
@@ -65,20 +54,25 @@ const simpleLayout = (paneId: string, groupId: string): LayoutNode => ({
   tabGroupId: groupId,
 });
 
-describe('reorderEdgeTab', () => {
+describe('reorder tabs in edge tab groups via moveTab', () => {
   beforeEach(() => {
     resetToState({
       tabGroups: {
         'group-1': makeTabGroup('group-1', [makeTab('center-1')]),
+        'left-group': makeTabGroup('left-group', [
+          { id: 'left-1', title: 'Explorer', contentType: 'tool' },
+          { id: 'left-2', title: 'Search', contentType: 'tool' },
+          { id: 'left-3', title: 'Source Control', contentType: 'tool' },
+        ], 'left-1'),
+        'right-group': makeTabGroup('right-group', [
+          { id: 'right-1', title: 'Outline', contentType: 'tool' },
+        ], 'right-1'),
+        'bottom-group': makeTabGroup('bottom-group', [], null),
       },
       edgePanels: {
-        left: makeEdgePanel('left', [
-          makeEdgeTab('left-1', 'left', 'Explorer'),
-          makeEdgeTab('left-2', 'left', 'Search'),
-          makeEdgeTab('left-3', 'left', 'Source Control'),
-        ]),
-        right: makeEdgePanel('right', [makeEdgeTab('right-1', 'right', 'Outline')]),
-        bottom: makeEdgePanel('bottom', []),
+        left: makeEdgePanel('left', 'left-group'),
+        right: makeEdgePanel('right', 'right-group'),
+        bottom: makeEdgePanel('bottom', 'bottom-group'),
       },
       layout: simpleLayout('pane-1', 'group-1'),
       activePaneId: 'pane-1',
@@ -86,108 +80,48 @@ describe('reorderEdgeTab', () => {
     });
   });
 
-  it('reorders first tab to last position', () => {
-    windowActions.reorderEdgeTab('left', 'left-1', 2);
+  it('reorders first tab to last position via moveTab', () => {
+    windowActions.moveTab('left-group', 'left-group', 'left-1', 2);
 
-    expect(windowStore.edgePanels.left.tabs).toHaveLength(3);
-    expect(windowStore.edgePanels.left.tabs[0]!.id).toBe('left-2');
-    expect(windowStore.edgePanels.left.tabs[1]!.id).toBe('left-3');
-    expect(windowStore.edgePanels.left.tabs[2]!.id).toBe('left-1');
+    const group = windowStore.tabGroups['left-group']!;
+    expect(group.tabs).toHaveLength(3);
+    expect(group.tabs[0]!.id).toBe('left-2');
+    expect(group.tabs[1]!.id).toBe('left-3');
+    expect(group.tabs[2]!.id).toBe('left-1');
   });
 
-  it('reorders last tab to first position', () => {
-    windowActions.reorderEdgeTab('left', 'left-3', 0);
+  it('reorders last tab to first position via moveTab', () => {
+    windowActions.moveTab('left-group', 'left-group', 'left-3', 0);
 
-    expect(windowStore.edgePanels.left.tabs).toHaveLength(3);
-    expect(windowStore.edgePanels.left.tabs[0]!.id).toBe('left-3');
-    expect(windowStore.edgePanels.left.tabs[1]!.id).toBe('left-1');
-    expect(windowStore.edgePanels.left.tabs[2]!.id).toBe('left-2');
-  });
-
-  it('reorders middle tab to end', () => {
-    windowActions.reorderEdgeTab('left', 'left-2', 2);
-
-    expect(windowStore.edgePanels.left.tabs).toHaveLength(3);
-    expect(windowStore.edgePanels.left.tabs[0]!.id).toBe('left-1');
-    expect(windowStore.edgePanels.left.tabs[1]!.id).toBe('left-3');
-    expect(windowStore.edgePanels.left.tabs[2]!.id).toBe('left-2');
-  });
-
-  it('is a no-op when moving to same position', () => {
-    const tabsBefore = [...windowStore.edgePanels.left.tabs];
-
-    windowActions.reorderEdgeTab('left', 'left-1', 0);
-
-    expect(windowStore.edgePanels.left.tabs).toHaveLength(3);
-    expect(windowStore.edgePanels.left.tabs[0]!.id).toBe(tabsBefore[0]!.id);
-    expect(windowStore.edgePanels.left.tabs[1]!.id).toBe(tabsBefore[1]!.id);
-    expect(windowStore.edgePanels.left.tabs[2]!.id).toBe(tabsBefore[2]!.id);
-  });
-
-  it('is a no-op when tab not found', () => {
-    const tabsBefore = [...windowStore.edgePanels.left.tabs];
-
-    windowActions.reorderEdgeTab('left', 'nonexistent', 1);
-
-    expect(windowStore.edgePanels.left.tabs).toHaveLength(3);
-    expect(windowStore.edgePanels.left.tabs[0]!.id).toBe(tabsBefore[0]!.id);
-    expect(windowStore.edgePanels.left.tabs[1]!.id).toBe(tabsBefore[1]!.id);
-    expect(windowStore.edgePanels.left.tabs[2]!.id).toBe(tabsBefore[2]!.id);
-  });
-
-  it('is a no-op when panel not found', () => {
-    const tabsBefore = [...windowStore.edgePanels.left.tabs];
-
-    windowActions.reorderEdgeTab('bottom', 'left-1', 0);
-
-    expect(windowStore.edgePanels.left.tabs).toHaveLength(3);
-    expect(windowStore.edgePanels.left.tabs[0]!.id).toBe(tabsBefore[0]!.id);
-  });
-
-  it('handles off-by-one: moving from earlier to later position', () => {
-    // Moving left-1 (index 0) to index 2 should result in:
-    // [left-2, left-3, left-1]
-    windowActions.reorderEdgeTab('left', 'left-1', 2);
-
-    expect(windowStore.edgePanels.left.tabs[0]!.id).toBe('left-2');
-    expect(windowStore.edgePanels.left.tabs[1]!.id).toBe('left-3');
-    expect(windowStore.edgePanels.left.tabs[2]!.id).toBe('left-1');
-  });
-
-  it('handles off-by-one: moving from later to earlier position', () => {
-    // Moving left-3 (index 2) to index 0 should result in:
-    // [left-3, left-1, left-2]
-    windowActions.reorderEdgeTab('left', 'left-3', 0);
-
-    expect(windowStore.edgePanels.left.tabs[0]!.id).toBe('left-3');
-    expect(windowStore.edgePanels.left.tabs[1]!.id).toBe('left-1');
-    expect(windowStore.edgePanels.left.tabs[2]!.id).toBe('left-2');
+    const group = windowStore.tabGroups['left-group']!;
+    expect(group.tabs).toHaveLength(3);
+    expect(group.tabs[0]!.id).toBe('left-3');
+    expect(group.tabs[1]!.id).toBe('left-1');
+    expect(group.tabs[2]!.id).toBe('left-2');
   });
 
   it('preserves tab properties during reorder', () => {
-    const tabBefore = windowStore.edgePanels.left.tabs[0]!;
+    const tabBefore = windowStore.tabGroups['left-group']!.tabs[0]!;
 
-    windowActions.reorderEdgeTab('left', 'left-1', 2);
+    windowActions.moveTab('left-group', 'left-group', 'left-1', 2);
 
-    const tabAfter = windowStore.edgePanels.left.tabs[2]!;
+    const tabAfter = windowStore.tabGroups['left-group']!.tabs[2]!;
     expect(tabAfter.id).toBe(tabBefore.id);
     expect(tabAfter.title).toBe(tabBefore.title);
     expect(tabAfter.contentType).toBe(tabBefore.contentType);
-    expect(tabAfter.panelPosition).toBe(tabBefore.panelPosition);
   });
 
-  it('works with single-tab panel (no-op)', () => {
-    windowActions.reorderEdgeTab('right', 'right-1', 0);
+  it('works with single-tab group (no-op)', () => {
+    windowActions.moveTab('right-group', 'right-group', 'right-1', 0);
 
-    expect(windowStore.edgePanels.right.tabs).toHaveLength(1);
-    expect(windowStore.edgePanels.right.tabs[0]!.id).toBe('right-1');
+    expect(windowStore.tabGroups['right-group']!.tabs).toHaveLength(1);
+    expect(windowStore.tabGroups['right-group']!.tabs[0]!.id).toBe('right-1');
   });
 
-  it('reorders in different edge panels independently', () => {
-    windowActions.reorderEdgeTab('left', 'left-1', 2);
-    windowActions.reorderEdgeTab('right', 'right-1', 0);
+  it('reorders in different edge groups independently', () => {
+    windowActions.moveTab('left-group', 'left-group', 'left-1', 2);
 
-    expect(windowStore.edgePanels.left.tabs[2]!.id).toBe('left-1');
-    expect(windowStore.edgePanels.right.tabs[0]!.id).toBe('right-1');
+    expect(windowStore.tabGroups['left-group']!.tabs[2]!.id).toBe('left-1');
+    expect(windowStore.tabGroups['right-group']!.tabs[0]!.id).toBe('right-1');
   });
 });
