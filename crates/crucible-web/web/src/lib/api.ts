@@ -552,3 +552,42 @@ export function generateMessageId(): string {
 //   }
 //   return `You said: "${message}"\n\nThis is a mock response.`;
 // }
+
+// =============================================================================
+// Layout Persistence Endpoints
+// =============================================================================
+
+import type { SerializedLayout } from './layout-serializer';
+
+export async function saveLayout(layout: SerializedLayout): Promise<void> {
+  const res = await fetch('/api/layout', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(layout),
+  });
+  if (!res.ok) {
+    console.warn(`Failed to save layout: HTTP ${res.status}`);
+  }
+}
+
+export async function loadLayout(): Promise<SerializedLayout | null> {
+  try {
+    const res = await fetch('/api/layout');
+    if (res.status === 404) return null;
+    if (!res.ok) {
+      console.warn(`Failed to load layout: HTTP ${res.status}`);
+      return null;
+    }
+    return (await res.json()) as SerializedLayout;
+  } catch (err) {
+    console.warn('Failed to load layout:', err);
+    return null;
+  }
+}
+
+export async function resetLayout(): Promise<void> {
+  const res = await fetch('/api/layout', { method: 'DELETE' });
+  if (!res.ok) {
+    console.warn(`Failed to reset layout: HTTP ${res.status}`);
+  }
+}
