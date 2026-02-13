@@ -1,13 +1,10 @@
-import { Component, Show, For, createSignal, onCleanup } from 'solid-js';
+import { Component, Show, For, onCleanup } from 'solid-js';
 import { windowStore, windowActions } from '@/stores/windowStore';
-import type { EdgePanelPosition, EdgePanelTab } from '@/types/windowTypes';
+import type { EdgePanelPosition } from '@/types/windowTypes';
 import {
   IconPanelLeft,
-  IconPanelLeftClose,
   IconPanelRight,
-  IconPanelRightClose,
   IconPanelBottom,
-  IconPanelBottomClose,
   IconGripVertical,
   IconGripHorizontal,
 } from './icons';
@@ -82,7 +79,7 @@ function EdgePanelResizeHandle(props: { position: EdgePanelPosition }) {
         'w-1': isVertical(),
         'h-1': !isVertical(),
       }}
-      style={isVertical() ? { minWidth: '4px' } : { minHeight: '4px' }}
+      style={isVertical() ? { 'min-width': '4px' } : { 'min-height': '4px' }}
       onMouseDown={handleMouseDown}
     >
       <div
@@ -108,14 +105,6 @@ export const EdgePanel: Component<{ position: EdgePanelPosition }> = (props) => 
     const p = panel();
     const tab = p.tabs.find((t) => t.id === p.activeTabId);
     return tab ?? null;
-  };
-
-  const PanelIcon = () => {
-    if (props.position === 'left')
-      return isCollapsed() ? <IconPanelLeft /> : <IconPanelLeftClose />;
-    if (props.position === 'right')
-      return isCollapsed() ? <IconPanelRight /> : <IconPanelRightClose />;
-    return isCollapsed() ? <IconPanelBottom /> : <IconPanelBottomClose />;
   };
 
   return (
@@ -182,17 +171,11 @@ export const EdgePanel: Component<{ position: EdgePanelPosition }> = (props) => 
           }}
           style={
             isVertical()
-              ? { width: panel().width ? `${panel().width}px` : '250px', minWidth: 0 }
-              : { height: panel().height ? `${panel().height}px` : '200px', minHeight: 0 }
+              ? { width: panel().width ? `${panel().width}px` : '250px', 'min-width': '0' }
+              : { height: panel().height ? `${panel().height}px` : '200px', 'min-height': '0' }
           }
         >
-          <div
-            classList={{
-              'flex border-b border-zinc-800': true,
-              'flex-row': !isVertical(),
-              'flex-col': isVertical(),
-            }}
-          >
+          <div class="flex flex-row border-b border-zinc-800">
             <For each={panel().tabs}>
               {(tab) => (
                 <button

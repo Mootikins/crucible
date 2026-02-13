@@ -55,7 +55,7 @@ export const VolumeMeter: Component<VolumeMeterProps> = (props) => {
           stroke="rgb(239, 68, 68)" /* red-500 */
           stroke-width={strokeWidth}
           stroke-linecap="round"
-          stroke-dasharray={circumference()}
+          stroke-dasharray={String(circumference())}
           stroke-dashoffset={dashOffset()}
           style={{ transition: 'stroke-dashoffset 50ms ease-out' }}
         />
