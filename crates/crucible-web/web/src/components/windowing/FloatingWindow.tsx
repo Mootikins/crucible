@@ -10,11 +10,11 @@ const MIN_WIDTH = 200;
 const MIN_HEIGHT = 150;
 
 const HANDLE_DEFS: { edge: ResizeEdge; cursor: string; style: Record<string, string> }[] = [
-  // Edges (4px strips)
-  { edge: 'n',  cursor: 'n-resize',  style: { top: '-2px', left: '12px', right: '12px', height: '5px', 'z-index': '1' } },
-  { edge: 's',  cursor: 's-resize',  style: { bottom: '-2px', left: '12px', right: '12px', height: '5px', 'z-index': '1' } },
-  { edge: 'w',  cursor: 'w-resize',  style: { left: '-2px', top: '12px', bottom: '12px', width: '5px', 'z-index': '1' } },
-  { edge: 'e',  cursor: 'e-resize',  style: { right: '-2px', top: '12px', bottom: '12px', width: '5px', 'z-index': '1' } },
+  // Edges (6px strips)
+  { edge: 'n',  cursor: 'n-resize',  style: { top: '-2px', left: '12px', right: '12px', height: '6px', 'z-index': '1' } },
+  { edge: 's',  cursor: 's-resize',  style: { bottom: '-2px', left: '12px', right: '12px', height: '6px', 'z-index': '1' } },
+  { edge: 'w',  cursor: 'w-resize',  style: { left: '-2px', top: '12px', bottom: '12px', width: '6px', 'z-index': '1' } },
+  { edge: 'e',  cursor: 'e-resize',  style: { right: '-2px', top: '12px', bottom: '12px', width: '6px', 'z-index': '1' } },
   // Corners (12x12, higher z-index)
   { edge: 'nw', cursor: 'nw-resize', style: { top: '-2px', left: '-2px', width: '12px', height: '12px', 'z-index': '2' } },
   { edge: 'ne', cursor: 'ne-resize', style: { top: '-2px', right: '-2px', width: '12px', height: '12px', 'z-index': '2' } },
@@ -154,9 +154,9 @@ export const FloatingWindow: Component<{ window: FloatingWindowType }> = (props)
         class="flex items-center justify-between px-2 py-1 bg-zinc-800 border-b border-zinc-700 cursor-grab active:cursor-grabbing select-none"
         onMouseDown={handleTitleMouseDown}
       >
-        <span class="text-xs font-medium text-zinc-300 truncate">
-          {w().title ?? (tabs()[0]?.title ?? 'Window')}
-        </span>
+         <span class="text-xs font-medium text-zinc-300 truncate">
+           {w().title ?? 'Window'}
+         </span>
         <div class="flex items-center gap-0.5">
           <button
             type="button"

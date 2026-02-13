@@ -93,8 +93,8 @@ const SplitPaneInner: Component<{ node: Extract<LayoutNode, { type: 'split' }> }
         data-split-id={split().id}
         classList={{
           'group relative flex-shrink-0 z-10 pointer-events-auto transition-colors': true,
-          'w-2 cursor-col-resize': split().direction === 'horizontal',
-          'h-2 cursor-row-resize': split().direction !== 'horizontal',
+          'w-1.5 cursor-col-resize': split().direction === 'horizontal',
+          'h-1.5 cursor-row-resize': split().direction !== 'horizontal',
           'bg-blue-500': isDragging(),
           'bg-zinc-800 hover:bg-zinc-700 active:bg-blue-500': !isDragging(),
         }}

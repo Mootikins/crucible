@@ -95,14 +95,6 @@ export const Pane: Component<{ paneId: string }> = (props) => {
       case 'file':
         return (
           <div class="flex-1 bg-zinc-900 overflow-auto p-4">
-            <div class="flex items-center gap-2 mb-4 pb-3 border-b border-zinc-800">
-              <span class="text-sm text-zinc-300">{tab.title}</span>
-              {tab.isModified && (
-                <span class="text-xs text-amber-500 px-1.5 py-0.5 bg-amber-500/10 rounded">
-                  Modified
-                </span>
-              )}
-            </div>
             <pre class="text-sm font-mono text-zinc-300 whitespace-pre-wrap">
               {`// ${tab.title}\nimport { createRoot } from 'solid-js/web'\nimport App from './App'\n\nconst root = document.getElementById('root')\nif (root) createRoot(root).render(() => <App />)\n`}
             </pre>
@@ -127,7 +119,6 @@ export const Pane: Component<{ paneId: string }> = (props) => {
               <div class="w-64 h-40 bg-zinc-700 rounded-lg flex items-center justify-center">
                 <span class="text-zinc-500">Preview</span>
               </div>
-              <p class="text-sm text-zinc-400 mt-3 text-center">{tab.title}</p>
             </div>
           </div>
         );
@@ -144,7 +135,6 @@ export const Pane: Component<{ paneId: string }> = (props) => {
       case 'tool':
         return (
           <div class="flex-1 bg-zinc-900 overflow-auto p-4">
-            <div class="text-zinc-300 text-sm">Tool: {tab.title}</div>
           </div>
         );
       default:
