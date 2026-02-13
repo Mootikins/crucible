@@ -95,10 +95,10 @@ function DragOverlayContent() {
   const data = () => draggable()?.data as DragSource | undefined;
 
   return (
-    <Show when={data()?.type === 'tab'}>
+    <Show when={data()?.type === 'tab' || data()?.type === 'edgeTab'}>
       <div class="px-2.5 py-1.5 bg-zinc-800 border border-zinc-600 rounded shadow-lg text-xs text-zinc-200 flex items-center gap-1.5 opacity-90">
         <span class="font-medium truncate max-w-[120px]">
-          {(() => { const d = data(); return d?.type === 'tab' ? d.tab.title : ''; })()}
+          {(() => { const d = data(); return (d?.type === 'tab' || d?.type === 'edgeTab') ? d.tab.title : ''; })()}
         </span>
       </div>
     </Show>
