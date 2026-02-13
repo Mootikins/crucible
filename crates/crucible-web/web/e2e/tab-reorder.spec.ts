@@ -74,13 +74,23 @@ test.describe('Tab reorder within same bar', () => {
     const lastTab = page.locator('[data-tab-id="tab-4"]');
     const firstTab = page.locator('[data-tab-id="tab-1"]');
 
+    const initialOrder = await firstTab
+      .locator('..')
+      .locator('[data-tab-id]')
+      .evaluateAll((els) => els.map((el) => el.getAttribute('data-tab-id')));
+
+    expect(initialOrder.indexOf('tab-4')).toBeGreaterThan(initialOrder.indexOf('tab-1'));
+
+    await lastTab.scrollIntoViewIfNeeded();
+    await page.waitForTimeout(100);
+
     const from = await getCenterOf(page, lastTab);
     const firstBox = await firstTab.boundingBox();
     expect(firstBox).toBeTruthy();
-    const to = { x: firstBox!.x - 5, y: firstBox!.y + firstBox!.height / 2 };
+    const to = { x: firstBox!.x + firstBox!.width / 4, y: firstBox!.y + firstBox!.height / 2 };
 
-    await pointerDrag(page, from, to);
-    await page.waitForTimeout(300);
+    await pointerDrag(page, from, to, 15);
+    await page.waitForTimeout(500);
 
     const newOrder = await firstTab
       .locator('..')
