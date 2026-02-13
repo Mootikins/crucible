@@ -161,6 +161,7 @@ const CenterTabBar: Component<{
   createEffect(() => {
     if (!isSameBarDrag() || !tabsContainerRef) {
       setInsertIdx(null);
+      setReorderState(null);
       return;
     }
     const sensor = dndCtx?.[0]?.active?.sensor;
@@ -350,6 +351,7 @@ const EdgeTabBar: Component<{
   createEffect(() => {
     if (!isSameBarDrag() || !containerRef) {
       setInsertIdx(null);
+      setReorderState(null);
       return;
     }
     const sensor = dndCtx?.[0]?.active?.sensor;
@@ -440,4 +442,3 @@ export const TabBar: Component<TabBarProps> = (props) => {
     />
   );
 };
-
