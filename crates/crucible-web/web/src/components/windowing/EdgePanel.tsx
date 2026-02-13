@@ -91,9 +91,9 @@ function EdgePanelResizeHandle(props: { position: EdgePanelPosition }) {
         }}
       >
         {isVertical() ? (
-          <IconGripVertical class="w-3 h-6" />
+          <IconGripVertical class="w-1 h-4" />
         ) : (
-          <IconGripHorizontal class="w-6 h-3" />
+          <IconGripHorizontal class="w-4 h-1" />
         )}
       </div>
     </div>
@@ -189,8 +189,8 @@ export const EdgePanel: Component<{ position: EdgePanelPosition }> = (props) => 
           <div
             classList={{
               'flex border-b border-zinc-800': true,
-              'flex-row': isVertical(),
-              'flex-col': !isVertical(),
+              'flex-row': !isVertical(),
+              'flex-col': isVertical(),
             }}
           >
             <For each={panel().tabs}>
