@@ -1,5 +1,6 @@
 import { Component, Show, For, onCleanup } from 'solid-js';
 import { Dynamic } from 'solid-js/web';
+import { createDroppable } from '@thisbeyond/solid-dnd';
 import { windowStore, windowActions } from '@/stores/windowStore';
 import type { EdgePanelPosition } from '@/types/windowTypes';
 import {
@@ -10,6 +11,7 @@ import {
   IconGripHorizontal,
 } from './icons';
 import { getGlobalRegistry } from '@/lib/panel-registry';
+import { TabBar } from './TabBar';
 
 const EDGE_PANEL_MIN_WIDTH = 120;
 const EDGE_PANEL_MAX_WIDTH = 600;
@@ -105,6 +107,67 @@ function EdgePanelResizeHandle(props: { position: EdgePanelPosition }) {
   );
 }
 
+const CollapsedEdgeStrip: Component<{ position: EdgePanelPosition }> = (props) => {
+  const panel = () => windowStore.edgePanels[props.position];
+  const isVertical = () => props.position === 'left' || props.position === 'right';
+
+  const droppable = createDroppable(`edgepanel-collapsed:${props.position}`, {
+    type: 'edgePanel',
+    panelId: props.position,
+  });
+
+  return (
+    <div
+      use:droppable
+      data-testid={`edge-collapsed-drop-${props.position}`}
+      classList={{
+        'flex bg-zinc-900/95 border-zinc-800 transition-colors': true,
+        'flex-col border-r': isVertical(),
+        'flex-row border-t': !isVertical(),
+        'bg-blue-500/20': droppable.isActiveDroppable,
+      }}
+    >
+      <For each={panel().tabs}>
+        {(tab) => (
+          <button
+            type="button"
+            data-testid={`collapsed-tab-button-${props.position}`}
+            classList={{
+              'flex items-center justify-center transition-all duration-150': true,
+              'w-10 h-10': isVertical(),
+              'h-9 px-3': !isVertical(),
+              'bg-zinc-800 text-zinc-100': panel().activeTabId === tab.id,
+              'text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50':
+                panel().activeTabId !== tab.id,
+            }}
+            title={tab.title}
+            onClick={() => {
+              windowActions.setEdgePanelActiveTab(props.position, tab.id);
+              windowActions.openFlyout(props.position, tab.id);
+            }}
+          >
+            {tab.icon ? <tab.icon class="w-4 h-4" /> : <span class="text-xs truncate max-w-[2rem]">{tab.title[0]}</span>}
+          </button>
+        )}
+      </For>
+      <button
+        type="button"
+        classList={{
+          'flex items-center justify-center text-zinc-600 hover:text-zinc-300 hover:bg-zinc-800/50 transition-colors': true,
+          'w-10 h-10 mt-auto': isVertical(),
+          'h-9 px-2': !isVertical(),
+        }}
+        title="Expand panel"
+        onClick={() => windowActions.toggleEdgePanel(props.position)}
+      >
+        {props.position === 'left' && <IconPanelLeft />}
+        {props.position === 'right' && <IconPanelRight />}
+        {props.position === 'bottom' && <IconPanelBottom />}
+      </button>
+    </div>
+  );
+};
+
 export const EdgePanel: Component<{ position: EdgePanelPosition }> = (props) => {
   const panel = () => windowStore.edgePanels[props.position];
   const isCollapsed = () => panel().isCollapsed;
@@ -118,53 +181,7 @@ export const EdgePanel: Component<{ position: EdgePanelPosition }> = (props) => 
   return (
     <Show
       when={!isCollapsed()}
-      fallback={
-        <div
-          classList={{
-            'flex bg-zinc-900/95 border-zinc-800': true,
-            'flex-col border-r': isVertical(),
-            'flex-row border-t': !isVertical(),
-          }}
-        >
-          <For each={panel().tabs}>
-            {(tab) => (
-              <button
-                type="button"
-                data-testid={`collapsed-tab-button-${props.position}`}
-                classList={{
-                  'flex items-center justify-center transition-all duration-150': true,
-                  'w-10 h-10': isVertical(),
-                  'h-9 px-3': !isVertical(),
-                  'bg-zinc-800 text-zinc-100': panel().activeTabId === tab.id,
-                  'text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50':
-                    panel().activeTabId !== tab.id,
-                }}
-                title={tab.title}
-                onClick={() => {
-                  windowActions.setEdgePanelActiveTab(props.position, tab.id);
-                  windowActions.openFlyout(props.position, tab.id);
-                }}
-              >
-                {tab.icon ? <tab.icon class="w-4 h-4" /> : <span class="text-xs truncate max-w-[2rem]">{tab.title[0]}</span>}
-              </button>
-            )}
-          </For>
-          <button
-            type="button"
-            classList={{
-              'flex items-center justify-center text-zinc-600 hover:text-zinc-300 hover:bg-zinc-800/50 transition-colors': true,
-              'w-10 h-10 mt-auto': isVertical(),
-              'h-9 px-2': !isVertical(),
-            }}
-            title="Expand panel"
-            onClick={() => windowActions.toggleEdgePanel(props.position)}
-          >
-            {props.position === 'left' && <IconPanelLeft />}
-            {props.position === 'right' && <IconPanelRight />}
-            {props.position === 'bottom' && <IconPanelBottom />}
-          </button>
-        </div>
-      }
+      fallback={<CollapsedEdgeStrip position={props.position} />}
     >
       <div
         classList={{
@@ -187,32 +204,12 @@ export const EdgePanel: Component<{ position: EdgePanelPosition }> = (props) => 
               : { height: panel().height ? `${panel().height}px` : '200px', 'min-height': '0' }
           }
         >
-          <div class="flex flex-row border-b border-zinc-800">
-            {(() => {
-              const isFocused = () => windowStore.focusedRegion === props.position;
-              return (
-                <For each={panel().tabs}>
-                  {(tab) => (
-                    <button
-                      type="button"
-                      classList={{
-                        'group relative flex items-center gap-1.5 transition-all duration-150 cursor-pointer border-b-2': true,
-                        'px-2 py-1.5': true,
-                        'bg-zinc-800 text-zinc-100': panel().activeTabId === tab.id,
-                        'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/50': panel().activeTabId !== tab.id,
-                        'border-blue-500': panel().activeTabId === tab.id && isFocused(),
-                        'border-zinc-600': panel().activeTabId === tab.id && !isFocused(),
-                        'border-transparent': panel().activeTabId !== tab.id,
-                      }}
-                      onClick={() => windowActions.setEdgePanelActiveTab(props.position, tab.id)}
-                    >
-                      <span class="text-xs font-medium truncate max-w-[100px]">{tab.title}</span>
-                    </button>
-                  )}
-                </For>
-              );
-            })()}
-          </div>
+          <TabBar
+            mode="edge"
+            position={props.position}
+            tabs={panel().tabs}
+            activeTabId={panel().activeTabId}
+          />
           <div class="flex-1 overflow-auto p-2 text-xs text-zinc-400" data-testid={`panel-content-${activeTab()?.contentType ?? 'unknown'}`}>
             <Show when={activeTab()} fallback={<span>Select a tab</span>}>
               {(tab) => {
