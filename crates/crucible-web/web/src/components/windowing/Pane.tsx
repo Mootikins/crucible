@@ -160,7 +160,7 @@ export const Pane: Component<{ paneId: string }> = (props) => {
       use:centerDroppable
       classList={{
         'relative flex flex-col h-full overflow-hidden transition-all': true,
-        'ring-1 ring-blue-500/30': isActive(),
+        'ring-1 ring-blue-500/30': isActive() && windowStore.focusedRegion === 'center',
         'bg-blue-500/5': centerDroppable.isActiveDroppable,
       }}
       onClick={() => windowActions.setActivePane(props.paneId)}
