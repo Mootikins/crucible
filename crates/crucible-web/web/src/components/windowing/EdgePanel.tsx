@@ -176,26 +176,30 @@ export const EdgePanel: Component<{ position: EdgePanelPosition }> = (props) => 
           }
         >
           <div class="flex flex-row border-b border-zinc-800">
-            <For each={panel().tabs}>
-              {(tab) => (
-                <button
-                  type="button"
-                  classList={{
-                    'group relative flex items-center gap-1.5 transition-all duration-150 cursor-pointer': true,
-                    'flex-row px-2 py-1.5 border-b border-zinc-800': isVertical(),
-                    'flex-row px-2 py-1.5': !isVertical(),
-                    'bg-zinc-800 text-zinc-100': panel().activeTabId === tab.id,
-                    'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/50':
-                      panel().activeTabId !== tab.id,
-                    'border-b-2 border-blue-500': !isVertical() && panel().activeTabId === tab.id,
-                    'border-b-2 border-transparent': !isVertical() && panel().activeTabId !== tab.id,
-                  }}
-                  onClick={() => windowActions.setEdgePanelActiveTab(props.position, tab.id)}
-                >
-                  <span class="text-xs font-medium truncate max-w-[100px]">{tab.title}</span>
-                </button>
-              )}
-            </For>
+            {(() => {
+              const isFocused = () => windowStore.focusedRegion === props.position;
+              return (
+                <For each={panel().tabs}>
+                  {(tab) => (
+                    <button
+                      type="button"
+                      classList={{
+                        'group relative flex items-center gap-1.5 transition-all duration-150 cursor-pointer border-b-2': true,
+                        'px-2 py-1.5': true,
+                        'bg-zinc-800 text-zinc-100': panel().activeTabId === tab.id,
+                        'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/50': panel().activeTabId !== tab.id,
+                        'border-blue-500': panel().activeTabId === tab.id && isFocused(),
+                        'border-zinc-600': panel().activeTabId === tab.id && !isFocused(),
+                        'border-transparent': panel().activeTabId !== tab.id,
+                      }}
+                      onClick={() => windowActions.setEdgePanelActiveTab(props.position, tab.id)}
+                    >
+                      <span class="text-xs font-medium truncate max-w-[100px]">{tab.title}</span>
+                    </button>
+                  )}
+                </For>
+              );
+            })()}
           </div>
           <div class="flex-1 overflow-auto p-2 text-xs text-zinc-400">
             <Show when={activeTab()} fallback={<span>Select a tab</span>}>

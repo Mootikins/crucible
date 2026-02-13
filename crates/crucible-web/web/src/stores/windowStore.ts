@@ -7,6 +7,7 @@ import type {
   EdgePanel as EdgePanelType,
   EdgePanelTab,
   EdgePanelPosition,
+  FocusedRegion,
   FloatingWindow,
   SplitDirection,
   DragSource,
@@ -103,6 +104,7 @@ export interface WindowState {
   edgePanels: Record<EdgePanelPosition, EdgePanelType>;
   floatingWindows: FloatingWindow[];
   activePaneId: string | null;
+  focusedRegion: FocusedRegion;
   dragState: {
     isDragging: boolean;
     source: DragSource | null;
@@ -238,6 +240,7 @@ function createInitialState(): WindowState {
     },
     floatingWindows: [] as FloatingWindow[],
     activePaneId: mainPaneId,
+    focusedRegion: 'center' as FocusedRegion,
     dragState: null as {
       isDragging: boolean;
       source: DragSource | null;
@@ -283,6 +286,7 @@ export const windowActions = {
           const firstPane = findFirstPane(s.layout);
           if (firstPane && (!s.activePaneId || !findPaneInLayout(s.layout, s.activePaneId))) {
             s.activePaneId = firstPane.id;
+            s.focusedRegion = 'center';
           }
         })
       );
@@ -353,6 +357,7 @@ export const windowActions = {
           const firstPane = findFirstPane(s.layout);
           if (firstPane && (!s.activePaneId || !findPaneInLayout(s.layout, s.activePaneId))) {
             s.activePaneId = firstPane.id;
+            s.focusedRegion = 'center';
           }
         }
       })
@@ -386,6 +391,7 @@ export const windowActions = {
             tabGroupId: groupId,
           }));
           s.activePaneId = paneId;
+          s.focusedRegion = 'center';
         }
       })
     );
@@ -439,6 +445,7 @@ export const windowActions = {
           delete s.tabGroups[pane.tabGroupId];
         }
         s.activePaneId = (newSplit as Extract<LayoutNode, { type: 'split' }>).second.id;
+        s.focusedRegion = 'center';
       })
     );
   },
@@ -462,6 +469,7 @@ export const windowActions = {
           activeTabId: tabId,
         };
         s.activePaneId = newPaneId;
+        s.focusedRegion = 'center';
       })
     );
     windowActions.moveTab(sourceGroupId, newGroupId, tabId);
@@ -469,6 +477,7 @@ export const windowActions = {
 
   setActivePane(paneId: string | null) {
     setStore('activePaneId', paneId);
+    setStore('focusedRegion', 'center');
   },
 
   toggleEdgePanel(position: EdgePanelPosition) {
@@ -487,6 +496,7 @@ export const windowActions = {
 
   setEdgePanelActiveTab(position: EdgePanelPosition, tabId: string | null) {
     setStore('edgePanels', position, 'activeTabId', tabId);
+    setStore('focusedRegion', position);
   },
 
   setEdgePanelSize(position: EdgePanelPosition, size: number) {
@@ -641,6 +651,7 @@ export const windowActions = {
             }));
             s.floatingWindows = s.floatingWindows.filter((w) => w.id !== windowId);
             s.activePaneId = targetPaneId;
+            s.focusedRegion = 'center';
           })
         );
         return;
@@ -664,6 +675,7 @@ export const windowActions = {
           }));
           s.floatingWindows = s.floatingWindows.filter((w) => w.id !== windowId);
           s.activePaneId = firstEmpty.id;
+          s.focusedRegion = 'center';
         })
       );
       return;
@@ -694,6 +706,7 @@ export const windowActions = {
               : replacePaneWithSplit(s.layout, mainPane.id, newSplit);
           s.floatingWindows = s.floatingWindows.filter((w) => w.id !== windowId);
           s.activePaneId = newPaneId;
+          s.focusedRegion = 'center';
         })
       );
     }
@@ -785,6 +798,7 @@ export const windowActions = {
       s.edgePanels = restored.edgePanels as Record<EdgePanelPosition, EdgePanelType>;
       s.floatingWindows = restored.floatingWindows;
       s.activePaneId = null;
+      s.focusedRegion = 'center';
       s.dragState = null;
       s.flyoutState = null;
       s.nextZIndex = 100;
