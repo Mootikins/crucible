@@ -5,7 +5,6 @@ import type {
   Tab,
   TabGroup,
   EdgePanel as EdgePanelType,
-  EdgePanelTab,
   EdgePanelPosition,
   FocusedRegion,
   FloatingWindow,
@@ -174,28 +173,31 @@ const createSampleTabs2 = (): Tab[] => [
   { id: 'tab-6', title: 'preview.png', contentType: 'preview', isModified: false, icon: Palette },
 ];
 
-const createLeftPanelTabs = (): EdgePanelTab[] => [
-  { id: 'explorer-tab', title: 'Explorer', contentType: 'tool', panelPosition: 'left', icon: FolderTree },
-  { id: 'search-tab', title: 'Search', contentType: 'tool', panelPosition: 'left', icon: Search },
-  { id: 'git-tab', title: 'Source Control', contentType: 'tool', panelPosition: 'left', icon: GitBranch },
+const createLeftPanelTabs = (): Tab[] => [
+  { id: 'explorer-tab', title: 'Explorer', contentType: 'tool', icon: FolderTree },
+  { id: 'search-tab', title: 'Search', contentType: 'tool', icon: Search },
+  { id: 'git-tab', title: 'Source Control', contentType: 'tool', icon: GitBranch },
 ];
 
-const createRightPanelTabs = (): EdgePanelTab[] => [
-  { id: 'outline-tab', title: 'Outline', contentType: 'tool', panelPosition: 'right', icon: ListTree },
-  { id: 'debug-tab', title: 'Debug', contentType: 'tool', panelPosition: 'right', icon: Bug },
+const createRightPanelTabs = (): Tab[] => [
+  { id: 'outline-tab', title: 'Outline', contentType: 'tool', icon: ListTree },
+  { id: 'debug-tab', title: 'Debug', contentType: 'tool', icon: Bug },
 ];
 
-const createBottomPanelTabs = (): EdgePanelTab[] => [
-  { id: 'terminal-tab-1', title: 'Terminal', contentType: 'terminal', panelPosition: 'bottom', icon: Terminal },
-  { id: 'terminal-tab-2', title: 'Terminal 2', contentType: 'terminal', panelPosition: 'bottom', icon: Terminal },
-  { id: 'problems-tab', title: 'Problems', contentType: 'tool', panelPosition: 'bottom', icon: AlertTriangle },
-  { id: 'output-tab', title: 'Output', contentType: 'tool', panelPosition: 'bottom', icon: FileOutput },
+const createBottomPanelTabs = (): Tab[] => [
+  { id: 'terminal-tab-1', title: 'Terminal', contentType: 'terminal', icon: Terminal },
+  { id: 'terminal-tab-2', title: 'Terminal 2', contentType: 'terminal', icon: Terminal },
+  { id: 'problems-tab', title: 'Problems', contentType: 'tool', icon: AlertTriangle },
+  { id: 'output-tab', title: 'Output', contentType: 'tool', icon: FileOutput },
 ];
 
 function createInitialState(): WindowState {
   const mainPaneId = generateId();
   const tabGroupId1 = generateId();
   const tabGroupId2 = generateId();
+  const leftGroupId = generateId();
+  const rightGroupId = generateId();
+  const bottomGroupId = generateId();
   return {
     layout: {
       id: 'split-root',
@@ -224,29 +226,38 @@ function createInitialState(): WindowState {
         tabs: createSampleTabs2(),
         activeTabId: 'tab-5',
       },
+      [leftGroupId]: {
+        id: leftGroupId,
+        tabs: createLeftPanelTabs(),
+        activeTabId: 'explorer-tab',
+      },
+      [rightGroupId]: {
+        id: rightGroupId,
+        tabs: createRightPanelTabs(),
+        activeTabId: 'outline-tab',
+      },
+      [bottomGroupId]: {
+        id: bottomGroupId,
+        tabs: createBottomPanelTabs(),
+        activeTabId: 'terminal-tab-1',
+      },
     },
     edgePanels: {
       left: {
         id: 'left-panel',
-        position: 'left' as EdgePanelPosition,
-        tabs: createLeftPanelTabs(),
-        activeTabId: 'explorer-tab',
+        tabGroupId: leftGroupId,
         isCollapsed: false,
         width: 250,
       },
       right: {
         id: 'right-panel',
-        position: 'right' as EdgePanelPosition,
-        tabs: createRightPanelTabs(),
-        activeTabId: 'outline-tab',
+        tabGroupId: rightGroupId,
         isCollapsed: true,
         width: 250,
       },
       bottom: {
         id: 'bottom-panel',
-        position: 'bottom' as EdgePanelPosition,
-        tabs: createBottomPanelTabs(),
-        activeTabId: 'terminal-tab-1',
+        tabGroupId: bottomGroupId,
         isCollapsed: false,
         height: 200,
       },
@@ -271,6 +282,13 @@ function createInitialState(): WindowState {
 const initialState = createInitialState();
 const [store, setStore] = createStore<WindowState>(initialState);
 export { store as windowStore, setStore };
+
+export function findEdgePanelForGroup(groupId: string): EdgePanelPosition | null {
+  for (const pos of ['left', 'right', 'bottom'] as EdgePanelPosition[]) {
+    if (store.edgePanels[pos].tabGroupId === groupId) return pos;
+  }
+  return null;
+}
 
 export const windowActions = {
   addTab(groupId: string, tab: Tab, insertIndex?: number) {
@@ -508,7 +526,8 @@ export const windowActions = {
   },
 
   setEdgePanelActiveTab(position: EdgePanelPosition, tabId: string | null) {
-    setStore('edgePanels', position, 'activeTabId', tabId);
+    const groupId = store.edgePanels[position].tabGroupId;
+    setStore('tabGroups', groupId, 'activeTabId', tabId);
     setStore('focusedRegion', position);
   },
 
@@ -528,26 +547,26 @@ export const windowActions = {
     );
   },
 
-  addEdgePanelTab(position: EdgePanelPosition, tab: EdgePanelTab) {
-    setStore(
-      produce((s) => {
-        s.edgePanels[position].tabs.push(tab);
-        s.edgePanels[position].activeTabId = tab.id;
-      })
-    );
+  addEdgePanelTab(position: EdgePanelPosition, tab: Tab) {
+    const groupId = store.edgePanels[position].tabGroupId;
+    const group = store.tabGroups[groupId];
+    if (!group) return;
+    setStore('tabGroups', groupId, {
+      tabs: [...group.tabs, tab],
+      activeTabId: tab.id,
+    });
   },
 
   removeEdgePanelTab(position: EdgePanelPosition, tabId: string) {
-    setStore(
-      produce((s) => {
-        const panel = s.edgePanels[position];
-        panel.tabs = panel.tabs.filter((t) => t.id !== tabId);
-        panel.activeTabId =
-          panel.activeTabId === tabId
-            ? (panel.tabs[0]?.id ?? null)
-            : panel.activeTabId;
-      })
-    );
+    const groupId = store.edgePanels[position].tabGroupId;
+    const group = store.tabGroups[groupId];
+    if (!group) return;
+    const newTabs = group.tabs.filter((t) => t.id !== tabId);
+    const newActiveId =
+      group.activeTabId === tabId
+        ? (newTabs[0]?.id ?? null)
+        : group.activeTabId;
+    setStore('tabGroups', groupId, { tabs: newTabs, activeTabId: newActiveId });
   },
 
   openFlyout(position: EdgePanelPosition, tabId: string) {
@@ -764,13 +783,11 @@ export const windowActions = {
           target.insertIndex
         );
       } else if (target.type === 'edgePanel') {
-        const panel = state.edgePanels[target.panelId as EdgePanelPosition];
+        const position = target.panelId as EdgePanelPosition;
+        const panel = state.edgePanels[position];
         if (panel) {
-          windowActions.removeTab(source.sourceGroupId, source.tab.id);
-          windowActions.addEdgePanelTab(panel.position, {
-            ...source.tab,
-            panelPosition: panel.position,
-          });
+          const edgeGroupId = panel.tabGroupId;
+          windowActions.moveTab(source.sourceGroupId, edgeGroupId, source.tab.id);
         }
       } else if (target.type === 'newFloating') {
         const newGroupId = windowActions.createTabGroup();
@@ -779,123 +796,6 @@ export const windowActions = {
       }
     }
     windowActions.endDrag();
-  },
-
-  moveEdgeTabToCenter(sourcePosition: EdgePanelPosition, tabId: string, targetGroupId: string) {
-    const panel = store.edgePanels[sourcePosition];
-    if (!panel) return;
-    const tab = panel.tabs.find((t) => t.id === tabId);
-    if (!tab) return;
-    const targetGroup = store.tabGroups[targetGroupId];
-    if (!targetGroup) return;
-
-    const { panelPosition: _, ...plainTab } = tab;
-
-    setStore(
-      produce((s) => {
-        const srcPanel = s.edgePanels[sourcePosition];
-        srcPanel.tabs = srcPanel.tabs.filter((t) => t.id !== tabId);
-        srcPanel.activeTabId =
-          srcPanel.activeTabId === tabId
-            ? (srcPanel.tabs[0]?.id ?? null)
-            : srcPanel.activeTabId;
-        if (srcPanel.tabs.length === 0) {
-          srcPanel.isCollapsed = true;
-        }
-
-        s.tabGroups[targetGroupId] = {
-          ...s.tabGroups[targetGroupId]!,
-          tabs: [...s.tabGroups[targetGroupId]!.tabs, plainTab as Tab],
-          activeTabId: tabId,
-        };
-
-        s.focusedRegion = 'center';
-      })
-    );
-  },
-
-  moveEdgeTabToEdge(sourcePosition: EdgePanelPosition, tabId: string, targetPosition: EdgePanelPosition) {
-    if (sourcePosition === targetPosition) return;
-
-    const srcPanel = store.edgePanels[sourcePosition];
-    if (!srcPanel) return;
-    const tab = srcPanel.tabs.find((t) => t.id === tabId);
-    if (!tab) return;
-
-    setStore(
-      produce((s) => {
-        const src = s.edgePanels[sourcePosition];
-        src.tabs = src.tabs.filter((t) => t.id !== tabId);
-        src.activeTabId =
-          src.activeTabId === tabId
-            ? (src.tabs[0]?.id ?? null)
-            : src.activeTabId;
-        if (src.tabs.length === 0) {
-          src.isCollapsed = true;
-        }
-
-        const movedTab: EdgePanelTab = { ...tab, panelPosition: targetPosition };
-        const tgt = s.edgePanels[targetPosition];
-        tgt.tabs.push(movedTab);
-        tgt.activeTabId = tabId;
-
-        s.focusedRegion = targetPosition;
-      })
-    );
-  },
-
-  moveCenterTabToEdge(sourceGroupId: string, tabId: string, targetPosition: EdgePanelPosition) {
-    const sourceGroup = store.tabGroups[sourceGroupId];
-    if (!sourceGroup) return;
-    const tab = sourceGroup.tabs.find((t) => t.id === tabId);
-    if (!tab) return;
-
-    const edgeTab: EdgePanelTab = { ...tab, panelPosition: targetPosition };
-
-    setStore(
-      produce((s) => {
-        const group = s.tabGroups[sourceGroupId]!;
-        const newTabs = group.tabs.filter((t) => t.id !== tabId);
-        const newActiveId =
-          group.activeTabId === tabId
-            ? (newTabs.length > 0 ? newTabs[newTabs.length - 1]!.id : null)
-            : group.activeTabId;
-
-        if (newTabs.length === 0) {
-          delete s.tabGroups[sourceGroupId];
-          s.layout = collapseEmptyNodes(s.layout, s.tabGroups);
-          const firstPane = findFirstPane(s.layout);
-          if (firstPane && (!s.activePaneId || !findPaneInLayout(s.layout, s.activePaneId))) {
-            s.activePaneId = firstPane.id;
-          }
-        } else {
-          s.tabGroups[sourceGroupId] = {
-            ...group,
-            tabs: newTabs,
-            activeTabId: newActiveId,
-          };
-        }
-
-        const tgt = s.edgePanels[targetPosition];
-        tgt.tabs.push(edgeTab);
-        tgt.activeTabId = tabId;
-
-        s.focusedRegion = targetPosition;
-      })
-    );
-  },
-
-  reorderEdgeTab(position: EdgePanelPosition, tabId: string, newIndex: number) {
-    setStore(
-      produce((s) => {
-        const panel = s.edgePanels[position];
-        if (!panel) return;
-        const idx = panel.tabs.findIndex((t) => t.id === tabId);
-        if (idx === -1 || idx === newIndex) return;
-        const [tab] = panel.tabs.splice(idx, 1);
-        panel.tabs.splice(newIndex, 0, tab);
-      })
-    );
   },
 
   getTabGroup(groupId: string) {
