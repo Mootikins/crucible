@@ -9,4 +9,3 @@ export { SessionPanel } from './SessionPanel';
 export { ToolCard } from './ToolCard';
 export { EditorPanel } from './EditorPanel';
 export { FilesPanel } from './FilesPanel';
-export * from './layout';
