@@ -60,6 +60,36 @@ function replacePaneWithSplit(
   };
 }
 
+function findFirstPane(layout: LayoutNode): PaneNode | null {
+  if (layout.type === 'pane') return layout;
+  return findFirstPane(layout.first) || findFirstPane(layout.second);
+}
+
+/**
+ * Collapse empty panes from the layout tree (bottom-up). A pane is "empty" when
+ * its tabGroupId is null or references a deleted group. When a split has one
+ * empty child, the split is replaced by the surviving child. Root is never
+ * collapsed — always at least one pane remains.
+ */
+function collapseEmptyNodes(
+  layout: LayoutNode,
+  tabGroups: Record<string, TabGroup>
+): LayoutNode {
+  if (layout.type === 'pane') return layout;
+
+  const first = collapseEmptyNodes(layout.first, tabGroups);
+  const second = collapseEmptyNodes(layout.second, tabGroups);
+
+  const isEmptyPane = (node: LayoutNode): boolean =>
+    node.type === 'pane' &&
+    (node.tabGroupId === null || !(node.tabGroupId in tabGroups));
+
+  if (isEmptyPane(first)) return second;
+  if (isEmptyPane(second)) return first;
+
+  return { ...layout, first, second };
+}
+
 export type PaneDropPosition = 'left' | 'right' | 'top' | 'bottom';
 
 export interface WindowState {
@@ -244,6 +274,11 @@ export const windowActions = {
       setStore(
         produce((s) => {
           delete s.tabGroups[groupId];
+          s.layout = collapseEmptyNodes(s.layout, s.tabGroups);
+          const firstPane = findFirstPane(s.layout);
+          if (firstPane && (!s.activePaneId || !findPaneInLayout(s.layout, s.activePaneId))) {
+            s.activePaneId = firstPane.id;
+          }
         })
       );
       return;
@@ -308,6 +343,13 @@ export const windowActions = {
           tabs: newTargetTabs,
           activeTabId: tabId,
         };
+        if (newSourceTabs.length === 0) {
+          s.layout = collapseEmptyNodes(s.layout, s.tabGroups);
+          const firstPane = findFirstPane(s.layout);
+          if (firstPane && (!s.activePaneId || !findPaneInLayout(s.layout, s.activePaneId))) {
+            s.activePaneId = firstPane.id;
+          }
+        }
       })
     );
   },
@@ -356,7 +398,9 @@ export const windowActions = {
   splitPane(paneId: string, direction: SplitDirection) {
     const pane = findPaneInLayout(store.layout, paneId);
     if (!pane) return;
-    const newGroupId = generateId();
+    const firstGroupId = generateId();
+    const secondGroupId = generateId();
+    const originalGroup = pane.tabGroupId ? store.tabGroups[pane.tabGroupId] : null;
     const newSplit: LayoutNode = {
       id: generateId(),
       type: 'split',
@@ -365,22 +409,30 @@ export const windowActions = {
       first: {
         id: generateId(),
         type: 'pane',
-        tabGroupId: pane.tabGroupId,
+        tabGroupId: firstGroupId,
       },
       second: {
         id: generateId(),
         type: 'pane',
-        tabGroupId: newGroupId,
+        tabGroupId: secondGroupId,
       },
     };
     setStore(
       produce((s) => {
         s.layout = replacePaneWithSplit(s.layout, paneId, newSplit);
-        s.tabGroups[newGroupId] = {
-          id: newGroupId,
+        s.tabGroups[firstGroupId] = {
+          id: firstGroupId,
+          tabs: originalGroup ? [...originalGroup.tabs] : [],
+          activeTabId: originalGroup?.activeTabId ?? null,
+        };
+        s.tabGroups[secondGroupId] = {
+          id: secondGroupId,
           tabs: [],
           activeTabId: null,
         };
+        if (pane.tabGroupId && pane.tabGroupId in s.tabGroups) {
+          delete s.tabGroups[pane.tabGroupId];
+        }
         s.activePaneId = (newSplit as Extract<LayoutNode, { type: 'split' }>).second.id;
       })
     );
