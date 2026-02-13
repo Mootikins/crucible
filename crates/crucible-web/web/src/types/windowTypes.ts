@@ -81,7 +81,8 @@ export interface FloatingWindow {
 // Drag and drop types
 export type DragSource =
   | { type: 'tab'; tab: Tab; sourceGroupId: string; sourcePaneId?: string }
-  | { type: 'tabGroup'; groupId: string; sourcePaneId?: string };
+  | { type: 'tabGroup'; groupId: string; sourcePaneId?: string }
+  | { type: 'edgeTab'; tab: EdgePanelTab; sourcePosition: EdgePanelPosition };
 
 export type DropTarget =
   | {
@@ -90,7 +91,7 @@ export type DropTarget =
       position?: 'center' | 'left' | 'right' | 'top' | 'bottom';
     }
   | { type: 'tabGroup'; groupId: string; insertIndex?: number }
-  | { type: 'edgePanel'; panelId: string }
+  | { type: 'edgePanel'; panelId: EdgePanelPosition }
   | { type: 'floatingWindow'; windowId: string }
   | { type: 'empty'; position: EdgePanelPosition }
   | { type: 'newFloating' };
@@ -173,12 +174,19 @@ export interface WindowManagerActions {
   setDropTarget: (target: DropTarget | null) => void;
   endDrag: () => void;
   executeDrop: () => void;
+  moveEdgeTabToCenter: (sourcePosition: EdgePanelPosition, tabId: string, targetGroupId: string) => void;
+  moveEdgeTabToEdge: (sourcePosition: EdgePanelPosition, tabId: string, targetPosition: EdgePanelPosition) => void;
   getTabGroup: (groupId: string) => TabGroup | undefined;
   getPaneTabGroupId: (paneId: string) => string | null;
   findPaneById: (paneId: string) => PaneNode | null;
 }
 
 export type WindowManagerStore = WindowManagerState & WindowManagerActions;
+
+// TabBar props discriminated union
+export type TabBarProps =
+  | { mode: 'center'; groupId: string; paneId: string; onPopOut?: () => void }
+  | { mode: 'edge'; position: EdgePanelPosition; tabs: EdgePanelTab[]; activeTabId: string | null };
 
 export interface TabContentProps {
   tab: Tab;
