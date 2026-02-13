@@ -109,6 +109,9 @@ function EdgePanelResizeHandle(props: { position: EdgePanelPosition }) {
 
 const CollapsedEdgeStrip: Component<{ position: EdgePanelPosition }> = (props) => {
   const panel = () => windowStore.edgePanels[props.position];
+  const group = () => windowStore.tabGroups[panel().tabGroupId];
+  const tabs = () => group()?.tabs ?? [];
+  const activeTabId = () => group()?.activeTabId ?? null;
   const isVertical = () => props.position === 'left' || props.position === 'right';
 
   const droppable = createDroppable(`edgepanel-collapsed:${props.position}`, {
@@ -127,7 +130,7 @@ const CollapsedEdgeStrip: Component<{ position: EdgePanelPosition }> = (props) =
         'bg-blue-500/20': droppable.isActiveDroppable,
       }}
     >
-      <For each={panel().tabs}>
+      <For each={tabs()}>
         {(tab) => (
           <button
             type="button"
@@ -136,13 +139,13 @@ const CollapsedEdgeStrip: Component<{ position: EdgePanelPosition }> = (props) =
               'flex items-center justify-center transition-all duration-150': true,
               'w-10 h-10': isVertical(),
               'h-9 px-3': !isVertical(),
-              'bg-zinc-800 text-zinc-100': panel().activeTabId === tab.id,
+              'bg-zinc-800 text-zinc-100': activeTabId() === tab.id,
               'text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50':
-                panel().activeTabId !== tab.id,
+                activeTabId() !== tab.id,
             }}
             title={tab.title}
             onClick={() => {
-              windowActions.setEdgePanelActiveTab(props.position, tab.id);
+              windowActions.setActiveTab(panel().tabGroupId, tab.id);
               windowActions.openFlyout(props.position, tab.id);
             }}
           >
@@ -170,12 +173,13 @@ const CollapsedEdgeStrip: Component<{ position: EdgePanelPosition }> = (props) =
 
 export const EdgePanel: Component<{ position: EdgePanelPosition }> = (props) => {
   const panel = () => windowStore.edgePanels[props.position];
+  const group = () => windowStore.tabGroups[panel().tabGroupId];
   const isCollapsed = () => panel().isCollapsed;
   const isVertical = () => props.position === 'left' || props.position === 'right';
   const activeTab = () => {
-    const p = panel();
-    const tab = p.tabs.find((t) => t.id === p.activeTabId);
-    return tab ?? null;
+    const g = group();
+    if (!g?.activeTabId) return null;
+    return g.tabs.find((t) => t.id === g.activeTabId) ?? null;
   };
 
   return (
@@ -207,8 +211,6 @@ export const EdgePanel: Component<{ position: EdgePanelPosition }> = (props) => 
           <TabBar
             mode="edge"
             position={props.position}
-            tabs={panel().tabs}
-            activeTabId={panel().activeTabId}
           />
           <div class="flex-1 overflow-auto p-2 text-xs text-zinc-400" data-testid={`panel-content-${activeTab()?.contentType ?? 'unknown'}`}>
             <Show when={activeTab()} fallback={<span>Select a tab</span>}>
