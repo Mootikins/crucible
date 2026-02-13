@@ -27,16 +27,18 @@ function EdgePanelResizeHandle(props: { position: EdgePanelPosition }) {
     }
   });
 
-  const handleMouseDown = (e: MouseEvent) => {
+  const handlePointerDown = (e: PointerEvent) => {
     e.preventDefault();
     e.stopPropagation();
+    const el = e.currentTarget as HTMLElement;
+    el.setPointerCapture(e.pointerId);
     const startX = e.clientX;
     const startY = e.clientY;
     const startSize = isVertical()
       ? panel().width ?? 250
       : panel().height ?? 200;
 
-    const handleMouseMove = (e: MouseEvent) => {
+    const handlePointerMove = (e: PointerEvent) => {
       if (props.position === 'left') {
         const delta = e.clientX - startX;
         windowActions.setEdgePanelSize(
@@ -58,15 +60,19 @@ function EdgePanelResizeHandle(props: { position: EdgePanelPosition }) {
       }
     };
 
-    const handleMouseUp = () => {
-      document.removeEventListener('mousemove', handleMouseMove);
-      document.removeEventListener('mouseup', handleMouseUp);
+    const handlePointerUp = (e: PointerEvent) => {
+      el.releasePointerCapture(e.pointerId);
+      document.removeEventListener('pointermove', handlePointerMove);
+      document.removeEventListener('pointerup', handlePointerUp);
       cleanup = null;
     };
 
-    document.addEventListener('mousemove', handleMouseMove);
-    document.addEventListener('mouseup', handleMouseUp);
-    cleanup = handleMouseUp;
+    document.addEventListener('pointermove', handlePointerMove);
+    document.addEventListener('pointerup', handlePointerUp);
+    cleanup = () => {
+      document.removeEventListener('pointermove', handlePointerMove);
+      document.removeEventListener('pointerup', handlePointerUp);
+    };
   };
 
   return (
@@ -76,11 +82,11 @@ function EdgePanelResizeHandle(props: { position: EdgePanelPosition }) {
       classList={{
         'group relative flex-shrink-0 bg-zinc-800 hover:bg-zinc-700 active:bg-blue-500 transition-colors cursor-col-resize': isVertical(),
         'group relative flex-shrink-0 bg-zinc-800 hover:bg-zinc-700 active:bg-blue-500 transition-colors cursor-row-resize': !isVertical(),
-        'w-1': isVertical(),
-        'h-1': !isVertical(),
+        'w-1.5': isVertical(),
+        'h-1.5': !isVertical(),
       }}
-      style={isVertical() ? { 'min-width': '4px' } : { 'min-height': '4px' }}
-      onMouseDown={handleMouseDown}
+      style={isVertical() ? { 'min-width': '6px' } : { 'min-height': '6px' }}
+      on:pointerdown={handlePointerDown}
     >
       <div
         classList={{
@@ -122,6 +128,7 @@ export const EdgePanel: Component<{ position: EdgePanelPosition }> = (props) => 
             {(tab) => (
               <button
                 type="button"
+                data-testid={`collapsed-tab-button-${props.position}`}
                 classList={{
                   'flex items-center justify-center transition-all duration-150': true,
                   'w-10 h-10': isVertical(),
@@ -131,7 +138,10 @@ export const EdgePanel: Component<{ position: EdgePanelPosition }> = (props) => 
                     panel().activeTabId !== tab.id,
                 }}
                 title={tab.title}
-                onClick={() => windowActions.setEdgePanelActiveTab(props.position, tab.id)}
+                onClick={() => {
+                  windowActions.setEdgePanelActiveTab(props.position, tab.id);
+                  windowActions.openFlyout(props.position, tab.id);
+                }}
               >
                 {tab.icon ? <tab.icon class="w-4 h-4" /> : <span class="text-xs truncate max-w-[2rem]">{tab.title[0]}</span>}
               </button>
