@@ -12,6 +12,11 @@ import type {
   DragSource,
   DropTarget,
 } from '@/types/windowTypes';
+import {
+  serializeLayout,
+  deserializeLayout,
+} from '@/lib/layout-serializer';
+import type { SerializedLayout } from '@/lib/layout-serializer';
 
 const generateId = () => Math.random().toString(36).substring(2, 11);
 
@@ -761,6 +766,31 @@ export const windowActions = {
 
   findPaneById(paneId: string) {
     return findPaneInLayout(store.layout, paneId);
+  },
+
+  exportLayout(): SerializedLayout {
+    return serializeLayout({
+      layout: store.layout,
+      tabGroups: { ...store.tabGroups },
+      edgePanels: { ...store.edgePanels } as Record<EdgePanelPosition, EdgePanelType>,
+      floatingWindows: [...store.floatingWindows],
+    });
+  },
+
+  importLayout(json: SerializedLayout) {
+    const restored = deserializeLayout(json);
+    setStore(produce((s) => {
+      s.layout = restored.layout;
+      s.tabGroups = restored.tabGroups;
+      s.edgePanels = restored.edgePanels as Record<EdgePanelPosition, EdgePanelType>;
+      s.floatingWindows = restored.floatingWindows;
+      s.activePaneId = null;
+      s.dragState = null;
+      s.flyoutState = null;
+      s.nextZIndex = 100;
+      const firstPane = findFirstPane(s.layout);
+      if (firstPane) s.activePaneId = firstPane.id;
+    }));
   },
 };
 

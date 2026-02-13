@@ -1,15 +1,9 @@
 import { Component, Show } from 'solid-js';
+import { Dynamic } from 'solid-js/web';
 import { createDroppable, useDragDropContext } from '@thisbeyond/solid-dnd';
 import { TabBar } from './TabBar';
 import { windowStore, windowActions } from '@/stores/windowStore';
-import type { LayoutNode } from '@/types/windowTypes';
-
-function findPaneInLayout(layout: LayoutNode, paneId: string): { tabGroupId: string | null } | null {
-  if (layout.type === 'pane') {
-    return layout.id === paneId ? { tabGroupId: layout.tabGroupId } : null;
-  }
-  return findPaneInLayout(layout.first, paneId) || findPaneInLayout(layout.second, paneId);
-}
+import { getGlobalRegistry } from '@/lib/panel-registry';
 
 type PaneDropPosition = 'left' | 'right' | 'top' | 'bottom';
 
@@ -19,15 +13,29 @@ function PaneDropZone(props: {
   class: string;
 }) {
   const droppable = props.droppable;
+  const labels: Record<PaneDropPosition, string> = {
+    left: 'Split Left',
+    right: 'Split Right',
+    top: 'Split Top',
+    bottom: 'Split Bottom',
+  };
   return (
     <div
       use:droppable
       classList={{
         [props.class]: true,
-        'bg-blue-500/20 border-2 border-blue-500': droppable.isActiveDroppable,
-        'hover:bg-zinc-700/30 transition-colors': !droppable.isActiveDroppable,
+        'bg-blue-500/20 border-2 border-blue-400 border-dashed': droppable.isActiveDroppable,
+        'hover:bg-zinc-700/20 transition-all duration-150': !droppable.isActiveDroppable,
       }}
-    />
+    >
+      {droppable.isActiveDroppable && (
+        <div class="absolute inset-0 flex items-center justify-center">
+          <span class="text-xs font-medium text-blue-300 bg-blue-500/30 px-2 py-1 rounded">
+            {labels[props.position]}
+          </span>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -40,8 +48,7 @@ export const Pane: Component<{ paneId: string }> = (props) => {
       dndState.active.draggableId.startsWith('tab:');
   };
 
-  const paneInfo = () => findPaneInLayout(windowStore.layout, props.paneId);
-  const tabGroupId = () => paneInfo()?.tabGroupId ?? null;
+  const tabGroupId = () => windowActions.findPaneById(props.paneId)?.tabGroupId ?? null;
   const group = () => (tabGroupId() ? windowStore.tabGroups[tabGroupId()!] : null);
   const tabs = () => group()?.tabs ?? [];
   const activeTab = () => {
@@ -93,6 +100,10 @@ export const Pane: Component<{ paneId: string }> = (props) => {
           <div class="text-zinc-500 text-sm">No tab selected</div>
         </div>
       );
+    }
+    const panel = getGlobalRegistry().get(tab.contentType);
+    if (panel) {
+      return <Dynamic component={panel.component} />;
     }
     switch (tab.contentType) {
       case 'file':
@@ -183,6 +194,15 @@ export const Pane: Component<{ paneId: string }> = (props) => {
           onPopOut={handlePopOut}
         />
         {renderContent()}
+      </Show>
+
+      {/* Merge overlay when center drop zone is active */}
+      <Show when={centerDroppable.isActiveDroppable}>
+        <div class="absolute inset-0 bg-blue-500/10 flex items-center justify-center z-10 pointer-events-none border-2 border-blue-400 border-dashed rounded">
+          <span class="text-sm font-medium text-blue-300 bg-blue-500/30 px-3 py-1.5 rounded-lg">
+            Merge
+          </span>
+        </div>
       </Show>
 
       {/* Drop zone overlays when dragging a tab: split left/right/top/bottom */}
