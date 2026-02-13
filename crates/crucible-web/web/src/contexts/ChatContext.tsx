@@ -142,7 +142,7 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
 
        case 'interaction_requested': {
          const { type: _eventType, ...requestData } = event;
-         setPendingInteraction(requestData as InteractionRequest);
+         setPendingInteraction(requestData as unknown as InteractionRequest);
          break;
        }
 

@@ -88,15 +88,15 @@ function HeaderBar() {
 }
 
 function DragOverlayContent() {
-  const [state] = useDragDropContext();
-  const draggable = () => state.active.draggable;
+  const dndContext = useDragDropContext();
+  const draggable = () => dndContext?.[0].active.draggable;
   const data = () => draggable()?.data as DragSource | undefined;
 
   return (
     <Show when={data()?.type === 'tab'}>
       <div class="px-2.5 py-1.5 bg-zinc-800 border border-zinc-600 rounded shadow-lg text-xs text-zinc-200 flex items-center gap-1.5 opacity-90">
         <span class="font-medium truncate max-w-[120px]">
-          {data()?.type === 'tab' ? data()!.tab.title : ''}
+          {(() => { const d = data(); return d?.type === 'tab' ? d.tab.title : ''; })()}
         </span>
       </div>
     </Show>
@@ -104,7 +104,8 @@ function DragOverlayContent() {
 }
 
 function InnerManager() {
-  const [, { onDragEnd }] = useDragDropContext();
+  const dndCtx = useDragDropContext()!;
+  const [, { onDragEnd }] = dndCtx;
 
   onDragEnd(({ draggable, droppable }) => {
     const source = draggable.data as DragSource | undefined;

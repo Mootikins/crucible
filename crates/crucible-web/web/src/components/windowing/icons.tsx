@@ -157,42 +157,34 @@ export const IconLayout: Component<{ class?: string }> = (props) => (
 export const IconGripVertical: Component<{ class?: string }> = (props) => (
   <svg
     class={props.class ?? iconClass}
-    width="12"
-    height="12"
+    width="16"
+    height="20"
     viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    stroke-width="2"
-    stroke-linecap="round"
-    stroke-linejoin="round"
+    fill="white"
   >
-    <circle cx="9" cy="6" r="1" />
-    <circle cx="9" cy="12" r="1" />
-    <circle cx="9" cy="18" r="1" />
-    <circle cx="15" cy="6" r="1" />
-    <circle cx="15" cy="12" r="1" />
-    <circle cx="15" cy="18" r="1" />
+    <circle cx="9" cy="6" r="2.5" />
+    <circle cx="9" cy="12" r="2.5" />
+    <circle cx="9" cy="18" r="2.5" />
+    <circle cx="15" cy="6" r="2.5" />
+    <circle cx="15" cy="12" r="2.5" />
+    <circle cx="15" cy="18" r="2.5" />
   </svg>
 );
 
 export const IconGripHorizontal: Component<{ class?: string }> = (props) => (
   <svg
     class={props.class ?? iconClass}
-    width="12"
-    height="12"
+    width="20"
+    height="16"
     viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    stroke-width="2"
-    stroke-linecap="round"
-    stroke-linejoin="round"
+    fill="white"
   >
-    <circle cx="6" cy="9" r="1" />
-    <circle cx="12" cy="9" r="1" />
-    <circle cx="18" cy="9" r="1" />
-    <circle cx="6" cy="15" r="1" />
-    <circle cx="12" cy="15" r="1" />
-    <circle cx="18" cy="15" r="1" />
+    <circle cx="6" cy="9" r="2.5" />
+    <circle cx="12" cy="9" r="2.5" />
+    <circle cx="18" cy="9" r="2.5" />
+    <circle cx="6" cy="15" r="2.5" />
+    <circle cx="12" cy="15" r="2.5" />
+    <circle cx="18" cy="15" r="2.5" />
   </svg>
 );
 

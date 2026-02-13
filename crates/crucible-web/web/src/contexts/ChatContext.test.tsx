@@ -47,9 +47,8 @@ function TestConsumer() {
 }
 
 function TestWrapper(props: { children: any; session?: Session | null }) {
-  // Use explicit check - null means "no session", undefined means "use default"
   const [session] = createSignal(props.session !== undefined ? props.session : mockSession);
-  return <ChatProvider session={session}>{props.children}</ChatProvider>;
+  return <ChatProvider session={session} setSessionTitle={async () => {}}>{props.children}</ChatProvider>;
 }
 
 describe('ChatContext', () => {

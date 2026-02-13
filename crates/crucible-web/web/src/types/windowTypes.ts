@@ -12,7 +12,7 @@ export type TabContentType =
 export interface Tab {
   id: string;
   title: string;
-  icon?: Component;
+  icon?: Component<{ class?: string }>;
   contentType: TabContentType;
   isModified?: boolean;
   isPinned?: boolean;

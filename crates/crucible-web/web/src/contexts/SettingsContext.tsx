@@ -42,7 +42,7 @@ export const SettingsProvider: ParentComponent = (props) => {
   ) => {
     setSettings(
       produce((s) => {
-        (s[section] as Record<string, unknown>)[key as string] = value;
+        (s[section] as unknown as Record<string, unknown>)[key as string] = value;
       })
     );
     // Create a snapshot of the current settings for persistence
