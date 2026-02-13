@@ -1,7 +1,7 @@
 import { Component, createSignal, createEffect, onCleanup } from 'solid-js';
-import { unwrap } from 'solid-js/store';
+import { produce, unwrap } from 'solid-js/store';
 import { Pane } from './Pane';
-import { updateCenterLayout, updateSplitRatio, windowStore } from '@/stores/windowStore';
+import { setStore, updateSplitRatio, windowStore } from '@/stores/windowStore';
 import type { LayoutNode } from '@/types/windowTypes';
 import { IconGripVertical, IconGripHorizontal } from './icons';
 
@@ -62,7 +62,7 @@ export const SplitPane: Component<{ node: LayoutNode }> = (props) => {
       const ratio = localRatio();
       const currentLayout = unwrap(windowStore.layout) as LayoutNode;
       const newLayout = updateSplitRatio(currentLayout, splitId, ratio);
-      updateCenterLayout(newLayout);
+      setStore(produce((s) => { s.layout = newLayout; }));
       setIsDragging(false);
       el.releasePointerCapture(e.pointerId);
       document.removeEventListener('pointermove', handlePointerMove);

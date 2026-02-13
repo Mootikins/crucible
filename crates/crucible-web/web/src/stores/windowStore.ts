@@ -1,4 +1,3 @@
-import { createSignal } from 'solid-js';
 import { createStore, produce } from 'solid-js/store';
 import type {
   LayoutNode,
@@ -220,15 +219,7 @@ function createInitialState(): WindowState {
 
 const initialState = createInitialState();
 const [store, setStore] = createStore<WindowState>(initialState);
-const [centerLayout, setCenterLayout] = createSignal<LayoutNode>(initialState.layout);
-
-export { store as windowStore, setStore, centerLayout, setCenterLayout };
-
-/** Updates both store and center layout signal so the center UI re-renders. */
-export function updateCenterLayout(newLayout: LayoutNode) {
-  setStore(produce((s) => { s.layout = newLayout; }));
-  setCenterLayout(newLayout);
-}
+export { store as windowStore, setStore };
 
 export const windowActions = {
   addTab(groupId: string, tab: Tab, insertIndex?: number) {
@@ -351,7 +342,6 @@ export const windowActions = {
         }
       })
     );
-    if (paneId) setCenterLayout(store.layout);
     return groupId;
   },
 
@@ -394,7 +384,6 @@ export const windowActions = {
         s.activePaneId = (newSplit as Extract<LayoutNode, { type: 'split' }>).second.id;
       })
     );
-    setCenterLayout(store.layout);
   },
 
   splitPaneAndDrop(
@@ -418,7 +407,6 @@ export const windowActions = {
         s.activePaneId = newPaneId;
       })
     );
-    setCenterLayout(store.layout);
     windowActions.moveTab(sourceGroupId, newGroupId, tabId);
   },
 
@@ -598,7 +586,6 @@ export const windowActions = {
             s.activePaneId = targetPaneId;
           })
         );
-        setCenterLayout(store.layout);
         return;
       }
     }
@@ -622,7 +609,6 @@ export const windowActions = {
           s.activePaneId = firstEmpty.id;
         })
       );
-      setCenterLayout(store.layout);
       return;
     }
     const mainPane =
@@ -653,7 +639,6 @@ export const windowActions = {
           s.activePaneId = newPaneId;
         })
       );
-      setCenterLayout(store.layout);
     }
   },
 
