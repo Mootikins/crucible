@@ -13,29 +13,14 @@ function PaneDropZone(props: {
   class: string;
 }) {
   const droppable = props.droppable;
-  const labels: Record<PaneDropPosition, string> = {
-    left: 'Split Left',
-    right: 'Split Right',
-    top: 'Split Top',
-    bottom: 'Split Bottom',
-  };
   return (
     <div
       use:droppable
       classList={{
         [props.class]: true,
-        'bg-blue-500/20 border-2 border-blue-400 border-dashed': droppable.isActiveDroppable,
-        'hover:bg-zinc-700/20 transition-all duration-150': !droppable.isActiveDroppable,
+        'bg-blue-500/30': droppable.isActiveDroppable,
       }}
-    >
-      {droppable.isActiveDroppable && (
-        <div class="absolute inset-0 flex items-center justify-center">
-          <span class="text-xs font-medium text-blue-300 bg-blue-500/30 px-2 py-1 rounded">
-            {labels[props.position]}
-          </span>
-        </div>
-      )}
-    </div>
+    />
   );
 }
 
@@ -197,11 +182,7 @@ export const Pane: Component<{ paneId: string }> = (props) => {
       </Show>
 
       <Show when={centerDroppable.isActiveDroppable}>
-        <div class="absolute inset-0 bg-blue-500/10 flex items-center justify-center z-10 pointer-events-none border-2 border-blue-400 border-dashed rounded">
-          <span class="text-sm font-medium text-blue-300 bg-blue-500/30 px-3 py-1.5 rounded-lg">
-            Merge
-          </span>
-        </div>
+        <div class="absolute inset-0 bg-blue-500/20 z-10 pointer-events-none" />
       </Show>
 
       <div
