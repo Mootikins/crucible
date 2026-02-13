@@ -83,6 +83,7 @@ const EdgeTab: Component<{
   isActive: boolean;
   isFocused: boolean;
   onActivate: () => void;
+  onClose: (e: MouseEvent) => void;
 }> = (props) => {
   const id = () => `edgetab:${props.position}:${props.tab.id}`;
   const draggable = createDraggable(id(), {
@@ -90,6 +91,7 @@ const EdgeTab: Component<{
     tab: props.tab,
     sourcePosition: props.position,
   });
+  const Icon = props.tab.icon;
 
   // Close flyout when drag starts from edge panel
   createEffect(() => {
@@ -104,7 +106,7 @@ const EdgeTab: Component<{
       data-tab-id={props.tab.id}
       data-testid={`edge-tab-${props.position}-${props.tab.id}`}
       classList={{
-        'group relative flex items-center gap-1.5 px-2 py-1.5 cursor-pointer transition-all duration-150 border-b-2': true,
+        'group relative flex items-center gap-1.5 px-2.5 py-1.5 cursor-pointer transition-all duration-150 border-b-2': true,
         'opacity-40 border-transparent bg-zinc-800/50': draggable.isActiveDraggable,
         'bg-zinc-800 text-zinc-100': props.isActive && !draggable.isActiveDraggable,
         'border-blue-500': props.isActive && props.isFocused && !draggable.isActiveDraggable,
@@ -117,9 +119,21 @@ const EdgeTab: Component<{
       <div class="cursor-grab active:cursor-grabbing p-0.5 -ml-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
         <IconGripVertical class="w-3 h-3 text-zinc-500" />
       </div>
+      {Icon && (
+        <Icon class={`w-3.5 h-3.5 flex-shrink-0 ${props.isActive ? 'text-zinc-300' : 'text-zinc-500'}`} />
+      )}
       <span class="text-xs font-medium truncate max-w-[100px]">
         {props.tab.title}
       </span>
+      <button
+        onClick={(e) => { e.stopPropagation(); props.onClose(e); }}
+        classList={{
+          'flex-shrink-0 p-0.5 rounded-sm transition-all hover:bg-zinc-700 hover:text-zinc-200 focus:opacity-100': true,
+          'opacity-0 group-hover:opacity-100': !props.isActive,
+        }}
+      >
+        <IconClose class="w-3 h-3" />
+      </button>
     </div>
   );
 };
@@ -287,6 +301,7 @@ const EdgeTabBar: Component<{
             isActive={props.activeTabId === tab.id}
             isFocused={isFocused()}
             onActivate={() => windowActions.setEdgePanelActiveTab(props.position, tab.id)}
+            onClose={() => windowActions.removeEdgePanelTab(props.position, tab.id)}
           />
         )}
       </For>

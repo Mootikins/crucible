@@ -91,7 +91,7 @@ export type DropTarget =
       position?: 'center' | 'left' | 'right' | 'top' | 'bottom';
     }
   | { type: 'tabGroup'; groupId: string; insertIndex?: number }
-  | { type: 'edgePanel'; panelId: EdgePanelPosition }
+  | { type: 'edgePanel'; panelId: EdgePanelPosition; insertIndex?: number }
   | { type: 'floatingWindow'; windowId: string }
   | { type: 'empty'; position: EdgePanelPosition }
   | { type: 'newFloating' };
@@ -177,6 +177,7 @@ export interface WindowManagerActions {
   moveEdgeTabToCenter: (sourcePosition: EdgePanelPosition, tabId: string, targetGroupId: string) => void;
   moveEdgeTabToEdge: (sourcePosition: EdgePanelPosition, tabId: string, targetPosition: EdgePanelPosition) => void;
   moveCenterTabToEdge: (sourceGroupId: string, tabId: string, targetPosition: EdgePanelPosition) => void;
+  reorderEdgeTab: (position: EdgePanelPosition, tabId: string, newIndex: number) => void;
   getTabGroup: (groupId: string) => TabGroup | undefined;
   getPaneTabGroupId: (paneId: string) => string | null;
   findPaneById: (paneId: string) => PaneNode | null;
