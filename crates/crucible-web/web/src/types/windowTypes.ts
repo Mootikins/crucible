@@ -104,7 +104,7 @@ export interface WindowManagerState {
   } | null;
   flyoutState: {
     isOpen: boolean;
-    panelPosition: EdgePanelPosition;
+    position: EdgePanelPosition;
     tabId: string | null;
   } | null;
   nextZIndex: number;

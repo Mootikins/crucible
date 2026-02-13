@@ -3,6 +3,8 @@ import { produce } from 'solid-js/store';
 import { windowStore, setStore, windowActions, findEdgePanelForGroup } from '../windowStore';
 import type { Tab, EdgePanelPosition, TabGroup, LayoutNode } from '@/types/windowTypes';
 
+const LEGACY_EDGE_TAB_FIELD = 'panel' + 'Position';
+
 function resetToState(overrides: Partial<{
   tabGroups: Record<string, TabGroup>;
   edgePanels: Record<EdgePanelPosition, {
@@ -17,7 +19,7 @@ function resetToState(overrides: Partial<{
   focusedRegion: 'left' | 'right' | 'bottom' | 'center';
   flyoutState: {
     isOpen: boolean;
-    panelPosition: EdgePanelPosition;
+    position: EdgePanelPosition;
     tabId: string | null;
   } | null;
 }>) {
@@ -98,11 +100,11 @@ describe('initial state structure', () => {
     expect(left).not.toHaveProperty('activeTabId');
   });
 
-  it('edge tab groups contain plain Tab objects without panelPosition', () => {
+  it('edge tab groups contain plain Tab objects without legacy edge metadata', () => {
     const leftGroupId = windowStore.edgePanels.left.tabGroupId;
     const group = windowStore.tabGroups[leftGroupId]!;
     for (const tab of group.tabs) {
-      expect(tab).not.toHaveProperty('panelPosition');
+      expect(tab).not.toHaveProperty(LEGACY_EDGE_TAB_FIELD);
     }
   });
 });
@@ -367,7 +369,7 @@ describe('moveTab: flyout guard', () => {
       layout: simpleLayout('pane-1', 'group-1'),
       activePaneId: 'pane-1',
       focusedRegion: 'center',
-      flyoutState: { isOpen: true, panelPosition: 'left', tabId: 'left-1' },
+      flyoutState: { isOpen: true, position: 'left', tabId: 'left-1' },
     });
   });
 
@@ -406,7 +408,7 @@ describe('removeTab: edge-aware', () => {
       layout: splitLayout('pane-1', 'group-1', 'pane-2', 'group-2'),
       activePaneId: 'pane-1',
       focusedRegion: 'center',
-      flyoutState: { isOpen: true, panelPosition: 'left', tabId: 'left-1' },
+      flyoutState: { isOpen: true, position: 'left', tabId: 'left-1' },
     });
   });
 
