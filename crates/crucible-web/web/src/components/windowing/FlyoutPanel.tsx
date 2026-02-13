@@ -22,10 +22,10 @@ function flyoutPositionStyle(position: EdgePanelPosition): Record<string, string
 export const FlyoutPanel: Component = () => {
   const flyout = () => windowStore.flyoutState;
   const isOpen = () => flyout()?.isOpen ?? false;
-  const panelPosition = () => flyout()?.panelPosition ?? 'left';
+  const flyoutPosition = () => flyout()?.position ?? 'left';
 
   const panel = () =>
-    flyout() ? windowStore.edgePanels[flyout()!.panelPosition] : null;
+    flyout() ? windowStore.edgePanels[flyout()!.position] : null;
 
   const activeTab = () => {
     const f = flyout();
@@ -34,7 +34,7 @@ export const FlyoutPanel: Component = () => {
     return windowStore.tabGroups[p.tabGroupId]?.tabs.find((t) => t.id === f.tabId) ?? null;
   };
 
-  const posStyle = createMemo(() => flyoutPositionStyle(panelPosition()));
+  const posStyle = createMemo(() => flyoutPositionStyle(flyoutPosition()));
 
   return (
     <Show when={isOpen()}>
