@@ -48,6 +48,8 @@ export type LayoutNode = PaneNode | SplitNode;
 // Edge panel types
 export type EdgePanelPosition = 'left' | 'right' | 'bottom';
 
+export type FocusedRegion = EdgePanelPosition | 'center';
+
 export interface EdgePanelTab extends Tab {
   panelPosition: EdgePanelPosition;
 }
@@ -100,6 +102,7 @@ export interface WindowManagerState {
   edgePanels: Record<EdgePanelPosition, EdgePanel>;
   floatingWindows: FloatingWindow[];
   activePaneId: string | null;
+  focusedRegion: FocusedRegion;
   dragState: {
     isDragging: boolean;
     source: DragSource | null;

@@ -11,6 +11,7 @@ const Tab: Component<{
   tab: TabType;
   groupId: string;
   isActive: boolean;
+  isFocused: boolean;
   onClose: (e: MouseEvent) => void;
 }> = (props) => {
   const id = () => `tab:${props.groupId}:${props.tab.id}`;
@@ -29,7 +30,9 @@ const Tab: Component<{
         'group relative flex items-center gap-1 px-2.5 py-1.5 cursor-pointer transition-all duration-100 border-b-2 rounded-t-sm':
           true,
         'opacity-40 border-transparent bg-zinc-800/50': draggable.isActiveDraggable,
-        'bg-zinc-800 border-blue-500 text-zinc-100': props.isActive && !draggable.isActiveDraggable,
+        'bg-zinc-800 text-zinc-100': props.isActive && !draggable.isActiveDraggable,
+        'border-blue-500': props.isActive && props.isFocused && !draggable.isActiveDraggable,
+        'border-zinc-600': props.isActive && !props.isFocused && !draggable.isActiveDraggable,
         'border-transparent text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/50':
           !props.isActive && !draggable.isActiveDraggable,
       }}
@@ -74,6 +77,7 @@ export const TabBar: Component<{
   const group = () => windowStore.tabGroups[props.groupId];
   const tabs = () => group()?.tabs ?? [];
   const activeTabId = () => group()?.activeTabId ?? null;
+  const isFocused = () => windowStore.activePaneId === props.paneId && windowStore.focusedRegion === 'center';
 
   const [isOverflowing, setIsOverflowing] = createSignal(false);
   const [showDropdown, setShowDropdown] = createSignal(false);
@@ -136,6 +140,7 @@ export const TabBar: Component<{
               tab={tab}
               groupId={props.groupId}
               isActive={tab.id === activeTabId()}
+              isFocused={isFocused()}
               onClose={() => windowActions.removeTab(props.groupId, tab.id)}
             />
           )}
