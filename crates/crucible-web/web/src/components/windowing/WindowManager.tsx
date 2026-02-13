@@ -230,9 +230,9 @@ function InnerManager() {
           <EdgePanel position="bottom" />
         </div>
         <EdgePanel position="right" />
+        <FlyoutPanel />
       </div>
       <StatusBar />
-      <FlyoutPanel />
       <div class="fixed inset-0 z-30 pointer-events-none">
         <For each={floatingWindows()}>
           {(w) => (

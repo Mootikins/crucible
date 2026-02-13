@@ -62,7 +62,10 @@ const Tab: Component<{
           e.stopPropagation();
           props.onClose(e);
         }}
-        class="flex-shrink-0 p-0.5 rounded-sm transition-all hover:bg-zinc-700 hover:text-zinc-200 opacity-0 group-hover:opacity-100 focus:opacity-100"
+        classList={{
+          'flex-shrink-0 p-0.5 rounded-sm transition-all hover:bg-zinc-700 hover:text-zinc-200 focus:opacity-100': true,
+          'opacity-0 group-hover:opacity-100': !props.isActive,
+        }}
       >
         <IconClose class="w-3 h-3" />
       </button>
