@@ -59,6 +59,38 @@ function replacePaneWithSplit(
   };
 }
 
+export type PaneDropPosition = 'left' | 'right' | 'top' | 'bottom';
+
+function insertPaneRelative(
+  layout: LayoutNode,
+  paneId: string,
+  position: PaneDropPosition,
+  newPaneId: string,
+  newGroupId: string
+): LayoutNode {
+  const pane = findPaneInLayout(layout, paneId);
+  if (!pane) return layout;
+  const isHorizontal = position === 'left' || position === 'right';
+  const newPane: PaneNode = {
+    id: newPaneId,
+    type: 'pane',
+    tabGroupId: newGroupId,
+  };
+  const first =
+    position === 'left' || position === 'top' ? newPane : pane;
+  const second =
+    position === 'left' || position === 'top' ? pane : newPane;
+  const newSplit: LayoutNode = {
+    id: generateId(),
+    type: 'split',
+    direction: isHorizontal ? 'horizontal' : 'vertical',
+    splitRatio: 0.5,
+    first,
+    second,
+  };
+  return replacePaneWithSplit(layout, paneId, newSplit);
+}
+
 // Sample tabs without icons (icons can be set in UI)
 const createSampleTabs = (): Tab[] => [
   { id: 'tab-1', title: 'index.tsx', contentType: 'file', isModified: false },
@@ -336,6 +368,36 @@ export const windowActions = {
     );
   },
 
+  splitPaneAndDrop(
+    paneId: string,
+    position: PaneDropPosition,
+    sourceGroupId: string,
+    tabId: string
+  ) {
+    const pane = findPaneInLayout(store.layout, paneId);
+    if (!pane) return;
+    const newPaneId = generateId();
+    const newGroupId = generateId();
+    setStore(
+      produce((s) => {
+        s.layout = insertPaneRelative(
+          s.layout,
+          paneId,
+          position,
+          newPaneId,
+          newGroupId
+        );
+        s.tabGroups[newGroupId] = {
+          id: newGroupId,
+          tabs: [],
+          activeTabId: tabId,
+        };
+        s.activePaneId = newPaneId;
+      })
+    );
+    windowActions.moveTab(sourceGroupId, newGroupId, tabId);
+  },
+
   setActivePane(paneId: string | null) {
     setStore('activePaneId', paneId);
   },
@@ -356,6 +418,22 @@ export const windowActions = {
 
   setEdgePanelActiveTab(position: EdgePanelPosition, tabId: string | null) {
     setStore('edgePanels', position, 'activeTabId', tabId);
+  },
+
+  setEdgePanelSize(position: EdgePanelPosition, size: number) {
+    const isVertical = position === 'left' || position === 'right';
+    const clamped = isVertical
+      ? Math.max(120, Math.min(600, size))
+      : Math.max(100, Math.min(500, size));
+    setStore(
+      produce((s) => {
+        if (isVertical) {
+          s.edgePanels[position].width = clamped;
+        } else {
+          s.edgePanels[position].height = clamped;
+        }
+      })
+    );
   },
 
   addEdgePanelTab(position: EdgePanelPosition, tab: EdgePanelTab) {
