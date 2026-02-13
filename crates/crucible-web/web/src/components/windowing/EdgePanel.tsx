@@ -188,6 +188,7 @@ export const EdgePanel: Component<{ position: EdgePanelPosition }> = (props) => 
                     'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/50':
                       panel().activeTabId !== tab.id,
                     'border-b-2 border-blue-500': !isVertical() && panel().activeTabId === tab.id,
+                    'border-b-2 border-transparent': !isVertical() && panel().activeTabId !== tab.id,
                   }}
                   onClick={() => windowActions.setEdgePanelActiveTab(props.position, tab.id)}
                 >
