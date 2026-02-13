@@ -1,8 +1,10 @@
 import { Component, createSignal, createEffect, onCleanup, For } from 'solid-js';
+import { Dynamic } from 'solid-js/web';
 import { windowStore, windowActions } from '@/stores/windowStore';
 import type { FloatingWindow as FloatingWindowType } from '@/types/windowTypes';
 import { TabBar } from './TabBar';
 import { IconClose, IconMinimize } from './icons';
+import { getGlobalRegistry } from '@/lib/panel-registry';
 
 type ResizeEdge = 'n' | 's' | 'e' | 'w' | 'nw' | 'ne' | 'sw' | 'se';
 
@@ -178,11 +180,22 @@ export const FloatingWindow: Component<{ window: FloatingWindowType }> = (props)
       </div>
       <div class="flex-1 flex flex-col min-h-0 overflow-hidden">
         <TabBar groupId={w().tabGroupId} paneId="" />
-        <div class="flex-1 bg-zinc-900 overflow-auto p-2 text-xs text-zinc-400">
-          {tabs().length > 0 ? (
-            <span>Content for {tabs()[0]?.title}</span>
-          ) : (
-            <span>No tabs</span>
+        <div class="flex-1 bg-zinc-900 overflow-auto p-2 text-xs text-zinc-400" data-testid={`panel-content-${tabs()[0]?.contentType ?? 'unknown'}`}>
+          {tabs().length > 0 ? (() => {
+            const activeTab = tabs()[0];
+            const panel = getGlobalRegistry().get(activeTab.contentType);
+            if (panel) {
+              return <Dynamic component={panel.component} />;
+            }
+            return (
+              <div class="flex-1 bg-zinc-900 overflow-auto p-2 text-xs text-zinc-400">
+                <span>Content for {activeTab.title}</span>
+              </div>
+            );
+          })() : (
+            <div class="flex-1 bg-zinc-900 overflow-auto p-2 text-xs text-zinc-400">
+              <span>No tabs</span>
+            </div>
           )}
         </div>
       </div>
