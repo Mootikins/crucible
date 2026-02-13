@@ -48,6 +48,6 @@ describe('FloatingWindow title deduplication', () => {
     const source = fs.readFileSync(filePath, 'utf-8');
 
     // Verify TabBar is still rendered (where tab titles are shown)
-    expect(source).toMatch(/<TabBar\s+groupId={w\(\)\.tabGroupId}/);
+    expect(source).toMatch(/<TabBar\s+mode="center"\s+groupId={w\(\)\.tabGroupId}/);
   });
 });
