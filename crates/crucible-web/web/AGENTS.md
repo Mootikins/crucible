@@ -23,22 +23,27 @@ bun run preview      # Preview production build
 
 ```
 src/
-├── components/      # UI components (SolidJS + Solid UI)
-├── contexts/        # SolidJS context providers (state management)
-├── hooks/           # Reusable reactive hooks
-└── lib/             # Utilities, API client, non-reactive code
+├── components/         # UI components
+│   └── windowing/      # Window manager (WindowManager, SplitPane, Pane, TabBar, EdgePanel, etc.)
+├── contexts/           # SolidJS context providers (state management)
+├── hooks/              # Reusable reactive hooks
+├── stores/             # Global state (e.g. windowStore for layout/tabs/panels)
+├── types/              # Shared types (e.g. windowTypes)
+└── lib/                # Utilities, API client, non-reactive code
 ```
 
+The main UI is a **window manager** (demo-style): header bar, collapsible edge panels (left/right/bottom), main area with recursive split panes and tab groups, floating windows, flyout, status bar. State is in `stores/windowStore` (Solid `createStore`); drag-and-drop uses `@thisbeyond/solid-dnd`.
+
 **MVVM Pattern:**
-- **Model**: Contexts (ChatContext, WhisperContext) — state + API calls
-- **ViewModel**: Hooks — transform state, business logic
+- **Model**: Store (windowStore) and contexts (ChatContext, WhisperContext when re-wired)
+- **ViewModel**: Hooks and store actions
 - **View**: Components — render, emit events
 
 ## Key Dependencies
 
-- `@xenova/transformers` — Browser-side Whisper (WebGPU)
 - `solid-js` — Reactive UI framework
-- `@solid-ui/*` — Accessible component primitives
+- `@thisbeyond/solid-dnd` — Drag and drop for tabs/panes
+- `@xenova/transformers` — Browser-side Whisper (WebGPU) when chat is re-integrated
 
 ## Development Notes
 
