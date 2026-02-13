@@ -128,6 +128,12 @@ export interface WindowManagerActions {
   createTabGroup: (paneId?: string) => string;
   deleteTabGroup: (groupId: string) => void;
   splitPane: (paneId: string, direction: SplitDirection) => void;
+  splitPaneAndDrop: (
+    paneId: string,
+    position: 'left' | 'right' | 'top' | 'bottom',
+    sourceGroupId: string,
+    tabId: string
+  ) => void;
   setActivePane: (paneId: string | null) => void;
   toggleEdgePanel: (position: EdgePanelPosition) => void;
   setEdgePanelCollapsed: (
@@ -138,6 +144,7 @@ export interface WindowManagerActions {
     position: EdgePanelPosition,
     tabId: string | null
   ) => void;
+  setEdgePanelSize: (position: EdgePanelPosition, size: number) => void;
   addEdgePanelTab: (position: EdgePanelPosition, tab: EdgePanelTab) => void;
   removeEdgePanelTab: (position: EdgePanelPosition, tabId: string) => void;
   openFlyout: (position: EdgePanelPosition, tabId: string) => void;
