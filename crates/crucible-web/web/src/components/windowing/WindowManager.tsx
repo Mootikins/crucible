@@ -24,6 +24,7 @@ import {
   IconZap,
 } from './icons';
 import { matchShortcut } from '@/lib/keyboard-shortcuts';
+import { smallestIntersecting } from '@/lib/collision-detector';
 
 function HeaderBar() {
   const edgePanels = () => windowStore.edgePanels;
@@ -251,7 +252,7 @@ function InnerManager() {
 
 export const WindowManager: Component = () => {
   return (
-    <DragDropProvider>
+    <DragDropProvider collisionDetector={smallestIntersecting}>
       <DragDropSensors>
         <InnerManager />
       </DragDropSensors>

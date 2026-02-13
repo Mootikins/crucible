@@ -197,6 +197,35 @@ The layout uses **pointer** events for drag. To verify with playwright-cli:
 - Click a border collapse/expand and see the border collapse/expand.
 - Drag a center splitter and see pane sizes change.
 
+## Center splitter resize (playwright-cli)
+
+Reproduce the center splitter resize in the main windowing UI: open the app, target the root splitter, perform a pointer drag, and measure whether the left pane width changes. If the width changes, the resize path works in that run; if not, the failure is reproduced.
+
+### Prerequisites
+
+- Dev server running: `bun run dev` (default port 5173).
+- playwright-cli available: `bunx playwright-cli` or global install.
+
+### Steps
+
+1. **Open the main app** (windowing UI with center tiling):
+   ```bash
+   playwright-cli open "http://localhost:5173/"
+   ```
+   Add `--headed` to watch the browser.
+
+2. **Capture refs (optional):**
+   ```bash
+   playwright-cli snapshot
+   ```
+   Inspect `.playwright-cli/page-*.yml` for element refs.
+
+3. **Run the resize repro script** (measures first pane width before/after dragging the root splitter right by 80px):
+   ```bash
+   playwright-cli run-code "$(cat e2e/scripts/center-resize-repro.js)"
+   ```
+   The script targets `[data-split-id="split-root"]`, reads the first pane width, performs a pointer sequence (move to splitter center, down, move right 80px, up), then reads the width again and prints `{"widthBefore":...,"widthAfter":...}`. If resize worked, `widthAfter` should be greater than `widthBefore`; if they are equal, the failure is reproduced.
+
 ## Notes
 
 - Tests expect the app to be running on `http://localhost:3000`

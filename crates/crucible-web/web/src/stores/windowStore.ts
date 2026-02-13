@@ -794,6 +794,10 @@ export const windowActions = {
   },
 };
 
+if (typeof window !== 'undefined') {
+  (window as unknown as Record<string, unknown>).__windowActions = windowActions;
+}
+
 export function updateSplitRatio(
   layout: LayoutNode,
   splitId: string,
