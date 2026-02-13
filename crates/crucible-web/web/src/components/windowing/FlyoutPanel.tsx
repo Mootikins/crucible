@@ -31,7 +31,7 @@ export const FlyoutPanel: Component = () => {
     const f = flyout();
     const p = panel();
     if (!f || !p) return null;
-    return p.tabs.find((t) => t.id === f.tabId) ?? null;
+    return windowStore.tabGroups[p.tabGroupId]?.tabs.find((t) => t.id === f.tabId) ?? null;
   };
 
   const posStyle = createMemo(() => flyoutPositionStyle(panelPosition()));
