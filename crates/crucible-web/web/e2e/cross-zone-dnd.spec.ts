@@ -3,6 +3,18 @@ import { test, expect, type Page } from '@playwright/test';
 type PanelPosition = 'left' | 'right' | 'bottom';
 
 async function waitForApp(page: Page) {
+  await page.route('**/api/layout', async (route) => {
+    const method = route.request().method();
+    if (method === 'GET') {
+      await route.fulfill({ status: 404, contentType: 'application/json', body: '{}' });
+      return;
+    }
+    if (method === 'POST' || method === 'DELETE') {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
+      return;
+    }
+    await route.continue();
+  });
   await page.goto('/');
   await page.waitForTimeout(500);
 }
@@ -73,30 +85,30 @@ test.describe('Cross-zone tab drag and drop', () => {
   });
 
   test('drag edge tab from left panel to bottom panel', async ({ page }) => {
-    const from = await getCenter(page, '[data-testid="edge-tab-left-git-tab"]');
+    const from = await getCenter(page, '[data-testid="edge-tab-left-search-tab"]');
     const to = await getCenter(page, '[data-testid="edge-tabbar-bottom"]');
 
     await pointerDrag(page, from, to);
     await page.waitForTimeout(300);
 
-    await expect(page.locator('[data-testid="edge-tab-left-git-tab"]')).not.toBeVisible({ timeout: 2000 });
-    await expect(page.locator('[data-testid="edge-tab-bottom-git-tab"]')).toBeVisible({ timeout: 2000 });
+    await expect(page.locator('[data-testid="edge-tab-left-search-tab"]')).not.toBeVisible({ timeout: 2000 });
+    await expect(page.locator('[data-testid="edge-tab-bottom-search-tab"]')).toBeVisible({ timeout: 2000 });
   });
 
   test('dragging last tab out of edge panel auto-collapses it', async ({ page }) => {
-    // Given: left panel has 3 tabs; drain to 1 by moving explorer + search to center
-    const centerTarget = await getCenterOf(page, page.locator('[data-tab-id="tab-1"]'));
+    // Given: left panel has 3 tabs; drain to 1 by moving search + git to center
+    const centerTarget = await getCenterOf(page, page.locator('[data-tab-id="tab-2"]'));
 
-    await pointerDrag(page, await getCenter(page, '[data-testid="edge-tab-left-explorer-tab"]'), centerTarget);
-    await page.waitForTimeout(300);
     await pointerDrag(page, await getCenter(page, '[data-testid="edge-tab-left-search-tab"]'), centerTarget);
+    await page.waitForTimeout(300);
+    await pointerDrag(page, await getCenter(page, '[data-testid="edge-tab-left-git-tab"]'), centerTarget);
     await page.waitForTimeout(300);
 
     const leftTabBar = page.locator('[data-testid="edge-tabbar-left"]');
     await expect(leftTabBar).toBeVisible({ timeout: 2000 });
 
-    // When: drag the last remaining tab (git-tab) to center
-    await pointerDrag(page, await getCenter(page, '[data-testid="edge-tab-left-git-tab"]'), centerTarget);
+    // When: drag the last remaining tab (explorer-tab) to center
+    await pointerDrag(page, await getCenter(page, '[data-testid="edge-tab-left-explorer-tab"]'), centerTarget);
     await page.waitForTimeout(300);
 
     // Then: left panel auto-collapses
@@ -105,7 +117,7 @@ test.describe('Cross-zone tab drag and drop', () => {
 
   test('drag center tab onto collapsed right panel expands it', async ({ page }) => {
     // Given: right panel starts collapsed
-    const from = await getCenterOf(page, page.locator('[data-tab-id="tab-4"]'));
+    const from = await getCenterOf(page, page.locator('[data-tab-id="tab-2"]'));
     const to = await getCenter(page, '[data-testid="edge-collapsed-drop-right"]');
 
     // When: drag center tab onto collapsed strip
@@ -114,7 +126,7 @@ test.describe('Cross-zone tab drag and drop', () => {
 
     // Then: right panel expands with the dropped tab
     await expect(page.locator('[data-testid="edge-tabbar-right"]')).toBeVisible({ timeout: 2000 });
-    await expect(page.locator('[data-testid="edge-tab-right-tab-4"]')).toBeVisible({ timeout: 2000 });
+    await expect(page.locator('[data-testid="edge-tab-right-tab-2"]')).toBeVisible({ timeout: 2000 });
   });
 
   test('edge tab drag creates drag overlay with tab title', async ({ page }) => {

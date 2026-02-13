@@ -125,7 +125,7 @@ export interface WindowState {
   } | null;
   flyoutState: {
     isOpen: boolean;
-    panelPosition: EdgePanelPosition;
+    position: EdgePanelPosition;
     tabId: string | null;
   } | null;
   nextZIndex: number;
@@ -272,7 +272,7 @@ function createInitialState(): WindowState {
     } | null,
     flyoutState: null as {
       isOpen: boolean;
-      panelPosition: EdgePanelPosition;
+      position: EdgePanelPosition;
       tabId: string | null;
     } | null,
     nextZIndex: 100,
@@ -574,21 +574,9 @@ export const windowActions = {
     );
   },
 
-  /** @deprecated Use addTab(groupId, tab) with edgePanels[position].tabGroupId */
-  addEdgePanelTab(position: EdgePanelPosition, tab: Tab) {
-    const groupId = store.edgePanels[position].tabGroupId;
-    windowActions.addTab(groupId, tab);
-  },
-
-  /** @deprecated Use removeTab(groupId, tabId) with edgePanels[position].tabGroupId */
-  removeEdgePanelTab(position: EdgePanelPosition, tabId: string) {
-    const groupId = store.edgePanels[position].tabGroupId;
-    windowActions.removeTab(groupId, tabId);
-  },
-
   openFlyout(position: EdgePanelPosition, tabId: string) {
     setStore({
-      flyoutState: { isOpen: true, panelPosition: position, tabId },
+      flyoutState: { isOpen: true, position, tabId },
     });
   },
 

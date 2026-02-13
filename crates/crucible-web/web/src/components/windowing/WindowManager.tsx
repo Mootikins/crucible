@@ -117,8 +117,16 @@ function InnerManager() {
     const reorder = reorderState();
     setReorderState(null);
     if (reorder && source && source.type === 'tab' && reorder.groupId === source.sourceGroupId) {
-      windowActions.moveTab(source.sourceGroupId, source.sourceGroupId, source.tab.id, reorder.insertIndex);
-      return;
+      const droppingOnSameGroup =
+        target?.type === 'tabGroup' && target.groupId === source.sourceGroupId;
+      const droppingOnSameEdgePanel =
+        target?.type === 'edgePanel' &&
+        windowStore.edgePanels[target.panelId as 'left' | 'right' | 'bottom']?.tabGroupId ===
+          source.sourceGroupId;
+      if (!target || droppingOnSameGroup || droppingOnSameEdgePanel) {
+        windowActions.moveTab(source.sourceGroupId, source.sourceGroupId, source.tab.id, reorder.insertIndex);
+        return;
+      }
     }
 
     if (!source || !target) {
