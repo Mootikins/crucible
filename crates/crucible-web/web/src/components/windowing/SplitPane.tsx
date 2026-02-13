@@ -1,17 +1,12 @@
-import { Component, createSignal, createEffect, onCleanup } from 'solid-js';
+import { Component, Show, createSignal, createEffect, onCleanup } from 'solid-js';
 import { produce, unwrap } from 'solid-js/store';
 import { Pane } from './Pane';
 import { setStore, updateSplitRatio, windowStore } from '@/stores/windowStore';
 import type { LayoutNode } from '@/types/windowTypes';
 import { IconGripVertical, IconGripHorizontal } from './icons';
 
-export const SplitPane: Component<{ node: LayoutNode }> = (props) => {
-  const node = () => props.node;
-  if (node().type === 'pane') {
-    return <Pane paneId={node().id} />;
-  }
-
-  const split = () => node() as Extract<LayoutNode, { type: 'split' }>;
+const SplitPaneInner: Component<{ node: Extract<LayoutNode, { type: 'split' }> }> = (props) => {
+  const split = () => props.node;
   const [localRatio, setLocalRatio] = createSignal(split().splitRatio);
   const [isDragging, setIsDragging] = createSignal(false);
   let containerRef: HTMLDivElement;
@@ -91,11 +86,7 @@ export const SplitPane: Component<{ node: LayoutNode }> = (props) => {
         class="relative z-0 overflow-hidden min-w-0 min-h-0"
         style={{ flex: `${effectiveRatio()} 1 0` }}
       >
-        {split().first.type === 'pane' ? (
-          <Pane paneId={split().first.id} />
-        ) : (
-          <SplitPane node={split().first} />
-        )}
+        <SplitPane node={split().first} />
       </div>
       <div
         data-testid="resize-splitter"
@@ -125,12 +116,19 @@ export const SplitPane: Component<{ node: LayoutNode }> = (props) => {
         class="relative z-0 overflow-hidden min-w-0 min-h-0"
         style={{ flex: `${1 - effectiveRatio()} 1 0` }}
       >
-        {split().second.type === 'pane' ? (
-          <Pane paneId={split().second.id} />
-        ) : (
-          <SplitPane node={split().second} />
-        )}
+        <SplitPane node={split().second} />
       </div>
     </div>
+  );
+};
+
+export const SplitPane: Component<{ node: LayoutNode }> = (props) => {
+  return (
+    <Show
+      when={props.node.type === 'split' ? props.node : undefined}
+      fallback={<Pane paneId={props.node.id} />}
+    >
+      {(split) => <SplitPaneInner node={split()} />}
+    </Show>
   );
 };
