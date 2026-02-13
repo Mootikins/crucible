@@ -4,6 +4,19 @@ import { useProjectSafe } from '@/contexts/ProjectContext';
 import { useEditorSafe } from '@/contexts/EditorContext';
 import { listNotes } from '@/lib/api';
 import type { FileEntry } from '@/lib/types';
+import {
+  FileText,
+  FileCode,
+  File,
+  Folder,
+  FolderOpen,
+  FileJson,
+  Palette,
+  Globe,
+  Moon,
+  Cog,
+  ChevronDown,
+} from '@/lib/icons';
 
 interface FileNode {
   id: string;
@@ -14,59 +27,39 @@ interface FileNode {
 }
 
 const FileIcon: Component<{ extension: string }> = (props) => {
-  const icon = createMemo(() => {
-    const ext = props.extension.toLowerCase();
-    switch (ext) {
-      case 'md':
-        return '📝';
-      case 'ts':
-      case 'tsx':
-        return '🔷';
-      case 'js':
-      case 'jsx':
-        return '🟨';
-      case 'rs':
-        return '🦀';
-      case 'json':
-        return '📋';
-      case 'toml':
-      case 'yaml':
-      case 'yml':
-        return '⚙️';
-      case 'css':
-      case 'scss':
-        return '🎨';
-      case 'html':
-        return '🌐';
-      case 'lua':
-      case 'fnl':
-        return '🌙';
-      default:
-        return '📄';
-    }
-  });
+  const ext = createMemo(() => props.extension.toLowerCase());
 
-  return <span class="mr-1.5 text-sm">{icon()}</span>;
+  return (
+    <>
+      {ext() === 'md' && <FileText class="w-4 h-4 mr-1.5 shrink-0" />}
+      {(ext() === 'ts' || ext() === 'tsx') && <FileCode class="w-4 h-4 mr-1.5 shrink-0" />}
+      {(ext() === 'js' || ext() === 'jsx') && <FileCode class="w-4 h-4 mr-1.5 shrink-0" />}
+      {ext() === 'rs' && <FileCode class="w-4 h-4 mr-1.5 shrink-0" />}
+      {ext() === 'json' && <FileJson class="w-4 h-4 mr-1.5 shrink-0" />}
+      {(ext() === 'toml' || ext() === 'yaml' || ext() === 'yml') && <Cog class="w-4 h-4 mr-1.5 shrink-0" />}
+      {(ext() === 'css' || ext() === 'scss') && <Palette class="w-4 h-4 mr-1.5 shrink-0" />}
+      {ext() === 'html' && <Globe class="w-4 h-4 mr-1.5 shrink-0" />}
+      {(ext() === 'lua' || ext() === 'fnl') && <Moon class="w-4 h-4 mr-1.5 shrink-0" />}
+      {!['md', 'ts', 'tsx', 'js', 'jsx', 'rs', 'json', 'toml', 'yaml', 'yml', 'css', 'scss', 'html', 'lua', 'fnl'].includes(ext()) && <File class="w-4 h-4 mr-1.5 shrink-0" />}
+    </>
+  );
 };
 
 const FolderIcon: Component<{ open?: boolean }> = (props) => (
-  <span class="mr-1.5 text-sm">{props.open ? '📂' : '📁'}</span>
+  <>
+    {props.open ? (
+      <FolderOpen class="w-4 h-4 mr-1.5 shrink-0" />
+    ) : (
+      <Folder class="w-4 h-4 mr-1.5 shrink-0" />
+    )}
+  </>
 );
 
 const ChevronIcon: Component<{ open?: boolean }> = (props) => (
-  <svg
-    xmlns="http://www.w3.org/2000/svg"
-    viewBox="0 0 20 20"
-    fill="currentColor"
+  <ChevronDown
     class="w-3.5 h-3.5 transition-transform shrink-0"
     classList={{ 'rotate-90': props.open }}
-  >
-    <path
-      fill-rule="evenodd"
-      d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z"
-      clip-rule="evenodd"
-    />
-  </svg>
+  />
 );
 
 const getExtension = (filename: string): string => {
