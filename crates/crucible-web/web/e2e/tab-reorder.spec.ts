@@ -1,6 +1,18 @@
 import { test, expect, type Page } from '@playwright/test';
 
 async function waitForApp(page: Page) {
+  await page.route('**/api/layout', async (route) => {
+    const method = route.request().method();
+    if (method === 'GET') {
+      await route.fulfill({ status: 404, contentType: 'application/json', body: '{}' });
+      return;
+    }
+    if (method === 'POST' || method === 'DELETE') {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
+      return;
+    }
+    await route.continue();
+  });
   await page.goto('/');
   await page.waitForTimeout(500);
 }
