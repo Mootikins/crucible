@@ -2,6 +2,7 @@ import { Component, For, Show, createSignal, createEffect } from 'solid-js';
 import { useSessionSafe } from '@/contexts/SessionContext';
 import { useProjectSafe } from '@/contexts/ProjectContext';
 import type { Session, Project } from '@/lib/types';
+import { RefreshCw, Plus } from '@/lib/icons';
 
 const KilnSelector: Component<{
   kilns: string[];
@@ -212,9 +213,10 @@ export const SessionPanel: Component = () => {
 
           <button
             onClick={() => setShowNewProject(true)}
-            class="w-full mt-2 px-3 py-2 text-sm text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800 rounded-lg transition-colors"
+            class="w-full mt-2 px-3 py-2 text-sm text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800 rounded-lg transition-colors flex items-center justify-center gap-2"
           >
-            + Add Project
+            <Plus class="w-3.5 h-3.5" />
+            Add Project
           </button>
         </div>
 
@@ -248,9 +250,10 @@ export const SessionPanel: Component = () => {
               <button
                 onClick={handleCreateSession}
                 disabled={isLoading() || !selectedKiln()}
-                class="w-full mt-2 px-3 py-2 text-sm text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800 rounded-lg transition-colors disabled:opacity-50"
+                class="w-full mt-2 px-3 py-2 text-sm text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800 rounded-lg transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
               >
-                + New Session
+                <Plus class="w-3.5 h-3.5" />
+                New Session
               </button>
             </div>
           </div>
@@ -294,9 +297,9 @@ export const SessionPanel: Component = () => {
 
             <button
               onClick={() => refreshSessions()}
-              class="px-2 py-1 text-sm bg-neutral-700 text-neutral-300 rounded hover:bg-neutral-600"
+              class="px-2 py-1 text-sm bg-neutral-700 text-neutral-300 rounded hover:bg-neutral-600 flex items-center justify-center"
             >
-              ↻
+              <RefreshCw class="w-3.5 h-3.5" />
             </button>
           </div>
         </div>
