@@ -27,6 +27,10 @@ import {
   Terminal,
   AlertTriangle,
   FileOutput,
+  FileCode,
+  Palette,
+  FileJson,
+  FileText,
 } from '@/lib/icons';
 
 const generateId = () => Math.random().toString(36).substring(2, 11);
@@ -158,17 +162,16 @@ function insertPaneRelative(
   return replacePaneWithSplit(layout, paneId, newSplit);
 }
 
-// Sample tabs without icons (icons can be set in UI)
 const createSampleTabs = (): Tab[] => [
-  { id: 'tab-1', title: 'index.tsx', contentType: 'file', isModified: false },
-  { id: 'tab-2', title: 'App.tsx', contentType: 'file', isModified: true },
-  { id: 'tab-3', title: 'styles.css', contentType: 'file', isModified: false },
-  { id: 'tab-4', title: 'package.json', contentType: 'file', isModified: false },
+  { id: 'tab-1', title: 'index.tsx', contentType: 'file', isModified: false, icon: FileCode },
+  { id: 'tab-2', title: 'App.tsx', contentType: 'file', isModified: true, icon: FileCode },
+  { id: 'tab-3', title: 'styles.css', contentType: 'file', isModified: false, icon: Palette },
+  { id: 'tab-4', title: 'package.json', contentType: 'file', isModified: false, icon: FileJson },
 ];
 
 const createSampleTabs2 = (): Tab[] => [
-  { id: 'tab-5', title: 'README.md', contentType: 'document', isModified: false },
-  { id: 'tab-6', title: 'preview.png', contentType: 'preview', isModified: false },
+  { id: 'tab-5', title: 'README.md', contentType: 'document', isModified: false, icon: FileText },
+  { id: 'tab-6', title: 'preview.png', contentType: 'preview', isModified: false, icon: Palette },
 ];
 
 const createLeftPanelTabs = (): EdgePanelTab[] => [
@@ -878,6 +881,19 @@ export const windowActions = {
         tgt.activeTabId = tabId;
 
         s.focusedRegion = targetPosition;
+      })
+    );
+  },
+
+  reorderEdgeTab(position: EdgePanelPosition, tabId: string, newIndex: number) {
+    setStore(
+      produce((s) => {
+        const panel = s.edgePanels[position];
+        if (!panel) return;
+        const idx = panel.tabs.findIndex((t) => t.id === tabId);
+        if (idx === -1 || idx === newIndex) return;
+        const [tab] = panel.tabs.splice(idx, 1);
+        panel.tabs.splice(newIndex, 0, tab);
       })
     );
   },
