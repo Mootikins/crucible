@@ -23,6 +23,7 @@ import {
   IconSettings,
   IconZap,
 } from './icons';
+import { matchShortcut } from '@/lib/keyboard-shortcuts';
 
 function HeaderBar() {
   const edgePanels = () => windowStore.edgePanels;
@@ -167,9 +168,49 @@ function InnerManager() {
     }
   });
 
+  const handleShortcutAction = (action: string) => {
+    if (action === 'closeActiveTab') {
+      const activePaneId = windowStore.activePaneId;
+      if (!activePaneId) return;
+      const pane = windowActions.findPaneById(activePaneId);
+      if (!pane?.tabGroupId) return;
+      const group = windowActions.getTabGroup(pane.tabGroupId);
+      if (!group?.activeTabId) return;
+      windowActions.removeTab(pane.tabGroupId, group.activeTabId);
+    } else if (action === 'nextTab') {
+      const activePaneId = windowStore.activePaneId;
+      if (!activePaneId) return;
+      const pane = windowActions.findPaneById(activePaneId);
+      if (!pane?.tabGroupId) return;
+      const group = windowActions.getTabGroup(pane.tabGroupId);
+      if (!group || group.tabs.length === 0) return;
+      const currentIndex = group.tabs.findIndex((t) => t.id === group.activeTabId);
+      const nextIndex = (currentIndex + 1) % group.tabs.length;
+      const nextTab = group.tabs[nextIndex];
+      if (nextTab) {
+        windowActions.setActiveTab(pane.tabGroupId, nextTab.id);
+      }
+    } else if (action === 'splitVertical') {
+      const activePaneId = windowStore.activePaneId;
+      if (activePaneId) {
+        windowActions.splitPane(activePaneId, 'vertical');
+      }
+    } else if (action === 'toggleLeftPanel') {
+      windowActions.toggleEdgePanel('left');
+    }
+  };
+
   onMount(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') windowActions.closeFlyout();
+      if (e.key === 'Escape') {
+        windowActions.closeFlyout();
+        return;
+      }
+      const action = matchShortcut(e);
+      if (action) {
+        e.preventDefault();
+        handleShortcutAction(action);
+      }
     };
     document.addEventListener('keydown', handleKeyDown);
     onCleanup(() => document.removeEventListener('keydown', handleKeyDown));
