@@ -13,6 +13,7 @@ import { StatusBar } from './StatusBar';
 import { MinimizedBar } from './MinimizedBar';
 import { windowStore, windowActions } from '@/stores/windowStore';
 import type { DragSource, DropTarget } from '@/types/windowTypes';
+import { reorderState, setReorderState } from './TabBar';
 import {
   IconPanelLeft,
   IconPanelLeftClose,
@@ -112,6 +113,20 @@ function InnerManager() {
   onDragEnd(({ draggable, droppable }) => {
     const source = draggable.data as DragSource | undefined;
     const target = droppable?.data as DropTarget | undefined;
+
+    const reorder = reorderState();
+    setReorderState(null);
+    if (reorder && source) {
+      if (reorder.type === 'center' && source.type === 'tab' && reorder.groupId === source.sourceGroupId) {
+        windowActions.moveTab(source.sourceGroupId, source.sourceGroupId, source.tab.id, reorder.insertIndex);
+        return;
+      }
+      if (reorder.type === 'edge' && source.type === 'edgeTab' && reorder.position === source.sourcePosition) {
+        windowActions.reorderEdgeTab(source.sourcePosition, source.tab.id, reorder.insertIndex);
+        return;
+      }
+    }
+
     if (!source || !target) {
       if (source?.type === 'tab' && draggable.id === 'newFloating') {
         // Dropped on "New Window" chip or similar - create floating

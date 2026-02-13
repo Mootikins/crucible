@@ -2,33 +2,74 @@ import { Component, For, Show, createSignal, createEffect, onMount, onCleanup } 
 import {
   createDraggable,
   createDroppable,
+  useDragDropContext,
 } from '@thisbeyond/solid-dnd';
-import type { Tab as TabType, EdgePanelTab, EdgePanelPosition, TabBarProps } from '@/types/windowTypes';
+import type { Tab as TabType, EdgePanelTab, EdgePanelPosition, TabBarProps, DragSource } from '@/types/windowTypes';
 import { windowStore, windowActions } from '@/stores/windowStore';
 import { IconGripVertical, IconClose, IconLayout } from './icons';
 import { ChevronDown } from '@/lib/icons';
 
-// ── Center Tab (existing behavior, unchanged) ──────────────────────────
+// ── Module-level reorder state (shared with WindowManager) ──────────────
 
-const Tab: Component<{
-  tab: TabType;
-  groupId: string;
+export type ReorderState = {
+  type: 'center' | 'edge';
+  groupId?: string;
+  position?: EdgePanelPosition;
+  insertIndex: number;
+} | null;
+
+const [reorderState, setReorderState] = createSignal<ReorderState>(null);
+export { reorderState, setReorderState };
+
+// ── Insert-index computation helper ─────────────────────────────────────
+
+function computeInsertIndex(
+  containerEl: HTMLElement,
+  pointerX: number,
+  draggedTabId?: string,
+): number | null {
+  const tabEls = containerEl.querySelectorAll('[data-tab-id]');
+  let adjustedIndex = 0;
+  for (let i = 0; i < tabEls.length; i++) {
+    const el = tabEls[i] as HTMLElement;
+    if (draggedTabId && el.dataset.tabId === draggedTabId) continue;
+    const rect = el.getBoundingClientRect();
+    if (pointerX < rect.left + rect.width / 2) return adjustedIndex;
+    adjustedIndex++;
+  }
+  return adjustedIndex;
+}
+
+// ── Unified TabItem (replaces Tab + EdgeTab) ────────────────────────────
+
+interface TabItemProps {
+  tab: TabType | EdgePanelTab;
+  draggableId: string;
+  draggableData: DragSource;
   isActive: boolean;
   isFocused: boolean;
+  onClick: () => void;
   onClose: (e: MouseEvent) => void;
-}> = (props) => {
-  const id = () => `tab:${props.groupId}:${props.tab.id}`;
-  const draggable = createDraggable(id(), {
-    type: 'tab',
-    tab: props.tab,
-    sourceGroupId: props.groupId,
-  });
+  testId?: string;
+  onDragStart?: () => void;
+}
+
+const TabItem: Component<TabItemProps> = (props) => {
+  const draggable = createDraggable(props.draggableId, props.draggableData);
   const Icon = props.tab.icon;
+
+  // Fire onDragStart callback when this tab becomes the active draggable
+  createEffect(() => {
+    if (draggable.isActiveDraggable) {
+      props.onDragStart?.();
+    }
+  });
 
   return (
     <div
       use:draggable
       data-tab-id={props.tab.id}
+      data-testid={props.testId}
       classList={{
         'group relative flex items-center gap-1 px-2.5 py-1.5 cursor-pointer transition-all duration-100 border-b-2 rounded-t-sm':
           true,
@@ -39,9 +80,7 @@ const Tab: Component<{
         'border-transparent text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/50':
           !props.isActive && !draggable.isActiveDraggable,
       }}
-      onClick={() => {
-        windowActions.setActiveTab(props.groupId, props.tab.id);
-      }}
+      onClick={() => props.onClick()}
       onMouseEnter={() => {}}
       onMouseLeave={() => {}}
     >
@@ -75,70 +114,13 @@ const Tab: Component<{
   );
 };
 
-// ── Edge Tab (draggable, for edge panel mode) ───────────────────────────
+// ── Insert indicator element ────────────────────────────────────────────
 
-const EdgeTab: Component<{
-  tab: EdgePanelTab;
-  position: EdgePanelPosition;
-  isActive: boolean;
-  isFocused: boolean;
-  onActivate: () => void;
-  onClose: (e: MouseEvent) => void;
-}> = (props) => {
-  const id = () => `edgetab:${props.position}:${props.tab.id}`;
-  const draggable = createDraggable(id(), {
-    type: 'edgeTab',
-    tab: props.tab,
-    sourcePosition: props.position,
-  });
-  const Icon = props.tab.icon;
+const InsertIndicator: Component = () => (
+  <div class="w-0.5 h-5 bg-blue-500 rounded-full flex-shrink-0 my-auto" />
+);
 
-  // Close flyout when drag starts from edge panel
-  createEffect(() => {
-    if (draggable.isActiveDraggable && windowStore.flyoutState?.isOpen) {
-      windowActions.closeFlyout();
-    }
-  });
-
-  return (
-    <div
-      use:draggable
-      data-tab-id={props.tab.id}
-      data-testid={`edge-tab-${props.position}-${props.tab.id}`}
-      classList={{
-        'group relative flex items-center gap-1.5 px-2.5 py-1.5 cursor-pointer transition-all duration-150 border-b-2': true,
-        'opacity-40 border-transparent bg-zinc-800/50': draggable.isActiveDraggable,
-        'bg-zinc-800 text-zinc-100': props.isActive && !draggable.isActiveDraggable,
-        'border-blue-500': props.isActive && props.isFocused && !draggable.isActiveDraggable,
-        'border-zinc-600': props.isActive && !props.isFocused && !draggable.isActiveDraggable,
-        'border-transparent text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/50':
-          !props.isActive && !draggable.isActiveDraggable,
-      }}
-      onClick={() => props.onActivate()}
-    >
-      <div class="cursor-grab active:cursor-grabbing p-0.5 -ml-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-        <IconGripVertical class="w-3 h-3 text-zinc-500" />
-      </div>
-      {Icon && (
-        <Icon class={`w-3.5 h-3.5 flex-shrink-0 ${props.isActive ? 'text-zinc-300' : 'text-zinc-500'}`} />
-      )}
-      <span class="text-xs font-medium truncate max-w-[100px]">
-        {props.tab.title}
-      </span>
-      <button
-        onClick={(e) => { e.stopPropagation(); props.onClose(e); }}
-        classList={{
-          'flex-shrink-0 p-0.5 rounded-sm transition-all hover:bg-zinc-700 hover:text-zinc-200 focus:opacity-100': true,
-          'opacity-0 group-hover:opacity-100': !props.isActive,
-        }}
-      >
-        <IconClose class="w-3 h-3" />
-      </button>
-    </div>
-  );
-};
-
-// ── Center TabBar (existing behavior, unchanged) ────────────────────────
+// ── Center TabBar ───────────────────────────────────────────────────────
 
 const CenterTabBar: Component<{
   groupId: string;
@@ -152,11 +134,49 @@ const CenterTabBar: Component<{
 
   const [isOverflowing, setIsOverflowing] = createSignal(false);
   const [showDropdown, setShowDropdown] = createSignal(false);
+  const [insertIdx, setInsertIdx] = createSignal<number | null>(null);
+  const [pointerX, setPointerX] = createSignal<number | null>(null);
   let tabsContainerRef: HTMLDivElement | undefined;
 
   const droppable = createDroppable(`tabgroup:${props.groupId}`, {
     type: 'tabGroup',
     groupId: props.groupId,
+  });
+
+  const dndCtx = useDragDropContext();
+
+  const isSameBarDrag = () => {
+    const active = dndCtx?.[0]?.active?.draggable;
+    if (!active) return false;
+    const data = active.data as DragSource | undefined;
+    return data?.type === 'tab' && data.sourceGroupId === props.groupId;
+  };
+
+  const draggedTabId = () => {
+    const active = dndCtx?.[0]?.active?.draggable;
+    if (!active) return undefined;
+    const data = active.data as DragSource | undefined;
+    return data?.type === 'tab' ? data.tab.id : undefined;
+  };
+
+  createEffect(() => {
+    const x = pointerX();
+    if (x != null && tabsContainerRef && isSameBarDrag()) {
+      const idx = computeInsertIndex(tabsContainerRef, x, draggedTabId());
+      setInsertIdx(idx);
+      if (idx != null) {
+        setReorderState({ type: 'center', groupId: props.groupId, insertIndex: idx });
+      }
+    } else {
+      setInsertIdx(null);
+    }
+  });
+
+  createEffect(() => {
+    if (!dndCtx?.[0]?.active?.draggable) {
+      setInsertIdx(null);
+      setPointerX(null);
+    }
   });
 
   onMount(() => {
@@ -204,18 +224,30 @@ const CenterTabBar: Component<{
       <div
         ref={tabsContainerRef}
         class="flex-1 flex items-end gap-0.5 overflow-x-auto scrollbar-hide px-1 min-w-0 [scrollbar-width:none] [-ms-overflow-style:none]"
+        onPointerMove={(e) => { if (isSameBarDrag()) setPointerX(e.clientX); }}
+        onPointerLeave={() => setPointerX(null)}
       >
         <For each={tabs()}>
-          {(tab) => (
-            <Tab
-              tab={tab}
-              groupId={props.groupId}
-              isActive={tab.id === activeTabId()}
-              isFocused={isFocused()}
-              onClose={() => windowActions.removeTab(props.groupId, tab.id)}
-            />
+          {(tab, i) => (
+            <>
+              <Show when={insertIdx() === i()}>
+                <InsertIndicator />
+              </Show>
+              <TabItem
+                tab={tab}
+                draggableId={`tab:${props.groupId}:${tab.id}`}
+                draggableData={{ type: 'tab', tab, sourceGroupId: props.groupId }}
+                isActive={tab.id === activeTabId()}
+                isFocused={isFocused()}
+                onClick={() => windowActions.setActiveTab(props.groupId, tab.id)}
+                onClose={() => windowActions.removeTab(props.groupId, tab.id)}
+              />
+            </>
           )}
         </For>
+        <Show when={insertIdx() === tabs().length}>
+          <InsertIndicator />
+        </Show>
       </div>
        <Show when={isOverflowing()}>
          <div class="relative flex-shrink-0">
@@ -270,7 +302,7 @@ const CenterTabBar: Component<{
   );
 };
 
-// ── Edge TabBar (droppable bar with draggable edge tabs) ────────────────
+// ── Edge TabBar ─────────────────────────────────────────────────────────
 
 const EdgeTabBar: Component<{
   position: EdgePanelPosition;
@@ -279,32 +311,86 @@ const EdgeTabBar: Component<{
 }> = (props) => {
   const isFocused = () => windowStore.focusedRegion === props.position;
 
+  const [insertIdx, setInsertIdx] = createSignal<number | null>(null);
+  const [pointerX, setPointerX] = createSignal<number | null>(null);
+  let containerRef: HTMLDivElement | undefined;
+
   const droppable = createDroppable(`edgepanel:${props.position}`, {
     type: 'edgePanel',
     panelId: props.position,
   });
 
+  const dndCtx = useDragDropContext();
+
+  const isSameBarDrag = () => {
+    const active = dndCtx?.[0]?.active?.draggable;
+    if (!active) return false;
+    const data = active.data as DragSource | undefined;
+    return data?.type === 'edgeTab' && data.sourcePosition === props.position;
+  };
+
+  const draggedTabId = () => {
+    const active = dndCtx?.[0]?.active?.draggable;
+    if (!active) return undefined;
+    const data = active.data as DragSource | undefined;
+    return data?.type === 'edgeTab' ? data.tab.id : undefined;
+  };
+
+  createEffect(() => {
+    const x = pointerX();
+    if (x != null && containerRef && isSameBarDrag()) {
+      const idx = computeInsertIndex(containerRef, x, draggedTabId());
+      setInsertIdx(idx);
+      if (idx != null) {
+        setReorderState({ type: 'edge', position: props.position, insertIndex: idx });
+      }
+    } else {
+      setInsertIdx(null);
+    }
+  });
+
+  createEffect(() => {
+    if (!dndCtx?.[0]?.active?.draggable) {
+      setInsertIdx(null);
+      setPointerX(null);
+    }
+  });
+
   return (
     <div
       use:droppable
+      ref={containerRef}
       data-testid={`edge-tabbar-${props.position}`}
       classList={{
         'flex flex-row border-b border-zinc-800 relative': true,
         'bg-blue-500/5': droppable.isActiveDroppable,
       }}
+      onPointerMove={(e) => { if (isSameBarDrag()) setPointerX(e.clientX); }}
+      onPointerLeave={() => setPointerX(null)}
     >
       <For each={props.tabs}>
-        {(tab) => (
-          <EdgeTab
-            tab={tab}
-            position={props.position}
-            isActive={props.activeTabId === tab.id}
-            isFocused={isFocused()}
-            onActivate={() => windowActions.setEdgePanelActiveTab(props.position, tab.id)}
-            onClose={() => windowActions.removeEdgePanelTab(props.position, tab.id)}
-          />
+        {(tab, i) => (
+          <>
+            <Show when={insertIdx() === i()}>
+              <InsertIndicator />
+            </Show>
+            <TabItem
+              tab={tab}
+              draggableId={`edgetab:${props.position}:${tab.id}`}
+              draggableData={{ type: 'edgeTab', tab, sourcePosition: props.position }}
+              isActive={props.activeTabId === tab.id}
+              isFocused={isFocused()}
+              onClick={() => windowActions.setEdgePanelActiveTab(props.position, tab.id)}
+              onClose={() => windowActions.removeEdgePanelTab(props.position, tab.id)}
+              testId={`edge-tab-${props.position}-${tab.id}`}
+              onDragStart={() => { if (windowStore.flyoutState?.isOpen) windowActions.closeFlyout(); }}
+            />
+          </>
         )}
       </For>
+      <Show when={insertIdx() === props.tabs.length}>
+        <InsertIndicator />
+      </Show>
       {droppable.isActiveDroppable && (
         <div class="absolute inset-x-0 bottom-0 h-0.5 bg-blue-500" />
       )}
