@@ -1,7 +1,7 @@
 import { Component, Show } from 'solid-js';
-import { unwrap } from 'solid-js/store';
+import { produce, unwrap } from 'solid-js/store';
 import { SplitPane } from './SplitPane';
-import { centerLayout, updateCenterLayout, updateSplitRatio, windowStore } from '@/stores/windowStore';
+import { setStore, updateSplitRatio, windowStore } from '@/stores/windowStore';
 import type { LayoutNode } from '@/types/windowTypes';
 
 /**
@@ -10,10 +10,11 @@ import type { LayoutNode } from '@/types/windowTypes';
  * panes and dropped on edges to create new splits.
  */
 export const CenterTiling: Component = () => {
-  const layout = () => centerLayout();
+  const layout = () => windowStore.layout;
   const setRatio = (ratio: number) => {
     const current = unwrap(windowStore.layout) as LayoutNode;
-    updateCenterLayout(updateSplitRatio(current, 'split-root', ratio));
+    const newLayout = updateSplitRatio(current, 'split-root', ratio);
+    setStore(produce((s) => { s.layout = newLayout; }));
   };
   return (
     <div class="flex-1 overflow-hidden min-h-0 relative">
