@@ -8,7 +8,7 @@
 //! used to create internal agents with the correct settings.
 
 use crucible_cli::factories::{create_internal_agent, AgentInitParams};
-use crucible_config::{CliAppConfig, LlmConfig, LlmProvider, LlmProviderConfig, LlmProviderType};
+use crucible_config::{CliAppConfig, LlmConfig, LlmProviderConfig, LlmProviderType};
 use std::collections::HashMap;
 
 /// Helper to create a minimal CliAppConfig for testing
@@ -20,7 +20,7 @@ fn create_test_config() -> CliAppConfig {
 }
 
 /// Helper to create CliAppConfig with custom chat provider
-fn create_config_with_provider(provider: LlmProvider, model: Option<String>) -> CliAppConfig {
+fn create_config_with_provider(provider: LlmProviderType, model: Option<String>) -> CliAppConfig {
     let mut config = create_test_config();
     config.chat.provider = provider;
     config.chat.model = model;
@@ -49,7 +49,7 @@ fn test_default_config_has_sensible_values() {
     let config = create_test_config();
 
     // Chat config should have defaults
-    assert_eq!(config.chat.provider, LlmProvider::Ollama);
+    assert_eq!(config.chat.provider, LlmProviderType::Ollama);
     assert_eq!(config.chat.llm_endpoint(), "http://localhost:11434");
     assert_eq!(config.chat.chat_model(), "llama3.2");
     assert_eq!(config.chat.temperature(), 0.7);
@@ -370,7 +370,7 @@ async fn test_create_internal_agent_with_named_provider() {
 #[test]
 fn test_model_name_from_chat_config() {
     let config = create_config_with_provider(
-        LlmProvider::Ollama,
+        LlmProviderType::Ollama,
         Some("test-model-from-chat".to_string()),
     );
 
@@ -379,7 +379,7 @@ fn test_model_name_from_chat_config() {
 
 #[test]
 fn test_model_name_fallback_to_default() {
-    let config = create_config_with_provider(LlmProvider::Ollama, None);
+    let config = create_config_with_provider(LlmProviderType::Ollama, None);
 
     // Should use default Ollama model
     assert_eq!(config.chat.chat_model(), "llama3.2");
@@ -466,13 +466,13 @@ fn test_empty_llm_config() {
 #[test]
 fn test_chat_provider_variants() {
     // Test all provider enum variants
-    let ollama = LlmProvider::Ollama;
-    let openai = LlmProvider::OpenAI;
-    let anthropic = LlmProvider::Anthropic;
+    let ollama = LlmProviderType::Ollama;
+    let openai = LlmProviderType::OpenAI;
+    let anthropic = LlmProviderType::Anthropic;
 
-    assert_eq!(ollama, LlmProvider::Ollama);
-    assert_eq!(openai, LlmProvider::OpenAI);
-    assert_eq!(anthropic, LlmProvider::Anthropic);
+    assert_eq!(ollama, LlmProviderType::Ollama);
+    assert_eq!(openai, LlmProviderType::OpenAI);
+    assert_eq!(anthropic, LlmProviderType::Anthropic);
 
     // Test inequality
     assert_ne!(ollama, openai);

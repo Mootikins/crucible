@@ -196,7 +196,7 @@ pub async fn create_internal_agent(
     config: &CliAppConfig,
     params: AgentInitParams,
 ) -> Result<Box<dyn AgentHandle + Send + Sync>> {
-    use crucible_config::LlmProvider;
+    use crucible_config::LlmProviderType;
     use crucible_context::{LayeredPromptBuilder, PromptBuilder};
     use crucible_core::prompts::{base_prompt_for_size, ModelSize};
     use crucible_rig::{build_agent_with_kiln_tools, AgentComponents, RigAgentHandle};
@@ -207,9 +207,10 @@ pub async fn create_internal_agent(
         .model
         .clone()
         .unwrap_or_else(|| match config.chat.provider {
-            LlmProvider::Ollama => "llama3.2".to_string(),
-            LlmProvider::OpenAI => "gpt-4o".to_string(),
-            LlmProvider::Anthropic => "claude-3-5-sonnet-20241022".to_string(),
+            LlmProviderType::Ollama => "llama3.2".to_string(),
+            LlmProviderType::OpenAI => "gpt-4o".to_string(),
+            LlmProviderType::Anthropic => "claude-3-5-sonnet-20241022".to_string(),
+            LlmProviderType::GitHubCopilot => "gpt-4o".to_string(),
         });
 
     // Detect model size (or use Medium if size-aware prompts disabled)
@@ -286,13 +287,13 @@ pub async fn create_internal_agent(
         agent_config = agent_config.with_max_tokens(tokens);
     }
 
-    use crucible_config::{LlmProviderConfig, LlmProviderType};
+    use crucible_config::LlmProviderConfig;
 
     let mut reasoning_endpoint: Option<String> = None;
     let mut ollama_endpoint: Option<String> = None;
 
     let client = match config.chat.provider {
-        LlmProvider::Ollama => {
+        LlmProviderType::Ollama => {
             let endpoint = config
                 .chat
                 .endpoint
@@ -348,7 +349,7 @@ pub async fn create_internal_agent(
                 )?
             }
         }
-        LlmProvider::OpenAI => {
+        LlmProviderType::OpenAI => {
             agent_config = agent_config
                 .with_additional_params(serde_json::json!({"parallel_tool_calls": true}));
             crucible_rig::create_client(
@@ -360,7 +361,7 @@ pub async fn create_internal_agent(
                     .build(),
             )?
         }
-        LlmProvider::Anthropic => crucible_rig::create_client(
+        LlmProviderType::Anthropic => crucible_rig::create_client(
             &LlmProviderConfig::builder(LlmProviderType::Anthropic)
                 .maybe_endpoint(config.chat.endpoint.clone())
                 .model(model.clone())
@@ -368,6 +369,9 @@ pub async fn create_internal_agent(
                 .api_key_from_env()
                 .build(),
         )?,
+        LlmProviderType::GitHubCopilot => {
+            return Err(anyhow::anyhow!("GitHub Copilot provider not yet implemented"));
+        }
     };
 
     let has_kiln = params.kiln_context.is_some();

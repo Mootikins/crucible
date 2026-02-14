@@ -5,10 +5,11 @@ use std::collections::HashMap;
 use std::str::FromStr;
 
 /// LLM provider type
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum LlmProviderType {
     /// Ollama provider
+    #[default]
     Ollama,
     /// OpenAI provider
     OpenAI,

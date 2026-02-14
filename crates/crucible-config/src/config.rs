@@ -2,8 +2,8 @@
 
 use crate::components::{
     AcpConfig, ChatConfig, CliConfig, ContextConfig, DiscoveryPathsConfig, EmbeddingConfig,
-    EmbeddingProviderType, GatewayConfig, HandlersConfig, LlmConfig, LlmProvider, LlmProviderType,
-    McpConfig, ProvidersConfig, StorageConfig,
+    EmbeddingProviderType, GatewayConfig, HandlersConfig, LlmConfig, LlmProviderType, McpConfig,
+    ProvidersConfig, StorageConfig,
 };
 use crate::includes::IncludeConfig;
 use crate::{EnrichmentConfig, ProfileConfig};
@@ -481,19 +481,15 @@ impl Config {
         let chat = self.chat_config()?;
         Ok(EffectiveLlmConfig {
             key: "default".to_string(),
-            provider_type: match chat.provider {
-                LlmProvider::Ollama => LlmProviderType::Ollama,
-                LlmProvider::OpenAI => LlmProviderType::OpenAI,
-                LlmProvider::Anthropic => LlmProviderType::Anthropic,
-            },
+            provider_type: chat.provider,
             endpoint: chat.llm_endpoint(),
             model: chat.chat_model(),
             temperature: chat.temperature(),
             max_tokens: chat.max_tokens(),
             timeout_secs: chat.timeout_secs(),
-            api_key: match chat.provider {
-                LlmProvider::OpenAI => std::env::var("OPENAI_API_KEY").ok(),
-                LlmProvider::Anthropic => std::env::var("ANTHROPIC_API_KEY").ok(),
+            api_key: match &chat.provider {
+                LlmProviderType::OpenAI => std::env::var("OPENAI_API_KEY").ok(),
+                LlmProviderType::Anthropic => std::env::var("ANTHROPIC_API_KEY").ok(),
                 _ => None,
             },
         })
@@ -1625,19 +1621,15 @@ verbose = false
         // Fall back to ChatConfig
         Ok(EffectiveLlmConfig {
             key: "default".to_string(),
-            provider_type: match self.chat.provider {
-                LlmProvider::Ollama => LlmProviderType::Ollama,
-                LlmProvider::OpenAI => LlmProviderType::OpenAI,
-                LlmProvider::Anthropic => LlmProviderType::Anthropic,
-            },
+            provider_type: self.chat.provider,
             endpoint: self.chat.llm_endpoint(),
             model: self.chat.chat_model(),
             temperature: self.chat.temperature(),
             max_tokens: self.chat.max_tokens(),
             timeout_secs: self.chat.timeout_secs(),
-            api_key: match self.chat.provider {
-                LlmProvider::OpenAI => std::env::var("OPENAI_API_KEY").ok(),
-                LlmProvider::Anthropic => std::env::var("ANTHROPIC_API_KEY").ok(),
+            api_key: match &self.chat.provider {
+                LlmProviderType::OpenAI => std::env::var("OPENAI_API_KEY").ok(),
+                LlmProviderType::Anthropic => std::env::var("ANTHROPIC_API_KEY").ok(),
                 _ => None,
             },
         })
@@ -2357,7 +2349,7 @@ allowed_tools = ["search_*"]
             chat: Some(ChatConfig {
                 model: Some("gpt-4o".to_string()),
                 enable_markdown: true,
-                provider: crate::components::LlmProvider::OpenAI,
+                provider: crate::components::LlmProviderType::OpenAI,
                 agent_preference: crate::components::AgentPreference::default(),
                 endpoint: Some("https://api.openai.com/v1".to_string()),
                 temperature: Some(0.8),
