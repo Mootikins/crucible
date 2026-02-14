@@ -1,19 +1,7 @@
 //! Simple chat configuration
 
+use crate::components::LlmProviderType;
 use serde::{Deserialize, Serialize};
-
-/// LLM provider type for chat
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "lowercase")]
-pub enum LlmProvider {
-    /// Ollama provider
-    #[default]
-    Ollama,
-    /// OpenAI provider
-    OpenAI,
-    /// Anthropic provider
-    Anthropic,
-}
 
 /// Agent type preference for chat
 ///
@@ -38,7 +26,7 @@ pub struct ChatConfig {
     pub enable_markdown: bool,
     /// LLM provider to use
     #[serde(default)]
-    pub provider: LlmProvider,
+    pub provider: LlmProviderType,
     /// Default agent type preference (acp or internal)
     #[serde(default)]
     pub agent_preference: AgentPreference,
@@ -77,7 +65,7 @@ impl Default for ChatConfig {
         Self {
             model: None,
             enable_markdown: true,
-            provider: LlmProvider::default(),
+            provider: LlmProviderType::Ollama,
             agent_preference: AgentPreference::default(),
             endpoint: None,
             temperature: None,
@@ -95,9 +83,12 @@ impl ChatConfig {
         self.endpoint
             .clone()
             .unwrap_or_else(|| match self.provider {
-                LlmProvider::Ollama => "http://localhost:11434".to_string(),
-                LlmProvider::OpenAI => "https://api.openai.com/v1".to_string(),
-                LlmProvider::Anthropic => "https://api.anthropic.com/v1".to_string(),
+                LlmProviderType::Ollama => "http://localhost:11434".to_string(),
+                LlmProviderType::OpenAI => "https://api.openai.com/v1".to_string(),
+                LlmProviderType::Anthropic => "https://api.anthropic.com/v1".to_string(),
+                LlmProviderType::GitHubCopilot => {
+                    "https://api.github.com/copilot_internal/v2".to_string()
+                }
             })
     }
 
