@@ -25,17 +25,17 @@ function computeInsertIndex(
   containerEl: HTMLElement,
   pointerX: number,
   draggedTabId?: string,
-): number | null {
+): { logical: number; display: number } | null {
   const tabEls = containerEl.querySelectorAll('[data-tab-id]');
-  let adjustedIndex = 0;
+  let logicalIndex = 0;
   for (let i = 0; i < tabEls.length; i++) {
     const el = tabEls[i] as HTMLElement;
     if (draggedTabId && el.dataset.tabId === draggedTabId) continue;
     const rect = el.getBoundingClientRect();
-    if (pointerX < rect.left + rect.width / 2) return adjustedIndex;
-    adjustedIndex++;
+    if (pointerX < rect.left + rect.width / 2) return { logical: logicalIndex, display: i };
+    logicalIndex++;
   }
-  return adjustedIndex;
+  return { logical: logicalIndex, display: tabEls.length };
 }
 
 // ── Unified TabItem (replaces Tab + EdgeTab) ────────────────────────────
@@ -175,10 +175,10 @@ const CenterTabBar: Component<{
         setReorderState(null);
         return;
       }
-      const idx = computeInsertIndex(tabsContainerRef, x, draggedTabId());
-      setInsertIdx(idx);
-      if (idx != null) {
-        setReorderState({ groupId: props.groupId, insertIndex: idx });
+      const result = computeInsertIndex(tabsContainerRef, x, draggedTabId());
+      setInsertIdx(result?.display ?? null);
+      if (result != null) {
+        setReorderState({ groupId: props.groupId, insertIndex: result.logical });
       }
     } else {
       setInsertIdx(null);
@@ -370,10 +370,10 @@ const EdgeTabBar: Component<{
         setReorderState(null);
         return;
       }
-      const idx = computeInsertIndex(tabsContainerRef, x, draggedTabId());
-      setInsertIdx(idx);
-      if (idx != null) {
-        setReorderState({ groupId: groupId(), insertIndex: idx });
+      const result = computeInsertIndex(tabsContainerRef, x, draggedTabId());
+      setInsertIdx(result?.display ?? null);
+      if (result != null) {
+        setReorderState({ groupId: groupId(), insertIndex: result.logical });
       }
     } else {
       setInsertIdx(null);
