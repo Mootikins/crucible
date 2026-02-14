@@ -80,14 +80,16 @@ const TabItem: Component<TabItemProps> = (props) => {
       }}
       onClick={() => props.onClick()}
     >
-      <div class="cursor-grab active:cursor-grabbing p-0.5 -ml-1 opacity-0 group-hover:opacity-100 transition-opacity">
-        <IconGripVertical class="w-3 h-3 text-zinc-500" />
+      <div class="relative w-3.5 h-3.5 flex-shrink-0 cursor-grab active:cursor-grabbing">
+        <Show when={Icon} fallback={
+          <IconGripVertical class="w-3.5 h-3.5 text-zinc-500 opacity-0 group-hover:opacity-100 transition-opacity duration-150" />
+        }>
+          <>
+            {Icon && <Icon class={`absolute inset-0 w-3.5 h-3.5 ${props.isActive ? 'text-zinc-300' : 'text-zinc-500'} group-hover:opacity-0 transition-opacity duration-150`} />}
+            <IconGripVertical class="absolute inset-0 w-3.5 h-3.5 text-zinc-500 opacity-0 group-hover:opacity-100 transition-opacity duration-150" />
+          </>
+        </Show>
       </div>
-      {Icon && (
-        <Icon
-          class={`w-3.5 h-3.5 flex-shrink-0 ${props.isActive ? 'text-zinc-300' : 'text-zinc-500'}`}
-        />
-      )}
       <span class="text-xs font-medium truncate max-w-[120px]">
         {props.tab.title}
       </span>
