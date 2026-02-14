@@ -754,8 +754,12 @@ mod tests {
         let sessions = manager2
             .list_sessions_filtered_async(Some(&tmp.path().to_path_buf()), None, None, None)
             .await;
-        
-        assert_eq!(sessions.len(), 1, "Persisted session should be visible after daemon restart");
+
+        assert_eq!(
+            sessions.len(),
+            1,
+            "Persisted session should be visible after daemon restart"
+        );
         assert_eq!(sessions[0].id, session_id);
     }
 
@@ -765,18 +769,18 @@ mod tests {
         let storage = Arc::new(FileSessionStorage::new());
 
         let manager1 = SessionManager::with_storage(storage.clone());
-        
+
         let _active_session = manager1
             .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![])
             .await
             .unwrap();
-        
+
         let paused_session = manager1
             .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![])
             .await
             .unwrap();
         manager1.pause_session(&paused_session.id).await.unwrap();
-        
+
         let _ended_session = manager1
             .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![])
             .await
@@ -789,14 +793,18 @@ mod tests {
         let sessions = manager2
             .list_sessions_filtered_async(Some(&tmp.path().to_path_buf()), None, None, None)
             .await;
-        assert_eq!(sessions.len(), 3, "All persisted sessions should be visible");
-        
+        assert_eq!(
+            sessions.len(),
+            3,
+            "All persisted sessions should be visible"
+        );
+
         let paused = manager2
             .list_sessions_filtered_async(
-                Some(&tmp.path().to_path_buf()), 
-                None, 
-                None, 
-                Some(SessionState::Paused)
+                Some(&tmp.path().to_path_buf()),
+                None,
+                None,
+                Some(SessionState::Paused),
             )
             .await;
         assert_eq!(paused.len(), 1);

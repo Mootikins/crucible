@@ -376,8 +376,7 @@ async fn list_providers(
             .clone()
             .unwrap_or_else(|| default_endpoint_for(provider_type));
 
-        let models =
-            fetch_models_for_provider(&state.http_client, provider_type, &endpoint).await;
+        let models = fetch_models_for_provider(&state.http_client, provider_type, &endpoint).await;
 
         if !models.is_empty() || provider_type != "ollama" {
             seen_types.insert(provider_type.to_string());
@@ -620,7 +619,10 @@ mod tests {
     fn test_format_provider_name_anthropic_uses_configured_name() {
         assert_eq!(format_provider_name("default", "anthropic"), "Anthropic");
         assert_eq!(format_provider_name("Anthropic", "anthropic"), "Anthropic");
-        assert_eq!(format_provider_name("research", "anthropic"), "Anthropic (research)");
+        assert_eq!(
+            format_provider_name("research", "anthropic"),
+            "Anthropic (research)"
+        );
     }
 
     #[test]
@@ -641,7 +643,10 @@ mod tests {
 
     #[test]
     fn test_default_endpoint_for_anthropic() {
-        assert_eq!(default_endpoint_for("anthropic"), "https://api.anthropic.com");
+        assert_eq!(
+            default_endpoint_for("anthropic"),
+            "https://api.anthropic.com"
+        );
     }
 
     #[test]
