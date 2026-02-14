@@ -446,11 +446,12 @@ async fn list_providers(
     Ok(Json(serde_json::json!({ "providers": providers })))
 }
 
-fn llm_provider_to_str(provider: &crucible_config::LlmProvider) -> &'static str {
+fn llm_provider_to_str(provider: &crucible_config::LlmProviderType) -> &'static str {
     match provider {
-        crucible_config::LlmProvider::Ollama => "ollama",
-        crucible_config::LlmProvider::OpenAI => "openai",
-        crucible_config::LlmProvider::Anthropic => "anthropic",
+        crucible_config::LlmProviderType::Ollama => "ollama",
+        crucible_config::LlmProviderType::OpenAI => "openai",
+        crucible_config::LlmProviderType::Anthropic => "anthropic",
+        crucible_config::LlmProviderType::GitHubCopilot => "github-copilot",
     }
 }
 

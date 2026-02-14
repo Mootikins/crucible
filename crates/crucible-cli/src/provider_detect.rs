@@ -7,7 +7,7 @@
 //! - Anthropic: ANTHROPIC_API_KEY env var or credential store
 
 use crucible_config::credentials::{CredentialSource, CredentialStore, SecretsFile};
-use crucible_config::{ChatConfig, LlmProvider};
+use crucible_config::{ChatConfig, LlmProviderType};
 use std::time::Duration;
 
 /// Default Ollama endpoint
@@ -92,11 +92,12 @@ pub async fn check_ollama_models(endpoint: &str) -> Option<Vec<String>> {
 }
 
 /// Fetch available models for a provider, returning formatted as "provider/model"
-pub async fn fetch_provider_models(provider: &LlmProvider, endpoint: &str) -> Vec<String> {
+pub async fn fetch_provider_models(provider: &LlmProviderType, endpoint: &str) -> Vec<String> {
     match provider {
-        LlmProvider::Ollama => fetch_ollama_models(endpoint).await,
-        LlmProvider::OpenAI => fetch_openai_models(endpoint).await,
-        LlmProvider::Anthropic => anthropic_models(),
+        LlmProviderType::Ollama => fetch_ollama_models(endpoint).await,
+        LlmProviderType::OpenAI => fetch_openai_models(endpoint).await,
+        LlmProviderType::Anthropic => anthropic_models(),
+        LlmProviderType::GitHubCopilot => Vec::new(),
     }
 }
 
@@ -244,7 +245,7 @@ pub fn detect_providers(config: &ChatConfig) -> Vec<DetectedProvider> {
     let mut providers = Vec::new();
 
     match config.provider {
-        LlmProvider::Ollama => {
+        LlmProviderType::Ollama => {
             let endpoint = config.endpoint.as_deref().unwrap_or(DEFAULT_OLLAMA_HOST);
             let reason = if std::env::var("OLLAMA_HOST").is_ok() {
                 format!("OLLAMA_HOST={}", ollama_endpoint())
@@ -262,7 +263,7 @@ pub fn detect_providers(config: &ChatConfig) -> Vec<DetectedProvider> {
                 source: None,
             });
         }
-        LlmProvider::OpenAI => {
+        LlmProviderType::OpenAI => {
             if let Some(src) = has_api_key_with_source("openai") {
                 providers.push(DetectedProvider {
                     name: "OpenAI".to_string(),
@@ -274,7 +275,7 @@ pub fn detect_providers(config: &ChatConfig) -> Vec<DetectedProvider> {
                 });
             }
         }
-        LlmProvider::Anthropic => {
+        LlmProviderType::Anthropic => {
             if let Some(src) = has_api_key_with_source("anthropic") {
                 providers.push(DetectedProvider {
                     name: "Anthropic".to_string(),
@@ -288,6 +289,10 @@ pub fn detect_providers(config: &ChatConfig) -> Vec<DetectedProvider> {
                     source: Some(src),
                 });
             }
+        }
+        LlmProviderType::GitHubCopilot => {
+            // GitHub Copilot requires OAuth flow, not a simple API key
+            // For now, we don't auto-detect it
         }
     }
 
@@ -369,7 +374,7 @@ mod tests {
     fn test_detect_openai_from_config_with_key() {
         std::env::set_var("OPENAI_API_KEY", "sk-test");
         let config = ChatConfig {
-            provider: LlmProvider::OpenAI,
+            provider: LlmProviderType::OpenAI,
             ..ChatConfig::default()
         };
         let detected = detect_providers(&config);
@@ -383,7 +388,7 @@ mod tests {
         std::env::remove_var("OPENAI_API_KEY");
         std::env::remove_var("ANTHROPIC_API_KEY");
         let config = ChatConfig {
-            provider: LlmProvider::OpenAI,
+            provider: LlmProviderType::OpenAI,
             ..ChatConfig::default()
         };
         let detected = detect_providers(&config);
