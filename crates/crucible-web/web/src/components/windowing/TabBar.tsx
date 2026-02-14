@@ -2,12 +2,12 @@ import { Component, For, Show, createSignal, createEffect, onMount, onCleanup } 
 import {
   createDraggable,
   createDroppable,
-  useDragDropContext,
 } from '@thisbeyond/solid-dnd';
 import type { Tab as TabType, EdgePanelPosition, TabBarProps, DragSource } from '@/types/windowTypes';
 import { windowStore, windowActions } from '@/stores/windowStore';
 import { IconGripVertical, IconClose, IconLayout } from './icons';
 import { ChevronDown } from '@/lib/icons';
+import { useTabReorderDrag } from './hooks/useTabReorderDrag';
 
 // ── Module-level reorder state (shared with WindowManager) ──────────────
 
@@ -16,35 +16,7 @@ export type ReorderState = {
   insertIndex: number;
 } | null;
 
-// Non-reactive pending reorder state (survives reactive cleanup race)
-let pendingReorder: ReorderState = null;
-
-export function getPendingReorder(): ReorderState {
-  return pendingReorder;
-}
-
-export function clearPendingReorder(): void {
-  pendingReorder = null;
-}
-
-// ── Insert-index computation helper ─────────────────────────────────────
-
-function computeInsertIndex(
-  containerEl: HTMLElement,
-  pointerX: number,
-  draggedTabId?: string,
-): { logical: number; display: number } | null {
-  const tabEls = containerEl.querySelectorAll('[data-tab-id]');
-  let logicalIndex = 0;
-  for (let i = 0; i < tabEls.length; i++) {
-    const el = tabEls[i] as HTMLElement;
-    if (draggedTabId && el.dataset.tabId === draggedTabId) continue;
-    const rect = el.getBoundingClientRect();
-    if (pointerX < rect.left + rect.width / 2) return { logical: logicalIndex, display: i };
-    logicalIndex++;
-  }
-  return { logical: logicalIndex, display: tabEls.length };
-}
+export { getPendingReorder, clearPendingReorder } from './hooks/useTabReorderDrag';
 
 // ── Unified TabItem (replaces Tab + EdgeTab) ────────────────────────────
 
@@ -140,7 +112,6 @@ const CenterTabBar: Component<{
 
   const [isOverflowing, setIsOverflowing] = createSignal(false);
   const [showDropdown, setShowDropdown] = createSignal(false);
-  const [insertIdx, setInsertIdx] = createSignal<number | null>(null);
   let tabsContainerRef: HTMLDivElement | undefined;
 
   const droppable = createDroppable(`tabgroup:${props.groupId}`, {
@@ -148,59 +119,9 @@ const CenterTabBar: Component<{
     groupId: props.groupId,
   });
 
-  const dndCtx = useDragDropContext();
-
-  const isSameBarDrag = () => {
-    const active = dndCtx?.[0]?.active?.draggable;
-    if (!active) return false;
-    const data = active.data as DragSource | undefined;
-    return data?.type === 'tab' && data.sourceGroupId === props.groupId;
-  };
-
-  const draggedTabId = () => {
-    const active = dndCtx?.[0]?.active?.draggable;
-    if (!active) return undefined;
-    const data = active.data as DragSource | undefined;
-    return data?.type === 'tab' ? data.tab.id : undefined;
-  };
-
-  // Read sensor coordinates reactively — onPointerMove doesn't fire during
-  // drag because the DragOverlay portal intercepts pointer events.
-  createEffect(() => {
-    if (!isSameBarDrag() || !tabsContainerRef) {
-      setInsertIdx(null);
-      pendingReorder = null;
-      return;
-    }
-    const sensor = dndCtx?.[0]?.active?.sensor;
-    const x = sensor?.coordinates?.current?.x;
-    const y = sensor?.coordinates?.current?.y;
-    if (x != null && y != null) {
-      const rect = tabsContainerRef.getBoundingClientRect();
-      const VERTICAL_TOLERANCE = 8;
-      const inBounds = x >= rect.left && x <= rect.right &&
-                       y >= rect.top - VERTICAL_TOLERANCE && y <= rect.bottom + VERTICAL_TOLERANCE;
-      if (!inBounds) {
-        setInsertIdx(null);
-        pendingReorder = null;
-        return;
-      }
-      const result = computeInsertIndex(tabsContainerRef, x, draggedTabId());
-      setInsertIdx(result?.display ?? null);
-      if (result != null) {
-        pendingReorder = { groupId: props.groupId, insertIndex: result.logical };
-      }
-    } else {
-      setInsertIdx(null);
-      pendingReorder = null;
-    }
-  });
-
-  createEffect(() => {
-    if (!dndCtx?.[0]?.active?.draggable) {
-      setInsertIdx(null);
-      pendingReorder = null;
-    }
+  const { insertIdx } = useTabReorderDrag({
+    groupId: () => props.groupId,
+    containerRef: () => tabsContainerRef,
   });
 
   onMount(() => {
@@ -337,7 +258,6 @@ const EdgeTabBar: Component<{
 
   const [isOverflowing, setIsOverflowing] = createSignal(false);
   const [showDropdown, setShowDropdown] = createSignal(false);
-  const [insertIdx, setInsertIdx] = createSignal<number | null>(null);
   let containerRef: HTMLDivElement | undefined;
   let tabsContainerRef: HTMLDivElement | undefined;
 
@@ -346,59 +266,9 @@ const EdgeTabBar: Component<{
     panelId: props.position,
   });
 
-  const dndCtx = useDragDropContext();
-
-  const isSameBarDrag = () => {
-    const active = dndCtx?.[0]?.active?.draggable;
-    if (!active) return false;
-    const data = active.data as DragSource | undefined;
-    return data?.type === 'tab' && data.sourceGroupId === groupId();
-  };
-
-  const draggedTabId = () => {
-    const active = dndCtx?.[0]?.active?.draggable;
-    if (!active) return undefined;
-    const data = active.data as DragSource | undefined;
-    return data?.type === 'tab' ? data.tab.id : undefined;
-  };
-
-  // Read sensor coordinates reactively — onPointerMove doesn't fire during
-  // drag because the DragOverlay portal intercepts pointer events.
-  createEffect(() => {
-    if (!isSameBarDrag() || !tabsContainerRef) {
-      setInsertIdx(null);
-      pendingReorder = null;
-      return;
-    }
-    const sensor = dndCtx?.[0]?.active?.sensor;
-    const x = sensor?.coordinates?.current?.x;
-    const y = sensor?.coordinates?.current?.y;
-    if (x != null && y != null) {
-      const rect = tabsContainerRef.getBoundingClientRect();
-      const VERTICAL_TOLERANCE = 8;
-      const inBounds = x >= rect.left && x <= rect.right &&
-                       y >= rect.top - VERTICAL_TOLERANCE && y <= rect.bottom + VERTICAL_TOLERANCE;
-      if (!inBounds) {
-        setInsertIdx(null);
-        pendingReorder = null;
-        return;
-      }
-      const result = computeInsertIndex(tabsContainerRef, x, draggedTabId());
-      setInsertIdx(result?.display ?? null);
-      if (result != null) {
-        pendingReorder = { groupId: groupId(), insertIndex: result.logical };
-      }
-    } else {
-      setInsertIdx(null);
-      pendingReorder = null;
-    }
-  });
-
-  createEffect(() => {
-    if (!dndCtx?.[0]?.active?.draggable) {
-      setInsertIdx(null);
-      pendingReorder = null;
-    }
+  const { insertIdx } = useTabReorderDrag({
+    groupId,
+    containerRef: () => tabsContainerRef,
   });
 
   onMount(() => {
