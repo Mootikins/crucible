@@ -70,7 +70,8 @@ async fn get_note(
     axum::extract::Query(query): axum::extract::Query<KilnQuery>,
 ) -> Result<Json<serde_json::Value>, WebError> {
     // Security: Validate note name doesn't contain path traversal
-    if name.contains("..") || name.starts_with('/') || name.starts_with('\\') || name.contains('\0') {
+    if name.contains("..") || name.starts_with('/') || name.starts_with('\\') || name.contains('\0')
+    {
         return Err(WebError::Chat(
             "Invalid note name: path traversal not allowed".to_string(),
         ));
@@ -117,7 +118,8 @@ async fn put_note(
     }
 
     // Security: Validate note name doesn't contain path traversal
-    if name.contains("..") || name.starts_with('/') || name.starts_with('\\') || name.contains('\0') {
+    if name.contains("..") || name.starts_with('/') || name.starts_with('\\') || name.contains('\0')
+    {
         return Err(WebError::Chat(
             "Invalid note name: path traversal not allowed".to_string(),
         ));
@@ -218,13 +220,7 @@ fn extract_title(content: &str) -> String {
                 Some(trimmed.to_string())
             }
         })
-        .unwrap_or_else(|| {
-            content
-                .lines()
-                .next()
-                .unwrap_or("Untitled")
-                .to_string()
-        })
+        .unwrap_or_else(|| content.lines().next().unwrap_or("Untitled").to_string())
 }
 
 #[derive(Debug, Deserialize)]
@@ -364,7 +360,11 @@ mod tests {
             "index",
         ];
         for name in valid_names {
-            assert!(is_valid_note_name(name), "Should allow valid name: {}", name);
+            assert!(
+                is_valid_note_name(name),
+                "Should allow valid name: {}",
+                name
+            );
         }
     }
 
@@ -407,7 +407,7 @@ mod tests {
     #[test]
     fn test_path_join_does_not_normalize_traversal() {
         let base = std::path::Path::new("/home/user/kiln");
-        
+
         // Path::join doesn't normalize ".." - it creates literal path
         // This is why we validate name for ".." BEFORE joining
         // The starts_with check is defense-in-depth for edge cases
