@@ -124,4 +124,87 @@ describe('reorder tabs in edge tab groups via moveTab', () => {
     expect(windowStore.tabGroups['left-group']!.tabs[2]!.id).toBe('left-1');
     expect(windowStore.tabGroups['right-group']!.tabs[0]!.id).toBe('right-1');
   });
+
+  it('reorders in a two-tab group', () => {
+    resetToState({
+      tabGroups: {
+        'group-1': makeTabGroup('group-1', [makeTab('center-1')]),
+        'two-tab-group': makeTabGroup('two-tab-group', [makeTab('A'), makeTab('B')], 'A'),
+        'left-group': makeTabGroup('left-group', []),
+        'right-group': makeTabGroup('right-group', []),
+        'bottom-group': makeTabGroup('bottom-group', []),
+      },
+      edgePanels: {
+        left: makeEdgePanel('left', 'left-group'),
+        right: makeEdgePanel('right', 'right-group'),
+        bottom: makeEdgePanel('bottom', 'bottom-group'),
+      },
+      layout: simpleLayout('pane-1', 'group-1'),
+      activePaneId: 'pane-1',
+      focusedRegion: 'center',
+    });
+
+    windowActions.moveTab('two-tab-group', 'two-tab-group', 'A', 1);
+
+    const group = windowStore.tabGroups['two-tab-group']!;
+    expect(group.tabs).toHaveLength(2);
+    expect(group.tabs[0]!.id).toBe('B');
+    expect(group.tabs[1]!.id).toBe('A');
+  });
+
+  it('no-op when reordering tab to its current position', () => {
+    resetToState({
+      tabGroups: {
+        'group-1': makeTabGroup('group-1', [makeTab('center-1')]),
+        'noop-group': makeTabGroup('noop-group', [makeTab('A'), makeTab('B'), makeTab('C')], 'A'),
+        'left-group': makeTabGroup('left-group', []),
+        'right-group': makeTabGroup('right-group', []),
+        'bottom-group': makeTabGroup('bottom-group', []),
+      },
+      edgePanels: {
+        left: makeEdgePanel('left', 'left-group'),
+        right: makeEdgePanel('right', 'right-group'),
+        bottom: makeEdgePanel('bottom', 'bottom-group'),
+      },
+      layout: simpleLayout('pane-1', 'group-1'),
+      activePaneId: 'pane-1',
+      focusedRegion: 'center',
+    });
+
+    windowActions.moveTab('noop-group', 'noop-group', 'A', 0);
+
+    const group = windowStore.tabGroups['noop-group']!;
+    expect(group.tabs).toHaveLength(3);
+    expect(group.tabs[0]!.id).toBe('A');
+    expect(group.tabs[1]!.id).toBe('B');
+    expect(group.tabs[2]!.id).toBe('C');
+    expect(group.activeTabId).toBe('A');
+  });
+
+  it('reorders last tab to middle position in edge group', () => {
+    resetToState({
+      tabGroups: {
+        'group-1': makeTabGroup('group-1', [makeTab('center-1')]),
+        'left-group': makeTabGroup('left-group', [makeTab('L1'), makeTab('L2'), makeTab('L3')], 'L1'),
+        'right-group': makeTabGroup('right-group', []),
+        'bottom-group': makeTabGroup('bottom-group', []),
+      },
+      edgePanels: {
+        left: makeEdgePanel('left', 'left-group'),
+        right: makeEdgePanel('right', 'right-group'),
+        bottom: makeEdgePanel('bottom', 'bottom-group'),
+      },
+      layout: simpleLayout('pane-1', 'group-1'),
+      activePaneId: 'pane-1',
+      focusedRegion: 'center',
+    });
+
+    windowActions.moveTab('left-group', 'left-group', 'L3', 1);
+
+    const group = windowStore.tabGroups['left-group']!;
+    expect(group.tabs).toHaveLength(3);
+    expect(group.tabs[0]!.id).toBe('L1');
+    expect(group.tabs[1]!.id).toBe('L3');
+    expect(group.tabs[2]!.id).toBe('L2');
+  });
 });
