@@ -48,6 +48,7 @@ async fn test_chat_command_does_not_double_open_database() -> Result<()> {
         storage: None,
         mcp: None,
         plugins: std::collections::HashMap::new(),
+        web: None,
         source_map: None,
     };
 
@@ -139,6 +140,7 @@ async fn test_chat_command_with_minimal_config() -> Result<()> {
         storage: None,
         mcp: None,
         plugins: std::collections::HashMap::new(),
+        web: None,
         source_map: None,
     };
 

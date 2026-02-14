@@ -100,7 +100,7 @@ fmt:
 
 # Format check (CI)
 fmt-check:
-    cargo fmt -- --check
+    cargo fmt --all -- --check
 
 # === Documentation ===
 
@@ -181,6 +181,10 @@ coverage-open: coverage
 
 # === CI ===
 
-# Run full CI check
-ci: fmt-check clippy test
+# Run full CI check (mirrors GitHub CI workflow)
+ci: fmt-check clippy test-ci
     @echo "CI checks passed!"
+
+# Run tests with CI profile (matches GitHub Actions)
+test-ci:
+    cargo nextest run --profile ci --workspace

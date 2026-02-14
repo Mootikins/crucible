@@ -1520,7 +1520,7 @@ mod tests {
                             println!("Text: {}", t.text);
                             got_text = true;
                         }
-                        StreamedAssistantContent::ToolCall(tc) => {
+                        StreamedAssistantContent::ToolCall { tool_call: tc, .. } => {
                             println!("ToolCall: {} ({:?})", tc.function.name, tc.call_id);
                             got_tool_call = true;
                         }
@@ -1629,7 +1629,7 @@ mod tests {
                         text_chunks.push(t.text.clone());
                         print!("{}", t.text);
                     }
-                    StreamedAssistantContent::ToolCall(tc) => {
+                    StreamedAssistantContent::ToolCall { tool_call: tc, .. } => {
                         tool_call_count += 1;
                         println!(
                             "\n[Round {} - Tool call #{}: {}]",
