@@ -196,6 +196,8 @@ const CenterTabBar: Component<{
       }
     } else {
       setInsertIdx(null);
+      setReorderState(null);
+      pendingReorder = null;
     }
   });
 
@@ -394,6 +396,8 @@ const EdgeTabBar: Component<{
       }
     } else {
       setInsertIdx(null);
+      setReorderState(null);
+      pendingReorder = null;
     }
   });
 
