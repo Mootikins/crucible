@@ -1,4 +1,4 @@
-import { Component, For, Show, createSignal, createEffect, onMount, onCleanup } from 'solid-js';
+import { Component, For, Show, createEffect } from 'solid-js';
 import {
   createDraggable,
   createDroppable,
@@ -8,6 +8,7 @@ import { windowStore, windowActions } from '@/stores/windowStore';
 import { IconGripVertical, IconClose, IconLayout } from './icons';
 import { ChevronDown } from '@/lib/icons';
 import { useTabReorderDrag } from './hooks/useTabReorderDrag';
+import { useOverflowDropdown } from './hooks/useOverflowDropdown';
 
 // ── Module-level reorder state (shared with WindowManager) ──────────────
 
@@ -110,8 +111,6 @@ const CenterTabBar: Component<{
   const activeTabId = () => group()?.activeTabId ?? null;
   const isFocused = () => windowStore.activePaneId === props.paneId && windowStore.focusedRegion === 'center';
 
-  const [isOverflowing, setIsOverflowing] = createSignal(false);
-  const [showDropdown, setShowDropdown] = createSignal(false);
   let tabsContainerRef: HTMLDivElement | undefined;
 
   const droppable = createDroppable(`tabgroup:${props.groupId}`, {
@@ -124,38 +123,9 @@ const CenterTabBar: Component<{
     containerRef: () => tabsContainerRef,
   });
 
-  onMount(() => {
-    if (!tabsContainerRef) return;
-    const checkOverflow = () => {
-      if (tabsContainerRef) {
-        setIsOverflowing(tabsContainerRef.scrollWidth > tabsContainerRef.clientWidth);
-      }
-    };
-    const observer = new ResizeObserver(checkOverflow);
-    observer.observe(tabsContainerRef);
-    createEffect(() => {
-      tabs();
-      checkOverflow();
-    });
-    onCleanup(() => observer.disconnect());
-  });
-
-  createEffect(() => {
-    if (!showDropdown()) return;
-    const handleClickOutside = () => {
-      setShowDropdown(false);
-    };
-    const handleEscape = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setShowDropdown(false);
-    };
-    setTimeout(() => {
-      document.addEventListener('click', handleClickOutside);
-      document.addEventListener('keydown', handleEscape);
-    }, 0);
-    onCleanup(() => {
-      document.removeEventListener('click', handleClickOutside);
-      document.removeEventListener('keydown', handleEscape);
-    });
+  const { isOverflowing, showDropdown, setShowDropdown, toggleDropdown } = useOverflowDropdown({
+    containerRef: () => tabsContainerRef,
+    deps: () => tabs(),
   });
 
   return (
@@ -194,11 +164,11 @@ const CenterTabBar: Component<{
       </div>
        <Show when={isOverflowing()}>
          <div class="relative flex-shrink-0">
-           <button
-             class="flex-shrink-0 w-6 h-6 flex items-center justify-center text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800 rounded transition-colors"
-             onClick={(e) => { e.stopPropagation(); setShowDropdown(!showDropdown()); }}
-             title="Show all tabs"
-           >
+            <button
+              class="flex-shrink-0 w-6 h-6 flex items-center justify-center text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800 rounded transition-colors"
+              onClick={(e) => { e.stopPropagation(); toggleDropdown(); }}
+              title="Show all tabs"
+            >
              <ChevronDown class="w-3.5 h-3.5" />
            </button>
           <Show when={showDropdown()}>
@@ -256,8 +226,6 @@ const EdgeTabBar: Component<{
   const activeTabId = () => group()?.activeTabId ?? null;
   const isFocused = () => windowStore.focusedRegion === props.position;
 
-  const [isOverflowing, setIsOverflowing] = createSignal(false);
-  const [showDropdown, setShowDropdown] = createSignal(false);
   let containerRef: HTMLDivElement | undefined;
   let tabsContainerRef: HTMLDivElement | undefined;
 
@@ -271,38 +239,9 @@ const EdgeTabBar: Component<{
     containerRef: () => tabsContainerRef,
   });
 
-  onMount(() => {
-    if (!tabsContainerRef) return;
-    const checkOverflow = () => {
-      if (tabsContainerRef) {
-        setIsOverflowing(tabsContainerRef.scrollWidth > tabsContainerRef.clientWidth);
-      }
-    };
-    const observer = new ResizeObserver(checkOverflow);
-    observer.observe(tabsContainerRef);
-    createEffect(() => {
-      tabs();
-      checkOverflow();
-    });
-    onCleanup(() => observer.disconnect());
-  });
-
-  createEffect(() => {
-    if (!showDropdown()) return;
-    const handleClickOutside = () => {
-      setShowDropdown(false);
-    };
-    const handleEscape = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setShowDropdown(false);
-    };
-    setTimeout(() => {
-      document.addEventListener('click', handleClickOutside);
-      document.addEventListener('keydown', handleEscape);
-    }, 0);
-    onCleanup(() => {
-      document.removeEventListener('click', handleClickOutside);
-      document.removeEventListener('keydown', handleEscape);
-    });
+  const { isOverflowing, showDropdown, setShowDropdown } = useOverflowDropdown({
+    containerRef: () => tabsContainerRef,
+    deps: () => tabs(),
   });
 
   return (
