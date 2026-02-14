@@ -11,6 +11,7 @@ pub trait ToRpcError {
     fn to_rpc_error(&self) -> RpcError;
 }
 
+#[allow(dead_code)]
 pub fn agent_error_to_rpc_error(e: AgentError) -> RpcError {
     use AgentError::*;
     match e {
@@ -45,6 +46,7 @@ pub fn agent_error_to_rpc_error(e: AgentError) -> RpcError {
     }
 }
 
+#[allow(dead_code)]
 pub fn anyhow_to_rpc_error(e: anyhow::Error) -> RpcError {
     tracing::error!("Internal error: {}", e);
     RpcError {

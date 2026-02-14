@@ -169,15 +169,13 @@ async fn put_note(
 
     // Create parent directories if needed
     if let Some(parent) = file_path.parent() {
-        fs::create_dir_all(parent)
-            .await
-            .map_err(|e| WebError::Io(e))?;
+        fs::create_dir_all(parent).await.map_err(WebError::Io)?;
     }
 
     // Write content to filesystem (source of truth)
     fs::write(&file_path, &req.content)
         .await
-        .map_err(|e| WebError::Io(e))?;
+        .map_err(WebError::Io)?;
 
     // Extract metadata and update database
     let title = extract_title(&req.content);

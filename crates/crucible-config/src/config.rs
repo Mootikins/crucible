@@ -210,6 +210,7 @@ pub struct Config {
     #[serde(default)]
     pub web: Option<WebConfig>,
 
+    /// SCM (git) integration configuration.
     #[serde(default)]
     pub scm: Option<ScmConfig>,
 

@@ -65,7 +65,7 @@ impl ProjectManager {
         self.projects
             .iter()
             .filter(|entry| {
-                entry.value().repository.as_ref().map_or(false, |r| {
+                entry.value().repository.as_ref().is_some_and(|r| {
                     let id = r.main_repo_git_dir.as_ref().unwrap_or(&r.root);
                     id == repo_root
                 })

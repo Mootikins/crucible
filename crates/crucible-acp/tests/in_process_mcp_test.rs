@@ -104,7 +104,7 @@ async fn test_in_process_mcp_host_provides_valid_sse_url() {
         url.starts_with("http://127.0.0.1:"),
         "URL should be localhost"
     );
-    assert!(url.ends_with("/sse"), "URL should end with /sse path");
+    assert!(url.ends_with("/mcp"), "URL should end with /mcp path");
 
     // Verify port is non-zero (actually assigned)
     let port = host.address().port();
@@ -130,22 +130,25 @@ async fn test_in_process_mcp_sse_endpoint_is_reachable() {
 
     let url = host.sse_url();
 
-    // Try to connect to the SSE endpoint
+    // Try to connect to the streamable HTTP endpoint
     let client = reqwest::Client::new();
     let response = client
-        .get(&url)
-        .header("Accept", "text/event-stream")
+        .post(&url)
+        .header("Content-Type", "application/json")
+        .header("Accept", "application/json, text/event-stream")
+        .body(r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"test","version":"0.1.0"}}}"#)
         .send()
         .await;
 
-    // The server should respond (even if we don't complete the SSE handshake)
-    assert!(response.is_ok(), "SSE endpoint should be reachable");
+    // The server should respond to a valid MCP initialize request
+    assert!(response.is_ok(), "MCP endpoint should be reachable");
 
     let resp = response.unwrap();
-    // SSE connections return 200 OK with text/event-stream content type
+    // Streamable HTTP MCP returns 200 OK for valid requests
     assert!(
         resp.status().is_success(),
-        "SSE endpoint should return success status"
+        "MCP endpoint should return success status, got: {}",
+        resp.status()
     );
 
     host.shutdown().await;
