@@ -3,8 +3,8 @@ use crate::routes::{chat_routes, health_routes, project_routes, search_routes, s
 use crate::services::daemon;
 use crate::{Result, WebError};
 use axum::extract::DefaultBodyLimit;
-use axum::Router;
 use axum::http::{header, Method};
+use axum::Router;
 use std::net::SocketAddr;
 use tower_http::cors::{AllowOrigin, CorsLayer};
 
