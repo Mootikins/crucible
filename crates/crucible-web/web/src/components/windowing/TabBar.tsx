@@ -16,9 +16,6 @@ export type ReorderState = {
   insertIndex: number;
 } | null;
 
-const [reorderState, setReorderState] = createSignal<ReorderState>(null);
-export { reorderState, setReorderState };
-
 // Non-reactive pending reorder state (survives reactive cleanup race)
 let pendingReorder: ReorderState = null;
 
@@ -172,7 +169,7 @@ const CenterTabBar: Component<{
   createEffect(() => {
     if (!isSameBarDrag() || !tabsContainerRef) {
       setInsertIdx(null);
-      setReorderState(null);
+      pendingReorder = null;
       return;
     }
     const sensor = dndCtx?.[0]?.active?.sensor;
@@ -185,18 +182,16 @@ const CenterTabBar: Component<{
                        y >= rect.top - VERTICAL_TOLERANCE && y <= rect.bottom + VERTICAL_TOLERANCE;
       if (!inBounds) {
         setInsertIdx(null);
-        setReorderState(null);
+        pendingReorder = null;
         return;
       }
       const result = computeInsertIndex(tabsContainerRef, x, draggedTabId());
       setInsertIdx(result?.display ?? null);
       if (result != null) {
-        setReorderState({ groupId: props.groupId, insertIndex: result.logical });
         pendingReorder = { groupId: props.groupId, insertIndex: result.logical };
       }
     } else {
       setInsertIdx(null);
-      setReorderState(null);
       pendingReorder = null;
     }
   });
@@ -204,7 +199,7 @@ const CenterTabBar: Component<{
   createEffect(() => {
     if (!dndCtx?.[0]?.active?.draggable) {
       setInsertIdx(null);
-      setReorderState(null);
+      pendingReorder = null;
     }
   });
 
@@ -372,7 +367,7 @@ const EdgeTabBar: Component<{
   createEffect(() => {
     if (!isSameBarDrag() || !tabsContainerRef) {
       setInsertIdx(null);
-      setReorderState(null);
+      pendingReorder = null;
       return;
     }
     const sensor = dndCtx?.[0]?.active?.sensor;
@@ -385,18 +380,16 @@ const EdgeTabBar: Component<{
                        y >= rect.top - VERTICAL_TOLERANCE && y <= rect.bottom + VERTICAL_TOLERANCE;
       if (!inBounds) {
         setInsertIdx(null);
-        setReorderState(null);
+        pendingReorder = null;
         return;
       }
       const result = computeInsertIndex(tabsContainerRef, x, draggedTabId());
       setInsertIdx(result?.display ?? null);
       if (result != null) {
-        setReorderState({ groupId: groupId(), insertIndex: result.logical });
         pendingReorder = { groupId: groupId(), insertIndex: result.logical };
       }
     } else {
       setInsertIdx(null);
-      setReorderState(null);
       pendingReorder = null;
     }
   });
@@ -404,7 +397,7 @@ const EdgeTabBar: Component<{
   createEffect(() => {
     if (!dndCtx?.[0]?.active?.draggable) {
       setInsertIdx(null);
-      setReorderState(null);
+      pendingReorder = null;
     }
   });
 

@@ -13,7 +13,7 @@ import { StatusBar } from './StatusBar';
 import { MinimizedBar } from './MinimizedBar';
 import { windowStore, windowActions } from '@/stores/windowStore';
 import type { DragSource, DropTarget } from '@/types/windowTypes';
-import { setReorderState, getPendingReorder, clearPendingReorder } from './TabBar';
+import { getPendingReorder, clearPendingReorder } from './TabBar';
 import {
   IconPanelLeft,
   IconPanelLeftClose,
@@ -116,7 +116,6 @@ function InnerManager() {
 
     const reorder = getPendingReorder();
     clearPendingReorder();
-    setReorderState(null);
     if (reorder && source && source.type === 'tab' && reorder.groupId === source.sourceGroupId) {
       const droppingOnSameGroup =
         target?.type === 'tabGroup' && target.groupId === source.sourceGroupId;
