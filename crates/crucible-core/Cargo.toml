@@ -23,7 +23,7 @@ async-trait = { workspace = true }
 blake3 = "1.8"
 hex = "0.4"
 sha2 = "0.10"
-bitflags = "2.10"
+bitflags = "2.11"
 tempfile = { workspace = true }
 
 # Enhanced async runtime
@@ -85,7 +85,7 @@ test-utils = []
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util", "full"] }
 tracing-subscriber = { workspace = true }
-tempfile = "3.24"
+tempfile = "3.25"
 serial_test = "3.3"
 
 # Dev-kiln validation tests
