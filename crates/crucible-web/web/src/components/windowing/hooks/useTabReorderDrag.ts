@@ -22,7 +22,7 @@ export function clearPendingReorder(): void {
   pendingReorder = null;
 }
 
-function computeInsertIndex(
+export function computeInsertIndex(
   containerEl: HTMLElement,
   pointerX: number,
   draggedTabId?: string,
