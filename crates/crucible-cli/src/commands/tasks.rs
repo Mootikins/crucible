@@ -247,6 +247,7 @@ mod tests {
             storage: None,
             mcp: None,
             plugins: std::collections::HashMap::new(),
+            web: None,
             source_map: None,
         }
     }

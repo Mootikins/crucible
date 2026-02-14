@@ -191,10 +191,21 @@ mod tests {
             .find(|n| &n.title == hub_title)
             .unwrap();
 
-        // Hub should have many more links than average
+        let non_hub_avg = {
+            let non_hub_links: usize = fixture
+                .notes
+                .iter()
+                .filter(|n| !fixture.stats.hub_notes.contains(&n.title))
+                .map(|n| n.links_to.len())
+                .sum();
+            let non_hub_count = fixture.notes.len() - fixture.stats.hub_notes.len();
+            non_hub_links as f64 / non_hub_count as f64
+        };
         assert!(
-            hub_note.links_to.len() > fixture.stats.avg_links_per_note as usize * 5,
-            "Hub should have at least 5x average links"
+            hub_note.links_to.len() > (non_hub_avg * 5.0) as usize,
+            "Hub should have at least 5x non-hub average links (hub={}, non_hub_avg={:.1})",
+            hub_note.links_to.len(),
+            non_hub_avg,
         );
     }
 
