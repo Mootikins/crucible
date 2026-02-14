@@ -19,6 +19,17 @@ export type ReorderState = {
 const [reorderState, setReorderState] = createSignal<ReorderState>(null);
 export { reorderState, setReorderState };
 
+// Non-reactive pending reorder state (survives reactive cleanup race)
+let pendingReorder: ReorderState = null;
+
+export function getPendingReorder(): ReorderState {
+  return pendingReorder;
+}
+
+export function clearPendingReorder(): void {
+  pendingReorder = null;
+}
+
 // ── Insert-index computation helper ─────────────────────────────────────
 
 function computeInsertIndex(
@@ -169,7 +180,9 @@ const CenterTabBar: Component<{
     const y = sensor?.coordinates?.current?.y;
     if (x != null && y != null) {
       const rect = tabsContainerRef.getBoundingClientRect();
-      const inBounds = x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
+      const VERTICAL_TOLERANCE = 8;
+      const inBounds = x >= rect.left && x <= rect.right &&
+                       y >= rect.top - VERTICAL_TOLERANCE && y <= rect.bottom + VERTICAL_TOLERANCE;
       if (!inBounds) {
         setInsertIdx(null);
         setReorderState(null);
@@ -179,6 +192,7 @@ const CenterTabBar: Component<{
       setInsertIdx(result?.display ?? null);
       if (result != null) {
         setReorderState({ groupId: props.groupId, insertIndex: result.logical });
+        pendingReorder = { groupId: props.groupId, insertIndex: result.logical };
       }
     } else {
       setInsertIdx(null);
@@ -364,7 +378,9 @@ const EdgeTabBar: Component<{
     const y = sensor?.coordinates?.current?.y;
     if (x != null && y != null) {
       const rect = tabsContainerRef.getBoundingClientRect();
-      const inBounds = x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
+      const VERTICAL_TOLERANCE = 8;
+      const inBounds = x >= rect.left && x <= rect.right &&
+                       y >= rect.top - VERTICAL_TOLERANCE && y <= rect.bottom + VERTICAL_TOLERANCE;
       if (!inBounds) {
         setInsertIdx(null);
         setReorderState(null);
@@ -374,6 +390,7 @@ const EdgeTabBar: Component<{
       setInsertIdx(result?.display ?? null);
       if (result != null) {
         setReorderState({ groupId: groupId(), insertIndex: result.logical });
+        pendingReorder = { groupId: groupId(), insertIndex: result.logical };
       }
     } else {
       setInsertIdx(null);
