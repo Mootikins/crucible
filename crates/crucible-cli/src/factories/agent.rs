@@ -246,6 +246,7 @@ pub async fn create_internal_agent(
             LlmProviderType::Anthropic => "claude-3-5-sonnet-20241022".to_string(),
             LlmProviderType::GitHubCopilot => "gpt-4o".to_string(),
             LlmProviderType::OpenRouter => "openai/gpt-4o".to_string(),
+            LlmProviderType::ZAI => "GLM-4.7".to_string(),
         });
 
     // Detect model size (or use Medium if size-aware prompts disabled)
@@ -423,6 +424,14 @@ pub async fn create_internal_agent(
         }
         LlmProviderType::OpenRouter => crucible_rig::create_client(
             &LlmProviderConfig::builder(LlmProviderType::OpenRouter)
+                .maybe_endpoint(config.chat.endpoint.clone())
+                .model(model.clone())
+                .maybe_timeout_secs(config.chat.timeout_secs)
+                .api_key_from_env()
+                .build(),
+        )?,
+        LlmProviderType::ZAI => crucible_rig::create_client(
+            &LlmProviderConfig::builder(LlmProviderType::ZAI)
                 .maybe_endpoint(config.chat.endpoint.clone())
                 .model(model.clone())
                 .maybe_timeout_secs(config.chat.timeout_secs)

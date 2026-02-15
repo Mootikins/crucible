@@ -456,6 +456,7 @@ fn llm_provider_to_str(provider: &crucible_config::LlmProviderType) -> &'static 
         crucible_config::LlmProviderType::Anthropic => "anthropic",
         crucible_config::LlmProviderType::GitHubCopilot => "github-copilot",
         crucible_config::LlmProviderType::OpenRouter => "openrouter",
+        crucible_config::LlmProviderType::ZAI => "zai",
     }
 }
 
@@ -464,6 +465,7 @@ fn format_provider_name(name: &str, provider_type: &str) -> String {
         "ollama" => "Ollama",
         "openai" => "OpenAI",
         "anthropic" => "Anthropic",
+        "zai" => "Z.AI",
         _ => return name.to_string(),
     };
     if name == "default" || name.eq_ignore_ascii_case(type_label) {

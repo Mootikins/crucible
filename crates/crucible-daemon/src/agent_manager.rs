@@ -3384,7 +3384,7 @@ mod tests {
         );
 
         let llm_config = LlmConfig {
-            default: Some("anthropic".to_string()),
+            default: Some("zai-coding".to_string()),
             providers,
         };
 
@@ -3725,6 +3725,163 @@ mod tests {
         assert!(
             !agent_manager.agent_cache.contains_key(&session.id),
             "Cache should be invalidated after llm_config cross-provider switch"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_list_models_multi_provider_with_zai() {
+        use crucible_config::{LlmConfig, LlmProviderConfig, LlmProviderType};
+        use std::collections::HashMap;
+
+        let tmp = TempDir::new().unwrap();
+        let storage = Arc::new(FileSessionStorage::new());
+        let session_manager = Arc::new(SessionManager::with_storage(storage));
+
+        let session = session_manager
+            .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![])
+            .await
+            .unwrap();
+
+        let mut providers = HashMap::new();
+        providers.insert(
+            "zai-coding".to_string(),
+            LlmProviderConfig::builder(LlmProviderType::ZAI)
+                .endpoint("https://api.z.ai/api/coding/paas/v4")
+                .available_models(vec![
+                    "GLM-5".to_string(),
+                    "GLM-4.7".to_string(),
+                    "GLM-4.5-Air".to_string(),
+                ])
+                .build(),
+        );
+        providers.insert(
+            "openai".to_string(),
+            LlmProviderConfig::builder(LlmProviderType::OpenAI)
+                .available_models(vec!["gpt-4".to_string(), "gpt-3.5-turbo".to_string()])
+                .build(),
+        );
+
+        let llm_config = LlmConfig {
+            default: Some("ollama".to_string()),
+            providers,
+        };
+
+        let agent_manager =
+            create_test_agent_manager_with_llm_config(session_manager.clone(), llm_config);
+
+        agent_manager
+            .configure_agent(&session.id, test_agent())
+            .await
+            .unwrap();
+
+        let models = agent_manager.list_models(&session.id).await.unwrap();
+
+        // Verify ZAI models are present with correct prefix
+        assert!(
+            models.iter().any(|m| m.starts_with("zai-coding/")),
+            "Should have zai-coding/ prefixed models, got: {:?}",
+            models
+        );
+        assert!(
+            models.contains(&"zai-coding/GLM-5".to_string()),
+            "Should contain zai-coding/GLM-5, got: {:?}",
+            models
+        );
+        assert!(
+            models.contains(&"zai-coding/GLM-4.7".to_string()),
+            "Should contain zai-coding/GLM-4.7, got: {:?}",
+            models
+        );
+        assert!(
+            models.contains(&"zai-coding/GLM-4.5-Air".to_string()),
+            "Should contain zai-coding/GLM-4.5-Air, got: {:?}",
+            models
+        );
+
+        // Verify OpenAI models are also present
+        assert!(
+            models.contains(&"openai/gpt-4".to_string()),
+            "Should contain openai/gpt-4, got: {:?}",
+            models
+        );
+    }
+
+    #[tokio::test]
+    async fn test_switch_model_to_zai_provider() {
+        use crucible_config::{LlmConfig, LlmProviderConfig, LlmProviderType};
+        use std::collections::HashMap;
+
+        let tmp = TempDir::new().unwrap();
+        let storage = Arc::new(FileSessionStorage::new());
+        let session_manager = Arc::new(SessionManager::with_storage(storage));
+
+        let session = session_manager
+            .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![])
+            .await
+            .unwrap();
+
+        let mut providers = HashMap::new();
+        providers.insert(
+            "openai".to_string(),
+            LlmProviderConfig::builder(LlmProviderType::OpenAI)
+                .model("gpt-4")
+                .build(),
+        );
+        providers.insert(
+            "zai-coding".to_string(),
+            LlmProviderConfig::builder(LlmProviderType::ZAI)
+                .endpoint("https://api.z.ai/api/coding/paas/v4")
+                .available_models(vec![
+                    "GLM-5".to_string(),
+                    "GLM-4.7".to_string(),
+                    "GLM-4.5-Air".to_string(),
+                ])
+                .build(),
+        );
+
+        let llm_config = LlmConfig {
+            default: Some("openai".to_string()),
+            providers,
+        };
+
+        let agent_manager =
+            create_test_agent_manager_with_llm_config(session_manager.clone(), llm_config);
+
+        // Configure with OpenAI provider
+        agent_manager
+            .configure_agent(&session.id, test_agent())
+            .await
+            .unwrap();
+
+        // Switch to ZAI provider with GLM-4.7 model
+        agent_manager
+            .switch_model(&session.id, "zai-coding/GLM-4.7", None)
+            .await
+            .unwrap();
+
+        // Verify the agent was updated
+        let updated = session_manager.get_session(&session.id).unwrap();
+        let agent = updated.agent.as_ref().unwrap();
+
+        assert_eq!(
+            agent.provider_key.as_deref(),
+            Some("zai-coding"),
+            "Provider key should be updated to zai-coding"
+        );
+        assert_eq!(
+            agent.model, "GLM-4.7",
+            "Model should be updated to GLM-4.7"
+        );
+        assert_eq!(
+            agent.endpoint.as_deref(),
+            Some("https://api.z.ai/api/coding/paas/v4"),
+            "Endpoint should be updated to ZAI Coding Plan endpoint"
+        );
+
+        // Verify cache was invalidated
+        assert!(
+            !agent_manager.agent_cache.contains_key(&session.id),
+            "Cache should be invalidated after cross-provider switch to ZAI"
         );
     }
 }

@@ -99,6 +99,7 @@ pub async fn fetch_provider_models(provider: &LlmProviderType, endpoint: &str) -
         LlmProviderType::Anthropic => anthropic_models(),
         LlmProviderType::GitHubCopilot => Vec::new(),
         LlmProviderType::OpenRouter => Vec::new(),
+        LlmProviderType::ZAI => zai_models(),
     }
 }
 
@@ -188,6 +189,14 @@ fn anthropic_models() -> Vec<String> {
         "claude-3-5-sonnet-20241022".to_string(),
         "claude-3-5-haiku-20241022".to_string(),
         "claude-3-opus-20240229".to_string(),
+    ]
+}
+
+fn zai_models() -> Vec<String> {
+    vec![
+        "GLM-5".to_string(),
+        "GLM-4.7".to_string(),
+        "GLM-4.5-Air".to_string(),
     ]
 }
 
@@ -343,6 +352,18 @@ pub fn detect_providers(config: &ChatConfig) -> Vec<DetectedProvider> {
                     available: true,
                     reason: format!("API key found ({})", src),
                     default_model: config.model.clone().or(Some("openai/gpt-4o".to_string())),
+                    source: Some(src),
+                });
+            }
+        }
+        LlmProviderType::ZAI => {
+            if let Some(src) = has_api_key_with_source("zai") {
+                providers.push(DetectedProvider {
+                    name: "Z.AI".to_string(),
+                    provider_type: "zai".to_string(),
+                    available: true,
+                    reason: format!("API key found ({})", src),
+                    default_model: config.model.clone().or(Some("GLM-4.7".to_string())),
                     source: Some(src),
                 });
             }
