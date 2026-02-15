@@ -7,7 +7,7 @@
 use crate::acp_handle::AcpAgentHandle;
 use crate::protocol::SessionEventMessage;
 use crucible_config::credentials::SecretsFile;
-use crucible_config::{LlmProviderConfig, LlmProviderType};
+use crucible_config::{BackendType, LlmProviderConfig};
 use crucible_core::background::BackgroundSpawner;
 use crucible_core::interaction_registry::InteractionRegistry;
 use crucible_core::prompts::ModelSize;
@@ -136,17 +136,18 @@ pub async fn create_agent_from_session_config(
         "Creating agent from session config"
     );
 
-    let provider_type = LlmProviderType::from_str(&agent_config.provider)
+    #[allow(deprecated)] // LlmProviderConfig::builder takes LlmProviderType
+    let provider_type = crucible_config::LlmProviderType::from_str(&agent_config.provider)
         .map_err(AgentFactoryError::ClientCreation)?;
 
+    #[allow(deprecated)]
     let mut llm_config = LlmProviderConfig::builder(provider_type)
         .maybe_endpoint(agent_config.endpoint.clone())
         .model(agent_config.model.clone())
         .api_key_from_env()
         .build();
 
-    // For GitHub Copilot, resolve OAuth token from credential store
-    if provider_type == LlmProviderType::GitHubCopilot {
+    if agent_config.provider == BackendType::GitHubCopilot.as_str() {
         if let Some(oauth_token) = resolve_copilot_oauth_token(llm_config.api_key.as_deref()) {
             llm_config.api_key = Some(oauth_token);
         }

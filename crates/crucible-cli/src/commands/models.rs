@@ -2,13 +2,14 @@ use crate::config::CliConfig;
 use crate::provider_detect::fetch_provider_models;
 use anyhow::Result;
 
+#[allow(deprecated)] // ChatConfig.provider is LlmProviderType
 pub async fn execute(config: CliConfig) -> Result<()> {
-    let provider = &config.chat.provider;
+    let provider: crucible_config::BackendType = config.chat.provider.into();
     let endpoint = config.chat.llm_endpoint();
 
     eprintln!("Fetching models from {:?} at {}...", provider, endpoint);
 
-    let models = fetch_provider_models(provider, &endpoint).await;
+    let models = fetch_provider_models(&provider, &endpoint).await;
 
     if models.is_empty() {
         eprintln!("No models available.");
