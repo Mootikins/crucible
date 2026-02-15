@@ -1217,42 +1217,35 @@ impl AgentManager {
         let (provider_key_opt, model_name) = self.parse_provider_model(model_id);
 
         if let Some(provider_key) = provider_key_opt {
-            if let Some(provider_config) = self.providers_config.get(&provider_key) {
-                agent_config.provider = provider_config.backend.as_str().to_string();
-                agent_config.provider_key = Some(provider_key.clone());
-                agent_config.endpoint = provider_config.endpoint();
-                agent_config.model = model_name.clone();
-
-                debug!(
+            if let Some(resolved) = self.resolve_provider_config(&provider_key) {
+                info!(
                     session_id = %session_id,
                     provider_key = %provider_key,
-                    provider = %agent_config.provider,
                     model = %model_name,
-                    endpoint = ?agent_config.endpoint,
-                    "Cross-provider switch detected via ProvidersConfig"
+                    source = %resolved.source,
+                    "Resolved provider '{}' via {}",
+                    provider_key,
+                    resolved.source,
                 );
-            } else if let Some(llm_provider_config) = self
-                .llm_config
-                .as_ref()
-                .and_then(|c| c.providers.get(&provider_key))
-            {
-                agent_config.provider = llm_provider_config.provider_type.as_str().to_string();
-                agent_config.provider_key = Some(provider_key.clone());
-                agent_config.endpoint = Some(llm_provider_config.endpoint());
-                agent_config.model = model_name.clone();
 
-                debug!(
-                    session_id = %session_id,
-                    provider_key = %provider_key,
-                    provider = %agent_config.provider,
-                    model = %model_name,
-                    endpoint = ?agent_config.endpoint,
-                    "Cross-provider switch detected via LlmConfig"
-                );
+                agent_config.provider = resolved.provider_type;
+                agent_config.provider_key = Some(provider_key);
+                agent_config.endpoint = resolved.endpoint;
+                agent_config.model = model_name;
             } else {
+                info!(
+                    session_id = %session_id,
+                    model = %model_id,
+                    "No provider config found for prefix, treating as model-only switch"
+                );
                 agent_config.model = model_id.to_string();
             }
         } else {
+            info!(
+                session_id = %session_id,
+                model = %model_name,
+                "Model-only switch (no provider prefix)"
+            );
             agent_config.model = model_name;
         }
 
