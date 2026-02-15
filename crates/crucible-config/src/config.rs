@@ -2322,6 +2322,7 @@ allowed_tools = ["search_*"]
                 max_tokens: Some(8192),
                 timeout_secs: Some(300),
                 api_key: None,
+                available_models: None,
             },
         );
 
@@ -2428,6 +2429,7 @@ max_tokens = 4096
                 max_tokens: None,
                 timeout_secs: None,
                 api_key: None,
+                available_models: None,
             },
         );
 
