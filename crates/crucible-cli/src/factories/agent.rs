@@ -400,7 +400,7 @@ pub async fn create_internal_agent(
                 &builder
                     .model(model.clone())
                     .maybe_timeout_secs(config.chat.timeout_secs)
-                    .api_key_from_env()
+                    .with_api_key_env_var_name()
                     .build(),
             )?
         }
@@ -413,7 +413,7 @@ pub async fn create_internal_agent(
                 &builder
                     .model(model.clone())
                     .maybe_timeout_secs(config.chat.timeout_secs)
-                    .api_key_from_env()
+                    .with_api_key_env_var_name()
                     .build(),
             )?
         }
@@ -425,7 +425,7 @@ pub async fn create_internal_agent(
             let mut copilot_config = builder
                 .model(model.clone())
                 .maybe_timeout_secs(config.chat.timeout_secs)
-                .api_key_from_env()
+                .with_api_key_env_var_name()
                 .build();
 
             if let Some(oauth_token) =
@@ -445,7 +445,7 @@ pub async fn create_internal_agent(
                 &builder
                     .model(model.clone())
                     .maybe_timeout_secs(config.chat.timeout_secs)
-                    .api_key_from_env()
+                    .with_api_key_env_var_name()
                     .build(),
             )?
         }
@@ -458,7 +458,7 @@ pub async fn create_internal_agent(
                 &builder
                     .model(model.clone())
                     .maybe_timeout_secs(config.chat.timeout_secs)
-                    .api_key_from_env()
+                    .with_api_key_env_var_name()
                     .build(),
             )?
         }
