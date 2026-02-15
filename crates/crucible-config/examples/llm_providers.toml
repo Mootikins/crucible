@@ -54,13 +54,13 @@ temperature = 0.7
 max_tokens = 4096
 
 # Named provider: Z.AI GLM Coding Plan (Anthropic-compatible endpoint)
-# NOTE: Z.AI's API currently rejects standard Anthropic headers.
-# This config is provided for future compatibility when Z.AI fixes their API.
+# Z.AI proxies the Anthropic API and maps Claude model names to GLM models.
+# Use Claude model names (e.g., claude-sonnet-4-20250514), not GLM names.
 [llm.providers.zai-coding]
 type = "anthropic"
 endpoint = "https://api.z.ai/api/anthropic"
-api_key = "{env:ZAI_API_KEY}"
-default_model = "glm-4-flash"
+api_key = "{env:GLM_AUTH_TOKEN}"
+default_model = "claude-sonnet-4-20250514"
 temperature = 0.7
 max_tokens = 4096
 
