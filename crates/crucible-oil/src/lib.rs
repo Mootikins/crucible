@@ -33,8 +33,7 @@ pub mod proptest_strategies;
 pub mod render;
 pub(crate) mod span;
 pub mod style;
-// NOTE: taffy_layout module is dead code and will be replaced in Task 2
-// pub mod taffy_layout;
+pub mod taffy_layout;
 pub mod template;
 
 pub use cell_grid::{CellGrid, StyledCell};
@@ -47,8 +46,7 @@ pub use focus::*;
 pub use layout::flex::*;
 pub use layout::Rect;
 pub use layout::*;
-// NOTE: These will be exported from layout module in Task 2 when tree_render is moved from CLI
-// pub use layout::{build_layout_tree, render_layout_tree, render_layout_tree_filtered};
+pub use layout::{build_layout_tree, render_layout_tree};
 pub use layout::{LayoutBox, LayoutContent, LayoutTree, PopupItem};
 pub use node::*;
 pub use overlay::{composite_overlays, Overlay, OverlayAnchor};

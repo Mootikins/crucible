@@ -1,13 +1,11 @@
 mod debug;
 pub mod flex;
 mod query;
-// NOTE: tree_render module will be moved from CLI in Task 2
-// mod tree_render;
+mod tree_render;
 mod types;
 
-// NOTE: taffy_layout module is disabled in lib.rs and will be replaced in Task 2
-// pub use crate::taffy_layout::build_layout_tree;
-// pub use tree_render::{render_layout_tree, render_layout_tree_filtered};
+pub use crate::taffy_layout::build_layout_tree;
+pub use tree_render::render_layout_tree;
 pub use types::{LayoutBox, LayoutContent, LayoutTree, PopupItem};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
