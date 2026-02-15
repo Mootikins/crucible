@@ -86,9 +86,7 @@ impl ChatConfig {
                 LlmProviderType::Ollama => "http://localhost:11434".to_string(),
                 LlmProviderType::OpenAI => "https://api.openai.com/v1".to_string(),
                 LlmProviderType::Anthropic => "https://api.anthropic.com/v1".to_string(),
-                LlmProviderType::GitHubCopilot => {
-                    "https://api.github.com/copilot_internal/v2".to_string()
-                }
+                LlmProviderType::GitHubCopilot => "https://api.githubcopilot.com".to_string(),
                 LlmProviderType::OpenRouter => "https://openrouter.ai/api/v1".to_string(),
                 LlmProviderType::ZAI => "https://api.z.ai/api/coding/paas/v4".to_string(),
             })
@@ -155,5 +153,18 @@ mod tests {
         "#;
         let config: ChatConfig = toml::from_str(toml).unwrap();
         assert!(config.size_aware_prompts);
+    }
+
+    #[test]
+    fn test_github_copilot_endpoint_matches_implementation() {
+        let config = ChatConfig {
+            provider: LlmProviderType::GitHubCopilot,
+            ..Default::default()
+        };
+        let endpoint = config.llm_endpoint();
+        assert_eq!(
+            endpoint, "https://api.githubcopilot.com",
+            "GitHubCopilot endpoint must match COPILOT_API_BASE from github_copilot.rs"
+        );
     }
 }

@@ -146,7 +146,7 @@ pub fn generate_config_with_provider(provider: &str, model: &str) -> String {
     let endpoint = match provider {
         "ollama" => "http://localhost:11434",
         "openai" => "https://api.openai.com/v1",
-        "anthropic" => "https://api.anthropic.com",
+        "anthropic" => "https://api.anthropic.com/v1",
         _ => "http://localhost:11434",
     };
 
@@ -206,7 +206,7 @@ mod tests {
         let config = generate_config_with_provider("anthropic", "claude-3-5-sonnet-latest");
         assert!(config.contains("provider = \"anthropic\""));
         assert!(config.contains("model = \"claude-3-5-sonnet-latest\""));
-        assert!(config.contains("endpoint = \"https://api.anthropic.com\""));
+        assert!(config.contains("endpoint = \"https://api.anthropic.com/v1\""));
     }
 
     #[test]
@@ -218,7 +218,7 @@ mod tests {
         assert!(openai_config.contains("endpoint = \"https://api.openai.com/v1\""));
 
         let anthropic_config = generate_config_with_provider("anthropic", "test");
-        assert!(anthropic_config.contains("endpoint = \"https://api.anthropic.com\""));
+        assert!(anthropic_config.contains("endpoint = \"https://api.anthropic.com/v1\""));
 
         let unknown_config = generate_config_with_provider("unknown", "test");
         assert!(unknown_config.contains("endpoint = \"http://localhost:11434\""));
