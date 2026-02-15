@@ -3,6 +3,7 @@ use agent_client_protocol::PromptRequest;
 use crucible_acp::client::{ClientConfig, CrucibleAcpClient};
 use crucible_acp::discovery::{clear_agent_cache, discover_agent};
 use crucible_acp::{StreamConfig, StreamHandler, StreamingChunk};
+use crucible_config::AcpConfig;
 use once_cell::sync::Lazy;
 use serde_json::json;
 use std::path::PathBuf;
@@ -199,12 +200,17 @@ async fn concurrent_agent_cache_isolation_with_clear_boundaries() {
     let merged = format!("{}:{}", temp.path().display(), old_path);
     let _path_guard = EnvVarGuard::set("PATH", merged);
 
-    let discovered = discover_agent(None).await.expect("discover should succeed with fake PATH");
+    let config = AcpConfig::default();
+    let discovered = discover_agent(None, &config)
+        .await
+        .expect("discover should succeed with fake PATH");
     assert_eq!(discovered.name, "opencode");
     assert_eq!(discovered.command, "opencode");
 
     clear_agent_cache();
-    let discovered_again = discover_agent(None).await.expect("discover should still succeed after clear");
+    let discovered_again = discover_agent(None, &config)
+        .await
+        .expect("discover should still succeed after clear");
     assert_eq!(discovered_again.name, "opencode");
 
     clear_agent_cache();
