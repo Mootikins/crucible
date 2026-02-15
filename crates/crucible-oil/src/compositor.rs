@@ -1,11 +1,11 @@
 use crate::span::{Span, SpanLine};
 use crate::style::Style;
 
-pub trait ContentSource {
+pub(crate) trait ContentSource {
     fn get_content(&self, id: &str) -> Option<&str>;
 }
 
-pub struct Compositor<'a> {
+pub(crate) struct Compositor<'a> {
     content_source: &'a dyn ContentSource,
     width: usize,
     lines: Vec<SpanLine<'a>>,
@@ -90,7 +90,7 @@ impl<'a> Compositor<'a> {
     }
 }
 
-pub struct StaticCompositor {
+pub(crate) struct StaticCompositor {
     width: usize,
     lines: Vec<String>,
 }
