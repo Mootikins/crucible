@@ -23,6 +23,8 @@ pub struct ThemeTokens {
     pub shell_bg: Color,
     /// Popup/overlay background
     pub popup_bg: Color,
+    /// Popup selected item background
+    pub popup_selected_bg: Color,
     /// Code block background
     pub code_bg: Color,
     /// Thinking block background
@@ -140,6 +142,7 @@ impl ThemeTokens {
             command_bg: Rgb(60, 50, 20),
             shell_bg: Rgb(60, 30, 30),
             popup_bg: Rgb(30, 34, 42),
+            popup_selected_bg: Rgb(50, 56, 68),
             code_bg: Rgb(35, 39, 47),
             thinking_bg: Rgb(45, 40, 55),
 
@@ -325,6 +328,16 @@ impl ThemeTokens {
         Style::new().fg(self.text_dim).dim()
     }
 
+    /// Style for popup background
+    pub fn popup_bg_style(&self) -> Style {
+        Style::new().bg(self.popup_bg)
+    }
+
+    /// Style for popup selected item background
+    pub fn popup_selected_bg_style(&self) -> Style {
+        Style::new().bg(self.popup_selected_bg)
+    }
+
     // ── Mode badges ─────────────────────────────────────────────────────
 
     /// Style for NORMAL mode badge
@@ -499,6 +512,7 @@ mod tests {
         assert_eq!(t.command_bg, Color::Rgb(60, 50, 20));
         assert_eq!(t.shell_bg, Color::Rgb(60, 30, 30));
         assert_eq!(t.popup_bg, Color::Rgb(30, 34, 42));
+        assert_eq!(t.popup_selected_bg, Color::Rgb(50, 56, 68));
         assert_eq!(t.code_bg, Color::Rgb(35, 39, 47));
         assert_eq!(t.thinking_bg, Color::Rgb(45, 40, 55));
 
@@ -561,10 +575,10 @@ mod tests {
     }
 
     #[test]
-    fn default_has_47_tokens() {
-        // Count verified by the exhaustive test above covering all 47 fields:
-        // 6 surfaces + 4 text + 4 semantic + 4 roles + 3 modes +
-        // 6 UI elements + 10 markdown + 3 overlay + 7 diff = 47
+    fn default_has_48_tokens() {
+        // Count verified by the exhaustive test above covering all 48 fields:
+        // 7 surfaces + 4 text + 4 semantic + 4 roles + 3 modes +
+        // 6 UI elements + 10 markdown + 3 overlay + 7 diff = 48
         let t = ThemeTokens::default();
         // If any field were missing, the struct literal in default_tokens() wouldn't compile.
         assert_eq!(t, ThemeTokens::default_tokens());
@@ -612,6 +626,11 @@ mod tests {
             Style::new().fg(Color::Black).bg(Color::Cyan)
         );
         assert_eq!(t.popup_description(), Style::new().fg(Color::Gray).dim());
+        assert_eq!(t.popup_bg_style(), Style::new().bg(Color::Rgb(30, 34, 42)));
+        assert_eq!(
+            t.popup_selected_bg_style(),
+            Style::new().bg(Color::Rgb(50, 56, 68))
+        );
 
         // Mode badges
         assert_eq!(
