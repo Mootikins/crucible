@@ -502,13 +502,10 @@ async fn fetch_models_for_provider(
 /// Static Anthropic model list used when API enumeration is unavailable.
 /// Update periodically as new models are released.
 fn anthropic_models() -> Vec<String> {
-    vec![
-        "claude-sonnet-4-20250514".to_string(),
-        "claude-3-7-sonnet-20250219".to_string(),
-        "claude-3-5-sonnet-20241022".to_string(),
-        "claude-3-5-haiku-20241022".to_string(),
-        "claude-3-opus-20240229".to_string(),
-    ]
+    crucible_config::ANTHROPIC_MODELS
+        .iter()
+        .map(|s| s.to_string())
+        .collect()
 }
 
 async fn fetch_ollama_models(client: &reqwest::Client, endpoint: &str) -> Vec<String> {
@@ -565,11 +562,9 @@ async fn fetch_openai_models(client: &reqwest::Client) -> Vec<String> {
             .data
             .into_iter()
             .filter(|m| {
-                m.id.starts_with("gpt-")
-                    || m.id.starts_with("chatgpt-")
-                    || m.id.starts_with("o1")
-                    || m.id.starts_with("o3")
-                    || m.id.starts_with("o4")
+                crucible_config::OPENAI_MODEL_PREFIXES
+                    .iter()
+                    .any(|prefix| m.id.starts_with(prefix))
             })
             .map(|m| m.id)
             .collect(),
