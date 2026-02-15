@@ -562,6 +562,9 @@ mod tests {
             env_overrides: HashMap::new(),
             mcp_servers: Vec::new(),
             agent_card_name: None,
+            capabilities: None,
+            agent_description: None,
+            delegation_config: None,
         }
     }
 
