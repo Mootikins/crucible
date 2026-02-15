@@ -53,14 +53,15 @@ default_model = "openai/gpt-4o"  # Use provider/model format
 temperature = 0.7
 max_tokens = 4096
 
-# Named provider: Z.AI GLM Coding Plan (Anthropic-compatible endpoint)
-# Z.AI proxies the Anthropic API and maps Claude model names to GLM models.
-# Use Claude model names (e.g., claude-sonnet-4-20250514), not GLM names.
+# Named provider: Z.AI GLM Coding Plan
+# Z.AI provides access to GLM models via their Coding Plan subscription.
+# Requires GLM_AUTH_TOKEN environment variable with your Z.AI API key.
+# Available models: GLM-5, GLM-4.7, GLM-4.5-Air
 [llm.providers.zai-coding]
-type = "anthropic"
-endpoint = "https://api.z.ai/api/anthropic"
+type = "zai"
+endpoint = "https://api.z.ai/api/coding/paas/v4"
 api_key = "{env:GLM_AUTH_TOKEN}"
-default_model = "claude-sonnet-4-20250514"
+default_model = "GLM-4.7"
 temperature = 0.7
 max_tokens = 4096
 
