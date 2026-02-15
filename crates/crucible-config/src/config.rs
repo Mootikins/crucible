@@ -466,7 +466,7 @@ impl Config {
             if let Some((key, provider)) = llm.default_provider() {
                 return Ok(EffectiveLlmConfig {
                     key: key.clone(),
-                    provider_type: provider.provider_type.clone(),
+                    provider_type: provider.provider_type,
                     endpoint: provider.endpoint(),
                     model: provider.model(),
                     temperature: provider.temperature(),
@@ -1608,7 +1608,7 @@ verbose = false
         if let Some((key, provider)) = self.llm.default_provider() {
             return Ok(EffectiveLlmConfig {
                 key: key.clone(),
-                provider_type: provider.provider_type.clone(),
+                provider_type: provider.provider_type,
                 endpoint: provider.endpoint(),
                 model: provider.model(),
                 temperature: provider.temperature(),
