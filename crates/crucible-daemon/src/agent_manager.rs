@@ -1132,6 +1132,11 @@ impl AgentManager {
             if self.providers_config.get(prefix).is_some() {
                 return (Some(prefix.to_string()), model_name.to_string());
             }
+            if let Some(ref llm_config) = self.llm_config {
+                if llm_config.providers.contains_key(prefix) {
+                    return (Some(prefix.to_string()), model_name.to_string());
+                }
+            }
         }
         (None, model_id.to_string())
     }
@@ -1178,7 +1183,25 @@ impl AgentManager {
                     provider = %agent_config.provider,
                     model = %model_name,
                     endpoint = ?agent_config.endpoint,
-                    "Cross-provider switch detected"
+                    "Cross-provider switch detected via ProvidersConfig"
+                );
+            } else if let Some(llm_provider_config) = self
+                .llm_config
+                .as_ref()
+                .and_then(|c| c.providers.get(&provider_key))
+            {
+                agent_config.provider = llm_provider_config.provider_type.as_str().to_string();
+                agent_config.provider_key = Some(provider_key.clone());
+                agent_config.endpoint = Some(llm_provider_config.endpoint());
+                agent_config.model = model_name.clone();
+
+                debug!(
+                    session_id = %session_id,
+                    provider_key = %provider_key,
+                    provider = %agent_config.provider,
+                    model = %model_name,
+                    endpoint = ?agent_config.endpoint,
+                    "Cross-provider switch detected via LlmConfig"
                 );
             } else {
                 agent_config.model = model_id.to_string();
@@ -3386,6 +3409,322 @@ mod tests {
             models.contains(&"anthropic/claude-3-opus".to_string()),
             "Should prefix with provider key: {:?}",
             models
+        );
+    }
+
+    fn create_test_agent_manager_with_llm_config(
+        session_manager: Arc<SessionManager>,
+        llm_config: crucible_config::LlmConfig,
+    ) -> AgentManager {
+        let (event_tx, _) = broadcast::channel(16);
+        let background_manager = Arc::new(BackgroundJobManager::new(event_tx));
+        AgentManager::new(
+            session_manager,
+            background_manager,
+            None,
+            crucible_config::ProvidersConfig::default(),
+            Some(llm_config),
+        )
+    }
+
+    fn create_test_agent_manager_with_both(
+        session_manager: Arc<SessionManager>,
+        providers_config: crucible_config::ProvidersConfig,
+        llm_config: crucible_config::LlmConfig,
+    ) -> AgentManager {
+        let (event_tx, _) = broadcast::channel(16);
+        let background_manager = Arc::new(BackgroundJobManager::new(event_tx));
+        AgentManager::new(
+            session_manager,
+            background_manager,
+            None,
+            providers_config,
+            Some(llm_config),
+        )
+    }
+
+    #[tokio::test]
+    async fn test_parse_provider_model_llm_config_found() {
+        use crucible_config::{LlmConfig, LlmProviderConfig, LlmProviderType};
+
+        let storage = Arc::new(FileSessionStorage::new());
+        let session_manager = Arc::new(SessionManager::with_storage(storage));
+
+        let mut providers = std::collections::HashMap::new();
+        providers.insert(
+            "zai-coding".to_string(),
+            LlmProviderConfig::builder(LlmProviderType::ZAI)
+                .endpoint("https://api.z.ai/api/coding/paas/v4")
+                .available_models(vec!["GLM-4.7".to_string()])
+                .build(),
+        );
+
+        let llm_config = LlmConfig {
+            default: Some("zai-coding".to_string()),
+            providers,
+        };
+
+        let agent_manager =
+            create_test_agent_manager_with_llm_config(session_manager.clone(), llm_config);
+
+        let (provider_key, model_name) = agent_manager.parse_provider_model("zai-coding/GLM-4.7");
+        assert_eq!(
+            provider_key.as_deref(),
+            Some("zai-coding"),
+            "Should find provider key in llm_config"
+        );
+        assert_eq!(model_name, "GLM-4.7", "Model name should be extracted");
+    }
+
+    #[tokio::test]
+    async fn test_parse_provider_model_llm_config_not_found() {
+        use crucible_config::{LlmConfig, LlmProviderConfig, LlmProviderType};
+
+        let storage = Arc::new(FileSessionStorage::new());
+        let session_manager = Arc::new(SessionManager::with_storage(storage));
+
+        let mut providers = std::collections::HashMap::new();
+        providers.insert(
+            "zai-coding".to_string(),
+            LlmProviderConfig::builder(LlmProviderType::ZAI)
+                .build(),
+        );
+
+        let llm_config = LlmConfig {
+            default: None,
+            providers,
+        };
+
+        let agent_manager =
+            create_test_agent_manager_with_llm_config(session_manager.clone(), llm_config);
+
+        let (provider_key, model_name) = agent_manager.parse_provider_model("unknown/model");
+        assert_eq!(
+            provider_key, None,
+            "Should return None when prefix not in either config"
+        );
+        assert_eq!(
+            model_name, "unknown/model",
+            "Should return full string as model"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_parse_provider_model_legacy_takes_precedence() {
+        use crucible_config::{
+            BackendType, LlmConfig, LlmProviderConfig, LlmProviderType, ProviderConfig,
+        };
+
+        let storage = Arc::new(FileSessionStorage::new());
+        let session_manager = Arc::new(SessionManager::with_storage(storage));
+
+        // Configure same key in both legacy and llm configs
+        let mut providers_config = crucible_config::ProvidersConfig::new();
+        providers_config.add(
+            "local",
+            ProviderConfig::new(BackendType::Ollama).with_endpoint("http://localhost:11434"),
+        );
+
+        let mut llm_providers = std::collections::HashMap::new();
+        llm_providers.insert(
+            "local".to_string(),
+            LlmProviderConfig::builder(LlmProviderType::Ollama)
+                .endpoint("http://different:11434")
+                .build(),
+        );
+        let llm_config = LlmConfig {
+            default: None,
+            providers: llm_providers,
+        };
+
+        let agent_manager = create_test_agent_manager_with_both(
+            session_manager.clone(),
+            providers_config,
+            llm_config,
+        );
+
+        let (provider_key, model_name) = agent_manager.parse_provider_model("local/llama3.2");
+        assert_eq!(
+            provider_key.as_deref(),
+            Some("local"),
+            "Legacy providers_config should take precedence"
+        );
+        assert_eq!(model_name, "llama3.2");
+    }
+
+    #[tokio::test]
+    async fn test_switch_model_zai_llm_config() {
+        use crucible_config::{LlmConfig, LlmProviderConfig, LlmProviderType};
+
+        let tmp = TempDir::new().unwrap();
+        let storage = Arc::new(FileSessionStorage::new());
+        let session_manager = Arc::new(SessionManager::with_storage(storage));
+
+        let session = session_manager
+            .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![])
+            .await
+            .unwrap();
+
+        let mut providers = std::collections::HashMap::new();
+        providers.insert(
+            "zai-coding".to_string(),
+            LlmProviderConfig::builder(LlmProviderType::ZAI)
+                .endpoint("https://api.z.ai/api/coding/paas/v4")
+                .available_models(vec!["GLM-4.7".to_string()])
+                .build(),
+        );
+
+        let llm_config = LlmConfig {
+            default: Some("zai-coding".to_string()),
+            providers,
+        };
+
+        let agent_manager =
+            create_test_agent_manager_with_llm_config(session_manager.clone(), llm_config);
+
+        agent_manager
+            .configure_agent(&session.id, test_agent())
+            .await
+            .unwrap();
+
+        // Switch to zai-coding/GLM-4.7
+        agent_manager
+            .switch_model(&session.id, "zai-coding/GLM-4.7", None)
+            .await
+            .unwrap();
+
+        let updated = session_manager.get_session(&session.id).unwrap();
+        let agent = updated.agent.as_ref().unwrap();
+
+        assert_eq!(agent.model, "GLM-4.7", "Model should be updated");
+        assert_eq!(
+            agent.provider, "zai",
+            "Provider should be set to zai via as_str()"
+        );
+        assert_eq!(
+            agent.provider_key.as_deref(),
+            Some("zai-coding"),
+            "Provider key should be set"
+        );
+        assert_eq!(
+            agent.endpoint.as_deref(),
+            Some("https://api.z.ai/api/coding/paas/v4"),
+            "Endpoint should be updated from llm_config"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_switch_model_legacy_still_works() {
+        use crucible_config::{BackendType, LlmConfig, LlmProviderConfig, LlmProviderType, ProviderConfig};
+
+        let tmp = TempDir::new().unwrap();
+        let storage = Arc::new(FileSessionStorage::new());
+        let session_manager = Arc::new(SessionManager::with_storage(storage));
+
+        let session = session_manager
+            .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![])
+            .await
+            .unwrap();
+
+        // Set up legacy ProvidersConfig with "local"
+        let mut providers_config = crucible_config::ProvidersConfig::new();
+        providers_config.add(
+            "local",
+            ProviderConfig::new(BackendType::Ollama).with_endpoint("http://localhost:11434"),
+        );
+
+        // Also have llm_config with a different provider
+        let mut llm_providers = std::collections::HashMap::new();
+        llm_providers.insert(
+            "zai-coding".to_string(),
+            LlmProviderConfig::builder(LlmProviderType::ZAI)
+                .endpoint("https://api.z.ai/api/coding/paas/v4")
+                .build(),
+        );
+        let llm_config = LlmConfig {
+            default: None,
+            providers: llm_providers,
+        };
+
+        let agent_manager = create_test_agent_manager_with_both(
+            session_manager.clone(),
+            providers_config,
+            llm_config,
+        );
+
+        agent_manager
+            .configure_agent(&session.id, test_agent())
+            .await
+            .unwrap();
+
+        // Switch using legacy config key
+        agent_manager
+            .switch_model(&session.id, "local/llama3.3", None)
+            .await
+            .unwrap();
+
+        let updated = session_manager.get_session(&session.id).unwrap();
+        let agent = updated.agent.as_ref().unwrap();
+
+        assert_eq!(agent.model, "llama3.3", "Model should be updated");
+        assert_eq!(
+            agent.provider, "ollama",
+            "Provider should be set from legacy config"
+        );
+        assert_eq!(
+            agent.provider_key.as_deref(),
+            Some("local"),
+            "Provider key should be set"
+        );
+        assert_eq!(
+            agent.endpoint.as_deref(),
+            Some("http://localhost:11434"),
+            "Endpoint should come from legacy config"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_switch_model_llm_config_invalidates_cache() {
+        use crucible_config::{LlmConfig, LlmProviderConfig, LlmProviderType};
+
+        let tmp = TempDir::new().unwrap();
+        let storage = Arc::new(FileSessionStorage::new());
+        let session_manager = Arc::new(SessionManager::with_storage(storage));
+
+        let session = session_manager
+            .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![])
+            .await
+            .unwrap();
+
+        let mut providers = std::collections::HashMap::new();
+        providers.insert(
+            "zai-coding".to_string(),
+            LlmProviderConfig::builder(LlmProviderType::ZAI)
+                .endpoint("https://api.z.ai/api/coding/paas/v4")
+                .build(),
+        );
+
+        let llm_config = LlmConfig {
+            default: None,
+            providers,
+        };
+
+        let agent_manager =
+            create_test_agent_manager_with_llm_config(session_manager.clone(), llm_config);
+
+        agent_manager
+            .configure_agent(&session.id, test_agent())
+            .await
+            .unwrap();
+
+        agent_manager
+            .switch_model(&session.id, "zai-coding/GLM-4.7", None)
+            .await
+            .unwrap();
+
+        assert!(
+            !agent_manager.agent_cache.contains_key(&session.id),
+            "Cache should be invalidated after llm_config cross-provider switch"
         );
     }
 }
