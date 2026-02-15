@@ -89,8 +89,8 @@ fn find_box_by_key<'a>(box_node: &'a LayoutBox, key: &str) -> Option<&'a LayoutB
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tui::oil::layout::LayoutContent;
-    use crucible_oil::layout::Rect;
+    use crate::layout::Rect;
+    use crate::style::Style;
 
     #[test]
     fn find_root_node_by_key() {
@@ -240,8 +240,6 @@ mod tests {
 
     #[test]
     fn content_text_extracts_from_text_node() {
-        use crucible_oil::style::Style;
-
         let box_node = LayoutBox::new(
             Rect::new(0, 0, 10, 1),
             LayoutContent::Text {
@@ -255,8 +253,6 @@ mod tests {
 
     #[test]
     fn content_text_extracts_from_input_node() {
-        use crucible_oil::style::Style;
-
         let box_node = LayoutBox::new(
             Rect::new(0, 0, 20, 1),
             LayoutContent::Input {
@@ -273,8 +269,6 @@ mod tests {
 
     #[test]
     fn content_text_extracts_from_spinner_with_label() {
-        use crucible_oil::style::Style;
-
         let box_node = LayoutBox::new(
             Rect::new(0, 0, 15, 1),
             LayoutContent::Spinner {
@@ -290,8 +284,6 @@ mod tests {
 
     #[test]
     fn content_text_returns_none_for_spinner_without_label() {
-        use crucible_oil::style::Style;
-
         let box_node = LayoutBox::new(
             Rect::new(0, 0, 5, 1),
             LayoutContent::Spinner {
@@ -307,8 +299,6 @@ mod tests {
 
     #[test]
     fn content_text_returns_none_for_box() {
-        use crucible_oil::style::Style;
-
         let box_node = LayoutBox::new(
             Rect::new(0, 0, 80, 24),
             LayoutContent::Box {
@@ -343,8 +333,8 @@ mod tests {
                 selected: 0,
                 viewport_offset: 0,
                 max_visible: 5,
-                bg_style: crucible_oil::style::Style::new(),
-                selected_style: crucible_oil::style::Style::new(),
+                bg_style: Style::new(),
+                selected_style: Style::new(),
             },
         );
 

@@ -22,19 +22,19 @@ pub mod components;
 #[cfg(test)]
 mod compositor;
 pub mod decrypt;
-mod diff;
+pub(crate) mod diff;
 pub mod focus;
 pub mod layout;
-mod line_buffer;
+pub(crate) mod line_buffer;
 pub mod node;
 pub mod overlay;
 #[cfg(any(test, feature = "test-utils"))]
 pub mod proptest_strategies;
 pub mod render;
-mod span;
+pub(crate) mod span;
 pub mod style;
-#[cfg(test)]
-mod taffy_layout;
+// NOTE: taffy_layout module is dead code and will be replaced in Task 2
+// pub mod taffy_layout;
 pub mod template;
 
 pub use cell_grid::{CellGrid, StyledCell};
@@ -43,19 +43,22 @@ pub use components::{
     DrawerKind, InputArea, InputStyle, PopupOverlay, FOCUS_POPUP, INPUT_MAX_CONTENT_LINES,
     POPUP_MAX_VISIBLE,
 };
-pub use diff::*;
 pub use focus::*;
+pub use layout::flex::*;
+pub use layout::Rect;
 pub use layout::*;
-pub use line_buffer::{DiffOp, LineBuffer, LineDiff, RenderedLine};
+// NOTE: These will be exported from layout module in Task 2 when tree_render is moved from CLI
+// pub use layout::{build_layout_tree, render_layout_tree, render_layout_tree_filtered};
+pub use layout::{LayoutBox, LayoutContent, LayoutTree, PopupItem};
 pub use node::*;
 pub use overlay::{composite_overlays, Overlay, OverlayAnchor};
 pub use render::*;
-pub use span::{OwnedSpan, OwnedSpanLine, Span, SpanLine};
 pub use style::*;
 
 // Re-export commonly used decrypt functions
 pub use decrypt::{decrypt_text, DecryptConfig, CIPHER_CHARS};
 
-pub mod utils {
-    pub use crate::ansi::{apply_style, strip_ansi, visible_width, visual_rows};
-}
+pub mod utils;
+
+// Re-export utils for convenience
+pub use utils::{truncate_to_chars, truncate_to_width};
