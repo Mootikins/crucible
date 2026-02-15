@@ -53,6 +53,17 @@ default_model = "openai/gpt-4o"  # Use provider/model format
 temperature = 0.7
 max_tokens = 4096
 
+# Named provider: Z.AI GLM Coding Plan (Anthropic-compatible endpoint)
+# NOTE: Z.AI's API currently rejects standard Anthropic headers.
+# This config is provided for future compatibility when Z.AI fixes their API.
+[llm.providers.zai-coding]
+type = "anthropic"
+endpoint = "https://api.z.ai/api/anthropic"
+api_key = "{env:ZAI_API_KEY}"
+default_model = "glm-4-flash"
+temperature = 0.7
+max_tokens = 4096
+
 # Chat-specific settings (unchanged from previous version)
 [chat]
 enable_markdown = true
