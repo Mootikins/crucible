@@ -4,7 +4,7 @@
 //! and understanding layout hierarchies without rendering.
 
 use super::types::{LayoutBox, LayoutContent, LayoutTree};
-use crate::tui::oil::utils::truncate_to_chars;
+use crate::utils::truncate_to_chars;
 
 impl LayoutTree {
     /// Generate an ASCII art representation of the layout tree structure.
@@ -166,8 +166,8 @@ fn format_box_info(box_node: &LayoutBox) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crucible_oil::layout::Rect;
-    use crucible_oil::style::Style;
+    use crate::layout::Rect;
+    use crate::style::Style;
 
     #[test]
     fn debug_print_empty_tree() {
@@ -302,8 +302,8 @@ mod tests {
                 selected: 1,
                 viewport_offset: 0,
                 max_visible: 5,
-                bg_style: crucible_oil::style::Style::new(),
-                selected_style: crucible_oil::style::Style::new(),
+                bg_style: Style::new(),
+                selected_style: Style::new(),
             },
         );
         let tree = LayoutTree::new(box_node);
