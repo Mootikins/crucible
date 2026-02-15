@@ -13,6 +13,7 @@ use tracing::{debug, info};
 
 use crucible_config::CliAppConfig;
 use crucible_core::traits::chat::AgentHandle;
+use crucible_config::credentials::SecretsFile;
 
 /// Agent type selection
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
@@ -189,6 +190,39 @@ fn supports_reasoning_content(model_name: &str) -> bool {
         || name_lower.contains("deepseek") && name_lower.contains("r1")
         // Any model with explicit "reasoning" in name
         || name_lower.contains("reasoning")
+}
+
+/// Resolve OAuth token for GitHub Copilot from credential store
+///
+/// Resolution order:
+/// 1. Environment variable (GITHUB_COPILOT_OAUTH_TOKEN)
+/// 2. Credential store (secrets.toml)
+/// 3. Config api_key (fallback)
+fn resolve_copilot_oauth_token(config_api_key: Option<&str>) -> Option<String> {
+    // Check environment variable first
+    if let Ok(token) = std::env::var("GITHUB_COPILOT_OAUTH_TOKEN") {
+        if !token.is_empty() {
+            debug!("Using GitHub Copilot OAuth token from environment variable");
+            return Some(token);
+        }
+    }
+
+    // Check credential store
+    let secrets = SecretsFile::new();
+    if let Ok(Some(token)) = secrets.get_oauth_token("github-copilot") {
+        debug!("Using GitHub Copilot OAuth token from credential store");
+        return Some(token);
+    }
+
+    // Fall back to config api_key
+    if let Some(key) = config_api_key {
+        if !key.is_empty() {
+            debug!("Using GitHub Copilot OAuth token from config");
+            return Some(key.to_string());
+        }
+    }
+
+    None
 }
 
 /// Create an internal agent using the Rig framework
@@ -370,7 +404,19 @@ pub async fn create_internal_agent(
                 .build(),
         )?,
         LlmProviderType::GitHubCopilot => {
-            return Err(anyhow::anyhow!("GitHub Copilot provider not yet implemented"));
+            let mut copilot_config = LlmProviderConfig::builder(LlmProviderType::GitHubCopilot)
+                .maybe_endpoint(config.chat.endpoint.clone())
+                .model(model.clone())
+                .maybe_timeout_secs(config.chat.timeout_secs)
+                .api_key_from_env()
+                .build();
+
+            // Resolve OAuth token from credential store
+            if let Some(oauth_token) = resolve_copilot_oauth_token(copilot_config.api_key.as_deref()) {
+                copilot_config.api_key = Some(oauth_token);
+            }
+
+            crucible_rig::create_client(&copilot_config)?
         }
     };
 

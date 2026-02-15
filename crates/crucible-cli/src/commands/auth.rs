@@ -8,6 +8,7 @@ use colored::Colorize;
 use crucible_config::credentials::{
     env_var_for_provider, CredentialSource, CredentialStore, SecretsFile,
 };
+use crucible_rig::github_copilot::{CopilotAuth, CopilotError};
 
 use crate::cli::AuthCommands;
 
@@ -19,6 +20,7 @@ pub async fn execute(command: Option<AuthCommands>) -> Result<()> {
         AuthCommands::Login { provider, key } => login(provider, key).await,
         AuthCommands::Logout { provider } => logout(provider).await,
         AuthCommands::List => list().await,
+        AuthCommands::Copilot { force } => copilot_auth(force).await,
     }
 }
 
@@ -117,7 +119,7 @@ async fn list() -> Result<()> {
     let stored = store.list()?;
 
     // Known providers to check
-    let known_providers = ["openai", "anthropic"];
+    let known_providers = ["openai", "anthropic", "github-copilot"];
 
     let mut found_any = false;
 
@@ -131,6 +133,20 @@ async fn list() -> Result<()> {
             masked.dimmed(),
             CredentialSource::Store.to_string().cyan()
         );
+    }
+
+    // Check OAuth tokens
+    if let Ok(Some(oauth_token)) = store.get_oauth_token("github-copilot") {
+        if !stored.contains_key("github-copilot") {
+            found_any = true;
+            let masked = mask_key(&oauth_token);
+            println!(
+                "  {} {} ({})",
+                "github-copilot".bold(),
+                masked.dimmed(),
+                "oauth".cyan()
+            );
+        }
     }
 
     // Check environment variables (for providers not already shown from store)
@@ -181,6 +197,85 @@ async fn list() -> Result<()> {
     Ok(())
 }
 
+/// Authenticate with GitHub Copilot using OAuth device flow
+async fn copilot_auth(force: bool) -> Result<()> {
+    let mut store = SecretsFile::new();
+
+    if !force {
+        if let Ok(Some(_)) = store.get_oauth_token("github-copilot") {
+            println!(
+                "{} GitHub Copilot already authenticated. Use {} to re-authenticate.",
+                "!".yellow(),
+                "--force".bold()
+            );
+            return Ok(());
+        }
+    }
+
+    println!("{}", "Starting GitHub Copilot authentication...".bold());
+    println!();
+
+    let auth = CopilotAuth::new();
+
+    let device_code = auth.start_device_flow().await.map_err(|e| match e {
+        CopilotError::OAuth(msg) => anyhow::anyhow!("OAuth flow failed: {}", msg),
+        e => anyhow::anyhow!("Failed to start device flow: {}", e),
+    })?;
+
+    println!("{}", "Please visit the following URL and enter the code:".bold());
+    println!();
+    println!("  {}", device_code.verification_uri.cyan().underline());
+    println!();
+    println!("  Code: {}", device_code.user_code.green().bold());
+    println!();
+    println!("{}", "Waiting for authorization...".dimmed());
+
+    let interval = std::time::Duration::from_secs(device_code.interval.max(5));
+    let deadline =
+        std::time::Instant::now() + std::time::Duration::from_secs(device_code.expires_in);
+
+    loop {
+        if std::time::Instant::now() > deadline {
+            anyhow::bail!("Authentication timed out. Please try again.");
+        }
+
+        tokio::time::sleep(interval).await;
+
+        match auth.poll_for_token(&device_code).await {
+            Ok(token) => {
+                store.set_oauth_token("github-copilot", &token.access_token)?;
+
+                println!();
+                println!(
+                    "{} GitHub Copilot authenticated successfully!",
+                    "✓".green()
+                );
+                println!(
+                    "  {}",
+                    format!("Token stored in {}", store.path().display()).dimmed()
+                );
+                return Ok(());
+            }
+            Err(CopilotError::AuthorizationPending) => continue,
+            Err(CopilotError::SlowDown) => {
+                tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                continue;
+            }
+            Err(CopilotError::DeviceCodeExpired) => {
+                anyhow::bail!("Verification code expired. Please run 'cru auth copilot' again.");
+            }
+            Err(CopilotError::AccessDenied) => {
+                anyhow::bail!(
+                    "Access denied. GitHub Copilot subscription required.\nVisit https://github.com/features/copilot to subscribe."
+                );
+            }
+            Err(e) => {
+                anyhow::bail!("Authentication failed: {}", e);
+            }
+        }
+    }
+}
+
 /// Mask an API key for display (show first 5 chars + ****)
 fn mask_key(key: &str) -> String {
     if key.len() <= 5 {
@@ -204,5 +299,10 @@ mod tests {
     fn mask_key_normal() {
         assert_eq!(mask_key("sk-test-key-12345"), "sk-te****");
         assert_eq!(mask_key("sk-ant-api3"), "sk-an****");
+    }
+
+    #[test]
+    fn mask_key_oauth_token() {
+        assert_eq!(mask_key("gho_1234567890abcdef"), "gho_1****");
     }
 }
