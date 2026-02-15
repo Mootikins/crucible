@@ -6,7 +6,6 @@ use crate::node::{
     BoxNode, Direction, InputNode, Node, PopupNode, RawNode, Size, SpinnerNode, TextNode,
 };
 use crate::style::Style;
-use std::io::{self, Write};
 use textwrap::{wrap, Options, WordSplitter};
 
 pub trait RenderFilter {
@@ -120,15 +119,6 @@ pub fn render_with_cursor_filtered(
         content: output,
         cursor: cursor_info,
     }
-}
-
-fn render_node_tracking_cursor(
-    node: &Node,
-    width: usize,
-    output: &mut String,
-    cursor_info: &mut CursorInfo,
-) {
-    render_node_filtered(node, width, &NoFilter, output, cursor_info);
 }
 
 fn render_node_filtered(
@@ -467,69 +457,6 @@ enum RowChildInfo {
     Content(String, CursorInfo),
 }
 
-fn render_node_to_string(node: &Node, width: usize, output: &mut String) {
-    match node {
-        Node::Empty => {}
-
-        Node::Text(text) => {
-            render_text(text, width, output);
-        }
-
-        Node::Box(boxnode) => {
-            render_box(boxnode, width, output);
-        }
-
-        Node::Static(static_node) => {
-            for child in &static_node.children {
-                render_node_to_string(child, width, output);
-            }
-        }
-
-        Node::Input(input) => {
-            render_input(input, output);
-        }
-
-        Node::Spinner(spinner) => {
-            render_spinner(spinner, output);
-        }
-
-        Node::Popup(popup) => {
-            render_popup(popup, width, output);
-        }
-
-        Node::Fragment(children) => {
-            for child in children {
-                render_node_to_string(child, width, output);
-            }
-        }
-
-        Node::Focusable(focusable) => {
-            render_node_to_string(&focusable.child, width, output);
-        }
-
-        Node::ErrorBoundary(boundary) => {
-            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                let mut child_output = String::new();
-                render_node_to_string(&boundary.child, width, &mut child_output);
-                child_output
-            }));
-
-            match result {
-                Ok(child_output) => output.push_str(&child_output),
-                Err(_) => render_node_to_string(&boundary.fallback, width, output),
-            }
-        }
-
-        Node::Overlay(overlay) => {
-            render_node_to_string(&overlay.child, width, output);
-        }
-
-        Node::Raw(raw) => {
-            render_raw(raw, width, output);
-        }
-    }
-}
-
 fn render_raw(raw: &RawNode, width: usize, output: &mut String) {
     output.push_str(&raw.content);
     let pad = width.saturating_sub(raw.display_width as usize);
@@ -556,188 +483,11 @@ fn render_text(text: &TextNode, width: usize, output: &mut String) {
     }
 }
 
-fn render_box(boxnode: &BoxNode, width: usize, output: &mut String) {
-    let border_size = if boxnode.border.is_some() { 2 } else { 0 };
-    let inner_width = width
-        .saturating_sub(boxnode.padding.horizontal() as usize)
-        .saturating_sub(border_size);
-
-    let children_output = match boxnode.direction {
-        Direction::Column => render_column_children(&boxnode.children, inner_width),
-        Direction::Row => render_row_children(&boxnode.children, inner_width),
-    };
-
-    let content = match boxnode.direction {
-        Direction::Column => {
-            // Separate children with newlines: 1 base + `gap` additional blank lines
-            // gap=0 → "A\r\nB", gap=1 → "A\r\n\r\nB", gap=2 → "A\r\n\r\n\r\nB"
-            let separator = "\r\n".repeat(1 + boxnode.gap.row as usize);
-            children_output.join(&separator)
-        }
-        Direction::Row => children_output.join(""),
-    };
-
-    if let Some(border) = &boxnode.border {
-        render_bordered_content(&content, border, width, &boxnode.style, output);
-    } else {
-        output.push_str(&content);
-    }
-}
-
-fn render_column_children(children: &[Node], width: usize) -> Vec<String> {
-    children
-        .iter()
-        .filter(|c| !matches!(c, Node::Empty))
-        .map(|child| {
-            let mut s = String::new();
-            render_node_to_string(child, width, &mut s);
-            s
-        })
-        .collect()
-}
-
-fn render_row_children(children: &[Node], width: usize) -> Vec<String> {
-    if children.is_empty() {
-        return Vec::new();
-    }
-
-    let mut fixed_width_used = 0usize;
-    let mut total_flex_weight = 0u16;
-    let mut child_sizes: Vec<ChildSize> = Vec::with_capacity(children.len());
-
-    for child in children {
-        if matches!(child, Node::Empty) {
-            child_sizes.push(ChildSize::Skip);
-            continue;
-        }
-
-        let size = get_node_size(child);
-        match size {
-            Size::Fixed(w) => {
-                fixed_width_used += w as usize;
-                child_sizes.push(ChildSize::Fixed(w as usize));
-            }
-            Size::Flex(weight) => {
-                total_flex_weight += weight;
-                child_sizes.push(ChildSize::Flex(weight));
-            }
-            Size::Content => {
-                let mut temp = String::new();
-                render_node_to_string(child, width, &mut temp);
-                let content_width = temp.lines().next().map(visible_width).unwrap_or(0);
-                fixed_width_used += content_width;
-                child_sizes.push(ChildSize::Content(temp));
-            }
-        }
-    }
-
-    let remaining = width.saturating_sub(fixed_width_used);
-
-    let mut result = Vec::with_capacity(children.len());
-    for (child, child_size) in children.iter().zip(child_sizes.into_iter()) {
-        match child_size {
-            ChildSize::Skip => {}
-            ChildSize::Content(rendered) => {
-                if !rendered.is_empty() {
-                    result.push(rendered);
-                }
-            }
-            ChildSize::Fixed(w) => {
-                let mut s = String::new();
-                render_node_to_string(child, w, &mut s);
-                if !s.is_empty() {
-                    result.push(s);
-                }
-            }
-            ChildSize::Flex(weight) => {
-                let flex_width = if total_flex_weight > 0 {
-                    (remaining as u32 * weight as u32 / total_flex_weight as u32) as usize
-                } else {
-                    0
-                };
-                if flex_width > 0 {
-                    result.push(" ".repeat(flex_width));
-                }
-            }
-        }
-    }
-
-    result
-}
-
-enum ChildSize {
-    Skip,
-    Fixed(usize),
-    Flex(u16),
-    Content(String),
-}
-
 fn get_node_size(node: &Node) -> Size {
     match node {
         Node::Box(b) => b.size,
         Node::Raw(raw) => Size::Fixed(raw.display_width),
         _ => Size::Content,
-    }
-}
-
-fn render_bordered_content(
-    content: &str,
-    border: &crate::style::Border,
-    width: usize,
-    style: &Style,
-    output: &mut String,
-) {
-    let chars = border.chars();
-    let inner_width = width.saturating_sub(2);
-
-    let top = format!(
-        "{}{}{}",
-        chars.top_left,
-        chars.horizontal.to_string().repeat(inner_width),
-        chars.top_right
-    );
-    output.push_str(&apply_style(&top, style));
-    output.push_str("\r\n");
-
-    for line in content.lines() {
-        let visible_len = strip_ansi_codes(line).chars().count();
-        let padding = inner_width.saturating_sub(visible_len);
-        let padded_line = format!("{}{}", line, " ".repeat(padding));
-        output.push_str(&apply_style(&chars.vertical.to_string(), style));
-        output.push_str(&padded_line);
-        output.push_str(&apply_style(&chars.vertical.to_string(), style));
-        output.push_str("\r\n");
-    }
-
-    if content.is_empty() {
-        output.push_str(&apply_style(&chars.vertical.to_string(), style));
-        output.push_str(&" ".repeat(inner_width));
-        output.push_str(&apply_style(&chars.vertical.to_string(), style));
-        output.push_str("\r\n");
-    }
-
-    let bottom = format!(
-        "{}{}{}",
-        chars.bottom_left,
-        chars.horizontal.to_string().repeat(inner_width),
-        chars.bottom_right
-    );
-    output.push_str(&apply_style(&bottom, style));
-}
-
-fn strip_ansi_codes(s: &str) -> String {
-    crate::ansi::strip_ansi(s)
-}
-
-fn render_input(input: &InputNode, output: &mut String) {
-    if input.value.is_empty() {
-        if let Some(placeholder) = &input.placeholder {
-            let styled = apply_style(placeholder, &Style::new().dim());
-            output.push_str(&styled);
-        }
-    } else {
-        let styled = apply_style(&input.value, &input.style);
-        output.push_str(&styled);
     }
 }
 
@@ -844,22 +594,4 @@ fn render_popup(popup: &PopupNode, width: usize, output: &mut String) {
             output.push_str("\r\n");
         }
     }
-}
-
-pub fn render_popup_standalone(popup: &PopupNode, width: usize) -> String {
-    let mut output = String::new();
-    render_popup(popup, width, &mut output);
-    output
-}
-
-pub fn print_to_stdout(content: &str) -> io::Result<()> {
-    let mut stdout = io::stdout().lock();
-    write!(stdout, "{}", content)?;
-    stdout.flush()
-}
-
-pub fn println_to_stdout(content: &str) -> io::Result<()> {
-    let mut stdout = io::stdout().lock();
-    writeln!(stdout, "{}", content)?;
-    stdout.flush()
 }

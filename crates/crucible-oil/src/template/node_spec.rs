@@ -266,19 +266,23 @@ fn parse_box(
     Ok(Node::Box(node))
 }
 
-fn parse_flex(attrs: &NodeAttrs, children: &[NodeSpec]) -> NodeSpecResult<Node> {
-    let weight = attrs.get("weight").and_then(|v| v.as_u16()).unwrap_or(1);
-
+/// Convert children specs to a single node (wrapping in fragment if multiple)
+fn children_to_node(children: &[NodeSpec]) -> NodeSpecResult<Node> {
     if children.len() == 1 {
-        let child = spec_to_node(&children[0])?;
-        Ok(flex(weight, child))
+        spec_to_node(&children[0])
     } else {
         let child_nodes: Vec<Node> = children
             .iter()
             .map(spec_to_node)
             .collect::<NodeSpecResult<Vec<_>>>()?;
-        Ok(flex(weight, fragment(child_nodes)))
+        Ok(fragment(child_nodes))
     }
+}
+
+fn parse_flex(attrs: &NodeAttrs, children: &[NodeSpec]) -> NodeSpecResult<Node> {
+    let weight = optional_u16(attrs, "weight", 1);
+    let child = children_to_node(children)?;
+    Ok(flex(weight, child))
 }
 
 fn parse_fixed(attrs: &NodeAttrs, children: &[NodeSpec]) -> NodeSpecResult<Node> {
@@ -290,24 +294,13 @@ fn parse_fixed(attrs: &NodeAttrs, children: &[NodeSpec]) -> NodeSpecResult<Node>
             message: "fixed requires a height attribute".to_string(),
         })?;
 
-    if children.len() == 1 {
-        let child = spec_to_node(&children[0])?;
-        Ok(fixed(height, child))
-    } else {
-        let child_nodes: Vec<Node> = children
-            .iter()
-            .map(spec_to_node)
-            .collect::<NodeSpecResult<Vec<_>>>()?;
-        Ok(fixed(height, fragment(child_nodes)))
-    }
+    let child = children_to_node(children)?;
+    Ok(fixed(height, child))
 }
 
 fn parse_spinner(attrs: &NodeAttrs) -> NodeSpecResult<Node> {
-    let label = attrs
-        .get("label")
-        .and_then(|v| v.as_str())
-        .map(String::from);
-    let frame = attrs.get("frame").and_then(|v| v.as_usize()).unwrap_or(0);
+    let label = optional_str(attrs, "label");
+    let frame = optional_usize(attrs, "frame", 0);
     Ok(spinner(label, frame))
 }
 
@@ -317,15 +310,9 @@ fn parse_input(attrs: &NodeAttrs) -> NodeSpecResult<Node> {
         .and_then(|v| v.as_str())
         .unwrap_or("")
         .to_string();
-    let cursor = attrs.get("cursor").and_then(|v| v.as_usize()).unwrap_or(0);
-    let placeholder = attrs
-        .get("placeholder")
-        .and_then(|v| v.as_str())
-        .map(String::from);
-    let focused = attrs
-        .get("focused")
-        .and_then(|v| v.as_bool())
-        .unwrap_or(true);
+    let cursor = optional_usize(attrs, "cursor", 0);
+    let placeholder = optional_str(attrs, "placeholder");
+    let focused = optional_bool(attrs, "focused", true);
     let style = parse_style(attrs)?;
 
     Ok(Node::Input(InputNode {
@@ -338,14 +325,8 @@ fn parse_input(attrs: &NodeAttrs) -> NodeSpecResult<Node> {
 }
 
 fn parse_popup(attrs: &NodeAttrs, children: &[NodeSpec]) -> NodeSpecResult<Node> {
-    let selected = attrs
-        .get("selected")
-        .and_then(|v| v.as_usize())
-        .unwrap_or(0);
-    let max_visible = attrs
-        .get("max_visible")
-        .and_then(|v| v.as_usize())
-        .unwrap_or(10);
+    let selected = optional_usize(attrs, "selected", 0);
+    let max_visible = optional_usize(attrs, "max_visible", 10);
 
     let items: Vec<PopupItemNode> = children
         .iter()
@@ -383,17 +364,8 @@ fn parse_fragment(children: &[NodeSpec]) -> NodeSpecResult<Node> {
 }
 
 fn parse_focusable(attrs: &NodeAttrs, children: &[NodeSpec]) -> NodeSpecResult<Node> {
-    let id = attrs.get("id").and_then(|v| v.as_str()).ok_or_else(|| {
-        NodeSpecError::InvalidAttribute {
-            key: "id".to_string(),
-            message: "focusable requires an id attribute".to_string(),
-        }
-    })?;
-
-    let auto_focus = attrs
-        .get("auto_focus")
-        .and_then(|v| v.as_bool())
-        .unwrap_or(false);
+    let id = required_attr(attrs, "id", "focusable")?;
+    let auto_focus = optional_bool(attrs, "auto_focus", false);
 
     if children.is_empty() {
         return Err(NodeSpecError::InvalidChild(
@@ -411,17 +383,8 @@ fn parse_focusable(attrs: &NodeAttrs, children: &[NodeSpec]) -> NodeSpecResult<N
 }
 
 fn parse_scrollback(attrs: &NodeAttrs, children: &[NodeSpec]) -> NodeSpecResult<Node> {
-    let key = attrs.get("key").and_then(|v| v.as_str()).ok_or_else(|| {
-        NodeSpecError::InvalidAttribute {
-            key: "key".to_string(),
-            message: "scrollback requires a key attribute".to_string(),
-        }
-    })?;
-
-    let newline = attrs
-        .get("newline")
-        .and_then(|v| v.as_bool())
-        .unwrap_or(true);
+    let key = required_attr(attrs, "key", "scrollback")?;
+    let newline = optional_bool(attrs, "newline", true);
 
     let child_nodes: Vec<Node> = children
         .iter()
@@ -450,11 +413,8 @@ fn parse_error_boundary(children: &[NodeSpec]) -> NodeSpecResult<Node> {
 }
 
 fn parse_overlay(attrs: &NodeAttrs, children: &[NodeSpec]) -> NodeSpecResult<Node> {
-    let anchor = if let Some(offset) = attrs.get("from_bottom").and_then(|v| v.as_usize()) {
-        OverlayAnchor::FromBottom(offset)
-    } else {
-        OverlayAnchor::FromBottom(0)
-    };
+    let offset = optional_usize(attrs, "from_bottom", 0);
+    let anchor = OverlayAnchor::FromBottom(offset);
 
     if children.is_empty() {
         return Err(NodeSpecError::InvalidChild(
@@ -476,13 +436,13 @@ fn parse_divider(attrs: &NodeAttrs) -> NodeSpecResult<Node> {
         .and_then(|v| v.as_str())
         .and_then(|s| s.chars().next())
         .unwrap_or('─');
-    let width = attrs.get("width").and_then(|v| v.as_u16()).unwrap_or(80);
+    let width = optional_u16(attrs, "width", 80);
     Ok(divider(char, width))
 }
 
 fn parse_progress(attrs: &NodeAttrs) -> NodeSpecResult<Node> {
     let value = attrs.get("value").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32;
-    let width = attrs.get("width").and_then(|v| v.as_u16()).unwrap_or(20);
+    let width = optional_u16(attrs, "width", 20);
     Ok(progress_bar(value, width))
 }
 
@@ -522,12 +482,7 @@ fn parse_numbered_list(children: &[NodeSpec]) -> NodeSpecResult<Node> {
 }
 
 fn parse_key_value(attrs: &NodeAttrs) -> NodeSpecResult<Node> {
-    let key = attrs.get("key").and_then(|v| v.as_str()).ok_or_else(|| {
-        NodeSpecError::InvalidAttribute {
-            key: "key".to_string(),
-            message: "key-value requires a key attribute".to_string(),
-        }
-    })?;
+    let key = required_attr(attrs, "key", "key-value")?;
     let value = attrs.get("value").and_then(|v| v.as_str()).unwrap_or("");
     Ok(key_value(key, value))
 }
@@ -565,6 +520,49 @@ fn parse_style(attrs: &NodeAttrs) -> NodeSpecResult<Style> {
     Ok(style)
 }
 
+/// Helper to create a color parsing error
+fn color_error(msg: impl Into<String>) -> NodeSpecError {
+    NodeSpecError::InvalidAttribute {
+        key: "color".to_string(),
+        message: msg.into(),
+    }
+}
+
+/// Extract a required string attribute
+fn required_attr<'a>(
+    attrs: &'a NodeAttrs,
+    key: &str,
+    description: &str,
+) -> NodeSpecResult<&'a str> {
+    attrs
+        .get(key)
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| NodeSpecError::InvalidAttribute {
+            key: key.to_string(),
+            message: format!("{} requires a {} attribute", description, key),
+        })
+}
+
+/// Extract an optional u16 attribute with default
+fn optional_u16(attrs: &NodeAttrs, key: &str, default: u16) -> u16 {
+    attrs.get(key).and_then(|v| v.as_u16()).unwrap_or(default)
+}
+
+/// Extract an optional usize attribute with default
+fn optional_usize(attrs: &NodeAttrs, key: &str, default: usize) -> usize {
+    attrs.get(key).and_then(|v| v.as_usize()).unwrap_or(default)
+}
+
+/// Extract an optional bool attribute with default
+fn optional_bool(attrs: &NodeAttrs, key: &str, default: bool) -> bool {
+    attrs.get(key).and_then(|v| v.as_bool()).unwrap_or(default)
+}
+
+/// Extract an optional string attribute
+fn optional_str(attrs: &NodeAttrs, key: &str) -> Option<String> {
+    attrs.get(key).and_then(|v| v.as_str()).map(String::from)
+}
+
 pub fn parse_color(s: &str) -> NodeSpecResult<Color> {
     match s.to_lowercase().as_str() {
         "black" => Ok(Color::Black),
@@ -580,34 +578,22 @@ pub fn parse_color(s: &str) -> NodeSpecResult<Color> {
         "reset" => Ok(Color::Reset),
         _ if s.starts_with('#') => parse_hex_color(s),
         _ if s.starts_with("rgb(") => parse_rgb_color(s),
-        _ => Err(NodeSpecError::InvalidAttribute {
-            key: "color".to_string(),
-            message: format!("unknown color: {}", s),
-        }),
+        _ => Err(color_error(format!("unknown color: {}", s))),
     }
 }
 
 fn parse_hex_color(s: &str) -> NodeSpecResult<Color> {
     let hex = s.trim_start_matches('#');
     if hex.len() != 6 {
-        return Err(NodeSpecError::InvalidAttribute {
-            key: "color".to_string(),
-            message: format!("invalid hex color: {}", s),
-        });
+        return Err(color_error(format!("invalid hex color: {}", s)));
     }
 
-    let r = u8::from_str_radix(&hex[0..2], 16).map_err(|_| NodeSpecError::InvalidAttribute {
-        key: "color".to_string(),
-        message: format!("invalid hex color: {}", s),
-    })?;
-    let g = u8::from_str_radix(&hex[2..4], 16).map_err(|_| NodeSpecError::InvalidAttribute {
-        key: "color".to_string(),
-        message: format!("invalid hex color: {}", s),
-    })?;
-    let b = u8::from_str_radix(&hex[4..6], 16).map_err(|_| NodeSpecError::InvalidAttribute {
-        key: "color".to_string(),
-        message: format!("invalid hex color: {}", s),
-    })?;
+    let r = u8::from_str_radix(&hex[0..2], 16)
+        .map_err(|_| color_error(format!("invalid hex color: {}", s)))?;
+    let g = u8::from_str_radix(&hex[2..4], 16)
+        .map_err(|_| color_error(format!("invalid hex color: {}", s)))?;
+    let b = u8::from_str_radix(&hex[4..6], 16)
+        .map_err(|_| color_error(format!("invalid hex color: {}", s)))?;
 
     Ok(Color::Rgb(r, g, b))
 }
@@ -617,30 +603,18 @@ fn parse_rgb_color(s: &str) -> NodeSpecResult<Color> {
 
     let parts: Vec<&str> = inner.split(',').map(|p| p.trim()).collect();
     if parts.len() != 3 {
-        return Err(NodeSpecError::InvalidAttribute {
-            key: "color".to_string(),
-            message: format!("invalid rgb color: {}", s),
-        });
+        return Err(color_error(format!("invalid rgb color: {}", s)));
     }
 
     let r: u8 = parts[0]
         .parse()
-        .map_err(|_| NodeSpecError::InvalidAttribute {
-            key: "color".to_string(),
-            message: format!("invalid rgb color: {}", s),
-        })?;
+        .map_err(|_| color_error(format!("invalid rgb color: {}", s)))?;
     let g: u8 = parts[1]
         .parse()
-        .map_err(|_| NodeSpecError::InvalidAttribute {
-            key: "color".to_string(),
-            message: format!("invalid rgb color: {}", s),
-        })?;
+        .map_err(|_| color_error(format!("invalid rgb color: {}", s)))?;
     let b: u8 = parts[2]
         .parse()
-        .map_err(|_| NodeSpecError::InvalidAttribute {
-            key: "color".to_string(),
-            message: format!("invalid rgb color: {}", s),
-        })?;
+        .map_err(|_| color_error(format!("invalid rgb color: {}", s)))?;
 
     Ok(Color::Rgb(r, g, b))
 }
