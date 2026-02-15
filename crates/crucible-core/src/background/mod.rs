@@ -11,6 +11,25 @@ pub use types::{
 use async_trait::async_trait;
 use std::path::PathBuf;
 use std::time::Duration;
+use tokio::sync::oneshot;
+
+/// Configuration for blocking subagent delegation.
+#[derive(Debug, Clone)]
+pub struct SubagentBlockingConfig {
+    /// Maximum time to wait for subagent completion.
+    pub timeout: Duration,
+    /// Maximum bytes returned in `JobResult.output`.
+    pub result_max_bytes: usize,
+}
+
+impl Default for SubagentBlockingConfig {
+    fn default() -> Self {
+        Self {
+            timeout: Duration::from_secs(300),
+            result_max_bytes: 51200,
+        }
+    }
+}
 
 /// Trait for spawning and managing background jobs.
 ///
@@ -41,6 +60,23 @@ pub trait BackgroundSpawner: Send + Sync {
         prompt: String,
         context: Option<String>,
     ) -> Result<JobId, JobError>;
+
+    /// Spawn a subagent and wait for completion.
+    ///
+    /// Default implementation returns an unsupported error so existing
+    /// `BackgroundSpawner` implementations remain source-compatible.
+    async fn spawn_subagent_blocking(
+        &self,
+        _session_id: &str,
+        _prompt: String,
+        _context: Option<String>,
+        _config: SubagentBlockingConfig,
+        _cancel_rx: Option<oneshot::Receiver<()>>,
+    ) -> Result<JobResult, JobError> {
+        Err(JobError::SpawnFailed(
+            "spawn_subagent_blocking not supported".to_string(),
+        ))
+    }
 
     /// List all jobs (running + completed) for a session.
     ///

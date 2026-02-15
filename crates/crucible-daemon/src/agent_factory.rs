@@ -139,7 +139,7 @@ pub async fn create_agent_from_session_config(
     let provider_type = LlmProviderType::from_str(&agent_config.provider)
         .map_err(AgentFactoryError::ClientCreation)?;
 
-    let mut llm_config = LlmProviderConfig::builder(provider_type.clone())
+    let mut llm_config = LlmProviderConfig::builder(provider_type)
         .maybe_endpoint(agent_config.endpoint.clone())
         .model(agent_config.model.clone())
         .api_key_from_env()
@@ -350,6 +350,9 @@ mod tests {
             env_overrides: HashMap::new(),
             mcp_servers: Vec::new(),
             agent_card_name: None,
+            capabilities: None,
+            agent_description: None,
+            delegation_config: None,
         }
     }
 
