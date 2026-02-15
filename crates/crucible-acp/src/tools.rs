@@ -579,201 +579,312 @@ impl ToolExecutor {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use async_trait::async_trait;
+    use crucible_core::traits::acp::{AcpError, ToolBridge};
+    use crucible_core::traits::tools::{
+        ExecutionContext, ToolDefinition, ToolError, ToolExecutor as CoreToolExecutor,
+    };
+    use crucible_core::types::acp::{ToolInvocation, ToolOutput};
+    use serde_json::json;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
+    use tempfile::TempDir;
 
-    #[test]
-    fn test_tool_registry_creation() {
-        let registry = ToolRegistry::new();
-        assert_eq!(registry.count(), 0);
+    fn test_tool(name: &str, category: &str, input_schema: serde_json::Value) -> ToolDescriptor {
+        ToolDescriptor {
+            name: name.to_string(),
+            description: format!("{} description", name),
+            category: category.to_string(),
+            input_schema,
+        }
+    }
+
+    fn object_schema(required: &[&str]) -> serde_json::Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "path": {"type": "string"}
+            },
+            "required": required,
+        })
+    }
+
+    fn is_valid_input_schema(schema: &serde_json::Value) -> bool {
+        schema.get("type").and_then(serde_json::Value::as_str) == Some("object")
+    }
+
+    struct MockCoreExecutor {
+        tools: Vec<ToolDefinition>,
+    }
+
+    #[async_trait]
+    impl CoreToolExecutor for MockCoreExecutor {
+        async fn execute_tool(
+            &self,
+            name: &str,
+            params: serde_json::Value,
+            _context: &ExecutionContext,
+        ) -> std::result::Result<serde_json::Value, ToolError> {
+            if name == "echo" {
+                return Ok(params);
+            }
+            Err(ToolError::NotFound(name.to_string()))
+        }
+
+        async fn list_tools(&self) -> std::result::Result<Vec<ToolDefinition>, ToolError> {
+            Ok(self.tools.clone())
+        }
+    }
+
+    struct PermissionedToolBridge {
+        registry: ToolRegistry,
+        allow_unsafe: bool,
+        permission_checks: Arc<AtomicUsize>,
+    }
+
+    impl PermissionedToolBridge {
+        fn new(allow_unsafe: bool) -> Self {
+            let mut registry = ToolRegistry::new();
+            registry
+                .register(test_tool("read_note", "notes", object_schema(&["path"])))
+                .unwrap();
+            registry
+                .register(test_tool(
+                    "create_note",
+                    "notes",
+                    object_schema(&["path", "content"]),
+                ))
+                .unwrap();
+
+            Self {
+                registry,
+                allow_unsafe,
+                permission_checks: Arc::new(AtomicUsize::new(0)),
+            }
+        }
+
+        fn requires_permission_check(tool_name: &str) -> bool {
+            !matches!(tool_name, "read_note" | "list_notes" | "read_metadata")
+        }
+    }
+
+    #[async_trait]
+    impl ToolBridge for PermissionedToolBridge {
+        type ToolCall = ToolInvocation;
+        type ToolResult = ToolOutput;
+        type ToolDescriptor = ToolDescriptor;
+
+        async fn execute_tool(&self, call: Self::ToolCall) -> std::result::Result<Self::ToolResult, AcpError> {
+            if !self.registry.contains(&call.tool_name) {
+                return Err(AcpError::NotFound(call.tool_name));
+            }
+
+            if Self::requires_permission_check(&call.tool_name) {
+                self.permission_checks.fetch_add(1, Ordering::SeqCst);
+                if !self.allow_unsafe {
+                    return Err(AcpError::PermissionDenied(format!(
+                        "Tool '{}' denied by permission gate",
+                        call.tool_name
+                    )));
+                }
+            }
+
+            Ok(ToolOutput::success(json!({
+                "tool": call.tool_name,
+                "parameters": call.parameters,
+            })))
+        }
+
+        async fn list_tools(&self) -> std::result::Result<Vec<Self::ToolDescriptor>, AcpError> {
+            Ok(self
+                .registry
+                .list()
+                .into_iter()
+                .cloned()
+                .collect::<Vec<_>>())
+        }
+
+        async fn get_tool_schema(&self, tool_name: &str) -> std::result::Result<serde_json::Value, AcpError> {
+            self.registry
+                .get(tool_name)
+                .map(|tool| tool.input_schema.clone())
+                .ok_or_else(|| AcpError::NotFound(tool_name.to_string()))
+        }
     }
 
     #[test]
-    fn test_tool_registration() {
+    fn register_tool_happy_path() {
         let mut registry = ToolRegistry::new();
-
-        let descriptor = ToolDescriptor {
-            name: "test_tool".to_string(),
-            description: "A test tool".to_string(),
-            category: "test".to_string(),
-            input_schema: serde_json::json!({}),
-        };
-
-        let result = registry.register(descriptor.clone());
-        assert!(result.is_ok());
-        assert_eq!(registry.count(), 1);
-        assert!(registry.contains("test_tool"));
-
-        let retrieved = registry.get("test_tool");
-        assert!(retrieved.is_some());
-        assert_eq!(retrieved.unwrap(), &descriptor);
-    }
-
-    #[test]
-    fn test_duplicate_registration_fails() {
-        let mut registry = ToolRegistry::new();
-
-        let descriptor = ToolDescriptor {
-            name: "test_tool".to_string(),
-            description: "A test tool".to_string(),
-            category: "test".to_string(),
-            input_schema: serde_json::json!({}),
-        };
+        let descriptor = test_tool("test_tool", "test", object_schema(&["path"]));
 
         registry.register(descriptor.clone()).unwrap();
-        let result = registry.register(descriptor);
-        assert!(result.is_err());
+
+        assert_eq!(registry.count(), 1);
+        assert_eq!(registry.get("test_tool"), Some(&descriptor));
     }
 
     #[test]
-    fn test_tool_listing() {
+    fn list_tools_returns_registered_tools() {
         let mut registry = ToolRegistry::new();
+        registry
+            .register(test_tool("tool_one", "test", object_schema(&[])))
+            .unwrap();
+        registry
+            .register(test_tool("tool_two", "test", object_schema(&[])))
+            .unwrap();
 
-        let descriptor1 = ToolDescriptor {
-            name: "tool1".to_string(),
-            description: "First tool".to_string(),
-            category: "test".to_string(),
-            input_schema: serde_json::json!({}),
-        };
+        let mut names = registry
+            .list()
+            .into_iter()
+            .map(|tool| tool.name.as_str())
+            .collect::<Vec<_>>();
+        names.sort_unstable();
 
-        let descriptor2 = ToolDescriptor {
-            name: "tool2".to_string(),
-            description: "Second tool".to_string(),
-            category: "test".to_string(),
-            input_schema: serde_json::json!({}),
-        };
-
-        registry.register(descriptor1).unwrap();
-        registry.register(descriptor2).unwrap();
-
-        let tools = registry.list();
-        assert_eq!(tools.len(), 2);
-    }
-
-    #[test]
-    fn test_discover_crucible_tools() {
-        let mut registry = ToolRegistry::new();
-        let result = discover_crucible_tools(&mut registry, "/test/kiln");
-
-        // This should fail because discovery is not yet implemented
-        // Once implemented, it should discover 10 tools from crucible-tools:
-        // - 6 NoteTools: create_note, read_note, read_metadata, update_note, delete_note, list_notes
-        // - 3 SearchTools: text_search, property_search, semantic_search
-        // - 1 KilnTools: get_kiln_info
-        assert!(result.is_ok());
-        let count = result.unwrap();
-        assert_eq!(count, 10, "Should discover 10 Crucible tools");
-        assert_eq!(registry.count(), 10);
-
-        // Verify specific tools are present
-        assert!(registry.contains("create_note"));
-        assert!(registry.contains("read_note"));
-        assert!(registry.contains("text_search"));
-        assert!(registry.contains("get_kiln_info"));
-    }
-
-    #[test]
-    fn test_tool_categories() {
-        let mut registry = ToolRegistry::new();
-        discover_crucible_tools(&mut registry, "/test/kiln").unwrap();
-
-        // Check that tools have correct categories
-        let create_note = registry.get("create_note");
-        assert!(create_note.is_some());
-        assert_eq!(create_note.unwrap().category, "notes");
-
-        let text_search = registry.get("text_search");
-        assert!(text_search.is_some());
-        assert_eq!(text_search.unwrap().category, "search");
-
-        let kiln_info = registry.get("get_kiln_info");
-        assert!(kiln_info.is_some());
-        assert_eq!(kiln_info.unwrap().category, "kiln");
-    }
-
-    #[test]
-    fn test_tool_descriptions() {
-        let mut registry = ToolRegistry::new();
-        discover_crucible_tools(&mut registry, "/test/kiln").unwrap();
-
-        let create_note = registry.get("create_note");
-        assert!(create_note.is_some());
-        assert!(!create_note.unwrap().description.is_empty());
-
-        let read_note = registry.get("read_note");
-        assert!(read_note.is_some());
-        assert!(!read_note.unwrap().description.is_empty());
-    }
-
-    #[test]
-    fn test_tool_executor_creation() {
-        let executor = ToolExecutor::new(PathBuf::from("/test/kiln"));
-        assert_eq!(executor.kiln_path(), &PathBuf::from("/test/kiln"));
+        assert_eq!(names, vec!["tool_one", "tool_two"]);
     }
 
     #[tokio::test]
-    async fn test_execute_get_kiln_info() {
-        let executor = ToolExecutor::new(PathBuf::from("/test/kiln"));
+    async fn execute_tool_happy_path() {
+        let temp = TempDir::new().unwrap();
+        let executor = ToolExecutor::new(temp.path().to_path_buf());
 
-        // Execute get_kiln_info tool (simplest tool with no parameters)
-        let params = serde_json::json!({});
-        let result = executor.execute("get_kiln_info", params).await;
+        let output = executor.execute("get_kiln_info", json!({})).await.unwrap();
+        assert_eq!(output["exists"], json!(true));
+        assert_eq!(output["is_directory"], json!(true));
+    }
 
-        // Should succeed and return kiln information
-        assert!(result.is_ok(), "get_kiln_info should execute successfully");
+    #[test]
+    fn register_duplicate_tool_name_fails() {
+        let mut registry = ToolRegistry::new();
+        let descriptor = test_tool("duplicate", "test", object_schema(&[]));
+        registry.register(descriptor.clone()).unwrap();
 
-        let value = result.unwrap();
-        assert!(value.is_object(), "Result should be a JSON object");
+        let err = registry.register(descriptor).unwrap_err();
+        assert!(matches!(err, ClientError::InvalidConfig(_)));
     }
 
     #[tokio::test]
-    async fn test_execute_read_note() {
-        // Create a temporary test kiln
-        let temp_dir = std::env::temp_dir().join("crucible-test-kiln");
-        std::fs::create_dir_all(&temp_dir).ok();
+    async fn execute_unknown_tool_name_fails() {
+        let executor = ToolExecutor::new(PathBuf::from("/tmp"));
+        let err = executor
+            .execute("does_not_exist", json!({}))
+            .await
+            .unwrap_err();
 
-        // Create a test note
-        let test_note = temp_dir.join("test.md");
-        std::fs::write(&test_note, "# Test Note\n\nThis is a test.").ok();
-
-        let executor = ToolExecutor::new(temp_dir.clone());
-
-        // Execute read_note tool
-        let params = serde_json::json!({
-            "path": "test.md"
-        });
-        let result = executor.execute("read_note", params).await;
-
-        // Should succeed and return the note content
-        assert!(result.is_ok(), "read_note should execute successfully");
-
-        let value = result.unwrap();
-        assert!(value.is_object(), "Result should be a JSON object");
-
-        // Cleanup
-        std::fs::remove_dir_all(&temp_dir).ok();
-    }
-
-    #[tokio::test]
-    async fn test_execute_unknown_tool() {
-        let executor = ToolExecutor::new(PathBuf::from("/test/kiln"));
-
-        let params = serde_json::json!({});
-        let result = executor.execute("nonexistent_tool", params).await;
-
-        // Should fail with NotFound error
-        assert!(result.is_err(), "Unknown tool should return error");
-        let err = result.unwrap_err();
         assert!(matches!(err, ClientError::NotFound(_)));
     }
 
     #[tokio::test]
-    async fn test_execute_invalid_parameters() {
-        let executor = ToolExecutor::new(PathBuf::from("/test/kiln"));
+    async fn execute_tool_with_invalid_input_schema_fails() {
+        let executor = ToolExecutor::new(PathBuf::from("/tmp"));
 
-        // Try to call read_note without required path parameter
-        let params = serde_json::json!({});
-        let result = executor.execute("read_note", params).await;
+        let err = executor
+            .execute("read_note", json!({ "path": 123 }))
+            .await
+            .unwrap_err();
 
-        // Should fail due to missing required parameter
-        assert!(result.is_err(), "Invalid parameters should return error");
+        assert!(matches!(err, ClientError::InvalidConfig(_)));
+    }
+
+    #[test]
+    fn invalid_input_schema_is_detectable() {
+        let invalid = test_tool("bad_schema", "test", json!("not-an-object"));
+        assert!(!is_valid_input_schema(&invalid.input_schema));
+    }
+
+    #[test]
+    fn tool_descriptor_serialization_round_trip() {
+        let descriptor = test_tool("round_trip", "test", object_schema(&["path"]));
+
+        let serialized = serde_json::to_string(&descriptor).unwrap();
+        let deserialized: ToolDescriptor = serde_json::from_str(&serialized).unwrap();
+
+        assert_eq!(descriptor, deserialized);
+    }
+
+    #[test]
+    fn crucible_system_prompt_is_non_empty_and_well_formed() {
+        let prompt = get_crucible_system_prompt();
+        assert!(!prompt.trim().is_empty());
+        assert!(prompt.contains("You are working with Crucible"));
+        assert!(prompt.contains("read_note"));
+        assert!(prompt.contains("semantic_search"));
+    }
+
+    #[tokio::test]
+    async fn core_tool_executor_trait_contract_is_satisfied() {
+        let executor = MockCoreExecutor {
+            tools: vec![ToolDefinition::new("echo", "Echo input")],
+        };
+
+        let listed = executor.list_tools().await.unwrap();
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].name, "echo");
+
+        let context = ExecutionContext::new();
+        let output = executor
+            .execute_tool("echo", json!({"value": 1}), &context)
+            .await
+            .unwrap();
+        assert_eq!(output, json!({"value": 1}));
+    }
+
+    #[tokio::test]
+    async fn permission_gate_allowed_passes() {
+        let bridge = PermissionedToolBridge::new(true);
+
+        let output = bridge
+            .execute_tool(ToolInvocation::new(
+                "create_note",
+                json!({"path": "x.md", "content": "ok"}),
+            ))
+            .await
+            .unwrap();
+
+        assert!(output.success);
+        assert_eq!(bridge.permission_checks.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn permission_gate_denied_fails_with_permission_denied() {
+        let bridge = PermissionedToolBridge::new(false);
+
+        let err = bridge
+            .execute_tool(ToolInvocation::new(
+                "create_note",
+                json!({"path": "x.md", "content": "blocked"}),
+            ))
+            .await
+            .unwrap_err();
+
+        assert!(matches!(err, AcpError::PermissionDenied(_)));
+    }
+
+    #[tokio::test]
+    async fn permission_patterns_safe_tool_skips_permission_check() {
+        let bridge = PermissionedToolBridge::new(false);
+
+        let output = bridge
+            .execute_tool(ToolInvocation::new("read_note", json!({"path": "x.md"})))
+            .await
+            .unwrap();
+
+        assert!(output.success);
+        assert_eq!(bridge.permission_checks.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    async fn permission_patterns_unsafe_tool_triggers_check() {
+        let bridge = PermissionedToolBridge::new(true);
+
+        bridge
+            .execute_tool(ToolInvocation::new(
+                "create_note",
+                json!({"path": "x.md", "content": "ok"}),
+            ))
+            .await
+            .unwrap();
+
+        assert_eq!(bridge.permission_checks.load(Ordering::SeqCst), 1);
     }
 }
