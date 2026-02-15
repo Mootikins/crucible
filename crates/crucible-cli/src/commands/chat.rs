@@ -377,7 +377,8 @@ async fn run_interactive_chat(
 
     runner = runner.with_session_command_receiver(session_cmd_rx);
 
-    let provider = config.chat.provider.clone();
+    #[allow(deprecated)] // ChatConfig.provider is LlmProviderType
+    let provider: crucible_config::BackendType = config.chat.provider.into();
     let model_endpoint = config.chat.llm_endpoint();
 
     let (files, notes, available_models) = tokio::join!(

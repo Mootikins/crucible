@@ -3,7 +3,8 @@
 //! This module maps `LlmProviderConfig` from crucible-config to Rig provider clients.
 
 use crate::github_copilot::CopilotClient;
-use crucible_config::llm::{LlmProviderConfig, LlmProviderType};
+use crucible_config::llm::LlmProviderConfig;
+use crucible_config::BackendType;
 use rig::client::Nothing;
 use rig::providers::{anthropic, ollama, openai, openrouter};
 use thiserror::Error;
@@ -22,7 +23,7 @@ pub enum RigError {
 
     /// Provider not supported
     #[error("Provider type not supported: {0:?}")]
-    UnsupportedProvider(LlmProviderType),
+    UnsupportedProvider(BackendType),
 
     /// Client creation failed
     #[error("Failed to create client: {0}")]
@@ -150,13 +151,16 @@ impl RigClient {
 /// let client = create_client(&config)?;
 /// ```
 pub fn create_client(config: &LlmProviderConfig) -> RigResult<RigClient> {
-    match config.provider_type {
-        LlmProviderType::Ollama => create_ollama_client(config),
-        LlmProviderType::OpenAI => create_openai_client(config),
-        LlmProviderType::Anthropic => create_anthropic_client(config),
-        LlmProviderType::GitHubCopilot => create_github_copilot_client(config),
-        LlmProviderType::OpenRouter => create_openrouter_client(config),
-        LlmProviderType::ZAI => create_openai_client(config),
+    #[allow(deprecated)] // LlmProviderConfig.provider_type is LlmProviderType (deprecated)
+    let backend: BackendType = config.provider_type.into();
+    match backend {
+        BackendType::Ollama => create_ollama_client(config),
+        BackendType::OpenAI => create_openai_client(config),
+        BackendType::Anthropic => create_anthropic_client(config),
+        BackendType::GitHubCopilot => create_github_copilot_client(config),
+        BackendType::OpenRouter => create_openrouter_client(config),
+        BackendType::ZAI => create_openai_client(config),
+        other => Err(RigError::UnsupportedProvider(other)),
     }
 }
 
@@ -321,8 +325,10 @@ pub fn create_openai_compat_client(
 }
 
 #[cfg(test)]
+#[allow(deprecated)] // Tests construct LlmProviderConfig which uses deprecated LlmProviderType
 mod tests {
     use super::*;
+    use crucible_config::llm::LlmProviderType;
 
     fn ollama_config() -> LlmProviderConfig {
         LlmProviderConfig {
