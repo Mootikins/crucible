@@ -732,8 +732,8 @@ pub async fn create_daemon_agent(
             SessionAgent {
                 agent_type: "internal".to_string(),
                 agent_name: None,
-                provider_key: Some(format!("{:?}", config.chat.provider).to_lowercase()),
-                provider: format!("{:?}", config.chat.provider).to_lowercase(),
+                provider_key: Some(config.chat.provider.as_str().to_string()),
+                provider: config.chat.provider.as_str().to_string(),
                 model,
                 system_prompt: String::new(),
                 temperature: config.chat.temperature.map(|t| t as f64),
