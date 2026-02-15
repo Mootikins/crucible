@@ -3,7 +3,7 @@
 //! Renders tool call states: running (with spinner), complete (with result summary),
 //! and error (with error message).
 
-use crate::tui::oil::node::{col, row, spinner_with_frames, styled, Node, BRAILLE_SPINNER_FRAMES};
+use crate::tui::oil::node::{col, row, styled, Node, SpinnerNode, BRAILLE_SPINNER_FRAMES};
 use crate::tui::oil::style::Style;
 use crate::tui::oil::theme::ThemeTokens;
 use crate::tui::oil::utils::{terminal_width, truncate_first_line, truncate_to_chars};
@@ -117,13 +117,14 @@ fn render_tool_running(
     let show_elapsed = elapsed >= Duration::from_secs(2);
 
     let theme = ThemeTokens::default_ref();
+    let spinner = Node::Spinner(
+        SpinnerNode::new(spinner_frame)
+            .style(Style::new().fg(theme.text_dim))
+            .frames(BRAILLE_SPINNER_FRAMES),
+    );
     let header = row([
         styled(" ", Style::new()),
-        spinner_with_frames(
-            spinner_frame,
-            Style::new().fg(theme.text_dim),
-            BRAILLE_SPINNER_FRAMES,
-        ),
+        spinner,
         styled(" ", Style::new()),
         styled(display_name, Style::new().fg(theme.text_dim)),
         styled(format!("({})", args_formatted), theme.dim()),

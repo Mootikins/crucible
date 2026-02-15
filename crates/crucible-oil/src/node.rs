@@ -252,30 +252,11 @@ pub fn text_input(value: impl Into<String>, cursor: usize) -> Node {
 }
 
 pub fn spinner(label: Option<String>, frame: usize) -> Node {
-    Node::Spinner(SpinnerNode {
-        label,
-        style: Style::default(),
-        frame,
-        frames: None,
-    })
-}
-
-pub fn spinner_styled(frame: usize, style: Style) -> Node {
-    Node::Spinner(SpinnerNode {
-        label: None,
-        style,
-        frame,
-        frames: None,
-    })
-}
-
-pub fn spinner_with_frames(frame: usize, style: Style, frames: &'static [char]) -> Node {
-    Node::Spinner(SpinnerNode {
-        label: None,
-        style,
-        frame,
-        frames: Some(frames),
-    })
+    let mut spinner = SpinnerNode::new(frame);
+    if let Some(lbl) = label {
+        spinner.label = Some(lbl);
+    }
+    Node::Spinner(spinner)
 }
 
 pub fn fragment(children: impl IntoIterator<Item = Node>) -> Node {
@@ -283,57 +264,7 @@ pub fn fragment(children: impl IntoIterator<Item = Node>) -> Node {
 }
 
 pub fn popup(items: Vec<PopupItemNode>, selected: usize, max_visible: usize) -> Node {
-    popup_with_colors(
-        items,
-        selected,
-        max_visible,
-        DEFAULT_POPUP_BG,
-        DEFAULT_POPUP_SELECTED_BG,
-    )
-}
-
-pub fn popup_with_colors(
-    items: Vec<PopupItemNode>,
-    selected: usize,
-    max_visible: usize,
-    bg_color: Color,
-    selected_color: Color,
-) -> Node {
-    let bg_style = Style::new().bg(bg_color);
-    let selected_style = Style::new().bg(selected_color);
-    let unselected_style = Style::new().bg(bg_color);
-    popup_styled(
-        items,
-        selected,
-        max_visible,
-        bg_style,
-        selected_style,
-        unselected_style,
-    )
-}
-
-pub fn popup_styled(
-    items: Vec<PopupItemNode>,
-    selected: usize,
-    max_visible: usize,
-    bg_style: Style,
-    selected_style: Style,
-    unselected_style: Style,
-) -> Node {
-    let viewport_offset = if selected >= max_visible {
-        selected.saturating_sub(max_visible - 1)
-    } else {
-        0
-    };
-    Node::Popup(PopupNode {
-        items,
-        selected,
-        viewport_offset,
-        max_visible,
-        bg_style,
-        selected_style,
-        unselected_style,
-    })
+    Node::Popup(PopupNode::new(items, selected, max_visible))
 }
 
 pub fn popup_item(label: impl Into<String>) -> PopupItemNode {
@@ -341,6 +272,53 @@ pub fn popup_item(label: impl Into<String>) -> PopupItemNode {
         label: label.into(),
         description: None,
         kind: None,
+    }
+}
+
+impl PopupNode {
+    /// Create a new popup builder with items, selected index, and max visible.
+    pub fn new(items: Vec<PopupItemNode>, selected: usize, max_visible: usize) -> Self {
+        let viewport_offset = if selected >= max_visible {
+            selected.saturating_sub(max_visible - 1)
+        } else {
+            0
+        };
+        PopupNode {
+            items,
+            selected,
+            viewport_offset,
+            max_visible,
+            bg_style: Style::new().bg(DEFAULT_POPUP_BG),
+            selected_style: Style::new().bg(DEFAULT_POPUP_SELECTED_BG),
+            unselected_style: Style::new().bg(DEFAULT_POPUP_BG),
+        }
+    }
+
+    /// Set background color.
+    pub fn bg_color(mut self, color: Color) -> Self {
+        let bg_style = Style::new().bg(color);
+        self.bg_style = bg_style;
+        self.unselected_style = bg_style;
+        self
+    }
+
+    /// Set selected item background color.
+    pub fn selected_color(mut self, color: Color) -> Self {
+        self.selected_style = Style::new().bg(color);
+        self
+    }
+
+    /// Set all styles at once.
+    pub fn styles(
+        mut self,
+        bg_style: Style,
+        selected_style: Style,
+        unselected_style: Style,
+    ) -> Self {
+        self.bg_style = bg_style;
+        self.selected_style = selected_style;
+        self.unselected_style = unselected_style;
+        self
     }
 }
 
@@ -461,22 +439,6 @@ pub fn progress_bar(progress: f32, width: u16) -> Node {
 
     let bar = format!("{}{}", "█".repeat(filled), "░".repeat(empty));
     text(bar)
-}
-
-pub fn progress_bar_styled(
-    progress: f32,
-    width: u16,
-    filled_style: Style,
-    empty_style: Style,
-) -> Node {
-    let progress = progress.clamp(0.0, 1.0);
-    let filled = (progress * width as f32).round() as usize;
-    let empty = (width as usize).saturating_sub(filled);
-
-    row([
-        styled("█".repeat(filled), filled_style),
-        styled("░".repeat(empty), empty_style),
-    ])
 }
 
 pub fn divider(char: char, width: u16) -> Node {
@@ -656,6 +618,34 @@ impl InputNode {
 }
 
 impl SpinnerNode {
+    /// Create a new spinner with just a frame number.
+    pub fn new(frame: usize) -> Self {
+        SpinnerNode {
+            label: None,
+            style: Style::default(),
+            frame,
+            frames: None,
+        }
+    }
+
+    /// Set the spinner label.
+    pub fn label(mut self, label: impl Into<String>) -> Self {
+        self.label = Some(label.into());
+        self
+    }
+
+    /// Set the spinner style.
+    pub fn style(mut self, style: Style) -> Self {
+        self.style = style;
+        self
+    }
+
+    /// Set custom spinner frames.
+    pub fn frames(mut self, frames: &'static [char]) -> Self {
+        self.frames = Some(frames);
+        self
+    }
+
     pub fn current_char(&self) -> char {
         let frames = self.frames.unwrap_or(SPINNER_FRAMES);
         debug_assert!(!frames.is_empty(), "spinner frames must not be empty");

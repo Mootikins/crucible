@@ -16,11 +16,10 @@
 //!   +---- update() <---- Event <--- Input
 //! ```
 
-#![allow(dead_code)]
-
 pub mod ansi;
 pub mod cell_grid;
 pub mod components;
+#[cfg(test)]
 mod compositor;
 pub mod decrypt;
 mod diff;
@@ -34,6 +33,7 @@ pub mod proptest_strategies;
 pub mod render;
 mod span;
 pub mod style;
+#[cfg(test)]
 mod taffy_layout;
 pub mod template;
 
@@ -43,7 +43,6 @@ pub use components::{
     DrawerKind, InputArea, InputStyle, PopupOverlay, FOCUS_POPUP, INPUT_MAX_CONTENT_LINES,
     POPUP_MAX_VISIBLE,
 };
-pub use compositor::{Compositor, ContentSource, StaticCompositor};
 pub use diff::*;
 pub use focus::*;
 pub use layout::*;

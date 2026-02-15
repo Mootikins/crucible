@@ -246,6 +246,7 @@ pub fn composite_overlays(base: &[String], overlays: &[Overlay], width: usize) -
     result
 }
 
+#[cfg(test)]
 fn pad_or_truncate(line: &str, width: usize) -> String {
     let vis_width = visible_width(line);
     match vis_width.cmp(&width) {
