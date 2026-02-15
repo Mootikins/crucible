@@ -18,6 +18,9 @@
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
+#[cfg(unix)]
+use std::os::unix::ffi::OsStrExt;
+
 use crate::{ClientError, Result};
 
 /// Configuration for file system access
@@ -79,6 +82,18 @@ impl FileSystemHandler {
         // If no allowed roots configured, deny all access
         if self.config.allowed_roots.is_empty() {
             return false;
+        }
+
+        if path.as_os_str().is_empty() {
+            return false;
+        }
+
+        #[cfg(unix)]
+        {
+            let bytes = path.as_os_str().as_bytes();
+            if bytes.contains(&0) || bytes.len() > 4096 {
+                return false;
+            }
         }
 
         // Try to canonicalize the path to resolve any symlinks or .. components
@@ -295,7 +310,17 @@ impl FileSystemHandler {
 mod tests {
     use super::*;
     use std::fs;
+    use std::path::PathBuf;
     use tempfile::TempDir;
+
+    fn handler_for_roots(allowed_roots: Vec<PathBuf>, allow_write: bool) -> FileSystemHandler {
+        FileSystemHandler::new(FileSystemConfig {
+            allowed_roots,
+            allow_write,
+            allow_create_dirs: false,
+            max_read_size: 10 * 1024 * 1024,
+        })
+    }
 
     #[test]
     fn test_handler_creation() {
@@ -339,6 +364,130 @@ mod tests {
         // Parent directory traversal should not be allowed
         let traversal_path = allowed_root.join("../outside.txt");
         assert!(!handler.is_path_allowed(&traversal_path));
+    }
+
+    #[test]
+    fn test_path_traversal_with_relative_parent_components_is_denied() {
+        let temp_dir = TempDir::new().unwrap();
+        let allowed_root = temp_dir.path().canonicalize().unwrap();
+        let handler = handler_for_roots(vec![allowed_root], false);
+
+        let traversal = Path::new("../../etc/passwd");
+        assert!(!handler.is_path_allowed(traversal));
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn test_symlink_inside_allowed_root_pointing_outside_is_denied() {
+        use std::os::unix::fs::symlink;
+
+        let allowed_dir = TempDir::new().unwrap();
+        let outside_dir = TempDir::new().unwrap();
+        let allowed_root = allowed_dir.path().canonicalize().unwrap();
+
+        let outside_file = outside_dir.path().join("secret.txt");
+        fs::write(&outside_file, "secret").unwrap();
+
+        let symlink_path = allowed_root.join("link_to_outside.txt");
+        symlink(&outside_file, &symlink_path).unwrap();
+
+        let handler = handler_for_roots(vec![allowed_root], false);
+
+        let read_result = handler.read_file(&symlink_path).await;
+        assert!(matches!(read_result, Err(ClientError::PermissionDenied(_))));
+    }
+
+    #[test]
+    fn test_null_byte_in_path_is_denied() {
+        let temp_dir = TempDir::new().unwrap();
+        let allowed_root = temp_dir.path().canonicalize().unwrap();
+        let handler = handler_for_roots(vec![allowed_root.clone()], false);
+
+        let null_byte_path = allowed_root.join("bad\0name.txt");
+        assert!(!handler.is_path_allowed(&null_byte_path));
+    }
+
+    #[test]
+    fn test_very_long_path_is_denied() {
+        let temp_dir = TempDir::new().unwrap();
+        let allowed_root = temp_dir.path().canonicalize().unwrap();
+        let handler = handler_for_roots(vec![allowed_root.clone()], false);
+
+        let long_name = "a".repeat(5000);
+        let long_path = allowed_root.join(long_name);
+        assert!(!handler.is_path_allowed(&long_path));
+    }
+
+    #[test]
+    fn test_empty_path_component_is_denied() {
+        let temp_dir = TempDir::new().unwrap();
+        let allowed_root = temp_dir.path().canonicalize().unwrap();
+        let handler = handler_for_roots(vec![allowed_root], false);
+
+        assert!(!handler.is_path_allowed(Path::new("")));
+    }
+
+    #[tokio::test]
+    async fn test_read_write_happy_path_within_allowed_root() {
+        let temp_dir = TempDir::new().unwrap();
+        let allowed_root = temp_dir.path().canonicalize().unwrap();
+        let handler = handler_for_roots(vec![allowed_root.clone()], true);
+
+        let file_path = allowed_root.join("happy.txt");
+        handler.write_file(&file_path, "hello").await.unwrap();
+
+        let content = handler.read_file(&file_path).await.unwrap();
+        assert_eq!(content, "hello");
+    }
+
+    #[tokio::test]
+    async fn test_read_only_mode_blocks_write_even_for_allowed_path() {
+        let temp_dir = TempDir::new().unwrap();
+        let allowed_root = temp_dir.path().canonicalize().unwrap();
+        let handler = handler_for_roots(vec![allowed_root.clone()], false);
+
+        let file_path = allowed_root.join("readonly.txt");
+        let result = handler.write_file(&file_path, "should fail").await;
+
+        assert!(matches!(result, Err(ClientError::PermissionDenied(_))));
+    }
+
+    #[test]
+    fn test_multiple_allowed_roots_isolation() {
+        let root_a = TempDir::new().unwrap();
+        let root_b = TempDir::new().unwrap();
+        let outside = TempDir::new().unwrap();
+
+        let root_a_path = root_a.path().canonicalize().unwrap();
+        let root_b_path = root_b.path().canonicalize().unwrap();
+
+        let handler = handler_for_roots(vec![root_a_path.clone(), root_b_path.clone()], false);
+
+        let in_a = root_a_path.join("a.txt");
+        let in_b = root_b_path.join("b.txt");
+        let out = outside.path().join("outside.txt");
+
+        assert!(handler.is_path_allowed(&in_a));
+        assert!(handler.is_path_allowed(&in_b));
+        assert!(!handler.is_path_allowed(&out));
+    }
+
+    #[tokio::test]
+    async fn test_max_read_size_enforced() {
+        let temp_dir = TempDir::new().unwrap();
+        let allowed_root = temp_dir.path().canonicalize().unwrap();
+        let test_file = allowed_root.join("max-size.txt");
+        fs::write(&test_file, "1234567890").unwrap();
+
+        let handler = FileSystemHandler::new(FileSystemConfig {
+            allowed_roots: vec![allowed_root],
+            allow_write: false,
+            allow_create_dirs: false,
+            max_read_size: 5,
+        });
+
+        let result = handler.read_file(&test_file).await;
+        assert!(matches!(result, Err(ClientError::FileSystem(_))));
     }
 
     #[tokio::test]
