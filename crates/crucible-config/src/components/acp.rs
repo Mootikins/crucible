@@ -31,7 +31,7 @@ pub struct AcpConfig {
 }
 
 /// Delegation configuration for an ACP agent
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct DelegationConfig {
     /// Whether delegation is enabled for this agent
     #[serde(default)]
