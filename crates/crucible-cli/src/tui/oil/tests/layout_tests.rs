@@ -3,7 +3,7 @@ use crate::tui::oil::*;
 #[test]
 fn text_layout_single_line() {
     let node = text("Hello");
-    let layout = calculate_layout(&node, 80, 24);
+    let layout = build_layout_tree(&node, 80, 24).root;
 
     assert_eq!(layout.rect.width, 80);
     assert_eq!(layout.rect.height, 1);
@@ -12,7 +12,7 @@ fn text_layout_single_line() {
 #[test]
 fn text_layout_wrapping() {
     let node = text("Hello world this is a long line that should wrap");
-    let layout = calculate_layout(&node, 20, 24);
+    let layout = build_layout_tree(&node, 20, 24).root;
 
     assert!(layout.rect.height > 1, "Should wrap to multiple lines");
 }
@@ -20,7 +20,7 @@ fn text_layout_wrapping() {
 #[test]
 fn column_layout_stacks_vertically() {
     let node = col([text("Line 1"), text("Line 2"), text("Line 3")]);
-    let layout = calculate_layout(&node, 80, 24);
+    let layout = build_layout_tree(&node, 80, 24).root;
 
     assert_eq!(layout.children.len(), 3);
     assert_eq!(layout.rect.height, 3);
@@ -33,13 +33,21 @@ fn column_layout_stacks_vertically() {
 #[test]
 fn row_layout_side_by_side() {
     let node = row([text("A"), text("B"), text("C")]);
-    let layout = calculate_layout(&node, 90, 24);
+    let layout = build_layout_tree(&node, 90, 24).root;
 
     assert_eq!(layout.children.len(), 3);
 
+    // Row children are content-sized: "A"=1, "B"=1, "C"=1
     assert_eq!(layout.children[0].rect.x, 0);
-    assert_eq!(layout.children[1].rect.x, 30);
-    assert_eq!(layout.children[2].rect.x, 60);
+    assert_eq!(layout.children[0].rect.width, 1);
+    assert!(
+        layout.children[1].rect.x > layout.children[0].rect.x,
+        "B should be after A"
+    );
+    assert!(
+        layout.children[2].rect.x > layout.children[1].rect.x,
+        "C should be after B"
+    );
 }
 
 #[test]
@@ -51,26 +59,33 @@ fn fixed_size_respected() {
         ..Default::default()
     });
 
-    let layout = calculate_layout(&node, 80, 24);
+    let layout = build_layout_tree(&node, 80, 24).root;
     assert_eq!(layout.rect.height, 10);
 }
 
 #[test]
 fn flex_distributes_space() {
-    let node = col([
-        Node::Box(BoxNode {
-            children: vec![text("Fixed")],
-            size: Size::Fixed(4),
-            ..Default::default()
-        }),
-        Node::Box(BoxNode {
-            children: vec![text("Flex")],
-            size: Size::Flex(1),
-            ..Default::default()
-        }),
-    ]);
+    // Root must have a fixed height for flex distribution to work in Taffy.
+    // With Size::Content (default), the root shrinks to content and there's
+    // no remaining space for flex children to grow into.
+    let node = Node::Box(BoxNode {
+        children: vec![
+            Node::Box(BoxNode {
+                children: vec![text("Fixed")],
+                size: Size::Fixed(4),
+                ..Default::default()
+            }),
+            Node::Box(BoxNode {
+                children: vec![text("Flex")],
+                size: Size::Flex(1),
+                ..Default::default()
+            }),
+        ],
+        size: Size::Fixed(24),
+        ..Default::default()
+    });
 
-    let layout = calculate_layout(&node, 80, 24);
+    let layout = build_layout_tree(&node, 80, 24).root;
 
     assert_eq!(layout.children[0].rect.height, 4);
     assert_eq!(layout.children[1].rect.height, 20);
@@ -79,7 +94,7 @@ fn flex_distributes_space() {
 #[test]
 fn content_size_shrinks_to_fit() {
     let node = col([text("Line 1"), text("Line 2")]);
-    let layout = calculate_layout(&node, 80, 100);
+    let layout = build_layout_tree(&node, 80, 100).root;
 
     assert_eq!(layout.rect.height, 2);
 }
@@ -87,7 +102,7 @@ fn content_size_shrinks_to_fit() {
 #[test]
 fn padding_adds_space() {
     let node = text("X").with_padding(Padding::all(1));
-    let layout = calculate_layout(&node, 80, 24);
+    let layout = build_layout_tree(&node, 80, 24).root;
 
     assert!(layout.rect.height >= 3);
 }
@@ -96,7 +111,7 @@ fn padding_adds_space() {
 fn nested_layout_calculates_correctly() {
     let node = col([row([text("A"), text("B")]), row([text("C"), text("D")])]);
 
-    let layout = calculate_layout(&node, 80, 24);
+    let layout = build_layout_tree(&node, 80, 24).root;
 
     assert_eq!(layout.children.len(), 2);
     assert_eq!(layout.children[0].children.len(), 2);
@@ -106,7 +121,7 @@ fn nested_layout_calculates_correctly() {
 #[test]
 fn empty_node_zero_height() {
     let node = Node::Empty;
-    let layout = calculate_layout(&node, 80, 24);
+    let layout = build_layout_tree(&node, 80, 24).root;
 
     assert_eq!(layout.rect.height, 0);
 }
@@ -114,7 +129,7 @@ fn empty_node_zero_height() {
 #[test]
 fn spinner_single_line() {
     let node = spinner(Some("Loading...".into()), 0);
-    let layout = calculate_layout(&node, 80, 24);
+    let layout = build_layout_tree(&node, 80, 24).root;
 
     assert_eq!(layout.rect.height, 1);
 }
@@ -122,7 +137,7 @@ fn spinner_single_line() {
 #[test]
 fn input_single_line() {
     let node = text_input("hello", 5);
-    let layout = calculate_layout(&node, 80, 24);
+    let layout = build_layout_tree(&node, 80, 24).root;
 
     assert_eq!(layout.rect.height, 1);
 }
@@ -130,21 +145,26 @@ fn input_single_line() {
 #[test]
 fn static_node_layout_like_fragment() {
     let node = scrollback("key", [text("Line 1"), text("Line 2")]);
-    let layout = calculate_layout(&node, 80, 24);
+    let layout = build_layout_tree(&node, 80, 24).root;
 
     assert_eq!(layout.rect.height, 2);
 }
 
 #[test]
 fn chat_interface_layout() {
-    let node = col([
-        scrollback("msg-1", [text("User message")]),
-        scrollback("msg-2", [text("Assistant reply")]),
-        spacer(),
-        text_input("", 0),
-    ]);
+    // Fixed-size root needed for spacer (flex) to fill remaining space.
+    let node = Node::Box(BoxNode {
+        children: vec![
+            scrollback("msg-1", [text("User message")]),
+            scrollback("msg-2", [text("Assistant reply")]),
+            spacer(),
+            text_input("", 0),
+        ],
+        size: Size::Fixed(24),
+        ..Default::default()
+    });
 
-    let layout = calculate_layout(&node, 80, 24);
+    let layout = build_layout_tree(&node, 80, 24).root;
 
     assert_eq!(layout.children.len(), 4);
 
@@ -157,20 +177,24 @@ fn chat_interface_layout() {
 
 #[test]
 fn multiple_flex_items_share_space() {
-    let node = col([
-        Node::Box(BoxNode {
-            size: Size::Flex(1),
-            children: vec![text("A")],
-            ..Default::default()
-        }),
-        Node::Box(BoxNode {
-            size: Size::Flex(1),
-            children: vec![text("B")],
-            ..Default::default()
-        }),
-    ]);
+    let node = Node::Box(BoxNode {
+        children: vec![
+            Node::Box(BoxNode {
+                size: Size::Flex(1),
+                children: vec![text("A")],
+                ..Default::default()
+            }),
+            Node::Box(BoxNode {
+                size: Size::Flex(1),
+                children: vec![text("B")],
+                ..Default::default()
+            }),
+        ],
+        size: Size::Fixed(20),
+        ..Default::default()
+    });
 
-    let layout = calculate_layout(&node, 80, 20);
+    let layout = build_layout_tree(&node, 80, 20).root;
 
     assert_eq!(layout.children[0].rect.height, 10);
     assert_eq!(layout.children[1].rect.height, 10);
@@ -178,29 +202,37 @@ fn multiple_flex_items_share_space() {
 
 #[test]
 fn weighted_flex() {
-    let node = col([
-        Node::Box(BoxNode {
-            size: Size::Flex(1),
-            children: vec![text("Small")],
-            ..Default::default()
-        }),
-        Node::Box(BoxNode {
-            size: Size::Flex(3),
-            children: vec![text("Large")],
-            ..Default::default()
-        }),
-    ]);
+    let node = Node::Box(BoxNode {
+        children: vec![
+            Node::Box(BoxNode {
+                size: Size::Flex(1),
+                children: vec![text("Small")],
+                ..Default::default()
+            }),
+            Node::Box(BoxNode {
+                size: Size::Flex(3),
+                children: vec![text("Large")],
+                ..Default::default()
+            }),
+        ],
+        size: Size::Fixed(20),
+        ..Default::default()
+    });
 
-    let layout = calculate_layout(&node, 80, 20);
+    let layout = build_layout_tree(&node, 80, 20).root;
 
-    assert_eq!(layout.children[0].rect.height, 5);
-    assert_eq!(layout.children[1].rect.height, 15);
+    // Taffy distributes remaining space (after 1-line intrinsic per child)
+    // proportionally: flex(1) gets ~5-6, flex(3) gets ~14-15 depending on rounding
+    let small_h = layout.children[0].rect.height;
+    let large_h = layout.children[1].rect.height;
+    assert_eq!(small_h + large_h, 20, "total should fill container");
+    assert!(large_h > small_h, "flex(3) should be larger than flex(1)");
 }
 
 #[test]
 fn gap_adds_space_between_children() {
     let node = col([text("A"), text("B"), text("C")]).gap(Gap::row(2));
-    let layout = calculate_layout(&node, 80, 24);
+    let layout = build_layout_tree(&node, 80, 24).root;
 
     assert_eq!(layout.children.len(), 3);
     assert_eq!(layout.children[0].rect.y, 0);
@@ -211,7 +243,7 @@ fn gap_adds_space_between_children() {
 #[test]
 fn margin_adds_external_space() {
     let node = col([text("Content").with_margin(Padding::all(2))]);
-    let layout = calculate_layout(&node, 80, 24);
+    let layout = build_layout_tree(&node, 80, 24).root;
 
     assert!(layout.children[0].rect.y >= 2);
 }

@@ -107,7 +107,7 @@ impl LayoutEngine {
                 .tree
                 .new_leaf(Style {
                     size: Size {
-                        width: auto(),
+                        width: length(available_width),
                         height: length(1.0),
                     },
                     ..Default::default()
@@ -175,6 +175,57 @@ impl LayoutEngine {
         node_id
     }
 
+    /// Build a node that sizes to its content width rather than filling available space.
+    /// Used for children inside Row layouts so items sit side-by-side at natural width.
+    fn build_node_content_sized(&mut self, node: &Node, available_width: f32) -> NodeId {
+        let id = self.next_id;
+        self.next_id += 1;
+
+        let node_id = match node {
+            Node::Text(text) => {
+                let content_width = crate::ansi::visible_width(&text.content) as f32;
+                let lines = measure_text_lines(&text.content, content_width as usize);
+                self.tree
+                    .new_leaf(Style {
+                        size: Size {
+                            width: length(content_width),
+                            height: length(lines as f32),
+                        },
+                        ..Default::default()
+                    })
+                    .unwrap()
+            }
+
+            Node::Spinner(spinner) => {
+                let label_width = spinner
+                    .label
+                    .as_ref()
+                    .map(|l| l.chars().count() + 2)
+                    .unwrap_or(1) as f32;
+                self.tree
+                    .new_leaf(Style {
+                        size: Size {
+                            width: length(label_width),
+                            height: length(1.0),
+                        },
+                        ..Default::default()
+                    })
+                    .unwrap()
+            }
+
+            Node::Input(_) => {
+                // Inputs in rows should still fill remaining space
+                return self.build_node(node, available_width);
+            }
+
+            // For all other node types, delegate to normal build
+            _ => return self.build_node(node, available_width),
+        };
+
+        self.node_map.insert(id, node_id);
+        node_id
+    }
+
     fn build_box(&mut self, boxnode: &BoxNode, available_width: f32) -> NodeId {
         let padding = &boxnode.padding;
         let margin = &boxnode.margin;
@@ -183,10 +234,17 @@ impl LayoutEngine {
         let inner_width =
             available_width - padding.left as f32 - padding.right as f32 - border_width * 2.0;
 
+        let is_row = matches!(boxnode.direction, Direction::Row);
         let child_ids: Vec<NodeId> = boxnode
             .children
             .iter()
-            .map(|c| self.build_node(c, inner_width.max(0.0)))
+            .map(|c| {
+                if is_row {
+                    self.build_node_content_sized(c, inner_width.max(0.0))
+                } else {
+                    self.build_node(c, inner_width.max(0.0))
+                }
+            })
             .collect();
 
         let flex_direction = match boxnode.direction {
