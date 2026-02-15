@@ -46,7 +46,7 @@ pub use focus::*;
 pub use layout::flex::*;
 pub use layout::Rect;
 pub use layout::*;
-pub use layout::{build_layout_tree, render_layout_tree};
+pub use layout::{build_layout_tree, render_layout_tree, render_layout_tree_filtered};
 pub use layout::{LayoutBox, LayoutContent, LayoutTree, PopupItem};
 pub use node::*;
 pub use overlay::{composite_overlays, Overlay, OverlayAnchor};
