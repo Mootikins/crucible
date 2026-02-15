@@ -275,8 +275,27 @@ impl LlmProviderConfigBuilder {
         self
     }
 
-    /// Set API key from provider's default env var name
-    pub fn api_key_from_env(mut self) -> Self {
+    /// Set API key to the provider's default environment variable name.
+    ///
+    /// This method stores the **environment variable name** (e.g., `"OPENAI_API_KEY"`),
+    /// not the actual value from the environment. The actual value is resolved later
+    /// when the configuration is used, allowing for dynamic environment variable lookup.
+    ///
+    /// # Behavior
+    ///
+    /// - For providers with a standard env var (OpenAI, Anthropic, OpenRouter, ZAI),
+    ///   this sets `api_key` to that variable name.
+    /// - For providers without a standard env var (Ollama, GitHub Copilot),
+    ///   this has no effect (api_key remains `None`).
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// let config = LlmProviderConfig::builder(LlmProviderType::OpenAI)
+    ///     .with_api_key_env_var_name()  // Sets api_key to "OPENAI_API_KEY"
+    ///     .build();
+    /// ```
+    pub fn with_api_key_env_var_name(mut self) -> Self {
         self.api_key = self.provider_type.api_key_env_var().map(String::from);
         self
     }
