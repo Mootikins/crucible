@@ -223,10 +223,10 @@ fn render_popup(
     width: usize,
     grid: &mut CellGrid,
 ) {
-    use crucible_oil::style::Color;
+    use crucible_oil::node::{DEFAULT_POPUP_BG, DEFAULT_POPUP_SELECTED_BG};
 
-    let popup_bg = bg_style.bg.unwrap_or(Color::Rgb(30, 34, 42));
-    let selected_bg = selected_style.bg.unwrap_or(Color::Rgb(50, 56, 68));
+    let popup_bg = bg_style.bg.unwrap_or(DEFAULT_POPUP_BG);
+    let selected_bg = selected_style.bg.unwrap_or(DEFAULT_POPUP_SELECTED_BG);
 
     let visible_end = (viewport_offset + max_visible).min(items.len());
     let visible_items = &items[viewport_offset..visible_end];

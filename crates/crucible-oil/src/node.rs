@@ -32,6 +32,12 @@ impl ElementKind {
     }
 }
 
+/// Default popup background color (dark blue-gray).
+pub const DEFAULT_POPUP_BG: Color = Color::Rgb(30, 34, 42);
+
+/// Default popup selected-item background color (lighter blue-gray).
+pub const DEFAULT_POPUP_SELECTED_BG: Color = Color::Rgb(50, 56, 68);
+
 #[derive(Debug, Clone, PartialEq, Default)]
 pub enum Node {
     #[default]
@@ -281,8 +287,8 @@ pub fn popup(items: Vec<PopupItemNode>, selected: usize, max_visible: usize) -> 
         items,
         selected,
         max_visible,
-        Color::Rgb(30, 34, 42),
-        Color::Rgb(50, 56, 68),
+        DEFAULT_POPUP_BG,
+        DEFAULT_POPUP_SELECTED_BG,
     )
 }
 
