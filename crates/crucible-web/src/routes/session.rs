@@ -442,7 +442,7 @@ async fn list_providers(
             available: true,
             default_model: models.first().cloned(),
             models,
-            endpoint: Some("https://api.anthropic.com".to_string()),
+            endpoint: Some("https://api.anthropic.com/v1".to_string()),
         });
     }
 
@@ -479,7 +479,7 @@ fn default_endpoint_for(provider_type: &str) -> String {
     match provider_type {
         "ollama" => "http://localhost:11434".to_string(),
         "openai" => "https://api.openai.com/v1".to_string(),
-        "anthropic" => "https://api.anthropic.com".to_string(),
+        "anthropic" => "https://api.anthropic.com/v1".to_string(),
         _ => String::new(),
     }
 }
@@ -655,7 +655,7 @@ mod tests {
     fn test_default_endpoint_for_anthropic() {
         assert_eq!(
             default_endpoint_for("anthropic"),
-            "https://api.anthropic.com"
+            "https://api.anthropic.com/v1"
         );
     }
 
