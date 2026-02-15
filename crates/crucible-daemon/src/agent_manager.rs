@@ -3486,8 +3486,7 @@ mod tests {
         let mut providers = std::collections::HashMap::new();
         providers.insert(
             "zai-coding".to_string(),
-            LlmProviderConfig::builder(LlmProviderType::ZAI)
-                .build(),
+            LlmProviderConfig::builder(LlmProviderType::ZAI).build(),
         );
 
         let llm_config = LlmConfig {
@@ -3615,7 +3614,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_switch_model_legacy_still_works() {
-        use crucible_config::{BackendType, LlmConfig, LlmProviderConfig, LlmProviderType, ProviderConfig};
+        use crucible_config::{
+            BackendType, LlmConfig, LlmProviderConfig, LlmProviderType, ProviderConfig,
+        };
 
         let tmp = TempDir::new().unwrap();
         let storage = Arc::new(FileSessionStorage::new());
@@ -3868,10 +3869,7 @@ mod tests {
             Some("zai-coding"),
             "Provider key should be updated to zai-coding"
         );
-        assert_eq!(
-            agent.model, "GLM-4.7",
-            "Model should be updated to GLM-4.7"
-        );
+        assert_eq!(agent.model, "GLM-4.7", "Model should be updated to GLM-4.7");
         assert_eq!(
             agent.endpoint.as_deref(),
             Some("https://api.z.ai/api/coding/paas/v4"),
