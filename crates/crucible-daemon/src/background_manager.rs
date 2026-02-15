@@ -30,6 +30,7 @@ use crate::protocol::SessionEventMessage;
 use async_trait::async_trait;
 use crucible_core::background::{
     truncate, BackgroundSpawner, JobError, JobId, JobInfo, JobKind, JobResult,
+    SubagentBlockingConfig,
 };
 use crucible_core::session::SessionAgent;
 use crucible_core::traits::chat::AgentHandle;
@@ -98,6 +99,22 @@ pub struct SubagentContext {
     pub workspace: PathBuf,
     /// Parent session directory for creating subagent session files
     pub parent_session_dir: Option<PathBuf>,
+}
+
+struct PreparedSubagentExecution {
+    info: JobInfo,
+    prompt: String,
+    context: Option<String>,
+    session_id: String,
+    session_link: String,
+    agent: Box<dyn AgentHandle + Send + Sync>,
+    subagent_writer: Option<Arc<Mutex<SessionWriter>>>,
+}
+
+struct SubagentExecutionOptions {
+    max_turns: usize,
+    max_output_bytes: usize,
+    timeout: Option<Duration>,
 }
 
 pub struct BackgroundJobManager {
@@ -555,12 +572,149 @@ impl BackgroundJobManager {
         prompt: String,
         context: Option<String>,
     ) -> Result<JobId, BackgroundError> {
+        let prepared = self
+            .prepare_subagent_execution(session_id, prompt, context)
+            .await?;
+        let job_id = prepared.info.id.clone();
+        let (cancel_tx, cancel_rx) = oneshot::channel();
+
+        let task_handle = {
+            let running = self.running.clone();
+            let history = self.history.clone();
+            let event_tx = self.event_tx.clone();
+            let job_id = job_id.clone();
+            let session_id = prepared.session_id.clone();
+            let max_history = self.max_history;
+            let session_link = prepared.session_link.clone();
+            let fallback_prompt = prepared.prompt.clone();
+            let fallback_context = prepared.context.clone();
+            let agent = prepared.agent;
+            let prompt = prepared.prompt;
+            let context = prepared.context;
+            let subagent_writer = prepared.subagent_writer;
+
+            tokio::spawn(async move {
+                let result = Self::execute_subagent_with_options(
+                    agent,
+                    prompt.clone(),
+                    context,
+                    cancel_rx,
+                    subagent_writer,
+                    SubagentExecutionOptions {
+                        max_turns: DEFAULT_SUBAGENT_MAX_TURNS,
+                        max_output_bytes: MAX_SUBAGENT_OUTPUT,
+                        timeout: None,
+                    },
+                )
+                .await;
+
+                // Extract original JobInfo to preserve started_at timestamp
+                let info = running
+                    .remove(&job_id)
+                    .map(|(_, rt)| rt.info)
+                    .unwrap_or_else(|| {
+                        JobInfo::new(
+                            session_id.clone(),
+                            JobKind::Subagent {
+                                prompt: fallback_prompt,
+                                context: fallback_context,
+                            },
+                        )
+                    });
+
+                let job_result = Self::build_subagent_result(info, result);
+                Self::emit_subagent_completion_events(
+                    &event_tx,
+                    &session_id,
+                    &job_result.info.id.clone(),
+                    &job_result,
+                    &session_link,
+                );
+                Self::add_to_history(&history, &session_id, job_result, max_history);
+
+                debug!(job_id = %job_id, "Background subagent completed");
+            })
+        };
+
+        self.running.insert(
+            job_id.clone(),
+            RunningJob {
+                info: prepared.info,
+                cancel_tx,
+                task_handle,
+            },
+        );
+
+        Ok(job_id)
+    }
+
+    pub async fn spawn_subagent_blocking(
+        &self,
+        session_id: &str,
+        prompt: String,
+        context: Option<String>,
+        config: SubagentBlockingConfig,
+        cancel_rx: Option<oneshot::Receiver<()>>,
+    ) -> Result<JobResult, BackgroundError> {
+        let prepared = self
+            .prepare_subagent_execution(session_id, prompt, context)
+            .await?;
+
+        let mut cancel_tx_keepalive = None;
+        let cancel_rx = match cancel_rx {
+            Some(rx) => rx,
+            None => {
+                let (cancel_tx, cancel_rx) = oneshot::channel();
+                cancel_tx_keepalive = Some(cancel_tx);
+                cancel_rx
+            }
+        };
+
+        let result = Self::execute_subagent_with_options(
+            prepared.agent,
+            prepared.prompt,
+            prepared.context,
+            cancel_rx,
+            prepared.subagent_writer,
+            SubagentExecutionOptions {
+                max_turns: DEFAULT_SUBAGENT_MAX_TURNS,
+                max_output_bytes: config.result_max_bytes,
+                timeout: Some(config.timeout),
+            },
+        )
+        .await;
+        drop(cancel_tx_keepalive);
+
+        let job_result = Self::build_subagent_result(prepared.info, result);
+        Self::emit_subagent_completion_events(
+            &self.event_tx,
+            &prepared.session_id,
+            &job_result.info.id.clone(),
+            &job_result,
+            &prepared.session_link,
+        );
+        Self::add_to_history(
+            &self.history,
+            &prepared.session_id,
+            job_result.clone(),
+            self.max_history,
+        );
+
+        Ok(job_result)
+    }
+
+    async fn prepare_subagent_execution(
+        &self,
+        session_id: &str,
+        prompt: String,
+        context: Option<String>,
+    ) -> Result<PreparedSubagentExecution, BackgroundError> {
         let factory = self
             .subagent_factory
             .as_ref()
             .ok_or(BackgroundError::NoSubagentFactory)?;
 
-        let (agent_config, workspace, parent_session_dir) = {
+        let (mut agent_config, workspace, parent_session_dir) = {
             let ctx = self.subagent_contexts.get(session_id).ok_or_else(|| {
                 BackgroundError::SpawnFailed("Subagent context not registered".into())
             })?;
@@ -571,13 +725,14 @@ impl BackgroundJobManager {
             )
         };
 
+        agent_config.delegation_config = None;
+
         let kind = JobKind::Subagent {
             prompt: prompt.clone(),
             context: context.clone(),
         };
         let mut info = JobInfo::new(session_id.to_string(), kind);
         let job_id = info.id.clone();
-        let (cancel_tx, cancel_rx) = oneshot::channel();
 
         let (subagent_writer, session_link) = if let Some(ref parent_dir) = parent_session_dir {
             match SessionWriter::create_subagent(parent_dir).await {
@@ -616,74 +771,31 @@ impl BackgroundJobManager {
             .await
             .map_err(BackgroundError::SpawnFailed)?;
 
-        let task_handle = {
-            let running = self.running.clone();
-            let history = self.history.clone();
-            let event_tx = self.event_tx.clone();
-            let job_id = job_id.clone();
-            let session_id = session_id.to_string();
-            let max_history = self.max_history;
-            let session_link = session_link.clone();
-
-            tokio::spawn(async move {
-                let result = Self::execute_subagent(
-                    agent,
-                    prompt.clone(),
-                    context,
-                    cancel_rx,
-                    DEFAULT_SUBAGENT_MAX_TURNS,
-                    subagent_writer,
-                )
-                .await;
-
-                // Extract original JobInfo to preserve started_at timestamp
-                let info = running
-                    .remove(&job_id)
-                    .map(|(_, rt)| rt.info)
-                    .unwrap_or_else(|| {
-                        JobInfo::new(
-                            session_id.clone(),
-                            JobKind::Subagent {
-                                prompt,
-                                context: None,
-                            },
-                        )
-                    });
-
-                let job_result = Self::build_subagent_result(info, result);
-                Self::emit_subagent_completion_events(
-                    &event_tx,
-                    &session_id,
-                    &job_result.info.id.clone(),
-                    &job_result,
-                    &session_link,
-                );
-                Self::add_to_history(&history, &session_id, job_result, max_history);
-
-                debug!(job_id = %job_id, "Background subagent completed");
-            })
-        };
-
-        self.running.insert(
-            job_id.clone(),
-            RunningJob {
-                info,
-                cancel_tx,
-                task_handle,
-            },
-        );
-
-        Ok(job_id)
+        Ok(PreparedSubagentExecution {
+            info,
+            prompt,
+            context,
+            session_id: session_id.to_string(),
+            session_link,
+            agent,
+            subagent_writer,
+        })
     }
 
-    async fn execute_subagent(
+    async fn execute_subagent_with_options(
         mut agent: Box<dyn AgentHandle + Send + Sync>,
         prompt: String,
         context: Option<String>,
         mut cancel_rx: oneshot::Receiver<()>,
-        max_turns: usize,
         session_writer: Option<Arc<Mutex<SessionWriter>>>,
+        options: SubagentExecutionOptions,
     ) -> Result<String, SubagentError> {
+        let SubagentExecutionOptions {
+            max_turns,
+            max_output_bytes,
+            timeout,
+        } = options;
+        let execute = async {
         let full_prompt = match context {
             Some(ctx) => format!("{}\n\n{}", ctx, prompt),
             None => prompt.clone(),
@@ -746,8 +858,8 @@ impl BackgroundJobManager {
             accumulated_output.push_str(&turn_output);
             accumulated_output.push('\n');
 
-            if accumulated_output.len() > MAX_SUBAGENT_OUTPUT {
-                accumulated_output.truncate(MAX_SUBAGENT_OUTPUT);
+            if accumulated_output.len() > max_output_bytes {
+                accumulated_output.truncate(max_output_bytes);
                 accumulated_output.push_str("\n\n[Output truncated due to size limit]");
                 break;
             }
@@ -757,7 +869,23 @@ impl BackgroundJobManager {
             }
         }
 
-        Ok(accumulated_output.trim().to_string())
+            Ok(accumulated_output.trim().to_string())
+        };
+
+        let mut output = if let Some(timeout_duration) = timeout {
+            match tokio::time::timeout(timeout_duration, execute).await {
+                Ok(inner) => inner?,
+                Err(_) => return Err(SubagentError::Timeout),
+            }
+        } else {
+            execute.await?
+        };
+
+        if output.len() > max_output_bytes {
+            output = truncate(&output, max_output_bytes);
+        }
+
+        Ok(output)
     }
 
     fn build_subagent_result(
@@ -776,6 +904,10 @@ impl BackgroundJobManager {
             Err(SubagentError::Failed(msg)) => {
                 info.mark_failed();
                 JobResult::failure(info, msg)
+            }
+            Err(SubagentError::Timeout) => {
+                info.mark_failed();
+                JobResult::failure(info, "Subagent timed out".to_string())
             }
         }
     }
@@ -822,6 +954,7 @@ impl BackgroundJobManager {
 enum SubagentError {
     Cancelled,
     Failed(String),
+    Timeout,
 }
 
 #[async_trait]
@@ -860,6 +993,26 @@ impl BackgroundSpawner for BackgroundJobManager {
             .await
             .map_err(|e| JobError::SpawnFailed(e.to_string()))
     }
+
+    async fn spawn_subagent_blocking(
+        &self,
+        session_id: &str,
+        prompt: String,
+        context: Option<String>,
+        config: SubagentBlockingConfig,
+        cancel_rx: Option<oneshot::Receiver<()>>,
+    ) -> Result<JobResult, JobError> {
+        BackgroundJobManager::spawn_subagent_blocking(
+            self,
+            session_id,
+            prompt,
+            context,
+            config,
+            cancel_rx,
+        )
+        .await
+        .map_err(|e| JobError::SpawnFailed(e.to_string()))
+    }
 }
 
 enum BashError {
@@ -874,12 +1027,319 @@ enum BashError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crucible_config::DelegationConfig;
     use crucible_core::background::JobStatus;
+    use crucible_core::traits::chat::{AgentHandle, ChatChunk, ChatError, ChatResult};
+    use futures::stream::{self, BoxStream};
+    use std::collections::HashMap;
+    use std::sync::Mutex as StdMutex;
+    use std::time::Instant;
     use tokio::sync::broadcast;
 
     fn create_manager() -> BackgroundJobManager {
         let (tx, _) = broadcast::channel(16);
         BackgroundJobManager::new(tx)
+    }
+
+    #[derive(Clone)]
+    enum MockSubagentBehavior {
+        ImmediateSuccess(String),
+        DelayedSuccess { output: String, delay: Duration },
+        Pending,
+        StreamFailure(String),
+    }
+
+    struct MockSubagentHandle {
+        behavior: MockSubagentBehavior,
+    }
+
+    impl MockSubagentHandle {
+        fn new(behavior: MockSubagentBehavior) -> Self {
+            Self { behavior }
+        }
+    }
+
+    fn chunk(delta: String, done: bool) -> ChatChunk {
+        ChatChunk {
+            delta,
+            done,
+            tool_calls: None,
+            tool_results: None,
+            reasoning: None,
+            usage: None,
+            subagent_events: None,
+        }
+    }
+
+    #[async_trait]
+    impl AgentHandle for MockSubagentHandle {
+        fn send_message_stream(&mut self, _message: String) -> BoxStream<'static, ChatResult<ChatChunk>> {
+            match self.behavior.clone() {
+                MockSubagentBehavior::ImmediateSuccess(output) => {
+                    Box::pin(stream::iter(vec![Ok(chunk(output, true))]))
+                }
+                MockSubagentBehavior::DelayedSuccess { output, delay } => Box::pin(stream::once(
+                    async move {
+                        tokio::time::sleep(delay).await;
+                        Ok(chunk(output, true))
+                    },
+                )),
+                MockSubagentBehavior::Pending => Box::pin(stream::pending()),
+                MockSubagentBehavior::StreamFailure(message) => Box::pin(stream::iter(vec![Err(
+                    ChatError::Internal(message),
+                )])),
+            }
+        }
+
+        async fn set_mode_str(&mut self, _mode_id: &str) -> ChatResult<()> {
+            Ok(())
+        }
+
+        fn is_connected(&self) -> bool {
+            true
+        }
+    }
+
+    fn test_session_agent(delegation_config: Option<DelegationConfig>) -> SessionAgent {
+        SessionAgent {
+            agent_type: "acp".to_string(),
+            agent_name: Some("test-agent".to_string()),
+            provider_key: None,
+            provider: "acp".to_string(),
+            model: "test-agent".to_string(),
+            system_prompt: String::new(),
+            temperature: None,
+            max_tokens: None,
+            max_context_tokens: None,
+            thinking_budget: None,
+            endpoint: None,
+            env_overrides: HashMap::new(),
+            mcp_servers: vec![],
+            agent_card_name: None,
+            capabilities: None,
+            agent_description: None,
+            delegation_config,
+        }
+    }
+
+    fn make_subagent_manager_with_factory(
+        factory: SubagentFactory,
+        delegation_config: Option<DelegationConfig>,
+    ) -> BackgroundJobManager {
+        let (tx, _) = broadcast::channel(16);
+        let manager = BackgroundJobManager::new(tx).with_subagent_factory(factory);
+        manager.register_subagent_context(
+            "session-1",
+            SubagentContext {
+                agent: test_session_agent(delegation_config),
+                workspace: std::env::temp_dir(),
+                parent_session_dir: None,
+            },
+        );
+        manager
+    }
+
+    fn behavior_factory(behavior: MockSubagentBehavior) -> SubagentFactory {
+        Box::new(move |_agent, _workspace| {
+            let behavior = behavior.clone();
+            Box::pin(async move {
+                Ok(Box::new(MockSubagentHandle::new(behavior)) as Box<dyn AgentHandle + Send + Sync>)
+            })
+        })
+    }
+
+    #[tokio::test]
+    async fn spawn_subagent_blocking_returns_job_result_with_output() {
+        let manager = make_subagent_manager_with_factory(
+            behavior_factory(MockSubagentBehavior::DelayedSuccess {
+                output: "blocking-complete".to_string(),
+                delay: Duration::from_millis(75),
+            }),
+            None,
+        );
+        let start = Instant::now();
+
+        let result: Result<JobResult, BackgroundError> = manager
+            .spawn_subagent_blocking(
+                "session-1",
+                "do it".to_string(),
+                None,
+                SubagentBlockingConfig::default(),
+                None,
+            )
+            .await;
+
+        let result = result.expect("blocking subagent should complete");
+        assert!(start.elapsed() >= Duration::from_millis(70));
+        assert_eq!(result.info.status, JobStatus::Completed);
+        assert_eq!(result.output.as_deref(), Some("blocking-complete"));
+    }
+
+    #[tokio::test]
+    async fn spawn_subagent_blocking_timeout_returns_failed_job_result() {
+        let manager = make_subagent_manager_with_factory(
+            behavior_factory(MockSubagentBehavior::Pending),
+            None,
+        );
+
+        let result = manager
+            .spawn_subagent_blocking(
+                "session-1",
+                "do it".to_string(),
+                None,
+                SubagentBlockingConfig {
+                    timeout: Duration::from_millis(50),
+                    result_max_bytes: 51200,
+                },
+                None,
+            )
+            .await
+            .expect("timeout should return JobResult");
+
+        assert_eq!(result.info.status, JobStatus::Failed);
+        assert!(result.error.as_deref().unwrap_or("").contains("timed out"));
+    }
+
+    #[tokio::test]
+    async fn spawn_subagent_blocking_cancellation_marks_job_cancelled() {
+        let manager = make_subagent_manager_with_factory(
+            behavior_factory(MockSubagentBehavior::Pending),
+            None,
+        );
+        let (cancel_tx, cancel_rx) = oneshot::channel();
+
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(30)).await;
+            let _ = cancel_tx.send(());
+        });
+
+        let result = manager
+            .spawn_subagent_blocking(
+                "session-1",
+                "do it".to_string(),
+                None,
+                SubagentBlockingConfig::default(),
+                Some(cancel_rx),
+            )
+            .await
+            .expect("cancelled execution should return JobResult");
+
+        assert_eq!(result.info.status, JobStatus::Cancelled);
+        assert!(result.error.as_deref().unwrap_or("").contains("cancelled"));
+    }
+
+    #[tokio::test]
+    async fn spawn_subagent_blocking_factory_failure_returns_background_error() {
+        let manager = make_subagent_manager_with_factory(
+            Box::new(move |_agent, _workspace| {
+                Box::pin(async move { Err("factory failed".to_string()) })
+            }),
+            None,
+        );
+
+        let err = manager
+            .spawn_subagent_blocking(
+                "session-1",
+                "do it".to_string(),
+                None,
+                SubagentBlockingConfig::default(),
+                None,
+            )
+            .await
+            .expect_err("factory failure should return BackgroundError");
+
+        assert!(matches!(err, BackgroundError::SpawnFailed(_)));
+    }
+
+    #[tokio::test]
+    async fn spawn_subagent_blocking_execution_failure_returns_failed_job_result() {
+        let manager = make_subagent_manager_with_factory(
+            behavior_factory(MockSubagentBehavior::StreamFailure(
+                "agent-stream-broke".to_string(),
+            )),
+            None,
+        );
+
+        let result = manager
+            .spawn_subagent_blocking(
+                "session-1",
+                "do it".to_string(),
+                None,
+                SubagentBlockingConfig::default(),
+                None,
+            )
+            .await
+            .expect("execution failure should still return JobResult");
+
+        assert_eq!(result.info.status, JobStatus::Failed);
+        assert!(result.error.as_deref().unwrap_or("").contains("agent-stream-broke"));
+    }
+
+    #[tokio::test]
+    async fn spawn_subagent_blocking_truncates_output_to_configured_max_bytes() {
+        let manager = make_subagent_manager_with_factory(
+            behavior_factory(MockSubagentBehavior::ImmediateSuccess("x".repeat(512))),
+            None,
+        );
+
+        let result = manager
+            .spawn_subagent_blocking(
+                "session-1",
+                "do it".to_string(),
+                None,
+                SubagentBlockingConfig {
+                    timeout: Duration::from_secs(1),
+                    result_max_bytes: 32,
+                },
+                None,
+            )
+            .await
+            .expect("subagent should complete");
+
+        let output = result.output.unwrap_or_default();
+        assert!(output.len() <= 32, "output length was {}", output.len());
+    }
+
+    #[tokio::test]
+    async fn spawn_subagent_blocking_disables_nested_delegation_before_factory() {
+        let observed = Arc::new(StdMutex::new(None));
+        let observed_for_factory = observed.clone();
+        let manager = make_subagent_manager_with_factory(
+            Box::new(move |agent, _workspace| {
+                let mut lock = observed_for_factory
+                    .lock()
+                    .expect("observation mutex should be available");
+                *lock = Some(agent.delegation_config.clone());
+                Box::pin(async move {
+                    Ok(Box::new(MockSubagentHandle::new(
+                        MockSubagentBehavior::ImmediateSuccess("ok".to_string()),
+                    )) as Box<dyn AgentHandle + Send + Sync>)
+                })
+            }),
+            Some(DelegationConfig {
+                enabled: true,
+                max_depth: 2,
+                allowed_targets: Some(vec!["child".to_string()]),
+                result_max_bytes: 51200,
+            }),
+        );
+
+        let _ = manager
+            .spawn_subagent_blocking(
+                "session-1",
+                "do it".to_string(),
+                None,
+                SubagentBlockingConfig::default(),
+                None,
+            )
+            .await
+            .expect("blocking run should succeed");
+
+        let observed = observed
+            .lock()
+            .expect("observation mutex should be available")
+            .clone();
+        assert_eq!(observed, Some(None));
     }
 
     #[tokio::test]
@@ -1045,7 +1505,7 @@ mod tests {
         assert!(result
             .error
             .as_ref()
-            .map_or(false, |e| e.contains("timed out")));
+            .is_some_and(|e| e.contains("timed out")));
     }
 
     #[tokio::test]
