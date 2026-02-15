@@ -156,6 +156,7 @@ pub fn create_client(config: &LlmProviderConfig) -> RigResult<RigClient> {
         LlmProviderType::Anthropic => create_anthropic_client(config),
         LlmProviderType::GitHubCopilot => create_github_copilot_client(config),
         LlmProviderType::OpenRouter => create_openrouter_client(config),
+        LlmProviderType::ZAI => create_openai_client(config),
     }
 }
 
@@ -332,6 +333,7 @@ mod tests {
             max_tokens: None,
             timeout_secs: None,
             api_key: None,
+            available_models: None,
         }
     }
 
@@ -344,6 +346,7 @@ mod tests {
             max_tokens: None,
             timeout_secs: None,
             api_key: None,
+            available_models: None,
         }
     }
 
@@ -356,6 +359,7 @@ mod tests {
             max_tokens: None,
             timeout_secs: None,
             api_key: Some("TEST_OPENAI_KEY".into()),
+            available_models: None,
         }
     }
 
@@ -368,6 +372,7 @@ mod tests {
             max_tokens: None,
             timeout_secs: None,
             api_key: Some("TEST_ANTHROPIC_KEY".into()),
+            available_models: None,
         }
     }
 
@@ -380,6 +385,7 @@ mod tests {
             max_tokens: None,
             timeout_secs: None,
             api_key: Some("gho_test_oauth_token".into()),
+            available_models: None,
         }
     }
 
@@ -392,6 +398,7 @@ mod tests {
             max_tokens: None,
             timeout_secs: None,
             api_key: None,
+            available_models: None,
         }
     }
 
@@ -432,16 +439,15 @@ mod tests {
 
     #[test]
     fn test_create_openai_client_missing_api_key() {
-        // With the new {env:VAR} system, api_key is None if no key is provided
-        // (env var resolution happens at config load time, not client creation time)
         let config = LlmProviderConfig {
             provider_type: LlmProviderType::OpenAI,
-            endpoint: None, // Real OpenAI endpoint requires API key
+            endpoint: None,
             default_model: Some("gpt-4o".into()),
             temperature: None,
             max_tokens: None,
             timeout_secs: None,
-            api_key: None, // No API key provided
+            api_key: None,
+            available_models: None,
         };
 
         let client = create_client(&config);
@@ -468,8 +474,6 @@ mod tests {
 
     #[test]
     fn test_create_anthropic_client_missing_api_key() {
-        // With the new {env:VAR} system, api_key is None if no key is provided
-        // (env var resolution happens at config load time, not client creation time)
         let config = LlmProviderConfig {
             provider_type: LlmProviderType::Anthropic,
             endpoint: None,
@@ -477,7 +481,8 @@ mod tests {
             temperature: None,
             max_tokens: None,
             timeout_secs: None,
-            api_key: None, // No API key provided
+            api_key: None,
+            available_models: None,
         };
 
         let client = create_client(&config);
@@ -508,7 +513,6 @@ mod tests {
 
     #[test]
     fn test_create_openai_compat_client_with_custom_endpoint() {
-        // OpenAI with custom endpoint should return OpenAICompat variant
         let config = LlmProviderConfig {
             provider_type: LlmProviderType::OpenAI,
             endpoint: Some("https://llama.example.com/v1".into()),
@@ -516,7 +520,8 @@ mod tests {
             temperature: None,
             max_tokens: None,
             timeout_secs: None,
-            api_key: None, // No API key needed for local servers
+            api_key: None,
+            available_models: None,
         };
 
         let client = create_client(&config);
@@ -529,7 +534,6 @@ mod tests {
 
     #[test]
     fn test_create_openai_compat_no_api_key_required() {
-        // OpenAI-compatible endpoints don't require API key
         let config = LlmProviderConfig {
             provider_type: LlmProviderType::OpenAI,
             endpoint: Some("http://localhost:8080/v1".into()),
@@ -537,10 +541,10 @@ mod tests {
             temperature: None,
             max_tokens: None,
             timeout_secs: None,
-            api_key: Some("NONEXISTENT_API_KEY".into()), // Won't fail even if not set
+            api_key: Some("NONEXISTENT_API_KEY".into()),
+            available_models: None,
         };
 
-        // Should succeed without API key
         let client = create_client(&config);
         assert!(client.is_ok());
         assert_eq!(client.unwrap().provider_name(), "openai-compat");
@@ -548,16 +552,15 @@ mod tests {
 
     #[test]
     fn test_real_openai_requires_api_key() {
-        // Real OpenAI API (default endpoint) requires API key
-        // With the new {env:VAR} system, api_key is None if no key is provided
         let config = LlmProviderConfig {
             provider_type: LlmProviderType::OpenAI,
-            endpoint: None, // Uses default https://api.openai.com/v1
+            endpoint: None,
             default_model: Some("gpt-4o".into()),
             temperature: None,
             max_tokens: None,
             timeout_secs: None,
-            api_key: None, // No API key provided
+            api_key: None,
+            available_models: None,
         };
 
         let client = create_client(&config);
@@ -609,6 +612,7 @@ mod tests {
             max_tokens: None,
             timeout_secs: None,
             api_key: Some("sk-or-test-key".into()),
+            available_models: None,
         }
     }
 
@@ -621,6 +625,7 @@ mod tests {
             max_tokens: None,
             timeout_secs: None,
             api_key: None,
+            available_models: None,
         }
     }
 
@@ -656,6 +661,7 @@ mod tests {
             max_tokens: None,
             timeout_secs: None,
             api_key: Some("TEST_ANTHROPIC_KEY".into()),
+            available_models: None,
         };
 
         let client = create_client(&config);
@@ -665,5 +671,26 @@ mod tests {
         assert_eq!(client.provider_name(), "anthropic");
 
         std::env::remove_var("TEST_ANTHROPIC_KEY");
+    }
+
+    #[test]
+    fn test_create_zai_client() {
+        let config = LlmProviderConfig {
+            provider_type: LlmProviderType::ZAI,
+            endpoint: Some("https://api.z.ai/api/coding/paas/v4".into()),
+            default_model: Some("glm-4-flash".into()),
+            temperature: None,
+            max_tokens: None,
+            timeout_secs: None,
+            api_key: Some("test-key".into()),
+            available_models: None,
+        };
+
+        let client = create_client(&config);
+
+        assert!(client.is_ok());
+        let client = client.unwrap();
+        // ZAI routes through OpenAI-compat client
+        assert!(client.provider_name() == "openai-compat" || client.provider_name() == "openai");
     }
 }
