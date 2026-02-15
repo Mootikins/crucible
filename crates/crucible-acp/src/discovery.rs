@@ -875,7 +875,10 @@ mod tests {
 
         let agent = resolve_agent_from_config("my-claude", &config).expect("should resolve");
         assert_eq!(agent.command, "npx");
-        assert_eq!(agent.args, vec!["@zed-industries/claude-code-acp".to_string()]);
+        assert_eq!(
+            agent.args,
+            vec!["@zed-industries/claude-code-acp".to_string()]
+        );
     }
 
     #[test]
@@ -947,10 +950,15 @@ mod tests {
         let agent = discover_agent(None, &config)
             .await
             .expect("should discover from merged profiles");
-        assert!(
-            ["cargo-agent", "opencode", "claude", "gemini", "codex", "cursor"]
-                .contains(&agent.name.as_str())
-        );
+        assert!([
+            "cargo-agent",
+            "opencode",
+            "claude",
+            "gemini",
+            "codex",
+            "cursor"
+        ]
+        .contains(&agent.name.as_str()));
     }
 
     #[test]

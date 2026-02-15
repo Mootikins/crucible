@@ -222,7 +222,10 @@ async fn copilot_auth(force: bool) -> Result<()> {
         e => anyhow::anyhow!("Failed to start device flow: {}", e),
     })?;
 
-    println!("{}", "Please visit the following URL and enter the code:".bold());
+    println!(
+        "{}",
+        "Please visit the following URL and enter the code:".bold()
+    );
     println!();
     println!("  {}", device_code.verification_uri.cyan().underline());
     println!();
@@ -246,10 +249,7 @@ async fn copilot_auth(force: bool) -> Result<()> {
                 store.set_oauth_token("github-copilot", &token.access_token)?;
 
                 println!();
-                println!(
-                    "{} GitHub Copilot authenticated successfully!",
-                    "✓".green()
-                );
+                println!("{} GitHub Copilot authenticated successfully!", "✓".green());
                 println!(
                     "  {}",
                     format!("Token stored in {}", store.path().display()).dimmed()

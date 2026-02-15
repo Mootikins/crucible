@@ -674,7 +674,10 @@ mod tests {
         type ToolResult = ToolOutput;
         type ToolDescriptor = ToolDescriptor;
 
-        async fn execute_tool(&self, call: Self::ToolCall) -> std::result::Result<Self::ToolResult, AcpError> {
+        async fn execute_tool(
+            &self,
+            call: Self::ToolCall,
+        ) -> std::result::Result<Self::ToolResult, AcpError> {
             if !self.registry.contains(&call.tool_name) {
                 return Err(AcpError::NotFound(call.tool_name));
             }
@@ -704,7 +707,10 @@ mod tests {
                 .collect::<Vec<_>>())
         }
 
-        async fn get_tool_schema(&self, tool_name: &str) -> std::result::Result<serde_json::Value, AcpError> {
+        async fn get_tool_schema(
+            &self,
+            tool_name: &str,
+        ) -> std::result::Result<serde_json::Value, AcpError> {
             self.registry
                 .get(tool_name)
                 .map(|tool| tool.input_schema.clone())

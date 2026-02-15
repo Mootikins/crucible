@@ -78,17 +78,17 @@ impl FileSystemHandler {
     /// # Returns
     ///
     /// `true` if the path is within an allowed root, `false` otherwise
-     pub fn is_path_allowed(&self, path: &Path) -> bool {
-         // KNOWN LIMITATION: TOCTOU (Time-of-Check-Time-of-Use) window exists between
-         // this permission check and actual file operations (read_file, write_file, etc.).
-         // A file could be moved/deleted/replaced between the check and the operation.
-         // This is acceptable for the MVP as it's a general filesystem limitation, not
-         // specific to ACP. Future versions could use file descriptors or atomic operations.
-         
-         // If no allowed roots configured, deny all access
-         if self.config.allowed_roots.is_empty() {
-             return false;
-         }
+    pub fn is_path_allowed(&self, path: &Path) -> bool {
+        // KNOWN LIMITATION: TOCTOU (Time-of-Check-Time-of-Use) window exists between
+        // this permission check and actual file operations (read_file, write_file, etc.).
+        // A file could be moved/deleted/replaced between the check and the operation.
+        // This is acceptable for the MVP as it's a general filesystem limitation, not
+        // specific to ACP. Future versions could use file descriptors or atomic operations.
+
+        // If no allowed roots configured, deny all access
+        if self.config.allowed_roots.is_empty() {
+            return false;
+        }
 
         if path.as_os_str().is_empty() {
             return false;
