@@ -24,6 +24,9 @@ pub enum LlmProviderType {
     /// Access 100+ models through a single API key.
     #[serde(alias = "openrouter", alias = "open_router", alias = "open-router")]
     OpenRouter,
+    /// Z.AI provider (GLM Coding Plan)
+    #[serde(alias = "z.ai", alias = "z_ai", alias = "zai")]
+    ZAI,
 }
 
 impl LlmProviderType {
@@ -35,6 +38,19 @@ impl LlmProviderType {
             LlmProviderType::Anthropic => Some("ANTHROPIC_API_KEY"),
             LlmProviderType::GitHubCopilot => None,
             LlmProviderType::OpenRouter => Some("OPENROUTER_API_KEY"),
+            LlmProviderType::ZAI => Some("GLM_AUTH_TOKEN"),
+        }
+    }
+
+    /// Get the string representation of this provider type
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            LlmProviderType::Ollama => "ollama",
+            LlmProviderType::OpenAI => "openai",
+            LlmProviderType::Anthropic => "anthropic",
+            LlmProviderType::GitHubCopilot => "github-copilot",
+            LlmProviderType::OpenRouter => "openrouter",
+            LlmProviderType::ZAI => "zai",
         }
     }
 }
@@ -49,6 +65,7 @@ impl FromStr for LlmProviderType {
             "anthropic" => Ok(LlmProviderType::Anthropic),
             "github-copilot" | "github_copilot" | "copilot" => Ok(LlmProviderType::GitHubCopilot),
             "openrouter" | "open_router" | "open-router" => Ok(LlmProviderType::OpenRouter),
+            "zai" | "z.ai" | "z_ai" => Ok(LlmProviderType::ZAI),
             other => Err(format!("Unknown provider: {}", other)),
         }
     }
@@ -95,6 +112,7 @@ impl LlmProviderConfig {
                 LlmProviderType::Anthropic => "https://api.anthropic.com/v1".to_string(),
                 LlmProviderType::GitHubCopilot => "https://api.githubcopilot.com".to_string(),
                 LlmProviderType::OpenRouter => "https://openrouter.ai/api/v1".to_string(),
+                LlmProviderType::ZAI => "https://api.z.ai/api/coding/paas/v4".to_string(),
             })
     }
 
@@ -108,6 +126,7 @@ impl LlmProviderConfig {
                 LlmProviderType::Anthropic => "claude-3-5-sonnet-20241022".to_string(),
                 LlmProviderType::GitHubCopilot => "gpt-4o".to_string(),
                 LlmProviderType::OpenRouter => "openai/gpt-4o".to_string(),
+                LlmProviderType::ZAI => "GLM-4.7".to_string(),
             })
     }
 
@@ -134,7 +153,7 @@ impl LlmProviderConfig {
         self.api_key.clone()
     }
 
-    /// Get effective models for this provider, using hardcoded fallback for Anthropic/OpenAI
+    /// Get effective models for this provider, using hardcoded fallback for Anthropic/OpenAI/ZAI
     pub fn effective_models(&self) -> Vec<String> {
         if let Some(models) = &self.available_models {
             return models.clone();
@@ -153,6 +172,11 @@ impl LlmProviderConfig {
                 "gpt-4o-mini".to_string(),
                 "o1".to_string(),
                 "o3-mini".to_string(),
+            ],
+            LlmProviderType::ZAI => vec![
+                "GLM-5".to_string(),
+                "GLM-4.7".to_string(),
+                "GLM-4.5-Air".to_string(),
             ],
             _ => Vec::new(),
         }
@@ -784,5 +808,122 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn test_zai_from_str_variants() {
+        // Test all FromStr variants for ZAI
+        assert_eq!(LlmProviderType::from_str("zai"), Ok(LlmProviderType::ZAI));
+        assert_eq!(LlmProviderType::from_str("z.ai"), Ok(LlmProviderType::ZAI));
+        assert_eq!(LlmProviderType::from_str("z_ai"), Ok(LlmProviderType::ZAI));
+    }
+
+    #[test]
+    fn test_zai_serde_aliases() {
+        // Test that various TOML formats deserialize correctly
+        let variants = [
+            r#"{"type": "zai"}"#,  // canonical lowercase form
+            r#"{"type": "z.ai"}"#, // dot alias
+            r#"{"type": "z_ai"}"#, // snake_case alias
+        ];
+
+        for json in variants {
+            let config: LlmProviderConfig = serde_json::from_str(json).unwrap();
+            assert_eq!(
+                config.provider_type,
+                LlmProviderType::ZAI,
+                "Failed to parse: {}",
+                json
+            );
+        }
+    }
+
+    #[test]
+    fn test_zai_api_key_env_var() {
+        let zai = LlmProviderType::ZAI;
+        assert_eq!(zai.api_key_env_var(), Some("GLM_AUTH_TOKEN"));
+    }
+
+    #[test]
+    fn test_zai_endpoint_default() {
+        let config = LlmProviderConfig {
+            provider_type: LlmProviderType::ZAI,
+            endpoint: None,
+            default_model: None,
+            temperature: None,
+            max_tokens: None,
+            timeout_secs: None,
+            api_key: None,
+            available_models: None,
+        };
+
+        assert_eq!(config.endpoint(), "https://api.z.ai/api/coding/paas/v4");
+    }
+
+    #[test]
+    fn test_zai_model_default() {
+        let config = LlmProviderConfig {
+            provider_type: LlmProviderType::ZAI,
+            endpoint: None,
+            default_model: None,
+            temperature: None,
+            max_tokens: None,
+            timeout_secs: None,
+            api_key: None,
+            available_models: None,
+        };
+
+        assert_eq!(config.model(), "GLM-4.7");
+    }
+
+    #[test]
+    fn test_zai_effective_models_hardcoded() {
+        let config = LlmProviderConfig {
+            provider_type: LlmProviderType::ZAI,
+            endpoint: None,
+            default_model: None,
+            temperature: None,
+            max_tokens: None,
+            timeout_secs: None,
+            api_key: None,
+            available_models: None,
+        };
+
+        let models = config.effective_models();
+        assert_eq!(
+            models,
+            vec![
+                "GLM-5".to_string(),
+                "GLM-4.7".to_string(),
+                "GLM-4.5-Air".to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn test_zai_effective_models_custom() {
+        let custom_models = vec!["custom-model".to_string()];
+        let config = LlmProviderConfig {
+            provider_type: LlmProviderType::ZAI,
+            endpoint: None,
+            default_model: None,
+            temperature: None,
+            max_tokens: None,
+            timeout_secs: None,
+            api_key: None,
+            available_models: Some(custom_models.clone()),
+        };
+
+        assert_eq!(config.effective_models(), custom_models);
+    }
+
+    #[test]
+    fn test_provider_as_str() {
+        assert_eq!(LlmProviderType::Ollama.as_str(), "ollama");
+        assert_eq!(LlmProviderType::OpenAI.as_str(), "openai");
+        assert_eq!(LlmProviderType::Anthropic.as_str(), "anthropic");
+        assert_eq!(LlmProviderType::GitHubCopilot.as_str(), "github-copilot");
+        assert_eq!(LlmProviderType::OpenRouter.as_str(), "openrouter");
+        assert_eq!(LlmProviderType::ZAI.as_str(), "zai");
     }
 }
