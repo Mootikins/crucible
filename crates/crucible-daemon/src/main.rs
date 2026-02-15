@@ -35,7 +35,12 @@ async fn main() -> Result<()> {
     let mcp_config = config.mcp.as_ref();
     let plugin_config = config.plugins.clone();
     let providers_config = config.providers.clone();
-    let web_config = config.web.clone();
+    let llm_config = if config.llm.has_providers() {
+        Some(config.llm)
+    } else {
+        None
+    };
+    let web_config = config.web;
 
     defer! {
         tracing::info!("Cleaning up daemon resources");
@@ -47,6 +52,7 @@ async fn main() -> Result<()> {
         mcp_config,
         plugin_config,
         providers_config,
+        llm_config,
         web_config,
     )
     .await?;

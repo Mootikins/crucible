@@ -250,6 +250,7 @@ mod tests {
             background_manager,
             None,
             crucible_config::ProvidersConfig::default(),
+            None,
         ));
 
         RpcContext::new(
