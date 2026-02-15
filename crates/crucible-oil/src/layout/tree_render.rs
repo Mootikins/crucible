@@ -5,7 +5,7 @@
 use super::tree::{LayoutBox, LayoutContent, LayoutTree};
 use crate::ansi::{apply_style, visible_width};
 use crate::node::Direction;
-use crate::style::{Color, Style};
+use crate::style::Style;
 use textwrap::{wrap, Options, WordSplitter};
 
 /// Render a LayoutTree to a string with ANSI escape codes.
@@ -168,8 +168,11 @@ fn render_popup(popup: &crate::node::PopupNode, width: usize, output: &mut Strin
         return;
     }
 
-    let popup_bg = popup.bg_style.bg.unwrap_or(Color::Rgb(30, 34, 42));
-    let selected_bg = popup.selected_style.bg.unwrap_or(Color::Rgb(50, 56, 68));
+    let popup_bg = popup.bg_style.bg.unwrap_or(crate::node::DEFAULT_POPUP_BG);
+    let selected_bg = popup
+        .selected_style
+        .bg
+        .unwrap_or(crate::node::DEFAULT_POPUP_SELECTED_BG);
 
     let visible_end = (popup.viewport_offset + popup.max_visible).min(popup.items.len());
     let visible_items = &popup.items[popup.viewport_offset..visible_end];

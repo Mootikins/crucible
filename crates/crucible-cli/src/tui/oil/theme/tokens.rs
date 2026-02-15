@@ -6,6 +6,7 @@
 //!
 //! Use `ThemeTokens::default_ref()` for a zero-cost `&'static` reference.
 
+use crucible_oil::node::{DEFAULT_POPUP_BG, DEFAULT_POPUP_SELECTED_BG};
 use crucible_oil::style::{Color, Style};
 
 /// Runtime color tokens for the TUI theme.
@@ -141,8 +142,8 @@ impl ThemeTokens {
             input_bg: Rgb(40, 44, 52),
             command_bg: Rgb(60, 50, 20),
             shell_bg: Rgb(60, 30, 30),
-            popup_bg: Rgb(30, 34, 42),
-            popup_selected_bg: Rgb(50, 56, 68),
+            popup_bg: DEFAULT_POPUP_BG,
+            popup_selected_bg: DEFAULT_POPUP_SELECTED_BG,
             code_bg: Rgb(35, 39, 47),
             thinking_bg: Rgb(45, 40, 55),
 
