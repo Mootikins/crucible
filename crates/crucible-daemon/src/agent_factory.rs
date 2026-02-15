@@ -147,7 +147,7 @@ pub async fn create_agent_from_session_config(
     }
     let mut llm_config = llm_config
         .model(agent_config.model.clone())
-        .api_key_from_env()
+        .with_api_key_env_var_name()
         .build();
 
     if agent_config.provider == BackendType::GitHubCopilot.as_str() {
