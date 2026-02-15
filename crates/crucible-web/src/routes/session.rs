@@ -134,6 +134,9 @@ async fn create_session(
         env_overrides: HashMap::new(),
         mcp_servers: vec![],
         agent_card_name: None,
+        capabilities: None,
+        agent_description: None,
+        delegation_config: None,
     };
 
     state
@@ -586,23 +589,23 @@ async fn fetch_openai_models(client: &reqwest::Client) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crucible_config::LlmProvider;
+    use crucible_config::LlmProviderType;
     use serial_test::serial;
 
-    #[test]
-    fn test_llm_provider_to_str_ollama() {
-        assert_eq!(llm_provider_to_str(&LlmProvider::Ollama), "ollama");
-    }
+     #[test]
+     fn test_llm_provider_to_str_ollama() {
+         assert_eq!(llm_provider_to_str(&LlmProviderType::Ollama), "ollama");
+     }
 
-    #[test]
-    fn test_llm_provider_to_str_openai() {
-        assert_eq!(llm_provider_to_str(&LlmProvider::OpenAI), "openai");
-    }
+     #[test]
+     fn test_llm_provider_to_str_openai() {
+         assert_eq!(llm_provider_to_str(&LlmProviderType::OpenAI), "openai");
+     }
 
-    #[test]
-    fn test_llm_provider_to_str_anthropic() {
-        assert_eq!(llm_provider_to_str(&LlmProvider::Anthropic), "anthropic");
-    }
+     #[test]
+     fn test_llm_provider_to_str_anthropic() {
+         assert_eq!(llm_provider_to_str(&LlmProviderType::Anthropic), "anthropic");
+     }
 
     #[test]
     fn test_format_provider_name_ollama() {

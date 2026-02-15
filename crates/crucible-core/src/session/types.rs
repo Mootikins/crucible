@@ -89,6 +89,12 @@ impl SessionAgent {
     /// - model: the provided agent_name
     /// - capabilities, agent_description, delegation_config from profile
     /// - env_overrides: profile's env vars (isolated, parent env NOT inherited)
+    ///
+    /// KNOWN LIMITATION: No permission inheritance for subagents.
+    /// Subagents start with a fresh permission state (empty env_overrides, no inherited
+    /// permissions from the parent agent). This is intentional for security: each subagent
+    /// must be explicitly configured with its own permissions. Future versions could support
+    /// selective permission inheritance with explicit allowlists.
     pub fn from_profile(profile: &AgentProfile, agent_name: &str) -> Self {
         Self {
             agent_type: "acp".to_string(),
