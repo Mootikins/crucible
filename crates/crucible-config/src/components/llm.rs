@@ -239,12 +239,6 @@ impl LlmProviderConfigBuilder {
         self
     }
 
-    /// Set the API endpoint if Some
-    pub fn maybe_endpoint(mut self, endpoint: Option<String>) -> Self {
-        self.endpoint = endpoint;
-        self
-    }
-
     /// Set the default model
     pub fn model(mut self, model: impl Into<String>) -> Self {
         self.default_model = Some(model.into());
@@ -257,21 +251,9 @@ impl LlmProviderConfigBuilder {
         self
     }
 
-    /// Set the temperature if Some
-    pub fn maybe_temperature(mut self, temp: Option<f32>) -> Self {
-        self.temperature = temp;
-        self
-    }
-
     /// Set max tokens
     pub fn max_tokens(mut self, tokens: u32) -> Self {
         self.max_tokens = Some(tokens);
-        self
-    }
-
-    /// Set max tokens if Some
-    pub fn maybe_max_tokens(mut self, tokens: Option<u32>) -> Self {
-        self.max_tokens = tokens;
         self
     }
 
