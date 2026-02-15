@@ -392,31 +392,41 @@ pub async fn create_internal_agent(
         BackendType::OpenAI => {
             agent_config = agent_config
                 .with_additional_params(serde_json::json!({"parallel_tool_calls": true}));
+            let mut builder = LlmProviderConfig::builder(crucible_config::LlmProviderType::OpenAI);
+            if let Some(endpoint) = config.chat.endpoint.clone() {
+                builder = builder.endpoint(endpoint);
+            }
             crucible_rig::create_client(
-                &LlmProviderConfig::builder(crucible_config::LlmProviderType::OpenAI)
-                    .maybe_endpoint(config.chat.endpoint.clone())
+                &builder
                     .model(model.clone())
                     .maybe_timeout_secs(config.chat.timeout_secs)
                     .api_key_from_env()
                     .build(),
             )?
         }
-        BackendType::Anthropic => crucible_rig::create_client(
-            &LlmProviderConfig::builder(crucible_config::LlmProviderType::Anthropic)
-                .maybe_endpoint(config.chat.endpoint.clone())
-                .model(model.clone())
-                .maybe_timeout_secs(config.chat.timeout_secs)
-                .api_key_from_env()
-                .build(),
-        )?,
-        BackendType::GitHubCopilot => {
-            let mut copilot_config =
-                LlmProviderConfig::builder(crucible_config::LlmProviderType::GitHubCopilot)
-                    .maybe_endpoint(config.chat.endpoint.clone())
+        BackendType::Anthropic => {
+            let mut builder = LlmProviderConfig::builder(crucible_config::LlmProviderType::Anthropic);
+            if let Some(endpoint) = config.chat.endpoint.clone() {
+                builder = builder.endpoint(endpoint);
+            }
+            crucible_rig::create_client(
+                &builder
                     .model(model.clone())
                     .maybe_timeout_secs(config.chat.timeout_secs)
                     .api_key_from_env()
-                    .build();
+                    .build(),
+            )?
+        }
+        BackendType::GitHubCopilot => {
+            let mut builder = LlmProviderConfig::builder(crucible_config::LlmProviderType::GitHubCopilot);
+            if let Some(endpoint) = config.chat.endpoint.clone() {
+                builder = builder.endpoint(endpoint);
+            }
+            let mut copilot_config = builder
+                .model(model.clone())
+                .maybe_timeout_secs(config.chat.timeout_secs)
+                .api_key_from_env()
+                .build();
 
             if let Some(oauth_token) =
                 resolve_copilot_oauth_token(copilot_config.api_key.as_deref())
@@ -426,22 +436,32 @@ pub async fn create_internal_agent(
 
             crucible_rig::create_client(&copilot_config)?
         }
-        BackendType::OpenRouter => crucible_rig::create_client(
-            &LlmProviderConfig::builder(crucible_config::LlmProviderType::OpenRouter)
-                .maybe_endpoint(config.chat.endpoint.clone())
-                .model(model.clone())
-                .maybe_timeout_secs(config.chat.timeout_secs)
-                .api_key_from_env()
-                .build(),
-        )?,
-        BackendType::ZAI => crucible_rig::create_client(
-            &LlmProviderConfig::builder(crucible_config::LlmProviderType::ZAI)
-                .maybe_endpoint(config.chat.endpoint.clone())
-                .model(model.clone())
-                .maybe_timeout_secs(config.chat.timeout_secs)
-                .api_key_from_env()
-                .build(),
-        )?,
+        BackendType::OpenRouter => {
+            let mut builder = LlmProviderConfig::builder(crucible_config::LlmProviderType::OpenRouter);
+            if let Some(endpoint) = config.chat.endpoint.clone() {
+                builder = builder.endpoint(endpoint);
+            }
+            crucible_rig::create_client(
+                &builder
+                    .model(model.clone())
+                    .maybe_timeout_secs(config.chat.timeout_secs)
+                    .api_key_from_env()
+                    .build(),
+            )?
+        }
+        BackendType::ZAI => {
+            let mut builder = LlmProviderConfig::builder(crucible_config::LlmProviderType::ZAI);
+            if let Some(endpoint) = config.chat.endpoint.clone() {
+                builder = builder.endpoint(endpoint);
+            }
+            crucible_rig::create_client(
+                &builder
+                    .model(model.clone())
+                    .maybe_timeout_secs(config.chat.timeout_secs)
+                    .api_key_from_env()
+                    .build(),
+            )?
+        }
         _ => anyhow::bail!("Unsupported provider backend: {:?}", provider_backend),
     };
 
