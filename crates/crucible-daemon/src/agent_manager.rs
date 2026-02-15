@@ -1577,7 +1577,13 @@ mod tests {
     ) -> AgentManager {
         let (event_tx, _) = broadcast::channel(16);
         let background_manager = Arc::new(BackgroundJobManager::new(event_tx));
-        AgentManager::new(session_manager, background_manager, None, providers_config, None)
+        AgentManager::new(
+            session_manager,
+            background_manager,
+            None,
+            providers_config,
+            None,
+        )
     }
 
     #[tokio::test]
@@ -3047,8 +3053,7 @@ mod tests {
             let mut providers_config = crucible_config::ProvidersConfig::new();
             providers_config.add(
                 "ollama",
-                ProviderConfig::new(BackendType::Ollama)
-                    .with_endpoint("http://localhost:11434"),
+                ProviderConfig::new(BackendType::Ollama).with_endpoint("http://localhost:11434"),
             );
             providers_config.add(
                 "zai",
@@ -3104,8 +3109,7 @@ mod tests {
             let mut providers_config = crucible_config::ProvidersConfig::new();
             providers_config.add(
                 "ollama",
-                ProviderConfig::new(BackendType::Ollama)
-                    .with_endpoint("http://localhost:11434"),
+                ProviderConfig::new(BackendType::Ollama).with_endpoint("http://localhost:11434"),
             );
 
             let agent_manager =
@@ -3156,8 +3160,7 @@ mod tests {
             let mut providers_config = crucible_config::ProvidersConfig::new();
             providers_config.add(
                 "ollama",
-                ProviderConfig::new(BackendType::Ollama)
-                    .with_endpoint("http://localhost:11434"),
+                ProviderConfig::new(BackendType::Ollama).with_endpoint("http://localhost:11434"),
             );
 
             let agent_manager =
@@ -3205,8 +3208,7 @@ mod tests {
             let mut providers_config = crucible_config::ProvidersConfig::new();
             providers_config.add(
                 "ollama",
-                ProviderConfig::new(BackendType::Ollama)
-                    .with_endpoint("http://localhost:11434"),
+                ProviderConfig::new(BackendType::Ollama).with_endpoint("http://localhost:11434"),
             );
             providers_config.add(
                 "zai",

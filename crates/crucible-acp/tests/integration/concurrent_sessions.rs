@@ -147,8 +147,14 @@ fn assert_chunk_eq(left: &StreamingChunk, right: &StreamingChunk) {
         (StreamingChunk::Text(a), StreamingChunk::Text(b)) => assert_eq!(a, b),
         (StreamingChunk::Thinking(a), StreamingChunk::Thinking(b)) => assert_eq!(a, b),
         (
-            StreamingChunk::ToolStart { name: a_name, id: a_id },
-            StreamingChunk::ToolStart { name: b_name, id: b_id },
+            StreamingChunk::ToolStart {
+                name: a_name,
+                id: a_id,
+            },
+            StreamingChunk::ToolStart {
+                name: b_name,
+                id: b_id,
+            },
         ) => {
             assert_eq!(a_name, b_name);
             assert_eq!(a_id, b_id);
@@ -162,10 +168,15 @@ fn assert_chunk_eq(left: &StreamingChunk, right: &StreamingChunk) {
 
 #[tokio::test]
 async fn concurrent_dual_sessions_isolated_no_cross_contamination() {
-    let (mut client_a, _handle_a) = ThreadedMockAgent::spawn_with_client(MockStdioAgentConfig::opencode());
-    let (mut client_b, _handle_b) = ThreadedMockAgent::spawn_with_client(MockStdioAgentConfig::opencode());
+    let (mut client_a, _handle_a) =
+        ThreadedMockAgent::spawn_with_client(MockStdioAgentConfig::opencode());
+    let (mut client_b, _handle_b) =
+        ThreadedMockAgent::spawn_with_client(MockStdioAgentConfig::opencode());
 
-    let (session_a, session_b) = tokio::join!(client_a.connect_with_handshake(), client_b.connect_with_handshake());
+    let (session_a, session_b) = tokio::join!(
+        client_a.connect_with_handshake(),
+        client_b.connect_with_handshake()
+    );
 
     let session_a = session_a.expect("session A should connect");
     let session_b = session_b.expect("session B should connect");
@@ -218,8 +229,10 @@ async fn concurrent_agent_cache_isolation_with_clear_boundaries() {
 
 #[tokio::test]
 async fn stream_edge_chunk_ordering_preserved_per_stream_with_parallel_streams() {
-    let (mut client_a, mut agent_a_reader, mut agent_a_writer) = client_with_custom_transport(Some(300));
-    let (mut client_b, mut agent_b_reader, mut agent_b_writer) = client_with_custom_transport(Some(300));
+    let (mut client_a, mut agent_a_reader, mut agent_a_writer) =
+        client_with_custom_transport(Some(300));
+    let (mut client_b, mut agent_b_reader, mut agent_b_writer) =
+        client_with_custom_transport(Some(300));
     let barrier = std::sync::Arc::new(Barrier::new(3));
 
     let barrier_a = barrier.clone();
@@ -348,10 +361,7 @@ async fn stream_edge_cancel_mid_stream_aborts_and_closes_transport() {
     let stream_task = tokio::spawn(async move {
         let request = make_prompt_request("cancel-session", "cancel me");
         client
-            .send_prompt_with_callback(
-                request,
-                Box::new(|_| true),
-            )
+            .send_prompt_with_callback(request, Box::new(|_| true))
             .await
     });
 
@@ -362,7 +372,10 @@ async fn stream_edge_cancel_mid_stream_aborts_and_closes_transport() {
     let transport_closed = cleanup_rx
         .await
         .expect("cleanup signal should be sent by agent");
-    assert!(transport_closed, "aborted stream should close transport and fail agent writes");
+    assert!(
+        transport_closed,
+        "aborted stream should close transport and fail agent writes"
+    );
 }
 
 #[test]
@@ -402,7 +415,10 @@ fn stream_edge_stream_config_respects_show_tool_calls_toggle() {
     });
 
     let params = json!({"path": "demo.md"});
-    assert!(with_tools.format_tool_call("read_note", &params).unwrap().is_some());
+    assert!(with_tools
+        .format_tool_call("read_note", &params)
+        .unwrap()
+        .is_some());
     assert!(without_tools
         .format_tool_call("read_note", &params)
         .unwrap()
@@ -432,7 +448,8 @@ fn stream_edge_streaming_chunk_round_trip_variants() {
 
 #[tokio::test]
 async fn stream_edge_large_response_near_max_output_is_accumulated() {
-    let (mut client, mut agent_reader, mut agent_writer) = client_with_custom_transport(Some(1_000));
+    let (mut client, mut agent_reader, mut agent_writer) =
+        client_with_custom_transport(Some(1_000));
 
     let large_text = "x".repeat(MAX_SUBAGENT_OUTPUT - 4096);
     let expected_len = large_text.len();

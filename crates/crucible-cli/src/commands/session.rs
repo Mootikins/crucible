@@ -133,7 +133,10 @@ async fn search(config: CliConfig, query: String, limit: u32) -> Result<()> {
     let matches = match search_with_ripgrep(&sessions_path, &query, limit).await {
         Ok(results) => results,
         Err(e) => {
-            tracing::debug!("Ripgrep search failed ({}), falling back to in-memory scan", e);
+            tracing::debug!(
+                "Ripgrep search failed ({}), falling back to in-memory scan",
+                e
+            );
             search_in_memory(&sessions_path, &query, limit).await?
         }
     };
@@ -917,25 +920,25 @@ async fn daemon_configure(
         .map(|mcp| mcp.servers.iter().map(|s| s.name.clone()).collect())
         .unwrap_or_default();
 
-     let agent = crucible_core::session::SessionAgent {
-         agent_type: "internal".to_string(),
-         agent_name: None,
-         provider_key: Some(provider.to_string()),
-         provider: provider.to_string(),
-         model: model.to_string(),
-         system_prompt: String::new(),
-         temperature: None,
-         max_tokens: None,
-         max_context_tokens: None,
-         thinking_budget: None,
-         endpoint,
-         env_overrides: std::collections::HashMap::new(),
-         mcp_servers,
-         agent_card_name: None,
-         capabilities: None,
-         agent_description: None,
-         delegation_config: None,
-     };
+    let agent = crucible_core::session::SessionAgent {
+        agent_type: "internal".to_string(),
+        agent_name: None,
+        provider_key: Some(provider.to_string()),
+        provider: provider.to_string(),
+        model: model.to_string(),
+        system_prompt: String::new(),
+        temperature: None,
+        max_tokens: None,
+        max_context_tokens: None,
+        thinking_budget: None,
+        endpoint,
+        env_overrides: std::collections::HashMap::new(),
+        mcp_servers,
+        agent_card_name: None,
+        capabilities: None,
+        agent_description: None,
+        delegation_config: None,
+    };
 
     client.session_configure_agent(session_id, &agent).await?;
 

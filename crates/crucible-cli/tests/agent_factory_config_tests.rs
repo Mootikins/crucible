@@ -87,6 +87,7 @@ fn test_llm_config_with_single_ollama_provider() {
             max_tokens: Some(4096),
             timeout_secs: Some(120),
             api_key: None,
+            available_models: None,
         },
     );
 
@@ -116,6 +117,7 @@ fn test_llm_config_with_multiple_providers() {
             max_tokens: None,
             timeout_secs: None,
             api_key: None,
+            available_models: None,
         },
     );
 
@@ -129,6 +131,7 @@ fn test_llm_config_with_multiple_providers() {
             max_tokens: Some(8192),
             timeout_secs: Some(300),
             api_key: Some("OPENAI_API_KEY".to_string()),
+            available_models: None,
         },
     );
 
@@ -171,6 +174,7 @@ fn test_llm_config_invalid_default_provider() {
             max_tokens: None,
             timeout_secs: None,
             api_key: None,
+            available_models: None,
         },
     );
 
@@ -195,6 +199,7 @@ fn test_provider_type_ollama_defaults() {
         max_tokens: None,
         timeout_secs: None,
         api_key: None,
+        available_models: None,
     };
 
     assert_eq!(provider.endpoint(), "http://localhost:11434");
@@ -214,6 +219,7 @@ fn test_provider_type_openai_defaults() {
         max_tokens: None,
         timeout_secs: None,
         api_key: None,
+        available_models: None,
     };
 
     assert_eq!(provider.endpoint(), "https://api.openai.com/v1");
@@ -233,6 +239,7 @@ fn test_provider_type_anthropic_defaults() {
         max_tokens: None,
         timeout_secs: None,
         api_key: None,
+        available_models: None,
     };
 
     assert_eq!(provider.endpoint(), "https://api.anthropic.com/v1");
@@ -252,6 +259,7 @@ fn test_provider_custom_overrides() {
         max_tokens: Some(8192),
         timeout_secs: Some(300),
         api_key: None,
+        available_models: None,
     };
 
     assert_eq!(provider.endpoint(), "http://192.168.1.100:11434");
@@ -337,6 +345,7 @@ async fn test_create_internal_agent_with_named_provider() {
             max_tokens: Some(4096),
             timeout_secs: Some(120),
             api_key: None,
+            available_models: None,
         },
     );
 
@@ -398,6 +407,7 @@ fn test_model_name_from_named_provider() {
             max_tokens: None,
             timeout_secs: None,
             api_key: None,
+            available_models: None,
         },
     );
 
@@ -563,6 +573,7 @@ fn test_provider_api_key_direct_value() {
         max_tokens: None,
         timeout_secs: None,
         api_key: Some("sk-test-key-12345".to_string()),
+        available_models: None,
     };
 
     assert_eq!(provider.api_key(), Some("sk-test-key-12345".to_string()));
@@ -578,6 +589,7 @@ fn test_provider_no_api_key_configured() {
         max_tokens: None,
         timeout_secs: None,
         api_key: None,
+        available_models: None,
     };
 
     // Should return None if no api_key configured
@@ -601,6 +613,7 @@ fn test_realistic_ollama_config() {
             max_tokens: Some(4096),
             timeout_secs: Some(120),
             api_key: None,
+            available_models: None,
         },
     );
 
@@ -626,6 +639,7 @@ fn test_realistic_openai_config() {
             max_tokens: Some(8192),
             timeout_secs: Some(300),
             api_key: Some("OPENAI_API_KEY".to_string()),
+            available_models: None,
         },
     );
 
@@ -655,6 +669,7 @@ fn test_realistic_multi_provider_config() {
             max_tokens: Some(4096),
             timeout_secs: Some(120),
             api_key: None,
+            available_models: None,
         },
     );
 
@@ -663,12 +678,13 @@ fn test_realistic_multi_provider_config() {
         "prod".to_string(),
         LlmProviderConfig {
             provider_type: LlmProviderType::OpenAI,
-            endpoint: None,
+            endpoint: None, // Use default
             default_model: Some("gpt-4o".to_string()),
             temperature: Some(0.5),
             max_tokens: Some(8192),
             timeout_secs: Some(300),
             api_key: Some("OPENAI_API_KEY".to_string()),
+            available_models: None,
         },
     );
 
@@ -683,6 +699,7 @@ fn test_realistic_multi_provider_config() {
             max_tokens: Some(4096),
             timeout_secs: Some(300),
             api_key: Some("ANTHROPIC_API_KEY".to_string()),
+            available_models: None,
         },
     );
 

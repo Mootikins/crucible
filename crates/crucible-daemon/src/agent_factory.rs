@@ -6,6 +6,7 @@
 
 use crate::acp_handle::AcpAgentHandle;
 use crate::protocol::SessionEventMessage;
+use crucible_config::credentials::SecretsFile;
 use crucible_config::{LlmProviderConfig, LlmProviderType};
 use crucible_core::background::BackgroundSpawner;
 use crucible_core::interaction_registry::InteractionRegistry;
@@ -23,7 +24,6 @@ use std::sync::Arc;
 use thiserror::Error;
 use tokio::sync::broadcast;
 use tracing::{debug, info};
-use crucible_config::credentials::SecretsFile;
 
 #[derive(Error, Debug)]
 pub enum AgentFactoryError {

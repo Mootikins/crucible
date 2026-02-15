@@ -53,7 +53,10 @@ fn client_with_custom_transport(
     (client, BufReader::new(agent_read), agent_write)
 }
 
-fn protocol_guard(agent_version: ProtocolVersion, local_version: ProtocolVersion) -> Result<(), ClientError> {
+fn protocol_guard(
+    agent_version: ProtocolVersion,
+    local_version: ProtocolVersion,
+) -> Result<(), ClientError> {
     if agent_version.is_compatible_with(&local_version) {
         Ok(())
     } else {
@@ -111,7 +114,9 @@ async fn test_error_malformed_json_response_returns_serialization_error() {
     tokio::spawn(async move {
         let mut request_line = String::new();
         let _ = agent_reader.read_line(&mut request_line).await;
-        let _ = agent_writer.write_all(b"{ this is not valid json }\n").await;
+        let _ = agent_writer
+            .write_all(b"{ this is not valid json }\n")
+            .await;
         let _ = agent_writer.flush().await;
     });
 
@@ -131,9 +136,7 @@ async fn test_error_invalid_json_rpc_shape_returns_session_error() {
     tokio::spawn(async move {
         let mut request_line = String::new();
         let _ = agent_reader.read_line(&mut request_line).await;
-        let _ = agent_writer
-            .write_all(br#"{"jsonrpc":"2.0","id":1}"#)
-            .await;
+        let _ = agent_writer.write_all(br#"{"jsonrpc":"2.0","id":1}"#).await;
         let _ = agent_writer.write_all(b"\n").await;
         let _ = agent_writer.flush().await;
     });
@@ -275,7 +278,10 @@ async fn test_error_stream_abort_from_threaded_mock_agent_is_recoverable() {
         .send_prompt_with_streaming(make_prompt_request("ses-abort"))
         .await;
 
-    assert!(result.is_err(), "aborted agent should return an error, not panic");
+    assert!(
+        result.is_err(),
+        "aborted agent should return an error, not panic"
+    );
 }
 
 #[tokio::test]
