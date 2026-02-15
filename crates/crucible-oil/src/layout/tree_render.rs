@@ -11,7 +11,6 @@
 
 use crate::ansi::apply_style;
 use crate::cell_grid::CellGrid;
-use crate::layout::Rect;
 use crate::node::BRAILLE_SPINNER_FRAMES;
 use crate::style::{Border, Style};
 use crate::utils::truncate_to_width;
@@ -41,12 +40,35 @@ pub fn render_layout_tree(tree: &LayoutTree) -> String {
     }
 
     let mut grid = CellGrid::new(width, height);
-    render_box(&tree.root, &mut grid);
+    render_box_filtered(&tree.root, &mut grid, &|_| false);
+    grid.to_string_joined()
+}
+
+pub fn render_layout_tree_filtered<F>(tree: &LayoutTree, skip_key: F) -> String
+where
+    F: Fn(&str) -> bool,
+{
+    let width = tree.root.rect.width as usize;
+    let height = tree.root.rect.height as usize;
+
+    if width == 0 || height == 0 {
+        return String::new();
+    }
+
+    let mut grid = CellGrid::new(width, height);
+    render_box_filtered(&tree.root, &mut grid, &skip_key);
     grid.to_string_joined()
 }
 
 /// Recursively render a LayoutBox and its children to the grid.
-fn render_box(layout_box: &LayoutBox, grid: &mut CellGrid) {
+fn render_box_filtered<F>(layout_box: &LayoutBox, grid: &mut CellGrid, skip_key: &F)
+where
+    F: Fn(&str) -> bool,
+{
+    if layout_box.key.as_deref().is_some_and(skip_key) {
+        return;
+    }
+
     let x = layout_box.rect.x as usize;
     let y = layout_box.rect.y as usize;
     let width = layout_box.rect.width as usize;
@@ -127,7 +149,7 @@ fn render_box(layout_box: &LayoutBox, grid: &mut CellGrid) {
 
     // Render children (later children can overwrite earlier ones for z-order)
     for child in &layout_box.children {
-        render_box(child, grid);
+        render_box_filtered(child, grid, skip_key);
     }
 }
 
@@ -368,6 +390,7 @@ fn visible_width(s: &str) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::layout::Rect;
 
     #[test]
     fn render_empty_tree() {

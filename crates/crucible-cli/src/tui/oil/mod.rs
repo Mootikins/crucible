@@ -62,7 +62,6 @@ mod render;
 mod runner;
 mod runtime;
 mod style;
-mod taffy_layout;
 mod terminal;
 mod test_harness;
 pub mod theme;
