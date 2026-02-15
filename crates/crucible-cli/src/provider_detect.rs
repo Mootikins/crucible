@@ -7,7 +7,7 @@
 //! - Anthropic: ANTHROPIC_API_KEY env var or credential store
 
 use crucible_config::credentials::{CredentialSource, CredentialStore, SecretsFile};
-use crucible_config::{ChatConfig, LlmConfig, LlmProviderType};
+use crucible_config::{BackendType, ChatConfig, LlmConfig};
 use std::time::Duration;
 
 /// Default Ollama endpoint
@@ -92,14 +92,15 @@ pub async fn check_ollama_models(endpoint: &str) -> Option<Vec<String>> {
 }
 
 /// Fetch available models for a provider, returning formatted as "provider/model"
-pub async fn fetch_provider_models(provider: &LlmProviderType, endpoint: &str) -> Vec<String> {
+pub async fn fetch_provider_models(provider: &BackendType, endpoint: &str) -> Vec<String> {
     match provider {
-        LlmProviderType::Ollama => fetch_ollama_models(endpoint).await,
-        LlmProviderType::OpenAI => fetch_openai_models(endpoint).await,
-        LlmProviderType::Anthropic => anthropic_models(),
-        LlmProviderType::GitHubCopilot => Vec::new(),
-        LlmProviderType::OpenRouter => Vec::new(),
-        LlmProviderType::ZAI => zai_models(),
+        BackendType::Ollama => fetch_ollama_models(endpoint).await,
+        BackendType::OpenAI => fetch_openai_models(endpoint).await,
+        BackendType::Anthropic => anthropic_models(),
+        BackendType::GitHubCopilot => Vec::new(),
+        BackendType::OpenRouter => Vec::new(),
+        BackendType::ZAI => zai_models(),
+        _ => Vec::new(),
     }
 }
 
@@ -208,8 +209,10 @@ pub async fn fetch_all_provider_models(llm_config: &LlmConfig) -> Vec<String> {
     let mut ollama_futures = Vec::new();
 
     for (key, config) in &llm_config.providers {
-        match config.provider_type {
-            LlmProviderType::Ollama => {
+        #[allow(deprecated)] // LlmProviderConfig.provider_type is LlmProviderType
+        let backend: BackendType = config.provider_type.into();
+        match backend {
+            BackendType::Ollama => {
                 let key = key.clone();
                 let endpoint = config.endpoint();
                 let fut = async move {
@@ -289,11 +292,13 @@ pub async fn fetch_model_context_length(endpoint: &str, model_id: &str) -> Optio
 /// Detect available providers from config and environment only (no HTTP probes).
 ///
 /// Checks: config file provider, OLLAMA_HOST env, API key env vars, credential store.
+#[allow(deprecated)] // ChatConfig.provider is LlmProviderType
 pub fn detect_providers(config: &ChatConfig) -> Vec<DetectedProvider> {
     let mut providers = Vec::new();
+    let provider_backend: BackendType = config.provider.into();
 
-    match config.provider {
-        LlmProviderType::Ollama => {
+    match provider_backend {
+        BackendType::Ollama => {
             let endpoint = config.endpoint.as_deref().unwrap_or(DEFAULT_OLLAMA_HOST);
             let reason = if std::env::var("OLLAMA_HOST").is_ok() {
                 format!("OLLAMA_HOST={}", ollama_endpoint())
@@ -311,7 +316,7 @@ pub fn detect_providers(config: &ChatConfig) -> Vec<DetectedProvider> {
                 source: None,
             });
         }
-        LlmProviderType::OpenAI => {
+        BackendType::OpenAI => {
             if let Some(src) = has_api_key_with_source("openai") {
                 providers.push(DetectedProvider {
                     name: "OpenAI".to_string(),
@@ -323,7 +328,7 @@ pub fn detect_providers(config: &ChatConfig) -> Vec<DetectedProvider> {
                 });
             }
         }
-        LlmProviderType::Anthropic => {
+        BackendType::Anthropic => {
             if let Some(src) = has_api_key_with_source("anthropic") {
                 providers.push(DetectedProvider {
                     name: "Anthropic".to_string(),
@@ -338,11 +343,8 @@ pub fn detect_providers(config: &ChatConfig) -> Vec<DetectedProvider> {
                 });
             }
         }
-        LlmProviderType::GitHubCopilot => {
-            // GitHub Copilot requires OAuth flow, not a simple API key
-            // For now, we don't auto-detect it
-        }
-        LlmProviderType::OpenRouter => {
+        BackendType::GitHubCopilot => {}
+        BackendType::OpenRouter => {
             if let Some(src) = has_api_key_with_source("openrouter") {
                 providers.push(DetectedProvider {
                     name: "OpenRouter".to_string(),
@@ -354,7 +356,7 @@ pub fn detect_providers(config: &ChatConfig) -> Vec<DetectedProvider> {
                 });
             }
         }
-        LlmProviderType::ZAI => {
+        BackendType::ZAI => {
             if let Some(src) = has_api_key_with_source("zai") {
                 providers.push(DetectedProvider {
                     name: "Z.AI".to_string(),
@@ -366,6 +368,7 @@ pub fn detect_providers(config: &ChatConfig) -> Vec<DetectedProvider> {
                 });
             }
         }
+        _ => {}
     }
 
     // Also detect providers not in config but available via env/credentials
@@ -413,8 +416,10 @@ pub fn detect_providers(config: &ChatConfig) -> Vec<DetectedProvider> {
 }
 
 #[cfg(test)]
+#[allow(deprecated)] // Tests construct ChatConfig with LlmProviderType fields
 mod tests {
     use super::*;
+    use crucible_config::LlmProviderType;
     use serial_test::serial;
 
     #[test]

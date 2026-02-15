@@ -230,23 +230,26 @@ pub async fn create_internal_agent(
     config: &CliAppConfig,
     params: AgentInitParams,
 ) -> Result<Box<dyn AgentHandle + Send + Sync>> {
-    use crucible_config::LlmProviderType;
+    use crucible_config::BackendType;
     use crucible_context::{LayeredPromptBuilder, PromptBuilder};
     use crucible_core::prompts::{base_prompt_for_size, ModelSize};
     use crucible_rig::{build_agent_with_kiln_tools, AgentComponents, RigAgentHandle};
 
-    // Get model name from config
+    #[allow(deprecated)] // ChatConfig.provider is LlmProviderType
+    let provider_backend: BackendType = config.chat.provider.into();
+
     let model = config
         .chat
         .model
         .clone()
-        .unwrap_or_else(|| match config.chat.provider {
-            LlmProviderType::Ollama => "llama3.2".to_string(),
-            LlmProviderType::OpenAI => "gpt-4o".to_string(),
-            LlmProviderType::Anthropic => "claude-3-5-sonnet-20241022".to_string(),
-            LlmProviderType::GitHubCopilot => "gpt-4o".to_string(),
-            LlmProviderType::OpenRouter => "openai/gpt-4o".to_string(),
-            LlmProviderType::ZAI => "GLM-4.7".to_string(),
+        .unwrap_or_else(|| match provider_backend {
+            BackendType::Ollama => "llama3.2".to_string(),
+            BackendType::OpenAI => "gpt-4o".to_string(),
+            BackendType::Anthropic => "claude-3-5-sonnet-20241022".to_string(),
+            BackendType::GitHubCopilot => "gpt-4o".to_string(),
+            BackendType::OpenRouter => "openai/gpt-4o".to_string(),
+            BackendType::ZAI => "GLM-4.7".to_string(),
+            _ => crucible_config::DEFAULT_CHAT_MODEL.to_string(),
         });
 
     // Detect model size (or use Medium if size-aware prompts disabled)
@@ -328,8 +331,9 @@ pub async fn create_internal_agent(
     let mut reasoning_endpoint: Option<String> = None;
     let mut ollama_endpoint: Option<String> = None;
 
-    let client = match config.chat.provider {
-        LlmProviderType::Ollama => {
+    #[allow(deprecated)] // LlmProviderConfig::builder requires LlmProviderType
+    let client = match provider_backend {
+        BackendType::Ollama => {
             let endpoint = config
                 .chat
                 .endpoint
@@ -351,7 +355,7 @@ pub async fn create_internal_agent(
                 }
                 // Local Ollama - use native client
                 crucible_rig::create_client(
-                    &LlmProviderConfig::builder(LlmProviderType::Ollama)
+                    &LlmProviderConfig::builder(crucible_config::LlmProviderType::Ollama)
                         .endpoint(endpoint)
                         .model(model.clone())
                         .maybe_timeout_secs(config.chat.timeout_secs)
@@ -377,7 +381,7 @@ pub async fn create_internal_agent(
                     compat_endpoint
                 );
                 crucible_rig::create_client(
-                    &LlmProviderConfig::builder(LlmProviderType::OpenAI)
+                    &LlmProviderConfig::builder(crucible_config::LlmProviderType::OpenAI)
                         .endpoint(compat_endpoint)
                         .model(model.clone())
                         .maybe_timeout_secs(config.chat.timeout_secs)
@@ -385,11 +389,11 @@ pub async fn create_internal_agent(
                 )?
             }
         }
-        LlmProviderType::OpenAI => {
+        BackendType::OpenAI => {
             agent_config = agent_config
                 .with_additional_params(serde_json::json!({"parallel_tool_calls": true}));
             crucible_rig::create_client(
-                &LlmProviderConfig::builder(LlmProviderType::OpenAI)
+                &LlmProviderConfig::builder(crucible_config::LlmProviderType::OpenAI)
                     .maybe_endpoint(config.chat.endpoint.clone())
                     .model(model.clone())
                     .maybe_timeout_secs(config.chat.timeout_secs)
@@ -397,23 +401,23 @@ pub async fn create_internal_agent(
                     .build(),
             )?
         }
-        LlmProviderType::Anthropic => crucible_rig::create_client(
-            &LlmProviderConfig::builder(LlmProviderType::Anthropic)
+        BackendType::Anthropic => crucible_rig::create_client(
+            &LlmProviderConfig::builder(crucible_config::LlmProviderType::Anthropic)
                 .maybe_endpoint(config.chat.endpoint.clone())
                 .model(model.clone())
                 .maybe_timeout_secs(config.chat.timeout_secs)
                 .api_key_from_env()
                 .build(),
         )?,
-        LlmProviderType::GitHubCopilot => {
-            let mut copilot_config = LlmProviderConfig::builder(LlmProviderType::GitHubCopilot)
-                .maybe_endpoint(config.chat.endpoint.clone())
-                .model(model.clone())
-                .maybe_timeout_secs(config.chat.timeout_secs)
-                .api_key_from_env()
-                .build();
+        BackendType::GitHubCopilot => {
+            let mut copilot_config =
+                LlmProviderConfig::builder(crucible_config::LlmProviderType::GitHubCopilot)
+                    .maybe_endpoint(config.chat.endpoint.clone())
+                    .model(model.clone())
+                    .maybe_timeout_secs(config.chat.timeout_secs)
+                    .api_key_from_env()
+                    .build();
 
-            // Resolve OAuth token from credential store
             if let Some(oauth_token) =
                 resolve_copilot_oauth_token(copilot_config.api_key.as_deref())
             {
@@ -422,22 +426,23 @@ pub async fn create_internal_agent(
 
             crucible_rig::create_client(&copilot_config)?
         }
-        LlmProviderType::OpenRouter => crucible_rig::create_client(
-            &LlmProviderConfig::builder(LlmProviderType::OpenRouter)
+        BackendType::OpenRouter => crucible_rig::create_client(
+            &LlmProviderConfig::builder(crucible_config::LlmProviderType::OpenRouter)
                 .maybe_endpoint(config.chat.endpoint.clone())
                 .model(model.clone())
                 .maybe_timeout_secs(config.chat.timeout_secs)
                 .api_key_from_env()
                 .build(),
         )?,
-        LlmProviderType::ZAI => crucible_rig::create_client(
-            &LlmProviderConfig::builder(LlmProviderType::ZAI)
+        BackendType::ZAI => crucible_rig::create_client(
+            &LlmProviderConfig::builder(crucible_config::LlmProviderType::ZAI)
                 .maybe_endpoint(config.chat.endpoint.clone())
                 .model(model.clone())
                 .maybe_timeout_secs(config.chat.timeout_secs)
                 .api_key_from_env()
                 .build(),
         )?,
+        _ => anyhow::bail!("Unsupported provider backend: {:?}", provider_backend),
     };
 
     let has_kiln = params.kiln_context.is_some();
@@ -625,6 +630,7 @@ pub async fn create_internal_agent(
 }
 
 /// Create an agent via daemon (auto-starts daemon if needed)
+#[allow(deprecated)] // ChatConfig.provider is LlmProviderType
 pub async fn create_daemon_agent(
     config: &CliAppConfig,
     params: &AgentInitParams,
@@ -805,8 +811,8 @@ pub async fn create_daemon_agent(
             SessionAgent {
                 agent_type: "internal".to_string(),
                 agent_name: None,
-                provider_key: Some(format!("{:?}", config.chat.provider).to_lowercase()),
-                provider: format!("{:?}", config.chat.provider).to_lowercase(),
+                provider_key: Some(config.chat.provider.as_str().to_string()),
+                provider: config.chat.provider.as_str().to_string(),
                 model,
                 system_prompt: String::new(),
                 temperature: config.chat.temperature.map(|t| t as f64),

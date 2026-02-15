@@ -1135,6 +1135,7 @@ impl AgentManager {
     ///
     /// Checks `LlmConfig` (new system) first, then `ProvidersConfig` (legacy).
     /// Returns `None` if the provider key is not found in either system.
+    #[allow(deprecated)] // LlmProviderConfig.provider_type is LlmProviderType
     fn resolve_provider_config(&self, provider_key: &str) -> Option<ResolvedProvider> {
         if let Some(llm_provider) = self
             .llm_config
@@ -1293,15 +1294,16 @@ impl AgentManager {
     }
 
     pub async fn list_models(&self, session_id: &str) -> Result<Vec<String>, AgentError> {
-        use crucible_config::LlmProviderType;
+        use crucible_config::BackendType;
 
         let mut all_models = Vec::new();
 
-        // Collect models from LlmConfig (new system)
         if let Some(ref llm_config) = self.llm_config {
             for (provider_key, provider_config) in &llm_config.providers {
-                let models = match provider_config.provider_type {
-                    LlmProviderType::Ollama => {
+                #[allow(deprecated)] // LlmProviderConfig.provider_type is LlmProviderType
+                let backend: BackendType = provider_config.provider_type.into();
+                let models = match backend {
+                    BackendType::Ollama => {
                         let endpoint = provider_config
                             .endpoint
                             .as_deref()
