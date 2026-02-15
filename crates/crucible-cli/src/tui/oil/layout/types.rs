@@ -170,6 +170,10 @@ pub enum LayoutContent {
         viewport_offset: usize,
         /// Maximum visible items.
         max_visible: usize,
+        /// Background style for unselected items.
+        bg_style: crucible_oil::style::Style,
+        /// Background style for selected item.
+        selected_style: crucible_oil::style::Style,
     },
 
     /// Container box (column or row).

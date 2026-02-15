@@ -343,6 +343,8 @@ mod tests {
                 selected: 0,
                 viewport_offset: 0,
                 max_visible: 5,
+                bg_style: crucible_oil::style::Style::new(),
+                selected_style: crucible_oil::style::Style::new(),
             },
         );
 

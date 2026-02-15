@@ -393,6 +393,8 @@ impl LayoutEngine {
                     selected: popup.selected,
                     viewport_offset: popup.viewport_offset,
                     max_visible: popup.max_visible,
+                    bg_style: popup.bg_style,
+                    selected_style: popup.selected_style,
                 },
             ),
 

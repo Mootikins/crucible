@@ -281,8 +281,8 @@ pub fn popup(items: Vec<PopupItemNode>, selected: usize, max_visible: usize) -> 
         items,
         selected,
         max_visible,
-        Color::Rgb(45, 50, 60),
-        Color::Rgb(60, 70, 90),
+        Color::Rgb(30, 34, 42),
+        Color::Rgb(50, 56, 68),
     )
 }
 
