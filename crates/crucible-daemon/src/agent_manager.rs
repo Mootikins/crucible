@@ -111,6 +111,22 @@ struct PendingPermission {
     response_tx: oneshot::Sender<PermResponse>,
 }
 
+/// Resolved provider configuration from either the new LlmConfig or legacy ProvidersConfig system.
+///
+/// This struct unifies the lookup result so callers don't need to know
+/// which config system the provider came from.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ResolvedProvider {
+    /// Backend/provider type string (e.g., "zai", "ollama", "openai")
+    pub provider_type: String,
+    /// API endpoint, if configured
+    pub endpoint: Option<String>,
+    /// API key, if configured
+    pub api_key: Option<String>,
+    /// Which config system this was resolved from, for logging
+    pub source: &'static str,
+}
+
 pub struct AgentManager {
     request_state: Arc<DashMap<String, RequestState>>,
     agent_cache: Arc<DashMap<String, Arc<Mutex<BoxedAgentHandle>>>>,
@@ -1113,6 +1129,36 @@ impl AgentManager {
             warn!(session_id = %session_id, "No active request to cancel");
             false
         }
+    }
+
+    /// Resolve provider configuration from either config system.
+    ///
+    /// Checks `LlmConfig` (new system) first, then `ProvidersConfig` (legacy).
+    /// Returns `None` if the provider key is not found in either system.
+    fn resolve_provider_config(&self, provider_key: &str) -> Option<ResolvedProvider> {
+        if let Some(llm_provider) = self
+            .llm_config
+            .as_ref()
+            .and_then(|c| c.providers.get(provider_key))
+        {
+            return Some(ResolvedProvider {
+                provider_type: llm_provider.provider_type.as_str().to_string(),
+                endpoint: Some(llm_provider.endpoint()),
+                api_key: llm_provider.api_key.clone(),
+                source: "llm_config",
+            });
+        }
+
+        if let Some(provider_config) = self.providers_config.get(provider_key) {
+            return Some(ResolvedProvider {
+                provider_type: provider_config.backend.as_str().to_string(),
+                endpoint: provider_config.endpoint(),
+                api_key: provider_config.api_key.clone(),
+                source: "providers_config",
+            });
+        }
+
+        None
     }
 
     /// Parse a model ID into optional provider key and model name.
@@ -3881,5 +3927,131 @@ mod tests {
             !agent_manager.agent_cache.contains_key(&session.id),
             "Cache should be invalidated after cross-provider switch to ZAI"
         );
+    }
+
+    #[tokio::test]
+    async fn test_resolve_provider_config_from_llm_config() {
+        use crucible_config::{LlmConfig, LlmProviderConfig, LlmProviderType};
+
+        let storage = Arc::new(FileSessionStorage::new());
+        let session_manager = Arc::new(SessionManager::with_storage(storage));
+
+        let mut providers = std::collections::HashMap::new();
+        providers.insert(
+            "zai-coding".to_string(),
+            LlmProviderConfig::builder(LlmProviderType::ZAI)
+                .endpoint("https://api.z.ai/api/coding/paas/v4")
+                .api_key("test-key-123")
+                .build(),
+        );
+
+        let llm_config = LlmConfig {
+            default: Some("zai-coding".to_string()),
+            providers,
+        };
+
+        let agent_manager =
+            create_test_agent_manager_with_llm_config(session_manager.clone(), llm_config);
+
+        let resolved = agent_manager.resolve_provider_config("zai-coding");
+        assert!(resolved.is_some(), "Should resolve from llm_config");
+        let resolved = resolved.unwrap();
+        assert_eq!(resolved.provider_type, "zai");
+        assert_eq!(
+            resolved.endpoint.as_deref(),
+            Some("https://api.z.ai/api/coding/paas/v4")
+        );
+        assert_eq!(resolved.api_key.as_deref(), Some("test-key-123"));
+        assert_eq!(resolved.source, "llm_config");
+    }
+
+    #[tokio::test]
+    async fn test_resolve_provider_config_from_providers_config() {
+        use crucible_config::{BackendType, ProviderConfig};
+
+        let storage = Arc::new(FileSessionStorage::new());
+        let session_manager = Arc::new(SessionManager::with_storage(storage));
+
+        let mut providers_config = crucible_config::ProvidersConfig::new();
+        let mut provider = ProviderConfig::new(BackendType::Ollama);
+        provider.endpoint = Some("http://localhost:11434".to_string());
+        provider.api_key = Some("ollama-key".to_string());
+        providers_config.add("local", provider);
+
+        let agent_manager =
+            create_test_agent_manager_with_providers(session_manager.clone(), providers_config);
+
+        let resolved = agent_manager.resolve_provider_config("local");
+        assert!(resolved.is_some(), "Should resolve from providers_config");
+        let resolved = resolved.unwrap();
+        assert_eq!(resolved.provider_type, "ollama");
+        assert_eq!(
+            resolved.endpoint.as_deref(),
+            Some("http://localhost:11434")
+        );
+        assert_eq!(resolved.api_key.as_deref(), Some("ollama-key"));
+        assert_eq!(resolved.source, "providers_config");
+    }
+
+    #[tokio::test]
+    async fn test_resolve_provider_config_not_found() {
+        let storage = Arc::new(FileSessionStorage::new());
+        let session_manager = Arc::new(SessionManager::with_storage(storage));
+        let agent_manager = create_test_agent_manager(session_manager);
+
+        let resolved = agent_manager.resolve_provider_config("nonexistent");
+        assert!(
+            resolved.is_none(),
+            "Should return None when provider not in either config"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_resolve_provider_config_llm_config_wins_over_providers_config() {
+        use crucible_config::{
+            BackendType, LlmConfig, LlmProviderConfig, LlmProviderType, ProviderConfig,
+        };
+
+        let storage = Arc::new(FileSessionStorage::new());
+        let session_manager = Arc::new(SessionManager::with_storage(storage));
+
+        let mut providers_config = crucible_config::ProvidersConfig::new();
+        providers_config.add(
+            "shared",
+            ProviderConfig::new(BackendType::Ollama).with_endpoint("http://legacy:11434"),
+        );
+
+        let mut llm_providers = std::collections::HashMap::new();
+        llm_providers.insert(
+            "shared".to_string(),
+            LlmProviderConfig::builder(LlmProviderType::OpenAI)
+                .endpoint("https://api.openai.com/v1")
+                .api_key("openai-key")
+                .build(),
+        );
+        let llm_config = LlmConfig {
+            default: None,
+            providers: llm_providers,
+        };
+
+        let agent_manager = create_test_agent_manager_with_both(
+            session_manager.clone(),
+            providers_config,
+            llm_config,
+        );
+
+        let resolved = agent_manager.resolve_provider_config("shared");
+        assert!(resolved.is_some(), "Should resolve when in both configs");
+        let resolved = resolved.unwrap();
+        assert_eq!(
+            resolved.source, "llm_config",
+            "LlmConfig (new system) should take priority over ProvidersConfig (legacy)"
+        );
+        assert_eq!(resolved.provider_type, "openai");
+        assert_eq!(
+            resolved.endpoint.as_deref(),
+            Some("https://api.openai.com/v1")
+        );
+        assert_eq!(resolved.api_key.as_deref(), Some("openai-key"));
     }
 }
