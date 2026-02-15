@@ -373,7 +373,7 @@ async fn list_providers(
     // 2. Fall back to `chat` config (legacy format) if no providers found
     if providers.is_empty() {
         let chat = &state.config.chat;
-        let provider_type = llm_provider_to_str(&chat.provider);
+        let provider_type = chat.provider.as_str();
         let endpoint = chat
             .endpoint
             .clone()
@@ -447,17 +447,6 @@ async fn list_providers(
     }
 
     Ok(Json(serde_json::json!({ "providers": providers })))
-}
-
-fn llm_provider_to_str(provider: &crucible_config::LlmProviderType) -> &'static str {
-    match provider {
-        crucible_config::LlmProviderType::Ollama => "ollama",
-        crucible_config::LlmProviderType::OpenAI => "openai",
-        crucible_config::LlmProviderType::Anthropic => "anthropic",
-        crucible_config::LlmProviderType::GitHubCopilot => "github-copilot",
-        crucible_config::LlmProviderType::OpenRouter => "openrouter",
-        crucible_config::LlmProviderType::ZAI => "zai",
-    }
 }
 
 fn format_provider_name(name: &str, provider_type: &str) -> String {
@@ -591,26 +580,7 @@ async fn fetch_openai_models(client: &reqwest::Client) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crucible_config::LlmProviderType;
     use serial_test::serial;
-
-    #[test]
-    fn test_llm_provider_to_str_ollama() {
-        assert_eq!(llm_provider_to_str(&LlmProviderType::Ollama), "ollama");
-    }
-
-    #[test]
-    fn test_llm_provider_to_str_openai() {
-        assert_eq!(llm_provider_to_str(&LlmProviderType::OpenAI), "openai");
-    }
-
-    #[test]
-    fn test_llm_provider_to_str_anthropic() {
-        assert_eq!(
-            llm_provider_to_str(&LlmProviderType::Anthropic),
-            "anthropic"
-        );
-    }
 
     #[test]
     fn test_format_provider_name_ollama() {
