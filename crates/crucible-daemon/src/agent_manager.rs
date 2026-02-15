@@ -1141,6 +1141,12 @@ impl AgentManager {
             .as_ref()
             .and_then(|c| c.providers.get(provider_key))
         {
+            debug!(
+                provider_key = %provider_key,
+                source = "llm_config",
+                provider_type = %llm_provider.provider_type.as_str(),
+                "Resolved provider from llm_config"
+            );
             return Some(ResolvedProvider {
                 provider_type: llm_provider.provider_type.as_str().to_string(),
                 endpoint: Some(llm_provider.endpoint()),
@@ -1150,6 +1156,12 @@ impl AgentManager {
         }
 
         if let Some(provider_config) = self.providers_config.get(provider_key) {
+            debug!(
+                provider_key = %provider_key,
+                source = "providers_config",
+                provider_type = %provider_config.backend.as_str(),
+                "Resolved provider from providers_config"
+            );
             return Some(ResolvedProvider {
                 provider_type: provider_config.backend.as_str().to_string(),
                 endpoint: provider_config.endpoint(),
@@ -1158,6 +1170,10 @@ impl AgentManager {
             });
         }
 
+        debug!(
+            provider_key = %provider_key,
+            "Provider not found in any config"
+        );
         None
     }
 
@@ -3636,6 +3652,104 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_parse_provider_model_empty_string() {
+        let storage = Arc::new(FileSessionStorage::new());
+        let session_manager = Arc::new(SessionManager::with_storage(storage));
+        let agent_manager = create_test_agent_manager(session_manager);
+
+        let (provider_key, model_name) = agent_manager.parse_provider_model("");
+        assert_eq!(provider_key, None, "Empty string should return None provider");
+        assert_eq!(model_name, "", "Empty string should return empty model name");
+    }
+
+    #[tokio::test]
+    async fn test_parse_provider_model_trailing_slash() {
+        use crucible_config::{BackendType, ProviderConfig};
+
+        let storage = Arc::new(FileSessionStorage::new());
+        let session_manager = Arc::new(SessionManager::with_storage(storage));
+
+        let mut providers_config = crucible_config::ProvidersConfig::new();
+        providers_config.add(
+            "provider",
+            ProviderConfig::new(BackendType::Ollama).with_endpoint("http://localhost:11434"),
+        );
+
+        let agent_manager =
+            create_test_agent_manager_with_providers(session_manager.clone(), providers_config);
+
+        let (provider_key, model_name) = agent_manager.parse_provider_model("provider/");
+        assert_eq!(
+            provider_key.as_deref(),
+            Some("provider"),
+            "Trailing slash should still parse provider"
+        );
+        assert_eq!(
+            model_name, "",
+            "Trailing slash should result in empty model name"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_parse_provider_model_whitespace() {
+        use crucible_config::{BackendType, ProviderConfig};
+
+        let storage = Arc::new(FileSessionStorage::new());
+        let session_manager = Arc::new(SessionManager::with_storage(storage));
+
+        let mut providers_config = crucible_config::ProvidersConfig::new();
+        providers_config.add(
+            "provider",
+            ProviderConfig::new(BackendType::Ollama).with_endpoint("http://localhost:11434"),
+        );
+
+        let agent_manager =
+            create_test_agent_manager_with_providers(session_manager.clone(), providers_config);
+
+        let (provider_key, model_name) = agent_manager.parse_provider_model("  provider/model  ");
+        assert_eq!(
+            provider_key, None,
+            "Whitespace prefix prevents provider match (no trimming in parse)"
+        );
+        assert_eq!(
+            model_name, "  provider/model  ",
+            "Full string with whitespace returned as model"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_parse_provider_model_case_sensitivity() {
+        use crucible_config::{BackendType, ProviderConfig};
+
+        let storage = Arc::new(FileSessionStorage::new());
+        let session_manager = Arc::new(SessionManager::with_storage(storage));
+
+        let mut providers_config = crucible_config::ProvidersConfig::new();
+        providers_config.add(
+            "ollama",
+            ProviderConfig::new(BackendType::Ollama).with_endpoint("http://localhost:11434"),
+        );
+
+        let agent_manager =
+            create_test_agent_manager_with_providers(session_manager.clone(), providers_config);
+
+        let (provider_key, model_name) = agent_manager.parse_provider_model("ollama/model");
+        assert_eq!(
+            provider_key.as_deref(),
+            Some("ollama"),
+            "Lowercase should match"
+        );
+        assert_eq!(model_name, "model");
+
+        let (provider_key, model_name) = agent_manager.parse_provider_model("OLLAMA/model");
+        assert_eq!(
+            provider_key, None,
+            "Uppercase should not match (case-sensitive)"
+        );
+        assert_eq!(model_name, "OLLAMA/model", "Full string returned as model");
+    }
+
+    #[tokio::test]
     async fn test_switch_model_zai_llm_config() {
         use crucible_config::{LlmConfig, LlmProviderConfig, LlmProviderType};
 
@@ -3810,6 +3924,83 @@ mod tests {
         assert!(
             !agent_manager.agent_cache.contains_key(&session.id),
             "Cache should be invalidated after llm_config cross-provider switch"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_switch_model_unknown_provider_prefix() {
+        let tmp = TempDir::new().unwrap();
+        let storage = Arc::new(FileSessionStorage::new());
+        let session_manager = Arc::new(SessionManager::with_storage(storage));
+
+        let session = session_manager
+            .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![])
+            .await
+            .unwrap();
+
+        let agent_manager = create_test_agent_manager(session_manager.clone());
+
+        agent_manager
+            .configure_agent(&session.id, test_agent())
+            .await
+            .unwrap();
+
+        agent_manager
+            .switch_model(&session.id, "unknown-provider/model", None)
+            .await
+            .unwrap();
+
+        let updated = session_manager.get_session(&session.id).unwrap();
+        let agent = updated.agent.as_ref().unwrap();
+
+        assert_eq!(
+            agent.model, "unknown-provider/model",
+            "Unknown provider should be treated as model name"
+        );
+        assert_eq!(
+            agent.provider, "ollama",
+            "Provider should remain unchanged (default)"
+        );
+        assert_eq!(
+            agent.provider_key.as_deref(),
+            Some("ollama"),
+            "Provider key should remain unchanged"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_switch_model_org_slash_model_format() {
+        let tmp = TempDir::new().unwrap();
+        let storage = Arc::new(FileSessionStorage::new());
+        let session_manager = Arc::new(SessionManager::with_storage(storage));
+
+        let session = session_manager
+            .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![])
+            .await
+            .unwrap();
+
+        let agent_manager = create_test_agent_manager(session_manager.clone());
+
+        agent_manager
+            .configure_agent(&session.id, test_agent())
+            .await
+            .unwrap();
+
+        agent_manager
+            .switch_model(&session.id, "meta-llama/llama-3.2-1b", None)
+            .await
+            .unwrap();
+
+        let updated = session_manager.get_session(&session.id).unwrap();
+        let agent = updated.agent.as_ref().unwrap();
+
+        assert_eq!(
+            agent.model, "meta-llama/llama-3.2-1b",
+            "Org/model format should be treated as full model name"
+        );
+        assert_eq!(
+            agent.provider, "ollama",
+            "Provider should remain unchanged (default)"
         );
     }
 
