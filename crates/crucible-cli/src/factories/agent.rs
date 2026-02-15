@@ -721,7 +721,7 @@ pub async fn create_daemon_agent(
                 .chat
                 .model
                 .clone()
-                .unwrap_or_else(|| "llama3.2".to_string());
+                .unwrap_or_else(|| crucible_config::DEFAULT_CHAT_MODEL.to_string());
 
             let mcp_servers = config
                 .mcp
