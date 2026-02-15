@@ -2,7 +2,7 @@
 //!
 //! This module provides a pluggable backend system for running embedding model inference.
 //! Different backends can be used depending on platform capabilities:
-//! - `LlamaCppBackend`: Uses llama.cpp for GGUF models (Vulkan, CUDA, Metal, CPU)
+//! - GGUF model support has been removed (use an OpenAI-compatible llama.cpp server instead)
 //! - `BurnBackend`: Uses Burn framework for SafeTensors models (wgpu/Vulkan)
 //! - `MockBackend`: For testing without actual model loading
 
@@ -139,7 +139,7 @@ pub struct LoadedModelInfo {
 ///
 /// # Implementors
 ///
-/// - `LlamaCppBackend`: GGUF models via llama.cpp (Vulkan, CUDA, Metal, CPU)
+/// - GGUF: No longer supported (use an OpenAI-compatible llama.cpp server instead)
 /// - `BurnBackend`: SafeTensors models via Burn framework
 /// - `MockBackend`: Testing without real models
 pub trait InferenceBackend: Send + Sync {
@@ -207,19 +207,9 @@ impl BackendFactory {
 
         match format {
             ModelFormat::Gguf => {
-                #[cfg(feature = "llama-cpp")]
-                {
-                    return Ok(Box::new(super::llama_cpp_backend::LlamaCppBackend::new(
-                        preferred_device,
-                    )?));
-                }
-
-                #[cfg(not(feature = "llama-cpp"))]
-                {
-                    Err(EmbeddingError::ConfigError(
-                        "GGUF models require the 'llama-cpp' feature. Enable it with: --features llama-cpp".to_string()
-                    ))
-                }
+                Err(EmbeddingError::ConfigError(
+                    "GGUF model support (llama.cpp backend) has been removed. Use an OpenAI-compatible llama.cpp server instead.".to_string()
+                ))
             }
             ModelFormat::SafeTensors => {
                 #[cfg(feature = "burn")]
