@@ -9,7 +9,7 @@
 //! Internal agents use the Rig framework for LLM interaction.
 
 use anyhow::Result;
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
 use crucible_config::credentials::SecretsFile;
 use crucible_config::CliAppConfig;
@@ -735,11 +735,14 @@ pub async fn create_daemon_agent(
                 .map(|mcp| mcp.servers.iter().map(|s| s.name.clone()).collect())
                 .unwrap_or_default();
 
+            #[allow(deprecated)]
+            let provider_str = config.chat.provider.as_str().to_string();
+            warn!("Using deprecated ChatConfig.provider as fallback. Migrate to [llm.providers] configuration.");
             SessionAgent {
                 agent_type: "internal".to_string(),
                 agent_name: None,
-                provider_key: Some(config.chat.provider.as_str().to_string()),
-                provider: config.chat.provider.as_str().to_string(),
+                provider_key: Some(provider_str.clone()),
+                provider: provider_str,
                 model,
                 system_prompt: String::new(),
                 temperature: config.chat.temperature.map(|t| t as f64),
@@ -808,11 +811,14 @@ pub async fn create_daemon_agent(
                 .as_ref()
                 .map(|mcp| mcp.servers.iter().map(|s| s.name.clone()).collect())
                 .unwrap_or_default();
+            #[allow(deprecated)]
+            let provider_str = config.chat.provider.as_str().to_string();
+            warn!("Using deprecated ChatConfig.provider as fallback. Migrate to [llm.providers] configuration.");
             SessionAgent {
                 agent_type: "internal".to_string(),
                 agent_name: None,
-                provider_key: Some(config.chat.provider.as_str().to_string()),
-                provider: config.chat.provider.as_str().to_string(),
+                provider_key: Some(provider_str.clone()),
+                provider: provider_str,
                 model,
                 system_prompt: String::new(),
                 temperature: config.chat.temperature.map(|t| t as f64),
