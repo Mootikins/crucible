@@ -28,24 +28,22 @@ pub struct AgentInfo {
     pub env_vars: HashMap<String, String>,
 }
 
-/// Known ACP-compatible agents (name, command, args, description)
-const KNOWN_AGENTS: &[(&str, &str, &[&str], &str)] = &[
-    ("opencode", "opencode", &["acp"], "OpenCode AI (Go)"),
-    (
-        "claude",
-        "npx",
-        &["@zed-industries/claude-code-acp"],
-        "Claude Code via ACP",
-    ),
-    ("gemini", "gemini", &[], "Google Gemini CLI"),
-    (
-        "codex",
-        "npx",
-        &["@zed-industries/codex-acp"],
-        "OpenAI Codex via ACP",
-    ),
-    ("cursor", "cursor-acp", &[], "Cursor IDE via ACP"),
-];
+const BUILTIN_AGENT_ORDER: &[&str] = &["opencode", "claude", "gemini", "codex", "cursor"];
+
+static KNOWN_AGENTS: Lazy<Vec<(String, String)>> = Lazy::new(|| {
+    let defaults = default_agent_profiles();
+    BUILTIN_AGENT_ORDER
+        .iter()
+        .filter_map(|name| {
+            defaults.get(*name).map(|profile| {
+                (
+                    (*name).to_string(),
+                    profile.description.clone().unwrap_or_default(),
+                )
+            })
+        })
+        .collect()
+});
 
 /// Information about a known agent (for splash screen display)
 #[derive(Debug, Clone)]
@@ -59,7 +57,7 @@ pub struct KnownAgent {
 pub fn get_known_agents() -> Vec<KnownAgent> {
     KNOWN_AGENTS
         .iter()
-        .map(|(name, _, _, desc)| KnownAgent {
+        .map(|(name, desc)| KnownAgent {
             name: name.to_string(),
             description: desc.to_string(),
             available: false, // Unknown until probed
@@ -72,19 +70,148 @@ pub fn get_known_agents() -> Vec<KnownAgent> {
 /// This probes all agents in parallel and returns their availability.
 /// Use this to populate splash screen with actual availability info.
 pub async fn probe_all_agents() -> Vec<KnownAgent> {
-    let futures: Vec<_> = KNOWN_AGENTS
-        .iter()
-        .map(|(name, cmd, _, desc)| async move {
-            let available = is_agent_available(cmd).await;
-            KnownAgent {
-                name: name.to_string(),
-                description: desc.to_string(),
-                available,
-            }
+    let profiles = default_agent_profiles();
+    let ordered_names = ordered_profile_names(&profiles);
+
+    let futures: Vec<_> = ordered_names
+        .into_iter()
+        .filter_map(|name| {
+            profiles.get(&name).and_then(|profile| {
+                profile.command.as_ref().map(|cmd| {
+                    let name = name.clone();
+                    let cmd = cmd.clone();
+                    let description = profile.description.clone().unwrap_or_default();
+                    async move {
+                        let available = is_agent_available(&cmd).await;
+                        KnownAgent {
+                            name,
+                            description,
+                            available,
+                        }
+                    }
+                })
+            })
         })
         .collect();
 
     join_all(futures).await
+}
+
+pub fn default_agent_profiles() -> HashMap<String, AgentProfile> {
+    let mut profiles = HashMap::new();
+
+    profiles.insert(
+        "opencode".to_string(),
+        AgentProfile {
+            extends: None,
+            command: Some("opencode".to_string()),
+            args: Some(vec!["acp".to_string()]),
+            env: HashMap::new(),
+            description: Some("OpenCode AI (Go)".to_string()),
+            capabilities: None,
+            delegation: None,
+        },
+    );
+
+    profiles.insert(
+        "claude".to_string(),
+        AgentProfile {
+            extends: None,
+            command: Some("npx".to_string()),
+            args: Some(vec!["@zed-industries/claude-code-acp".to_string()]),
+            env: HashMap::new(),
+            description: Some("Claude Code via ACP".to_string()),
+            capabilities: None,
+            delegation: None,
+        },
+    );
+
+    profiles.insert(
+        "gemini".to_string(),
+        AgentProfile {
+            extends: None,
+            command: Some("gemini".to_string()),
+            args: Some(Vec::new()),
+            env: HashMap::new(),
+            description: Some("Google Gemini CLI".to_string()),
+            capabilities: None,
+            delegation: None,
+        },
+    );
+
+    profiles.insert(
+        "codex".to_string(),
+        AgentProfile {
+            extends: None,
+            command: Some("npx".to_string()),
+            args: Some(vec!["@zed-industries/codex-acp".to_string()]),
+            env: HashMap::new(),
+            description: Some("OpenAI Codex via ACP".to_string()),
+            capabilities: None,
+            delegation: None,
+        },
+    );
+
+    profiles.insert(
+        "cursor".to_string(),
+        AgentProfile {
+            extends: None,
+            command: Some("cursor-acp".to_string()),
+            args: Some(Vec::new()),
+            env: HashMap::new(),
+            description: Some("Cursor IDE via ACP".to_string()),
+            capabilities: None,
+            delegation: None,
+        },
+    );
+
+    profiles
+}
+
+fn ordered_profile_names(profiles: &HashMap<String, AgentProfile>) -> Vec<String> {
+    let mut ordered = Vec::new();
+    for name in BUILTIN_AGENT_ORDER {
+        if profiles.contains_key(*name) {
+            ordered.push((*name).to_string());
+        }
+    }
+
+    let mut custom: Vec<String> = profiles
+        .keys()
+        .filter(|name| !BUILTIN_AGENT_ORDER.contains(&name.as_str()))
+        .cloned()
+        .collect();
+    custom.sort();
+    ordered.extend(custom);
+
+    ordered
+}
+
+fn merge_profiles(config: &AcpConfig) -> Result<HashMap<String, AgentProfile>> {
+    let mut merged = default_agent_profiles();
+
+    for (name, profile) in &config.agents {
+        let resolved = resolve_profile(name, profile, &merged)?;
+        merged.insert(name.clone(), resolved);
+    }
+
+    Ok(merged)
+}
+
+fn profile_to_agent_info(name: &str, profile: &AgentProfile) -> Result<AgentInfo> {
+    let command = profile.command.clone().ok_or_else(|| {
+        anyhow!(
+            "Agent profile '{}' must define `command` (directly or via built-in default)",
+            name
+        )
+    })?;
+
+    Ok(AgentInfo {
+        name: name.to_string(),
+        command,
+        args: profile.args.clone().unwrap_or_default(),
+        env_vars: profile.env.clone(),
+    })
 }
 
 /// Discover an available ACP agent using parallel probing
@@ -100,7 +227,7 @@ pub async fn probe_all_agents() -> Vec<KnownAgent> {
 ///
 /// # Errors
 /// Returns error if no compatible agent is found
-pub async fn discover_agent(preferred: Option<&str>) -> Result<AgentInfo> {
+pub async fn discover_agent(preferred: Option<&str>, acp_config: &AcpConfig) -> Result<AgentInfo> {
     // Check cache first (unless a specific agent is preferred)
     if preferred.is_none() {
         if let Some(cached) = AGENT_CACHE.lock().unwrap().clone() {
@@ -109,23 +236,20 @@ pub async fn discover_agent(preferred: Option<&str>) -> Result<AgentInfo> {
         }
     }
 
+    let merged_profiles = merge_profiles(acp_config)?;
+
     // If a preferred agent is specified, check it first (single probe)
     if let Some(agent_name) = preferred {
         debug!("Trying preferred agent: {}", agent_name);
-        if let Some((name, cmd, args, _)) =
-            KNOWN_AGENTS.iter().find(|(n, _, _, _)| *n == agent_name)
-        {
-            if is_agent_available(cmd).await {
-                info!("Using preferred agent: {}", agent_name);
-                let agent = AgentInfo {
-                    name: name.to_string(),
-                    command: cmd.to_string(),
-                    args: args.iter().map(|s| s.to_string()).collect(),
-                    env_vars: HashMap::new(),
-                };
-                // Cache the result
-                *AGENT_CACHE.lock().unwrap() = Some(agent.clone());
-                return Ok(agent);
+        if let Some(profile) = merged_profiles.get(agent_name) {
+            if let Some(cmd) = profile.command.as_deref() {
+                if is_agent_available(cmd).await {
+                    info!("Using preferred agent: {}", agent_name);
+                    let agent = profile_to_agent_info(agent_name, profile)?;
+                    // Cache the result
+                    *AGENT_CACHE.lock().unwrap() = Some(agent.clone());
+                    return Ok(agent);
+                }
             }
         }
         warn!(
@@ -135,14 +259,24 @@ pub async fn discover_agent(preferred: Option<&str>) -> Result<AgentInfo> {
     }
 
     // Parallel probe: check all agents concurrently
-    debug!("Probing {} agents in parallel", KNOWN_AGENTS.len());
+    let ordered_names = ordered_profile_names(&merged_profiles);
+    debug!("Probing {} agents in parallel", ordered_names.len());
     let start = std::time::Instant::now();
 
-    let futures: Vec<_> = KNOWN_AGENTS
+    let futures: Vec<_> = ordered_names
         .iter()
-        .map(|(name, cmd, args, _)| async move {
-            let available = is_agent_available(cmd).await;
-            (*name, *cmd, *args, available)
+        .filter_map(|name| {
+            merged_profiles.get(name).and_then(|profile| {
+                profile.command.as_ref().map(|command| {
+                    let name = name.clone();
+                    let profile = profile.clone();
+                    let command = command.clone();
+                    async move {
+                        let available = is_agent_available(&command).await;
+                        (name, profile, available)
+                    }
+                })
+            })
         })
         .collect();
 
@@ -150,15 +284,10 @@ pub async fn discover_agent(preferred: Option<&str>) -> Result<AgentInfo> {
     debug!("Parallel probe completed in {:?}", start.elapsed());
 
     // Find first available agent (maintaining priority order)
-    for (name, cmd, args, available) in results {
+    for (name, profile, available) in results {
         if available {
-            info!("Discovered agent: {} ({} {:?})", name, cmd, args);
-            let agent = AgentInfo {
-                name: name.to_string(),
-                command: cmd.to_string(),
-                args: args.iter().map(|s| s.to_string()).collect(),
-                env_vars: HashMap::new(),
-            };
+            info!("Discovered agent: {}", name);
+            let agent = profile_to_agent_info(&name, &profile)?;
             // Cache the result
             *AGENT_CACHE.lock().unwrap() = Some(agent.clone());
             return Ok(agent);
@@ -324,64 +453,80 @@ pub async fn is_agent_available(command: &str) -> bool {
 /// # Returns
 /// AgentInfo with merged configuration
 pub fn resolve_agent_from_config(name: &str, config: &AcpConfig) -> Result<AgentInfo> {
-    // Check for custom profile first
-    if let Some(profile) = config.agents.get(name) {
-        return resolve_profile(name, profile);
+    let merged_profiles = merge_profiles(config)?;
+
+    if let Some(profile) = merged_profiles.get(name) {
+        return profile_to_agent_info(name, profile);
     }
 
-    // Fall back to built-in agent
-    if let Some((_, cmd, args, _)) = KNOWN_AGENTS.iter().find(|(n, _, _, _)| *n == name) {
-        return Ok(AgentInfo {
-            name: name.to_string(),
-            command: cmd.to_string(),
-            args: args.iter().map(|s| s.to_string()).collect(),
-            env_vars: HashMap::new(),
-        });
-    }
+    let mut known_names = ordered_profile_names(&merged_profiles);
+    known_names.sort();
 
     Err(anyhow!(
-        "Unknown agent '{}'. Use --agent with a known agent name or define it in config.",
-        name
+        "Unknown agent '{}'. Known agent names: {}. Use --agent with a known agent name or define it in config.",
+        name,
+        known_names.join(", ")
     ))
 }
 
 /// Resolve a custom agent profile
-fn resolve_profile(name: &str, profile: &AgentProfile) -> Result<AgentInfo> {
-    // If profile has custom command, use it directly
-    if let Some(cmd) = &profile.command {
-        return Ok(AgentInfo {
-            name: name.to_string(),
-            command: cmd.clone(),
-            args: profile.args.clone().unwrap_or_default(),
-            env_vars: profile.env.clone(),
-        });
-    }
-
-    // Otherwise, look up base agent (from extends or profile name)
+fn resolve_profile(
+    name: &str,
+    profile: &AgentProfile,
+    merged_profiles: &HashMap<String, AgentProfile>,
+) -> Result<AgentProfile> {
     let base_name = profile.extends.as_deref().unwrap_or(name);
 
-    if let Some((_, cmd, args, _)) = KNOWN_AGENTS.iter().find(|(n, _, _, _)| *n == base_name) {
-        Ok(AgentInfo {
-            name: name.to_string(),
-            command: cmd.to_string(),
-            args: profile
-                .args
-                .clone()
-                .unwrap_or_else(|| args.iter().map(|s| s.to_string()).collect()),
-            env_vars: profile.env.clone(),
-        })
-    } else {
-        Err(anyhow!(
+    if profile.extends.is_some() && !merged_profiles.contains_key(base_name) {
+        return Err(anyhow!(
             "Agent profile '{}' extends unknown agent '{}'. Define command/args or use a known base agent.",
             name,
             base_name
-        ))
+        ));
     }
+
+    if profile.command.is_none()
+        && profile.args.is_none()
+        && profile.extends.is_none()
+        && !merged_profiles.contains_key(name)
+    {
+        return Err(anyhow!(
+            "Agent profile '{}' must define `command` or `extends`",
+            name
+        ));
+    }
+
+    let mut resolved = merged_profiles.get(base_name).cloned().unwrap_or_default();
+    resolved.extends = profile.extends.clone();
+
+    if let Some(command) = &profile.command {
+        resolved.command = Some(command.clone());
+    }
+    if let Some(args) = &profile.args {
+        resolved.args = Some(args.clone());
+    }
+    if let Some(description) = &profile.description {
+        resolved.description = Some(description.clone());
+    }
+    if let Some(capabilities) = &profile.capabilities {
+        resolved.capabilities = Some(capabilities.clone());
+    }
+    if let Some(delegation) = &profile.delegation {
+        resolved.delegation = Some(delegation.clone());
+    }
+
+    resolved.env.extend(profile.env.clone());
+
+    Ok(resolved)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn empty_config() -> AcpConfig {
+        AcpConfig::default()
+    }
 
     #[tokio::test]
     async fn test_is_agent_available_fast_path_rejection() {
@@ -445,7 +590,8 @@ mod tests {
 
         // Discovery should return cached agent without probing
         let start = std::time::Instant::now();
-        let result = discover_agent(None).await;
+        let config = empty_config();
+        let result = discover_agent(None, &config).await;
         let elapsed = start.elapsed();
 
         assert!(result.is_ok());
@@ -478,7 +624,8 @@ mod tests {
         // Parallel probe should complete quickly even with multiple agents
         // because non-existent commands fail fast via `which`
         let start = std::time::Instant::now();
-        let _result = discover_agent(None).await;
+        let config = empty_config();
+        let _result = discover_agent(None, &config).await;
         let elapsed = start.elapsed();
 
         // Should complete within timeout + some margin
@@ -494,20 +641,21 @@ mod tests {
         clear_agent_cache();
     }
 
-    #[tokio::test]
-    async fn test_known_agents_list() {
-        // Verify KNOWN_AGENTS structure is valid
+    #[test]
+    fn test_known_agents_list() {
         assert!(!KNOWN_AGENTS.is_empty(), "Should have known agents");
 
-        for (name, cmd, _args, _desc) in KNOWN_AGENTS {
+        for (name, description) in KNOWN_AGENTS.iter() {
             assert!(!name.is_empty(), "Agent name should not be empty");
-            assert!(!cmd.is_empty(), "Agent command should not be empty");
+            assert!(
+                !description.is_empty(),
+                "Agent description should not be empty"
+            );
         }
 
-        // Verify expected agents are present
-        let names: Vec<_> = KNOWN_AGENTS.iter().map(|(n, _, _, _)| *n).collect();
-        assert!(names.contains(&"opencode"));
-        assert!(names.contains(&"claude"));
+        let names: Vec<String> = KNOWN_AGENTS.iter().map(|(name, _)| name.clone()).collect();
+        assert!(names.contains(&"opencode".to_string()));
+        assert!(names.contains(&"claude".to_string()));
     }
 
     #[test]
@@ -643,5 +791,171 @@ mod tests {
         // Unknown agent should fail
         let result = resolve_agent_from_config("unknown-agent", &config);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_default_agent_profiles_include_all_builtin_agents() {
+        let profiles = default_agent_profiles();
+
+        for name in ["opencode", "claude", "gemini", "codex", "cursor"] {
+            assert!(profiles.contains_key(name), "missing profile: {}", name);
+        }
+    }
+
+    #[test]
+    fn test_default_agent_profiles_have_command_args_and_description() {
+        let profiles = default_agent_profiles();
+
+        for name in ["opencode", "claude", "gemini", "codex", "cursor"] {
+            let profile = profiles.get(name).expect("profile should exist");
+            assert!(
+                profile.command.as_ref().is_some_and(|v| !v.is_empty()),
+                "{} should have command",
+                name
+            );
+            assert!(profile.args.is_some(), "{} should have args", name);
+            assert!(
+                profile.description.as_ref().is_some_and(|v| !v.is_empty()),
+                "{} should have description",
+                name
+            );
+        }
+    }
+
+    #[test]
+    fn test_resolve_agent_user_overlay_overrides_command_and_falls_back_for_none_fields() {
+        let mut agents = HashMap::new();
+        agents.insert(
+            "opencode".to_string(),
+            AgentProfile {
+                extends: None,
+                command: Some("cargo".to_string()),
+                args: None,
+                env: HashMap::new(),
+                description: None,
+                capabilities: None,
+                delegation: None,
+            },
+        );
+
+        let config = AcpConfig {
+            agents,
+            ..Default::default()
+        };
+
+        let agent = resolve_agent_from_config("opencode", &config).expect("should resolve");
+        assert_eq!(agent.command, "cargo");
+        assert_eq!(agent.args, vec!["acp".to_string()]);
+    }
+
+    #[test]
+    fn test_resolve_agent_uses_extends_for_backward_compatible_defaults() {
+        let mut agents = HashMap::new();
+        agents.insert(
+            "my-claude".to_string(),
+            AgentProfile {
+                extends: Some("claude".to_string()),
+                command: None,
+                args: None,
+                env: HashMap::new(),
+                description: None,
+                capabilities: None,
+                delegation: None,
+            },
+        );
+
+        let config = AcpConfig {
+            agents,
+            ..Default::default()
+        };
+
+        let agent = resolve_agent_from_config("my-claude", &config).expect("should resolve");
+        assert_eq!(agent.command, "npx");
+        assert_eq!(agent.args, vec!["@zed-industries/claude-code-acp".to_string()]);
+    }
+
+    #[test]
+    fn test_unknown_agent_error_is_helpful() {
+        let config = AcpConfig::default();
+
+        let err = resolve_agent_from_config("definitely-unknown", &config).unwrap_err();
+        let message = err.to_string();
+
+        assert!(message.contains("definitely-unknown"));
+        assert!(message.contains("known agent"));
+    }
+
+    #[tokio::test]
+    async fn test_discover_agent_preferred_uses_merged_profile_command() {
+        clear_agent_cache();
+
+        let mut agents = HashMap::new();
+        agents.insert(
+            "opencode".to_string(),
+            AgentProfile {
+                extends: None,
+                command: Some("cargo".to_string()),
+                args: Some(vec!["--version".to_string()]),
+                env: HashMap::new(),
+                description: Some("Overridden".to_string()),
+                capabilities: None,
+                delegation: None,
+            },
+        );
+
+        let config = AcpConfig {
+            agents,
+            ..Default::default()
+        };
+
+        let agent = discover_agent(Some("opencode"), &config)
+            .await
+            .expect("preferred profile should resolve");
+
+        assert_eq!(agent.name, "opencode");
+        assert_eq!(agent.command, "cargo");
+        assert_eq!(agent.args, vec!["--version".to_string()]);
+    }
+
+    #[tokio::test]
+    async fn test_discover_agent_without_preferred_can_use_config_only_profile() {
+        clear_agent_cache();
+
+        let mut agents = HashMap::new();
+        agents.insert(
+            "cargo-agent".to_string(),
+            AgentProfile {
+                extends: None,
+                command: Some("cargo".to_string()),
+                args: Some(vec!["--version".to_string()]),
+                env: HashMap::new(),
+                description: Some("Cargo-backed profile".to_string()),
+                capabilities: None,
+                delegation: None,
+            },
+        );
+
+        let config = AcpConfig {
+            agents,
+            ..Default::default()
+        };
+
+        let agent = discover_agent(None, &config)
+            .await
+            .expect("should discover from merged profiles");
+        assert!(
+            ["cargo-agent", "opencode", "claude", "gemini", "codex", "cursor"]
+                .contains(&agent.name.as_str())
+        );
+    }
+
+    #[test]
+    fn test_get_known_agents_reflects_default_profiles() {
+        let known = get_known_agents();
+        let profiles = default_agent_profiles();
+
+        for agent in known {
+            assert!(profiles.contains_key(&agent.name));
+        }
     }
 }
