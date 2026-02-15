@@ -367,26 +367,17 @@ fn render_row_children_filtered(
             output,
         );
     } else {
-        render_row_single_line(
-            children,
-            child_infos,
-            &layout_result.widths,
-            filter,
-            output,
-            cursor_info,
-        );
+        render_row_single_line(child_infos, &layout_result.widths, output, cursor_info);
     }
 }
 
 fn render_row_single_line(
-    children: &[Node],
     child_infos: Vec<RowChildInfo>,
     widths: &[usize],
-    _filter: &dyn RenderFilter,
     output: &mut String,
     cursor_info: &mut CursorInfo,
 ) {
-    for (i, (_child, child_info)) in children.iter().zip(child_infos.into_iter()).enumerate() {
+    for (i, child_info) in child_infos.into_iter().enumerate() {
         let child_width = widths.get(i).copied().unwrap_or(0);
 
         match child_info {
