@@ -120,6 +120,7 @@ pub struct AgentManager {
     pending_permissions: Arc<DashMap<String, HashMap<PermissionId, PendingPermission>>>,
     mcp_gateway: Option<Arc<tokio::sync::RwLock<crucible_tools::mcp_gateway::McpGatewayManager>>>,
     providers_config: crucible_config::ProvidersConfig,
+    llm_config: Option<crucible_config::LlmConfig>,
 }
 
 impl AgentManager {
@@ -130,6 +131,7 @@ impl AgentManager {
             Arc<tokio::sync::RwLock<crucible_tools::mcp_gateway::McpGatewayManager>>,
         >,
         providers_config: crucible_config::ProvidersConfig,
+        llm_config: Option<crucible_config::LlmConfig>,
     ) -> Self {
         Self {
             request_state: Arc::new(DashMap::new()),
@@ -140,6 +142,7 @@ impl AgentManager {
             pending_permissions: Arc::new(DashMap::new()),
             mcp_gateway,
             providers_config,
+            llm_config,
         }
     }
 
@@ -1112,6 +1115,27 @@ impl AgentManager {
         }
     }
 
+    /// Parse a model ID into optional provider key and model name.
+    ///
+    /// Splits on the first `/` and checks if the prefix matches a configured provider key.
+    /// Returns `(Some(provider_key), model_name)` if the prefix is a valid provider,
+    /// otherwise `(None, model_id)` to treat the entire string as a model name.
+    ///
+    /// # Examples
+    ///
+    /// - `"zai/claude-sonnet-4"` → `(Some("zai"), "claude-sonnet-4")` if "zai" is configured
+    /// - `"llama3.2"` → `(None, "llama3.2")` (no `/` separator)
+    /// - `"unknown/model"` → `(None, "unknown/model")` if "unknown" is not configured
+    /// - `"library/llama3:latest"` → `(Some("library"), "llama3:latest")` if "library" is configured
+    fn parse_provider_model(&self, model_id: &str) -> (Option<String>, String) {
+        if let Some((prefix, model_name)) = model_id.split_once('/') {
+            if self.providers_config.get(prefix).is_some() {
+                return (Some(prefix.to_string()), model_name.to_string());
+            }
+        }
+        (None, model_id.to_string())
+    }
+
     pub async fn switch_model(
         &self,
         session_id: &str,
@@ -1139,7 +1163,30 @@ impl AgentManager {
             .clone()
             .ok_or_else(|| AgentError::NoAgentConfigured(session_id.to_string()))?;
 
-        agent_config.model = model_id.to_string();
+        let (provider_key_opt, model_name) = self.parse_provider_model(model_id);
+
+        if let Some(provider_key) = provider_key_opt {
+            if let Some(provider_config) = self.providers_config.get(&provider_key) {
+                agent_config.provider = provider_config.backend.as_str().to_string();
+                agent_config.provider_key = Some(provider_key.clone());
+                agent_config.endpoint = provider_config.endpoint();
+                agent_config.model = model_name.clone();
+
+                debug!(
+                    session_id = %session_id,
+                    provider_key = %provider_key,
+                    provider = %agent_config.provider,
+                    model = %model_name,
+                    endpoint = ?agent_config.endpoint,
+                    "Cross-provider switch detected"
+                );
+            } else {
+                agent_config.model = model_id.to_string();
+            }
+        } else {
+            agent_config.model = model_name;
+        }
+
         session.agent = Some(agent_config.clone());
 
         self.session_manager
@@ -1151,7 +1198,7 @@ impl AgentManager {
 
         info!(
             session_id = %session_id,
-            model = %model_id,
+            model = %agent_config.model,
             provider = %agent_config.provider,
             "Model switched for session (agent cache invalidated)"
         );
@@ -1159,7 +1206,7 @@ impl AgentManager {
         if let Some(tx) = event_tx {
             let _ = tx.send(SessionEventMessage::model_switched(
                 session_id,
-                model_id,
+                &agent_config.model,
                 &agent_config.provider,
             ));
         }
@@ -1168,20 +1215,55 @@ impl AgentManager {
     }
 
     pub async fn list_models(&self, session_id: &str) -> Result<Vec<String>, AgentError> {
-        let (_, agent_config) = self.get_session_with_agent(session_id)?;
+        use crucible_config::LlmProviderType;
 
-        let endpoint = agent_config
-            .endpoint
-            .unwrap_or_else(|| "http://localhost:11434".to_string());
+        if let Some(ref llm_config) = self.llm_config {
+            let mut all_models = Vec::new();
 
-        match agent_config.provider.as_str() {
-            "ollama" => self.list_ollama_models(&endpoint).await,
-            _ => {
-                debug!(
-                    provider = %agent_config.provider,
-                    "Model listing not supported for provider"
-                );
-                Ok(Vec::new())
+            for (provider_key, provider_config) in &llm_config.providers {
+                let models = match provider_config.provider_type {
+                    LlmProviderType::Ollama => {
+                        let endpoint = provider_config
+                            .endpoint
+                            .as_deref()
+                            .unwrap_or("http://localhost:11434");
+                        match self.list_ollama_models(endpoint).await {
+                            Ok(models) => models,
+                            Err(e) => {
+                                debug!(
+                                    provider_key = %provider_key,
+                                    error = %e,
+                                    "Failed to list Ollama models, skipping"
+                                );
+                                continue;
+                            }
+                        }
+                    }
+                    _ => provider_config.effective_models(),
+                };
+
+                for model in models {
+                    all_models.push(format!("{}/{}", provider_key, model));
+                }
+            }
+
+            Ok(all_models)
+        } else {
+            let (_, agent_config) = self.get_session_with_agent(session_id)?;
+
+            let endpoint = agent_config
+                .endpoint
+                .unwrap_or_else(|| "http://localhost:11434".to_string());
+
+            match agent_config.provider.as_str() {
+                "ollama" => self.list_ollama_models(&endpoint).await,
+                _ => {
+                    debug!(
+                        provider = %agent_config.provider,
+                        "Model listing not supported for provider"
+                    );
+                    Ok(Vec::new())
+                }
             }
         }
     }
@@ -1485,7 +1567,17 @@ mod tests {
             background_manager,
             None,
             crucible_config::ProvidersConfig::default(),
+            None,
         )
+    }
+
+    fn create_test_agent_manager_with_providers(
+        session_manager: Arc<SessionManager>,
+        providers_config: crucible_config::ProvidersConfig,
+    ) -> AgentManager {
+        let (event_tx, _) = broadcast::channel(16);
+        let background_manager = Arc::new(BackgroundJobManager::new(event_tx));
+        AgentManager::new(session_manager, background_manager, None, providers_config, None)
     }
 
     #[tokio::test]
@@ -2937,5 +3029,361 @@ mod tests {
                 "Session 2 should still have its permission"
             );
         }
+
+        #[tokio::test]
+        async fn test_switch_model_cross_provider() {
+            use crucible_config::{BackendType, ProviderConfig};
+
+            let tmp = TempDir::new().unwrap();
+            let storage = Arc::new(FileSessionStorage::new());
+            let session_manager = Arc::new(SessionManager::with_storage(storage));
+
+            let session = session_manager
+                .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![])
+                .await
+                .unwrap();
+
+            // Create providers config with multiple providers
+            let mut providers_config = crucible_config::ProvidersConfig::new();
+            providers_config.add(
+                "ollama",
+                ProviderConfig::new(BackendType::Ollama)
+                    .with_endpoint("http://localhost:11434"),
+            );
+            providers_config.add(
+                "zai",
+                ProviderConfig::new(BackendType::Anthropic)
+                    .with_endpoint("https://api.zaiforge.com/v1"),
+            );
+
+            let agent_manager =
+                create_test_agent_manager_with_providers(session_manager.clone(), providers_config);
+
+            // Configure with ollama provider
+            agent_manager
+                .configure_agent(&session.id, test_agent())
+                .await
+                .unwrap();
+
+            // Switch to zai/claude-sonnet-4
+            agent_manager
+                .switch_model(&session.id, "zai/claude-sonnet-4", None)
+                .await
+                .unwrap();
+
+            let updated = session_manager.get_session(&session.id).unwrap();
+            let agent = updated.agent.as_ref().unwrap();
+
+            assert_eq!(agent.model, "claude-sonnet-4", "Model should be updated");
+            assert_eq!(
+                agent.provider_key.as_deref(),
+                Some("zai"),
+                "Provider key should be updated"
+            );
+            assert_eq!(
+                agent.endpoint.as_deref(),
+                Some("https://api.zaiforge.com/v1"),
+                "Endpoint should be updated"
+            );
+            assert_eq!(agent.provider, "anthropic", "Provider should be updated");
+        }
+
+        #[tokio::test]
+        async fn test_switch_model_unprefixed_same_provider() {
+            use crucible_config::{BackendType, ProviderConfig};
+
+            let tmp = TempDir::new().unwrap();
+            let storage = Arc::new(FileSessionStorage::new());
+            let session_manager = Arc::new(SessionManager::with_storage(storage));
+
+            let session = session_manager
+                .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![])
+                .await
+                .unwrap();
+
+            let mut providers_config = crucible_config::ProvidersConfig::new();
+            providers_config.add(
+                "ollama",
+                ProviderConfig::new(BackendType::Ollama)
+                    .with_endpoint("http://localhost:11434"),
+            );
+
+            let agent_manager =
+                create_test_agent_manager_with_providers(session_manager.clone(), providers_config);
+
+            agent_manager
+                .configure_agent(&session.id, test_agent())
+                .await
+                .unwrap();
+
+            let before = session_manager.get_session(&session.id).unwrap();
+            let before_provider = before.agent.as_ref().unwrap().provider.clone();
+            let before_endpoint = before.agent.as_ref().unwrap().endpoint.clone();
+
+            // Switch to unprefixed model (should only change model, not provider)
+            agent_manager
+                .switch_model(&session.id, "llama3.3", None)
+                .await
+                .unwrap();
+
+            let updated = session_manager.get_session(&session.id).unwrap();
+            let agent = updated.agent.as_ref().unwrap();
+
+            assert_eq!(agent.model, "llama3.3", "Model should be updated");
+            assert_eq!(
+                agent.provider, before_provider,
+                "Provider should remain unchanged"
+            );
+            assert_eq!(
+                agent.endpoint, before_endpoint,
+                "Endpoint should remain unchanged"
+            );
+        }
+
+        #[tokio::test]
+        async fn test_switch_model_unknown_provider_prefix() {
+            use crucible_config::{BackendType, ProviderConfig};
+
+            let tmp = TempDir::new().unwrap();
+            let storage = Arc::new(FileSessionStorage::new());
+            let session_manager = Arc::new(SessionManager::with_storage(storage));
+
+            let session = session_manager
+                .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![])
+                .await
+                .unwrap();
+
+            let mut providers_config = crucible_config::ProvidersConfig::new();
+            providers_config.add(
+                "ollama",
+                ProviderConfig::new(BackendType::Ollama)
+                    .with_endpoint("http://localhost:11434"),
+            );
+
+            let agent_manager =
+                create_test_agent_manager_with_providers(session_manager.clone(), providers_config);
+
+            agent_manager
+                .configure_agent(&session.id, test_agent())
+                .await
+                .unwrap();
+
+            let before = session_manager.get_session(&session.id).unwrap();
+            let before_provider = before.agent.as_ref().unwrap().provider.clone();
+
+            agent_manager
+                .switch_model(&session.id, "unknown/model", None)
+                .await
+                .unwrap();
+
+            let updated = session_manager.get_session(&session.id).unwrap();
+            let agent = updated.agent.as_ref().unwrap();
+
+            assert_eq!(
+                agent.model, "unknown/model",
+                "Model should be set to full string"
+            );
+            assert_eq!(
+                agent.provider, before_provider,
+                "Provider should remain unchanged"
+            );
+        }
+
+        #[tokio::test]
+        async fn test_switch_model_cross_provider_invalidates_cache() {
+            use crucible_config::{BackendType, ProviderConfig};
+
+            let tmp = TempDir::new().unwrap();
+            let storage = Arc::new(FileSessionStorage::new());
+            let session_manager = Arc::new(SessionManager::with_storage(storage));
+
+            let session = session_manager
+                .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![])
+                .await
+                .unwrap();
+
+            let mut providers_config = crucible_config::ProvidersConfig::new();
+            providers_config.add(
+                "ollama",
+                ProviderConfig::new(BackendType::Ollama)
+                    .with_endpoint("http://localhost:11434"),
+            );
+            providers_config.add(
+                "zai",
+                ProviderConfig::new(BackendType::Anthropic)
+                    .with_endpoint("https://api.zaiforge.com/v1"),
+            );
+
+            let agent_manager =
+                create_test_agent_manager_with_providers(session_manager.clone(), providers_config);
+
+            agent_manager
+                .configure_agent(&session.id, test_agent())
+                .await
+                .unwrap();
+
+            agent_manager
+                .switch_model(&session.id, "zai/claude-sonnet-4", None)
+                .await
+                .unwrap();
+
+            assert!(
+                !agent_manager.agent_cache.contains_key(&session.id),
+                "Cache should be invalidated after cross-provider switch"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_list_models_returns_all_providers() {
+        use crucible_config::{LlmConfig, LlmProviderConfig, LlmProviderType};
+        use std::collections::HashMap;
+
+        let tmp = TempDir::new().unwrap();
+        let storage = Arc::new(FileSessionStorage::new());
+        let session_manager = Arc::new(SessionManager::with_storage(storage));
+
+        let session = session_manager
+            .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![])
+            .await
+            .unwrap();
+
+        let mut providers = HashMap::new();
+        providers.insert(
+            "ollama".to_string(),
+            LlmProviderConfig::builder(LlmProviderType::Ollama)
+                .endpoint("http://localhost:11434")
+                .available_models(vec!["llama3.2".to_string(), "qwen2.5".to_string()])
+                .build(),
+        );
+        providers.insert(
+            "openai".to_string(),
+            LlmProviderConfig::builder(LlmProviderType::OpenAI)
+                .available_models(vec!["gpt-4".to_string(), "gpt-3.5-turbo".to_string()])
+                .build(),
+        );
+
+        let llm_config = LlmConfig {
+            default: Some("ollama".to_string()),
+            providers,
+        };
+
+        let (event_tx, _) = broadcast::channel(16);
+        let background_manager = Arc::new(BackgroundJobManager::new(event_tx));
+        let agent_manager = AgentManager::new(
+            session_manager.clone(),
+            background_manager,
+            None,
+            crucible_config::ProvidersConfig::default(),
+            Some(llm_config),
+        );
+
+        agent_manager
+            .configure_agent(&session.id, test_agent())
+            .await
+            .unwrap();
+
+        let models = agent_manager.list_models(&session.id).await.unwrap();
+
+        assert!(
+            models.iter().any(|m| m.starts_with("openai/")),
+            "Should have openai/ prefixed models, got: {:?}",
+            models
+        );
+        assert!(
+            models.contains(&"openai/gpt-4".to_string()),
+            "Should contain openai/gpt-4, got: {:?}",
+            models
+        );
+        assert!(
+            models.contains(&"openai/gpt-3.5-turbo".to_string()),
+            "Should contain openai/gpt-3.5-turbo, got: {:?}",
+            models
+        );
+    }
+
+    #[tokio::test]
+    async fn test_list_models_no_llm_config() {
+        let tmp = TempDir::new().unwrap();
+        let storage = Arc::new(FileSessionStorage::new());
+        let session_manager = Arc::new(SessionManager::with_storage(storage));
+
+        let session = session_manager
+            .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![])
+            .await
+            .unwrap();
+
+        let (event_tx, _) = broadcast::channel(16);
+        let background_manager = Arc::new(BackgroundJobManager::new(event_tx));
+        let agent_manager = AgentManager::new(
+            session_manager.clone(),
+            background_manager,
+            None,
+            crucible_config::ProvidersConfig::default(),
+            None,
+        );
+
+        agent_manager
+            .configure_agent(&session.id, test_agent())
+            .await
+            .unwrap();
+
+        let models = agent_manager.list_models(&session.id).await.unwrap();
+
+        assert!(
+            models.is_empty() || !models[0].contains('/'),
+            "Should not prefix models when llm_config is None"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_list_models_prefixes_with_provider_key() {
+        use crucible_config::{LlmConfig, LlmProviderConfig, LlmProviderType};
+        use std::collections::HashMap;
+
+        let tmp = TempDir::new().unwrap();
+        let storage = Arc::new(FileSessionStorage::new());
+        let session_manager = Arc::new(SessionManager::with_storage(storage));
+
+        let session = session_manager
+            .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![])
+            .await
+            .unwrap();
+
+        let mut providers = HashMap::new();
+        providers.insert(
+            "anthropic".to_string(),
+            LlmProviderConfig::builder(LlmProviderType::Anthropic)
+                .available_models(vec!["claude-3-opus".to_string()])
+                .build(),
+        );
+
+        let llm_config = LlmConfig {
+            default: Some("anthropic".to_string()),
+            providers,
+        };
+
+        let (event_tx, _) = broadcast::channel(16);
+        let background_manager = Arc::new(BackgroundJobManager::new(event_tx));
+        let agent_manager = AgentManager::new(
+            session_manager.clone(),
+            background_manager,
+            None,
+            crucible_config::ProvidersConfig::default(),
+            Some(llm_config),
+        );
+
+        agent_manager
+            .configure_agent(&session.id, test_agent())
+            .await
+            .unwrap();
+
+        let models = agent_manager.list_models(&session.id).await.unwrap();
+
+        assert!(
+            models.contains(&"anthropic/claude-3-opus".to_string()),
+            "Should prefix with provider key: {:?}",
+            models
+        );
     }
 }
