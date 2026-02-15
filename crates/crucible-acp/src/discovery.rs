@@ -16,6 +16,10 @@ use tracing::{debug, info, trace, warn};
 const PROBE_TIMEOUT_MS: u64 = 2000;
 
 /// Cache for discovered agent to avoid repeated probing on subsequent calls
+// KNOWN LIMITATION: AGENT_CACHE global still exists as a process-wide cache.
+// Config-driven discovery (via AcpConfig) is an overlay on top of this cache, not a replacement.
+// The cache is cleared between tests but persists across discovery calls in production.
+// Future versions could make caching configurable or use session-scoped discovery caches.
 static AGENT_CACHE: Lazy<Mutex<Option<AgentInfo>>> = Lazy::new(|| Mutex::new(None));
 
 /// Information about a discovered agent

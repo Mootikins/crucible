@@ -650,14 +650,18 @@ impl BackgroundJobManager {
         Ok(job_id)
     }
 
-    pub async fn spawn_subagent_blocking(
-        &self,
-        session_id: &str,
-        prompt: String,
-        context: Option<String>,
-        config: SubagentBlockingConfig,
-        cancel_rx: Option<oneshot::Receiver<()>>,
-    ) -> Result<JobResult, BackgroundError> {
+     pub async fn spawn_subagent_blocking(
+         &self,
+         session_id: &str,
+         prompt: String,
+         context: Option<String>,
+         config: SubagentBlockingConfig,
+         cancel_rx: Option<oneshot::Receiver<()>>,
+     ) -> Result<JobResult, BackgroundError> {
+         // KNOWN LIMITATION: Blocking delegation does not support streaming responses.
+         // The subagent's output is collected entirely before returning to the caller.
+         // Streaming delegation is a future enhancement that would require async streaming
+         // channels and client-side buffering. For now, blocking mode is synchronous only.
         let prepared = self
             .prepare_subagent_execution(session_id, prompt, context)
             .await?;
@@ -733,11 +737,16 @@ impl BackgroundJobManager {
             &agent_config,
             delegator_name.as_deref(),
             target_name.as_deref(),
-        )?;
+         )?;
 
-        agent_config.delegation_config = None;
+         // KNOWN LIMITATION: No nested delegation (depth=1 only).
+         // Subagents cannot spawn their own subagents. This is enforced by clearing
+         // the delegation_config before passing the agent to the subagent factory.
+         // Future versions could support configurable nesting depth with proper
+         // authorization checks at each level.
+         agent_config.delegation_config = None;
 
-        let kind = JobKind::Subagent {
+         let kind = JobKind::Subagent {
             prompt: prompt.clone(),
             context: context.clone(),
         };
