@@ -27,6 +27,7 @@ pub struct ChatConfig {
     #[serde(default = "default_true")]
     pub enable_markdown: bool,
     /// LLM provider to use
+    #[deprecated(note = "Use [llm.providers] instead")]
     #[serde(default)]
     pub provider: LlmProviderType,
     /// Default agent type preference (acp or internal)
@@ -83,6 +84,7 @@ impl Default for ChatConfig {
 #[allow(deprecated)]
 impl ChatConfig {
     /// Get the LLM endpoint, using provider-specific default if not specified
+    #[deprecated(note = "Use [llm.providers] instead")]
     pub fn llm_endpoint(&self) -> String {
         self.endpoint
             .clone()
