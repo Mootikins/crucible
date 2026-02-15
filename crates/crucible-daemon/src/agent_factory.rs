@@ -141,8 +141,11 @@ pub async fn create_agent_from_session_config(
         .map_err(AgentFactoryError::ClientCreation)?;
 
     #[allow(deprecated)]
-    let mut llm_config = LlmProviderConfig::builder(provider_type)
-        .maybe_endpoint(agent_config.endpoint.clone())
+    let mut llm_config = LlmProviderConfig::builder(provider_type);
+    if let Some(endpoint) = agent_config.endpoint.clone() {
+        llm_config = llm_config.endpoint(endpoint);
+    }
+    let mut llm_config = llm_config
         .model(agent_config.model.clone())
         .api_key_from_env()
         .build();
