@@ -11,7 +11,7 @@
 
 use crate::ansi::apply_style;
 use crate::cell_grid::CellGrid;
-use crate::node::BRAILLE_SPINNER_FRAMES;
+use crate::node::SPINNER_FRAMES;
 use crate::style::{Border, Style};
 use crate::utils::truncate_to_width;
 
@@ -57,7 +57,20 @@ where
 
     let mut grid = CellGrid::new(width, height);
     render_box_filtered(&tree.root, &mut grid, &skip_key);
-    grid.to_string_joined()
+
+    // Trim trailing blank lines so fully-filtered trees produce empty string
+    let lines = grid.to_lines();
+    let trimmed: Vec<&str> = {
+        let mut v: Vec<&str> = lines.iter().map(|s| s.as_str()).collect();
+        while v
+            .last()
+            .is_some_and(|l| l.is_empty() || l.chars().all(|c| c == ' ' || c == '\0'))
+        {
+            v.pop();
+        }
+        v
+    };
+    trimmed.join("\r\n")
 }
 
 /// Recursively render a LayoutBox and its children to the grid.
@@ -166,18 +179,23 @@ fn render_text(
         return;
     }
 
-    let styled = apply_style(content, style);
-
-    // Handle text wrapping
-    let lines: Vec<&str> = styled.lines().collect();
-    for (row_idx, line) in lines.iter().enumerate() {
+    // Wrap plain text into lines that fit within width, then style each line.
+    // This matches the legacy renderer's character-level wrapping.
+    let wrapped = wrap_text(content, width);
+    for (row_idx, line) in wrapped.iter().enumerate() {
         let target_y = y + row_idx;
         if target_y < grid.height() {
-            // Truncate line to width if needed
-            let truncated = truncate_to_width(line, width, false);
-            grid.blit_line(&truncated, x, target_y);
+            let styled_line = apply_style(line, style);
+            grid.blit_line(&styled_line, x, target_y);
         }
     }
+}
+
+fn wrap_text(content: &str, width: usize) -> Vec<String> {
+    use textwrap::{wrap, Options, WordSplitter};
+    let options = Options::new(width).word_splitter(WordSplitter::NoHyphenation);
+    let wrapped: Vec<_> = wrap(content, options);
+    wrapped.into_iter().map(|cow| cow.into_owned()).collect()
 }
 
 /// Render an input field at the given position.
@@ -213,7 +231,7 @@ fn render_spinner(
     y: usize,
     grid: &mut CellGrid,
 ) {
-    let spinner_frames = frames.unwrap_or(BRAILLE_SPINNER_FRAMES);
+    let spinner_frames = frames.unwrap_or(SPINNER_FRAMES);
     let frame_char = spinner_frames
         .get(frame % spinner_frames.len())
         .copied()
@@ -499,8 +517,7 @@ mod tests {
 
         let result = render_layout_tree(&tree);
         assert!(result.contains("Loading"));
-        // Should contain spinner character
-        assert!(result.contains('⠋'));
+        assert!(result.contains('◐'));
     }
 
     #[test]
