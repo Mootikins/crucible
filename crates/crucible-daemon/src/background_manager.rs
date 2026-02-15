@@ -99,6 +99,8 @@ pub struct SubagentContext {
     pub workspace: PathBuf,
     /// Parent session directory for creating subagent session files
     pub parent_session_dir: Option<PathBuf>,
+    pub delegator_agent_name: Option<String>,
+    pub target_agent_name: Option<String>,
 }
 
 struct PreparedSubagentExecution {
@@ -714,7 +716,7 @@ impl BackgroundJobManager {
             .as_ref()
             .ok_or(BackgroundError::NoSubagentFactory)?;
 
-        let (mut agent_config, workspace, parent_session_dir) = {
+        let (mut agent_config, workspace, parent_session_dir, delegator_name, target_name) = {
             let ctx = self.subagent_contexts.get(session_id).ok_or_else(|| {
                 BackgroundError::SpawnFailed("Subagent context not registered".into())
             })?;
@@ -722,8 +724,16 @@ impl BackgroundJobManager {
                 ctx.agent.clone(),
                 ctx.workspace.clone(),
                 ctx.parent_session_dir.clone(),
+                ctx.delegator_agent_name.clone(),
+                ctx.target_agent_name.clone(),
             )
         };
+
+        Self::enforce_delegation_capabilities(
+            &agent_config,
+            delegator_name.as_deref(),
+            target_name.as_deref(),
+        )?;
 
         agent_config.delegation_config = None;
 
@@ -780,6 +790,42 @@ impl BackgroundJobManager {
             agent,
             subagent_writer,
         })
+    }
+
+    fn enforce_delegation_capabilities(
+        session_agent: &SessionAgent,
+        delegator_name: Option<&str>,
+        target_name: Option<&str>,
+    ) -> Result<(), BackgroundError> {
+        let delegation = session_agent
+            .delegation_config
+            .as_ref()
+            .filter(|cfg| cfg.enabled)
+            .ok_or_else(|| {
+                BackgroundError::SpawnFailed("Delegation is disabled for this agent".to_string())
+            })?;
+
+        if let Some(allowed_targets) = &delegation.allowed_targets {
+            let target = target_name.ok_or_else(|| {
+                BackgroundError::SpawnFailed("Delegation target could not be determined".to_string())
+            })?;
+
+            if !allowed_targets.iter().any(|allowed| allowed == target) {
+                return Err(BackgroundError::SpawnFailed(format!(
+                    "Delegation target '{target}' is not allowed"
+                )));
+            }
+        }
+
+        if let (Some(delegator), Some(target)) = (delegator_name, target_name) {
+            if delegator == target {
+                return Err(BackgroundError::SpawnFailed(
+                    "Delegation rejected by self-delegation guard".to_string(),
+                ));
+            }
+        }
+
+        Ok(())
     }
 
     async fn execute_subagent_with_options(
@@ -1122,9 +1168,11 @@ mod tests {
         }
     }
 
-    fn make_subagent_manager_with_factory(
+    fn make_subagent_manager_with_factory_and_identity(
         factory: SubagentFactory,
         delegation_config: Option<DelegationConfig>,
+        delegator_agent_name: Option<&str>,
+        target_agent_name: Option<&str>,
     ) -> BackgroundJobManager {
         let (tx, _) = broadcast::channel(16);
         let manager = BackgroundJobManager::new(tx).with_subagent_factory(factory);
@@ -1134,9 +1182,42 @@ mod tests {
                 agent: test_session_agent(delegation_config),
                 workspace: std::env::temp_dir(),
                 parent_session_dir: None,
+                delegator_agent_name: delegator_agent_name.map(str::to_string),
+                target_agent_name: target_agent_name.map(str::to_string),
             },
         );
         manager
+    }
+
+    fn make_subagent_manager_with_factory(
+        factory: SubagentFactory,
+        delegation_config: Option<DelegationConfig>,
+    ) -> BackgroundJobManager {
+        make_subagent_manager_with_factory_and_identity(
+            factory,
+            delegation_config,
+            Some("parent-agent"),
+            Some("worker-agent"),
+        )
+    }
+
+    fn make_subagent_manager_with_factory_and_events(
+        factory: SubagentFactory,
+        delegation_config: Option<DelegationConfig>,
+    ) -> (BackgroundJobManager, broadcast::Receiver<SessionEventMessage>) {
+        let (tx, rx) = broadcast::channel(32);
+        let manager = BackgroundJobManager::new(tx).with_subagent_factory(factory);
+        manager.register_subagent_context(
+            "session-1",
+            SubagentContext {
+                agent: test_session_agent(delegation_config),
+                workspace: std::env::temp_dir(),
+                parent_session_dir: None,
+                delegator_agent_name: Some("parent-agent".to_string()),
+                target_agent_name: Some("worker-agent".to_string()),
+            },
+        );
+        (manager, rx)
     }
 
     fn behavior_factory(behavior: MockSubagentBehavior) -> SubagentFactory {
@@ -1304,7 +1385,7 @@ mod tests {
     async fn spawn_subagent_blocking_disables_nested_delegation_before_factory() {
         let observed = Arc::new(StdMutex::new(None));
         let observed_for_factory = observed.clone();
-        let manager = make_subagent_manager_with_factory(
+        let manager = make_subagent_manager_with_factory_and_identity(
             Box::new(move |agent, _workspace| {
                 let mut lock = observed_for_factory
                     .lock()
@@ -1319,9 +1400,11 @@ mod tests {
             Some(DelegationConfig {
                 enabled: true,
                 max_depth: 2,
-                allowed_targets: Some(vec!["child".to_string()]),
+                allowed_targets: Some(vec!["worker-agent".to_string()]),
                 result_max_bytes: 51200,
             }),
+            Some("parent-agent"),
+            Some("worker-agent"),
         );
 
         let _ = manager
@@ -1340,6 +1423,266 @@ mod tests {
             .expect("observation mutex should be available")
             .clone();
         assert_eq!(observed, Some(None));
+    }
+
+    #[tokio::test]
+    async fn delegation_happy_path_returns_result_to_parent() {
+        let manager = make_subagent_manager_with_factory(
+            behavior_factory(MockSubagentBehavior::ImmediateSuccess(
+                "delegation-result".to_string(),
+            )),
+            Some(DelegationConfig {
+                enabled: true,
+                max_depth: 1,
+                allowed_targets: None,
+                result_max_bytes: 51200,
+            }),
+        );
+
+        let result = manager
+            .spawn_subagent_blocking(
+                "session-1",
+                "delegate this".to_string(),
+                Some("delegation-context".to_string()),
+                SubagentBlockingConfig::default(),
+                None,
+            )
+            .await
+            .expect("delegation should succeed");
+
+        assert_eq!(result.info.status, JobStatus::Completed);
+        assert_eq!(result.output.as_deref(), Some("delegation-result"));
+    }
+
+    #[tokio::test]
+    async fn delegation_rejected_when_disabled() {
+        let manager = make_subagent_manager_with_factory(
+            behavior_factory(MockSubagentBehavior::ImmediateSuccess("ok".to_string())),
+            Some(DelegationConfig {
+                enabled: false,
+                max_depth: 1,
+                allowed_targets: None,
+                result_max_bytes: 51200,
+            }),
+        );
+
+        let err = manager
+            .spawn_subagent_blocking(
+                "session-1",
+                "delegate this".to_string(),
+                None,
+                SubagentBlockingConfig::default(),
+                None,
+            )
+            .await
+            .expect_err("disabled delegation should be rejected");
+
+        assert!(matches!(err, BackgroundError::SpawnFailed(_)));
+        assert!(err
+            .to_string()
+            .contains("Delegation is disabled"));
+    }
+
+    #[tokio::test]
+    async fn delegation_rejected_when_target_not_allowed() {
+        let manager = make_subagent_manager_with_factory(
+            behavior_factory(MockSubagentBehavior::ImmediateSuccess("ok".to_string())),
+            Some(DelegationConfig {
+                enabled: true,
+                max_depth: 1,
+                allowed_targets: Some(vec!["allowed-agent".to_string()]),
+                result_max_bytes: 51200,
+            }),
+        );
+
+        let err = manager
+            .spawn_subagent_blocking(
+                "session-1",
+                "delegate this".to_string(),
+                None,
+                SubagentBlockingConfig::default(),
+                None,
+            )
+            .await
+            .expect_err("unauthorized delegation target should be rejected");
+
+        assert!(matches!(err, BackgroundError::SpawnFailed(_)));
+        assert!(err.to_string().contains("not allowed"));
+    }
+
+    #[tokio::test]
+    async fn delegation_timeout_returns_failed_job_result() {
+        let manager = make_subagent_manager_with_factory(
+            behavior_factory(MockSubagentBehavior::Pending),
+            Some(DelegationConfig {
+                enabled: true,
+                max_depth: 1,
+                allowed_targets: None,
+                result_max_bytes: 51200,
+            }),
+        );
+
+        let result = manager
+            .spawn_subagent_blocking(
+                "session-1",
+                "delegate this".to_string(),
+                None,
+                SubagentBlockingConfig {
+                    timeout: Duration::from_millis(30),
+                    result_max_bytes: 51200,
+                },
+                None,
+            )
+            .await
+            .expect("timeout should return a failed JobResult");
+
+        assert_eq!(result.info.status, JobStatus::Failed);
+        assert!(result.error.as_deref().unwrap_or("").contains("timed out"));
+    }
+
+    #[tokio::test]
+    async fn delegation_unavailable_agent_returns_error() {
+        let manager = make_subagent_manager_with_factory(
+            Box::new(move |_agent, _workspace| {
+                Box::pin(async move {
+                    Err("command not found: mock-subagent".to_string())
+                })
+            }),
+            Some(DelegationConfig {
+                enabled: true,
+                max_depth: 1,
+                allowed_targets: None,
+                result_max_bytes: 51200,
+            }),
+        );
+
+        let err = manager
+            .spawn_subagent_blocking(
+                "session-1",
+                "delegate this".to_string(),
+                None,
+                SubagentBlockingConfig::default(),
+                None,
+            )
+            .await
+            .expect_err("unavailable target agent should return error");
+
+        assert!(matches!(err, BackgroundError::SpawnFailed(_)));
+        assert!(err.to_string().contains("command not found"));
+    }
+
+    #[tokio::test]
+    async fn delegation_self_delegation_guard_rejects_same_agent() {
+        let manager = make_subagent_manager_with_factory_and_identity(
+            behavior_factory(MockSubagentBehavior::ImmediateSuccess("ok".to_string())),
+            Some(DelegationConfig {
+                enabled: true,
+                max_depth: 1,
+                allowed_targets: Some(vec!["parent-agent".to_string()]),
+                result_max_bytes: 51200,
+            }),
+            Some("parent-agent"),
+            Some("parent-agent"),
+        );
+
+        let err = manager
+            .spawn_subagent_blocking(
+                "session-1",
+                "delegate this".to_string(),
+                None,
+                SubagentBlockingConfig::default(),
+                None,
+            )
+            .await
+            .expect_err("self delegation must be rejected");
+
+        assert!(matches!(err, BackgroundError::SpawnFailed(_)));
+        assert!(err.to_string().contains("self-delegation"));
+    }
+
+    #[tokio::test]
+    async fn delegation_result_truncation_respects_config_limit() {
+        let manager = make_subagent_manager_with_factory(
+            behavior_factory(MockSubagentBehavior::ImmediateSuccess("y".repeat(200))),
+            Some(DelegationConfig {
+                enabled: true,
+                max_depth: 1,
+                allowed_targets: None,
+                result_max_bytes: 16,
+            }),
+        );
+
+        let result = manager
+            .spawn_subagent_blocking(
+                "session-1",
+                "delegate this".to_string(),
+                None,
+                SubagentBlockingConfig {
+                    timeout: Duration::from_secs(1),
+                    result_max_bytes: 16,
+                },
+                None,
+            )
+            .await
+            .expect("delegation should complete");
+
+        let output = result.output.unwrap_or_default();
+        assert!(output.len() <= 16, "output length was {}", output.len());
+    }
+
+    #[tokio::test]
+    async fn delegation_blocking_emits_spawned_and_completed_events() {
+        let (manager, mut rx) = make_subagent_manager_with_factory_and_events(
+            behavior_factory(MockSubagentBehavior::ImmediateSuccess(
+                "eventful-result".to_string(),
+            )),
+            Some(DelegationConfig {
+                enabled: true,
+                max_depth: 1,
+                allowed_targets: None,
+                result_max_bytes: 51200,
+            }),
+        );
+
+        let result = manager
+            .spawn_subagent_blocking(
+                "session-1",
+                "delegate this".to_string(),
+                None,
+                SubagentBlockingConfig::default(),
+                None,
+            )
+            .await
+            .expect("blocking delegation should succeed");
+
+        assert_eq!(result.info.status, JobStatus::Completed);
+
+        let mut saw_spawned = false;
+        let mut saw_completed = false;
+        for _ in 0..5 {
+            let event = tokio::time::timeout(Duration::from_secs(1), rx.recv())
+                .await
+                .expect("timeout waiting for delegation event")
+                .expect("failed to receive delegation event");
+
+            if event.event == events::SUBAGENT_SPAWNED {
+                saw_spawned = true;
+            }
+            if event.event == events::SUBAGENT_COMPLETED {
+                saw_completed = true;
+            }
+
+            if saw_spawned && saw_completed {
+                break;
+            }
+        }
+
+        assert!(saw_spawned, "expected {} event", events::SUBAGENT_SPAWNED);
+        assert!(
+            saw_completed,
+            "expected {} event",
+            events::SUBAGENT_COMPLETED
+        );
     }
 
     #[tokio::test]
