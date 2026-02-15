@@ -228,6 +228,9 @@ fn create_openai_client(config: &LlmProviderConfig) -> RigResult<RigClient> {
 }
 
 /// Create an Anthropic client
+///
+/// Supports custom endpoints (e.g., Anthropic-compatible APIs) via the `endpoint` config field.
+/// If no endpoint is specified, uses the default Anthropic API.
 fn create_anthropic_client(config: &LlmProviderConfig) -> RigResult<RigClient> {
     let api_key = config.api_key().ok_or_else(|| RigError::MissingApiKey {
         provider: "Anthropic".into(),
@@ -237,12 +240,25 @@ fn create_anthropic_client(config: &LlmProviderConfig) -> RigResult<RigClient> {
             .unwrap_or_else(|| "ANTHROPIC_API_KEY".into()),
     })?;
 
-    tracing::debug!("Creating Anthropic client");
+    let endpoint = config.endpoint();
+    let is_default_endpoint = endpoint == "https://api.anthropic.com/v1";
 
-    let client = anthropic::Client::builder()
-        .api_key(api_key)
-        .build()
-        .map_err(|e| RigError::ClientCreation(e.to_string()))?;
+    tracing::debug!(endpoint = %endpoint, is_default_endpoint, "Creating Anthropic client");
+
+    let client = if is_default_endpoint {
+        // Default Anthropic API
+        anthropic::Client::builder()
+            .api_key(api_key)
+            .build()
+            .map_err(|e| RigError::ClientCreation(e.to_string()))?
+    } else {
+        // Custom endpoint (Anthropic-compatible API)
+        anthropic::Client::builder()
+            .api_key(api_key)
+            .base_url(&endpoint)
+            .build()
+            .map_err(|e| RigError::ClientCreation(e.to_string()))?
+    };
 
     Ok(RigClient::Anthropic(client))
 }
@@ -626,5 +642,28 @@ mod tests {
         assert!(client.is_err());
         let err = client.unwrap_err();
         assert!(matches!(err, RigError::MissingApiKey { .. }));
+    }
+
+    #[test]
+    fn test_create_anthropic_client_custom_endpoint() {
+        std::env::set_var("TEST_ANTHROPIC_KEY", "test-key-custom");
+
+        let config = LlmProviderConfig {
+            provider_type: LlmProviderType::Anthropic,
+            endpoint: Some("https://api.z.ai/api/anthropic".into()),
+            default_model: Some("glm-4-flash".into()),
+            temperature: None,
+            max_tokens: None,
+            timeout_secs: None,
+            api_key: Some("TEST_ANTHROPIC_KEY".into()),
+        };
+
+        let client = create_client(&config);
+
+        assert!(client.is_ok());
+        let client = client.unwrap();
+        assert_eq!(client.provider_name(), "anthropic");
+
+        std::env::remove_var("TEST_ANTHROPIC_KEY");
     }
 }
