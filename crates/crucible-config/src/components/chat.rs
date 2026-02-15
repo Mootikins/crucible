@@ -90,6 +90,7 @@ impl ChatConfig {
                     "https://api.github.com/copilot_internal/v2".to_string()
                 }
                 LlmProviderType::OpenRouter => "https://openrouter.ai/api/v1".to_string(),
+                LlmProviderType::ZAI => "https://api.z.ai/api/coding/paas/v4".to_string(),
             })
     }
 
