@@ -11,6 +11,7 @@ mod support;
 
 // Test modules
 mod claude_acp_integration;
+mod concurrent_sessions;
 mod error_propagation;
 mod mock_agent_framework;
 mod opencode_integration;
