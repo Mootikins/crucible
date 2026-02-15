@@ -51,17 +51,14 @@ Waiting for authorization...
 
 ### Step 3: Token Storage
 
-Once authorized, Crucible stores your OAuth token securely. The CLI confirms:
+Once authorized, Crucible stores your OAuth token in the credential store at `~/.config/crucible/secrets.toml`. The CLI confirms:
 
 ```text
-Authentication successful!
-Token saved to ~/.config/crucible/copilot-token
-
-Add to your config:
-  [llm.providers.copilot]
-  type = "copilot"
-  api_key = "{env:GITHUB_COPILOT_TOKEN}"
+✓ GitHub Copilot authenticated successfully!
+  Token stored in /home/user/.config/crucible/secrets.toml
 ```
+
+That's it — no manual configuration needed. Crucible automatically resolves the token from the credential store when you use the Copilot provider.
 
 ### Step 4: Configure Provider
 
@@ -73,15 +70,33 @@ default = "copilot"
 
 [llm.providers.copilot]
 type = "copilot"
-api_key = "{env:GITHUB_COPILOT_TOKEN}"
+# No api_key needed — token is resolved from credential store
 # default_model = "gpt-4o"  # optional, gpt-4o is default
 ```
 
-Or set the environment variable directly:
+Alternatively, you can set the token via environment variable (overrides credential store):
 
 ```bash
-export GITHUB_COPILOT_TOKEN="gho_xxxxxxxxxxxx"
+export GITHUB_COPILOT_OAUTH_TOKEN="gho_xxxxxxxxxxxx"
 ```
+
+### Re-authentication
+
+If you need to re-authenticate (e.g., after revoking the token), use the `--force` flag:
+
+```bash
+cru auth copilot --force
+```
+
+This bypasses the existing token check and starts a fresh device flow.
+
+### Token Resolution Order
+
+Crucible resolves the Copilot OAuth token in this order:
+
+1. **Environment variable** (`GITHUB_COPILOT_OAUTH_TOKEN`) — highest priority
+2. **Credential store** (`~/.config/crucible/secrets.toml`) — set by `cru auth copilot`
+3. **Config `api_key`** — fallback for manual token management
 
 ## Available Models
 
@@ -127,12 +142,22 @@ Typical models include:
 
 ## Token Lifecycle
 
-- **OAuth token** (`gho_xxx`): Long-lived, stored in config
+- **OAuth token** (`gho_xxx`): Long-lived, stored in credential store
 - **API token**: 30-minute TTL, auto-refreshed by Crucible
 
 You only need to re-authenticate if:
 - You revoke the OAuth token in GitHub settings
 - Your Copilot subscription lapses
+
+## Checking Stored Credentials
+
+View your stored credentials with:
+
+```bash
+cru auth list
+```
+
+This shows all configured providers and their token sources. OAuth tokens appear with an `oauth` label and are masked for security (e.g., `gho_1****`).
 
 ## Troubleshooting
 
@@ -143,11 +168,15 @@ Your GitHub account may not have an active Copilot subscription. Check:
 
 ### "Token exchange failed"
 
-The OAuth token may have been revoked. Re-run:
+The OAuth token may have been revoked. Re-authenticate:
 
 ```bash
 cru auth copilot --force
 ```
+
+### "Verification code expired"
+
+The device code has a limited lifetime. If it expires before you authorize, run `cru auth copilot` again to get a fresh code.
 
 ### API errors after working previously
 
@@ -155,7 +184,7 @@ The API token (30-min TTL) refreshes automatically, but if issues persist:
 
 1. Check Copilot status: <https://www.githubstatus.com/>
 2. Verify subscription is active
-3. Try re-authenticating
+3. Re-authenticate with `cru auth copilot --force`
 
 ## Security Notes
 
@@ -166,6 +195,7 @@ The API token (30-min TTL) refreshes automatically, but if issues persist:
 
 ## See Also
 
+- [[Guides/Getting Started|Getting Started Guide]]
+- [[Guides/OpenRouter-Setup|OpenRouter Setup]]
 - [[Help/Configuration|Configuration Reference]]
 - [[Help/Config/LLM Providers|LLM Providers]]
-- [[Guides/Getting Started|Getting Started Guide]]
