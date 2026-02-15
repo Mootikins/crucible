@@ -5,7 +5,7 @@
 use crate::github_copilot::CopilotClient;
 use crucible_config::llm::{LlmProviderConfig, LlmProviderType};
 use rig::client::Nothing;
-use rig::providers::{anthropic, ollama, openai};
+use rig::providers::{anthropic, ollama, openai, openrouter};
 use thiserror::Error;
 
 /// Errors from Rig provider operations
@@ -53,6 +53,8 @@ pub enum RigClient {
     Anthropic(anthropic::Client),
     /// GitHub Copilot client (uses OAuth + Copilot API token exchange)
     GitHubCopilot(CopilotClient),
+    /// OpenRouter client (meta-provider for multiple LLM APIs)
+    OpenRouter(openrouter::Client),
 }
 
 impl RigClient {
@@ -64,6 +66,7 @@ impl RigClient {
             RigClient::OpenAICompat(_) => "openai-compat",
             RigClient::Anthropic(_) => "anthropic",
             RigClient::GitHubCopilot(_) => "github-copilot",
+            RigClient::OpenRouter(_) => "openrouter",
         }
     }
 
@@ -152,6 +155,7 @@ pub fn create_client(config: &LlmProviderConfig) -> RigResult<RigClient> {
         LlmProviderType::OpenAI => create_openai_client(config),
         LlmProviderType::Anthropic => create_anthropic_client(config),
         LlmProviderType::GitHubCopilot => create_github_copilot_client(config),
+        LlmProviderType::OpenRouter => create_openrouter_client(config),
     }
 }
 
@@ -261,7 +265,6 @@ fn create_anthropic_client(config: &LlmProviderConfig) -> RigResult<RigClient> {
 /// // Save oauth_token.access_token to config
 /// ```
 fn create_github_copilot_client(config: &LlmProviderConfig) -> RigResult<RigClient> {
-    // GitHub Copilot requires an OAuth token
     let oauth_token = config.api_key().ok_or(RigError::CopilotAuthRequired)?;
 
     tracing::debug!("Creating GitHub Copilot client");
@@ -269,6 +272,20 @@ fn create_github_copilot_client(config: &LlmProviderConfig) -> RigResult<RigClie
     let client = CopilotClient::new(oauth_token);
 
     Ok(RigClient::GitHubCopilot(client))
+}
+
+fn create_openrouter_client(config: &LlmProviderConfig) -> RigResult<RigClient> {
+    let api_key = config.api_key().ok_or_else(|| RigError::MissingApiKey {
+        provider: "OpenRouter".into(),
+        env_var: "OPENROUTER_API_KEY".into(),
+    })?;
+
+    tracing::debug!("Creating OpenRouter client");
+
+    let client =
+        openrouter::Client::new(&api_key).map_err(|e| RigError::ClientCreation(e.to_string()))?;
+
+    Ok(RigClient::OpenRouter(client))
 }
 
 /// Create an OpenAI-compatible client with explicit credentials.
@@ -565,5 +582,49 @@ mod tests {
 
         // OAuth token should be preserved
         assert_eq!(copilot.oauth_token(), "gho_test_oauth_token");
+    }
+
+    fn openrouter_config_with_key() -> LlmProviderConfig {
+        LlmProviderConfig {
+            provider_type: LlmProviderType::OpenRouter,
+            endpoint: None,
+            default_model: Some("openai/gpt-4o".into()),
+            temperature: None,
+            max_tokens: None,
+            timeout_secs: None,
+            api_key: Some("sk-or-test-key".into()),
+        }
+    }
+
+    fn openrouter_config_no_key() -> LlmProviderConfig {
+        LlmProviderConfig {
+            provider_type: LlmProviderType::OpenRouter,
+            endpoint: None,
+            default_model: Some("openai/gpt-4o".into()),
+            temperature: None,
+            max_tokens: None,
+            timeout_secs: None,
+            api_key: None,
+        }
+    }
+
+    #[test]
+    fn test_create_openrouter_client_with_api_key() {
+        let config = openrouter_config_with_key();
+        let client = create_client(&config);
+
+        assert!(client.is_ok());
+        let client = client.unwrap();
+        assert_eq!(client.provider_name(), "openrouter");
+    }
+
+    #[test]
+    fn test_create_openrouter_client_missing_api_key() {
+        let config = openrouter_config_no_key();
+        let client = create_client(&config);
+
+        assert!(client.is_err());
+        let err = client.unwrap_err();
+        assert!(matches!(err, RigError::MissingApiKey { .. }));
     }
 }
