@@ -500,4 +500,3 @@ async fn test_e2e_session_persistence() {
 
     daemon.stop().await.expect("Failed to stop daemon");
 }
-

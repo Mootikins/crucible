@@ -592,20 +592,23 @@ mod tests {
     use crucible_config::LlmProviderType;
     use serial_test::serial;
 
-     #[test]
-     fn test_llm_provider_to_str_ollama() {
-         assert_eq!(llm_provider_to_str(&LlmProviderType::Ollama), "ollama");
-     }
+    #[test]
+    fn test_llm_provider_to_str_ollama() {
+        assert_eq!(llm_provider_to_str(&LlmProviderType::Ollama), "ollama");
+    }
 
-     #[test]
-     fn test_llm_provider_to_str_openai() {
-         assert_eq!(llm_provider_to_str(&LlmProviderType::OpenAI), "openai");
-     }
+    #[test]
+    fn test_llm_provider_to_str_openai() {
+        assert_eq!(llm_provider_to_str(&LlmProviderType::OpenAI), "openai");
+    }
 
-     #[test]
-     fn test_llm_provider_to_str_anthropic() {
-         assert_eq!(llm_provider_to_str(&LlmProviderType::Anthropic), "anthropic");
-     }
+    #[test]
+    fn test_llm_provider_to_str_anthropic() {
+        assert_eq!(
+            llm_provider_to_str(&LlmProviderType::Anthropic),
+            "anthropic"
+        );
+    }
 
     #[test]
     fn test_format_provider_name_ollama() {

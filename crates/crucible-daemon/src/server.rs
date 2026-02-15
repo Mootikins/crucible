@@ -347,7 +347,8 @@ impl Server {
                     // Persist markdown for user/assistant messages
                     match event.event.as_str() {
                         "user_message" => {
-                            if let Some(content) = event.data.get("content").and_then(|v| v.as_str())
+                            if let Some(content) =
+                                event.data.get("content").and_then(|v| v.as_str())
                             {
                                 let _ = storage.append_markdown(&session, "User", content).await;
                             }
@@ -356,7 +357,9 @@ impl Server {
                             if let Some(content) =
                                 event.data.get("full_response").and_then(|v| v.as_str())
                             {
-                                let _ = storage.append_markdown(&session, "Assistant", content).await;
+                                let _ = storage
+                                    .append_markdown(&session, "Assistant", content)
+                                    .await;
                             }
                         }
                         _ => {}

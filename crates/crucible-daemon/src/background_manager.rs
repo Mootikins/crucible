@@ -650,18 +650,18 @@ impl BackgroundJobManager {
         Ok(job_id)
     }
 
-     pub async fn spawn_subagent_blocking(
-         &self,
-         session_id: &str,
-         prompt: String,
-         context: Option<String>,
-         config: SubagentBlockingConfig,
-         cancel_rx: Option<oneshot::Receiver<()>>,
-     ) -> Result<JobResult, BackgroundError> {
-         // KNOWN LIMITATION: Blocking delegation does not support streaming responses.
-         // The subagent's output is collected entirely before returning to the caller.
-         // Streaming delegation is a future enhancement that would require async streaming
-         // channels and client-side buffering. For now, blocking mode is synchronous only.
+    pub async fn spawn_subagent_blocking(
+        &self,
+        session_id: &str,
+        prompt: String,
+        context: Option<String>,
+        config: SubagentBlockingConfig,
+        cancel_rx: Option<oneshot::Receiver<()>>,
+    ) -> Result<JobResult, BackgroundError> {
+        // KNOWN LIMITATION: Blocking delegation does not support streaming responses.
+        // The subagent's output is collected entirely before returning to the caller.
+        // Streaming delegation is a future enhancement that would require async streaming
+        // channels and client-side buffering. For now, blocking mode is synchronous only.
         let prepared = self
             .prepare_subagent_execution(session_id, prompt, context)
             .await?;
@@ -737,16 +737,16 @@ impl BackgroundJobManager {
             &agent_config,
             delegator_name.as_deref(),
             target_name.as_deref(),
-         )?;
+        )?;
 
-         // KNOWN LIMITATION: No nested delegation (depth=1 only).
-         // Subagents cannot spawn their own subagents. This is enforced by clearing
-         // the delegation_config before passing the agent to the subagent factory.
-         // Future versions could support configurable nesting depth with proper
-         // authorization checks at each level.
-         agent_config.delegation_config = None;
+        // KNOWN LIMITATION: No nested delegation (depth=1 only).
+        // Subagents cannot spawn their own subagents. This is enforced by clearing
+        // the delegation_config before passing the agent to the subagent factory.
+        // Future versions could support configurable nesting depth with proper
+        // authorization checks at each level.
+        agent_config.delegation_config = None;
 
-         let kind = JobKind::Subagent {
+        let kind = JobKind::Subagent {
             prompt: prompt.clone(),
             context: context.clone(),
         };
@@ -816,7 +816,9 @@ impl BackgroundJobManager {
 
         if let Some(allowed_targets) = &delegation.allowed_targets {
             let target = target_name.ok_or_else(|| {
-                BackgroundError::SpawnFailed("Delegation target could not be determined".to_string())
+                BackgroundError::SpawnFailed(
+                    "Delegation target could not be determined".to_string(),
+                )
             })?;
 
             if !allowed_targets.iter().any(|allowed| allowed == target) {
@@ -851,78 +853,78 @@ impl BackgroundJobManager {
             timeout,
         } = options;
         let execute = async {
-        let full_prompt = match context {
-            Some(ctx) => format!("{}\n\n{}", ctx, prompt),
-            None => prompt.clone(),
-        };
-
-        if let Some(ref writer) = session_writer {
-            let mut w = writer.lock().await;
-            if let Err(e) = w.append(LogEvent::user(&full_prompt)).await {
-                error!(error = %e, "Failed to write user event to subagent session");
-            }
-        }
-
-        let mut accumulated_output = String::new();
-        let mut turns = 0;
-
-        while turns < max_turns {
-            turns += 1;
-            let input = if turns == 1 {
-                full_prompt.clone()
-            } else {
-                "Continue with the task.".to_string()
+            let full_prompt = match context {
+                Some(ctx) => format!("{}\n\n{}", ctx, prompt),
+                None => prompt.clone(),
             };
-
-            let mut stream = agent.send_message_stream(input);
-            let mut turn_output = String::new();
-            let mut has_tool_calls = false;
-
-            loop {
-                tokio::select! {
-                    _ = &mut cancel_rx => {
-                        return Err(SubagentError::Cancelled);
-                    }
-                    chunk = stream.next() => {
-                        match chunk {
-                            Some(Ok(c)) => {
-                                turn_output.push_str(&c.delta);
-                                if c.tool_calls.is_some() {
-                                    has_tool_calls = true;
-                                }
-                                if c.done {
-                                    break;
-                                }
-                            }
-                            Some(Err(e)) => {
-                                return Err(SubagentError::Failed(e.to_string()));
-                            }
-                            None => break,
-                        }
-                    }
-                }
-            }
 
             if let Some(ref writer) = session_writer {
                 let mut w = writer.lock().await;
-                if let Err(e) = w.append(LogEvent::assistant(&turn_output)).await {
-                    error!(error = %e, "Failed to write assistant event to subagent session");
+                if let Err(e) = w.append(LogEvent::user(&full_prompt)).await {
+                    error!(error = %e, "Failed to write user event to subagent session");
                 }
             }
 
-            accumulated_output.push_str(&turn_output);
-            accumulated_output.push('\n');
+            let mut accumulated_output = String::new();
+            let mut turns = 0;
 
-            if accumulated_output.len() > max_output_bytes {
-                accumulated_output.truncate(max_output_bytes);
-                accumulated_output.push_str("\n\n[Output truncated due to size limit]");
-                break;
-            }
+            while turns < max_turns {
+                turns += 1;
+                let input = if turns == 1 {
+                    full_prompt.clone()
+                } else {
+                    "Continue with the task.".to_string()
+                };
 
-            if !has_tool_calls {
-                break;
+                let mut stream = agent.send_message_stream(input);
+                let mut turn_output = String::new();
+                let mut has_tool_calls = false;
+
+                loop {
+                    tokio::select! {
+                        _ = &mut cancel_rx => {
+                            return Err(SubagentError::Cancelled);
+                        }
+                        chunk = stream.next() => {
+                            match chunk {
+                                Some(Ok(c)) => {
+                                    turn_output.push_str(&c.delta);
+                                    if c.tool_calls.is_some() {
+                                        has_tool_calls = true;
+                                    }
+                                    if c.done {
+                                        break;
+                                    }
+                                }
+                                Some(Err(e)) => {
+                                    return Err(SubagentError::Failed(e.to_string()));
+                                }
+                                None => break,
+                            }
+                        }
+                    }
+                }
+
+                if let Some(ref writer) = session_writer {
+                    let mut w = writer.lock().await;
+                    if let Err(e) = w.append(LogEvent::assistant(&turn_output)).await {
+                        error!(error = %e, "Failed to write assistant event to subagent session");
+                    }
+                }
+
+                accumulated_output.push_str(&turn_output);
+                accumulated_output.push('\n');
+
+                if accumulated_output.len() > max_output_bytes {
+                    accumulated_output.truncate(max_output_bytes);
+                    accumulated_output.push_str("\n\n[Output truncated due to size limit]");
+                    break;
+                }
+
+                if !has_tool_calls {
+                    break;
+                }
             }
-        }
 
             Ok(accumulated_output.trim().to_string())
         };
@@ -1058,12 +1060,7 @@ impl BackgroundSpawner for BackgroundJobManager {
         cancel_rx: Option<oneshot::Receiver<()>>,
     ) -> Result<JobResult, JobError> {
         BackgroundJobManager::spawn_subagent_blocking(
-            self,
-            session_id,
-            prompt,
-            context,
-            config,
-            cancel_rx,
+            self, session_id, prompt, context, config, cancel_rx,
         )
         .await
         .map_err(|e| JobError::SpawnFailed(e.to_string()))
@@ -1128,21 +1125,24 @@ mod tests {
 
     #[async_trait]
     impl AgentHandle for MockSubagentHandle {
-        fn send_message_stream(&mut self, _message: String) -> BoxStream<'static, ChatResult<ChatChunk>> {
+        fn send_message_stream(
+            &mut self,
+            _message: String,
+        ) -> BoxStream<'static, ChatResult<ChatChunk>> {
             match self.behavior.clone() {
                 MockSubagentBehavior::ImmediateSuccess(output) => {
                     Box::pin(stream::iter(vec![Ok(chunk(output, true))]))
                 }
-                MockSubagentBehavior::DelayedSuccess { output, delay } => Box::pin(stream::once(
-                    async move {
+                MockSubagentBehavior::DelayedSuccess { output, delay } => {
+                    Box::pin(stream::once(async move {
                         tokio::time::sleep(delay).await;
                         Ok(chunk(output, true))
-                    },
-                )),
+                    }))
+                }
                 MockSubagentBehavior::Pending => Box::pin(stream::pending()),
-                MockSubagentBehavior::StreamFailure(message) => Box::pin(stream::iter(vec![Err(
-                    ChatError::Internal(message),
-                )])),
+                MockSubagentBehavior::StreamFailure(message) => {
+                    Box::pin(stream::iter(vec![Err(ChatError::Internal(message))]))
+                }
             }
         }
 
@@ -1192,7 +1192,8 @@ mod tests {
         delegator_agent_name: Option<&str>,
         target_agent_name: Option<&str>,
     ) -> BackgroundJobManager {
-        let delegation_config = delegation_config.or_else(|| Some(default_enabled_delegation_config()));
+        let delegation_config =
+            delegation_config.or_else(|| Some(default_enabled_delegation_config()));
         let (tx, _) = broadcast::channel(16);
         let manager = BackgroundJobManager::new(tx).with_subagent_factory(factory);
         manager.register_subagent_context(
@@ -1223,8 +1224,12 @@ mod tests {
     fn make_subagent_manager_with_factory_and_events(
         factory: SubagentFactory,
         delegation_config: Option<DelegationConfig>,
-    ) -> (BackgroundJobManager, broadcast::Receiver<SessionEventMessage>) {
-        let delegation_config = delegation_config.or_else(|| Some(default_enabled_delegation_config()));
+    ) -> (
+        BackgroundJobManager,
+        broadcast::Receiver<SessionEventMessage>,
+    ) {
+        let delegation_config =
+            delegation_config.or_else(|| Some(default_enabled_delegation_config()));
         let (tx, rx) = broadcast::channel(32);
         let manager = BackgroundJobManager::new(tx).with_subagent_factory(factory);
         manager.register_subagent_context(
@@ -1244,7 +1249,8 @@ mod tests {
         Box::new(move |_agent, _workspace| {
             let behavior = behavior.clone();
             Box::pin(async move {
-                Ok(Box::new(MockSubagentHandle::new(behavior)) as Box<dyn AgentHandle + Send + Sync>)
+                Ok(Box::new(MockSubagentHandle::new(behavior))
+                    as Box<dyn AgentHandle + Send + Sync>)
             })
         })
     }
@@ -1373,7 +1379,11 @@ mod tests {
             .expect("execution failure should still return JobResult");
 
         assert_eq!(result.info.status, JobStatus::Failed);
-        assert!(result.error.as_deref().unwrap_or("").contains("agent-stream-broke"));
+        assert!(result
+            .error
+            .as_deref()
+            .unwrap_or("")
+            .contains("agent-stream-broke"));
     }
 
     #[tokio::test]
@@ -1498,9 +1508,7 @@ mod tests {
             .expect_err("disabled delegation should be rejected");
 
         assert!(matches!(err, BackgroundError::SpawnFailed(_)));
-        assert!(err
-            .to_string()
-            .contains("Delegation is disabled"));
+        assert!(err.to_string().contains("Delegation is disabled"));
     }
 
     #[tokio::test]
@@ -1564,9 +1572,7 @@ mod tests {
     async fn delegation_unavailable_agent_returns_error() {
         let manager = make_subagent_manager_with_factory(
             Box::new(move |_agent, _workspace| {
-                Box::pin(async move {
-                    Err("command not found: mock-subagent".to_string())
-                })
+                Box::pin(async move { Err("command not found: mock-subagent".to_string()) })
             }),
             Some(DelegationConfig {
                 enabled: true,
