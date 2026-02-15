@@ -174,11 +174,9 @@ async fn fetch_openai_models(endpoint: &str) -> Vec<String> {
             .data
             .into_iter()
             .filter(|m| {
-                m.id.starts_with("gpt-")
-                    || m.id.starts_with("chatgpt-")
-                    || m.id.starts_with("o1")
-                    || m.id.starts_with("o3")
-                    || m.id.starts_with("o4")
+                crucible_config::OPENAI_MODEL_PREFIXES
+                    .iter()
+                    .any(|prefix| m.id.starts_with(prefix))
             })
             .map(|m| m.id)
             .collect(),
@@ -187,21 +185,17 @@ async fn fetch_openai_models(endpoint: &str) -> Vec<String> {
 }
 
 fn anthropic_models() -> Vec<String> {
-    vec![
-        "claude-sonnet-4-20250514".to_string(),
-        "claude-3-7-sonnet-20250219".to_string(),
-        "claude-3-5-sonnet-20241022".to_string(),
-        "claude-3-5-haiku-20241022".to_string(),
-        "claude-3-opus-20240229".to_string(),
-    ]
+    crucible_config::ANTHROPIC_MODELS
+        .iter()
+        .map(|s| s.to_string())
+        .collect()
 }
 
 fn zai_models() -> Vec<String> {
-    vec![
-        "GLM-5".to_string(),
-        "GLM-4.7".to_string(),
-        "GLM-4.5-Air".to_string(),
-    ]
+    crucible_config::ZAI_MODELS
+        .iter()
+        .map(|s| s.to_string())
+        .collect()
 }
 
 /// Fetch available models from all configured providers in [llm] config

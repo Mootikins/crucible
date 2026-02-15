@@ -83,12 +83,18 @@ impl ChatConfig {
         self.endpoint
             .clone()
             .unwrap_or_else(|| match self.provider {
-                LlmProviderType::Ollama => "http://localhost:11434".to_string(),
-                LlmProviderType::OpenAI => "https://api.openai.com/v1".to_string(),
-                LlmProviderType::Anthropic => "https://api.anthropic.com/v1".to_string(),
-                LlmProviderType::GitHubCopilot => "https://api.githubcopilot.com".to_string(),
-                LlmProviderType::OpenRouter => "https://openrouter.ai/api/v1".to_string(),
-                LlmProviderType::ZAI => "https://api.z.ai/api/coding/paas/v4".to_string(),
+                LlmProviderType::Ollama => super::defaults::DEFAULT_OLLAMA_ENDPOINT.to_string(),
+                LlmProviderType::OpenAI => super::defaults::DEFAULT_OPENAI_ENDPOINT.to_string(),
+                LlmProviderType::Anthropic => {
+                    super::defaults::DEFAULT_ANTHROPIC_ENDPOINT.to_string()
+                }
+                LlmProviderType::GitHubCopilot => {
+                    super::defaults::DEFAULT_GITHUB_COPILOT_ENDPOINT.to_string()
+                }
+                LlmProviderType::OpenRouter => {
+                    super::defaults::DEFAULT_OPENROUTER_ENDPOINT.to_string()
+                }
+                LlmProviderType::ZAI => super::defaults::DEFAULT_ZAI_ENDPOINT.to_string(),
             })
     }
 

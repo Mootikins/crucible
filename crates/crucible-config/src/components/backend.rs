@@ -99,9 +99,9 @@ impl BackendType {
     /// Get the default endpoint for this backend
     pub fn default_endpoint(&self) -> Option<&'static str> {
         match self {
-            Self::Ollama => Some("http://localhost:11434"),
-            Self::OpenAI => Some("https://api.openai.com/v1"),
-            Self::Anthropic => Some("https://api.anthropic.com/v1"),
+            Self::Ollama => Some(super::defaults::DEFAULT_OLLAMA_ENDPOINT),
+            Self::OpenAI => Some(super::defaults::DEFAULT_OPENAI_ENDPOINT),
+            Self::Anthropic => Some(super::defaults::DEFAULT_ANTHROPIC_ENDPOINT),
             Self::Cohere => Some("https://api.cohere.ai/v1"),
             Self::VertexAI => Some("https://aiplatform.googleapis.com"),
             Self::FastEmbed => None, // Local, no endpoint
@@ -131,9 +131,9 @@ impl BackendType {
     /// Get default chat model for this backend (if supported)
     pub fn default_chat_model(&self) -> Option<&'static str> {
         match self {
-            Self::Ollama => Some("llama3.2"),
-            Self::OpenAI => Some("gpt-4o"),
-            Self::Anthropic => Some("claude-3-5-sonnet-20241022"),
+            Self::Ollama => Some(super::defaults::DEFAULT_CHAT_MODEL),
+            Self::OpenAI => Some(super::defaults::DEFAULT_OPENAI_MODEL),
+            Self::Anthropic => Some(super::defaults::DEFAULT_ANTHROPIC_MODEL),
             Self::Cohere => Some("command-r-plus"),
             Self::VertexAI => Some("gemini-1.5-pro"),
             Self::Custom => None,    // User must specify

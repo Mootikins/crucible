@@ -107,12 +107,18 @@ impl LlmProviderConfig {
         self.endpoint
             .clone()
             .unwrap_or_else(|| match self.provider_type {
-                LlmProviderType::Ollama => "http://localhost:11434".to_string(),
-                LlmProviderType::OpenAI => "https://api.openai.com/v1".to_string(),
-                LlmProviderType::Anthropic => "https://api.anthropic.com/v1".to_string(),
-                LlmProviderType::GitHubCopilot => "https://api.githubcopilot.com".to_string(),
-                LlmProviderType::OpenRouter => "https://openrouter.ai/api/v1".to_string(),
-                LlmProviderType::ZAI => "https://api.z.ai/api/coding/paas/v4".to_string(),
+                LlmProviderType::Ollama => super::defaults::DEFAULT_OLLAMA_ENDPOINT.to_string(),
+                LlmProviderType::OpenAI => super::defaults::DEFAULT_OPENAI_ENDPOINT.to_string(),
+                LlmProviderType::Anthropic => {
+                    super::defaults::DEFAULT_ANTHROPIC_ENDPOINT.to_string()
+                }
+                LlmProviderType::GitHubCopilot => {
+                    super::defaults::DEFAULT_GITHUB_COPILOT_ENDPOINT.to_string()
+                }
+                LlmProviderType::OpenRouter => {
+                    super::defaults::DEFAULT_OPENROUTER_ENDPOINT.to_string()
+                }
+                LlmProviderType::ZAI => super::defaults::DEFAULT_ZAI_ENDPOINT.to_string(),
             })
     }
 
@@ -121,12 +127,16 @@ impl LlmProviderConfig {
         self.default_model
             .clone()
             .unwrap_or_else(|| match self.provider_type {
-                LlmProviderType::Ollama => "llama3.2".to_string(),
-                LlmProviderType::OpenAI => "gpt-4o".to_string(),
-                LlmProviderType::Anthropic => "claude-3-5-sonnet-20241022".to_string(),
-                LlmProviderType::GitHubCopilot => "gpt-4o".to_string(),
-                LlmProviderType::OpenRouter => "openai/gpt-4o".to_string(),
-                LlmProviderType::ZAI => "GLM-4.7".to_string(),
+                LlmProviderType::Ollama => super::defaults::DEFAULT_CHAT_MODEL.to_string(),
+                LlmProviderType::OpenAI => super::defaults::DEFAULT_OPENAI_MODEL.to_string(),
+                LlmProviderType::Anthropic => super::defaults::DEFAULT_ANTHROPIC_MODEL.to_string(),
+                LlmProviderType::GitHubCopilot => {
+                    super::defaults::DEFAULT_GITHUB_COPILOT_MODEL.to_string()
+                }
+                LlmProviderType::OpenRouter => {
+                    super::defaults::DEFAULT_OPENROUTER_MODEL.to_string()
+                }
+                LlmProviderType::ZAI => super::defaults::DEFAULT_ZAI_MODEL.to_string(),
             })
     }
 
@@ -160,24 +170,18 @@ impl LlmProviderConfig {
         }
 
         match self.provider_type {
-            LlmProviderType::Anthropic => vec![
-                "claude-sonnet-4-20250514".to_string(),
-                "claude-3-7-sonnet-20250219".to_string(),
-                "claude-3-5-sonnet-20241022".to_string(),
-                "claude-3-5-haiku-20241022".to_string(),
-                "claude-3-opus-20240229".to_string(),
-            ],
-            LlmProviderType::OpenAI => vec![
-                "gpt-4o".to_string(),
-                "gpt-4o-mini".to_string(),
-                "o1".to_string(),
-                "o3-mini".to_string(),
-            ],
-            LlmProviderType::ZAI => vec![
-                "GLM-5".to_string(),
-                "GLM-4.7".to_string(),
-                "GLM-4.5-Air".to_string(),
-            ],
+            LlmProviderType::Anthropic => super::defaults::ANTHROPIC_MODELS
+                .iter()
+                .map(|s| s.to_string())
+                .collect(),
+            LlmProviderType::OpenAI => super::defaults::OPENAI_HARDCODED_MODELS
+                .iter()
+                .map(|s| s.to_string())
+                .collect(),
+            LlmProviderType::ZAI => super::defaults::ZAI_MODELS
+                .iter()
+                .map(|s| s.to_string())
+                .collect(),
             LlmProviderType::Ollama
             | LlmProviderType::GitHubCopilot
             | LlmProviderType::OpenRouter => Vec::new(),
