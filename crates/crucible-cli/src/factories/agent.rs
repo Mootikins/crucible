@@ -685,53 +685,59 @@ pub async fn create_daemon_agent(
             .map(|t| t == AgentType::Acp)
             .unwrap_or(false);
 
-        let session_agent = if is_acp {
-            SessionAgent {
-                agent_type: "acp".to_string(),
-                agent_name: params.agent_name.clone(),
-                provider_key: None,
-                provider: String::new(),
-                model: String::new(),
-                system_prompt: String::new(),
-                temperature: None,
-                max_tokens: None,
-                max_context_tokens: None,
-                thinking_budget: None,
-                endpoint: None,
-                env_overrides: params.env_overrides.clone(),
-                mcp_servers: vec![],
-                agent_card_name: None,
-            }
-        } else {
-            let model = config
-                .chat
-                .model
-                .clone()
-                .unwrap_or_else(|| "llama3.2".to_string());
+         let session_agent = if is_acp {
+             SessionAgent {
+                 agent_type: "acp".to_string(),
+                 agent_name: params.agent_name.clone(),
+                 provider_key: None,
+                 provider: String::new(),
+                 model: String::new(),
+                 system_prompt: String::new(),
+                 temperature: None,
+                 max_tokens: None,
+                 max_context_tokens: None,
+                 thinking_budget: None,
+                 endpoint: None,
+                 env_overrides: params.env_overrides.clone(),
+                 mcp_servers: vec![],
+                 agent_card_name: None,
+                 capabilities: None,
+                 agent_description: None,
+                 delegation_config: None,
+             }
+         } else {
+             let model = config
+                 .chat
+                 .model
+                 .clone()
+                 .unwrap_or_else(|| "llama3.2".to_string());
 
-            let mcp_servers = config
-                .mcp
-                .as_ref()
-                .map(|mcp| mcp.servers.iter().map(|s| s.name.clone()).collect())
-                .unwrap_or_default();
+             let mcp_servers = config
+                 .mcp
+                 .as_ref()
+                 .map(|mcp| mcp.servers.iter().map(|s| s.name.clone()).collect())
+                 .unwrap_or_default();
 
-            SessionAgent {
-                agent_type: "internal".to_string(),
-                agent_name: None,
-                provider_key: Some(format!("{:?}", config.chat.provider).to_lowercase()),
-                provider: format!("{:?}", config.chat.provider).to_lowercase(),
-                model,
-                system_prompt: String::new(),
-                temperature: config.chat.temperature.map(|t| t as f64),
-                max_tokens: config.chat.max_tokens,
-                max_context_tokens: None,
-                thinking_budget: None,
-                endpoint: config.chat.endpoint.clone(),
-                env_overrides: std::collections::HashMap::new(),
-                mcp_servers,
-                agent_card_name: None,
-            }
-        };
+             SessionAgent {
+                 agent_type: "internal".to_string(),
+                 agent_name: None,
+                 provider_key: Some(format!("{:?}", config.chat.provider).to_lowercase()),
+                 provider: format!("{:?}", config.chat.provider).to_lowercase(),
+                 model,
+                 system_prompt: String::new(),
+                 temperature: config.chat.temperature.map(|t| t as f64),
+                 max_tokens: config.chat.max_tokens,
+                 max_context_tokens: None,
+                 thinking_budget: None,
+                 endpoint: config.chat.endpoint.clone(),
+                 env_overrides: std::collections::HashMap::new(),
+                 mcp_servers,
+                 agent_card_name: None,
+                 capabilities: None,
+                 agent_description: None,
+                 delegation_config: None,
+             }
+         };
 
         client
             .session_configure_agent(&session_id, &session_agent)
@@ -754,51 +760,57 @@ pub async fn create_daemon_agent(
             .map(|t| t == AgentType::Acp)
             .unwrap_or(false);
 
-        let agent_config = if is_acp {
-            SessionAgent {
-                agent_type: "acp".to_string(),
-                agent_name: params.agent_name.clone(),
-                provider_key: None,
-                provider: String::new(),
-                model: String::new(),
-                system_prompt: String::new(),
-                temperature: None,
-                max_tokens: None,
-                max_context_tokens: None,
-                thinking_budget: None,
-                endpoint: None,
-                env_overrides: params.env_overrides.clone(),
-                mcp_servers: vec![],
-                agent_card_name: None,
-            }
-        } else {
-            let model = config
-                .chat
-                .model
-                .clone()
-                .unwrap_or_else(|| "llama3.2".to_string());
-            let mcp_servers = config
-                .mcp
-                .as_ref()
-                .map(|mcp| mcp.servers.iter().map(|s| s.name.clone()).collect())
-                .unwrap_or_default();
-            SessionAgent {
-                agent_type: "internal".to_string(),
-                agent_name: None,
-                provider_key: Some(format!("{:?}", config.chat.provider).to_lowercase()),
-                provider: format!("{:?}", config.chat.provider).to_lowercase(),
-                model,
-                system_prompt: String::new(),
-                temperature: config.chat.temperature.map(|t| t as f64),
-                max_tokens: config.chat.max_tokens,
-                max_context_tokens: None,
-                thinking_budget: None,
-                endpoint: config.chat.endpoint.clone(),
-                env_overrides: std::collections::HashMap::new(),
-                mcp_servers,
-                agent_card_name: None,
-            }
-        };
+         let agent_config = if is_acp {
+             SessionAgent {
+                 agent_type: "acp".to_string(),
+                 agent_name: params.agent_name.clone(),
+                 provider_key: None,
+                 provider: String::new(),
+                 model: String::new(),
+                 system_prompt: String::new(),
+                 temperature: None,
+                 max_tokens: None,
+                 max_context_tokens: None,
+                 thinking_budget: None,
+                 endpoint: None,
+                 env_overrides: params.env_overrides.clone(),
+                 mcp_servers: vec![],
+                 agent_card_name: None,
+                 capabilities: None,
+                 agent_description: None,
+                 delegation_config: None,
+             }
+         } else {
+             let model = config
+                 .chat
+                 .model
+                 .clone()
+                 .unwrap_or_else(|| "llama3.2".to_string());
+             let mcp_servers = config
+                 .mcp
+                 .as_ref()
+                 .map(|mcp| mcp.servers.iter().map(|s| s.name.clone()).collect())
+                 .unwrap_or_default();
+             SessionAgent {
+                 agent_type: "internal".to_string(),
+                 agent_name: None,
+                 provider_key: Some(format!("{:?}", config.chat.provider).to_lowercase()),
+                 provider: format!("{:?}", config.chat.provider).to_lowercase(),
+                 model,
+                 system_prompt: String::new(),
+                 temperature: config.chat.temperature.map(|t| t as f64),
+                 max_tokens: config.chat.max_tokens,
+                 max_context_tokens: None,
+                 thinking_budget: None,
+                 endpoint: config.chat.endpoint.clone(),
+                 env_overrides: std::collections::HashMap::new(),
+                 mcp_servers,
+                 agent_card_name: None,
+                 capabilities: None,
+                 agent_description: None,
+                 delegation_config: None,
+             }
+         };
         handle.with_agent_config(agent_config)
     } else {
         handle

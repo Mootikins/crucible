@@ -869,24 +869,27 @@ async fn test_session_configure_agent() {
         .expect("session_id should be string")
         .to_string();
 
-    let agent = SessionAgent {
-        agent_type: "internal".to_string(),
-        agent_name: None,
-        provider_key: Some("ollama".to_string()),
-        provider: "ollama".to_string(),
-        model: "llama3.2".to_string(),
-        system_prompt: "You are a helpful assistant.".to_string(),
-        temperature: Some(0.7),
-        max_tokens: Some(4096),
-        max_context_tokens: None,
-        thinking_budget: None,
-        endpoint: Some("http://localhost:11434".to_string()),
-        env_overrides: std::collections::HashMap::new(),
-        mcp_servers: vec![],
-        agent_card_name: None,
-    };
+     let agent = SessionAgent {
+         agent_type: "internal".to_string(),
+         agent_name: None,
+         provider_key: Some("ollama".to_string()),
+         provider: "ollama".to_string(),
+         model: "llama3.2".to_string(),
+         system_prompt: "You are a helpful assistant.".to_string(),
+         temperature: Some(0.7),
+         max_tokens: Some(4096),
+         max_context_tokens: None,
+         thinking_budget: None,
+         endpoint: Some("http://localhost:11434".to_string()),
+         env_overrides: std::collections::HashMap::new(),
+         mcp_servers: vec![],
+         agent_card_name: None,
+         capabilities: None,
+         agent_description: None,
+         delegation_config: None,
+     };
 
-    let result = client.session_configure_agent(&session_id, &agent).await;
+     let result = client.session_configure_agent(&session_id, &agent).await;
     assert!(
         result.is_ok(),
         "session_configure_agent should succeed: {:?}",
@@ -1081,22 +1084,25 @@ async fn test_tui_daemon_agent_full_flow() {
         .await
         .expect("subscribe failed");
 
-    let agent = SessionAgent {
-        agent_type: "internal".to_string(),
-        agent_name: None,
-        provider_key: Some("ollama".to_string()),
-        provider: "ollama".to_string(),
-        model: "llama3.2".to_string(),
-        system_prompt: "You are helpful.".to_string(),
-        temperature: Some(0.7),
-        max_tokens: Some(4096),
-        max_context_tokens: None,
-        thinking_budget: None,
-        endpoint: Some("http://localhost:11434".to_string()),
-        env_overrides: std::collections::HashMap::new(),
-        mcp_servers: vec![],
-        agent_card_name: None,
-    };
+     let agent = SessionAgent {
+         agent_type: "internal".to_string(),
+         agent_name: None,
+         provider_key: Some("ollama".to_string()),
+         provider: "ollama".to_string(),
+         model: "llama3.2".to_string(),
+         system_prompt: "You are helpful.".to_string(),
+         temperature: Some(0.7),
+         max_tokens: Some(4096),
+         max_context_tokens: None,
+         thinking_budget: None,
+         endpoint: Some("http://localhost:11434".to_string()),
+         env_overrides: std::collections::HashMap::new(),
+         mcp_servers: vec![],
+         agent_card_name: None,
+         capabilities: None,
+         agent_description: None,
+         delegation_config: None,
+     };
 
     client
         .session_configure_agent(&session_id, &agent)
@@ -1422,26 +1428,29 @@ async fn test_session_switch_model() {
         .expect("session_id should be string")
         .to_string();
 
-    let agent = SessionAgent {
-        agent_type: "internal".to_string(),
-        agent_name: None,
-        provider_key: Some("ollama".to_string()),
-        provider: "ollama".to_string(),
-        model: "llama3.2".to_string(),
-        system_prompt: "You are a helpful assistant.".to_string(),
-        temperature: Some(0.7),
-        max_tokens: Some(4096),
-        max_context_tokens: None,
-        thinking_budget: None,
-        endpoint: Some("http://localhost:11434".to_string()),
-        env_overrides: std::collections::HashMap::new(),
-        mcp_servers: vec![],
-        agent_card_name: None,
-    };
+     let agent = SessionAgent {
+         agent_type: "internal".to_string(),
+         agent_name: None,
+         provider_key: Some("ollama".to_string()),
+         provider: "ollama".to_string(),
+         model: "llama3.2".to_string(),
+         system_prompt: "You are a helpful assistant.".to_string(),
+         temperature: Some(0.7),
+         max_tokens: Some(4096),
+         max_context_tokens: None,
+         thinking_budget: None,
+         endpoint: Some("http://localhost:11434".to_string()),
+         env_overrides: std::collections::HashMap::new(),
+         mcp_servers: vec![],
+         agent_card_name: None,
+         capabilities: None,
+         agent_description: None,
+         delegation_config: None,
+     };
 
-    client
-        .session_configure_agent(&session_id, &agent)
-        .await
+     client
+         .session_configure_agent(&session_id, &agent)
+         .await
         .expect("configure_agent failed");
 
     let result = client.session_switch_model(&session_id, "gpt-4").await;
@@ -1488,26 +1497,29 @@ async fn test_daemon_agent_handle_switch_model() {
         .expect("session_id should be string")
         .to_string();
 
-    let agent = SessionAgent {
-        agent_type: "internal".to_string(),
-        agent_name: None,
-        provider_key: Some("ollama".to_string()),
-        provider: "ollama".to_string(),
-        model: "llama3.2".to_string(),
-        system_prompt: "Test assistant".to_string(),
-        temperature: None,
-        max_tokens: None,
-        max_context_tokens: None,
-        thinking_budget: None,
-        endpoint: Some("http://localhost:11434".to_string()),
-        env_overrides: std::collections::HashMap::new(),
-        mcp_servers: vec![],
-        agent_card_name: None,
-    };
+     let agent = SessionAgent {
+         agent_type: "internal".to_string(),
+         agent_name: None,
+         provider_key: Some("ollama".to_string()),
+         provider: "ollama".to_string(),
+         model: "llama3.2".to_string(),
+         system_prompt: "Test assistant".to_string(),
+         temperature: None,
+         max_tokens: None,
+         max_context_tokens: None,
+         thinking_budget: None,
+         endpoint: Some("http://localhost:11434".to_string()),
+         env_overrides: std::collections::HashMap::new(),
+         mcp_servers: vec![],
+         agent_card_name: None,
+         capabilities: None,
+         agent_description: None,
+         delegation_config: None,
+     };
 
-    client
-        .session_configure_agent(&session_id, &agent)
-        .await
+     client
+         .session_configure_agent(&session_id, &agent)
+         .await
         .expect("configure_agent failed");
 
     let mut handle =
