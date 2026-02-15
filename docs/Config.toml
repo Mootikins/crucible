@@ -189,7 +189,6 @@ timeout_secs = 120
 # - anthropic: Anthropic's embedding models (requires API key)
 # - cohere: Cohere's embedding models (requires API key)
 # - burn: Local GPU via Burn ML framework (experimental)
-# - llamacpp: Local GGUF models with GPU acceleration (experimental)
 # - custom: Custom HTTP endpoint
 # - mock: Testing only
 #
@@ -203,7 +202,7 @@ timeout_secs = 120
 
 [embedding]
 # Provider type
-# Options: fastembed, ollama, openai, anthropic, cohere, burn, llamacpp, custom
+# Options: fastembed, ollama, openai, anthropic, cohere, burn, custom
 provider = "ollama"
 
 # Model name (provider-specific)
@@ -235,7 +234,7 @@ batch_size = 50
 # If not set, uses provider-specific defaults:
 # - ollama: 1 (single GPU, sequential to avoid OOM)
 # - fastembed: num_cpus/2 (CPU-bound, parallel OK)
-# - burn/llamacpp: 1 (GPU-bound, sequential)
+# - burn: 1 (GPU-bound, sequential)
 # - openai/anthropic: 8 (rate-limited, moderate concurrency)
 # - mock: 16 (testing, high concurrency)
 # max_concurrent = 4

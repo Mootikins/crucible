@@ -323,18 +323,6 @@ impl ProviderConfig {
                     dimensions: 0,
                 },
             ),
-            BackendType::LlamaCpp => crate::enrichment::EmbeddingProviderConfig::LlamaCpp(
-                crate::enrichment::LlamaCppConfig {
-                    model_path: self
-                        .embedding_model()
-                        .unwrap_or_else(|| "nomic-embed-text-v1.5.Q8_0.gguf".to_string()),
-                    device: "auto".to_string(),
-                    gpu_layers: -1,
-                    batch_size: self.batch_size(),
-                    context_size: 512,
-                    dimensions: 0,
-                },
-            ),
             // Fallback for backends without embedding support
             _ => crate::enrichment::EmbeddingProviderConfig::FastEmbed(
                 crate::enrichment::FastEmbedConfig {
@@ -365,7 +353,6 @@ impl ProviderConfig {
             EmbeddingProviderType::Custom => BackendType::Custom,
             EmbeddingProviderType::Mock => BackendType::Mock,
             EmbeddingProviderType::Burn => BackendType::Burn,
-            EmbeddingProviderType::LlamaCpp => BackendType::LlamaCpp,
             EmbeddingProviderType::None => BackendType::FastEmbed, // Default fallback
         };
 
