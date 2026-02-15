@@ -97,12 +97,16 @@ fn render_box(layout_box: &LayoutBox, grid: &mut CellGrid) {
             selected,
             viewport_offset,
             max_visible,
+            bg_style,
+            selected_style,
         } => {
             render_popup(
                 items,
                 *selected,
                 *viewport_offset,
                 *max_visible,
+                bg_style,
+                selected_style,
                 x,
                 y,
                 width,
@@ -212,6 +216,8 @@ fn render_popup(
     selected: usize,
     viewport_offset: usize,
     max_visible: usize,
+    bg_style: &crucible_oil::style::Style,
+    selected_style: &crucible_oil::style::Style,
     x: usize,
     y: usize,
     width: usize,
@@ -219,8 +225,8 @@ fn render_popup(
 ) {
     use crucible_oil::style::Color;
 
-    let popup_bg = Color::Rgb(45, 50, 60);
-    let selected_bg = Color::Rgb(60, 70, 90);
+    let popup_bg = bg_style.bg.unwrap_or(Color::Rgb(30, 34, 42));
+    let selected_bg = selected_style.bg.unwrap_or(Color::Rgb(50, 56, 68));
 
     let visible_end = (viewport_offset + max_visible).min(items.len());
     let visible_items = &items[viewport_offset..visible_end];
@@ -554,6 +560,8 @@ mod tests {
                 selected: 1,
                 viewport_offset: 0,
                 max_visible: 3,
+                bg_style: crucible_oil::style::Style::new(),
+                selected_style: crucible_oil::style::Style::new(),
             },
         ));
 
