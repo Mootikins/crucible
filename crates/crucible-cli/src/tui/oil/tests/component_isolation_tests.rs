@@ -557,6 +557,79 @@ mod popup_overlay_tests {
         let popup = PopupOverlay::new(sample_items()).selected(2);
         assert_snapshot!("popup_selection_last", render_plain(&popup, 80));
     }
+
+    #[test]
+    fn popup_bg_matches_theme() {
+        let popup = PopupOverlay::new(sample_items()).selected(0);
+        let ansi = render_ansi(&popup, 80);
+
+        // ThemeTokens::popup_bg is Rgb(30, 34, 42)
+        // ANSI escape for background: \x1b[48;2;30;34;42m
+        assert!(
+            ansi.contains("\x1b[48;2;30;34;42m"),
+            "Popup should use theme popup_bg color Rgb(30,34,42). Got: {:?}",
+            ansi
+        );
+    }
+
+    #[test]
+    fn popup_selected_bg_matches_theme() {
+        let popup = PopupOverlay::new(sample_items()).selected(1);
+        let ansi = render_ansi(&popup, 80);
+
+        // Selected items should have a different background (theme-derived)
+        // At minimum, should contain ANSI background color codes
+        let lines: Vec<&str> = ansi.lines().collect();
+        let mut found_selected_bg = false;
+
+        for line in lines {
+            // Selected line should have ANSI background code
+            if line.contains("Option B") && line.contains("\x1b[48;2;") {
+                found_selected_bg = true;
+                break;
+            }
+        }
+
+        assert!(
+            found_selected_bg,
+            "Selected item should have theme-derived background ANSI code"
+        );
+    }
+
+    #[test]
+    fn popup_all_lines_have_bg() {
+        let popup = PopupOverlay::new(sample_items()).selected(0);
+        let ansi = render_ansi(&popup, 80);
+
+        // All non-empty rendered lines should have background color
+        let lines: Vec<&str> = ansi.lines().collect();
+        assert!(!lines.is_empty(), "Popup should render lines");
+
+        for (i, line) in lines.iter().enumerate() {
+            if !line.is_empty() {
+                assert!(
+                    line.contains("\x1b[48;2;"),
+                    "Line {} should have background color ANSI code. Got: {:?}",
+                    i,
+                    line
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn popup_bg_not_hardcoded_45_50_60() {
+        let popup = PopupOverlay::new(sample_items()).selected(0);
+        let ansi = render_ansi(&popup, 80);
+
+        // The old hardcoded wrong value was Rgb(45, 50, 60)
+        // ANSI escape: \x1b[48;2;45;50;60m
+        // This test verifies we're NOT using that hardcoded value
+        assert!(
+            !ansi.contains("\x1b[48;2;45;50;60m"),
+            "Popup should NOT use hardcoded Rgb(45,50,60). Should use theme popup_bg instead."
+        );
+    }
 }
 
 mod layout_tests {
