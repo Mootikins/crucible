@@ -1279,9 +1279,10 @@ impl AgentManager {
     pub async fn list_models(&self, session_id: &str) -> Result<Vec<String>, AgentError> {
         use crucible_config::LlmProviderType;
 
-        if let Some(ref llm_config) = self.llm_config {
-            let mut all_models = Vec::new();
+        let mut all_models = Vec::new();
 
+        // Collect models from LlmConfig (new system)
+        if let Some(ref llm_config) = self.llm_config {
             for (provider_key, provider_config) in &llm_config.providers {
                 let models = match provider_config.provider_type {
                     LlmProviderType::Ollama => {
@@ -1308,9 +1309,52 @@ impl AgentManager {
                     all_models.push(format!("{}/{}", provider_key, model));
                 }
             }
+        }
 
-            Ok(all_models)
-        } else {
+        // Collect models from ProvidersConfig (legacy system)
+        for (provider_key, provider_config) in self.providers_config.iter() {
+            use crucible_config::BackendType;
+
+            let models = match provider_config.backend {
+                BackendType::Ollama => {
+                    let endpoint = provider_config
+                        .endpoint()
+                        .unwrap_or_else(|| "http://localhost:11434".to_string());
+                    match self.list_ollama_models(&endpoint).await {
+                        Ok(models) => models,
+                        Err(e) => {
+                            debug!(
+                                provider_key = %provider_key,
+                                error = %e,
+                                "Failed to list Ollama models from legacy config, skipping"
+                            );
+                            continue;
+                        }
+                    }
+                }
+                _ => {
+                    // For non-Ollama providers, collect configured models
+                    let mut models = Vec::new();
+                    if let Some(chat_model) = provider_config.chat_model() {
+                        models.push(chat_model);
+                    }
+                    if let Some(embedding_model) = provider_config.embedding_model() {
+                        // Only add if different from chat model
+                        if !models.contains(&embedding_model) {
+                            models.push(embedding_model);
+                        }
+                    }
+                    models
+                }
+            };
+
+            for model in models {
+                all_models.push(format!("{}/{}", provider_key, model));
+            }
+        }
+
+        // Fallback for legacy-only users with no configured providers
+        if all_models.is_empty() && self.llm_config.is_none() {
             let (_, agent_config) = self.get_session_with_agent(session_id)?;
 
             let endpoint = agent_config
@@ -1318,16 +1362,17 @@ impl AgentManager {
                 .unwrap_or_else(|| "http://localhost:11434".to_string());
 
             match agent_config.provider.as_str() {
-                "ollama" => self.list_ollama_models(&endpoint).await,
+                "ollama" => return self.list_ollama_models(&endpoint).await,
                 _ => {
                     debug!(
                         provider = %agent_config.provider,
                         "Model listing not supported for provider"
                     );
-                    Ok(Vec::new())
                 }
             }
         }
+
+        Ok(all_models)
     }
 
     pub async fn set_thinking_budget(
@@ -3842,6 +3887,122 @@ mod tests {
         assert!(
             models.contains(&"openai/gpt-4".to_string()),
             "Should contain openai/gpt-4, got: {:?}",
+            models
+        );
+    }
+
+    #[tokio::test]
+    async fn test_list_models_legacy_providers_config() {
+        use crucible_config::{BackendType, ProviderConfig};
+
+        let tmp = TempDir::new().unwrap();
+        let storage = Arc::new(FileSessionStorage::new());
+        let session_manager = Arc::new(SessionManager::with_storage(storage));
+
+        let session = session_manager
+            .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![])
+            .await
+            .unwrap();
+
+        let mut providers_config = crucible_config::ProvidersConfig::new();
+        providers_config.add(
+            "openai",
+            ProviderConfig::new(BackendType::OpenAI)
+                .with_chat_model("gpt-4")
+                .with_embedding_model("text-embedding-3-small"),
+        );
+        providers_config.add(
+            "anthropic",
+            ProviderConfig::new(BackendType::Anthropic).with_chat_model("claude-3-opus"),
+        );
+
+        let (event_tx, _) = broadcast::channel(16);
+        let background_manager = Arc::new(BackgroundJobManager::new(event_tx));
+        let agent_manager = AgentManager::new(
+            session_manager.clone(),
+            background_manager,
+            None,
+            providers_config,
+            None,
+        );
+
+        agent_manager
+            .configure_agent(&session.id, test_agent())
+            .await
+            .unwrap();
+
+        let models = agent_manager.list_models(&session.id).await.unwrap();
+
+        assert!(
+            models.contains(&"openai/gpt-4".to_string()),
+            "Should contain openai/gpt-4 from legacy config, got: {:?}",
+            models
+        );
+        assert!(
+            models.contains(&"openai/text-embedding-3-small".to_string()),
+            "Should contain openai/text-embedding-3-small from legacy config, got: {:?}",
+            models
+        );
+        assert!(
+            models.contains(&"anthropic/claude-3-opus".to_string()),
+            "Should contain anthropic/claude-3-opus from legacy config, got: {:?}",
+            models
+        );
+    }
+
+    #[tokio::test]
+    async fn test_list_models_both_configs() {
+        use crucible_config::{
+            BackendType, LlmConfig, LlmProviderConfig, LlmProviderType, ProviderConfig,
+        };
+        use std::collections::HashMap;
+
+        let tmp = TempDir::new().unwrap();
+        let storage = Arc::new(FileSessionStorage::new());
+        let session_manager = Arc::new(SessionManager::with_storage(storage));
+
+        let session = session_manager
+            .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![])
+            .await
+            .unwrap();
+
+        let mut providers_config = crucible_config::ProvidersConfig::new();
+        providers_config.add(
+            "legacy-openai",
+            ProviderConfig::new(BackendType::OpenAI).with_chat_model("gpt-3.5-turbo"),
+        );
+
+        let mut llm_providers = HashMap::new();
+        llm_providers.insert(
+            "new-anthropic".to_string(),
+            LlmProviderConfig::builder(LlmProviderType::Anthropic)
+                .available_models(vec!["claude-sonnet-4".to_string()])
+                .build(),
+        );
+
+        let llm_config = LlmConfig {
+            default: Some("new-anthropic".to_string()),
+            providers: llm_providers,
+        };
+
+        let agent_manager =
+            create_test_agent_manager_with_both(session_manager.clone(), providers_config, llm_config);
+
+        agent_manager
+            .configure_agent(&session.id, test_agent())
+            .await
+            .unwrap();
+
+        let models = agent_manager.list_models(&session.id).await.unwrap();
+
+        assert!(
+            models.contains(&"new-anthropic/claude-sonnet-4".to_string()),
+            "Should contain new-anthropic/claude-sonnet-4 from LlmConfig, got: {:?}",
+            models
+        );
+        assert!(
+            models.contains(&"legacy-openai/gpt-3.5-turbo".to_string()),
+            "Should contain legacy-openai/gpt-3.5-turbo from ProvidersConfig, got: {:?}",
             models
         );
     }

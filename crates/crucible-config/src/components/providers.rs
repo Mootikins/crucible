@@ -154,6 +154,11 @@ impl ProvidersConfig {
             .or_else(|| self.providers.iter().find(|(_, c)| c.supports_chat()))
     }
 
+    /// Iterate over all providers
+    pub fn iter(&self) -> impl Iterator<Item = (&String, &ProviderConfig)> {
+        self.providers.iter()
+    }
+
     /// List all provider names
     pub fn names(&self) -> Vec<&String> {
         self.providers.keys().collect()
