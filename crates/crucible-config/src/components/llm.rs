@@ -20,6 +20,10 @@ pub enum LlmProviderType {
     /// Requires initial device flow authentication, then stores OAuth token.
     #[serde(alias = "github-copilot", alias = "github_copilot", alias = "copilot")]
     GitHubCopilot,
+    /// OpenRouter provider (meta-provider routing to multiple LLM APIs)
+    /// Access 100+ models through a single API key.
+    #[serde(alias = "openrouter", alias = "open_router", alias = "open-router")]
+    OpenRouter,
 }
 
 impl LlmProviderType {
@@ -30,6 +34,7 @@ impl LlmProviderType {
             LlmProviderType::OpenAI => Some("OPENAI_API_KEY"),
             LlmProviderType::Anthropic => Some("ANTHROPIC_API_KEY"),
             LlmProviderType::GitHubCopilot => None,
+            LlmProviderType::OpenRouter => Some("OPENROUTER_API_KEY"),
         }
     }
 }
@@ -43,6 +48,7 @@ impl FromStr for LlmProviderType {
             "openai" => Ok(LlmProviderType::OpenAI),
             "anthropic" => Ok(LlmProviderType::Anthropic),
             "github-copilot" | "github_copilot" | "copilot" => Ok(LlmProviderType::GitHubCopilot),
+            "openrouter" | "open_router" | "open-router" => Ok(LlmProviderType::OpenRouter),
             other => Err(format!("Unknown provider: {}", other)),
         }
     }
@@ -84,6 +90,7 @@ impl LlmProviderConfig {
                 LlmProviderType::OpenAI => "https://api.openai.com/v1".to_string(),
                 LlmProviderType::Anthropic => "https://api.anthropic.com/v1".to_string(),
                 LlmProviderType::GitHubCopilot => "https://api.githubcopilot.com".to_string(),
+                LlmProviderType::OpenRouter => "https://openrouter.ai/api/v1".to_string(),
             })
     }
 
@@ -96,6 +103,7 @@ impl LlmProviderConfig {
                 LlmProviderType::OpenAI => "gpt-4o".to_string(),
                 LlmProviderType::Anthropic => "claude-3-5-sonnet-20241022".to_string(),
                 LlmProviderType::GitHubCopilot => "gpt-4o".to_string(),
+                LlmProviderType::OpenRouter => "openai/gpt-4o".to_string(),
             })
     }
 

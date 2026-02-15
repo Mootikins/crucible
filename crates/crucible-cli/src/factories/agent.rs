@@ -245,6 +245,7 @@ pub async fn create_internal_agent(
             LlmProviderType::OpenAI => "gpt-4o".to_string(),
             LlmProviderType::Anthropic => "claude-3-5-sonnet-20241022".to_string(),
             LlmProviderType::GitHubCopilot => "gpt-4o".to_string(),
+            LlmProviderType::OpenRouter => "openai/gpt-4o".to_string(),
         });
 
     // Detect model size (or use Medium if size-aware prompts disabled)
@@ -418,6 +419,14 @@ pub async fn create_internal_agent(
 
             crucible_rig::create_client(&copilot_config)?
         }
+        LlmProviderType::OpenRouter => crucible_rig::create_client(
+            &LlmProviderConfig::builder(LlmProviderType::OpenRouter)
+                .maybe_endpoint(config.chat.endpoint.clone())
+                .model(model.clone())
+                .maybe_timeout_secs(config.chat.timeout_secs)
+                .api_key_from_env()
+                .build(),
+        )?,
     };
 
     let has_kiln = params.kiln_context.is_some();
@@ -582,6 +591,24 @@ pub async fn create_internal_agent(
             } else {
                 Box::new(handle)
             })
+        }
+        crucible_rig::RigClient::OpenRouter(openrouter_client) => {
+            let (agent, ws_ctx) = build_agent_with_kiln_tools(
+                &agent_config,
+                &openrouter_client,
+                &workspace_root,
+                model_size,
+                kiln_ctx,
+                mcp_tools.clone(),
+            )?;
+            let mut handle = RigAgentHandle::new(agent)
+                .with_workspace_context(ws_ctx)
+                .with_initial_mode(initial_mode)
+                .with_model(model.clone());
+            if let Some(endpoint) = ollama_endpoint.clone() {
+                handle = handle.with_ollama_endpoint(endpoint);
+            }
+            Ok(Box::new(handle))
         }
     }
 }
