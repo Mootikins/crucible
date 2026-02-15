@@ -1168,12 +1168,22 @@ mod tests {
         }
     }
 
+    fn default_enabled_delegation_config() -> DelegationConfig {
+        DelegationConfig {
+            enabled: true,
+            max_depth: 1,
+            allowed_targets: None,
+            result_max_bytes: 51200,
+        }
+    }
+
     fn make_subagent_manager_with_factory_and_identity(
         factory: SubagentFactory,
         delegation_config: Option<DelegationConfig>,
         delegator_agent_name: Option<&str>,
         target_agent_name: Option<&str>,
     ) -> BackgroundJobManager {
+        let delegation_config = delegation_config.or_else(|| Some(default_enabled_delegation_config()));
         let (tx, _) = broadcast::channel(16);
         let manager = BackgroundJobManager::new(tx).with_subagent_factory(factory);
         manager.register_subagent_context(
@@ -1205,6 +1215,7 @@ mod tests {
         factory: SubagentFactory,
         delegation_config: Option<DelegationConfig>,
     ) -> (BackgroundJobManager, broadcast::Receiver<SessionEventMessage>) {
+        let delegation_config = delegation_config.or_else(|| Some(default_enabled_delegation_config()));
         let (tx, rx) = broadcast::channel(32);
         let manager = BackgroundJobManager::new(tx).with_subagent_factory(factory);
         manager.register_subagent_context(
