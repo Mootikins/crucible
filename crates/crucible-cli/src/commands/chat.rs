@@ -18,7 +18,9 @@ use crate::core_facade::KilnContext;
 use crate::factories;
 use crate::kiln_discover::{discover_kiln, DiscoverySource};
 use crate::progress::{BackgroundProgress, LiveProgress, StatusLine};
-use crate::provider_detect::{detect_providers, fetch_model_context_length, fetch_provider_models};
+use crate::provider_detect::{
+    detect_providers, fetch_all_provider_models, fetch_model_context_length, fetch_provider_models,
+};
 use crate::tui::oil::{McpServerDisplay, PluginStatusEntry};
 use crate::tui::AgentSelection;
 use crucible_core::traits::chat::{is_read_only, mode_display_name};
@@ -289,7 +291,11 @@ async fn run_interactive_chat(
     let bridge = AgentEventBridge::new(ring);
 
     let mode = ChatMode::parse(initial_mode);
-    let model_name = config.chat_model();
+    let model_name = if let Some((_, provider)) = config.llm.default_provider() {
+        provider.model()
+    } else {
+        config.chat_model()
+    };
     let endpoint = config.chat.llm_endpoint();
 
     let context_limit = fetch_model_context_length(&endpoint, &model_name)
@@ -383,7 +389,13 @@ async fn run_interactive_chat(
             let root = kiln_root.clone();
             move || index_kiln_notes(&root)
         }),
-        fetch_provider_models(&provider, &model_endpoint),
+        async {
+            if !config.llm.providers.is_empty() {
+                fetch_all_provider_models(&config.llm).await
+            } else {
+                fetch_provider_models(&provider, &model_endpoint).await
+            }
+        },
     );
 
     if let Ok(files) = files {

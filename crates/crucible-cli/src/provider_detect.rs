@@ -7,7 +7,7 @@
 //! - Anthropic: ANTHROPIC_API_KEY env var or credential store
 
 use crucible_config::credentials::{CredentialSource, CredentialStore, SecretsFile};
-use crucible_config::{ChatConfig, LlmProviderType};
+use crucible_config::{ChatConfig, LlmConfig, LlmProviderType};
 use std::time::Duration;
 
 /// Default Ollama endpoint
@@ -189,6 +189,46 @@ fn anthropic_models() -> Vec<String> {
         "claude-3-5-haiku-20241022".to_string(),
         "claude-3-opus-20240229".to_string(),
     ]
+}
+
+/// Fetch available models from all configured providers in [llm] config
+///
+/// Returns models prefixed with provider key (e.g., "ollama-local/llama3.2")
+/// - Ollama providers: async HTTP fetch in parallel
+/// - Other providers: use effective_models() (hardcoded fallback)
+pub async fn fetch_all_provider_models(llm_config: &LlmConfig) -> Vec<String> {
+    let mut all_models = Vec::new();
+    let mut ollama_futures = Vec::new();
+
+    for (key, config) in &llm_config.providers {
+        match config.provider_type {
+            LlmProviderType::Ollama => {
+                let key = key.clone();
+                let endpoint = config.endpoint();
+                let fut = async move {
+                    let models = fetch_ollama_models(&endpoint).await;
+                    models
+                        .into_iter()
+                        .map(|model| format!("{}/{}", key, model))
+                        .collect::<Vec<String>>()
+                };
+                ollama_futures.push(fut);
+            }
+            _ => {
+                let models = config.effective_models();
+                for model in models {
+                    all_models.push(format!("{}/{}", key, model));
+                }
+            }
+        }
+    }
+
+    let ollama_results = futures::future::join_all(ollama_futures).await;
+    for result in ollama_results {
+        all_models.extend(result);
+    }
+
+    all_models
 }
 
 /// Fetch context length for a model from OpenAI-compatible /v1/models endpoint
@@ -525,5 +565,38 @@ mod tests {
                 .await;
         assert!(result.is_some());
         assert!(result.unwrap() > 0);
+    }
+
+    #[tokio::test]
+    async fn test_fetch_all_provider_models_aggregates() {
+        use crucible_config::LlmProviderConfig;
+        use std::collections::HashMap;
+
+        let mut providers = HashMap::new();
+        providers.insert(
+            "anthropic-main".to_string(),
+            LlmProviderConfig::builder(LlmProviderType::Anthropic)
+                .model("claude-3-5-sonnet-20241022")
+                .build(),
+        );
+        providers.insert(
+            "openai-backup".to_string(),
+            LlmProviderConfig::builder(LlmProviderType::OpenAI)
+                .model("gpt-4o")
+                .build(),
+        );
+
+        let llm_config = LlmConfig {
+            default: Some("anthropic-main".to_string()),
+            providers,
+        };
+
+        let models = fetch_all_provider_models(&llm_config).await;
+
+        assert!(!models.is_empty());
+        assert!(models
+            .iter()
+            .any(|m| m.starts_with("anthropic-main/claude")));
+        assert!(models.iter().any(|m| m.starts_with("openai-backup/gpt")));
     }
 }
