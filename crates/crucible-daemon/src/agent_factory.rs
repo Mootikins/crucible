@@ -23,6 +23,7 @@ use std::sync::Arc;
 use thiserror::Error;
 use tokio::sync::broadcast;
 use tracing::{debug, info};
+use crucible_config::credentials::SecretsFile;
 
 #[derive(Error, Debug)]
 pub enum AgentFactoryError {
@@ -34,6 +35,39 @@ pub enum AgentFactoryError {
 
     #[error("Unsupported agent type: {0}")]
     UnsupportedAgentType(String),
+}
+
+/// Resolve OAuth token for GitHub Copilot from credential store
+///
+/// Resolution order:
+/// 1. Environment variable (GITHUB_COPILOT_OAUTH_TOKEN)
+/// 2. Credential store (secrets.toml)
+/// 3. Config api_key (fallback)
+fn resolve_copilot_oauth_token(config_api_key: Option<&str>) -> Option<String> {
+    // Check environment variable first
+    if let Ok(token) = std::env::var("GITHUB_COPILOT_OAUTH_TOKEN") {
+        if !token.is_empty() {
+            debug!("Using GitHub Copilot OAuth token from environment variable");
+            return Some(token);
+        }
+    }
+
+    // Check credential store
+    let secrets = SecretsFile::new();
+    if let Ok(Some(token)) = secrets.get_oauth_token("github-copilot") {
+        debug!("Using GitHub Copilot OAuth token from credential store");
+        return Some(token);
+    }
+
+    // Fall back to config api_key
+    if let Some(key) = config_api_key {
+        if !key.is_empty() {
+            debug!("Using GitHub Copilot OAuth token from config");
+            return Some(key.to_string());
+        }
+    }
+
+    None
 }
 
 /// Create an agent handle from session configuration.
@@ -105,11 +139,18 @@ pub async fn create_agent_from_session_config(
     let provider_type = LlmProviderType::from_str(&agent_config.provider)
         .map_err(AgentFactoryError::ClientCreation)?;
 
-    let llm_config = LlmProviderConfig::builder(provider_type.clone())
+    let mut llm_config = LlmProviderConfig::builder(provider_type.clone())
         .maybe_endpoint(agent_config.endpoint.clone())
         .model(agent_config.model.clone())
         .api_key_from_env()
         .build();
+
+    // For GitHub Copilot, resolve OAuth token from credential store
+    if provider_type == LlmProviderType::GitHubCopilot {
+        if let Some(oauth_token) = resolve_copilot_oauth_token(llm_config.api_key.as_deref()) {
+            llm_config.api_key = Some(oauth_token);
+        }
+    }
 
     let client =
         create_client(&llm_config).map_err(|e| AgentFactoryError::ClientCreation(e.to_string()))?;

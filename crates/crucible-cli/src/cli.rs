@@ -553,6 +553,16 @@ pub enum AuthCommands {
 
     /// Show all configured credentials and their sources
     List,
+
+    /// Authenticate with GitHub Copilot using OAuth device flow
+    #[command(
+        long_about = "Authenticate with GitHub Copilot using OAuth device flow.\n\nThis command starts the OAuth device flow and stores the long-lived OAuth token for use with GitHub Copilot.\n\nExamples:\n  # Authenticate with GitHub Copilot\n  cru auth copilot\n\n  # Force re-authentication\n  cru auth copilot --force"
+    )]
+    Copilot {
+        /// Force re-authentication even if token exists
+        #[arg(long)]
+        force: bool,
+    },
 }
 
 #[derive(Subcommand)]
