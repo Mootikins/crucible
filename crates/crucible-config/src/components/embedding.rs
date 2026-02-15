@@ -26,8 +26,6 @@ pub enum EmbeddingProviderType {
     Mock,
     /// Burn ML framework provider (local, GPU-accelerated)
     Burn,
-    /// LlamaCpp provider for GGUF models (local, GPU-accelerated)
-    LlamaCpp,
     /// No provider configured (used when migrating from legacy config)
     None,
 }
@@ -80,7 +78,6 @@ impl EmbeddingProviderType {
             crate::enrichment::EmbeddingProviderConfig::Custom(_) => Self::Custom,
             crate::enrichment::EmbeddingProviderConfig::Mock(_) => Self::Mock,
             crate::enrichment::EmbeddingProviderConfig::Burn(_) => Self::Burn,
-            crate::enrichment::EmbeddingProviderConfig::LlamaCpp(_) => Self::LlamaCpp,
             // Note: Anthropic is not in the legacy config, so it's handled separately
         }
     }
@@ -97,7 +94,6 @@ impl EmbeddingProviderType {
             Self::Mock => "mock",
             Self::Anthropic => "anthropic",
             Self::Burn => "burn",
-            Self::LlamaCpp => "llamacpp",
             Self::None => "none",
         }
     }
@@ -116,7 +112,6 @@ impl EmbeddingConfig {
             EmbeddingProviderType::Custom => "custom-model",
             EmbeddingProviderType::Mock => "mock-test-model",
             EmbeddingProviderType::Burn => "nomic-embed-text",
-            EmbeddingProviderType::LlamaCpp => "nomic-embed-text-v1.5.Q8_0.gguf",
             EmbeddingProviderType::None => "", // Not configured
         })
     }
@@ -146,7 +141,6 @@ impl EmbeddingConfig {
             EmbeddingProviderType::Custom => self.api_url.as_deref(), // User must specify
             EmbeddingProviderType::Mock => None,                      // Mock provider
             EmbeddingProviderType::Burn => None,                      // Local GPU provider
-            EmbeddingProviderType::LlamaCpp => None,                  // Local GPU provider
             EmbeddingProviderType::None => None,                      // Not configured
         }
     }
@@ -159,7 +153,6 @@ impl EmbeddingConfig {
                 | EmbeddingProviderType::Ollama
                 | EmbeddingProviderType::Mock
                 | EmbeddingProviderType::Burn
-                | EmbeddingProviderType::LlamaCpp
                 | EmbeddingProviderType::None
         )
     }
@@ -170,7 +163,6 @@ impl EmbeddingConfig {
     /// - Ollama: 1 (single GPU, sequential processing to avoid OOM/rate limits)
     /// - FastEmbed: num_cpus/2 (CPU-bound, parallel OK but avoid oversubscription)
     /// - Burn: 1 (GPU-bound, sequential to avoid VRAM exhaustion)
-    /// - LlamaCpp: 1 (GPU-bound, sequential to avoid VRAM exhaustion)
     /// - Remote APIs (OpenAI, Anthropic, Cohere, VertexAI): 8 (rate-limited, moderate concurrency)
     /// - Mock: 16 (testing, high concurrency OK)
     /// - Custom: 4 (conservative default)
@@ -179,7 +171,6 @@ impl EmbeddingConfig {
             match self.provider {
                 EmbeddingProviderType::Ollama => 1,
                 EmbeddingProviderType::Burn => 1, // GPU-bound, sequential
-                EmbeddingProviderType::LlamaCpp => 1, // GPU-bound, sequential
                 EmbeddingProviderType::FastEmbed => {
                     // CPU-bound: use half of available cores, minimum 1
                     (num_cpus::get() / 2).max(1)
@@ -267,21 +258,6 @@ impl EmbeddingConfig {
                         model_dir: crate::enrichment::BurnEmbedConfig::default_model_dir(),
                         model_search_paths: Vec::new(), // Will use defaults
                         dimensions: 0,                  // Auto-detect
-                    },
-                )
-            }
-            EmbeddingProviderType::LlamaCpp => {
-                crate::enrichment::EmbeddingProviderConfig::LlamaCpp(
-                    crate::enrichment::LlamaCppConfig {
-                        model_path: self
-                            .model
-                            .clone()
-                            .unwrap_or_else(|| "nomic-embed-text-v1.5.Q8_0.gguf".to_string()),
-                        device: "auto".to_string(),
-                        gpu_layers: -1, // Offload all layers
-                        batch_size: 8,
-                        context_size: 512,
-                        dimensions: 0, // Auto-detect
                     },
                 )
             }

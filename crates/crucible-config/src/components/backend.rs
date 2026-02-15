@@ -34,10 +34,6 @@ pub enum BackendType {
     FastEmbed,
     /// Burn - local GPU-accelerated embeddings via Burn ML framework
     Burn,
-    /// LlamaCpp - local GPU-accelerated embeddings via llama.cpp
-    #[serde(rename = "llamacpp")]
-    LlamaCpp,
-
     // === Utility backends ===
     /// Custom HTTP-based provider
     Custom,
@@ -48,7 +44,17 @@ pub enum BackendType {
 impl BackendType {
     /// Whether this backend supports embeddings
     pub fn supports_embeddings(&self) -> bool {
-        !matches!(self, Self::Anthropic)
+        matches!(
+            self,
+            Self::Ollama
+                | Self::OpenAI
+                | Self::Cohere
+                | Self::VertexAI
+                | Self::FastEmbed
+                | Self::Burn
+                | Self::Custom
+                | Self::Mock
+        )
     }
 
     /// Whether this backend supports chat
@@ -66,10 +72,7 @@ impl BackendType {
 
     /// Whether this backend is local (no remote API calls)
     pub fn is_local(&self) -> bool {
-        matches!(
-            self,
-            Self::FastEmbed | Self::Burn | Self::LlamaCpp | Self::Mock
-        )
+        matches!(self, Self::FastEmbed | Self::Burn | Self::Mock)
     }
 
     /// Whether this backend requires an API key
@@ -90,7 +93,6 @@ impl BackendType {
             Self::VertexAI => "vertexai",
             Self::FastEmbed => "fastembed",
             Self::Burn => "burn",
-            Self::LlamaCpp => "llamacpp",
             Self::Custom => "custom",
             Self::Mock => "mock",
         }
@@ -106,7 +108,6 @@ impl BackendType {
             Self::VertexAI => Some("https://aiplatform.googleapis.com"),
             Self::FastEmbed => None, // Local, no endpoint
             Self::Burn => None,      // Local, no endpoint
-            Self::LlamaCpp => None,  // Local, no endpoint
             Self::Custom => None,    // User must specify
             Self::Mock => None,      // Local, no endpoint
         }
@@ -121,7 +122,6 @@ impl BackendType {
             Self::VertexAI => Some("textembedding-gecko@003"),
             Self::FastEmbed => Some("BAAI/bge-small-en-v1.5"),
             Self::Burn => Some("nomic-embed-text"),
-            Self::LlamaCpp => Some("nomic-embed-text-v1.5.Q8_0.gguf"),
             Self::Custom => None, // User must specify
             Self::Mock => Some("mock-embed-model"),
             Self::Anthropic => None, // No embedding support
@@ -139,7 +139,6 @@ impl BackendType {
             Self::Custom => None,    // User must specify
             Self::FastEmbed => None, // No chat support
             Self::Burn => None,      // No chat support
-            Self::LlamaCpp => None,  // No chat support (embedding-only)
             Self::Mock => Some("mock-chat-model"),
         }
     }
@@ -149,7 +148,6 @@ impl BackendType {
         match self {
             Self::Ollama => 1,                               // Single GPU, sequential
             Self::Burn => 1,                                 // GPU-bound
-            Self::LlamaCpp => 1,                             // GPU-bound
             Self::FastEmbed => (num_cpus::get() / 2).max(1), // CPU-bound
             Self::OpenAI | Self::Anthropic | Self::Cohere | Self::VertexAI => 8, // Rate-limited
             Self::Mock => 16,                                // Testing
@@ -198,7 +196,6 @@ mod tests {
     fn test_local_detection() {
         assert!(BackendType::FastEmbed.is_local());
         assert!(BackendType::Burn.is_local());
-        assert!(BackendType::LlamaCpp.is_local());
         assert!(BackendType::Mock.is_local());
 
         assert!(!BackendType::OpenAI.is_local());
