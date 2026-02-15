@@ -78,6 +78,10 @@ pub struct LlmProviderConfig {
 
     /// API key for this provider (use `{env:VAR}` syntax for env vars)
     pub api_key: Option<String>,
+
+    /// Available models for this provider
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub available_models: Option<Vec<String>>,
 }
 
 impl LlmProviderConfig {
@@ -130,6 +134,30 @@ impl LlmProviderConfig {
         self.api_key.clone()
     }
 
+    /// Get effective models for this provider, using hardcoded fallback for Anthropic/OpenAI
+    pub fn effective_models(&self) -> Vec<String> {
+        if let Some(models) = &self.available_models {
+            return models.clone();
+        }
+
+        match self.provider_type {
+            LlmProviderType::Anthropic => vec![
+                "claude-sonnet-4-20250514".to_string(),
+                "claude-3-7-sonnet-20250219".to_string(),
+                "claude-3-5-sonnet-20241022".to_string(),
+                "claude-3-5-haiku-20241022".to_string(),
+                "claude-3-opus-20240229".to_string(),
+            ],
+            LlmProviderType::OpenAI => vec![
+                "gpt-4o".to_string(),
+                "gpt-4o-mini".to_string(),
+                "o1".to_string(),
+                "o3-mini".to_string(),
+            ],
+            _ => Vec::new(),
+        }
+    }
+
     /// Create a new builder for this config type
     pub fn builder(provider_type: LlmProviderType) -> LlmProviderConfigBuilder {
         LlmProviderConfigBuilder::new(provider_type)
@@ -146,6 +174,7 @@ pub struct LlmProviderConfigBuilder {
     max_tokens: Option<u32>,
     timeout_secs: Option<u64>,
     api_key: Option<String>,
+    available_models: Option<Vec<String>>,
 }
 
 impl LlmProviderConfigBuilder {
@@ -159,6 +188,7 @@ impl LlmProviderConfigBuilder {
             max_tokens: None,
             timeout_secs: None,
             api_key: None,
+            available_models: None,
         }
     }
 
@@ -228,6 +258,12 @@ impl LlmProviderConfigBuilder {
         self
     }
 
+    /// Set available models
+    pub fn available_models(mut self, models: Vec<String>) -> Self {
+        self.available_models = Some(models);
+        self
+    }
+
     /// Build the config
     pub fn build(self) -> LlmProviderConfig {
         LlmProviderConfig {
@@ -238,6 +274,7 @@ impl LlmProviderConfigBuilder {
             max_tokens: self.max_tokens,
             timeout_secs: self.timeout_secs,
             api_key: self.api_key,
+            available_models: self.available_models,
         }
     }
 }
@@ -259,6 +296,21 @@ impl LlmConfig {
         let default_key = self.default.as_ref()?;
         let config = self.providers.get(default_key)?;
         Some((default_key, config))
+    }
+
+    /// Get all provider models aggregated across all configured providers
+    pub fn all_provider_models(&self) -> Vec<(String, Vec<String>)> {
+        self.providers
+            .iter()
+            .filter_map(|(key, config)| {
+                let models = config.effective_models();
+                if models.is_empty() {
+                    None
+                } else {
+                    Some((key.clone(), models))
+                }
+            })
+            .collect()
     }
 
     /// Get a provider by key
@@ -291,6 +343,7 @@ mod tests {
             max_tokens: None,
             timeout_secs: None,
             api_key: None,
+            available_models: None,
         };
 
         assert_eq!(ollama.endpoint(), "http://localhost:11434");
@@ -307,6 +360,7 @@ mod tests {
             max_tokens: None,
             timeout_secs: None,
             api_key: None,
+            available_models: None,
         };
 
         assert_eq!(openai.endpoint(), "https://api.openai.com/v1");
@@ -320,6 +374,7 @@ mod tests {
             max_tokens: None,
             timeout_secs: None,
             api_key: None,
+            available_models: None,
         };
 
         assert_eq!(anthropic.endpoint(), "https://api.anthropic.com/v1");
@@ -333,6 +388,7 @@ mod tests {
             max_tokens: None,
             timeout_secs: None,
             api_key: None,
+            available_models: None,
         };
 
         assert_eq!(copilot.endpoint(), "https://api.githubcopilot.com");
@@ -372,6 +428,7 @@ mod tests {
             max_tokens: Some(8192),
             timeout_secs: Some(300),
             api_key: None,
+            available_models: None,
         };
 
         assert_eq!(config.endpoint(), "http://192.168.1.100:11434");
@@ -383,7 +440,6 @@ mod tests {
 
     #[test]
     fn test_api_key_direct_value() {
-        // With new model, api_key is the direct value (resolved at config load)
         let config = LlmProviderConfig {
             provider_type: LlmProviderType::OpenAI,
             endpoint: None,
@@ -392,6 +448,7 @@ mod tests {
             max_tokens: None,
             timeout_secs: None,
             api_key: Some("sk-test-key-123".to_string()),
+            available_models: None,
         };
 
         assert_eq!(config.api_key(), Some("sk-test-key-123".to_string()));
@@ -410,6 +467,7 @@ mod tests {
                 max_tokens: None,
                 timeout_secs: None,
                 api_key: None,
+                available_models: None,
             },
         );
         providers.insert(
@@ -422,6 +480,7 @@ mod tests {
                 max_tokens: None,
                 timeout_secs: None,
                 api_key: Some("OPENAI_API_KEY".to_string()),
+                available_models: None,
             },
         );
 
@@ -449,6 +508,7 @@ mod tests {
                 max_tokens: None,
                 timeout_secs: None,
                 api_key: None,
+                available_models: None,
             },
         );
 
@@ -476,6 +536,7 @@ mod tests {
                 max_tokens: None,
                 timeout_secs: None,
                 api_key: None,
+                available_models: None,
             },
         );
         providers.insert(
@@ -488,6 +549,7 @@ mod tests {
                 max_tokens: None,
                 timeout_secs: None,
                 api_key: None,
+                available_models: None,
             },
         );
 
@@ -521,6 +583,7 @@ mod tests {
                 max_tokens: None,
                 timeout_secs: None,
                 api_key: None,
+                available_models: None,
             },
         );
 
@@ -554,6 +617,7 @@ mod tests {
                 max_tokens: None,
                 timeout_secs: None,
                 api_key: None,
+                available_models: None,
             },
         );
 
@@ -563,5 +627,162 @@ mod tests {
         };
 
         assert!(config.default_provider().is_none());
+    }
+
+    #[test]
+    fn test_available_models_deserialization() {
+        let config = LlmProviderConfig {
+            provider_type: LlmProviderType::Ollama,
+            endpoint: None,
+            default_model: None,
+            temperature: None,
+            max_tokens: None,
+            timeout_secs: None,
+            api_key: None,
+            available_models: Some(vec!["model-a".to_string(), "model-b".to_string()]),
+        };
+
+        assert_eq!(
+            config.available_models,
+            Some(vec!["model-a".to_string(), "model-b".to_string()])
+        );
+    }
+
+    #[test]
+    fn test_available_models_none_by_default() {
+        let config = LlmProviderConfig {
+            provider_type: LlmProviderType::Ollama,
+            endpoint: None,
+            default_model: None,
+            temperature: None,
+            max_tokens: None,
+            timeout_secs: None,
+            api_key: None,
+            available_models: None,
+        };
+
+        assert_eq!(config.available_models, None);
+    }
+
+    #[test]
+    fn test_all_provider_models_aggregates() {
+        let mut providers = HashMap::new();
+        providers.insert(
+            "local".to_string(),
+            LlmProviderConfig {
+                provider_type: LlmProviderType::Ollama,
+                endpoint: None,
+                default_model: None,
+                temperature: None,
+                max_tokens: None,
+                timeout_secs: None,
+                api_key: None,
+                available_models: Some(vec!["llama3.2".to_string()]),
+            },
+        );
+        providers.insert(
+            "cloud".to_string(),
+            LlmProviderConfig {
+                provider_type: LlmProviderType::OpenAI,
+                endpoint: None,
+                default_model: None,
+                temperature: None,
+                max_tokens: None,
+                timeout_secs: None,
+                api_key: None,
+                available_models: Some(vec!["gpt-4o".to_string(), "gpt-4o-mini".to_string()]),
+            },
+        );
+
+        let config = LlmConfig {
+            default: None,
+            providers,
+        };
+
+        let result = config.all_provider_models();
+        assert_eq!(result.len(), 2);
+
+        // Check that both providers are in the result
+        let keys: Vec<_> = result.iter().map(|(k, _)| k.as_str()).collect();
+        assert!(keys.contains(&"local"));
+        assert!(keys.contains(&"cloud"));
+
+        // Check models for each provider
+        for (key, models) in result {
+            if key == "local" {
+                assert_eq!(models, vec!["llama3.2".to_string()]);
+            } else if key == "cloud" {
+                assert_eq!(models.len(), 2);
+                assert!(models.contains(&"gpt-4o".to_string()));
+                assert!(models.contains(&"gpt-4o-mini".to_string()));
+            }
+        }
+    }
+
+    #[test]
+    fn test_all_provider_models_with_hardcoded_fallback() {
+        let mut providers = HashMap::new();
+        // Anthropic without available_models should use hardcoded fallback
+        providers.insert(
+            "anthropic".to_string(),
+            LlmProviderConfig {
+                provider_type: LlmProviderType::Anthropic,
+                endpoint: None,
+                default_model: None,
+                temperature: None,
+                max_tokens: None,
+                timeout_secs: None,
+                api_key: None,
+                available_models: None,
+            },
+        );
+        // OpenAI without available_models should use hardcoded fallback
+        providers.insert(
+            "openai".to_string(),
+            LlmProviderConfig {
+                provider_type: LlmProviderType::OpenAI,
+                endpoint: None,
+                default_model: None,
+                temperature: None,
+                max_tokens: None,
+                timeout_secs: None,
+                api_key: None,
+                available_models: None,
+            },
+        );
+
+        let config = LlmConfig {
+            default: None,
+            providers,
+        };
+
+        let result = config.all_provider_models();
+        assert_eq!(result.len(), 2);
+
+        // Check Anthropic hardcoded models
+        for (key, models) in &result {
+            if key == "anthropic" {
+                assert_eq!(
+                    models,
+                    &vec![
+                        "claude-sonnet-4-20250514".to_string(),
+                        "claude-3-7-sonnet-20250219".to_string(),
+                        "claude-3-5-sonnet-20241022".to_string(),
+                        "claude-3-5-haiku-20241022".to_string(),
+                        "claude-3-opus-20240229".to_string(),
+                    ]
+                );
+            } else if key == "openai" {
+                assert_eq!(
+                    models,
+                    &vec![
+                        "gpt-4o".to_string(),
+                        "gpt-4o-mini".to_string(),
+                        "o1".to_string(),
+                        "o3-mini".to_string(),
+                    ]
+                );
+            }
+        }
     }
 }
