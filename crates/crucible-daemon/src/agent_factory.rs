@@ -300,6 +300,24 @@ pub async fn create_agent_from_session_config(
                     .with_thinking_budget(thinking_budget),
             )
         }
+        RigClient::OpenRouter(openrouter_client) => {
+            let agent = build_agent_with_model_size(
+                &rig_agent_config,
+                &openrouter_client,
+                &ws_ctx,
+                model_size,
+                mcp_tools,
+            )
+            .map_err(|e| AgentFactoryError::AgentBuild(e.to_string()))?;
+            let mut handle = RigAgentHandle::new(agent)
+                .with_workspace_context(ws_ctx)
+                .with_model(agent_config.model.clone())
+                .with_thinking_budget(thinking_budget);
+            if let Some(endpoint) = &ollama_endpoint {
+                handle = handle.with_ollama_endpoint(endpoint.clone());
+            }
+            Box::new(handle)
+        }
     };
 
     info!(

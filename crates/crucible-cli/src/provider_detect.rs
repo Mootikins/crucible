@@ -98,6 +98,7 @@ pub async fn fetch_provider_models(provider: &LlmProviderType, endpoint: &str) -
         LlmProviderType::OpenAI => fetch_openai_models(endpoint).await,
         LlmProviderType::Anthropic => anthropic_models(),
         LlmProviderType::GitHubCopilot => Vec::new(),
+        LlmProviderType::OpenRouter => Vec::new(),
     }
 }
 
@@ -293,6 +294,18 @@ pub fn detect_providers(config: &ChatConfig) -> Vec<DetectedProvider> {
         LlmProviderType::GitHubCopilot => {
             // GitHub Copilot requires OAuth flow, not a simple API key
             // For now, we don't auto-detect it
+        }
+        LlmProviderType::OpenRouter => {
+            if let Some(src) = has_api_key_with_source("openrouter") {
+                providers.push(DetectedProvider {
+                    name: "OpenRouter".to_string(),
+                    provider_type: "openrouter".to_string(),
+                    available: true,
+                    reason: format!("API key found ({})", src),
+                    default_model: config.model.clone().or(Some("openai/gpt-4o".to_string())),
+                    source: Some(src),
+                });
+            }
         }
     }
 

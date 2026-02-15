@@ -452,6 +452,7 @@ fn llm_provider_to_str(provider: &crucible_config::LlmProviderType) -> &'static 
         crucible_config::LlmProviderType::OpenAI => "openai",
         crucible_config::LlmProviderType::Anthropic => "anthropic",
         crucible_config::LlmProviderType::GitHubCopilot => "github-copilot",
+        crucible_config::LlmProviderType::OpenRouter => "openrouter",
     }
 }
 

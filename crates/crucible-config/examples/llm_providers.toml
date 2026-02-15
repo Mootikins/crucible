@@ -45,6 +45,14 @@ default_model = "claude-3-5-sonnet-20241022"
 temperature = 0.7
 max_tokens = 4096
 
+# Named provider: OpenRouter (meta-provider for multiple LLM APIs)
+[llm.providers.openrouter]
+type = "openrouter"
+api_key = "{env:OPENROUTER_API_KEY}"
+default_model = "openai/gpt-4o"  # Use provider/model format
+temperature = 0.7
+max_tokens = 4096
+
 # Chat-specific settings (unchanged from previous version)
 [chat]
 enable_markdown = true
