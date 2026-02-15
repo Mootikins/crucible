@@ -5,6 +5,11 @@ use std::collections::HashMap;
 use std::str::FromStr;
 
 /// LLM provider type
+#[deprecated(
+    since = "0.1.0",
+    note = "Use `BackendType` instead. `BackendType` is the unified type that supports both embeddings and chat. Use `From<LlmProviderType>` to convert."
+)]
+#[allow(deprecated)] // Allow self-referential use in derive macros (Default, Deserialize)
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum LlmProviderType {
@@ -29,6 +34,7 @@ pub enum LlmProviderType {
     ZAI,
 }
 
+#[allow(deprecated)]
 impl LlmProviderType {
     /// Get the environment variable name for this provider's API key
     pub fn api_key_env_var(&self) -> Option<&'static str> {
@@ -55,6 +61,7 @@ impl LlmProviderType {
     }
 }
 
+#[allow(deprecated)]
 impl FromStr for LlmProviderType {
     type Err = String;
 
@@ -72,6 +79,7 @@ impl FromStr for LlmProviderType {
 }
 
 /// Named LLM provider instance configuration
+#[allow(deprecated)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LlmProviderConfig {
     /// Provider type
@@ -101,6 +109,7 @@ pub struct LlmProviderConfig {
     pub available_models: Option<Vec<String>>,
 }
 
+#[allow(deprecated)]
 impl LlmProviderConfig {
     /// Get the API endpoint, using provider-specific default if not set
     pub fn endpoint(&self) -> String {
@@ -195,6 +204,7 @@ impl LlmProviderConfig {
 }
 
 /// Builder for LlmProviderConfig
+#[allow(deprecated)]
 #[derive(Debug, Clone)]
 pub struct LlmProviderConfigBuilder {
     provider_type: LlmProviderType,
@@ -207,6 +217,7 @@ pub struct LlmProviderConfigBuilder {
     available_models: Option<Vec<String>>,
 }
 
+#[allow(deprecated)]
 impl LlmProviderConfigBuilder {
     /// Create a new builder with the specified provider type
     pub fn new(provider_type: LlmProviderType) -> Self {
@@ -360,6 +371,7 @@ impl LlmConfig {
 }
 
 #[cfg(test)]
+#[allow(deprecated)]
 mod tests {
     use super::*;
 

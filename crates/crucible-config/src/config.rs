@@ -1,5 +1,6 @@
 //! Core configuration types and structures.
 
+#[allow(deprecated)]
 use crate::components::{
     AcpConfig, ChatConfig, CliConfig, ContextConfig, DiscoveryPathsConfig, EmbeddingConfig,
     EmbeddingProviderType, GatewayConfig, HandlersConfig, LlmConfig, LlmProviderType, McpConfig,
@@ -71,6 +72,7 @@ pub enum ConfigValidationError {
 }
 
 /// Resolved LLM provider configuration
+#[allow(deprecated)]
 #[derive(Clone)]
 pub struct EffectiveLlmConfig {
     /// Provider key (e.g., "local", "cloud", or "default" for fallback)
@@ -91,6 +93,7 @@ pub struct EffectiveLlmConfig {
     pub api_key: Option<String>,
 }
 
+#[allow(deprecated)]
 impl std::fmt::Debug for EffectiveLlmConfig {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("EffectiveLlmConfig")
@@ -460,6 +463,7 @@ impl Config {
 
     /// Get the effective LLM provider for chat.
     /// Prefers llm.providers if configured, falls back to chat.provider.
+    #[allow(deprecated)]
     pub fn effective_llm_provider(&self) -> Result<EffectiveLlmConfig, ConfigError> {
         // Check LlmConfig first
         if let Some(llm) = &self.llm {
@@ -1603,6 +1607,7 @@ verbose = false
 
     /// Get the effective LLM provider for chat.
     /// Prefers llm.providers if configured, falls back to chat.provider.
+    #[allow(deprecated)]
     pub fn effective_llm_provider(&self) -> Result<EffectiveLlmConfig, ConfigError> {
         // Check LlmConfig first
         if let Some((key, provider)) = self.llm.default_provider() {
@@ -1974,6 +1979,7 @@ impl Default for LoggingConfig {
 }
 
 #[cfg(test)]
+#[allow(deprecated)]
 mod tests {
     use super::*;
     use std::io::Write;
