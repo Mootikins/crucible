@@ -174,7 +174,11 @@ async fn fetch_openai_models(endpoint: &str) -> Vec<String> {
             .data
             .into_iter()
             .filter(|m| {
-                m.id.starts_with("gpt-") || m.id.starts_with("o1") || m.id.starts_with("o3")
+                m.id.starts_with("gpt-")
+                    || m.id.starts_with("chatgpt-")
+                    || m.id.starts_with("o1")
+                    || m.id.starts_with("o3")
+                    || m.id.starts_with("o4")
             })
             .map(|m| m.id)
             .collect(),
