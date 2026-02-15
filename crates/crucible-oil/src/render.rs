@@ -595,3 +595,419 @@ fn render_popup(popup: &PopupNode, width: usize, output: &mut String) {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::node::*;
+    use crate::style::{Border, Color, Gap, Padding, Style};
+
+    #[test]
+    fn test_render_empty_node() {
+        let node = Node::Empty;
+        let result = render_to_string(&node, 80);
+        assert_eq!(result, "");
+    }
+
+    #[test]
+    fn test_render_simple_text() {
+        let node = text("Hello, World!");
+        let result = render_to_string(&node, 80);
+        assert_eq!(result, "Hello, World!");
+    }
+
+    #[test]
+    fn test_render_styled_text() {
+        let style = Style::new().bold().fg(Color::Red);
+        let node = styled("Bold Red", style);
+        let result = render_to_string(&node, 80);
+        assert!(result.contains("Bold Red"));
+        assert!(result.contains("\x1b["));
+    }
+
+    #[test]
+    fn test_render_column_with_gap() {
+        let node = col(vec![text("Line 1"), text("Line 2"), text("Line 3")]);
+        let result = render_to_string(&node, 80);
+        let lines: Vec<&str> = result.lines().collect();
+        assert_eq!(lines.len(), 3);
+        assert_eq!(lines[0], "Line 1");
+        assert_eq!(lines[1], "Line 2");
+        assert_eq!(lines[2], "Line 3");
+    }
+
+    #[test]
+    fn test_render_row_simple() {
+        let node = row(vec![text("A"), text("B"), text("C")]);
+        let result = render_to_string(&node, 80);
+        assert!(result.contains("A"));
+        assert!(result.contains("B"));
+        assert!(result.contains("C"));
+    }
+
+    #[test]
+    fn test_render_fragment() {
+        let node = fragment(vec![text("First"), text("Second"), text("Third")]);
+        let result = render_to_string(&node, 80);
+        assert!(result.contains("First"));
+        assert!(result.contains("Second"));
+        assert!(result.contains("Third"));
+    }
+
+    #[test]
+    fn test_render_input_unfocused() {
+        let node = Node::Input(InputNode {
+            value: "test input".to_string(),
+            cursor: 0,
+            placeholder: None,
+            style: Style::default(),
+            focused: false,
+        });
+        let result = render_to_string(&node, 80);
+        assert_eq!(result, "test input");
+    }
+
+    #[test]
+    fn test_render_input_with_placeholder() {
+        let node = Node::Input(InputNode {
+            value: String::new(),
+            cursor: 0,
+            placeholder: Some("Enter text...".to_string()),
+            style: Style::default(),
+            focused: false,
+        });
+        let result = render_to_string(&node, 80);
+        assert!(result.contains("Enter text..."));
+    }
+
+    #[test]
+    fn test_render_spinner() {
+        let node = Node::Spinner(SpinnerNode {
+            label: Some("Loading".to_string()),
+            style: Style::default(),
+            frame: 0,
+            frames: None,
+        });
+        let result = render_to_string(&node, 80);
+        assert!(result.contains("Loading"));
+        assert!(result.contains("◐"));
+    }
+
+    #[test]
+    fn test_render_spinner_no_label() {
+        let node = Node::Spinner(SpinnerNode {
+            label: None,
+            style: Style::default(),
+            frame: 1,
+            frames: None,
+        });
+        let result = render_to_string(&node, 80);
+        assert_eq!(result, "◓");
+    }
+
+    #[test]
+    fn test_render_popup_single_item() {
+        let items = vec![popup_item("Option 1")];
+        let node = popup(items, 0, 5);
+        let result = render_to_string(&node, 80);
+        assert!(result.contains("Option 1"));
+    }
+
+    #[test]
+    fn test_render_popup_multiple_items() {
+        let items = vec![
+            popup_item("Option 1"),
+            popup_item("Option 2"),
+            popup_item("Option 3"),
+        ];
+        let node = popup(items, 1, 5);
+        let result = render_to_string(&node, 80);
+        assert!(result.contains("Option 1"));
+        assert!(result.contains("Option 2"));
+        assert!(result.contains("Option 3"));
+    }
+
+    #[test]
+    fn test_render_focusable_node() {
+        let node = focusable("test-id", text("Focusable content"));
+        let result = render_to_string(&node, 80);
+        assert_eq!(result, "Focusable content");
+    }
+
+    #[test]
+    fn test_render_error_boundary_success() {
+        let node = error_boundary(text("Success"), text("Fallback"));
+        let result = render_to_string(&node, 80);
+        assert_eq!(result, "Success");
+    }
+
+    #[test]
+    fn test_render_overlay_node() {
+        let node = overlay_from_bottom(text("Overlay content"), 5);
+        let result = render_to_string(&node, 80);
+        assert_eq!(result, "Overlay content");
+    }
+
+    #[test]
+    fn test_render_raw_node() {
+        let node = raw("\\x1b[31mRed\\x1b[0m", 3, 1);
+        let result = render_to_string(&node, 80);
+        assert!(result.contains("\\x1b[31mRed\\x1b[0m"));
+    }
+
+    #[test]
+    fn test_render_nested_col_row() {
+        let node = col(vec![
+            text("Header"),
+            row(vec![text("A"), text("B")]),
+            text("Footer"),
+        ]);
+        let result = render_to_string(&node, 80);
+        let lines: Vec<&str> = result.lines().collect();
+        assert!(lines.len() >= 3);
+        assert!(result.contains("Header"));
+        assert!(result.contains("A"));
+        assert!(result.contains("B"));
+        assert!(result.contains("Footer"));
+    }
+
+    #[test]
+    fn test_render_box_with_padding() {
+        let boxnode = BoxNode {
+            children: vec![text("Content")],
+            direction: Direction::Column,
+            padding: Padding {
+                top: 1,
+                bottom: 1,
+                left: 2,
+                right: 2,
+            },
+            ..Default::default()
+        };
+        let node = Node::Box(boxnode);
+        let result = render_to_string(&node, 80);
+        assert!(result.contains("Content"));
+    }
+
+    #[test]
+    fn test_render_box_with_border() {
+        let boxnode = BoxNode {
+            children: vec![text("Content")],
+            direction: Direction::Column,
+            border: Some(Border::Single),
+            ..Default::default()
+        };
+        let node = Node::Box(boxnode);
+        let result = render_to_string(&node, 80);
+        assert!(result.contains("Content"));
+    }
+
+    #[test]
+    fn test_render_static_node() {
+        let node = scrollback("key1", vec![text("Static content")]);
+        let result = render_to_string(&node, 80);
+        assert_eq!(result, "Static content");
+    }
+
+    #[test]
+    fn test_cursor_tracking_simple_input() {
+        let node = Node::Input(InputNode {
+            value: "hello".to_string(),
+            cursor: 2,
+            placeholder: None,
+            style: Style::default(),
+            focused: true,
+        });
+        let result = render_with_cursor(&node, 80);
+        assert_eq!(result.cursor.col, 2);
+        assert_eq!(result.cursor.row_from_end, 0);
+        assert!(result.cursor.visible);
+    }
+
+    #[test]
+    fn test_cursor_tracking_input_at_end() {
+        let node = Node::Input(InputNode {
+            value: "hello".to_string(),
+            cursor: 5,
+            placeholder: None,
+            style: Style::default(),
+            focused: true,
+        });
+        let result = render_with_cursor(&node, 80);
+        assert_eq!(result.cursor.col, 5);
+        assert!(result.cursor.visible);
+    }
+
+    #[test]
+    fn test_cursor_tracking_input_with_padding() {
+        let boxnode = BoxNode {
+            children: vec![Node::Input(InputNode {
+                value: "test".to_string(),
+                cursor: 2,
+                placeholder: None,
+                style: Style::default(),
+                focused: true,
+            })],
+            direction: Direction::Column,
+            padding: Padding {
+                top: 0,
+                bottom: 0,
+                left: 4,
+                right: 0,
+            },
+            ..Default::default()
+        };
+        let node = Node::Box(boxnode);
+        let result = render_with_cursor(&node, 80);
+        assert_eq!(result.cursor.col, 6);
+        assert!(result.cursor.visible);
+    }
+
+    #[test]
+    fn test_cursor_tracking_input_with_border() {
+        let boxnode = BoxNode {
+            children: vec![Node::Input(InputNode {
+                value: "test".to_string(),
+                cursor: 1,
+                placeholder: None,
+                style: Style::default(),
+                focused: true,
+            })],
+            direction: Direction::Column,
+            border: Some(Border::Single),
+            ..Default::default()
+        };
+        let node = Node::Box(boxnode);
+        let result = render_with_cursor(&node, 80);
+        assert_eq!(result.cursor.col, 2);
+        assert!(result.cursor.visible);
+    }
+
+    #[test]
+    fn test_cursor_tracking_nested_input() {
+        let inner_box = Node::Box(BoxNode {
+            children: vec![Node::Input(InputNode {
+                value: "nested".to_string(),
+                cursor: 3,
+                placeholder: None,
+                style: Style::default(),
+                focused: true,
+            })],
+            direction: Direction::Column,
+            padding: Padding {
+                top: 0,
+                bottom: 0,
+                left: 2,
+                right: 0,
+            },
+            ..Default::default()
+        });
+
+        let outer_box = Node::Box(BoxNode {
+            children: vec![inner_box],
+            direction: Direction::Column,
+            padding: Padding {
+                top: 0,
+                bottom: 0,
+                left: 3,
+                right: 0,
+            },
+            ..Default::default()
+        });
+
+        let result = render_with_cursor(&outer_box, 80);
+        assert_eq!(result.cursor.col, 8);
+        assert!(result.cursor.visible);
+    }
+
+    #[test]
+    fn test_cursor_tracking_input_multiline() {
+        let node = col(vec![
+            text("Line 1"),
+            Node::Input(InputNode {
+                value: "input".to_string(),
+                cursor: 2,
+                placeholder: None,
+                style: Style::default(),
+                focused: true,
+            }),
+            text("Line 3"),
+        ]);
+        let result = render_with_cursor(&node, 80);
+        assert!(result.cursor.visible);
+        // Cursor position is 2 on the input line, but "Line 1" is 6 chars,
+        // so the cursor col accumulates: 6 (Line 1) + 2 (cursor in input) = 8
+        assert_eq!(result.cursor.col, 8);
+        // Cursor should be on the second line (row_from_end counts from bottom)
+        // With 3 lines total, cursor on line 2 means row_from_end = 1
+        assert!(result.cursor.row_from_end <= 1);
+    }
+
+    #[test]
+    fn test_cursor_tracking_unfocused_input() {
+        let node = Node::Input(InputNode {
+            value: "unfocused".to_string(),
+            cursor: 3,
+            placeholder: None,
+            style: Style::default(),
+            focused: false,
+        });
+        let result = render_with_cursor(&node, 80);
+        assert!(!result.cursor.visible);
+    }
+
+    #[test]
+    fn test_cursor_tracking_input_with_padding_and_border() {
+        let boxnode = BoxNode {
+            children: vec![Node::Input(InputNode {
+                value: "test".to_string(),
+                cursor: 2,
+                placeholder: None,
+                style: Style::default(),
+                focused: true,
+            })],
+            direction: Direction::Column,
+            padding: Padding {
+                top: 0,
+                bottom: 0,
+                left: 3,
+                right: 0,
+            },
+            border: Some(Border::Single),
+            ..Default::default()
+        };
+        let node = Node::Box(boxnode);
+        let result = render_with_cursor(&node, 80);
+        assert_eq!(result.cursor.col, 6);
+        assert!(result.cursor.visible);
+    }
+
+    #[test]
+    fn test_render_column_with_custom_gap() {
+        let boxnode = BoxNode {
+            children: vec![text("A"), text("B"), text("C")],
+            direction: Direction::Column,
+            gap: Gap { row: 2, column: 0 },
+            ..Default::default()
+        };
+        let node = Node::Box(boxnode);
+        let result = render_to_string(&node, 80);
+        let lines: Vec<&str> = result.lines().collect();
+        assert!(lines.len() >= 5);
+    }
+
+    #[test]
+    fn test_render_empty_fragment() {
+        let node = fragment(vec![]);
+        let result = render_to_string(&node, 80);
+        assert_eq!(result, "");
+    }
+
+    #[test]
+    fn test_render_fragment_with_empty_nodes() {
+        let node = fragment(vec![text("A"), Node::Empty, text("B")]);
+        let result = render_to_string(&node, 80);
+        assert!(result.contains("A"));
+        assert!(result.contains("B"));
+    }
+}

@@ -14,8 +14,8 @@
 //! - [`LayoutContent`] - The actual content to render (text, input, spinner, etc.)
 //! - [`Rect`] - Re-exported from crucible-oil for position/size
 
-use crucible_oil::layout::Rect;
-use crucible_oil::style::Style;
+use crate::layout::Rect;
+use crate::style::{Border, Style};
 
 /// Root container for a computed layout tree.
 ///
@@ -171,9 +171,9 @@ pub enum LayoutContent {
         /// Maximum visible items.
         max_visible: usize,
         /// Background style for unselected items.
-        bg_style: crucible_oil::style::Style,
+        bg_style: Style,
         /// Background style for selected item.
-        selected_style: crucible_oil::style::Style,
+        selected_style: Style,
     },
 
     /// Container box (column or row).
@@ -182,7 +182,7 @@ pub enum LayoutContent {
     /// this just indicates the box type for border/background rendering.
     Box {
         /// Border style if any.
-        border: Option<crucible_oil::style::Border>,
+        border: Option<Border>,
         /// Background style.
         style: Style,
     },
