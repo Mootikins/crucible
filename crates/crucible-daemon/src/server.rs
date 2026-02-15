@@ -336,8 +336,27 @@ impl Server {
                     return;
                 }
                 if let Some(session) = sm.get_session(&event.session_id) {
+                    // Persist JSONL event
                     if let Ok(json) = serde_json::to_string(event) {
                         let _ = storage.append_event(&session, &json).await;
+                    }
+
+                    // Persist markdown for user/assistant messages
+                    match event.event.as_str() {
+                        "user_message" => {
+                            if let Some(content) = event.data.get("content").and_then(|v| v.as_str())
+                            {
+                                let _ = storage.append_markdown(&session, "User", content).await;
+                            }
+                        }
+                        "message_complete" => {
+                            if let Some(content) =
+                                event.data.get("full_response").and_then(|v| v.as_str())
+                            {
+                                let _ = storage.append_markdown(&session, "Assistant", content).await;
+                            }
+                        }
+                        _ => {}
                     }
                 }
             }

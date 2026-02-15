@@ -22,7 +22,7 @@ use tokio::io::AsyncWriteExt;
 /// Implementations provide different storage backends for persisting
 /// sessions to disk or other storage systems.
 #[async_trait]
-#[allow(dead_code)] // list and append_markdown are part of API but not yet used in production code paths
+#[allow(dead_code)] // list is part of API but not yet used in production code paths
 pub trait SessionStorage: Send + Sync {
     /// Save a session to storage.
     ///

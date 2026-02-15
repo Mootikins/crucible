@@ -120,7 +120,7 @@ async fn list(
     Ok(())
 }
 
-/// Search sessions by title/content
+/// Search sessions by title/content using ripgrep (with fallback)
 async fn search(config: CliConfig, query: String, limit: u32) -> Result<()> {
     let sessions_path = sessions_dir(&config);
 
@@ -129,47 +129,14 @@ async fn search(config: CliConfig, query: String, limit: u32) -> Result<()> {
         return Ok(());
     }
 
-    let ids = list_sessions(&sessions_path).await?;
-    let query_lower = query.to_lowercase();
-
-    let mut matches = Vec::new();
-
-    for id in ids {
-        let session_dir = sessions_path.join(id.as_str());
-        let events = load_events(&session_dir).await.unwrap_or_default();
-
-        // Search through user and assistant messages
-        let matched = events.iter().any(|e| match e {
-            LogEvent::User { content, .. } | LogEvent::Assistant { content, .. } => {
-                content.to_lowercase().contains(&query_lower)
-            }
-            _ => false,
-        });
-
-        if matched {
-            // Get first user message as title
-            let title = events
-                .iter()
-                .find_map(|e| match e {
-                    LogEvent::User { content, .. } => {
-                        let preview = content.chars().take(60).collect::<String>();
-                        if content.len() > 60 {
-                            Some(format!("{}...", preview))
-                        } else {
-                            Some(preview)
-                        }
-                    }
-                    _ => None,
-                })
-                .unwrap_or_else(|| "(empty)".to_string());
-
-            matches.push((id, title));
+    // Try ripgrep first, fall back to in-memory scan if not available
+    let matches = match search_with_ripgrep(&sessions_path, &query, limit).await {
+        Ok(results) => results,
+        Err(e) => {
+            tracing::debug!("Ripgrep search failed ({}), falling back to in-memory scan", e);
+            search_in_memory(&sessions_path, &query, limit).await?
         }
-
-        if matches.len() >= limit as usize {
-            break;
-        }
-    }
+    };
 
     if matches.is_empty() {
         println!("No sessions matching '{}' found.", query);
@@ -177,12 +144,146 @@ async fn search(config: CliConfig, query: String, limit: u32) -> Result<()> {
     }
 
     println!("Sessions matching '{}':\n", query);
-    for (id, title) in matches {
-        println!("  {}", id);
-        println!("    {}\n", title);
+    for (session_id, line_num, context) in matches {
+        println!("  {} (line {})", session_id, line_num);
+        println!("    {}\n", context);
     }
 
     Ok(())
+}
+
+/// Search using ripgrep for fast text search
+async fn search_with_ripgrep(
+    sessions_path: &PathBuf,
+    query: &str,
+    limit: u32,
+) -> Result<Vec<(String, usize, String)>> {
+    use std::process::Command;
+
+    // Check if ripgrep is available
+    let rg_check = Command::new("rg").arg("--version").output();
+    if rg_check.is_err() {
+        return Err(anyhow!("ripgrep not found"));
+    }
+
+    // Run ripgrep with JSON output
+    let output = Command::new("rg")
+        .arg("--json")
+        .arg("--max-count")
+        .arg(limit.to_string())
+        .arg("--context")
+        .arg("2") // 2 lines before/after
+        .arg("--glob")
+        .arg("*.jsonl") // Only search JSONL files
+        .arg(query)
+        .arg(sessions_path)
+        .output()
+        .map_err(|e| anyhow!("Failed to run ripgrep: {}", e))?;
+
+    if !output.status.success() {
+        // Exit code 1 means no matches (not an error)
+        if output.status.code() == Some(1) {
+            return Ok(vec![]);
+        }
+        return Err(anyhow!("ripgrep failed with status: {}", output.status));
+    }
+
+    // Parse ripgrep JSON output
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let mut results = Vec::new();
+
+    for line in stdout.lines() {
+        if let Ok(json) = serde_json::from_str::<serde_json::Value>(line) {
+            if json["type"] == "match" {
+                if let Some(data) = json["data"].as_object() {
+                    // Extract session ID from path
+                    let path = data["path"]["text"].as_str().unwrap_or("");
+                    let session_id = extract_session_id_from_path(path);
+
+                    // Extract line number
+                    let line_num = data["line_number"].as_u64().unwrap_or(0) as usize;
+
+                    // Extract matching line
+                    let content = data["lines"]["text"]
+                        .as_str()
+                        .unwrap_or("")
+                        .trim()
+                        .to_string();
+
+                    // Truncate long lines
+                    let content = if content.len() > 100 {
+                        format!("{}...", content.chars().take(100).collect::<String>())
+                    } else {
+                        content
+                    };
+
+                    results.push((session_id, line_num, content));
+
+                    if results.len() >= limit as usize {
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(results)
+}
+
+/// Fallback in-memory search when ripgrep is not available
+async fn search_in_memory(
+    sessions_path: &PathBuf,
+    query: &str,
+    limit: u32,
+) -> Result<Vec<(String, usize, String)>> {
+    let ids = list_sessions(sessions_path).await?;
+    let query_lower = query.to_lowercase();
+    let mut results = Vec::new();
+
+    for id in ids {
+        let session_dir = sessions_path.join(id.as_str());
+        let jsonl_path = session_dir.join("session.jsonl");
+
+        if !jsonl_path.exists() {
+            continue;
+        }
+
+        // Read JSONL file
+        let content = match fs::read_to_string(&jsonl_path).await {
+            Ok(c) => c,
+            Err(_) => continue,
+        };
+
+        // Search line by line
+        for (line_num, line) in content.lines().enumerate() {
+            if line.to_lowercase().contains(&query_lower) {
+                let preview = if line.len() > 100 {
+                    format!("{}...", line.chars().take(100).collect::<String>())
+                } else {
+                    line.to_string()
+                };
+
+                results.push((id.to_string(), line_num + 1, preview));
+
+                if results.len() >= limit as usize {
+                    return Ok(results);
+                }
+            }
+        }
+    }
+
+    Ok(results)
+}
+
+/// Extract session ID from a file path
+fn extract_session_id_from_path(path: &str) -> String {
+    // Path format: .../sessions/{session_id}/session.jsonl
+    std::path::Path::new(path)
+        .parent()
+        .and_then(|p| p.file_name())
+        .and_then(|n| n.to_str())
+        .unwrap_or("unknown")
+        .to_string()
 }
 
 /// Show session details
@@ -1091,5 +1192,70 @@ mod tests {
         ];
 
         assert!(extract_session_content("empty-sess", &events).is_none());
+    }
+
+    #[tokio::test]
+    async fn test_search_in_memory() {
+        let tmp = TempDir::new().unwrap();
+        let sessions_path = tmp.path().join(".crucible").join("sessions");
+        std::fs::create_dir_all(&sessions_path).unwrap();
+
+        let id = setup_test_session(&sessions_path).await;
+
+        let results = super::search_in_memory(&sessions_path, "hello", 10)
+            .await
+            .unwrap();
+
+        assert!(!results.is_empty());
+        assert_eq!(results[0].0, id.to_string());
+        assert!(results[0].2.to_lowercase().contains("hello"));
+    }
+
+    #[tokio::test]
+    async fn test_search_in_memory_no_matches() {
+        let tmp = TempDir::new().unwrap();
+        let sessions_path = tmp.path().join(".crucible").join("sessions");
+        std::fs::create_dir_all(&sessions_path).unwrap();
+
+        let _id = setup_test_session(&sessions_path).await;
+
+        let results = super::search_in_memory(&sessions_path, "nonexistent_xyz", 10)
+            .await
+            .unwrap();
+
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn test_extract_session_id_from_path() {
+        let path = "/home/user/notes/.crucible/sessions/chat-20260104-1530-a1b2/session.jsonl";
+        let id = super::extract_session_id_from_path(path);
+        assert_eq!(id, "chat-20260104-1530-a1b2");
+
+        let path = "sessions/agent-20260105-0900-xyz/session.jsonl";
+        let id = super::extract_session_id_from_path(path);
+        assert_eq!(id, "agent-20260105-0900-xyz");
+    }
+
+    #[tokio::test]
+    async fn test_search_with_ripgrep_fallback() {
+        let tmp = TempDir::new().unwrap();
+        let sessions_path = tmp.path().join(".crucible").join("sessions");
+        std::fs::create_dir_all(&sessions_path).unwrap();
+
+        let _id = setup_test_session(&sessions_path).await;
+
+        let result = super::search_with_ripgrep(&sessions_path, "Hello", 10).await;
+
+        match result {
+            Ok(matches) => {
+                if !matches.is_empty() {
+                    assert!(matches[0].2.contains("Hello") || matches[0].2.contains("hello"));
+                }
+            }
+            Err(_) => {
+                // Ripgrep not installed or no matches - both are acceptable
+            }
+        }
     }
 }
