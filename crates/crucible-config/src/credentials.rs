@@ -48,7 +48,9 @@ pub struct ProviderSecrets {
     /// API key for the provider
     #[serde(skip_serializing_if = "Option::is_none")]
     pub api_key: Option<String>,
-    // Future: oauth_token, refresh_token, expires_at for OAuth providers
+    /// OAuth token for the provider (e.g., GitHub Copilot `gho_xxx`)
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub oauth_token: Option<String>,
 }
 
 /// Top-level structure of secrets.toml
@@ -194,6 +196,30 @@ impl SecretsFile {
 
         Ok(())
     }
+
+    /// Get the OAuth token for a provider
+    pub fn get_oauth_token(&self, provider: &str) -> CredentialResult<Option<String>> {
+        let content = self.read()?;
+        Ok(content
+            .providers
+            .get(provider)
+            .and_then(|s| s.oauth_token.clone()))
+    }
+
+    /// Store an OAuth token for a provider
+    pub fn set_oauth_token(&mut self, provider: &str, oauth_token: &str) -> CredentialResult<()> {
+        let mut content = self.read()?;
+        let mut secrets = content
+            .providers
+            .remove(provider)
+            .unwrap_or(ProviderSecrets {
+                api_key: None,
+                oauth_token: None,
+            });
+        secrets.oauth_token = Some(oauth_token.to_string());
+        content.providers.insert(provider.to_string(), secrets);
+        self.write(&content)
+    }
 }
 
 impl Default for SecretsFile {
@@ -217,6 +243,7 @@ impl CredentialStore for SecretsFile {
             provider.to_string(),
             ProviderSecrets {
                 api_key: Some(api_key.to_string()),
+                oauth_token: None,
             },
         );
         self.write(&content)
@@ -763,5 +790,120 @@ mod tests {
         assert_eq!(env_var_for_provider("anthropic"), Some("ANTHROPIC_API_KEY"));
         assert_eq!(env_var_for_provider("ollama"), None);
         assert_eq!(env_var_for_provider("unknown"), None);
+    }
+
+    // =========================================================================
+    // OAuth token: set/get roundtrip
+    // =========================================================================
+
+    #[test]
+    fn secrets_file_oauth_token_set_get_roundtrip() {
+        let (mut store, _dir) = temp_store();
+
+        store
+            .set_oauth_token("github-copilot", "gho_test_token")
+            .expect("set oauth_token");
+
+        let token = store
+            .get_oauth_token("github-copilot")
+            .expect("get oauth_token");
+        assert_eq!(token, Some("gho_test_token".to_string()));
+    }
+
+    // =========================================================================
+    // OAuth token: backward compatibility (missing field)
+    // =========================================================================
+
+    #[test]
+    fn secrets_file_backward_compat_missing_oauth_token() {
+        let (store, _dir) = temp_store();
+
+        if let Some(parent) = store.path().parent() {
+            std::fs::create_dir_all(parent).unwrap();
+        }
+
+        let old_format = r#"
+[providers.openai]
+api_key = "sk-old-key"
+"#;
+        std::fs::write(store.path(), old_format).unwrap();
+
+        let api_key = store.get("openai").expect("get api_key");
+        assert_eq!(api_key, Some("sk-old-key".to_string()));
+
+        let oauth_token = store.get_oauth_token("openai").expect("get oauth_token");
+        assert_eq!(oauth_token, None);
+    }
+
+    // =========================================================================
+    // OAuth token: coexist with api_key
+    // =========================================================================
+
+    #[test]
+    fn secrets_file_oauth_token_and_api_key_coexist() {
+        let (mut store, _dir) = temp_store();
+
+        store
+            .set("github-copilot", "sk-api-key")
+            .expect("set api_key");
+        store
+            .set_oauth_token("github-copilot", "gho_oauth_token")
+            .expect("set oauth_token");
+
+        let api_key = store.get("github-copilot").expect("get api_key");
+        assert_eq!(api_key, Some("sk-api-key".to_string()));
+
+        let oauth_token = store
+            .get_oauth_token("github-copilot")
+            .expect("get oauth_token");
+        assert_eq!(oauth_token, Some("gho_oauth_token".to_string()));
+    }
+
+    // =========================================================================
+    // OAuth token: TOML format includes oauth_token field
+    // =========================================================================
+
+    #[test]
+    fn secrets_file_oauth_token_toml_format() {
+        let (mut store, _dir) = temp_store();
+
+        store
+            .set_oauth_token("github-copilot", "gho_test")
+            .expect("set");
+
+        let raw = std::fs::read_to_string(store.path()).expect("read");
+
+        let parsed: toml::Value = toml::from_str(&raw).expect("parse");
+        let oauth_token = parsed
+            .get("providers")
+            .and_then(|p| p.get("github-copilot"))
+            .and_then(|o| o.get("oauth_token"))
+            .and_then(|k| k.as_str());
+        assert_eq!(oauth_token, Some("gho_test"));
+    }
+
+    // =========================================================================
+    // OAuth token: remove provider clears both api_key and oauth_token
+    // =========================================================================
+
+    #[test]
+    fn secrets_file_remove_clears_oauth_token() {
+        let (mut store, _dir) = temp_store();
+
+        store.set("github-copilot", "sk-api").expect("set api_key");
+        store
+            .set_oauth_token("github-copilot", "gho_token")
+            .expect("set oauth_token");
+
+        let removed = store.remove("github-copilot").expect("remove");
+        assert!(removed);
+
+        let api_key = store.get("github-copilot").expect("get api_key");
+        assert_eq!(api_key, None);
+
+        let oauth_token = store
+            .get_oauth_token("github-copilot")
+            .expect("get oauth_token");
+        assert_eq!(oauth_token, None);
     }
 }
