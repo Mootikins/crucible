@@ -217,6 +217,7 @@ impl std::fmt::Display for BackendType {
     }
 }
 
+#[allow(deprecated)]
 impl From<super::llm::LlmProviderType> for BackendType {
     fn from(provider: super::llm::LlmProviderType) -> Self {
         match provider {
@@ -230,6 +231,7 @@ impl From<super::llm::LlmProviderType> for BackendType {
     }
 }
 
+#[allow(deprecated)]
 impl TryFrom<BackendType> for super::llm::LlmProviderType {
     type Error = String;
 
@@ -250,6 +252,7 @@ impl TryFrom<BackendType> for super::llm::LlmProviderType {
 }
 
 #[cfg(test)]
+#[allow(deprecated)]
 mod tests {
     use super::super::llm::LlmProviderType;
     use super::*;

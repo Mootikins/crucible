@@ -1,5 +1,6 @@
 //! Simple chat configuration
 
+#[allow(deprecated)]
 use crate::components::LlmProviderType;
 use serde::{Deserialize, Serialize};
 
@@ -17,6 +18,7 @@ pub enum AgentPreference {
 }
 
 /// Simple chat configuration - only essential user settings
+#[allow(deprecated)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatConfig {
     /// Default chat model (can be overridden by agents)
@@ -60,6 +62,7 @@ fn default_true() -> bool {
     true
 }
 
+#[allow(deprecated)]
 impl Default for ChatConfig {
     fn default() -> Self {
         Self {
@@ -77,6 +80,7 @@ impl Default for ChatConfig {
     }
 }
 
+#[allow(deprecated)]
 impl ChatConfig {
     /// Get the LLM endpoint, using provider-specific default if not specified
     pub fn llm_endpoint(&self) -> String {
@@ -125,6 +129,7 @@ impl ChatConfig {
 }
 
 #[cfg(test)]
+#[allow(deprecated)]
 mod tests {
     use super::*;
 
