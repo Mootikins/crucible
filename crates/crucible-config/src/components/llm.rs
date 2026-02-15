@@ -178,7 +178,9 @@ impl LlmProviderConfig {
                 "GLM-4.7".to_string(),
                 "GLM-4.5-Air".to_string(),
             ],
-            _ => Vec::new(),
+            LlmProviderType::Ollama
+            | LlmProviderType::GitHubCopilot
+            | LlmProviderType::OpenRouter => Vec::new(),
         }
     }
 
