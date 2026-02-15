@@ -564,6 +564,9 @@ mod tests {
                 command: None,
                 args: None,
                 env,
+                description: None,
+                capabilities: None,
+                delegation: None,
             },
         );
 
@@ -598,6 +601,9 @@ mod tests {
                 command: Some("/usr/local/bin/my-agent".to_string()),
                 args: Some(vec!["--mode".to_string(), "acp".to_string()]),
                 env: HashMap::new(),
+                description: None,
+                capabilities: None,
+                delegation: None,
             },
         );
 
