@@ -3,12 +3,6 @@
 //\! Ollama embedding provider implementation
 
 use async_trait::async_trait;
-use crucible_config::BackendType;
-use crucible_core::traits::provider::{
-    CanEmbed, EmbeddingResponse as UnifiedEmbeddingResponse, ExtendedCapabilities,
-    Provider as UnifiedProvider,
-};
-use crucible_core::traits::{BackendError, BackendResult};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
@@ -472,75 +466,7 @@ impl EmbeddingProvider for OllamaProvider {
 }
 
 // =============================================================================
-// Unified Provider Trait Implementations
-// =============================================================================
 
-#[async_trait]
-impl UnifiedProvider for OllamaProvider {
-    fn name(&self) -> &str {
-        "ollama"
-    }
-
-    fn backend_type(&self) -> BackendType {
-        BackendType::Ollama
-    }
-
-    fn endpoint(&self) -> Option<&str> {
-        Some(&self.endpoint)
-    }
-
-    fn capabilities(&self) -> ExtendedCapabilities {
-        ExtendedCapabilities::embedding_only(self.expected_dimensions)
-    }
-
-    async fn health_check(&self) -> BackendResult<bool> {
-        EmbeddingProvider::health_check(self)
-            .await
-            .map_err(|e| BackendError::Provider(format!("Ollama: {}", e)))
-    }
-}
-
-#[async_trait]
-impl CanEmbed for OllamaProvider {
-    async fn embed(&self, text: &str) -> BackendResult<UnifiedEmbeddingResponse> {
-        let embedding = EmbeddingProvider::embed(self, text)
-            .await
-            .map_err(|e| BackendError::Provider(format!("Ollama: {}", e)))?;
-
-        Ok(UnifiedEmbeddingResponse {
-            embedding,
-            token_count: None,
-            model: self.model.clone(),
-        })
-    }
-
-    async fn embed_batch(
-        &self,
-        texts: Vec<String>,
-    ) -> BackendResult<Vec<UnifiedEmbeddingResponse>> {
-        let text_refs: Vec<&str> = texts.iter().map(|s| s.as_str()).collect();
-        let embeddings = EmbeddingProvider::embed_batch(self, &text_refs)
-            .await
-            .map_err(|e| BackendError::Provider(format!("Ollama: {}", e)))?;
-
-        Ok(embeddings
-            .into_iter()
-            .map(|embedding| UnifiedEmbeddingResponse {
-                embedding,
-                token_count: None,
-                model: self.model.clone(),
-            })
-            .collect())
-    }
-
-    fn embedding_dimensions(&self) -> usize {
-        self.expected_dimensions
-    }
-
-    fn embedding_model(&self) -> &str {
-        &self.model
-    }
-}
 
 #[cfg(test)]
 mod tests {
@@ -788,7 +714,8 @@ mod tests {
         let config = create_test_config();
         let provider = OllamaProvider::new(config).unwrap();
 
-        let result = EmbeddingProvider::embed_batch(&provider, vec![]).await;
+        let empty: &[&str] = &[];
+        let result = EmbeddingProvider::embed_batch(&provider, empty).await;
         assert!(result.is_ok());
         assert_eq!(result.unwrap().len(), 0);
     }
@@ -800,7 +727,7 @@ mod tests {
 
         // All empty strings should result in empty vec
         let result =
-            EmbeddingProvider::embed_batch(&provider, vec!["".to_string(), "".to_string()]).await;
+            EmbeddingProvider::embed_batch(&provider, &["", ""]).await;
         assert!(result.is_ok());
         assert_eq!(result.unwrap().len(), 0);
     }
@@ -815,67 +742,5 @@ mod tests {
     }
 
     // =========================================================================
-    // TDD Tests for Unified Provider Traits (Provider + CanEmbed)
-    // =========================================================================
 
-    mod unified_traits {
-        use super::*;
-        use crucible_config::BackendType;
-        use crucible_core::traits::provider::{CanEmbed, Provider};
-
-        #[test]
-        fn test_ollama_implements_provider_trait() {
-            let config = create_test_config();
-            let provider = OllamaProvider::new(config).unwrap();
-
-            // Test Provider trait methods
-            assert_eq!(provider.name(), "ollama");
-            assert_eq!(provider.backend_type(), BackendType::Ollama);
-            // Ollama has an endpoint
-            assert!(provider.endpoint().is_some());
-            assert!(provider.endpoint().unwrap().contains("llama"));
-        }
-
-        #[test]
-        fn test_ollama_provider_capabilities() {
-            let config = create_test_config();
-            let provider = OllamaProvider::new(config).unwrap();
-
-            let caps = provider.capabilities();
-
-            // Ollama embedding provider is embedding-only
-            assert!(caps.embeddings);
-            assert!(caps.embeddings_batch);
-            assert_eq!(caps.embedding_dimensions, Some(768)); // nomic-embed-text
-            assert!(!caps.llm.chat_completion); // This is embedding-only provider
-        }
-
-        #[test]
-        fn test_ollama_can_embed_trait() {
-            let config = create_test_config();
-            let provider = OllamaProvider::new(config).unwrap();
-
-            // Test CanEmbed trait accessors
-            assert_eq!(provider.embedding_dimensions(), 768);
-            assert!(provider.embedding_model().contains("nomic"));
-        }
-
-        #[test]
-        fn test_ollama_can_be_used_as_dyn_provider() {
-            let config = create_test_config();
-            let provider = OllamaProvider::new(config).unwrap();
-
-            // Should be usable as Box<dyn Provider>
-            let _boxed: Box<dyn Provider> = Box::new(provider);
-        }
-
-        #[test]
-        fn test_ollama_can_be_used_as_dyn_can_embed() {
-            let config = create_test_config();
-            let provider = OllamaProvider::new(config).unwrap();
-
-            // Should be usable as Box<dyn CanEmbed>
-            let _boxed: Box<dyn CanEmbed> = Box::new(provider);
-        }
-    }
 }
