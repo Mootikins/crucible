@@ -4020,6 +4020,7 @@ dependencies = [
  "async-stream",
  "async-trait",
  "chrono",
+ "crucible-config",
  "crucible-core",
  "crucible-daemon",
  "crucible-protocol",

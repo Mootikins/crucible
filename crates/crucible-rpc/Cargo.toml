@@ -25,3 +25,4 @@ libc = "0.2"
 tempfile = { workspace = true }
 crucible-sqlite = { path = "../crucible-sqlite" }
 crucible-daemon = { path = "../crucible-daemon" }
+crucible-config = { path = "../crucible-config" }

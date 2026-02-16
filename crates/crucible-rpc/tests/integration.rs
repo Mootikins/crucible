@@ -4,6 +4,7 @@
 //! with a real daemon process.
 
 use anyhow::Result;
+use crucible_config::BackendType;
 use crucible_core::traits::chat::AgentHandle;
 use crucible_daemon::Server;
 use crucible_rpc::DaemonClient;
@@ -873,7 +874,7 @@ async fn test_session_configure_agent() {
         agent_type: "internal".to_string(),
         agent_name: None,
         provider_key: Some("ollama".to_string()),
-        provider: "ollama".to_string(),
+        provider: BackendType::Ollama,
         model: "llama3.2".to_string(),
         system_prompt: "You are a helpful assistant.".to_string(),
         temperature: Some(0.7),
@@ -1088,7 +1089,7 @@ async fn test_tui_daemon_agent_full_flow() {
         agent_type: "internal".to_string(),
         agent_name: None,
         provider_key: Some("ollama".to_string()),
-        provider: "ollama".to_string(),
+        provider: BackendType::Ollama,
         model: "llama3.2".to_string(),
         system_prompt: "You are helpful.".to_string(),
         temperature: Some(0.7),
@@ -1432,7 +1433,7 @@ async fn test_session_switch_model() {
         agent_type: "internal".to_string(),
         agent_name: None,
         provider_key: Some("ollama".to_string()),
-        provider: "ollama".to_string(),
+        provider: BackendType::Ollama,
         model: "llama3.2".to_string(),
         system_prompt: "You are a helpful assistant.".to_string(),
         temperature: Some(0.7),
@@ -1501,11 +1502,11 @@ async fn test_daemon_agent_handle_switch_model() {
         agent_type: "internal".to_string(),
         agent_name: None,
         provider_key: Some("ollama".to_string()),
-        provider: "ollama".to_string(),
+        provider: BackendType::Ollama,
         model: "llama3.2".to_string(),
-        system_prompt: "Test assistant".to_string(),
-        temperature: None,
-        max_tokens: None,
+        system_prompt: "You are a helpful assistant.".to_string(),
+        temperature: Some(0.7),
+        max_tokens: Some(4096),
         max_context_tokens: None,
         thinking_budget: None,
         endpoint: Some("http://localhost:11434".to_string()),
