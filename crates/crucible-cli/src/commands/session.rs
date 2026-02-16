@@ -684,7 +684,15 @@ async fn daemon_execute(config: CliConfig, cmd: DaemonSessionCommands) -> Result
         } => {
             let provider_type = BackendType::from_str(&provider)
                 .map_err(|e| anyhow!("Invalid provider '{}': {}", provider, e))?;
-            daemon_configure(&client, &config, &session_id, provider_type, &model, endpoint).await
+            daemon_configure(
+                &client,
+                &config,
+                &session_id,
+                provider_type,
+                &model,
+                endpoint,
+            )
+            .await
         }
         DaemonSessionCommands::Subscribe { session_ids } => daemon_subscribe(&session_ids).await,
         DaemonSessionCommands::Load { session_id } => {

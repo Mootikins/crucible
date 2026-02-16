@@ -5,7 +5,6 @@ use crate::background_manager::BackgroundJobManager;
 use crate::protocol::SessionEventMessage;
 use crate::session_manager::{SessionError, SessionManager};
 use crucible_config::{BackendType, PatternStore};
-use std::str::FromStr;
 use crucible_core::events::SessionEvent;
 use crucible_core::interaction::{InteractionRequest, PermRequest, PermResponse, PermissionScope};
 use crucible_core::session::SessionAgent;
@@ -3139,7 +3138,11 @@ mod tests {
                 Some("https://api.zaiforge.com/v1"),
                 "Endpoint should be updated"
             );
-            assert_eq!(agent.provider, BackendType::Anthropic, "Provider should be updated");
+            assert_eq!(
+                agent.provider,
+                BackendType::Anthropic,
+                "Provider should be updated"
+            );
         }
 
         #[tokio::test]
@@ -3732,7 +3735,8 @@ mod tests {
 
         assert_eq!(agent.model, "GLM-4.7", "Model should be updated");
         assert_eq!(
-            agent.provider, BackendType::ZAI,
+            agent.provider,
+            BackendType::ZAI,
             "Provider should be set to zai via as_str()"
         );
         assert_eq!(
@@ -3797,7 +3801,8 @@ mod tests {
 
         assert_eq!(agent.model, "llama3.3", "Model should be updated");
         assert_eq!(
-            agent.provider, BackendType::Ollama,
+            agent.provider,
+            BackendType::Ollama,
             "Provider should be set from llm config"
         );
         assert_eq!(
@@ -3888,7 +3893,8 @@ mod tests {
             "Unknown provider should be treated as model name"
         );
         assert_eq!(
-            agent.provider, BackendType::Ollama,
+            agent.provider,
+            BackendType::Ollama,
             "Provider should remain unchanged (default)"
         );
         assert_eq!(
@@ -3929,7 +3935,8 @@ mod tests {
             "Org/model format should be treated as full model name"
         );
         assert_eq!(
-            agent.provider, BackendType::Ollama,
+            agent.provider,
+            BackendType::Ollama,
             "Provider should remain unchanged (default)"
         );
     }
