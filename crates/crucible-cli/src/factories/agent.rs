@@ -12,7 +12,7 @@ use anyhow::Result;
 use tracing::{debug, info, warn};
 
 use crucible_config::credentials::resolve_copilot_oauth_token;
-use crucible_config::CliAppConfig;
+use crucible_config::{BackendType, CliAppConfig};
 use crucible_core::session::SessionAgent;
 use crucible_core::traits::chat::AgentHandle;
 
@@ -198,7 +198,7 @@ fn build_acp_session_agent(params: &AgentInitParams) -> SessionAgent {
         agent_type: "acp".to_string(),
         agent_name: params.agent_name.clone(),
         provider_key: None,
-        provider: String::new(),
+        provider: BackendType::Custom,
         model: String::new(),
         system_prompt: String::new(),
         temperature: None,
@@ -227,20 +227,20 @@ fn build_internal_session_agent(config: &CliAppConfig) -> SessionAgent {
         .as_ref()
         .map(|mcp| mcp.servers.iter().map(|s| s.name.clone()).collect())
         .unwrap_or_default();
-    let provider_str = effective_llm
+    let backend_type = effective_llm
         .as_ref()
-        .map(|p| p.provider_type.as_str().to_string())
-        .unwrap_or_else(|| crucible_config::BackendType::Ollama.as_str().to_string());
+        .map(|p| p.provider_type)
+        .unwrap_or(crucible_config::BackendType::Ollama);
     let provider_key = effective_llm
         .as_ref()
         .map(|p| p.key.clone())
-        .unwrap_or_else(|| provider_str.clone());
+        .unwrap_or_else(|| backend_type.as_str().to_string());
 
     SessionAgent {
         agent_type: "internal".to_string(),
         agent_name: None,
         provider_key: Some(provider_key),
-        provider: provider_str,
+        provider: backend_type,
         model,
         system_prompt: String::new(),
         temperature: effective_llm

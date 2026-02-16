@@ -1,7 +1,7 @@
 //! Core session types.
 
 use chrono::{DateTime, Utc};
-use crucible_config::{AgentProfile, DelegationConfig};
+use crucible_config::{AgentProfile, BackendType, DelegationConfig};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -24,8 +24,8 @@ pub struct SessionAgent {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provider_key: Option<String>,
 
-    /// LLM provider identifier
-    pub provider: String,
+    /// LLM provider identifier (typed backend)
+    pub provider: BackendType,
 
     /// Model identifier (e.g., "llama3.2", "gpt-4o", "claude-3-5-sonnet")
     pub model: String,
@@ -100,7 +100,7 @@ impl SessionAgent {
             agent_type: "acp".to_string(),
             agent_name: Some(agent_name.to_string()),
             provider_key: None,
-            provider: "acp".to_string(),
+            provider: BackendType::Custom,
             model: agent_name.to_string(),
             system_prompt: String::new(),
             temperature: None,
@@ -507,7 +507,7 @@ mod tests {
             agent_type: "internal".to_string(),
             agent_name: None,
             provider_key: Some("ollama".to_string()),
-            provider: "ollama".to_string(),
+            provider: BackendType::Ollama,
             model: "llama3.2".to_string(),
             system_prompt: "You are a helpful assistant.".to_string(),
             temperature: Some(0.7),
@@ -540,7 +540,7 @@ mod tests {
             agent_type: "internal".to_string(),
             agent_name: None,
             provider_key: Some("openai".to_string()),
-            provider: "openai".to_string(),
+            provider: BackendType::OpenAI,
             model: "gpt-4o".to_string(),
             system_prompt: "You are helpful.".to_string(),
             temperature: None,
@@ -592,7 +592,7 @@ mod tests {
             agent_type: "internal".to_string(),
             agent_name: None,
             provider_key: Some("anthropic".to_string()),
-            provider: "anthropic".to_string(),
+            provider: BackendType::Anthropic,
             model: "claude-3-5-sonnet".to_string(),
             system_prompt: "".to_string(),
             temperature: None,
@@ -616,6 +616,81 @@ mod tests {
     }
 
     // =============================================================================
+    // SessionAgent Typed Provider Tests (TDD)
+    // =============================================================================
+
+    #[test]
+    fn test_session_agent_typed_provider_serialization() {
+        // SessionAgent.provider should be BackendType, serialized as lowercase string
+        let agent = SessionAgent {
+            agent_type: "internal".to_string(),
+            agent_name: None,
+            provider_key: Some("ollama".to_string()),
+            provider: BackendType::Ollama,
+            model: "llama3.2".to_string(),
+            system_prompt: "Test".to_string(),
+            temperature: None,
+            max_tokens: None,
+            max_context_tokens: None,
+            thinking_budget: None,
+            endpoint: None,
+            env_overrides: HashMap::new(),
+            mcp_servers: Vec::new(),
+            agent_card_name: None,
+            capabilities: None,
+            agent_description: None,
+            delegation_config: None,
+        };
+
+        let json = serde_json::to_string(&agent).unwrap();
+        assert!(json.contains("\"provider\":\"ollama\""));
+    }
+
+    #[test]
+    fn test_session_agent_typed_provider_deserialization() {
+        // JSON with "provider": "ollama" should deserialize to BackendType::Ollama
+        let json = r#"{
+            "agent_type": "internal",
+            "provider": "ollama",
+            "model": "llama3.2",
+            "system_prompt": "Test"
+        }"#;
+
+        let agent: SessionAgent = serde_json::from_str(json).unwrap();
+        assert_eq!(agent.provider, BackendType::Ollama);
+    }
+
+    #[test]
+    fn test_session_agent_typed_provider_round_trip() {
+        // Round-trip: BackendType → JSON → BackendType
+        let original = SessionAgent {
+            agent_type: "internal".to_string(),
+            agent_name: None,
+            provider_key: Some("openai".to_string()),
+            provider: BackendType::OpenAI,
+            model: "gpt-4o".to_string(),
+            system_prompt: "Test".to_string(),
+            temperature: None,
+            max_tokens: None,
+            max_context_tokens: None,
+            thinking_budget: None,
+            endpoint: None,
+            env_overrides: HashMap::new(),
+            mcp_servers: Vec::new(),
+            agent_card_name: None,
+            capabilities: None,
+            agent_description: None,
+            delegation_config: None,
+        };
+
+        let json = serde_json::to_string(&original).unwrap();
+        let parsed: SessionAgent = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(parsed.provider, BackendType::OpenAI);
+        assert_eq!(parsed.model, "gpt-4o");
+    }
+
+    // =============================================================================
     // SessionAgent Profile Construction Tests (TDD - RED phase)
     // =============================================================================
 
@@ -626,7 +701,7 @@ mod tests {
             agent_type: "acp".to_string(),
             agent_name: Some("opencode".to_string()),
             provider_key: None,
-            provider: "acp".to_string(),
+            provider: BackendType::Custom,
             model: "opencode".to_string(),
             system_prompt: "You are helpful.".to_string(),
             temperature: None,
@@ -660,7 +735,7 @@ mod tests {
             agent_type: "acp".to_string(),
             agent_name: Some("claude".to_string()),
             provider_key: None,
-            provider: "acp".to_string(),
+            provider: BackendType::Custom,
             model: "claude".to_string(),
             system_prompt: "You are helpful.".to_string(),
             temperature: None,
@@ -703,7 +778,7 @@ mod tests {
             agent_type: "acp".to_string(),
             agent_name: Some("delegating-agent".to_string()),
             provider_key: None,
-            provider: "acp".to_string(),
+            provider: BackendType::Custom,
             model: "delegating-agent".to_string(),
             system_prompt: "You can delegate.".to_string(),
             temperature: None,
@@ -770,7 +845,7 @@ mod tests {
             agent_type: "acp".to_string(),
             agent_name: Some("full-agent".to_string()),
             provider_key: None,
-            provider: "acp".to_string(),
+            provider: BackendType::Custom,
             model: "full-agent".to_string(),
             system_prompt: "Full agent.".to_string(),
             temperature: Some(0.8),
@@ -831,7 +906,7 @@ mod tests {
 
         assert_eq!(agent.agent_type, "acp");
         assert_eq!(agent.agent_name, Some("claude-custom".to_string()));
-        assert_eq!(agent.provider, "acp");
+        assert_eq!(agent.provider, BackendType::Custom);
         assert_eq!(agent.model, "claude-custom");
         assert_eq!(
             agent.agent_description,

@@ -6,6 +6,7 @@ use crate::cli::{DaemonSessionCommands, SessionCommands};
 use crate::config::CliConfig;
 use anyhow::{anyhow, Result};
 use chrono::{Duration, Utc};
+use crucible_config::BackendType;
 use crucible_core::storage::NoteStore;
 use crucible_observe::{
     extract_session_content, list_sessions, load_events, render_to_markdown, LogEvent,
@@ -13,6 +14,7 @@ use crucible_observe::{
 };
 use crucible_rpc::DaemonClient;
 use std::path::PathBuf;
+use std::str::FromStr;
 use tokio::fs;
 
 /// Execute a session subcommand
@@ -679,7 +681,11 @@ async fn daemon_execute(config: CliConfig, cmd: DaemonSessionCommands) -> Result
             provider,
             model,
             endpoint,
-        } => daemon_configure(&client, &config, &session_id, &provider, &model, endpoint).await,
+        } => {
+            let provider_type = BackendType::from_str(&provider)
+                .map_err(|e| anyhow!("Invalid provider '{}': {}", provider, e))?;
+            daemon_configure(&client, &config, &session_id, provider_type, &model, endpoint).await
+        }
         DaemonSessionCommands::Subscribe { session_ids } => daemon_subscribe(&session_ids).await,
         DaemonSessionCommands::Load { session_id } => {
             daemon_load(&client, &config, &session_id).await
@@ -910,7 +916,7 @@ async fn daemon_configure(
     client: &DaemonClient,
     config: &CliConfig,
     session_id: &str,
-    provider: &str,
+    provider: BackendType,
     model: &str,
     endpoint: Option<String>,
 ) -> Result<()> {
@@ -924,7 +930,7 @@ async fn daemon_configure(
         agent_type: "internal".to_string(),
         agent_name: None,
         provider_key: Some(provider.to_string()),
-        provider: provider.to_string(),
+        provider,
         model: model.to_string(),
         system_prompt: String::new(),
         temperature: None,
