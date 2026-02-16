@@ -75,7 +75,7 @@ pub use llm::{
 pub use parser::MarkdownParser;
 pub use prompt_builder::{priorities, PromptBuilder};
 pub use provider::{
-    CanEmbed, EmbeddingResponse, ExtendedCapabilities, Provider,
+    EmbeddingResponse, ExtendedCapabilities,
 };
 pub use registry::{Registry, RegistryBuilder};
 pub use storage::Storage;

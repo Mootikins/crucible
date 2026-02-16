@@ -1,29 +1,15 @@
-//! Unified provider traits with capability-based extensions
+//! Provider capability types and model information
 //!
-//! This module defines the unified provider abstraction with extension traits
-//! for specific capabilities (embeddings). This follows the Interface
-//! Segregation principle - providers implement only what they support.
-//!
-//! ## Design Pattern
-//!
-//! ```text
-//! Provider (base trait)
-//!    └── CanEmbed (extension trait for embeddings)
-//! ```
+//! This module defines types for describing provider capabilities and models.
+//! The canonical embedding trait is [`EmbeddingProvider`](crate::enrichment::EmbeddingProvider)
+//! in crucible-core::enrichment.
 //!
 //! Chat completions are handled by [`CompletionBackend`](super::CompletionBackend).
-//!
-//! This design allows:
-//! - Type-safe capability discovery at compile time
-//! - Providers that support only embeddings (FastEmbed, Burn)
-//! - Full providers that support both embeddings and chat (Ollama, OpenAI)
 
-use async_trait::async_trait;
 use crucible_config::BackendType;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-use super::completion_backend::BackendResult;
 use super::llm::ProviderCapabilities;
 
 /// Embedding response from a provider
@@ -234,56 +220,6 @@ impl ExtendedCapabilities {
             max_batch_size: Some(16),
         }
     }
-}
-
-/// Base trait for all providers
-///
-/// This trait defines the common interface shared by all providers,
-/// regardless of their specific capabilities.
-#[async_trait]
-pub trait Provider: Send + Sync {
-    /// Get the provider name (e.g., "ollama-local", "openai-prod")
-    fn name(&self) -> &str;
-
-    /// Get the backend type
-    fn backend_type(&self) -> BackendType;
-
-    /// Get the API endpoint (if applicable)
-    fn endpoint(&self) -> Option<&str>;
-
-    /// Get extended capabilities including embedding support
-    fn capabilities(&self) -> ExtendedCapabilities;
-
-    /// Check if the provider is healthy/reachable
-    async fn health_check(&self) -> BackendResult<bool>;
-}
-
-/// Extension trait for providers that support text embeddings
-///
-/// Providers implementing this trait can generate vector embeddings
-/// from text input. This is used for semantic search and similarity.
-#[async_trait]
-pub trait CanEmbed: Provider {
-    /// Generate embedding for a single text
-    async fn embed(&self, text: &str) -> BackendResult<EmbeddingResponse>;
-
-    /// Generate embeddings for multiple texts (batch operation)
-    ///
-    /// The default implementation calls `embed` for each text sequentially.
-    /// Providers should override this for better performance.
-    async fn embed_batch(&self, texts: Vec<String>) -> BackendResult<Vec<EmbeddingResponse>> {
-        let mut results = Vec::with_capacity(texts.len());
-        for text in texts {
-            results.push(self.embed(&text).await?);
-        }
-        Ok(results)
-    }
-
-    /// Get the embedding dimensions for this provider
-    fn embedding_dimensions(&self) -> usize;
-
-    /// Get the embedding model name
-    fn embedding_model(&self) -> &str;
 }
 
 #[cfg(test)]

@@ -2,7 +2,7 @@
 ///
 /// This provider uses the Burn framework to generate embeddings with GPU acceleration
 /// via Vulkan, ROCm, CUDA, or CPU backends.
-use super::{EmbeddingResponse, EmbeddingResult};
+use super::EmbeddingResult;
 use crucible_core::enrichment::EmbeddingProvider;
 use async_trait::async_trait;
 use crucible_config::{BurnBackendConfig, BurnEmbedConfig};
@@ -930,13 +930,11 @@ mod tests {
 
         let provider = BurnProvider::new(&config).unwrap();
 
-        let response = provider.embed("Hello world").await.unwrap();
-        assert_eq!(response.embedding.len(), 384);
-        assert_eq!(response.model, "test-model");
-        assert_eq!(response.dimensions, 384);
+        let embedding = provider.embed("Hello world").await.unwrap();
+        assert_eq!(embedding.len(), 384);
 
         // Verify embedding values are finite (not NaN or Inf)
-        for &value in &response.embedding {
+        for &value in &embedding {
             assert!(value.is_finite(), "Embedding values should be finite");
         }
     }
@@ -952,11 +950,11 @@ mod tests {
 
         let provider = BurnProvider::new(&config).unwrap();
 
-        let response1 = provider.embed("Hello world").await.unwrap();
-        let response2 = provider.embed("Goodbye world").await.unwrap();
+        let embedding1 = provider.embed("Hello world").await.unwrap();
+        let embedding2 = provider.embed("Goodbye world").await.unwrap();
 
         // Different texts should produce different embeddings
-        assert_ne!(response1.embedding, response2.embedding);
+        assert_ne!(embedding1, embedding2);
     }
 
     #[tokio::test]
@@ -970,22 +968,18 @@ mod tests {
 
         let provider = BurnProvider::new(&config).unwrap();
 
-        let texts = vec![
-            "First text".to_string(),
-            "Second text".to_string(),
-            "Third text".to_string(),
-        ];
+        let texts: &[&str] = &["First text", "Second text", "Third text"];
 
         let responses = provider.embed_batch(texts).await.unwrap();
         assert_eq!(responses.len(), 3);
-        assert_eq!(responses[0].embedding.len(), 768);
-        assert_eq!(responses[1].embedding.len(), 768);
-        assert_eq!(responses[2].embedding.len(), 768);
+        assert_eq!(responses[0].len(), 768);
+        assert_eq!(responses[1].len(), 768);
+        assert_eq!(responses[2].len(), 768);
 
         // Verify all embeddings are different
-        assert_ne!(responses[0].embedding, responses[1].embedding);
-        assert_ne!(responses[1].embedding, responses[2].embedding);
-        assert_ne!(responses[0].embedding, responses[2].embedding);
+        assert_ne!(responses[0], responses[1]);
+        assert_ne!(responses[1], responses[2]);
+        assert_ne!(responses[0], responses[2]);
     }
 
     #[tokio::test]
@@ -998,7 +992,8 @@ mod tests {
         };
 
         let provider = BurnProvider::new(&config).unwrap();
-        let responses = provider.embed_batch(vec![]).await.unwrap();
+        let empty: &[&str] = &[];
+        let responses = provider.embed_batch(empty).await.unwrap();
         assert_eq!(responses.len(), 0);
     }
 
@@ -1015,11 +1010,12 @@ mod tests {
 
         // Test with a larger batch (simulating 300 files scenario)
         let texts: Vec<String> = (0..50).map(|i| format!("Text number {}", i)).collect();
+        let text_refs: Vec<&str> = texts.iter().map(|s| s.as_str()).collect();
 
-        let responses = provider.embed_batch(texts).await.unwrap();
+        let responses = provider.embed_batch(&text_refs).await.unwrap();
         assert_eq!(responses.len(), 50);
-        for response in &responses {
-            assert_eq!(response.embedding.len(), 768);
+        for embedding in &responses {
+            assert_eq!(embedding.len(), 768);
         }
     }
 
@@ -1089,8 +1085,7 @@ mod tests {
         let provider = BurnProvider::new(&config).unwrap();
         let models = provider.list_models().await.unwrap();
         assert!(!models.is_empty());
-        assert_eq!(models[0].name, "nomic-ai/nomic-embed-text-v1.5");
-        assert_eq!(models[0].dimensions, Some(768));
+        assert_eq!(models[0], "nomic-ai/nomic-embed-text-v1.5");
     }
 
     #[tokio::test]
@@ -1103,11 +1098,10 @@ mod tests {
         };
 
         let provider = BurnProvider::new(&config).unwrap();
-        let response = provider.embed("Hello world, this is a test").await.unwrap();
+        let embedding = provider.embed("Hello world, this is a test").await.unwrap();
 
-        // Should have token count
-        assert!(response.tokens.is_some());
-        assert!(response.tokens.unwrap() > 0);
+        // Should produce a valid embedding
+        assert!(!embedding.is_empty());
     }
 
     #[tokio::test]

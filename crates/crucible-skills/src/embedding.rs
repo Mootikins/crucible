@@ -2,27 +2,26 @@
 
 use crate::error::{SkillError, SkillResult};
 use crate::types::Skill;
-use crucible_core::traits::provider::CanEmbed;
+use crucible_core::enrichment::EmbeddingProvider;
 use tracing::debug;
 
 /// Embed a skill's description and store it
-pub async fn embed_skill<P: CanEmbed>(
+pub async fn embed_skill<P: EmbeddingProvider + ?Sized>(
     client: &impl SkillEmbeddingStore,
     skill: &Skill,
     provider: &P,
 ) -> SkillResult<()> {
     // Embed the description (concise, designed for matching)
-    let embedding = provider
+    let vector = provider
         .embed(&skill.description)
         .await
         .map_err(|e| SkillError::DiscoveryError(format!("Embedding failed: {}", e)))?;
 
-    let vector = embedding.embedding;
-    let model = embedding.model;
+    let model = provider.model_name();
     let dimensions = vector.len();
 
     // Store embedding
-    client.store_skill_embedding(skill, &vector, &model).await?;
+    client.store_skill_embedding(skill, &vector, model).await?;
 
     debug!("Embedded skill: {} ({} dims)", skill.name, dimensions);
     Ok(())
@@ -39,7 +38,7 @@ pub trait SkillEmbeddingStore: Send + Sync {
 }
 
 /// Search skills by semantic similarity
-pub async fn search_skills_semantic<P: CanEmbed>(
+pub async fn search_skills_semantic<P: EmbeddingProvider + ?Sized>(
     client: &impl SkillSearchStore,
     query: &str,
     provider: &P,
@@ -51,7 +50,7 @@ pub async fn search_skills_semantic<P: CanEmbed>(
         .map_err(|e| SkillError::DiscoveryError(format!("Embedding failed: {}", e)))?;
 
     client
-        .search_by_embedding(&embedding.embedding, limit)
+        .search_by_embedding(&embedding, limit)
         .await
 }
 
