@@ -234,16 +234,37 @@ async fn run_preflight_checks(config: &mut CliConfig) -> Result<()> {
         println!();
         println!("  Crucible needs an LLM provider to chat. Choose one of these:");
         println!();
-        println!("  {} Set an API key environment variable:", "Option 1:".bold());
-        println!("    {} (for OpenAI)", "export OPENAI_API_KEY=sk-...".dimmed());
-        println!("    {} (for Anthropic)", "export ANTHROPIC_API_KEY=sk-ant-...".dimmed());
-        println!("    {} (for other providers)", "export OPENROUTER_API_KEY=sk-...".dimmed());
+        println!(
+            "  {} Set an API key environment variable:",
+            "Option 1:".bold()
+        );
+        println!(
+            "    {} (for OpenAI)",
+            "export OPENAI_API_KEY=sk-...".dimmed()
+        );
+        println!(
+            "    {} (for Anthropic)",
+            "export ANTHROPIC_API_KEY=sk-ant-...".dimmed()
+        );
+        println!(
+            "    {} (for other providers)",
+            "export OPENROUTER_API_KEY=sk-...".dimmed()
+        );
         println!();
-        println!("  {} Use the interactive credential manager:", "Option 2:".bold());
+        println!(
+            "  {} Use the interactive credential manager:",
+            "Option 2:".bold()
+        );
         println!("    {}", "cru auth login".dimmed());
         println!();
-        println!("  {} Configure a provider in your config file:", "Option 3:".bold());
-        println!("    {} (see docs/Guides/Getting Started.md)", "~/.config/crucible/config.toml".dimmed());
+        println!(
+            "  {} Configure a provider in your config file:",
+            "Option 3:".bold()
+        );
+        println!(
+            "    {} (see docs/Guides/Getting Started.md)",
+            "~/.config/crucible/config.toml".dimmed()
+        );
         println!();
         println!(
             "  {}",
