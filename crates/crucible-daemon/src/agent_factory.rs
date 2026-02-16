@@ -103,8 +103,7 @@ pub async fn create_agent_from_session_config(
         "Creating agent from session config"
     );
 
-    let provider_type =
-        BackendType::from_str(&agent_config.provider).map_err(AgentFactoryError::ClientCreation)?;
+    let provider_type = agent_config.provider;
 
     let mut llm_config = LlmProviderConfig::builder(provider_type);
     if let Some(endpoint) = agent_config.endpoint.clone() {
@@ -115,7 +114,7 @@ pub async fn create_agent_from_session_config(
         .with_api_key_env_var_name()
         .build();
 
-    if agent_config.provider == BackendType::GitHubCopilot.as_str() {
+    if agent_config.provider == BackendType::GitHubCopilot {
         if let Some(oauth_token) = resolve_copilot_oauth_token(llm_config.api_key.as_deref()) {
             llm_config.api_key = Some(oauth_token);
         }

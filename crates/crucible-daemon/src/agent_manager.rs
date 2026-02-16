@@ -4,7 +4,8 @@ use crate::agent_factory::{create_agent_from_session_config, AgentFactoryError};
 use crate::background_manager::BackgroundJobManager;
 use crate::protocol::SessionEventMessage;
 use crate::session_manager::{SessionError, SessionManager};
-use crucible_config::PatternStore;
+use crucible_config::{BackendType, PatternStore};
+use std::str::FromStr;
 use crucible_core::events::SessionEvent;
 use crucible_core::interaction::{InteractionRequest, PermRequest, PermResponse, PermissionScope};
 use crucible_core::session::SessionAgent;
@@ -113,8 +114,8 @@ struct PendingPermission {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ResolvedProvider {
-    /// Backend/provider type string (e.g., "zai", "ollama", "openai")
-    pub provider_type: String,
+    /// Backend/provider type
+    pub provider_type: BackendType,
     /// API endpoint, if configured
     pub endpoint: Option<String>,
     /// API key, if configured
@@ -469,7 +470,7 @@ impl AgentManager {
             let provider_key = agent_config
                 .provider_key
                 .as_deref()
-                .unwrap_or(&agent_config.provider);
+                .unwrap_or_else(|| agent_config.provider.as_str());
             if let Some(provider) = self.resolve_provider_config(provider_key) {
                 let mut config = agent_config.clone();
                 config.endpoint = provider.endpoint;
@@ -1140,7 +1141,7 @@ impl AgentManager {
                 "Resolved provider from llm_config"
             );
             return Some(ResolvedProvider {
-                provider_type: llm_provider.provider_type.as_str().to_string(),
+                provider_type: llm_provider.provider_type,
                 endpoint: Some(llm_provider.endpoint()),
                 api_key: llm_provider.api_key.clone(),
                 source: "llm_config",
@@ -1259,7 +1260,7 @@ impl AgentManager {
             let _ = tx.send(SessionEventMessage::model_switched(
                 session_id,
                 &agent_config.model,
-                &agent_config.provider,
+                agent_config.provider.as_str(),
             ));
         }
 
