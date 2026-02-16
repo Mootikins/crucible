@@ -11,6 +11,8 @@ aliases:
   - Task Files
 ---
 
+> **⚠️ Planned Feature**: This feature is not yet implemented. The documentation below describes the intended design.
+
 # Task Management
 
 > **Status**: This feature is planned as an official Lua plugin. It will demonstrate programmatic tool generation, file-as-state patterns, and the tools→workflow bridge.

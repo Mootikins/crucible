@@ -1,3 +1,10 @@
+---
+description: Dioxus Unified Binary Architecture
+tags:
+  - meta
+  - analysis
+---
+
 # Dioxus Unified Binary Architecture
 
 Research into using [[https://github.com/dioxuslabs/dioxus|Dioxus]] for a unified desktop/web/CLI binary.

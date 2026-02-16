@@ -1,3 +1,10 @@
+---
+description: Looking up your own documentation:
+tags:
+  - reference
+  - prompts
+---
+
 <!--
 name: 'System Prompt: Main system prompt'
 description: Core system prompt for Claude Code defining behavior, tone, and tool usage policies

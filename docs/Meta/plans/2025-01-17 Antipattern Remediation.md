@@ -1,3 +1,10 @@
+---
+description: Antipattern Remediation Plan
+tags:
+  - meta
+  - plan
+---
+
 # Antipattern Remediation Plan
 
 > **Status:** Complete (Sprints 1-3)

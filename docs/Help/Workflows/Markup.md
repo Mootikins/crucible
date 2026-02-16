@@ -7,9 +7,9 @@ tags:
   - syntax
 ---
 
-# Workflow Markup
+> **⚠️ Planned Feature**: This feature is not yet implemented. The documentation below describes the intended design.
 
-> [!warning] Workflow markup syntax is not yet implemented.
+# Workflow Markup
 
 Workflow markup lets you define automated processes using natural language with embedded structure.
 

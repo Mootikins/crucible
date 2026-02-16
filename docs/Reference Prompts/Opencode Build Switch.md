@@ -1,3 +1,10 @@
+---
+description: <system-reminder>
+tags:
+  - reference
+  - prompts
+---
+
 <system-reminder>
 Your operational mode has changed from plan to build.
 You are no longer in read-only mode.

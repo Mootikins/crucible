@@ -1,3 +1,10 @@
+---
+description: TUI Syntax Styling Options
+tags:
+  - meta
+  - analysis
+---
+
 # TUI Syntax Styling Options
 
 > Design exploration for making markdown elements more visually distinct

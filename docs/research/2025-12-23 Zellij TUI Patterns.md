@@ -1,3 +1,9 @@
+---
+description: Zellij TUI Implementation Patterns Research
+tags:
+  - research
+---
+
 # Zellij TUI Implementation Patterns Research
 
 **Date:** 2025-12-23

@@ -1,3 +1,10 @@
+---
+description: Ratatui Production Patterns
+tags:
+  - meta
+  - analysis
+---
+
 # Ratatui Production Patterns
 
 Patterns from OpenAI Codex CLI - a production Ratatui application with streaming, async operations, and complex state management.

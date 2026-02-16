@@ -1,3 +1,10 @@
+---
+description: Rig vs Crucible LLM Abstraction Comparison
+tags:
+  - meta
+  - analysis
+---
+
 # Rig vs Crucible LLM Abstraction Comparison
 
 **Date**: 2024-12-24
