@@ -187,6 +187,7 @@ async fn run_preflight_checks(config: &mut CliConfig) -> Result<()> {
                 "{} No kiln found. A kiln is a folder where Crucible stores your notes and sessions.",
                 "Setup:".cyan().bold()
             );
+            println!("  {} A good default is a folder in your home directory or Documents.", "Tip:".dimmed());
 
             let path_input: String = dialoguer::Input::new()
                 .with_prompt("Kiln path")
@@ -229,12 +230,17 @@ async fn run_preflight_checks(config: &mut CliConfig) -> Result<()> {
     if providers.is_empty() {
         warn!("No LLM providers detected");
         println!("{} No LLM provider configured.", "Warning:".yellow().bold());
-        println!(
-            "  Run {} or set {} / {}",
-            "cru auth login".bold(),
-            "OPENAI_API_KEY".bold(),
-            "ANTHROPIC_API_KEY".bold(),
-        );
+        println!();
+        println!("  {} Set one of these environment variables:", "Option 1:".bold());
+        println!("    {} (for OpenAI)", "export OPENAI_API_KEY=sk-...".dimmed());
+        println!("    {} (for Anthropic)", "export ANTHROPIC_API_KEY=sk-ant-...".dimmed());
+        println!();
+        println!("  {} Use the credential manager:", "Option 2:".bold());
+        println!("    {}", "cru auth login".dimmed());
+        println!();
+        println!("  {} Edit your config file:", "Option 3:".bold());
+        println!("    {} (see docs/Guides/Getting Started.md)", "~/.config/crucible/config.toml".dimmed());
+        println!();
         println!(
             "  {}",
             "Chat will start, but requests will fail without a provider.".dimmed()
