@@ -344,15 +344,16 @@ async fn list_providers(
     let mut providers = Vec::new();
     let mut seen_types = std::collections::HashSet::new();
 
-    // 1. Check `providers` config (new format with named providers)
-    if state.config.providers.has_providers() {
-        for (name, provider_config) in state.config.providers.chat_providers() {
-            let provider_type = provider_config.backend.as_str();
+    if state.config.llm.has_providers() {
+        for (name, provider_config) in &state.config.llm.providers {
+            if !provider_config.provider_type.supports_chat() {
+                continue;
+            }
+
+            let provider_type = provider_config.provider_type.as_str();
             seen_types.insert(provider_type.to_string());
 
-            let endpoint = provider_config
-                .endpoint()
-                .unwrap_or_else(|| default_endpoint_for(provider_type));
+            let endpoint = provider_config.endpoint();
 
             let models =
                 fetch_models_for_provider(&state.http_client, provider_type, &endpoint).await;
@@ -361,40 +362,13 @@ async fn list_providers(
                 name: format_provider_name(name, provider_type),
                 provider_type: provider_type.to_string(),
                 available: !models.is_empty() || provider_type != "ollama",
-                default_model: provider_config
-                    .chat_model()
-                    .or_else(|| models.first().cloned()),
+                default_model: Some(provider_config.model()),
                 models,
                 endpoint: Some(endpoint),
             });
         }
     }
 
-    // 2. Fall back to `chat` config (legacy format) if no providers found
-    if providers.is_empty() {
-        let chat = &state.config.chat;
-        let provider_type = chat.provider.as_str();
-        let endpoint = chat
-            .endpoint
-            .clone()
-            .unwrap_or_else(|| default_endpoint_for(provider_type));
-
-        let models = fetch_models_for_provider(&state.http_client, provider_type, &endpoint).await;
-
-        if !models.is_empty() || provider_type != "ollama" {
-            seen_types.insert(provider_type.to_string());
-            providers.push(ProviderInfo {
-                name: format_provider_name("default", provider_type),
-                provider_type: provider_type.to_string(),
-                available: true,
-                default_model: chat.model.clone().or_else(|| models.first().cloned()),
-                models,
-                endpoint: Some(endpoint),
-            });
-        }
-    }
-
-    // 3. Also detect providers from environment variables (that weren't already found)
     if !seen_types.contains("ollama") && std::env::var("OLLAMA_HOST").is_ok() {
         let endpoint = ollama_endpoint_from_env();
         let models = fetch_ollama_models(&state.http_client, &endpoint).await;
@@ -464,6 +438,7 @@ fn format_provider_name(name: &str, provider_type: &str) -> String {
     }
 }
 
+#[allow(dead_code)]
 fn default_endpoint_for(provider_type: &str) -> String {
     match provider_type {
         "ollama" => "http://localhost:11434".to_string(),

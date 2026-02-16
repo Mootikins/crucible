@@ -124,10 +124,10 @@ async fn test_batch_with_mixed_content() {
     let long_text = "x".repeat(1000);
     let texts: Vec<&str> = vec![
         "normal text",
-        "",                    // empty
-        "日本語",              // unicode
-        "@#$%",                // special chars
-        &long_text,            // long text
+        "",         // empty
+        "日本語",   // unicode
+        "@#$%",     // special chars
+        &long_text, // long text
     ];
 
     let expected_len = texts.len();

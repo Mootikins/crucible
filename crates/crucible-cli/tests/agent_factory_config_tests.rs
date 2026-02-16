@@ -22,8 +22,12 @@ fn create_test_config() -> CliAppConfig {
 /// Helper to create CliAppConfig with custom chat provider
 fn create_config_with_provider(provider: BackendType, model: Option<String>) -> CliAppConfig {
     let mut config = create_test_config();
-    config.chat.provider = provider;
     config.chat.model = model;
+    config.llm.default = Some("default".to_string());
+    config.llm.providers.insert(
+        "default".to_string(),
+        LlmProviderConfig::builder(provider).build(),
+    );
     config
 }
 
@@ -49,8 +53,7 @@ fn test_default_config_has_sensible_values() {
     let config = create_test_config();
 
     // Chat config should have defaults
-    assert_eq!(config.chat.provider, BackendType::Ollama);
-    assert_eq!(config.chat.llm_endpoint(), "http://localhost:11434");
+    assert_eq!(config.ollama_endpoint(), "http://localhost:11434");
     assert_eq!(config.chat.chat_model(), "llama3.2");
     assert_eq!(config.chat.temperature(), 0.7);
     assert_eq!(config.chat.max_tokens(), 2048);
@@ -65,7 +68,7 @@ fn test_custom_chat_config_values() {
     config.chat.max_tokens = Some(4096);
 
     assert_eq!(config.chat.chat_model(), "custom-model");
-    assert_eq!(config.chat.llm_endpoint(), "http://custom:8080");
+    assert_eq!(config.chat.endpoint.as_deref(), Some("http://custom:8080"));
     assert_eq!(config.chat.temperature(), 0.9);
     assert_eq!(config.chat.max_tokens(), 4096);
 }

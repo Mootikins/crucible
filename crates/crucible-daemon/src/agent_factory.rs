@@ -103,8 +103,8 @@ pub async fn create_agent_from_session_config(
         "Creating agent from session config"
     );
 
-    let provider_type = BackendType::from_str(&agent_config.provider)
-        .map_err(AgentFactoryError::ClientCreation)?;
+    let provider_type =
+        BackendType::from_str(&agent_config.provider).map_err(AgentFactoryError::ClientCreation)?;
 
     let mut llm_config = LlmProviderConfig::builder(provider_type);
     if let Some(endpoint) = agent_config.endpoint.clone() {

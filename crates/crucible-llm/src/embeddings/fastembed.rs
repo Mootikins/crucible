@@ -424,16 +424,13 @@ impl EmbeddingProvider for FastEmbedProvider {
 
         let embeddings = self.embed_internal(vec![text.to_string()]).await?;
 
-        embeddings
-            .into_iter()
-            .next()
-            .ok_or_else(|| {
-                EmbeddingError::ProviderError {
-                    provider: "FastEmbed".to_string(),
-                    message: "No embedding returned".to_string(),
-                }
-                .into()
-            })
+        embeddings.into_iter().next().ok_or_else(|| {
+            EmbeddingError::ProviderError {
+                provider: "FastEmbed".to_string(),
+                message: "No embedding returned".to_string(),
+            }
+            .into()
+        })
     }
 
     async fn embed_batch(&self, texts: &[&str]) -> anyhow::Result<Vec<Vec<f32>>> {
@@ -480,7 +477,6 @@ impl EmbeddingProvider for FastEmbedProvider {
 }
 
 // =============================================================================
-
 
 #[cfg(test)]
 mod tests {
@@ -598,5 +594,4 @@ mod tests {
     }
 
     // =========================================================================
-
 }

@@ -3,9 +3,9 @@
 /// This provider uses the Burn framework to generate embeddings with GPU acceleration
 /// via Vulkan, ROCm, CUDA, or CPU backends.
 use super::EmbeddingResult;
-use crucible_core::enrichment::EmbeddingProvider;
 use async_trait::async_trait;
 use crucible_config::{BurnBackendConfig, BurnEmbedConfig};
+use crucible_core::enrichment::EmbeddingProvider;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::sync::RwLock;

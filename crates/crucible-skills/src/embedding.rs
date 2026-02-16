@@ -49,9 +49,7 @@ pub async fn search_skills_semantic<P: EmbeddingProvider + ?Sized>(
         .await
         .map_err(|e| SkillError::DiscoveryError(format!("Embedding failed: {}", e)))?;
 
-    client
-        .search_by_embedding(&embedding, limit)
-        .await
+    client.search_by_embedding(&embedding, limit).await
 }
 
 /// Trait for searching skills by embedding

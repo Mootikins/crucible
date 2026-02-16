@@ -52,10 +52,13 @@ fn test_config_load_with_valid_toml() {
             r#"
 kiln_path = "{}"
 
-[embedding]
-provider = "openai"
-model = "test-model"
-api_url = "https://example.com"
+[llm]
+default = "openai"
+
+[llm.providers.openai]
+type = "openai"
+default_model = "test-model"
+endpoint = "https://example.com"
 
 [acp]
 default_agent = "claude-code"
@@ -76,12 +79,10 @@ verbose = false
 
     let config = CliConfig::load(Some(config_path), None, None).unwrap();
     assert_eq!(config.kiln_path, kiln_path);
-    assert_eq!(config.embedding.provider, Some(BackendType::OpenAI));
-    assert_eq!(config.embedding.model, Some("test-model".to_string()));
-    assert_eq!(
-        config.embedding.api_url,
-        Some("https://example.com".to_string())
-    );
+    let provider = config.effective_llm_provider().unwrap();
+    assert_eq!(provider.provider_type, BackendType::OpenAI);
+    assert_eq!(provider.model, "test-model");
+    assert_eq!(provider.endpoint, "https://example.com");
 }
 
 #[test]
@@ -96,10 +97,13 @@ fn test_config_cli_overrides() {
             r#"
 kiln_path = "{}"
 
-[embedding]
-provider = "ollama"
-model = "file-model"
-api_url = "https://file-url.com"
+[llm]
+default = "ollama"
+
+[llm.providers.ollama]
+type = "ollama"
+default_model = "file-model"
+endpoint = "https://file-url.com"
 "#,
             kiln_path.to_string_lossy().replace('\\', "\\\\")
         ),
@@ -116,12 +120,10 @@ api_url = "https://file-url.com"
 
     // Verify CLI overrides take priority over file config
     assert_eq!(config.kiln_path, kiln_path);
-    assert_eq!(config.embedding.provider, Some(BackendType::Ollama));
-    assert_eq!(config.embedding.model, Some("cli-model".to_string()));
-    assert_eq!(
-        config.embedding.api_url,
-        Some("https://cli-url.com".to_string())
-    );
+    let provider = config.effective_llm_provider().unwrap();
+    assert_eq!(provider.provider_type, BackendType::Ollama);
+    assert_eq!(provider.model, "cli-model");
+    assert_eq!(provider.endpoint, "https://cli-url.com");
 }
 
 // ============================================================================
@@ -135,8 +137,7 @@ fn test_config_default_minimal() {
     // Should have defaults
     assert_eq!(config.chat_model(), "llama3.2");
     assert_eq!(config.temperature(), 0.7);
-    assert_eq!(config.embedding.provider, Some(BackendType::FastEmbed));
-    assert_eq!(config.embedding.batch_size, 16);
+    assert!(!config.llm.has_providers());
 }
 
 #[test]
@@ -148,7 +149,7 @@ fn test_config_with_custom_kiln_path() {
     config.kiln_path = kiln_path.clone();
 
     assert_eq!(config.kiln_path, kiln_path);
-    assert_eq!(config.embedding.provider, Some(BackendType::FastEmbed));
+    assert!(!config.llm.has_providers());
     assert_eq!(config.chat_model(), "llama3.2");
     assert_eq!(config.temperature(), 0.7);
 }
@@ -228,7 +229,7 @@ fn test_display_as_toml() {
     let toml_str = config.display_as_toml().unwrap();
     assert!(toml_str.contains("kiln_path"));
     assert!(toml_str.contains(&kiln_path.to_string_lossy().to_string()));
-    assert!(toml_str.contains("[embedding]"));
+    assert!(!toml_str.contains("[embedding]"));
 }
 
 #[test]
@@ -240,7 +241,7 @@ fn test_display_as_json() {
     let json_str = config.display_as_json().unwrap();
     assert!(json_str.contains("\"kiln_path\""));
     assert!(json_str.contains(&kiln_path.to_string_lossy().to_string()));
-    assert!(json_str.contains("\"embedding\""));
+    assert!(json_str.contains("\"llm\""));
 }
 
 // ============================================================================
@@ -251,10 +252,7 @@ fn test_display_as_json() {
 fn test_embedding_config_defaults() {
     let config = CliConfig::default();
 
-    assert_eq!(config.embedding.provider, Some(BackendType::FastEmbed));
-    assert_eq!(config.embedding.model, None); // Uses provider default
-    assert_eq!(config.embedding.api_url, None);
-    assert_eq!(config.embedding.batch_size, 16);
+    assert!(!config.llm.has_providers());
 }
 
 #[test]
@@ -269,11 +267,13 @@ fn test_embedding_config_openai() {
             r#"
 kiln_path = "{}"
 
-[embedding]
-provider = "openai"
-model = "text-embedding-3-small"
-api_url = "https://api.openai.com/v1"
-batch_size = 32
+[llm]
+default = "openai"
+
+[llm.providers.openai]
+type = "openai"
+default_model = "text-embedding-3-small"
+endpoint = "https://api.openai.com/v1"
 "#,
             kiln_path.to_string_lossy().replace('\\', "\\\\")
         ),
@@ -281,16 +281,10 @@ batch_size = 32
     .unwrap();
 
     let config = CliConfig::load(Some(config_path), None, None).unwrap();
-    assert_eq!(config.embedding.provider, Some(BackendType::OpenAI));
-    assert_eq!(
-        config.embedding.model,
-        Some("text-embedding-3-small".to_string())
-    );
-    assert_eq!(
-        config.embedding.api_url,
-        Some("https://api.openai.com/v1".to_string())
-    );
-    assert_eq!(config.embedding.batch_size, 32);
+    let provider = config.effective_llm_provider().unwrap();
+    assert_eq!(provider.provider_type, BackendType::OpenAI);
+    assert_eq!(provider.model, "text-embedding-3-small");
+    assert_eq!(provider.endpoint, "https://api.openai.com/v1");
 }
 
 // ============================================================================
@@ -337,8 +331,7 @@ fn test_default_config_values() {
     assert_eq!(config.timeout(), 30);
 
     // New embedding defaults
-    assert_eq!(config.embedding.provider, Some(BackendType::FastEmbed));
-    assert_eq!(config.embedding.batch_size, 16);
+    assert!(!config.llm.has_providers());
 
     // ACP defaults
     assert_eq!(config.acp.default_agent, None);
@@ -372,7 +365,7 @@ fn test_create_example_config() {
     let contents = fs::read_to_string(&config_path).unwrap();
     assert!(contents.contains("Crucible CLI Configuration"));
     assert!(contents.contains("kiln_path"));
-    assert!(contents.contains("[embedding]"));
+    assert!(contents.contains("[llm]"));
     assert!(contents.contains("[acp]"));
     assert!(contents.contains("[chat]"));
     assert!(contents.contains("[cli]"));

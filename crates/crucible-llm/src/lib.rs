@@ -51,12 +51,12 @@ pub mod reranking;
 
 // Re-export commonly used types at crate root
 pub use embeddings::{
-    create_provider,      // Factory function
-    EmbeddingConfig,      // Configuration (data type)
-    EmbeddingError,       // Error type
-    EmbeddingProvider,    // Trait (re-exported from crucible-core)
-    EmbeddingResponse,    // Response type (data)
-    EmbeddingResult,      // Result type alias
+    create_provider,   // Factory function
+    EmbeddingConfig,   // Configuration (data type)
+    EmbeddingError,    // Error type
+    EmbeddingProvider, // Trait (re-exported from crucible-core)
+    EmbeddingResponse, // Response type (data)
+    EmbeddingResult,   // Result type alias
 };
 
 #[cfg(feature = "fastembed")]

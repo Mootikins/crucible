@@ -111,10 +111,6 @@ struct PendingPermission {
     response_tx: oneshot::Sender<PermResponse>,
 }
 
-/// Resolved provider configuration from either the new LlmConfig or legacy ProvidersConfig system.
-///
-/// This struct unifies the lookup result so callers don't need to know
-/// which config system the provider came from.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ResolvedProvider {
     /// Backend/provider type string (e.g., "zai", "ollama", "openai")
@@ -135,7 +131,6 @@ pub struct AgentManager {
     lua_states: Arc<DashMap<String, Arc<Mutex<SessionLuaState>>>>,
     pending_permissions: Arc<DashMap<String, HashMap<PermissionId, PendingPermission>>>,
     mcp_gateway: Option<Arc<tokio::sync::RwLock<crucible_tools::mcp_gateway::McpGatewayManager>>>,
-    providers_config: crucible_config::ProvidersConfig,
     llm_config: Option<crucible_config::LlmConfig>,
 }
 
@@ -146,7 +141,6 @@ impl AgentManager {
         mcp_gateway: Option<
             Arc<tokio::sync::RwLock<crucible_tools::mcp_gateway::McpGatewayManager>>,
         >,
-        providers_config: crucible_config::ProvidersConfig,
         llm_config: Option<crucible_config::LlmConfig>,
     ) -> Self {
         Self {
@@ -157,7 +151,6 @@ impl AgentManager {
             lua_states: Arc::new(DashMap::new()),
             pending_permissions: Arc::new(DashMap::new()),
             mcp_gateway,
-            providers_config,
             llm_config,
         }
     }
@@ -472,19 +465,18 @@ impl AgentManager {
             return Ok(cached.clone());
         }
 
-        // Resolve endpoint from providers config if not explicitly set
         let resolved_config = if agent_config.endpoint.is_none() {
             let provider_key = agent_config
                 .provider_key
                 .as_deref()
                 .unwrap_or(&agent_config.provider);
-            if let Some(provider) = self.providers_config.get(provider_key) {
+            if let Some(provider) = self.resolve_provider_config(provider_key) {
                 let mut config = agent_config.clone();
-                config.endpoint = provider.endpoint();
+                config.endpoint = provider.endpoint;
                 debug!(
                     provider_key = %provider_key,
                     endpoint = ?config.endpoint,
-                    "Resolved endpoint from providers config"
+                    "Resolved endpoint from llm config"
                 );
                 config
             } else {
@@ -1133,7 +1125,7 @@ impl AgentManager {
 
     /// Resolve provider configuration from either config system.
     ///
-    /// Checks `LlmConfig` (new system) first, then `ProvidersConfig` (legacy).
+    /// Checks `LlmConfig` for configured providers.
     /// Returns `None` if the provider key is not found in either system.
     fn resolve_provider_config(&self, provider_key: &str) -> Option<ResolvedProvider> {
         if let Some(llm_provider) = self
@@ -1152,21 +1144,6 @@ impl AgentManager {
                 endpoint: Some(llm_provider.endpoint()),
                 api_key: llm_provider.api_key.clone(),
                 source: "llm_config",
-            });
-        }
-
-        if let Some(provider_config) = self.providers_config.get(provider_key) {
-            debug!(
-                provider_key = %provider_key,
-                source = "providers_config",
-                provider_type = %provider_config.backend.as_str(),
-                "Resolved provider from providers_config"
-            );
-            return Some(ResolvedProvider {
-                provider_type: provider_config.backend.as_str().to_string(),
-                endpoint: provider_config.endpoint(),
-                api_key: provider_config.api_key.clone(),
-                source: "providers_config",
             });
         }
 
@@ -1191,9 +1168,6 @@ impl AgentManager {
     /// - `"library/llama3:latest"` → `(Some("library"), "llama3:latest")` if "library" is configured
     fn parse_provider_model(&self, model_id: &str) -> (Option<String>, String) {
         if let Some((prefix, model_name)) = model_id.split_once('/') {
-            if self.providers_config.get(prefix).is_some() {
-                return (Some(prefix.to_string()), model_name.to_string());
-            }
             if let Some(ref llm_config) = self.llm_config {
                 if llm_config.providers.contains_key(prefix) {
                     return (Some(prefix.to_string()), model_name.to_string());
@@ -1326,50 +1300,7 @@ impl AgentManager {
             }
         }
 
-        // Collect models from ProvidersConfig (legacy system)
-        for (provider_key, provider_config) in self.providers_config.iter() {
-            use crucible_config::BackendType;
-
-            let models = match provider_config.backend {
-                BackendType::Ollama => {
-                    let endpoint = provider_config
-                        .endpoint()
-                        .unwrap_or_else(|| crucible_config::DEFAULT_OLLAMA_ENDPOINT.to_string());
-                    match self.list_ollama_models(&endpoint).await {
-                        Ok(models) => models,
-                        Err(e) => {
-                            debug!(
-                                provider_key = %provider_key,
-                                error = %e,
-                                "Failed to list Ollama models from legacy config, skipping"
-                            );
-                            continue;
-                        }
-                    }
-                }
-                _ => {
-                    // For non-Ollama providers, collect configured models
-                    let mut models = Vec::new();
-                    if let Some(chat_model) = provider_config.chat_model() {
-                        models.push(chat_model);
-                    }
-                    if let Some(embedding_model) = provider_config.embedding_model() {
-                        // Only add if different from chat model
-                        if !models.contains(&embedding_model) {
-                            models.push(embedding_model);
-                        }
-                    }
-                    models
-                }
-            };
-
-            for model in models {
-                all_models.push(format!("{}/{}", provider_key, model));
-            }
-        }
-
-        // Fallback for legacy-only users with no configured providers
-        if all_models.is_empty() && self.llm_config.is_none() {
+        if all_models.is_empty() {
             let (_, agent_config) = self.get_session_with_agent(session_id)?;
 
             let endpoint = agent_config
@@ -1684,28 +1615,16 @@ mod tests {
     fn create_test_agent_manager(session_manager: Arc<SessionManager>) -> AgentManager {
         let (event_tx, _) = broadcast::channel(16);
         let background_manager = Arc::new(BackgroundJobManager::new(event_tx));
-        AgentManager::new(
-            session_manager,
-            background_manager,
-            None,
-            crucible_config::ProvidersConfig::default(),
-            None,
-        )
+        AgentManager::new(session_manager, background_manager, None, None)
     }
 
     fn create_test_agent_manager_with_providers(
         session_manager: Arc<SessionManager>,
-        providers_config: crucible_config::ProvidersConfig,
+        llm_config: crucible_config::LlmConfig,
     ) -> AgentManager {
         let (event_tx, _) = broadcast::channel(16);
         let background_manager = Arc::new(BackgroundJobManager::new(event_tx));
-        AgentManager::new(
-            session_manager,
-            background_manager,
-            None,
-            providers_config,
-            None,
-        )
+        AgentManager::new(session_manager, background_manager, None, Some(llm_config))
     }
 
     #[tokio::test]
@@ -3160,7 +3079,7 @@ mod tests {
 
         #[tokio::test]
         async fn test_switch_model_cross_provider() {
-            use crucible_config::{BackendType, ProviderConfig};
+            use crucible_config::{BackendType, LlmConfig, LlmProviderConfig};
 
             let tmp = TempDir::new().unwrap();
             let storage = Arc::new(FileSessionStorage::new());
@@ -3172,19 +3091,26 @@ mod tests {
                 .unwrap();
 
             // Create providers config with multiple providers
-            let mut providers_config = crucible_config::ProvidersConfig::new();
-            providers_config.add(
-                "ollama",
-                ProviderConfig::new(BackendType::Ollama).with_endpoint("http://localhost:11434"),
+            let mut providers = std::collections::HashMap::new();
+            providers.insert(
+                "ollama".to_string(),
+                LlmProviderConfig::builder(BackendType::Ollama)
+                    .endpoint("http://localhost:11434")
+                    .build(),
             );
-            providers_config.add(
-                "zai",
-                ProviderConfig::new(BackendType::Anthropic)
-                    .with_endpoint("https://api.zaiforge.com/v1"),
+            providers.insert(
+                "zai".to_string(),
+                LlmProviderConfig::builder(BackendType::Anthropic)
+                    .endpoint("https://api.zaiforge.com/v1")
+                    .build(),
             );
+            let llm_config = LlmConfig {
+                default: Some("ollama".to_string()),
+                providers,
+            };
 
             let agent_manager =
-                create_test_agent_manager_with_providers(session_manager.clone(), providers_config);
+                create_test_agent_manager_with_providers(session_manager.clone(), llm_config);
 
             // Configure with ollama provider
             agent_manager
@@ -3217,7 +3143,7 @@ mod tests {
 
         #[tokio::test]
         async fn test_switch_model_unprefixed_same_provider() {
-            use crucible_config::{BackendType, ProviderConfig};
+            use crucible_config::{BackendType, LlmConfig, LlmProviderConfig};
 
             let tmp = TempDir::new().unwrap();
             let storage = Arc::new(FileSessionStorage::new());
@@ -3228,14 +3154,20 @@ mod tests {
                 .await
                 .unwrap();
 
-            let mut providers_config = crucible_config::ProvidersConfig::new();
-            providers_config.add(
-                "ollama",
-                ProviderConfig::new(BackendType::Ollama).with_endpoint("http://localhost:11434"),
+            let mut providers = std::collections::HashMap::new();
+            providers.insert(
+                "ollama".to_string(),
+                LlmProviderConfig::builder(BackendType::Ollama)
+                    .endpoint("http://localhost:11434")
+                    .build(),
             );
+            let llm_config = LlmConfig {
+                default: Some("ollama".to_string()),
+                providers,
+            };
 
             let agent_manager =
-                create_test_agent_manager_with_providers(session_manager.clone(), providers_config);
+                create_test_agent_manager_with_providers(session_manager.clone(), llm_config);
 
             agent_manager
                 .configure_agent(&session.id, test_agent())
@@ -3268,7 +3200,7 @@ mod tests {
 
         #[tokio::test]
         async fn test_switch_model_unknown_provider_prefix() {
-            use crucible_config::{BackendType, ProviderConfig};
+            use crucible_config::{BackendType, LlmConfig, LlmProviderConfig};
 
             let tmp = TempDir::new().unwrap();
             let storage = Arc::new(FileSessionStorage::new());
@@ -3279,14 +3211,20 @@ mod tests {
                 .await
                 .unwrap();
 
-            let mut providers_config = crucible_config::ProvidersConfig::new();
-            providers_config.add(
-                "ollama",
-                ProviderConfig::new(BackendType::Ollama).with_endpoint("http://localhost:11434"),
+            let mut providers = std::collections::HashMap::new();
+            providers.insert(
+                "ollama".to_string(),
+                LlmProviderConfig::builder(BackendType::Ollama)
+                    .endpoint("http://localhost:11434")
+                    .build(),
             );
+            let llm_config = LlmConfig {
+                default: Some("ollama".to_string()),
+                providers,
+            };
 
             let agent_manager =
-                create_test_agent_manager_with_providers(session_manager.clone(), providers_config);
+                create_test_agent_manager_with_providers(session_manager.clone(), llm_config);
 
             agent_manager
                 .configure_agent(&session.id, test_agent())
@@ -3316,7 +3254,7 @@ mod tests {
 
         #[tokio::test]
         async fn test_switch_model_cross_provider_invalidates_cache() {
-            use crucible_config::{BackendType, ProviderConfig};
+            use crucible_config::{BackendType, LlmConfig, LlmProviderConfig};
 
             let tmp = TempDir::new().unwrap();
             let storage = Arc::new(FileSessionStorage::new());
@@ -3327,19 +3265,26 @@ mod tests {
                 .await
                 .unwrap();
 
-            let mut providers_config = crucible_config::ProvidersConfig::new();
-            providers_config.add(
-                "ollama",
-                ProviderConfig::new(BackendType::Ollama).with_endpoint("http://localhost:11434"),
+            let mut providers = std::collections::HashMap::new();
+            providers.insert(
+                "ollama".to_string(),
+                LlmProviderConfig::builder(BackendType::Ollama)
+                    .endpoint("http://localhost:11434")
+                    .build(),
             );
-            providers_config.add(
-                "zai",
-                ProviderConfig::new(BackendType::Anthropic)
-                    .with_endpoint("https://api.zaiforge.com/v1"),
+            providers.insert(
+                "zai".to_string(),
+                LlmProviderConfig::builder(BackendType::Anthropic)
+                    .endpoint("https://api.zaiforge.com/v1")
+                    .build(),
             );
+            let llm_config = LlmConfig {
+                default: Some("ollama".to_string()),
+                providers,
+            };
 
             let agent_manager =
-                create_test_agent_manager_with_providers(session_manager.clone(), providers_config);
+                create_test_agent_manager_with_providers(session_manager.clone(), llm_config);
 
             agent_manager
                 .configure_agent(&session.id, test_agent())
@@ -3398,7 +3343,6 @@ mod tests {
             session_manager.clone(),
             background_manager,
             None,
-            crucible_config::ProvidersConfig::default(),
             Some(llm_config),
         );
 
@@ -3439,13 +3383,8 @@ mod tests {
 
         let (event_tx, _) = broadcast::channel(16);
         let background_manager = Arc::new(BackgroundJobManager::new(event_tx));
-        let agent_manager = AgentManager::new(
-            session_manager.clone(),
-            background_manager,
-            None,
-            crucible_config::ProvidersConfig::default(),
-            None,
-        );
+        let agent_manager =
+            AgentManager::new(session_manager.clone(), background_manager, None, None);
 
         agent_manager
             .configure_agent(&session.id, test_agent())
@@ -3493,7 +3432,6 @@ mod tests {
             session_manager.clone(),
             background_manager,
             None,
-            crucible_config::ProvidersConfig::default(),
             Some(llm_config),
         );
 
@@ -3517,29 +3455,16 @@ mod tests {
     ) -> AgentManager {
         let (event_tx, _) = broadcast::channel(16);
         let background_manager = Arc::new(BackgroundJobManager::new(event_tx));
-        AgentManager::new(
-            session_manager,
-            background_manager,
-            None,
-            crucible_config::ProvidersConfig::default(),
-            Some(llm_config),
-        )
+        AgentManager::new(session_manager, background_manager, None, Some(llm_config))
     }
 
     fn create_test_agent_manager_with_both(
         session_manager: Arc<SessionManager>,
-        providers_config: crucible_config::ProvidersConfig,
         llm_config: crucible_config::LlmConfig,
     ) -> AgentManager {
         let (event_tx, _) = broadcast::channel(16);
         let background_manager = Arc::new(BackgroundJobManager::new(event_tx));
-        AgentManager::new(
-            session_manager,
-            background_manager,
-            None,
-            providers_config,
-            Some(llm_config),
-        )
+        AgentManager::new(session_manager, background_manager, None, Some(llm_config))
     }
 
     #[tokio::test]
@@ -3609,19 +3534,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_parse_provider_model_legacy_takes_precedence() {
-        use crucible_config::{
-            BackendType, LlmConfig, LlmProviderConfig, ProviderConfig,
-        };
+        use crucible_config::{BackendType, LlmConfig, LlmProviderConfig};
 
         let storage = Arc::new(FileSessionStorage::new());
         let session_manager = Arc::new(SessionManager::with_storage(storage));
-
-        // Configure same key in both legacy and llm configs
-        let mut providers_config = crucible_config::ProvidersConfig::new();
-        providers_config.add(
-            "local",
-            ProviderConfig::new(BackendType::Ollama).with_endpoint("http://localhost:11434"),
-        );
 
         let mut llm_providers = std::collections::HashMap::new();
         llm_providers.insert(
@@ -3635,17 +3551,14 @@ mod tests {
             providers: llm_providers,
         };
 
-        let agent_manager = create_test_agent_manager_with_both(
-            session_manager.clone(),
-            providers_config,
-            llm_config,
-        );
+        let agent_manager =
+            create_test_agent_manager_with_both(session_manager.clone(), llm_config);
 
         let (provider_key, model_name) = agent_manager.parse_provider_model("local/llama3.2");
         assert_eq!(
             provider_key.as_deref(),
             Some("local"),
-            "Legacy providers_config should take precedence"
+            "Configured provider key should be detected"
         );
         assert_eq!(model_name, "llama3.2");
     }
@@ -3657,25 +3570,37 @@ mod tests {
         let agent_manager = create_test_agent_manager(session_manager);
 
         let (provider_key, model_name) = agent_manager.parse_provider_model("");
-        assert_eq!(provider_key, None, "Empty string should return None provider");
-        assert_eq!(model_name, "", "Empty string should return empty model name");
+        assert_eq!(
+            provider_key, None,
+            "Empty string should return None provider"
+        );
+        assert_eq!(
+            model_name, "",
+            "Empty string should return empty model name"
+        );
     }
 
     #[tokio::test]
     async fn test_parse_provider_model_trailing_slash() {
-        use crucible_config::{BackendType, ProviderConfig};
+        use crucible_config::{BackendType, LlmConfig, LlmProviderConfig};
 
         let storage = Arc::new(FileSessionStorage::new());
         let session_manager = Arc::new(SessionManager::with_storage(storage));
 
-        let mut providers_config = crucible_config::ProvidersConfig::new();
-        providers_config.add(
-            "provider",
-            ProviderConfig::new(BackendType::Ollama).with_endpoint("http://localhost:11434"),
+        let mut providers = std::collections::HashMap::new();
+        providers.insert(
+            "provider".to_string(),
+            LlmProviderConfig::builder(BackendType::Ollama)
+                .endpoint("http://localhost:11434")
+                .build(),
         );
+        let llm_config = LlmConfig {
+            default: Some("provider".to_string()),
+            providers,
+        };
 
         let agent_manager =
-            create_test_agent_manager_with_providers(session_manager.clone(), providers_config);
+            create_test_agent_manager_with_providers(session_manager.clone(), llm_config);
 
         let (provider_key, model_name) = agent_manager.parse_provider_model("provider/");
         assert_eq!(
@@ -3691,19 +3616,25 @@ mod tests {
 
     #[tokio::test]
     async fn test_parse_provider_model_whitespace() {
-        use crucible_config::{BackendType, ProviderConfig};
+        use crucible_config::{BackendType, LlmConfig, LlmProviderConfig};
 
         let storage = Arc::new(FileSessionStorage::new());
         let session_manager = Arc::new(SessionManager::with_storage(storage));
 
-        let mut providers_config = crucible_config::ProvidersConfig::new();
-        providers_config.add(
-            "provider",
-            ProviderConfig::new(BackendType::Ollama).with_endpoint("http://localhost:11434"),
+        let mut providers = std::collections::HashMap::new();
+        providers.insert(
+            "provider".to_string(),
+            LlmProviderConfig::builder(BackendType::Ollama)
+                .endpoint("http://localhost:11434")
+                .build(),
         );
+        let llm_config = LlmConfig {
+            default: Some("provider".to_string()),
+            providers,
+        };
 
         let agent_manager =
-            create_test_agent_manager_with_providers(session_manager.clone(), providers_config);
+            create_test_agent_manager_with_providers(session_manager.clone(), llm_config);
 
         let (provider_key, model_name) = agent_manager.parse_provider_model("  provider/model  ");
         assert_eq!(
@@ -3718,19 +3649,25 @@ mod tests {
 
     #[tokio::test]
     async fn test_parse_provider_model_case_sensitivity() {
-        use crucible_config::{BackendType, ProviderConfig};
+        use crucible_config::{BackendType, LlmConfig, LlmProviderConfig};
 
         let storage = Arc::new(FileSessionStorage::new());
         let session_manager = Arc::new(SessionManager::with_storage(storage));
 
-        let mut providers_config = crucible_config::ProvidersConfig::new();
-        providers_config.add(
-            "ollama",
-            ProviderConfig::new(BackendType::Ollama).with_endpoint("http://localhost:11434"),
+        let mut providers = std::collections::HashMap::new();
+        providers.insert(
+            "ollama".to_string(),
+            LlmProviderConfig::builder(BackendType::Ollama)
+                .endpoint("http://localhost:11434")
+                .build(),
         );
+        let llm_config = LlmConfig {
+            default: Some("ollama".to_string()),
+            providers,
+        };
 
         let agent_manager =
-            create_test_agent_manager_with_providers(session_manager.clone(), providers_config);
+            create_test_agent_manager_with_providers(session_manager.clone(), llm_config);
 
         let (provider_key, model_name) = agent_manager.parse_provider_model("ollama/model");
         assert_eq!(
@@ -3811,9 +3748,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_switch_model_legacy_still_works() {
-        use crucible_config::{
-            BackendType, LlmConfig, LlmProviderConfig, ProviderConfig,
-        };
+        use crucible_config::{BackendType, LlmConfig, LlmProviderConfig};
 
         let tmp = TempDir::new().unwrap();
         let storage = Arc::new(FileSessionStorage::new());
@@ -3824,15 +3759,13 @@ mod tests {
             .await
             .unwrap();
 
-        // Set up legacy ProvidersConfig with "local"
-        let mut providers_config = crucible_config::ProvidersConfig::new();
-        providers_config.add(
-            "local",
-            ProviderConfig::new(BackendType::Ollama).with_endpoint("http://localhost:11434"),
-        );
-
-        // Also have llm_config with a different provider
         let mut llm_providers = std::collections::HashMap::new();
+        llm_providers.insert(
+            "local".to_string(),
+            LlmProviderConfig::builder(BackendType::Ollama)
+                .endpoint("http://localhost:11434")
+                .build(),
+        );
         llm_providers.insert(
             "zai-coding".to_string(),
             LlmProviderConfig::builder(BackendType::ZAI)
@@ -3844,11 +3777,8 @@ mod tests {
             providers: llm_providers,
         };
 
-        let agent_manager = create_test_agent_manager_with_both(
-            session_manager.clone(),
-            providers_config,
-            llm_config,
-        );
+        let agent_manager =
+            create_test_agent_manager_with_both(session_manager.clone(), llm_config);
 
         agent_manager
             .configure_agent(&session.id, test_agent())
@@ -3867,7 +3797,7 @@ mod tests {
         assert_eq!(agent.model, "llama3.3", "Model should be updated");
         assert_eq!(
             agent.provider, "ollama",
-            "Provider should be set from legacy config"
+            "Provider should be set from llm config"
         );
         assert_eq!(
             agent.provider_key.as_deref(),
@@ -3877,7 +3807,7 @@ mod tests {
         assert_eq!(
             agent.endpoint.as_deref(),
             Some("http://localhost:11434"),
-            "Endpoint should come from legacy config"
+            "Endpoint should come from llm config"
         );
     }
 
@@ -4083,7 +4013,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_list_models_legacy_providers_config() {
-        use crucible_config::{BackendType, ProviderConfig};
+        use crucible_config::{BackendType, LlmConfig, LlmProviderConfig};
 
         let tmp = TempDir::new().unwrap();
         let storage = Arc::new(FileSessionStorage::new());
@@ -4094,27 +4024,28 @@ mod tests {
             .await
             .unwrap();
 
-        let mut providers_config = crucible_config::ProvidersConfig::new();
-        providers_config.add(
-            "openai",
-            ProviderConfig::new(BackendType::OpenAI)
-                .with_chat_model("gpt-4")
-                .with_embedding_model("text-embedding-3-small"),
+        let mut providers = std::collections::HashMap::new();
+        providers.insert(
+            "openai".to_string(),
+            LlmProviderConfig::builder(BackendType::OpenAI)
+                .available_models(vec![
+                    "gpt-4".to_string(),
+                    "text-embedding-3-small".to_string(),
+                ])
+                .build(),
         );
-        providers_config.add(
-            "anthropic",
-            ProviderConfig::new(BackendType::Anthropic).with_chat_model("claude-3-opus"),
+        providers.insert(
+            "anthropic".to_string(),
+            LlmProviderConfig::builder(BackendType::Anthropic)
+                .available_models(vec!["claude-3-opus".to_string()])
+                .build(),
         );
-
-        let (event_tx, _) = broadcast::channel(16);
-        let background_manager = Arc::new(BackgroundJobManager::new(event_tx));
-        let agent_manager = AgentManager::new(
-            session_manager.clone(),
-            background_manager,
-            None,
-            providers_config,
-            None,
-        );
+        let llm_config = LlmConfig {
+            default: Some("openai".to_string()),
+            providers,
+        };
+        let agent_manager =
+            create_test_agent_manager_with_llm_config(session_manager.clone(), llm_config);
 
         agent_manager
             .configure_agent(&session.id, test_agent())
@@ -4142,9 +4073,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_list_models_both_configs() {
-        use crucible_config::{
-            BackendType, LlmConfig, LlmProviderConfig, ProviderConfig,
-        };
+        use crucible_config::{BackendType, LlmConfig, LlmProviderConfig};
         use std::collections::HashMap;
 
         let tmp = TempDir::new().unwrap();
@@ -4156,13 +4085,13 @@ mod tests {
             .await
             .unwrap();
 
-        let mut providers_config = crucible_config::ProvidersConfig::new();
-        providers_config.add(
-            "legacy-openai",
-            ProviderConfig::new(BackendType::OpenAI).with_chat_model("gpt-3.5-turbo"),
-        );
-
         let mut llm_providers = HashMap::new();
+        llm_providers.insert(
+            "legacy-openai".to_string(),
+            LlmProviderConfig::builder(BackendType::OpenAI)
+                .available_models(vec!["gpt-3.5-turbo".to_string()])
+                .build(),
+        );
         llm_providers.insert(
             "new-anthropic".to_string(),
             LlmProviderConfig::builder(BackendType::Anthropic)
@@ -4176,7 +4105,7 @@ mod tests {
         };
 
         let agent_manager =
-            create_test_agent_manager_with_both(session_manager.clone(), providers_config, llm_config);
+            create_test_agent_manager_with_both(session_manager.clone(), llm_config);
 
         agent_manager
             .configure_agent(&session.id, test_agent())
@@ -4192,7 +4121,7 @@ mod tests {
         );
         assert!(
             models.contains(&"legacy-openai/gpt-3.5-turbo".to_string()),
-            "Should contain legacy-openai/gpt-3.5-turbo from ProvidersConfig, got: {:?}",
+            "Should contain legacy-openai/gpt-3.5-turbo, got: {:?}",
             models
         );
     }
@@ -4311,30 +4240,51 @@ mod tests {
 
     #[tokio::test]
     async fn test_resolve_provider_config_from_providers_config() {
-        use crucible_config::{BackendType, ProviderConfig};
+        use crucible_config::{BackendType, LlmConfig, LlmProviderConfig};
 
         let storage = Arc::new(FileSessionStorage::new());
         let session_manager = Arc::new(SessionManager::with_storage(storage));
 
-        let mut providers_config = crucible_config::ProvidersConfig::new();
-        let mut provider = ProviderConfig::new(BackendType::Ollama);
-        provider.endpoint = Some("http://localhost:11434".to_string());
-        provider.api_key = Some("ollama-key".to_string());
-        providers_config.add("local", provider);
+        let mut providers = std::collections::HashMap::new();
+        providers.insert(
+            "local".to_string(),
+            LlmProviderConfig::builder(BackendType::Ollama)
+                .endpoint("http://localhost:11434")
+                .api_key("ollama-key")
+                .build(),
+        );
+        let llm_config = LlmConfig {
+            default: Some("local".to_string()),
+            providers,
+        };
 
         let agent_manager =
-            create_test_agent_manager_with_providers(session_manager.clone(), providers_config);
+            create_test_agent_manager_with_providers(session_manager.clone(), llm_config);
 
         let resolved = agent_manager.resolve_provider_config("local");
-        assert!(resolved.is_some(), "Should resolve from providers_config");
+        assert!(resolved.is_some(), "Should resolve from llm_config");
         let resolved = resolved.unwrap();
         assert_eq!(resolved.provider_type, "ollama");
-        assert_eq!(
-            resolved.endpoint.as_deref(),
-            Some("http://localhost:11434")
-        );
+        assert_eq!(resolved.endpoint.as_deref(), Some("http://localhost:11434"));
         assert_eq!(resolved.api_key.as_deref(), Some("ollama-key"));
-        assert_eq!(resolved.source, "providers_config");
+        assert_eq!(resolved.source, "llm_config");
+    }
+
+    #[tokio::test]
+    async fn test_resolve_provider_config_does_not_use_legacy_providers_config() {
+        use crucible_config::LlmConfig;
+
+        let storage = Arc::new(FileSessionStorage::new());
+        let session_manager = Arc::new(SessionManager::with_storage(storage));
+
+        let llm_config = LlmConfig::default();
+        let agent_manager = create_test_agent_manager_with_providers(session_manager, llm_config);
+
+        let resolved = agent_manager.resolve_provider_config("legacy");
+        assert!(
+            resolved.is_none(),
+            "legacy providers config should not be used for resolution"
+        );
     }
 
     #[tokio::test]
@@ -4352,18 +4302,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_resolve_provider_config_llm_config_wins_over_providers_config() {
-        use crucible_config::{
-            BackendType, LlmConfig, LlmProviderConfig, ProviderConfig,
-        };
+        use crucible_config::{BackendType, LlmConfig, LlmProviderConfig};
 
         let storage = Arc::new(FileSessionStorage::new());
         let session_manager = Arc::new(SessionManager::with_storage(storage));
-
-        let mut providers_config = crucible_config::ProvidersConfig::new();
-        providers_config.add(
-            "shared",
-            ProviderConfig::new(BackendType::Ollama).with_endpoint("http://legacy:11434"),
-        );
 
         let mut llm_providers = std::collections::HashMap::new();
         llm_providers.insert(
@@ -4378,18 +4320,15 @@ mod tests {
             providers: llm_providers,
         };
 
-        let agent_manager = create_test_agent_manager_with_both(
-            session_manager.clone(),
-            providers_config,
-            llm_config,
-        );
+        let agent_manager =
+            create_test_agent_manager_with_both(session_manager.clone(), llm_config);
 
         let resolved = agent_manager.resolve_provider_config("shared");
         assert!(resolved.is_some(), "Should resolve when in both configs");
         let resolved = resolved.unwrap();
         assert_eq!(
             resolved.source, "llm_config",
-            "LlmConfig (new system) should take priority over ProvidersConfig (legacy)"
+            "LlmConfig should take priority"
         );
         assert_eq!(resolved.provider_type, "openai");
         assert_eq!(

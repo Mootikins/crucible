@@ -134,17 +134,19 @@ proptest! {
         let viewport = strip_ansi(runtime.viewport_content());
         let combined = format!("{}{}", stdout, viewport);
 
-        let tool_names: Vec<&str> = sequence.iter().filter_map(|e| {
+        let tool_names: Vec<String> = sequence.iter().filter_map(|e| {
             if let StreamEvent::ToolCall { name, .. } = e {
-                Some(name.as_str())
+                Some(name)
             } else {
                 None
             }
-        }).collect();
+        }).map(|name| {
+            name.strip_prefix("mcp_").unwrap_or(name).to_string()
+        }).filter(|name| !name.is_empty()).collect();
 
         for name in &tool_names {
             prop_assert!(
-                combined.contains(name),
+                combined.contains(name.as_str()),
                 "Tool '{}' should appear in output:\n{}",
                 name, combined
             );

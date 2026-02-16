@@ -101,7 +101,6 @@ impl Server {
             path,
             mcp_config,
             std::collections::HashMap::new(),
-            crucible_config::ProvidersConfig::default(),
             None,
             None,
         )
@@ -113,7 +112,6 @@ impl Server {
         path: &Path,
         mcp_config: Option<&crucible_config::McpConfig>,
         plugin_config: std::collections::HashMap<String, serde_json::Value>,
-        providers_config: crucible_config::ProvidersConfig,
         llm_config: Option<crucible_config::LlmConfig>,
         #[allow(unused_variables)] web_config: Option<crucible_config::WebConfig>,
     ) -> Result<Self> {
@@ -159,7 +157,6 @@ impl Server {
             session_manager.clone(),
             background_manager.clone(),
             mcp_gateway,
-            providers_config,
             llm_config,
         ));
         let subscription_manager = Arc::new(SubscriptionManager::new());
@@ -2558,10 +2555,7 @@ mod tests {
 
         #[async_trait]
         impl SessionStorage for FailingStorage {
-            async fn save(
-                &self,
-                _s: &crucible_core::session::Session,
-            ) -> Result<(), SessionError> {
+            async fn save(&self, _s: &crucible_core::session::Session) -> Result<(), SessionError> {
                 Ok(())
             }
             async fn load(
@@ -2571,10 +2565,7 @@ mod tests {
             ) -> Result<crucible_core::session::Session, SessionError> {
                 Err(SessionError::NotFound("mock".to_string()))
             }
-            async fn list(
-                &self,
-                _k: &Path,
-            ) -> Result<Vec<SessionSummary>, SessionError> {
+            async fn list(&self, _k: &Path) -> Result<Vec<SessionSummary>, SessionError> {
                 Ok(vec![])
             }
             async fn append_event(
@@ -2601,11 +2592,7 @@ mod tests {
             ) -> Result<Vec<serde_json::Value>, SessionError> {
                 Ok(vec![])
             }
-            async fn count_events(
-                &self,
-                _id: &str,
-                _k: &Path,
-            ) -> Result<usize, SessionError> {
+            async fn count_events(&self, _id: &str, _k: &Path) -> Result<usize, SessionError> {
                 Ok(0)
             }
         }
@@ -2667,15 +2654,13 @@ mod tests {
                 "ended",
             ];
             for event_name in &persistent {
-                let event =
-                    SessionEventMessage::new("test", *event_name, serde_json::json!({}));
+                let event = SessionEventMessage::new("test", *event_name, serde_json::json!({}));
                 assert!(should_persist(&event), "{} should be persisted", event_name);
             }
 
             let non_persistent = ["stream_chunk", "thinking", "status_update", "unknown"];
             for event_name in &non_persistent {
-                let event =
-                    SessionEventMessage::new("test", *event_name, serde_json::json!({}));
+                let event = SessionEventMessage::new("test", *event_name, serde_json::json!({}));
                 assert!(
                     !should_persist(&event),
                     "{} should NOT be persisted",

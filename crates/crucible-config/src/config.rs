@@ -2,8 +2,7 @@
 
 use crate::components::{
     AcpConfig, BackendType, ChatConfig, CliConfig, ContextConfig, DiscoveryPathsConfig,
-    EmbeddingConfig, GatewayConfig, HandlersConfig, LlmConfig, McpConfig, ProvidersConfig,
-    StorageConfig,
+    GatewayConfig, HandlersConfig, LlmConfig, McpConfig, StorageConfig,
 };
 use crate::includes::IncludeConfig;
 use crate::{EnrichmentConfig, ProfileConfig};
@@ -15,7 +14,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use thiserror::Error;
 
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info};
 
 /// Returns the Crucible home directory (`~/.crucible/`).
 ///
@@ -187,10 +186,6 @@ pub struct Config {
     #[serde(default)]
     pub cli: Option<CliConfig>,
 
-    /// Embedding configuration.
-    #[serde(default)]
-    pub embedding: Option<EmbeddingConfig>,
-
     /// ACP (Agent Client Protocol) configuration.
     #[serde(default)]
     pub acp: Option<AcpConfig>,
@@ -251,7 +246,6 @@ impl Default for Config {
             enrichment: None,
             database: None,
             cli: Some(CliConfig::default()),
-            embedding: Some(EmbeddingConfig::default()),
             acp: Some(AcpConfig::default()),
             chat: Some(ChatConfig::default()),
             llm: None,
@@ -398,16 +392,6 @@ impl Config {
         Ok(CliConfig::default())
     }
 
-    /// Get the effective embedding configuration.
-    pub fn embedding_config(&self) -> Result<EmbeddingConfig, ConfigError> {
-        if let Some(config) = &self.embedding {
-            return Ok(config.clone());
-        }
-
-        // Fall back to default with FastEmbed
-        Ok(EmbeddingConfig::default())
-    }
-
     /// Get the effective ACP configuration.
     pub fn acp_config(&self) -> Result<AcpConfig, ConfigError> {
         if let Some(config) = &self.acp {
@@ -459,9 +443,7 @@ impl Config {
     }
 
     /// Get the effective LLM provider for chat.
-    /// Prefers llm.providers if configured, falls back to chat.provider.
     pub fn effective_llm_provider(&self) -> Result<EffectiveLlmConfig, ConfigError> {
-        // Check LlmConfig first
         if let Some(llm) = &self.llm {
             if let Some((key, provider)) = llm.default_provider() {
                 return Ok(EffectiveLlmConfig {
@@ -477,22 +459,8 @@ impl Config {
             }
         }
 
-        // Fall back to ChatConfig
-        let chat = self.chat_config()?;
-        let provider_type = chat.provider;
-        Ok(EffectiveLlmConfig {
-            key: "default".to_string(),
-            provider_type,
-            endpoint: chat.llm_endpoint(),
-            model: chat.chat_model(),
-            temperature: chat.temperature(),
-            max_tokens: chat.max_tokens(),
-            timeout_secs: chat.timeout_secs(),
-            api_key: match provider_type {
-                BackendType::OpenAI => std::env::var("OPENAI_API_KEY").ok(),
-                BackendType::Anthropic => std::env::var("ANTHROPIC_API_KEY").ok(),
-                _ => None,
-            },
+        Err(ConfigError::MissingValue {
+            field: "llm.default".to_string(),
         })
     }
 
@@ -670,10 +638,6 @@ pub struct CliAppConfig {
     #[serde(default)]
     pub agent_directories: Vec<std::path::PathBuf>,
 
-    /// Embedding configuration
-    #[serde(default)]
-    pub embedding: EmbeddingConfig,
-
     /// ACP (Agent Client Protocol) configuration
     #[serde(default)]
     pub acp: AcpConfig,
@@ -685,13 +649,6 @@ pub struct CliAppConfig {
     /// LLM provider configuration with named instances
     #[serde(default)]
     pub llm: LlmConfig,
-
-    /// Unified provider configuration (new format)
-    ///
-    /// Supports both embedding and chat providers with capability-based traits.
-    /// This is the preferred way to configure providers.
-    #[serde(default)]
-    pub providers: ProvidersConfig,
 
     /// CLI-specific configuration
     #[serde(default)]
@@ -742,11 +699,9 @@ impl Default for CliAppConfig {
         Self {
             kiln_path: default_kiln_path(),
             agent_directories: Vec::new(),
-            embedding: EmbeddingConfig::default(),
             acp: AcpConfig::default(),
             chat: ChatConfig::default(),
             llm: LlmConfig::default(),
-            providers: ProvidersConfig::default(),
             cli: CliConfig::default(),
             logging: None,
             processing: ProcessingConfig::default(),
@@ -812,6 +767,27 @@ impl CliAppConfig {
                     )
                 })?;
 
+                if raw_table.contains_key("embedding") {
+                    return Err(anyhow::anyhow!(
+                        "Failed to parse config file {}: legacy [embedding] is no longer supported. Use [llm.providers.<name>] with [llm].default",
+                        config_path.display()
+                    ));
+                }
+                if raw_table.contains_key("providers") {
+                    return Err(anyhow::anyhow!(
+                        "Failed to parse config file {}: legacy [providers] is no longer supported. Use [llm.providers.<name>] with [llm].default",
+                        config_path.display()
+                    ));
+                }
+                if let Some(toml::Value::Table(chat)) = raw_table.get("chat") {
+                    if chat.contains_key("provider") {
+                        return Err(anyhow::anyhow!(
+                            "Failed to parse config file {}: chat.provider is no longer supported. Use [llm.providers.<name>] with [llm].default",
+                            config_path.display()
+                        ));
+                    }
+                }
+
                 let file_fields = Self::detect_present_fields(&raw_table);
 
                 match toml::from_str::<CliAppConfig>(&contents) {
@@ -852,18 +828,13 @@ impl CliAppConfig {
         let all_tracked_fields = [
             "kiln_path",
             "agent_directories",
-            "embedding.provider",
-            "embedding.model",
-            "embedding.api_url",
-            "embedding.batch_size",
-            "embedding.max_concurrent",
+            "llm.default",
             "acp.default_agent",
             "acp.enable_discovery",
             "acp.session_timeout_minutes",
             "acp.max_message_size_mb",
             "chat.model",
             "chat.enable_markdown",
-            "chat.provider",
             "chat.endpoint",
             "chat.temperature",
             "chat.max_tokens",
@@ -890,14 +861,28 @@ impl CliAppConfig {
 
         // Apply CLI flag overrides (priority 1 - highest)
         if let Some(url) = embedding_url {
-            debug!("Overriding embedding.api_url from CLI flag: {}", url);
-            config.embedding.api_url = Some(url);
-            source_map.set("embedding.api_url", ValueSource::Cli);
+            if let Some(default_key) = config.llm.default.clone() {
+                if let Some(provider) = config.llm.providers.get_mut(&default_key) {
+                    debug!(
+                        "Overriding llm.providers.{}.endpoint from CLI flag: {}",
+                        default_key, url
+                    );
+                    provider.endpoint = Some(url);
+                    source_map.set("llm.default.endpoint", ValueSource::Cli);
+                }
+            }
         }
         if let Some(model) = embedding_model {
-            debug!("Overriding embedding.model from CLI flag: {}", model);
-            config.embedding.model = Some(model);
-            source_map.set("embedding.model", ValueSource::Cli);
+            if let Some(default_key) = config.llm.default.clone() {
+                if let Some(provider) = config.llm.providers.get_mut(&default_key) {
+                    debug!(
+                        "Overriding llm.providers.{}.default_model from CLI flag: {}",
+                        default_key, model
+                    );
+                    provider.default_model = Some(model);
+                    source_map.set("llm.default.model", ValueSource::Cli);
+                }
+            }
         }
 
         config.source_map = Some(source_map);
@@ -916,23 +901,9 @@ impl CliAppConfig {
         if table.contains_key("agent_directories") {
             fields.push("agent_directories".to_string());
         }
-
-        // Embedding section
-        if let Some(toml::Value::Table(embedding)) = table.get("embedding") {
-            if embedding.contains_key("provider") {
-                fields.push("embedding.provider".to_string());
-            }
-            if embedding.contains_key("model") {
-                fields.push("embedding.model".to_string());
-            }
-            if embedding.contains_key("api_url") {
-                fields.push("embedding.api_url".to_string());
-            }
-            if embedding.contains_key("batch_size") {
-                fields.push("embedding.batch_size".to_string());
-            }
-            if embedding.contains_key("max_concurrent") {
-                fields.push("embedding.max_concurrent".to_string());
+        if let Some(toml::Value::Table(llm)) = table.get("llm") {
+            if llm.contains_key("default") {
+                fields.push("llm.default".to_string());
             }
         }
 
@@ -959,9 +930,6 @@ impl CliAppConfig {
             }
             if chat.contains_key("enable_markdown") {
                 fields.push("chat.enable_markdown".to_string());
-            }
-            if chat.contains_key("provider") {
-                fields.push("chat.provider".to_string());
             }
             if chat.contains_key("endpoint") {
                 fields.push("chat.endpoint".to_string());
@@ -1011,9 +979,7 @@ impl CliAppConfig {
     pub fn log_config(&self) {
         info!("Effective configuration:");
         info!("  kiln_path: {}", self.kiln_path.display());
-        info!("  embedding.provider: {:?}", self.embedding.provider);
-        info!("  embedding.model: {:?}", self.embedding.model);
-        info!("  embedding.batch_size: {}", self.embedding.batch_size);
+        info!("  llm.default: {:?}", self.llm.default);
         info!("  acp.default_agent: {:?}", self.acp.default_agent);
         info!("  acp.enable_discovery: {}", self.acp.enable_discovery);
         info!(
@@ -1100,10 +1066,7 @@ impl CliAppConfig {
         let mut map = ValueSourceMap::new();
         let tracked_fields = [
             "kiln_path",
-            "embedding.provider",
-            "embedding.model",
-            "embedding.api_url",
-            "embedding.batch_size",
+            "llm.default",
             "acp.default_agent",
             "acp.enable_discovery",
             "acp.session_timeout_minutes",
@@ -1155,54 +1118,17 @@ impl CliAppConfig {
             ),
         );
 
-        // embedding section
-        let mut embedding_section = serde_json::Map::new();
-        let provider_source = source_map
-            .get("embedding.provider")
+        let llm_source = source_map
+            .get("llm.default")
             .unwrap_or(&ValueSource::Default);
-        embedding_section.insert(
-            "provider".to_string(),
-            make_item(
-                serde_json::Value::String(format!("{:?}", self.embedding.provider)),
-                provider_source,
-            ),
-        );
-
-        if let Some(ref model) = self.embedding.model {
-            let model_source = source_map
-                .get("embedding.model")
-                .unwrap_or(&ValueSource::Default);
-            embedding_section.insert(
-                "model".to_string(),
-                make_item(serde_json::Value::String(model.clone()), model_source),
+        let mut llm_section = serde_json::Map::new();
+        if let Some(default_key) = &self.llm.default {
+            llm_section.insert(
+                "default".to_string(),
+                make_item(serde_json::Value::String(default_key.clone()), llm_source),
             );
         }
-
-        if let Some(ref api_url) = self.embedding.api_url {
-            let url_source = source_map
-                .get("embedding.api_url")
-                .unwrap_or(&ValueSource::Default);
-            embedding_section.insert(
-                "api_url".to_string(),
-                make_item(serde_json::Value::String(api_url.clone()), url_source),
-            );
-        }
-
-        let batch_source = source_map
-            .get("embedding.batch_size")
-            .unwrap_or(&ValueSource::Default);
-        embedding_section.insert(
-            "batch_size".to_string(),
-            make_item(
-                serde_json::Value::Number(self.embedding.batch_size.into()),
-                batch_source,
-            ),
-        );
-
-        output.insert(
-            "embedding".to_string(),
-            serde_json::Value::Object(embedding_section),
-        );
+        output.insert("llm".to_string(), serde_json::Value::Object(llm_section));
 
         // acp section
         let mut acp_section = serde_json::Map::new();
@@ -1325,47 +1251,17 @@ impl CliAppConfig {
             kiln_source.detail()
         ));
 
-        // embedding section
-        output.push_str("\n[embedding]\n");
-        let provider_source = source_map
-            .get("embedding.provider")
+        output.push_str("\n[llm]\n");
+        let llm_source = source_map
+            .get("llm.default")
             .unwrap_or(&ValueSource::Default);
-        output.push_str(&format!(
-            "provider = \"{:?}\"  # from: {}\n",
-            self.embedding.provider,
-            provider_source.detail()
-        ));
-
-        if let Some(ref model) = self.embedding.model {
-            let model_source = source_map
-                .get("embedding.model")
-                .unwrap_or(&ValueSource::Default);
+        if let Some(default_key) = &self.llm.default {
             output.push_str(&format!(
-                "model = \"{}\"  # from: {}\n",
-                model,
-                model_source.detail()
+                "default = \"{}\"  # from: {}\n",
+                default_key,
+                llm_source.detail()
             ));
         }
-
-        if let Some(ref api_url) = self.embedding.api_url {
-            let url_source = source_map
-                .get("embedding.api_url")
-                .unwrap_or(&ValueSource::Default);
-            output.push_str(&format!(
-                "api_url = \"{}\"  # from: {}\n",
-                api_url,
-                url_source.detail()
-            ));
-        }
-
-        let batch_source = source_map
-            .get("embedding.batch_size")
-            .unwrap_or(&ValueSource::Default);
-        output.push_str(&format!(
-            "batch_size = {}  # from: {}\n",
-            self.embedding.batch_size,
-            batch_source.detail()
-        ));
 
         // ACP section
         output.push_str("\n[acp]\n");
@@ -1465,11 +1361,14 @@ kiln_path = "/home/user/Documents/my-kiln"
 # Paths can be absolute or relative to this config file location
 # agent_directories = ["/home/user/shared-agents", "./docs/agents"]
 
-# Embedding configuration
-[embedding]
-provider = "fastembed"
-model = "BAAI/bge-small-en-v1.5"
-batch_size = 16
+# LLM provider configuration
+[llm]
+default = "local"
+
+[llm.providers.local]
+type = "ollama"
+default_model = "llama3.2"
+endpoint = "http://localhost:11434"
 
 # ACP (Agent Client Protocol) configuration
 [acp]
@@ -1603,9 +1502,7 @@ verbose = false
     }
 
     /// Get the effective LLM provider for chat.
-    /// Prefers llm.providers if configured, falls back to chat.provider.
     pub fn effective_llm_provider(&self) -> Result<EffectiveLlmConfig, ConfigError> {
-        // Check LlmConfig first
         if let Some((key, provider)) = self.llm.default_provider() {
             return Ok(EffectiveLlmConfig {
                 key: key.clone(),
@@ -1619,67 +1516,9 @@ verbose = false
             });
         }
 
-        // Fall back to ChatConfig
-        Ok(EffectiveLlmConfig {
-            key: "default".to_string(),
-            provider_type: self.chat.provider,
-            endpoint: self.chat.llm_endpoint(),
-            model: self.chat.chat_model(),
-            temperature: self.chat.temperature(),
-            max_tokens: self.chat.max_tokens(),
-            timeout_secs: self.chat.timeout_secs(),
-            api_key: match &self.chat.provider {
-                BackendType::OpenAI => std::env::var("OPENAI_API_KEY").ok(),
-                BackendType::Anthropic => std::env::var("ANTHROPIC_API_KEY").ok(),
-                _ => None,
-            },
+        Err(ConfigError::MissingValue {
+            field: "llm.default".to_string(),
         })
-    }
-
-    /// Get the effective embedding provider.
-    ///
-    /// Priority:
-    /// 1. New `providers` section with embedding capability
-    /// 2. Legacy `embedding` section
-    ///
-    /// Returns the provider name and config if found.
-    pub fn effective_embedding_provider(
-        &self,
-    ) -> Option<(String, crate::components::ProviderConfig)> {
-        // First, check the new providers config
-        if let Some((name, config)) = self.providers.first_embedding_provider() {
-            return Some((name.clone(), config.clone()));
-        }
-
-        // Fall back to legacy embedding config - convert to ProviderConfig
-        if self.embedding.provider.is_some() {
-            let provider_config =
-                crate::components::ProviderConfig::from_legacy_embedding(&self.embedding);
-            return Some(("legacy".to_string(), provider_config));
-        }
-
-        None
-    }
-
-    /// Migrate legacy config to new format.
-    ///
-    /// If legacy `[embedding]` section is populated but `[providers]` is empty,
-    /// automatically migrate to the new format. Emits a warning suggesting
-    /// the user update their config file.
-    pub fn migrate_legacy_config(&mut self) {
-        // If new providers section is empty and legacy embedding is configured
-        if !self.providers.has_providers() && self.embedding.provider.is_some() {
-            let provider_config =
-                crate::components::ProviderConfig::from_legacy_embedding(&self.embedding);
-
-            self.providers.add("default", provider_config);
-            self.providers.default_embedding = Some("default".to_string());
-
-            warn!(
-                "Migrated legacy [embedding] config to [providers.default]. \
-                 Consider updating your config file to use the new [providers] section."
-            );
-        }
     }
 }
 
@@ -2009,9 +1848,6 @@ mod tests {
             r#"
 kiln_path = "{}"
 agent_directories = ["/home/user/shared-agents", "./local-agents"]
-
-[embedding]
-provider = "fastembed"
 "#,
             kiln_path.to_string_lossy().replace('\\', "\\\\")
         );
@@ -2037,9 +1873,6 @@ provider = "fastembed"
         let toml_content = format!(
             r#"
 kiln_path = "{}"
-
-[embedding]
-provider = "fastembed"
 "#,
             kiln_path.to_string_lossy().replace('\\', "\\\\")
         );
@@ -2344,13 +2177,12 @@ allowed_tools = ["search_*"]
     }
 
     #[test]
-    fn test_effective_llm_provider_fallback_to_chat() {
+    fn test_effective_llm_provider_without_llm_default_returns_error() {
         let config = Config {
             llm: None,
             chat: Some(ChatConfig {
                 model: Some("gpt-4o".to_string()),
                 enable_markdown: true,
-                provider: crate::components::BackendType::OpenAI,
                 agent_preference: crate::components::AgentPreference::default(),
                 endpoint: Some("https://api.openai.com/v1".to_string()),
                 temperature: Some(0.8),
@@ -2362,13 +2194,8 @@ allowed_tools = ["search_*"]
             ..Config::default()
         };
 
-        let effective = config.effective_llm_provider().unwrap();
-        assert_eq!(effective.key, "default");
-        assert_eq!(effective.endpoint, "https://api.openai.com/v1");
-        assert_eq!(effective.model, "gpt-4o");
-        assert_eq!(effective.temperature, 0.8);
-        assert_eq!(effective.max_tokens, 4096);
-        assert_eq!(effective.timeout_secs, 60);
+        let effective = config.effective_llm_provider();
+        assert!(effective.is_err());
     }
 
     #[test]
@@ -2442,155 +2269,105 @@ max_tokens = 4096
     }
 
     #[test]
-    fn test_cli_app_config_effective_llm_provider_fallback() {
+    fn test_cli_app_config_effective_llm_provider_missing_default_errors() {
         let config = CliAppConfig::default();
-
-        // Should fall back to ChatConfig defaults
-        let effective = config.effective_llm_provider().unwrap();
-        assert_eq!(effective.key, "default");
-        assert_eq!(
-            effective.provider_type,
-            crate::components::BackendType::Ollama
-        );
-        assert_eq!(effective.endpoint, "http://localhost:11434");
-    }
-
-    // === Phase 4: Unified Providers TDD Tests ===
-
-    #[test]
-    fn test_new_providers_config_loads() {
-        let kiln_path = test_path("test");
-        let toml = format!(
-            r#"
-kiln_path = "{}"
-
-[providers]
-default_embedding = "ollama"
-
-[providers.ollama]
-backend = "ollama"
-endpoint = "http://localhost:11434"
-
-[providers.ollama.models]
-embedding = "nomic-embed-text"
-"#,
-            kiln_path.to_string_lossy().replace('\\', "\\\\")
-        );
-        let config: CliAppConfig = toml::from_str(&toml).unwrap();
-
-        assert!(config.providers.get("ollama").is_some());
-        assert_eq!(
-            config.providers.default_embedding,
-            Some("ollama".to_string())
-        );
-
-        let ollama = config.providers.get("ollama").unwrap();
-        assert_eq!(ollama.backend, crate::components::BackendType::Ollama);
-        assert_eq!(
-            ollama.embedding_model(),
-            Some("nomic-embed-text".to_string())
-        );
+        let effective = config.effective_llm_provider();
+        assert!(effective.is_err());
     }
 
     #[test]
-    fn test_legacy_embedding_config_migrates() {
-        let kiln_path = test_path("test");
-        let toml = format!(
-            r#"
-kiln_path = "{}"
-
-[embedding]
-provider = "ollama"
-api_url = "http://localhost:11434"
-model = "nomic-embed-text"
-"#,
-            kiln_path.to_string_lossy().replace('\\', "\\\\")
-        );
-        let mut config: CliAppConfig = toml::from_str(&toml).unwrap();
-        config.migrate_legacy_config();
-
-        // Should have migrated to providers section
-        assert!(config.providers.has_providers());
-        let (name, provider) = config.providers.first_embedding_provider().unwrap();
-        assert_eq!(name, "default");
-        assert_eq!(provider.backend, crate::components::BackendType::Ollama);
-    }
-
-    #[test]
-    fn test_effective_embedding_provider_prefers_new_config() {
-        let kiln_path = test_path("test");
-        let toml = format!(
-            r#"
-kiln_path = "{}"
-
-[embedding]
-provider = "fastembed"
-model = "legacy-model"
-
-[providers]
-default_embedding = "new-provider"
-
-[providers.new-provider]
-backend = "ollama"
-endpoint = "http://localhost:11434"
-
-[providers.new-provider.models]
-embedding = "new-model"
-"#,
-            kiln_path.to_string_lossy().replace('\\', "\\\\")
-        );
-        let config: CliAppConfig = toml::from_str(&toml).unwrap();
-
-        // Should prefer new providers config over legacy
-        let (name, provider) = config.effective_embedding_provider().unwrap();
-        assert_eq!(name, "new-provider");
-        assert_eq!(provider.backend, crate::components::BackendType::Ollama);
-        assert_eq!(provider.embedding_model(), Some("new-model".to_string()));
-    }
-
-    #[test]
-    fn test_effective_embedding_provider_falls_back_to_legacy() {
-        let kiln_path = test_path("test");
-        let toml = format!(
-            r#"
-kiln_path = "{}"
-
-[embedding]
-provider = "fastembed"
-model = "legacy-model"
-batch_size = 32
-"#,
-            kiln_path.to_string_lossy().replace('\\', "\\\\")
-        );
-        let config: CliAppConfig = toml::from_str(&toml).unwrap();
-
-        // Should fall back to legacy embedding config
-        let (name, provider) = config.effective_embedding_provider().unwrap();
-        assert_eq!(name, "legacy");
-        assert_eq!(provider.backend, crate::components::BackendType::FastEmbed);
-        assert_eq!(provider.embedding_model(), Some("legacy-model".to_string()));
-        assert_eq!(provider.batch_size(), 32);
-    }
-
-    #[test]
-    fn test_provider_config_from_legacy_embedding() {
-        let legacy = crate::components::EmbeddingConfig {
-            provider: Some(BackendType::Ollama),
-            model: Some("nomic-embed-text".to_string()),
-            api_url: Some("http://custom:11434".to_string()),
-            batch_size: 64,
-            max_concurrent: Some(4),
+    fn test_effective_llm_provider_requires_llm_default_provider() {
+        let config = CliAppConfig {
+            llm: crate::components::LlmConfig::default(),
+            ..Default::default()
         };
 
-        let converted = crate::components::ProviderConfig::from_legacy_embedding(&legacy);
-
-        assert_eq!(converted.backend, crate::components::BackendType::Ollama);
-        assert_eq!(converted.endpoint, Some("http://custom:11434".to_string()));
-        assert_eq!(
-            converted.models.embedding,
-            Some("nomic-embed-text".to_string())
+        let effective = config.effective_llm_provider();
+        assert!(
+            effective.is_err(),
+            "effective_llm_provider should fail without llm.default"
         );
-        assert_eq!(converted.batch_size(), 64);
-        assert_eq!(converted.max_concurrent(), 4);
+    }
+
+    #[test]
+    fn test_cli_app_config_rejects_legacy_embedding_section() {
+        let temp = tempfile::NamedTempFile::new().unwrap();
+        let toml_content = r#"
+kiln_path = "/tmp/test-kiln"
+
+[embedding]
+provider = "fastembed"
+"#;
+        std::fs::write(temp.path(), toml_content).unwrap();
+
+        let parsed = CliAppConfig::load(Some(temp.path().to_path_buf()), None, None);
+        assert!(
+            parsed.is_err(),
+            "legacy [embedding] config should be rejected"
+        );
+    }
+
+    #[test]
+    fn test_cli_app_config_rejects_legacy_providers_section() {
+        let temp = tempfile::NamedTempFile::new().unwrap();
+        let toml_content = r#"
+kiln_path = "/tmp/test-kiln"
+
+[providers]
+default_embedding = "legacy"
+
+[providers.legacy]
+backend = "ollama"
+"#;
+        std::fs::write(temp.path(), toml_content).unwrap();
+
+        let parsed = CliAppConfig::load(Some(temp.path().to_path_buf()), None, None);
+        assert!(
+            parsed.is_err(),
+            "legacy [providers] config should be rejected"
+        );
+    }
+
+    #[test]
+    fn test_cli_app_config_loads_llm_provider_config() {
+        let kiln_path = test_path("test");
+        let toml = format!(
+            r#"
+kiln_path = "{}"
+
+[llm]
+default = "local"
+
+[llm.providers.local]
+type = "ollama"
+default_model = "llama3.2"
+endpoint = "http://localhost:11434"
+"#,
+            kiln_path.to_string_lossy().replace('\\', "\\\\")
+        );
+        let config: CliAppConfig = toml::from_str(&toml).unwrap();
+
+        assert_eq!(config.llm.default, Some("local".to_string()));
+        let provider = config.llm.providers.get("local").unwrap();
+        assert_eq!(
+            provider.provider_type,
+            crate::components::BackendType::Ollama
+        );
+        assert_eq!(provider.model(), "llama3.2");
+    }
+
+    #[test]
+    fn test_cli_app_config_rejects_chat_provider_field() {
+        let temp = tempfile::NamedTempFile::new().unwrap();
+        let toml_content = r#"
+kiln_path = "/tmp/test-kiln"
+
+[chat]
+provider = "openai"
+"#;
+        std::fs::write(temp.path(), toml_content).unwrap();
+
+        let parsed = CliAppConfig::load(Some(temp.path().to_path_buf()), None, None);
+        assert!(parsed.is_err(), "chat.provider should be rejected");
     }
 }

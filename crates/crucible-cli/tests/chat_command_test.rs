@@ -10,8 +10,7 @@ use anyhow::Result;
 use crucible_cli::commands::chat;
 use crucible_cli::config::{CliAppConfig, CliConfig};
 use crucible_config::{
-    AcpConfig, BackendType, ChatConfig, EmbeddingConfig, LlmConfig, ProcessingConfig,
-    ProvidersConfig,
+    AcpConfig, BackendType, ChatConfig, LlmConfig, LlmProviderConfig, ProcessingConfig,
 };
 use tempfile::TempDir;
 
@@ -27,23 +26,25 @@ async fn test_chat_command_does_not_double_open_database() -> Result<()> {
     std::fs::write(&test_note, "# Test Note\n\nThis is a test.")?;
 
     // Create test config
+    let mut llm_config = LlmConfig::default();
+    llm_config.default = Some("local".to_string());
+    llm_config.providers.insert(
+        "local".to_string(),
+        LlmProviderConfig::builder(BackendType::Ollama)
+            .endpoint("https://llm.example.com")
+            .model("nomic-embed-text-v1.5-q8_0")
+            .build(),
+    );
+
     let config = CliConfig {
         kiln_path: kiln_path.clone(),
         agent_directories: Vec::new(),
-        embedding: EmbeddingConfig {
-            provider: Some(BackendType::Ollama),
-            model: Some("nomic-embed-text-v1.5-q8_0".to_string()),
-            api_url: Some("https://llm.example.com".to_string()),
-            batch_size: 16,
-            max_concurrent: None,
-        },
         acp: AcpConfig::default(),
         chat: ChatConfig::default(),
-        llm: LlmConfig::default(),
+        llm: llm_config,
         cli: CliAppConfig::default(),
         logging: None,
         processing: ProcessingConfig::default(),
-        providers: ProvidersConfig::default(),
         context: None,
         storage: None,
         mcp: None,
@@ -119,23 +120,25 @@ async fn test_chat_command_with_minimal_config() -> Result<()> {
     let kiln_path = temp_dir.path().join("minimal-kiln");
     std::fs::create_dir_all(&kiln_path)?;
 
+    let mut llm_config = LlmConfig::default();
+    llm_config.default = Some("local".to_string());
+    llm_config.providers.insert(
+        "local".to_string(),
+        LlmProviderConfig::builder(BackendType::Ollama)
+            .endpoint("https://llm.example.com")
+            .model("nomic-embed-text-v1.5-q8_0")
+            .build(),
+    );
+
     let config = CliConfig {
         kiln_path: kiln_path.clone(),
         agent_directories: Vec::new(),
-        embedding: EmbeddingConfig {
-            provider: Some(BackendType::Ollama),
-            model: Some("nomic-embed-text-v1.5-q8_0".to_string()),
-            api_url: Some("https://llm.example.com".to_string()),
-            batch_size: 16,
-            max_concurrent: None,
-        },
         acp: AcpConfig::default(),
         chat: ChatConfig::default(),
-        llm: LlmConfig::default(),
+        llm: llm_config,
         cli: CliAppConfig::default(),
         logging: None,
         processing: ProcessingConfig::default(),
-        providers: ProvidersConfig::default(),
         context: None,
         storage: None,
         mcp: None,

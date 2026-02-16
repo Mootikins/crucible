@@ -58,10 +58,7 @@ mod fastembed_tests {
         let embedding = provider.embed("Hello, world!").await.unwrap();
 
         println!("FastEmbed dimensions: {}", embedding.len());
-        println!(
-            "First 5 values: {:?}",
-            &embedding[..5.min(embedding.len())]
-        );
+        println!("First 5 values: {:?}", &embedding[..5.min(embedding.len())]);
 
         assert!(!embedding.is_empty());
         assert!(embedding.len() > 100); // Should be high-dimensional
@@ -162,10 +159,7 @@ mod ollama_tests {
         let embedding = provider.embed("Hello, world!").await.unwrap();
 
         println!("Ollama dimensions: {}", embedding.len());
-        println!(
-            "First 5 values: {:?}",
-            &embedding[..5.min(embedding.len())]
-        );
+        println!("First 5 values: {:?}", &embedding[..5.min(embedding.len())]);
 
         assert!(!embedding.is_empty());
         assert_eq!(embedding.len(), 768); // nomic-embed-text has 768 dims

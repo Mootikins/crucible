@@ -865,7 +865,10 @@ mod tests {
         modified.title = Some("Updated Title".to_string());
 
         let result = manager.update_session(&modified).await;
-        assert!(result.is_err(), "update_session should fail when storage fails");
+        assert!(
+            result.is_err(),
+            "update_session should fail when storage fails"
+        );
 
         let in_memory = manager.get_session(&session_id).unwrap();
         assert_eq!(

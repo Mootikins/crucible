@@ -37,8 +37,10 @@ struct OpenAIEmbeddingResponse {
     /// Embedding data array
     data: Vec<OpenAIEmbeddingData>,
     /// Model used
+    #[allow(dead_code)]
     model: String,
     /// Usage statistics
+    #[allow(dead_code)]
     usage: OpenAIUsage,
 }
 
@@ -55,6 +57,7 @@ struct OpenAIEmbeddingData {
 #[derive(Debug, Deserialize)]
 struct OpenAIUsage {
     /// Number of prompt tokens
+    #[allow(dead_code)]
     prompt_tokens: usize,
     /// Total tokens used
     #[allow(dead_code)]
@@ -138,7 +141,10 @@ impl EmbeddingProvider for OpenAIProvider {
 
         let status = response.status();
         if !status.is_success() {
-            return self.handle_error_response::<Vec<f32>>(response).await.map_err(|e| e.into());
+            return self
+                .handle_error_response::<Vec<f32>>(response)
+                .await
+                .map_err(|e| e.into());
         }
 
         let api_response: OpenAIEmbeddingResponse = response.json().await.map_err(|e| {
@@ -185,7 +191,10 @@ impl EmbeddingProvider for OpenAIProvider {
 
         let status = response.status();
         if !status.is_success() {
-            return self.handle_error_response::<Vec<Vec<f32>>>(response).await.map_err(|e| e.into());
+            return self
+                .handle_error_response::<Vec<Vec<f32>>>(response)
+                .await
+                .map_err(|e| e.into());
         }
 
         let api_response: OpenAIEmbeddingResponse = response.json().await.map_err(|e| {

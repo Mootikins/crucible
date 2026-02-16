@@ -228,21 +228,18 @@ mod tests {
     // Helper to create a test config
     fn test_config() -> CliConfig {
         use crucible_config::{
-            AcpConfig, ChatConfig, CliConfig as CliAppConfig, EmbeddingConfig, LlmConfig,
-            ProcessingConfig, ProvidersConfig,
+            AcpConfig, ChatConfig, CliConfig as CliAppConfig, LlmConfig, ProcessingConfig,
         };
 
         CliConfig {
             kiln_path: test_path("test-kiln"),
             agent_directories: Vec::new(),
-            embedding: EmbeddingConfig::default(),
             acp: AcpConfig::default(),
             chat: ChatConfig::default(),
             llm: LlmConfig::default(),
             cli: CliAppConfig::default(),
             logging: None,
             processing: ProcessingConfig::default(),
-            providers: ProvidersConfig::default(),
             context: None,
             storage: None,
             mcp: None,

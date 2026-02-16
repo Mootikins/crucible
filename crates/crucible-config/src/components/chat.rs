@@ -1,6 +1,5 @@
 //! Simple chat configuration
 
-use crate::components::BackendType;
 use serde::{Deserialize, Serialize};
 
 /// Agent type preference for chat
@@ -24,10 +23,6 @@ pub struct ChatConfig {
     /// Enable markdown rendering
     #[serde(default = "default_true")]
     pub enable_markdown: bool,
-    /// LLM provider to use
-    #[deprecated(note = "Use [llm.providers] instead")]
-    #[serde(default = "default_chat_backend")]
-    pub provider: BackendType,
     /// Default agent type preference (acp or internal)
     #[serde(default)]
     pub agent_preference: AgentPreference,
@@ -61,16 +56,11 @@ fn default_true() -> bool {
     true
 }
 
-fn default_chat_backend() -> BackendType {
-    BackendType::Ollama
-}
-
 impl Default for ChatConfig {
     fn default() -> Self {
         Self {
             model: None,
             enable_markdown: true,
-            provider: default_chat_backend(),
             agent_preference: AgentPreference::default(),
             endpoint: None,
             temperature: None,
@@ -83,17 +73,6 @@ impl Default for ChatConfig {
 }
 
 impl ChatConfig {
-    /// Get the LLM endpoint, using provider-specific default if not specified
-    #[deprecated(note = "Use [llm.providers] instead")]
-    pub fn llm_endpoint(&self) -> String {
-        self.endpoint.clone().unwrap_or_else(|| {
-            self.provider
-                .default_endpoint()
-                .unwrap_or("http://localhost:11434")
-                .to_string()
-        })
-    }
-
     /// Get the chat model, using default if not specified
     pub fn chat_model(&self) -> String {
         self.model
@@ -123,12 +102,6 @@ impl ChatConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_chat_config_default_provider() {
-        let config = ChatConfig::default();
-        assert_eq!(config.provider, BackendType::Ollama);
-    }
 
     #[test]
     fn test_size_aware_prompts_default_enabled() {
@@ -161,36 +134,5 @@ mod tests {
         "#;
         let config: ChatConfig = toml::from_str(toml).unwrap();
         assert!(config.size_aware_prompts);
-    }
-
-    #[test]
-    fn test_github_copilot_endpoint_matches_implementation() {
-        let config = ChatConfig {
-            provider: BackendType::GitHubCopilot,
-            ..Default::default()
-        };
-        let endpoint = config.llm_endpoint();
-        assert_eq!(
-            endpoint, "https://api.githubcopilot.com",
-            "GitHubCopilot endpoint must match COPILOT_API_BASE from github_copilot.rs"
-        );
-    }
-
-    #[test]
-    fn test_provider_defaults_to_ollama_when_missing() {
-        let toml = r#"
-            model = "test-model"
-        "#;
-        let config: ChatConfig = toml::from_str(toml).unwrap();
-        assert_eq!(config.provider, BackendType::Ollama);
-    }
-
-    #[test]
-    fn test_provider_deserialize_from_toml() {
-        let toml = r#"
-            provider = "openai"
-        "#;
-        let config: ChatConfig = toml::from_str(toml).unwrap();
-        assert_eq!(config.provider, BackendType::OpenAI);
     }
 }
