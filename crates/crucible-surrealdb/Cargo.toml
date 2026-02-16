@@ -58,11 +58,11 @@ test-slow = []           # Performance benchmarks and timing tests
 # Always enable test-utils for tests
 [dev-dependencies]
 crucible-surrealdb = { path = ".", features = ["test-utils"] }
-tempfile = "3.24"
+tempfile = "3.25"
 tokio-test = "0.4"
 tracing-test = "0.2"
 fake = { version = "4.4", features = ["derive"] }
-rand = "0.9"
+rand = "0.10"
 crucible-parser = { path = "../crucible-parser" }
 walkdir = "2.5"
 regex = "1.12"
