@@ -553,13 +553,7 @@ pub async fn create_internal_agent(
     };
 
     client
-        .build_agent_handle_with_kiln(
-            &agent_config,
-            &workspace_root,
-            kiln_ctx,
-            mcp_tools,
-            opts,
-        )
+        .build_agent_handle_with_kiln(&agent_config, &workspace_root, kiln_ctx, mcp_tools, opts)
         .await
         .map_err(|e| anyhow::anyhow!(e))
 }
