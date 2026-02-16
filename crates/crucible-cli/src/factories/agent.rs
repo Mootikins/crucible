@@ -274,8 +274,6 @@ pub async fn create_internal_agent(
     use crucible_config::BackendType;
     use crucible_context::{LayeredPromptBuilder, PromptBuilder};
     use crucible_core::prompts::{base_prompt_for_size, ModelSize};
-    use crucible_rig::{build_agent_with_kiln_tools, AgentComponents, RigAgentHandle};
-
     let provider_backend = config
         .effective_llm_provider()
         .map(|p| p.provider_type)
@@ -544,145 +542,26 @@ pub async fn create_internal_agent(
     };
 
     let kiln_ctx = params.kiln_context;
-    match client {
-        crucible_rig::RigClient::Ollama(ollama_client) => {
-            let (agent, ws_ctx) = build_agent_with_kiln_tools(
-                &agent_config,
-                &ollama_client,
-                &workspace_root,
-                model_size,
-                kiln_ctx.clone(),
-                mcp_tools.clone(),
-            )?;
+    let opts = crucible_rig::HandleBuildOpts {
+        model: model.clone(),
+        model_size,
+        thinking_budget: None,
+        ollama_endpoint,
+        mcp_gateway: None,
+        initial_mode: Some(initial_mode.to_string()),
+        reasoning_endpoint,
+    };
 
-            let mut components = AgentComponents::new(
-                agent_config.clone(),
-                crucible_rig::RigClient::Ollama(ollama_client),
-                ws_ctx.clone(),
-            )
-            .with_model_size(model_size);
-
-            if let Some(kc) = kiln_ctx {
-                components = components.with_kiln(kc);
-            }
-            if let Some(ref endpoint) = ollama_endpoint {
-                components = components.with_ollama_endpoint(endpoint.clone());
-            }
-
-            let mut handle = RigAgentHandle::new(agent)
-                .with_ollama_components(components)
-                .with_initial_mode(initial_mode);
-
-            if let Some(endpoint) = reasoning_endpoint {
-                handle = handle.with_reasoning_endpoint(endpoint, model);
-            }
-            Ok(Box::new(handle))
-        }
-        crucible_rig::RigClient::OpenAI(openai_client) => {
-            let (agent, ws_ctx) = build_agent_with_kiln_tools(
-                &agent_config,
-                &openai_client,
-                &workspace_root,
-                model_size,
-                kiln_ctx,
-                mcp_tools.clone(),
-            )?;
-            let mut handle = RigAgentHandle::new(agent)
-                .with_workspace_context(ws_ctx)
-                .with_initial_mode(initial_mode)
-                .with_model(model.clone());
-            if let Some(endpoint) = ollama_endpoint.clone() {
-                handle = handle.with_ollama_endpoint(endpoint);
-            }
-            if let Some(endpoint) = reasoning_endpoint {
-                handle = handle.with_reasoning_endpoint(endpoint, model);
-            }
-            Ok(Box::new(handle))
-        }
-        crucible_rig::RigClient::OpenAICompat(compat_client) => {
-            let (agent, ws_ctx) = build_agent_with_kiln_tools(
-                &agent_config,
-                &compat_client,
-                &workspace_root,
-                model_size,
-                kiln_ctx,
-                mcp_tools.clone(),
-            )?;
-            let mut handle = RigAgentHandle::new(agent)
-                .with_workspace_context(ws_ctx)
-                .with_initial_mode(initial_mode)
-                .with_model(model.clone());
-            if let Some(endpoint) = ollama_endpoint.clone() {
-                handle = handle.with_ollama_endpoint(endpoint);
-            }
-            if let Some(endpoint) = reasoning_endpoint {
-                handle = handle.with_reasoning_endpoint(endpoint, model);
-            }
-            Ok(Box::new(handle))
-        }
-        crucible_rig::RigClient::Anthropic(anthropic_client) => {
-            let (agent, ws_ctx) = build_agent_with_kiln_tools(
-                &agent_config,
-                &anthropic_client,
-                &workspace_root,
-                model_size,
-                kiln_ctx,
-                mcp_tools.clone(),
-            )?;
-            Ok(Box::new(
-                RigAgentHandle::new(agent)
-                    .with_workspace_context(ws_ctx)
-                    .with_initial_mode(initial_mode),
-            ))
-        }
-        crucible_rig::RigClient::GitHubCopilot(copilot_client) => {
-            let api_token = copilot_client
-                .api_token()
-                .await
-                .map_err(|e| anyhow::anyhow!("Failed to get Copilot API token: {}", e))?;
-            let api_base = copilot_client
-                .api_base()
-                .await
-                .map_err(|e| anyhow::anyhow!("Failed to get Copilot API base: {}", e))?;
-
-            let compat_client = crucible_rig::create_openai_compat_client(&api_token, &api_base)?;
-
-            let (agent, ws_ctx) = build_agent_with_kiln_tools(
-                &agent_config,
-                &compat_client,
-                &workspace_root,
-                model_size,
-                kiln_ctx,
-                mcp_tools,
-            )?;
-            let handle = RigAgentHandle::new(agent)
-                .with_workspace_context(ws_ctx)
-                .with_initial_mode(initial_mode);
-            Ok(if let Some(endpoint) = reasoning_endpoint {
-                Box::new(handle.with_reasoning_endpoint(endpoint, model))
-            } else {
-                Box::new(handle)
-            })
-        }
-        crucible_rig::RigClient::OpenRouter(openrouter_client) => {
-            let (agent, ws_ctx) = build_agent_with_kiln_tools(
-                &agent_config,
-                &openrouter_client,
-                &workspace_root,
-                model_size,
-                kiln_ctx,
-                mcp_tools.clone(),
-            )?;
-            let mut handle = RigAgentHandle::new(agent)
-                .with_workspace_context(ws_ctx)
-                .with_initial_mode(initial_mode)
-                .with_model(model.clone());
-            if let Some(endpoint) = ollama_endpoint.clone() {
-                handle = handle.with_ollama_endpoint(endpoint);
-            }
-            Ok(Box::new(handle))
-        }
-    }
+    client
+        .build_agent_handle_with_kiln(
+            &agent_config,
+            &workspace_root,
+            kiln_ctx,
+            mcp_tools,
+            opts,
+        )
+        .await
+        .map_err(|e| anyhow::anyhow!(e))
 }
 
 /// Create an agent via daemon (auto-starts daemon if needed)
