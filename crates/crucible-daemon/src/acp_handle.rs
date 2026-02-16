@@ -545,13 +545,14 @@ fn resolve_agent_command(
 mod tests {
     use super::*;
     use std::collections::HashMap;
+    use crucible_config::BackendType;
 
     fn test_session_agent(agent_name: &str) -> SessionAgent {
         SessionAgent {
             agent_type: "acp".to_string(),
             agent_name: Some(agent_name.to_string()),
             provider_key: None,
-            provider: "acp".to_string(),
+            provider: BackendType::Custom,
             model: "acp".to_string(),
             system_prompt: String::new(),
             temperature: None,
