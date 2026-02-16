@@ -55,16 +55,16 @@ mod fastembed_tests {
         let config = EmbeddingConfig::fastembed(None, None, None);
         let provider = create_provider(config).await.unwrap();
 
-        let response = provider.embed("Hello, world!").await.unwrap();
+        let embedding = provider.embed("Hello, world!").await.unwrap();
 
-        println!("FastEmbed dimensions: {}", response.embedding.len());
+        println!("FastEmbed dimensions: {}", embedding.len());
         println!(
             "First 5 values: {:?}",
-            &response.embedding[..5.min(response.embedding.len())]
+            &embedding[..5.min(embedding.len())]
         );
 
-        assert!(!response.embedding.is_empty());
-        assert!(response.embedding.len() > 100); // Should be high-dimensional
+        assert!(!embedding.is_empty());
+        assert!(embedding.len() > 100); // Should be high-dimensional
     }
 
     #[tokio::test]
@@ -76,8 +76,8 @@ mod fastembed_tests {
         // Get embeddings for all test texts
         let mut embeddings = Vec::new();
         for text in TEST_TEXTS {
-            let response = provider.embed(text).await.unwrap();
-            embeddings.push(normalize(&response.embedding));
+            let embedding = provider.embed(text).await.unwrap();
+            embeddings.push(normalize(&embedding));
         }
 
         // Calculate similarity matrix
@@ -124,9 +124,8 @@ mod fastembed_tests {
         let config = EmbeddingConfig::fastembed(None, None, None);
         let provider = create_provider(config).await.unwrap();
 
-        let texts: Vec<String> = TEST_TEXTS.iter().map(|s| s.to_string()).collect();
         let start = std::time::Instant::now();
-        let responses = provider.embed_batch(texts).await.unwrap();
+        let responses = provider.embed_batch(TEST_TEXTS).await.unwrap();
         let elapsed = start.elapsed();
 
         println!(
@@ -160,16 +159,16 @@ mod ollama_tests {
         );
         let provider = create_provider(config).await.unwrap();
 
-        let response = provider.embed("Hello, world!").await.unwrap();
+        let embedding = provider.embed("Hello, world!").await.unwrap();
 
-        println!("Ollama dimensions: {}", response.embedding.len());
+        println!("Ollama dimensions: {}", embedding.len());
         println!(
             "First 5 values: {:?}",
-            &response.embedding[..5.min(response.embedding.len())]
+            &embedding[..5.min(embedding.len())]
         );
 
-        assert!(!response.embedding.is_empty());
-        assert_eq!(response.embedding.len(), 768); // nomic-embed-text has 768 dims
+        assert!(!embedding.is_empty());
+        assert_eq!(embedding.len(), 768); // nomic-embed-text has 768 dims
     }
 
     #[tokio::test]
@@ -184,8 +183,8 @@ mod ollama_tests {
         // Get embeddings for all test texts
         let mut embeddings = Vec::new();
         for text in TEST_TEXTS {
-            let response = provider.embed(text).await.unwrap();
-            embeddings.push(normalize(&response.embedding));
+            let embedding = provider.embed(text).await.unwrap();
+            embeddings.push(normalize(&embedding));
         }
 
         // Calculate similarity matrix
@@ -243,12 +242,13 @@ mod ollama_tests {
                 )
             })
             .collect();
+        let text_refs: Vec<&str> = texts.iter().map(|s| s.as_str()).collect();
 
         // Warm up
         let _ = provider.embed("warmup").await;
 
         let start = std::time::Instant::now();
-        let responses = provider.embed_batch(texts.clone()).await.unwrap();
+        let responses = provider.embed_batch(&text_refs).await.unwrap();
         let elapsed = start.elapsed();
 
         println!(

@@ -25,14 +25,12 @@ mod tests {
 
         // Test embedding generation
         let text = "Hello, world!";
-        let response = provider
+        let embedding = provider
             .embed(text)
             .await
             .expect("Failed to generate embedding");
 
-        assert_eq!(response.embedding.len(), 384);
-        assert_eq!(response.model, "test-model");
-        assert_eq!(response.dimensions, 384);
+        assert_eq!(embedding.len(), 384);
     }
 
     #[tokio::test]
@@ -49,20 +47,15 @@ mod tests {
             .expect("Failed to create Burn provider");
 
         // Test batch embedding
-        let texts = vec![
-            "First text".to_string(),
-            "Second text".to_string(),
-            "Third text".to_string(),
-        ];
+        let texts: &[&str] = &["First text", "Second text", "Third text"];
         let responses = provider
             .embed_batch(texts)
             .await
             .expect("Failed to generate batch embeddings");
 
         assert_eq!(responses.len(), 3);
-        for response in responses {
-            assert_eq!(response.embedding.len(), 768);
-            assert_eq!(response.model, "test-model");
+        for embedding in responses {
+            assert_eq!(embedding.len(), 768);
         }
     }
 
@@ -83,11 +76,11 @@ mod tests {
         assert_eq!(provider.dimensions(), 512);
 
         // Even with Vulkan backend, should work (mocked)
-        let response = provider
+        let embedding = provider
             .embed("Test")
             .await
             .expect("Failed to generate embedding");
-        assert_eq!(response.embedding.len(), 512);
+        assert_eq!(embedding.len(), 512);
     }
 
     #[tokio::test]
@@ -105,7 +98,6 @@ mod tests {
 
         let models = provider.list_models().await.expect("Failed to list models");
         assert_eq!(models.len(), 1);
-        assert_eq!(models[0].name, "test-model");
-        assert_eq!(models[0].dimensions, Some(768));
+        assert_eq!(models[0], "test-model");
     }
 }

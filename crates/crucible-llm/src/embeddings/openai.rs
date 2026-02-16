@@ -9,7 +9,6 @@ use std::time::Duration;
 
 use super::config::EmbeddingConfig;
 use super::error::{EmbeddingError, EmbeddingResult};
-use super::provider::EmbeddingResponse;
 use crucible_core::enrichment::EmbeddingProvider;
 
 /// OpenAI API request for embeddings
