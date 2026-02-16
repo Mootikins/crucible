@@ -1,25 +1,40 @@
-# Crucible
+# ⚗️ Crucible
 
 [![CI](https://github.com/Mootikins/crucible/actions/workflows/ci.yml/badge.svg)](https://github.com/Mootikins/crucible/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-MIT%2FApache--2.0-blue.svg)](LICENSE-MIT)
 
-> An AI agent that remembers in plaintext
+**A local-first AI agent that turns every conversation into a searchable, linkable note you own.**
 
-Crucible is a local-first AI assistant where **every conversation becomes a searchable note you own**. Chat with AI, build a knowledge graph, extend with plugins in multiple languages — all backed by markdown files in your git repo.
+No cloud. No lock-in. Your AI chats live as markdown files in git, wired into a knowledge graph you control.
+
+<p align="center">
+  <img src="assets/chat-demo.gif" alt="Crucible chat demo" width="720" />
+</p>
 
 > **Early Development**: APIs and storage formats may change. Contributions welcome!
 
 ## What Makes Crucible Different
 
-**Sessions as Markdown**: Conversations aren't ephemeral. Every chat session is saved as a markdown file, organized by workspace. Search across sessions. Link them together. Your AI memory lives in git.
+Most AI chat tools treat conversations as disposable. Crucible treats them as knowledge.
 
-**Knowledge as Context**: Your notes become agent memory. Precognition automatically injects relevant vault context before each agent turn, or use `/search` for manual control. Wikilinks define relationships. Block-level embeddings enable semantic search at paragraph granularity.
+- **Sessions are markdown.** Every chat saves to a `.md` file in your workspace. Search them, link them, version them in git.
+- **Your notes become agent memory.** Precognition auto-injects relevant vault context before each LLM turn. Wikilinks define relationships. Block-level embeddings power semantic search at paragraph granularity.
+- **Bring any LLM.** Ollama, OpenAI, Anthropic, local GGUF models. Swap freely.
+- **Extend with Lua & Fennel.** Write tools, handlers, and automations as plugins. Drop a `.lua` or `.fnl` file in your plugins folder and it just works.
+- **Plaintext first.** No proprietary formats. Files are the source of truth. The database is optional acceleration.
 
-**Extensible Plugins**: Write extensions in Lua with Fennel support:
-- **Lua** — LLM-friendly syntax, simple semantics, gradual types
-- **Fennel** — Lisp syntax compiling to Lua, macros included
+## How It Compares
 
-**Plaintext First**: No proprietary formats. No cloud lock-in. Files are always the source of truth. The database is optional acceleration.
+| | Crucible | ChatGPT | Obsidian + AI | OpenClaw |
+|---|---|---|---|---|
+| Local-first | ✅ | ❌ | ✅ | ✅ |
+| Sessions as markdown | ✅ | ❌ | ❌ | ❌ |
+| Knowledge graph | ✅ | ❌ | ✅ | ❌ |
+| Bring your own LLM | ✅ | ❌ | Partial | ✅ |
+| Plugin system | ✅ Lua/Fennel | ❌ | ✅ JS | ✅ TS |
+| MCP server | ✅ | ❌ | ❌ | ❌ |
+| Semantic search | ✅ Block-level | ❌ | Plugin | ❌ |
+| Setup time | ~2 min | 0 | ~5 min | 2-7 hrs |
 
 ## Install
 
@@ -57,72 +72,43 @@ cru chat
 cru mcp
 ```
 
-On first run, `cru chat` launches a setup wizard that walks you through kiln path selection, provider detection, and model configuration. A background daemon auto-spawns to handle session persistence and file watching.
+First run launches a setup wizard: pick a kiln path, detect providers, choose a model. A background daemon auto-spawns for session persistence and file watching.
 
 **In a chat session:**
-- Type naturally — the agent responds with tool access to your knowledge base
-- `/search query` — Inject relevant notes into context
-- `/tasks` — View current task list
-- `:command` — Run REPL commands (`:model`, `:set`, `:export`, `:help`)
-- `!shell` — Execute shell commands
-- `BackTab` — Cycle modes: Normal → Plan → Auto
+- Type naturally, the agent responds with access to your knowledge base
+- `/search query` injects relevant notes into context
+- `:model`, `:set`, `:export`, `:help` for REPL commands
+- `BackTab` cycles modes: Normal → Plan → Auto
 
-## Core Features
+<p align="center">
+  <img src="assets/cru-overview.gif" alt="Crucible overview" width="720" />
+</p>
 
-### Agent Chat (TUI & Web)
+## Features
 
-Interactive AI conversations with session persistence:
+### Agent Chat
 
-```
-~/code/my-project $ cru chat
-
-> Help me understand the authentication flow
-
-[Agent searches your notes, finds relevant context...]
-
-I found several notes about auth. Based on [[Auth Design]] and
-[[API Security]], your flow uses JWT tokens issued by...
-```
-
-Sessions are saved to `~/your-kiln/sessions/my-project/2025-01-01_1430.md`.
+Interactive conversations with full session persistence. The TUI supports streaming markdown, tool calls, and multi-turn context. Sessions save as markdown files organized by workspace.
 
 ### Knowledge Graph
 
-Wikilinks (`[[Note Name]]`) define your knowledge graph — no extraction needed:
-
-```markdown
-# Project Architecture
-
-The [[API Gateway]] handles auth via [[JWT Tokens]].
-See [[Security Audit 2024]] for vulnerability review.
-```
-
-Query by graph traversal, semantic similarity, tags, or full-text search.
+Wikilinks (`[[Note Name]]`) define your graph. No extraction step, no special syntax beyond what you'd write naturally. Query by graph traversal, semantic similarity, tags, or full-text search.
 
 ### MCP Server
 
-Expose your knowledge base to any MCP-compatible AI:
+Expose your knowledge base to any MCP-compatible AI (Claude Desktop, Claude Code, GPT, local models):
 
 ```bash
 cru mcp
 ```
 
-Works with Claude Desktop, Claude Code, GPT via plugins, and local models. Tools include:
-- `semantic_search` — Find notes by meaning
-- `create_note` — Add to your knowledge base
-- `get_outlinks` / `get_inlinks` — Traverse relationships
+Tools include `semantic_search`, `create_note`, `get_outlinks`, `get_inlinks`, and more.
 
 ### Lua Plugins
 
-Define tools and event handlers in Lua. Place plugin files in `~/.config/crucible/plugins/` or `KILN/plugins/`:
-
-| Extension | Language | Use Case |
-|-----------|----------|----------|
-| `.lua` | Lua | Tools, handlers, automation |
-| `.fnl` | Fennel | Lisp syntax, macros, DSLs |
+Drop `.lua` or `.fnl` files into `~/.config/crucible/plugins/` or your kiln's `plugins/` directory:
 
 ```lua
---- Search and summarize notes
 -- @tool name="summarize" description="Summarize notes matching query"
 -- @param query string "Search query"
 function summarize(args)
@@ -131,43 +117,23 @@ function summarize(args)
 end
 ```
 
-See the [docs](./docs/Help/Concepts/Scripting%20Languages.md) for the full plugin guide.
-
-## Architecture
-
-```
-crucible-cli             Terminal UI, REPL, commands
-crucible-daemon          Background server (auto-spawned, Unix socket)
-crucible-rpc             RPC client library with auto-reconnect
-crucible-tools           MCP server, tool implementations
-crucible-core            Domain logic, traits, parser types
-crucible-surrealdb       Storage with EAV graph schema
-crucible-lua             Lua/Luau with Fennel support
-crucible-llm             Embedding backends (FastEmbed, Burn, LlamaCpp)
-crucible-rig             LLM chat via Rig (Ollama, OpenAI, Anthropic)
-crucible-acp             Agent Context Protocol (host + gateway)
-```
-
-The daemon (`cru-server`) auto-spawns on first use and handles session persistence, file watching, event streaming, and multi-client coordination over a Unix socket. LLM providers implement capability traits (`CanEmbed`, `CanChat`), letting you swap backends freely.
+See the [plugin guide](./docs/Help/Concepts/Scripting%20Languages.md) for the full API.
 
 ## Documentation
 
-- **[docs/](./docs/)** — User guides and reference (also a working example kiln)
-- **[AGENTS.md](./AGENTS.md)** — Guide for AI agents working on this codebase
-- **[openspec/](./openspec/)** — Change proposals and specifications
+- **[docs/](./docs/)** is both the user guide and a working example kiln (155 interlinked notes)
+- **[AGENTS.md](./AGENTS.md)** covers architecture and AI agent instructions
+- **[openspec/](./openspec/)** has change proposals and specifications
 
 ## Roadmap
 
 - [x] TUI chat with session persistence and resume
 - [x] MCP server for external agents
-- [x] Lua/Fennel plugin system with 17+ API modules
+- [x] Lua/Fennel plugin system (17+ API modules)
 - [x] Block-level semantic search with reranking
 - [x] Precognition (auto-RAG before each turn)
-- [x] ACP host for spawning external AI agents
-- [x] Permission system with pattern whitelisting
-- [x] Daemon with auto-spawn, file watching, and multi-session support
+- [x] Daemon with auto-spawn, file watching, multi-session support
 - [ ] Web chat interface
-- [ ] Lua session primitives (fork, inject, collect)
 - [ ] ACP agent mode (embeddable in Zed, JetBrains, Neovim)
 
 ## License
