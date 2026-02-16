@@ -111,7 +111,8 @@ pub async fn execute(config: CliConfig, args: McpArgs) -> Result<()> {
     };
 
     // Get embedding config and create provider
-    let embedding_config = core.config().embedding.to_provider_config();
+    let embedding_config =
+        crate::factories::enrichment::embedding_provider_config_from_cli(core.config());
     let llm_provider = crucible_llm::embeddings::create_provider(embedding_config).await?;
 
     let embedding_provider = llm_provider as Arc<dyn EmbeddingProvider>;

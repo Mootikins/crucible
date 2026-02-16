@@ -51,10 +51,14 @@ struct OllamaModelInfo {
     #[serde(default)]
     #[allow(dead_code)]
     model: Option<String>,
+    #[allow(dead_code)]
     modified_at: Option<String>,
+    #[allow(dead_code)]
     size: Option<u64>,
+    #[allow(dead_code)]
     digest: Option<String>,
     #[serde(default)]
+    #[allow(dead_code)]
     details: Option<OllamaModelDetails>,
 }
 
@@ -64,12 +68,16 @@ struct OllamaModelDetails {
     #[serde(default)]
     #[allow(dead_code)]
     parent_model: Option<String>,
+    #[allow(dead_code)]
     format: Option<String>,
+    #[allow(dead_code)]
     family: Option<String>,
     #[serde(default)]
     #[allow(dead_code)]
     families: Option<Vec<String>>,
+    #[allow(dead_code)]
     parameter_size: Option<String>,
+    #[allow(dead_code)]
     quantization_level: Option<String>,
 }
 
@@ -340,10 +348,9 @@ impl OllamaProvider {
 impl EmbeddingProvider for OllamaProvider {
     async fn embed(&self, text: &str) -> anyhow::Result<Vec<f32>> {
         if text.is_empty() {
-            return Err(EmbeddingError::InvalidResponse(
-                "Cannot embed empty text".to_string(),
-            )
-            .into());
+            return Err(
+                EmbeddingError::InvalidResponse("Cannot embed empty text".to_string()).into(),
+            );
         }
 
         let response = self.embed_with_retry(text).await?;
@@ -457,16 +464,11 @@ impl EmbeddingProvider for OllamaProvider {
             .await
             .map_err(|e| anyhow::anyhow!("Failed to parse model list: {}", e))?;
 
-        Ok(tags_response
-            .models
-            .into_iter()
-            .map(|m| m.name)
-            .collect())
+        Ok(tags_response.models.into_iter().map(|m| m.name).collect())
     }
 }
 
 // =============================================================================
-
 
 #[cfg(test)]
 mod tests {
@@ -726,8 +728,7 @@ mod tests {
         let provider = OllamaProvider::new(config).unwrap();
 
         // All empty strings should result in empty vec
-        let result =
-            EmbeddingProvider::embed_batch(&provider, &["", ""]).await;
+        let result = EmbeddingProvider::embed_batch(&provider, &["", ""]).await;
         assert!(result.is_ok());
         assert_eq!(result.unwrap().len(), 0);
     }
@@ -742,5 +743,4 @@ mod tests {
     }
 
     // =========================================================================
-
 }

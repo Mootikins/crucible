@@ -291,12 +291,16 @@ async fn run_interactive_chat(
     let bridge = AgentEventBridge::new(ring);
 
     let mode = ChatMode::parse(initial_mode);
-    let model_name = if let Some((_, provider)) = config.llm.default_provider() {
-        provider.model()
-    } else {
-        config.chat_model()
-    };
-    let endpoint = config.chat.llm_endpoint();
+    let effective_llm = config.effective_llm_provider().ok();
+    let model_name = effective_llm
+        .as_ref()
+        .map(|p| p.model.clone())
+        .unwrap_or_else(|| config.chat_model());
+    let endpoint = effective_llm
+        .as_ref()
+        .map(|p| p.endpoint.clone())
+        .or_else(|| config.chat.endpoint.clone())
+        .unwrap_or_else(|| crucible_config::DEFAULT_OLLAMA_ENDPOINT.to_string());
 
     let context_limit = fetch_model_context_length(&endpoint, &model_name)
         .await
@@ -377,8 +381,11 @@ async fn run_interactive_chat(
 
     runner = runner.with_session_command_receiver(session_cmd_rx);
 
-    let provider: crucible_config::BackendType = config.chat.provider;
-    let model_endpoint = config.chat.llm_endpoint();
+    let provider = effective_llm
+        .as_ref()
+        .map(|p| p.provider_type)
+        .unwrap_or(crucible_config::BackendType::Ollama);
+    let model_endpoint = endpoint.clone();
 
     let (files, notes, available_models) = tokio::join!(
         tokio::task::spawn_blocking({

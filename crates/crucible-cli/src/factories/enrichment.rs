@@ -1,13 +1,10 @@
 //! Enrichment service factory - creates DefaultEnrichmentService
 //! Phase 5: Uses public factory function instead of importing concrete service.
 //! Includes caching for embedding providers to avoid repeated initialization.
-//!
-//! Now supports both:
-//! - New unified `[providers]` config (preferred)
-//! - Legacy `[embedding]` config (fallback with deprecation warning)
 
 use crate::config::CliConfig;
 use anyhow::Result;
+use crucible_config::{BackendType, EmbeddingProviderConfig, OllamaConfig, OpenAIConfig};
 use crucible_core::enrichment::{EmbeddingProvider, EnrichmentService};
 use once_cell::sync::Lazy;
 use std::collections::HashMap;
@@ -21,28 +18,48 @@ static EMBEDDING_PROVIDER_CACHE: Lazy<Mutex<HashMap<String, Arc<dyn EmbeddingPro
     Lazy::new(|| Mutex::new(HashMap::new()));
 
 /// Generate a cache key from embedding configuration
-/// Supports both new providers config and legacy embedding config
 fn embedding_config_cache_key(config: &CliConfig) -> String {
-    // Try new unified providers first
-    if let Some((name, provider_config)) = config.effective_embedding_provider() {
-        return format!(
-            "providers|{}|{:?}|{}|{}",
-            name,
-            provider_config.backend,
-            provider_config.endpoint().unwrap_or_default(),
-            provider_config.embedding_model().unwrap_or_default()
-        );
-    }
-
-    // Fall back to legacy embedding config
-    let ec = &config.embedding;
+    let ec = embedding_provider_config_from_cli(config);
     format!(
-        "legacy|{:?}|{}|{}|{}",
-        ec.provider,
-        ec.model.as_deref().unwrap_or("default"),
-        ec.api_url.as_deref().unwrap_or("default"),
-        ec.batch_size
+        "llm|{:?}|{}|{}",
+        ec.provider_type(),
+        ec.endpoint(),
+        ec.model_name()
     )
+}
+
+pub fn embedding_provider_config_from_cli(config: &CliConfig) -> EmbeddingProviderConfig {
+    let effective = match config.effective_llm_provider() {
+        Ok(cfg) => cfg,
+        Err(err) => {
+            warn!(error = %err, "No effective llm provider; using default ollama embedding config");
+            return EmbeddingProviderConfig::ollama(None, None);
+        }
+    };
+
+    match effective.provider_type {
+        BackendType::OpenAI => {
+            let cfg = OpenAIConfig {
+                base_url: effective.endpoint,
+                api_key: effective.api_key.unwrap_or_default(),
+                model: effective.model,
+                ..Default::default()
+            };
+            EmbeddingProviderConfig::OpenAI(cfg)
+        }
+        BackendType::Ollama => {
+            let cfg = OllamaConfig {
+                base_url: effective.endpoint,
+                model: effective.model,
+                ..Default::default()
+            };
+            EmbeddingProviderConfig::Ollama(cfg)
+        }
+        unsupported => {
+            warn!(provider = ?unsupported, "Provider does not support embeddings; using default ollama config");
+            EmbeddingProviderConfig::ollama(None, None)
+        }
+    }
 }
 
 /// Get or create an embedding provider (cached)
@@ -51,8 +68,6 @@ fn embedding_config_cache_key(config: &CliConfig) -> String {
 /// initialization. FastEmbed requires loading model weights, and remote
 /// providers may need connection setup.
 ///
-/// Uses the new unified `[providers]` config if available, falling back to
-/// the legacy `[embedding]` section with a deprecation warning.
 pub async fn get_or_create_embedding_provider(
     config: &CliConfig,
 ) -> Result<Arc<dyn EmbeddingProvider>> {
@@ -67,20 +82,8 @@ pub async fn get_or_create_embedding_provider(
         }
     }
 
-    // Create new provider - try unified config first
     trace!("Creating new embedding provider for key: {}", cache_key);
-    let embedding_config =
-        if let Some((name, provider_config)) = config.effective_embedding_provider() {
-            trace!("Using unified provider config: {}", name);
-            provider_config.to_embedding_provider_config()
-        } else {
-            // Fall back to legacy config
-            warn!(
-                "Using legacy [embedding] config. Consider migrating to [providers] format. \
-             See docs for migration guide."
-            );
-            config.embedding.to_provider_config()
-        };
+    let embedding_config = embedding_provider_config_from_cli(config);
 
     let provider: Arc<dyn EmbeddingProvider> =
         crucible_llm::embeddings::create_provider(embedding_config).await?;
@@ -158,8 +161,42 @@ mod tests {
         let mut config1 = CliConfig::default();
         let mut config2 = CliConfig::default();
 
-        config1.embedding.model = Some("model-a".to_string());
-        config2.embedding.model = Some("model-b".to_string());
+        config1.llm.providers.insert(
+            "local".to_string(),
+            crucible_config::LlmProviderConfig {
+                provider_type: BackendType::Ollama,
+                endpoint: None,
+                default_model: None,
+                temperature: None,
+                max_tokens: None,
+                timeout_secs: None,
+                api_key: None,
+                available_models: None,
+            },
+        );
+        config2.llm.providers.insert(
+            "local".to_string(),
+            crucible_config::LlmProviderConfig {
+                provider_type: BackendType::Ollama,
+                endpoint: None,
+                default_model: None,
+                temperature: None,
+                max_tokens: None,
+                timeout_secs: None,
+                api_key: None,
+                available_models: None,
+            },
+        );
+
+        config1.llm.default = Some("local".to_string());
+        if let Some(provider) = config1.llm.providers.get_mut("local") {
+            provider.default_model = Some("model-a".to_string());
+        }
+
+        config2.llm.default = Some("local".to_string());
+        if let Some(provider) = config2.llm.providers.get_mut("local") {
+            provider.default_model = Some("model-b".to_string());
+        }
 
         let key1 = embedding_config_cache_key(&config1);
         let key2 = embedding_config_cache_key(&config2);
@@ -171,8 +208,42 @@ mod tests {
         let mut config1 = CliConfig::default();
         let mut config2 = CliConfig::default();
 
-        config1.embedding.api_url = Some("http://localhost:11434".to_string());
-        config2.embedding.api_url = Some("http://localhost:8080".to_string());
+        config1.llm.providers.insert(
+            "local".to_string(),
+            crucible_config::LlmProviderConfig {
+                provider_type: BackendType::Ollama,
+                endpoint: None,
+                default_model: None,
+                temperature: None,
+                max_tokens: None,
+                timeout_secs: None,
+                api_key: None,
+                available_models: None,
+            },
+        );
+        config2.llm.providers.insert(
+            "local".to_string(),
+            crucible_config::LlmProviderConfig {
+                provider_type: BackendType::Ollama,
+                endpoint: None,
+                default_model: None,
+                temperature: None,
+                max_tokens: None,
+                timeout_secs: None,
+                api_key: None,
+                available_models: None,
+            },
+        );
+
+        config1.llm.default = Some("local".to_string());
+        if let Some(provider) = config1.llm.providers.get_mut("local") {
+            provider.endpoint = Some("http://localhost:11434".to_string());
+        }
+
+        config2.llm.default = Some("local".to_string());
+        if let Some(provider) = config2.llm.providers.get_mut("local") {
+            provider.endpoint = Some("http://localhost:8080".to_string());
+        }
 
         let key1 = embedding_config_cache_key(&config1);
         let key2 = embedding_config_cache_key(&config2);

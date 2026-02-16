@@ -34,7 +34,6 @@ async fn main() -> Result<()> {
     let config = CliAppConfig::load(None, None, None).unwrap_or_default();
     let mcp_config = config.mcp.as_ref();
     let plugin_config = config.plugins.clone();
-    let providers_config = config.providers.clone();
     let llm_config = if config.llm.has_providers() {
         Some(config.llm)
     } else {
@@ -51,7 +50,6 @@ async fn main() -> Result<()> {
         &sock_path,
         mcp_config,
         plugin_config,
-        providers_config,
         llm_config,
         web_config,
     )

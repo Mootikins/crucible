@@ -294,11 +294,14 @@ pub async fn fetch_model_context_length(endpoint: &str, model_id: &str) -> Optio
 /// Checks: config file provider, OLLAMA_HOST env, API key env vars, credential store.
 pub fn detect_providers(config: &ChatConfig) -> Vec<DetectedProvider> {
     let mut providers = Vec::new();
-    let provider_backend: BackendType = config.provider;
+    let provider_backend = BackendType::Ollama;
 
     match provider_backend {
         BackendType::Ollama => {
-            let endpoint = config.endpoint.as_deref().unwrap_or(DEFAULT_OLLAMA_ENDPOINT);
+            let endpoint = config
+                .endpoint
+                .as_deref()
+                .unwrap_or(DEFAULT_OLLAMA_ENDPOINT);
             let reason = if std::env::var("OLLAMA_HOST").is_ok() {
                 format!("OLLAMA_HOST={}", ollama_endpoint())
             } else if config.endpoint.is_some() {
@@ -453,10 +456,7 @@ mod tests {
     #[serial]
     fn test_detect_openai_from_config_with_key() {
         std::env::set_var("OPENAI_API_KEY", "sk-test");
-        let config = ChatConfig {
-            provider: BackendType::OpenAI,
-            ..ChatConfig::default()
-        };
+        let config = ChatConfig::default();
         let detected = detect_providers(&config);
         assert!(detected.iter().any(|p| p.provider_type == "openai"));
         std::env::remove_var("OPENAI_API_KEY");
@@ -467,10 +467,7 @@ mod tests {
     fn test_detect_openai_from_config_without_key_is_empty() {
         std::env::remove_var("OPENAI_API_KEY");
         std::env::remove_var("ANTHROPIC_API_KEY");
-        let config = ChatConfig {
-            provider: BackendType::OpenAI,
-            ..ChatConfig::default()
-        };
+        let config = ChatConfig::default();
         let detected = detect_providers(&config);
         // No API key = no provider detected for cloud providers
         assert!(!detected.iter().any(|p| p.provider_type == "openai"));

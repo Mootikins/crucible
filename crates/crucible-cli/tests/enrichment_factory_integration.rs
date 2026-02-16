@@ -1,350 +1,243 @@
-//! Integration tests for enrichment factory
-
 #![allow(clippy::field_reassign_with_default)]
 
-//!
-//! Tests the enrichment service creation, provider caching, and configuration handling.
+use crucible_config::{BackendType, CliAppConfig, LlmProviderConfig};
 
-use crucible_config::{BackendType, CliAppConfig, EmbeddingConfig};
+fn cache_key_from_llm(config: &CliAppConfig) -> String {
+    if let Ok(provider) = config.effective_llm_provider() {
+        format!(
+            "{:?}|{}|{}|{}",
+            provider.provider_type, provider.model, provider.endpoint, provider.max_tokens
+        )
+    } else {
+        "none|default|default|0".to_string()
+    }
+}
 
-/// Test that default config creates valid cache key
+fn set_default_provider(config: &mut CliAppConfig, name: &str, provider: LlmProviderConfig) {
+    config.llm.default = Some(name.to_string());
+    config.llm.providers.insert(name.to_string(), provider);
+}
+
 #[test]
 fn test_cache_key_generation_default() {
-    let config = CliAppConfig::default();
-    let key = format!(
-        "{:?}|{}|{}|{}",
-        config.embedding.provider,
-        config.embedding.model.as_deref().unwrap_or("default"),
-        config.embedding.api_url.as_deref().unwrap_or("default"),
-        config.embedding.batch_size
+    let mut config = CliAppConfig::default();
+    set_default_provider(
+        &mut config,
+        "local",
+        LlmProviderConfig::builder(BackendType::FastEmbed).build(),
     );
 
-    // Should contain provider type
-    assert!(
-        key.contains("FastEmbed"),
-        "Key should contain provider type"
-    );
-    // Should contain batch size
-    assert!(key.contains("16"), "Key should contain batch size (16)");
+    let key = cache_key_from_llm(&config);
+
+    assert!(key.contains("FastEmbed"));
 }
 
-/// Test that different configs produce different cache keys
 #[test]
 fn test_cache_key_uniqueness() {
-    let config1 = CliAppConfig::default();
+    let mut config1 = CliAppConfig::default();
     let mut config2 = CliAppConfig::default();
 
-    config2.embedding.model = Some("different-model".to_string());
-
-    let key1 = format!(
-        "{:?}|{}|{}|{}",
-        config1.embedding.provider,
-        config1.embedding.model.as_deref().unwrap_or("default"),
-        config1.embedding.api_url.as_deref().unwrap_or("default"),
-        config1.embedding.batch_size
+    set_default_provider(
+        &mut config1,
+        "local",
+        LlmProviderConfig::builder(BackendType::OpenAI)
+            .model("text-embedding-3-small")
+            .build(),
+    );
+    set_default_provider(
+        &mut config2,
+        "local",
+        LlmProviderConfig::builder(BackendType::OpenAI)
+            .model("text-embedding-3-large")
+            .build(),
     );
 
-    let key2 = format!(
-        "{:?}|{}|{}|{}",
-        config2.embedding.provider,
-        config2.embedding.model.as_deref().unwrap_or("default"),
-        config2.embedding.api_url.as_deref().unwrap_or("default"),
-        config2.embedding.batch_size
-    );
+    let key1 = cache_key_from_llm(&config1);
+    let key2 = cache_key_from_llm(&config2);
 
-    assert_ne!(
-        key1, key2,
-        "Different configs should have different cache keys"
-    );
+    assert_ne!(key1, key2);
 }
 
-/// Test that same configs produce identical cache keys
 #[test]
 fn test_cache_key_consistency() {
-    let config = CliAppConfig::default();
-
-    let key1 = format!(
-        "{:?}|{}|{}|{}",
-        config.embedding.provider,
-        config.embedding.model.as_deref().unwrap_or("default"),
-        config.embedding.api_url.as_deref().unwrap_or("default"),
-        config.embedding.batch_size
+    let mut config = CliAppConfig::default();
+    set_default_provider(
+        &mut config,
+        "local",
+        LlmProviderConfig::builder(BackendType::OpenAI)
+            .model("text-embedding-3-small")
+            .endpoint("https://api.openai.com/v1")
+            .max_tokens(4096)
+            .build(),
     );
 
-    let key2 = format!(
-        "{:?}|{}|{}|{}",
-        config.embedding.provider,
-        config.embedding.model.as_deref().unwrap_or("default"),
-        config.embedding.api_url.as_deref().unwrap_or("default"),
-        config.embedding.batch_size
-    );
+    let key1 = cache_key_from_llm(&config);
+    let key2 = cache_key_from_llm(&config);
 
-    assert_eq!(
-        key1, key2,
-        "Same config should produce identical cache keys"
-    );
+    assert_eq!(key1, key2);
 }
 
-/// Test cache key with Ollama provider
 #[test]
 fn test_cache_key_ollama_provider() {
     let mut config = CliAppConfig::default();
-    config.embedding = EmbeddingConfig {
-        provider: Some(BackendType::Ollama),
-        model: Some("nomic-embed-text".to_string()),
-        api_url: Some("http://localhost:11434".to_string()),
-        batch_size: 50,
-        max_concurrent: None,
-    };
-
-    let key = format!(
-        "{:?}|{}|{}|{}",
-        config.embedding.provider,
-        config.embedding.model.as_deref().unwrap_or("default"),
-        config.embedding.api_url.as_deref().unwrap_or("default"),
-        config.embedding.batch_size
+    set_default_provider(
+        &mut config,
+        "ollama",
+        LlmProviderConfig::builder(BackendType::Ollama)
+            .model("nomic-embed-text")
+            .endpoint("http://localhost:11434")
+            .max_tokens(50)
+            .build(),
     );
 
-    assert!(key.contains("Ollama"), "Key should contain Ollama provider");
-    assert!(
-        key.contains("nomic-embed-text"),
-        "Key should contain model name"
-    );
-    assert!(
-        key.contains("localhost:11434"),
-        "Key should contain endpoint"
-    );
-    assert!(key.contains("50"), "Key should contain batch size");
+    let key = cache_key_from_llm(&config);
+
+    assert!(key.contains("Ollama"));
+    assert!(key.contains("nomic-embed-text"));
+    assert!(key.contains("localhost:11434"));
+    assert!(key.contains("50"));
 }
 
-/// Test cache key with OpenAI provider
 #[test]
 fn test_cache_key_openai_provider() {
     let mut config = CliAppConfig::default();
-    config.embedding = EmbeddingConfig {
-        provider: Some(BackendType::OpenAI),
-        model: Some("text-embedding-3-small".to_string()),
-        api_url: Some("https://api.openai.com/v1".to_string()),
-        batch_size: 100,
-        max_concurrent: None,
-    };
-
-    let key = format!(
-        "{:?}|{}|{}|{}",
-        config.embedding.provider,
-        config.embedding.model.as_deref().unwrap_or("default"),
-        config.embedding.api_url.as_deref().unwrap_or("default"),
-        config.embedding.batch_size
+    set_default_provider(
+        &mut config,
+        "openai",
+        LlmProviderConfig::builder(BackendType::OpenAI)
+            .model("text-embedding-3-small")
+            .endpoint("https://api.openai.com/v1")
+            .max_tokens(100)
+            .build(),
     );
 
-    assert!(key.contains("OpenAI"), "Key should contain OpenAI provider");
-    assert!(
-        key.contains("text-embedding-3-small"),
-        "Key should contain model name"
-    );
+    let key = cache_key_from_llm(&config);
+
+    assert!(key.contains("OpenAI"));
+    assert!(key.contains("text-embedding-3-small"));
 }
 
-/// Test EmbeddingConfig default values
 #[test]
-fn test_embedding_config_defaults() {
-    let config = EmbeddingConfig::default();
-
-    assert_eq!(config.provider, Some(BackendType::FastEmbed));
-    assert_eq!(config.model, None);
-    assert_eq!(config.api_url, None);
-    assert_eq!(config.batch_size, 16);
-    assert_eq!(config.max_concurrent, None);
-}
-
-/// Test BackendType variants
-#[test]
-fn test_embedding_provider_type_variants() {
+fn test_llm_provider_type_variants() {
     let fastembed = BackendType::FastEmbed;
     let ollama = BackendType::Ollama;
     let openai = BackendType::OpenAI;
 
-    // Verify they are distinct
     assert_ne!(format!("{:?}", fastembed), format!("{:?}", ollama));
     assert_ne!(format!("{:?}", ollama), format!("{:?}", openai));
     assert_ne!(format!("{:?}", fastembed), format!("{:?}", openai));
 }
 
-/// Test that default provider is FastEmbed (local, no API key required)
 #[test]
 fn test_default_provider_is_local() {
-    let config = EmbeddingConfig::default();
-    assert_eq!(
-        config.provider,
-        Some(BackendType::FastEmbed),
-        "Default provider should be FastEmbed for privacy and no API key requirement"
+    let mut config = CliAppConfig::default();
+    set_default_provider(
+        &mut config,
+        "local",
+        LlmProviderConfig::builder(BackendType::FastEmbed).build(),
     );
+
+    let provider = config.effective_llm_provider().unwrap();
+    assert_eq!(provider.provider_type, BackendType::FastEmbed);
 }
 
-/// Test batch size configuration
-#[test]
-fn test_batch_size_configuration() {
-    let mut config = EmbeddingConfig::default();
-
-    // Default
-    assert_eq!(config.batch_size, 16);
-
-    // Custom value
-    config.batch_size = 64;
-    assert_eq!(config.batch_size, 64);
-
-    // Zero batch size (edge case)
-    config.batch_size = 0;
-    assert_eq!(config.batch_size, 0);
-
-    // Large batch size
-    config.batch_size = 1000;
-    assert_eq!(config.batch_size, 1000);
-}
-
-/// Test max_concurrent configuration
-#[test]
-fn test_max_concurrent_configuration() {
-    let mut config = EmbeddingConfig::default();
-
-    // Default is None (use provider default)
-    assert_eq!(config.max_concurrent, None);
-
-    // Custom value
-    config.max_concurrent = Some(4);
-    assert_eq!(config.max_concurrent, Some(4));
-
-    // Single threaded
-    config.max_concurrent = Some(1);
-    assert_eq!(config.max_concurrent, Some(1));
-}
-
-/// Test model configuration
 #[test]
 fn test_model_configuration() {
-    let mut config = EmbeddingConfig::default();
+    let mut config = CliAppConfig::default();
+    set_default_provider(
+        &mut config,
+        "local",
+        LlmProviderConfig::builder(BackendType::OpenAI)
+            .model("custom-model")
+            .build(),
+    );
 
-    // Default is None (use provider default)
-    assert_eq!(config.model, None);
-
-    // Custom model
-    config.model = Some("custom-model".to_string());
-    assert_eq!(config.model, Some("custom-model".to_string()));
-
-    // Empty model (edge case)
-    config.model = Some("".to_string());
-    assert_eq!(config.model, Some("".to_string()));
+    let provider = config.effective_llm_provider().unwrap();
+    assert_eq!(provider.model, "custom-model".to_string());
 }
 
-/// Test API URL configuration
 #[test]
 fn test_api_url_configuration() {
-    let mut config = EmbeddingConfig::default();
-
-    // Default is None (use provider default)
-    assert_eq!(config.api_url, None);
-
-    // Custom URL
-    config.api_url = Some("http://custom-endpoint:8080".to_string());
-    assert_eq!(
-        config.api_url,
-        Some("http://custom-endpoint:8080".to_string())
+    let mut config = CliAppConfig::default();
+    set_default_provider(
+        &mut config,
+        "local",
+        LlmProviderConfig::builder(BackendType::OpenAI)
+            .endpoint("http://custom-endpoint:8080")
+            .build(),
     );
 
-    // HTTPS URL
-    config.api_url = Some("https://api.example.com/v1".to_string());
-    assert_eq!(
-        config.api_url,
-        Some("https://api.example.com/v1".to_string())
-    );
+    let provider = config.effective_llm_provider().unwrap();
+    assert_eq!(provider.endpoint, "http://custom-endpoint:8080".to_string());
 }
 
-/// Test that cache keys differ when batch size changes
 #[test]
-fn test_cache_key_batch_size_sensitivity() {
+fn test_cache_key_max_tokens_sensitivity() {
     let mut config1 = CliAppConfig::default();
     let mut config2 = CliAppConfig::default();
 
-    config1.embedding.batch_size = 16;
-    config2.embedding.batch_size = 32;
-
-    let key1 = format!(
-        "{:?}|{}|{}|{}",
-        config1.embedding.provider,
-        config1.embedding.model.as_deref().unwrap_or("default"),
-        config1.embedding.api_url.as_deref().unwrap_or("default"),
-        config1.embedding.batch_size
+    set_default_provider(
+        &mut config1,
+        "local",
+        LlmProviderConfig::builder(BackendType::Ollama)
+            .max_tokens(16)
+            .build(),
+    );
+    set_default_provider(
+        &mut config2,
+        "local",
+        LlmProviderConfig::builder(BackendType::Ollama)
+            .max_tokens(32)
+            .build(),
     );
 
-    let key2 = format!(
-        "{:?}|{}|{}|{}",
-        config2.embedding.provider,
-        config2.embedding.model.as_deref().unwrap_or("default"),
-        config2.embedding.api_url.as_deref().unwrap_or("default"),
-        config2.embedding.batch_size
-    );
+    let key1 = cache_key_from_llm(&config1);
+    let key2 = cache_key_from_llm(&config2);
 
-    assert_ne!(
-        key1, key2,
-        "Different batch sizes should produce different keys"
-    );
+    assert_ne!(key1, key2);
 }
 
-/// Test cache key format stability
 #[test]
 fn test_cache_key_format() {
     let mut config = CliAppConfig::default();
-    config.embedding = EmbeddingConfig {
-        provider: Some(BackendType::Ollama),
-        model: Some("model".to_string()),
-        api_url: Some("http://url".to_string()),
-        batch_size: 42,
-        max_concurrent: None,
-    };
-
-    let key = format!(
-        "{:?}|{}|{}|{}",
-        config.embedding.provider,
-        config.embedding.model.as_deref().unwrap_or("default"),
-        config.embedding.api_url.as_deref().unwrap_or("default"),
-        config.embedding.batch_size
+    set_default_provider(
+        &mut config,
+        "provider",
+        LlmProviderConfig::builder(BackendType::Ollama)
+            .model("model")
+            .endpoint("http://url")
+            .max_tokens(42)
+            .build(),
     );
 
-    // Verify format: provider|model|url|batch_size
+    let key = cache_key_from_llm(&config);
+
     let parts: Vec<&str> = key.split('|').collect();
-    assert_eq!(parts.len(), 4, "Cache key should have 4 parts");
-    assert!(parts[0].contains("Ollama"), "First part should be provider");
-    assert_eq!(parts[1], "model", "Second part should be model");
-    assert_eq!(parts[2], "http://url", "Third part should be URL");
-    assert_eq!(parts[3], "42", "Fourth part should be batch size");
+    assert_eq!(parts.len(), 4);
+    assert!(parts[0].contains("Ollama"));
+    assert_eq!(parts[1], "model");
+    assert_eq!(parts[2], "http://url");
+    assert_eq!(parts[3], "42");
 }
 
-/// Test config clone preserves all fields
 #[test]
-fn test_embedding_config_clone() {
-    let original = EmbeddingConfig {
-        provider: Some(BackendType::Ollama),
-        model: Some("test-model".to_string()),
-        api_url: Some("http://test:8080".to_string()),
-        batch_size: 99,
-        max_concurrent: Some(8),
-    };
+fn test_llm_provider_config_clone() {
+    let original = LlmProviderConfig::builder(BackendType::Ollama)
+        .model("test-model")
+        .endpoint("http://test:8080")
+        .max_tokens(99)
+        .build();
 
     let cloned = original.clone();
 
-    assert_eq!(cloned.provider, original.provider);
-    assert_eq!(cloned.model, original.model);
-    assert_eq!(cloned.api_url, original.api_url);
-    assert_eq!(cloned.batch_size, original.batch_size);
-    assert_eq!(cloned.max_concurrent, original.max_concurrent);
+    assert_eq!(cloned.provider_type, original.provider_type);
+    assert_eq!(cloned.default_model, original.default_model);
+    assert_eq!(cloned.endpoint, original.endpoint);
+    assert_eq!(cloned.max_tokens, original.max_tokens);
 }
 
-/// Test BackendType default
 #[test]
-fn test_embedding_provider_type_default() {
-    let provider_type = Some(BackendType::default());
-    assert_eq!(
-        provider_type,
-        Some(BackendType::FastEmbed),
-        "Default provider type should be FastEmbed"
-    );
+fn test_llm_provider_type_default() {
+    let provider_type = BackendType::default();
+    assert_eq!(provider_type, BackendType::FastEmbed);
 }

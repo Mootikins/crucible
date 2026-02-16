@@ -126,7 +126,8 @@ impl KilnContext {
         );
 
         // Get embedding config from composite config and convert to provider config
-        let embedding_config = self.config.embedding.to_provider_config();
+        let embedding_config =
+            crate::factories::enrichment::embedding_provider_config_from_cli(&self.config);
         tracing::debug!("embedding config: {:?}", embedding_config);
 
         // Create embedding provider using factory function
@@ -212,7 +213,8 @@ impl KilnContext {
         #[cfg(feature = "storage-surrealdb")]
         if let Some(storage) = self.storage_handle.try_embedded() {
             // Get embedding config from composite config and convert to provider config
-            let embedding_config = self.config.embedding.to_provider_config();
+            let embedding_config =
+                crate::factories::enrichment::embedding_provider_config_from_cli(&self.config);
 
             // Create embedding provider using factory function
             let provider = crucible_llm::embeddings::create_provider(embedding_config).await?;
