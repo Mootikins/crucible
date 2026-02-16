@@ -1,3 +1,10 @@
+---
+description: Preventing XML-Style Tool Calls in Small LLMs
+tags:
+  - meta
+  - analysis
+---
+
 # Preventing XML-Style Tool Calls in Small LLMs
 
 **Date**: 2026-01-02

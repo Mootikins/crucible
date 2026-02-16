@@ -1,3 +1,10 @@
+---
+description: Oil Lua API Reference
+tags:
+  - plugins
+  - api
+---
+
 # Oil Lua API Reference
 
 > **Build custom TUI components with Lua**

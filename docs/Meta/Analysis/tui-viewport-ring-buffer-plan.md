@@ -1,3 +1,10 @@
+---
+description: TUI Viewport Ring Buffer Architecture Plan
+tags:
+  - meta
+  - analysis
+---
+
 # TUI Viewport Ring Buffer Architecture Plan
 
 > **Status**: Draft  

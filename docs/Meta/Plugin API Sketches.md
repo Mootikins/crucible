@@ -1,3 +1,9 @@
+---
+description: Plugin API Sketches (MVP)
+tags:
+  - help
+---
+
 # Plugin API Sketches (MVP)
 
 MVP-level API designs for Crucible's plugin/extension system, based on patterns from Neovim, Emacs, Obsidian, VSCode, and Bevy.

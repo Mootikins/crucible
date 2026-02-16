@@ -1,3 +1,10 @@
+---
+description: TUI Testability Refactoring Plan
+tags:
+  - meta
+  - analysis
+---
+
 # TUI Testability Refactoring Plan
 
 Analysis of crucible-cli's TUI/oil module with recommendations for improving testability.

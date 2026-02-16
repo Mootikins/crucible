@@ -1,3 +1,10 @@
+---
+description: Daemon Consolidation Plan
+tags:
+  - meta
+  - plan
+---
+
 # Daemon Consolidation Plan
 
 > **Status:** Implemented

@@ -1,3 +1,10 @@
+---
+description: Single-Binary DB Daemon - Implementation Plan
+tags:
+  - meta
+  - plan
+---
+
 # Single-Binary DB Daemon - Implementation Plan
 
 > **Status:** ⚠️ SUPERSEDED by [[2025-01-17-daemon-consolidation]]

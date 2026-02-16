@@ -1,3 +1,9 @@
+---
+description: Data Flow Analysis
+tags:
+  - help
+---
+
 # Data Flow Analysis
 
 > Generated analysis of message dispatch, RPC boundaries, and trait implementations.

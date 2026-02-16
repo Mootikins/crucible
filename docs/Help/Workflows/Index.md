@@ -6,9 +6,9 @@ tags:
   - automation
 ---
 
-# Workflows
+> **⚠️ Planned Feature**: This feature is not yet implemented. The documentation below describes the intended design.
 
-> [!warning] Workflows are not yet fully implemented.
+# Workflows
 
 Workflows let you define multi-step processes that can be executed automatically or triggered by events.
 

@@ -1,3 +1,10 @@
+---
+description: System Prompt Template Design
+tags:
+  - meta
+  - plan
+---
+
 # System Prompt Template Design
 
 **Date**: 2024-12-30
