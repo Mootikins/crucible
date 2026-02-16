@@ -1,0 +1,88 @@
+---
+title: "Workflow Authoring"
+description: "How to create custom workflows in Crucible"
+---
+
+Create automated workflows that combine multiple operations.
+
+> [!warning] A new prose-based workflow syntax is planned. See [Markup](../workflows/markup/).
+
+## Overview
+
+Workflows are sequences of steps that:
+- Process notes automatically
+- Chain agent operations
+- React to file changes
+- Schedule recurring tasks
+
+## Workflow Definition (YAML)
+
+```yaml
+# workflows/daily-review.yaml
+name: Daily Review
+description: Generate daily summary of changes
+trigger:
+  schedule: "0 18 * * *"  # 6 PM daily
+
+steps:
+  - name: Find today's notes
+    tool: search
+    params:
+      query: "modified:today"
+
+  - name: Summarize
+    agent: Researcher
+    prompt: "Summarize these notes: {{previous.results}}"
+
+  - name: Create summary
+    tool: create_note
+    params:
+      title: "Daily Summary - {{date}}"
+      content: "{{previous.response}}"
+```
+
+## Triggers
+
+| Type | Description |
+|------|-------------|
+| `schedule` | Cron expression |
+| `file_change` | On note modification |
+| `manual` | Explicit invocation |
+| `webhook` | HTTP trigger |
+
+## Steps
+
+Each step can:
+- Call a **tool** with parameters
+- Invoke an **agent** with a prompt
+- Reference **previous step results** with `{{previous.*}}`
+
+## Variables
+
+Use template variables in steps:
+
+| Variable | Description |
+|----------|-------------|
+| `{{date}}` | Current date |
+| `{{time}}` | Current time |
+| `{{previous.results}}` | Output from previous step |
+| `{{previous.response}}` | Agent response from previous step |
+
+## Running Workflows
+
+```bash
+# Run a workflow manually
+cru workflow run "daily-review"
+
+# List available workflows
+cru workflow list
+```
+
+## See Also
+
+- [Index](../workflows/index/) - Workflow system overview
+- [Markup](../workflows/markup/) - Planned prose syntax
+- [Sessions](../core/sessions/) - Session tracking
+- [Creating Plugins](./creating-plugins/) - Plugin development
+- [Custom Tools](./custom-tools/) - Creating tools
+- Daily Summary - Example workflow script

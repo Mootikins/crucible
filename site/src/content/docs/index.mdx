@@ -1,0 +1,34 @@
+---
+title: Crucible Documentation
+description: A local-first AI assistant where every conversation becomes a searchable note.
+template: splash
+hero:
+  tagline: Every conversation becomes a searchable, linkable note you own. No cloud. No lock-in.
+  actions:
+    - text: Getting Started
+      link: /crucible/guides/getting-started/
+      icon: right-arrow
+    - text: GitHub
+      link: https://github.com/Mootikins/crucible
+      icon: external
+      variant: minimal
+---
+
+import { Card, CardGrid } from '@astrojs/starlight/components';
+
+## Explore
+
+<CardGrid stagger>
+	<Card title="Core Concepts" icon="open-book">
+		Learn about [kilns](/crucible/help/concepts/kilns/), the [knowledge graph](/crucible/help/concepts/the-knowledge-graph/), and [semantic search](/crucible/help/concepts/semantic-search/).
+	</Card>
+	<Card title="CLI Reference" icon="laptop">
+		Start a [chat session](/crucible/help/cli/chat/), [search your notes](/crucible/help/cli/search/), or [process your kiln](/crucible/help/cli/process/).
+	</Card>
+	<Card title="Extend with Plugins" icon="puzzle">
+		Write [plugins in Lua or Fennel](/crucible/help/extending/creating-plugins/), add [custom tools](/crucible/help/extending/custom-tools/), or connect via [MCP](/crucible/help/extending/mcp-gateway/).
+	</Card>
+	<Card title="Configuration" icon="setting">
+		Set up [LLM providers](/crucible/help/config/llm/), configure [embeddings](/crucible/help/config/embedding/), and tune [storage](/crucible/help/config/storage/).
+	</Card>
+</CardGrid>
