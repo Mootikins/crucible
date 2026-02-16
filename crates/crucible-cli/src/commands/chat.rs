@@ -187,7 +187,8 @@ async fn run_preflight_checks(config: &mut CliConfig) -> Result<()> {
                 "{} No kiln found. A kiln is a folder where Crucible stores your notes and sessions.",
                 "Setup:".cyan().bold()
             );
-            println!("  {} A good default is a folder in your home directory or Documents.", "Tip:".dimmed());
+            println!("  {} A kiln is like a vault — it holds all your markdown notes, embeddings, and chat history.", "What is a kiln?".dimmed());
+            println!("  {} A good default is a folder in your home directory or Documents (e.g., ~/crucible).", "Tip:".dimmed());
 
             let path_input: String = dialoguer::Input::new()
                 .with_prompt("Kiln path")
@@ -229,21 +230,24 @@ async fn run_preflight_checks(config: &mut CliConfig) -> Result<()> {
 
     if providers.is_empty() {
         warn!("No LLM providers detected");
-        println!("{} No LLM provider configured.", "Warning:".yellow().bold());
+        println!("{} No LLM provider configured.", "Error:".red().bold());
         println!();
-        println!("  {} Set one of these environment variables:", "Option 1:".bold());
+        println!("  Crucible needs an LLM provider to chat. Choose one of these:");
+        println!();
+        println!("  {} Set an API key environment variable:", "Option 1:".bold());
         println!("    {} (for OpenAI)", "export OPENAI_API_KEY=sk-...".dimmed());
         println!("    {} (for Anthropic)", "export ANTHROPIC_API_KEY=sk-ant-...".dimmed());
+        println!("    {} (for other providers)", "export OPENROUTER_API_KEY=sk-...".dimmed());
         println!();
-        println!("  {} Use the credential manager:", "Option 2:".bold());
+        println!("  {} Use the interactive credential manager:", "Option 2:".bold());
         println!("    {}", "cru auth login".dimmed());
         println!();
-        println!("  {} Edit your config file:", "Option 3:".bold());
+        println!("  {} Configure a provider in your config file:", "Option 3:".bold());
         println!("    {} (see docs/Guides/Getting Started.md)", "~/.config/crucible/config.toml".dimmed());
         println!();
         println!(
             "  {}",
-            "Chat will start, but requests will fail without a provider.".dimmed()
+            "Chat will not work without a provider. Please set up one of the above.".dimmed()
         );
     } else {
         let has_cloud_provider = providers
