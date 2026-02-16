@@ -32,7 +32,10 @@ impl CachedMessage {
             let lines = wrap_content(&self.content, width);
             self.wrapped = Some((width, lines));
         }
-        &self.wrapped.as_ref().unwrap().1
+        self.wrapped
+            .as_ref()
+            .map(|(_, lines)| lines.as_slice())
+            .unwrap_or(&[])
     }
 
     pub fn invalidate_wrap(&mut self) {

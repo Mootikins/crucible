@@ -64,10 +64,18 @@ pub fn truncate_to_width(s: &str, max_width: usize, ellipsis: bool) -> Cow<'_, s
             // Start of ANSI escape sequence - include but don't count width
             result.push(c);
             if chars.peek() == Some(&'[') {
-                result.push(chars.next().unwrap());
+                if let Some(ansi_char) = chars.next() {
+                    result.push(ansi_char);
+                } else {
+                    break;
+                }
                 // Consume until we hit the command character (a letter)
                 while let Some(&next) = chars.peek() {
-                    result.push(chars.next().unwrap());
+                    if let Some(ansi_char) = chars.next() {
+                        result.push(ansi_char);
+                    } else {
+                        break;
+                    }
                     if next.is_ascii_alphabetic() {
                         break;
                     }

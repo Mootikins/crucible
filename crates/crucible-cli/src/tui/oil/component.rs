@@ -34,8 +34,7 @@ impl ComponentHarness {
     pub fn render_component(&mut self, c: &impl Component) -> &FrameSnapshot {
         let ctx = ViewContext::new(&self.focus);
         let tree = c.view(&ctx);
-        self.last_snapshot = Some(self.planner.plan(&tree));
-        self.last_snapshot.as_ref().unwrap()
+        self.last_snapshot.insert(self.planner.plan(&tree))
     }
 
     pub fn trace(&self) -> Option<&FrameTrace> {
