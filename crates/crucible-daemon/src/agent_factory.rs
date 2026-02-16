@@ -15,8 +15,8 @@ use crucible_core::session::SessionAgent;
 use crucible_core::traits::chat::AgentHandle;
 use crucible_core::{EventPushCallback, InteractionContext};
 use crucible_rig::{
-    build_agent_with_model_size, create_client, mcp_tools_from_gateway, AgentComponents,
-    AgentConfig, McpProxyTool, RigAgentHandle, RigClient, WorkspaceContext,
+    create_client, mcp_tools_from_gateway, AgentConfig, HandleBuildOpts, McpProxyTool,
+    WorkspaceContext,
 };
 use std::path::Path;
 use std::sync::Arc;
@@ -159,133 +159,20 @@ pub async fn create_agent_from_session_config(
         ws_ctx = ws_ctx.with_background_spawner(spawner.clone());
     }
 
-    let handle: Box<dyn AgentHandle + Send + Sync> = match client {
-        RigClient::Ollama(ref ollama_client) => {
-            let agent = build_agent_with_model_size(
-                &rig_agent_config,
-                ollama_client,
-                &ws_ctx,
-                model_size,
-                mcp_tools,
-            )
-            .map_err(|e| AgentFactoryError::AgentBuild(e.to_string()))?;
-            let mut components =
-                AgentComponents::new(rig_agent_config.clone(), client, ws_ctx.clone())
-                    .with_model_size(model_size);
-            if let Some(budget) = thinking_budget {
-                components = components.with_thinking_budget(budget);
-            }
-            if let Some(ref endpoint) = ollama_endpoint {
-                components = components.with_ollama_endpoint(endpoint.clone());
-            }
-            if let Some(gw) = mcp_gateway {
-                components = components.with_mcp_gateway(gw);
-            }
-            let handle = RigAgentHandle::new(agent)
-                .with_ollama_components(components)
-                .with_model(agent_config.model.clone())
-                .with_thinking_budget(thinking_budget);
-            Box::new(handle)
-        }
-        RigClient::OpenAI(openai_client) => {
-            let agent = build_agent_with_model_size(
-                &rig_agent_config,
-                &openai_client,
-                &ws_ctx,
-                model_size,
-                mcp_tools,
-            )
-            .map_err(|e| AgentFactoryError::AgentBuild(e.to_string()))?;
-            let mut handle = RigAgentHandle::new(agent)
-                .with_workspace_context(ws_ctx)
-                .with_model(agent_config.model.clone())
-                .with_thinking_budget(thinking_budget);
-            if let Some(endpoint) = &ollama_endpoint {
-                handle = handle.with_ollama_endpoint(endpoint.clone());
-            }
-            Box::new(handle)
-        }
-        RigClient::OpenAICompat(compat_client) => {
-            let agent = build_agent_with_model_size(
-                &rig_agent_config,
-                &compat_client,
-                &ws_ctx,
-                model_size,
-                mcp_tools,
-            )
-            .map_err(|e| AgentFactoryError::AgentBuild(e.to_string()))?;
-            let mut handle = RigAgentHandle::new(agent)
-                .with_workspace_context(ws_ctx)
-                .with_model(agent_config.model.clone())
-                .with_thinking_budget(thinking_budget);
-            if let Some(endpoint) = &ollama_endpoint {
-                handle = handle.with_ollama_endpoint(endpoint.clone());
-            }
-            Box::new(handle)
-        }
-        RigClient::Anthropic(anthropic_client) => {
-            let agent = build_agent_with_model_size(
-                &rig_agent_config,
-                &anthropic_client,
-                &ws_ctx,
-                model_size,
-                mcp_tools,
-            )
-            .map_err(|e| AgentFactoryError::AgentBuild(e.to_string()))?;
-            Box::new(
-                RigAgentHandle::new(agent)
-                    .with_workspace_context(ws_ctx)
-                    .with_model(agent_config.model.clone())
-                    .with_thinking_budget(thinking_budget),
-            )
-        }
-        RigClient::GitHubCopilot(copilot_client) => {
-            let api_token = copilot_client
-                .api_token()
-                .await
-                .map_err(|e| AgentFactoryError::ClientCreation(format!("Copilot auth: {}", e)))?;
-            let api_base = copilot_client
-                .api_base()
-                .await
-                .map_err(|e| AgentFactoryError::ClientCreation(format!("Copilot base: {}", e)))?;
-
-            let compat_client = crucible_rig::create_openai_compat_client(&api_token, &api_base)
-                .map_err(|e| AgentFactoryError::ClientCreation(e.to_string()))?;
-
-            let agent = build_agent_with_model_size(
-                &rig_agent_config,
-                &compat_client,
-                &ws_ctx,
-                model_size,
-                mcp_tools,
-            )
-            .map_err(|e| AgentFactoryError::AgentBuild(e.to_string()))?;
-            Box::new(
-                RigAgentHandle::new(agent)
-                    .with_workspace_context(ws_ctx)
-                    .with_model(agent_config.model.clone())
-                    .with_thinking_budget(thinking_budget),
-            )
-        }
-        RigClient::OpenRouter(openrouter_client) => {
-            let agent = build_agent_with_model_size(
-                &rig_agent_config,
-                &openrouter_client,
-                &ws_ctx,
-                model_size,
-                mcp_tools,
-            )
-            .map_err(|e| AgentFactoryError::AgentBuild(e.to_string()))?;
-            let mut handle = RigAgentHandle::new(agent)
-                .with_workspace_context(ws_ctx)
-                .with_model(agent_config.model.clone())
-                .with_thinking_budget(thinking_budget);
-            if let Some(endpoint) = &ollama_endpoint {
-                handle = handle.with_ollama_endpoint(endpoint.clone());
-            }
-            Box::new(handle)
-        }
+    let opts = HandleBuildOpts {
+        model: agent_config.model.clone(),
+        model_size,
+        thinking_budget,
+        ollama_endpoint,
+        mcp_gateway,
+        initial_mode: None,
+        reasoning_endpoint: None,
     };
+
+    let handle = client
+        .build_agent_handle(&rig_agent_config, &ws_ctx, mcp_tools, opts)
+        .await
+        .map_err(AgentFactoryError::AgentBuild)?;
 
     info!(
         provider = %agent_config.provider,
