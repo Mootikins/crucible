@@ -8,7 +8,7 @@
 No cloud. No lock-in. Your AI chats live as markdown files in git, wired into a knowledge graph you control.
 
 <p align="center">
-  <img src="assets/chat-demo.gif" alt="Crucible chat demo" width="720" />
+  <img src="assets/demo.gif" alt="Crucible chat demo" width="720" />
 </p>
 
 > **Early Development**: APIs and storage formats may change. Contributions welcome!
@@ -38,22 +38,10 @@ Most AI chat tools treat conversations as disposable. Crucible treats them as kn
 
 ## Install
 
-**Pre-built binaries** (Linux x86_64/aarch64, macOS Intel/Apple Silicon):
+**Pre-built binaries** (Linux x86_64/aarch64, macOS Apple Silicon):
 
 ```bash
 curl -fsSL https://github.com/Mootikins/crucible/releases/latest/download/install.sh | sh
-```
-
-**Homebrew** (macOS and Linux):
-
-```bash
-brew install mootikins/crucible/crucible
-```
-
-**cargo-binstall** (downloads pre-built binary):
-
-```bash
-cargo binstall crucible-cli
 ```
 
 **From source:**
@@ -65,19 +53,19 @@ cargo install --git https://github.com/Mootikins/crucible.git crucible-cli
 ## Quick Start
 
 ```bash
-# Start a chat session (first run triggers setup wizard)
+# Start a chat session
 cru chat
 
 # Or start the MCP server for Claude/GPT integration
 cru mcp
 ```
 
-First run launches a setup wizard: pick a kiln path, detect providers, choose a model. A background daemon auto-spawns for session persistence and file watching.
+First run prompts for a kiln path and detects available LLM providers. A background daemon auto-spawns for session persistence and file watching.
 
 **In a chat session:**
 - Type naturally, the agent responds with access to your knowledge base
 - `/search query` injects relevant notes into context
-- `:model`, `:set`, `:export`, `:help` for REPL commands
+- `:model`, `:set`, `:export` for REPL commands
 - `BackTab` cycles modes: Normal → Plan → Auto
 
 <p align="center">
@@ -123,7 +111,6 @@ See the [plugin guide](./docs/Help/Concepts/Scripting%20Languages.md) for the fu
 
 - **[docs/](./docs/)** is both the user guide and a working example kiln (155 interlinked notes)
 - **[AGENTS.md](./AGENTS.md)** covers architecture and AI agent instructions
-- **[openspec/](./openspec/)** has change proposals and specifications
 
 ## Roadmap
 
