@@ -11,15 +11,11 @@ async fn test_empty_text_embedding() {
 
     let result = provider.embed("").await;
 
-    // Should either succeed with empty/zero embedding or return error
     match result {
-        Ok(response) => {
-            // If it succeeds, embedding should be valid dimensional vector
-            assert!(!response.embedding.is_empty());
+        Ok(embedding) => {
+            assert!(!embedding.is_empty());
         }
-        Err(_) => {
-            // Error is also acceptable for empty input
-        }
+        Err(_) => {}
     }
 }
 

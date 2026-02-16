@@ -98,21 +98,44 @@ fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
 // Filter Translation
 // ============================================================================
 
-/// Translate a Filter to SQL WHERE clause
+/// Validate that a property key is safe for interpolation into a JSON path.
 ///
-/// Returns the SQL clause and appends parameter values to the params vector.
-fn filter_to_sql(filter: &Filter, params: &mut Vec<Box<dyn ToSql + Send>>) -> String {
+/// Allows: alphanumeric, underscore, dot (for nested paths), hyphen.
+/// Rejects: empty strings, SQL metacharacters, quotes, parens, semicolons.
+fn validate_property_key(key: &str) -> SqliteResult<()> {
+    if key.is_empty() {
+        return Err(SqliteError::InvalidOperation(
+            "Property key must not be empty".to_string(),
+        ));
+    }
+    if !key
+        .chars()
+        .all(|c| c.is_alphanumeric() || c == '_' || c == '.' || c == '-')
+    {
+        return Err(SqliteError::InvalidOperation(format!(
+            "Property key contains invalid characters: {:?}",
+            key
+        )));
+    }
+    Ok(())
+}
+
+fn filter_to_sql(
+    filter: &Filter,
+    params: &mut Vec<Box<dyn ToSql + Send>>,
+) -> SqliteResult<String> {
     match filter {
         Filter::Tag(tag) => {
             params.push(Box::new(tag.clone()));
-            // Use json_each to check if tag is in the JSON array
-            "EXISTS (SELECT 1 FROM json_each(tags) WHERE value = ?)".to_string()
+            Ok("EXISTS (SELECT 1 FROM json_each(tags) WHERE value = ?)".to_string())
         }
         Filter::Path(prefix) => {
             params.push(Box::new(format!("{}%", prefix)));
-            "path LIKE ?".to_string()
+            Ok("path LIKE ?".to_string())
         }
         Filter::Property(key, op, value) => {
+            validate_property_key(key)?;
+
             let op_str = match op {
                 Op::Eq => "=",
                 Op::Ne => "!=",
@@ -124,7 +147,6 @@ fn filter_to_sql(filter: &Filter, params: &mut Vec<Box<dyn ToSql + Send>>) -> St
                 Op::Matches => "GLOB",
             };
 
-            // For Contains, we need to wrap the value with %
             let param_value: Box<dyn ToSql + Send> = match op {
                 Op::Contains => {
                     let pattern = match value {
@@ -150,21 +172,30 @@ fn filter_to_sql(filter: &Filter, params: &mut Vec<Box<dyn ToSql + Send>>) -> St
                 },
             };
             params.push(param_value);
-            format!("json_extract(properties, '$.{}') {} ?", key, op_str)
+            Ok(format!(
+                "json_extract(properties, '$.{}') {} ?",
+                key, op_str
+            ))
         }
         Filter::And(filters) => {
             if filters.is_empty() {
-                return "1=1".to_string();
+                return Ok("1=1".to_string());
             }
-            let clauses: Vec<_> = filters.iter().map(|f| filter_to_sql(f, params)).collect();
-            format!("({})", clauses.join(" AND "))
+            let clauses: Vec<_> = filters
+                .iter()
+                .map(|f| filter_to_sql(f, params))
+                .collect::<SqliteResult<Vec<_>>>()?;
+            Ok(format!("({})", clauses.join(" AND ")))
         }
         Filter::Or(filters) => {
             if filters.is_empty() {
-                return "1=0".to_string();
+                return Ok("1=0".to_string());
             }
-            let clauses: Vec<_> = filters.iter().map(|f| filter_to_sql(f, params)).collect();
-            format!("({})", clauses.join(" OR "))
+            let clauses: Vec<_> = filters
+                .iter()
+                .map(|f| filter_to_sql(f, params))
+                .collect::<SqliteResult<Vec<_>>>()?;
+            Ok(format!("({})", clauses.join(" OR ")))
         }
     }
 }
@@ -480,7 +511,7 @@ impl NoteStore for SqliteNoteStore {
                 // Build SQL query with optional filter
                 let (sql, params) = if let Some(ref filter) = filter {
                     let mut params: Vec<Box<dyn ToSql + Send>> = Vec::new();
-                    let where_clause = filter_to_sql(filter, &mut params);
+                    let where_clause = filter_to_sql(filter, &mut params)?;
                     let sql = format!(
                         r#"
                         SELECT path, content_hash, embedding, title, tags, links_to, properties, updated_at
@@ -627,7 +658,7 @@ mod tests {
     fn test_filter_to_sql_tag() {
         let filter = Filter::Tag("rust".to_string());
         let mut params: Vec<Box<dyn ToSql + Send>> = Vec::new();
-        let sql = filter_to_sql(&filter, &mut params);
+        let sql = filter_to_sql(&filter, &mut params).unwrap();
 
         assert!(sql.contains("json_each(tags)"));
         assert_eq!(params.len(), 1);
@@ -637,7 +668,7 @@ mod tests {
     fn test_filter_to_sql_path() {
         let filter = Filter::Path("projects/".to_string());
         let mut params: Vec<Box<dyn ToSql + Send>> = Vec::new();
-        let sql = filter_to_sql(&filter, &mut params);
+        let sql = filter_to_sql(&filter, &mut params).unwrap();
 
         assert!(sql.contains("LIKE"));
         assert_eq!(params.len(), 1);
@@ -651,7 +682,7 @@ mod tests {
             Value::String("draft".to_string()),
         );
         let mut params: Vec<Box<dyn ToSql + Send>> = Vec::new();
-        let sql = filter_to_sql(&filter, &mut params);
+        let sql = filter_to_sql(&filter, &mut params).unwrap();
 
         assert!(sql.contains("json_extract"));
         assert!(sql.contains("status"));
@@ -665,7 +696,7 @@ mod tests {
             Filter::Path("notes/".to_string()),
         ]);
         let mut params: Vec<Box<dyn ToSql + Send>> = Vec::new();
-        let sql = filter_to_sql(&filter, &mut params);
+        let sql = filter_to_sql(&filter, &mut params).unwrap();
 
         assert!(sql.contains(" AND "));
         assert_eq!(params.len(), 2);
@@ -678,10 +709,73 @@ mod tests {
             Filter::Tag("python".to_string()),
         ]);
         let mut params: Vec<Box<dyn ToSql + Send>> = Vec::new();
-        let sql = filter_to_sql(&filter, &mut params);
+        let sql = filter_to_sql(&filter, &mut params).unwrap();
 
         assert!(sql.contains(" OR "));
         assert_eq!(params.len(), 2);
+    }
+
+    #[test]
+    fn test_filter_rejects_malicious_property_key_sql_injection() {
+        // A key like this could escape the JSON path and inject SQL
+        let filter = Filter::Property(
+            "foo') OR ('1'='1".to_string(),
+            Op::Eq,
+            Value::String("bar".to_string()),
+        );
+        let mut params: Vec<Box<dyn ToSql + Send>> = Vec::new();
+        let result = filter_to_sql(&filter, &mut params);
+        assert!(result.is_err(), "Malicious property key should be rejected");
+    }
+
+    #[test]
+    fn test_filter_rejects_property_key_with_semicolon() {
+        let filter = Filter::Property(
+            "key; DROP TABLE notes; --".to_string(),
+            Op::Eq,
+            Value::String("val".to_string()),
+        );
+        let mut params: Vec<Box<dyn ToSql + Send>> = Vec::new();
+        let result = filter_to_sql(&filter, &mut params);
+        assert!(result.is_err(), "Key with semicolon should be rejected");
+    }
+
+    #[test]
+    fn test_filter_rejects_property_key_with_quotes() {
+        let filter = Filter::Property(
+            r#"key"value"#.to_string(),
+            Op::Eq,
+            Value::String("val".to_string()),
+        );
+        let mut params: Vec<Box<dyn ToSql + Send>> = Vec::new();
+        let result = filter_to_sql(&filter, &mut params);
+        assert!(result.is_err(), "Key with quotes should be rejected");
+    }
+
+    #[test]
+    fn test_filter_accepts_valid_property_keys() {
+        for key in &["status", "my_key", "nested.path", "key123", "_private"] {
+            let filter = Filter::Property(
+                key.to_string(),
+                Op::Eq,
+                Value::String("val".to_string()),
+            );
+            let mut params: Vec<Box<dyn ToSql + Send>> = Vec::new();
+            let result = filter_to_sql(&filter, &mut params);
+            assert!(result.is_ok(), "Valid key '{}' should be accepted", key);
+        }
+    }
+
+    #[test]
+    fn test_filter_rejects_empty_property_key() {
+        let filter = Filter::Property(
+            "".to_string(),
+            Op::Eq,
+            Value::String("val".to_string()),
+        );
+        let mut params: Vec<Box<dyn ToSql + Send>> = Vec::new();
+        let result = filter_to_sql(&filter, &mut params);
+        assert!(result.is_err(), "Empty key should be rejected");
     }
 
     #[tokio::test]

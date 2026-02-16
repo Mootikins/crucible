@@ -138,11 +138,12 @@ impl RigClient {
 /// # Example
 ///
 /// ```rust,ignore
-/// use crucible_config::components::llm::{LlmProviderConfig, LlmProviderType};
+/// use crucible_config::components::llm::LlmProviderConfig;
+/// use crucible_config::components::backend::BackendType;
 /// use crucible_rig::providers::create_client;
 ///
 /// let config = LlmProviderConfig {
-///     provider_type: LlmProviderType::Ollama,
+///     provider_type: BackendType::Ollama,
 ///     endpoint: Some("http://localhost:11434".into()),
 ///     default_model: Some("llama3.2".into()),
 ///     ..Default::default()
@@ -151,16 +152,19 @@ impl RigClient {
 /// let client = create_client(&config)?;
 /// ```
 pub fn create_client(config: &LlmProviderConfig) -> RigResult<RigClient> {
-    #[allow(deprecated)] // LlmProviderConfig.provider_type is LlmProviderType (deprecated)
-    let backend: BackendType = config.provider_type.into();
-    match backend {
+    match config.provider_type {
         BackendType::Ollama => create_ollama_client(config),
-        BackendType::OpenAI => create_openai_client(config),
+        // OpenAI and ZAI both use the OpenAI-compatible client
+        BackendType::OpenAI | BackendType::ZAI => create_openai_client(config),
         BackendType::Anthropic => create_anthropic_client(config),
         BackendType::GitHubCopilot => create_github_copilot_client(config),
         BackendType::OpenRouter => create_openrouter_client(config),
-        BackendType::ZAI => create_openai_client(config),
-        other => Err(RigError::UnsupportedProvider(other)),
+        BackendType::Cohere
+        | BackendType::VertexAI
+        | BackendType::FastEmbed
+        | BackendType::Burn
+        | BackendType::Custom
+        | BackendType::Mock => Err(RigError::UnsupportedProvider(config.provider_type)),
     }
 }
 
@@ -325,14 +329,12 @@ pub fn create_openai_compat_client(
 }
 
 #[cfg(test)]
-#[allow(deprecated)] // Tests construct LlmProviderConfig which uses deprecated LlmProviderType
 mod tests {
     use super::*;
-    use crucible_config::llm::LlmProviderType;
 
     fn ollama_config() -> LlmProviderConfig {
         LlmProviderConfig {
-            provider_type: LlmProviderType::Ollama,
+            provider_type: BackendType::Ollama,
             endpoint: None,
             default_model: Some("llama3.2".into()),
             temperature: None,
@@ -345,7 +347,7 @@ mod tests {
 
     fn ollama_config_custom_endpoint() -> LlmProviderConfig {
         LlmProviderConfig {
-            provider_type: LlmProviderType::Ollama,
+            provider_type: BackendType::Ollama,
             endpoint: Some("http://192.168.1.100:11434".into()),
             default_model: Some("llama3.2".into()),
             temperature: None,
@@ -358,7 +360,7 @@ mod tests {
 
     fn openai_config_with_key() -> LlmProviderConfig {
         LlmProviderConfig {
-            provider_type: LlmProviderType::OpenAI,
+            provider_type: BackendType::OpenAI,
             endpoint: None,
             default_model: Some("gpt-4o".into()),
             temperature: None,
@@ -371,7 +373,7 @@ mod tests {
 
     fn anthropic_config_with_key() -> LlmProviderConfig {
         LlmProviderConfig {
-            provider_type: LlmProviderType::Anthropic,
+            provider_type: BackendType::Anthropic,
             endpoint: None,
             default_model: Some("claude-3-5-sonnet-20241022".into()),
             temperature: None,
@@ -384,7 +386,7 @@ mod tests {
 
     fn copilot_config_with_token() -> LlmProviderConfig {
         LlmProviderConfig {
-            provider_type: LlmProviderType::GitHubCopilot,
+            provider_type: BackendType::GitHubCopilot,
             endpoint: None,
             default_model: Some("gpt-4o".into()),
             temperature: None,
@@ -397,7 +399,7 @@ mod tests {
 
     fn copilot_config_no_token() -> LlmProviderConfig {
         LlmProviderConfig {
-            provider_type: LlmProviderType::GitHubCopilot,
+            provider_type: BackendType::GitHubCopilot,
             endpoint: None,
             default_model: Some("gpt-4o".into()),
             temperature: None,
@@ -446,7 +448,7 @@ mod tests {
     #[test]
     fn test_create_openai_client_missing_api_key() {
         let config = LlmProviderConfig {
-            provider_type: LlmProviderType::OpenAI,
+            provider_type: BackendType::OpenAI,
             endpoint: None,
             default_model: Some("gpt-4o".into()),
             temperature: None,
@@ -481,7 +483,7 @@ mod tests {
     #[test]
     fn test_create_anthropic_client_missing_api_key() {
         let config = LlmProviderConfig {
-            provider_type: LlmProviderType::Anthropic,
+            provider_type: BackendType::Anthropic,
             endpoint: None,
             default_model: None,
             temperature: None,
@@ -520,7 +522,7 @@ mod tests {
     #[test]
     fn test_create_openai_compat_client_with_custom_endpoint() {
         let config = LlmProviderConfig {
-            provider_type: LlmProviderType::OpenAI,
+            provider_type: BackendType::OpenAI,
             endpoint: Some("https://llama.example.com/v1".into()),
             default_model: Some("qwen3-8b".into()),
             temperature: None,
@@ -541,7 +543,7 @@ mod tests {
     #[test]
     fn test_create_openai_compat_no_api_key_required() {
         let config = LlmProviderConfig {
-            provider_type: LlmProviderType::OpenAI,
+            provider_type: BackendType::OpenAI,
             endpoint: Some("http://localhost:8080/v1".into()),
             default_model: Some("local-model".into()),
             temperature: None,
@@ -559,7 +561,7 @@ mod tests {
     #[test]
     fn test_real_openai_requires_api_key() {
         let config = LlmProviderConfig {
-            provider_type: LlmProviderType::OpenAI,
+            provider_type: BackendType::OpenAI,
             endpoint: None,
             default_model: Some("gpt-4o".into()),
             temperature: None,
@@ -611,7 +613,7 @@ mod tests {
 
     fn openrouter_config_with_key() -> LlmProviderConfig {
         LlmProviderConfig {
-            provider_type: LlmProviderType::OpenRouter,
+            provider_type: BackendType::OpenRouter,
             endpoint: None,
             default_model: Some("openai/gpt-4o".into()),
             temperature: None,
@@ -624,7 +626,7 @@ mod tests {
 
     fn openrouter_config_no_key() -> LlmProviderConfig {
         LlmProviderConfig {
-            provider_type: LlmProviderType::OpenRouter,
+            provider_type: BackendType::OpenRouter,
             endpoint: None,
             default_model: Some("openai/gpt-4o".into()),
             temperature: None,
@@ -660,7 +662,7 @@ mod tests {
         std::env::set_var("TEST_ANTHROPIC_KEY", "test-key-custom");
 
         let config = LlmProviderConfig {
-            provider_type: LlmProviderType::Anthropic,
+            provider_type: BackendType::Anthropic,
             endpoint: Some("https://api.z.ai/api/anthropic".into()),
             default_model: Some("glm-4-flash".into()),
             temperature: None,
@@ -682,7 +684,7 @@ mod tests {
     #[test]
     fn test_create_zai_client() {
         let config = LlmProviderConfig {
-            provider_type: LlmProviderType::ZAI,
+            provider_type: BackendType::ZAI,
             endpoint: Some("https://api.z.ai/api/coding/paas/v4".into()),
             default_model: Some("glm-4-flash".into()),
             temperature: None,

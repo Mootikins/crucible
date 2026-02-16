@@ -31,7 +31,6 @@ pub use types::{BlockEmbedding, EnrichedNote, EnrichmentMetadata, InferredRelati
 // Re-export configuration types from crucible-config to maintain backward compatibility
 // Configuration lives in crucible-config to simplify dependency graph
 pub use crucible_config::{
-    embedding::EmbeddingProviderType, CohereConfig, CustomConfig, EmbeddingProviderConfig,
-    EnrichmentConfig, FastEmbedConfig, MockConfig, OllamaConfig, OpenAIConfig, PipelineConfig,
-    VertexAIConfig,
+    CohereConfig, CustomConfig, EmbeddingProviderConfig, EnrichmentConfig, FastEmbedConfig,
+    MockConfig, OllamaConfig, OpenAIConfig, PipelineConfig, VertexAIConfig,
 };

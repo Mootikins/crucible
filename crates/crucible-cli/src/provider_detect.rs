@@ -7,11 +7,8 @@
 //! - Anthropic: ANTHROPIC_API_KEY env var or credential store
 
 use crucible_config::credentials::{CredentialSource, CredentialStore, SecretsFile};
-use crucible_config::{BackendType, ChatConfig, LlmConfig};
+use crucible_config::{BackendType, ChatConfig, LlmConfig, DEFAULT_OLLAMA_ENDPOINT};
 use std::time::Duration;
-
-/// Default Ollama endpoint
-const DEFAULT_OLLAMA_HOST: &str = "http://localhost:11434";
 
 /// A detected provider with availability info
 #[derive(Debug, Clone)]
@@ -36,7 +33,7 @@ pub fn ollama_endpoint() -> String {
                 format!("http://{}", host)
             }
         })
-        .unwrap_or_else(|| DEFAULT_OLLAMA_HOST.to_string())
+        .unwrap_or_else(|| DEFAULT_OLLAMA_ENDPOINT.to_string())
 }
 
 /// Check if an API key exists for a provider (env var or credential store)
@@ -100,7 +97,12 @@ pub async fn fetch_provider_models(provider: &BackendType, endpoint: &str) -> Ve
         BackendType::GitHubCopilot => Vec::new(),
         BackendType::OpenRouter => Vec::new(),
         BackendType::ZAI => zai_models(),
-        _ => Vec::new(),
+        BackendType::Cohere
+        | BackendType::VertexAI
+        | BackendType::FastEmbed
+        | BackendType::Burn
+        | BackendType::Custom
+        | BackendType::Mock => Vec::new(),
     }
 }
 
@@ -209,9 +211,7 @@ pub async fn fetch_all_provider_models(llm_config: &LlmConfig) -> Vec<String> {
     let mut ollama_futures = Vec::new();
 
     for (key, config) in &llm_config.providers {
-        #[allow(deprecated)] // LlmProviderConfig.provider_type is LlmProviderType
-        let backend: BackendType = config.provider_type.into();
-        match backend {
+        match &config.provider_type {
             BackendType::Ollama => {
                 let key = key.clone();
                 let endpoint = config.endpoint();
@@ -292,14 +292,13 @@ pub async fn fetch_model_context_length(endpoint: &str, model_id: &str) -> Optio
 /// Detect available providers from config and environment only (no HTTP probes).
 ///
 /// Checks: config file provider, OLLAMA_HOST env, API key env vars, credential store.
-#[allow(deprecated)] // ChatConfig.provider is LlmProviderType
 pub fn detect_providers(config: &ChatConfig) -> Vec<DetectedProvider> {
     let mut providers = Vec::new();
-    let provider_backend: BackendType = config.provider.into();
+    let provider_backend: BackendType = config.provider;
 
     match provider_backend {
         BackendType::Ollama => {
-            let endpoint = config.endpoint.as_deref().unwrap_or(DEFAULT_OLLAMA_HOST);
+            let endpoint = config.endpoint.as_deref().unwrap_or(DEFAULT_OLLAMA_ENDPOINT);
             let reason = if std::env::var("OLLAMA_HOST").is_ok() {
                 format!("OLLAMA_HOST={}", ollama_endpoint())
             } else if config.endpoint.is_some() {
@@ -368,7 +367,12 @@ pub fn detect_providers(config: &ChatConfig) -> Vec<DetectedProvider> {
                 });
             }
         }
-        _ => {}
+        BackendType::Cohere
+        | BackendType::VertexAI
+        | BackendType::FastEmbed
+        | BackendType::Burn
+        | BackendType::Custom
+        | BackendType::Mock => {}
     }
 
     // Also detect providers not in config but available via env/credentials
@@ -416,10 +420,9 @@ pub fn detect_providers(config: &ChatConfig) -> Vec<DetectedProvider> {
 }
 
 #[cfg(test)]
-#[allow(deprecated)] // Tests construct ChatConfig with LlmProviderType fields
 mod tests {
     use super::*;
-    use crucible_config::LlmProviderType;
+    use crucible_config::BackendType;
     use serial_test::serial;
 
     #[test]
@@ -451,7 +454,7 @@ mod tests {
     fn test_detect_openai_from_config_with_key() {
         std::env::set_var("OPENAI_API_KEY", "sk-test");
         let config = ChatConfig {
-            provider: LlmProviderType::OpenAI,
+            provider: BackendType::OpenAI,
             ..ChatConfig::default()
         };
         let detected = detect_providers(&config);
@@ -465,7 +468,7 @@ mod tests {
         std::env::remove_var("OPENAI_API_KEY");
         std::env::remove_var("ANTHROPIC_API_KEY");
         let config = ChatConfig {
-            provider: LlmProviderType::OpenAI,
+            provider: BackendType::OpenAI,
             ..ChatConfig::default()
         };
         let detected = detect_providers(&config);
@@ -599,13 +602,13 @@ mod tests {
         let mut providers = HashMap::new();
         providers.insert(
             "anthropic-main".to_string(),
-            LlmProviderConfig::builder(LlmProviderType::Anthropic)
+            LlmProviderConfig::builder(BackendType::Anthropic)
                 .model("claude-3-5-sonnet-20241022")
                 .build(),
         );
         providers.insert(
             "openai-backup".to_string(),
-            LlmProviderConfig::builder(LlmProviderType::OpenAI)
+            LlmProviderConfig::builder(BackendType::OpenAI)
                 .model("gpt-4o")
                 .build(),
         );

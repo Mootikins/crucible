@@ -612,6 +612,14 @@ mod tests {
         fn dimensions(&self) -> usize {
             self.dimensions
         }
+
+        fn provider_name(&self) -> &str {
+            "mock"
+        }
+
+        async fn list_models(&self) -> Result<Vec<String>> {
+            Ok(vec![self.model.clone()])
+        }
     }
 
     #[tokio::test]

@@ -75,8 +75,7 @@ pub use llm::{
 pub use parser::MarkdownParser;
 pub use prompt_builder::{priorities, PromptBuilder};
 pub use provider::{
-    CanChat, CanConstrainGeneration, CanEmbed, ConstrainedRequest, ConstrainedResponse,
-    EmbeddingResponse, ExtendedCapabilities, FullProvider, Provider, ProviderExt, SchemaFormat,
+    CanEmbed, EmbeddingResponse, ExtendedCapabilities, Provider,
 };
 pub use registry::{Registry, RegistryBuilder};
 pub use storage::Storage;

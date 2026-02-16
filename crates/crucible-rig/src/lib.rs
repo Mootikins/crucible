@@ -13,12 +13,13 @@
 //!
 //! ```rust,ignore
 //! use crucible_rig::{create_client, build_agent};
-//! use crucible_config::llm::{LlmProviderConfig, LlmProviderType};
+//! use crucible_config::llm::LlmProviderConfig;
+//! use crucible_config::BackendType;
 //! use crucible_core::agent::AgentCard;
 //!
 //! // Create a client from config
 //! let config = LlmProviderConfig {
-//!     provider_type: LlmProviderType::Ollama,
+//!     provider_type: BackendType::Ollama,
 //!     endpoint: Some("http://localhost:11434".into()),
 //!     default_model: Some("llama3.2".into()),
 //!     ..Default::default()

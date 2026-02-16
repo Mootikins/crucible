@@ -13,7 +13,7 @@ use anyhow::Result;
 use crucible_cli::commands::process;
 use crucible_cli::config::{CliAppConfig, CliConfig};
 use crucible_config::{
-    AcpConfig, ChatConfig, EmbeddingConfig, EmbeddingProviderType, LlmConfig, ProcessingConfig,
+    AcpConfig, BackendType, ChatConfig, EmbeddingConfig, LlmConfig, ProcessingConfig,
     ProvidersConfig, StorageConfig, StorageMode,
 };
 use crucible_core::test_support::fixtures::{create_kiln, KilnFixture};
@@ -48,7 +48,7 @@ fn create_test_config(kiln_path: PathBuf, _db_path: PathBuf) -> CliConfig {
         kiln_path,
         agent_directories: Vec::new(),
         embedding: EmbeddingConfig {
-            provider: EmbeddingProviderType::Mock,
+            provider: Some(BackendType::Mock),
             model: None,
             api_url: None,
             batch_size: 16,

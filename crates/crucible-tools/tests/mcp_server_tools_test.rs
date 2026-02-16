@@ -55,6 +55,14 @@ impl EmbeddingProvider for MockEmbeddingProvider {
     fn dimensions(&self) -> usize {
         384
     }
+
+    fn provider_name(&self) -> &str {
+        "mock"
+    }
+
+    async fn list_models(&self) -> anyhow::Result<Vec<String>> {
+        Ok(vec!["mock-model".to_string()])
+    }
 }
 
 /// Expected tool names that should be exposed by CrucibleMcpServer

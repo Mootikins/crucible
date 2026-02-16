@@ -1135,7 +1135,6 @@ impl AgentManager {
     ///
     /// Checks `LlmConfig` (new system) first, then `ProvidersConfig` (legacy).
     /// Returns `None` if the provider key is not found in either system.
-    #[allow(deprecated)] // LlmProviderConfig.provider_type is LlmProviderType
     fn resolve_provider_config(&self, provider_key: &str) -> Option<ResolvedProvider> {
         if let Some(llm_provider) = self
             .llm_config
@@ -1300,14 +1299,12 @@ impl AgentManager {
 
         if let Some(ref llm_config) = self.llm_config {
             for (provider_key, provider_config) in &llm_config.providers {
-                #[allow(deprecated)] // LlmProviderConfig.provider_type is LlmProviderType
-                let backend: BackendType = provider_config.provider_type.into();
-                let models = match backend {
+                let models = match &provider_config.provider_type {
                     BackendType::Ollama => {
                         let endpoint = provider_config
                             .endpoint
                             .as_deref()
-                            .unwrap_or("http://localhost:11434");
+                            .unwrap_or(crucible_config::DEFAULT_OLLAMA_ENDPOINT);
                         match self.list_ollama_models(endpoint).await {
                             Ok(models) => models,
                             Err(e) => {
@@ -1337,7 +1334,7 @@ impl AgentManager {
                 BackendType::Ollama => {
                     let endpoint = provider_config
                         .endpoint()
-                        .unwrap_or_else(|| "http://localhost:11434".to_string());
+                        .unwrap_or_else(|| crucible_config::DEFAULT_OLLAMA_ENDPOINT.to_string());
                     match self.list_ollama_models(&endpoint).await {
                         Ok(models) => models,
                         Err(e) => {
@@ -1377,7 +1374,7 @@ impl AgentManager {
 
             let endpoint = agent_config
                 .endpoint
-                .unwrap_or_else(|| "http://localhost:11434".to_string());
+                .unwrap_or_else(|| crucible_config::DEFAULT_OLLAMA_ENDPOINT.to_string());
 
             match agent_config.provider.as_str() {
                 "ollama" => return self.list_ollama_models(&endpoint).await,
@@ -3363,7 +3360,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_list_models_returns_all_providers() {
-        use crucible_config::{LlmConfig, LlmProviderConfig, LlmProviderType};
+        use crucible_config::{BackendType, LlmConfig, LlmProviderConfig};
         use std::collections::HashMap;
 
         let tmp = TempDir::new().unwrap();
@@ -3378,14 +3375,14 @@ mod tests {
         let mut providers = HashMap::new();
         providers.insert(
             "ollama".to_string(),
-            LlmProviderConfig::builder(LlmProviderType::Ollama)
+            LlmProviderConfig::builder(BackendType::Ollama)
                 .endpoint("http://localhost:11434")
                 .available_models(vec!["llama3.2".to_string(), "qwen2.5".to_string()])
                 .build(),
         );
         providers.insert(
             "openai".to_string(),
-            LlmProviderConfig::builder(LlmProviderType::OpenAI)
+            LlmProviderConfig::builder(BackendType::OpenAI)
                 .available_models(vec!["gpt-4".to_string(), "gpt-3.5-turbo".to_string()])
                 .build(),
         );
@@ -3465,7 +3462,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_list_models_prefixes_with_provider_key() {
-        use crucible_config::{LlmConfig, LlmProviderConfig, LlmProviderType};
+        use crucible_config::{BackendType, LlmConfig, LlmProviderConfig};
         use std::collections::HashMap;
 
         let tmp = TempDir::new().unwrap();
@@ -3480,7 +3477,7 @@ mod tests {
         let mut providers = HashMap::new();
         providers.insert(
             "anthropic".to_string(),
-            LlmProviderConfig::builder(LlmProviderType::Anthropic)
+            LlmProviderConfig::builder(BackendType::Anthropic)
                 .available_models(vec!["claude-3-opus".to_string()])
                 .build(),
         );
@@ -3547,7 +3544,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_parse_provider_model_llm_config_found() {
-        use crucible_config::{LlmConfig, LlmProviderConfig, LlmProviderType};
+        use crucible_config::{BackendType, LlmConfig, LlmProviderConfig};
 
         let storage = Arc::new(FileSessionStorage::new());
         let session_manager = Arc::new(SessionManager::with_storage(storage));
@@ -3555,7 +3552,7 @@ mod tests {
         let mut providers = std::collections::HashMap::new();
         providers.insert(
             "zai-coding".to_string(),
-            LlmProviderConfig::builder(LlmProviderType::ZAI)
+            LlmProviderConfig::builder(BackendType::ZAI)
                 .endpoint("https://api.z.ai/api/coding/paas/v4")
                 .available_models(vec!["GLM-4.7".to_string()])
                 .build(),
@@ -3580,7 +3577,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_parse_provider_model_llm_config_not_found() {
-        use crucible_config::{LlmConfig, LlmProviderConfig, LlmProviderType};
+        use crucible_config::{BackendType, LlmConfig, LlmProviderConfig};
 
         let storage = Arc::new(FileSessionStorage::new());
         let session_manager = Arc::new(SessionManager::with_storage(storage));
@@ -3588,7 +3585,7 @@ mod tests {
         let mut providers = std::collections::HashMap::new();
         providers.insert(
             "zai-coding".to_string(),
-            LlmProviderConfig::builder(LlmProviderType::ZAI).build(),
+            LlmProviderConfig::builder(BackendType::ZAI).build(),
         );
 
         let llm_config = LlmConfig {
@@ -3613,7 +3610,7 @@ mod tests {
     #[tokio::test]
     async fn test_parse_provider_model_legacy_takes_precedence() {
         use crucible_config::{
-            BackendType, LlmConfig, LlmProviderConfig, LlmProviderType, ProviderConfig,
+            BackendType, LlmConfig, LlmProviderConfig, ProviderConfig,
         };
 
         let storage = Arc::new(FileSessionStorage::new());
@@ -3629,7 +3626,7 @@ mod tests {
         let mut llm_providers = std::collections::HashMap::new();
         llm_providers.insert(
             "local".to_string(),
-            LlmProviderConfig::builder(LlmProviderType::Ollama)
+            LlmProviderConfig::builder(BackendType::Ollama)
                 .endpoint("http://different:11434")
                 .build(),
         );
@@ -3753,7 +3750,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_switch_model_zai_llm_config() {
-        use crucible_config::{LlmConfig, LlmProviderConfig, LlmProviderType};
+        use crucible_config::{BackendType, LlmConfig, LlmProviderConfig};
 
         let tmp = TempDir::new().unwrap();
         let storage = Arc::new(FileSessionStorage::new());
@@ -3767,7 +3764,7 @@ mod tests {
         let mut providers = std::collections::HashMap::new();
         providers.insert(
             "zai-coding".to_string(),
-            LlmProviderConfig::builder(LlmProviderType::ZAI)
+            LlmProviderConfig::builder(BackendType::ZAI)
                 .endpoint("https://api.z.ai/api/coding/paas/v4")
                 .available_models(vec!["GLM-4.7".to_string()])
                 .build(),
@@ -3815,7 +3812,7 @@ mod tests {
     #[tokio::test]
     async fn test_switch_model_legacy_still_works() {
         use crucible_config::{
-            BackendType, LlmConfig, LlmProviderConfig, LlmProviderType, ProviderConfig,
+            BackendType, LlmConfig, LlmProviderConfig, ProviderConfig,
         };
 
         let tmp = TempDir::new().unwrap();
@@ -3838,7 +3835,7 @@ mod tests {
         let mut llm_providers = std::collections::HashMap::new();
         llm_providers.insert(
             "zai-coding".to_string(),
-            LlmProviderConfig::builder(LlmProviderType::ZAI)
+            LlmProviderConfig::builder(BackendType::ZAI)
                 .endpoint("https://api.z.ai/api/coding/paas/v4")
                 .build(),
         );
@@ -3886,7 +3883,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_switch_model_llm_config_invalidates_cache() {
-        use crucible_config::{LlmConfig, LlmProviderConfig, LlmProviderType};
+        use crucible_config::{BackendType, LlmConfig, LlmProviderConfig};
 
         let tmp = TempDir::new().unwrap();
         let storage = Arc::new(FileSessionStorage::new());
@@ -3900,7 +3897,7 @@ mod tests {
         let mut providers = std::collections::HashMap::new();
         providers.insert(
             "zai-coding".to_string(),
-            LlmProviderConfig::builder(LlmProviderType::ZAI)
+            LlmProviderConfig::builder(BackendType::ZAI)
                 .endpoint("https://api.z.ai/api/coding/paas/v4")
                 .build(),
         );
@@ -4008,7 +4005,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_list_models_multi_provider_with_zai() {
-        use crucible_config::{LlmConfig, LlmProviderConfig, LlmProviderType};
+        use crucible_config::{BackendType, LlmConfig, LlmProviderConfig};
         use std::collections::HashMap;
 
         let tmp = TempDir::new().unwrap();
@@ -4023,7 +4020,7 @@ mod tests {
         let mut providers = HashMap::new();
         providers.insert(
             "zai-coding".to_string(),
-            LlmProviderConfig::builder(LlmProviderType::ZAI)
+            LlmProviderConfig::builder(BackendType::ZAI)
                 .endpoint("https://api.z.ai/api/coding/paas/v4")
                 .available_models(vec![
                     "GLM-5".to_string(),
@@ -4034,7 +4031,7 @@ mod tests {
         );
         providers.insert(
             "openai".to_string(),
-            LlmProviderConfig::builder(LlmProviderType::OpenAI)
+            LlmProviderConfig::builder(BackendType::OpenAI)
                 .available_models(vec!["gpt-4".to_string(), "gpt-3.5-turbo".to_string()])
                 .build(),
         );
@@ -4146,7 +4143,7 @@ mod tests {
     #[tokio::test]
     async fn test_list_models_both_configs() {
         use crucible_config::{
-            BackendType, LlmConfig, LlmProviderConfig, LlmProviderType, ProviderConfig,
+            BackendType, LlmConfig, LlmProviderConfig, ProviderConfig,
         };
         use std::collections::HashMap;
 
@@ -4168,7 +4165,7 @@ mod tests {
         let mut llm_providers = HashMap::new();
         llm_providers.insert(
             "new-anthropic".to_string(),
-            LlmProviderConfig::builder(LlmProviderType::Anthropic)
+            LlmProviderConfig::builder(BackendType::Anthropic)
                 .available_models(vec!["claude-sonnet-4".to_string()])
                 .build(),
         );
@@ -4202,7 +4199,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_switch_model_to_zai_provider() {
-        use crucible_config::{LlmConfig, LlmProviderConfig, LlmProviderType};
+        use crucible_config::{BackendType, LlmConfig, LlmProviderConfig};
         use std::collections::HashMap;
 
         let tmp = TempDir::new().unwrap();
@@ -4217,13 +4214,13 @@ mod tests {
         let mut providers = HashMap::new();
         providers.insert(
             "openai".to_string(),
-            LlmProviderConfig::builder(LlmProviderType::OpenAI)
+            LlmProviderConfig::builder(BackendType::OpenAI)
                 .model("gpt-4")
                 .build(),
         );
         providers.insert(
             "zai-coding".to_string(),
-            LlmProviderConfig::builder(LlmProviderType::ZAI)
+            LlmProviderConfig::builder(BackendType::ZAI)
                 .endpoint("https://api.z.ai/api/coding/paas/v4")
                 .available_models(vec![
                     "GLM-5".to_string(),
@@ -4278,7 +4275,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_resolve_provider_config_from_llm_config() {
-        use crucible_config::{LlmConfig, LlmProviderConfig, LlmProviderType};
+        use crucible_config::{BackendType, LlmConfig, LlmProviderConfig};
 
         let storage = Arc::new(FileSessionStorage::new());
         let session_manager = Arc::new(SessionManager::with_storage(storage));
@@ -4286,7 +4283,7 @@ mod tests {
         let mut providers = std::collections::HashMap::new();
         providers.insert(
             "zai-coding".to_string(),
-            LlmProviderConfig::builder(LlmProviderType::ZAI)
+            LlmProviderConfig::builder(BackendType::ZAI)
                 .endpoint("https://api.z.ai/api/coding/paas/v4")
                 .api_key("test-key-123")
                 .build(),
@@ -4356,7 +4353,7 @@ mod tests {
     #[tokio::test]
     async fn test_resolve_provider_config_llm_config_wins_over_providers_config() {
         use crucible_config::{
-            BackendType, LlmConfig, LlmProviderConfig, LlmProviderType, ProviderConfig,
+            BackendType, LlmConfig, LlmProviderConfig, ProviderConfig,
         };
 
         let storage = Arc::new(FileSessionStorage::new());
@@ -4371,7 +4368,7 @@ mod tests {
         let mut llm_providers = std::collections::HashMap::new();
         llm_providers.insert(
             "shared".to_string(),
-            LlmProviderConfig::builder(LlmProviderType::OpenAI)
+            LlmProviderConfig::builder(BackendType::OpenAI)
                 .endpoint("https://api.openai.com/v1")
                 .api_key("openai-key")
                 .build(),
