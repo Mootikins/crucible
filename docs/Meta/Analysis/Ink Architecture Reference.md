@@ -1,3 +1,10 @@
+---
+description: Ink Architecture Reference
+tags:
+  - meta
+  - analysis
+---
+
 # Ink Architecture Reference
 
 Reference notes from analyzing [vadimdemedes/ink](https://github.com/vadimdemedes/ink) for our Rust TUI implementation.

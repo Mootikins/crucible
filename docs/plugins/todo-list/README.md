@@ -1,3 +1,9 @@
+---
+description: Todo List Plugin
+tags:
+  - plugins
+---
+
 # Todo List Plugin
 
 A task management plugin for Crucible using the TASKS.md format.

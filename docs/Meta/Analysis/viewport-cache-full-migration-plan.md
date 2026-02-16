@@ -1,3 +1,10 @@
+---
+description: ViewportCache Full Migration Plan
+tags:
+  - meta
+  - analysis
+---
+
 # ViewportCache Full Migration Plan
 
 > **Status**: Ready for implementation  

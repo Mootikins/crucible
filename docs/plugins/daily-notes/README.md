@@ -1,3 +1,9 @@
+---
+description: Daily Notes Plugin
+tags:
+  - plugins
+---
+
 # Daily Notes Plugin
 
 A journaling plugin for Crucible that creates and manages daily notes.

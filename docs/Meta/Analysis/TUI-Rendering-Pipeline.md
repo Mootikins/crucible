@@ -1,3 +1,10 @@
+---
+description: TUI Rendering Pipeline
+tags:
+  - meta
+  - analysis
+---
+
 # TUI Rendering Pipeline
 
 Architecture analysis of Crucible's Oil-based TUI rendering system, including the graduation mechanism for streaming content.

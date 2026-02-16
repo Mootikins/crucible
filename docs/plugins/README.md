@@ -1,3 +1,9 @@
+---
+description: Plugin Examples
+tags:
+  - plugins
+---
+
 # Plugin Examples
 
 Example Lua plugins demonstrating tools and hooks for the Crucible plugin system.

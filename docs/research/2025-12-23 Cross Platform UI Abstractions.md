@@ -1,3 +1,9 @@
+---
+description: Cross-Platform UI Abstractions for Chat/Agent Interface
+tags:
+  - research
+---
+
 # Cross-Platform UI Abstractions for Chat/Agent Interface
 
 **Date:** 2025-12-23

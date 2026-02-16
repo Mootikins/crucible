@@ -1,3 +1,10 @@
+---
+description: Plan Mode - System Reminder
+tags:
+  - reference
+  - prompts
+---
+
 <system-reminder>
 # Plan Mode - System Reminder
 

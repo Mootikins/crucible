@@ -1,3 +1,9 @@
+---
+description: Graph View Plugin
+tags:
+  - plugins
+---
+
 # Graph View Plugin
 
 A knowledge graph visualization plugin for Crucible written in Fennel.

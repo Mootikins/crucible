@@ -1,3 +1,10 @@
+---
+description: CRITICAL - MAXIMUM STEPS REACHED
+tags:
+  - reference
+  - prompts
+---
+
 CRITICAL - MAXIMUM STEPS REACHED
 
 The maximum number of steps allowed for this task has been reached. Tools are disabled until next user input. Respond with text only.

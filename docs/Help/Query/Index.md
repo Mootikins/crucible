@@ -6,9 +6,9 @@ tags:
   - search
 ---
 
-# Query System
+> **⚠️ Planned Feature**: This feature is not yet implemented. The documentation below describes the intended design.
 
-> [!warning] The query language described here is planned but not yet implemented.
+# Query System
 
 The query system provides a powerful language for finding notes based on complex criteria.
 

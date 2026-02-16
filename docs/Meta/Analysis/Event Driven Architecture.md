@@ -1,3 +1,10 @@
+---
+description: Event-Driven Architecture
+tags:
+  - meta
+  - analysis
+---
+
 # Event-Driven Architecture
 
 > Design document for Crucible's event-driven core architecture.

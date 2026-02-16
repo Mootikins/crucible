@@ -1,3 +1,9 @@
+---
+description: Plugin System Architecture Best Practices for Crucible
+tags:
+  - help
+---
+
 # Plugin System Architecture Best Practices for Crucible
 
 A synthesis of design patterns from Neovim, Emacs, Obsidian, VSCode, Bevy, and modern event-driven systems.

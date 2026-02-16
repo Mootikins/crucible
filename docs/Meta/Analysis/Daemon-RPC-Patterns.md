@@ -1,3 +1,10 @@
+---
+description: Daemon/RPC Architecture Patterns
+tags:
+  - meta
+  - analysis
+---
+
 # Daemon/RPC Architecture Patterns
 
 Research on daemon architectures and RPC patterns from production terminal applications.
