@@ -18,6 +18,7 @@ mod graduation_invariant_tests;
 mod graduation_tests;
 mod interrupt_tests;
 mod layout_tests;
+mod markdown_fuzz_tests;
 mod node_tests;
 mod parity_tests;
 mod permission_integration_tests;

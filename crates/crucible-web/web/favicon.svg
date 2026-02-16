@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
+  <defs>
+    <linearGradient id="fire" x1="0" y1="1" x2="0" y2="0">
+      <stop offset="0%" stop-color="#FF6B1A"/>
+      <stop offset="100%" stop-color="#FFAA33"/>
+    </linearGradient>
+    <linearGradient id="glass" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#C8D6E5" stop-opacity="0.9"/>
+      <stop offset="100%" stop-color="#8395A7" stop-opacity="0.7"/>
+    </linearGradient>
+  </defs>
+  <!-- Flask body -->
+  <path d="M13 4 L13 12 L6 26 Q5 28 7 29 L25 29 Q27 28 26 26 L19 12 L19 4 Z"
+        fill="url(#glass)" stroke="#64748B" stroke-width="1.2" stroke-linejoin="round"/>
+  <!-- Liquid -->
+  <path d="M9 22 L23 22 L26 26 Q27 28 25 29 L7 29 Q5 28 6 26 Z"
+        fill="url(#fire)" opacity="0.85"/>
+  <!-- Flask neck ring -->
+  <rect x="12" y="3" width="8" height="2" rx="1" fill="#8395A7" stroke="#64748B" stroke-width="0.8"/>
+  <!-- Bubbles -->
+  <circle cx="14" cy="25" r="1.2" fill="#FFDD57" opacity="0.7"/>
+  <circle cx="18" cy="23.5" r="0.8" fill="#FFDD57" opacity="0.5"/>
+  <circle cx="16" cy="26.5" r="0.6" fill="#FFDD57" opacity="0.6"/>
+</svg>
