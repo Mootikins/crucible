@@ -28,6 +28,7 @@
 
 use crate::protocol::SessionEventMessage;
 use async_trait::async_trait;
+use crucible_config::BackendType;
 use crucible_core::background::{
     truncate, BackgroundSpawner, JobError, JobId, JobInfo, JobKind, JobResult,
     SubagentBlockingConfig,
@@ -1160,7 +1161,7 @@ mod tests {
             agent_type: "acp".to_string(),
             agent_name: Some("test-agent".to_string()),
             provider_key: None,
-            provider: "acp".to_string(),
+            provider: BackendType::Custom,
             model: "test-agent".to_string(),
             system_prompt: String::new(),
             temperature: None,

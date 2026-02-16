@@ -1596,7 +1596,7 @@ mod tests {
             agent_type: "internal".to_string(),
             agent_name: None,
             provider_key: Some("ollama".to_string()),
-            provider: "ollama".to_string(),
+            provider: BackendType::Ollama,
             model: "llama3.2".to_string(),
             system_prompt: "You are helpful.".to_string(),
             temperature: Some(0.7),
@@ -1929,7 +1929,7 @@ mod tests {
         let mut agent = test_agent();
         agent.temperature = Some(0.9);
         agent.system_prompt = "Custom prompt".to_string();
-        agent.provider = "custom-provider".to_string();
+        agent.provider = BackendType::Custom;
 
         agent_manager
             .configure_agent(&session.id, agent)
@@ -1947,7 +1947,7 @@ mod tests {
         assert_eq!(updated_agent.model, "new-model");
         assert_eq!(updated_agent.temperature, Some(0.9));
         assert_eq!(updated_agent.system_prompt, "Custom prompt");
-        assert_eq!(updated_agent.provider, "custom-provider");
+        assert_eq!(updated_agent.provider, BackendType::Custom);
     }
 
     #[tokio::test]
@@ -3139,7 +3139,7 @@ mod tests {
                 Some("https://api.zaiforge.com/v1"),
                 "Endpoint should be updated"
             );
-            assert_eq!(agent.provider, "anthropic", "Provider should be updated");
+            assert_eq!(agent.provider, BackendType::Anthropic, "Provider should be updated");
         }
 
         #[tokio::test]
@@ -3732,7 +3732,7 @@ mod tests {
 
         assert_eq!(agent.model, "GLM-4.7", "Model should be updated");
         assert_eq!(
-            agent.provider, "zai",
+            agent.provider, BackendType::ZAI,
             "Provider should be set to zai via as_str()"
         );
         assert_eq!(
@@ -3797,7 +3797,7 @@ mod tests {
 
         assert_eq!(agent.model, "llama3.3", "Model should be updated");
         assert_eq!(
-            agent.provider, "ollama",
+            agent.provider, BackendType::Ollama,
             "Provider should be set from llm config"
         );
         assert_eq!(
@@ -3888,7 +3888,7 @@ mod tests {
             "Unknown provider should be treated as model name"
         );
         assert_eq!(
-            agent.provider, "ollama",
+            agent.provider, BackendType::Ollama,
             "Provider should remain unchanged (default)"
         );
         assert_eq!(
@@ -3929,7 +3929,7 @@ mod tests {
             "Org/model format should be treated as full model name"
         );
         assert_eq!(
-            agent.provider, "ollama",
+            agent.provider, BackendType::Ollama,
             "Provider should remain unchanged (default)"
         );
     }
@@ -4230,7 +4230,7 @@ mod tests {
         let resolved = agent_manager.resolve_provider_config("zai-coding");
         assert!(resolved.is_some(), "Should resolve from llm_config");
         let resolved = resolved.unwrap();
-        assert_eq!(resolved.provider_type, "zai");
+        assert_eq!(resolved.provider_type, BackendType::ZAI);
         assert_eq!(
             resolved.endpoint.as_deref(),
             Some("https://api.z.ai/api/coding/paas/v4")
@@ -4265,7 +4265,7 @@ mod tests {
         let resolved = agent_manager.resolve_provider_config("local");
         assert!(resolved.is_some(), "Should resolve from llm_config");
         let resolved = resolved.unwrap();
-        assert_eq!(resolved.provider_type, "ollama");
+        assert_eq!(resolved.provider_type, BackendType::Ollama);
         assert_eq!(resolved.endpoint.as_deref(), Some("http://localhost:11434"));
         assert_eq!(resolved.api_key.as_deref(), Some("ollama-key"));
         assert_eq!(resolved.source, "llm_config");
@@ -4331,7 +4331,7 @@ mod tests {
             resolved.source, "llm_config",
             "LlmConfig should take priority"
         );
-        assert_eq!(resolved.provider_type, "openai");
+        assert_eq!(resolved.provider_type, BackendType::OpenAI);
         assert_eq!(
             resolved.endpoint.as_deref(),
             Some("https://api.openai.com/v1")

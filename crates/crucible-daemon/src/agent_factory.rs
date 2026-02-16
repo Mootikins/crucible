@@ -307,7 +307,7 @@ mod tests {
             agent_type: "internal".to_string(),
             agent_name: None,
             provider_key: Some("ollama".to_string()),
-            provider: "ollama".to_string(),
+            provider: BackendType::Ollama,
             model: "llama3.2".to_string(),
             system_prompt: "You are a helpful assistant.".to_string(),
             temperature: Some(0.7),
