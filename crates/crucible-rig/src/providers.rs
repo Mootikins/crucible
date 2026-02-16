@@ -241,12 +241,9 @@ impl RigClient {
                 )
                 .map_err(|e| e.to_string())?;
 
-                let mut components = AgentComponents::new(
-                    rig_agent_config.clone(),
-                    self.clone(),
-                    ws_ctx.clone(),
-                )
-                .with_model_size(opts.model_size);
+                let mut components =
+                    AgentComponents::new(rig_agent_config.clone(), self.clone(), ws_ctx.clone())
+                        .with_model_size(opts.model_size);
 
                 if let Some(kc) = kiln_ctx {
                     components = components.with_kiln(kc);
@@ -294,16 +291,14 @@ impl RigClient {
                 }
                 Ok(Box::new(handle))
             }
-            _ => {
-                self.build_standard_kiln_handle(
-                    rig_agent_config,
-                    workspace_root,
-                    kiln_ctx,
-                    mcp_tools,
-                    &opts,
-                    initial_mode,
-                )
-            }
+            _ => self.build_standard_kiln_handle(
+                rig_agent_config,
+                workspace_root,
+                kiln_ctx,
+                mcp_tools,
+                &opts,
+                initial_mode,
+            ),
         }
     }
 
@@ -317,7 +312,11 @@ impl RigClient {
         macro_rules! standard_daemon_handle {
             ($client:expr) => {{
                 let agent = build_agent_with_model_size(
-                    rig_agent_config, $client, ws_ctx, opts.model_size, mcp_tools,
+                    rig_agent_config,
+                    $client,
+                    ws_ctx,
+                    opts.model_size,
+                    mcp_tools,
                 )
                 .map_err(|e| e.to_string())?;
                 let mut handle = RigAgentHandle::new(agent)
@@ -354,8 +353,12 @@ impl RigClient {
         macro_rules! standard_kiln_handle {
             ($client:expr) => {{
                 let (agent, ws_ctx) = build_agent_with_kiln_tools(
-                    rig_agent_config, $client, workspace_root, opts.model_size,
-                    kiln_ctx, mcp_tools,
+                    rig_agent_config,
+                    $client,
+                    workspace_root,
+                    opts.model_size,
+                    kiln_ctx,
+                    mcp_tools,
                 )
                 .map_err(|e| e.to_string())?;
                 let mut handle = RigAgentHandle::new(agent)
