@@ -161,15 +161,22 @@ fn render_all_lines_styled(content: &str, is_insert: bool, extension: Option<&st
         .unwrap_or(false);
 
     let mut nodes: Vec<Node> = if should_highlight {
-        let ext = extension.unwrap();
-        let highlighter = SyntaxHighlighter::new();
-        let display_content = display_lines.join("\n");
-        let highlighted_lines = highlighter.highlight(&display_content, ext);
+        match extension {
+            Some(ext) => {
+                let highlighter = SyntaxHighlighter::new();
+                let display_content = display_lines.join("\n");
+                let highlighted_lines = highlighter.highlight(&display_content, ext);
 
-        highlighted_lines
-            .into_iter()
-            .map(|line| render_highlighted_diff_line(&line, prefix, diff_bg))
-            .collect()
+                highlighted_lines
+                    .into_iter()
+                    .map(|line| render_highlighted_diff_line(&line, prefix, diff_bg))
+                    .collect()
+            }
+            None => display_lines
+                .iter()
+                .map(|line| styled(format!("{}{}", prefix, line), Style::new().fg(diff_bg)))
+                .collect(),
+        }
     } else {
         let fallback_style = Style::new().fg(diff_bg);
         display_lines

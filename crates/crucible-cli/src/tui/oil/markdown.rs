@@ -264,11 +264,12 @@ impl RenderContext {
         let spans = std::mem::take(&mut self.current_spans);
 
         if spans.len() == 1 {
-            let (content, style) = spans.into_iter().next().unwrap();
-            if style == Style::default() {
-                self.blocks.push(text_node(&content));
-            } else {
-                self.blocks.push(styled(&content, style));
+            if let Some((content, style)) = spans.into_iter().next() {
+                if style == Style::default() {
+                    self.blocks.push(text_node(&content));
+                } else {
+                    self.blocks.push(styled(&content, style));
+                }
             }
         } else {
             let styled_spans: Vec<(String, String)> = spans
@@ -311,7 +312,7 @@ impl RenderContext {
         if self.blocks.is_empty() {
             Node::Empty
         } else if self.blocks.len() == 1 {
-            self.blocks.pop().unwrap()
+            self.blocks.pop().unwrap_or(Node::Empty)
         } else {
             col(self.blocks)
         }

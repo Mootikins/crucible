@@ -491,7 +491,10 @@ impl ContainerList {
             thinking: None,
         });
         self.turn_active = true;
-        self.containers.last().unwrap().id()
+        self.containers
+            .last()
+            .map(ChatContainer::id)
+            .unwrap_or_default()
     }
 
     /// Append text to the current assistant response.
