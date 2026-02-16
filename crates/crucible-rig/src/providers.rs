@@ -83,46 +83,7 @@ impl RigClient {
         }
     }
 
-    /// Get the inner Ollama client, if this is an Ollama client.
-    pub fn as_ollama(&self) -> Option<&ollama::Client> {
-        match self {
-            RigClient::Ollama(c) => Some(c),
-            _ => None,
-        }
-    }
-
-    /// Get the inner OpenAI client, if this is an OpenAI client.
-    pub fn as_openai(&self) -> Option<&openai::Client> {
-        match self {
-            RigClient::OpenAI(c) => Some(c),
-            _ => None,
-        }
-    }
-
-    /// Get the inner Anthropic client, if this is an Anthropic client.
-    pub fn as_anthropic(&self) -> Option<&anthropic::Client> {
-        match self {
-            RigClient::Anthropic(c) => Some(c),
-            _ => None,
-        }
-    }
-
-    /// Get the inner OpenAI-compatible client, if this is an OpenAI-compatible client.
-    ///
-    /// This client uses the standard `/chat/completions` API rather than the
-    /// newer "responses" API, making it compatible with llama.cpp, vLLM,
-    /// and other OpenAI-compatible servers.
-    pub fn as_openai_compat(&self) -> Option<&openai::CompletionsClient> {
-        match self {
-            RigClient::OpenAICompat(c) => Some(c),
-            _ => None,
-        }
-    }
-
     /// Get the inner GitHub Copilot client, if this is a GitHub Copilot client.
-    ///
-    /// This client handles OAuth token exchange with GitHub's Copilot API,
-    /// automatically refreshing the API token (30-minute TTL) as needed.
     pub fn as_github_copilot(&self) -> Option<&CopilotClient> {
         match self {
             RigClient::GitHubCopilot(c) => Some(c),
@@ -134,22 +95,43 @@ impl RigClient {
 /// Configuration knobs for [`RigClient::build_agent_handle`] and [`RigClient::build_agent_handle_with_kiln`].
 pub struct HandleBuildOpts {
     /// Model name for display/streaming.
+    /// Read by: both `build_agent_handle` (daemon) and `build_agent_handle_with_kiln` (CLI).
     pub model: String,
     /// Size classification for tool selection.
+    /// Read by: both `build_agent_handle` (daemon) and `build_agent_handle_with_kiln` (CLI).
     pub model_size: ModelSize,
     /// Thinking budget: -1 = unlimited, 0 = disabled, >0 = max tokens.
+    /// Read by: `build_agent_handle` (daemon) only — CLI manages thinking budget elsewhere.
     pub thinking_budget: Option<i64>,
     /// Ollama endpoint for custom streaming / model discovery.
+    /// Read by: both methods, but **only applied for Ollama clients**.
     pub ollama_endpoint: Option<String>,
     /// MCP gateway for upstream tool injection.
+    /// Read by: `build_agent_handle` (daemon) only — Ollama clients only.
     pub mcp_gateway: Option<Arc<RwLock<McpGatewayManager>>>,
     /// Initial mode (plan/normal/auto).
+    /// Read by: `build_agent_handle_with_kiln` (CLI) only.
     pub initial_mode: Option<String>,
     /// OpenAI-compatible endpoint for `reasoning_content` extraction.
+    /// Read by: `build_agent_handle_with_kiln` (CLI) only.
     pub reasoning_endpoint: Option<String>,
 }
 
 impl RigClient {
+    async fn copilot_compat_client(
+        copilot_client: &CopilotClient,
+    ) -> Result<openai::CompletionsClient, String> {
+        let api_token = copilot_client
+            .api_token()
+            .await
+            .map_err(|e| format!("Copilot auth: {}", e))?;
+        let api_base = copilot_client
+            .api_base()
+            .await
+            .map_err(|e| format!("Copilot base: {}", e))?;
+        create_openai_compat_client(&api_token, &api_base).map_err(|e| e.to_string())
+    }
+
     /// Daemon path: build handle from a pre-configured `WorkspaceContext`.
     pub async fn build_agent_handle(
         &self,
@@ -187,17 +169,7 @@ impl RigClient {
                 Ok(Box::new(handle))
             }
             RigClient::GitHubCopilot(copilot_client) => {
-                let api_token = copilot_client
-                    .api_token()
-                    .await
-                    .map_err(|e| format!("Copilot auth: {}", e))?;
-                let api_base = copilot_client
-                    .api_base()
-                    .await
-                    .map_err(|e| format!("Copilot base: {}", e))?;
-
-                let compat_client = create_openai_compat_client(&api_token, &api_base)
-                    .map_err(|e| e.to_string())?;
+                let compat_client = Self::copilot_compat_client(copilot_client).await?;
 
                 let agent = build_agent_with_model_size(
                     rig_agent_config,
@@ -262,17 +234,7 @@ impl RigClient {
                 Ok(Box::new(handle))
             }
             RigClient::GitHubCopilot(copilot_client) => {
-                let api_token = copilot_client
-                    .api_token()
-                    .await
-                    .map_err(|e| format!("Copilot auth: {}", e))?;
-                let api_base = copilot_client
-                    .api_base()
-                    .await
-                    .map_err(|e| format!("Copilot base: {}", e))?;
-
-                let compat_client = create_openai_compat_client(&api_token, &api_base)
-                    .map_err(|e| e.to_string())?;
+                let compat_client = Self::copilot_compat_client(copilot_client).await?;
 
                 let (agent, ws_ctx) = build_agent_with_kiln_tools(
                     rig_agent_config,
@@ -309,34 +271,21 @@ impl RigClient {
         mcp_tools: Vec<McpProxyTool>,
         opts: &HandleBuildOpts,
     ) -> Result<Box<dyn AgentHandle + Send + Sync>, String> {
-        macro_rules! standard_daemon_handle {
-            ($client:expr) => {{
-                let agent = build_agent_with_model_size(
-                    rig_agent_config,
-                    $client,
-                    ws_ctx,
-                    opts.model_size,
-                    mcp_tools,
-                )
-                .map_err(|e| e.to_string())?;
-                let mut handle = RigAgentHandle::new(agent)
-                    .with_workspace_context(ws_ctx.clone())
-                    .with_model(opts.model.clone())
-                    .with_thinking_budget(opts.thinking_budget);
-                if let Some(ref endpoint) = opts.ollama_endpoint {
-                    handle = handle.with_ollama_endpoint(endpoint.clone());
-                }
-                Ok(Box::new(handle) as Box<dyn AgentHandle + Send + Sync>)
-            }};
-        }
-
         match self {
-            RigClient::OpenAI(client) => standard_daemon_handle!(client),
-            RigClient::OpenAICompat(client) => standard_daemon_handle!(client),
-            RigClient::Anthropic(client) => standard_daemon_handle!(client),
-            RigClient::OpenRouter(client) => standard_daemon_handle!(client),
+            RigClient::OpenAI(client) => {
+                make_daemon_handle(client, rig_agent_config, ws_ctx, mcp_tools, opts)
+            }
+            RigClient::OpenAICompat(client) => {
+                make_daemon_handle(client, rig_agent_config, ws_ctx, mcp_tools, opts)
+            }
+            RigClient::Anthropic(client) => {
+                make_daemon_handle(client, rig_agent_config, ws_ctx, mcp_tools, opts)
+            }
+            RigClient::OpenRouter(client) => {
+                make_daemon_handle(client, rig_agent_config, ws_ctx, mcp_tools, opts)
+            }
             RigClient::Ollama(_) | RigClient::GitHubCopilot(_) => {
-                unreachable!("Ollama and Copilot handled in build_agent_handle")
+                Err("Ollama and Copilot should be handled before build_standard_handle".into())
             }
         }
     }
@@ -350,41 +299,101 @@ impl RigClient {
         opts: &HandleBuildOpts,
         initial_mode: &str,
     ) -> Result<Box<dyn AgentHandle + Send + Sync>, String> {
-        macro_rules! standard_kiln_handle {
-            ($client:expr) => {{
-                let (agent, ws_ctx) = build_agent_with_kiln_tools(
-                    rig_agent_config,
-                    $client,
-                    workspace_root,
-                    opts.model_size,
-                    kiln_ctx,
-                    mcp_tools,
-                )
-                .map_err(|e| e.to_string())?;
-                let mut handle = RigAgentHandle::new(agent)
-                    .with_workspace_context(ws_ctx)
-                    .with_initial_mode(initial_mode)
-                    .with_model(opts.model.clone());
-                if let Some(ref endpoint) = opts.ollama_endpoint {
-                    handle = handle.with_ollama_endpoint(endpoint.clone());
-                }
-                if let Some(ref endpoint) = opts.reasoning_endpoint {
-                    handle = handle.with_reasoning_endpoint(endpoint.clone(), opts.model.clone());
-                }
-                Ok(Box::new(handle) as Box<dyn AgentHandle + Send + Sync>)
-            }};
-        }
-
         match self {
-            RigClient::OpenAI(client) => standard_kiln_handle!(client),
-            RigClient::OpenAICompat(client) => standard_kiln_handle!(client),
-            RigClient::Anthropic(client) => standard_kiln_handle!(client),
-            RigClient::OpenRouter(client) => standard_kiln_handle!(client),
+            RigClient::OpenAI(client) => make_kiln_handle(
+                client,
+                rig_agent_config,
+                workspace_root,
+                kiln_ctx,
+                mcp_tools,
+                opts,
+                initial_mode,
+            ),
+            RigClient::OpenAICompat(client) => make_kiln_handle(
+                client,
+                rig_agent_config,
+                workspace_root,
+                kiln_ctx,
+                mcp_tools,
+                opts,
+                initial_mode,
+            ),
+            RigClient::Anthropic(client) => make_kiln_handle(
+                client,
+                rig_agent_config,
+                workspace_root,
+                kiln_ctx,
+                mcp_tools,
+                opts,
+                initial_mode,
+            ),
+            RigClient::OpenRouter(client) => make_kiln_handle(
+                client,
+                rig_agent_config,
+                workspace_root,
+                kiln_ctx,
+                mcp_tools,
+                opts,
+                initial_mode,
+            ),
             RigClient::Ollama(_) | RigClient::GitHubCopilot(_) => {
-                unreachable!("Ollama and Copilot handled in build_agent_handle_with_kiln")
+                Err("Ollama and Copilot should be handled before build_standard_kiln_handle".into())
             }
         }
     }
+}
+
+fn make_daemon_handle<C>(
+    client: &C,
+    rig_agent_config: &AgentConfig,
+    ws_ctx: &WorkspaceContext,
+    mcp_tools: Vec<McpProxyTool>,
+    opts: &HandleBuildOpts,
+) -> Result<Box<dyn AgentHandle + Send + Sync>, String>
+where
+    C: rig::client::CompletionClient,
+    C::CompletionModel: rig::completion::CompletionModel<Client = C> + 'static,
+{
+    let agent =
+        build_agent_with_model_size(rig_agent_config, client, ws_ctx, opts.model_size, mcp_tools)
+            .map_err(|e| e.to_string())?;
+    let handle = RigAgentHandle::new(agent)
+        .with_workspace_context(ws_ctx.clone())
+        .with_model(opts.model.clone())
+        .with_thinking_budget(opts.thinking_budget);
+    Ok(Box::new(handle))
+}
+
+fn make_kiln_handle<C>(
+    client: &C,
+    rig_agent_config: &AgentConfig,
+    workspace_root: &Path,
+    kiln_ctx: Option<KilnContext>,
+    mcp_tools: Vec<McpProxyTool>,
+    opts: &HandleBuildOpts,
+    initial_mode: &str,
+) -> Result<Box<dyn AgentHandle + Send + Sync>, String>
+where
+    C: rig::client::CompletionClient,
+    C::CompletionModel: rig::completion::CompletionModel<Client = C> + 'static,
+{
+    let (agent, ws_ctx) = build_agent_with_kiln_tools(
+        rig_agent_config,
+        client,
+        workspace_root,
+        opts.model_size,
+        kiln_ctx,
+        mcp_tools,
+    )
+    .map_err(|e| e.to_string())?;
+    let mut handle = RigAgentHandle::new(agent)
+        .with_workspace_context(ws_ctx)
+        .with_initial_mode(initial_mode)
+        .with_model(opts.model.clone());
+    if let Some(ref endpoint) = opts.reasoning_endpoint {
+        handle = handle.with_reasoning_endpoint(endpoint.clone(), opts.model.clone());
+    }
+    Ok(Box::new(handle))
 }
 
 /// Create a Rig client from Crucible LLM provider configuration.
@@ -804,8 +813,6 @@ mod tests {
         assert!(client.is_ok());
         let client = client.unwrap();
         assert_eq!(client.provider_name(), "openai-compat");
-        assert!(client.as_openai_compat().is_some());
-        assert!(client.as_openai().is_none());
     }
 
     #[test]

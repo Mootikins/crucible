@@ -25,10 +25,7 @@
 //!     ..Default::default()
 //! };
 //! let client = create_client(&config)?;
-//!
-//! // Build an agent from a card
-//! let card = load_agent_card("agents/assistant.md")?;
-//! let agent = build_agent(&card, client.as_ollama().unwrap())?;
+//! assert_eq!(client.provider_name(), "ollama");
 //! ```
 
 #![warn(missing_docs)]
