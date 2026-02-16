@@ -10,8 +10,6 @@ use crucible_config::BackendType;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-use super::llm::ProviderCapabilities;
-
 /// Embedding response from a provider
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EmbeddingResponse {
@@ -159,98 +157,9 @@ impl UnifiedModelInfo {
     }
 }
 
-/// Extended provider capabilities including embedding support
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct ExtendedCapabilities {
-    /// Base LLM capabilities
-    #[serde(flatten)]
-    pub llm: ProviderCapabilities,
-
-    // === Embedding capabilities ===
-    /// Supports text embeddings
-    pub embeddings: bool,
-    /// Supports batch embeddings
-    pub embeddings_batch: bool,
-    /// Embedding dimensions (if known)
-    pub embedding_dimensions: Option<usize>,
-    /// Maximum texts per batch
-    pub max_batch_size: Option<usize>,
-}
-
-impl ExtendedCapabilities {
-    /// Create capabilities for an embedding-only provider
-    pub fn embedding_only(dimensions: usize) -> Self {
-        Self {
-            llm: ProviderCapabilities::default(),
-            embeddings: true,
-            embeddings_batch: true,
-            embedding_dimensions: Some(dimensions),
-            max_batch_size: Some(16),
-        }
-    }
-
-    /// Create capabilities for a chat-only provider
-    pub fn chat_only() -> Self {
-        Self {
-            llm: ProviderCapabilities {
-                chat_completion: true,
-                streaming: true,
-                tool_use: true,
-                ..Default::default()
-            },
-            embeddings: false,
-            embeddings_batch: false,
-            embedding_dimensions: None,
-            max_batch_size: None,
-        }
-    }
-
-    /// Create capabilities for a full provider (embeddings + chat)
-    pub fn full(dimensions: usize) -> Self {
-        Self {
-            llm: ProviderCapabilities {
-                chat_completion: true,
-                streaming: true,
-                tool_use: true,
-                ..Default::default()
-            },
-            embeddings: true,
-            embeddings_batch: true,
-            embedding_dimensions: Some(dimensions),
-            max_batch_size: Some(16),
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_extended_capabilities_embedding_only() {
-        let caps = ExtendedCapabilities::embedding_only(768);
-        assert!(caps.embeddings);
-        assert!(caps.embeddings_batch);
-        assert_eq!(caps.embedding_dimensions, Some(768));
-        assert!(!caps.llm.chat_completion);
-    }
-
-    #[test]
-    fn test_extended_capabilities_chat_only() {
-        let caps = ExtendedCapabilities::chat_only();
-        assert!(!caps.embeddings);
-        assert!(caps.llm.chat_completion);
-        assert!(caps.llm.streaming);
-        assert!(caps.llm.tool_use);
-    }
-
-    #[test]
-    fn test_extended_capabilities_full() {
-        let caps = ExtendedCapabilities::full(1536);
-        assert!(caps.embeddings);
-        assert!(caps.llm.chat_completion);
-        assert_eq!(caps.embedding_dimensions, Some(1536));
-    }
 
     #[test]
     fn test_model_capability_checks() {
