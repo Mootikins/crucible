@@ -1,0 +1,41 @@
+/*
+ * Crucible brand colors
+ *
+ * Primary:   #FF8C42 (Crucible Amber) — fire, warmth, primary accent
+ * Secondary: #64748B (Slate) — terminal feel, body text, borders
+ * Accent:    #22D3EE (Cyan) — links, highlights, interactive elements
+ *
+ * Extended palette:
+ *   Flame Dark:  #FF6B1A — hover states, emphasis
+ *   Flame Light: #FFAA33 — gradients, secondary highlights
+ *   Bubble Gold: #FFDD57 — sparkle effects, notifications
+ *   Slate Dark:  #334155 — backgrounds, cards
+ *   Slate Light: #C8D6E5 — borders, muted text
+ */
+
+/* ── Light mode ────────────────────────────────────── */
+:root {
+	--sl-color-accent-low: #fff3e6;
+	--sl-color-accent: #ff8c42;
+	--sl-color-accent-high: #b35400;
+	--sl-color-text-accent: #d96800;
+}
+
+/* ── Dark mode ─────────────────────────────────────── */
+:root[data-theme='dark'] {
+	--sl-color-accent-low: #3d2200;
+	--sl-color-accent: #ff8c42;
+	--sl-color-accent-high: #ffc999;
+	--sl-color-text-accent: #ffaa33;
+}
+
+/* ── Typography ────────────────────────────────────── */
+:root {
+	--sl-font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+	--sl-font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', ui-monospace, monospace;
+}
+
+/* ── Link hover uses flame dark ────────────────────── */
+a:hover {
+	color: #ff6b1a;
+}
