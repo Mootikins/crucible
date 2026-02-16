@@ -123,7 +123,7 @@ async fn create_session(
     // Configure agent for the session (required before sending messages)
     let provider_type = BackendType::from_str(&req.provider)
         .map_err(|e| WebError::Validation(format!("Invalid provider: {}", e)))?;
-    
+
     let agent = SessionAgent {
         agent_type: "internal".to_string(),
         agent_name: None,

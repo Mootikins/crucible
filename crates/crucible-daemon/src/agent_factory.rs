@@ -19,7 +19,6 @@ use crucible_rig::{
     AgentConfig, McpProxyTool, RigAgentHandle, RigClient, WorkspaceContext,
 };
 use std::path::Path;
-use std::str::FromStr;
 use std::sync::Arc;
 use thiserror::Error;
 use tokio::sync::broadcast;

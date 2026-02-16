@@ -28,7 +28,7 @@
 
 use crate::protocol::SessionEventMessage;
 use async_trait::async_trait;
-use crucible_config::BackendType;
+
 use crucible_core::background::{
     truncate, BackgroundSpawner, JobError, JobId, JobInfo, JobKind, JobResult,
     SubagentBlockingConfig,
@@ -1080,7 +1080,7 @@ enum BashError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crucible_config::DelegationConfig;
+    use crucible_config::{BackendType, DelegationConfig};
     use crucible_core::background::JobStatus;
     use crucible_core::traits::chat::{AgentHandle, ChatChunk, ChatError, ChatResult};
     use futures::stream::{self, BoxStream};

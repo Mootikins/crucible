@@ -544,8 +544,8 @@ fn resolve_agent_command(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::HashMap;
     use crucible_config::BackendType;
+    use std::collections::HashMap;
 
     fn test_session_agent(agent_name: &str) -> SessionAgent {
         SessionAgent {
