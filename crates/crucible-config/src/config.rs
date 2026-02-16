@@ -1420,12 +1420,12 @@ verbose = false
 
     #[allow(missing_docs)]
     pub fn temperature(&self) -> f32 {
-        0.7 // Default temperature
+        crate::components::defaults::DEFAULT_TEMPERATURE
     }
 
     #[allow(missing_docs)]
     pub fn max_tokens(&self) -> u32 {
-        2048 // Default max tokens
+        crate::components::defaults::DEFAULT_CHAT_MAX_TOKENS
     }
 
     #[allow(missing_docs)]
