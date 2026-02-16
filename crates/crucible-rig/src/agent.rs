@@ -94,97 +94,45 @@ fn attach_tools<M: CompletionModel>(
     mcp_tools: Vec<McpProxyTool>,
 ) -> Agent<M> {
     let read_only = is_read_only_mode(mode_id);
-    let has_background = ctx.has_background_spawner();
-    let has_interaction = ctx.has_interaction_context();
 
-    let interaction_ctx = ctx.interaction_context().map(|arc| (*arc).clone());
+    let mut builder = builder
+        .tool(ReadFileTool::new(ctx.clone()))
+        .tool(GlobTool::new(ctx.clone()))
+        .tool(GrepTool::new(ctx.clone()));
 
-    let builder_with_tools = match (read_only, kiln_ctx, has_background, has_interaction) {
-        (true, None, _, _) => builder
-            .tool(ReadFileTool::new(ctx.clone()))
-            .tool(GlobTool::new(ctx.clone()))
-            .tool(GrepTool::new(ctx.clone())),
-        (true, Some(kiln), _, _) => builder
-            .tool(ReadFileTool::new(ctx.clone()))
-            .tool(GlobTool::new(ctx.clone()))
-            .tool(GrepTool::new(ctx.clone()))
+    if !read_only {
+        builder = builder
+            .tool(EditFileTool::new(ctx.clone()))
+            .tool(WriteFileTool::new(ctx.clone()))
+            .tool(BashTool::new(ctx.clone()));
+    }
+
+    if let Some(kiln) = kiln_ctx {
+        builder = builder
             .tool(SemanticSearchTool::new(kiln.clone()))
             .tool(ReadNoteTool::new(kiln.clone()))
-            .tool(ListNotesTool::new(kiln.clone())),
-        (false, None, false, _) => {
-            let mut b = builder
-                .tool(ReadFileTool::new(ctx.clone()))
-                .tool(EditFileTool::new(ctx.clone()))
-                .tool(WriteFileTool::new(ctx.clone()))
-                .tool(BashTool::new(ctx.clone()))
-                .tool(GlobTool::new(ctx.clone()))
-                .tool(GrepTool::new(ctx.clone()));
-            if let Some(ref ic) = interaction_ctx {
-                b = b.tool(AskUserTool::new(ic.clone()));
-            }
-            b
-        }
-        (false, None, true, _) => {
-            let mut b = builder
-                .tool(ReadFileTool::new(ctx.clone()))
-                .tool(EditFileTool::new(ctx.clone()))
-                .tool(WriteFileTool::new(ctx.clone()))
-                .tool(BashTool::new(ctx.clone()))
-                .tool(GlobTool::new(ctx.clone()))
-                .tool(GrepTool::new(ctx.clone()))
-                .tool(ListJobsTool::new(ctx.clone()))
-                .tool(GetJobResultTool::new(ctx.clone()))
-                .tool(CancelJobTool::new(ctx.clone()))
-                .tool(SpawnSubagentTool::new(ctx.clone()));
-            if let Some(ref ic) = interaction_ctx {
-                b = b.tool(AskUserTool::new(ic.clone()));
-            }
-            b
-        }
-        (false, Some(kiln), false, _) => {
-            let mut b = builder
-                .tool(ReadFileTool::new(ctx.clone()))
-                .tool(EditFileTool::new(ctx.clone()))
-                .tool(WriteFileTool::new(ctx.clone()))
-                .tool(BashTool::new(ctx.clone()))
-                .tool(GlobTool::new(ctx.clone()))
-                .tool(GrepTool::new(ctx.clone()))
-                .tool(SemanticSearchTool::new(kiln.clone()))
-                .tool(ReadNoteTool::new(kiln.clone()))
-                .tool(ListNotesTool::new(kiln.clone()));
-            if let Some(ref ic) = interaction_ctx {
-                b = b.tool(AskUserTool::new(ic.clone()));
-            }
-            b
-        }
-        (false, Some(kiln), true, _) => {
-            let mut b = builder
-                .tool(ReadFileTool::new(ctx.clone()))
-                .tool(EditFileTool::new(ctx.clone()))
-                .tool(WriteFileTool::new(ctx.clone()))
-                .tool(BashTool::new(ctx.clone()))
-                .tool(GlobTool::new(ctx.clone()))
-                .tool(GrepTool::new(ctx.clone()))
-                .tool(ListJobsTool::new(ctx.clone()))
-                .tool(GetJobResultTool::new(ctx.clone()))
-                .tool(CancelJobTool::new(ctx.clone()))
-                .tool(SpawnSubagentTool::new(ctx.clone()))
-                .tool(SemanticSearchTool::new(kiln.clone()))
-                .tool(ReadNoteTool::new(kiln.clone()))
-                .tool(ListNotesTool::new(kiln.clone()));
-            if let Some(ref ic) = interaction_ctx {
-                b = b.tool(AskUserTool::new(ic.clone()));
-            }
-            b
-        }
-    };
-
-    // Inject MCP proxy tools (additive — no-op if empty)
-    let mut builder_with_mcp = builder_with_tools;
-    for mcp_tool in mcp_tools {
-        builder_with_mcp = builder_with_mcp.tool(mcp_tool);
+            .tool(ListNotesTool::new(kiln.clone()));
     }
-    builder_with_mcp.build()
+
+    if !read_only && ctx.has_background_spawner() {
+        builder = builder
+            .tool(ListJobsTool::new(ctx.clone()))
+            .tool(GetJobResultTool::new(ctx.clone()))
+            .tool(CancelJobTool::new(ctx.clone()))
+            .tool(SpawnSubagentTool::new(ctx.clone()));
+    }
+
+    if !read_only {
+        if let Some(ic) = ctx.interaction_context().map(|arc| (*arc).clone()) {
+            builder = builder.tool(AskUserTool::new(ic));
+        }
+    }
+
+    for mcp_tool in mcp_tools {
+        builder = builder.tool(mcp_tool);
+    }
+
+    builder.build()
 }
 
 /// Configuration extracted from an AgentCard for building agents
