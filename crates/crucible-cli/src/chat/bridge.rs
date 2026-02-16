@@ -1,5 +1,4 @@
 //! Agent Event Bridge
-#![allow(deprecated)]
 //!
 //! Converts streaming ChatChunks from AgentHandle into SessionEvents
 //! that the TUI can poll from the ring buffer.

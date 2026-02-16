@@ -66,9 +66,8 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 
 use super::error::{EmbeddingError, EmbeddingResult};
-use super::provider::{
-    EmbeddingProvider, EmbeddingResponse, ModelFamily, ModelInfo, ParameterSize,
-};
+use super::provider::{EmbeddingResponse, ModelFamily, ModelInfo, ParameterSize};
+use crucible_core::enrichment::EmbeddingProvider;
 
 /// Local embedding provider using FastEmbed library
 ///
@@ -424,41 +423,34 @@ impl FastEmbedProvider {
 
 #[async_trait]
 impl EmbeddingProvider for FastEmbedProvider {
-    async fn embed(&self, text: &str) -> EmbeddingResult<EmbeddingResponse> {
+    async fn embed(&self, text: &str) -> anyhow::Result<Vec<f32>> {
         if text.trim().is_empty() {
-            return Err(EmbeddingError::Other("Text cannot be empty".to_string()));
+            return Err(EmbeddingError::Other("Text cannot be empty".to_string()).into());
         }
 
         let embeddings = self.embed_internal(vec![text.to_string()]).await?;
 
-        let embedding =
-            embeddings
-                .into_iter()
-                .next()
-                .ok_or_else(|| EmbeddingError::ProviderError {
+        embeddings
+            .into_iter()
+            .next()
+            .ok_or_else(|| {
+                EmbeddingError::ProviderError {
                     provider: "FastEmbed".to_string(),
                     message: "No embedding returned".to_string(),
-                })?;
-
-        Ok(EmbeddingResponse::new(
-            embedding,
-            self.model_info.name.clone(),
-        ))
+                }
+                .into()
+            })
     }
 
-    async fn embed_batch(&self, texts: Vec<String>) -> EmbeddingResult<Vec<EmbeddingResponse>> {
+    async fn embed_batch(&self, texts: &[&str]) -> anyhow::Result<Vec<Vec<f32>>> {
         if texts.is_empty() {
             return Ok(Vec::new());
         }
 
-        let embeddings = self.embed_internal(texts).await?;
-
-        let responses = embeddings
-            .into_iter()
-            .map(|embedding| EmbeddingResponse::new(embedding, self.model_info.name.clone()))
-            .collect();
-
-        Ok(responses)
+        let owned: Vec<String> = texts.iter().map(|t| t.to_string()).collect();
+        self.embed_internal(owned)
+            .await
+            .map_err(|e| anyhow::anyhow!(e))
     }
 
     fn model_name(&self) -> &str {
@@ -473,23 +465,22 @@ impl EmbeddingProvider for FastEmbedProvider {
         "FastEmbed"
     }
 
-    async fn health_check(&self) -> EmbeddingResult<bool> {
+    async fn health_check(&self) -> anyhow::Result<bool> {
         match EmbeddingProvider::embed(self, "health check").await {
             Ok(_) => Ok(true),
             Err(_) => Ok(false),
         }
     }
 
-    async fn list_models(&self) -> EmbeddingResult<Vec<ModelInfo>> {
-        // Return supported models
+    async fn list_models(&self) -> anyhow::Result<Vec<String>> {
         Ok(vec![
-            Self::get_model_info(&EmbeddingModel::BGESmallENV15),
-            Self::get_model_info(&EmbeddingModel::AllMiniLML6V2),
-            Self::get_model_info(&EmbeddingModel::NomicEmbedTextV15),
-            Self::get_model_info(&EmbeddingModel::MxbaiEmbedLargeV1),
-            Self::get_model_info(&EmbeddingModel::MultilingualE5Large),
-            Self::get_model_info(&EmbeddingModel::BGEBaseENV15),
-            Self::get_model_info(&EmbeddingModel::BGELargeENV15),
+            Self::get_model_info(&EmbeddingModel::BGESmallENV15).name,
+            Self::get_model_info(&EmbeddingModel::AllMiniLML6V2).name,
+            Self::get_model_info(&EmbeddingModel::NomicEmbedTextV15).name,
+            Self::get_model_info(&EmbeddingModel::MxbaiEmbedLargeV1).name,
+            Self::get_model_info(&EmbeddingModel::MultilingualE5Large).name,
+            Self::get_model_info(&EmbeddingModel::BGEBaseENV15).name,
+            Self::get_model_info(&EmbeddingModel::BGELargeENV15).name,
         ])
     }
 }
@@ -517,26 +508,23 @@ impl UnifiedProvider for FastEmbedProvider {
     }
 
     async fn health_check(&self) -> BackendResult<bool> {
-        // Reuse the legacy health check logic
-        match EmbeddingProvider::health_check(self).await {
-            Ok(healthy) => Ok(healthy),
-            Err(e) => Err(BackendError::Provider(format!("FastEmbed: {}", e))),
-        }
+        EmbeddingProvider::health_check(self)
+            .await
+            .map_err(|e| BackendError::Provider(format!("FastEmbed: {}", e)))
     }
 }
 
 #[async_trait]
 impl CanEmbed for FastEmbedProvider {
     async fn embed(&self, text: &str) -> BackendResult<UnifiedEmbeddingResponse> {
-        // Delegate to legacy impl and convert response type
-        let response = EmbeddingProvider::embed(self, text)
+        let embedding = EmbeddingProvider::embed(self, text)
             .await
             .map_err(|e| BackendError::Provider(format!("FastEmbed: {}", e)))?;
 
         Ok(UnifiedEmbeddingResponse {
-            embedding: response.embedding,
-            token_count: None, // FastEmbed doesn't provide token count
-            model: response.model,
+            embedding,
+            token_count: None,
+            model: self.model_info.name.clone(),
         })
     }
 
@@ -544,17 +532,17 @@ impl CanEmbed for FastEmbedProvider {
         &self,
         texts: Vec<String>,
     ) -> BackendResult<Vec<UnifiedEmbeddingResponse>> {
-        // Delegate to legacy impl and convert response type
-        let responses = EmbeddingProvider::embed_batch(self, texts)
+        let text_refs: Vec<&str> = texts.iter().map(|s| s.as_str()).collect();
+        let embeddings = EmbeddingProvider::embed_batch(self, &text_refs)
             .await
             .map_err(|e| BackendError::Provider(format!("FastEmbed: {}", e)))?;
 
-        Ok(responses
+        Ok(embeddings
             .into_iter()
-            .map(|r| UnifiedEmbeddingResponse {
-                embedding: r.embedding,
+            .map(|embedding| UnifiedEmbeddingResponse {
+                embedding,
                 token_count: None,
-                model: r.model,
+                model: self.model_info.name.clone(),
             })
             .collect())
     }
@@ -600,18 +588,16 @@ mod tests {
         );
         let provider = FastEmbedProvider::new(config).unwrap();
 
-        let response = EmbeddingProvider::embed(&provider, "Hello, world!").await;
-        if let Err(ref e) = response {
+        let result = EmbeddingProvider::embed(&provider, "Hello, world!").await;
+        if let Err(ref e) = result {
             eprintln!("FastEmbed error: {:?}", e);
         }
-        assert!(response.is_ok());
+        assert!(result.is_ok());
 
-        let response = response.unwrap();
-        assert_eq!(response.dimensions, 384);
-        assert_eq!(response.embedding.len(), 384);
+        let embedding = result.unwrap();
+        assert_eq!(embedding.len(), 384);
 
-        // Verify embedding values are reasonable
-        for &value in &response.embedding {
+        for &value in &embedding {
             assert!(value.is_finite(), "Embedding values should be finite");
         }
     }
@@ -622,24 +608,19 @@ mod tests {
             super::super::config::EmbeddingConfig::fastembed(None, Some(test_cache_path()), None);
         let provider = FastEmbedProvider::new(config).unwrap();
 
-        let texts = vec![
-            "First text".to_string(),
-            "Second text".to_string(),
-            "Third text".to_string(),
-        ];
+        let texts: Vec<&str> = vec!["First text", "Second text", "Third text"];
 
-        let responses = EmbeddingProvider::embed_batch(&provider, texts).await;
-        if let Err(ref e) = responses {
+        let result = EmbeddingProvider::embed_batch(&provider, &texts).await;
+        if let Err(ref e) = result {
             eprintln!("FastEmbed batch error: {:?}", e);
         }
-        assert!(responses.is_ok());
+        assert!(result.is_ok());
 
-        let responses = responses.unwrap();
-        assert_eq!(responses.len(), 3);
+        let embeddings = result.unwrap();
+        assert_eq!(embeddings.len(), 3);
 
-        for response in responses {
-            assert_eq!(response.dimensions, 384);
-            assert_eq!(response.embedding.len(), 384);
+        for embedding in embeddings {
+            assert_eq!(embedding.len(), 384);
         }
     }
 
@@ -656,8 +637,8 @@ mod tests {
         let result = EmbeddingProvider::embed(&provider, "   ").await;
         assert!(result.is_err());
 
-        // Test empty batch
-        let result = EmbeddingProvider::embed_batch(&provider, vec![]).await;
+        let empty: Vec<&str> = vec![];
+        let result = EmbeddingProvider::embed_batch(&provider, &empty).await;
         assert!(result.is_ok());
         assert!(result.unwrap().is_empty());
     }
@@ -673,11 +654,9 @@ mod tests {
         let models = models.unwrap();
         assert!(!models.is_empty());
 
-        // Check for specific models
-        let model_names: Vec<&str> = models.iter().map(|m| m.name.as_str()).collect();
-        assert!(model_names.contains(&"BAAI/bge-small-en-v1.5"));
-        assert!(model_names.contains(&"all-MiniLM-L6-v2"));
-        assert!(model_names.contains(&"nomic-ai/nomic-embed-text-v1.5"));
+        assert!(models.contains(&"BAAI/bge-small-en-v1.5".to_string()));
+        assert!(models.contains(&"all-MiniLM-L6-v2".to_string()));
+        assert!(models.contains(&"nomic-ai/nomic-embed-text-v1.5".to_string()));
     }
 
     #[test]

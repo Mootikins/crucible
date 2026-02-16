@@ -3,7 +3,7 @@
 #![allow(clippy::field_reassign_with_default)]
 
 use crucible_cli::config::CliConfig;
-use crucible_config::EmbeddingProviderType;
+use crucible_config::BackendType;
 use serial_test::serial;
 use std::fs;
 use std::path::PathBuf;
@@ -76,7 +76,7 @@ verbose = false
 
     let config = CliConfig::load(Some(config_path), None, None).unwrap();
     assert_eq!(config.kiln_path, kiln_path);
-    assert_eq!(config.embedding.provider, EmbeddingProviderType::OpenAI);
+    assert_eq!(config.embedding.provider, Some(BackendType::OpenAI));
     assert_eq!(config.embedding.model, Some("test-model".to_string()));
     assert_eq!(
         config.embedding.api_url,
@@ -116,7 +116,7 @@ api_url = "https://file-url.com"
 
     // Verify CLI overrides take priority over file config
     assert_eq!(config.kiln_path, kiln_path);
-    assert_eq!(config.embedding.provider, EmbeddingProviderType::Ollama);
+    assert_eq!(config.embedding.provider, Some(BackendType::Ollama));
     assert_eq!(config.embedding.model, Some("cli-model".to_string()));
     assert_eq!(
         config.embedding.api_url,
@@ -135,7 +135,7 @@ fn test_config_default_minimal() {
     // Should have defaults
     assert_eq!(config.chat_model(), "llama3.2");
     assert_eq!(config.temperature(), 0.7);
-    assert_eq!(config.embedding.provider, EmbeddingProviderType::FastEmbed);
+    assert_eq!(config.embedding.provider, Some(BackendType::FastEmbed));
     assert_eq!(config.embedding.batch_size, 16);
 }
 
@@ -148,7 +148,7 @@ fn test_config_with_custom_kiln_path() {
     config.kiln_path = kiln_path.clone();
 
     assert_eq!(config.kiln_path, kiln_path);
-    assert_eq!(config.embedding.provider, EmbeddingProviderType::FastEmbed);
+    assert_eq!(config.embedding.provider, Some(BackendType::FastEmbed));
     assert_eq!(config.chat_model(), "llama3.2");
     assert_eq!(config.temperature(), 0.7);
 }
@@ -251,7 +251,7 @@ fn test_display_as_json() {
 fn test_embedding_config_defaults() {
     let config = CliConfig::default();
 
-    assert_eq!(config.embedding.provider, EmbeddingProviderType::FastEmbed);
+    assert_eq!(config.embedding.provider, Some(BackendType::FastEmbed));
     assert_eq!(config.embedding.model, None); // Uses provider default
     assert_eq!(config.embedding.api_url, None);
     assert_eq!(config.embedding.batch_size, 16);
@@ -281,7 +281,7 @@ batch_size = 32
     .unwrap();
 
     let config = CliConfig::load(Some(config_path), None, None).unwrap();
-    assert_eq!(config.embedding.provider, EmbeddingProviderType::OpenAI);
+    assert_eq!(config.embedding.provider, Some(BackendType::OpenAI));
     assert_eq!(
         config.embedding.model,
         Some("text-embedding-3-small".to_string())
@@ -337,7 +337,7 @@ fn test_default_config_values() {
     assert_eq!(config.timeout(), 30);
 
     // New embedding defaults
-    assert_eq!(config.embedding.provider, EmbeddingProviderType::FastEmbed);
+    assert_eq!(config.embedding.provider, Some(BackendType::FastEmbed));
     assert_eq!(config.embedding.batch_size, 16);
 
     // ACP defaults

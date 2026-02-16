@@ -139,8 +139,8 @@ impl SessionManager {
     }
 
     pub async fn update_session(&self, session: &Session) -> Result<(), SessionError> {
-        self.sessions.insert(session.id.clone(), session.clone());
         self.storage.save(session).await?;
+        self.sessions.insert(session.id.clone(), session.clone());
         Ok(())
     }
 
@@ -809,5 +809,69 @@ mod tests {
             .await;
         assert_eq!(paused.len(), 1);
         assert_eq!(paused[0].id, paused_session.id);
+    }
+
+    use async_trait::async_trait;
+
+    struct FailingSaveStorage;
+
+    #[async_trait]
+    impl SessionStorage for FailingSaveStorage {
+        async fn save(&self, _session: &Session) -> Result<(), SessionError> {
+            Err(SessionError::IoError("simulated disk failure".to_string()))
+        }
+        async fn load(&self, _id: &str, _kiln: &Path) -> Result<Session, SessionError> {
+            Err(SessionError::NotFound("not impl".to_string()))
+        }
+        async fn list(&self, _kiln: &Path) -> Result<Vec<SessionSummary>, SessionError> {
+            Ok(vec![])
+        }
+        async fn append_event(&self, _s: &Session, _e: &str) -> Result<(), SessionError> {
+            Ok(())
+        }
+        async fn append_markdown(
+            &self,
+            _s: &Session,
+            _r: &str,
+            _c: &str,
+        ) -> Result<(), SessionError> {
+            Ok(())
+        }
+        async fn load_events(
+            &self,
+            _id: &str,
+            _kiln: &Path,
+            _limit: Option<usize>,
+            _offset: Option<usize>,
+        ) -> Result<Vec<serde_json::Value>, SessionError> {
+            Ok(vec![])
+        }
+        async fn count_events(&self, _id: &str, _kiln: &Path) -> Result<usize, SessionError> {
+            Ok(0)
+        }
+    }
+
+    #[tokio::test]
+    async fn test_update_session_does_not_modify_memory_on_storage_failure() {
+        let storage = Arc::new(FailingSaveStorage);
+        let manager = SessionManager::with_storage(storage);
+
+        let mut session = Session::new(SessionType::Chat, PathBuf::from("/tmp/test-kiln"));
+        session.title = Some("Original Title".to_string());
+        let session_id = session.id.clone();
+        manager.sessions.insert(session_id.clone(), session.clone());
+
+        let mut modified = session.clone();
+        modified.title = Some("Updated Title".to_string());
+
+        let result = manager.update_session(&modified).await;
+        assert!(result.is_err(), "update_session should fail when storage fails");
+
+        let in_memory = manager.get_session(&session_id).unwrap();
+        assert_eq!(
+            in_memory.title,
+            Some("Original Title".to_string()),
+            "In-memory session should retain original title when storage fails"
+        );
     }
 }

@@ -1,7 +1,8 @@
 //! Mock embedding provider for testing
 
-use crate::embeddings::{EmbeddingProvider, EmbeddingResponse, EmbeddingResult};
+use crate::embeddings::{EmbeddingResponse, EmbeddingResult};
 use async_trait::async_trait;
+use crucible_core::enrichment::EmbeddingProvider;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -95,27 +96,12 @@ impl Default for MockEmbeddingProvider {
 
 #[async_trait]
 impl EmbeddingProvider for MockEmbeddingProvider {
-    async fn embed(&self, text: &str) -> EmbeddingResult<EmbeddingResponse> {
-        let embedding = self.generate_embedding(text);
-
-        Ok(EmbeddingResponse {
-            embedding,
-            model: self.model_name.clone(),
-            dimensions: self.dimensions,
-            tokens: Some(text.split_whitespace().count()),
-            metadata: None,
-        })
+    async fn embed(&self, text: &str) -> anyhow::Result<Vec<f32>> {
+        Ok(self.generate_embedding(text))
     }
 
-    async fn embed_batch(&self, texts: Vec<String>) -> EmbeddingResult<Vec<EmbeddingResponse>> {
-        let mut results = Vec::with_capacity(texts.len());
-
-        for text in texts {
-            let response = self.embed(&text).await?;
-            results.push(response);
-        }
-
-        Ok(results)
+    async fn embed_batch(&self, texts: &[&str]) -> anyhow::Result<Vec<Vec<f32>>> {
+        Ok(texts.iter().map(|t| self.generate_embedding(t)).collect())
     }
 
     fn model_name(&self) -> &str {
@@ -130,33 +116,11 @@ impl EmbeddingProvider for MockEmbeddingProvider {
         "mock"
     }
 
-    async fn list_models(&self) -> EmbeddingResult<Vec<crate::embeddings::provider::ModelInfo>> {
-        use crate::embeddings::provider::{ModelFamily, ModelInfo, ParameterSize};
-
-        // Return a hardcoded list of test models
+    async fn list_models(&self) -> anyhow::Result<Vec<String>> {
         Ok(vec![
-            ModelInfo::builder()
-                .name("mock-test-model")
-                .display_name("Mock Test Model")
-                .dimensions(768)
-                .family(ModelFamily::Bert)
-                .parameter_size(ParameterSize::new(137, true)) // 137M
-                .recommended(true)
-                .build(),
-            ModelInfo::builder()
-                .name("mock-small-model")
-                .display_name("Mock Small Model")
-                .dimensions(384)
-                .family(ModelFamily::Bert)
-                .parameter_size(ParameterSize::new(50, true)) // 50M
-                .build(),
-            ModelInfo::builder()
-                .name("mock-large-model")
-                .display_name("Mock Large Model")
-                .dimensions(1536)
-                .family(ModelFamily::Gpt)
-                .parameter_size(ParameterSize::new(1, false)) // 1B
-                .build(),
+            "mock-test-model".to_string(),
+            "mock-small-model".to_string(),
+            "mock-large-model".to_string(),
         ])
     }
 }
@@ -407,58 +371,19 @@ impl Default for FixtureBasedMockProvider {
 
 #[async_trait]
 impl EmbeddingProvider for FixtureBasedMockProvider {
-    async fn embed(&self, text: &str) -> EmbeddingResult<EmbeddingResponse> {
+    async fn embed(&self, text: &str) -> anyhow::Result<Vec<f32>> {
         let normalized_text = self.normalize_text(text);
-        let embedding = self.generate_embedding(normalized_text).await?;
-
-        Ok(EmbeddingResponse {
-            embedding,
-            model: self.model_name.clone(),
-            dimensions: self.dimensions,
-            tokens: Some(text.split_whitespace().count()),
-            metadata: None,
-        })
+        self.generate_embedding(normalized_text)
+            .await
+            .map_err(|e| anyhow::anyhow!(e))
     }
 
-    async fn embed_batch(&self, texts: Vec<String>) -> EmbeddingResult<Vec<EmbeddingResponse>> {
-        // Check if we have a pre-defined batch fixture
-        if let Some(responses) = self.fixtures.batch_embeddings.get(&texts) {
-            // Adjust responses to match this provider's model and dimensions
-            let adjusted_responses: Vec<EmbeddingResponse> = responses
-                .iter()
-                .map(|r| {
-                    let mut embedding = r.embedding.clone();
-                    if embedding.len() != self.dimensions {
-                        // Adjust dimensions
-                        let mut adjusted = Vec::with_capacity(self.dimensions);
-                        for i in 0..self.dimensions {
-                            if i < embedding.len() {
-                                adjusted.push(embedding[i]);
-                            } else {
-                                adjusted.push(0.0); // Pad with zeros
-                            }
-                        }
-                        embedding = adjusted;
-                    }
-                    EmbeddingResponse {
-                        embedding,
-                        model: self.model_name.clone(),
-                        dimensions: self.dimensions,
-                        tokens: r.tokens,
-                        metadata: None,
-                    }
-                })
-                .collect();
-            return Ok(adjusted_responses);
-        }
-
-        // Generate embeddings for each text
+    async fn embed_batch(&self, texts: &[&str]) -> anyhow::Result<Vec<Vec<f32>>> {
         let mut results = Vec::with_capacity(texts.len());
         for text in texts {
-            let response = self.embed(&text).await?;
-            results.push(response);
+            let embedding = self.embed(text).await?;
+            results.push(embedding);
         }
-
         Ok(results)
     }
 
@@ -474,40 +399,14 @@ impl EmbeddingProvider for FixtureBasedMockProvider {
         "mock"
     }
 
-    async fn health_check(&self) -> EmbeddingResult<bool> {
-        // Fixture-based provider is always healthy
+    async fn health_check(&self) -> anyhow::Result<bool> {
         Ok(true)
     }
 
-    async fn list_models(&self) -> EmbeddingResult<Vec<crate::embeddings::provider::ModelInfo>> {
-        let mut models = Vec::new();
-
-        // Add models from fixtures
-        for model_info in self.fixtures.model_info.values() {
-            models.push(model_info.clone());
-        }
-
-        // Add some additional test models
-        models.push(
-            crate::embeddings::provider::ModelInfo::builder()
-                .name("mock-small-model")
-                .display_name("Mock Small Model")
-                .dimensions(384)
-                .family(crate::embeddings::provider::ModelFamily::Bert)
-                .parameter_size(crate::embeddings::provider::ParameterSize::new(50, true)) // 50M
-                .build(),
-        );
-
-        models.push(
-            crate::embeddings::provider::ModelInfo::builder()
-                .name("mock-large-model")
-                .display_name("Mock Large Model")
-                .dimensions(1536)
-                .family(crate::embeddings::provider::ModelFamily::Gpt)
-                .parameter_size(crate::embeddings::provider::ParameterSize::new(1, false)) // 1B
-                .build(),
-        );
-
+    async fn list_models(&self) -> anyhow::Result<Vec<String>> {
+        let mut models: Vec<String> = self.fixtures.model_info.keys().cloned().collect();
+        models.push("mock-small-model".to_string());
+        models.push("mock-large-model".to_string());
         Ok(models)
     }
 }
@@ -519,18 +418,17 @@ mod tests {
     #[tokio::test]
     async fn test_mock_provider_basic() {
         let provider = MockEmbeddingProvider::new();
-        let result = provider.embed("test text").await.unwrap();
+        let embedding = provider.embed("test text").await.unwrap();
 
-        assert_eq!(result.embedding.len(), 768);
-        assert_eq!(result.model, "mock-test-model");
+        assert_eq!(embedding.len(), 768);
     }
 
     #[tokio::test]
     async fn test_mock_provider_custom_dimensions() {
         let provider = MockEmbeddingProvider::with_dimensions(512);
-        let result = provider.embed("test text").await.unwrap();
+        let embedding = provider.embed("test text").await.unwrap();
 
-        assert_eq!(result.embedding.len(), 512);
+        assert_eq!(embedding.len(), 512);
     }
 
     #[tokio::test]
@@ -541,7 +439,7 @@ mod tests {
         let result1 = provider.embed(text).await.unwrap();
         let result2 = provider.embed(text).await.unwrap();
 
-        assert_eq!(result1.embedding, result2.embedding);
+        assert_eq!(result1, result2);
     }
 
     #[tokio::test]
@@ -551,23 +449,19 @@ mod tests {
         let result1 = provider.embed("text1").await.unwrap();
         let result2 = provider.embed("text2").await.unwrap();
 
-        assert_ne!(result1.embedding, result2.embedding);
+        assert_ne!(result1, result2);
     }
 
     #[tokio::test]
     async fn test_mock_provider_batch() {
         let provider = MockEmbeddingProvider::new();
-        let texts = vec![
-            "text1".to_string(),
-            "text2".to_string(),
-            "text3".to_string(),
-        ];
+        let texts: Vec<&str> = vec!["text1", "text2", "text3"];
 
-        let results = provider.embed_batch(texts).await.unwrap();
+        let results = provider.embed_batch(&texts).await.unwrap();
 
         assert_eq!(results.len(), 3);
         for result in results {
-            assert_eq!(result.embedding.len(), 768);
+            assert_eq!(result.len(), 768);
         }
     }
 }

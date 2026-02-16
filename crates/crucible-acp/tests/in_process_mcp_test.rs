@@ -81,6 +81,14 @@ impl EmbeddingProvider for MockEmbeddingProvider {
     fn dimensions(&self) -> usize {
         384
     }
+
+    fn provider_name(&self) -> &str {
+        "mock"
+    }
+
+    async fn list_models(&self) -> anyhow::Result<Vec<String>> {
+        Ok(vec!["mock-model".to_string()])
+    }
 }
 
 /// Test that the in-process MCP host starts and provides a valid SSE URL

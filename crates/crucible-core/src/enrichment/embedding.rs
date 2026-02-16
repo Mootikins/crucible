@@ -1,25 +1,37 @@
 //! Embedding provider abstractions for the enrichment pipeline
 //!
-//! This module defines the core trait for embedding providers, following
-//! the Dependency Inversion Principle. The trait is defined in the core
-//! domain layer, while concrete implementations live in the infrastructure
-//! layer (crucible-llm).
+//! This module defines the canonical trait for embedding providers. All
+//! embedding implementations (Ollama, FastEmbed, OpenAI, Burn, etc.) implement
+//! this trait directly. There is no adapter layer.
+//!
+//! # Dependency Inversion
+//!
+//! By defining this trait in the core layer with minimal dependencies,
+//! we allow the domain logic to depend on abstractions rather than
+//! concrete implementations. The infrastructure layer (crucible-llm)
+//! depends on the core layer and provides concrete implementations.
 
 use anyhow::Result;
 
-/// Abstract interface for text embedding providers
+/// Canonical interface for text embedding providers
 ///
-/// This trait defines the minimal contract that embedding providers must
-/// implement to work with the enrichment pipeline. Implementations are
-/// provided in the crucible-llm crate (Fastembed, OpenAI, etc.).
+/// This trait defines the full contract that embedding providers must implement.
+/// It supports single and batch embedding, metadata queries, health checking,
+/// and model discovery.
 ///
-/// # Dependency Inversion
+/// Implementations are provided in the crucible-llm crate (FastEmbed, Ollama,
+/// OpenAI, Burn, etc.).
 ///
-/// By defining this trait in the core layer with minimal dependencies,
-/// we allow the domain logic to depend on abstractions rather than
-/// concrete implementations. The infrastructure layer (crucible-llm)
-/// depends on the core layer and provides concrete implementations.
+/// # Object Safety
 ///
+/// This trait is object-safe, meaning it can be used as `Arc<dyn EmbeddingProvider>`
+/// for dynamic dispatch. This allows different providers to be swapped at runtime
+/// based on configuration.
+///
+/// # Async Methods
+///
+/// All embedding methods are async to support non-blocking I/O operations when
+/// communicating with remote embedding APIs.
 #[async_trait::async_trait]
 pub trait EmbeddingProvider: Send + Sync {
     /// Generate an embedding vector for a single text input
@@ -84,6 +96,42 @@ pub trait EmbeddingProvider: Send + Sync {
     ///
     /// The number of dimensions in each embedding vector
     fn dimensions(&self) -> usize;
+
+    /// Get the name of the embedding provider
+    ///
+    /// # Returns
+    ///
+    /// The provider name as a string slice (e.g., "Ollama", "FastEmbed", "OpenAI")
+    fn provider_name(&self) -> &str;
+
+    /// Check if the provider is healthy/available
+    ///
+    /// # Returns
+    ///
+    /// `Ok(true)` if the provider is healthy, `Ok(false)` if it's not responding,
+    /// or an error if the health check cannot be performed.
+    async fn health_check(&self) -> Result<bool> {
+        // Default implementation: try to embed a test string
+        match self.embed("test").await {
+            Ok(_) => Ok(true),
+            Err(_) => Ok(false),
+        }
+    }
+
+    /// List available model names from this provider
+    ///
+    /// Queries the provider to discover what embedding models are available.
+    /// Returns model identifiers as strings. For richer metadata, use
+    /// provider-specific APIs in crucible-llm.
+    ///
+    /// # Returns
+    ///
+    /// A vector of model name strings
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if model discovery fails or is not supported.
+    async fn list_models(&self) -> Result<Vec<String>>;
 }
 
 /// A cached embedding result

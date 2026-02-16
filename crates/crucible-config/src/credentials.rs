@@ -495,6 +495,36 @@ impl std::fmt::Display for CredentialSource {
     }
 }
 
+/// Resolve OAuth token for GitHub Copilot from credential store
+///
+/// Resolution order:
+/// 1. Environment variable (GITHUB_COPILOT_OAUTH_TOKEN)
+/// 2. Credential store (secrets.toml)
+/// 3. Config api_key (fallback)
+pub fn resolve_copilot_oauth_token(config_api_key: Option<&str>) -> Option<String> {
+    if let Ok(token) = std::env::var("GITHUB_COPILOT_OAUTH_TOKEN") {
+        if !token.is_empty() {
+            debug!("Using GitHub Copilot OAuth token from environment variable");
+            return Some(token);
+        }
+    }
+
+    let secrets = SecretsFile::new();
+    if let Ok(Some(token)) = secrets.get_oauth_token("github-copilot") {
+        debug!("Using GitHub Copilot OAuth token from credential store");
+        return Some(token);
+    }
+
+    if let Some(key) = config_api_key {
+        if !key.is_empty() {
+            debug!("Using GitHub Copilot OAuth token from config");
+            return Some(key.to_string());
+        }
+    }
+
+    None
+}
+
 /// Resolve an API key for a provider using the priority chain:
 ///
 /// 1. Environment variable (e.g., `OPENAI_API_KEY`)

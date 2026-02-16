@@ -2,7 +2,8 @@
 ///
 /// This provider uses the Burn framework to generate embeddings with GPU acceleration
 /// via Vulkan, ROCm, CUDA, or CPU backends.
-use super::{EmbeddingProvider, EmbeddingResponse, EmbeddingResult};
+use super::{EmbeddingResponse, EmbeddingResult};
+use crucible_core::enrichment::EmbeddingProvider;
 use async_trait::async_trait;
 use crucible_config::{BurnBackendConfig, BurnEmbedConfig};
 use std::path::{Path, PathBuf};
@@ -553,11 +554,9 @@ impl BurnProvider {
 
 #[async_trait]
 impl EmbeddingProvider for BurnProvider {
-    /// Generate embeddings for a single text input
-    async fn embed(&self, text: &str) -> EmbeddingResult<EmbeddingResponse> {
+    async fn embed(&self, text: &str) -> anyhow::Result<Vec<f32>> {
         self.ensure_initialized().await?;
 
-        // Get tokenizer from state
         let tokenizer = {
             let state = self.state.read().await;
             match &*state {
@@ -565,12 +564,12 @@ impl EmbeddingProvider for BurnProvider {
                 _ => {
                     return Err(super::error::EmbeddingError::InferenceFailed(
                         "Provider not initialized".to_string(),
-                    ))
+                    )
+                    .into())
                 }
             }
         };
 
-        // Tokenize the input text
         let encoding = tokio::task::spawn_blocking({
             let text = text.to_string();
             move || {
@@ -590,28 +589,20 @@ impl EmbeddingProvider for BurnProvider {
             ))
         })??;
 
-        let token_count = encoding.get_ids().len();
         let token_ids = encoding.get_ids().to_vec();
 
-        // Generate embedding from tokens
-        // TODO: Replace with actual model inference using Burn
-        // For now, we'll use a deterministic embedding based on tokens and text
-        let embedding = self
-            .generate_embedding_from_tokens(&token_ids, text)
-            .await?;
-
-        Ok(EmbeddingResponse::new(embedding, self.model_name.clone()).with_tokens(token_count))
+        self.generate_embedding_from_tokens(&token_ids, text)
+            .await
+            .map_err(|e| anyhow::anyhow!(e))
     }
 
-    /// Generate embeddings for multiple text inputs
-    async fn embed_batch(&self, texts: Vec<String>) -> EmbeddingResult<Vec<EmbeddingResponse>> {
+    async fn embed_batch(&self, texts: &[&str]) -> anyhow::Result<Vec<Vec<f32>>> {
         if texts.is_empty() {
             return Ok(Vec::new());
         }
 
         self.ensure_initialized().await?;
 
-        // Get tokenizer from state
         let tokenizer = {
             let state = self.state.read().await;
             match &*state {
@@ -619,14 +610,15 @@ impl EmbeddingProvider for BurnProvider {
                 _ => {
                     return Err(super::error::EmbeddingError::InferenceFailed(
                         "Provider not initialized".to_string(),
-                    ))
+                    )
+                    .into())
                 }
             }
         };
 
-        // Tokenize all texts in batch
+        let owned_texts: Vec<String> = texts.iter().map(|t| t.to_string()).collect();
         let encodings = tokio::task::spawn_blocking({
-            let texts = texts.clone();
+            let texts = owned_texts.clone();
             move || {
                 texts
                     .iter()
@@ -649,51 +641,33 @@ impl EmbeddingProvider for BurnProvider {
             ))
         })??;
 
-        // Generate embeddings for all texts
-        // TODO: Use actual batch processing with Burn tensors for GPU parallelism
         let mut results = Vec::with_capacity(texts.len());
-        for (encoding, text) in encodings.into_iter().zip(texts.iter()) {
+        for (encoding, text) in encodings.into_iter().zip(owned_texts.iter()) {
             let token_ids = encoding.get_ids().to_vec();
-            let token_count = token_ids.len();
             let embedding = self
                 .generate_embedding_from_tokens(&token_ids, text)
-                .await?;
-
-            results.push(
-                EmbeddingResponse::new(embedding, self.model_name.clone()).with_tokens(token_count),
-            );
+                .await
+                .map_err(|e| anyhow::anyhow!(e))?;
+            results.push(embedding);
         }
 
         Ok(results)
     }
 
-    /// Get the name of the model
     fn model_name(&self) -> &str {
         &self.model_name
     }
 
-    /// Get the dimensions of the embeddings
     fn dimensions(&self) -> usize {
         self.dimensions
     }
 
-    /// Get the name of the embedding provider
     fn provider_name(&self) -> &str {
         "Burn"
     }
 
-    /// List available models from this provider
-    async fn list_models(&self) -> EmbeddingResult<Vec<super::provider::ModelInfo>> {
-        use super::provider::{ModelFamily, ModelInfo};
-
-        // TODO: When Burn is integrated, discover actual models
-        // For now, return a hardcoded model
-        Ok(vec![ModelInfo::builder()
-            .name(&self.model_name)
-            .dimensions(self.dimensions)
-            .family(ModelFamily::Bert)
-            .recommended(true)
-            .build()])
+    async fn list_models(&self) -> anyhow::Result<Vec<String>> {
+        Ok(vec![self.model_name.clone()])
     }
 }
 

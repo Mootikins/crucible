@@ -7,9 +7,6 @@
 /// Configuration structures for embedding providers.
 pub mod config;
 
-/// Core adapter for enrichment layer integration.
-pub mod core_adapter;
-
 /// Error types for embedding operations.
 pub mod error;
 
@@ -43,15 +40,15 @@ pub mod provider;
 pub mod mock;
 
 pub use burn::BurnProvider;
-pub use config::{EmbeddingConfig, EmbeddingProviderType, ProviderType};
-pub use core_adapter::CoreProviderAdapter;
+pub use config::{BackendType, EmbeddingConfig, ProviderType};
+pub use crucible_core::enrichment::EmbeddingProvider;
 pub use error::{EmbeddingError, EmbeddingResult};
 #[cfg(feature = "fastembed")]
 pub use fastembed::FastEmbedProvider;
 pub use mock::MockEmbeddingProvider;
 pub use ollama::OllamaProvider;
 pub use openai::OpenAIProvider;
-pub use provider::{EmbeddingProvider, EmbeddingResponse};
+pub use provider::EmbeddingResponse;
 
 use std::sync::Arc;
 
@@ -63,25 +60,24 @@ pub async fn create_provider(
     config.validate()?;
 
     match config.provider_type() {
-        EmbeddingProviderType::Ollama => {
+        BackendType::Ollama => {
             let provider = ollama::OllamaProvider::new(config)?;
             Ok(Arc::new(provider))
         }
-        EmbeddingProviderType::OpenAI => {
+        BackendType::OpenAI => {
             let provider = openai::OpenAIProvider::new(config)?;
             Ok(Arc::new(provider))
         }
         #[cfg(feature = "fastembed")]
-        EmbeddingProviderType::FastEmbed => {
+        BackendType::FastEmbed => {
             let provider = fastembed::FastEmbedProvider::new(config)?;
             Ok(Arc::new(provider))
         }
         #[cfg(not(feature = "fastembed"))]
-        EmbeddingProviderType::FastEmbed => Err(EmbeddingError::ConfigError(
+        BackendType::FastEmbed => Err(EmbeddingError::ConfigError(
             "FastEmbed provider requires the 'fastembed' feature to be enabled".to_string(),
         )),
-        EmbeddingProviderType::Burn => {
-            // Extract Burn config from the embedding config
+        BackendType::Burn => {
             if let crucible_config::EmbeddingProviderConfig::Burn(burn_config) = config {
                 let provider = burn::BurnProvider::new(&burn_config)?;
                 Ok(Arc::new(provider))
@@ -91,7 +87,7 @@ pub async fn create_provider(
                 ))
             }
         }
-        EmbeddingProviderType::Mock => {
+        BackendType::Mock => {
             let dimensions = config.dimensions().unwrap_or(768) as usize;
             let provider = mock::MockEmbeddingProvider::with_dimensions(dimensions);
             Ok(Arc::new(provider))
@@ -121,7 +117,7 @@ mod tests {
             Some("nomic-embed-text".to_string()),
         );
 
-        assert_eq!(config.provider_type(), EmbeddingProviderType::Ollama);
+        assert_eq!(config.provider_type(), BackendType::Ollama);
         assert_eq!(config.model_name(), "nomic-embed-text");
     }
 }

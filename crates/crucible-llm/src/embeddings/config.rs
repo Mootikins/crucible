@@ -64,27 +64,18 @@ impl ProviderType {
 // Re-export canonical EmbeddingProviderConfig as EmbeddingConfig for compatibility
 pub use crucible_config::EmbeddingProviderConfig as EmbeddingConfig;
 
-// Re-export EmbeddingProviderType for compatibility
-pub use crucible_config::embedding::EmbeddingProviderType;
+pub use crucible_config::BackendType;
 
 /// Get expected embedding dimensions based on provider and model
-///
-/// This is a simplified version - in production, we'd have a more
-/// comprehensive model dimension mapping.
-pub fn expected_dimensions_for_model(provider: &EmbeddingProviderType, model: &str) -> usize {
+pub fn expected_dimensions_for_model(provider: &BackendType, model: &str) -> usize {
     match (provider, model) {
-        // Ollama models
-        (EmbeddingProviderType::Ollama, "nomic-embed-text") => 768,
-        // OpenAI models
-        (EmbeddingProviderType::OpenAI, "text-embedding-3-small") => 1536,
-        (EmbeddingProviderType::OpenAI, "text-embedding-3-large") => 3072,
-        (EmbeddingProviderType::OpenAI, "text-embedding-ada-002") => 1536,
-        // Mock models for testing
-        (EmbeddingProviderType::Mock, _) => 768,
-        // Default to provider defaults for unknown models
-        (EmbeddingProviderType::Ollama, _) => 768,
-        (EmbeddingProviderType::OpenAI, _) => 1536,
-        // Other providers default to 768
+        (BackendType::Ollama, "nomic-embed-text") => 768,
+        (BackendType::OpenAI, "text-embedding-3-small") => 1536,
+        (BackendType::OpenAI, "text-embedding-3-large") => 3072,
+        (BackendType::OpenAI, "text-embedding-ada-002") => 1536,
+        (BackendType::Mock, _) => 768,
+        (BackendType::Ollama, _) => 768,
+        (BackendType::OpenAI, _) => 1536,
         _ => 768,
     }
 }

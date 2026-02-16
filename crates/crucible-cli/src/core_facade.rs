@@ -139,11 +139,10 @@ impl KilnContext {
 
         // Generate embedding for query
         tracing::debug!("Generating query embedding...");
-        let query_response = provider.embed(query).await.map_err(|e| {
+        let query_embedding = provider.embed(query).await.map_err(|e| {
             tracing::error!("Failed to generate query embedding: {}", e);
             e
         })?;
-        let query_embedding = query_response.embedding;
         tracing::debug!(
             "Query embedding generated, dimensions={}",
             query_embedding.len()

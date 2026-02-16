@@ -579,7 +579,7 @@ mod tests {
     #[async_trait::async_trait]
     impl crucible_core::enrichment::EmbeddingProvider for MockEmbeddingProvider {
         async fn embed(&self, _text: &str) -> anyhow::Result<Vec<f32>> {
-            Ok(vec![0.1; 384]) // Mock 384-dimensional embedding
+            Ok(vec![0.1; 384])
         }
 
         async fn embed_batch(&self, _texts: &[&str]) -> anyhow::Result<Vec<Vec<f32>>> {
@@ -592,6 +592,14 @@ mod tests {
 
         fn dimensions(&self) -> usize {
             384
+        }
+
+        fn provider_name(&self) -> &str {
+            "mock"
+        }
+
+        async fn list_models(&self) -> anyhow::Result<Vec<String>> {
+            Ok(vec!["mock-model".to_string()])
         }
     }
 
@@ -1110,6 +1118,14 @@ mod note_store_tests {
 
         fn dimensions(&self) -> usize {
             384
+        }
+
+        fn provider_name(&self) -> &str {
+            "mock"
+        }
+
+        async fn list_models(&self) -> anyhow::Result<Vec<String>> {
+            Ok(vec!["mock-model".to_string()])
         }
     }
 

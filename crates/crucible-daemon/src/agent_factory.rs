@@ -6,7 +6,7 @@
 
 use crate::acp_handle::AcpAgentHandle;
 use crate::protocol::SessionEventMessage;
-use crucible_config::credentials::SecretsFile;
+use crucible_config::credentials::resolve_copilot_oauth_token;
 use crucible_config::{BackendType, LlmProviderConfig};
 use crucible_core::background::BackgroundSpawner;
 use crucible_core::interaction_registry::InteractionRegistry;
@@ -35,39 +35,6 @@ pub enum AgentFactoryError {
 
     #[error("Unsupported agent type: {0}")]
     UnsupportedAgentType(String),
-}
-
-/// Resolve OAuth token for GitHub Copilot from credential store
-///
-/// Resolution order:
-/// 1. Environment variable (GITHUB_COPILOT_OAUTH_TOKEN)
-/// 2. Credential store (secrets.toml)
-/// 3. Config api_key (fallback)
-fn resolve_copilot_oauth_token(config_api_key: Option<&str>) -> Option<String> {
-    // Check environment variable first
-    if let Ok(token) = std::env::var("GITHUB_COPILOT_OAUTH_TOKEN") {
-        if !token.is_empty() {
-            debug!("Using GitHub Copilot OAuth token from environment variable");
-            return Some(token);
-        }
-    }
-
-    // Check credential store
-    let secrets = SecretsFile::new();
-    if let Ok(Some(token)) = secrets.get_oauth_token("github-copilot") {
-        debug!("Using GitHub Copilot OAuth token from credential store");
-        return Some(token);
-    }
-
-    // Fall back to config api_key
-    if let Some(key) = config_api_key {
-        if !key.is_empty() {
-            debug!("Using GitHub Copilot OAuth token from config");
-            return Some(key.to_string());
-        }
-    }
-
-    None
 }
 
 /// Create an agent handle from session configuration.
@@ -136,11 +103,9 @@ pub async fn create_agent_from_session_config(
         "Creating agent from session config"
     );
 
-    #[allow(deprecated)] // LlmProviderConfig::builder takes LlmProviderType
-    let provider_type = crucible_config::LlmProviderType::from_str(&agent_config.provider)
+    let provider_type = BackendType::from_str(&agent_config.provider)
         .map_err(AgentFactoryError::ClientCreation)?;
 
-    #[allow(deprecated)]
     let mut llm_config = LlmProviderConfig::builder(provider_type);
     if let Some(endpoint) = agent_config.endpoint.clone() {
         llm_config = llm_config.endpoint(endpoint);

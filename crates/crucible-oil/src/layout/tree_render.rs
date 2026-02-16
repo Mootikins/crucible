@@ -13,7 +13,6 @@ use crate::ansi::apply_style;
 use crate::cell_grid::CellGrid;
 use crate::node::SPINNER_FRAMES;
 use crate::style::{Border, Style};
-use crate::utils::truncate_to_width;
 
 use super::types::{LayoutBox, LayoutContent, LayoutTree, PopupItem};
 
@@ -409,6 +408,7 @@ fn visible_width(s: &str) -> usize {
 mod tests {
     use super::*;
     use crate::layout::Rect;
+    use crate::utils::truncate_to_width;
 
     #[test]
     fn render_empty_tree() {

@@ -15,7 +15,8 @@ use std::time::Duration;
 
 use super::config::EmbeddingConfig;
 use super::error::{EmbeddingError, EmbeddingResult};
-use super::provider::{EmbeddingProvider, EmbeddingResponse};
+use super::provider::EmbeddingResponse;
+use crucible_core::enrichment::EmbeddingProvider;
 
 /// Request structure for Ollama legacy embedding API (/api/embeddings)
 #[derive(Debug, Serialize)]
@@ -343,23 +344,29 @@ impl OllamaProvider {
 
 #[async_trait]
 impl EmbeddingProvider for OllamaProvider {
-    async fn embed(&self, text: &str) -> EmbeddingResult<EmbeddingResponse> {
+    async fn embed(&self, text: &str) -> anyhow::Result<Vec<f32>> {
         if text.is_empty() {
             return Err(EmbeddingError::InvalidResponse(
                 "Cannot embed empty text".to_string(),
-            ));
+            )
+            .into());
         }
 
-        self.embed_with_retry(text).await
+        let response = self.embed_with_retry(text).await?;
+        Ok(response.embedding)
     }
 
-    async fn embed_batch(&self, texts: Vec<String>) -> EmbeddingResult<Vec<EmbeddingResponse>> {
+    async fn embed_batch(&self, texts: &[&str]) -> anyhow::Result<Vec<Vec<f32>>> {
         if texts.is_empty() {
             return Ok(Vec::new());
         }
 
-        // Filter out empty texts
-        let non_empty: Vec<String> = texts.into_iter().filter(|t| !t.is_empty()).collect();
+        // Filter out empty texts, converting to owned strings for internal API
+        let non_empty: Vec<String> = texts
+            .iter()
+            .filter(|t| !t.is_empty())
+            .map(|t| t.to_string())
+            .collect();
         if non_empty.is_empty() {
             return Ok(Vec::new());
         }
@@ -368,24 +375,22 @@ impl EmbeddingProvider for OllamaProvider {
         if self.batch_size <= 1 {
             let mut results = Vec::with_capacity(non_empty.len());
             for text in &non_empty {
-                let result = EmbeddingProvider::embed(self, text).await?;
-                results.push(result);
+                let response = self.embed_with_retry(text).await?;
+                results.push(response.embedding);
             }
             return Ok(results);
         }
 
         // Use native batch endpoint (/api/embed) for maximum throughput
-        // Send all texts in one request if possible (Ollama handles large batches well)
-        // Only chunk if we have a very large number of texts
-        const MAX_SINGLE_BATCH: usize = 256; // Ollama can handle large batches efficiently
+        const MAX_SINGLE_BATCH: usize = 256;
 
         if non_empty.len() <= MAX_SINGLE_BATCH {
-            // Single batch - most efficient
             match self.embed_batch_native(non_empty.clone()).await {
-                Ok(batch_results) => return Ok(batch_results),
+                Ok(batch_results) => {
+                    return Ok(batch_results.into_iter().map(|r| r.embedding).collect())
+                }
                 Err(e) => {
                     tracing::warn!("Batch embedding failed, falling back to chunked: {}", e);
-                    // Fall through to chunked processing
                 }
             }
         }
@@ -396,21 +401,18 @@ impl EmbeddingProvider for OllamaProvider {
         for chunk in non_empty.chunks(self.batch_size) {
             let chunk_texts: Vec<String> = chunk.to_vec();
 
-            // Try batch endpoint first, fall back to sequential on failure
             match self.embed_batch_native(chunk_texts.clone()).await {
                 Ok(batch_results) => {
-                    results.extend(batch_results);
+                    results.extend(batch_results.into_iter().map(|r| r.embedding));
                 }
                 Err(e) => {
                     tracing::warn!("Batch embedding failed, falling back to sequential: {}", e);
-                    // Fall back to sequential processing for this chunk
                     for text in &chunk_texts {
-                        let result = EmbeddingProvider::embed(self, text).await?;
-                        results.push(result);
+                        let response = self.embed_with_retry(text).await?;
+                        results.push(response.embedding);
                     }
                 }
             }
-            // No delay - let Ollama handle rate limiting internally
         }
 
         Ok(results)
@@ -428,13 +430,9 @@ impl EmbeddingProvider for OllamaProvider {
         self.expected_dimensions
     }
 
-    async fn health_check(&self) -> EmbeddingResult<bool> {
-        // Try to embed a simple test string
+    async fn health_check(&self) -> anyhow::Result<bool> {
         match self.embed_single("health check").await {
-            Ok(response) => {
-                // Verify dimensions are correct
-                Ok(response.dimensions == self.expected_dimensions)
-            }
+            Ok(response) => Ok(response.dimensions == self.expected_dimensions),
             Err(e) => {
                 tracing::warn!("Ollama health check failed: {}", e);
                 Ok(false)
@@ -442,11 +440,7 @@ impl EmbeddingProvider for OllamaProvider {
         }
     }
 
-    async fn list_models(&self) -> EmbeddingResult<Vec<super::provider::ModelInfo>> {
-        use super::provider::{ModelFamily, ModelInfo, ParameterSize};
-        use chrono::DateTime;
-
-        // Query Ollama's /api/tags endpoint
+    async fn list_models(&self) -> anyhow::Result<Vec<String>> {
         let url = format!("{}/api/tags", self.endpoint);
 
         let response = self
@@ -454,64 +448,26 @@ impl EmbeddingProvider for OllamaProvider {
             .get(&url)
             .timeout(Duration::from_secs(self.timeout_secs))
             .send()
-            .await?;
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to list models: {}", e))?;
 
         if !response.status().is_success() {
-            return Err(EmbeddingError::ProviderError {
-                provider: "Ollama".to_string(),
-                message: format!("Failed to list models: {}", response.status()),
-            });
+            return Err(anyhow::anyhow!(
+                "Failed to list models: {}",
+                response.status()
+            ));
         }
 
-        let tags_response: OllamaTagsResponse = response.json().await?;
+        let tags_response: OllamaTagsResponse = response
+            .json()
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to parse model list: {}", e))?;
 
-        // Convert Ollama model info to our ModelInfo format
-        let models = tags_response
+        Ok(tags_response
             .models
             .into_iter()
-            .map(|model| {
-                let mut builder = ModelInfo::builder().name(model.name);
-
-                if let Some(size) = model.size {
-                    builder = builder.size_bytes(size);
-                }
-
-                if let Some(digest) = model.digest {
-                    builder = builder.digest(digest);
-                }
-
-                if let Some(modified_at_str) = model.modified_at {
-                    // Try to parse the timestamp
-                    if let Ok(dt) = DateTime::parse_from_rfc3339(&modified_at_str) {
-                        builder = builder.modified_at(dt.with_timezone(&chrono::Utc));
-                    }
-                }
-
-                if let Some(details) = model.details {
-                    if let Some(family_str) = details.family {
-                        builder = builder.family(ModelFamily::from_str(&family_str));
-                    }
-
-                    if let Some(param_size_str) = details.parameter_size {
-                        if let Some(param_size) = ParameterSize::from_str(&param_size_str) {
-                            builder = builder.parameter_size(param_size);
-                        }
-                    }
-
-                    if let Some(quant) = details.quantization_level {
-                        builder = builder.quantization(quant);
-                    }
-
-                    if let Some(format) = details.format {
-                        builder = builder.format(format);
-                    }
-                }
-
-                builder.build()
-            })
-            .collect();
-
-        Ok(models)
+            .map(|m| m.name)
+            .collect())
     }
 }
 
@@ -538,26 +494,23 @@ impl UnifiedProvider for OllamaProvider {
     }
 
     async fn health_check(&self) -> BackendResult<bool> {
-        // Reuse the legacy health check logic
-        match EmbeddingProvider::health_check(self).await {
-            Ok(healthy) => Ok(healthy),
-            Err(e) => Err(BackendError::Provider(format!("Ollama: {}", e))),
-        }
+        EmbeddingProvider::health_check(self)
+            .await
+            .map_err(|e| BackendError::Provider(format!("Ollama: {}", e)))
     }
 }
 
 #[async_trait]
 impl CanEmbed for OllamaProvider {
     async fn embed(&self, text: &str) -> BackendResult<UnifiedEmbeddingResponse> {
-        // Delegate to legacy impl and convert response type
-        let response = EmbeddingProvider::embed(self, text)
+        let embedding = EmbeddingProvider::embed(self, text)
             .await
             .map_err(|e| BackendError::Provider(format!("Ollama: {}", e)))?;
 
         Ok(UnifiedEmbeddingResponse {
-            embedding: response.embedding,
-            token_count: None, // Ollama doesn't provide token count for embeddings
-            model: response.model,
+            embedding,
+            token_count: None,
+            model: self.model.clone(),
         })
     }
 
@@ -565,17 +518,17 @@ impl CanEmbed for OllamaProvider {
         &self,
         texts: Vec<String>,
     ) -> BackendResult<Vec<UnifiedEmbeddingResponse>> {
-        // Delegate to legacy impl and convert response type
-        let responses = EmbeddingProvider::embed_batch(self, texts)
+        let text_refs: Vec<&str> = texts.iter().map(|s| s.as_str()).collect();
+        let embeddings = EmbeddingProvider::embed_batch(self, &text_refs)
             .await
             .map_err(|e| BackendError::Provider(format!("Ollama: {}", e)))?;
 
-        Ok(responses
+        Ok(embeddings
             .into_iter()
-            .map(|r| UnifiedEmbeddingResponse {
-                embedding: r.embedding,
+            .map(|embedding| UnifiedEmbeddingResponse {
+                embedding,
                 token_count: None,
-                model: r.model,
+                model: self.model.clone(),
             })
             .collect())
     }
@@ -632,9 +585,12 @@ mod tests {
         let result = EmbeddingProvider::embed(&provider, "").await;
         assert!(result.is_err());
 
-        if let Err(e) = result {
-            assert!(matches!(e, EmbeddingError::InvalidResponse(_)));
-        }
+        let err = result.unwrap_err();
+        assert!(
+            err.to_string().contains("Cannot embed empty text"),
+            "Expected empty text error, got: {}",
+            err
+        );
     }
 
     #[test]

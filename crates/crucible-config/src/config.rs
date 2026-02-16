@@ -1,10 +1,9 @@
 //! Core configuration types and structures.
 
-#[allow(deprecated)]
 use crate::components::{
-    AcpConfig, ChatConfig, CliConfig, ContextConfig, DiscoveryPathsConfig, EmbeddingConfig,
-    EmbeddingProviderType, GatewayConfig, HandlersConfig, LlmConfig, LlmProviderType, McpConfig,
-    ProvidersConfig, StorageConfig,
+    AcpConfig, BackendType, ChatConfig, CliConfig, ContextConfig, DiscoveryPathsConfig,
+    EmbeddingConfig, GatewayConfig, HandlersConfig, LlmConfig, McpConfig, ProvidersConfig,
+    StorageConfig,
 };
 use crate::includes::IncludeConfig;
 use crate::{EnrichmentConfig, ProfileConfig};
@@ -72,13 +71,12 @@ pub enum ConfigValidationError {
 }
 
 /// Resolved LLM provider configuration
-#[allow(deprecated)]
 #[derive(Clone)]
 pub struct EffectiveLlmConfig {
     /// Provider key (e.g., "local", "cloud", or "default" for fallback)
     pub key: String,
     /// Provider type
-    pub provider_type: LlmProviderType,
+    pub provider_type: BackendType,
     /// API endpoint
     pub endpoint: String,
     /// Model name
@@ -93,7 +91,6 @@ pub struct EffectiveLlmConfig {
     pub api_key: Option<String>,
 }
 
-#[allow(deprecated)]
 impl std::fmt::Debug for EffectiveLlmConfig {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("EffectiveLlmConfig")
@@ -463,7 +460,6 @@ impl Config {
 
     /// Get the effective LLM provider for chat.
     /// Prefers llm.providers if configured, falls back to chat.provider.
-    #[allow(deprecated)]
     pub fn effective_llm_provider(&self) -> Result<EffectiveLlmConfig, ConfigError> {
         // Check LlmConfig first
         if let Some(llm) = &self.llm {
@@ -483,17 +479,18 @@ impl Config {
 
         // Fall back to ChatConfig
         let chat = self.chat_config()?;
+        let provider_type = chat.provider;
         Ok(EffectiveLlmConfig {
             key: "default".to_string(),
-            provider_type: chat.provider,
+            provider_type,
             endpoint: chat.llm_endpoint(),
             model: chat.chat_model(),
             temperature: chat.temperature(),
             max_tokens: chat.max_tokens(),
             timeout_secs: chat.timeout_secs(),
-            api_key: match &chat.provider {
-                LlmProviderType::OpenAI => std::env::var("OPENAI_API_KEY").ok(),
-                LlmProviderType::Anthropic => std::env::var("ANTHROPIC_API_KEY").ok(),
+            api_key: match provider_type {
+                BackendType::OpenAI => std::env::var("OPENAI_API_KEY").ok(),
+                BackendType::Anthropic => std::env::var("ANTHROPIC_API_KEY").ok(),
                 _ => None,
             },
         })
@@ -1607,7 +1604,6 @@ verbose = false
 
     /// Get the effective LLM provider for chat.
     /// Prefers llm.providers if configured, falls back to chat.provider.
-    #[allow(deprecated)]
     pub fn effective_llm_provider(&self) -> Result<EffectiveLlmConfig, ConfigError> {
         // Check LlmConfig first
         if let Some((key, provider)) = self.llm.default_provider() {
@@ -1633,8 +1629,8 @@ verbose = false
             max_tokens: self.chat.max_tokens(),
             timeout_secs: self.chat.timeout_secs(),
             api_key: match &self.chat.provider {
-                LlmProviderType::OpenAI => std::env::var("OPENAI_API_KEY").ok(),
-                LlmProviderType::Anthropic => std::env::var("ANTHROPIC_API_KEY").ok(),
+                BackendType::OpenAI => std::env::var("OPENAI_API_KEY").ok(),
+                BackendType::Anthropic => std::env::var("ANTHROPIC_API_KEY").ok(),
                 _ => None,
             },
         })
@@ -1656,7 +1652,7 @@ verbose = false
         }
 
         // Fall back to legacy embedding config - convert to ProviderConfig
-        if self.embedding.provider != EmbeddingProviderType::None {
+        if self.embedding.provider.is_some() {
             let provider_config =
                 crate::components::ProviderConfig::from_legacy_embedding(&self.embedding);
             return Some(("legacy".to_string(), provider_config));
@@ -1672,8 +1668,7 @@ verbose = false
     /// the user update their config file.
     pub fn migrate_legacy_config(&mut self) {
         // If new providers section is empty and legacy embedding is configured
-        if !self.providers.has_providers() && self.embedding.provider != EmbeddingProviderType::None
-        {
+        if !self.providers.has_providers() && self.embedding.provider.is_some() {
             let provider_config =
                 crate::components::ProviderConfig::from_legacy_embedding(&self.embedding);
 
@@ -1979,7 +1974,6 @@ impl Default for LoggingConfig {
 }
 
 #[cfg(test)]
-#[allow(deprecated)]
 mod tests {
     use super::*;
     use std::io::Write;
@@ -2321,7 +2315,7 @@ allowed_tools = ["search_*"]
         providers.insert(
             "local".to_string(),
             crate::components::LlmProviderConfig {
-                provider_type: crate::components::LlmProviderType::Ollama,
+                provider_type: crate::components::BackendType::Ollama,
                 endpoint: Some("http://192.168.1.100:11434".to_string()),
                 default_model: Some("llama3.1:70b".to_string()),
                 temperature: Some(0.9),
@@ -2356,7 +2350,7 @@ allowed_tools = ["search_*"]
             chat: Some(ChatConfig {
                 model: Some("gpt-4o".to_string()),
                 enable_markdown: true,
-                provider: crate::components::LlmProviderType::OpenAI,
+                provider: crate::components::BackendType::OpenAI,
                 agent_preference: crate::components::AgentPreference::default(),
                 endpoint: Some("https://api.openai.com/v1".to_string()),
                 temperature: Some(0.8),
@@ -2406,17 +2400,11 @@ max_tokens = 4096
         assert_eq!(llm.providers.len(), 2);
 
         let local = llm.get_provider("local").unwrap();
-        assert_eq!(
-            local.provider_type,
-            crate::components::LlmProviderType::Ollama
-        );
+        assert_eq!(local.provider_type, crate::components::BackendType::Ollama);
         assert_eq!(local.model(), "llama3.2");
 
         let cloud = llm.get_provider("cloud").unwrap();
-        assert_eq!(
-            cloud.provider_type,
-            crate::components::LlmProviderType::OpenAI
-        );
+        assert_eq!(cloud.provider_type, crate::components::BackendType::OpenAI);
         assert_eq!(cloud.model(), "gpt-4o");
         assert_eq!(cloud.api_key, Some("OPENAI_API_KEY".to_string()));
     }
@@ -2428,7 +2416,7 @@ max_tokens = 4096
         providers.insert(
             "local".to_string(),
             crate::components::LlmProviderConfig {
-                provider_type: crate::components::LlmProviderType::Ollama,
+                provider_type: crate::components::BackendType::Ollama,
                 endpoint: Some("http://localhost:11434".to_string()),
                 default_model: Some("llama3.2".to_string()),
                 temperature: Some(0.7),
@@ -2462,7 +2450,7 @@ max_tokens = 4096
         assert_eq!(effective.key, "default");
         assert_eq!(
             effective.provider_type,
-            crate::components::LlmProviderType::Ollama
+            crate::components::BackendType::Ollama
         );
         assert_eq!(effective.endpoint, "http://localhost:11434");
     }
@@ -2587,7 +2575,7 @@ batch_size = 32
     #[test]
     fn test_provider_config_from_legacy_embedding() {
         let legacy = crate::components::EmbeddingConfig {
-            provider: EmbeddingProviderType::Ollama,
+            provider: Some(BackendType::Ollama),
             model: Some("nomic-embed-text".to_string()),
             api_url: Some("http://custom:11434".to_string()),
             batch_size: 64,

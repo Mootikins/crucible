@@ -14,9 +14,6 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::time::Duration;
 
-// Re-export the EmbeddingProviderType from components module to avoid duplication
-pub use super::components::EmbeddingProviderType;
-
 /// Main enrichment configuration
 ///
 /// This configuration encompasses all settings related to document enrichment,
@@ -851,8 +848,17 @@ impl EmbeddingProviderConfig {
     }
 
     /// Get the provider type enum value
-    pub fn provider_type(&self) -> EmbeddingProviderType {
-        EmbeddingProviderType::from_config(self)
+    pub fn provider_type(&self) -> super::components::BackendType {
+        match self {
+            Self::OpenAI(_) => super::components::BackendType::OpenAI,
+            Self::Ollama(_) => super::components::BackendType::Ollama,
+            Self::FastEmbed(_) => super::components::BackendType::FastEmbed,
+            Self::Cohere(_) => super::components::BackendType::Cohere,
+            Self::VertexAI(_) => super::components::BackendType::VertexAI,
+            Self::Custom(_) => super::components::BackendType::Custom,
+            Self::Mock(_) => super::components::BackendType::Mock,
+            Self::Burn(_) => super::components::BackendType::Burn,
+        }
     }
 
     /// Get the API key if the provider supports it

@@ -19,19 +19,14 @@
 pub mod ansi;
 pub mod cell_grid;
 pub mod components;
-#[cfg(test)]
-mod compositor;
 pub mod decrypt;
-pub(crate) mod diff;
 pub mod focus;
 pub mod layout;
-pub(crate) mod line_buffer;
 pub mod node;
 pub mod overlay;
 #[cfg(any(test, feature = "test-utils"))]
 pub mod proptest_strategies;
 pub mod render;
-pub(crate) mod span;
 pub mod style;
 pub mod taffy_layout;
 pub mod template;

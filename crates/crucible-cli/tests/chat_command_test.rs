@@ -10,7 +10,7 @@ use anyhow::Result;
 use crucible_cli::commands::chat;
 use crucible_cli::config::{CliAppConfig, CliConfig};
 use crucible_config::{
-    AcpConfig, ChatConfig, EmbeddingConfig, EmbeddingProviderType, LlmConfig, ProcessingConfig,
+    AcpConfig, BackendType, ChatConfig, EmbeddingConfig, LlmConfig, ProcessingConfig,
     ProvidersConfig,
 };
 use tempfile::TempDir;
@@ -31,7 +31,7 @@ async fn test_chat_command_does_not_double_open_database() -> Result<()> {
         kiln_path: kiln_path.clone(),
         agent_directories: Vec::new(),
         embedding: EmbeddingConfig {
-            provider: EmbeddingProviderType::Ollama,
+            provider: Some(BackendType::Ollama),
             model: Some("nomic-embed-text-v1.5-q8_0".to_string()),
             api_url: Some("https://llm.example.com".to_string()),
             batch_size: 16,
@@ -123,7 +123,7 @@ async fn test_chat_command_with_minimal_config() -> Result<()> {
         kiln_path: kiln_path.clone(),
         agent_directories: Vec::new(),
         embedding: EmbeddingConfig {
-            provider: EmbeddingProviderType::Ollama,
+            provider: Some(BackendType::Ollama),
             model: Some("nomic-embed-text-v1.5-q8_0".to_string()),
             api_url: Some("https://llm.example.com".to_string()),
             batch_size: 16,

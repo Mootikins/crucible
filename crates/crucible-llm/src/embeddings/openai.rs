@@ -9,7 +9,8 @@ use std::time::Duration;
 
 use super::config::EmbeddingConfig;
 use super::error::{EmbeddingError, EmbeddingResult};
-use super::provider::{EmbeddingProvider, EmbeddingResponse};
+use super::provider::EmbeddingResponse;
+use crucible_core::enrichment::EmbeddingProvider;
 
 /// OpenAI API request for embeddings
 #[derive(Debug, Serialize)]
@@ -120,15 +121,13 @@ impl OpenAIProvider {
 
 #[async_trait]
 impl EmbeddingProvider for OpenAIProvider {
-    async fn embed(&self, text: &str) -> EmbeddingResult<EmbeddingResponse> {
-        // Build request
+    async fn embed(&self, text: &str) -> anyhow::Result<Vec<f32>> {
         let request = OpenAIEmbeddingRequest {
             model: self.config.model_name().to_string(),
             input: EmbeddingInput::Single(text.to_string()),
             encoding_format: None,
         };
 
-        // Send request
         let response = self
             .client
             .post(format!("{}/embeddings", self.endpoint))
@@ -138,50 +137,44 @@ impl EmbeddingProvider for OpenAIProvider {
             .send()
             .await?;
 
-        // Handle error status codes
         let status = response.status();
         if !status.is_success() {
-            return self.handle_error_response(response).await;
+            return self.handle_error_response::<Vec<f32>>(response).await.map_err(|e| e.into());
         }
 
-        // Parse successful response
         let api_response: OpenAIEmbeddingResponse = response.json().await.map_err(|e| {
             EmbeddingError::InvalidResponse(format!("Failed to parse OpenAI response: {}", e))
         })?;
 
-        // Extract first embedding from data array
         let data = api_response.data.into_iter().next().ok_or_else(|| {
             EmbeddingError::InvalidResponse("No embedding data in response".to_string())
         })?;
 
-        // Validate dimensions
         let embedding_dims = data.embedding.len();
         let expected_dims = self.dimensions();
         if embedding_dims != expected_dims {
             return Err(EmbeddingError::InvalidDimensions {
                 expected: expected_dims,
                 actual: embedding_dims,
-            });
+            }
+            .into());
         }
 
-        // Build response
-        Ok(EmbeddingResponse::new(data.embedding, api_response.model)
-            .with_tokens(api_response.usage.prompt_tokens))
+        Ok(data.embedding)
     }
 
-    async fn embed_batch(&self, texts: Vec<String>) -> EmbeddingResult<Vec<EmbeddingResponse>> {
+    async fn embed_batch(&self, texts: &[&str]) -> anyhow::Result<Vec<Vec<f32>>> {
         if texts.is_empty() {
             return Ok(Vec::new());
         }
 
-        // Build request
+        let owned: Vec<String> = texts.iter().map(|t| t.to_string()).collect();
         let request = OpenAIEmbeddingRequest {
             model: self.config.model_name().to_string(),
-            input: EmbeddingInput::Batch(texts),
+            input: EmbeddingInput::Batch(owned),
             encoding_format: None,
         };
 
-        // Send request
         let response = self
             .client
             .post(format!("{}/embeddings", self.endpoint))
@@ -191,22 +184,18 @@ impl EmbeddingProvider for OpenAIProvider {
             .send()
             .await?;
 
-        // Handle error status codes
         let status = response.status();
         if !status.is_success() {
-            return self.handle_error_response(response).await;
+            return self.handle_error_response::<Vec<Vec<f32>>>(response).await.map_err(|e| e.into());
         }
 
-        // Parse successful response
         let api_response: OpenAIEmbeddingResponse = response.json().await.map_err(|e| {
             EmbeddingError::InvalidResponse(format!("Failed to parse OpenAI response: {}", e))
         })?;
 
-        // Sort by index to maintain input order
         let mut data = api_response.data;
         data.sort_by_key(|d| d.index);
 
-        // Validate dimensions and build responses
         let expected_dims = self.dimensions();
         let mut results = Vec::with_capacity(data.len());
 
@@ -216,13 +205,10 @@ impl EmbeddingProvider for OpenAIProvider {
                 return Err(EmbeddingError::InvalidDimensions {
                     expected: expected_dims,
                     actual: embedding_dims,
-                });
+                }
+                .into());
             }
-
-            results.push(
-                EmbeddingResponse::new(embedding_data.embedding, api_response.model.clone())
-                    .with_tokens(api_response.usage.prompt_tokens / results.len().max(1)),
-            );
+            results.push(embedding_data.embedding);
         }
 
         Ok(results)
@@ -243,11 +229,9 @@ impl EmbeddingProvider for OpenAIProvider {
         )
     }
 
-    async fn list_models(&self) -> EmbeddingResult<Vec<super::provider::ModelInfo>> {
-        // For now, return a stub implementation
-        // OpenAI doesn't focus on Ollama, so we return a minimal error
-        Err(EmbeddingError::ModelDiscoveryNotSupported(
-            "OpenAI".to_string(),
+    async fn list_models(&self) -> anyhow::Result<Vec<String>> {
+        Err(anyhow::anyhow!(
+            "Model discovery not supported by OpenAI provider"
         ))
     }
 }

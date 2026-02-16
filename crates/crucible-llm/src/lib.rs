@@ -35,9 +35,9 @@
 //!
 //!     // Use factory function - returns trait object
 //!     let provider = create_provider(config).await?;
-//!     let response = provider.embed("Hello, world!").await?;
+//!     let embedding = provider.embed("Hello, world!").await?;
 //!
-//!     println!("Generated embedding with {} dimensions", response.dimensions);
+//!     println!("Generated embedding with {} dimensions", embedding.len());
 //!     Ok(())
 //! }
 //! ```
@@ -51,14 +51,12 @@ pub mod reranking;
 
 // Re-export commonly used types at crate root
 pub use embeddings::{
-    create_provider,       // Factory function
-    CoreProviderAdapter,   // Adapter for core trait
-    EmbeddingConfig,       // Configuration (data type)
-    EmbeddingError,        // Error type
-    EmbeddingProvider,     // Trait (abstraction)
-    EmbeddingProviderType, // Enum for provider selection
-    EmbeddingResponse,     // Response type (data)
-    EmbeddingResult,       // Result type alias
+    create_provider,      // Factory function
+    EmbeddingConfig,      // Configuration (data type)
+    EmbeddingError,       // Error type
+    EmbeddingProvider,    // Trait (re-exported from crucible-core)
+    EmbeddingResponse,    // Response type (data)
+    EmbeddingResult,      // Result type alias
 };
 
 #[cfg(feature = "fastembed")]

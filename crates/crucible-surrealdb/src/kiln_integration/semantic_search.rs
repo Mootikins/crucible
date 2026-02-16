@@ -29,12 +29,10 @@ pub async fn semantic_search(
         return Ok(Vec::new());
     }
 
-    let response = embedding_provider
+    let query_embedding = embedding_provider
         .embed(query)
         .await
         .map_err(|e| anyhow!("Failed to generate query embedding: {}", e))?;
-
-    let query_embedding = response.embedding;
 
     debug!(
         "Generated query embedding with {} dimensions using provider: {}",

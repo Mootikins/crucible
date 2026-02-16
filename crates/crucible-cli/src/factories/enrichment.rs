@@ -82,9 +82,8 @@ pub async fn get_or_create_embedding_provider(
             config.embedding.to_provider_config()
         };
 
-    let llm_provider = crucible_llm::embeddings::create_provider(embedding_config).await?;
-    let core_provider = crucible_llm::embeddings::CoreProviderAdapter::new(llm_provider);
-    let provider: Arc<dyn EmbeddingProvider> = Arc::new(core_provider);
+    let provider: Arc<dyn EmbeddingProvider> =
+        crucible_llm::embeddings::create_provider(embedding_config).await?;
 
     // Cache it
     {

@@ -5,7 +5,7 @@
 //!
 //! Tests the enrichment service creation, provider caching, and configuration handling.
 
-use crucible_config::{CliAppConfig, EmbeddingConfig, EmbeddingProviderType};
+use crucible_config::{BackendType, CliAppConfig, EmbeddingConfig};
 
 /// Test that default config creates valid cache key
 #[test]
@@ -90,7 +90,7 @@ fn test_cache_key_consistency() {
 fn test_cache_key_ollama_provider() {
     let mut config = CliAppConfig::default();
     config.embedding = EmbeddingConfig {
-        provider: EmbeddingProviderType::Ollama,
+        provider: Some(BackendType::Ollama),
         model: Some("nomic-embed-text".to_string()),
         api_url: Some("http://localhost:11434".to_string()),
         batch_size: 50,
@@ -122,7 +122,7 @@ fn test_cache_key_ollama_provider() {
 fn test_cache_key_openai_provider() {
     let mut config = CliAppConfig::default();
     config.embedding = EmbeddingConfig {
-        provider: EmbeddingProviderType::OpenAI,
+        provider: Some(BackendType::OpenAI),
         model: Some("text-embedding-3-small".to_string()),
         api_url: Some("https://api.openai.com/v1".to_string()),
         batch_size: 100,
@@ -149,19 +149,19 @@ fn test_cache_key_openai_provider() {
 fn test_embedding_config_defaults() {
     let config = EmbeddingConfig::default();
 
-    assert_eq!(config.provider, EmbeddingProviderType::FastEmbed);
+    assert_eq!(config.provider, Some(BackendType::FastEmbed));
     assert_eq!(config.model, None);
     assert_eq!(config.api_url, None);
     assert_eq!(config.batch_size, 16);
     assert_eq!(config.max_concurrent, None);
 }
 
-/// Test EmbeddingProviderType variants
+/// Test BackendType variants
 #[test]
 fn test_embedding_provider_type_variants() {
-    let fastembed = EmbeddingProviderType::FastEmbed;
-    let ollama = EmbeddingProviderType::Ollama;
-    let openai = EmbeddingProviderType::OpenAI;
+    let fastembed = BackendType::FastEmbed;
+    let ollama = BackendType::Ollama;
+    let openai = BackendType::OpenAI;
 
     // Verify they are distinct
     assert_ne!(format!("{:?}", fastembed), format!("{:?}", ollama));
@@ -175,7 +175,7 @@ fn test_default_provider_is_local() {
     let config = EmbeddingConfig::default();
     assert_eq!(
         config.provider,
-        EmbeddingProviderType::FastEmbed,
+        Some(BackendType::FastEmbed),
         "Default provider should be FastEmbed for privacy and no API key requirement"
     );
 }
@@ -294,7 +294,7 @@ fn test_cache_key_batch_size_sensitivity() {
 fn test_cache_key_format() {
     let mut config = CliAppConfig::default();
     config.embedding = EmbeddingConfig {
-        provider: EmbeddingProviderType::Ollama,
+        provider: Some(BackendType::Ollama),
         model: Some("model".to_string()),
         api_url: Some("http://url".to_string()),
         batch_size: 42,
@@ -322,7 +322,7 @@ fn test_cache_key_format() {
 #[test]
 fn test_embedding_config_clone() {
     let original = EmbeddingConfig {
-        provider: EmbeddingProviderType::Ollama,
+        provider: Some(BackendType::Ollama),
         model: Some("test-model".to_string()),
         api_url: Some("http://test:8080".to_string()),
         batch_size: 99,
@@ -338,13 +338,13 @@ fn test_embedding_config_clone() {
     assert_eq!(cloned.max_concurrent, original.max_concurrent);
 }
 
-/// Test EmbeddingProviderType default
+/// Test BackendType default
 #[test]
 fn test_embedding_provider_type_default() {
-    let provider_type = EmbeddingProviderType::default();
+    let provider_type = Some(BackendType::default());
     assert_eq!(
         provider_type,
-        EmbeddingProviderType::FastEmbed,
+        Some(BackendType::FastEmbed),
         "Default provider type should be FastEmbed"
     );
 }

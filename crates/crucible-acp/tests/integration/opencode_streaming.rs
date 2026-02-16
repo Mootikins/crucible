@@ -333,6 +333,14 @@ async fn test_opencode_with_sse_mcp() {
         fn dimensions(&self) -> usize {
             384
         }
+
+        fn provider_name(&self) -> &str {
+            "mock"
+        }
+
+        async fn list_models(&self) -> anyhow::Result<Vec<String>> {
+            Ok(vec!["mock-model".to_string()])
+        }
     }
 
     // Skip if opencode not installed
@@ -617,6 +625,12 @@ async fn test_opencode_raw_sse_mcp() {
         }
         fn dimensions(&self) -> usize {
             384
+        }
+        fn provider_name(&self) -> &str {
+            "mock"
+        }
+        async fn list_models(&self) -> anyhow::Result<Vec<String>> {
+            Ok(vec!["mock-model".to_string()])
         }
     }
 

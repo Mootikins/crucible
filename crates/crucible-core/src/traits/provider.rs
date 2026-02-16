@@ -1,33 +1,30 @@
 //! Unified provider traits with capability-based extensions
 //!
 //! This module defines the unified provider abstraction with extension traits
-//! for specific capabilities (embeddings, chat). This follows the Interface
+//! for specific capabilities (embeddings). This follows the Interface
 //! Segregation principle - providers implement only what they support.
 //!
 //! ## Design Pattern
 //!
 //! ```text
 //! Provider (base trait)
-//!    ├── CanEmbed (extension trait for embeddings)
-//!    └── CanChat (extension trait for chat/completions)
+//!    └── CanEmbed (extension trait for embeddings)
 //! ```
+//!
+//! Chat completions are handled by [`CompletionBackend`](super::CompletionBackend).
 //!
 //! This design allows:
 //! - Type-safe capability discovery at compile time
 //! - Providers that support only embeddings (FastEmbed, Burn)
-//! - Providers that support only chat (Anthropic)
-//! - Providers that support both (Ollama, OpenAI)
+//! - Full providers that support both embeddings and chat (Ollama, OpenAI)
 
 use async_trait::async_trait;
 use crucible_config::BackendType;
-use futures::stream::BoxStream;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 use super::completion_backend::BackendResult;
-use super::llm::{
-    ChatCompletionChunk, ChatCompletionRequest, ChatCompletionResponse, ProviderCapabilities,
-};
+use super::llm::ProviderCapabilities;
 
 /// Embedding response from a provider
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -287,160 +284,6 @@ pub trait CanEmbed: Provider {
 
     /// Get the embedding model name
     fn embedding_model(&self) -> &str;
-}
-
-/// Extension trait for providers that support chat completion
-///
-/// Providers implementing this trait can generate chat completions,
-/// including streaming and tool calling support.
-///
-/// # Status: Unimplemented Design
-///
-/// This trait is part of a planned unified provider capability system but is
-/// **not currently implemented** by any providers. The active chat implementation
-/// uses [`CompletionBackend`](crate::traits::CompletionBackend) instead.
-///
-/// The trait exists to define the target API for future provider consolidation:
-/// - [`CompletionBackend`] will be migrated to implement `CanChat`
-/// - All LLM providers will implement the unified `Provider` + capability traits
-/// - This enables runtime capability queries via [`ProviderExt`]
-///
-/// Until migration is complete, use [`CompletionBackend`] for chat operations.
-#[async_trait]
-pub trait CanChat: Provider {
-    /// Generate a chat completion
-    async fn chat(&self, request: ChatCompletionRequest) -> BackendResult<ChatCompletionResponse>;
-
-    /// Generate a streaming chat completion
-    fn chat_stream<'a>(
-        &'a self,
-        request: ChatCompletionRequest,
-    ) -> BoxStream<'a, BackendResult<ChatCompletionChunk>>;
-
-    /// Get the default chat model name
-    fn chat_model(&self) -> &str;
-}
-
-/// Schema format for constrained generation
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SchemaFormat {
-    /// GBNF grammar (llama.cpp)
-    Gbnf,
-    /// JSON Schema (OpenAI, Anthropic)
-    JsonSchema,
-    /// Regex pattern
-    Regex,
-}
-
-/// Request for constrained generation
-#[derive(Debug, Clone)]
-pub struct ConstrainedRequest {
-    /// The input prompt
-    pub prompt: String,
-    /// Schema/grammar content
-    pub schema: String,
-    /// Schema format
-    pub format: SchemaFormat,
-    /// Maximum tokens to generate
-    pub max_tokens: Option<u32>,
-    /// Temperature (0.0 = greedy)
-    pub temperature: Option<f32>,
-    /// Stop sequences
-    pub stop: Option<Vec<String>>,
-}
-
-impl ConstrainedRequest {
-    /// Create a new GBNF-constrained request
-    pub fn gbnf(prompt: impl Into<String>, grammar: impl Into<String>) -> Self {
-        Self {
-            prompt: prompt.into(),
-            schema: grammar.into(),
-            format: SchemaFormat::Gbnf,
-            max_tokens: None,
-            temperature: None,
-            stop: None,
-        }
-    }
-
-    /// Create a new JSON Schema-constrained request
-    pub fn json_schema(prompt: impl Into<String>, schema: impl Into<String>) -> Self {
-        Self {
-            prompt: prompt.into(),
-            schema: schema.into(),
-            format: SchemaFormat::JsonSchema,
-            max_tokens: None,
-            temperature: None,
-            stop: None,
-        }
-    }
-
-    /// Set maximum tokens
-    pub fn with_max_tokens(mut self, max_tokens: u32) -> Self {
-        self.max_tokens = Some(max_tokens);
-        self
-    }
-
-    /// Set temperature
-    pub fn with_temperature(mut self, temperature: f32) -> Self {
-        self.temperature = Some(temperature);
-        self
-    }
-}
-
-/// Response from constrained generation
-#[derive(Debug, Clone)]
-pub struct ConstrainedResponse {
-    /// Generated text (guaranteed to match schema)
-    pub text: String,
-    /// Token count
-    pub tokens: u32,
-    /// Whether generation was truncated
-    pub truncated: bool,
-}
-
-/// Extension trait for providers that support constrained/structured generation
-///
-/// Providers implementing this trait can constrain output to match a grammar
-/// or schema. Different backends support different formats:
-/// - llama.cpp: GBNF grammars
-/// - OpenAI: JSON Schema via response_format
-/// - Anthropic: Tool use for structured output
-#[async_trait]
-pub trait CanConstrainGeneration: Provider {
-    /// Get the supported schema formats
-    fn supported_formats(&self) -> Vec<SchemaFormat>;
-
-    /// Check if a specific format is supported
-    fn supports_format(&self, format: SchemaFormat) -> bool {
-        self.supported_formats().contains(&format)
-    }
-
-    /// Generate text constrained by a schema/grammar
-    async fn generate_constrained(
-        &self,
-        request: ConstrainedRequest,
-    ) -> BackendResult<ConstrainedResponse>;
-}
-
-/// Marker trait for providers that support both embeddings and chat
-///
-/// This is automatically implemented for any type that implements
-/// both `CanEmbed` and `CanChat`.
-pub trait FullProvider: CanEmbed + CanChat {}
-
-// Blanket implementation: anything with both capabilities is a FullProvider
-impl<T: CanEmbed + CanChat> FullProvider for T {}
-
-/// Dynamic provider handle that can be queried for capabilities
-///
-/// This is useful when you have a `Box<dyn Provider>` and want to
-/// check if it supports specific capabilities at runtime.
-pub trait ProviderExt: Provider {
-    /// Try to get this provider as an embedding provider
-    fn as_embedding_provider(&self) -> Option<&dyn CanEmbed>;
-
-    /// Try to get this provider as a chat provider
-    fn as_chat_provider(&self) -> Option<&dyn CanChat>;
 }
 
 #[cfg(test)]

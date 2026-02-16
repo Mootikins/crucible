@@ -1,7 +1,6 @@
 //! Simple chat configuration
 
-#[allow(deprecated)]
-use crate::components::LlmProviderType;
+use crate::components::BackendType;
 use serde::{Deserialize, Serialize};
 
 /// Agent type preference for chat
@@ -18,7 +17,6 @@ pub enum AgentPreference {
 }
 
 /// Simple chat configuration - only essential user settings
-#[allow(deprecated)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatConfig {
     /// Default chat model (can be overridden by agents)
@@ -28,8 +26,8 @@ pub struct ChatConfig {
     pub enable_markdown: bool,
     /// LLM provider to use
     #[deprecated(note = "Use [llm.providers] instead")]
-    #[serde(default)]
-    pub provider: LlmProviderType,
+    #[serde(default = "default_chat_backend")]
+    pub provider: BackendType,
     /// Default agent type preference (acp or internal)
     #[serde(default)]
     pub agent_preference: AgentPreference,
@@ -63,13 +61,16 @@ fn default_true() -> bool {
     true
 }
 
-#[allow(deprecated)]
+fn default_chat_backend() -> BackendType {
+    BackendType::Ollama
+}
+
 impl Default for ChatConfig {
     fn default() -> Self {
         Self {
             model: None,
             enable_markdown: true,
-            provider: LlmProviderType::Ollama,
+            provider: default_chat_backend(),
             agent_preference: AgentPreference::default(),
             endpoint: None,
             temperature: None,
@@ -81,27 +82,16 @@ impl Default for ChatConfig {
     }
 }
 
-#[allow(deprecated)]
 impl ChatConfig {
     /// Get the LLM endpoint, using provider-specific default if not specified
     #[deprecated(note = "Use [llm.providers] instead")]
     pub fn llm_endpoint(&self) -> String {
-        self.endpoint
-            .clone()
-            .unwrap_or_else(|| match self.provider {
-                LlmProviderType::Ollama => super::defaults::DEFAULT_OLLAMA_ENDPOINT.to_string(),
-                LlmProviderType::OpenAI => super::defaults::DEFAULT_OPENAI_ENDPOINT.to_string(),
-                LlmProviderType::Anthropic => {
-                    super::defaults::DEFAULT_ANTHROPIC_ENDPOINT.to_string()
-                }
-                LlmProviderType::GitHubCopilot => {
-                    super::defaults::DEFAULT_GITHUB_COPILOT_ENDPOINT.to_string()
-                }
-                LlmProviderType::OpenRouter => {
-                    super::defaults::DEFAULT_OPENROUTER_ENDPOINT.to_string()
-                }
-                LlmProviderType::ZAI => super::defaults::DEFAULT_ZAI_ENDPOINT.to_string(),
-            })
+        self.endpoint.clone().unwrap_or_else(|| {
+            self.provider
+                .default_endpoint()
+                .unwrap_or("http://localhost:11434")
+                .to_string()
+        })
     }
 
     /// Get the chat model, using default if not specified
@@ -131,9 +121,14 @@ impl ChatConfig {
 }
 
 #[cfg(test)]
-#[allow(deprecated)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_chat_config_default_provider() {
+        let config = ChatConfig::default();
+        assert_eq!(config.provider, BackendType::Ollama);
+    }
 
     #[test]
     fn test_size_aware_prompts_default_enabled() {
@@ -171,7 +166,7 @@ mod tests {
     #[test]
     fn test_github_copilot_endpoint_matches_implementation() {
         let config = ChatConfig {
-            provider: LlmProviderType::GitHubCopilot,
+            provider: BackendType::GitHubCopilot,
             ..Default::default()
         };
         let endpoint = config.llm_endpoint();
@@ -179,5 +174,23 @@ mod tests {
             endpoint, "https://api.githubcopilot.com",
             "GitHubCopilot endpoint must match COPILOT_API_BASE from github_copilot.rs"
         );
+    }
+
+    #[test]
+    fn test_provider_defaults_to_ollama_when_missing() {
+        let toml = r#"
+            model = "test-model"
+        "#;
+        let config: ChatConfig = toml::from_str(toml).unwrap();
+        assert_eq!(config.provider, BackendType::Ollama);
+    }
+
+    #[test]
+    fn test_provider_deserialize_from_toml() {
+        let toml = r#"
+            provider = "openai"
+        "#;
+        let config: ChatConfig = toml::from_str(toml).unwrap();
+        assert_eq!(config.provider, BackendType::OpenAI);
     }
 }
