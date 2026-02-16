@@ -1,0 +1,42 @@
+# Crucible Demo Configuration
+# Used by VHS tape files for reproducible demo recordings.
+# Points to docs/ as the kiln (ships with the repo, 155 notes).
+
+kiln_path = "docs"
+
+[providers]
+default_embedding = "ollama"
+
+[providers.ollama]
+backend = "ollama"
+endpoint = "https://llm.example.com"
+timeout_secs = 120
+batch_size = 50
+
+[providers.ollama.models]
+embedding = "nomic-embed-text-v1.5-q8_0"
+
+[llm]
+default = "demo"
+
+[llm.providers.demo]
+type = "ollama"
+endpoint = "https://llm.example.com"
+default_model = "qwen3-4b-instruct-2507-q8_0"
+temperature = 0.3
+max_tokens = 2048
+
+[chat]
+agent_preference = "crucible"
+internal_backend = "rig"
+provider = "ollama"
+model = "qwen3-4b-instruct-2507-q8_0"
+endpoint = "https://llm.example.com"
+
+[cli]
+show_progress = false
+confirm_destructive = true
+verbose = false
+
+[storage]
+mode = "embedded"
