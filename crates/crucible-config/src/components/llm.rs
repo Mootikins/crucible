@@ -1,90 +1,15 @@
 //! LLM provider configuration with support for named instances
 
+use super::backend::BackendType;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::str::FromStr;
-
-/// LLM provider type
-#[deprecated(
-    since = "0.1.0",
-    note = "Use `BackendType` instead. `BackendType` is the unified type that supports both embeddings and chat. Use `From<LlmProviderType>` to convert."
-)]
-#[allow(deprecated)] // Allow self-referential use in derive macros (Default, Deserialize)
-#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "lowercase")]
-pub enum LlmProviderType {
-    /// Ollama provider
-    #[default]
-    Ollama,
-    /// OpenAI provider
-    OpenAI,
-    /// Anthropic provider
-    Anthropic,
-    /// GitHub Copilot provider (via VS Code OAuth flow)
-    /// Uses the same OAuth client ID as VS Code for authentication.
-    /// Requires initial device flow authentication, then stores OAuth token.
-    #[serde(alias = "github-copilot", alias = "github_copilot", alias = "copilot")]
-    GitHubCopilot,
-    /// OpenRouter provider (meta-provider routing to multiple LLM APIs)
-    /// Access 100+ models through a single API key.
-    #[serde(alias = "openrouter", alias = "open_router", alias = "open-router")]
-    OpenRouter,
-    /// Z.AI provider (GLM Coding Plan)
-    #[serde(alias = "z.ai", alias = "z_ai", alias = "zai")]
-    ZAI,
-}
-
-#[allow(deprecated)]
-impl LlmProviderType {
-    /// Get the environment variable name for this provider's API key
-    pub fn api_key_env_var(&self) -> Option<&'static str> {
-        match self {
-            LlmProviderType::Ollama => None,
-            LlmProviderType::OpenAI => Some("OPENAI_API_KEY"),
-            LlmProviderType::Anthropic => Some("ANTHROPIC_API_KEY"),
-            LlmProviderType::GitHubCopilot => None,
-            LlmProviderType::OpenRouter => Some("OPENROUTER_API_KEY"),
-            LlmProviderType::ZAI => Some("GLM_AUTH_TOKEN"),
-        }
-    }
-
-    /// Get the string representation of this provider type
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            LlmProviderType::Ollama => "ollama",
-            LlmProviderType::OpenAI => "openai",
-            LlmProviderType::Anthropic => "anthropic",
-            LlmProviderType::GitHubCopilot => "github-copilot",
-            LlmProviderType::OpenRouter => "openrouter",
-            LlmProviderType::ZAI => "zai",
-        }
-    }
-}
-
-#[allow(deprecated)]
-impl FromStr for LlmProviderType {
-    type Err = String;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s.to_lowercase().as_str() {
-            "ollama" => Ok(LlmProviderType::Ollama),
-            "openai" => Ok(LlmProviderType::OpenAI),
-            "anthropic" => Ok(LlmProviderType::Anthropic),
-            "github-copilot" | "github_copilot" | "copilot" => Ok(LlmProviderType::GitHubCopilot),
-            "openrouter" | "open_router" | "open-router" => Ok(LlmProviderType::OpenRouter),
-            "zai" | "z.ai" | "z_ai" => Ok(LlmProviderType::ZAI),
-            other => Err(format!("Unknown provider: {}", other)),
-        }
-    }
-}
 
 /// Named LLM provider instance configuration
-#[allow(deprecated)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LlmProviderConfig {
     /// Provider type
     #[serde(rename = "type")]
-    pub provider_type: LlmProviderType,
+    pub provider_type: BackendType,
 
     /// API endpoint (uses provider default if not set)
     pub endpoint: Option<String>,
@@ -109,44 +34,25 @@ pub struct LlmProviderConfig {
     pub available_models: Option<Vec<String>>,
 }
 
-#[allow(deprecated)]
 impl LlmProviderConfig {
     /// Get the API endpoint, using provider-specific default if not set
     pub fn endpoint(&self) -> String {
-        self.endpoint
-            .clone()
-            .unwrap_or_else(|| match self.provider_type {
-                LlmProviderType::Ollama => super::defaults::DEFAULT_OLLAMA_ENDPOINT.to_string(),
-                LlmProviderType::OpenAI => super::defaults::DEFAULT_OPENAI_ENDPOINT.to_string(),
-                LlmProviderType::Anthropic => {
-                    super::defaults::DEFAULT_ANTHROPIC_ENDPOINT.to_string()
-                }
-                LlmProviderType::GitHubCopilot => {
-                    super::defaults::DEFAULT_GITHUB_COPILOT_ENDPOINT.to_string()
-                }
-                LlmProviderType::OpenRouter => {
-                    super::defaults::DEFAULT_OPENROUTER_ENDPOINT.to_string()
-                }
-                LlmProviderType::ZAI => super::defaults::DEFAULT_ZAI_ENDPOINT.to_string(),
-            })
+        self.endpoint.clone().unwrap_or_else(|| {
+            self.provider_type
+                .default_endpoint()
+                .unwrap_or(super::defaults::DEFAULT_OLLAMA_ENDPOINT)
+                .to_string()
+        })
     }
 
     /// Get the default model, using provider-specific default if not set
     pub fn model(&self) -> String {
-        self.default_model
-            .clone()
-            .unwrap_or_else(|| match self.provider_type {
-                LlmProviderType::Ollama => super::defaults::DEFAULT_CHAT_MODEL.to_string(),
-                LlmProviderType::OpenAI => super::defaults::DEFAULT_OPENAI_MODEL.to_string(),
-                LlmProviderType::Anthropic => super::defaults::DEFAULT_ANTHROPIC_MODEL.to_string(),
-                LlmProviderType::GitHubCopilot => {
-                    super::defaults::DEFAULT_GITHUB_COPILOT_MODEL.to_string()
-                }
-                LlmProviderType::OpenRouter => {
-                    super::defaults::DEFAULT_OPENROUTER_MODEL.to_string()
-                }
-                LlmProviderType::ZAI => super::defaults::DEFAULT_ZAI_MODEL.to_string(),
-            })
+        self.default_model.clone().unwrap_or_else(|| {
+            self.provider_type
+                .default_chat_model()
+                .unwrap_or(super::defaults::DEFAULT_CHAT_MODEL)
+                .to_string()
+        })
     }
 
     /// Get temperature (default 0.7)
@@ -179,35 +85,40 @@ impl LlmProviderConfig {
         }
 
         match self.provider_type {
-            LlmProviderType::Anthropic => super::defaults::ANTHROPIC_MODELS
+            BackendType::Anthropic => super::defaults::ANTHROPIC_MODELS
                 .iter()
                 .map(|s| s.to_string())
                 .collect(),
-            LlmProviderType::OpenAI => super::defaults::OPENAI_HARDCODED_MODELS
+            BackendType::OpenAI => super::defaults::OPENAI_HARDCODED_MODELS
                 .iter()
                 .map(|s| s.to_string())
                 .collect(),
-            LlmProviderType::ZAI => super::defaults::ZAI_MODELS
+            BackendType::ZAI => super::defaults::ZAI_MODELS
                 .iter()
                 .map(|s| s.to_string())
                 .collect(),
-            LlmProviderType::Ollama
-            | LlmProviderType::GitHubCopilot
-            | LlmProviderType::OpenRouter => Vec::new(),
+            BackendType::Ollama
+            | BackendType::GitHubCopilot
+            | BackendType::OpenRouter
+            | BackendType::Cohere
+            | BackendType::VertexAI
+            | BackendType::FastEmbed
+            | BackendType::Burn
+            | BackendType::Custom
+            | BackendType::Mock => Vec::new(),
         }
     }
 
     /// Create a new builder for this config type
-    pub fn builder(provider_type: LlmProviderType) -> LlmProviderConfigBuilder {
+    pub fn builder(provider_type: BackendType) -> LlmProviderConfigBuilder {
         LlmProviderConfigBuilder::new(provider_type)
     }
 }
 
 /// Builder for LlmProviderConfig
-#[allow(deprecated)]
 #[derive(Debug, Clone)]
 pub struct LlmProviderConfigBuilder {
-    provider_type: LlmProviderType,
+    provider_type: BackendType,
     endpoint: Option<String>,
     default_model: Option<String>,
     temperature: Option<f32>,
@@ -217,10 +128,9 @@ pub struct LlmProviderConfigBuilder {
     available_models: Option<Vec<String>>,
 }
 
-#[allow(deprecated)]
 impl LlmProviderConfigBuilder {
     /// Create a new builder with the specified provider type
-    pub fn new(provider_type: LlmProviderType) -> Self {
+    pub fn new(provider_type: BackendType) -> Self {
         Self {
             provider_type,
             endpoint: None,
@@ -291,7 +201,7 @@ impl LlmProviderConfigBuilder {
     /// # Example
     ///
     /// ```ignore
-    /// let config = LlmProviderConfig::builder(LlmProviderType::OpenAI)
+    /// let config = LlmProviderConfig::builder(BackendType::OpenAI)
     ///     .with_api_key_env_var_name()  // Sets api_key to "OPENAI_API_KEY"
     ///     .build();
     /// ```
@@ -372,14 +282,14 @@ impl LlmConfig {
 }
 
 #[cfg(test)]
-#[allow(deprecated)]
 mod tests {
     use super::*;
+    use std::str::FromStr;
 
     #[test]
     fn test_provider_defaults() {
         let ollama = LlmProviderConfig {
-            provider_type: LlmProviderType::Ollama,
+            provider_type: BackendType::Ollama,
             endpoint: None,
             default_model: None,
             temperature: None,
@@ -396,7 +306,7 @@ mod tests {
         assert_eq!(ollama.timeout_secs(), 120);
 
         let openai = LlmProviderConfig {
-            provider_type: LlmProviderType::OpenAI,
+            provider_type: BackendType::OpenAI,
             endpoint: None,
             default_model: None,
             temperature: None,
@@ -410,7 +320,7 @@ mod tests {
         assert_eq!(openai.model(), "gpt-4o");
 
         let anthropic = LlmProviderConfig {
-            provider_type: LlmProviderType::Anthropic,
+            provider_type: BackendType::Anthropic,
             endpoint: None,
             default_model: None,
             temperature: None,
@@ -424,7 +334,7 @@ mod tests {
         assert_eq!(anthropic.model(), "claude-3-5-sonnet-20241022");
 
         let copilot = LlmProviderConfig {
-            provider_type: LlmProviderType::GitHubCopilot,
+            provider_type: BackendType::GitHubCopilot,
             endpoint: None,
             default_model: None,
             temperature: None,
@@ -454,7 +364,7 @@ mod tests {
             let config: LlmProviderConfig = serde_json::from_str(json).unwrap();
             assert_eq!(
                 config.provider_type,
-                LlmProviderType::GitHubCopilot,
+                BackendType::GitHubCopilot,
                 "Failed to parse: {}",
                 json
             );
@@ -464,7 +374,7 @@ mod tests {
     #[test]
     fn test_provider_custom_values() {
         let config = LlmProviderConfig {
-            provider_type: LlmProviderType::Ollama,
+            provider_type: BackendType::Ollama,
             endpoint: Some("http://192.168.1.100:11434".to_string()),
             default_model: Some("llama3.1:70b".to_string()),
             temperature: Some(0.9),
@@ -484,7 +394,7 @@ mod tests {
     #[test]
     fn test_api_key_direct_value() {
         let config = LlmProviderConfig {
-            provider_type: LlmProviderType::OpenAI,
+            provider_type: BackendType::OpenAI,
             endpoint: None,
             default_model: None,
             temperature: None,
@@ -503,7 +413,7 @@ mod tests {
         providers.insert(
             "local".to_string(),
             LlmProviderConfig {
-                provider_type: LlmProviderType::Ollama,
+                provider_type: BackendType::Ollama,
                 endpoint: Some("http://localhost:11434".to_string()),
                 default_model: Some("llama3.2".to_string()),
                 temperature: None,
@@ -516,7 +426,7 @@ mod tests {
         providers.insert(
             "cloud".to_string(),
             LlmProviderConfig {
-                provider_type: LlmProviderType::OpenAI,
+                provider_type: BackendType::OpenAI,
                 endpoint: None,
                 default_model: Some("gpt-4o".to_string()),
                 temperature: None,
@@ -534,7 +444,7 @@ mod tests {
 
         let (key, provider) = config.default_provider().unwrap();
         assert_eq!(key, "local");
-        assert_eq!(provider.provider_type, LlmProviderType::Ollama);
+        assert_eq!(provider.provider_type, BackendType::Ollama);
         assert_eq!(provider.model(), "llama3.2");
     }
 
@@ -544,7 +454,7 @@ mod tests {
         providers.insert(
             "local".to_string(),
             LlmProviderConfig {
-                provider_type: LlmProviderType::Ollama,
+                provider_type: BackendType::Ollama,
                 endpoint: Some("http://localhost:11434".to_string()),
                 default_model: Some("llama3.2".to_string()),
                 temperature: None,
@@ -561,7 +471,7 @@ mod tests {
         };
 
         let provider = config.get_provider("local").unwrap();
-        assert_eq!(provider.provider_type, LlmProviderType::Ollama);
+        assert_eq!(provider.provider_type, BackendType::Ollama);
 
         assert!(config.get_provider("nonexistent").is_none());
     }
@@ -572,7 +482,7 @@ mod tests {
         providers.insert(
             "local".to_string(),
             LlmProviderConfig {
-                provider_type: LlmProviderType::Ollama,
+                provider_type: BackendType::Ollama,
                 endpoint: None,
                 default_model: None,
                 temperature: None,
@@ -585,7 +495,7 @@ mod tests {
         providers.insert(
             "cloud".to_string(),
             LlmProviderConfig {
-                provider_type: LlmProviderType::OpenAI,
+                provider_type: BackendType::OpenAI,
                 endpoint: None,
                 default_model: None,
                 temperature: None,
@@ -619,7 +529,7 @@ mod tests {
         providers.insert(
             "local".to_string(),
             LlmProviderConfig {
-                provider_type: LlmProviderType::Ollama,
+                provider_type: BackendType::Ollama,
                 endpoint: None,
                 default_model: None,
                 temperature: None,
@@ -653,7 +563,7 @@ mod tests {
         providers.insert(
             "local".to_string(),
             LlmProviderConfig {
-                provider_type: LlmProviderType::Ollama,
+                provider_type: BackendType::Ollama,
                 endpoint: None,
                 default_model: None,
                 temperature: None,
@@ -675,7 +585,7 @@ mod tests {
     #[test]
     fn test_available_models_deserialization() {
         let config = LlmProviderConfig {
-            provider_type: LlmProviderType::Ollama,
+            provider_type: BackendType::Ollama,
             endpoint: None,
             default_model: None,
             temperature: None,
@@ -694,7 +604,7 @@ mod tests {
     #[test]
     fn test_available_models_none_by_default() {
         let config = LlmProviderConfig {
-            provider_type: LlmProviderType::Ollama,
+            provider_type: BackendType::Ollama,
             endpoint: None,
             default_model: None,
             temperature: None,
@@ -713,7 +623,7 @@ mod tests {
         providers.insert(
             "local".to_string(),
             LlmProviderConfig {
-                provider_type: LlmProviderType::Ollama,
+                provider_type: BackendType::Ollama,
                 endpoint: None,
                 default_model: None,
                 temperature: None,
@@ -726,7 +636,7 @@ mod tests {
         providers.insert(
             "cloud".to_string(),
             LlmProviderConfig {
-                provider_type: LlmProviderType::OpenAI,
+                provider_type: BackendType::OpenAI,
                 endpoint: None,
                 default_model: None,
                 temperature: None,
@@ -769,7 +679,7 @@ mod tests {
         providers.insert(
             "anthropic".to_string(),
             LlmProviderConfig {
-                provider_type: LlmProviderType::Anthropic,
+                provider_type: BackendType::Anthropic,
                 endpoint: None,
                 default_model: None,
                 temperature: None,
@@ -783,7 +693,7 @@ mod tests {
         providers.insert(
             "openai".to_string(),
             LlmProviderConfig {
-                provider_type: LlmProviderType::OpenAI,
+                provider_type: BackendType::OpenAI,
                 endpoint: None,
                 default_model: None,
                 temperature: None,
@@ -831,10 +741,9 @@ mod tests {
 
     #[test]
     fn test_zai_from_str_variants() {
-        // Test all FromStr variants for ZAI
-        assert_eq!(LlmProviderType::from_str("zai"), Ok(LlmProviderType::ZAI));
-        assert_eq!(LlmProviderType::from_str("z.ai"), Ok(LlmProviderType::ZAI));
-        assert_eq!(LlmProviderType::from_str("z_ai"), Ok(LlmProviderType::ZAI));
+        assert_eq!(BackendType::from_str("zai"), Ok(BackendType::ZAI));
+        assert_eq!(BackendType::from_str("z.ai"), Ok(BackendType::ZAI));
+        assert_eq!(BackendType::from_str("z_ai"), Ok(BackendType::ZAI));
     }
 
     #[test]
@@ -850,7 +759,7 @@ mod tests {
             let config: LlmProviderConfig = serde_json::from_str(json).unwrap();
             assert_eq!(
                 config.provider_type,
-                LlmProviderType::ZAI,
+                BackendType::ZAI,
                 "Failed to parse: {}",
                 json
             );
@@ -859,14 +768,14 @@ mod tests {
 
     #[test]
     fn test_zai_api_key_env_var() {
-        let zai = LlmProviderType::ZAI;
+        let zai = BackendType::ZAI;
         assert_eq!(zai.api_key_env_var(), Some("GLM_AUTH_TOKEN"));
     }
 
     #[test]
     fn test_zai_endpoint_default() {
         let config = LlmProviderConfig {
-            provider_type: LlmProviderType::ZAI,
+            provider_type: BackendType::ZAI,
             endpoint: None,
             default_model: None,
             temperature: None,
@@ -882,7 +791,7 @@ mod tests {
     #[test]
     fn test_zai_model_default() {
         let config = LlmProviderConfig {
-            provider_type: LlmProviderType::ZAI,
+            provider_type: BackendType::ZAI,
             endpoint: None,
             default_model: None,
             temperature: None,
@@ -898,7 +807,7 @@ mod tests {
     #[test]
     fn test_zai_effective_models_hardcoded() {
         let config = LlmProviderConfig {
-            provider_type: LlmProviderType::ZAI,
+            provider_type: BackendType::ZAI,
             endpoint: None,
             default_model: None,
             temperature: None,
@@ -923,7 +832,7 @@ mod tests {
     fn test_zai_effective_models_custom() {
         let custom_models = vec!["custom-model".to_string()];
         let config = LlmProviderConfig {
-            provider_type: LlmProviderType::ZAI,
+            provider_type: BackendType::ZAI,
             endpoint: None,
             default_model: None,
             temperature: None,
@@ -938,11 +847,11 @@ mod tests {
 
     #[test]
     fn test_provider_as_str() {
-        assert_eq!(LlmProviderType::Ollama.as_str(), "ollama");
-        assert_eq!(LlmProviderType::OpenAI.as_str(), "openai");
-        assert_eq!(LlmProviderType::Anthropic.as_str(), "anthropic");
-        assert_eq!(LlmProviderType::GitHubCopilot.as_str(), "github-copilot");
-        assert_eq!(LlmProviderType::OpenRouter.as_str(), "openrouter");
-        assert_eq!(LlmProviderType::ZAI.as_str(), "zai");
+        assert_eq!(BackendType::Ollama.as_str(), "ollama");
+        assert_eq!(BackendType::OpenAI.as_str(), "openai");
+        assert_eq!(BackendType::Anthropic.as_str(), "anthropic");
+        assert_eq!(BackendType::GitHubCopilot.as_str(), "github-copilot");
+        assert_eq!(BackendType::OpenRouter.as_str(), "openrouter");
+        assert_eq!(BackendType::ZAI.as_str(), "zai");
     }
 }

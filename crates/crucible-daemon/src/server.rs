@@ -318,69 +318,24 @@ impl Server {
         let persist_cancel_clone = persist_cancel.clone();
 
         let persist_task = tokio::spawn(async move {
-            fn should_persist(event: &SessionEventMessage) -> bool {
-                matches!(
-                    event.event.as_str(),
-                    "user_message"
-                        | "message_complete"
-                        | "tool_call"
-                        | "tool_result"
-                        | "model_switched"
-                        | "ended"
-                )
-            }
-
-            async fn persist_event(
-                event: &SessionEventMessage,
-                sm: &SessionManager,
-                storage: &FileSessionStorage,
-            ) {
-                if !should_persist(event) {
-                    return;
-                }
-                if let Some(session) = sm.get_session(&event.session_id) {
-                    // Persist JSONL event
-                    if let Ok(json) = serde_json::to_string(event) {
-                        let _ = storage.append_event(&session, &json).await;
-                    }
-
-                    // Persist markdown for user/assistant messages
-                    match event.event.as_str() {
-                        "user_message" => {
-                            if let Some(content) =
-                                event.data.get("content").and_then(|v| v.as_str())
-                            {
-                                let _ = storage.append_markdown(&session, "User", content).await;
-                            }
-                        }
-                        "message_complete" => {
-                            if let Some(content) =
-                                event.data.get("full_response").and_then(|v| v.as_str())
-                            {
-                                let _ = storage
-                                    .append_markdown(&session, "Assistant", content)
-                                    .await;
-                            }
-                        }
-                        _ => {}
-                    }
-                }
-            }
-
             loop {
                 tokio::select! {
                     biased;
                     _ = persist_cancel_clone.cancelled() => {
                         debug!("Persist task received shutdown signal, draining remaining events");
                         while let Ok(event) = persist_rx.try_recv() {
-                            persist_event(&event, &sm_clone, &storage).await;
+                            if let Err(e) = persist_event(&event, &sm_clone, &storage).await {
+                                warn!(session_id = %event.session_id, error = %e, "Failed to persist event during shutdown drain");
+                            }
                         }
                         break;
                     }
                     result = persist_rx.recv() => {
                         match result {
                             Ok(event) => {
-                                persist_event(&event, &sm_clone, &storage).await;
+                                if let Err(e) = persist_event(&event, &sm_clone, &storage).await {
+                                    warn!(session_id = %event.session_id, event = %event.event, error = %e, "Failed to persist event");
+                                }
                             }
                             Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
                                 tracing::warn!(
@@ -599,6 +554,59 @@ async fn handle_client(
     let _ = tokio::time::timeout(std::time::Duration::from_millis(100), event_task).await;
     subscription_manager.remove_client(client_id);
 
+    Ok(())
+}
+
+fn should_persist(event: &SessionEventMessage) -> bool {
+    matches!(
+        event.event.as_str(),
+        "user_message"
+            | "message_complete"
+            | "tool_call"
+            | "tool_result"
+            | "model_switched"
+            | "ended"
+    )
+}
+
+async fn persist_event(
+    event: &SessionEventMessage,
+    sm: &SessionManager,
+    storage: &dyn SessionStorage,
+) -> Result<()> {
+    if !should_persist(event) {
+        return Ok(());
+    }
+    let session = match sm.get_session(&event.session_id) {
+        Some(s) => s,
+        None => return Ok(()),
+    };
+
+    let json = serde_json::to_string(event)?;
+    storage
+        .append_event(&session, &json)
+        .await
+        .map_err(|e| anyhow::anyhow!("append_event failed: {}", e))?;
+
+    match event.event.as_str() {
+        "user_message" => {
+            if let Some(content) = event.data.get("content").and_then(|v| v.as_str()) {
+                storage
+                    .append_markdown(&session, "User", content)
+                    .await
+                    .map_err(|e| anyhow::anyhow!("append_markdown(User) failed: {}", e))?;
+            }
+        }
+        "message_complete" => {
+            if let Some(content) = event.data.get("full_response").and_then(|v| v.as_str()) {
+                storage
+                    .append_markdown(&session, "Assistant", content)
+                    .await
+                    .map_err(|e| anyhow::anyhow!("append_markdown(Assistant) failed: {}", e))?;
+            }
+        }
+        _ => {}
+    }
     Ok(())
 }
 
@@ -2537,5 +2545,143 @@ mod tests {
 
         let _ = shutdown_handle.send(());
         let _ = server_task.await;
+    }
+
+    mod persist_event_tests {
+        use super::*;
+        use crate::session_manager::SessionError;
+        use crate::session_storage::SessionStorage;
+        use async_trait::async_trait;
+        use crucible_core::session::{SessionSummary, SessionType};
+
+        struct FailingStorage;
+
+        #[async_trait]
+        impl SessionStorage for FailingStorage {
+            async fn save(
+                &self,
+                _s: &crucible_core::session::Session,
+            ) -> Result<(), SessionError> {
+                Ok(())
+            }
+            async fn load(
+                &self,
+                _id: &str,
+                _k: &Path,
+            ) -> Result<crucible_core::session::Session, SessionError> {
+                Err(SessionError::NotFound("mock".to_string()))
+            }
+            async fn list(
+                &self,
+                _k: &Path,
+            ) -> Result<Vec<SessionSummary>, SessionError> {
+                Ok(vec![])
+            }
+            async fn append_event(
+                &self,
+                _s: &crucible_core::session::Session,
+                _e: &str,
+            ) -> Result<(), SessionError> {
+                Err(SessionError::IoError("simulated disk failure".to_string()))
+            }
+            async fn append_markdown(
+                &self,
+                _s: &crucible_core::session::Session,
+                _r: &str,
+                _c: &str,
+            ) -> Result<(), SessionError> {
+                Err(SessionError::IoError("simulated disk failure".to_string()))
+            }
+            async fn load_events(
+                &self,
+                _id: &str,
+                _k: &Path,
+                _limit: Option<usize>,
+                _offset: Option<usize>,
+            ) -> Result<Vec<serde_json::Value>, SessionError> {
+                Ok(vec![])
+            }
+            async fn count_events(
+                &self,
+                _id: &str,
+                _k: &Path,
+            ) -> Result<usize, SessionError> {
+                Ok(0)
+            }
+        }
+
+        #[tokio::test]
+        async fn test_persist_event_returns_error_on_storage_failure() {
+            let tmp = TempDir::new().unwrap();
+            let sm = Arc::new(SessionManager::new());
+            let session = sm
+                .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![])
+                .await
+                .unwrap();
+
+            let event = SessionEventMessage::new(
+                session.id.clone(),
+                "user_message",
+                serde_json::json!({"content": "hello"}),
+            );
+
+            let storage = FailingStorage;
+            let result = persist_event(&event, &sm, &storage).await;
+            assert!(
+                result.is_err(),
+                "persist_event must propagate storage errors, not swallow them"
+            );
+        }
+
+        #[tokio::test]
+        async fn test_persist_event_skips_non_persistent_events() {
+            let tmp = TempDir::new().unwrap();
+            let sm = Arc::new(SessionManager::new());
+            let session = sm
+                .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![])
+                .await
+                .unwrap();
+
+            let event = SessionEventMessage::new(
+                session.id.clone(),
+                "stream_chunk",
+                serde_json::json!({"chunk": "partial"}),
+            );
+
+            let storage = FailingStorage;
+            let result = persist_event(&event, &sm, &storage).await;
+            assert!(
+                result.is_ok(),
+                "Non-persistent events should be skipped without error"
+            );
+        }
+
+        #[tokio::test]
+        async fn test_should_persist_filters_correctly() {
+            let persistent = [
+                "user_message",
+                "message_complete",
+                "tool_call",
+                "tool_result",
+                "model_switched",
+                "ended",
+            ];
+            for event_name in &persistent {
+                let event =
+                    SessionEventMessage::new("test", *event_name, serde_json::json!({}));
+                assert!(should_persist(&event), "{} should be persisted", event_name);
+            }
+
+            let non_persistent = ["stream_chunk", "thinking", "status_update", "unknown"];
+            for event_name in &non_persistent {
+                let event =
+                    SessionEventMessage::new("test", *event_name, serde_json::json!({}));
+                assert!(
+                    !should_persist(&event),
+                    "{} should NOT be persisted",
+                    event_name
+                );
+            }
+        }
     }
 }

@@ -8,7 +8,7 @@
 //! used to create internal agents with the correct settings.
 
 use crucible_cli::factories::{create_internal_agent, AgentInitParams};
-use crucible_config::{CliAppConfig, LlmConfig, LlmProviderConfig, LlmProviderType};
+use crucible_config::{BackendType, CliAppConfig, LlmConfig, LlmProviderConfig};
 use std::collections::HashMap;
 
 /// Helper to create a minimal CliAppConfig for testing
@@ -20,7 +20,7 @@ fn create_test_config() -> CliAppConfig {
 }
 
 /// Helper to create CliAppConfig with custom chat provider
-fn create_config_with_provider(provider: LlmProviderType, model: Option<String>) -> CliAppConfig {
+fn create_config_with_provider(provider: BackendType, model: Option<String>) -> CliAppConfig {
     let mut config = create_test_config();
     config.chat.provider = provider;
     config.chat.model = model;
@@ -49,7 +49,7 @@ fn test_default_config_has_sensible_values() {
     let config = create_test_config();
 
     // Chat config should have defaults
-    assert_eq!(config.chat.provider, LlmProviderType::Ollama);
+    assert_eq!(config.chat.provider, BackendType::Ollama);
     assert_eq!(config.chat.llm_endpoint(), "http://localhost:11434");
     assert_eq!(config.chat.chat_model(), "llama3.2");
     assert_eq!(config.chat.temperature(), 0.7);
@@ -80,7 +80,7 @@ fn test_llm_config_with_single_ollama_provider() {
     providers.insert(
         "local".to_string(),
         LlmProviderConfig {
-            provider_type: LlmProviderType::Ollama,
+            provider_type: BackendType::Ollama,
             endpoint: Some("http://localhost:11434".to_string()),
             default_model: Some("llama3.2".to_string()),
             temperature: Some(0.7),
@@ -98,7 +98,7 @@ fn test_llm_config_with_single_ollama_provider() {
 
     let (key, provider) = config.llm.default_provider().unwrap();
     assert_eq!(key, "local");
-    assert_eq!(provider.provider_type, LlmProviderType::Ollama);
+    assert_eq!(provider.provider_type, BackendType::Ollama);
     assert_eq!(provider.endpoint(), "http://localhost:11434");
     assert_eq!(provider.model(), "llama3.2");
 }
@@ -110,7 +110,7 @@ fn test_llm_config_with_multiple_providers() {
     providers.insert(
         "local-ollama".to_string(),
         LlmProviderConfig {
-            provider_type: LlmProviderType::Ollama,
+            provider_type: BackendType::Ollama,
             endpoint: Some("http://localhost:11434".to_string()),
             default_model: Some("llama3.2".to_string()),
             temperature: None,
@@ -124,7 +124,7 @@ fn test_llm_config_with_multiple_providers() {
     providers.insert(
         "remote-openai".to_string(),
         LlmProviderConfig {
-            provider_type: LlmProviderType::OpenAI,
+            provider_type: BackendType::OpenAI,
             endpoint: None, // Use default
             default_model: Some("gpt-4o".to_string()),
             temperature: Some(0.5),
@@ -146,7 +146,7 @@ fn test_llm_config_with_multiple_providers() {
 
     // Can retrieve OpenAI provider by name
     let openai = config.llm.get_provider("remote-openai").unwrap();
-    assert_eq!(openai.provider_type, LlmProviderType::OpenAI);
+    assert_eq!(openai.provider_type, BackendType::OpenAI);
     assert_eq!(openai.endpoint(), "https://api.openai.com/v1");
     assert_eq!(openai.model(), "gpt-4o");
 }
@@ -167,7 +167,7 @@ fn test_llm_config_invalid_default_provider() {
     providers.insert(
         "local".to_string(),
         LlmProviderConfig {
-            provider_type: LlmProviderType::Ollama,
+            provider_type: BackendType::Ollama,
             endpoint: None,
             default_model: None,
             temperature: None,
@@ -192,7 +192,7 @@ fn test_llm_config_invalid_default_provider() {
 #[test]
 fn test_provider_type_ollama_defaults() {
     let provider = LlmProviderConfig {
-        provider_type: LlmProviderType::Ollama,
+        provider_type: BackendType::Ollama,
         endpoint: None,
         default_model: None,
         temperature: None,
@@ -212,7 +212,7 @@ fn test_provider_type_ollama_defaults() {
 #[test]
 fn test_provider_type_openai_defaults() {
     let provider = LlmProviderConfig {
-        provider_type: LlmProviderType::OpenAI,
+        provider_type: BackendType::OpenAI,
         endpoint: None,
         default_model: None,
         temperature: None,
@@ -232,7 +232,7 @@ fn test_provider_type_openai_defaults() {
 #[test]
 fn test_provider_type_anthropic_defaults() {
     let provider = LlmProviderConfig {
-        provider_type: LlmProviderType::Anthropic,
+        provider_type: BackendType::Anthropic,
         endpoint: None,
         default_model: None,
         temperature: None,
@@ -252,7 +252,7 @@ fn test_provider_type_anthropic_defaults() {
 #[test]
 fn test_provider_custom_overrides() {
     let provider = LlmProviderConfig {
-        provider_type: LlmProviderType::Ollama,
+        provider_type: BackendType::Ollama,
         endpoint: Some("http://192.168.1.100:11434".to_string()),
         default_model: Some("llama3.1:70b".to_string()),
         temperature: Some(0.9),
@@ -338,7 +338,7 @@ async fn test_create_internal_agent_with_named_provider() {
     providers.insert(
         "test-ollama".to_string(),
         LlmProviderConfig {
-            provider_type: LlmProviderType::Ollama,
+            provider_type: BackendType::Ollama,
             endpoint: Some("http://localhost:11434".to_string()),
             default_model: Some("llama3.2".to_string()),
             temperature: Some(0.7),
@@ -379,7 +379,7 @@ async fn test_create_internal_agent_with_named_provider() {
 #[test]
 fn test_model_name_from_chat_config() {
     let config = create_config_with_provider(
-        LlmProviderType::Ollama,
+        BackendType::Ollama,
         Some("test-model-from-chat".to_string()),
     );
 
@@ -388,7 +388,7 @@ fn test_model_name_from_chat_config() {
 
 #[test]
 fn test_model_name_fallback_to_default() {
-    let config = create_config_with_provider(LlmProviderType::Ollama, None);
+    let config = create_config_with_provider(BackendType::Ollama, None);
 
     // Should use default Ollama model
     assert_eq!(config.chat.chat_model(), "llama3.2");
@@ -400,7 +400,7 @@ fn test_model_name_from_named_provider() {
     providers.insert(
         "custom".to_string(),
         LlmProviderConfig {
-            provider_type: LlmProviderType::Ollama,
+            provider_type: BackendType::Ollama,
             endpoint: None,
             default_model: Some("custom-provider-model".to_string()),
             temperature: None,
@@ -476,13 +476,13 @@ fn test_empty_llm_config() {
 #[test]
 fn test_chat_provider_variants() {
     // Test all provider enum variants
-    let ollama = LlmProviderType::Ollama;
-    let openai = LlmProviderType::OpenAI;
-    let anthropic = LlmProviderType::Anthropic;
+    let ollama = BackendType::Ollama;
+    let openai = BackendType::OpenAI;
+    let anthropic = BackendType::Anthropic;
 
-    assert_eq!(ollama, LlmProviderType::Ollama);
-    assert_eq!(openai, LlmProviderType::OpenAI);
-    assert_eq!(anthropic, LlmProviderType::Anthropic);
+    assert_eq!(ollama, BackendType::Ollama);
+    assert_eq!(openai, BackendType::OpenAI);
+    assert_eq!(anthropic, BackendType::Anthropic);
 
     // Test inequality
     assert_ne!(ollama, openai);
@@ -493,13 +493,13 @@ fn test_chat_provider_variants() {
 #[test]
 fn test_llm_provider_type_variants() {
     // Test all provider type enum variants
-    let ollama = LlmProviderType::Ollama;
-    let openai = LlmProviderType::OpenAI;
-    let anthropic = LlmProviderType::Anthropic;
+    let ollama = BackendType::Ollama;
+    let openai = BackendType::OpenAI;
+    let anthropic = BackendType::Anthropic;
 
-    assert_eq!(ollama, LlmProviderType::Ollama);
-    assert_eq!(openai, LlmProviderType::OpenAI);
-    assert_eq!(anthropic, LlmProviderType::Anthropic);
+    assert_eq!(ollama, BackendType::Ollama);
+    assert_eq!(openai, BackendType::OpenAI);
+    assert_eq!(anthropic, BackendType::Anthropic);
 
     // Test inequality
     assert_ne!(ollama, openai);
@@ -566,7 +566,7 @@ fn test_config_timeout_boundary_values() {
 fn test_provider_api_key_direct_value() {
     // With new model, api_key is the resolved value (not an env var name)
     let provider = LlmProviderConfig {
-        provider_type: LlmProviderType::OpenAI,
+        provider_type: BackendType::OpenAI,
         endpoint: None,
         default_model: None,
         temperature: None,
@@ -582,7 +582,7 @@ fn test_provider_api_key_direct_value() {
 #[test]
 fn test_provider_no_api_key_configured() {
     let provider = LlmProviderConfig {
-        provider_type: LlmProviderType::Ollama,
+        provider_type: BackendType::Ollama,
         endpoint: None,
         default_model: None,
         temperature: None,
@@ -606,7 +606,7 @@ fn test_realistic_ollama_config() {
     providers.insert(
         "local-llama".to_string(),
         LlmProviderConfig {
-            provider_type: LlmProviderType::Ollama,
+            provider_type: BackendType::Ollama,
             endpoint: Some("http://localhost:11434".to_string()),
             default_model: Some("llama3.2:latest".to_string()),
             temperature: Some(0.7),
@@ -621,7 +621,7 @@ fn test_realistic_ollama_config() {
 
     let (key, provider) = config.llm.default_provider().unwrap();
     assert_eq!(key, "local-llama");
-    assert_eq!(provider.provider_type, LlmProviderType::Ollama);
+    assert_eq!(provider.provider_type, BackendType::Ollama);
     assert_eq!(provider.endpoint(), "http://localhost:11434");
     assert_eq!(provider.model(), "llama3.2:latest");
 }
@@ -632,7 +632,7 @@ fn test_realistic_openai_config() {
     providers.insert(
         "openai-gpt4".to_string(),
         LlmProviderConfig {
-            provider_type: LlmProviderType::OpenAI,
+            provider_type: BackendType::OpenAI,
             endpoint: None, // Use default
             default_model: Some("gpt-4o".to_string()),
             temperature: Some(0.5),
@@ -647,7 +647,7 @@ fn test_realistic_openai_config() {
 
     let (key, provider) = config.llm.default_provider().unwrap();
     assert_eq!(key, "openai-gpt4");
-    assert_eq!(provider.provider_type, LlmProviderType::OpenAI);
+    assert_eq!(provider.provider_type, BackendType::OpenAI);
     assert_eq!(provider.endpoint(), "https://api.openai.com/v1");
     assert_eq!(provider.model(), "gpt-4o");
     assert_eq!(provider.temperature(), 0.5);
@@ -662,7 +662,7 @@ fn test_realistic_multi_provider_config() {
     providers.insert(
         "dev".to_string(),
         LlmProviderConfig {
-            provider_type: LlmProviderType::Ollama,
+            provider_type: BackendType::Ollama,
             endpoint: Some("http://localhost:11434".to_string()),
             default_model: Some("llama3.2".to_string()),
             temperature: Some(0.7),
@@ -677,7 +677,7 @@ fn test_realistic_multi_provider_config() {
     providers.insert(
         "prod".to_string(),
         LlmProviderConfig {
-            provider_type: LlmProviderType::OpenAI,
+            provider_type: BackendType::OpenAI,
             endpoint: None, // Use default
             default_model: Some("gpt-4o".to_string()),
             temperature: Some(0.5),
@@ -692,7 +692,7 @@ fn test_realistic_multi_provider_config() {
     providers.insert(
         "claude".to_string(),
         LlmProviderConfig {
-            provider_type: LlmProviderType::Anthropic,
+            provider_type: BackendType::Anthropic,
             endpoint: None,
             default_model: Some("claude-3-5-sonnet-20241022".to_string()),
             temperature: Some(0.7),

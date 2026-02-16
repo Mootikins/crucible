@@ -341,20 +341,7 @@ impl ProviderConfig {
     /// This is used for automatic migration from the old `[embedding]` config
     /// format to the new `[providers]` format.
     pub fn from_legacy_embedding(config: &super::EmbeddingConfig) -> Self {
-        use super::EmbeddingProviderType;
-
-        let backend = match config.provider {
-            EmbeddingProviderType::FastEmbed => BackendType::FastEmbed,
-            EmbeddingProviderType::OpenAI => BackendType::OpenAI,
-            EmbeddingProviderType::Anthropic => BackendType::Anthropic,
-            EmbeddingProviderType::Ollama => BackendType::Ollama,
-            EmbeddingProviderType::Cohere => BackendType::Cohere,
-            EmbeddingProviderType::VertexAI => BackendType::VertexAI,
-            EmbeddingProviderType::Custom => BackendType::Custom,
-            EmbeddingProviderType::Mock => BackendType::Mock,
-            EmbeddingProviderType::Burn => BackendType::Burn,
-            EmbeddingProviderType::None => BackendType::FastEmbed, // Default fallback
-        };
+        let backend = config.provider.unwrap_or(BackendType::FastEmbed);
 
         let mut provider_config = Self::new(backend);
         provider_config.endpoint = config.api_url.clone();

@@ -11,8 +11,9 @@
 use anyhow::Result;
 use tracing::{debug, info, warn};
 
-use crucible_config::credentials::SecretsFile;
+use crucible_config::credentials::resolve_copilot_oauth_token;
 use crucible_config::CliAppConfig;
+use crucible_core::session::SessionAgent;
 use crucible_core::traits::chat::AgentHandle;
 
 /// Agent type selection
@@ -192,37 +193,60 @@ fn supports_reasoning_content(model_name: &str) -> bool {
         || name_lower.contains("reasoning")
 }
 
-/// Resolve OAuth token for GitHub Copilot from credential store
-///
-/// Resolution order:
-/// 1. Environment variable (GITHUB_COPILOT_OAUTH_TOKEN)
-/// 2. Credential store (secrets.toml)
-/// 3. Config api_key (fallback)
-fn resolve_copilot_oauth_token(config_api_key: Option<&str>) -> Option<String> {
-    // Check environment variable first
-    if let Ok(token) = std::env::var("GITHUB_COPILOT_OAUTH_TOKEN") {
-        if !token.is_empty() {
-            debug!("Using GitHub Copilot OAuth token from environment variable");
-            return Some(token);
-        }
+fn build_acp_session_agent(params: &AgentInitParams) -> SessionAgent {
+    SessionAgent {
+        agent_type: "acp".to_string(),
+        agent_name: params.agent_name.clone(),
+        provider_key: None,
+        provider: String::new(),
+        model: String::new(),
+        system_prompt: String::new(),
+        temperature: None,
+        max_tokens: None,
+        max_context_tokens: None,
+        thinking_budget: None,
+        endpoint: None,
+        env_overrides: params.env_overrides.clone(),
+        mcp_servers: vec![],
+        agent_card_name: None,
+        capabilities: None,
+        agent_description: None,
+        delegation_config: None,
     }
+}
 
-    // Check credential store
-    let secrets = SecretsFile::new();
-    if let Ok(Some(token)) = secrets.get_oauth_token("github-copilot") {
-        debug!("Using GitHub Copilot OAuth token from credential store");
-        return Some(token);
+fn build_internal_session_agent(config: &CliAppConfig) -> SessionAgent {
+    let model = config
+        .chat
+        .model
+        .clone()
+        .unwrap_or_else(|| crucible_config::DEFAULT_CHAT_MODEL.to_string());
+    let mcp_servers = config
+        .mcp
+        .as_ref()
+        .map(|mcp| mcp.servers.iter().map(|s| s.name.clone()).collect())
+        .unwrap_or_default();
+    let provider_str = config.chat.provider.as_str().to_string();
+
+    SessionAgent {
+        agent_type: "internal".to_string(),
+        agent_name: None,
+        provider_key: Some(provider_str.clone()),
+        provider: provider_str,
+        model,
+        system_prompt: String::new(),
+        temperature: config.chat.temperature.map(|t| t as f64),
+        max_tokens: config.chat.max_tokens,
+        max_context_tokens: None,
+        thinking_budget: None,
+        endpoint: config.chat.endpoint.clone(),
+        env_overrides: std::collections::HashMap::new(),
+        mcp_servers,
+        agent_card_name: None,
+        capabilities: None,
+        agent_description: None,
+        delegation_config: None,
     }
-
-    // Fall back to config api_key
-    if let Some(key) = config_api_key {
-        if !key.is_empty() {
-            debug!("Using GitHub Copilot OAuth token from config");
-            return Some(key.to_string());
-        }
-    }
-
-    None
 }
 
 /// Create an internal agent using the Rig framework
@@ -235,21 +259,17 @@ pub async fn create_internal_agent(
     use crucible_core::prompts::{base_prompt_for_size, ModelSize};
     use crucible_rig::{build_agent_with_kiln_tools, AgentComponents, RigAgentHandle};
 
-    #[allow(deprecated)] // ChatConfig.provider is LlmProviderType
-    let provider_backend: BackendType = config.chat.provider.into();
+    let provider_backend: BackendType = config.chat.provider;
 
     let model = config
         .chat
         .model
         .clone()
-        .unwrap_or_else(|| match provider_backend {
-            BackendType::Ollama => "llama3.2".to_string(),
-            BackendType::OpenAI => "gpt-4o".to_string(),
-            BackendType::Anthropic => "claude-3-5-sonnet-20241022".to_string(),
-            BackendType::GitHubCopilot => "gpt-4o".to_string(),
-            BackendType::OpenRouter => "openai/gpt-4o".to_string(),
-            BackendType::ZAI => "GLM-4.7".to_string(),
-            _ => crucible_config::DEFAULT_CHAT_MODEL.to_string(),
+        .unwrap_or_else(|| {
+            provider_backend
+                .default_chat_model()
+                .unwrap_or(crucible_config::DEFAULT_CHAT_MODEL)
+                .to_string()
         });
 
     // Detect model size (or use Medium if size-aware prompts disabled)
@@ -331,14 +351,33 @@ pub async fn create_internal_agent(
     let mut reasoning_endpoint: Option<String> = None;
     let mut ollama_endpoint: Option<String> = None;
 
-    #[allow(deprecated)] // LlmProviderConfig::builder requires LlmProviderType
+    /// Helper function to build a standard LLM client for providers with identical patterns
+    fn build_standard_client(
+        provider_type: BackendType,
+        endpoint: Option<String>,
+        model: &str,
+        timeout_secs: Option<u64>,
+    ) -> Result<crucible_rig::RigClient> {
+        let mut builder = LlmProviderConfig::builder(provider_type);
+        if let Some(endpoint) = endpoint {
+            builder = builder.endpoint(endpoint);
+        }
+        Ok(crucible_rig::create_client(
+            &builder
+                .model(model.to_string())
+                .maybe_timeout_secs(timeout_secs)
+                .with_api_key_env_var_name()
+                .build(),
+        )?)
+    }
+
     let client = match provider_backend {
         BackendType::Ollama => {
             let endpoint = config
                 .chat
                 .endpoint
                 .clone()
-                .unwrap_or_else(|| "http://localhost:11434".to_string());
+                .unwrap_or_else(|| crucible_config::DEFAULT_OLLAMA_ENDPOINT.to_string());
 
             ollama_endpoint = Some(endpoint.clone());
 
@@ -355,7 +394,7 @@ pub async fn create_internal_agent(
                 }
                 // Local Ollama - use native client
                 crucible_rig::create_client(
-                    &LlmProviderConfig::builder(crucible_config::LlmProviderType::Ollama)
+                    &LlmProviderConfig::builder(BackendType::Ollama)
                         .endpoint(endpoint)
                         .model(model.clone())
                         .maybe_timeout_secs(config.chat.timeout_secs)
@@ -381,7 +420,7 @@ pub async fn create_internal_agent(
                     compat_endpoint
                 );
                 crucible_rig::create_client(
-                    &LlmProviderConfig::builder(crucible_config::LlmProviderType::OpenAI)
+                    &LlmProviderConfig::builder(BackendType::OpenAI)
                         .endpoint(compat_endpoint)
                         .model(model.clone())
                         .maybe_timeout_secs(config.chat.timeout_secs)
@@ -392,33 +431,23 @@ pub async fn create_internal_agent(
         BackendType::OpenAI => {
             agent_config = agent_config
                 .with_additional_params(serde_json::json!({"parallel_tool_calls": true}));
-            let mut builder = LlmProviderConfig::builder(crucible_config::LlmProviderType::OpenAI);
-            if let Some(endpoint) = config.chat.endpoint.clone() {
-                builder = builder.endpoint(endpoint);
-            }
-            crucible_rig::create_client(
-                &builder
-                    .model(model.clone())
-                    .maybe_timeout_secs(config.chat.timeout_secs)
-                    .with_api_key_env_var_name()
-                    .build(),
+            build_standard_client(
+                BackendType::OpenAI,
+                config.chat.endpoint.clone(),
+                &model,
+                config.chat.timeout_secs,
             )?
         }
         BackendType::Anthropic => {
-            let mut builder = LlmProviderConfig::builder(crucible_config::LlmProviderType::Anthropic);
-            if let Some(endpoint) = config.chat.endpoint.clone() {
-                builder = builder.endpoint(endpoint);
-            }
-            crucible_rig::create_client(
-                &builder
-                    .model(model.clone())
-                    .maybe_timeout_secs(config.chat.timeout_secs)
-                    .with_api_key_env_var_name()
-                    .build(),
+            build_standard_client(
+                BackendType::Anthropic,
+                config.chat.endpoint.clone(),
+                &model,
+                config.chat.timeout_secs,
             )?
         }
         BackendType::GitHubCopilot => {
-            let mut builder = LlmProviderConfig::builder(crucible_config::LlmProviderType::GitHubCopilot);
+            let mut builder = LlmProviderConfig::builder(BackendType::GitHubCopilot);
             if let Some(endpoint) = config.chat.endpoint.clone() {
                 builder = builder.endpoint(endpoint);
             }
@@ -437,32 +466,29 @@ pub async fn create_internal_agent(
             crucible_rig::create_client(&copilot_config)?
         }
         BackendType::OpenRouter => {
-            let mut builder = LlmProviderConfig::builder(crucible_config::LlmProviderType::OpenRouter);
-            if let Some(endpoint) = config.chat.endpoint.clone() {
-                builder = builder.endpoint(endpoint);
-            }
-            crucible_rig::create_client(
-                &builder
-                    .model(model.clone())
-                    .maybe_timeout_secs(config.chat.timeout_secs)
-                    .with_api_key_env_var_name()
-                    .build(),
+            build_standard_client(
+                BackendType::OpenRouter,
+                config.chat.endpoint.clone(),
+                &model,
+                config.chat.timeout_secs,
             )?
         }
         BackendType::ZAI => {
-            let mut builder = LlmProviderConfig::builder(crucible_config::LlmProviderType::ZAI);
-            if let Some(endpoint) = config.chat.endpoint.clone() {
-                builder = builder.endpoint(endpoint);
-            }
-            crucible_rig::create_client(
-                &builder
-                    .model(model.clone())
-                    .maybe_timeout_secs(config.chat.timeout_secs)
-                    .with_api_key_env_var_name()
-                    .build(),
+            build_standard_client(
+                BackendType::ZAI,
+                config.chat.endpoint.clone(),
+                &model,
+                config.chat.timeout_secs,
             )?
         }
-        _ => anyhow::bail!("Unsupported provider backend: {:?}", provider_backend),
+        BackendType::Cohere
+        | BackendType::VertexAI
+        | BackendType::FastEmbed
+        | BackendType::Burn
+        | BackendType::Custom
+        | BackendType::Mock => {
+            anyhow::bail!("Unsupported provider backend: {:?}", provider_backend)
+        }
     };
 
     let has_kiln = params.kiln_context.is_some();
@@ -650,12 +676,10 @@ pub async fn create_internal_agent(
 }
 
 /// Create an agent via daemon (auto-starts daemon if needed)
-#[allow(deprecated)] // ChatConfig.provider is LlmProviderType
 pub async fn create_daemon_agent(
     config: &CliAppConfig,
     params: &AgentInitParams,
 ) -> Result<Box<dyn AgentHandle + Send + Sync>> {
-    use crucible_core::session::SessionAgent;
     use crucible_rpc::{DaemonAgentHandle, DaemonClient};
     use std::sync::Arc;
 
@@ -716,67 +740,16 @@ pub async fn create_daemon_agent(
         ),
     };
 
+    let is_acp = params
+        .agent_type
+        .map(|t| t == AgentType::Acp)
+        .unwrap_or(false);
+
     if is_new_session {
-        let is_acp = params
-            .agent_type
-            .map(|t| t == AgentType::Acp)
-            .unwrap_or(false);
-
         let session_agent = if is_acp {
-            SessionAgent {
-                agent_type: "acp".to_string(),
-                agent_name: params.agent_name.clone(),
-                provider_key: None,
-                provider: String::new(),
-                model: String::new(),
-                system_prompt: String::new(),
-                temperature: None,
-                max_tokens: None,
-                max_context_tokens: None,
-                thinking_budget: None,
-                endpoint: None,
-                env_overrides: params.env_overrides.clone(),
-                mcp_servers: vec![],
-                agent_card_name: None,
-                capabilities: None,
-                agent_description: None,
-                delegation_config: None,
-            }
+            build_acp_session_agent(params)
         } else {
-            let model = config
-                .chat
-                .model
-                .clone()
-                .unwrap_or_else(|| crucible_config::DEFAULT_CHAT_MODEL.to_string());
-
-            let mcp_servers = config
-                .mcp
-                .as_ref()
-                .map(|mcp| mcp.servers.iter().map(|s| s.name.clone()).collect())
-                .unwrap_or_default();
-
-            #[allow(deprecated)]
-            let provider_str = config.chat.provider.as_str().to_string();
-            warn!("Using deprecated ChatConfig.provider as fallback. Migrate to [llm.providers] configuration.");
-            SessionAgent {
-                agent_type: "internal".to_string(),
-                agent_name: None,
-                provider_key: Some(provider_str.clone()),
-                provider: provider_str,
-                model,
-                system_prompt: String::new(),
-                temperature: config.chat.temperature.map(|t| t as f64),
-                max_tokens: config.chat.max_tokens,
-                max_context_tokens: None,
-                thinking_budget: None,
-                endpoint: config.chat.endpoint.clone(),
-                env_overrides: std::collections::HashMap::new(),
-                mcp_servers,
-                agent_card_name: None,
-                capabilities: None,
-                agent_description: None,
-                delegation_config: None,
-            }
+            build_internal_session_agent(config)
         };
 
         client
@@ -795,64 +768,10 @@ pub async fn create_daemon_agent(
         .with_workspace(workspace.clone());
 
     let handle = if is_new_session {
-        let is_acp = params
-            .agent_type
-            .map(|t| t == AgentType::Acp)
-            .unwrap_or(false);
-
         let agent_config = if is_acp {
-            SessionAgent {
-                agent_type: "acp".to_string(),
-                agent_name: params.agent_name.clone(),
-                provider_key: None,
-                provider: String::new(),
-                model: String::new(),
-                system_prompt: String::new(),
-                temperature: None,
-                max_tokens: None,
-                max_context_tokens: None,
-                thinking_budget: None,
-                endpoint: None,
-                env_overrides: params.env_overrides.clone(),
-                mcp_servers: vec![],
-                agent_card_name: None,
-                capabilities: None,
-                agent_description: None,
-                delegation_config: None,
-            }
+            build_acp_session_agent(params)
         } else {
-            let model = config
-                .chat
-                .model
-                .clone()
-                .unwrap_or_else(|| "llama3.2".to_string());
-            let mcp_servers = config
-                .mcp
-                .as_ref()
-                .map(|mcp| mcp.servers.iter().map(|s| s.name.clone()).collect())
-                .unwrap_or_default();
-            #[allow(deprecated)]
-            let provider_str = config.chat.provider.as_str().to_string();
-            warn!("Using deprecated ChatConfig.provider as fallback. Migrate to [llm.providers] configuration.");
-            SessionAgent {
-                agent_type: "internal".to_string(),
-                agent_name: None,
-                provider_key: Some(provider_str.clone()),
-                provider: provider_str,
-                model,
-                system_prompt: String::new(),
-                temperature: config.chat.temperature.map(|t| t as f64),
-                max_tokens: config.chat.max_tokens,
-                max_context_tokens: None,
-                thinking_budget: None,
-                endpoint: config.chat.endpoint.clone(),
-                env_overrides: std::collections::HashMap::new(),
-                mcp_servers,
-                agent_card_name: None,
-                capabilities: None,
-                agent_description: None,
-                delegation_config: None,
-            }
+            build_internal_session_agent(config)
         };
         handle.with_agent_config(agent_config)
     } else {

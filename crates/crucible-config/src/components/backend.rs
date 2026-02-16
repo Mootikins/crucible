@@ -2,7 +2,7 @@
 //!
 //! This module defines the `BackendType` enum that represents all supported
 //! provider backends for both embeddings and chat. This unifies the previously
-//! separate `EmbeddingProviderType` and `LlmProviderType` enums.
+//! separate embedding and LLM provider type enums (both now removed).
 
 use serde::{Deserialize, Serialize};
 
@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 ///
 /// Backends are the underlying services that provide AI capabilities.
 /// Some backends support only embeddings, some only chat, and some support both.
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq, Hash)]
 #[serde(rename_all = "lowercase")]
 pub enum BackendType {
     // === Multi-capability backends (embeddings + chat) ===
@@ -192,8 +192,8 @@ impl BackendType {
         }
     }
 
-    /// Get default environment variable name for API key
-    pub fn default_api_key(&self) -> Option<&'static str> {
+    /// Get the environment variable name for this backend's API key
+    pub fn api_key_env_var(&self) -> Option<&'static str> {
         match self {
             Self::OpenAI => Some("OPENAI_API_KEY"),
             Self::Anthropic => Some("ANTHROPIC_API_KEY"),
@@ -217,45 +217,149 @@ impl std::fmt::Display for BackendType {
     }
 }
 
-#[allow(deprecated)]
-impl From<super::llm::LlmProviderType> for BackendType {
-    fn from(provider: super::llm::LlmProviderType) -> Self {
-        match provider {
-            super::llm::LlmProviderType::Ollama => BackendType::Ollama,
-            super::llm::LlmProviderType::OpenAI => BackendType::OpenAI,
-            super::llm::LlmProviderType::Anthropic => BackendType::Anthropic,
-            super::llm::LlmProviderType::GitHubCopilot => BackendType::GitHubCopilot,
-            super::llm::LlmProviderType::OpenRouter => BackendType::OpenRouter,
-            super::llm::LlmProviderType::ZAI => BackendType::ZAI,
-        }
-    }
-}
+impl std::str::FromStr for BackendType {
+    type Err = String;
 
-#[allow(deprecated)]
-impl TryFrom<BackendType> for super::llm::LlmProviderType {
-    type Error = String;
-
-    fn try_from(backend: BackendType) -> Result<Self, Self::Error> {
-        match backend {
-            BackendType::Ollama => Ok(super::llm::LlmProviderType::Ollama),
-            BackendType::OpenAI => Ok(super::llm::LlmProviderType::OpenAI),
-            BackendType::Anthropic => Ok(super::llm::LlmProviderType::Anthropic),
-            BackendType::GitHubCopilot => Ok(super::llm::LlmProviderType::GitHubCopilot),
-            BackendType::OpenRouter => Ok(super::llm::LlmProviderType::OpenRouter),
-            BackendType::ZAI => Ok(super::llm::LlmProviderType::ZAI),
-            other => Err(format!(
-                "BackendType::{} has no corresponding LlmProviderType (not a chat-capable LLM backend)",
-                other.as_str()
-            )),
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            // Multi-capability backends
+            "ollama" => Ok(BackendType::Ollama),
+            "openai" => Ok(BackendType::OpenAI),
+            "anthropic" => Ok(BackendType::Anthropic),
+            "cohere" => Ok(BackendType::Cohere),
+            "vertexai" => Ok(BackendType::VertexAI),
+            // Embedding-only backends
+            "fastembed" => Ok(BackendType::FastEmbed),
+            "burn" => Ok(BackendType::Burn),
+            // Chat-only backends with aliases
+            "github-copilot" | "github_copilot" | "copilot" | "githubcopilot" => {
+                Ok(BackendType::GitHubCopilot)
+            }
+            "openrouter" | "open_router" | "open-router" => Ok(BackendType::OpenRouter),
+            "zai" | "z.ai" | "z_ai" => Ok(BackendType::ZAI),
+            // Utility backends
+            "custom" => Ok(BackendType::Custom),
+            "mock" => Ok(BackendType::Mock),
+            other => Err(format!("Unknown backend: {}", other)),
         }
     }
 }
 
 #[cfg(test)]
-#[allow(deprecated)]
 mod tests {
-    use super::super::llm::LlmProviderType;
     use super::*;
+    use std::str::FromStr;
+
+    #[test]
+    fn test_from_str_all_12_variants() {
+        let variants = [
+            ("ollama", BackendType::Ollama),
+            ("openai", BackendType::OpenAI),
+            ("anthropic", BackendType::Anthropic),
+            ("cohere", BackendType::Cohere),
+            ("vertexai", BackendType::VertexAI),
+            ("fastembed", BackendType::FastEmbed),
+            ("burn", BackendType::Burn),
+            ("githubcopilot", BackendType::GitHubCopilot),
+            ("openrouter", BackendType::OpenRouter),
+            ("zai", BackendType::ZAI),
+            ("custom", BackendType::Custom),
+            ("mock", BackendType::Mock),
+        ];
+
+        for (s, expected) in &variants {
+            let parsed = BackendType::from_str(s).expect(&format!("Failed to parse: {}", s));
+            assert_eq!(parsed, *expected, "Mismatch for: {}", s);
+        }
+    }
+
+    #[test]
+    fn test_from_str_case_insensitive() {
+        assert_eq!(
+            BackendType::from_str("OLLAMA").unwrap(),
+            BackendType::Ollama
+        );
+        assert_eq!(
+            BackendType::from_str("OpenAI").unwrap(),
+            BackendType::OpenAI
+        );
+        assert_eq!(
+            BackendType::from_str("ANTHROPIC").unwrap(),
+            BackendType::Anthropic
+        );
+    }
+
+    #[test]
+    fn test_from_str_github_copilot_aliases() {
+        let aliases = [
+            "github-copilot",
+            "github_copilot",
+            "copilot",
+            "githubcopilot",
+        ];
+        for alias in &aliases {
+            let parsed =
+                BackendType::from_str(alias).expect(&format!("Failed to parse alias: {}", alias));
+            assert_eq!(
+                parsed,
+                BackendType::GitHubCopilot,
+                "Alias mismatch: {}",
+                alias
+            );
+        }
+    }
+
+    #[test]
+    fn test_from_str_openrouter_aliases() {
+        let aliases = ["openrouter", "open_router", "open-router"];
+        for alias in &aliases {
+            let parsed =
+                BackendType::from_str(alias).expect(&format!("Failed to parse alias: {}", alias));
+            assert_eq!(parsed, BackendType::OpenRouter, "Alias mismatch: {}", alias);
+        }
+    }
+
+    #[test]
+    fn test_from_str_zai_aliases() {
+        let aliases = ["zai", "z.ai", "z_ai"];
+        for alias in &aliases {
+            let parsed =
+                BackendType::from_str(alias).expect(&format!("Failed to parse alias: {}", alias));
+            assert_eq!(parsed, BackendType::ZAI, "Alias mismatch: {}", alias);
+        }
+    }
+
+    #[test]
+    fn test_from_str_unknown_returns_error() {
+        assert!(BackendType::from_str("unknown").is_err());
+        assert!(BackendType::from_str("invalid").is_err());
+        assert!(BackendType::from_str("").is_err());
+    }
+
+    #[test]
+    fn test_from_str_roundtrip_all_variants() {
+        let all_variants = [
+            BackendType::Ollama,
+            BackendType::OpenAI,
+            BackendType::Anthropic,
+            BackendType::Cohere,
+            BackendType::VertexAI,
+            BackendType::FastEmbed,
+            BackendType::Burn,
+            BackendType::GitHubCopilot,
+            BackendType::OpenRouter,
+            BackendType::ZAI,
+            BackendType::Custom,
+            BackendType::Mock,
+        ];
+
+        for variant in &all_variants {
+            let s = variant.as_str();
+            let parsed = BackendType::from_str(s)
+                .expect(&format!("Failed to parse roundtrip for: {:?}", variant));
+            assert_eq!(parsed, *variant, "Roundtrip failed for {:?}", variant);
+        }
+    }
 
     #[test]
     fn test_capability_detection() {
@@ -308,24 +412,56 @@ mod tests {
     }
 
     #[test]
-    fn test_default_api_key_env_vars() {
+    fn test_api_key_env_var() {
         assert_eq!(
-            BackendType::OpenAI.default_api_key(),
+            BackendType::OpenAI.api_key_env_var(),
             Some("OPENAI_API_KEY")
         );
         assert_eq!(
-            BackendType::Anthropic.default_api_key(),
+            BackendType::Anthropic.api_key_env_var(),
             Some("ANTHROPIC_API_KEY")
         );
         assert_eq!(
-            BackendType::OpenRouter.default_api_key(),
+            BackendType::OpenRouter.api_key_env_var(),
             Some("OPENROUTER_API_KEY")
         );
-        assert_eq!(BackendType::ZAI.default_api_key(), Some("GLM_AUTH_TOKEN"));
+        assert_eq!(BackendType::ZAI.api_key_env_var(), Some("GLM_AUTH_TOKEN"));
 
-        assert_eq!(BackendType::GitHubCopilot.default_api_key(), None);
-        assert_eq!(BackendType::Ollama.default_api_key(), None);
-        assert_eq!(BackendType::FastEmbed.default_api_key(), None);
+        assert_eq!(BackendType::GitHubCopilot.api_key_env_var(), None);
+        assert_eq!(BackendType::Ollama.api_key_env_var(), None);
+        assert_eq!(BackendType::FastEmbed.api_key_env_var(), None);
+    }
+
+    #[test]
+    fn test_api_key_env_var_method() {
+        assert_eq!(
+            BackendType::OpenAI.api_key_env_var(),
+            Some("OPENAI_API_KEY")
+        );
+        assert_eq!(
+            BackendType::Anthropic.api_key_env_var(),
+            Some("ANTHROPIC_API_KEY")
+        );
+        assert_eq!(
+            BackendType::Cohere.api_key_env_var(),
+            Some("COHERE_API_KEY")
+        );
+        assert_eq!(
+            BackendType::VertexAI.api_key_env_var(),
+            Some("GOOGLE_API_KEY")
+        );
+        assert_eq!(
+            BackendType::OpenRouter.api_key_env_var(),
+            Some("OPENROUTER_API_KEY")
+        );
+        assert_eq!(BackendType::ZAI.api_key_env_var(), Some("GLM_AUTH_TOKEN"));
+
+        assert_eq!(BackendType::Ollama.api_key_env_var(), None);
+        assert_eq!(BackendType::FastEmbed.api_key_env_var(), None);
+        assert_eq!(BackendType::Burn.api_key_env_var(), None);
+        assert_eq!(BackendType::GitHubCopilot.api_key_env_var(), None);
+        assert_eq!(BackendType::Custom.api_key_env_var(), None);
+        assert_eq!(BackendType::Mock.api_key_env_var(), None);
     }
 
     #[test]
@@ -466,93 +602,6 @@ mod tests {
         for alias in &aliases {
             let parsed: BackendType = serde_json::from_str(alias).unwrap();
             assert_eq!(parsed, BackendType::ZAI, "Failed to parse alias: {}", alias);
-        }
-    }
-
-    #[test]
-    fn test_from_llm_provider_type() {
-        assert_eq!(
-            BackendType::from(LlmProviderType::Ollama),
-            BackendType::Ollama
-        );
-        assert_eq!(
-            BackendType::from(LlmProviderType::OpenAI),
-            BackendType::OpenAI
-        );
-        assert_eq!(
-            BackendType::from(LlmProviderType::Anthropic),
-            BackendType::Anthropic
-        );
-        assert_eq!(
-            BackendType::from(LlmProviderType::GitHubCopilot),
-            BackendType::GitHubCopilot
-        );
-        assert_eq!(
-            BackendType::from(LlmProviderType::OpenRouter),
-            BackendType::OpenRouter
-        );
-        assert_eq!(BackendType::from(LlmProviderType::ZAI), BackendType::ZAI);
-    }
-
-    #[test]
-    fn test_try_from_backend_type_succeeds_for_chat_backends() {
-        let chat_mappings = [
-            (BackendType::Ollama, LlmProviderType::Ollama),
-            (BackendType::OpenAI, LlmProviderType::OpenAI),
-            (BackendType::Anthropic, LlmProviderType::Anthropic),
-            (BackendType::GitHubCopilot, LlmProviderType::GitHubCopilot),
-            (BackendType::OpenRouter, LlmProviderType::OpenRouter),
-            (BackendType::ZAI, LlmProviderType::ZAI),
-        ];
-
-        for (backend, expected_provider) in &chat_mappings {
-            let result = LlmProviderType::try_from(backend.clone());
-            assert_eq!(
-                result,
-                Ok(*expected_provider),
-                "TryFrom failed for {:?}",
-                backend
-            );
-        }
-    }
-
-    #[test]
-    fn test_try_from_backend_type_fails_for_non_chat_backends() {
-        let non_chat = [
-            BackendType::FastEmbed,
-            BackendType::Burn,
-            BackendType::Cohere,
-            BackendType::VertexAI,
-            BackendType::Custom,
-            BackendType::Mock,
-        ];
-
-        for backend in &non_chat {
-            let result = LlmProviderType::try_from(backend.clone());
-            assert!(result.is_err(), "TryFrom should fail for {:?}", backend);
-        }
-    }
-
-    #[test]
-    fn test_llm_provider_type_roundtrip_through_backend_type() {
-        // Every LlmProviderType should survive: LlmProviderType -> BackendType -> LlmProviderType
-        let all_providers = [
-            LlmProviderType::Ollama,
-            LlmProviderType::OpenAI,
-            LlmProviderType::Anthropic,
-            LlmProviderType::GitHubCopilot,
-            LlmProviderType::OpenRouter,
-            LlmProviderType::ZAI,
-        ];
-
-        for provider in &all_providers {
-            let backend = BackendType::from(*provider);
-            let roundtripped = LlmProviderType::try_from(backend).unwrap();
-            assert_eq!(
-                &roundtripped, provider,
-                "Roundtrip failed for {:?}",
-                provider
-            );
         }
     }
 

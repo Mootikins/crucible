@@ -1,41 +1,15 @@
 //! Simple embedding configuration with sensible defaults
 
+use super::BackendType;
 use serde::{Deserialize, Serialize};
 use std::default::Default;
-
-/// Embedding provider type - enum for TOML serialization
-#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
-#[serde(rename_all = "lowercase")]
-pub enum EmbeddingProviderType {
-    /// Local FastEmbed provider (default, CPU-friendly)
-    #[default]
-    FastEmbed,
-    /// OpenAI API provider
-    OpenAI,
-    /// Anthropic API provider
-    Anthropic,
-    /// Ollama provider (local or remote)
-    Ollama,
-    /// Cohere API provider
-    Cohere,
-    /// Google Vertex AI provider
-    VertexAI,
-    /// Custom HTTP-based provider
-    Custom,
-    /// Mock provider for testing
-    Mock,
-    /// Burn ML framework provider (local, GPU-accelerated)
-    Burn,
-    /// No provider configured (used when migrating from legacy config)
-    None,
-}
 
 /// Embedding configuration - pragmatic settings for performance and cost
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EmbeddingConfig {
     /// Embedding provider type (fastembed, openai, anthropic)
-    #[serde(default)]
-    pub provider: EmbeddingProviderType,
+    #[serde(default = "default_provider")]
+    pub provider: Option<BackendType>,
     /// Model name (defaults to provider-appropriate optimal model)
     pub model: Option<String>,
     /// Custom API endpoint (only for remote providers)
@@ -50,6 +24,10 @@ pub struct EmbeddingConfig {
     pub max_concurrent: Option<usize>,
 }
 
+fn default_provider() -> Option<BackendType> {
+    Some(BackendType::FastEmbed)
+}
+
 fn default_batch_size() -> usize {
     16
 } // Conservative default for CPU-friendly performance
@@ -57,7 +35,7 @@ fn default_batch_size() -> usize {
 impl Default for EmbeddingConfig {
     fn default() -> Self {
         Self {
-            provider: EmbeddingProviderType::FastEmbed,
+            provider: Some(BackendType::FastEmbed),
             model: None, // Will use provider default
             api_url: None,
             batch_size: default_batch_size(),
@@ -66,94 +44,32 @@ impl Default for EmbeddingConfig {
     }
 }
 
-impl EmbeddingProviderType {
-    /// Get the provider type from a full configuration
-    pub fn from_config(config: &crate::enrichment::EmbeddingProviderConfig) -> Self {
-        match config {
-            crate::enrichment::EmbeddingProviderConfig::OpenAI(_) => Self::OpenAI,
-            crate::enrichment::EmbeddingProviderConfig::Ollama(_) => Self::Ollama,
-            crate::enrichment::EmbeddingProviderConfig::FastEmbed(_) => Self::FastEmbed,
-            crate::enrichment::EmbeddingProviderConfig::Cohere(_) => Self::Cohere,
-            crate::enrichment::EmbeddingProviderConfig::VertexAI(_) => Self::VertexAI,
-            crate::enrichment::EmbeddingProviderConfig::Custom(_) => Self::Custom,
-            crate::enrichment::EmbeddingProviderConfig::Mock(_) => Self::Mock,
-            crate::enrichment::EmbeddingProviderConfig::Burn(_) => Self::Burn,
-            // Note: Anthropic is not in the legacy config, so it's handled separately
-        }
-    }
-
-    /// Get the type name as a string
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            Self::OpenAI => "openai",
-            Self::Ollama => "ollama",
-            Self::FastEmbed => "fastembed",
-            Self::Cohere => "cohere",
-            Self::VertexAI => "vertexai",
-            Self::Custom => "custom",
-            Self::Mock => "mock",
-            Self::Anthropic => "anthropic",
-            Self::Burn => "burn",
-            Self::None => "none",
-        }
-    }
-}
-
 impl EmbeddingConfig {
     /// Get the actual model name to use
     pub fn get_model(&self) -> &str {
-        self.model.as_deref().unwrap_or(match self.provider {
-            EmbeddingProviderType::FastEmbed => "BAAI/bge-small-en-v1.5",
-            EmbeddingProviderType::OpenAI => "text-embedding-3-small",
-            EmbeddingProviderType::Anthropic => "claude-3-haiku-20240307",
-            EmbeddingProviderType::Ollama => "nomic-embed-text",
-            EmbeddingProviderType::Cohere => "embed-english-v3.0",
-            EmbeddingProviderType::VertexAI => "textembedding-gecko@003",
-            EmbeddingProviderType::Custom => "custom-model",
-            EmbeddingProviderType::Mock => "mock-test-model",
-            EmbeddingProviderType::Burn => "nomic-embed-text",
-            EmbeddingProviderType::None => "", // Not configured
+        self.model.as_deref().unwrap_or_else(|| {
+            self.provider
+                .and_then(|p| p.default_embedding_model())
+                .unwrap_or("")
         })
     }
 
     /// Get API URL for remote providers
     pub fn get_api_url(&self) -> Option<&str> {
-        match self.provider {
-            EmbeddingProviderType::FastEmbed => None, // Local provider
-            EmbeddingProviderType::OpenAI => self
-                .api_url
-                .as_deref()
-                .or(Some("https://api.openai.com/v1")),
-            EmbeddingProviderType::Anthropic => self
-                .api_url
-                .as_deref()
-                .or(Some("https://api.anthropic.com")),
-            EmbeddingProviderType::Ollama => {
-                self.api_url.as_deref().or(Some("http://localhost:11434"))
-            }
-            EmbeddingProviderType::Cohere => {
-                self.api_url.as_deref().or(Some("https://api.cohere.ai/v1"))
-            }
-            EmbeddingProviderType::VertexAI => self
-                .api_url
-                .as_deref()
-                .or(Some("https://aiplatform.googleapis.com")),
-            EmbeddingProviderType::Custom => self.api_url.as_deref(), // User must specify
-            EmbeddingProviderType::Mock => None,                      // Mock provider
-            EmbeddingProviderType::Burn => None,                      // Local GPU provider
-            EmbeddingProviderType::None => None,                      // Not configured
-        }
+        self.api_url
+            .as_deref()
+            .or_else(|| self.provider.and_then(|p| p.default_endpoint()))
     }
 
     /// Check if provider is local (no API calls needed)
     pub fn is_local(&self) -> bool {
         matches!(
             self.provider,
-            EmbeddingProviderType::FastEmbed
-                | EmbeddingProviderType::Ollama
-                | EmbeddingProviderType::Mock
-                | EmbeddingProviderType::Burn
-                | EmbeddingProviderType::None
+            Some(BackendType::FastEmbed)
+                | Some(BackendType::Ollama)
+                | Some(BackendType::Mock)
+                | Some(BackendType::Burn)
+                | None
         )
     }
 
@@ -168,28 +84,16 @@ impl EmbeddingConfig {
     /// - Custom: 4 (conservative default)
     pub fn get_max_concurrent(&self) -> usize {
         self.max_concurrent.unwrap_or_else(|| {
-            match self.provider {
-                EmbeddingProviderType::Ollama => 1,
-                EmbeddingProviderType::Burn => 1, // GPU-bound, sequential
-                EmbeddingProviderType::FastEmbed => {
-                    // CPU-bound: use half of available cores, minimum 1
-                    (num_cpus::get() / 2).max(1)
-                }
-                EmbeddingProviderType::OpenAI
-                | EmbeddingProviderType::Anthropic
-                | EmbeddingProviderType::Cohere
-                | EmbeddingProviderType::VertexAI => 8,
-                EmbeddingProviderType::Mock => 16,
-                EmbeddingProviderType::Custom => 4,
-                EmbeddingProviderType::None => 1, // Not configured, minimal
-            }
+            self.provider
+                .map(|p| p.default_max_concurrent())
+                .unwrap_or(1)
         })
     }
 
     /// Convert to EmbeddingProviderConfig for use with LLM crate
     pub fn to_provider_config(&self) -> crate::enrichment::EmbeddingProviderConfig {
         match self.provider {
-            EmbeddingProviderType::FastEmbed => {
+            Some(BackendType::FastEmbed) => {
                 crate::enrichment::EmbeddingProviderConfig::FastEmbed(
                     crate::enrichment::FastEmbedConfig {
                         model: self
@@ -203,7 +107,7 @@ impl EmbeddingConfig {
                     },
                 )
             }
-            EmbeddingProviderType::OpenAI => {
+            Some(BackendType::OpenAI) => {
                 crate::enrichment::EmbeddingProviderConfig::OpenAI(
                     crate::enrichment::OpenAIConfig {
                         api_key: std::env::var("OPENAI_API_KEY").unwrap_or_default(),
@@ -222,7 +126,7 @@ impl EmbeddingConfig {
                     },
                 )
             }
-            EmbeddingProviderType::Ollama => {
+            Some(BackendType::Ollama) => {
                 crate::enrichment::EmbeddingProviderConfig::Ollama(
                     crate::enrichment::OllamaConfig {
                         model: self
@@ -240,14 +144,14 @@ impl EmbeddingConfig {
                     },
                 )
             }
-            EmbeddingProviderType::Mock => {
+            Some(BackendType::Mock) => {
                 crate::enrichment::EmbeddingProviderConfig::Mock(crate::enrichment::MockConfig {
                     model: "mock-test-model".to_string(),
                     dimensions: 768,
                     simulated_latency_ms: 0,
                 })
             }
-            EmbeddingProviderType::Burn => {
+            Some(BackendType::Burn) => {
                 crate::enrichment::EmbeddingProviderConfig::Burn(
                     crate::enrichment::BurnEmbedConfig {
                         model: self

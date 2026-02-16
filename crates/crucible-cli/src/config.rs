@@ -9,12 +9,12 @@
 // - crucible_config::CliConfig is the small CLI-specific settings (show_progress, verbose, etc.)
 pub use crucible_config::{
     AcpConfig,
+    BackendType,
     ChatConfig,
     CliAppConfig as CliConfig, // Top-level config type for CLI
     CliConfig as CliAppConfig, // Small CLI settings (renamed for clarity)
     EmbeddingConfig,
     EmbeddingProviderConfig,
-    EmbeddingProviderType as ProviderType,
     HighlightingConfig,
 };
 
@@ -132,7 +132,7 @@ verbose = false
         assert_eq!(config.kiln_path, kiln_path);
         assert_eq!(
             config.embedding.provider,
-            crucible_config::EmbeddingProviderType::OpenAI
+            Some(crucible_config::BackendType::OpenAI)
         );
         assert_eq!(config.embedding.model, Some("test-model".to_string()));
         assert_eq!(
@@ -188,7 +188,7 @@ verbose = false
 
         assert_eq!(
             config.embedding.provider,
-            crucible_config::EmbeddingProviderType::FastEmbed
+            Some(crucible_config::BackendType::FastEmbed)
         );
         assert_eq!(config.embedding.batch_size, 16);
     }
@@ -205,7 +205,7 @@ verbose = false
         // New embedding defaults
         assert_eq!(
             config.embedding.provider,
-            crucible_config::EmbeddingProviderType::FastEmbed
+            Some(crucible_config::BackendType::FastEmbed)
         );
         assert_eq!(config.embedding.batch_size, 16);
 
@@ -256,7 +256,7 @@ verbose = false
         assert!(config.streaming());
         assert_eq!(
             config.embedding.provider,
-            crucible_config::EmbeddingProviderType::FastEmbed
+            Some(crucible_config::BackendType::FastEmbed)
         );
         assert_eq!(config.embedding.batch_size, 16);
     }
@@ -284,7 +284,7 @@ provider = "openai"
         assert_eq!(config.kiln_path.to_str().unwrap(), "/partial/kiln");
         assert_eq!(
             config.embedding.provider,
-            crucible_config::EmbeddingProviderType::OpenAI
+            Some(crucible_config::BackendType::OpenAI)
         );
 
         // Default fields should still be present
@@ -303,7 +303,7 @@ provider = "openai"
         assert_eq!(config.chat_model(), "llama3.2");
         assert_eq!(
             config.embedding.provider,
-            crucible_config::EmbeddingProviderType::FastEmbed
+            Some(crucible_config::BackendType::FastEmbed)
         );
     }
 
