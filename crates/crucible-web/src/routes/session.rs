@@ -5,11 +5,13 @@ use axum::{
     routing::{get, post, put},
     Json, Router,
 };
+use crucible_config::BackendType;
 use crucible_core::session::SessionAgent;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::net::IpAddr;
 use std::path::PathBuf;
+use std::str::FromStr;
 
 pub fn session_routes() -> Router<AppState> {
     Router::new()
@@ -119,11 +121,14 @@ async fn create_session(
     let session_id = result["session_id"].as_str().unwrap_or("");
 
     // Configure agent for the session (required before sending messages)
+    let provider_type = BackendType::from_str(&req.provider)
+        .map_err(|e| WebError::Validation(format!("Invalid provider: {}", e)))?;
+    
     let agent = SessionAgent {
         agent_type: "internal".to_string(),
         agent_name: None,
         provider_key: Some(req.provider.clone()),
-        provider: req.provider,
+        provider: provider_type,
         model: req.model,
         system_prompt: String::new(),
         temperature: None,
