@@ -13,8 +13,8 @@ use anyhow::Result;
 use crucible_cli::commands::process;
 use crucible_cli::config::{CliAppConfig, CliConfig};
 use crucible_config::{
-    AcpConfig, BackendType, ChatConfig, EmbeddingConfig, LlmConfig, ProcessingConfig,
-    ProvidersConfig, StorageConfig, StorageMode,
+    AcpConfig, BackendType, ChatConfig, LlmConfig, LlmProviderConfig, ProcessingConfig,
+    StorageConfig, StorageMode,
 };
 use crucible_core::test_support::fixtures::{create_kiln, KilnFixture};
 use std::path::PathBuf;
@@ -44,26 +44,25 @@ fn create_test_kiln() -> Result<TempDir> {
 
 /// Helper to create test CLI config
 fn create_test_config(kiln_path: PathBuf, _db_path: PathBuf) -> CliConfig {
+    let mut llm_config = LlmConfig::default();
+    llm_config.default = Some("local".to_string());
+    llm_config.providers.insert(
+        "local".to_string(),
+        LlmProviderConfig::builder(BackendType::FastEmbed).build(),
+    );
+
     CliConfig {
         kiln_path,
         agent_directories: Vec::new(),
-        embedding: EmbeddingConfig {
-            provider: Some(BackendType::Mock),
-            model: None,
-            api_url: None,
-            batch_size: 16,
-            max_concurrent: None,
-        },
         acp: AcpConfig {
             default_agent: Some("test-agent".to_string()),
             ..Default::default()
         },
         chat: ChatConfig::default(),
-        llm: LlmConfig::default(),
+        llm: llm_config,
         cli: CliAppConfig::default(),
         logging: None,
         processing: ProcessingConfig::default(),
-        providers: ProvidersConfig::default(),
         context: None,
         storage: Some(StorageConfig {
             mode: StorageMode::Embedded,

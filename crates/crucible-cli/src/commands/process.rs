@@ -118,7 +118,10 @@ pub async fn execute(
     // - Ollama: 1 (single GPU, sequential to avoid OOM)
     // - FastEmbed: num_cpus/2 (CPU-bound, parallel OK)
     // - Remote APIs: 8 (rate-limited, moderate concurrency)
-    let embedding_max_concurrent = config.embedding.get_max_concurrent();
+    let embedding_max_concurrent = config
+        .effective_llm_provider()
+        .map(|p| p.provider_type.default_max_concurrent())
+        .unwrap_or(crucible_config::BackendType::FastEmbed.default_max_concurrent());
     let workers = parallel
         .or(config.parallel_workers())
         .unwrap_or(embedding_max_concurrent)

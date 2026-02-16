@@ -120,10 +120,7 @@ fn validate_property_key(key: &str) -> SqliteResult<()> {
     Ok(())
 }
 
-fn filter_to_sql(
-    filter: &Filter,
-    params: &mut Vec<Box<dyn ToSql + Send>>,
-) -> SqliteResult<String> {
+fn filter_to_sql(filter: &Filter, params: &mut Vec<Box<dyn ToSql + Send>>) -> SqliteResult<String> {
     match filter {
         Filter::Tag(tag) => {
             params.push(Box::new(tag.clone()));
@@ -755,11 +752,8 @@ mod tests {
     #[test]
     fn test_filter_accepts_valid_property_keys() {
         for key in &["status", "my_key", "nested.path", "key123", "_private"] {
-            let filter = Filter::Property(
-                key.to_string(),
-                Op::Eq,
-                Value::String("val".to_string()),
-            );
+            let filter =
+                Filter::Property(key.to_string(), Op::Eq, Value::String("val".to_string()));
             let mut params: Vec<Box<dyn ToSql + Send>> = Vec::new();
             let result = filter_to_sql(&filter, &mut params);
             assert!(result.is_ok(), "Valid key '{}' should be accepted", key);
@@ -768,11 +762,7 @@ mod tests {
 
     #[test]
     fn test_filter_rejects_empty_property_key() {
-        let filter = Filter::Property(
-            "".to_string(),
-            Op::Eq,
-            Value::String("val".to_string()),
-        );
+        let filter = Filter::Property("".to_string(), Op::Eq, Value::String("val".to_string()));
         let mut params: Vec<Box<dyn ToSql + Send>> = Vec::new();
         let result = filter_to_sql(&filter, &mut params);
         assert!(result.is_err(), "Empty key should be rejected");

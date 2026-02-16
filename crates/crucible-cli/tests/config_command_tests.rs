@@ -47,7 +47,7 @@ fn test_config_init_creates_file() {
     let content = fs::read_to_string(&config_path).unwrap();
     assert!(content.contains("Crucible CLI Configuration"));
     assert!(content.contains("kiln_path"));
-    assert!(content.contains("[embedding]"));
+    assert!(content.contains("[llm]"));
     assert!(content.contains("[acp]"));
 }
 
@@ -164,8 +164,7 @@ fn test_config_show_default() {
     cmd.assert()
         .success()
         .stdout(predicate::str::contains("kiln_path"))
-        .stdout(predicate::str::contains("[embedding]"))
-        .stdout(predicate::str::contains("provider = \"fastembed\""));
+        .stdout(predicate::str::contains("[chat]"));
 }
 
 #[test]
@@ -182,7 +181,7 @@ fn test_config_show_json_format() {
     cmd.assert()
         .success()
         .stdout(predicate::str::contains("\"kiln_path\""))
-        .stdout(predicate::str::contains("\"embedding\""));
+        .stdout(predicate::str::contains("\"llm\""));
 }
 
 #[test]
@@ -197,11 +196,13 @@ fn test_config_show_with_file_config() {
         r#"
 kiln_path = "/file/kiln"
 
-[embedding]
-provider = "anthropic"
-model = "file-model"
-api_url = "https://api.anthropic.com"
-batch_size = 32
+[llm]
+default = "anthropic"
+
+[llm.providers.anthropic]
+type = "anthropic"
+default_model = "file-model"
+endpoint = "https://api.anthropic.com"
 
 [acp]
 default_agent = "claude-3-opus"
@@ -234,7 +235,7 @@ streaming = false
         .success()
         // Just check that it outputs a valid config structure
         .stdout(predicate::str::contains("kiln_path"))
-        .stdout(predicate::str::contains("[embedding]"))
+        .stdout(predicate::str::contains("[llm]"))
         .stdout(predicate::str::contains("provider"))
         .stdout(predicate::str::contains("[acp]"))
         .stdout(predicate::str::contains("[chat]"));
@@ -266,7 +267,7 @@ fn test_config_show_trace_without_config_file() {
         .success()
         .stdout(predicate::str::contains("# from: default"))
         .stdout(predicate::str::contains("kiln_path"))
-        .stdout(predicate::str::contains("[embedding]"));
+        .stdout(predicate::str::contains("[llm]"));
 }
 
 #[test]
@@ -283,9 +284,12 @@ fn test_config_show_trace_with_config_file() {
         r#"
 kiln_path = "/test/kiln"
 
-[embedding]
-provider = "ollama"
-model = "nomic-embed-text"
+[llm]
+default = "ollama"
+
+[llm.providers.ollama]
+type = "ollama"
+default_model = "nomic-embed-text"
 "#,
     )
     .unwrap();
@@ -356,8 +360,7 @@ fn test_config_dump_default() {
     cmd.assert()
         .success()
         .stdout(predicate::str::contains("kiln_path"))
-        .stdout(predicate::str::contains("[embedding]"))
-        .stdout(predicate::str::contains("provider = \"fastembed\""));
+        .stdout(predicate::str::contains("[chat]"));
 }
 
 #[test]
@@ -373,7 +376,7 @@ fn test_config_dump_json_format() {
     cmd.assert()
         .success()
         .stdout(predicate::str::contains("\"kiln_path\""))
-        .stdout(predicate::str::contains("\"embedding\""));
+        .stdout(predicate::str::contains("\"llm\""));
 }
 
 // ============================================================================
@@ -447,8 +450,6 @@ default_agent = "partial-agent"
         // Check that output is valid config
         .stdout(predicate::str::contains("kiln_path"))
         .stdout(predicate::str::contains("[acp]"))
-        .stdout(predicate::str::contains("[embedding]"))
-        .stdout(predicate::str::contains("provider"))
         .stdout(predicate::str::contains("[chat]"));
 
     env::remove_var("HOME");
@@ -469,14 +470,12 @@ fn test_config_show_preserves_order() {
 
     // Check that major sections appear in a reasonable order
     let kiln_pos = stdout.find("kiln_path").unwrap();
-    let embedding_pos = stdout.find("[embedding]").unwrap();
     let acp_pos = stdout.find("[acp]").unwrap();
     let chat_pos = stdout.find("[chat]").unwrap();
     let cli_pos = stdout.find("[cli]").unwrap();
 
     // Basic order check (not strict, just reasonable)
-    assert!(kiln_pos < embedding_pos);
-    assert!(embedding_pos < acp_pos);
+    assert!(kiln_pos < acp_pos);
     assert!(acp_pos < chat_pos);
     assert!(chat_pos < cli_pos);
 }
@@ -497,8 +496,11 @@ fn test_config_output_used_by_other_commands() {
         format!(
             r#"
 kiln_path = "{}"
-[embedding]
-provider = "fastembed"
+[llm]
+default = "local"
+
+[llm.providers.local]
+type = "fastembed"
 "#,
             kiln_temp.path().to_string_lossy().replace('\\', "\\\\")
         ),
@@ -571,9 +573,12 @@ fn test_config_show_with_large_config() {
     let mut content = r#"
 kiln_path = "/large/kiln"
 
-[embedding]
-provider = "openai"
-model = "text-embedding-3-large"
+[llm]
+default = "openai"
+
+[llm.providers.openai]
+type = "openai"
+default_model = "text-embedding-3-large"
 
 agent_directories = ["#
         .to_string();

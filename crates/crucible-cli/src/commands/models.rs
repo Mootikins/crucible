@@ -3,8 +3,14 @@ use crate::provider_detect::fetch_provider_models;
 use anyhow::Result;
 
 pub async fn execute(config: CliConfig) -> Result<()> {
-    let provider: crucible_config::BackendType = config.chat.provider;
-    let endpoint = config.chat.llm_endpoint();
+    let effective = config.effective_llm_provider().ok();
+    let provider = effective
+        .as_ref()
+        .map(|p| p.provider_type)
+        .unwrap_or(crucible_config::BackendType::Ollama);
+    let endpoint = effective
+        .map(|p| p.endpoint)
+        .unwrap_or_else(|| crucible_config::DEFAULT_OLLAMA_ENDPOINT.to_string());
 
     eprintln!("Fetching models from {:?} at {}...", provider, endpoint);
 

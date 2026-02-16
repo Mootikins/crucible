@@ -216,30 +216,47 @@ fn build_acp_session_agent(params: &AgentInitParams) -> SessionAgent {
 }
 
 fn build_internal_session_agent(config: &CliAppConfig) -> SessionAgent {
-    let model = config
-        .chat
-        .model
-        .clone()
+    let effective_llm = config.effective_llm_provider().ok();
+    let model = effective_llm
+        .as_ref()
+        .map(|p| p.model.clone())
+        .or_else(|| config.chat.model.clone())
         .unwrap_or_else(|| crucible_config::DEFAULT_CHAT_MODEL.to_string());
     let mcp_servers = config
         .mcp
         .as_ref()
         .map(|mcp| mcp.servers.iter().map(|s| s.name.clone()).collect())
         .unwrap_or_default();
-    let provider_str = config.chat.provider.as_str().to_string();
+    let provider_str = effective_llm
+        .as_ref()
+        .map(|p| p.provider_type.as_str().to_string())
+        .unwrap_or_else(|| crucible_config::BackendType::Ollama.as_str().to_string());
+    let provider_key = effective_llm
+        .as_ref()
+        .map(|p| p.key.clone())
+        .unwrap_or_else(|| provider_str.clone());
 
     SessionAgent {
         agent_type: "internal".to_string(),
         agent_name: None,
-        provider_key: Some(provider_str.clone()),
+        provider_key: Some(provider_key),
         provider: provider_str,
         model,
         system_prompt: String::new(),
-        temperature: config.chat.temperature.map(|t| t as f64),
-        max_tokens: config.chat.max_tokens,
+        temperature: effective_llm
+            .as_ref()
+            .map(|p| p.temperature as f64)
+            .or_else(|| config.chat.temperature.map(|t| t as f64)),
+        max_tokens: effective_llm
+            .as_ref()
+            .map(|p| p.max_tokens)
+            .or(config.chat.max_tokens),
         max_context_tokens: None,
         thinking_budget: None,
-        endpoint: config.chat.endpoint.clone(),
+        endpoint: effective_llm
+            .as_ref()
+            .map(|p| p.endpoint.clone())
+            .or_else(|| config.chat.endpoint.clone()),
         env_overrides: std::collections::HashMap::new(),
         mcp_servers,
         agent_card_name: None,
@@ -259,18 +276,17 @@ pub async fn create_internal_agent(
     use crucible_core::prompts::{base_prompt_for_size, ModelSize};
     use crucible_rig::{build_agent_with_kiln_tools, AgentComponents, RigAgentHandle};
 
-    let provider_backend: BackendType = config.chat.provider;
+    let provider_backend = config
+        .effective_llm_provider()
+        .map(|p| p.provider_type)
+        .unwrap_or(BackendType::Ollama);
 
-    let model = config
-        .chat
-        .model
-        .clone()
-        .unwrap_or_else(|| {
-            provider_backend
-                .default_chat_model()
-                .unwrap_or(crucible_config::DEFAULT_CHAT_MODEL)
-                .to_string()
-        });
+    let model = config.chat.model.clone().unwrap_or_else(|| {
+        provider_backend
+            .default_chat_model()
+            .unwrap_or(crucible_config::DEFAULT_CHAT_MODEL)
+            .to_string()
+    });
 
     // Detect model size (or use Medium if size-aware prompts disabled)
     let model_size = if config.chat.size_aware_prompts {
@@ -438,14 +454,12 @@ pub async fn create_internal_agent(
                 config.chat.timeout_secs,
             )?
         }
-        BackendType::Anthropic => {
-            build_standard_client(
-                BackendType::Anthropic,
-                config.chat.endpoint.clone(),
-                &model,
-                config.chat.timeout_secs,
-            )?
-        }
+        BackendType::Anthropic => build_standard_client(
+            BackendType::Anthropic,
+            config.chat.endpoint.clone(),
+            &model,
+            config.chat.timeout_secs,
+        )?,
         BackendType::GitHubCopilot => {
             let mut builder = LlmProviderConfig::builder(BackendType::GitHubCopilot);
             if let Some(endpoint) = config.chat.endpoint.clone() {
@@ -465,22 +479,18 @@ pub async fn create_internal_agent(
 
             crucible_rig::create_client(&copilot_config)?
         }
-        BackendType::OpenRouter => {
-            build_standard_client(
-                BackendType::OpenRouter,
-                config.chat.endpoint.clone(),
-                &model,
-                config.chat.timeout_secs,
-            )?
-        }
-        BackendType::ZAI => {
-            build_standard_client(
-                BackendType::ZAI,
-                config.chat.endpoint.clone(),
-                &model,
-                config.chat.timeout_secs,
-            )?
-        }
+        BackendType::OpenRouter => build_standard_client(
+            BackendType::OpenRouter,
+            config.chat.endpoint.clone(),
+            &model,
+            config.chat.timeout_secs,
+        )?,
+        BackendType::ZAI => build_standard_client(
+            BackendType::ZAI,
+            config.chat.endpoint.clone(),
+            &model,
+            config.chat.timeout_secs,
+        )?,
         BackendType::Cohere
         | BackendType::VertexAI
         | BackendType::FastEmbed

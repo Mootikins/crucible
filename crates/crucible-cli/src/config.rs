@@ -13,13 +13,12 @@ pub use crucible_config::{
     ChatConfig,
     CliAppConfig as CliConfig, // Top-level config type for CLI
     CliConfig as CliAppConfig, // Small CLI settings (renamed for clarity)
-    EmbeddingConfig,
     EmbeddingProviderConfig,
     HighlightingConfig,
 };
 
 // Legacy type aliases for backward compatibility
-pub type EmbeddingConfigSection = crucible_config::EmbeddingConfig;
+pub type EmbeddingConfigSection = crucible_config::EmbeddingProviderConfig;
 pub type LlmConfig = crucible_config::AcpConfig;
 
 /// Builder for programmatically constructing CliConfig (top-level CLI configuration)
@@ -106,10 +105,13 @@ mod tests {
                 r#"
 kiln_path = "{}"
 
-[embedding]
-provider = "openai"
-model = "test-model"
-api_url = "https://example.com"
+[llm]
+default = "openai"
+
+[llm.providers.openai]
+type = "openai"
+default_model = "test-model"
+endpoint = "https://example.com"
 
 [acp]
 default_agent = "claude-code"
@@ -130,15 +132,10 @@ verbose = false
 
         let config = CliConfig::load(Some(config_path), None, None).unwrap();
         assert_eq!(config.kiln_path, kiln_path);
-        assert_eq!(
-            config.embedding.provider,
-            Some(crucible_config::BackendType::OpenAI)
-        );
-        assert_eq!(config.embedding.model, Some("test-model".to_string()));
-        assert_eq!(
-            config.embedding.api_url,
-            Some("https://example.com".to_string())
-        );
+        let provider = config.effective_llm_provider().unwrap();
+        assert_eq!(provider.provider_type, crucible_config::BackendType::OpenAI);
+        assert_eq!(provider.model, "test-model");
+        assert_eq!(provider.endpoint, "https://example.com");
     }
 
     #[test]
@@ -171,7 +168,7 @@ verbose = false
         let config = CliConfig::default();
         let toml_str = config.display_as_toml().unwrap();
         assert!(toml_str.contains("kiln_path"));
-        assert!(toml_str.contains("[embedding]"));
+        assert!(!toml_str.contains("[embedding]"));
     }
 
     #[test]
@@ -179,18 +176,14 @@ verbose = false
         let config = CliConfig::default();
         let json_str = config.display_as_json().unwrap();
         assert!(json_str.contains("\"kiln_path\""));
-        assert!(json_str.contains("\"embedding\""));
+        assert!(json_str.contains("\"llm\""));
     }
 
     #[test]
     fn test_embedding_config_defaults() {
         let config = CliConfig::default();
 
-        assert_eq!(
-            config.embedding.provider,
-            Some(crucible_config::BackendType::FastEmbed)
-        );
-        assert_eq!(config.embedding.batch_size, 16);
+        assert!(!config.llm.has_providers());
     }
 
     #[test]
@@ -203,11 +196,7 @@ verbose = false
         assert!(config.streaming());
 
         // New embedding defaults
-        assert_eq!(
-            config.embedding.provider,
-            Some(crucible_config::BackendType::FastEmbed)
-        );
-        assert_eq!(config.embedding.batch_size, 16);
+        assert!(!config.llm.has_providers());
 
         // ACP defaults
         assert_eq!(config.acp.default_agent, None);
@@ -237,7 +226,7 @@ verbose = false
         let contents = fs::read_to_string(&config_path).unwrap();
         assert!(contents.contains("Crucible CLI Configuration"));
         assert!(contents.contains("kiln_path"));
-        assert!(contents.contains("[embedding]"));
+        assert!(contents.contains("[llm]"));
         assert!(contents.contains("[acp]"));
         assert!(contents.contains("[chat]"));
         assert!(contents.contains("[cli]"));
@@ -254,11 +243,7 @@ verbose = false
         assert_eq!(config.temperature(), 0.7);
         assert_eq!(config.max_tokens(), 2048);
         assert!(config.streaming());
-        assert_eq!(
-            config.embedding.provider,
-            Some(crucible_config::BackendType::FastEmbed)
-        );
-        assert_eq!(config.embedding.batch_size, 16);
+        assert!(!config.llm.has_providers());
     }
 
     #[test]
@@ -272,8 +257,11 @@ verbose = false
             &config_path,
             r#"
 kiln_path = "/partial/kiln"
-[embedding]
-provider = "openai"
+[llm]
+default = "openai"
+
+[llm.providers.openai]
+type = "openai"
 "#,
         )
         .unwrap();
@@ -282,15 +270,13 @@ provider = "openai"
 
         // Specified fields
         assert_eq!(config.kiln_path.to_str().unwrap(), "/partial/kiln");
-        assert_eq!(
-            config.embedding.provider,
-            Some(crucible_config::BackendType::OpenAI)
-        );
+        let provider = config.effective_llm_provider().unwrap();
+        assert_eq!(provider.provider_type, crucible_config::BackendType::OpenAI);
 
         // Default fields should still be present
         assert_eq!(config.chat_model(), "llama3.2");
         assert_eq!(config.temperature(), 0.7);
-        assert_eq!(config.embedding.batch_size, 16);
+        assert_eq!(provider.max_tokens, 4096);
     }
 
     #[test]
@@ -301,10 +287,7 @@ provider = "openai"
         let config = CliConfig::load(Some(nonexistent), None, None).unwrap();
 
         assert_eq!(config.chat_model(), "llama3.2");
-        assert_eq!(
-            config.embedding.provider,
-            Some(crucible_config::BackendType::FastEmbed)
-        );
+        assert!(!config.llm.has_providers());
     }
 
     #[test]
@@ -376,7 +359,7 @@ provider = "openai"
         let parsed: serde_json::Value = serde_json::from_str(&json_str).unwrap();
         assert!(parsed.is_object());
         assert!(parsed.get("kiln_path").is_some());
-        assert!(parsed.get("embedding").is_some());
+        assert!(parsed.get("llm").is_some());
     }
 
     #[test]
