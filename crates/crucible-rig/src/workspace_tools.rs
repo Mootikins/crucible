@@ -56,6 +56,7 @@ pub struct WorkspaceContext {
     mode_id: Arc<RwLock<String>>,
     session_id: Arc<RwLock<Option<String>>>,
     delegation_enabled: Arc<RwLock<bool>>,
+    delegation_targets: Vec<String>,
     delegation_depth: Arc<RwLock<u32>>,
     background_spawner: Option<Arc<dyn BackgroundSpawner>>,
     interaction_context: Option<Arc<InteractionContext>>,
@@ -69,10 +70,17 @@ impl WorkspaceContext {
             mode_id: Arc::new(RwLock::new("auto".to_string())),
             session_id: Arc::new(RwLock::new(None)),
             delegation_enabled: Arc::new(RwLock::new(true)),
+            delegation_targets: Vec::new(),
             delegation_depth: Arc::new(RwLock::new(0)),
             background_spawner: None,
             interaction_context: None,
         }
+    }
+
+    /// Set pre-resolved delegation target names for tool schemas.
+    pub fn with_delegation_targets(mut self, targets: Vec<String>) -> Self {
+        self.delegation_targets = targets;
+        self
     }
 
     /// Set the background task spawner
@@ -1063,6 +1071,21 @@ impl Tool for DelegateSessionTool {
     type Output = DelegateSessionOutput;
 
     async fn definition(&self, _prompt: String) -> ToolDefinition {
+        let target_description = self
+            .ctx
+            .as_ref()
+            .map(|ctx| {
+                if ctx.delegation_targets.is_empty() {
+                    "Agent to delegate to. Omit to use same agent.".to_string()
+                } else {
+                    format!(
+                        "Agent to delegate to. Available: {}. Omit to use same agent.",
+                        ctx.delegation_targets.join(", ")
+                    )
+                }
+            })
+            .unwrap_or_else(|| "Agent to delegate to. Omit to use same agent.".to_string());
+
         ToolDefinition {
             name: Self::NAME.to_string(),
             description: "Delegate work to a child agent session.".to_string(),
@@ -1088,7 +1111,7 @@ impl Tool for DelegateSessionTool {
                     },
                     "target": {
                         "type": "string",
-                        "description": "Agent to delegate to. Omit to use same agent."
+                        "description": target_description
                     }
                 },
                 "required": ["prompt", "description"]
@@ -1124,6 +1147,10 @@ impl Tool for DelegateSessionTool {
             format!("Description: {}", args.description),
             format!("Delegation depth: {}", child_depth),
         ];
+
+        if let Some(target) = args.target.as_ref() {
+            context_parts.push(format!("Target agent: {}", target));
+        }
 
         if let Some(files) = args.context_files.filter(|f| !f.is_empty()) {
             context_parts.push("Context files:".to_string());
@@ -1742,13 +1769,19 @@ mod tests {
                 description: "Error handling delegation".to_string(),
                 context_files: Some(vec!["src/lib.rs".to_string()]),
                 background: Some(true),
-                target: None,
+                target: Some("cursor".to_string()),
             })
             .await
             .unwrap();
 
         assert!(output.delegation_id.starts_with("deleg-"));
         assert!(matches!(output.status, DelegationStatus::Spawned));
+        let calls = spawner.subagent_calls.lock().await;
+        let (_, _, context) = calls.last().expect("expected recorded subagent call");
+        let context = context
+            .as_deref()
+            .expect("delegation call should include context");
+        assert!(context.contains("Target agent: cursor"));
     }
 
     #[tokio::test]
@@ -1913,6 +1946,38 @@ mod tests {
             .contains("Agent to delegate to"));
         let required = params["required"].as_array().unwrap();
         assert!(!required.iter().any(|v| v.as_str() == Some("target")));
+    }
+
+    #[test]
+    fn test_delegate_session_definition_lists_available_targets() {
+        let (temp, ctx) = create_test_context();
+        let _ = temp;
+        let ctx = ctx.with_delegation_targets(vec!["claude".to_string(), "opencode".to_string()]);
+        let tool = DelegateSessionTool::new(ctx);
+
+        let definition = futures::executor::block_on(tool.definition("test".to_string()));
+        let description = definition.parameters["properties"]["target"]["description"]
+            .as_str()
+            .unwrap();
+
+        assert_eq!(
+            description,
+            "Agent to delegate to. Available: claude, opencode. Omit to use same agent."
+        );
+    }
+
+    #[test]
+    fn test_delegate_session_definition_no_targets_omits_list() {
+        let (temp, ctx) = create_test_context();
+        let _ = temp;
+        let tool = DelegateSessionTool::new(ctx);
+
+        let definition = futures::executor::block_on(tool.definition("test".to_string()));
+        let description = definition.parameters["properties"]["target"]["description"]
+            .as_str()
+            .unwrap();
+
+        assert_eq!(description, "Agent to delegate to. Omit to use same agent.");
     }
 
     #[test]

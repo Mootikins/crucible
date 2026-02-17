@@ -28,6 +28,7 @@
 
 use crate::protocol::SessionEventMessage;
 use async_trait::async_trait;
+use crucible_config::AgentProfile;
 
 use crucible_core::background::{
     truncate, BackgroundSpawner, JobError, JobId, JobInfo, JobKind, JobResult,
@@ -39,6 +40,7 @@ use crucible_observe::events::LogEvent;
 use crucible_observe::session::SessionWriter;
 use dashmap::DashMap;
 use futures::StreamExt;
+use std::collections::HashMap;
 use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
@@ -102,6 +104,7 @@ struct RunningJob {
 
 pub struct SubagentContext {
     pub agent: SessionAgent,
+    pub agent_profiles: HashMap<String, AgentProfile>,
     pub workspace: PathBuf,
     pub parent_session_id: Option<String>,
     /// Parent session directory for creating subagent session files
@@ -128,6 +131,18 @@ struct SubagentExecutionOptions {
     max_turns: usize,
     max_output_bytes: usize,
     timeout: Option<Duration>,
+}
+
+fn parse_target_agent_name(context: Option<&str>) -> Option<String> {
+    const TARGET_PREFIX: &str = "Target agent: ";
+    context.and_then(|ctx| {
+        ctx.lines().find_map(|line| {
+            line.strip_prefix(TARGET_PREFIX)
+                .map(str::trim)
+                .filter(|target| !target.is_empty())
+                .map(ToString::to_string)
+        })
+    })
 }
 
 pub struct BackgroundJobManager {
@@ -744,12 +759,13 @@ impl BackgroundJobManager {
             .ok_or(BackgroundError::NoSubagentFactory)?;
 
         let (
-            mut agent_config,
+            parent_agent_config,
+            agent_profiles,
             workspace,
             parent_session_dir,
             parent_session_id,
             delegator_name,
-            target_name,
+            default_target_name,
             delegation_depth,
         ) = {
             let ctx = self.subagent_contexts.get(session_id).ok_or_else(|| {
@@ -757,6 +773,7 @@ impl BackgroundJobManager {
             })?;
             (
                 ctx.agent.clone(),
+                ctx.agent_profiles.clone(),
                 ctx.workspace.clone(),
                 ctx.parent_session_dir.clone(),
                 ctx.parent_session_id.clone(),
@@ -765,15 +782,30 @@ impl BackgroundJobManager {
                 ctx.delegation_depth,
             )
         };
+        let mut agent_config = parent_agent_config.clone();
+
+        let requested_target_name = parse_target_agent_name(context.as_deref());
+        let effective_target_name = requested_target_name
+            .clone()
+            .or_else(|| default_target_name.clone());
+
+        if let Some(target_name) = requested_target_name {
+            let profile = agent_profiles.get(&target_name).ok_or_else(|| {
+                BackgroundError::SpawnFailed(format!(
+                    "Delegation target profile '{target_name}' was not found"
+                ))
+            })?;
+            agent_config = SessionAgent::from_profile(profile, &target_name);
+        }
 
         let is_delegation = parent_session_id.is_some();
         let child_delegation_depth = delegation_depth.saturating_add(1);
         let child_parent_session_id = parent_session_id.clone();
 
         self.enforce_delegation_capabilities(
-            &agent_config,
+            &parent_agent_config,
             delegator_name.as_deref(),
-            target_name.as_deref(),
+            effective_target_name.as_deref(),
             child_delegation_depth,
             session_id,
         )?;
@@ -833,10 +865,11 @@ impl BackgroundJobManager {
                 child_context_key,
                 SubagentContext {
                     agent: agent_config.clone(),
+                    agent_profiles: agent_profiles.clone(),
                     workspace: workspace.clone(),
                     parent_session_id: child_parent_session_id,
                     parent_session_dir: info.session_path.clone(),
-                    delegator_agent_name: target_name,
+                    delegator_agent_name: effective_target_name,
                     target_agent_name: None,
                     delegation_depth: child_delegation_depth,
                 },
@@ -1225,7 +1258,7 @@ enum BashError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crucible_config::{BackendType, DelegationConfig};
+    use crucible_config::{AgentProfile, BackendType, DelegationConfig};
     use crucible_core::background::JobStatus;
     use crucible_core::traits::chat::{AgentHandle, ChatChunk, ChatError, ChatResult};
     use futures::stream::{self, BoxStream};
@@ -1340,6 +1373,18 @@ mod tests {
         }
     }
 
+    fn test_agent_profile(command: &str, args: &[&str]) -> AgentProfile {
+        AgentProfile {
+            extends: None,
+            command: Some(command.to_string()),
+            args: Some(args.iter().map(|arg| arg.to_string()).collect()),
+            env: HashMap::new(),
+            description: Some("delegation test target".to_string()),
+            capabilities: None,
+            delegation: None,
+        }
+    }
+
     fn make_subagent_manager_with_factory_and_identity(
         factory: SubagentFactory,
         delegation_config: Option<DelegationConfig>,
@@ -1354,6 +1399,7 @@ mod tests {
             "session-1",
             SubagentContext {
                 agent: test_session_agent(delegation_config),
+                agent_profiles: HashMap::new(),
                 workspace: std::env::temp_dir(),
                 parent_session_id: Some("session-1".to_string()),
                 parent_session_dir: None,
@@ -1392,6 +1438,7 @@ mod tests {
             "session-1",
             SubagentContext {
                 agent: test_session_agent(delegation_config),
+                agent_profiles: HashMap::new(),
                 workspace: std::env::temp_dir(),
                 parent_session_id: Some("session-1".to_string()),
                 parent_session_dir: None,
@@ -1698,6 +1745,172 @@ mod tests {
 
         assert!(matches!(err, BackgroundError::SpawnFailed(_)));
         assert!(err.to_string().contains("not allowed"));
+    }
+
+    #[tokio::test]
+    async fn test_delegation_with_target_uses_different_session_agent() {
+        let observed = Arc::new(StdMutex::new(None));
+        let observed_for_factory = observed.clone();
+        let manager = make_subagent_manager_with_factory_and_identity(
+            Box::new(move |agent, _workspace| {
+                let mut lock = observed_for_factory
+                    .lock()
+                    .expect("observation mutex should be available");
+                *lock = Some(agent.clone());
+                Box::pin(async move {
+                    Ok(Box::new(MockSubagentHandle::new(
+                        MockSubagentBehavior::ImmediateSuccess("ok".to_string()),
+                    )) as Box<dyn AgentHandle + Send + Sync>)
+                })
+            }),
+            Some(DelegationConfig {
+                enabled: true,
+                max_depth: 1,
+                allowed_targets: Some(vec!["cursor".to_string()]),
+                result_max_bytes: 51200,
+                max_concurrent_delegations: 3,
+            }),
+            Some("parent-agent"),
+            Some("worker-agent"),
+        );
+        let mut agent_profiles = HashMap::new();
+        agent_profiles.insert("cursor".to_string(), test_agent_profile("cursor-acp", &["acp"]));
+        manager.register_subagent_context(
+            "session-1",
+            SubagentContext {
+                agent: test_session_agent(Some(DelegationConfig {
+                    enabled: true,
+                    max_depth: 1,
+                    allowed_targets: Some(vec!["cursor".to_string()]),
+                    result_max_bytes: 51200,
+                    max_concurrent_delegations: 3,
+                })),
+                agent_profiles,
+                workspace: std::env::temp_dir(),
+                parent_session_id: Some("session-1".to_string()),
+                parent_session_dir: None,
+                delegator_agent_name: Some("parent-agent".to_string()),
+                target_agent_name: Some("worker-agent".to_string()),
+                delegation_depth: 0,
+            },
+        );
+
+        let _ = manager
+            .spawn_subagent_blocking(
+                "session-1",
+                "delegate this".to_string(),
+                Some("Target agent: cursor".to_string()),
+                SubagentBlockingConfig::default(),
+                None,
+            )
+            .await
+            .expect("delegation with explicit target should succeed");
+
+        let observed = observed
+            .lock()
+            .expect("observation mutex should be available")
+            .clone()
+            .expect("factory should have observed target agent config");
+        assert_eq!(observed.agent_name.as_deref(), Some("cursor"));
+        assert_eq!(observed.model, "cursor");
+    }
+
+    #[tokio::test]
+    async fn test_delegation_with_target_validates_allowed() {
+        let manager = make_subagent_manager_with_factory_and_identity(
+            behavior_factory(MockSubagentBehavior::ImmediateSuccess("ok".to_string())),
+            Some(DelegationConfig {
+                enabled: true,
+                max_depth: 1,
+                allowed_targets: Some(vec!["allowed-agent".to_string()]),
+                result_max_bytes: 51200,
+                max_concurrent_delegations: 3,
+            }),
+            Some("parent-agent"),
+            None,
+        );
+        let mut agent_profiles = HashMap::new();
+        agent_profiles.insert("cursor".to_string(), test_agent_profile("cursor-acp", &["acp"]));
+        manager.register_subagent_context(
+            "session-1",
+            SubagentContext {
+                agent: test_session_agent(Some(DelegationConfig {
+                    enabled: true,
+                    max_depth: 1,
+                    allowed_targets: Some(vec!["allowed-agent".to_string()]),
+                    result_max_bytes: 51200,
+                    max_concurrent_delegations: 3,
+                })),
+                agent_profiles,
+                workspace: std::env::temp_dir(),
+                parent_session_id: Some("session-1".to_string()),
+                parent_session_dir: None,
+                delegator_agent_name: Some("parent-agent".to_string()),
+                target_agent_name: None,
+                delegation_depth: 0,
+            },
+        );
+
+        let err = manager
+            .spawn_subagent_blocking(
+                "session-1",
+                "delegate this".to_string(),
+                Some("Target agent: cursor".to_string()),
+                SubagentBlockingConfig::default(),
+                None,
+            )
+            .await
+            .expect_err("unauthorized explicit target should be rejected");
+
+        assert!(matches!(err, BackgroundError::SpawnFailed(_)));
+        assert!(err.to_string().contains("not allowed"));
+    }
+
+    #[tokio::test]
+    async fn test_delegation_without_target_uses_parent_agent() {
+        let observed = Arc::new(StdMutex::new(None));
+        let observed_for_factory = observed.clone();
+        let manager = make_subagent_manager_with_factory_and_identity(
+            Box::new(move |agent, _workspace| {
+                let mut lock = observed_for_factory
+                    .lock()
+                    .expect("observation mutex should be available");
+                *lock = Some(agent.clone());
+                Box::pin(async move {
+                    Ok(Box::new(MockSubagentHandle::new(
+                        MockSubagentBehavior::ImmediateSuccess("ok".to_string()),
+                    )) as Box<dyn AgentHandle + Send + Sync>)
+                })
+            }),
+            Some(DelegationConfig {
+                enabled: true,
+                max_depth: 1,
+                allowed_targets: None,
+                result_max_bytes: 51200,
+                max_concurrent_delegations: 3,
+            }),
+            Some("parent-agent"),
+            None,
+        );
+
+        let _ = manager
+            .spawn_subagent_blocking(
+                "session-1",
+                "delegate this".to_string(),
+                Some("Delegation ID: deleg-1\nDescription: no explicit target".to_string()),
+                SubagentBlockingConfig::default(),
+                None,
+            )
+            .await
+            .expect("delegation without explicit target should succeed");
+
+        let observed = observed
+            .lock()
+            .expect("observation mutex should be available")
+            .clone()
+            .expect("factory should have observed parent agent config");
+        assert_eq!(observed.agent_name.as_deref(), Some("test-agent"));
+        assert_eq!(observed.model, "test-agent");
     }
 
     #[tokio::test]
@@ -2035,6 +2248,7 @@ mod tests {
                     result_max_bytes: 51200,
                     max_concurrent_delegations: 3,
                 })),
+                agent_profiles: HashMap::new(),
                 workspace: std::env::temp_dir(),
                 parent_session_id: Some("session-1".to_string()),
                 parent_session_dir: Some(parent_dir.path().to_path_buf()),
@@ -2510,6 +2724,7 @@ mod tests {
     fn subagent_context_default_delegation_depth_is_zero() {
         let ctx = SubagentContext {
             agent: test_session_agent(None),
+            agent_profiles: HashMap::new(),
             workspace: std::env::temp_dir(),
             parent_session_id: Some("session-1".to_string()),
             parent_session_dir: None,
@@ -2808,6 +3023,7 @@ mod tests {
             "session-1",
             SubagentContext {
                 agent: test_session_agent(Some(default_enabled_delegation_config())),
+                agent_profiles: HashMap::new(),
                 workspace: std::env::temp_dir(),
                 parent_session_id: None,
                 parent_session_dir: None,
