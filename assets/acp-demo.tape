@@ -24,7 +24,7 @@ Set PlaybackSpeed 2
 
 # Launch Crucible chat with Claude Code as ACP agent
 # The agent gets MCP tools and Precognition context from the knowledge graph
-Type "PATH=/home/moot/.nvm/versions/node/v24.7.0/bin:/home/moot/crucible/target/debug:$PATH cru chat -a claude --no-process"
+Type "cru chat -a claude --no-process --set perm.autoconfirm_session"
 Enter
 Sleep 10s
 
