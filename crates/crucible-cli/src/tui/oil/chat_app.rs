@@ -124,6 +124,7 @@ pub enum ChatAppMsg {
     DelegationSpawned {
         id: String,
         prompt: String,
+        target_agent: Option<String>,
     },
     DelegationCompleted {
         id: String,
@@ -694,12 +695,17 @@ impl App for OilChatApp {
                 });
                 Action::Continue
             }
-            ChatAppMsg::DelegationSpawned { id, prompt } => {
+            ChatAppMsg::DelegationSpawned {
+                id,
+                prompt,
+                target_agent,
+            } => {
                 if !self.container_list.is_streaming() {
                     self.container_list.mark_turn_active();
                 }
-                self.container_list
-                    .add_delegation(CachedSubagent::new(id, &prompt, "delegation"));
+                let mut delegation = CachedSubagent::new(id, &prompt, "delegation");
+                delegation.target_agent = target_agent.clone();
+                self.container_list.add_delegation(delegation);
                 Action::Continue
             }
             ChatAppMsg::DelegationCompleted { id, summary } => {
