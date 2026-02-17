@@ -2,6 +2,7 @@
 
 [![CI](https://github.com/Mootikins/crucible/actions/workflows/ci.yml/badge.svg)](https://github.com/Mootikins/crucible/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-MIT%2FApache--2.0-blue.svg)](LICENSE-MIT)
+[![Docs](https://img.shields.io/badge/docs-mootikins.github.io%2Fcrucible-blue)](https://mootikins.github.io/crucible/)
 
 **A local-first AI agent that turns every conversation into a searchable, linkable note you own.**
 
@@ -109,6 +110,7 @@ See the [plugin guide](./docs/Help/Concepts/Scripting%20Languages.md) for the fu
 
 ## Documentation
 
+- **[Documentation Site](https://mootikins.github.io/crucible/)** — searchable, organized reference
 - **[docs/](./docs/)** is both the user guide and a working example kiln (155 interlinked notes)
 - **[AGENTS.md](./AGENTS.md)** covers architecture and AI agent instructions
 

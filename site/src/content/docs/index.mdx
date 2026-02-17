@@ -16,6 +16,29 @@ hero:
 
 import { Card, CardGrid } from '@astrojs/starlight/components';
 
+## What Makes Crucible Different
+
+Most AI chat tools treat conversations as disposable. Crucible treats them as **knowledge**.
+
+- **Sessions are markdown.** Every chat saves to a `.md` file in your workspace. Search them, link them, version them in git.
+- **Your notes become agent memory.** Precognition auto-injects relevant vault context before each LLM turn. Wikilinks define relationships. Block-level embeddings power semantic search at paragraph granularity.
+- **Bring any LLM.** Ollama, OpenAI, Anthropic, local GGUF models — swap freely.
+- **Extend with Lua & Fennel.** Write tools, handlers, and automations as plugins.
+- **Plaintext first.** No proprietary formats. Files are the source of truth.
+
+## Quick Start
+
+```bash
+# Install
+curl -fsSL https://github.com/Mootikins/crucible/releases/latest/download/install.sh | sh
+
+# Start chatting
+cru chat
+
+# Or expose your knowledge base via MCP
+cru mcp
+```
+
 ## Explore
 
 <CardGrid stagger>
