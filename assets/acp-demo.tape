@@ -33,17 +33,19 @@ Type "./crucible/target/debug/cru chat -a claude --no-process"
 Enter
 Sleep 10s
 
+# Enable auto-approval of tool permissions for this session
+Type ":set perm.autoconfirm_session true"
+Enter
+Sleep 2s
+
 # Ask a question that exercises the protocol docs from the knowledge graph
 # Precognition will inject ACP/MCP reference docs as context before Claude responds
 Type "How does ACP differ from MCP, and how does Crucible use both?"
 Enter
-Sleep 30s
+Sleep 120s
 
-# Approve any tool permission prompts (Claude may request tool access)
-Type "y"
-Enter
-Sleep 60s
-
-# Clean exit
+# Exit — first Ctrl+C shows "press again to quit", second confirms
 Ctrl+C
-Sleep 2s
+Sleep 500ms
+Ctrl+C
+Sleep 5s
