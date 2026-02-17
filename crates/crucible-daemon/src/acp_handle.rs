@@ -10,6 +10,7 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::collections::HashMap;
 
 use async_trait::async_trait;
 use futures::stream::BoxStream;
@@ -23,7 +24,9 @@ use crucible_acp::InProcessMcpHost;
 use crucible_config::AcpConfig;
 use crucible_core::enrichment::EmbeddingProvider;
 use crucible_core::session::SessionAgent;
-use crucible_core::traits::chat::{AgentHandle, ChatChunk, ChatError, ChatResult, ChatToolCall};
+use crucible_core::traits::chat::{
+    AgentHandle, ChatChunk, ChatError, ChatResult, ChatToolCall, ChatToolResult,
+};
 use crucible_core::traits::KnowledgeRepository;
 use crucible_core::types::acp::schema::{AvailableCommand, SessionModeState};
 use crucible_core::types::mode::default_internal_modes;
@@ -228,15 +231,17 @@ impl AgentHandle for AcpAgentHandle {
                 >,
             >,
             Vec<ChatToolCall>,
+            HashMap<String, String>,
         )>;
 
         Box::pin(futures::stream::unfold(
-            Some((chunk_rx, result_rx, Vec::new())) as UnfoldState,
+            Some((chunk_rx, result_rx, Vec::new(), HashMap::new())) as UnfoldState,
             |state| async move {
-                let (mut rx, result_rx, mut tool_calls): (
+                let (mut rx, result_rx, mut tool_calls, mut tool_names_by_id): (
                     mpsc::UnboundedReceiver<StreamingChunk>,
                     _,
                     Vec<ChatToolCall>,
+                    HashMap<String, String>,
                 ) = state?;
 
                 match rx.recv().await {
@@ -260,10 +265,15 @@ impl AgentHandle for AcpAgentHandle {
                                 usage: None,
                                 subagent_events: None,
                             },
-                            StreamingChunk::ToolStart { name, id } => {
+                            StreamingChunk::ToolStart {
+                                name,
+                                id,
+                                arguments,
+                            } => {
+                                tool_names_by_id.insert(id.clone(), name.clone());
                                 tool_calls.push(ChatToolCall {
                                     name: name.clone(),
-                                    arguments: None,
+                                    arguments: arguments.clone(),
                                     id: Some(id.clone()),
                                 });
                                 ChatChunk {
@@ -271,7 +281,7 @@ impl AgentHandle for AcpAgentHandle {
                                     done: false,
                                     tool_calls: Some(vec![ChatToolCall {
                                         name,
-                                        arguments: None,
+                                        arguments,
                                         id: Some(id),
                                     }]),
                                     tool_results: None,
@@ -280,17 +290,30 @@ impl AgentHandle for AcpAgentHandle {
                                     subagent_events: None,
                                 }
                             }
-                            StreamingChunk::ToolEnd { id: _ } => ChatChunk {
-                                delta: String::new(),
-                                done: false,
-                                tool_calls: None,
-                                tool_results: None,
-                                reasoning: None,
-                                usage: None,
-                                subagent_events: None,
-                            },
+                            StreamingChunk::ToolEnd { id, result, error } => {
+                                let name = tool_names_by_id
+                                    .remove(&id)
+                                    .unwrap_or_else(|| "unknown_tool".to_string());
+                                ChatChunk {
+                                    delta: String::new(),
+                                    done: false,
+                                    tool_calls: None,
+                                    tool_results: Some(vec![ChatToolResult {
+                                        name,
+                                        result: result.unwrap_or_default(),
+                                        error,
+                                        call_id: Some(id),
+                                    }]),
+                                    reasoning: None,
+                                    usage: None,
+                                    subagent_events: None,
+                                }
+                            }
                         };
-                        Some((Ok(chat_chunk), Some((rx, result_rx, tool_calls))))
+                        Some((
+                            Ok(chat_chunk),
+                            Some((rx, result_rx, tool_calls, tool_names_by_id)),
+                        ))
                     }
                     None => match result_rx.await {
                         Ok(Ok((_content, acp_tool_calls, _response))) => {
