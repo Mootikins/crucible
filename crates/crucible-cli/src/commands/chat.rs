@@ -312,9 +312,10 @@ async fn run_interactive_chat(
     use crucible_core::events::EventRing;
     use crucible_core::traits::chat::is_read_only;
 
-    {
+    let parsed_set_overrides = {
         use crate::tui::oil::commands::{validate_set_for_cli, SetEffect};
 
+        let mut parsed = Vec::with_capacity(set_overrides.len());
         for input in &set_overrides {
             match validate_set_for_cli(input) {
                 Err(e) => {
@@ -328,10 +329,11 @@ async fn run_interactive_chat(
                     );
                     std::process::exit(1);
                 }
-                Ok(_) => {}
+                Ok(effect) => parsed.push(effect),
             }
         }
-    }
+        parsed
+    };
 
     let default_agent = config.acp.default_agent.clone();
 
@@ -366,7 +368,7 @@ async fn run_interactive_chat(
         .with_context_limit(context_limit)
         .with_show_thinking(config.chat.show_thinking)
         .with_agent_name(agent_name)
-        .with_initial_sets(set_overrides);
+        .with_initial_sets(parsed_set_overrides);
 
     info!("Starting oil chat with model: {}", model_name);
 
@@ -761,7 +763,7 @@ async fn apply_oneshot_set_overrides(
     set_overrides: &[String],
     is_acp: bool,
 ) -> bool {
-    use crate::tui::oil::commands::{validate_set_for_cli, SetEffect, SetRpcAction};
+    use crate::tui::oil::commands::{CliValue, SetEffect, SetRpcAction, validate_set_for_cli};
 
     let mut autoconfirm = false;
 
@@ -790,8 +792,13 @@ async fn apply_oneshot_set_overrides(
             }
             SetEffect::TuiLocal { key, value } => {
                 if key == "perm.autoconfirm_session" {
-                    autoconfirm = match value.as_deref() {
-                        Some("false") | Some("0") | Some("no") | Some("off") => false,
+                    autoconfirm = match value {
+                        CliValue::Disable => false,
+                        CliValue::Set(v)
+                            if matches!(v.to_ascii_lowercase().as_str(), "false" | "0" | "no" | "off") =>
+                        {
+                            false
+                        }
                         _ => true,
                     };
                 } else {

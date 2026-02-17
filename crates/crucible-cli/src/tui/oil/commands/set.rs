@@ -44,8 +44,16 @@ pub enum SetRpcAction {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub enum CliValue {
+    Enable,
+    Disable,
+    Toggle,
+    Set(String),
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub enum SetEffect {
-    TuiLocal { key: String, value: Option<String> },
+    TuiLocal { key: String, value: CliValue },
     DaemonRpc(SetRpcAction),
 }
 
@@ -78,48 +86,9 @@ pub fn validate_set_for_cli(input: &str) -> Result<SetEffect, SetError> {
         | SetCommand::QueryHistory { .. }
         | SetCommand::Reset { .. }
         | SetCommand::Pop { .. } => Err(SetError::NotSupportedAsCli),
-        SetCommand::Enable { key } => {
-            if is_tui_local_key(&key) {
-                Ok(SetEffect::TuiLocal { key, value: None })
-            } else if is_daemon_rpc_key(&key) {
-                Err(SetError::InvalidValue {
-                    key,
-                    message: "this key requires an explicit value".to_string(),
-                })
-            } else {
-                Err(SetError::UnknownKey(key))
-            }
-        }
-        SetCommand::Disable { key } => {
-            if is_tui_local_key(&key) {
-                Ok(SetEffect::TuiLocal {
-                    key,
-                    value: Some("false".to_string()),
-                })
-            } else if is_daemon_rpc_key(&key) {
-                Err(SetError::InvalidValue {
-                    key,
-                    message: "this key requires an explicit value".to_string(),
-                })
-            } else {
-                Err(SetError::UnknownKey(key))
-            }
-        }
-        SetCommand::Toggle { key } => {
-            if is_tui_local_key(&key) {
-                Ok(SetEffect::TuiLocal {
-                    key,
-                    value: Some("__toggle__".to_string()),
-                })
-            } else if is_daemon_rpc_key(&key) {
-                Err(SetError::InvalidValue {
-                    key,
-                    message: "this key requires an explicit value".to_string(),
-                })
-            } else {
-                Err(SetError::UnknownKey(key))
-            }
-        }
+        SetCommand::Enable { key } => classify_key_without_value(key, CliValue::Enable),
+        SetCommand::Disable { key } => classify_key_without_value(key, CliValue::Disable),
+        SetCommand::Toggle { key } => classify_key_without_value(key, CliValue::Toggle),
         SetCommand::Set { key, value } => match key.as_str() {
             "model" => Ok(SetEffect::DaemonRpc(SetRpcAction::SwitchModel(value))),
             "thinkingbudget" => {
@@ -176,12 +145,12 @@ pub fn validate_set_for_cli(input: &str) -> Result<SetEffect, SetError> {
                 })?;
                 Ok(SetEffect::TuiLocal {
                     key,
-                    value: Some(value),
+                    value: CliValue::Set(value),
                 })
             }
             "thinking" | "precognition" | "verbose" | "theme" => Ok(SetEffect::TuiLocal {
                 key,
-                value: Some(value),
+                value: CliValue::Set(value),
             }),
             "precognition.results" => {
                 let parsed = value.parse::<usize>().map_err(|_| SetError::InvalidValue {
@@ -196,11 +165,24 @@ pub fn validate_set_for_cli(input: &str) -> Result<SetEffect, SetError> {
                 }
                 Ok(SetEffect::TuiLocal {
                     key,
-                    value: Some(value),
+                    value: CliValue::Set(value),
                 })
             }
             _ => Err(SetError::UnknownKey(key)),
         },
+    }
+}
+
+fn classify_key_without_value(key: String, effect: CliValue) -> Result<SetEffect, SetError> {
+    if is_tui_local_key(&key) {
+        Ok(SetEffect::TuiLocal { key, value: effect })
+    } else if is_daemon_rpc_key(&key) {
+        Err(SetError::InvalidValue {
+            key,
+            message: "this key requires an explicit value".to_string(),
+        })
+    } else {
+        Err(SetError::UnknownKey(key))
     }
 }
 
@@ -638,7 +620,7 @@ mod tests {
             validate_set_for_cli("perm.autoconfirm_session"),
             Ok(SetEffect::TuiLocal {
                 key: "perm.autoconfirm_session".to_string(),
-                value: None,
+                value: CliValue::Enable,
             })
         );
     }
@@ -678,7 +660,7 @@ mod tests {
             validate_set_for_cli("verbose!"),
             Ok(SetEffect::TuiLocal {
                 key: "verbose".to_string(),
-                value: Some("__toggle__".to_string()),
+                value: CliValue::Toggle,
             })
         );
     }
