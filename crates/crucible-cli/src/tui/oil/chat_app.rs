@@ -1506,10 +1506,7 @@ impl OilChatApp {
                     self.handle_set_command(&format!("set model {}", model_name))
                 }
             }
-            "clear" => {
-                self.reset_session();
-                Action::Send(ChatAppMsg::ClearHistory)
-            }
+            "clear" => Action::Send(ChatAppMsg::ClearHistory),
             _ if command.starts_with("reload ") => {
                 let plugin_name = command
                     .strip_prefix("reload ")
@@ -2321,7 +2318,7 @@ impl OilChatApp {
         self.status = "Ready".to_string();
     }
 
-    fn reset_session(&mut self) {
+    pub(crate) fn reset_session(&mut self) {
         self.container_list.clear();
         self.message_counter = 0;
         self.deferred_messages.clear();
@@ -2842,7 +2839,8 @@ mod tests {
         assert_eq!(app.container_list().len(), 1);
 
         let action = app.handle_repl_command(":clear");
-        assert!(app.container_list().is_empty());
+        // reset_session() is now called by the runner after confirming non-ACP
+        assert_eq!(app.container_list().len(), 1);
         assert!(matches!(action, Action::Send(ChatAppMsg::ClearHistory)));
     }
 
