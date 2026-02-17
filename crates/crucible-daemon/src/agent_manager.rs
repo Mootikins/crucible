@@ -2,13 +2,16 @@
 
 use crate::agent_factory::{create_agent_from_session_config, AgentFactoryError};
 use crate::background_manager::BackgroundJobManager;
+use crate::permission_bridge::{DaemonPermissionGate, PermissionPromptCallback};
 use crate::protocol::SessionEventMessage;
 use crate::session_manager::{SessionError, SessionManager};
 use crucible_config::{BackendType, PatternStore};
+use crucible_config::components::permissions::PermissionConfig;
 use crucible_core::events::SessionEvent;
 use crucible_core::interaction::{InteractionRequest, PermRequest, PermResponse, PermissionScope};
 use crucible_core::session::SessionAgent;
 use crucible_core::traits::chat::AgentHandle;
+use crucible_core::traits::PermissionGate;
 use crucible_lua::{
     execute_permission_hooks, register_crucible_on_api, register_permission_hook_api,
     LuaScriptHandlerRegistry, PermissionHook, PermissionHookResult, PermissionRequest,
@@ -132,6 +135,7 @@ pub struct AgentManager {
     pending_permissions: Arc<DashMap<String, HashMap<PermissionId, PendingPermission>>>,
     mcp_gateway: Option<Arc<tokio::sync::RwLock<crucible_tools::mcp_gateway::McpGatewayManager>>>,
     llm_config: Option<crucible_config::LlmConfig>,
+    permission_config: Option<PermissionConfig>,
 }
 
 impl AgentManager {
@@ -142,6 +146,7 @@ impl AgentManager {
             Arc<tokio::sync::RwLock<crucible_tools::mcp_gateway::McpGatewayManager>>,
         >,
         llm_config: Option<crucible_config::LlmConfig>,
+        permission_config: Option<PermissionConfig>,
     ) -> Self {
         Self {
             request_state: Arc::new(DashMap::new()),
@@ -152,6 +157,7 @@ impl AgentManager {
             pending_permissions: Arc::new(DashMap::new()),
             mcp_gateway,
             llm_config,
+            permission_config,
         }
     }
 
@@ -494,12 +500,19 @@ impl AgentManager {
             "Creating new agent"
         );
 
+        let acp_permission_handler = if resolved_config.agent_type == "acp" {
+            Some(self.build_acp_permission_handler(session_id, event_tx))
+        } else {
+            None
+        };
+
         let agent = create_agent_from_session_config(
             &resolved_config,
             workspace,
             Some(self.background_manager.clone()),
             event_tx,
             self.mcp_gateway.clone(),
+            acp_permission_handler,
         )
         .await?;
         let agent = Arc::new(Mutex::new(agent));
@@ -507,6 +520,124 @@ impl AgentManager {
             .insert(session_id.to_string(), agent.clone());
 
         Ok(agent)
+    }
+
+    fn build_acp_permission_handler(
+        &self,
+        session_id: &str,
+        event_tx: &broadcast::Sender<SessionEventMessage>,
+    ) -> crucible_acp::client::PermissionRequestHandler {
+        let pending_permissions = self.pending_permissions.clone();
+        let session_id_owned = session_id.to_string();
+        let event_tx_owned = event_tx.clone();
+
+        let ask_callback: PermissionPromptCallback = Arc::new(move |perm_request: PermRequest| {
+            let pending_permissions = pending_permissions.clone();
+            let session_id_owned = session_id_owned.clone();
+            let event_tx_owned = event_tx_owned.clone();
+
+            Box::pin(async move {
+                let permission_id = format!("perm-{}", uuid::Uuid::new_v4());
+                let (response_tx, response_rx) = oneshot::channel();
+
+                let pending = PendingPermission {
+                    request: perm_request.clone(),
+                    response_tx,
+                };
+
+                pending_permissions
+                    .entry(session_id_owned.clone())
+                    .or_default()
+                    .insert(permission_id.clone(), pending);
+
+                let interaction_request = InteractionRequest::Permission(perm_request);
+                let _ = event_tx_owned.send(SessionEventMessage::interaction_requested(
+                    &session_id_owned,
+                    &permission_id,
+                    &interaction_request,
+                ));
+
+                let result =
+                    tokio::time::timeout(std::time::Duration::from_secs(300), response_rx).await;
+
+                match result {
+                    Ok(Ok(response)) => response,
+                    Ok(Err(_)) => {
+                        if let Some(mut session_map) = pending_permissions.get_mut(&session_id_owned)
+                        {
+                            session_map.remove(&permission_id);
+                        }
+                        PermResponse::deny_with_reason(
+                            "Permission request channel closed before response",
+                        )
+                    }
+                    Err(_) => {
+                        if let Some(mut session_map) = pending_permissions.get_mut(&session_id_owned)
+                        {
+                            session_map.remove(&permission_id);
+                        }
+                        PermResponse::deny_with_reason("Permission request timed out")
+                    }
+                }
+            })
+        });
+
+        let gate: Arc<dyn PermissionGate> = Arc::new(
+            DaemonPermissionGate::new(self.permission_config.clone(), true)
+                .with_prompt_callback(ask_callback),
+        );
+
+        Arc::new(move |request: agent_client_protocol::RequestPermissionRequest| {
+            let gate = gate.clone();
+
+            Box::pin(async move {
+                use agent_client_protocol::{
+                    PermissionOptionKind, RequestPermissionOutcome, SelectedPermissionOutcome,
+                };
+
+                let tool_name = request
+                    .tool_call
+                    .fields
+                    .title
+                    .as_deref()
+                    .unwrap_or("acp_tool")
+                    .to_string();
+                let args = request
+                    .tool_call
+                    .fields
+                    .raw_input
+                    .clone()
+                    .unwrap_or(serde_json::Value::Null);
+
+                let permission = PermRequest::tool(tool_name, args);
+                let response = gate.request_permission(permission).await;
+
+                let desired_kind = if response.allowed {
+                    if response.scope == PermissionScope::Project
+                        || response.scope == PermissionScope::User
+                        || response.scope == PermissionScope::Session
+                        || response.pattern.is_some()
+                    {
+                        PermissionOptionKind::AllowAlways
+                    } else {
+                        PermissionOptionKind::AllowOnce
+                    }
+                } else {
+                    PermissionOptionKind::RejectOnce
+                };
+
+                request
+                    .options
+                    .iter()
+                    .find(|opt| opt.kind == desired_kind)
+                    .map(|opt| {
+                        RequestPermissionOutcome::Selected(SelectedPermissionOutcome::new(
+                            opt.option_id.clone(),
+                        ))
+                    })
+                    .unwrap_or(RequestPermissionOutcome::Cancelled)
+            })
+        })
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -1615,7 +1746,7 @@ mod tests {
     fn create_test_agent_manager(session_manager: Arc<SessionManager>) -> AgentManager {
         let (event_tx, _) = broadcast::channel(16);
         let background_manager = Arc::new(BackgroundJobManager::new(event_tx));
-        AgentManager::new(session_manager, background_manager, None, None)
+        AgentManager::new(session_manager, background_manager, None, None, None)
     }
 
     fn create_test_agent_manager_with_providers(
@@ -1624,7 +1755,7 @@ mod tests {
     ) -> AgentManager {
         let (event_tx, _) = broadcast::channel(16);
         let background_manager = Arc::new(BackgroundJobManager::new(event_tx));
-        AgentManager::new(session_manager, background_manager, None, Some(llm_config))
+        AgentManager::new(session_manager, background_manager, None, Some(llm_config), None)
     }
 
     #[tokio::test]
@@ -3348,6 +3479,7 @@ mod tests {
             background_manager,
             None,
             Some(llm_config),
+            None,
         );
 
         agent_manager
@@ -3387,8 +3519,13 @@ mod tests {
 
         let (event_tx, _) = broadcast::channel(16);
         let background_manager = Arc::new(BackgroundJobManager::new(event_tx));
-        let agent_manager =
-            AgentManager::new(session_manager.clone(), background_manager, None, None);
+        let agent_manager = AgentManager::new(
+            session_manager.clone(),
+            background_manager,
+            None,
+            None,
+            None,
+        );
 
         agent_manager
             .configure_agent(&session.id, test_agent())
@@ -3437,6 +3574,7 @@ mod tests {
             background_manager,
             None,
             Some(llm_config),
+            None,
         );
 
         agent_manager
@@ -3459,7 +3597,7 @@ mod tests {
     ) -> AgentManager {
         let (event_tx, _) = broadcast::channel(16);
         let background_manager = Arc::new(BackgroundJobManager::new(event_tx));
-        AgentManager::new(session_manager, background_manager, None, Some(llm_config))
+        AgentManager::new(session_manager, background_manager, None, Some(llm_config), None)
     }
 
     fn create_test_agent_manager_with_both(
@@ -3468,7 +3606,7 @@ mod tests {
     ) -> AgentManager {
         let (event_tx, _) = broadcast::channel(16);
         let background_manager = Arc::new(BackgroundJobManager::new(event_tx));
-        AgentManager::new(session_manager, background_manager, None, Some(llm_config))
+        AgentManager::new(session_manager, background_manager, None, Some(llm_config), None)
     }
 
     #[tokio::test]
