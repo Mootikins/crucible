@@ -1757,7 +1757,7 @@ mod tests {
     async fn test_delegate_session_background_returns_spawned_status() {
         let (temp, base_ctx) = create_test_context();
         let spawner = Arc::new(MockBackgroundSpawner::new());
-        let ctx = base_ctx.with_background_spawner(spawner);
+        let ctx = base_ctx.with_background_spawner(spawner.clone());
         let _ = temp;
         ctx.set_session_id("parent-session-1");
         ctx.set_delegation_depth(1);
