@@ -756,16 +756,6 @@ async fn run_oneshot_chat(
     Ok(())
 }
 
-fn format_set_error(err: &crate::tui::oil::commands::SetError) -> String {
-    use crate::tui::oil::commands::SetError;
-    match err {
-        SetError::Parse(e) => e.to_string(),
-        SetError::NotSupportedAsCli => "not supported as CLI flag".to_string(),
-        SetError::InvalidValue { key, message } => format!("{}: {}", key, message),
-        SetError::UnknownKey(key) => format!("unknown key '{}'", key),
-    }
-}
-
 async fn apply_oneshot_set_overrides(
     handle: &mut Box<dyn crucible_core::traits::chat::AgentHandle + Send + Sync>,
     set_overrides: &[String],
@@ -779,7 +769,7 @@ async fn apply_oneshot_set_overrides(
         let effect = match validate_set_for_cli(input) {
             Ok(effect) => effect,
             Err(err) => {
-                eprintln!("error: invalid --set '{}': {}", input, format_set_error(&err));
+                eprintln!("error: invalid --set '{}': {}", input, err);
                 std::process::exit(1);
             }
         };

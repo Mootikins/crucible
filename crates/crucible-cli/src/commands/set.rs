@@ -57,19 +57,7 @@ fn collect_rpc_actions(settings: &[String]) -> Result<Vec<(String, SetRpcAction)
 }
 
 pub async fn execute(settings: Vec<String>, session_id: Option<String>) -> anyhow::Result<()> {
-    let session_id = match resolve_session_id(session_id, std::env::var("CRU_SESSION").ok()) {
-        Ok(id) => id,
-        Err(CliSetError::MissingSession) => {
-            eprintln!(
-                "error: no session specified. Use --session <ID> or set CRU_SESSION env var.\n\
-                 \n\
-                 Tip: find session IDs with `cru session daemon list`"
-            );
-            std::process::exit(1);
-        }
-        Err(_) => unreachable!("resolve_session_id only returns MissingSession"),
-    };
-
+    // Validate all settings FIRST, before resolving session
     let rpc_actions = match collect_rpc_actions(&settings) {
         Ok(actions) => actions,
         Err(CliSetError::TuiLocalSetting { key, input }) => {
@@ -102,7 +90,21 @@ pub async fn execute(settings: Vec<String>, session_id: Option<String>) -> anyho
             );
             std::process::exit(1);
         }
-        Err(CliSetError::MissingSession) => unreachable!("session already resolved"),
+        Err(CliSetError::MissingSession) => unreachable!("collect_rpc_actions doesn't return MissingSession"),
+    };
+
+    // Only resolve session if we have RPC actions to apply
+    let session_id = match resolve_session_id(session_id, std::env::var("CRU_SESSION").ok()) {
+        Ok(id) => id,
+        Err(CliSetError::MissingSession) => {
+            eprintln!(
+                "error: no session specified. Use --session <ID> or set CRU_SESSION env var.\n\
+                 \n\
+                 Tip: find session IDs with `cru session daemon list`"
+            );
+            std::process::exit(1);
+        }
+        Err(_) => unreachable!("resolve_session_id only returns MissingSession"),
     };
 
     let client = DaemonClient::connect_or_start()
