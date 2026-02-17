@@ -1,0 +1,1 @@
+-- crucible-help plugin: registers kiln docs as agent skill context

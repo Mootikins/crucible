@@ -1,0 +1,14 @@
+name: crucible-help
+version: "0.1.0"
+description: Registers Crucible documentation as agent skill context
+author: Crucible Team
+license: MIT
+
+main: init.lua
+
+capabilities:
+  - kiln
+  - agent
+
+exports:
+  auto_discover: true
