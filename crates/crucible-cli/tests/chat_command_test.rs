@@ -69,6 +69,7 @@ async fn test_chat_command_does_not_double_open_database() -> Result<()> {
         8192,                             // max_context_tokens
         vec![],                           // env_overrides
         None,                             // resume (session ID)
+        vec![],                           // set_overrides
     )
     .await;
 
@@ -163,6 +164,7 @@ async fn test_chat_command_with_minimal_config() -> Result<()> {
         8192,   // max_context_tokens
         vec![], // env_overrides
         None,   // resume (session ID)
+        vec![], // set_overrides
     )
     .await;
 
