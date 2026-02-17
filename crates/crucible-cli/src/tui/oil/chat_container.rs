@@ -8,15 +8,13 @@
 //! - SystemMessage: System-level messages
 
 use crate::tui::oil::components::{
-    render_delegation, render_shell_execution, render_subagent, render_thinking_block,
-    render_tool_call_with_frame, render_user_prompt,
+    render_shell_execution, render_subagent, render_thinking_block, render_tool_call_with_frame,
+    render_user_prompt,
 };
 use crate::tui::oil::markdown::{markdown_to_node_styled, Margins, RenderStyle};
 use crate::tui::oil::node::{col, row, scrollback, spinner, text, Node};
 use crate::tui::oil::style::Padding;
-use crate::tui::oil::viewport_cache::{
-    CachedDelegation, CachedShellExecution, CachedSubagent, CachedToolCall,
-};
+use crate::tui::oil::viewport_cache::{CachedShellExecution, CachedSubagent, CachedToolCall};
 
 /// Parameters for rendering a container view.
 ///
@@ -98,7 +96,7 @@ pub enum ChatContainer {
     /// Delegation execution (session-to-session)
     Delegation {
         id: String,
-        delegation: CachedDelegation,
+        delegation: CachedSubagent,
     },
 
     /// Shell command execution
@@ -142,10 +140,10 @@ impl ChatContainer {
                 )
             }
             Self::Delegation { delegation, .. } => {
-                use crate::tui::oil::viewport_cache::DelegationStatus;
                 matches!(
                     delegation.status,
-                    DelegationStatus::Completed | DelegationStatus::Failed
+                    crate::tui::oil::viewport_cache::SubagentStatus::Completed
+                        | crate::tui::oil::viewport_cache::SubagentStatus::Failed
                 )
             }
             Self::ShellExecution { .. } => true,
@@ -230,11 +228,11 @@ impl ChatContainer {
             }
 
             Self::Delegation { id, delegation } => {
-                let content = render_delegation(delegation, params.spinner_frame);
-                use crate::tui::oil::viewport_cache::DelegationStatus;
+                let content = render_subagent(delegation, params.spinner_frame);
                 let is_complete = matches!(
                     delegation.status,
-                    DelegationStatus::Completed | DelegationStatus::Failed
+                    crate::tui::oil::viewport_cache::SubagentStatus::Completed
+                        | crate::tui::oil::viewport_cache::SubagentStatus::Failed
                 );
                 if is_complete {
                     scrollback(id.clone(), [content])
@@ -789,7 +787,7 @@ impl ContainerList {
         }
     }
 
-    pub fn add_delegation(&mut self, delegation: CachedDelegation) {
+    pub fn add_delegation(&mut self, delegation: CachedSubagent) {
         self.remove_empty_trailing_response();
 
         let id = self.next_id("delegation");
@@ -797,11 +795,7 @@ impl ContainerList {
             .push(ChatContainer::Delegation { id, delegation });
     }
 
-    pub fn update_delegation(
-        &mut self,
-        delegation_id: &str,
-        f: impl FnOnce(&mut CachedDelegation),
-    ) {
+    pub fn update_delegation(&mut self, delegation_id: &str, f: impl FnOnce(&mut CachedSubagent)) {
         for container in self.containers.iter_mut().rev() {
             if let ChatContainer::Delegation { delegation, .. } = container {
                 if delegation.id.as_ref() == delegation_id {
@@ -929,10 +923,10 @@ impl ContainerList {
                 )
             }
             Some(ChatContainer::Delegation { delegation, .. }) => {
-                use crate::tui::oil::viewport_cache::DelegationStatus;
                 matches!(
                     delegation.status,
-                    DelegationStatus::Completed | DelegationStatus::Failed
+                    crate::tui::oil::viewport_cache::SubagentStatus::Completed
+                        | crate::tui::oil::viewport_cache::SubagentStatus::Failed
                 )
             }
             _ => true,

@@ -14,7 +14,6 @@ use crate::tui::oil::theme::ThemeTokens;
 use crate::tui::oil::viewport_cache::{CachedChatItem, CachedMessage};
 use crate::tui::oil::ViewContext;
 
-use super::delegation_render::render_delegation;
 use super::shell_render::render_shell_execution;
 use super::subagent_render::render_subagent;
 use super::tool_render::render_tool_call;
@@ -38,7 +37,7 @@ impl<'a> MessageList<'a> {
                 CachedChatItem::ToolCall(tool) => render_tool_call(tool),
                 CachedChatItem::ShellExecution(shell) => render_shell_execution(shell),
                 CachedChatItem::Subagent(subagent) => render_subagent(subagent, 0),
-                CachedChatItem::Delegation(delegation) => render_delegation(delegation, 0),
+                CachedChatItem::Delegation(delegation) => render_subagent(delegation, 0),
             };
             nodes.push(node);
         }
