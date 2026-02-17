@@ -2,4 +2,6 @@
 
 mod set;
 
-pub use set::{validate_set_for_cli, ParseError, SetCommand, SetEffect, SetError, SetRpcAction};
+pub use set::{
+    validate_set_for_cli, CliValue, ParseError, SetCommand, SetEffect, SetError, SetRpcAction,
+};

@@ -23,6 +23,7 @@ use std::time::Duration;
 use tokio::sync::mpsc;
 
 use crate::context_enricher::ContextEnricher;
+use crate::tui::oil::commands::{SetEffect, SetRpcAction};
 
 pub struct OilChatRunner {
     terminal: Terminal,
@@ -45,7 +46,7 @@ pub struct OilChatRunner {
     slash_commands: Vec<(String, String)>,
     enricher: Option<Arc<ContextEnricher>>,
     agent_name: Option<String>,
-    initial_sets: Vec<String>,
+    initial_sets: Vec<SetEffect>,
 }
 
 impl OilChatRunner {
@@ -167,7 +168,7 @@ impl OilChatRunner {
         self
     }
 
-    pub fn with_initial_sets(mut self, sets: Vec<String>) -> Self {
+    pub fn with_initial_sets(mut self, sets: Vec<SetEffect>) -> Self {
         self.initial_sets = sets;
         self
     }
@@ -252,26 +253,22 @@ impl OilChatRunner {
         let (msg_tx, msg_rx) = mpsc::unbounded_channel::<ChatAppMsg>();
 
         if !self.initial_sets.is_empty() {
-            use crate::tui::oil::commands::{validate_set_for_cli, SetEffect, SetRpcAction};
-
-            for input in std::mem::take(&mut self.initial_sets) {
-                if let Ok(effect) = validate_set_for_cli(&input) {
-                    match effect {
-                        SetEffect::TuiLocal { key, value } => {
-                            app.apply_cli_override(&key, value.as_deref());
-                        }
-                        SetEffect::DaemonRpc(action) => {
-                            let msg = match action {
-                                SetRpcAction::SwitchModel(m) => ChatAppMsg::SwitchModel(m),
-                                SetRpcAction::SetThinkingBudget(Some(b)) => {
-                                    ChatAppMsg::SetThinkingBudget(b)
-                                }
-                                SetRpcAction::SetThinkingBudget(None) => continue,
-                                SetRpcAction::SetTemperature(t) => ChatAppMsg::SetTemperature(t),
-                                SetRpcAction::SetMaxTokens(n) => ChatAppMsg::SetMaxTokens(n),
-                            };
-                            let _ = msg_tx.send(msg);
-                        }
+            for effect in std::mem::take(&mut self.initial_sets) {
+                match effect {
+                    SetEffect::TuiLocal { key, value } => {
+                        app.apply_cli_override(&key, value);
+                    }
+                    SetEffect::DaemonRpc(action) => {
+                        let msg = match action {
+                            SetRpcAction::SwitchModel(m) => ChatAppMsg::SwitchModel(m),
+                            SetRpcAction::SetThinkingBudget(Some(b)) => {
+                                ChatAppMsg::SetThinkingBudget(b)
+                            }
+                            SetRpcAction::SetThinkingBudget(None) => continue,
+                            SetRpcAction::SetTemperature(t) => ChatAppMsg::SetTemperature(t),
+                            SetRpcAction::SetMaxTokens(n) => ChatAppMsg::SetMaxTokens(n),
+                        };
+                        let _ = msg_tx.send(msg);
                     }
                 }
             }
