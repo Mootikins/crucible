@@ -450,6 +450,24 @@ pub fn default_daemon_plugin_paths() -> Vec<PathBuf> {
         paths.push(config_dir.join("crucible").join("plugins"));
     }
 
+    if let Ok(runtime_base) = std::env::var("CRUCIBLE_RUNTIME") {
+        let runtime_plugins = PathBuf::from(runtime_base).join("plugins");
+        if runtime_plugins.exists() {
+            tracing::debug!("Adding runtime plugin path: {:?}", runtime_plugins);
+            paths.push(runtime_plugins);
+        }
+    } else {
+        if let Ok(exe_path) = std::env::current_exe() {
+            if let Some(exe_dir) = exe_path.parent() {
+                let runtime_plugins = exe_dir.join("..").join("..").join("runtime").join("plugins");
+                if runtime_plugins.exists() {
+                    tracing::debug!("Adding exe-relative runtime plugin path: {:?}", runtime_plugins);
+                    paths.push(runtime_plugins);
+                }
+            }
+        }
+    }
+
     paths
 }
 
@@ -470,6 +488,44 @@ mod tests {
     #[test]
     fn default_paths_includes_config_dir() {
         let paths = default_daemon_plugin_paths();
+        let has_plugins = paths
+            .iter()
+            .any(|p| p.to_string_lossy().contains("plugins"));
+        assert!(has_plugins, "Expected plugins path in {:?}", paths);
+    }
+
+    #[test]
+    fn test_default_paths_includes_runtime_when_set() {
+        use tempfile::TempDir;
+        
+        let tmp = TempDir::new().unwrap();
+        let runtime_dir = tmp.path();
+        std::fs::create_dir(runtime_dir.join("plugins")).unwrap();
+        
+        std::env::set_var("CRUCIBLE_RUNTIME", runtime_dir.to_string_lossy().to_string());
+        
+        let paths = default_daemon_plugin_paths();
+        
+        let has_runtime = paths
+            .iter()
+            .any(|p| p.ends_with("plugins") && p.starts_with(runtime_dir));
+        
+        std::env::remove_var("CRUCIBLE_RUNTIME");
+        
+        assert!(has_runtime, "Expected runtime plugin path in {:?}", paths);
+    }
+
+    #[test]
+    fn test_runtime_path_resolved_from_exe() {
+        // Ensure CRUCIBLE_RUNTIME is not set
+        std::env::remove_var("CRUCIBLE_RUNTIME");
+        
+        let paths = default_daemon_plugin_paths();
+        
+        // Should have at least one path (config dir or exe-relative)
+        assert!(!paths.is_empty(), "Expected at least one path");
+        
+        // At least one path should contain "plugins"
         let has_plugins = paths
             .iter()
             .any(|p| p.to_string_lossy().contains("plugins"));

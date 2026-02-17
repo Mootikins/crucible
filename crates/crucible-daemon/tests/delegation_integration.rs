@@ -1,10 +1,11 @@
 use async_trait::async_trait;
 use crucible_config::{BackendType, DelegationConfig};
 use crucible_core::background::{JobResult, JobStatus, SubagentBlockingConfig};
-use crucible_core::session::SessionAgent;
+use crucible_core::session::{SessionAgent, SessionType};
 use crucible_core::traits::chat::{AgentHandle, ChatChunk};
 use crucible_core::traits::ChatResult;
 use crucible_daemon::background_manager::{BackgroundJobManager, SubagentContext, SubagentFactory};
+use crucible_daemon::{AgentManager, FileSessionStorage, SessionManager};
 use crucible_daemon::protocol::SessionEventMessage;
 use futures::stream::{self, BoxStream};
 use futures::StreamExt;
@@ -83,6 +84,34 @@ fn test_session_agent(enabled: bool, max_concurrent_delegations: u32) -> Session
         provider_key: None,
         provider: BackendType::Mock,
         model: "mock-model".to_string(),
+        system_prompt: "test".to_string(),
+        temperature: None,
+        max_tokens: None,
+        max_context_tokens: None,
+        thinking_budget: None,
+        endpoint: None,
+        env_overrides: HashMap::new(),
+        mcp_servers: vec![],
+        agent_card_name: None,
+        capabilities: None,
+        agent_description: None,
+        delegation_config: Some(DelegationConfig {
+            enabled,
+            max_depth: 2,
+            allowed_targets: None,
+            result_max_bytes: 51200,
+            max_concurrent_delegations,
+        }),
+    }
+}
+
+fn test_root_session_agent(enabled: bool, max_concurrent_delegations: u32) -> SessionAgent {
+    SessionAgent {
+        agent_type: "internal".to_string(),
+        agent_name: None,
+        provider_key: Some("ollama".to_string()),
+        provider: BackendType::Ollama,
+        model: "llama3.2".to_string(),
         system_prompt: "test".to_string(),
         temperature: None,
         max_tokens: None,
@@ -345,4 +374,54 @@ async fn delegation_pipeline_rejects_when_disabled() {
     assert!(err.to_string().contains("Delegation is disabled"));
 
     assert!(manager.list_jobs(session_id).is_empty());
+}
+
+#[tokio::test]
+async fn test_root_session_delegation_succeeds() {
+    let temp = TempDir::new().expect("temp dir");
+    let storage = Arc::new(FileSessionStorage::new());
+    let session_manager = Arc::new(SessionManager::with_storage(storage));
+
+    let (event_tx, _) = broadcast::channel(32);
+    let background_manager = Arc::new(BackgroundJobManager::new(event_tx.clone()).with_subagent_factory(
+        make_subagent_factory(MockSubagentBehavior::ImmediateSuccess(
+            "root-delegation-result".to_string(),
+        )),
+    ));
+    let agent_manager = AgentManager::new(
+        session_manager.clone(),
+        background_manager.clone(),
+        None,
+        None,
+        None,
+    );
+
+    let session = session_manager
+        .create_session(SessionType::Chat, temp.path().to_path_buf(), None, vec![])
+        .await
+        .expect("session should be created");
+
+    agent_manager
+        .configure_agent(&session.id, test_root_session_agent(true, 3))
+        .await
+        .expect("agent should be configured");
+
+    let _ = agent_manager
+        .send_message(&session.id, "prime agent cache".to_string(), &event_tx)
+        .await
+        .expect("agent handle should be created");
+
+    let output = background_manager
+        .spawn_subagent_blocking(
+            &session.id,
+            "run root delegation".to_string(),
+            Some("root delegation integration".to_string()),
+            SubagentBlockingConfig::default(),
+            None,
+        )
+        .await
+        .expect("root session delegation should succeed");
+
+    assert_eq!(output.info.status, JobStatus::Completed);
+    assert_eq!(output.output.as_deref(), Some("root-delegation-result"));
 }
