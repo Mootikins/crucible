@@ -260,8 +260,10 @@ mod tests {
     fn test_embedding_config_uses_enrichment_provider_when_configured() {
         use crucible_config::EnrichmentConfig;
 
-        let mut config = CliConfig::default();
-        config.enrichment = Some(EnrichmentConfig::default());
+        let config = CliConfig {
+            enrichment: Some(EnrichmentConfig::default()),
+            ..Default::default()
+        };
 
         let embedding_config = embedding_provider_config_from_cli(&config);
         assert!(

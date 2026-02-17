@@ -16,9 +16,7 @@ use crate::tui::oil::node::*;
 use crate::tui::oil::style::{Color, Gap, Padding, Style};
 use crate::tui::oil::theme::ThemeTokens;
 use crate::tui::oil::utils::terminal_width;
-use crate::tui::oil::viewport_cache::{
-    CachedDelegation, CachedShellExecution, CachedSubagent, CachedToolCall,
-};
+use crate::tui::oil::viewport_cache::{CachedShellExecution, CachedSubagent, CachedToolCall};
 use crossterm::event::KeyCode;
 use crossterm::terminal::{EnterAlternateScreen, LeaveAlternateScreen};
 use crossterm::{cursor, execute};
@@ -681,7 +679,7 @@ impl App for OilChatApp {
                     self.container_list.mark_turn_active();
                 }
                 self.container_list
-                    .add_subagent(CachedSubagent::new(id, &prompt));
+                    .add_subagent(CachedSubagent::new(id, &prompt, "subagent"));
                 Action::Continue
             }
             ChatAppMsg::SubagentCompleted { id, summary } => {
@@ -701,7 +699,7 @@ impl App for OilChatApp {
                     self.container_list.mark_turn_active();
                 }
                 self.container_list
-                    .add_delegation(CachedDelegation::new(id, &prompt));
+                    .add_delegation(CachedSubagent::new(id, &prompt, "delegation"));
                 Action::Continue
             }
             ChatAppMsg::DelegationCompleted { id, summary } => {
