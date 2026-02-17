@@ -29,6 +29,12 @@ fn embedding_config_cache_key(config: &CliConfig) -> String {
 }
 
 pub fn embedding_provider_config_from_cli(config: &CliConfig) -> EmbeddingProviderConfig {
+    // Check if enrichment provider is explicitly configured — use it directly
+    if let Some(enrichment) = &config.enrichment {
+        return enrichment.provider.clone();
+    }
+
+    // Fall back to deriving from the LLM provider config
     let effective = match config.effective_llm_provider() {
         Ok(cfg) => cfg,
         Err(err) => {
@@ -248,5 +254,25 @@ mod tests {
         let key1 = embedding_config_cache_key(&config1);
         let key2 = embedding_config_cache_key(&config2);
         assert_ne!(key1, key2);
+    }
+
+    #[test]
+    fn test_embedding_config_uses_enrichment_provider_when_configured() {
+        use crucible_config::EnrichmentConfig;
+
+        let mut config = CliConfig::default();
+        config.enrichment = Some(EnrichmentConfig::default());
+
+        let embedding_config = embedding_provider_config_from_cli(&config);
+        assert!(
+            matches!(embedding_config, EmbeddingProviderConfig::FastEmbed(_)),
+            "Should use FastEmbed from enrichment config, not derive from LLM provider"
+        );
+    }
+
+    #[test]
+    fn test_embedding_config_falls_back_without_enrichment_config() {
+        let config = CliConfig::default();
+        let _ = embedding_provider_config_from_cli(&config);
     }
 }

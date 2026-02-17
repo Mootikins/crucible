@@ -60,6 +60,7 @@ fn create_test_config(kiln_path: PathBuf, _db_path: PathBuf) -> CliConfig {
         },
         chat: ChatConfig::default(),
         llm: llm_config,
+        enrichment: None,
         cli: CliAppConfig::default(),
         logging: None,
         processing: ProcessingConfig::default(),
