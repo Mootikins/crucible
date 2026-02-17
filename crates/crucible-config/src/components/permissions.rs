@@ -14,7 +14,7 @@ pub enum PermissionScope {
 }
 
 /// Permission mode for tool access control
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum PermissionMode {
     /// Allow tool execution
@@ -22,13 +22,8 @@ pub enum PermissionMode {
     /// Deny tool execution
     Deny,
     /// Ask user for permission
+    #[default]
     Ask,
-}
-
-impl Default for PermissionMode {
-    fn default() -> Self {
-        Self::Ask
-    }
 }
 
 /// Parsed permission rule with tool, optional server, and pattern
