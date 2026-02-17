@@ -8,12 +8,12 @@ expression: render_app(&app)
 
  ● Starting analysis.
 
- ✓ bash(command="ls -la")
+ ✓ Bash(command="ls -la")
    │ total 42
    │ drwxr-xr-x  5 user
 
    Found the directory listing. Let me check the config.
- ✓ read_file(path="Cargo.toml") → [package]                                     
+ ✓ Read File(path="Cargo.toml") → [package]                                     
                                 name = "myproject"                              
  ◐
 

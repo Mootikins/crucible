@@ -22,16 +22,16 @@ pub fn render_tool_call_with_frame(tool: &CachedToolCall, spinner_frame: usize) 
     let result_str = tool.result();
 
     if let Some(ref error) = tool.error {
-        return render_tool_error(tool, display_name, &args_formatted, error);
+        return render_tool_error(tool, &display_name, &args_formatted, error);
     }
 
     if tool.complete {
-        return render_tool_complete(tool, display_name, &args_formatted, &result_str);
+        return render_tool_complete(tool, &display_name, &args_formatted, &result_str);
     }
 
     render_tool_running(
         tool,
-        display_name,
+        &display_name,
         &args_formatted,
         &result_str,
         spinner_frame,
@@ -150,8 +150,9 @@ fn render_tool_running(
 
 // --- Utility functions ---
 
-fn display_tool_name(name: &str) -> &str {
-    name.strip_prefix("mcp_").unwrap_or(name)
+fn display_tool_name(name: &str) -> String {
+    // Use humanize_tool_title from crucible-acp for consistent formatting
+    crucible_acp::streaming::humanize_tool_title(name)
 }
 
 pub(crate) fn format_elapsed(duration: Duration) -> String {
@@ -493,8 +494,8 @@ mod tests {
         let plain = render_to_plain_text(&node, 80);
         assert!(plain.contains("✓"), "Should show checkmark: {:?}", plain);
         assert!(
-            plain.contains("read"),
-            "Should show tool name (without mcp_ prefix): {:?}",
+            plain.contains("Read"),
+            "Should show tool name (title-cased, without mcp_ prefix): {:?}",
             plain
         );
     }
@@ -505,8 +506,8 @@ mod tests {
         let node = render_tool_call(&tool);
         let plain = render_to_plain_text(&node, 80);
         assert!(
-            plain.contains("bash"),
-            "Should show tool name (without mcp_ prefix): {:?}",
+            plain.contains("Bash"),
+            "Should show tool name (title-cased, without mcp_ prefix): {:?}",
             plain
         );
     }

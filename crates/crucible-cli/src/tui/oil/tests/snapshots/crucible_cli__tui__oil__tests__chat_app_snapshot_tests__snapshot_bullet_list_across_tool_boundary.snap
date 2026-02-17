@@ -11,7 +11,7 @@ expression: render_app(&app)
    • main.rs
    • lib.rs
 
- ✓ read_file(path="src/main.rs") → 1 lines
+ ✓ Read File(path="src/main.rs") → 1 lines
 
    The main file is minimal. Key observations:
 

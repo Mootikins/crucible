@@ -63,7 +63,7 @@ mod chat_app_message_handling {
 
         let output = render_app(&app);
         assert!(
-            output.contains("read_file"),
+            output.contains("Read File"),
             "Tool name should appear: {}",
             output
         );
@@ -111,7 +111,7 @@ mod chat_app_message_handling {
         app.on_message(ChatAppMsg::TextDelta("AFTER_TOOL".to_string()));
 
         let output = render_app(&app);
-        assert_order(&output, "BEFORE_TOOL", "my_tool");
+        assert_order(&output, "BEFORE_TOOL", "My Tool");
     }
 
     #[test]
@@ -143,8 +143,8 @@ mod chat_app_message_handling {
         );
 
         let output = render_app(&app);
-        assert_order(&output, "BEFORE_TOOL", "my_tool");
-        assert_order(&output, "my_tool", "AFTER_TOOL");
+        assert_order(&output, "BEFORE_TOOL", "My Tool");
+        assert_order(&output, "My Tool", "AFTER_TOOL");
     }
 
     #[test]
@@ -181,10 +181,10 @@ mod chat_app_message_handling {
 
         let output = render_app(&app);
 
-        assert_order(&output, "START", "tool_alpha");
-        assert_order(&output, "tool_alpha", "MIDDLE");
-        assert_order(&output, "MIDDLE", "tool_beta");
-        assert_order(&output, "tool_beta", "END");
+        assert_order(&output, "START", "Tool Alpha");
+        assert_order(&output, "Tool Alpha", "MIDDLE");
+        assert_order(&output, "MIDDLE", "Tool Beta");
+        assert_order(&output, "Tool Beta", "END");
     }
 }
 
@@ -320,7 +320,7 @@ mod realistic_scenarios {
         let output = render_app(&app);
 
         assert!(
-            output.contains("read_file"),
+            output.contains("Read File"),
             "Should show tool name: {}",
             output
         );
@@ -329,8 +329,8 @@ mod realistic_scenarios {
             "Should show completion checkmark: {}",
             output
         );
-        assert_order(&output, "configuration", "read_file");
-        assert_order(&output, "read_file", "contains");
+        assert_order(&output, "configuration", "Read File");
+        assert_order(&output, "Read File", "contains");
     }
 
     #[test]
@@ -381,10 +381,10 @@ mod realistic_scenarios {
 
         let output = render_app(&app);
 
-        assert_order(&output, "Looking", "glob");
-        assert_order(&output, "glob", "Found");
-        assert_order(&output, "Found", "read_file");
-        assert_order(&output, "read_file", "empty");
+        assert_order(&output, "Looking", "Glob");
+        assert_order(&output, "Glob", "Found");
+        assert_order(&output, "Found", "Read File");
+        assert_order(&output, "Read File", "empty");
     }
 }
 
@@ -420,7 +420,7 @@ mod graduation_tracking {
             call_id: None,
         });
         let snap2 = render_app(&app);
-        let pos2 = positions(&snap2, &["BEFORE_TOOL_TEXT", "read_file"]);
+        let pos2 = positions(&snap2, &["BEFORE_TOOL_TEXT", "Read File"]);
         assert!(
             pos2[0].1.unwrap() < pos2[1].1.unwrap(),
             "Step 2: Text should appear before tool call\nPositions: {:?}\n{}",
@@ -450,7 +450,7 @@ mod graduation_tracking {
         let snap4 = render_app(&app);
         let pos4 = positions(
             &snap4,
-            &["BEFORE_TOOL_TEXT", "read_file", "AFTER_TOOL_TEXT"],
+            &["BEFORE_TOOL_TEXT", "Read File", "AFTER_TOOL_TEXT"],
         );
         assert!(
             pos4[0].1.unwrap() < pos4[1].1.unwrap() && pos4[1].1.unwrap() < pos4[2].1.unwrap(),
@@ -469,7 +469,7 @@ mod graduation_tracking {
         // Check that tool call is still in correct position relative to markers
         let pos5 = positions(
             &snap5,
-            &["BEFORE_TOOL_TEXT", "read_file", "AFTER_TOOL_TEXT"],
+            &["BEFORE_TOOL_TEXT", "Read File", "AFTER_TOOL_TEXT"],
         );
         eprintln!("Step 5 positions: {:?}", pos5);
         eprintln!("Step 5 output:\n{}", snap5);
@@ -497,7 +497,7 @@ mod graduation_tracking {
         let snap6 = render_app(&app);
         let pos6 = positions(
             &snap6,
-            &["BEFORE_TOOL_TEXT", "read_file", "AFTER_TOOL_TEXT"],
+            &["BEFORE_TOOL_TEXT", "Read File", "AFTER_TOOL_TEXT"],
         );
 
         if let (Some(before), Some(tool), Some(after)) = (pos6[0].1, pos6[1].1, pos6[2].1) {
@@ -554,7 +554,7 @@ mod graduation_tracking {
         // The order should still be: HEADER -> tool -> MIDDLE -> overflow lines
         // Even if some content has graduated, relative order must be preserved
         let header_pos = output.find("HEADER");
-        let tool_pos = output.find("test_tool");
+        let tool_pos = output.find("Test Tool");
         let middle_pos = output.find("MIDDLE");
 
         eprintln!(
@@ -564,7 +564,7 @@ mod graduation_tracking {
 
         // All markers should exist
         assert!(header_pos.is_some(), "HEADER should be in output");
-        assert!(tool_pos.is_some(), "test_tool should be in output");
+        assert!(tool_pos.is_some(), "Test Tool should be in output");
         assert!(middle_pos.is_some(), "MIDDLE should be in output");
 
         // Order should be preserved

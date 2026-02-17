@@ -8,7 +8,7 @@ expression: render_app(&app)
 
  ● Let me explore the repository for you.
 
- ✓ bash(command="ls")
+ ✓ Bash(command="ls")
    │ README.md
    │ Cargo.toml
 

@@ -725,8 +725,8 @@ mod tool_call_tests {
             plain
         );
         assert!(
-            plain.contains("read"),
-            "Should show tool name without mcp_ prefix"
+            plain.contains("Read"),
+            "Should show title-cased tool name without mcp_ prefix"
         );
     }
 
@@ -738,8 +738,8 @@ mod tool_call_tests {
 
         assert!(plain.contains("✓"), "Complete tool should show checkmark");
         assert!(
-            plain.contains("glob"),
-            "Should show tool name without mcp_ prefix"
+            plain.contains("Glob"),
+            "Should show title-cased tool name without mcp_ prefix"
         );
     }
 
@@ -844,6 +844,6 @@ mod tool_call_tests {
             "Should strip mcp_ prefix: {:?}",
             plain
         );
-        assert!(plain.contains("read"), "Should show base name");
+        assert!(plain.contains("Read"), "Should show title-cased base name");
     }
 }
