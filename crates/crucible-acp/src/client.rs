@@ -375,6 +375,7 @@ impl CrucibleAcpClient {
     pub async fn spawn_agent(&mut self) -> Result<AgentProcess> {
         // If we already have a transport (e.g., from with_transport), skip spawning
         if self.has_transport() {
+            tracing::debug!(agent = %self.agent_name, "Using pre-configured transport, skipping spawn");
             return Ok(AgentProcess {
                 child: {
                     #[cfg(target_os = "windows")]
@@ -389,6 +390,8 @@ impl CrucibleAcpClient {
                 }, // Dummy process
             });
         }
+
+        tracing::info!(agent = %self.agent_name, path = %self.config.agent_path.display(), "Spawning ACP agent process");
 
         let mut cmd = Command::new(&self.config.agent_path);
 
@@ -418,6 +421,8 @@ impl CrucibleAcpClient {
         let mut child = cmd
             .spawn()
             .map_err(|e| ClientError::Connection(format!("Failed to spawn agent: {}", e)))?;
+
+        tracing::debug!(agent = %self.agent_name, "ACP agent process spawned successfully");
 
         // Capture stdin and stdout for communication
         let stdin = child
@@ -633,6 +638,8 @@ impl CrucibleAcpClient {
     pub async fn connect_with_handshake(&mut self) -> Result<AcpSession> {
         use agent_client_protocol::{InitializeRequest, NewSessionRequest};
 
+        tracing::debug!(agent = %self.agent_name, "Starting ACP protocol handshake");
+
         // 1. Spawn agent process
         let _process = self.spawn_agent().await?;
 
@@ -642,6 +649,7 @@ impl CrucibleAcpClient {
         let init_request = InitializeRequest::new(1u16.into());
 
         let _init_response = self.initialize(init_request).await?;
+        tracing::debug!(agent = %self.agent_name, "ACP protocol initialization complete");
 
         // 3. Send NewSessionRequest with MCP server configuration
         use agent_client_protocol::{McpServer, McpServerStdio};
@@ -668,6 +676,7 @@ impl CrucibleAcpClient {
         let session_request = NewSessionRequest::new(cwd).mcp_servers(vec![crucible_mcp_server]);
 
         let session_response = self.create_new_session(session_request).await?;
+        tracing::debug!(agent = %self.agent_name, session_id = %session_response.session_id, "ACP session created");
 
         // 4. Mark as connected and create session
         self.mark_connected();
@@ -703,7 +712,7 @@ impl CrucibleAcpClient {
             InitializeRequest, McpServer, McpServerSse, NewSessionRequest,
         };
 
-        tracing::info!("Connecting to agent with SSE MCP server at {}", sse_url);
+        tracing::info!(agent = %self.agent_name, sse_url = %sse_url, "Connecting to agent with SSE MCP server");
 
         // 1. Spawn agent process
         let _process = self.spawn_agent().await?;
@@ -712,11 +721,12 @@ impl CrucibleAcpClient {
         let init_request = InitializeRequest::new(1u16.into());
 
         let _init_response = self.initialize(init_request).await?;
+        tracing::debug!(agent = %self.agent_name, "ACP protocol initialization complete");
 
         // 3. Send NewSessionRequest with SSE MCP server
         let crucible_mcp_server = McpServer::Sse(McpServerSse::new("crucible", sse_url));
 
-        tracing::debug!("Configuring MCP server: {:?}", crucible_mcp_server);
+        tracing::debug!(agent = %self.agent_name, "Configuring SSE MCP server");
 
         let cwd = self
             .config
@@ -733,8 +743,9 @@ impl CrucibleAcpClient {
         self.mark_connected();
 
         tracing::info!(
-            "Agent connected with session: {}",
-            session_response.session_id
+            agent = %self.agent_name,
+            session_id = %session_response.session_id,
+            "ACP agent connected with session"
         );
 
         use crate::session::TransportConfig;
