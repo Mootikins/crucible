@@ -163,6 +163,7 @@ impl EventToMarkdown for SessionEvent {
                 delegation_id,
                 prompt,
                 parent_session_id,
+                ..
             } => format_delegation_spawned(delegation_id, prompt, parent_session_id),
 
             SessionEvent::DelegationCompleted {
