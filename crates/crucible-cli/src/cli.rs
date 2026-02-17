@@ -101,6 +101,12 @@ pub enum Commands {
         #[arg(short = 'e', long = "env", value_name = "KEY=VALUE")]
         env: Vec<String>,
 
+        /// Session configuration overrides in vim-style format (can be repeated)
+        /// Same syntax as TUI :set — examples: --set model=llama3 --set temperature=0.5
+        /// Use --set key for boolean flags (e.g. --set perm.autoconfirm_session)
+        #[arg(long = "set", value_name = "KEY[=VALUE]")]
+        set_overrides: Vec<String>,
+
         /// LLM provider to use (from config [llm.providers])
         #[arg(long)]
         provider: Option<String>,
