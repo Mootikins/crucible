@@ -12,7 +12,7 @@
 //! - `GlobTool` - Find files by pattern
 //! - `GrepTool` - Search file contents with regex
 
-use crucible_core::background::BackgroundSpawner;
+use crucible_core::background::{BackgroundSpawner, JobStatus, SubagentBlockingConfig};
 use crucible_core::events::SessionEvent;
 use crucible_core::interaction::AskRequest;
 use crucible_core::interaction::InteractionRequest;
@@ -55,6 +55,8 @@ pub struct WorkspaceContext {
     tools: Arc<WorkspaceTools>,
     mode_id: Arc<RwLock<String>>,
     session_id: Arc<RwLock<Option<String>>>,
+    delegation_enabled: Arc<RwLock<bool>>,
+    delegation_depth: Arc<RwLock<u32>>,
     background_spawner: Option<Arc<dyn BackgroundSpawner>>,
     interaction_context: Option<Arc<InteractionContext>>,
 }
@@ -66,6 +68,8 @@ impl WorkspaceContext {
             tools: Arc::new(WorkspaceTools::new(workspace_root)),
             mode_id: Arc::new(RwLock::new("auto".to_string())),
             session_id: Arc::new(RwLock::new(None)),
+            delegation_enabled: Arc::new(RwLock::new(true)),
+            delegation_depth: Arc::new(RwLock::new(0)),
             background_spawner: None,
             interaction_context: None,
         }
@@ -100,6 +104,33 @@ impl WorkspaceContext {
         if let Ok(mut guard) = self.mode_id.write() {
             *guard = mode_id.to_string();
         }
+    }
+
+    /// Enable or disable delegation tools for the current session.
+    pub fn set_delegation_enabled(&self, enabled: bool) {
+        if let Ok(mut guard) = self.delegation_enabled.write() {
+            *guard = enabled;
+        }
+    }
+
+    /// Returns whether delegation is enabled for the current session.
+    pub fn is_delegation_enabled(&self) -> bool {
+        self.delegation_enabled
+            .read()
+            .map(|guard| *guard)
+            .unwrap_or(false)
+    }
+
+    /// Set the current delegation depth for this session.
+    pub fn set_delegation_depth(&self, depth: u32) {
+        if let Ok(mut guard) = self.delegation_depth.write() {
+            *guard = depth;
+        }
+    }
+
+    /// Get the current delegation depth for this session.
+    pub fn delegation_depth(&self) -> u32 {
+        self.delegation_depth.read().map(|guard| *guard).unwrap_or(0)
     }
 
     /// Check if write operations are blocked (plan mode)
@@ -141,6 +172,7 @@ impl WorkspaceContext {
             tools.push(Box::new(GetJobResultTool::new(self.clone())));
             tools.push(Box::new(CancelJobTool::new(self.clone())));
             tools.push(Box::new(SpawnSubagentTool::new(self.clone())));
+            tools.push(Box::new(DelegateSessionTool::new(self.clone())));
         }
 
         tools
@@ -1004,6 +1036,146 @@ pub struct DelegateSessionOutput {
     pub status: DelegationStatus,
 }
 
+/// Tool for delegating work to a child session.
+#[derive(Clone, Serialize, Deserialize)]
+pub struct DelegateSessionTool {
+    #[serde(skip)]
+    ctx: Option<WorkspaceContext>,
+}
+
+impl DelegateSessionTool {
+    /// Create a delegate-session tool bound to a workspace context.
+    pub fn new(ctx: WorkspaceContext) -> Self {
+        Self { ctx: Some(ctx) }
+    }
+}
+
+impl Tool for DelegateSessionTool {
+    const NAME: &'static str = "delegate_session";
+    type Error = WorkspaceToolError;
+    type Args = DelegateSessionInput;
+    type Output = DelegateSessionOutput;
+
+    async fn definition(&self, _prompt: String) -> ToolDefinition {
+        ToolDefinition {
+            name: Self::NAME.to_string(),
+            description: "Delegate work to a child agent session.".to_string(),
+            parameters: json!({
+                "type": "object",
+                "properties": {
+                    "prompt": {
+                        "type": "string",
+                        "description": "The task or question for the delegated session"
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "Brief description shown for this delegation"
+                    },
+                    "context_files": {
+                        "type": "array",
+                        "items": { "type": "string" },
+                        "description": "Optional file paths to include as context"
+                    },
+                    "background": {
+                        "type": "boolean",
+                        "description": "If true, return immediately after spawning"
+                    }
+                },
+                "required": ["prompt", "description"]
+            }),
+        }
+    }
+
+    async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
+        let ctx = self.ctx.as_ref().ok_or_else(|| {
+            WorkspaceToolError::Command("Tool not initialized with context".to_string())
+        })?;
+
+        if !ctx.is_delegation_enabled() {
+            return Err(WorkspaceToolError::Command(
+                "Delegation is disabled for this agent".to_string(),
+            ));
+        }
+
+        let spawner = ctx.background_spawner.as_ref().ok_or_else(|| {
+            WorkspaceToolError::Command("Background job spawning not available".to_string())
+        })?;
+
+        let session_id = ctx
+            .session_id()
+            .ok_or_else(|| WorkspaceToolError::Command("No session ID available".to_string()))?;
+
+        let parent_depth = ctx.delegation_depth();
+        let child_depth = parent_depth.saturating_add(1);
+        let delegation_id = format!("deleg-{}", Uuid::new_v4());
+
+        let mut context_parts = vec![
+            format!("Delegation ID: {}", delegation_id),
+            format!("Description: {}", args.description),
+            format!("Delegation depth: {}", child_depth),
+        ];
+
+        if let Some(files) = args.context_files {
+            if !files.is_empty() {
+                context_parts.push("Context files:".to_string());
+                for file in files {
+                    context_parts.push(format!("- {}", file));
+                }
+            }
+        }
+
+        let context = Some(context_parts.join("\n"));
+
+        if args.background.unwrap_or(false) {
+            spawner
+                .spawn_subagent(&session_id, args.prompt, context)
+                .await
+                .map_err(|e| {
+                    WorkspaceToolError::Command(format!("Failed to spawn delegation: {}", e))
+                })?;
+
+            return Ok(DelegateSessionOutput {
+                delegation_id,
+                status: DelegationStatus::Spawned,
+            });
+        }
+
+        let result = spawner
+            .spawn_subagent_blocking(
+                &session_id,
+                args.prompt,
+                context,
+                SubagentBlockingConfig::default(),
+                None,
+            )
+            .await;
+
+        let status = match result {
+            Ok(job_result) => {
+                if job_result.info.status == JobStatus::Completed {
+                    DelegationStatus::Completed {
+                        result: job_result.output.unwrap_or_default(),
+                    }
+                } else {
+                    DelegationStatus::Failed {
+                        error: job_result.error.unwrap_or_else(|| {
+                            format!("Delegated session ended with status {}", job_result.info.status)
+                        }),
+                    }
+                }
+            }
+            Err(err) => DelegationStatus::Failed {
+                error: err.to_string(),
+            },
+        };
+
+        Ok(DelegateSessionOutput {
+            delegation_id,
+            status,
+        })
+    }
+}
+
 // =============================================================================
 // SpawnSubagentTool
 // =============================================================================
@@ -1226,7 +1398,91 @@ fn extract_text_content(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use async_trait::async_trait;
+    use crucible_core::background::{JobError, JobId, JobInfo, JobResult};
+    use std::path::PathBuf;
+    use std::sync::Arc;
+    use std::time::Duration;
     use tempfile::TempDir;
+    use tokio::sync::Mutex;
+
+    struct MockBackgroundSpawner {
+        subagent_calls: Arc<Mutex<Vec<(String, String, Option<String>)>>>,
+        blocking_result: Option<JobResult>,
+    }
+
+    impl MockBackgroundSpawner {
+        fn new() -> Self {
+            Self {
+                subagent_calls: Arc::new(Mutex::new(Vec::new())),
+                blocking_result: None,
+            }
+        }
+
+        fn with_blocking_result(blocking_result: JobResult) -> Self {
+            Self {
+                subagent_calls: Arc::new(Mutex::new(Vec::new())),
+                blocking_result: Some(blocking_result),
+            }
+        }
+    }
+
+    #[async_trait]
+    impl BackgroundSpawner for MockBackgroundSpawner {
+        async fn spawn_bash(
+            &self,
+            _session_id: &str,
+            _command: String,
+            _workdir: Option<PathBuf>,
+            _timeout: Option<Duration>,
+        ) -> Result<JobId, JobError> {
+            Ok("job-bash-test".to_string())
+        }
+
+        async fn spawn_subagent(
+            &self,
+            session_id: &str,
+            prompt: String,
+            context: Option<String>,
+        ) -> Result<JobId, JobError> {
+            self.subagent_calls
+                .lock()
+                .await
+                .push((session_id.to_string(), prompt, context));
+            Ok("job-subagent-test".to_string())
+        }
+
+        async fn spawn_subagent_blocking(
+            &self,
+            session_id: &str,
+            prompt: String,
+            context: Option<String>,
+            _config: SubagentBlockingConfig,
+            _cancel_rx: Option<tokio::sync::oneshot::Receiver<()>>,
+        ) -> Result<JobResult, JobError> {
+            self.subagent_calls
+                .lock()
+                .await
+                .push((session_id.to_string(), prompt, context));
+
+            match &self.blocking_result {
+                Some(result) => Ok(result.clone()),
+                None => Err(JobError::SpawnFailed("no blocking result configured".to_string())),
+            }
+        }
+
+        fn list_jobs(&self, _session_id: &str) -> Vec<JobInfo> {
+            vec![]
+        }
+
+        fn get_job_result(&self, _job_id: &JobId) -> Option<JobResult> {
+            None
+        }
+
+        async fn cancel_job(&self, _job_id: &JobId) -> bool {
+            false
+        }
+    }
 
     fn create_test_context() -> (TempDir, WorkspaceContext) {
         let temp = TempDir::new().unwrap();
@@ -1431,6 +1687,124 @@ mod tests {
         // Large models get all tools (6)
         let large_tools = ctx.tools_for_size(ModelSize::Large);
         assert_eq!(large_tools.len(), 6);
+    }
+
+    #[test]
+    fn test_workspace_context_all_tools_with_background_includes_delegate_session() {
+        let temp = TempDir::new().unwrap();
+        let ctx = WorkspaceContext::new(temp.path())
+            .with_background_spawner(Arc::new(MockBackgroundSpawner::new()));
+
+        let tool_names: Vec<String> = ctx
+            .all_tools()
+            .into_iter()
+            .map(|tool| tool.name().to_string())
+            .collect();
+
+        assert!(tool_names.contains(&"delegate_session".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_delegate_session_tool_name() {
+        let (temp, base_ctx) = create_test_context();
+        let ctx = base_ctx.with_background_spawner(Arc::new(MockBackgroundSpawner::new()));
+        let _ = temp;
+        let tool = DelegateSessionTool::new(ctx);
+
+        let def = tool.definition("test".to_string()).await;
+        assert_eq!(def.name, "delegate_session");
+    }
+
+    #[tokio::test]
+    async fn test_delegate_session_background_returns_spawned_status() {
+        let (temp, base_ctx) = create_test_context();
+        let spawner = Arc::new(MockBackgroundSpawner::new());
+        let ctx = base_ctx.with_background_spawner(spawner);
+        let _ = temp;
+        ctx.set_session_id("parent-session-1");
+        ctx.set_delegation_depth(1);
+        let tool = DelegateSessionTool::new(ctx);
+
+        let output = tool
+            .call(DelegateSessionInput {
+                prompt: "Investigate error handling".to_string(),
+                description: "Error handling delegation".to_string(),
+                context_files: Some(vec!["src/lib.rs".to_string()]),
+                background: Some(true),
+            })
+            .await
+            .unwrap();
+
+        assert!(output.delegation_id.starts_with("deleg-"));
+        assert!(matches!(output.status, DelegationStatus::Spawned));
+    }
+
+    #[tokio::test]
+    async fn test_delegate_session_disabled_delegation_rejected() {
+        let (temp, base_ctx) = create_test_context();
+        let ctx = base_ctx.with_background_spawner(Arc::new(MockBackgroundSpawner::new()));
+        let _ = temp;
+        ctx.set_session_id("parent-session-2");
+        ctx.set_delegation_enabled(false);
+        let tool = DelegateSessionTool::new(ctx);
+
+        let err = tool
+            .call(DelegateSessionInput {
+                prompt: "Do a delegated task".to_string(),
+                description: "Delegation should fail".to_string(),
+                context_files: None,
+                background: Some(true),
+            })
+            .await
+            .unwrap_err();
+
+        match err {
+            WorkspaceToolError::Command(msg) => {
+                assert!(msg.contains("Delegation is disabled"));
+            }
+            _ => panic!("expected command error"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_delegate_session_blocking_completed_status() {
+        let (temp, base_ctx) = create_test_context();
+        let mut info = JobInfo::new(
+            "parent-session-3".to_string(),
+            crucible_core::background::JobKind::Subagent {
+                prompt: "prompt".to_string(),
+                context: None,
+            },
+        );
+        info.mark_completed();
+        let spawner = Arc::new(MockBackgroundSpawner::with_blocking_result(JobResult {
+            info,
+            output: Some("delegated result".to_string()),
+            error: None,
+            exit_code: None,
+        }));
+
+        let ctx = base_ctx.with_background_spawner(spawner);
+        let _ = temp;
+        ctx.set_session_id("parent-session-3");
+        let tool = DelegateSessionTool::new(ctx);
+
+        let output = tool
+            .call(DelegateSessionInput {
+                prompt: "Do blocking delegation".to_string(),
+                description: "Blocking delegation".to_string(),
+                context_files: None,
+                background: Some(false),
+            })
+            .await
+            .unwrap();
+
+        match output.status {
+            DelegationStatus::Completed { result } => {
+                assert_eq!(result, "delegated result");
+            }
+            _ => panic!("expected completed status"),
+        }
     }
 
     #[test]
