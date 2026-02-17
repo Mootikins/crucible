@@ -650,6 +650,10 @@ pub struct CliAppConfig {
     #[serde(default)]
     pub llm: LlmConfig,
 
+    /// Enrichment configuration (embedding provider, pipeline settings)
+    #[serde(default)]
+    pub enrichment: Option<EnrichmentConfig>,
+
     /// CLI-specific configuration
     #[serde(default)]
     pub cli: CliConfig,
@@ -702,6 +706,7 @@ impl Default for CliAppConfig {
             acp: AcpConfig::default(),
             chat: ChatConfig::default(),
             llm: LlmConfig::default(),
+            enrichment: None,
             cli: CliConfig::default(),
             logging: None,
             processing: ProcessingConfig::default(),

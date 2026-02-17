@@ -2,8 +2,7 @@
 # with full access to the knowledge graph via Agent Context Protocol.
 #
 # Requirements:
-#   - ANTHROPIC_API_KEY set (for Claude Code agent)
-#   - claude-code-acp installed: npm install -g @zed-industries/claude-code-acp
+#   - Claude Code authenticated (OAuth via `claude` CLI)
 #   - cru binary built
 #
 # Usage: vhs assets/acp-demo.tape

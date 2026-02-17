@@ -237,6 +237,7 @@ mod tests {
             acp: AcpConfig::default(),
             chat: ChatConfig::default(),
             llm: LlmConfig::default(),
+            enrichment: None,
             cli: CliAppConfig::default(),
             logging: None,
             processing: ProcessingConfig::default(),
