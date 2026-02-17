@@ -69,6 +69,9 @@ impl EventToMarkdown for SessionEvent {
             SessionEvent::SubagentSpawned { .. } => "SubagentSpawned",
             SessionEvent::SubagentCompleted { .. } => "SubagentCompleted",
             SessionEvent::SubagentFailed { .. } => "SubagentFailed",
+            SessionEvent::DelegationSpawned { .. } => "DelegationSpawned",
+            SessionEvent::DelegationCompleted { .. } => "DelegationCompleted",
+            SessionEvent::DelegationFailed { .. } => "DelegationFailed",
             SessionEvent::BashTaskSpawned { .. } => "BashTaskSpawned",
             SessionEvent::BashTaskCompleted { .. } => "BashTaskCompleted",
             SessionEvent::BashTaskFailed { .. } => "BashTaskFailed",
@@ -155,6 +158,24 @@ impl EventToMarkdown for SessionEvent {
             SessionEvent::SubagentCompleted { id, result } => format_subagent_completed(id, result),
 
             SessionEvent::SubagentFailed { id, error } => format_subagent_failed(id, error),
+
+            SessionEvent::DelegationSpawned {
+                delegation_id,
+                prompt,
+                parent_session_id,
+            } => format_delegation_spawned(delegation_id, prompt, parent_session_id),
+
+            SessionEvent::DelegationCompleted {
+                delegation_id,
+                result_summary,
+                parent_session_id,
+            } => format_delegation_completed(delegation_id, result_summary, parent_session_id),
+
+            SessionEvent::DelegationFailed {
+                delegation_id,
+                error,
+                parent_session_id,
+            } => format_delegation_failed(delegation_id, error, parent_session_id),
 
             SessionEvent::BashTaskSpawned { id, command } => format_bash_task_spawned(id, command),
 
@@ -638,6 +659,37 @@ fn format_subagent_completed(id: &str, result: &str) -> String {
 /// Format SubagentFailed event body.
 fn format_subagent_failed(id: &str, error: &str) -> String {
     format!("**Subagent ID:** `{}`\n\n**Error:** {}\n", id, error)
+}
+
+/// Format DelegationSpawned event body.
+fn format_delegation_spawned(delegation_id: &str, prompt: &str, parent_session_id: &str) -> String {
+    let quoted_prompt = quote_content(prompt);
+    format!(
+        "**Delegation ID:** `{}`\n**Parent Session:** `{}`\n\n**Prompt:**\n{}\n",
+        delegation_id, parent_session_id, quoted_prompt
+    )
+}
+
+/// Format DelegationCompleted event body.
+fn format_delegation_completed(
+    delegation_id: &str,
+    result_summary: &str,
+    parent_session_id: &str,
+) -> String {
+    format!(
+        "**Delegation ID:** `{}`\n**Parent Session:** `{}`\n\n**Result:**\n{}\n",
+        delegation_id,
+        parent_session_id,
+        quote_content(result_summary)
+    )
+}
+
+/// Format DelegationFailed event body.
+fn format_delegation_failed(delegation_id: &str, error: &str, parent_session_id: &str) -> String {
+    format!(
+        "**Delegation ID:** `{}`\n**Parent Session:** `{}`\n\n**Error:** {}\n",
+        delegation_id, parent_session_id, error
+    )
 }
 
 fn format_bash_task_spawned(id: &str, command: &str) -> String {
