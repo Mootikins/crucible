@@ -1,17 +1,15 @@
-//! Agent factory - creates AgentHandle from configuration
+//! Agent factory - creates AgentHandle via daemon
 //!
-//! Supports both ACP (external) agents and internal (direct LLM) agents.
+//! All agents route through the daemon (auto-started if needed).
+//! Supports ACP (external) agents and internal (direct LLM) agents.
 //! Selection priority:
-//! 1. Explicit CLI flag (--internal or --acp)
+//! 1. Explicit `-a <name>` CLI flag
 //! 2. Config file setting (chat.agent_preference)
 //! 3. Default: Internal (Crucible's built-in Rig-based agents)
-//!
-//! Internal agents use the Rig framework for LLM interaction.
 
 use anyhow::Result;
 use tracing::{debug, info, warn};
 
-use crucible_config::credentials::resolve_copilot_oauth_token;
 use crucible_config::{BackendType, CliAppConfig};
 use crucible_core::session::SessionAgent;
 use crucible_core::traits::chat::AgentHandle;
