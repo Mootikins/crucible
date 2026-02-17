@@ -379,3 +379,6 @@ Before submitting changes:
 - **[docs/](./docs/)** — Reference kiln (user guides + test fixture)
 - **[justfile](./justfile)** — Development recipes
 - **[vendor/README.md](./vendor/README.md)** — Patched upstream dependencies
+- **[docs/Help/Concepts/Agent%20Client%20Protocol.md](./docs/Help/Concepts/Agent%20Client%20Protocol.md)** — ACP specification reference
+- **[docs/Help/Concepts/Model%20Context%20Protocol.md](./docs/Help/Concepts/Model%20Context%20Protocol.md)** — MCP specification reference
+- **[docs/Help/Concepts/Agent%20Skills.md](./docs/Help/Concepts/Agent%20Skills.md)** — Skills specification reference
