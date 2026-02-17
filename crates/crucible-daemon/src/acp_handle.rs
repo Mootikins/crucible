@@ -18,7 +18,7 @@ use thiserror::Error;
 use tokio::sync::Mutex;
 use tracing::{debug, info, warn};
 
-use crucible_acp::client::{ClientConfig, CrucibleAcpClient};
+use crucible_acp::client::{ClientConfig, CrucibleAcpClient, PermissionRequestHandler};
 use crucible_acp::streaming::{channel_callback, StreamingChunk};
 use crucible_acp::InProcessMcpHost;
 use crucible_config::AcpConfig;
@@ -91,6 +91,7 @@ impl AcpAgentHandle {
         knowledge_repo: Option<Arc<dyn KnowledgeRepository>>,
         embedding_provider: Option<Arc<dyn EmbeddingProvider>>,
         acp_config: Option<&AcpConfig>,
+        permission_handler: Option<PermissionRequestHandler>,
     ) -> Result<Self, AcpHandleError> {
         let agent_name = agent_config
             .agent_name
@@ -101,6 +102,9 @@ impl AcpAgentHandle {
 
         let client_config = build_client_config(agent_config, workspace, acp_config)?;
         let mut client = CrucibleAcpClient::with_name(client_config, agent_name.clone());
+        if let Some(handler) = permission_handler {
+            client = client.with_permission_handler(handler);
+        }
         let mcp_host = if let (Some(kiln), Some(repo), Some(embed)) =
             (kiln_path, knowledge_repo, embedding_provider)
         {

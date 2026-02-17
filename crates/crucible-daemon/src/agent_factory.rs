@@ -6,6 +6,7 @@
 
 use crate::acp_handle::AcpAgentHandle;
 use crate::protocol::SessionEventMessage;
+use crucible_acp::client::PermissionRequestHandler;
 use crucible_config::credentials::resolve_copilot_oauth_token;
 use crucible_config::{BackendType, LlmProviderConfig};
 use crucible_core::background::BackgroundSpawner;
@@ -60,9 +61,18 @@ pub async fn create_agent_from_session_config(
     background_spawner: Option<Arc<dyn BackgroundSpawner>>,
     event_tx: &broadcast::Sender<SessionEventMessage>,
     mcp_gateway: Option<Arc<tokio::sync::RwLock<crucible_tools::mcp_gateway::McpGatewayManager>>>,
+    acp_permission_handler: Option<PermissionRequestHandler>,
 ) -> Result<Box<dyn AgentHandle + Send + Sync>, AgentFactoryError> {
     if agent_config.agent_type == "acp" {
-        let handle = AcpAgentHandle::new(agent_config, workspace, None, None, None, None)
+        let handle = AcpAgentHandle::new(
+            agent_config,
+            workspace,
+            None,
+            None,
+            None,
+            None,
+            acp_permission_handler,
+        )
             .await
             .map_err(|e| AgentFactoryError::AgentBuild(e.to_string()))?;
         return Ok(Box::new(handle));
@@ -217,7 +227,7 @@ mod tests {
 
         let result = tokio::runtime::Runtime::new().unwrap().block_on(async {
             let (event_tx, _) = broadcast::channel(16);
-            create_agent_from_session_config(&config, Path::new("/tmp"), None, &event_tx, None)
+            create_agent_from_session_config(&config, Path::new("/tmp"), None, &event_tx, None, None)
                 .await
         });
 
@@ -233,7 +243,7 @@ mod tests {
         let config = test_agent_config();
         let (event_tx, _) = broadcast::channel(16);
         let result =
-            create_agent_from_session_config(&config, Path::new("/tmp"), None, &event_tx, None)
+            create_agent_from_session_config(&config, Path::new("/tmp"), None, &event_tx, None, None)
                 .await;
         assert!(result.is_ok());
     }
