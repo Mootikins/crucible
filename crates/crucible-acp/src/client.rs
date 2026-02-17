@@ -2003,7 +2003,7 @@ mod tests {
 
         assert_eq!(
             state.formatted_output(),
-            "First chunk\n\n  ▷ test_tool()\n\nResponse after the tool call."
+            "First chunk\n\n  ▷ Test Tool()\n\nResponse after the tool call."
         );
     }
 
@@ -2209,7 +2209,7 @@ mod tests {
 
         let output = state.formatted_output();
         // Tool block has blank line before and after
-        assert!(output.contains("Hello\n\n  ▷ read_note"));
+        assert!(output.contains("Hello\n\n  ▷ Read Note"));
         assert!(output.contains("\n\nWorld"));
     }
 
@@ -2241,7 +2241,7 @@ mod tests {
         );
 
         let output = state.formatted_output();
-        assert_eq!(output.matches("▷ read_note").count(), 1);
+        assert_eq!(output.matches("▷ Read Note").count(), 1);
         assert!(output.contains("PRIME.md"));
     }
 
@@ -2963,7 +2963,7 @@ mod tests {
         );
 
         let output = state.formatted_output();
-        assert!(output.contains("▷ update_note"), "Should have tool label");
+        assert!(output.contains("▷ Update Note"), "Should have tool label");
         assert!(
             output.contains("-old content"),
             "Should show deleted line in diff"
