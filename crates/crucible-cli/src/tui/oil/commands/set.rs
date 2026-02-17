@@ -57,6 +57,17 @@ pub enum SetError {
     UnknownKey(String),
 }
 
+impl fmt::Display for SetError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            SetError::Parse(e) => write!(f, "{}", e),
+            SetError::NotSupportedAsCli => write!(f, "not supported as CLI flag"),
+            SetError::InvalidValue { key, message } => write!(f, "{}: {}", key, message),
+            SetError::UnknownKey(key) => write!(f, "unknown key '{}'", key),
+        }
+    }
+}
+
 pub fn validate_set_for_cli(input: &str) -> Result<SetEffect, SetError> {
     let command = SetCommand::parse(input).map_err(SetError::Parse)?;
 
