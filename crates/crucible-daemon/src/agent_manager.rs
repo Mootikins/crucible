@@ -5,8 +5,9 @@ use crate::background_manager::{BackgroundJobManager, SubagentContext};
 use crate::permission_bridge::{DaemonPermissionGate, PermissionPromptCallback};
 use crate::protocol::SessionEventMessage;
 use crate::session_manager::{SessionError, SessionManager};
+use crucible_acp::discovery::default_agent_profiles;
 use crucible_config::components::permissions::PermissionConfig;
-use crucible_config::{BackendType, PatternStore};
+use crucible_config::{AcpConfig, AgentProfile, BackendType, PatternStore};
 use crucible_core::events::SessionEvent;
 use crucible_core::interaction::{InteractionRequest, PermRequest, PermResponse, PermissionScope};
 use crucible_core::session::SessionAgent;
@@ -64,6 +65,37 @@ pub fn is_safe(tool_name: &str) -> bool {
             | "get_outlinks"
             | "get_inlinks"
     )
+}
+
+fn resolve_agent_profile(
+    name: &str,
+    configured: &HashMap<String, AgentProfile>,
+    available: &HashMap<String, AgentProfile>,
+) -> Option<AgentProfile> {
+    let profile = configured.get(name)?;
+    let base_name = profile.extends.as_deref().unwrap_or(name);
+
+    let mut resolved = available.get(base_name).cloned().unwrap_or_default();
+    resolved.extends = profile.extends.clone();
+
+    if let Some(command) = &profile.command {
+        resolved.command = Some(command.clone());
+    }
+    if let Some(args) = &profile.args {
+        resolved.args = Some(args.clone());
+    }
+    if let Some(description) = &profile.description {
+        resolved.description = Some(description.clone());
+    }
+    if let Some(capabilities) = &profile.capabilities {
+        resolved.capabilities = Some(capabilities.clone());
+    }
+    if let Some(delegation) = &profile.delegation {
+        resolved.delegation = Some(delegation.clone());
+    }
+
+    resolved.env.extend(profile.env.clone());
+    Some(resolved)
 }
 
 #[derive(Error, Debug)]
@@ -135,6 +167,7 @@ pub struct AgentManager {
     pending_permissions: Arc<DashMap<String, HashMap<PermissionId, PendingPermission>>>,
     mcp_gateway: Option<Arc<tokio::sync::RwLock<crucible_tools::mcp_gateway::McpGatewayManager>>>,
     llm_config: Option<crucible_config::LlmConfig>,
+    acp_config: Option<AcpConfig>,
     permission_config: Option<PermissionConfig>,
 }
 
@@ -146,6 +179,7 @@ impl AgentManager {
             Arc<tokio::sync::RwLock<crucible_tools::mcp_gateway::McpGatewayManager>>,
         >,
         llm_config: Option<crucible_config::LlmConfig>,
+        acp_config: Option<AcpConfig>,
         permission_config: Option<PermissionConfig>,
     ) -> Self {
         Self {
@@ -157,6 +191,7 @@ impl AgentManager {
             pending_permissions: Arc::new(DashMap::new()),
             mcp_gateway,
             llm_config,
+            acp_config,
             permission_config,
         }
     }
@@ -323,6 +358,18 @@ impl AgentManager {
         self.session_manager
             .get_session(session_id)
             .ok_or_else(|| AgentError::SessionNotFound(session_id.to_string()))
+    }
+
+    fn build_available_agents(&self) -> HashMap<String, AgentProfile> {
+        let mut available = default_agent_profiles();
+        if let Some(config) = &self.acp_config {
+            for name in config.agents.keys() {
+                if let Some(resolved) = resolve_agent_profile(name, &config.agents, &available) {
+                    available.insert(name.clone(), resolved);
+                }
+            }
+        }
+        available
     }
 
     pub async fn configure_agent(
@@ -522,11 +569,12 @@ impl AgentManager {
                     .parent_session_id
                     .clone()
                     .or_else(|| Some(session.id.clone()));
+                let available_agents = self.build_available_agents();
                 self.background_manager.register_subagent_context(
                     session_id,
                     SubagentContext {
                         agent: resolved_config.clone(),
-                        agent_profiles: HashMap::new(),
+                        available_agents,
                         workspace: session.kiln.clone(),
                         parent_session_id,
                         parent_session_dir: Some(session.storage_path()),
@@ -1773,7 +1821,7 @@ mod tests {
     fn create_test_agent_manager(session_manager: Arc<SessionManager>) -> AgentManager {
         let (event_tx, _) = broadcast::channel(16);
         let background_manager = Arc::new(BackgroundJobManager::new(event_tx));
-        AgentManager::new(session_manager, background_manager, None, None, None)
+        AgentManager::new(session_manager, background_manager, None, None, None, None)
     }
 
     fn create_test_agent_manager_with_providers(
@@ -1787,6 +1835,7 @@ mod tests {
             background_manager,
             None,
             Some(llm_config),
+            None,
             None,
         )
     }
@@ -3513,6 +3562,7 @@ mod tests {
             None,
             Some(llm_config),
             None,
+            None,
         );
 
         agent_manager
@@ -3555,6 +3605,7 @@ mod tests {
         let agent_manager = AgentManager::new(
             session_manager.clone(),
             background_manager,
+            None,
             None,
             None,
             None,
@@ -3608,6 +3659,7 @@ mod tests {
             None,
             Some(llm_config),
             None,
+            None,
         );
 
         agent_manager
@@ -3636,6 +3688,7 @@ mod tests {
             None,
             Some(llm_config),
             None,
+            None,
         )
     }
 
@@ -3650,6 +3703,7 @@ mod tests {
             background_manager,
             None,
             Some(llm_config),
+            None,
             None,
         )
     }

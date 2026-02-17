@@ -302,6 +302,9 @@ pub enum SessionEvent {
         prompt: String,
         /// Parent session ID that initiated the delegation.
         parent_session_id: String,
+        /// Target agent name if delegating to a different agent (e.g., "cursor", "claude").
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        target_agent: Option<String>,
     },
 
     /// Delegation completed successfully.
@@ -1123,12 +1126,18 @@ impl SessionEvent {
                 delegation_id,
                 prompt,
                 parent_session_id,
+                target_agent,
             } => {
+                let target_str = target_agent
+                    .as_ref()
+                    .map(|t| format!(", target={}", t))
+                    .unwrap_or_default();
                 format!(
-                    "delegation_id={}, parent={}, prompt_len={}",
+                    "delegation_id={}, parent={}, prompt_len={}{}",
                     delegation_id,
                     parent_session_id,
-                    prompt.len()
+                    prompt.len(),
+                    target_str
                 )
             }
             Self::DelegationCompleted {
@@ -3485,6 +3494,7 @@ mod tests {
             delegation_id: "deleg-123".into(),
             prompt: "Analyze this code".into(),
             parent_session_id: "parent-456".into(),
+            target_agent: None,
         };
 
         // Test JSON round-trip

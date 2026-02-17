@@ -26,6 +26,12 @@ pub fn render_subagent(subagent: &CachedSubagent, spinner_frame: usize) -> Node 
 
     let prompt_preview = truncate_first_line(&subagent.prompt, 60, true);
 
+    let label_with_target = if let Some(target) = &subagent.target_agent {
+        format!("{} to {}", subagent.label, target)
+    } else {
+        subagent.label.to_string()
+    };
+
     let status_text = match subagent.status {
         SubagentStatus::Running => {
             let elapsed = subagent.elapsed();
@@ -51,7 +57,7 @@ pub fn render_subagent(subagent: &CachedSubagent, spinner_frame: usize) -> Node 
 
     let header = row([
         styled(icon, icon_style),
-        styled(subagent.label, Style::new().fg(theme.text_primary)),
+        styled(label_with_target, Style::new().fg(theme.text_primary)),
         styled(format!(" {}", prompt_preview), theme.muted()),
         styled(status_text, status_style),
     ]);

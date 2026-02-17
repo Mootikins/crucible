@@ -173,6 +173,7 @@ pub struct CachedSubagent {
     pub error: Option<Arc<str>>,
     pub started_at: std::time::Instant,
     pub label: &'static str,
+    pub target_agent: Option<String>,
 }
 
 impl CachedSubagent {
@@ -185,6 +186,7 @@ impl CachedSubagent {
             error: None,
             started_at: std::time::Instant::now(),
             label,
+            target_agent: None,
         }
     }
 

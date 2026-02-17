@@ -104,7 +104,7 @@ struct RunningJob {
 
 pub struct SubagentContext {
     pub agent: SessionAgent,
-    pub agent_profiles: HashMap<String, AgentProfile>,
+    pub available_agents: HashMap<String, AgentProfile>,
     pub workspace: PathBuf,
     pub parent_session_id: Option<String>,
     /// Parent session directory for creating subagent session files
@@ -143,6 +143,26 @@ fn parse_target_agent_name(context: Option<&str>) -> Option<String> {
                 .map(ToString::to_string)
         })
     })
+}
+
+fn target_profile_to_session_agent(
+    target_name: &str,
+    available_agents: &HashMap<String, AgentProfile>,
+) -> Result<SessionAgent, BackgroundError> {
+    let profile = available_agents.get(target_name).ok_or_else(|| {
+        let mut available: Vec<_> = available_agents.keys().cloned().collect();
+        available.sort();
+        let available_list = if available.is_empty() {
+            "(none)".to_string()
+        } else {
+            available.join(", ")
+        };
+        BackgroundError::SpawnFailed(format!(
+            "Delegation target '{target_name}' not found. Available agents: {available_list}"
+        ))
+    })?;
+
+    Ok(SessionAgent::from_profile(profile, target_name))
 }
 
 pub struct BackgroundJobManager {
@@ -760,7 +780,7 @@ impl BackgroundJobManager {
 
         let (
             parent_agent_config,
-            agent_profiles,
+            available_agents,
             workspace,
             parent_session_dir,
             parent_session_id,
@@ -773,7 +793,7 @@ impl BackgroundJobManager {
             })?;
             (
                 ctx.agent.clone(),
-                ctx.agent_profiles.clone(),
+                ctx.available_agents.clone(),
                 ctx.workspace.clone(),
                 ctx.parent_session_dir.clone(),
                 ctx.parent_session_id.clone(),
@@ -790,12 +810,7 @@ impl BackgroundJobManager {
             .or_else(|| default_target_name.clone());
 
         if let Some(target_name) = requested_target_name {
-            let profile = agent_profiles.get(&target_name).ok_or_else(|| {
-                BackgroundError::SpawnFailed(format!(
-                    "Delegation target profile '{target_name}' was not found"
-                ))
-            })?;
-            agent_config = SessionAgent::from_profile(profile, &target_name);
+            agent_config = target_profile_to_session_agent(&target_name, &available_agents)?;
         }
 
         let is_delegation = parent_session_id.is_some();
@@ -865,7 +880,7 @@ impl BackgroundJobManager {
                 child_context_key,
                 SubagentContext {
                     agent: agent_config.clone(),
-                    agent_profiles: agent_profiles.clone(),
+                    available_agents: available_agents.clone(),
                     workspace: workspace.clone(),
                     parent_session_id: child_parent_session_id,
                     parent_session_dir: info.session_path.clone(),
@@ -1399,7 +1414,7 @@ mod tests {
             "session-1",
             SubagentContext {
                 agent: test_session_agent(delegation_config),
-                agent_profiles: HashMap::new(),
+                available_agents: HashMap::new(),
                 workspace: std::env::temp_dir(),
                 parent_session_id: Some("session-1".to_string()),
                 parent_session_dir: None,
@@ -1438,7 +1453,7 @@ mod tests {
             "session-1",
             SubagentContext {
                 agent: test_session_agent(delegation_config),
-                agent_profiles: HashMap::new(),
+                available_agents: HashMap::new(),
                 workspace: std::env::temp_dir(),
                 parent_session_id: Some("session-1".to_string()),
                 parent_session_dir: None,
@@ -1785,7 +1800,7 @@ mod tests {
                     result_max_bytes: 51200,
                     max_concurrent_delegations: 3,
                 })),
-                agent_profiles,
+                available_agents: agent_profiles,
                 workspace: std::env::temp_dir(),
                 parent_session_id: Some("session-1".to_string()),
                 parent_session_dir: None,
@@ -1841,7 +1856,7 @@ mod tests {
                     result_max_bytes: 51200,
                     max_concurrent_delegations: 3,
                 })),
-                agent_profiles,
+                available_agents: agent_profiles,
                 workspace: std::env::temp_dir(),
                 parent_session_id: Some("session-1".to_string()),
                 parent_session_dir: None,
@@ -1864,6 +1879,37 @@ mod tests {
 
         assert!(matches!(err, BackgroundError::SpawnFailed(_)));
         assert!(err.to_string().contains("not allowed"));
+    }
+
+    #[tokio::test]
+    async fn test_delegation_with_unknown_target_returns_available_agents() {
+        let manager = make_subagent_manager_with_factory_and_identity(
+            behavior_factory(MockSubagentBehavior::ImmediateSuccess("ok".to_string())),
+            Some(DelegationConfig {
+                enabled: true,
+                max_depth: 1,
+                allowed_targets: Some(vec!["ghost".to_string()]),
+                result_max_bytes: 51200,
+                max_concurrent_delegations: 3,
+            }),
+            Some("parent-agent"),
+            None,
+        );
+
+        let err = manager
+            .spawn_subagent_blocking(
+                "session-1",
+                "delegate this".to_string(),
+                Some("Target agent: ghost".to_string()),
+                SubagentBlockingConfig::default(),
+                None,
+            )
+            .await
+            .expect_err("unknown explicit target should fail with available list");
+
+        let msg = err.to_string();
+        assert!(msg.contains("Delegation target 'ghost' not found"));
+        assert!(msg.contains("Available agents:"));
     }
 
     #[tokio::test]
@@ -2248,7 +2294,7 @@ mod tests {
                     result_max_bytes: 51200,
                     max_concurrent_delegations: 3,
                 })),
-                agent_profiles: HashMap::new(),
+                available_agents: HashMap::new(),
                 workspace: std::env::temp_dir(),
                 parent_session_id: Some("session-1".to_string()),
                 parent_session_dir: Some(parent_dir.path().to_path_buf()),
@@ -2724,7 +2770,7 @@ mod tests {
     fn subagent_context_default_delegation_depth_is_zero() {
         let ctx = SubagentContext {
             agent: test_session_agent(None),
-            agent_profiles: HashMap::new(),
+            available_agents: HashMap::new(),
             workspace: std::env::temp_dir(),
             parent_session_id: Some("session-1".to_string()),
             parent_session_dir: None,
@@ -3023,7 +3069,7 @@ mod tests {
             "session-1",
             SubagentContext {
                 agent: test_session_agent(Some(default_enabled_delegation_config())),
-                agent_profiles: HashMap::new(),
+                available_agents: HashMap::new(),
                 workspace: std::env::temp_dir(),
                 parent_session_id: None,
                 parent_session_dir: None,

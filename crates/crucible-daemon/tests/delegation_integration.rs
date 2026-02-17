@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use crucible_config::{BackendType, DelegationConfig};
+use crucible_config::{AcpConfig, AgentProfile, BackendType, DelegationConfig};
 use crucible_core::background::{JobResult, JobStatus, SubagentBlockingConfig};
 use crucible_core::session::{SessionAgent, SessionType};
 use crucible_core::traits::chat::{AgentHandle, ChatChunk};
@@ -12,6 +12,7 @@ use futures::StreamExt;
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
+use std::sync::Mutex as StdMutex;
 use std::time::Duration;
 use tempfile::TempDir;
 use tokio::sync::broadcast;
@@ -142,6 +143,20 @@ fn make_subagent_factory(behavior: MockSubagentBehavior) -> SubagentFactory {
     })
 }
 
+fn make_observing_subagent_factory(
+    observed: Arc<StdMutex<Option<SessionAgent>>>,
+    behavior: MockSubagentBehavior,
+) -> SubagentFactory {
+    Box::new(move |agent: &SessionAgent, _workspace: &Path| {
+        let mut lock = observed.lock().expect("observation lock should be available");
+        *lock = Some(agent.clone());
+        let behavior = behavior.clone();
+        Box::pin(async move {
+            Ok(Box::new(MockSubagentHandle::new(behavior)) as Box<dyn AgentHandle + Send + Sync>)
+        })
+    })
+}
+
 fn register_delegation_context(
     manager: &BackgroundJobManager,
     session_id: &str,
@@ -154,7 +169,7 @@ fn register_delegation_context(
         session_id,
         SubagentContext {
             agent: test_session_agent(enabled, max_concurrent_delegations),
-            agent_profiles: HashMap::new(),
+            available_agents: HashMap::new(),
             workspace: workspace.to_path_buf(),
             parent_session_id: Some(session_id.to_string()),
             parent_session_dir: parent_session_dir.map(|p| p.to_path_buf()),
@@ -395,6 +410,7 @@ async fn test_root_session_delegation_succeeds() {
         None,
         None,
         None,
+        None,
     );
 
     let session = session_manager
@@ -425,4 +441,89 @@ async fn test_root_session_delegation_succeeds() {
 
     assert_eq!(output.info.status, JobStatus::Completed);
     assert_eq!(output.output.as_deref(), Some("root-delegation-result"));
+}
+
+#[tokio::test]
+async fn test_delegation_to_acp_agent_creates_acp_session() {
+    let temp = TempDir::new().expect("temp dir");
+    let storage = Arc::new(FileSessionStorage::new());
+    let session_manager = Arc::new(SessionManager::with_storage(storage));
+    let observed = Arc::new(StdMutex::new(None));
+
+    let (event_tx, _) = broadcast::channel(32);
+    let background_manager = Arc::new(BackgroundJobManager::new(event_tx.clone()).with_subagent_factory(
+        make_observing_subagent_factory(
+            observed.clone(),
+            MockSubagentBehavior::ImmediateSuccess("delegated-acp-result".to_string()),
+        ),
+    ));
+    let mut acp_config = AcpConfig::default();
+    acp_config.agents.insert(
+        "opencode".to_string(),
+        AgentProfile {
+            extends: None,
+            command: Some("opencode".to_string()),
+            args: Some(vec!["acp".to_string()]),
+            env: HashMap::new(),
+            description: Some("OpenCode ACP".to_string()),
+            capabilities: None,
+            delegation: None,
+        },
+    );
+
+    let agent_manager = AgentManager::new(
+        session_manager.clone(),
+        background_manager.clone(),
+        None,
+        None,
+        Some(acp_config),
+        None,
+    );
+
+    let session = session_manager
+        .create_session(SessionType::Chat, temp.path().to_path_buf(), None, vec![])
+        .await
+        .expect("session should be created");
+
+    let mut root_agent = test_root_session_agent(true, 3);
+    root_agent.delegation_config = Some(DelegationConfig {
+        enabled: true,
+        max_depth: 2,
+        allowed_targets: Some(vec!["opencode".to_string()]),
+        result_max_bytes: 51200,
+        max_concurrent_delegations: 3,
+    });
+
+    agent_manager
+        .configure_agent(&session.id, root_agent)
+        .await
+        .expect("agent should be configured");
+
+    let _ = agent_manager
+        .send_message(&session.id, "prime agent cache".to_string(), &event_tx)
+        .await
+        .expect("agent handle should be created");
+
+    let output = background_manager
+        .spawn_subagent_blocking(
+            &session.id,
+            "delegate to opencode".to_string(),
+            Some("Delegation ID: deleg-1\nTarget agent: opencode\nDescription: test".to_string()),
+            SubagentBlockingConfig::default(),
+            None,
+        )
+        .await
+        .expect("delegation to opencode should succeed");
+
+    assert_eq!(output.info.status, JobStatus::Completed);
+    assert_eq!(output.output.as_deref(), Some("delegated-acp-result"));
+
+    let observed_agent = observed
+        .lock()
+        .expect("observation lock should be available")
+        .clone()
+        .expect("subagent factory should capture child session agent");
+    assert_eq!(observed_agent.agent_type, "acp");
+    assert_eq!(observed_agent.agent_name.as_deref(), Some("opencode"));
+    assert_eq!(observed_agent.model, "opencode");
 }

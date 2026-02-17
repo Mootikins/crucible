@@ -1850,6 +1850,54 @@ fn snapshot_multiple_subagents_parallel() {
     assert_snapshot!(render_app(&app));
 }
 
+#[test]
+fn snapshot_delegation_spawned_with_target() {
+    let mut app = OilChatApp::default();
+    app.on_message(ChatAppMsg::UserMessage(
+        "Research auth patterns".to_string(),
+    ));
+    app.on_message(ChatAppMsg::TextDelta(
+        "I'll delegate this to a specialized agent.".to_string(),
+    ));
+    app.on_message(ChatAppMsg::DelegationSpawned {
+        id: "deleg-1".to_string(),
+        prompt: "Research authentication patterns in Rust".to_string(),
+        target_agent: Some("cursor".to_string()),
+    });
+    assert_snapshot!(render_app(&app));
+}
+
+#[test]
+fn snapshot_delegation_spawned_without_target() {
+    let mut app = OilChatApp::default();
+    app.on_message(ChatAppMsg::UserMessage("Do something".to_string()));
+    app.on_message(ChatAppMsg::TextDelta(
+        "Delegating to same agent...".to_string(),
+    ));
+    app.on_message(ChatAppMsg::DelegationSpawned {
+        id: "deleg-2".to_string(),
+        prompt: "Analyze the code".to_string(),
+        target_agent: None,
+    });
+    assert_snapshot!(render_app(&app));
+}
+
+#[test]
+fn snapshot_delegation_completed() {
+    let mut app = OilChatApp::default();
+    app.on_message(ChatAppMsg::UserMessage("Research patterns".to_string()));
+    app.on_message(ChatAppMsg::DelegationSpawned {
+        id: "deleg-3".to_string(),
+        prompt: "Find security patterns".to_string(),
+        target_agent: Some("opencode".to_string()),
+    });
+    app.on_message(ChatAppMsg::DelegationCompleted {
+        id: "deleg-3".to_string(),
+        summary: "Found 3 security patterns in the codebase".to_string(),
+    });
+    assert_snapshot!(render_app(&app));
+}
+
 // =============================================================================
 // Precognition Result Snapshot Tests
 // =============================================================================
