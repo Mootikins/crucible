@@ -182,6 +182,10 @@ pub struct Session {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub continued_from: Option<String>,
 
+    /// Optional parent session ID for delegation linking
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent_session_id: Option<String>,
+
     /// Optional title/description for the session
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
@@ -215,6 +219,7 @@ impl Session {
             state: SessionState::Active,
             started_at: Utc::now(),
             continued_from: None,
+            parent_session_id: None,
             title: None,
             agent: None,
             notifications: crate::types::NotificationQueue::new(),
@@ -994,5 +999,54 @@ mod tests {
             parsed_delegation.allowed_targets,
             Some(vec!["worker1".to_string(), "worker2".to_string()])
         );
+    }
+
+    // =============================================================================
+    // Session parent_session_id Tests (TDD - parent-child delegation linking)
+    // =============================================================================
+
+    #[test]
+    fn test_session_parent_session_id_backward_compat_old_json_without_field() {
+        // Old JSON without parent_session_id should deserialize to None
+        let old_json = r#"{
+            "id": "chat-2025-01-08T1530-abc123",
+            "session_type": "chat",
+            "kiln": "/home/user/notes",
+            "workspace": "/home/user/notes",
+            "state": "active",
+            "started_at": "2025-01-08T15:30:00Z"
+        }"#;
+
+        let session: Session = serde_json::from_str(old_json).unwrap();
+        assert_eq!(session.parent_session_id, None);
+        assert_eq!(session.id, "chat-2025-01-08T1530-abc123");
+    }
+
+    #[test]
+    fn test_session_parent_session_id_round_trip() {
+        // parent_session_id: Some("parent-123") should round-trip correctly
+        let kiln = PathBuf::from("/home/user/notes");
+        let session = Session::new(SessionType::Chat, kiln).with_title("Child session");
+
+        // Manually set parent_session_id (no builder method yet, just for test)
+        let mut session_with_parent = session;
+        session_with_parent.parent_session_id = Some("parent-123".to_string());
+
+        let json = serde_json::to_string(&session_with_parent).unwrap();
+        assert!(json.contains("\"parent_session_id\":\"parent-123\""));
+
+        let parsed: Session = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.parent_session_id, Some("parent-123".to_string()));
+    }
+
+    #[test]
+    fn test_session_parent_session_id_omitted_when_none() {
+        // When parent_session_id is None, it should be omitted from JSON
+        let kiln = PathBuf::from("/home/user/notes");
+        let session = Session::new(SessionType::Chat, kiln);
+
+        let json = serde_json::to_string(&session).unwrap();
+        // parent_session_id should not appear in JSON when None
+        assert!(!json.contains("parent_session_id"));
     }
 }
