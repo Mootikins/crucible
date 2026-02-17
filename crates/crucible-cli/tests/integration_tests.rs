@@ -346,7 +346,7 @@ fn test_status_help() {
 
     cmd.assert()
         .success()
-        .stdout(predicate::str::contains("Show storage status"));
+        .stdout(predicate::str::contains("Display storage status"));
 }
 
 #[test]
