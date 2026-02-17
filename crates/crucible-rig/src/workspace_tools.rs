@@ -20,6 +20,7 @@ use crucible_core::interaction_context::InteractionContext;
 use crucible_tools::WorkspaceTools;
 use rig::completion::ToolDefinition;
 use rig::tool::Tool;
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::path::PathBuf;
@@ -958,6 +959,52 @@ impl Tool for CancelJobTool {
 }
 
 // =============================================================================
+// DelegateSessionTool Types
+// =============================================================================
+
+/// Input parameters for delegating a task to a new session.
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+pub struct DelegateSessionInput {
+    /// The task or question for the delegated agent session
+    pub prompt: String,
+    /// Brief description for display in the TUI
+    pub description: String,
+    /// Optional files to provide as context
+    #[serde(default)]
+    pub context_files: Option<Vec<String>>,
+    /// If true, return immediately with Spawned status; if false, wait for completion
+    #[serde(default)]
+    pub background: Option<bool>,
+}
+
+/// Status of a delegated session.
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "status", rename_all = "snake_case")]
+pub enum DelegationStatus {
+    /// Session has been spawned and is running
+    Spawned,
+    /// Session completed successfully
+    Completed {
+        /// Summary of the result
+        result: String,
+    },
+    /// Session failed
+    Failed {
+        /// Error message
+        error: String,
+    },
+}
+
+/// Output from delegating a session.
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+pub struct DelegateSessionOutput {
+    /// Unique identifier for the delegated session
+    pub delegation_id: String,
+    /// Current status of the delegation
+    pub status: DelegationStatus,
+}
+
+// =============================================================================
 // SpawnSubagentTool
 // =============================================================================
 
@@ -1384,5 +1431,162 @@ mod tests {
         // Large models get all tools (6)
         let large_tools = ctx.tools_for_size(ModelSize::Large);
         assert_eq!(large_tools.len(), 6);
+    }
+
+    #[test]
+    fn test_delegate_session_input_construction() {
+        let input = DelegateSessionInput {
+            prompt: "Analyze this code".to_string(),
+            description: "Code analysis task".to_string(),
+            context_files: Some(vec!["main.rs".to_string(), "lib.rs".to_string()]),
+            background: Some(true),
+        };
+
+        assert_eq!(input.prompt, "Analyze this code");
+        assert_eq!(input.description, "Code analysis task");
+        assert_eq!(input.context_files.as_ref().unwrap().len(), 2);
+        assert_eq!(input.background, Some(true));
+    }
+
+    #[test]
+    fn test_delegate_session_input_serde_round_trip() {
+        let input = DelegateSessionInput {
+            prompt: "Test prompt".to_string(),
+            description: "Test description".to_string(),
+            context_files: Some(vec!["file1.txt".to_string()]),
+            background: Some(false),
+        };
+
+        let json = serde_json::to_string(&input).unwrap();
+        let deserialized: DelegateSessionInput = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(deserialized.prompt, input.prompt);
+        assert_eq!(deserialized.description, input.description);
+        assert_eq!(deserialized.context_files, input.context_files);
+        assert_eq!(deserialized.background, input.background);
+    }
+
+    #[test]
+    fn test_delegate_session_input_optional_fields() {
+        let json = r#"{"prompt":"test","description":"desc"}"#;
+        let input: DelegateSessionInput = serde_json::from_str(json).unwrap();
+
+        assert_eq!(input.prompt, "test");
+        assert_eq!(input.description, "desc");
+        assert_eq!(input.context_files, None);
+        assert_eq!(input.background, None);
+    }
+
+    #[test]
+    fn test_delegation_status_spawned() {
+        let status = DelegationStatus::Spawned;
+        let json = serde_json::to_string(&status).unwrap();
+        assert!(json.contains("spawned"));
+
+        let deserialized: DelegationStatus = serde_json::from_str(&json).unwrap();
+        matches!(deserialized, DelegationStatus::Spawned);
+    }
+
+    #[test]
+    fn test_delegation_status_completed() {
+        let status = DelegationStatus::Completed {
+            result: "Task completed successfully".to_string(),
+        };
+        let json = serde_json::to_string(&status).unwrap();
+        assert!(json.contains("completed"));
+        assert!(json.contains("Task completed successfully"));
+
+        let deserialized: DelegationStatus = serde_json::from_str(&json).unwrap();
+        match deserialized {
+            DelegationStatus::Completed { result } => {
+                assert_eq!(result, "Task completed successfully");
+            }
+            _ => panic!("Expected Completed variant"),
+        }
+    }
+
+    #[test]
+    fn test_delegation_status_failed() {
+        let status = DelegationStatus::Failed {
+            error: "Connection timeout".to_string(),
+        };
+        let json = serde_json::to_string(&status).unwrap();
+        assert!(json.contains("failed"));
+        assert!(json.contains("Connection timeout"));
+
+        let deserialized: DelegationStatus = serde_json::from_str(&json).unwrap();
+        match deserialized {
+            DelegationStatus::Failed { error } => {
+                assert_eq!(error, "Connection timeout");
+            }
+            _ => panic!("Expected Failed variant"),
+        }
+    }
+
+    #[test]
+    fn test_delegate_session_output_construction() {
+        let output = DelegateSessionOutput {
+            delegation_id: "deleg-123".to_string(),
+            status: DelegationStatus::Spawned,
+        };
+
+        assert_eq!(output.delegation_id, "deleg-123");
+        matches!(output.status, DelegationStatus::Spawned);
+    }
+
+    #[test]
+    fn test_delegate_session_output_serde_round_trip_spawned() {
+        let output = DelegateSessionOutput {
+            delegation_id: "deleg-456".to_string(),
+            status: DelegationStatus::Spawned,
+        };
+
+        let json = serde_json::to_string(&output).unwrap();
+        let deserialized: DelegateSessionOutput = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(deserialized.delegation_id, output.delegation_id);
+        matches!(deserialized.status, DelegationStatus::Spawned);
+    }
+
+    #[test]
+    fn test_delegate_session_output_serde_round_trip_completed() {
+        let output = DelegateSessionOutput {
+            delegation_id: "deleg-789".to_string(),
+            status: DelegationStatus::Completed {
+                result: "Analysis complete".to_string(),
+            },
+        };
+
+        let json = serde_json::to_string(&output).unwrap();
+        let deserialized: DelegateSessionOutput = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(deserialized.delegation_id, output.delegation_id);
+        match deserialized.status {
+            DelegationStatus::Completed { result } => {
+                assert_eq!(result, "Analysis complete");
+            }
+            _ => panic!("Expected Completed variant"),
+        }
+    }
+
+    #[test]
+    fn test_delegate_session_output_serde_round_trip_failed() {
+        let output = DelegateSessionOutput {
+            delegation_id: "deleg-fail".to_string(),
+            status: DelegationStatus::Failed {
+                error: "Out of memory".to_string(),
+            },
+        };
+
+        let json = serde_json::to_string(&output).unwrap();
+        let deserialized: DelegateSessionOutput = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(deserialized.delegation_id, output.delegation_id);
+        match deserialized.status {
+            DelegationStatus::Failed { error } => {
+                assert_eq!(error, "Out of memory");
+            }
+            _ => panic!("Expected Failed variant"),
+        }
     }
 }
