@@ -1,9 +1,9 @@
 # ACP Agent Demo — Crucible spawning an external AI agent
-# with full access to the knowledge graph via Agent Context Protocol.
+# with full access to the knowledge graph via Agent Client Protocol.
 #
 # Requirements:
 #   - Claude Code authenticated (OAuth via `claude` CLI)
-#   - cru binary built
+#   - cru binary built and kiln processed
 #
 # Usage: vhs assets/acp-demo.tape
 
@@ -22,16 +22,27 @@ Set Padding 20
 Set TypingSpeed 50ms
 Set PlaybackSpeed 2
 
-# Launch Crucible chat with Claude Code as ACP agent
-# The agent gets MCP tools: semantic_search, get_outlinks, create_note, etc.
-Type "cru chat -a claude --no-process"
+# Set PATH to ensure npx and cru-server are available
+Type "export PATH=/home/moot/.nvm/versions/node/v24.7.0/bin:/home/moot/crucible/target/debug:$PATH"
 Enter
-Sleep 8s
+Sleep 1s
 
-# Ask a question that exercises the knowledge graph
-Type "What notes link to Wikilinks and how are they connected?"
+# Launch Crucible chat with Claude Code as ACP agent
+# The agent gets MCP tools and Precognition context from the knowledge graph
+Type "/home/moot/crucible/target/debug/cru chat -a claude --no-process"
 Enter
-Sleep 45s
+Sleep 10s
+
+# Ask a question that exercises the protocol docs from the knowledge graph
+# Precognition will inject ACP/MCP reference docs as context before Claude responds
+Type "How does ACP differ from MCP, and how does Crucible use both?"
+Enter
+Sleep 30s
+
+# Approve any tool permission prompts (Claude may request tool access)
+Type "y"
+Enter
+Sleep 60s
 
 # Clean exit
 Ctrl+C
