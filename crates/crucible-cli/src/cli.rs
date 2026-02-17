@@ -315,6 +315,26 @@ pub enum Commands {
         command: Option<AuthCommands>,
     },
 
+    /// Configure a running session's settings (same syntax as TUI :set)
+    ///
+    /// Requires session targeting via --session or CRU_SESSION env var.
+    /// Examples:
+    ///   cru set model=llama3 --session chat-20260217-1030
+    ///   CRU_SESSION=chat-20260217-1030 cru set temperature=0.5
+    #[command(
+        name = "set",
+        long_about = "Configure a running session's settings remotely (same syntax as TUI :set).\n\nRequires an explicit session target via --session flag or CRU_SESSION env var.\nOnly daemon-synced settings (model, temperature, thinkingbudget, maxtokens) are supported.\nTUI-local settings (verbose, thinking, theme, etc.) must be set via `cru chat --set`.\n\nExamples:\n  # Switch model on a running session\n  cru set model=llama3 --session chat-20260217-1030\n\n  # Set temperature using env var for session\n  CRU_SESSION=chat-20260217-1030 cru set temperature=0.5\n\n  # Set multiple settings at once\n  cru set model=llama3 temperature=0.7 --session chat-20260217-1030"
+    )]
+    Set {
+        /// Settings to apply (same syntax as TUI :set, can be repeated)
+        #[arg(required = true, value_name = "KEY[=VALUE]")]
+        settings: Vec<String>,
+
+        /// Target session ID (or use CRU_SESSION env var)
+        #[arg(long, value_name = "SESSION_ID")]
+        session: Option<String>,
+    },
+
     /// Start the web UI server for browser-based chat
     #[cfg(feature = "web")]
     #[command(

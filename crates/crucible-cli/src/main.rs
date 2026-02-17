@@ -382,6 +382,10 @@ async fn main() -> Result<()> {
             commands::auth::execute(command).await?;
         }
 
+        Some(Commands::Set { settings, session }) => {
+            commands::set::execute(settings, session).await?;
+        }
+
         #[cfg(feature = "web")]
         Some(Commands::Web(cmd)) => {
             commands::web::handle(cmd).await?;

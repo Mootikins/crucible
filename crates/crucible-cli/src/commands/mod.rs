@@ -8,6 +8,7 @@ pub mod mcp;
 pub mod models;
 pub mod process;
 pub mod session;
+pub mod set;
 pub mod skills;
 pub mod tasks;
 pub mod tools;
