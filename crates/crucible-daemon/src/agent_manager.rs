@@ -1,7 +1,7 @@
 //! Agent lifecycle management for the daemon.
 
 use crate::agent_factory::{create_agent_from_session_config, AgentFactoryError};
-use crate::background_manager::BackgroundJobManager;
+use crate::background_manager::{BackgroundJobManager, SubagentContext};
 use crate::permission_bridge::{DaemonPermissionGate, PermissionPromptCallback};
 use crate::protocol::SessionEventMessage;
 use crate::session_manager::{SessionError, SessionManager};
@@ -515,6 +515,28 @@ impl AgentManager {
             acp_permission_handler,
         )
         .await?;
+
+        if resolved_config.delegation_config.is_some() {
+            if let Some(session) = self.session_manager.get_session(session_id) {
+                let parent_session_id = session
+                    .parent_session_id
+                    .clone()
+                    .or_else(|| Some(session.id.clone()));
+                self.background_manager.register_subagent_context(
+                    session_id,
+                    SubagentContext {
+                        agent: resolved_config.clone(),
+                        workspace: session.kiln.clone(),
+                        parent_session_id,
+                        parent_session_dir: Some(session.storage_path()),
+                        delegator_agent_name: resolved_config.agent_name.clone(),
+                        target_agent_name: None,
+                        delegation_depth: 0,
+                    },
+                );
+            }
+        }
+
         let agent = Arc::new(Mutex::new(agent));
         self.agent_cache
             .insert(session_id.to_string(), agent.clone());
