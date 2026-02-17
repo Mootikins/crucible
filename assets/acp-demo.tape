@@ -22,24 +22,15 @@ Set Padding 20
 Set TypingSpeed 50ms
 Set PlaybackSpeed 2
 
-# Set PATH to ensure npx and cru-server are available
-Type "export PATH=~/.nvm/versions/node/v24.7.0/bin:./crucible/target/debug:$PATH"
-Enter
-Sleep 1s
-
 # Launch Crucible chat with Claude Code as ACP agent
 # The agent gets MCP tools and Precognition context from the knowledge graph
-Type "./crucible/target/debug/cru chat -a claude --no-process"
+Type "PATH=~/.nvm/versions/node/v24.7.0/bin:./crucible/target/debug:$PATH cru chat -a claude --no-process"
 Enter
 Sleep 10s
 
-# Enable auto-approval of tool permissions for this session
-Type ":set perm.autoconfirm_session true"
-Enter
-Sleep 2s
-
 # Ask a question that exercises the protocol docs from the knowledge graph
 # Precognition will inject ACP/MCP reference docs as context before Claude responds
+# Permission prompts will appear as Claude uses tools — user approves inline
 Type "How does ACP differ from MCP, and how does Crucible use both?"
 Enter
 Sleep 120s
