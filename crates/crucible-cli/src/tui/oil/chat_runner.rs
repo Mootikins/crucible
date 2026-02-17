@@ -1018,10 +1018,12 @@ impl OilChatRunner {
             SessionEvent::DelegationSpawned {
                 delegation_id,
                 prompt,
+                target_agent,
                 ..
             } => Some(ChatAppMsg::DelegationSpawned {
                 id: delegation_id,
                 prompt,
+                target_agent,
             }),
             SessionEvent::DelegationCompleted {
                 delegation_id,
