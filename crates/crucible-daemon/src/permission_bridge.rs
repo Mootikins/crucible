@@ -1,7 +1,9 @@
 //! Bridge from ACP permission requests to the daemon's permission system.
 
 use async_trait::async_trait;
-use crucible_config::components::permissions::{PermissionConfig, PermissionDecision, PermissionEngine};
+use crucible_config::components::permissions::{
+    PermissionConfig, PermissionDecision, PermissionEngine,
+};
 use crucible_core::interaction::{PermAction, PermRequest, PermResponse};
 use crucible_core::traits::PermissionGate;
 use std::future::Future;
@@ -11,7 +13,8 @@ use std::sync::Arc;
 use crate::agent_manager::is_safe;
 
 pub type PermissionPromptFuture = Pin<Box<dyn Future<Output = PermResponse> + Send>>;
-pub type PermissionPromptCallback = Arc<dyn Fn(PermRequest) -> PermissionPromptFuture + Send + Sync>;
+pub type PermissionPromptCallback =
+    Arc<dyn Fn(PermRequest) -> PermissionPromptFuture + Send + Sync>;
 
 pub struct DaemonPermissionGate {
     engine: PermissionEngine,

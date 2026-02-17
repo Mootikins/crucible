@@ -144,8 +144,12 @@ fn deserialize_chunk(value: &serde_json::Value) -> StreamingChunk {
         },
         "tool_end" => StreamingChunk::ToolEnd {
             id: value["id"].as_str().unwrap().to_string(),
-            result: value.get("result").and_then(|v| v.as_str().map(str::to_string)),
-            error: value.get("error").and_then(|v| v.as_str().map(str::to_string)),
+            result: value
+                .get("result")
+                .and_then(|v| v.as_str().map(str::to_string)),
+            error: value
+                .get("error")
+                .and_then(|v| v.as_str().map(str::to_string)),
         },
         other => panic!("unknown chunk kind: {other}"),
     }

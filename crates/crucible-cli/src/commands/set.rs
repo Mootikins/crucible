@@ -3,7 +3,10 @@ use crucible_rpc::DaemonClient;
 use crate::tui::oil::commands::{validate_set_for_cli, SetEffect, SetError, SetRpcAction};
 
 #[cfg(test)]
-fn resolve_session_id(explicit_session_id: Option<String>, env_session_id: Option<String>) -> Option<String> {
+fn resolve_session_id(
+    explicit_session_id: Option<String>,
+    env_session_id: Option<String>,
+) -> Option<String> {
     explicit_session_id.or(env_session_id)
 }
 
@@ -121,7 +124,9 @@ pub async fn execute(settings: Vec<String>, session_id: Option<String>) -> anyho
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tui::oil::commands::{CliValue, SetEffect, SetError, SetRpcAction, validate_set_for_cli};
+    use crate::tui::oil::commands::{
+        validate_set_for_cli, CliValue, SetEffect, SetError, SetRpcAction,
+    };
 
     #[test]
     fn validate_model_ok() {
@@ -203,9 +208,11 @@ mod tests {
 
     #[test]
     fn resolve_session_id_prefers_argument_over_env() {
-        let session =
-            resolve_session_id(Some("arg-session".to_string()), Some("env-session".to_string()))
-                .unwrap();
+        let session = resolve_session_id(
+            Some("arg-session".to_string()),
+            Some("env-session".to_string()),
+        )
+        .unwrap();
         assert_eq!(session, "arg-session");
     }
 
@@ -224,12 +231,16 @@ mod tests {
     #[test]
     fn collect_rpc_actions_rejects_tui_local_key() {
         let err = collect_rpc_actions(&["verbose=true".to_string()]).unwrap_err();
-        assert!(matches!(err, (input, SetError::InvalidValue { key, .. }) if input == "verbose=true" && key == "verbose"));
+        assert!(
+            matches!(err, (input, SetError::InvalidValue { key, .. }) if input == "verbose=true" && key == "verbose")
+        );
     }
 
     #[test]
     fn collect_rpc_actions_rejects_missing_explicit_value_for_model() {
         let err = collect_rpc_actions(&["model".to_string()]).unwrap_err();
-        assert!(matches!(err, (input, SetError::InvalidValue { key, .. }) if input == "model" && key == "model"));
+        assert!(
+            matches!(err, (input, SetError::InvalidValue { key, .. }) if input == "model" && key == "model")
+        );
     }
 }
