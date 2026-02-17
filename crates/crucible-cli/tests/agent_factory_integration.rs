@@ -6,7 +6,6 @@
 //! Tests the unified agent initialization for both ACP and internal agents.
 
 use crucible_cli::factories::{AgentInitParams, AgentType};
-use crucible_config::CliAppConfig;
 
 #[test]
 fn test_agent_init_params_builder() {
@@ -43,22 +42,6 @@ fn test_agent_types_equality() {
     assert_eq!(AgentType::Acp, AgentType::Acp);
     assert_eq!(AgentType::Internal, AgentType::Internal);
     assert_ne!(AgentType::Acp, AgentType::Internal);
-}
-
-#[tokio::test]
-#[ignore = "Rig uses config.chat.provider, not params.provider_key - test obsolete"]
-async fn test_create_internal_agent_with_invalid_provider() {
-    // NOTE: This test is obsolete after switching to Rig-only internal agents.
-    // Rig reads the provider from config.chat.provider, not from params.provider_key.
-    use crucible_cli::factories::create_internal_agent;
-
-    let config = CliAppConfig::default();
-    let params = AgentInitParams::new().with_provider("nonexistent_provider");
-
-    let result = create_internal_agent(&config, params).await;
-
-    // With Rig, this would succeed (ignores params.provider_key)
-    assert!(result.is_err());
 }
 
 #[test]

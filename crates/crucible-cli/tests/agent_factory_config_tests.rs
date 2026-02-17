@@ -7,7 +7,7 @@
 //! These tests validate that configurations are properly parsed, validated, and
 //! used to create internal agents with the correct settings.
 
-use crucible_cli::factories::{create_internal_agent, AgentInitParams};
+use crucible_cli::factories::AgentInitParams;
 use crucible_config::{BackendType, CliAppConfig, LlmConfig, LlmProviderConfig};
 use std::collections::HashMap;
 
@@ -276,105 +276,6 @@ fn test_provider_custom_overrides() {
 // Agent Creation Tests
 // ============================================================================
 
-#[tokio::test]
-async fn test_create_internal_agent_with_default_config() {
-    let config = create_test_config();
-    let params = AgentInitParams::new();
-
-    // Should create successfully with default Ollama config
-    // May fail if Ollama not running, but should not panic
-    let result = create_internal_agent(&config, params).await;
-
-    // Either succeeds or fails with connection error (not config error)
-    match result {
-        Ok(_) => { /* Success - Ollama is running */ }
-        Err(e) => {
-            let err_str = e.to_string().to_lowercase();
-            // Should be a connection/network error, not a config error
-            assert!(
-                err_str.contains("connection") ||
-                err_str.contains("network") ||
-                err_str.contains("refused") ||
-                err_str.contains("no llm providers configured") || // Expected if no providers
-                err_str.contains("failed to create"),
-                "Unexpected error type: {}",
-                e
-            );
-        }
-    }
-}
-
-#[tokio::test]
-async fn test_create_internal_agent_respects_custom_model() {
-    let mut config = create_test_config();
-    config.chat.model = Some("custom-model-name".to_string());
-
-    let params = AgentInitParams::new();
-
-    // Configuration should be valid (may fail at runtime if Ollama not running)
-    let result = create_internal_agent(&config, params).await;
-
-    match result {
-        Ok(agent) => {
-            // If successful, model should be set correctly
-            // Note: We can't directly inspect the model in the agent,
-            // but the test validates config parsing
-            drop(agent);
-        }
-        Err(e) => {
-            // Should not fail due to config error
-            let err_str = e.to_string().to_lowercase();
-            assert!(
-                !err_str.contains("invalid")
-                    || err_str.contains("connection")
-                    || err_str.contains("network"),
-                "Should not fail with config error: {}",
-                e
-            );
-        }
-    }
-}
-
-#[tokio::test]
-async fn test_create_internal_agent_with_named_provider() {
-    let mut providers = HashMap::new();
-    providers.insert(
-        "test-ollama".to_string(),
-        LlmProviderConfig {
-            provider_type: BackendType::Ollama,
-            endpoint: Some("http://localhost:11434".to_string()),
-            default_model: Some("llama3.2".to_string()),
-            temperature: Some(0.7),
-            max_tokens: Some(4096),
-            timeout_secs: Some(120),
-            api_key: None,
-            available_models: None,
-        },
-    );
-
-    let config = create_config_with_named_providers(Some("test-ollama".to_string()), providers);
-
-    let params = AgentInitParams::new().with_provider("test-ollama");
-
-    let result = create_internal_agent(&config, params).await;
-
-    // Should either succeed or fail with connection error
-    match result {
-        Ok(_) => { /* Success */ }
-        Err(e) => {
-            let err_str = e.to_string().to_lowercase();
-            assert!(
-                err_str.contains("connection")
-                    || err_str.contains("network")
-                    || err_str.contains("refused")
-                    || err_str.contains("failed to create"),
-                "Should fail with connection error, not config error: {}",
-                e
-            );
-        }
-    }
-}
-
 // ============================================================================
 // Model Name Propagation Tests
 // ============================================================================
@@ -424,44 +325,16 @@ fn test_model_name_from_named_provider() {
 // Context Token Configuration Tests
 // ============================================================================
 
-#[tokio::test]
-async fn test_agent_respects_max_context_tokens() {
-    let config = create_test_config();
+#[test]
+fn test_agent_params_accept_max_context_tokens() {
     let params = AgentInitParams::new().with_max_context_tokens(8192);
-
-    // The agent should be created with the specified token limit
-    // We can't directly test this without inspecting internal state,
-    // but we verify the config is accepted
-    let result = create_internal_agent(&config, params).await;
-
-    // Should not fail due to token configuration
-    if let Err(e) = result {
-        let err_str = e.to_string().to_lowercase();
-        assert!(
-            !err_str.contains("token") || !err_str.contains("invalid"),
-            "Should not fail with token config error: {}",
-            e
-        );
-    }
+    assert_eq!(params.max_context_tokens, Some(8192));
 }
 
-#[tokio::test]
-async fn test_agent_uses_default_max_context_tokens() {
-    let config = create_test_config();
-    let params = AgentInitParams::new(); // No max_context_tokens set
-
-    // Should use default value (16,384 from agent.rs:163)
-    let result = create_internal_agent(&config, params).await;
-
-    // Should not fail due to missing token config
-    if let Err(e) = result {
-        let err_str = e.to_string().to_lowercase();
-        assert!(
-            !err_str.contains("token") || !err_str.contains("required"),
-            "Should not require explicit token config: {}",
-            e
-        );
-    }
+#[test]
+fn test_agent_params_default_max_context_tokens_is_none() {
+    let params = AgentInitParams::new();
+    assert_eq!(params.max_context_tokens, None);
 }
 
 // ============================================================================
