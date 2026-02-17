@@ -1,13 +1,13 @@
 use async_trait::async_trait;
+use crucible_acp::discovery::default_agent_profiles;
 use crucible_config::{AcpConfig, AgentProfile, BackendType, DelegationConfig};
 use crucible_core::background::{JobResult, JobStatus, SubagentBlockingConfig};
 use crucible_core::session::{SessionAgent, SessionType};
 use crucible_core::traits::chat::{AgentHandle, ChatChunk};
 use crucible_core::traits::ChatResult;
 use crucible_daemon::background_manager::{BackgroundJobManager, SubagentContext, SubagentFactory};
-use crucible_daemon::{AgentManager, FileSessionStorage, SessionManager};
 use crucible_daemon::protocol::SessionEventMessage;
-use crucible_acp::discovery::default_agent_profiles;
+use crucible_daemon::{AgentManager, FileSessionStorage, SessionManager};
 use futures::stream::{self, BoxStream};
 use futures::StreamExt;
 use std::collections::HashMap;
@@ -161,7 +161,9 @@ fn make_observing_subagent_factory(
     behavior: MockSubagentBehavior,
 ) -> SubagentFactory {
     Box::new(move |agent: &SessionAgent, _workspace: &Path| {
-        let mut lock = observed.lock().expect("observation lock should be available");
+        let mut lock = observed
+            .lock()
+            .expect("observation lock should be available");
         *lock = Some(agent.clone());
         let behavior = behavior.clone();
         Box::pin(async move {
@@ -412,11 +414,11 @@ async fn test_root_session_delegation_succeeds() {
     let session_manager = Arc::new(SessionManager::with_storage(storage));
 
     let (event_tx, _) = broadcast::channel(32);
-    let background_manager = Arc::new(BackgroundJobManager::new(event_tx.clone()).with_subagent_factory(
-        make_subagent_factory(MockSubagentBehavior::ImmediateSuccess(
-            "root-delegation-result".to_string(),
+    let background_manager = Arc::new(
+        BackgroundJobManager::new(event_tx.clone()).with_subagent_factory(make_subagent_factory(
+            MockSubagentBehavior::ImmediateSuccess("root-delegation-result".to_string()),
         )),
-    ));
+    );
     let agent_manager = AgentManager::new(
         session_manager.clone(),
         background_manager.clone(),
@@ -464,12 +466,14 @@ async fn test_delegation_to_acp_agent_creates_acp_session() {
     let observed = Arc::new(StdMutex::new(None));
 
     let (event_tx, _) = broadcast::channel(32);
-    let background_manager = Arc::new(BackgroundJobManager::new(event_tx.clone()).with_subagent_factory(
-        make_observing_subagent_factory(
-            observed.clone(),
-            MockSubagentBehavior::ImmediateSuccess("delegated-acp-result".to_string()),
+    let background_manager = Arc::new(
+        BackgroundJobManager::new(event_tx.clone()).with_subagent_factory(
+            make_observing_subagent_factory(
+                observed.clone(),
+                MockSubagentBehavior::ImmediateSuccess("delegated-acp-result".to_string()),
+            ),
         ),
-    ));
+    );
     let mut acp_config = AcpConfig::default();
     acp_config.agents.insert(
         "opencode".to_string(),
@@ -549,19 +553,24 @@ async fn test_cross_agent_delegation_full_pipeline() {
     let observed = Arc::new(StdMutex::new(None));
 
     let (event_tx, _) = broadcast::channel(32);
-    let background_manager = Arc::new(BackgroundJobManager::new(event_tx.clone()).with_subagent_factory(
-        make_observing_subagent_factory(
-            observed.clone(),
-            MockSubagentBehavior::ImmediateSuccess("delegated-opencode-result".to_string()),
+    let background_manager = Arc::new(
+        BackgroundJobManager::new(event_tx.clone()).with_subagent_factory(
+            make_observing_subagent_factory(
+                observed.clone(),
+                MockSubagentBehavior::ImmediateSuccess("delegated-opencode-result".to_string()),
+            ),
         ),
-    ));
+    );
 
     let available_agents = default_agent_profiles();
     let opencode_profile = available_agents
         .get("opencode")
         .expect("default profiles should include opencode");
     assert_eq!(opencode_profile.command.as_deref(), Some("opencode"));
-    assert_eq!(opencode_profile.args.as_ref(), Some(&vec!["acp".to_string()]));
+    assert_eq!(
+        opencode_profile.args.as_ref(),
+        Some(&vec!["acp".to_string()])
+    );
 
     let session = session_manager
         .create_session(SessionType::Chat, temp.path().to_path_buf(), None, vec![])
