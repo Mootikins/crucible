@@ -1790,7 +1790,10 @@ mod tests {
             Some("worker-agent"),
         );
         let mut agent_profiles = HashMap::new();
-        agent_profiles.insert("cursor".to_string(), test_agent_profile("cursor-acp", &["acp"]));
+        agent_profiles.insert(
+            "cursor".to_string(),
+            test_agent_profile("cursor-acp", &["acp"]),
+        );
         manager.register_subagent_context(
             "session-1",
             SubagentContext {
@@ -1846,7 +1849,10 @@ mod tests {
             None,
         );
         let mut agent_profiles = HashMap::new();
-        agent_profiles.insert("cursor".to_string(), test_agent_profile("cursor-acp", &["acp"]));
+        agent_profiles.insert(
+            "cursor".to_string(),
+            test_agent_profile("cursor-acp", &["acp"]),
+        );
         manager.register_subagent_context(
             "session-1",
             SubagentContext {
