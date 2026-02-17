@@ -348,16 +348,68 @@ impl AgentHandle for AcpAgentHandle {
                         }
                         Ok(Err(e)) => {
                             warn!(error = %e, "ACP stream error");
-                            Some((
-                                Err(ChatError::Communication(format!("ACP error: {}", e))),
-                                None,
-                            ))
+                            let chat_err = match e {
+                                crucible_acp::ClientError::Connection(msg) => {
+                                    ChatError::Connection(format!(
+                                        "ACP agent connection lost: {msg}"
+                                    ))
+                                }
+                                crucible_acp::ClientError::Timeout(msg) => {
+                                    ChatError::Communication(format!(
+                                        "ACP agent timed out: {msg}"
+                                    ))
+                                }
+                                crucible_acp::ClientError::Session(msg) => {
+                                    ChatError::AgentUnavailable(format!(
+                                        "ACP session error: {msg}"
+                                    ))
+                                }
+                                crucible_acp::ClientError::Protocol(e) => {
+                                    ChatError::Communication(format!(
+                                        "ACP protocol error: {e}"
+                                    ))
+                                }
+                                crucible_acp::ClientError::PermissionDenied(msg) => {
+                                    ChatError::Communication(format!(
+                                        "ACP permission denied: {msg}"
+                                    ))
+                                }
+                                crucible_acp::ClientError::InvalidConfig(msg) => {
+                                    ChatError::InvalidInput(format!(
+                                        "ACP configuration error: {msg}"
+                                    ))
+                                }
+                                crucible_acp::ClientError::Validation(msg) => {
+                                    ChatError::InvalidInput(format!(
+                                        "ACP validation error: {msg}"
+                                    ))
+                                }
+                                crucible_acp::ClientError::NotFound(msg) => {
+                                    ChatError::AgentUnavailable(format!(
+                                        "ACP resource not found: {msg}"
+                                    ))
+                                }
+                                crucible_acp::ClientError::Io(e) => {
+                                    ChatError::Internal(format!("ACP error: {e}"))
+                                }
+                                crucible_acp::ClientError::Serialization(e) => {
+                                    ChatError::Internal(format!("ACP error: {e}"))
+                                }
+                                crucible_acp::ClientError::FileSystem(msg) => {
+                                    ChatError::Internal(format!("ACP error: {msg}"))
+                                }
+                                crucible_acp::ClientError::Other(e) => {
+                                    ChatError::Internal(format!("ACP error: {e}"))
+                                }
+                            };
+                            Some((Err(chat_err), None))
                         }
                         Err(_) => {
                             warn!("ACP streaming task dropped (oneshot cancelled)");
                             Some((
-                                Err(ChatError::Communication(
-                                    "ACP streaming task failed".to_string(),
+                                Err(ChatError::AgentUnavailable(
+                                    "ACP agent process terminated unexpectedly"
+                                        .to_string(),
                                 )),
                                 None,
                             ))
