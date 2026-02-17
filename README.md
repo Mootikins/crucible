@@ -57,6 +57,9 @@ cargo install --git https://github.com/Mootikins/crucible.git crucible-cli
 # Start a chat session
 cru chat
 
+# Chat with Claude Code, enriched by your knowledge base
+cru chat -a claude
+
 # Or start the MCP server for Claude/GPT integration
 cru mcp
 ```
@@ -93,6 +96,41 @@ cru mcp
 
 Tools include `semantic_search`, `create_note`, `get_outlinks`, `get_inlinks`, and more.
 
+### Agent Integration (ACP)
+
+Crucible can spawn and orchestrate external AI agents through the [Agent Context Protocol](https://agentcontextprotocol.org/). Your agent gets full access to Crucible's knowledge graph, semantic search, and tools.
+
+```bash
+# Use Claude Code with your knowledge base
+cru chat -a claude
+
+# Use OpenCode
+cru chat -a opencode
+
+# Use Gemini CLI
+cru chat -a gemini
+```
+
+Built-in agents (auto-discovered if installed):
+
+| Agent | Command | Install |
+|-------|---------|---------|
+| opencode | `opencode` | `go install github.com/grafana/opencode@latest` |
+| claude | `npx @zed-industries/claude-code-acp` | `npm install -g @zed-industries/claude-code-acp` |
+| gemini | `gemini` | `npm install -g gemini-cli` |
+| codex | `npx @zed-industries/codex-acp` | `npm install -g @zed-industries/codex-acp` |
+| cursor | `cursor-acp` | `npm install -g cursor-acp` |
+
+Custom profiles go in `crucible.toml`:
+
+```toml
+[acp.agents.my-claude]
+extends = "claude"
+env = { ANTHROPIC_BASE_URL = "http://localhost:4000" }
+```
+
+Then: `cru chat -a my-claude`
+
 ### Lua Plugins
 
 Drop `.lua` or `.fnl` files into `~/.config/crucible/plugins/` or your kiln's `plugins/` directory:
@@ -114,6 +152,35 @@ See the [plugin guide](./docs/Help/Concepts/Scripting%20Languages.md) for the fu
 - **[docs/](./docs/)** is both the user guide and a working example kiln (155 interlinked notes)
 - **[AGENTS.md](./AGENTS.md)** covers architecture and AI agent instructions
 
+## Command Reference
+
+| Command | Alias | Description |
+|---------|-------|-------------|
+| `cru chat` | `c` | Interactive AI chat with session persistence |
+| `cru chat -a <agent>` | | Use an ACP agent (claude, opencode, gemini, etc.) |
+| `cru chat --resume <id>` | | Resume a previous session |
+| `cru mcp` | | Start MCP server for external AI agents |
+| `cru process` | `p` | Parse, enrich, and store markdown files |
+| `cru init` | `i` | Initialize a new kiln (workspace) |
+| `cru session list` | `s` | List recent chat sessions |
+| `cru session resume <id>` | | Resume a previous session |
+| `cru session export <id>` | | Export session to markdown |
+| `cru session search <q>` | | Search sessions by title |
+| `cru stats` | | Display kiln statistics |
+| `cru status` | | Storage status and metrics |
+| `cru models` | | List available LLM models |
+| `cru config init` | `cfg` | Initialize config file |
+| `cru config show` | | Show effective configuration |
+| `cru agents list` | | List registered agent cards |
+| `cru skills list` | | List discovered agent skills |
+| `cru tasks list` | | Manage tasks from TASKS.md |
+| `cru daemon start` | | Start background daemon |
+| `cru daemon status` | | Check daemon status |
+| `cru storage verify` | | Verify content integrity |
+| `cru auth login` | | Store LLM provider API key |
+
+Run `cru <command> --help` for full options.
+
 ## Roadmap
 
 - [x] TUI chat with session persistence and resume
@@ -123,7 +190,8 @@ See the [plugin guide](./docs/Help/Concepts/Scripting%20Languages.md) for the fu
 - [x] Precognition (auto-RAG before each turn)
 - [x] Daemon with auto-spawn, file watching, multi-session support
 - [ ] Web chat interface
-- [ ] ACP agent mode (embeddable in Zed, JetBrains, Neovim)
+- [x] ACP host mode (use Claude Code, Cursor, OpenCode through Crucible)
+- [ ] ACP agent mode (embed Crucible in editors like Zed, JetBrains, Neovim)
 
 ## License
 
