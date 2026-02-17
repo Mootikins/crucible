@@ -683,6 +683,10 @@ pub struct CliAppConfig {
     #[serde(default)]
     pub mcp: Option<McpConfig>,
 
+    /// Permission configuration for tool access control.
+    #[serde(default)]
+    pub permissions: Option<PermissionConfig>,
+
     /// Per-plugin configuration sections (e.g. `[plugins.discord]`)
     #[serde(default)]
     pub plugins: HashMap<String, serde_json::Value>,
@@ -718,6 +722,7 @@ impl Default for CliAppConfig {
             context: None,
             storage: None,
             mcp: None,
+            permissions: None,
             plugins: HashMap::new(),
             web: None,
             source_map: None,

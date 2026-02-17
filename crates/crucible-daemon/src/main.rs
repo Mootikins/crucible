@@ -39,6 +39,7 @@ async fn main() -> Result<()> {
     } else {
         None
     };
+    let permission_config = config.permissions.clone();
     let web_config = config.web;
 
     defer! {
@@ -51,6 +52,7 @@ async fn main() -> Result<()> {
         mcp_config,
         plugin_config,
         llm_config,
+        permission_config,
         web_config,
     )
     .await?;

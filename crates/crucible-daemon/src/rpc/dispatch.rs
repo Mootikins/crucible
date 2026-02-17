@@ -250,6 +250,7 @@ mod tests {
             background_manager,
             None,
             None,
+            None,
         ));
 
         RpcContext::new(
