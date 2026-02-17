@@ -606,3 +606,219 @@ async fn test_cross_agent_delegation_full_pipeline() {
     assert_eq!(observed_agent.agent_name.as_deref(), Some("opencode"));
     assert_eq!(observed_agent.model, "opencode");
 }
+
+// --- Edge case tests ---
+
+#[tokio::test]
+async fn test_delegation_unknown_target_lists_available() {
+    let temp = TempDir::new().expect("temp dir");
+    let (event_tx, _) = broadcast::channel(32);
+    let manager = Arc::new(BackgroundJobManager::new(event_tx).with_subagent_factory(
+        make_subagent_factory(MockSubagentBehavior::ImmediateSuccess("unused".to_string())),
+    ));
+
+    let session_id = "session-unknown-target";
+    let mut available_agents = HashMap::new();
+    available_agents.insert(
+        "claude".to_string(),
+        AgentProfile {
+            extends: None,
+            command: Some("claude".to_string()),
+            args: Some(vec!["acp".to_string()]),
+            env: HashMap::new(),
+            description: Some("Claude ACP".to_string()),
+            capabilities: None,
+            delegation: None,
+        },
+    );
+    available_agents.insert(
+        "opencode".to_string(),
+        AgentProfile {
+            extends: None,
+            command: Some("opencode".to_string()),
+            args: Some(vec!["acp".to_string()]),
+            env: HashMap::new(),
+            description: Some("OpenCode ACP".to_string()),
+            capabilities: None,
+            delegation: None,
+        },
+    );
+
+    manager.register_subagent_context(
+        session_id,
+        SubagentContext {
+            agent: test_session_agent(true, 3),
+            available_agents,
+            workspace: temp.path().to_path_buf(),
+            parent_session_id: Some(session_id.to_string()),
+            parent_session_dir: Some(temp.path().to_path_buf()),
+            delegator_agent_name: Some("parent-agent".to_string()),
+            target_agent_name: Some("worker-agent".to_string()),
+            delegation_depth: 0,
+        },
+    );
+
+    let err = manager
+        .spawn_subagent_blocking(
+            session_id,
+            "delegate to nonexistent".to_string(),
+            Some("Target agent: nonexistent".to_string()),
+            SubagentBlockingConfig::default(),
+            None,
+        )
+        .await
+        .expect_err("unknown target should fail");
+
+    let msg = err.to_string();
+    assert!(
+        msg.contains("Delegation target 'nonexistent' not found"),
+        "error should name the unknown target, got: {msg}"
+    );
+    assert!(
+        msg.contains("claude"),
+        "error should list available agent 'claude', got: {msg}"
+    );
+    assert!(
+        msg.contains("opencode"),
+        "error should list available agent 'opencode', got: {msg}"
+    );
+}
+
+#[tokio::test]
+async fn test_delegation_depth_limit_enforced() {
+    let temp = TempDir::new().expect("temp dir");
+    let (event_tx, _) = broadcast::channel(32);
+    let manager = Arc::new(BackgroundJobManager::new(event_tx).with_subagent_factory(
+        make_subagent_factory(MockSubagentBehavior::ImmediateSuccess("unused".to_string())),
+    ));
+
+    let session_id = "session-depth-limit";
+    // Register context at depth 2; child will be depth 3 which hits hard cap (>= 3)
+    manager.register_subagent_context(
+        session_id,
+        SubagentContext {
+            agent: test_session_agent(true, 3),
+            available_agents: HashMap::new(),
+            workspace: temp.path().to_path_buf(),
+            parent_session_id: Some(session_id.to_string()),
+            parent_session_dir: Some(temp.path().to_path_buf()),
+            delegator_agent_name: Some("parent-agent".to_string()),
+            target_agent_name: Some("worker-agent".to_string()),
+            delegation_depth: 2,
+        },
+    );
+
+    let err = manager
+        .spawn_subagent_blocking(
+            session_id,
+            "delegate deeper".to_string(),
+            Some("depth test".to_string()),
+            SubagentBlockingConfig::default(),
+            None,
+        )
+        .await
+        .expect_err("depth limit should reject delegation");
+
+    let msg = err.to_string();
+    assert!(
+        msg.contains("Delegation depth limit exceeded"),
+        "error should mention depth limit, got: {msg}"
+    );
+    assert!(
+        msg.contains("hard cap at 3"),
+        "error should mention hard cap value, got: {msg}"
+    );
+}
+
+#[tokio::test]
+async fn test_delegation_concurrent_limit_enforced() {
+    let temp = TempDir::new().expect("temp dir");
+    let (event_tx, _) = broadcast::channel(32);
+    let manager = Arc::new(
+        BackgroundJobManager::new(event_tx)
+            .with_subagent_factory(make_subagent_factory(MockSubagentBehavior::Pending)),
+    );
+
+    let session_id = "session-concurrent-limit-1";
+    // Set max_concurrent_delegations to 1 — tightest possible limit
+    register_delegation_context(
+        manager.as_ref(),
+        session_id,
+        temp.path(),
+        Some(temp.path()),
+        true,
+        1,
+    );
+
+    let first_id = manager
+        .spawn_subagent(
+            session_id,
+            "first delegation".to_string(),
+            Some("concurrent test".to_string()),
+        )
+        .await
+        .expect("first delegation should succeed with limit of 1");
+
+    let err = manager
+        .spawn_subagent(
+            session_id,
+            "second delegation".to_string(),
+            Some("should be rejected".to_string()),
+        )
+        .await
+        .expect_err("second delegation should be rejected at limit 1");
+
+    let msg = err.to_string();
+    assert!(
+        msg.contains("Maximum concurrent delegations (1) exceeded"),
+        "error should mention the exact limit of 1, got: {msg}"
+    );
+
+    manager.cancel_job(&first_id).await;
+}
+
+#[tokio::test]
+async fn test_delegation_empty_available_agents_error() {
+    let temp = TempDir::new().expect("temp dir");
+    let (event_tx, _) = broadcast::channel(32);
+    let manager = Arc::new(BackgroundJobManager::new(event_tx).with_subagent_factory(
+        make_subagent_factory(MockSubagentBehavior::ImmediateSuccess("unused".to_string())),
+    ));
+
+    let session_id = "session-empty-agents";
+    // Register with zero available_agents — any target lookup must fail clearly
+    manager.register_subagent_context(
+        session_id,
+        SubagentContext {
+            agent: test_session_agent(true, 3),
+            available_agents: HashMap::new(),
+            workspace: temp.path().to_path_buf(),
+            parent_session_id: Some(session_id.to_string()),
+            parent_session_dir: Some(temp.path().to_path_buf()),
+            delegator_agent_name: Some("parent-agent".to_string()),
+            target_agent_name: None,
+            delegation_depth: 0,
+        },
+    );
+
+    let err = manager
+        .spawn_subagent_blocking(
+            session_id,
+            "delegate to missing".to_string(),
+            Some("Target agent: phantom".to_string()),
+            SubagentBlockingConfig::default(),
+            None,
+        )
+        .await
+        .expect_err("target with empty agents should fail");
+
+    let msg = err.to_string();
+    assert!(
+        msg.contains("Delegation target 'phantom' not found"),
+        "error should name the missing target, got: {msg}"
+    );
+    assert!(
+        msg.contains("(none)"),
+        "error should show (none) when no agents registered, got: {msg}"
+    );
+}
