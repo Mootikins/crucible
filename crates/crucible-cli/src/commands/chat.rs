@@ -312,7 +312,27 @@ async fn run_interactive_chat(
     use crucible_core::events::EventRing;
     use crucible_core::traits::chat::is_read_only;
 
-    let _set_overrides = set_overrides;
+    {
+        use crate::tui::oil::commands::{validate_set_for_cli, SetEffect};
+
+        for input in &set_overrides {
+            match validate_set_for_cli(input) {
+                Err(e) => {
+                    eprintln!("error: invalid --set '{}': {}", input, e);
+                    std::process::exit(1);
+                }
+                Ok(SetEffect::DaemonRpc(_)) if agent_name.is_some() => {
+                    eprintln!(
+                        "error: invalid --set '{}': cannot set daemon RPC keys on ACP agent sessions",
+                        input
+                    );
+                    std::process::exit(1);
+                }
+                Ok(_) => {}
+            }
+        }
+    }
+
     let default_agent = config.acp.default_agent.clone();
 
     let ring = std::sync::Arc::new(EventRing::new(4096));
@@ -345,7 +365,8 @@ async fn run_interactive_chat(
         .with_model(&model_name)
         .with_context_limit(context_limit)
         .with_show_thinking(config.chat.show_thinking)
-        .with_agent_name(agent_name);
+        .with_agent_name(agent_name)
+        .with_initial_sets(set_overrides);
 
     info!("Starting oil chat with model: {}", model_name);
 
@@ -581,7 +602,6 @@ async fn run_oneshot_chat(
     query_text: String,
     set_overrides: Vec<String>,
 ) -> Result<()> {
-    let _set_overrides = set_overrides;
     let mut status = StatusLine::new();
     let default_agent = config.acp.default_agent.clone();
 
@@ -693,6 +713,13 @@ async fn run_oneshot_chat(
     let mut handle = initialized_agent.into_handle();
     status.success("Ready");
 
+    let _autoconfirm_session = apply_oneshot_set_overrides(
+        &mut handle,
+        &set_overrides,
+        agent_name.is_some(),
+    )
+    .await;
+
     let _live_progress = bg_progress.map(LiveProgress::start);
 
     let prompt = if no_context {
@@ -727,6 +754,94 @@ async fn run_oneshot_chat(
     }
 
     Ok(())
+}
+
+fn format_set_error(err: &crate::tui::oil::commands::SetError) -> String {
+    use crate::tui::oil::commands::SetError;
+    match err {
+        SetError::Parse(e) => e.to_string(),
+        SetError::NotSupportedAsCli => "not supported as CLI flag".to_string(),
+        SetError::InvalidValue { key, message } => format!("{}: {}", key, message),
+        SetError::UnknownKey(key) => format!("unknown key '{}'", key),
+    }
+}
+
+async fn apply_oneshot_set_overrides(
+    handle: &mut Box<dyn crucible_core::traits::chat::AgentHandle + Send + Sync>,
+    set_overrides: &[String],
+    is_acp: bool,
+) -> bool {
+    use crate::tui::oil::commands::{validate_set_for_cli, SetEffect, SetRpcAction};
+
+    let mut autoconfirm = false;
+
+    for input in set_overrides {
+        let effect = match validate_set_for_cli(input) {
+            Ok(effect) => effect,
+            Err(err) => {
+                eprintln!("error: invalid --set '{}': {}", input, format_set_error(&err));
+                std::process::exit(1);
+            }
+        };
+
+        match effect {
+            SetEffect::DaemonRpc(action) => {
+                if is_acp {
+                    eprintln!(
+                        "error: --set '{}' cannot be used with ACP agents (daemon RPC not available)",
+                        input
+                    );
+                    std::process::exit(1);
+                }
+                if let Err(e) = apply_rpc_action(handle, action).await {
+                    eprintln!("error: --set '{}' failed: {}", input, e);
+                    std::process::exit(1);
+                }
+            }
+            SetEffect::TuiLocal { key, value } => {
+                if key == "perm.autoconfirm_session" {
+                    autoconfirm = match value.as_deref() {
+                        Some("false") | Some("0") | Some("no") | Some("off") => false,
+                        _ => true,
+                    };
+                } else {
+                    eprintln!(
+                        "warning: --set '{}' is TUI-only and has no effect in oneshot mode",
+                        key
+                    );
+                }
+            }
+        }
+    }
+
+    autoconfirm
+}
+
+async fn apply_rpc_action(
+    handle: &mut Box<dyn crucible_core::traits::chat::AgentHandle + Send + Sync>,
+    action: crate::tui::oil::commands::SetRpcAction,
+) -> Result<(), String> {
+    use crate::tui::oil::commands::SetRpcAction;
+
+    match action {
+        SetRpcAction::SwitchModel(model) => handle
+            .switch_model(&model)
+            .await
+            .map_err(|e| e.to_string()),
+        SetRpcAction::SetThinkingBudget(Some(budget)) => handle
+            .set_thinking_budget(budget)
+            .await
+            .map_err(|e| e.to_string()),
+        SetRpcAction::SetThinkingBudget(None) => Ok(()),
+        SetRpcAction::SetTemperature(temp) => handle
+            .set_temperature(temp)
+            .await
+            .map_err(|e| e.to_string()),
+        SetRpcAction::SetMaxTokens(max) => handle
+            .set_max_tokens(max)
+            .await
+            .map_err(|e| e.to_string()),
+    }
 }
 
 /// Spawn background watch task for chat mode using the event system
