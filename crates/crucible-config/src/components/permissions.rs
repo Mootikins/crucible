@@ -2,6 +2,16 @@
 
 use globset::{GlobBuilder, GlobMatcher};
 use serde::{Deserialize, Serialize};
+use std::path::{Path, PathBuf};
+
+/// Scope for writing permission rules to config files.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PermissionScope {
+    /// Project-level config: `crucible.toml` in the project directory.
+    Project,
+    /// User-level config: `~/.config/crucible/config.toml` (or platform equivalent).
+    User,
+}
 
 /// Permission mode for tool access control
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -65,6 +75,95 @@ impl PermissionConfig {
     pub fn new() -> Self {
         Self::default()
     }
+}
+
+fn resolve_config_path(
+    scope: PermissionScope,
+    config_dir: Option<&Path>,
+) -> Result<PathBuf, String> {
+    match scope {
+        PermissionScope::Project => {
+            if let Some(dir) = config_dir {
+                Ok(dir.join("crucible.toml"))
+            } else {
+                std::env::current_dir()
+                    .map(|d| d.join("crucible.toml"))
+                    .map_err(|e| format!("Failed to get current directory: {e}"))
+            }
+        }
+        PermissionScope::User => {
+            if let Some(dir) = config_dir {
+                Ok(dir.join("config.toml"))
+            } else {
+                dirs::config_dir()
+                    .map(|d| d.join("crucible").join("config.toml"))
+                    .ok_or_else(|| "Could not determine user config directory".to_string())
+            }
+        }
+    }
+}
+
+/// Write a permission rule to the allow list in the appropriate config file.
+///
+/// `config_dir` overrides the default config location (useful for testing).
+/// For `Project` scope, writes to `crucible.toml`. For `User` scope, writes to `config.toml`.
+///
+/// Creates the file and parent directories if they don't exist.
+/// Preserves existing config content. Skips duplicate rules.
+#[cfg(feature = "toml")]
+pub fn write_permission_rule(
+    scope: PermissionScope,
+    rule: &str,
+    config_dir: Option<&Path>,
+) -> Result<(), String> {
+    let path = resolve_config_path(scope, config_dir)?;
+
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| format!("Failed to create directory {}: {e}", parent.display()))?;
+    }
+
+    let content = match std::fs::read_to_string(&path) {
+        Ok(c) => c,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
+        Err(e) => return Err(format!("Failed to read {}: {e}", path.display())),
+    };
+
+    let mut table: toml::Table = if content.is_empty() {
+        toml::Table::new()
+    } else {
+        toml::from_str(&content).map_err(|e| format!("Failed to parse {}: {e}", path.display()))?
+    };
+
+    let permissions = table
+        .entry("permissions")
+        .or_insert_with(|| toml::Value::Table(toml::Table::new()));
+
+    let permissions_table = permissions
+        .as_table_mut()
+        .ok_or_else(|| "permissions is not a table".to_string())?;
+
+    let allow = permissions_table
+        .entry("allow")
+        .or_insert_with(|| toml::Value::Array(Vec::new()));
+
+    let allow_array = allow
+        .as_array_mut()
+        .ok_or_else(|| "permissions.allow is not an array".to_string())?;
+
+    if allow_array.iter().any(|v| v.as_str() == Some(rule)) {
+        return Ok(());
+    }
+
+    allow_array.push(toml::Value::String(rule.to_string()));
+
+    let output =
+        toml::to_string_pretty(&table).map_err(|e| format!("Failed to serialize config: {e}"))?;
+
+    std::fs::write(&path, output)
+        .map_err(|e| format!("Failed to write {}: {e}", path.display()))?;
+
+    Ok(())
 }
 
 /// Check if a tool invocation matches a hardcoded Layer 0 denial pattern.
@@ -501,6 +600,144 @@ impl CompiledPermissions {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[allow(missing_docs)]
+pub enum PermissionDecision {
+    Allow,
+    Deny { reason: String },
+    Ask,
+}
+
+#[derive(Debug, Clone)]
+#[allow(missing_docs)]
+pub struct PermissionEngine {
+    compiled: CompiledPermissions,
+}
+
+#[allow(missing_docs)]
+impl PermissionEngine {
+    pub fn new(config: Option<&PermissionConfig>) -> Self {
+        let default_config = PermissionConfig::default();
+        let config = config.unwrap_or(&default_config);
+        let (compiled, _warnings) = CompiledPermissions::from_config(config);
+        Self { compiled }
+    }
+
+    pub fn evaluate(&self, tool: &str, input: &str, is_interactive: bool) -> PermissionDecision {
+        let decision = if tool == "bash" {
+            self.evaluate_bash(input)
+        } else {
+            self.evaluate_single(tool, input)
+        };
+
+        if !is_interactive && decision == PermissionDecision::Ask {
+            return PermissionDecision::Deny {
+                reason: "Non-interactive mode: ask rules become deny".to_string(),
+            };
+        }
+
+        decision
+    }
+
+    fn evaluate_bash(&self, input: &str) -> PermissionDecision {
+        let commands = split_chained_commands(input);
+
+        if commands.is_empty() {
+            return self.evaluate_single("bash", input);
+        }
+
+        let mut has_ask_match = false;
+        let mut all_allow_match = true;
+
+        for command in &commands {
+            if let Some(reason) = is_hardcoded_denied("bash", command) {
+                return PermissionDecision::Deny {
+                    reason: format!("Hardcoded deny: {reason}"),
+                };
+            }
+
+            if self.any_match(&self.compiled.deny, "bash", command) {
+                return PermissionDecision::Deny {
+                    reason: "Matched deny rule".to_string(),
+                };
+            }
+
+            if self.any_match(&self.compiled.ask, "bash", command) {
+                has_ask_match = true;
+            }
+
+            if !self.any_match(&self.compiled.allow, "bash", command) {
+                all_allow_match = false;
+            }
+        }
+
+        if has_ask_match {
+            return PermissionDecision::Ask;
+        }
+
+        if all_allow_match {
+            return PermissionDecision::Allow;
+        }
+
+        self.default_decision()
+    }
+
+    fn evaluate_single(&self, tool: &str, input: &str) -> PermissionDecision {
+        if let Some(reason) = is_hardcoded_denied(tool, input) {
+            return PermissionDecision::Deny {
+                reason: format!("Hardcoded deny: {reason}"),
+            };
+        }
+
+        if self.any_match(&self.compiled.deny, tool, input) {
+            return PermissionDecision::Deny {
+                reason: "Matched deny rule".to_string(),
+            };
+        }
+
+        if self.any_match(&self.compiled.ask, tool, input) {
+            return PermissionDecision::Ask;
+        }
+
+        if self.any_match(&self.compiled.allow, tool, input) {
+            return PermissionDecision::Allow;
+        }
+
+        self.default_decision()
+    }
+
+    fn any_match(&self, matchers: &[PermissionMatcher], tool: &str, input: &str) -> bool {
+        matchers.iter().any(|matcher| {
+            if !is_file_tool(tool) {
+                return matches_bash_with_optional_args(matcher, tool, input);
+            }
+
+            let normalized = normalize_path_for_matching(input);
+            matches_bash_with_optional_args(matcher, tool, input)
+                || matches_bash_with_optional_args(matcher, tool, &normalized)
+        })
+    }
+
+    fn default_decision(&self) -> PermissionDecision {
+        match self.compiled.default {
+            PermissionMode::Allow => PermissionDecision::Allow,
+            PermissionMode::Deny => PermissionDecision::Deny {
+                reason: "Default mode is deny".to_string(),
+            },
+            PermissionMode::Ask => PermissionDecision::Ask,
+        }
+    }
+}
+
+fn is_file_tool(tool: &str) -> bool {
+    matches!(tool, "read" | "edit" | "write" | "delete")
+}
+
+fn matches_bash_with_optional_args(matcher: &PermissionMatcher, tool: &str, input: &str) -> bool {
+    matcher.matches(tool, input)
+        || (tool == "bash" && !input.ends_with(' ') && matcher.matches(tool, &format!("{input} ")))
+}
+
 fn compile_glob(pattern: &str) -> Result<GlobMatcher, String> {
     GlobBuilder::new(pattern)
         .case_insensitive(false)
@@ -530,6 +767,20 @@ fn compile_rules(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn config_with_rules(
+        default: PermissionMode,
+        allow: &[&str],
+        deny: &[&str],
+        ask: &[&str],
+    ) -> PermissionConfig {
+        PermissionConfig {
+            default,
+            allow: allow.iter().map(|s| (*s).to_string()).collect(),
+            deny: deny.iter().map(|s| (*s).to_string()).collect(),
+            ask: ask.iter().map(|s| (*s).to_string()).collect(),
+        }
+    }
 
     #[test]
     fn permission_mode_default_is_ask() {
@@ -1084,5 +1335,244 @@ ask:
     fn split_complex_command_with_args() {
         let result = split_chained_commands("cargo test --release && cargo build");
         assert_eq!(result, vec!["cargo test --release", "cargo build"]);
+    }
+
+    #[test]
+    fn engine_layer_0_denies_destructive_bash() {
+        let engine = PermissionEngine::new(None);
+        let decision = engine.evaluate("bash", "rm -rf /", true);
+        assert!(matches!(decision, PermissionDecision::Deny { .. }));
+    }
+
+    #[test]
+    fn engine_deny_rule_denies_matching_input() {
+        let config = config_with_rules(PermissionMode::Ask, &[], &["bash:rm *"], &[]);
+        let engine = PermissionEngine::new(Some(&config));
+
+        let decision = engine.evaluate("bash", "rm something", true);
+        assert!(matches!(decision, PermissionDecision::Deny { .. }));
+    }
+
+    #[test]
+    fn engine_ask_rule_returns_ask() {
+        let config = config_with_rules(PermissionMode::Ask, &[], &[], &["bash:git push *"]);
+        let engine = PermissionEngine::new(Some(&config));
+
+        let decision = engine.evaluate("bash", "git push origin main", true);
+        assert_eq!(decision, PermissionDecision::Ask);
+    }
+
+    #[test]
+    fn engine_allow_rule_returns_allow() {
+        let config = config_with_rules(PermissionMode::Ask, &["bash:cargo test*"], &[], &[]);
+        let engine = PermissionEngine::new(Some(&config));
+
+        let decision = engine.evaluate("bash", "cargo test", true);
+        assert_eq!(decision, PermissionDecision::Allow);
+    }
+
+    #[test]
+    fn engine_deny_wins_over_allow() {
+        let config = config_with_rules(PermissionMode::Ask, &["bash:rm *"], &["bash:rm *"], &[]);
+        let engine = PermissionEngine::new(Some(&config));
+
+        let decision = engine.evaluate("bash", "rm some-file", true);
+        assert!(matches!(decision, PermissionDecision::Deny { .. }));
+    }
+
+    #[test]
+    fn engine_chained_command_denies_on_layer_0_subcommand() {
+        let config = config_with_rules(PermissionMode::Ask, &["bash:cargo test*"], &[], &[]);
+        let engine = PermissionEngine::new(Some(&config));
+
+        let decision = engine.evaluate("bash", "cargo test && rm -rf /", true);
+        assert!(matches!(decision, PermissionDecision::Deny { .. }));
+    }
+
+    #[test]
+    fn engine_chained_command_allows_only_when_all_subcommands_allowed() {
+        let config = config_with_rules(
+            PermissionMode::Ask,
+            &["bash:cargo test*", "bash:cargo build"],
+            &[],
+            &[],
+        );
+        let engine = PermissionEngine::new(Some(&config));
+
+        let decision = engine.evaluate("bash", "cargo test && cargo build", true);
+        assert_eq!(decision, PermissionDecision::Allow);
+    }
+
+    #[test]
+    fn engine_chained_command_partial_allow_falls_back_to_ask() {
+        let config = config_with_rules(PermissionMode::Ask, &["bash:cargo test*"], &[], &[]);
+        let engine = PermissionEngine::new(Some(&config));
+
+        let decision = engine.evaluate("bash", "cargo test && npm run build", true);
+        assert_eq!(decision, PermissionDecision::Ask);
+    }
+
+    #[test]
+    fn engine_file_path_normalization_blocks_traversal_input() {
+        let config = config_with_rules(PermissionMode::Ask, &[], &["read:.env*"], &[]);
+        let engine = PermissionEngine::new(Some(&config));
+
+        let decision = engine.evaluate("read", "src/../.env", true);
+        assert!(matches!(decision, PermissionDecision::Deny { .. }));
+    }
+
+    #[test]
+    fn engine_non_interactive_ask_becomes_deny() {
+        let config = config_with_rules(PermissionMode::Ask, &[], &[], &["bash:*"]);
+        let engine = PermissionEngine::new(Some(&config));
+
+        let decision = engine.evaluate("bash", "ls", false);
+        assert_eq!(
+            decision,
+            PermissionDecision::Deny {
+                reason: "Non-interactive mode: ask rules become deny".to_string()
+            }
+        );
+    }
+
+    #[test]
+    fn engine_non_interactive_allow_still_allows() {
+        let config = config_with_rules(PermissionMode::Ask, &["bash:*"], &[], &[]);
+        let engine = PermissionEngine::new(Some(&config));
+
+        let decision = engine.evaluate("bash", "ls", false);
+        assert_eq!(decision, PermissionDecision::Allow);
+    }
+
+    #[test]
+    fn engine_with_no_config_defaults_to_ask() {
+        let engine = PermissionEngine::new(None);
+        let decision = engine.evaluate("bash", "ls", true);
+        assert_eq!(decision, PermissionDecision::Ask);
+    }
+
+    #[test]
+    fn engine_default_allow_when_no_rules_match() {
+        let config = config_with_rules(PermissionMode::Allow, &[], &[], &[]);
+        let engine = PermissionEngine::new(Some(&config));
+
+        let decision = engine.evaluate("bash", "unknown", true);
+        assert_eq!(decision, PermissionDecision::Allow);
+    }
+
+    #[test]
+    fn engine_default_deny_when_no_rules_match() {
+        let config = config_with_rules(PermissionMode::Deny, &[], &[], &[]);
+        let engine = PermissionEngine::new(Some(&config));
+
+        let decision = engine.evaluate("bash", "unknown", true);
+        assert!(matches!(decision, PermissionDecision::Deny { .. }));
+    }
+
+    #[test]
+    fn engine_allows_matching_mcp_server_rule() {
+        let config = config_with_rules(PermissionMode::Ask, &["mcp:github:*"], &[], &[]);
+        let engine = PermissionEngine::new(Some(&config));
+
+        let decision = engine.evaluate("mcp", "github:create_issue", true);
+        assert_eq!(decision, PermissionDecision::Allow);
+    }
+
+    #[test]
+    fn engine_file_rules_use_most_restrictive_raw_or_normalized_match() {
+        let config = config_with_rules(PermissionMode::Ask, &[], &["write:src/../secret.txt"], &[]);
+        let engine = PermissionEngine::new(Some(&config));
+
+        let decision = engine.evaluate("write", "src/../secret.txt", true);
+        assert!(matches!(decision, PermissionDecision::Deny { .. }));
+    }
+
+    #[test]
+    fn write_permission_rule_creates_new_file() {
+        let dir = tempfile::tempdir().unwrap();
+        write_permission_rule(
+            PermissionScope::Project,
+            "bash:cargo test *",
+            Some(dir.path()),
+        )
+        .unwrap();
+
+        let content = std::fs::read_to_string(dir.path().join("crucible.toml")).unwrap();
+        let table: toml::Table = toml::from_str(&content).unwrap();
+        let allow = table["permissions"]["allow"].as_array().unwrap();
+        assert_eq!(allow.len(), 1);
+        assert_eq!(allow[0].as_str().unwrap(), "bash:cargo test *");
+    }
+
+    #[test]
+    fn write_permission_rule_appends_to_existing_allow_array() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("crucible.toml");
+        std::fs::write(&path, "[permissions]\nallow = [\"read:*\"]\n").unwrap();
+
+        write_permission_rule(
+            PermissionScope::Project,
+            "bash:cargo test *",
+            Some(dir.path()),
+        )
+        .unwrap();
+
+        let content = std::fs::read_to_string(&path).unwrap();
+        let table: toml::Table = toml::from_str(&content).unwrap();
+        let allow = table["permissions"]["allow"].as_array().unwrap();
+        assert_eq!(allow.len(), 2);
+        assert_eq!(allow[0].as_str().unwrap(), "read:*");
+        assert_eq!(allow[1].as_str().unwrap(), "bash:cargo test *");
+    }
+
+    #[test]
+    fn write_permission_rule_skips_duplicate() {
+        let dir = tempfile::tempdir().unwrap();
+        write_permission_rule(
+            PermissionScope::Project,
+            "bash:cargo test *",
+            Some(dir.path()),
+        )
+        .unwrap();
+        write_permission_rule(
+            PermissionScope::Project,
+            "bash:cargo test *",
+            Some(dir.path()),
+        )
+        .unwrap();
+
+        let content = std::fs::read_to_string(dir.path().join("crucible.toml")).unwrap();
+        let table: toml::Table = toml::from_str(&content).unwrap();
+        let allow = table["permissions"]["allow"].as_array().unwrap();
+        assert_eq!(allow.len(), 1);
+    }
+
+    #[test]
+    fn write_permission_rule_adds_section_to_existing_config() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("crucible.toml");
+        std::fs::write(&path, "[llm]\nmodel = \"gpt-4\"\n").unwrap();
+
+        write_permission_rule(PermissionScope::Project, "read:*", Some(dir.path())).unwrap();
+
+        let content = std::fs::read_to_string(&path).unwrap();
+        let table: toml::Table = toml::from_str(&content).unwrap();
+        assert_eq!(table["llm"]["model"].as_str().unwrap(), "gpt-4");
+        let allow = table["permissions"]["allow"].as_array().unwrap();
+        assert_eq!(allow.len(), 1);
+        assert_eq!(allow[0].as_str().unwrap(), "read:*");
+    }
+
+    #[test]
+    fn write_permission_rule_user_scope_uses_config_toml() {
+        let dir = tempfile::tempdir().unwrap();
+        write_permission_rule(PermissionScope::User, "bash:*", Some(dir.path())).unwrap();
+
+        let path = dir.path().join("config.toml");
+        assert!(path.exists());
+        let content = std::fs::read_to_string(&path).unwrap();
+        let table: toml::Table = toml::from_str(&content).unwrap();
+        let allow = table["permissions"]["allow"].as_array().unwrap();
+        assert_eq!(allow[0].as_str().unwrap(), "bash:*");
     }
 }
