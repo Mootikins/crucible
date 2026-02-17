@@ -164,7 +164,15 @@ pub async fn create_agent_from_session_config(
     });
     let interaction_ctx = Arc::new(InteractionContext::new(registry, push_event));
 
-    let mut ws_ctx = WorkspaceContext::new(workspace).with_interaction_context(interaction_ctx);
+    let delegation_targets = agent_config
+        .delegation_config
+        .as_ref()
+        .and_then(|config| config.allowed_targets.clone())
+        .unwrap_or_default();
+
+    let mut ws_ctx = WorkspaceContext::new(workspace)
+        .with_delegation_targets(delegation_targets)
+        .with_interaction_context(interaction_ctx);
     if let Some(ref spawner) = background_spawner {
         ws_ctx = ws_ctx.with_background_spawner(spawner.clone());
     }
