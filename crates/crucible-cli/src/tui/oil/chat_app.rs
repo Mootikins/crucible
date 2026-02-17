@@ -2074,6 +2074,34 @@ impl OilChatApp {
                 request_id,
                 response,
             } => {
+                if let Some(ref pattern) = response.pattern {
+                    let config_scope = match response.scope {
+                        PermissionScope::Project => {
+                            Some(crucible_config::components::permissions::PermissionScope::Project)
+                        }
+                        PermissionScope::User => {
+                            Some(crucible_config::components::permissions::PermissionScope::User)
+                        }
+                        _ => None,
+                    };
+                    if let Some(scope) = config_scope {
+                        match crucible_config::components::permissions::write_permission_rule(
+                            scope, pattern, None,
+                        ) {
+                            Ok(()) => {
+                                let path = if response.scope == PermissionScope::User {
+                                    "~/.config/crucible/config.toml"
+                                } else {
+                                    "crucible.toml"
+                                };
+                                self.notify_toast(format!("Rule saved to {path}"));
+                            }
+                            Err(e) => {
+                                self.notify_toast(format!("Failed to save rule: {e}"));
+                            }
+                        }
+                    }
+                }
                 self.close_interaction_and_show_next();
                 Action::Send(ChatAppMsg::CloseInteraction {
                     request_id,
