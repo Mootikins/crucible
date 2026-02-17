@@ -767,13 +767,8 @@ impl BackgroundJobManager {
         };
 
         let is_delegation = parent_session_id.is_some();
-        let delegation_parent_session_id = parent_session_id.clone();
         let child_delegation_depth = delegation_depth.saturating_add(1);
-        let child_parent_session_id = if is_delegation {
-            parent_session_id.or_else(|| Some(session_id.to_string()))
-        } else {
-            None
-        };
+        let child_parent_session_id = parent_session_id.clone();
 
         self.enforce_delegation_capabilities(
             &agent_config,
@@ -781,7 +776,6 @@ impl BackgroundJobManager {
             target_name.as_deref(),
             child_delegation_depth,
             session_id,
-            is_delegation,
         )?;
 
         // KNOWN LIMITATION: No nested delegation (depth=1 only).
@@ -798,8 +792,9 @@ impl BackgroundJobManager {
         let mut info = JobInfo::new(session_id.to_string(), kind);
         let job_id = info.id.clone();
 
-        let (subagent_writer, session_link, child_session_id) =
-            if let Some(ref parent_dir) = parent_session_dir {
+        let (subagent_writer, session_link, child_session_id) = if let Some(ref parent_dir) =
+            parent_session_dir
+        {
             match SessionWriter::create_subagent(parent_dir).await {
                 Ok((mut writer, link)) => {
                     let subagent_session_id = writer.id().as_str().to_string();
@@ -817,7 +812,11 @@ impl BackgroundJobManager {
                     }
 
                     info.session_path = Some(writer.session_dir().to_path_buf());
-                    (Some(Arc::new(Mutex::new(writer))), link, Some(subagent_session_id))
+                    (
+                        Some(Arc::new(Mutex::new(writer))),
+                        link,
+                        Some(subagent_session_id),
+                    )
                 }
                 Err(e) => {
                     warn!(error = %e, "Failed to create subagent session, continuing without persistence");
@@ -855,7 +854,7 @@ impl BackgroundJobManager {
         ));
 
         if is_delegation {
-            if let Some(ref parent_id) = delegation_parent_session_id {
+            if let Some(ref parent_id) = parent_session_id {
                 let _ = self.event_tx.send(SessionEventMessage::new(
                     parent_id,
                     events::DELEGATION_SPAWNED,
@@ -889,7 +888,7 @@ impl BackgroundJobManager {
             agent,
             subagent_writer,
             is_delegation,
-            parent_session_id: delegation_parent_session_id,
+            parent_session_id,
         })
     }
 
@@ -900,7 +899,6 @@ impl BackgroundJobManager {
         target_name: Option<&str>,
         delegation_depth: u32,
         parent_session_id: &str,
-        is_delegation: bool,
     ) -> Result<(), BackgroundError> {
         if delegation_depth >= 3 {
             return Err(BackgroundError::SpawnFailed(
@@ -916,21 +914,19 @@ impl BackgroundJobManager {
                 BackgroundError::SpawnFailed("Delegation is disabled for this agent".to_string())
             })?;
 
-        if is_delegation {
-            let active_delegations = self
-                .running
-                .iter()
-                .filter(|entry| {
-                    entry.value().is_delegation && entry.value().info.session_id == parent_session_id
-                })
-                .count();
+        let active_delegations = self
+            .running
+            .iter()
+            .filter(|entry| {
+                entry.value().is_delegation && entry.value().info.session_id == parent_session_id
+            })
+            .count();
 
-            if active_delegations >= delegation.max_concurrent_delegations as usize {
-                return Err(BackgroundError::SpawnFailed(format!(
-                    "Maximum concurrent delegations ({}) exceeded",
-                    delegation.max_concurrent_delegations
-                )));
-            }
+        if active_delegations >= delegation.max_concurrent_delegations as usize {
+            return Err(BackgroundError::SpawnFailed(format!(
+                "Maximum concurrent delegations ({}) exceeded",
+                delegation.max_concurrent_delegations
+            )));
         }
 
         if let Some(allowed_targets) = &delegation.allowed_targets {
@@ -1097,24 +1093,28 @@ impl BackgroundJobManager {
         is_delegation: bool,
         parent_session_id: Option<&str>,
     ) {
-        let (event_type, event_data) = if result.is_success() {
-            let output = result.output.as_deref().unwrap_or("");
+        let (is_success, output_or_error) = if result.is_success() {
+            (true, result.output.as_deref().unwrap_or(""))
+        } else {
+            (false, result.error.as_deref().unwrap_or("Unknown error"))
+        };
+
+        let (event_type, event_data) = if is_success {
             (
                 events::SUBAGENT_COMPLETED,
                 serde_json::json!({
                     "job_id": job_id,
                     "session_link": session_link,
-                    "summary": truncate(output, 500),
+                    "summary": truncate(output_or_error, 500),
                 }),
             )
         } else {
-            let error = result.error.as_deref().unwrap_or("Unknown error");
             (
                 events::SUBAGENT_FAILED,
                 serde_json::json!({
                     "job_id": job_id,
                     "session_link": session_link,
-                    "error": error,
+                    "error": output_or_error,
                 }),
             )
         };
@@ -1126,34 +1126,28 @@ impl BackgroundJobManager {
             warn!(job_id = %job_id, "No subscribers for subagent completion event");
         }
 
-        if is_delegation {
-            if let Some(parent_id) = parent_session_id {
-                let (deleg_type, deleg_data) = if result.is_success() {
-                    let output = result.output.as_deref().unwrap_or("");
-                    (
-                        events::DELEGATION_COMPLETED,
-                        serde_json::json!({
-                            "delegation_id": job_id,
-                            "result_summary": truncate(output, 500),
-                            "parent_session_id": parent_id,
-                        }),
-                    )
-                } else {
-                    let error = result.error.as_deref().unwrap_or("Unknown error");
-                    (
-                        events::DELEGATION_FAILED,
-                        serde_json::json!({
-                            "delegation_id": job_id,
-                            "error": error,
-                            "parent_session_id": parent_id,
-                        }),
-                    )
-                };
+        if let Some(parent_id) = parent_session_id.filter(|_| is_delegation) {
+            let (deleg_type, deleg_data) = if is_success {
+                (
+                    events::DELEGATION_COMPLETED,
+                    serde_json::json!({
+                        "delegation_id": job_id,
+                        "result_summary": truncate(output_or_error, 500),
+                        "parent_session_id": parent_id,
+                    }),
+                )
+            } else {
+                (
+                    events::DELEGATION_FAILED,
+                    serde_json::json!({
+                        "delegation_id": job_id,
+                        "error": output_or_error,
+                        "parent_session_id": parent_id,
+                    }),
+                )
+            };
 
-                let _ = event_tx.send(SessionEventMessage::new(
-                    parent_id, deleg_type, deleg_data,
-                ));
-            }
+            let _ = event_tx.send(SessionEventMessage::new(parent_id, deleg_type, deleg_data));
         }
 
         Self::emit_background_completed(event_tx, session_id, job_id, result, "subagent");
@@ -1592,12 +1586,12 @@ mod tests {
                 })
             }),
             Some(DelegationConfig {
-                            enabled: true,
-                            max_depth: 2,
-                            allowed_targets: Some(vec!["worker-agent".to_string()]),
-                            result_max_bytes: 51200,
-                            max_concurrent_delegations: 3,
-                        }),
+                enabled: true,
+                max_depth: 2,
+                allowed_targets: Some(vec!["worker-agent".to_string()]),
+                result_max_bytes: 51200,
+                max_concurrent_delegations: 3,
+            }),
             Some("parent-agent"),
             Some("worker-agent"),
         );
@@ -1627,12 +1621,12 @@ mod tests {
                 "delegation-result".to_string(),
             )),
             Some(DelegationConfig {
-                            enabled: true,
-                            max_depth: 1,
-                            allowed_targets: None,
-                            result_max_bytes: 51200,
-                            max_concurrent_delegations: 3,
-                        }),
+                enabled: true,
+                max_depth: 1,
+                allowed_targets: None,
+                result_max_bytes: 51200,
+                max_concurrent_delegations: 3,
+            }),
         );
 
         let result = manager
@@ -1655,12 +1649,12 @@ mod tests {
         let manager = make_subagent_manager_with_factory(
             behavior_factory(MockSubagentBehavior::ImmediateSuccess("ok".to_string())),
             Some(DelegationConfig {
-                            enabled: false,
-                            max_depth: 1,
-                            allowed_targets: None,
-                            result_max_bytes: 51200,
-                            max_concurrent_delegations: 3,
-                        }),
+                enabled: false,
+                max_depth: 1,
+                allowed_targets: None,
+                result_max_bytes: 51200,
+                max_concurrent_delegations: 3,
+            }),
         );
 
         let err = manager
@@ -1683,12 +1677,12 @@ mod tests {
         let manager = make_subagent_manager_with_factory(
             behavior_factory(MockSubagentBehavior::ImmediateSuccess("ok".to_string())),
             Some(DelegationConfig {
-                            enabled: true,
-                            max_depth: 1,
-                            allowed_targets: Some(vec!["allowed-agent".to_string()]),
-                            result_max_bytes: 51200,
-                            max_concurrent_delegations: 3,
-                        }),
+                enabled: true,
+                max_depth: 1,
+                allowed_targets: Some(vec!["allowed-agent".to_string()]),
+                result_max_bytes: 51200,
+                max_concurrent_delegations: 3,
+            }),
         );
 
         let err = manager
@@ -1711,12 +1705,12 @@ mod tests {
         let manager = make_subagent_manager_with_factory(
             behavior_factory(MockSubagentBehavior::Pending),
             Some(DelegationConfig {
-                            enabled: true,
-                            max_depth: 1,
-                            allowed_targets: None,
-                            result_max_bytes: 51200,
-                            max_concurrent_delegations: 3,
-                        }),
+                enabled: true,
+                max_depth: 1,
+                allowed_targets: None,
+                result_max_bytes: 51200,
+                max_concurrent_delegations: 3,
+            }),
         );
 
         let result = manager
@@ -1744,12 +1738,12 @@ mod tests {
                 Box::pin(async move { Err("command not found: mock-subagent".to_string()) })
             }),
             Some(DelegationConfig {
-                            enabled: true,
-                            max_depth: 1,
-                            allowed_targets: None,
-                            result_max_bytes: 51200,
-                            max_concurrent_delegations: 3,
-                        }),
+                enabled: true,
+                max_depth: 1,
+                allowed_targets: None,
+                result_max_bytes: 51200,
+                max_concurrent_delegations: 3,
+            }),
         );
 
         let err = manager
@@ -1772,12 +1766,12 @@ mod tests {
         let manager = make_subagent_manager_with_factory_and_identity(
             behavior_factory(MockSubagentBehavior::ImmediateSuccess("ok".to_string())),
             Some(DelegationConfig {
-                            enabled: true,
-                            max_depth: 1,
-                            allowed_targets: Some(vec!["parent-agent".to_string()]),
-                            result_max_bytes: 51200,
-                            max_concurrent_delegations: 3,
-                        }),
+                enabled: true,
+                max_depth: 1,
+                allowed_targets: Some(vec!["parent-agent".to_string()]),
+                result_max_bytes: 51200,
+                max_concurrent_delegations: 3,
+            }),
             Some("parent-agent"),
             Some("parent-agent"),
         );
@@ -1802,12 +1796,12 @@ mod tests {
         let manager = make_subagent_manager_with_factory(
             behavior_factory(MockSubagentBehavior::ImmediateSuccess("y".repeat(200))),
             Some(DelegationConfig {
-                            enabled: true,
-                            max_depth: 1,
-                            allowed_targets: None,
-                            result_max_bytes: 16,
-                            max_concurrent_delegations: 3,
-                        }),
+                enabled: true,
+                max_depth: 1,
+                allowed_targets: None,
+                result_max_bytes: 16,
+                max_concurrent_delegations: 3,
+            }),
         );
 
         let result = manager
@@ -1835,12 +1829,12 @@ mod tests {
                 "eventful-result".to_string(),
             )),
             Some(DelegationConfig {
-                            enabled: true,
-                            max_depth: 1,
-                            allowed_targets: None,
-                            result_max_bytes: 51200,
-                            max_concurrent_delegations: 3,
-                        }),
+                enabled: true,
+                max_depth: 1,
+                allowed_targets: None,
+                result_max_bytes: 51200,
+                max_concurrent_delegations: 3,
+            }),
         );
 
         let result = manager
@@ -1968,7 +1962,10 @@ mod tests {
         let blocked = manager
             .spawn_subagent("session-1", "delegate blocked".to_string(), None)
             .await;
-        assert!(blocked.is_err(), "second delegation should be blocked while first is running");
+        assert!(
+            blocked.is_err(),
+            "second delegation should be blocked while first is running"
+        );
 
         tokio::time::sleep(Duration::from_millis(120)).await;
 
@@ -2006,7 +2003,10 @@ mod tests {
         let blocked = manager
             .spawn_subagent("session-1", "delegate blocked".to_string(), None)
             .await;
-        assert!(blocked.is_err(), "second delegation should be blocked while first is running");
+        assert!(
+            blocked.is_err(),
+            "second delegation should be blocked while first is running"
+        );
 
         tokio::time::sleep(Duration::from_millis(120)).await;
 
@@ -2022,10 +2022,9 @@ mod tests {
     async fn delegation_writes_parent_session_id_and_incremented_depth_to_child_session() {
         let parent_dir = tempfile::TempDir::new().expect("temp dir should be created");
         let (tx, _) = broadcast::channel(16);
-        let manager =
-            BackgroundJobManager::new(tx).with_subagent_factory(behavior_factory(
-                MockSubagentBehavior::ImmediateSuccess("ok".to_string()),
-            ));
+        let manager = BackgroundJobManager::new(tx).with_subagent_factory(behavior_factory(
+            MockSubagentBehavior::ImmediateSuccess("ok".to_string()),
+        ));
         manager.register_subagent_context(
             "session-1",
             SubagentContext {
@@ -2539,7 +2538,6 @@ mod tests {
             Some("child"),
             3,
             "session-1",
-            true,
         );
 
         assert!(result.is_err());
@@ -2566,7 +2564,6 @@ mod tests {
             Some("child"),
             5,
             "session-1",
-            true,
         );
 
         assert!(result.is_err());
@@ -2593,7 +2590,6 @@ mod tests {
             Some("child"),
             0,
             "session-1",
-            true,
         );
 
         assert!(result.is_ok());
@@ -2616,7 +2612,6 @@ mod tests {
             Some("child"),
             1,
             "session-1",
-            true,
         );
 
         assert!(result.is_ok());
@@ -2639,7 +2634,6 @@ mod tests {
             Some("child"),
             2,
             "session-1",
-            true,
         );
 
         assert!(result.is_ok());
@@ -2662,7 +2656,6 @@ mod tests {
             Some("child"),
             3,
             "session-1",
-            true,
         );
 
         assert!(result.is_err());
@@ -2698,10 +2691,7 @@ mod tests {
                         saw_delegation_spawned = true;
                         assert_eq!(event.session_id, "session-1");
                         assert!(event.data["delegation_id"].as_str().is_some());
-                        assert_eq!(
-                            event.data["parent_session_id"].as_str(),
-                            Some("session-1")
-                        );
+                        assert_eq!(event.data["parent_session_id"].as_str(), Some("session-1"));
                         assert!(event.data["prompt"]
                             .as_str()
                             .unwrap_or("")
@@ -2746,10 +2736,7 @@ mod tests {
                         saw_delegation_completed = true;
                         assert_eq!(event.session_id, "session-1");
                         assert!(event.data["delegation_id"].as_str().is_some());
-                        assert_eq!(
-                            event.data["parent_session_id"].as_str(),
-                            Some("session-1")
-                        );
+                        assert_eq!(event.data["parent_session_id"].as_str(), Some("session-1"));
                         assert!(event.data["result_summary"]
                             .as_str()
                             .unwrap_or("")
@@ -2794,10 +2781,7 @@ mod tests {
                         saw_delegation_failed = true;
                         assert_eq!(event.session_id, "session-1");
                         assert!(event.data["delegation_id"].as_str().is_some());
-                        assert_eq!(
-                            event.data["parent_session_id"].as_str(),
-                            Some("session-1")
-                        );
+                        assert_eq!(event.data["parent_session_id"].as_str(), Some("session-1"));
                         assert!(event.data["error"]
                             .as_str()
                             .unwrap_or("")

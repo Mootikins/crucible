@@ -130,7 +130,10 @@ impl WorkspaceContext {
 
     /// Get the current delegation depth for this session.
     pub fn delegation_depth(&self) -> u32 {
-        self.delegation_depth.read().map(|guard| *guard).unwrap_or(0)
+        self.delegation_depth
+            .read()
+            .map(|guard| *guard)
+            .unwrap_or(0)
     }
 
     /// Check if write operations are blocked (plan mode)
@@ -1115,13 +1118,9 @@ impl Tool for DelegateSessionTool {
             format!("Delegation depth: {}", child_depth),
         ];
 
-        if let Some(files) = args.context_files {
-            if !files.is_empty() {
-                context_parts.push("Context files:".to_string());
-                for file in files {
-                    context_parts.push(format!("- {}", file));
-                }
-            }
+        if let Some(files) = args.context_files.filter(|f| !f.is_empty()) {
+            context_parts.push("Context files:".to_string());
+            context_parts.extend(files.into_iter().map(|f| format!("- {}", f)));
         }
 
         let context = Some(context_parts.join("\n"));
@@ -1159,7 +1158,10 @@ impl Tool for DelegateSessionTool {
                 } else {
                     DelegationStatus::Failed {
                         error: job_result.error.unwrap_or_else(|| {
-                            format!("Delegated session ended with status {}", job_result.info.status)
+                            format!(
+                                "Delegated session ended with status {}",
+                                job_result.info.status
+                            )
                         }),
                     }
                 }
@@ -1243,7 +1245,7 @@ impl Tool for SpawnSubagentTool {
             .ok_or_else(|| WorkspaceToolError::Command("No session ID available".to_string()))?;
 
         let job_id = spawner
-            .spawn_subagent(&session_id, args.prompt.clone(), args.context)
+            .spawn_subagent(&session_id, args.prompt, args.context)
             .await
             .map_err(|e| WorkspaceToolError::Command(format!("Failed to spawn subagent: {}", e)))?;
 
@@ -1467,7 +1469,9 @@ mod tests {
 
             match &self.blocking_result {
                 Some(result) => Ok(result.clone()),
-                None => Err(JobError::SpawnFailed("no blocking result configured".to_string())),
+                None => Err(JobError::SpawnFailed(
+                    "no blocking result configured".to_string(),
+                )),
             }
         }
 

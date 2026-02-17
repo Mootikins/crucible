@@ -1,4 +1,3 @@
-mod delegation_render;
 mod diff_preview;
 mod drawer;
 mod input_area;
@@ -16,7 +15,6 @@ pub(crate) mod status_component;
 mod subagent_render;
 pub(crate) mod tool_render;
 
-pub use delegation_render::render_delegation;
 pub(crate) use diff_preview::render_diff_preview;
 pub use drawer::{Drawer, DrawerKind};
 pub use input_area::{InputArea, InputMode, INPUT_MAX_CONTENT_LINES};
