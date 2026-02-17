@@ -266,6 +266,13 @@ pub enum Commands {
     )]
     Skills(SkillsCommands),
 
+    /// Discover and manage tools (list, show)
+    #[command(
+        subcommand,
+        long_about = "Discover and manage tools available to agents.\n\nList tools from MCP servers, plugins, and built-in tools.\n\nExamples:\n  # List all available tools\n  cru tools list\n\n  # List tools in permission rule format\n  cru tools list --permissions"
+    )]
+    Tools(ToolsCommands),
+
     /// Initialize a new kiln (Crucible workspace)
     #[command(
         long_about = "Initialize a new kiln (Crucible workspace) with configuration and directory structure.\n\nExamples:\n  # Initialize kiln in current directory\n  cru init\n\n  # Initialize in specific directory\n  cru init --path ~/my-kiln\n\n  # Interactive setup with provider selection\n  cru init --interactive\n\n  # Force overwrite existing kiln\n  cru init --force",
@@ -708,6 +715,16 @@ pub enum SkillsCommands {
         /// Maximum results
         #[arg(short, long, default_value = "10")]
         limit: usize,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum ToolsCommands {
+    /// List available tools
+    List {
+        /// Output in permission rule format (tool:pattern)
+        #[arg(long)]
+        permissions: bool,
     },
 }
 

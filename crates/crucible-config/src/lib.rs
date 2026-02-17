@@ -27,7 +27,7 @@
 #![warn(missing_docs)]
 #![warn(clippy::all)]
 
-mod components;
+pub mod components;
 mod config;
 pub mod credentials;
 mod enrichment;

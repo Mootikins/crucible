@@ -360,6 +360,10 @@ async fn main() -> Result<()> {
             commands::skills::execute(config, cmd).await?;
         }
 
+        Some(Commands::Tools(cmd)) => {
+            commands::tools::execute(config, cmd).await?;
+        }
+
         Some(Commands::Init {
             path,
             force,

@@ -158,6 +158,7 @@ impl Server {
             background_manager.clone(),
             mcp_gateway,
             llm_config,
+            None,
         ));
         let subscription_manager = Arc::new(SubscriptionManager::new());
         let project_manager = Arc::new(ProjectManager::new(

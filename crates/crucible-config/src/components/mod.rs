@@ -28,8 +28,8 @@ pub use handlers::*;
 pub use llm::*;
 pub use mcp::{McpConfig, TransportType, UpstreamServerConfig};
 pub use permissions::{
-    parse_rule, CompiledPermissions, ParsedRule, PermissionConfig, PermissionMatcher,
-    PermissionMode,
+    parse_rule, CompiledPermissions, ParsedRule, PermissionConfig, PermissionDecision,
+    PermissionEngine, PermissionMatcher, PermissionMode,
 };
 pub use storage::*;
 
