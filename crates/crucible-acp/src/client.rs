@@ -18,9 +18,11 @@
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
+use std::future::Future;
 use std::path::PathBuf;
 use std::pin::Pin;
 use std::process::Stdio;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncWrite, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStdin, ChildStdout, Command};
@@ -173,6 +175,9 @@ impl StreamingState {
 pub type BoxedWriter = Pin<Box<dyn AsyncWrite + Send + Sync + Unpin>>;
 /// Type-erased async reader for agent communication
 pub type BoxedReader = Pin<Box<dyn AsyncBufRead + Send + Sync + Unpin>>;
+pub type PermissionOutcomeFuture = Pin<Box<dyn Future<Output = RequestPermissionOutcome> + Send>>;
+pub type PermissionRequestHandler =
+    Arc<dyn Fn(RequestPermissionRequest) -> PermissionOutcomeFuture + Send + Sync>;
 
 /// Main client for ACP communication
 ///
@@ -196,6 +201,7 @@ pub struct CrucibleAcpClient {
     boxed_reader: Option<BoxedReader>,
     /// Latest available slash commands advertised by the agent
     available_commands: Vec<AvailableCommand>,
+    permission_handler: Option<PermissionRequestHandler>,
 }
 
 // Manual Debug implementation since Child doesn't implement Debug
@@ -211,6 +217,7 @@ impl std::fmt::Debug for CrucibleAcpClient {
             .field("boxed_writer", &self.boxed_writer.is_some())
             .field("boxed_reader", &self.boxed_reader.is_some())
             .field("available_commands", &self.available_commands.len())
+            .field("permission_handler", &self.permission_handler.is_some())
             .finish()
     }
 }
@@ -250,7 +257,13 @@ impl CrucibleAcpClient {
             boxed_writer: None,
             boxed_reader: None,
             available_commands: Vec::new(),
+            permission_handler: None,
         }
+    }
+
+    pub fn with_permission_handler(mut self, handler: PermissionRequestHandler) -> Self {
+        self.permission_handler = Some(handler);
+        self
     }
 
     /// Get the agent name for display
@@ -298,6 +311,7 @@ impl CrucibleAcpClient {
             boxed_writer: Some(writer),
             boxed_reader: Some(reader),
             available_commands: Vec::new(),
+            permission_handler: None,
         }
     }
 
@@ -1508,13 +1522,13 @@ impl CrucibleAcpClient {
         request_id: u64,
         request: RequestPermissionRequest,
     ) -> Result<()> {
-        use agent_client_protocol::SelectedPermissionOutcome;
-
-        let outcome = if let Some(first_option) = request.options.first() {
-            RequestPermissionOutcome::Selected(SelectedPermissionOutcome::new(
-                first_option.option_id.clone(),
-            ))
+        let outcome = if let Some(handler) = self.permission_handler.clone() {
+            handler(request).await
         } else {
+            tracing::warn!(
+                request_id,
+                "No ACP permission handler configured; cancelling request"
+            );
             RequestPermissionOutcome::Cancelled
         };
 

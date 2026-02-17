@@ -103,6 +103,7 @@ impl Server {
             std::collections::HashMap::new(),
             None,
             None,
+            None,
         )
         .await
     }
@@ -113,6 +114,7 @@ impl Server {
         mcp_config: Option<&crucible_config::McpConfig>,
         plugin_config: std::collections::HashMap<String, serde_json::Value>,
         llm_config: Option<crucible_config::LlmConfig>,
+        permission_config: Option<crucible_config::components::permissions::PermissionConfig>,
         #[allow(unused_variables)] web_config: Option<crucible_config::WebConfig>,
     ) -> Result<Self> {
         // Remove stale socket
@@ -158,7 +160,7 @@ impl Server {
             background_manager.clone(),
             mcp_gateway,
             llm_config,
-            None,
+            permission_config,
         ));
         let subscription_manager = Arc::new(SubscriptionManager::new());
         let project_manager = Arc::new(ProjectManager::new(
