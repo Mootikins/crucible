@@ -101,19 +101,8 @@ pub enum Commands {
         #[arg(short = 'e', long = "env", value_name = "KEY=VALUE")]
         env: Vec<String>,
 
-        /// Use internal LLM agent instead of external ACP agent
-        /// Connects directly to configured LLM provider (Ollama, OpenAI, etc.)
+        /// LLM provider to use (from config [llm.providers])
         #[arg(long)]
-        internal: bool,
-
-        /// Force local agent execution (skip daemon).
-        /// By default, chat uses daemon for agent execution.
-        #[arg(long)]
-        local: bool,
-
-        /// LLM provider to use for internal agent (from config [llm.providers])
-        /// Requires --internal flag
-        #[arg(long, requires = "internal")]
         provider: Option<String>,
 
         /// Maximum context window tokens for internal agent (default: 16384)
