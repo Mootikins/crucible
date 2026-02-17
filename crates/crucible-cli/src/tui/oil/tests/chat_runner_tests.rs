@@ -513,7 +513,7 @@ mod daemon_event_to_tui_tests {
         let tree = app.view(&ctx);
         let output = render_to_string(&tree, 80);
         assert!(
-            output.contains("read_file"),
+            output.contains("Read File"),
             "Tool call should appear in UI: {}",
             output
         );
@@ -554,7 +554,7 @@ mod daemon_event_to_tui_tests {
         let tree = app.view(&ctx);
         let output = render_to_string(&tree, 80);
         assert!(
-            output.contains("fn main()") || output.contains("read_file"),
+            output.contains("fn main()") || output.contains("Read File"),
             "Tool result should appear in UI: {}",
             output
         );
@@ -742,7 +742,7 @@ mod daemon_event_to_tui_tests {
         let stripped = strip_ansi(&output);
 
         let text_pos = stripped.find("search").unwrap_or(usize::MAX);
-        let tool_pos = stripped.find("glob").unwrap_or(usize::MAX);
+        let tool_pos = stripped.find("Glob").unwrap_or(usize::MAX);
         let result_pos = stripped.find("Found").unwrap_or(usize::MAX);
 
         assert!(

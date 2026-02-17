@@ -8,12 +8,12 @@ expression: render_app(&app)
 
  ● Let me look at the files.
 
- ✓ bash(command="ls")
+ ✓ Bash(command="ls")
    │ src/
    │ Cargo.toml
 
    Now let me read the main file.
- ⠋ read_file(path="src/main.rs")
+ ⠋ Read File(path="src/main.rs")
 
  
 ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄

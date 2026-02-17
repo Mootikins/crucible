@@ -392,10 +392,13 @@ impl OilChatRunner {
 
                             if let Some(ref tool_calls) = chunk.tool_calls {
                                 for tc in tool_calls {
-                                    let args_val = tc.arguments.clone().unwrap_or_default();
+                                    let args_str = match &tc.arguments {
+                                        Some(v) if !v.is_null() => v.to_string(),
+                                        _ => String::new(),
+                                    };
                                     if msg_tx.send(ChatAppMsg::ToolCall {
                                         name: tc.name.clone(),
-                                        args: args_val.to_string(),
+                                        args: args_str,
                                         call_id: tc.id.clone(),
                                     }).is_err() {
                                         tracing::warn!(tool = %tc.name, "UI channel closed, ToolCall dropped");

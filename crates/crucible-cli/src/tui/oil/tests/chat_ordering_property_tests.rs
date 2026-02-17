@@ -141,7 +141,7 @@ proptest! {
                 None
             }
         }).map(|name| {
-            name.strip_prefix("mcp_").unwrap_or(name).to_string()
+            crucible_acp::streaming::humanize_tool_title(name)
         }).filter(|name| !name.is_empty()).collect();
 
         for name in &tool_names {

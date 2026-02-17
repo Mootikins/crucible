@@ -112,10 +112,11 @@ proptest! {
         let combined = combined_output(&runtime);
 
         for tool in &expected_tools {
+            let humanized = crucible_acp::streaming::humanize_tool_title(tool);
             prop_assert!(
-                combined.contains(tool),
-                "Tool '{}' should appear in output:\n{}",
-                tool, combined
+                combined.contains(&humanized),
+                "Tool '{}' (humanized: '{}') should appear in output:\n{}",
+                tool, humanized, combined
             );
         }
 
@@ -507,7 +508,7 @@ mod e2e_edge_cases {
 
         let combined = combined_output(&runtime);
 
-        assert!(combined.contains("empty_tool"));
+        assert!(combined.contains("Empty Tool"));
         assert!(combined.contains("\u{2713}") || combined.contains("Done"));
     }
 

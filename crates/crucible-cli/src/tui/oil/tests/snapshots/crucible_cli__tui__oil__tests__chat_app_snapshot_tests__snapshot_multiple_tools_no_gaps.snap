@@ -5,11 +5,11 @@ expression: render_app(&app)
 ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄
  > Explore repo                                                                 
 ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
- ✓ bash(command="ls -la")
+ ✓ Bash(command="ls -la")
    │ file1.txt
    │ file2.txt
- ✓ read_file(path="README.md") → 1 lines
- ✓ bash(command="cat Cargo.toml")
+ ✓ Read File(path="README.md") → 1 lines
+ ✓ Bash(command="cat Cargo.toml")
    │ [package]
    │ name = "test"
  ◐

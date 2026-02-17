@@ -54,14 +54,58 @@ pub fn channel_callback(
     Box::new(move |chunk| tx.send(chunk).is_ok())
 }
 
-/// Convert a tool title into a human-readable name by removing MCP schema prefixes.
+/// Convert a tool title into a human-readable name by removing MCP schema prefixes
+/// and title-casing the result.
+///
+/// Handles patterns:
+/// - `mcp__crucible__semantic_search` → `Semantic Search`
+/// - `mcp__create_issue` → `Create Issue`
+/// - `mcp_write` → `Write`
+/// - `plugin_NAME_NAME__search` → `Search`
+/// - `Read File` → `Read File` (already clean)
 pub fn humanize_tool_title(title: &str) -> String {
-    if let Some(stripped) = title.strip_prefix("mcp__crucible__") {
-        stripped.to_string()
-    } else if let Some(stripped) = title.strip_prefix("mcp__") {
-        stripped.to_string()
+    // Strip known prefixes
+    let stripped = if let Some(s) = title.strip_prefix("mcp__crucible__") {
+        s
+    } else if let Some(s) = title.strip_prefix("mcp__") {
+        s
+    } else if let Some(s) = title.strip_prefix("mcp_") {
+        s
+    } else if let Some(s) = title.strip_prefix("plugin_") {
+        // plugin_NAME_NAME__X → take X (part after __)
+        if let Some(after_double_underscore) = s.split("__").last() {
+            after_double_underscore
+        } else {
+            s
+        }
     } else {
-        title.to_string()
+        title
+    };
+
+    // Title-case: convert snake_case to Title Case
+    title_case(stripped)
+}
+
+/// Convert snake_case or kebab-case to Title Case.
+/// Examples: `semantic_search` → `Semantic Search`, `create-issue` → `Create Issue`
+/// If the input contains no alphanumeric characters, returns it unchanged.
+fn title_case(s: &str) -> String {
+    let words: Vec<String> = s
+        .split(|c| c == '_' || c == '-')
+        .filter(|word| !word.is_empty())
+        .map(|word| {
+            let mut chars = word.chars();
+            match chars.next() {
+                None => String::new(),
+                Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
+            }
+        })
+        .collect();
+
+    if words.is_empty() {
+        s.to_string()
+    } else {
+        words.join(" ")
     }
 }
 
@@ -324,5 +368,54 @@ mod tests {
         }
 
         assert_eq!(result, "Hello, world!");
+    }
+
+    #[test]
+    fn humanize_tool_title_mcp_double_underscore_crucible() {
+        assert_eq!(
+            humanize_tool_title("mcp__crucible__semantic_search"),
+            "Semantic Search"
+        );
+    }
+
+    #[test]
+    fn humanize_tool_title_mcp_double_underscore() {
+        assert_eq!(humanize_tool_title("mcp__create_issue"), "Create Issue");
+    }
+
+    #[test]
+    fn humanize_tool_title_mcp_single_underscore() {
+        assert_eq!(humanize_tool_title("mcp_write"), "Write");
+    }
+
+    #[test]
+    fn humanize_tool_title_plugin_prefix() {
+        assert_eq!(
+            humanize_tool_title("plugin_episodic-memory_episodic-memory__search"),
+            "Search"
+        );
+    }
+
+    #[test]
+    fn humanize_tool_title_already_clean() {
+        assert_eq!(humanize_tool_title("Read File"), "Read File");
+    }
+
+    #[test]
+    fn humanize_tool_title_simple_snake_case() {
+        assert_eq!(humanize_tool_title("search"), "Search");
+    }
+
+    #[test]
+    fn humanize_tool_title_kebab_case() {
+        assert_eq!(humanize_tool_title("create-issue"), "Create Issue");
+    }
+
+    #[test]
+    fn humanize_tool_title_complex_snake_case() {
+        assert_eq!(
+            humanize_tool_title("list_all_files_recursively"),
+            "List All Files Recursively"
+        );
     }
 }
