@@ -7,6 +7,7 @@ use crucible_core::traits::ChatResult;
 use crucible_daemon::background_manager::{BackgroundJobManager, SubagentContext, SubagentFactory};
 use crucible_daemon::{AgentManager, FileSessionStorage, SessionManager};
 use crucible_daemon::protocol::SessionEventMessage;
+use crucible_acp::discovery::default_agent_profiles;
 use futures::stream::{self, BoxStream};
 use futures::StreamExt;
 use std::collections::HashMap;
@@ -132,6 +133,18 @@ fn test_root_session_agent(enabled: bool, max_concurrent_delegations: u32) -> Se
             max_concurrent_delegations,
         }),
     }
+}
+
+fn setup_with_delegation_config(allowed_targets: Option<Vec<String>>) -> SessionAgent {
+    let mut root_agent = test_root_session_agent(true, 3);
+    root_agent.delegation_config = Some(DelegationConfig {
+        enabled: true,
+        max_depth: 2,
+        allowed_targets,
+        result_max_bytes: 51200,
+        max_concurrent_delegations: 3,
+    });
+    root_agent
 }
 
 fn make_subagent_factory(behavior: MockSubagentBehavior) -> SubagentFactory {
@@ -517,6 +530,72 @@ async fn test_delegation_to_acp_agent_creates_acp_session() {
 
     assert_eq!(output.info.status, JobStatus::Completed);
     assert_eq!(output.output.as_deref(), Some("delegated-acp-result"));
+
+    let observed_agent = observed
+        .lock()
+        .expect("observation lock should be available")
+        .clone()
+        .expect("subagent factory should capture child session agent");
+    assert_eq!(observed_agent.agent_type, "acp");
+    assert_eq!(observed_agent.agent_name.as_deref(), Some("opencode"));
+    assert_eq!(observed_agent.model, "opencode");
+}
+
+#[tokio::test]
+async fn test_cross_agent_delegation_full_pipeline() {
+    let temp = TempDir::new().expect("temp dir");
+    let storage = Arc::new(FileSessionStorage::new());
+    let session_manager = Arc::new(SessionManager::with_storage(storage));
+    let observed = Arc::new(StdMutex::new(None));
+
+    let (event_tx, _) = broadcast::channel(32);
+    let background_manager = Arc::new(BackgroundJobManager::new(event_tx.clone()).with_subagent_factory(
+        make_observing_subagent_factory(
+            observed.clone(),
+            MockSubagentBehavior::ImmediateSuccess("delegated-opencode-result".to_string()),
+        ),
+    ));
+
+    let available_agents = default_agent_profiles();
+    let opencode_profile = available_agents
+        .get("opencode")
+        .expect("default profiles should include opencode");
+    assert_eq!(opencode_profile.command.as_deref(), Some("opencode"));
+    assert_eq!(opencode_profile.args.as_ref(), Some(&vec!["acp".to_string()]));
+
+    let session = session_manager
+        .create_session(SessionType::Chat, temp.path().to_path_buf(), None, vec![])
+        .await
+        .expect("session should be created");
+
+    let root_agent = setup_with_delegation_config(Some(vec!["opencode".to_string()]));
+    let subagent_context = SubagentContext {
+        agent: root_agent,
+        available_agents: available_agents.clone(),
+        workspace: temp.path().to_path_buf(),
+        parent_session_id: Some(session.id.clone()),
+        parent_session_dir: Some(session.storage_path()),
+        delegator_agent_name: Some("parent-agent".to_string()),
+        target_agent_name: None,
+        delegation_depth: 0,
+    };
+    assert!(subagent_context.available_agents.contains_key("opencode"));
+    background_manager.register_subagent_context(&session.id, subagent_context);
+
+    let context = "Delegation ID: deleg-e2e\nTarget agent: opencode\nDescription: end-to-end";
+    let output = background_manager
+        .spawn_subagent_blocking(
+            &session.id,
+            "delegate to opencode end-to-end".to_string(),
+            Some(context.to_string()),
+            SubagentBlockingConfig::default(),
+            None,
+        )
+        .await
+        .expect("cross-agent delegation should succeed");
+
+    assert_eq!(output.info.status, JobStatus::Completed);
+    assert_eq!(output.output.as_deref(), Some("delegated-opencode-result"));
 
     let observed_agent = observed
         .lock()
