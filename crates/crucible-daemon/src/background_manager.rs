@@ -102,6 +102,8 @@ pub struct SubagentContext {
     pub parent_session_dir: Option<PathBuf>,
     pub delegator_agent_name: Option<String>,
     pub target_agent_name: Option<String>,
+    /// Delegation depth counter (0 = root, 1 = first delegation, etc.)
+    pub delegation_depth: u32,
 }
 
 struct PreparedSubagentExecution {
@@ -721,7 +723,7 @@ impl BackgroundJobManager {
             .as_ref()
             .ok_or(BackgroundError::NoSubagentFactory)?;
 
-        let (mut agent_config, workspace, parent_session_dir, delegator_name, target_name) = {
+        let (mut agent_config, workspace, parent_session_dir, delegator_name, target_name, delegation_depth) = {
             let ctx = self.subagent_contexts.get(session_id).ok_or_else(|| {
                 BackgroundError::SpawnFailed("Subagent context not registered".into())
             })?;
@@ -731,6 +733,7 @@ impl BackgroundJobManager {
                 ctx.parent_session_dir.clone(),
                 ctx.delegator_agent_name.clone(),
                 ctx.target_agent_name.clone(),
+                ctx.delegation_depth,
             )
         };
 
@@ -738,6 +741,7 @@ impl BackgroundJobManager {
             &agent_config,
             delegator_name.as_deref(),
             target_name.as_deref(),
+            delegation_depth,
         )?;
 
         // KNOWN LIMITATION: No nested delegation (depth=1 only).
@@ -806,7 +810,14 @@ impl BackgroundJobManager {
         session_agent: &SessionAgent,
         delegator_name: Option<&str>,
         target_name: Option<&str>,
+        delegation_depth: u32,
     ) -> Result<(), BackgroundError> {
+        if delegation_depth >= 3 {
+            return Err(BackgroundError::SpawnFailed(
+                "Delegation depth limit exceeded (hard cap at 3)".to_string(),
+            ));
+        }
+
         let delegation = session_agent
             .delegation_config
             .as_ref()
@@ -1184,6 +1195,7 @@ mod tests {
             max_depth: 1,
             allowed_targets: None,
             result_max_bytes: 51200,
+            max_concurrent_delegations: 3,
         }
     }
 
@@ -1205,6 +1217,7 @@ mod tests {
                 parent_session_dir: None,
                 delegator_agent_name: delegator_agent_name.map(str::to_string),
                 target_agent_name: target_agent_name.map(str::to_string),
+                delegation_depth: 0,
             },
         );
         manager
@@ -1241,6 +1254,7 @@ mod tests {
                 parent_session_dir: None,
                 delegator_agent_name: Some("parent-agent".to_string()),
                 target_agent_name: Some("worker-agent".to_string()),
+                delegation_depth: 0,
             },
         );
         (manager, rx)
@@ -1429,11 +1443,12 @@ mod tests {
                 })
             }),
             Some(DelegationConfig {
-                enabled: true,
-                max_depth: 2,
-                allowed_targets: Some(vec!["worker-agent".to_string()]),
-                result_max_bytes: 51200,
-            }),
+                            enabled: true,
+                            max_depth: 2,
+                            allowed_targets: Some(vec!["worker-agent".to_string()]),
+                            result_max_bytes: 51200,
+                            max_concurrent_delegations: 3,
+                        }),
             Some("parent-agent"),
             Some("worker-agent"),
         );
@@ -1463,11 +1478,12 @@ mod tests {
                 "delegation-result".to_string(),
             )),
             Some(DelegationConfig {
-                enabled: true,
-                max_depth: 1,
-                allowed_targets: None,
-                result_max_bytes: 51200,
-            }),
+                            enabled: true,
+                            max_depth: 1,
+                            allowed_targets: None,
+                            result_max_bytes: 51200,
+                            max_concurrent_delegations: 3,
+                        }),
         );
 
         let result = manager
@@ -1490,11 +1506,12 @@ mod tests {
         let manager = make_subagent_manager_with_factory(
             behavior_factory(MockSubagentBehavior::ImmediateSuccess("ok".to_string())),
             Some(DelegationConfig {
-                enabled: false,
-                max_depth: 1,
-                allowed_targets: None,
-                result_max_bytes: 51200,
-            }),
+                            enabled: false,
+                            max_depth: 1,
+                            allowed_targets: None,
+                            result_max_bytes: 51200,
+                            max_concurrent_delegations: 3,
+                        }),
         );
 
         let err = manager
@@ -1517,11 +1534,12 @@ mod tests {
         let manager = make_subagent_manager_with_factory(
             behavior_factory(MockSubagentBehavior::ImmediateSuccess("ok".to_string())),
             Some(DelegationConfig {
-                enabled: true,
-                max_depth: 1,
-                allowed_targets: Some(vec!["allowed-agent".to_string()]),
-                result_max_bytes: 51200,
-            }),
+                            enabled: true,
+                            max_depth: 1,
+                            allowed_targets: Some(vec!["allowed-agent".to_string()]),
+                            result_max_bytes: 51200,
+                            max_concurrent_delegations: 3,
+                        }),
         );
 
         let err = manager
@@ -1544,11 +1562,12 @@ mod tests {
         let manager = make_subagent_manager_with_factory(
             behavior_factory(MockSubagentBehavior::Pending),
             Some(DelegationConfig {
-                enabled: true,
-                max_depth: 1,
-                allowed_targets: None,
-                result_max_bytes: 51200,
-            }),
+                            enabled: true,
+                            max_depth: 1,
+                            allowed_targets: None,
+                            result_max_bytes: 51200,
+                            max_concurrent_delegations: 3,
+                        }),
         );
 
         let result = manager
@@ -1576,11 +1595,12 @@ mod tests {
                 Box::pin(async move { Err("command not found: mock-subagent".to_string()) })
             }),
             Some(DelegationConfig {
-                enabled: true,
-                max_depth: 1,
-                allowed_targets: None,
-                result_max_bytes: 51200,
-            }),
+                            enabled: true,
+                            max_depth: 1,
+                            allowed_targets: None,
+                            result_max_bytes: 51200,
+                            max_concurrent_delegations: 3,
+                        }),
         );
 
         let err = manager
@@ -1603,11 +1623,12 @@ mod tests {
         let manager = make_subagent_manager_with_factory_and_identity(
             behavior_factory(MockSubagentBehavior::ImmediateSuccess("ok".to_string())),
             Some(DelegationConfig {
-                enabled: true,
-                max_depth: 1,
-                allowed_targets: Some(vec!["parent-agent".to_string()]),
-                result_max_bytes: 51200,
-            }),
+                            enabled: true,
+                            max_depth: 1,
+                            allowed_targets: Some(vec!["parent-agent".to_string()]),
+                            result_max_bytes: 51200,
+                            max_concurrent_delegations: 3,
+                        }),
             Some("parent-agent"),
             Some("parent-agent"),
         );
@@ -1632,11 +1653,12 @@ mod tests {
         let manager = make_subagent_manager_with_factory(
             behavior_factory(MockSubagentBehavior::ImmediateSuccess("y".repeat(200))),
             Some(DelegationConfig {
-                enabled: true,
-                max_depth: 1,
-                allowed_targets: None,
-                result_max_bytes: 16,
-            }),
+                            enabled: true,
+                            max_depth: 1,
+                            allowed_targets: None,
+                            result_max_bytes: 16,
+                            max_concurrent_delegations: 3,
+                        }),
         );
 
         let result = manager
@@ -1664,11 +1686,12 @@ mod tests {
                 "eventful-result".to_string(),
             )),
             Some(DelegationConfig {
-                enabled: true,
-                max_depth: 1,
-                allowed_targets: None,
-                result_max_bytes: 51200,
-            }),
+                            enabled: true,
+                            max_depth: 1,
+                            allowed_targets: None,
+                            result_max_bytes: 51200,
+                            max_concurrent_delegations: 3,
+                        }),
         );
 
         let result = manager
@@ -2126,5 +2149,151 @@ mod tests {
         let result = spawner.get_job_result(&job_id);
         assert!(result.is_some());
         assert!(result.unwrap().info.status.is_terminal());
+    }
+
+    #[test]
+    fn subagent_context_default_delegation_depth_is_zero() {
+        let ctx = SubagentContext {
+            agent: test_session_agent(None),
+            workspace: std::env::temp_dir(),
+            parent_session_dir: None,
+            delegator_agent_name: None,
+            target_agent_name: None,
+            delegation_depth: 0,
+        };
+
+        assert_eq!(ctx.delegation_depth, 0);
+    }
+
+    #[test]
+    fn enforce_delegation_capabilities_rejects_depth_at_hard_cap() {
+        let agent = test_session_agent(Some(DelegationConfig {
+            enabled: true,
+            max_depth: 10,
+            allowed_targets: None,
+            result_max_bytes: 51200,
+            max_concurrent_delegations: 3,
+        }));
+
+        let result = BackgroundJobManager::enforce_delegation_capabilities(
+            &agent,
+            Some("parent"),
+            Some("child"),
+            3,
+        );
+
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Delegation depth limit exceeded"));
+    }
+
+    #[test]
+    fn enforce_delegation_capabilities_rejects_depth_above_hard_cap() {
+        let agent = test_session_agent(Some(DelegationConfig {
+            enabled: true,
+            max_depth: 10,
+            allowed_targets: None,
+            result_max_bytes: 51200,
+            max_concurrent_delegations: 3,
+        }));
+
+        let result = BackgroundJobManager::enforce_delegation_capabilities(
+            &agent,
+            Some("parent"),
+            Some("child"),
+            5,
+        );
+
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Delegation depth limit exceeded"));
+    }
+
+    #[test]
+    fn enforce_delegation_capabilities_allows_depth_below_hard_cap() {
+        let agent = test_session_agent(Some(DelegationConfig {
+            enabled: true,
+            max_depth: 10,
+            allowed_targets: None,
+            result_max_bytes: 51200,
+            max_concurrent_delegations: 3,
+        }));
+
+        let result = BackgroundJobManager::enforce_delegation_capabilities(
+            &agent,
+            Some("parent"),
+            Some("child"),
+            0,
+        );
+
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn enforce_delegation_capabilities_allows_depth_one() {
+        let agent = test_session_agent(Some(DelegationConfig {
+            enabled: true,
+            max_depth: 10,
+            allowed_targets: None,
+            result_max_bytes: 51200,
+            max_concurrent_delegations: 3,
+        }));
+
+        let result = BackgroundJobManager::enforce_delegation_capabilities(
+            &agent,
+            Some("parent"),
+            Some("child"),
+            1,
+        );
+
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn enforce_delegation_capabilities_allows_depth_two() {
+        let agent = test_session_agent(Some(DelegationConfig {
+            enabled: true,
+            max_depth: 10,
+            allowed_targets: None,
+            result_max_bytes: 51200,
+            max_concurrent_delegations: 3,
+        }));
+
+        let result = BackgroundJobManager::enforce_delegation_capabilities(
+            &agent,
+            Some("parent"),
+            Some("child"),
+            2,
+        );
+
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn enforce_delegation_capabilities_hard_cap_checked_before_enabled_check() {
+        let agent = test_session_agent(Some(DelegationConfig {
+            enabled: false,
+            max_depth: 10,
+            allowed_targets: None,
+            result_max_bytes: 51200,
+            max_concurrent_delegations: 3,
+        }));
+
+        let result = BackgroundJobManager::enforce_delegation_capabilities(
+            &agent,
+            Some("parent"),
+            Some("child"),
+            3,
+        );
+
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Delegation depth limit exceeded"));
     }
 }
