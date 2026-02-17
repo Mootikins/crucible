@@ -47,10 +47,6 @@ pub struct AgentInitParams {
     /// Optional kiln context for knowledge base access
     /// When provided, agent will have semantic_search, read_note, list_notes tools
     pub kiln_context: Option<crucible_rig::KilnContext>,
-    /// Force local agent execution (skip daemon).
-    /// Default (None): try daemon first, fall back to local.
-    /// Some(true): skip daemon, use local agent directly.
-    pub force_local: Option<bool>,
     /// Resume an existing daemon session instead of creating a new one.
     /// If Some(session_id), resume that specific session.
     /// If Some(""), resume most recent session for the workspace.
@@ -68,14 +64,8 @@ impl AgentInitParams {
             env_overrides: std::collections::HashMap::new(),
             working_dir: None,
             kiln_context: None,
-            force_local: None,
             resume_session_id: None,
         }
-    }
-
-    pub fn with_force_local(mut self, force: bool) -> Self {
-        self.force_local = Some(force);
-        self
     }
 
     pub fn with_resume_session_id(mut self, session_id: Option<String>) -> Self {
@@ -167,9 +157,7 @@ impl Default for AgentInitParams {
 
 /// Result of agent initialization — always a ready-to-use AgentHandle.
 ///
-/// Both ACP and internal agents route through the daemon, which returns
-/// a DaemonAgentHandle. The local internal fallback (force_local) returns
-/// a RigAgentHandle directly.
+/// All agents route through the daemon, which returns a DaemonAgentHandle.
 pub struct InitializedAgent(Box<dyn AgentHandle + Send + Sync>);
 
 impl InitializedAgent {
@@ -266,297 +254,7 @@ fn build_internal_session_agent(config: &CliAppConfig) -> SessionAgent {
     }
 }
 
-/// Create an internal agent using the Rig framework
-pub async fn create_internal_agent(
-    config: &CliAppConfig,
-    params: AgentInitParams,
-) -> Result<Box<dyn AgentHandle + Send + Sync>> {
-    use crucible_config::BackendType;
-    use crucible_context::{LayeredPromptBuilder, PromptBuilder};
-    use crucible_core::prompts::{base_prompt_for_size, ModelSize};
-    let provider_backend = config
-        .effective_llm_provider()
-        .map(|p| p.provider_type)
-        .unwrap_or(BackendType::Ollama);
 
-    let model = config.chat.model.clone().unwrap_or_else(|| {
-        provider_backend
-            .default_chat_model()
-            .unwrap_or(crucible_config::DEFAULT_CHAT_MODEL)
-            .to_string()
-    });
-
-    // Detect model size (or use Medium if size-aware prompts disabled)
-    let model_size = if config.chat.size_aware_prompts {
-        let detected = ModelSize::from_model_name(&model);
-        info!("Detected model size: {:?} for {}", detected, model);
-        detected
-    } else {
-        debug!("Size-aware prompts disabled, using standard prompts and all tools");
-        ModelSize::Medium
-    };
-
-    // Build layered system prompt
-    let mut prompt_builder = LayeredPromptBuilder::new();
-
-    // Replace the default base prompt with size-appropriate one
-    prompt_builder.remove_layer("base");
-    prompt_builder.add_layer(
-        crucible_context::priorities::BASE,
-        "base",
-        base_prompt_for_size(model_size).to_string(),
-    );
-
-    // Get workspace root for project rules loading
-    let workspace_root = params
-        .working_dir
-        .clone()
-        .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| config.kiln_path.clone()));
-
-    // Add project rules if workspace has them (AGENTS.md, .rules, etc.)
-    // Use configured rules_files or defaults
-    let rules_files = config
-        .context
-        .as_ref()
-        .map(|c| c.rules_files.clone())
-        .unwrap_or_else(|| {
-            vec![
-                "AGENTS.md".to_string(),
-                ".rules".to_string(),
-                ".github/copilot-instructions.md".to_string(),
-            ]
-        });
-    prompt_builder = prompt_builder.with_project_rules_hierarchical(&workspace_root, &rules_files);
-
-    // Skill context injection (eager mode)
-    // Discover skills from standard paths and inject descriptions into context
-    let skill_discovery =
-        crucible_skills::FolderDiscovery::with_default_paths(&workspace_root, None);
-    match skill_discovery.discover() {
-        Ok(skills) if !skills.is_empty() => {
-            let skill_context = crucible_skills::format_skills_for_context(&skills);
-            debug!(
-                "Injecting {} skills into context ({} chars)",
-                skills.len(),
-                skill_context.len()
-            );
-            prompt_builder.add_layer(crucible_context::priorities::SKILL, "skills", skill_context);
-        }
-        Ok(_) => {
-            debug!("No skills found in default paths");
-        }
-        Err(e) => {
-            tracing::warn!("Skill discovery failed, continuing without skills: {}", e);
-        }
-    }
-
-    let system_prompt = prompt_builder.build();
-
-    let mut agent_config = crucible_rig::AgentConfig::new(&model, &system_prompt);
-    if let Some(temp) = config.chat.temperature {
-        agent_config = agent_config.with_temperature(temp as f64);
-    }
-    if let Some(tokens) = config.chat.max_tokens {
-        agent_config = agent_config.with_max_tokens(tokens);
-    }
-
-    use crucible_config::LlmProviderConfig;
-
-    let mut reasoning_endpoint: Option<String> = None;
-    let mut ollama_endpoint: Option<String> = None;
-
-    /// Helper function to build a standard LLM client for providers with identical patterns
-    fn build_standard_client(
-        provider_type: BackendType,
-        endpoint: Option<String>,
-        model: &str,
-        timeout_secs: Option<u64>,
-    ) -> Result<crucible_rig::RigClient> {
-        let mut builder = LlmProviderConfig::builder(provider_type);
-        if let Some(endpoint) = endpoint {
-            builder = builder.endpoint(endpoint);
-        }
-        Ok(crucible_rig::create_client(
-            &builder
-                .model(model.to_string())
-                .maybe_timeout_secs(timeout_secs)
-                .with_api_key_env_var_name()
-                .build(),
-        )?)
-    }
-
-    let client = match provider_backend {
-        BackendType::Ollama => {
-            let endpoint = config
-                .chat
-                .endpoint
-                .clone()
-                .unwrap_or_else(|| crucible_config::DEFAULT_OLLAMA_ENDPOINT.to_string());
-
-            ollama_endpoint = Some(endpoint.clone());
-
-            // For custom Ollama endpoints (not localhost), use OpenAI-compatible client
-            // This provides better tool calling support via /v1/chat/completions
-            let is_local = endpoint.contains("localhost") || endpoint.contains("127.0.0.1");
-
-            if is_local {
-                // Local Ollama - check for reasoning support
-                if supports_reasoning_content(&model) {
-                    // For local Ollama, the OpenAI-compatible endpoint is at /v1
-                    reasoning_endpoint = Some(format!("{}/v1", endpoint.trim_end_matches('/')));
-                    info!("Enabling reasoning extraction for model: {}", model);
-                }
-                // Local Ollama - use native client
-                crucible_rig::create_client(
-                    &LlmProviderConfig::builder(BackendType::Ollama)
-                        .endpoint(endpoint)
-                        .model(model.clone())
-                        .maybe_timeout_secs(config.chat.timeout_secs)
-                        .build(),
-                )?
-            } else {
-                // Remote Ollama-compatible (e.g., llama-swappo) - use OpenAI-compatible client
-                // Append /v1 if not already present for OpenAI-compatible endpoint
-                let compat_endpoint = if endpoint.ends_with("/v1") {
-                    endpoint.clone()
-                } else {
-                    format!("{}/v1", endpoint.trim_end_matches('/'))
-                };
-
-                // Check for reasoning support
-                if supports_reasoning_content(&model) {
-                    reasoning_endpoint = Some(compat_endpoint.clone());
-                    info!("Enabling reasoning extraction for model: {}", model);
-                }
-
-                info!(
-                    "Using OpenAI-compatible endpoint for remote Ollama: {}",
-                    compat_endpoint
-                );
-                crucible_rig::create_client(
-                    &LlmProviderConfig::builder(BackendType::OpenAI)
-                        .endpoint(compat_endpoint)
-                        .model(model.clone())
-                        .maybe_timeout_secs(config.chat.timeout_secs)
-                        .build(),
-                )?
-            }
-        }
-        BackendType::OpenAI => {
-            agent_config = agent_config
-                .with_additional_params(serde_json::json!({"parallel_tool_calls": true}));
-            build_standard_client(
-                BackendType::OpenAI,
-                config.chat.endpoint.clone(),
-                &model,
-                config.chat.timeout_secs,
-            )?
-        }
-        BackendType::Anthropic => build_standard_client(
-            BackendType::Anthropic,
-            config.chat.endpoint.clone(),
-            &model,
-            config.chat.timeout_secs,
-        )?,
-        BackendType::GitHubCopilot => {
-            let mut builder = LlmProviderConfig::builder(BackendType::GitHubCopilot);
-            if let Some(endpoint) = config.chat.endpoint.clone() {
-                builder = builder.endpoint(endpoint);
-            }
-            let mut copilot_config = builder
-                .model(model.clone())
-                .maybe_timeout_secs(config.chat.timeout_secs)
-                .with_api_key_env_var_name()
-                .build();
-
-            if let Some(oauth_token) =
-                resolve_copilot_oauth_token(copilot_config.api_key.as_deref())
-            {
-                copilot_config.api_key = Some(oauth_token);
-            }
-
-            crucible_rig::create_client(&copilot_config)?
-        }
-        BackendType::OpenRouter => build_standard_client(
-            BackendType::OpenRouter,
-            config.chat.endpoint.clone(),
-            &model,
-            config.chat.timeout_secs,
-        )?,
-        BackendType::ZAI => build_standard_client(
-            BackendType::ZAI,
-            config.chat.endpoint.clone(),
-            &model,
-            config.chat.timeout_secs,
-        )?,
-        BackendType::Cohere
-        | BackendType::VertexAI
-        | BackendType::FastEmbed
-        | BackendType::Burn
-        | BackendType::Custom
-        | BackendType::Mock => {
-            anyhow::bail!("Unsupported provider backend: {:?}", provider_backend)
-        }
-    };
-
-    let has_kiln = params.kiln_context.is_some();
-    info!(
-        "Building Rig agent with {:?} tools{} for: {}",
-        model_size,
-        if has_kiln { " + kiln tools" } else { "" },
-        workspace_root.display()
-    );
-
-    let initial_mode = if params.read_only { "plan" } else { "normal" };
-
-    let mcp_tools = match config.mcp.as_ref() {
-        Some(mcp_cfg) if !mcp_cfg.servers.is_empty() => {
-            match crucible_tools::mcp_gateway::McpGatewayManager::from_config(mcp_cfg).await {
-                Ok(gw) => {
-                    let server_names: Vec<String> =
-                        mcp_cfg.servers.iter().map(|s| s.name.clone()).collect();
-                    let all_tools = gw.all_tools();
-                    let gateway = std::sync::Arc::new(tokio::sync::RwLock::new(gw));
-                    let tools = crucible_rig::mcp_proxy_tool::mcp_tools_from_gateway(
-                        &gateway,
-                        &server_names,
-                        &all_tools,
-                    );
-                    info!(
-                        "MCP gateway: {} tools from {} server(s)",
-                        tools.len(),
-                        server_names.len()
-                    );
-                    tools
-                }
-                Err(e) => {
-                    tracing::warn!(
-                        "MCP gateway init failed, continuing without MCP tools: {}",
-                        e
-                    );
-                    vec![]
-                }
-            }
-        }
-        _ => vec![],
-    };
-
-    let kiln_ctx = params.kiln_context;
-    let opts = crucible_rig::HandleBuildOpts {
-        model: model.clone(),
-        model_size,
-        thinking_budget: None,
-        ollama_endpoint,
-        mcp_gateway: None,
-        initial_mode: Some(initial_mode.to_string()),
-        reasoning_endpoint,
-    };
-
-    client
-        .build_agent_handle_with_kiln(&agent_config, &workspace_root, kiln_ctx, mcp_tools, opts)
-        .await
-        .map_err(|e| anyhow::anyhow!(e))
-}
 
 /// Create an agent via daemon (auto-starts daemon if needed)
 pub async fn create_daemon_agent(
@@ -626,7 +324,7 @@ pub async fn create_daemon_agent(
     let is_acp = params
         .agent_type
         .map(|t| t == AgentType::Acp)
-        .unwrap_or(false);
+        .unwrap_or_else(|| config.chat.agent_preference == crucible_config::AgentPreference::Acp);
 
     if is_new_session {
         let session_agent = if is_acp {
@@ -682,53 +380,21 @@ async fn create_new_daemon_session(
     Ok(session_id)
 }
 
-/// Create an agent based on configuration and parameters
+/// Create an agent via daemon (always required)
 ///
-/// Routing priority:
-/// 1. If force_local=true, skip daemon entirely
-/// 2. Try daemon first (auto-start if needed)
-/// 3. Fall back to local agent on daemon failure
-///
-/// Agent type priority:
-/// 1. Explicit agent_type in params
-/// 2. Config file setting (chat.agent_preference)
-/// 3. Default: Internal
+/// The daemon is now always required for agent execution.
+/// It auto-starts if not already running.
 pub async fn create_agent(
     config: &CliAppConfig,
     params: AgentInitParams,
 ) -> Result<InitializedAgent> {
-    use crucible_config::AgentPreference;
-
-    // Try daemon first unless force_local is set
-    let use_daemon = !params.force_local.unwrap_or(false);
-
-    if use_daemon {
-        match create_daemon_agent(config, &params).await {
-            Ok(handle) => {
-                info!("Using daemon-backed agent");
-                return Ok(InitializedAgent(handle));
-            }
-            Err(e) => {
-                tracing::warn!("Daemon agent creation failed, falling back to local: {}", e);
-            }
-        }
-    }
-
-    let agent_type = params
-        .agent_type
-        .unwrap_or(match config.chat.agent_preference {
-            AgentPreference::Crucible => AgentType::Internal,
-            AgentPreference::Acp => AgentType::Acp,
-        });
-
-    match agent_type {
-        AgentType::Internal => {
-            info!("Initializing local internal agent");
-            let handle = create_internal_agent(config, params).await?;
+    match create_daemon_agent(config, &params).await {
+        Ok(handle) => {
+            info!("Using daemon-backed agent");
             Ok(InitializedAgent(handle))
         }
-        AgentType::Acp => {
-            anyhow::bail!("ACP agents require the daemon. Start cru-server or remove --force-local")
+        Err(e) => {
+            anyhow::bail!("Failed to create agent via daemon: {}", e)
         }
     }
 }
@@ -793,19 +459,6 @@ mod tests {
             params.env_overrides.get("OPENCODE_MODEL"),
             Some(&"test-model".to_string())
         );
-    }
-
-    #[tokio::test]
-    #[ignore = "Requires Ollama to be running - Rig uses config.chat.provider, not params.provider_key"]
-    async fn test_create_internal_agent_with_default_config() {
-        // This test verifies that internal agent creation works with default config
-        // Requires Ollama to be running since default provider is Ollama
-        let config = CliAppConfig::default();
-        let params = AgentInitParams::new();
-
-        let result = create_internal_agent(&config, params).await;
-        // Should succeed if Ollama is available
-        assert!(result.is_ok());
     }
 
     #[test]

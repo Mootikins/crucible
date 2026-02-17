@@ -11,7 +11,7 @@ pub mod storage;
 pub mod watch;
 
 pub use agent::{
-    create_agent, create_internal_agent, AgentInitParams, AgentType, InitializedAgent,
+    create_agent, AgentInitParams, AgentType, InitializedAgent,
 };
 pub use enrichment::{create_default_enrichment_service, get_or_create_embedding_provider};
 pub use pipeline::create_pipeline;
