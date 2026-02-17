@@ -90,6 +90,7 @@ pub type SubagentFactory = Box<
 
 struct RunningJob {
     info: JobInfo,
+    is_delegation: bool,
     cancel_tx: oneshot::Sender<()>,
     #[allow(dead_code)]
     task_handle: JoinHandle<()>,
@@ -98,6 +99,7 @@ struct RunningJob {
 pub struct SubagentContext {
     pub agent: SessionAgent,
     pub workspace: PathBuf,
+    pub parent_session_id: Option<String>,
     /// Parent session directory for creating subagent session files
     pub parent_session_dir: Option<PathBuf>,
     pub delegator_agent_name: Option<String>,
@@ -114,6 +116,7 @@ struct PreparedSubagentExecution {
     session_link: String,
     agent: Box<dyn AgentHandle + Send + Sync>,
     subagent_writer: Option<Arc<Mutex<SessionWriter>>>,
+    is_delegation: bool,
 }
 
 struct SubagentExecutionOptions {
@@ -239,6 +242,7 @@ impl BackgroundJobManager {
             job_id.clone(),
             RunningJob {
                 info,
+                is_delegation: false,
                 cancel_tx,
                 task_handle,
             },
@@ -645,6 +649,7 @@ impl BackgroundJobManager {
             job_id.clone(),
             RunningJob {
                 info: prepared.info,
+                is_delegation: prepared.is_delegation,
                 cancel_tx,
                 task_handle,
             },
@@ -723,7 +728,15 @@ impl BackgroundJobManager {
             .as_ref()
             .ok_or(BackgroundError::NoSubagentFactory)?;
 
-        let (mut agent_config, workspace, parent_session_dir, delegator_name, target_name, delegation_depth) = {
+        let (
+            mut agent_config,
+            workspace,
+            parent_session_dir,
+            parent_session_id,
+            delegator_name,
+            target_name,
+            delegation_depth,
+        ) = {
             let ctx = self.subagent_contexts.get(session_id).ok_or_else(|| {
                 BackgroundError::SpawnFailed("Subagent context not registered".into())
             })?;
@@ -731,17 +744,28 @@ impl BackgroundJobManager {
                 ctx.agent.clone(),
                 ctx.workspace.clone(),
                 ctx.parent_session_dir.clone(),
+                ctx.parent_session_id.clone(),
                 ctx.delegator_agent_name.clone(),
                 ctx.target_agent_name.clone(),
                 ctx.delegation_depth,
             )
         };
 
-        Self::enforce_delegation_capabilities(
+        let is_delegation = parent_session_id.is_some();
+        let child_delegation_depth = delegation_depth.saturating_add(1);
+        let child_parent_session_id = if is_delegation {
+            parent_session_id.or_else(|| Some(session_id.to_string()))
+        } else {
+            None
+        };
+
+        self.enforce_delegation_capabilities(
             &agent_config,
             delegator_name.as_deref(),
             target_name.as_deref(),
-            delegation_depth,
+            child_delegation_depth,
+            session_id,
+            is_delegation,
         )?;
 
         // KNOWN LIMITATION: No nested delegation (depth=1 only).
@@ -758,20 +782,51 @@ impl BackgroundJobManager {
         let mut info = JobInfo::new(session_id.to_string(), kind);
         let job_id = info.id.clone();
 
-        let (subagent_writer, session_link) = if let Some(ref parent_dir) = parent_session_dir {
+        let (subagent_writer, session_link, child_session_id) =
+            if let Some(ref parent_dir) = parent_session_dir {
             match SessionWriter::create_subagent(parent_dir).await {
-                Ok((writer, link)) => {
+                Ok((mut writer, link)) => {
+                    let subagent_session_id = writer.id().as_str().to_string();
+                    if let Some(ref parent_id) = child_parent_session_id {
+                        let metadata = serde_json::json!({
+                            "delegation_metadata": {
+                                "parent_session_id": parent_id,
+                                "delegation_depth": child_delegation_depth,
+                            }
+                        })
+                        .to_string();
+                        if let Err(e) = writer.append(LogEvent::system(metadata)).await {
+                            warn!(error = %e, "Failed to write delegation metadata to child session");
+                        }
+                    }
+
                     info.session_path = Some(writer.session_dir().to_path_buf());
-                    (Some(Arc::new(Mutex::new(writer))), link)
+                    (Some(Arc::new(Mutex::new(writer))), link, Some(subagent_session_id))
                 }
                 Err(e) => {
                     warn!(error = %e, "Failed to create subagent session, continuing without persistence");
-                    (None, format!("[[subagent:{}]]", job_id))
+                    (None, format!("[[subagent:{}]]", job_id), None)
                 }
             }
         } else {
-            (None, format!("[[subagent:{}]]", job_id))
+            (None, format!("[[subagent:{}]]", job_id), None)
         };
+
+        if is_delegation {
+            let child_context_key = child_session_id.unwrap_or_else(|| job_id.clone());
+            self.subagent_contexts.insert(
+                child_context_key,
+                SubagentContext {
+                    agent: agent_config.clone(),
+                    workspace: workspace.clone(),
+                    parent_session_id: child_parent_session_id,
+                    parent_session_dir: info.session_path.clone(),
+                    delegator_agent_name: target_name,
+                    target_agent_name: None,
+                    delegation_depth: child_delegation_depth,
+                },
+            );
+        }
 
         let _ = self.event_tx.send(SessionEventMessage::new(
             session_id,
@@ -803,14 +858,18 @@ impl BackgroundJobManager {
             session_link,
             agent,
             subagent_writer,
+            is_delegation,
         })
     }
 
     fn enforce_delegation_capabilities(
+        &self,
         session_agent: &SessionAgent,
         delegator_name: Option<&str>,
         target_name: Option<&str>,
         delegation_depth: u32,
+        parent_session_id: &str,
+        is_delegation: bool,
     ) -> Result<(), BackgroundError> {
         if delegation_depth >= 3 {
             return Err(BackgroundError::SpawnFailed(
@@ -825,6 +884,23 @@ impl BackgroundJobManager {
             .ok_or_else(|| {
                 BackgroundError::SpawnFailed("Delegation is disabled for this agent".to_string())
             })?;
+
+        if is_delegation {
+            let active_delegations = self
+                .running
+                .iter()
+                .filter(|entry| {
+                    entry.value().is_delegation && entry.value().info.session_id == parent_session_id
+                })
+                .count();
+
+            if active_delegations >= delegation.max_concurrent_delegations as usize {
+                return Err(BackgroundError::SpawnFailed(format!(
+                    "Maximum concurrent delegations ({}) exceeded",
+                    delegation.max_concurrent_delegations
+                )));
+            }
+        }
 
         if let Some(allowed_targets) = &delegation.allowed_targets {
             let target = target_name.ok_or_else(|| {
@@ -1109,6 +1185,7 @@ mod tests {
     enum MockSubagentBehavior {
         ImmediateSuccess(String),
         DelayedSuccess { output: String, delay: Duration },
+        DelayedFailure { error: String, delay: Duration },
         Pending,
         StreamFailure(String),
     }
@@ -1149,6 +1226,12 @@ mod tests {
                     Box::pin(stream::once(async move {
                         tokio::time::sleep(delay).await;
                         Ok(chunk(output, true))
+                    }))
+                }
+                MockSubagentBehavior::DelayedFailure { error, delay } => {
+                    Box::pin(stream::once(async move {
+                        tokio::time::sleep(delay).await;
+                        Err(ChatError::Internal(error))
                     }))
                 }
                 MockSubagentBehavior::Pending => Box::pin(stream::pending()),
@@ -1214,6 +1297,7 @@ mod tests {
             SubagentContext {
                 agent: test_session_agent(delegation_config),
                 workspace: std::env::temp_dir(),
+                parent_session_id: Some("session-1".to_string()),
                 parent_session_dir: None,
                 delegator_agent_name: delegator_agent_name.map(str::to_string),
                 target_agent_name: target_agent_name.map(str::to_string),
@@ -1251,6 +1335,7 @@ mod tests {
             SubagentContext {
                 agent: test_session_agent(delegation_config),
                 workspace: std::env::temp_dir(),
+                parent_session_id: Some("session-1".to_string()),
                 parent_session_dir: None,
                 delegator_agent_name: Some("parent-agent".to_string()),
                 target_agent_name: Some("worker-agent".to_string()),
@@ -1736,6 +1821,213 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn delegation_rejected_when_max_concurrent_delegations_reached() {
+        let manager = make_subagent_manager_with_factory(
+            behavior_factory(MockSubagentBehavior::Pending),
+            Some(DelegationConfig {
+                enabled: true,
+                max_depth: 1,
+                allowed_targets: None,
+                result_max_bytes: 51200,
+                max_concurrent_delegations: 1,
+            }),
+        );
+
+        let first_job_id = manager
+            .spawn_subagent("session-1", "delegate first".to_string(), None)
+            .await
+            .expect("first delegation should spawn");
+
+        tokio::time::sleep(Duration::from_millis(25)).await;
+
+        let err = manager
+            .spawn_subagent("session-1", "delegate second".to_string(), None)
+            .await
+            .expect_err("second delegation should be rejected at concurrency limit");
+
+        assert!(err
+            .to_string()
+            .contains("Maximum concurrent delegations (1) exceeded"));
+
+        manager.cancel_job(&first_job_id).await;
+    }
+
+    #[tokio::test]
+    async fn delegation_under_max_concurrent_delegations_is_allowed() {
+        let manager = make_subagent_manager_with_factory(
+            behavior_factory(MockSubagentBehavior::Pending),
+            Some(DelegationConfig {
+                enabled: true,
+                max_depth: 1,
+                allowed_targets: None,
+                result_max_bytes: 51200,
+                max_concurrent_delegations: 2,
+            }),
+        );
+
+        let first_job_id = manager
+            .spawn_subagent("session-1", "delegate first".to_string(), None)
+            .await
+            .expect("first delegation should spawn");
+        let second_job_id = manager
+            .spawn_subagent("session-1", "delegate second".to_string(), None)
+            .await
+            .expect("second delegation should still be allowed under limit");
+
+        manager.cancel_job(&first_job_id).await;
+        manager.cancel_job(&second_job_id).await;
+    }
+
+    #[tokio::test]
+    async fn completed_delegation_frees_concurrency_slot() {
+        let manager = make_subagent_manager_with_factory(
+            behavior_factory(MockSubagentBehavior::DelayedSuccess {
+                output: "done".to_string(),
+                delay: Duration::from_millis(80),
+            }),
+            Some(DelegationConfig {
+                enabled: true,
+                max_depth: 1,
+                allowed_targets: None,
+                result_max_bytes: 51200,
+                max_concurrent_delegations: 1,
+            }),
+        );
+
+        let _first = manager
+            .spawn_subagent("session-1", "delegate first".to_string(), None)
+            .await
+            .expect("first delegation should spawn");
+
+        tokio::time::sleep(Duration::from_millis(10)).await;
+
+        let blocked = manager
+            .spawn_subagent("session-1", "delegate blocked".to_string(), None)
+            .await;
+        assert!(blocked.is_err(), "second delegation should be blocked while first is running");
+
+        tokio::time::sleep(Duration::from_millis(120)).await;
+
+        let second = manager
+            .spawn_subagent("session-1", "delegate second".to_string(), None)
+            .await
+            .expect("delegation slot should be freed after completion");
+
+        manager.cancel_job(&second).await;
+    }
+
+    #[tokio::test]
+    async fn failed_delegation_frees_concurrency_slot() {
+        let manager = make_subagent_manager_with_factory(
+            behavior_factory(MockSubagentBehavior::DelayedFailure {
+                error: "boom".to_string(),
+                delay: Duration::from_millis(80),
+            }),
+            Some(DelegationConfig {
+                enabled: true,
+                max_depth: 1,
+                allowed_targets: None,
+                result_max_bytes: 51200,
+                max_concurrent_delegations: 1,
+            }),
+        );
+
+        let _first = manager
+            .spawn_subagent("session-1", "delegate first".to_string(), None)
+            .await
+            .expect("first delegation should spawn");
+
+        tokio::time::sleep(Duration::from_millis(10)).await;
+
+        let blocked = manager
+            .spawn_subagent("session-1", "delegate blocked".to_string(), None)
+            .await;
+        assert!(blocked.is_err(), "second delegation should be blocked while first is running");
+
+        tokio::time::sleep(Duration::from_millis(120)).await;
+
+        let second = manager
+            .spawn_subagent("session-1", "delegate second".to_string(), None)
+            .await
+            .expect("delegation slot should be freed after failure");
+
+        manager.cancel_job(&second).await;
+    }
+
+    #[tokio::test]
+    async fn delegation_writes_parent_session_id_and_incremented_depth_to_child_session() {
+        let parent_dir = tempfile::TempDir::new().expect("temp dir should be created");
+        let (tx, _) = broadcast::channel(16);
+        let manager =
+            BackgroundJobManager::new(tx).with_subagent_factory(behavior_factory(
+                MockSubagentBehavior::ImmediateSuccess("ok".to_string()),
+            ));
+        manager.register_subagent_context(
+            "session-1",
+            SubagentContext {
+                agent: test_session_agent(Some(DelegationConfig {
+                    enabled: true,
+                    max_depth: 1,
+                    allowed_targets: None,
+                    result_max_bytes: 51200,
+                    max_concurrent_delegations: 3,
+                })),
+                workspace: std::env::temp_dir(),
+                parent_session_id: Some("session-1".to_string()),
+                parent_session_dir: Some(parent_dir.path().to_path_buf()),
+                delegator_agent_name: Some("parent-agent".to_string()),
+                target_agent_name: Some("worker-agent".to_string()),
+                delegation_depth: 0,
+            },
+        );
+
+        let result = manager
+            .spawn_subagent_blocking(
+                "session-1",
+                "delegate this".to_string(),
+                None,
+                SubagentBlockingConfig::default(),
+                None,
+            )
+            .await
+            .expect("delegation should complete");
+
+        let session_path = result
+            .info
+            .session_path
+            .expect("subagent session path should exist");
+        let jsonl_path = session_path.join("session.jsonl");
+        let contents = tokio::fs::read_to_string(&jsonl_path)
+            .await
+            .expect("subagent session jsonl should be readable");
+
+        let metadata_line = contents
+            .lines()
+            .find_map(|line| {
+                let event: serde_json::Value = serde_json::from_str(line).ok()?;
+                if event.get("type")?.as_str()? != "system" {
+                    return None;
+                }
+                let content = event.get("content")?.as_str()?;
+                serde_json::from_str::<serde_json::Value>(content).ok()
+            })
+            .expect("delegation metadata system event should exist");
+
+        assert_eq!(
+            metadata_line["delegation_metadata"]["parent_session_id"]
+                .as_str()
+                .expect("parent_session_id should be present"),
+            "session-1"
+        );
+        assert_eq!(
+            metadata_line["delegation_metadata"]["delegation_depth"]
+                .as_u64()
+                .expect("delegation_depth should be present"),
+            1
+        );
+    }
+
+    #[tokio::test]
     async fn spawn_bash_returns_job_id_immediately() {
         let manager = create_manager();
 
@@ -2156,6 +2448,7 @@ mod tests {
         let ctx = SubagentContext {
             agent: test_session_agent(None),
             workspace: std::env::temp_dir(),
+            parent_session_id: Some("session-1".to_string()),
             parent_session_dir: None,
             delegator_agent_name: None,
             target_agent_name: None,
@@ -2167,6 +2460,7 @@ mod tests {
 
     #[test]
     fn enforce_delegation_capabilities_rejects_depth_at_hard_cap() {
+        let manager = create_manager();
         let agent = test_session_agent(Some(DelegationConfig {
             enabled: true,
             max_depth: 10,
@@ -2175,11 +2469,13 @@ mod tests {
             max_concurrent_delegations: 3,
         }));
 
-        let result = BackgroundJobManager::enforce_delegation_capabilities(
+        let result = manager.enforce_delegation_capabilities(
             &agent,
             Some("parent"),
             Some("child"),
             3,
+            "session-1",
+            true,
         );
 
         assert!(result.is_err());
@@ -2191,6 +2487,7 @@ mod tests {
 
     #[test]
     fn enforce_delegation_capabilities_rejects_depth_above_hard_cap() {
+        let manager = create_manager();
         let agent = test_session_agent(Some(DelegationConfig {
             enabled: true,
             max_depth: 10,
@@ -2199,11 +2496,13 @@ mod tests {
             max_concurrent_delegations: 3,
         }));
 
-        let result = BackgroundJobManager::enforce_delegation_capabilities(
+        let result = manager.enforce_delegation_capabilities(
             &agent,
             Some("parent"),
             Some("child"),
             5,
+            "session-1",
+            true,
         );
 
         assert!(result.is_err());
@@ -2215,6 +2514,7 @@ mod tests {
 
     #[test]
     fn enforce_delegation_capabilities_allows_depth_below_hard_cap() {
+        let manager = create_manager();
         let agent = test_session_agent(Some(DelegationConfig {
             enabled: true,
             max_depth: 10,
@@ -2223,11 +2523,13 @@ mod tests {
             max_concurrent_delegations: 3,
         }));
 
-        let result = BackgroundJobManager::enforce_delegation_capabilities(
+        let result = manager.enforce_delegation_capabilities(
             &agent,
             Some("parent"),
             Some("child"),
             0,
+            "session-1",
+            true,
         );
 
         assert!(result.is_ok());
@@ -2235,6 +2537,7 @@ mod tests {
 
     #[test]
     fn enforce_delegation_capabilities_allows_depth_one() {
+        let manager = create_manager();
         let agent = test_session_agent(Some(DelegationConfig {
             enabled: true,
             max_depth: 10,
@@ -2243,11 +2546,13 @@ mod tests {
             max_concurrent_delegations: 3,
         }));
 
-        let result = BackgroundJobManager::enforce_delegation_capabilities(
+        let result = manager.enforce_delegation_capabilities(
             &agent,
             Some("parent"),
             Some("child"),
             1,
+            "session-1",
+            true,
         );
 
         assert!(result.is_ok());
@@ -2255,6 +2560,7 @@ mod tests {
 
     #[test]
     fn enforce_delegation_capabilities_allows_depth_two() {
+        let manager = create_manager();
         let agent = test_session_agent(Some(DelegationConfig {
             enabled: true,
             max_depth: 10,
@@ -2263,11 +2569,13 @@ mod tests {
             max_concurrent_delegations: 3,
         }));
 
-        let result = BackgroundJobManager::enforce_delegation_capabilities(
+        let result = manager.enforce_delegation_capabilities(
             &agent,
             Some("parent"),
             Some("child"),
             2,
+            "session-1",
+            true,
         );
 
         assert!(result.is_ok());
@@ -2275,6 +2583,7 @@ mod tests {
 
     #[test]
     fn enforce_delegation_capabilities_hard_cap_checked_before_enabled_check() {
+        let manager = create_manager();
         let agent = test_session_agent(Some(DelegationConfig {
             enabled: false,
             max_depth: 10,
@@ -2283,11 +2592,13 @@ mod tests {
             max_concurrent_delegations: 3,
         }));
 
-        let result = BackgroundJobManager::enforce_delegation_capabilities(
+        let result = manager.enforce_delegation_capabilities(
             &agent,
             Some("parent"),
             Some("child"),
             3,
+            "session-1",
+            true,
         );
 
         assert!(result.is_err());
