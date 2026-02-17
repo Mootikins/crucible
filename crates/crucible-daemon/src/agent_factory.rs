@@ -73,8 +73,8 @@ pub async fn create_agent_from_session_config(
             None,
             acp_permission_handler,
         )
-            .await
-            .map_err(|e| AgentFactoryError::AgentBuild(e.to_string()))?;
+        .await
+        .map_err(|e| AgentFactoryError::AgentBuild(e.to_string()))?;
         return Ok(Box::new(handle));
     }
 
@@ -227,8 +227,15 @@ mod tests {
 
         let result = tokio::runtime::Runtime::new().unwrap().block_on(async {
             let (event_tx, _) = broadcast::channel(16);
-            create_agent_from_session_config(&config, Path::new("/tmp"), None, &event_tx, None, None)
-                .await
+            create_agent_from_session_config(
+                &config,
+                Path::new("/tmp"),
+                None,
+                &event_tx,
+                None,
+                None,
+            )
+            .await
         });
 
         assert!(matches!(
@@ -242,9 +249,15 @@ mod tests {
     async fn test_create_ollama_agent() {
         let config = test_agent_config();
         let (event_tx, _) = broadcast::channel(16);
-        let result =
-            create_agent_from_session_config(&config, Path::new("/tmp"), None, &event_tx, None, None)
-                .await;
+        let result = create_agent_from_session_config(
+            &config,
+            Path::new("/tmp"),
+            None,
+            &event_tx,
+            None,
+            None,
+        )
+        .await;
         assert!(result.is_ok());
     }
 }
