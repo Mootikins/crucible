@@ -76,8 +76,6 @@ pub async fn execute(
     no_context: bool,
     no_process: bool,
     context_size: Option<usize>,
-    use_internal: bool,
-    force_local: bool,
     provider_key: Option<String>,
     max_context_tokens: usize,
     env_overrides: Vec<String>,
@@ -102,14 +100,12 @@ pub async fn execute(
             run_interactive_chat(
                 config,
                 initial_mode,
-                use_internal,
                 agent_name,
                 provider_key,
                 max_context_tokens,
                 parsed_env,
                 working_dir,
                 resume_session_id,
-                force_local,
             )
             .await
         }
@@ -117,14 +113,12 @@ pub async fn execute(
             run_oneshot_chat(
                 config,
                 initial_mode,
-                use_internal,
                 agent_name,
                 provider_key,
                 max_context_tokens,
                 parsed_env,
                 working_dir,
                 resume_session_id,
-                force_local,
                 no_context,
                 no_process,
                 context_size,
@@ -301,14 +295,12 @@ async fn run_preflight_checks(config: &mut CliConfig) -> Result<()> {
 async fn run_interactive_chat(
     config: CliConfig,
     initial_mode: &str,
-    _use_internal: bool,
     agent_name: Option<String>,
     provider_key: Option<String>,
     max_context_tokens: usize,
     parsed_env: std::collections::HashMap<String, String>,
     working_dir: Option<std::path::PathBuf>,
     resume_session_id: Option<String>,
-    force_local: bool,
 ) -> Result<()> {
     use crate::chat::bridge::AgentEventBridge;
     use crate::chat::session::{index_kiln_notes, index_workspace_files};
@@ -529,13 +521,11 @@ async fn run_interactive_chat(
             match selection {
                 AgentSelection::Acp(agent_name) => {
                     let mut params = factories::AgentInitParams::new()
-                        .with_type(factories::AgentType::Acp)
                         .with_agent_name_opt(Some(agent_name).or(default_agent))
                         .with_provider_opt(provider_key)
                         .with_read_only(is_read_only(&initial_mode))
                         .with_max_context_tokens(max_context_tokens)
                         .with_env_overrides(parsed_env)
-                        .with_force_local(force_local)
                         .with_resume_session_id(resume_session_id);
 
                     if let Some(wd) = working_dir {
@@ -547,12 +537,10 @@ async fn run_interactive_chat(
                 }
                 AgentSelection::Internal => {
                     let mut params = factories::AgentInitParams::new()
-                        .with_type(factories::AgentType::Internal)
                         .with_provider_opt(provider_key)
                         .with_read_only(is_read_only(&initial_mode))
                         .with_max_context_tokens(max_context_tokens)
                         .with_env_overrides(parsed_env)
-                        .with_force_local(force_local)
                         .with_resume_session_id(resume_session_id);
 
                     if let Some(wd) = working_dir {
@@ -576,14 +564,12 @@ async fn run_interactive_chat(
 async fn run_oneshot_chat(
     config: CliConfig,
     initial_mode: &str,
-    use_internal: bool,
     agent_name: Option<String>,
     provider_key: Option<String>,
     max_context_tokens: usize,
     parsed_env: std::collections::HashMap<String, String>,
     working_dir: Option<std::path::PathBuf>,
     resume_session_id: Option<String>,
-    force_local: bool,
     no_context: bool,
     no_process: bool,
     context_size: Option<usize>,
@@ -592,20 +578,12 @@ async fn run_oneshot_chat(
     let mut status = StatusLine::new();
     let default_agent = config.acp.default_agent.clone();
 
-    let agent_type = if use_internal {
-        factories::AgentType::Internal
-    } else {
-        factories::AgentType::Acp
-    };
-
     let mut agent_params = factories::AgentInitParams::new()
-        .with_type(agent_type)
         .with_agent_name_opt(agent_name.clone().or(default_agent.clone()))
         .with_provider_opt(provider_key)
         .with_read_only(is_read_only(initial_mode))
         .with_max_context_tokens(max_context_tokens)
         .with_env_overrides(parsed_env)
-        .with_force_local(force_local)
         .with_resume_session_id(resume_session_id);
 
     if let Some(ref wd) = working_dir {
@@ -626,31 +604,8 @@ async fn run_oneshot_chat(
     #[cfg(not(feature = "storage-surrealdb"))]
     let storage_client: Option<()> = None;
 
-    let initialized_agent = if use_internal {
-        status.update("Initializing LLM provider with kiln tools...");
-        #[cfg(feature = "storage-surrealdb")]
-        {
-            let storage_client = storage_client
-                .as_ref()
-                .expect("storage-surrealdb required for internal agent");
-            let embedding_provider = factories::get_or_create_embedding_provider(&config).await?;
-            let knowledge_repo = storage_client.as_knowledge_repository();
-            let kiln_ctx = crucible_rig::KilnContext::new(
-                &config.kiln_path,
-                knowledge_repo,
-                embedding_provider,
-            );
-            let agent_params = agent_params.with_kiln_context(kiln_ctx);
-            factories::create_agent(&config, agent_params).await?
-        }
-        #[cfg(not(feature = "storage-surrealdb"))]
-        {
-            anyhow::bail!("Internal agent mode requires the 'storage-surrealdb' feature")
-        }
-    } else {
-        status.update("Discovering agent...");
-        factories::create_agent(&config, agent_params).await?
-    };
+    status.update("Discovering agent...");
+    let initialized_agent = factories::create_agent(&config, agent_params).await?;
 
     let bg_progress: Option<BackgroundProgress> = if !no_process && !no_context {
         #[cfg(feature = "storage-surrealdb")]
