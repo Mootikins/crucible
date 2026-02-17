@@ -305,7 +305,7 @@ pub fn split_chained_commands(input: &str) -> Vec<&str> {
             continue;
         }
 
-        if ch == b'\'\'' && !in_double_quote {
+        if ch == b'\x27' && !in_double_quote {
             in_single_quote = !in_single_quote;
             i += 1;
             continue;
@@ -1085,5 +1085,4 @@ ask:
         let result = split_chained_commands("cargo test --release && cargo build");
         assert_eq!(result, vec!["cargo test --release", "cargo build"]);
     }
-
 }
