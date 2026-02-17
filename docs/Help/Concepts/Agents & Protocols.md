@@ -98,3 +98,6 @@ See [[Help/Task Management#Context Optimization]] for implementation details.
 - [[Help/Extending/Agent Cards]] - Creating agents
 - [[Help/Extending/Custom Tools]] - Adding agent capabilities
 - [[Help/Task Management]] - TASKS.md format and context optimization
+- [[Help/Concepts/Agent Client Protocol]] - ACP specification reference
+- [[Help/Concepts/Model Context Protocol]] - MCP specification reference
+- [[Help/Concepts/Agent Skills]] - Skills specification reference
