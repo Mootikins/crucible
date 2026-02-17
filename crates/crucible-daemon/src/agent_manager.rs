@@ -526,6 +526,7 @@ impl AgentManager {
                     session_id,
                     SubagentContext {
                         agent: resolved_config.clone(),
+                        agent_profiles: HashMap::new(),
                         workspace: session.kiln.clone(),
                         parent_session_id,
                         parent_session_dir: Some(session.storage_path()),

@@ -154,6 +154,7 @@ fn register_delegation_context(
         session_id,
         SubagentContext {
             agent: test_session_agent(enabled, max_concurrent_delegations),
+            agent_profiles: HashMap::new(),
             workspace: workspace.to_path_buf(),
             parent_session_id: Some(session_id.to_string()),
             parent_session_dir: parent_session_dir.map(|p| p.to_path_buf()),
