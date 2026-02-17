@@ -2,6 +2,8 @@
 
 use std::fmt;
 
+use crate::tui::oil::config::ThinkingPreset;
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum ParseError {
     Empty,
@@ -31,6 +33,192 @@ pub enum SetCommand {
     Reset { key: String },
     Pop { key: String },
     Set { key: String, value: String },
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum SetRpcAction {
+    SwitchModel(String),
+    SetThinkingBudget(Option<i64>),
+    SetTemperature(f64),
+    SetMaxTokens(Option<u32>),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum SetEffect {
+    TuiLocal { key: String, value: Option<String> },
+    DaemonRpc(SetRpcAction),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum SetError {
+    Parse(ParseError),
+    NotSupportedAsCli,
+    InvalidValue { key: String, message: String },
+    UnknownKey(String),
+}
+
+pub fn validate_set_for_cli(input: &str) -> Result<SetEffect, SetError> {
+    let command = SetCommand::parse(input).map_err(SetError::Parse)?;
+
+    match command {
+        SetCommand::ShowModified
+        | SetCommand::ShowAll
+        | SetCommand::Query { .. }
+        | SetCommand::QueryHistory { .. }
+        | SetCommand::Reset { .. }
+        | SetCommand::Pop { .. } => Err(SetError::NotSupportedAsCli),
+        SetCommand::Enable { key } => {
+            if is_tui_local_key(&key) {
+                Ok(SetEffect::TuiLocal { key, value: None })
+            } else if is_daemon_rpc_key(&key) {
+                Err(SetError::InvalidValue {
+                    key,
+                    message: "this key requires an explicit value".to_string(),
+                })
+            } else {
+                Err(SetError::UnknownKey(key))
+            }
+        }
+        SetCommand::Disable { key } => {
+            if is_tui_local_key(&key) {
+                Ok(SetEffect::TuiLocal {
+                    key,
+                    value: Some("false".to_string()),
+                })
+            } else if is_daemon_rpc_key(&key) {
+                Err(SetError::InvalidValue {
+                    key,
+                    message: "this key requires an explicit value".to_string(),
+                })
+            } else {
+                Err(SetError::UnknownKey(key))
+            }
+        }
+        SetCommand::Toggle { key } => {
+            if is_tui_local_key(&key) {
+                Ok(SetEffect::TuiLocal {
+                    key,
+                    value: Some("__toggle__".to_string()),
+                })
+            } else if is_daemon_rpc_key(&key) {
+                Err(SetError::InvalidValue {
+                    key,
+                    message: "this key requires an explicit value".to_string(),
+                })
+            } else {
+                Err(SetError::UnknownKey(key))
+            }
+        }
+        SetCommand::Set { key, value } => match key.as_str() {
+            "model" => Ok(SetEffect::DaemonRpc(SetRpcAction::SwitchModel(value))),
+            "thinkingbudget" => {
+                if let Some(preset) = ThinkingPreset::by_name(&value) {
+                    Ok(SetEffect::DaemonRpc(SetRpcAction::SetThinkingBudget(Some(
+                        preset.to_budget(),
+                    ))))
+                } else {
+                    let valid = ThinkingPreset::names().collect::<Vec<_>>().join(", ");
+                    Err(SetError::InvalidValue {
+                        key,
+                        message: format!("unknown preset '{}'. Valid: {}", value, valid),
+                    })
+                }
+            }
+            "temperature" => match value.parse::<f64>() {
+                Ok(temp) if (0.0..=2.0).contains(&temp) => {
+                    Ok(SetEffect::DaemonRpc(SetRpcAction::SetTemperature(temp)))
+                }
+                Ok(_) => Err(SetError::InvalidValue {
+                    key,
+                    message: "temperature must be between 0.0 and 2.0".to_string(),
+                }),
+                Err(_) => Err(SetError::InvalidValue {
+                    key,
+                    message: format!("invalid temperature value: {}", value),
+                }),
+            },
+            "maxtokens" => {
+                let max_tokens =
+                    if value.eq_ignore_ascii_case("none") || value.eq_ignore_ascii_case("null") {
+                        None
+                    } else {
+                        match value.parse::<u32>() {
+                            Ok(n) => Some(n),
+                            Err(_) => {
+                                return Err(SetError::InvalidValue {
+                                    key,
+                                    message: format!(
+                                        "invalid maxtokens value: {} (use a number or 'none')",
+                                        value
+                                    ),
+                                });
+                            }
+                        }
+                    };
+
+                Ok(SetEffect::DaemonRpc(SetRpcAction::SetMaxTokens(max_tokens)))
+            }
+            "perm.show_diff" | "perm.autoconfirm_session" => {
+                parse_bool(&value).map_err(|message| SetError::InvalidValue {
+                    key: key.clone(),
+                    message,
+                })?;
+                Ok(SetEffect::TuiLocal {
+                    key,
+                    value: Some(value),
+                })
+            }
+            "thinking" | "precognition" | "verbose" | "theme" => Ok(SetEffect::TuiLocal {
+                key,
+                value: Some(value),
+            }),
+            "precognition.results" => {
+                let parsed = value.parse::<usize>().map_err(|_| SetError::InvalidValue {
+                    key: key.clone(),
+                    message: "precognition.results must be 1-20".to_string(),
+                })?;
+                if !(1..=20).contains(&parsed) {
+                    return Err(SetError::InvalidValue {
+                        key,
+                        message: "precognition.results must be 1-20".to_string(),
+                    });
+                }
+                Ok(SetEffect::TuiLocal {
+                    key,
+                    value: Some(value),
+                })
+            }
+            _ => Err(SetError::UnknownKey(key)),
+        },
+    }
+}
+
+fn is_tui_local_key(key: &str) -> bool {
+    matches!(
+        key,
+        "thinking"
+            | "precognition"
+            | "precognition.results"
+            | "perm.show_diff"
+            | "perm.autoconfirm_session"
+            | "theme"
+            | "verbose"
+    )
+}
+
+fn is_daemon_rpc_key(key: &str) -> bool {
+    matches!(
+        key,
+        "model" | "thinkingbudget" | "temperature" | "maxtokens"
+    )
+}
+
+fn parse_bool(value: &str) -> Result<bool, String> {
+    match value.to_ascii_lowercase().as_str() {
+        "true" | "1" | "yes" | "on" => Ok(true),
+        "false" | "0" | "no" | "off" => Ok(false),
+        _ => Err(format!("invalid value: '{}'. Use true/false", value)),
+    }
 }
 
 impl SetCommand {
@@ -403,6 +591,83 @@ mod tests {
             Ok(SetCommand::Set {
                 key: "model".into(),
                 value: "DeepSeek-R1".into()
+            })
+        );
+    }
+
+    #[test]
+    fn validate_set_for_cli_temperature_invalid() {
+        assert!(matches!(
+            validate_set_for_cli("temperature=abc"),
+            Err(SetError::InvalidValue { .. })
+        ));
+    }
+
+    #[test]
+    fn validate_set_for_cli_query_not_supported() {
+        assert_eq!(
+            validate_set_for_cli("model?"),
+            Err(SetError::NotSupportedAsCli)
+        );
+    }
+
+    #[test]
+    fn validate_set_for_cli_model_ok() {
+        assert_eq!(
+            validate_set_for_cli("model=llama3"),
+            Ok(SetEffect::DaemonRpc(SetRpcAction::SwitchModel(
+                "llama3".to_string()
+            )))
+        );
+    }
+
+    #[test]
+    fn validate_set_for_cli_perm_enable_ok() {
+        assert_eq!(
+            validate_set_for_cli("perm.autoconfirm_session"),
+            Ok(SetEffect::TuiLocal {
+                key: "perm.autoconfirm_session".to_string(),
+                value: None,
+            })
+        );
+    }
+
+    #[test]
+    fn validate_set_for_cli_temperature_ok() {
+        assert_eq!(
+            validate_set_for_cli("temperature=1.5"),
+            Ok(SetEffect::DaemonRpc(SetRpcAction::SetTemperature(1.5)))
+        );
+    }
+
+    #[test]
+    fn validate_set_for_cli_maxtokens_none_ok() {
+        assert_eq!(
+            validate_set_for_cli("maxtokens=none"),
+            Ok(SetEffect::DaemonRpc(SetRpcAction::SetMaxTokens(None)))
+        );
+    }
+
+    #[test]
+    fn validate_set_for_cli_unknown_key() {
+        assert_eq!(
+            validate_set_for_cli("unknownkey"),
+            Err(SetError::UnknownKey("unknownkey".to_string()))
+        );
+    }
+
+    #[test]
+    fn validate_set_for_cli_empty_not_supported() {
+        assert_eq!(validate_set_for_cli(""), Err(SetError::NotSupportedAsCli));
+    }
+
+    #[test]
+    fn validate_set_for_cli_toggle_tui_local() {
+        assert_eq!(
+            validate_set_for_cli("verbose!"),
+            Ok(SetEffect::TuiLocal {
+                key: "verbose".to_string(),
+                value: Some("__toggle__".to_string()),
             })
         );
     }
