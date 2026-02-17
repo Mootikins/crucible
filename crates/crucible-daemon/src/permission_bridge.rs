@@ -1,68 +1,75 @@
 //! Bridge from ACP permission requests to the daemon's permission system.
 
 use async_trait::async_trait;
+use crucible_config::components::permissions::{PermissionConfig, PermissionDecision, PermissionEngine};
 use crucible_core::interaction::{PermAction, PermRequest, PermResponse};
 use crucible_core::traits::PermissionGate;
+use std::future::Future;
+use std::pin::Pin;
+use std::sync::Arc;
 
 use crate::agent_manager::is_safe;
 
-/// Permission gate bridging to the daemon's permission system.
-///
-/// Currently implements Layer 1 (static safety check via `is_safe`).
-/// Future layers: PatternStore matching, Lua hooks, interactive user prompt.
+pub type PermissionPromptFuture = Pin<Box<dyn Future<Output = PermResponse> + Send>>;
+pub type PermissionPromptCallback = Arc<dyn Fn(PermRequest) -> PermissionPromptFuture + Send + Sync>;
+
 pub struct DaemonPermissionGate {
-    /// Whether to auto-allow tools not recognized by `is_safe`.
-    fallback_allow: bool,
-    /// Whether the session is interactive (TUI) or non-interactive (oneshot/pipe).
-    /// In non-interactive mode, "ask" permissions become "deny".
+    engine: PermissionEngine,
     is_interactive: bool,
+    prompt_callback: Option<PermissionPromptCallback>,
 }
 
 impl DaemonPermissionGate {
-    pub fn new() -> Self {
+    pub fn new(permission_config: Option<PermissionConfig>, is_interactive: bool) -> Self {
         Self {
-            fallback_allow: true,
-            is_interactive: true,
+            engine: PermissionEngine::new(permission_config.as_ref()),
+            is_interactive,
+            prompt_callback: None,
         }
     }
 
-    pub fn with_fallback(fallback_allow: bool) -> Self {
-        Self {
-            fallback_allow,
-            is_interactive: true,
-        }
-    }
-
-    pub fn with_interactive(mut self, is_interactive: bool) -> Self {
-        self.is_interactive = is_interactive;
+    pub fn with_prompt_callback(mut self, callback: PermissionPromptCallback) -> Self {
+        self.prompt_callback = Some(callback);
         self
+    }
+
+    fn to_engine_input(request: &PermRequest) -> (&str, String) {
+        match &request.action {
+            PermAction::Tool { name, args } => (name.as_str(), args.to_string()),
+            PermAction::Bash { tokens } => ("bash", tokens.join(" ")),
+            PermAction::Read { segments } => ("read", segments.join("/")),
+            PermAction::Write { segments } => ("write", segments.join("/")),
+        }
     }
 }
 
 impl Default for DaemonPermissionGate {
     fn default() -> Self {
-        Self::new()
+        Self::new(None, false)
     }
 }
 
 #[async_trait]
 impl PermissionGate for DaemonPermissionGate {
     async fn request_permission(&self, request: PermRequest) -> PermResponse {
-        let tool_name = match &request.action {
-            PermAction::Tool { name, .. } => name.as_str(),
-            PermAction::Bash { tokens } => tokens.first().map(|s| s.as_str()).unwrap_or("bash"),
-            PermAction::Read { .. } => "read_file",
-            PermAction::Write { .. } => "write_file",
-        };
+        let (tool_name, input) = Self::to_engine_input(&request);
 
         if is_safe(tool_name) {
             return PermResponse::allow();
         }
 
-        if self.fallback_allow {
-            PermResponse::allow()
-        } else {
-            PermResponse::deny()
+        match self.engine.evaluate(tool_name, &input, self.is_interactive) {
+            PermissionDecision::Allow => PermResponse::allow(),
+            PermissionDecision::Deny { reason } => PermResponse::deny_with_reason(reason),
+            PermissionDecision::Ask => {
+                if let Some(callback) = &self.prompt_callback {
+                    callback(request).await
+                } else {
+                    PermResponse::deny_with_reason(
+                        "Permission requires user confirmation but no interactive bridge is configured",
+                    )
+                }
+            }
         }
     }
 }
@@ -74,23 +81,23 @@ mod tests {
 
     #[tokio::test]
     async fn safe_tool_is_allowed() {
-        let gate = DaemonPermissionGate::new();
+        let gate = DaemonPermissionGate::new(None, true);
         let request = PermRequest::tool("read_file", json!({"path": "/tmp/test.txt"}));
         let response = gate.request_permission(request).await;
         assert!(response.allowed);
     }
 
     #[tokio::test]
-    async fn unsafe_tool_allowed_with_fallback() {
-        let gate = DaemonPermissionGate::new();
+    async fn interactive_default_ask_without_prompt_callback_denies() {
+        let gate = DaemonPermissionGate::new(None, true);
         let request = PermRequest::tool("dangerous_tool", json!({}));
         let response = gate.request_permission(request).await;
-        assert!(response.allowed);
+        assert!(!response.allowed);
     }
 
     #[tokio::test]
-    async fn unsafe_tool_denied_without_fallback() {
-        let gate = DaemonPermissionGate::with_fallback(false);
+    async fn non_interactive_ask_becomes_deny() {
+        let gate = DaemonPermissionGate::new(None, false);
         let request = PermRequest::tool("dangerous_tool", json!({}));
         let response = gate.request_permission(request).await;
         assert!(!response.allowed);
@@ -98,23 +105,23 @@ mod tests {
 
     #[tokio::test]
     async fn bash_command_not_safe() {
-        let gate = DaemonPermissionGate::with_fallback(false);
+        let gate = DaemonPermissionGate::new(None, false);
         let request = PermRequest::bash(["rm", "-rf", "/tmp/test"]);
         let response = gate.request_permission(request).await;
         assert!(!response.allowed);
     }
 
     #[tokio::test]
-    async fn read_action_maps_to_read_file() {
-        let gate = DaemonPermissionGate::new();
+    async fn read_action_defaults_to_ask_then_deny_without_prompt_callback() {
+        let gate = DaemonPermissionGate::new(None, true);
         let request = PermRequest::read(["src", "main.rs"]);
         let response = gate.request_permission(request).await;
-        assert!(response.allowed);
+        assert!(!response.allowed);
     }
 
     #[tokio::test]
-    async fn write_action_denied_without_fallback() {
-        let gate = DaemonPermissionGate::with_fallback(false);
+    async fn write_action_defaults_to_ask_then_deny_without_prompt_callback() {
+        let gate = DaemonPermissionGate::new(None, true);
         let request = PermRequest::write(["src", "main.rs"]);
         let response = gate.request_permission(request).await;
         assert!(!response.allowed);
@@ -124,17 +131,5 @@ mod tests {
     async fn gate_is_send_sync() {
         fn assert_send_sync<T: Send + Sync + 'static>() {}
         assert_send_sync::<DaemonPermissionGate>();
-    }
-
-    #[tokio::test]
-    async fn non_interactive_mode_field_defaults_to_true() {
-        let gate = DaemonPermissionGate::new();
-        assert!(gate.is_interactive);
-    }
-
-    #[tokio::test]
-    async fn non_interactive_mode_can_be_set() {
-        let gate = DaemonPermissionGate::new().with_interactive(false);
-        assert!(!gate.is_interactive);
     }
 }
