@@ -244,6 +244,7 @@ mod tests {
             context: None,
             storage: None,
             mcp: None,
+            permissions: None,
             plugins: std::collections::HashMap::new(),
             web: None,
             source_map: None,
