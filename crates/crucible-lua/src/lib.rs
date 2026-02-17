@@ -112,7 +112,10 @@ pub use graph::{
     register_graph_module_with_executor, register_graph_module_with_store,
     register_graph_view_functions, register_note_store_functions,
 };
-pub use hooks::{get_session_start_hooks, register_hooks_module};
+pub use hooks::{
+    fire_tools_registered_hooks, get_session_start_hooks, get_tools_registered_hooks,
+    register_hooks_module, ToolRegistrationInfo,
+};
 pub use http::register_http_module;
 pub use interaction::{lua_ask_to_core, lua_permission_to_core, register_interaction_module};
 pub use json_query::{
