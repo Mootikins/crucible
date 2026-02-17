@@ -119,10 +119,16 @@ fn serialize_chunk(chunk: &StreamingChunk) -> serde_json::Value {
     match chunk {
         StreamingChunk::Text(text) => json!({"kind": "text", "text": text}),
         StreamingChunk::Thinking(text) => json!({"kind": "thinking", "text": text}),
-        StreamingChunk::ToolStart { name, id } => {
-            json!({"kind": "tool_start", "name": name, "id": id})
+        StreamingChunk::ToolStart {
+            name,
+            id,
+            arguments,
+        } => {
+            json!({"kind": "tool_start", "name": name, "id": id, "arguments": arguments})
         }
-        StreamingChunk::ToolEnd { id } => json!({"kind": "tool_end", "id": id}),
+        StreamingChunk::ToolEnd { id, result, error } => {
+            json!({"kind": "tool_end", "id": id, "result": result, "error": error})
+        }
     }
 }
 
@@ -134,9 +140,12 @@ fn deserialize_chunk(value: &serde_json::Value) -> StreamingChunk {
         "tool_start" => StreamingChunk::ToolStart {
             name: value["name"].as_str().unwrap().to_string(),
             id: value["id"].as_str().unwrap().to_string(),
+            arguments: value.get("arguments").cloned().filter(|v| !v.is_null()),
         },
         "tool_end" => StreamingChunk::ToolEnd {
             id: value["id"].as_str().unwrap().to_string(),
+            result: value.get("result").and_then(|v| v.as_str().map(str::to_string)),
+            error: value.get("error").and_then(|v| v.as_str().map(str::to_string)),
         },
         other => panic!("unknown chunk kind: {other}"),
     }
@@ -150,17 +159,33 @@ fn assert_chunk_eq(left: &StreamingChunk, right: &StreamingChunk) {
             StreamingChunk::ToolStart {
                 name: a_name,
                 id: a_id,
+                arguments: a_arguments,
             },
             StreamingChunk::ToolStart {
                 name: b_name,
                 id: b_id,
+                arguments: b_arguments,
             },
         ) => {
             assert_eq!(a_name, b_name);
             assert_eq!(a_id, b_id);
+            assert_eq!(a_arguments, b_arguments);
         }
-        (StreamingChunk::ToolEnd { id: a }, StreamingChunk::ToolEnd { id: b }) => {
-            assert_eq!(a, b)
+        (
+            StreamingChunk::ToolEnd {
+                id: a_id,
+                result: a_result,
+                error: a_error,
+            },
+            StreamingChunk::ToolEnd {
+                id: b_id,
+                result: b_result,
+                error: b_error,
+            },
+        ) => {
+            assert_eq!(a_id, b_id);
+            assert_eq!(a_result, b_result);
+            assert_eq!(a_error, b_error);
         }
         _ => panic!("chunk variants differ: left={left:?} right={right:?}"),
     }
@@ -433,9 +458,12 @@ fn stream_edge_streaming_chunk_round_trip_variants() {
         StreamingChunk::ToolStart {
             name: "read_note".to_string(),
             id: "tool-1".to_string(),
+            arguments: Some(json!({"path": "demo.md"})),
         },
         StreamingChunk::ToolEnd {
             id: "tool-1".to_string(),
+            result: Some("ok".to_string()),
+            error: None,
         },
     ];
 

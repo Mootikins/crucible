@@ -1200,6 +1200,7 @@ impl CrucibleAcpClient {
                 callback(StreamingChunk::ToolStart {
                     name: tool_name.clone(),
                     id: tool_id.clone(),
+                    arguments: tool_call.raw_input.clone(),
                 });
 
                 // Record tool call in state
@@ -1226,9 +1227,17 @@ impl CrucibleAcpClient {
             SessionUpdate::ToolCallUpdate(update) => {
                 let tool_id = update.tool_call_id.to_string();
                 // Tool updates often indicate completion
-                if update.fields.status == Some(ToolCallStatus::Completed) {
+                if matches!(
+                    update.fields.status,
+                    Some(ToolCallStatus::Completed | ToolCallStatus::Failed)
+                ) {
                     callback(StreamingChunk::ToolEnd {
                         id: tool_id.clone(),
+                        result: Self::extract_tool_result(update.fields.raw_output.as_ref()),
+                        error: Self::extract_tool_error(
+                            update.fields.status,
+                            update.fields.raw_output.as_ref(),
+                        ),
                     });
                 }
 
@@ -1523,6 +1532,38 @@ impl CrucibleAcpClient {
             serde_json::Value::Number(n) => n.as_u64(),
             serde_json::Value::String(s) => s.parse::<u64>().ok(),
             _ => None,
+        }
+    }
+
+    fn extract_tool_result(raw_output: Option<&serde_json::Value>) -> Option<String> {
+        raw_output.map(Self::format_json_value)
+    }
+
+    fn extract_tool_error(
+        status: Option<ToolCallStatus>,
+        raw_output: Option<&serde_json::Value>,
+    ) -> Option<String> {
+        let output_error = raw_output
+            .and_then(|value| value.get("error"))
+            .map(Self::format_json_value)
+            .filter(|value| !value.is_empty());
+
+        if output_error.is_some() {
+            return output_error;
+        }
+
+        if status == Some(ToolCallStatus::Failed) {
+            return Some("Tool call failed".to_string());
+        }
+
+        None
+    }
+
+    fn format_json_value(value: &serde_json::Value) -> String {
+        if let Some(s) = value.as_str() {
+            s.to_string()
+        } else {
+            value.to_string()
         }
     }
 

@@ -25,9 +25,17 @@ pub enum StreamingChunk {
     /// Agent is thinking (for agents that expose thinking)
     Thinking(String),
     /// A tool is being called
-    ToolStart { name: String, id: String },
+    ToolStart {
+        name: String,
+        id: String,
+        arguments: Option<serde_json::Value>,
+    },
     /// Tool execution completed
-    ToolEnd { id: String },
+    ToolEnd {
+        id: String,
+        result: Option<String>,
+        error: Option<String>,
+    },
 }
 
 /// Callback type for receiving streaming chunks.
