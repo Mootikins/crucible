@@ -302,7 +302,7 @@ async fn run_interactive_chat(
     config: CliConfig,
     initial_mode: &str,
     _use_internal: bool,
-    _agent_name: Option<String>,
+    agent_name: Option<String>,
     provider_key: Option<String>,
     max_context_tokens: usize,
     parsed_env: std::collections::HashMap<String, String>,
@@ -347,7 +347,8 @@ async fn run_interactive_chat(
         .with_mode(mode)
         .with_model(&model_name)
         .with_context_limit(context_limit)
-        .with_show_thinking(config.chat.show_thinking);
+        .with_show_thinking(config.chat.show_thinking)
+        .with_agent_name(agent_name);
 
     info!("Starting oil chat with model: {}", model_name);
 
