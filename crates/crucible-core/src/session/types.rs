@@ -777,6 +777,7 @@ mod tests {
             max_depth: 2,
             allowed_targets: Some(vec!["tool-agent".to_string()]),
             result_max_bytes: 102400,
+            max_concurrent_delegations: 3,
         };
 
         let agent = SessionAgent {
@@ -844,6 +845,7 @@ mod tests {
             max_depth: 3,
             allowed_targets: Some(vec!["agent1".to_string(), "agent2".to_string()]),
             result_max_bytes: 204800,
+            max_concurrent_delegations: 3,
         };
 
         let original = SessionAgent {
@@ -972,6 +974,7 @@ mod tests {
             max_depth: 2,
             allowed_targets: Some(vec!["worker1".to_string(), "worker2".to_string()]),
             result_max_bytes: 102400,
+            max_concurrent_delegations: 3,
         };
 
         let profile = AgentProfile {

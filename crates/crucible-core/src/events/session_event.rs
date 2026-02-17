@@ -292,6 +292,39 @@ pub enum SessionEvent {
     },
 
     // ─────────────────────────────────────────────────────────────────────
+    // Delegation events (session-to-session delegation via ACP)
+    // ─────────────────────────────────────────────────────────────────────
+    /// Delegation was spawned (child session created).
+    DelegationSpawned {
+        /// Unique identifier for the delegation.
+        delegation_id: String,
+        /// Prompt given to the delegated session.
+        prompt: String,
+        /// Parent session ID that initiated the delegation.
+        parent_session_id: String,
+    },
+
+    /// Delegation completed successfully.
+    DelegationCompleted {
+        /// Identifier of the completed delegation.
+        delegation_id: String,
+        /// Summary of the delegation result.
+        result_summary: String,
+        /// Parent session ID that initiated the delegation.
+        parent_session_id: String,
+    },
+
+    /// Delegation failed.
+    DelegationFailed {
+        /// Identifier of the failed delegation.
+        delegation_id: String,
+        /// Error message.
+        error: String,
+        /// Parent session ID that initiated the delegation.
+        parent_session_id: String,
+    },
+
+    // ─────────────────────────────────────────────────────────────────────
     // Background bash task events
     // ─────────────────────────────────────────────────────────────────────
     /// Background bash task was spawned.
@@ -611,6 +644,9 @@ impl SessionEvent {
             Self::SubagentSpawned { .. } => "subagent_spawned",
             Self::SubagentCompleted { .. } => "subagent_completed",
             Self::SubagentFailed { .. } => "subagent_failed",
+            Self::DelegationSpawned { .. } => "delegation_spawned",
+            Self::DelegationCompleted { .. } => "delegation_completed",
+            Self::DelegationFailed { .. } => "delegation_failed",
             Self::BashTaskSpawned { .. } => "bash_task_spawned",
             Self::BashTaskCompleted { .. } => "bash_task_completed",
             Self::BashTaskFailed { .. } => "bash_task_failed",
@@ -674,6 +710,15 @@ impl SessionEvent {
             Self::SubagentSpawned { id, .. } => format!("subagent:spawned:{}", id),
             Self::SubagentCompleted { id, .. } => format!("subagent:completed:{}", id),
             Self::SubagentFailed { id, .. } => format!("subagent:failed:{}", id),
+            Self::DelegationSpawned { delegation_id, .. } => {
+                format!("delegation:spawned:{}", delegation_id)
+            }
+            Self::DelegationCompleted { delegation_id, .. } => {
+                format!("delegation:completed:{}", delegation_id)
+            }
+            Self::DelegationFailed { delegation_id, .. } => {
+                format!("delegation:failed:{}", delegation_id)
+            }
             Self::BashTaskSpawned { id, .. } => format!("bash:spawned:{}", id),
             Self::BashTaskCompleted { id, .. } => format!("bash:completed:{}", id),
             Self::BashTaskFailed { id, .. } => format!("bash:failed:{}", id),
@@ -953,6 +998,9 @@ impl SessionEvent {
             Self::SubagentSpawned { .. } => "SubagentSpawned",
             Self::SubagentCompleted { .. } => "SubagentCompleted",
             Self::SubagentFailed { .. } => "SubagentFailed",
+            Self::DelegationSpawned { .. } => "DelegationSpawned",
+            Self::DelegationCompleted { .. } => "DelegationCompleted",
+            Self::DelegationFailed { .. } => "DelegationFailed",
             Self::BashTaskSpawned { .. } => "BashTaskSpawned",
             Self::BashTaskCompleted { .. } => "BashTaskCompleted",
             Self::BashTaskFailed { .. } => "BashTaskFailed",
@@ -1070,6 +1118,42 @@ impl SessionEvent {
             }
             Self::SubagentFailed { id, error } => {
                 format!("id={}, error={}", id, truncate(error, max_len))
+            }
+            Self::DelegationSpawned {
+                delegation_id,
+                prompt,
+                parent_session_id,
+            } => {
+                format!(
+                    "delegation_id={}, parent={}, prompt_len={}",
+                    delegation_id,
+                    parent_session_id,
+                    prompt.len()
+                )
+            }
+            Self::DelegationCompleted {
+                delegation_id,
+                result_summary,
+                parent_session_id,
+            } => {
+                format!(
+                    "delegation_id={}, parent={}, result_len={}",
+                    delegation_id,
+                    parent_session_id,
+                    result_summary.len()
+                )
+            }
+            Self::DelegationFailed {
+                delegation_id,
+                error,
+                parent_session_id,
+            } => {
+                format!(
+                    "delegation_id={}, parent={}, error={}",
+                    delegation_id,
+                    parent_session_id,
+                    truncate(error, max_len)
+                )
             }
             Self::BashTaskSpawned { id, command } => {
                 format!("id={}, command={}", id, truncate(command, max_len))
@@ -1321,6 +1405,9 @@ impl SessionEvent {
             Self::SubagentSpawned { prompt, .. } => Some(prompt.clone()),
             Self::SubagentCompleted { result, .. } => Some(result.clone()),
             Self::SubagentFailed { error, .. } => Some(error.clone()),
+            Self::DelegationSpawned { prompt, .. } => Some(prompt.clone()),
+            Self::DelegationCompleted { result_summary, .. } => Some(result_summary.clone()),
+            Self::DelegationFailed { error, .. } => Some(error.clone()),
             Self::BashTaskSpawned { command, .. } => Some(command.clone()),
             Self::BashTaskCompleted { output, .. } => Some(output.clone()),
             Self::BashTaskFailed { error, .. } => Some(error.clone()),
@@ -1461,6 +1548,9 @@ impl SessionEvent {
             Self::SubagentSpawned { prompt, .. } => prompt.len(),
             Self::SubagentCompleted { result, .. } => result.len(),
             Self::SubagentFailed { error, .. } => error.len(),
+            Self::DelegationSpawned { prompt, .. } => prompt.len(),
+            Self::DelegationCompleted { result_summary, .. } => result_summary.len(),
+            Self::DelegationFailed { error, .. } => error.len(),
             Self::BashTaskSpawned { command, .. } => command.len(),
             Self::BashTaskCompleted { output, .. } => output.len(),
             Self::BashTaskFailed { error, .. } => error.len(),
@@ -3386,6 +3476,97 @@ mod tests {
         };
         let tokens = event.estimate_tokens();
         assert_eq!(tokens, 50 / 4 + 10); // 50 fixed + overhead
+    }
+
+    #[test]
+    fn test_delegation_spawned_serde() {
+        // Test DelegationSpawned variant serializes/deserializes correctly
+        let event = SessionEvent::DelegationSpawned {
+            delegation_id: "deleg-123".into(),
+            prompt: "Analyze this code".into(),
+            parent_session_id: "parent-456".into(),
+        };
+
+        // Test JSON round-trip
+        let json = serde_json::to_string(&event).expect("serialize");
+        let deserialized: SessionEvent = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(event, deserialized);
+
+        // Verify JSON structure
+        let json_obj: serde_json::Value = serde_json::from_str(&json).expect("parse json");
+        assert_eq!(json_obj["type"], "delegation_spawned");
+        assert_eq!(json_obj["delegation_id"], "deleg-123");
+        assert_eq!(json_obj["parent_session_id"], "parent-456");
+    }
+
+    #[test]
+    fn test_delegation_completed_serde() {
+        // Test DelegationCompleted variant serializes/deserializes correctly
+        let event = SessionEvent::DelegationCompleted {
+            delegation_id: "deleg-123".into(),
+            result_summary: "Analysis complete: 5 issues found".into(),
+            parent_session_id: "parent-456".into(),
+        };
+
+        // Test JSON round-trip
+        let json = serde_json::to_string(&event).expect("serialize");
+        let deserialized: SessionEvent = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(event, deserialized);
+
+        // Verify JSON structure
+        let json_obj: serde_json::Value = serde_json::from_str(&json).expect("parse json");
+        assert_eq!(json_obj["type"], "delegation_completed");
+        assert_eq!(json_obj["delegation_id"], "deleg-123");
+        assert_eq!(json_obj["parent_session_id"], "parent-456");
+    }
+
+    #[test]
+    fn test_delegation_failed_serde() {
+        // Test DelegationFailed variant serializes/deserializes correctly
+        let event = SessionEvent::DelegationFailed {
+            delegation_id: "deleg-123".into(),
+            error: "Timeout after 30s".into(),
+            parent_session_id: "parent-456".into(),
+        };
+
+        // Test JSON round-trip
+        let json = serde_json::to_string(&event).expect("serialize");
+        let deserialized: SessionEvent = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(event, deserialized);
+
+        // Verify JSON structure
+        let json_obj: serde_json::Value = serde_json::from_str(&json).expect("parse json");
+        assert_eq!(json_obj["type"], "delegation_failed");
+        assert_eq!(json_obj["delegation_id"], "deleg-123");
+        assert_eq!(json_obj["parent_session_id"], "parent-456");
+    }
+
+    #[test]
+    fn test_subagent_variants_still_deserialize() {
+        // Verify backwards compatibility: existing SubagentSpawned/Completed/Failed still work
+        let subagent_spawned = SessionEvent::SubagentSpawned {
+            id: "sub-123".into(),
+            prompt: "Do something".into(),
+        };
+        let json = serde_json::to_string(&subagent_spawned).expect("serialize");
+        let deserialized: SessionEvent = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(subagent_spawned, deserialized);
+
+        let subagent_completed = SessionEvent::SubagentCompleted {
+            id: "sub-123".into(),
+            result: "Done".into(),
+        };
+        let json = serde_json::to_string(&subagent_completed).expect("serialize");
+        let deserialized: SessionEvent = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(subagent_completed, deserialized);
+
+        let subagent_failed = SessionEvent::SubagentFailed {
+            id: "sub-123".into(),
+            error: "Failed".into(),
+        };
+        let json = serde_json::to_string(&subagent_failed).expect("serialize");
+        let deserialized: SessionEvent = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(subagent_failed, deserialized);
     }
 
     #[test]
