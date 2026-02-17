@@ -8,13 +8,15 @@
 //! - SystemMessage: System-level messages
 
 use crate::tui::oil::components::{
-    render_shell_execution, render_subagent, render_thinking_block, render_tool_call_with_frame,
-    render_user_prompt,
+    render_delegation, render_shell_execution, render_subagent, render_thinking_block,
+    render_tool_call_with_frame, render_user_prompt,
 };
 use crate::tui::oil::markdown::{markdown_to_node_styled, Margins, RenderStyle};
 use crate::tui::oil::node::{col, row, scrollback, spinner, text, Node};
 use crate::tui::oil::style::Padding;
-use crate::tui::oil::viewport_cache::{CachedShellExecution, CachedSubagent, CachedToolCall};
+use crate::tui::oil::viewport_cache::{
+    CachedDelegation, CachedShellExecution, CachedSubagent, CachedToolCall,
+};
 
 /// Parameters for rendering a container view.
 ///
@@ -93,6 +95,12 @@ pub enum ChatContainer {
         subagent: CachedSubagent,
     },
 
+    /// Delegation execution (session-to-session)
+    Delegation {
+        id: String,
+        delegation: CachedDelegation,
+    },
+
     /// Shell command execution
     ShellExecution {
         id: String,
@@ -111,6 +119,7 @@ impl ChatContainer {
             Self::AssistantResponse { id, .. } => id,
             Self::ToolGroup { id, .. } => id,
             Self::Subagent { id, .. } => id,
+            Self::Delegation { id, .. } => id,
             Self::ShellExecution { id, .. } => id,
             Self::SystemMessage { id, .. } => id,
         }
@@ -130,6 +139,13 @@ impl ChatContainer {
                 matches!(
                     subagent.status,
                     SubagentStatus::Completed | SubagentStatus::Failed
+                )
+            }
+            Self::Delegation { delegation, .. } => {
+                use crate::tui::oil::viewport_cache::DelegationStatus;
+                matches!(
+                    delegation.status,
+                    DelegationStatus::Completed | DelegationStatus::Failed
                 )
             }
             Self::ShellExecution { .. } => true,
@@ -201,11 +217,24 @@ impl ChatContainer {
 
             Self::Subagent { id, subagent } => {
                 let content = render_subagent(subagent, params.spinner_frame);
-                // Only wrap in scrollback when subagent is complete
                 use crate::tui::oil::viewport_cache::SubagentStatus;
                 let is_complete = matches!(
                     subagent.status,
                     SubagentStatus::Completed | SubagentStatus::Failed
+                );
+                if is_complete {
+                    scrollback(id.clone(), [content])
+                } else {
+                    content
+                }
+            }
+
+            Self::Delegation { id, delegation } => {
+                let content = render_delegation(delegation, params.spinner_frame);
+                use crate::tui::oil::viewport_cache::DelegationStatus;
+                let is_complete = matches!(
+                    delegation.status,
+                    DelegationStatus::Completed | DelegationStatus::Failed
                 );
                 if is_complete {
                     scrollback(id.clone(), [content])
@@ -760,6 +789,29 @@ impl ContainerList {
         }
     }
 
+    pub fn add_delegation(&mut self, delegation: CachedDelegation) {
+        self.remove_empty_trailing_response();
+
+        let id = self.next_id("delegation");
+        self.containers
+            .push(ChatContainer::Delegation { id, delegation });
+    }
+
+    pub fn update_delegation(
+        &mut self,
+        delegation_id: &str,
+        f: impl FnOnce(&mut CachedDelegation),
+    ) {
+        for container in self.containers.iter_mut().rev() {
+            if let ChatContainer::Delegation { delegation, .. } = container {
+                if delegation.id.as_ref() == delegation_id {
+                    f(delegation);
+                    return;
+                }
+            }
+        }
+    }
+
     /// Add a system message.
     pub fn add_system_message(&mut self, content: String) {
         let id = self.next_id("system");
@@ -848,6 +900,7 @@ impl ContainerList {
             &self.containers[index - 1],
             ChatContainer::ToolGroup { .. }
                 | ChatContainer::Subagent { .. }
+                | ChatContainer::Delegation { .. }
                 | ChatContainer::ShellExecution { .. }
         )
     }
@@ -868,7 +921,6 @@ impl ContainerList {
             Some(ChatContainer::AssistantResponse { .. }) => false,
             // ToolGroup with any pending tool already shows braille spinners
             Some(ChatContainer::ToolGroup { tools, .. }) => tools.iter().all(|t| t.complete),
-            // Incomplete subagent already shows its own spinner
             Some(ChatContainer::Subagent { subagent, .. }) => {
                 use crate::tui::oil::viewport_cache::SubagentStatus;
                 matches!(
@@ -876,7 +928,13 @@ impl ContainerList {
                     SubagentStatus::Completed | SubagentStatus::Failed
                 )
             }
-            // Everything else (completed containers, user messages, etc.)
+            Some(ChatContainer::Delegation { delegation, .. }) => {
+                use crate::tui::oil::viewport_cache::DelegationStatus;
+                matches!(
+                    delegation.status,
+                    DelegationStatus::Completed | DelegationStatus::Failed
+                )
+            }
             _ => true,
         }
     }

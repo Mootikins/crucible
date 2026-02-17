@@ -16,7 +16,9 @@ use crate::tui::oil::node::*;
 use crate::tui::oil::style::{Color, Gap, Padding, Style};
 use crate::tui::oil::theme::ThemeTokens;
 use crate::tui::oil::utils::terminal_width;
-use crate::tui::oil::viewport_cache::{CachedShellExecution, CachedSubagent, CachedToolCall};
+use crate::tui::oil::viewport_cache::{
+    CachedDelegation, CachedShellExecution, CachedSubagent, CachedToolCall,
+};
 use crossterm::event::KeyCode;
 use crossterm::terminal::{EnterAlternateScreen, LeaveAlternateScreen};
 use crossterm::{cursor, execute};
@@ -118,6 +120,18 @@ pub enum ChatAppMsg {
         summary: String,
     },
     SubagentFailed {
+        id: String,
+        error: String,
+    },
+    DelegationSpawned {
+        id: String,
+        prompt: String,
+    },
+    DelegationCompleted {
+        id: String,
+        summary: String,
+    },
+    DelegationFailed {
         id: String,
         error: String,
     },
@@ -679,6 +693,26 @@ impl App for OilChatApp {
             ChatAppMsg::SubagentFailed { id, error } => {
                 self.container_list.update_subagent(&id, |s| {
                     s.mark_failed(&error);
+                });
+                Action::Continue
+            }
+            ChatAppMsg::DelegationSpawned { id, prompt } => {
+                if !self.container_list.is_streaming() {
+                    self.container_list.mark_turn_active();
+                }
+                self.container_list
+                    .add_delegation(CachedDelegation::new(id, &prompt));
+                Action::Continue
+            }
+            ChatAppMsg::DelegationCompleted { id, summary } => {
+                self.container_list.update_delegation(&id, |d| {
+                    d.mark_completed(&summary);
+                });
+                Action::Continue
+            }
+            ChatAppMsg::DelegationFailed { id, error } => {
+                self.container_list.update_delegation(&id, |d| {
+                    d.mark_failed(&error);
                 });
                 Action::Continue
             }
