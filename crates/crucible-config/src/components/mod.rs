@@ -12,6 +12,7 @@ pub mod gateway;
 pub mod handlers;
 pub mod llm;
 pub mod mcp;
+pub mod permissions;
 pub mod storage;
 
 pub mod backend;
@@ -26,6 +27,10 @@ pub use gateway::{GatewayConfig, UpstreamServerConfig as GatewayUpstreamServerCo
 pub use handlers::*;
 pub use llm::*;
 pub use mcp::{McpConfig, TransportType, UpstreamServerConfig};
+pub use permissions::{
+    parse_rule, CompiledPermissions, ParsedRule, PermissionConfig, PermissionMatcher,
+    PermissionMode,
+};
 pub use storage::*;
 
 pub use backend::BackendType;

@@ -2,7 +2,7 @@
 
 use crate::components::{
     AcpConfig, BackendType, ChatConfig, CliConfig, ContextConfig, DiscoveryPathsConfig,
-    GatewayConfig, HandlersConfig, LlmConfig, McpConfig, StorageConfig,
+    GatewayConfig, HandlersConfig, LlmConfig, McpConfig, PermissionConfig, StorageConfig,
 };
 use crate::includes::IncludeConfig;
 use crate::{EnrichmentConfig, ProfileConfig};
@@ -232,6 +232,10 @@ pub struct Config {
     #[serde(default)]
     pub context: Option<ContextConfig>,
 
+    /// Permission configuration for tool access control.
+    #[serde(default)]
+    pub permissions: Option<PermissionConfig>,
+
     /// Custom configuration values.
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub custom: HashMap<String, serde_json::Value>,
@@ -258,6 +262,7 @@ impl Default for Config {
             mcp: None,
             handlers: None,
             context: None,
+            permissions: None,
             custom: HashMap::new(),
         }
     }
