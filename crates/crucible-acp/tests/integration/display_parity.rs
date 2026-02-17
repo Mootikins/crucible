@@ -211,7 +211,7 @@ async fn tool_start_with_arguments_emits_chunk_with_args() {
             id,
             arguments,
         } => {
-            assert_eq!(name, "semantic_search", "MCP prefix should be humanized");
+            assert_eq!(name, "Semantic Search", "MCP prefix should be humanized");
             assert_eq!(id, "tool-42");
             let args = arguments.as_ref().expect("arguments should be Some");
             assert_eq!(args["query"], "rust async patterns");
