@@ -1010,6 +1010,9 @@ pub struct DelegateSessionInput {
     /// If true, return immediately with Spawned status; if false, wait for completion
     #[serde(default)]
     pub background: Option<bool>,
+    /// Agent to delegate to. Omit to use same agent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target: Option<String>,
 }
 
 /// Status of a delegated session.
@@ -1082,6 +1085,10 @@ impl Tool for DelegateSessionTool {
                     "background": {
                         "type": "boolean",
                         "description": "If true, return immediately after spawning"
+                    },
+                    "target": {
+                        "type": "string",
+                        "description": "Agent to delegate to. Omit to use same agent."
                     }
                 },
                 "required": ["prompt", "description"]
@@ -1735,6 +1742,7 @@ mod tests {
                 description: "Error handling delegation".to_string(),
                 context_files: Some(vec!["src/lib.rs".to_string()]),
                 background: Some(true),
+                target: None,
             })
             .await
             .unwrap();
@@ -1758,6 +1766,7 @@ mod tests {
                 description: "Delegation should fail".to_string(),
                 context_files: None,
                 background: Some(true),
+                target: None,
             })
             .await
             .unwrap_err();
@@ -1799,6 +1808,7 @@ mod tests {
                 description: "Blocking delegation".to_string(),
                 context_files: None,
                 background: Some(false),
+                target: None,
             })
             .await
             .unwrap();
@@ -1818,6 +1828,7 @@ mod tests {
             description: "Code analysis task".to_string(),
             context_files: Some(vec!["main.rs".to_string(), "lib.rs".to_string()]),
             background: Some(true),
+            target: None,
         };
 
         assert_eq!(input.prompt, "Analyze this code");
@@ -1833,6 +1844,7 @@ mod tests {
             description: "Test description".to_string(),
             context_files: Some(vec!["file1.txt".to_string()]),
             background: Some(false),
+            target: None,
         };
 
         let json = serde_json::to_string(&input).unwrap();
@@ -1853,6 +1865,54 @@ mod tests {
         assert_eq!(input.description, "desc");
         assert_eq!(input.context_files, None);
         assert_eq!(input.background, None);
+    }
+
+    #[test]
+    fn test_delegate_session_input_with_target_serde() {
+        let input = DelegateSessionInput {
+            prompt: "Analyze this code".to_string(),
+            description: "Code analysis task".to_string(),
+            context_files: Some(vec!["main.rs".to_string()]),
+            background: Some(true),
+            target: Some("code-analyzer".to_string()),
+        };
+
+        let json = serde_json::to_string(&input).unwrap();
+        let deserialized: DelegateSessionInput = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(deserialized.prompt, input.prompt);
+        assert_eq!(deserialized.description, input.description);
+        assert_eq!(deserialized.context_files, input.context_files);
+        assert_eq!(deserialized.background, input.background);
+        assert_eq!(deserialized.target, Some("code-analyzer".to_string()));
+    }
+
+    #[test]
+    fn test_delegate_session_input_target_optional() {
+        let json = r#"{"prompt":"test","description":"desc"}"#;
+        let input: DelegateSessionInput = serde_json::from_str(json).unwrap();
+
+        assert_eq!(input.prompt, "test");
+        assert_eq!(input.description, "desc");
+        assert_eq!(input.target, None);
+    }
+
+    #[test]
+    fn test_delegate_session_definition_includes_target_param() {
+        let (temp, ctx) = create_test_context();
+        let _ = temp;
+        let tool = DelegateSessionTool::new(ctx);
+        let definition = futures::executor::block_on(tool.definition("test".to_string()));
+
+        let params = &definition.parameters;
+        assert!(params["properties"].get("target").is_some());
+        assert_eq!(params["properties"]["target"]["type"], "string");
+        assert!(params["properties"]["target"]["description"]
+            .as_str()
+            .unwrap()
+            .contains("Agent to delegate to"));
+        let required = params["required"].as_array().unwrap();
+        assert!(!required.iter().any(|v| v.as_str() == Some("target")));
     }
 
     #[test]
