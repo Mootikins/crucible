@@ -45,6 +45,9 @@ pub struct DelegationConfig {
     /// Maximum size of delegation result in bytes (default 51200)
     #[serde(default = "default_result_max_bytes")]
     pub result_max_bytes: usize,
+    /// Maximum number of concurrent delegations a session can spawn (default 3)
+    #[serde(default = "default_max_concurrent_delegations")]
+    pub max_concurrent_delegations: u32,
 }
 
 fn default_max_depth() -> u32 {
@@ -53,6 +56,10 @@ fn default_max_depth() -> u32 {
 
 fn default_result_max_bytes() -> usize {
     51200
+}
+
+fn default_max_concurrent_delegations() -> u32 {
+    3
 }
 
 /// Configuration profile for an ACP agent
@@ -394,5 +401,60 @@ mod tests {
         assert!(claude_proxy.description.is_none());
         assert!(claude_proxy.capabilities.is_none());
         assert!(claude_proxy.delegation.is_none());
+    }
+
+    // =============================================================================
+    // DelegationConfig max_concurrent_delegations Tests (TDD - RED phase)
+    // =============================================================================
+
+    #[test]
+    fn test_delegation_config_max_concurrent_delegations_default_is_3() {
+        // Default value should be 3
+        let delegation = DelegationConfig {
+            enabled: true,
+            max_depth: 1,
+            allowed_targets: None,
+            result_max_bytes: 51200,
+            max_concurrent_delegations: 3,
+        };
+        assert_eq!(delegation.max_concurrent_delegations, 3);
+    }
+
+    #[test]
+    fn test_delegation_config_max_concurrent_delegations_custom_value() {
+        // Custom value should round-trip through serde
+        let toml = r#"
+            [agents.delegating-agent]
+            extends = "claude"
+            
+            [agents.delegating-agent.delegation]
+            enabled = true
+            max_depth = 2
+            max_concurrent_delegations = 5
+        "#;
+
+        let config: AcpConfig = toml::from_str(toml).expect("should parse");
+        let profile = config
+            .agents
+            .get("delegating-agent")
+            .expect("should have profile");
+        let delegation = profile
+            .delegation
+            .as_ref()
+            .expect("should have delegation config");
+        assert_eq!(delegation.max_concurrent_delegations, 5);
+    }
+
+    #[test]
+    fn test_delegation_config_max_concurrent_delegations_json_without_field_defaults_to_3() {
+        // JSON without field should deserialize to default (3)
+        let json = r#"{
+            "enabled": true,
+            "max_depth": 1,
+            "result_max_bytes": 51200
+        }"#;
+
+        let delegation: DelegationConfig = serde_json::from_str(json).expect("should parse");
+        assert_eq!(delegation.max_concurrent_delegations, 3);
     }
 }
