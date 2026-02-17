@@ -1,6 +1,7 @@
-use crucible_skills::discovery::{FolderDiscovery, SearchPath};
+use crucible_skills::discovery::{default_discovery_paths, FolderDiscovery, SearchPath};
 use crucible_skills::SkillScope;
 use std::fs;
+use std::path::PathBuf;
 use tempfile::TempDir;
 
 fn create_test_skill(dir: &std::path::Path, name: &str) {
@@ -62,4 +63,51 @@ fn test_priority_ordering_higher_scope_wins() {
         "Kiln should win"
     );
     assert_eq!(resolved.shadowed.len(), 1, "Should shadow personal");
+}
+
+#[test]
+fn test_runtime_skill_discovered() {
+    // Given: CRUCIBLE_RUNTIME points to the repo's runtime/ directory
+    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let runtime_dir = manifest_dir
+        .join("../../runtime")
+        .canonicalize()
+        .expect("runtime/ directory should exist at repo root");
+    std::env::set_var("CRUCIBLE_RUNTIME", &runtime_dir);
+
+    // When: default_discovery_paths() builds search paths
+    let paths = default_discovery_paths(None, None);
+
+    let has_runtime_path = paths
+        .iter()
+        .any(|p| p.path.to_string_lossy().contains("crucible-help"));
+    assert!(
+        has_runtime_path,
+        "default_discovery_paths() should include runtime crucible-help skills path, got: {:?}",
+        paths.iter().map(|p| &p.path).collect::<Vec<_>>()
+    );
+
+    // When: FolderDiscovery discovers skills from those paths
+    let discovery = FolderDiscovery::new(paths);
+    let discovered = discovery
+        .discover()
+        .expect("FolderDiscovery::discover() should succeed");
+
+    // Then: crucible-help skill is found with correct metadata
+    let resolved = discovered
+        .get("crucible-help")
+        .expect("crucible-help skill should be discovered from runtime/ directory");
+
+    assert_eq!(resolved.skill.name, "crucible-help");
+    assert!(
+        !resolved.skill.description.is_empty(),
+        "crucible-help description should be non-empty"
+    );
+    assert_eq!(
+        resolved.skill.source.scope,
+        SkillScope::Kiln,
+        "runtime skills should have Kiln scope"
+    );
+
+    std::env::remove_var("CRUCIBLE_RUNTIME");
 }
