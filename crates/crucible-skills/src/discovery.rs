@@ -151,6 +151,50 @@ pub fn default_discovery_paths(workspace: Option<&Path>, kiln: Option<&Path>) ->
         paths.push(SearchPath::new(k.join("skills"), SkillScope::Kiln).with_agent("crucible"));
     }
 
+    if let Ok(runtime_base) = std::env::var("CRUCIBLE_RUNTIME") {
+        let runtime_path = PathBuf::from(runtime_base);
+        for entry in std::fs::read_dir(&runtime_path).ok().into_iter().flatten() {
+            if let Ok(entry) = entry {
+                let path = entry.path();
+                if path.is_dir() {
+                    let skills_path = path.join("skills");
+                    if skills_path.exists() {
+                        debug!("Adding runtime skills path: {:?}", skills_path);
+                        paths.push(
+                            SearchPath::new(skills_path, SkillScope::Kiln).with_agent("crucible"),
+                        );
+                    }
+                }
+            }
+        }
+    } else {
+        if let Ok(exe_path) = std::env::current_exe() {
+            if let Some(exe_dir) = exe_path.parent() {
+                let runtime_path = exe_dir.join("..").join("..").join("runtime");
+                if runtime_path.exists() {
+                    for entry in std::fs::read_dir(&runtime_path).ok().into_iter().flatten() {
+                        if let Ok(entry) = entry {
+                            let path = entry.path();
+                            if path.is_dir() {
+                                let skills_path = path.join("skills");
+                                if skills_path.exists() {
+                                    debug!(
+                                        "Adding exe-relative runtime skills path: {:?}",
+                                        skills_path
+                                    );
+                                    paths.push(
+                                        SearchPath::new(skills_path, SkillScope::Kiln)
+                                            .with_agent("crucible"),
+                                    );
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     paths
 }
 
