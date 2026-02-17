@@ -284,6 +284,7 @@ async fn main() -> Result<()> {
             no_context,
             context_size,
             plan,
+            set_overrides,
         }) => {
             commands::chat::execute(
                 config,
@@ -297,6 +298,7 @@ async fn main() -> Result<()> {
                 max_context,
                 env,
                 resume,
+                set_overrides,
             )
             .await?
         }
@@ -398,6 +400,7 @@ async fn main() -> Result<()> {
                 16384,
                 vec![],
                 None,
+                vec![],
             )
             .await?
         }

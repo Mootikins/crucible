@@ -80,6 +80,7 @@ pub async fn execute(
     max_context_tokens: usize,
     env_overrides: Vec<String>,
     resume_session_id: Option<String>,
+    set_overrides: Vec<String>,
 ) -> Result<()> {
     let initial_mode = if read_only { "plan" } else { "normal" };
 
@@ -106,6 +107,7 @@ pub async fn execute(
                 parsed_env,
                 working_dir,
                 resume_session_id,
+                set_overrides,
             )
             .await
         }
@@ -123,6 +125,7 @@ pub async fn execute(
                 no_process,
                 context_size,
                 query_text,
+                set_overrides,
             )
             .await
         }
@@ -301,6 +304,7 @@ async fn run_interactive_chat(
     parsed_env: std::collections::HashMap<String, String>,
     working_dir: Option<std::path::PathBuf>,
     resume_session_id: Option<String>,
+    set_overrides: Vec<String>,
 ) -> Result<()> {
     use crate::chat::bridge::AgentEventBridge;
     use crate::chat::session::{index_kiln_notes, index_workspace_files};
@@ -308,6 +312,7 @@ async fn run_interactive_chat(
     use crucible_core::events::EventRing;
     use crucible_core::traits::chat::is_read_only;
 
+    let _set_overrides = set_overrides;
     let default_agent = config.acp.default_agent.clone();
 
     let ring = std::sync::Arc::new(EventRing::new(4096));
@@ -574,7 +579,9 @@ async fn run_oneshot_chat(
     no_process: bool,
     context_size: Option<usize>,
     query_text: String,
+    set_overrides: Vec<String>,
 ) -> Result<()> {
+    let _set_overrides = set_overrides;
     let mut status = StatusLine::new();
     let default_agent = config.acp.default_agent.clone();
 
