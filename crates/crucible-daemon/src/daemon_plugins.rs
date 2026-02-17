@@ -456,33 +456,29 @@ pub fn default_daemon_plugin_paths() -> Vec<PathBuf> {
             tracing::debug!("Adding runtime plugin path: {:?}", runtime_plugins);
             paths.push(runtime_plugins);
         }
-    } else {
-        if let Ok(exe_path) = std::env::current_exe() {
-            if let Some(exe_dir) = exe_path.parent() {
-                // Installed layout: <prefix>/bin/cru-server → <prefix>/share/crucible/runtime/plugins/
-                let installed_plugins = exe_dir
-                    .join("..")
-                    .join("share")
-                    .join("crucible")
-                    .join("runtime")
-                    .join("plugins");
-                if installed_plugins.exists() {
-                    tracing::debug!(
-                        "Adding installed runtime plugin path: {:?}",
-                        installed_plugins
-                    );
-                    paths.push(installed_plugins);
-                }
-                // Dev layout: target/debug/cru-server → runtime/plugins/
-                let dev_plugins = exe_dir
-                    .join("..")
-                    .join("..")
-                    .join("runtime")
-                    .join("plugins");
-                if dev_plugins.exists() {
-                    tracing::debug!("Adding dev runtime plugin path: {:?}", dev_plugins);
-                    paths.push(dev_plugins);
-                }
+    } else if let Ok(exe_path) = std::env::current_exe() {
+        if let Some(exe_dir) = exe_path.parent() {
+            let installed_plugins = exe_dir
+                .join("..")
+                .join("share")
+                .join("crucible")
+                .join("runtime")
+                .join("plugins");
+            if installed_plugins.exists() {
+                tracing::debug!(
+                    "Adding installed runtime plugin path: {:?}",
+                    installed_plugins
+                );
+                paths.push(installed_plugins);
+            }
+            let dev_plugins = exe_dir
+                .join("..")
+                .join("..")
+                .join("runtime")
+                .join("plugins");
+            if dev_plugins.exists() {
+                tracing::debug!("Adding dev runtime plugin path: {:?}", dev_plugins);
+                paths.push(dev_plugins);
             }
         }
     }
