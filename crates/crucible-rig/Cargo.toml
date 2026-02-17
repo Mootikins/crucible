@@ -25,6 +25,7 @@ async-stream = { version = "0.3" }
 # Serialization
 serde = { workspace = true }
 serde_json = { workspace = true }
+schemars = { workspace = true }
 
 # Date/time handling (for AgentCard)
 chrono = { workspace = true }
