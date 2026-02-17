@@ -247,29 +247,36 @@ impl AgentHandle for AcpAgentHandle {
                 match rx.recv().await {
                     Some(chunk) => {
                         let chat_chunk = match chunk {
-                            StreamingChunk::Text(text) => ChatChunk {
-                                delta: text,
-                                done: false,
-                                tool_calls: None,
-                                tool_results: None,
-                                reasoning: None,
-                                usage: None,
-                                subagent_events: None,
-                            },
-                            StreamingChunk::Thinking(text) => ChatChunk {
-                                delta: String::new(),
-                                done: false,
-                                tool_calls: None,
-                                tool_results: None,
-                                reasoning: Some(text),
-                                usage: None,
-                                subagent_events: None,
-                            },
+                            StreamingChunk::Text(text) => {
+                                debug!(chunk_type = "text", len = text.len(), "ACP streaming chunk");
+                                ChatChunk {
+                                    delta: text,
+                                    done: false,
+                                    tool_calls: None,
+                                    tool_results: None,
+                                    reasoning: None,
+                                    usage: None,
+                                    subagent_events: None,
+                                }
+                            }
+                            StreamingChunk::Thinking(text) => {
+                                debug!(chunk_type = "thinking", len = text.len(), "ACP streaming chunk");
+                                ChatChunk {
+                                    delta: String::new(),
+                                    done: false,
+                                    tool_calls: None,
+                                    tool_results: None,
+                                    reasoning: Some(text),
+                                    usage: None,
+                                    subagent_events: None,
+                                }
+                            }
                             StreamingChunk::ToolStart {
                                 name,
                                 id,
                                 arguments,
                             } => {
+                                info!(tool = %name, tool_id = %id, "ACP tool call started");
                                 tool_names_by_id.insert(id.clone(), name.clone());
                                 tool_calls.push(ChatToolCall {
                                     name: name.clone(),
@@ -294,6 +301,7 @@ impl AgentHandle for AcpAgentHandle {
                                 let name = tool_names_by_id
                                     .remove(&id)
                                     .unwrap_or_else(|| "unknown_tool".to_string());
+                                info!(tool = %name, tool_id = %id, has_error = error.is_some(), "ACP tool call completed");
                                 ChatChunk {
                                     delta: String::new(),
                                     done: false,
@@ -514,6 +522,7 @@ impl Drop for AcpAgentHandle {
     fn drop(&mut self) {
         let client_arc = Arc::clone(&self.client);
         let agent = self.agent_name.clone();
+        let session_id = self.session_id.clone();
         // try_current() returns None if tokio runtime is gone (shutdown, sync context).
         // In that case CrucibleAcpClient drops synchronously — child process gets
         // SIGKILL when its stdin/stdout handles close.
@@ -521,7 +530,7 @@ impl Drop for AcpAgentHandle {
             handle.spawn(async move {
                 if let Some(client) = client_arc.lock().await.take() {
                     drop(client);
-                    debug!(agent = %agent, "ACP agent cleaned up on drop");
+                    info!(agent = %agent, session_id = ?session_id, "ACP session terminated");
                 }
             });
         }
