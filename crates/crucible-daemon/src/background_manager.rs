@@ -884,7 +884,7 @@ impl BackgroundJobManager {
                     workspace: workspace.clone(),
                     parent_session_id: child_parent_session_id,
                     parent_session_dir: info.session_path.clone(),
-                    delegator_agent_name: effective_target_name,
+                    delegator_agent_name: effective_target_name.clone(),
                     target_agent_name: None,
                     delegation_depth: child_delegation_depth,
                 },
@@ -910,6 +910,7 @@ impl BackgroundJobManager {
                         "delegation_id": job_id,
                         "prompt": truncate(&prompt, 100),
                         "parent_session_id": parent_id,
+                        "target_agent": effective_target_name,
                     }),
                 ));
             }
