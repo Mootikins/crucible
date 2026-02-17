@@ -70,6 +70,7 @@ fn create_test_config(kiln_path: PathBuf, _db_path: PathBuf) -> CliConfig {
             idle_timeout_secs: 300,
         }),
         mcp: None,
+        permissions: None,
         plugins: std::collections::HashMap::new(),
         web: None,
         source_map: None,

@@ -315,6 +315,17 @@ impl InteractionModal {
                     self.selected = Self::wrap_selection(self.selected, 1, TOTAL_OPTIONS);
                     InteractionModalOutput::None
                 }
+                KeyCode::Enter
+                    if key.modifiers.contains(KeyModifiers::SHIFT) && self.selected == 2 =>
+                {
+                    InteractionModalOutput::PermissionResponse {
+                        request_id: self.request_id.clone(),
+                        response: PermResponse::allow_pattern(
+                            perm_request.suggested_pattern(),
+                            PermissionScope::User,
+                        ),
+                    }
+                }
                 KeyCode::Enter => self.handle_perm_confirm(&perm_request),
                 KeyCode::Char('y') | KeyCode::Char('Y') => {
                     InteractionModalOutput::PermissionResponse {
@@ -359,7 +370,10 @@ impl InteractionModal {
                 _ => InteractionModalOutput::None,
             },
             InteractionMode::TextInput => match key.code {
-                KeyCode::Enter => self.handle_perm_text_confirm(&perm_request),
+                KeyCode::Enter => {
+                    let shift = key.modifiers.contains(KeyModifiers::SHIFT);
+                    self.handle_perm_text_confirm(&perm_request, shift)
+                }
                 KeyCode::Esc => {
                     self.mode = InteractionMode::Selecting;
                     InteractionModalOutput::None
@@ -398,7 +412,11 @@ impl InteractionModal {
         }
     }
 
-    fn handle_perm_text_confirm(&self, _perm_request: &PermRequest) -> InteractionModalOutput {
+    fn handle_perm_text_confirm(
+        &self,
+        _perm_request: &PermRequest,
+        shift: bool,
+    ) -> InteractionModalOutput {
         let text = self.other_text.trim().to_string();
         match self.selected {
             0 => InteractionModalOutput::PermissionResponse {
@@ -413,14 +431,21 @@ impl InteractionModal {
                     PermResponse::deny_with_reason(text)
                 },
             },
-            2 => InteractionModalOutput::PermissionResponse {
-                request_id: self.request_id.clone(),
-                response: if text.is_empty() {
-                    PermResponse::deny()
+            2 => {
+                let scope = if shift {
+                    PermissionScope::User
                 } else {
-                    PermResponse::allow_pattern(text, PermissionScope::Project)
-                },
-            },
+                    PermissionScope::Project
+                };
+                InteractionModalOutput::PermissionResponse {
+                    request_id: self.request_id.clone(),
+                    response: if text.is_empty() {
+                        PermResponse::deny()
+                    } else {
+                        PermResponse::allow_pattern(text, scope)
+                    },
+                }
+            }
             _ => InteractionModalOutput::None,
         }
     }
@@ -553,14 +578,19 @@ impl InteractionModal {
         let hint_style = theme.overlay_hint();
 
         let footer_nodes: Vec<Node> = if self.mode == InteractionMode::TextInput {
-            vec![
+            let mut nodes = vec![
                 styled(" PERMISSION ", theme.permission_badge()),
                 styled(format!(" {} ", type_label), theme.permission_type()),
                 styled("  Enter", key_style),
                 styled(" send", hint_style),
-                styled("  Esc", key_style),
-                styled(" back", hint_style),
-            ]
+            ];
+            if self.selected == 2 {
+                nodes.push(styled("  S-Enter", key_style));
+                nodes.push(styled(" global", hint_style));
+            }
+            nodes.push(styled("  Esc", key_style));
+            nodes.push(styled(" back", hint_style));
+            nodes
         } else {
             let mut nodes = vec![
                 styled(" PERMISSION ", theme.permission_badge()),
@@ -572,6 +602,10 @@ impl InteractionModal {
                 styled("  Tab", key_style),
                 styled(" entry", hint_style),
             ];
+            if self.selected == 2 {
+                nodes.push(styled("  S-Enter", key_style));
+                nodes.push(styled(" global", hint_style));
+            }
             if is_write {
                 nodes.push(styled("  h", key_style));
                 nodes.push(styled(" diff", hint_style));
