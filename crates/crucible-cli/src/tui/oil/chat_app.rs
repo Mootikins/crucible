@@ -1923,6 +1923,30 @@ impl OilChatApp {
         }
     }
 
+    /// Apply a pre-validated CLI `--set` override.
+    ///
+    /// Value semantics: `None` = enable, `Some("false")` = disable,
+    /// `Some("__toggle__")` = toggle, `Some(v)` = set with type coercion.
+    pub(crate) fn apply_cli_override(&mut self, key: &str, value: Option<&str>) {
+        match value {
+            None => {
+                self.runtime_config
+                    .set(key, ConfigValue::Bool(true), ModSource::Cli);
+            }
+            Some("false") => {
+                self.runtime_config
+                    .set(key, ConfigValue::Bool(false), ModSource::Cli);
+            }
+            Some("__toggle__") => {
+                let _ = self.runtime_config.toggle(key, ModSource::Cli);
+            }
+            Some(v) => {
+                self.runtime_config.set_str(key, v, ModSource::Cli);
+            }
+        }
+        self.sync_runtime_to_fields(key);
+    }
+
     fn handle_plugins_command(&mut self) {
         if self.plugin_status.is_empty() {
             self.add_system_message("No plugins found".to_string());
