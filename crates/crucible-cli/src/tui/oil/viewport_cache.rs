@@ -164,6 +164,50 @@ pub enum SubagentStatus {
     Failed,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DelegationStatus {
+    Running,
+    Completed,
+    Failed,
+}
+
+#[derive(Debug, Clone)]
+pub struct CachedDelegation {
+    pub id: Arc<str>,
+    pub prompt: Arc<str>,
+    pub status: DelegationStatus,
+    pub summary: Option<Arc<str>>,
+    pub error: Option<Arc<str>>,
+    pub started_at: std::time::Instant,
+}
+
+impl CachedDelegation {
+    pub fn new(id: impl Into<String>, prompt: impl AsRef<str>) -> Self {
+        Self {
+            id: Arc::from(id.into().as_str()),
+            prompt: Arc::from(prompt.as_ref()),
+            status: DelegationStatus::Running,
+            summary: None,
+            error: None,
+            started_at: std::time::Instant::now(),
+        }
+    }
+
+    pub fn mark_completed(&mut self, summary: &str) {
+        self.status = DelegationStatus::Completed;
+        self.summary = Some(Arc::from(summary));
+    }
+
+    pub fn mark_failed(&mut self, error: &str) {
+        self.status = DelegationStatus::Failed;
+        self.error = Some(Arc::from(error));
+    }
+
+    pub fn elapsed(&self) -> std::time::Duration {
+        self.started_at.elapsed()
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct CachedSubagent {
     pub id: Arc<str>,
@@ -207,6 +251,7 @@ pub enum CachedChatItem {
     ToolCall(CachedToolCall),
     ShellExecution(CachedShellExecution),
     Subagent(CachedSubagent),
+    Delegation(CachedDelegation),
 }
 
 impl CachedChatItem {
@@ -216,6 +261,7 @@ impl CachedChatItem {
             CachedChatItem::ToolCall(t) => &t.id,
             CachedChatItem::ShellExecution(s) => &s.id,
             CachedChatItem::Subagent(s) => &s.id,
+            CachedChatItem::Delegation(d) => &d.id,
         }
     }
 
@@ -271,6 +317,20 @@ impl CachedChatItem {
     pub fn as_subagent_mut(&mut self) -> Option<&mut CachedSubagent> {
         match self {
             CachedChatItem::Subagent(s) => Some(s),
+            _ => None,
+        }
+    }
+
+    pub fn as_delegation(&self) -> Option<&CachedDelegation> {
+        match self {
+            CachedChatItem::Delegation(d) => Some(d),
+            _ => None,
+        }
+    }
+
+    pub fn as_delegation_mut(&mut self) -> Option<&mut CachedDelegation> {
+        match self {
+            CachedChatItem::Delegation(d) => Some(d),
             _ => None,
         }
     }

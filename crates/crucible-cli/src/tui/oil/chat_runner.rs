@@ -1015,6 +1015,30 @@ impl OilChatRunner {
                     request,
                 }),
             },
+            SessionEvent::DelegationSpawned {
+                delegation_id,
+                prompt,
+                ..
+            } => Some(ChatAppMsg::DelegationSpawned {
+                id: delegation_id,
+                prompt,
+            }),
+            SessionEvent::DelegationCompleted {
+                delegation_id,
+                result_summary,
+                ..
+            } => Some(ChatAppMsg::DelegationCompleted {
+                id: delegation_id,
+                summary: result_summary,
+            }),
+            SessionEvent::DelegationFailed {
+                delegation_id,
+                error,
+                ..
+            } => Some(ChatAppMsg::DelegationFailed {
+                id: delegation_id,
+                error,
+            }),
             _ => None,
         }
     }
