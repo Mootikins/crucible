@@ -91,7 +91,7 @@ pub fn humanize_tool_title(title: &str) -> String {
 /// If the input contains no alphanumeric characters, returns it unchanged.
 fn title_case(s: &str) -> String {
     let words: Vec<String> = s
-        .split(|c| c == '_' || c == '-')
+        .split(['_', '-'])
         .filter(|word| !word.is_empty())
         .map(|word| {
             let mut chars = word.chars();
