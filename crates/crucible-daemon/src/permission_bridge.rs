@@ -13,17 +13,29 @@ use crate::agent_manager::is_safe;
 pub struct DaemonPermissionGate {
     /// Whether to auto-allow tools not recognized by `is_safe`.
     fallback_allow: bool,
+    /// Whether the session is interactive (TUI) or non-interactive (oneshot/pipe).
+    /// In non-interactive mode, "ask" permissions become "deny".
+    is_interactive: bool,
 }
 
 impl DaemonPermissionGate {
     pub fn new() -> Self {
         Self {
             fallback_allow: true,
+            is_interactive: true,
         }
     }
 
     pub fn with_fallback(fallback_allow: bool) -> Self {
-        Self { fallback_allow }
+        Self {
+            fallback_allow,
+            is_interactive: true,
+        }
+    }
+
+    pub fn with_interactive(mut self, is_interactive: bool) -> Self {
+        self.is_interactive = is_interactive;
+        self
     }
 }
 
@@ -112,5 +124,17 @@ mod tests {
     async fn gate_is_send_sync() {
         fn assert_send_sync<T: Send + Sync + 'static>() {}
         assert_send_sync::<DaemonPermissionGate>();
+    }
+
+    #[tokio::test]
+    async fn non_interactive_mode_field_defaults_to_true() {
+        let gate = DaemonPermissionGate::new();
+        assert!(gate.is_interactive);
+    }
+
+    #[tokio::test]
+    async fn non_interactive_mode_can_be_set() {
+        let gate = DaemonPermissionGate::new().with_interactive(false);
+        assert!(!gate.is_interactive);
     }
 }
