@@ -44,6 +44,7 @@ pub struct OilChatRunner {
     session_cmd_rx: Option<mpsc::UnboundedReceiver<SessionCommand>>,
     slash_commands: Vec<(String, String)>,
     enricher: Option<Arc<ContextEnricher>>,
+    agent_name: Option<String>,
 }
 
 impl OilChatRunner {
@@ -72,6 +73,7 @@ impl OilChatRunner {
             session_cmd_rx: None,
             slash_commands: Vec::new(),
             enricher: None,
+            agent_name: None,
         }
     }
 
@@ -155,6 +157,11 @@ impl OilChatRunner {
 
     pub fn with_enricher(mut self, enricher: Arc<ContextEnricher>) -> Self {
         self.enricher = Some(enricher);
+        self
+    }
+
+    pub fn with_agent_name(mut self, name: Option<String>) -> Self {
+        self.agent_name = name;
         self
     }
 
@@ -536,7 +543,10 @@ impl OilChatRunner {
     }
 
     async fn discover_agent(&self) -> AgentSelection {
-        AgentSelection::Internal
+        match &self.agent_name {
+            Some(name) => AgentSelection::Acp(name.clone()),
+            None => AgentSelection::Internal,
+        }
     }
 
     fn process_message<A: AgentHandle>(
