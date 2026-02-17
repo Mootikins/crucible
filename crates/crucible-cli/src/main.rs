@@ -390,8 +390,6 @@ async fn main() -> Result<()> {
                 false,
                 cli.no_process,
                 Some(5),
-                false,
-                false,
                 None,
                 16384,
                 vec![],
