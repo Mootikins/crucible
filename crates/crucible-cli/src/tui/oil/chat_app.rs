@@ -2909,7 +2909,7 @@ mod tests {
         let node = app.view(&ctx);
         let output = render_to_string(&node, 80);
 
-        assert!(output.contains("read_file"), "should show tool name");
+        assert!(output.contains("Read File"), "should show tool name");
         assert!(output.contains("path="), "should show args");
 
         app.on_message(ChatAppMsg::ToolResultDelta {

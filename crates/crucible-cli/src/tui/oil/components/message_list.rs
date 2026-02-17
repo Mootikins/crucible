@@ -192,7 +192,7 @@ mod tests {
         let list = MessageList::new(&refs, 80);
         let node = list.view(&ViewContext::new(h.focus()));
         let plain = render_to_plain_text(&node, 80);
-        assert!(plain.contains("test_tool"));
+        assert!(plain.contains("Test Tool"));
     }
 
     #[test]
