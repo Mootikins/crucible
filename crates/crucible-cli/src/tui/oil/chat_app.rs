@@ -1,6 +1,6 @@
 use crate::tui::oil::app::{Action, App, ViewContext};
 use crate::tui::oil::chat_container::ContainerList;
-use crate::tui::oil::commands::SetCommand;
+use crate::tui::oil::commands::{CliValue, SetCommand};
 use crate::tui::oil::component::Component;
 use crate::tui::oil::components::{
     Drawer, DrawerKind, InteractionModal, InteractionModalMsg, InteractionModalOutput,
@@ -1923,25 +1923,21 @@ impl OilChatApp {
         }
     }
 
-    /// Apply a pre-validated CLI `--set` override.
-    ///
-    /// Value semantics: `None` = enable, `Some("false")` = disable,
-    /// `Some("__toggle__")` = toggle, `Some(v)` = set with type coercion.
-    pub(crate) fn apply_cli_override(&mut self, key: &str, value: Option<&str>) {
+    pub(crate) fn apply_cli_override(&mut self, key: &str, value: CliValue) {
         match value {
-            None => {
+            CliValue::Enable => {
                 self.runtime_config
                     .set(key, ConfigValue::Bool(true), ModSource::Cli);
             }
-            Some("false") => {
+            CliValue::Disable => {
                 self.runtime_config
                     .set(key, ConfigValue::Bool(false), ModSource::Cli);
             }
-            Some("__toggle__") => {
+            CliValue::Toggle => {
                 let _ = self.runtime_config.toggle(key, ModSource::Cli);
             }
-            Some(v) => {
-                self.runtime_config.set_str(key, v, ModSource::Cli);
+            CliValue::Set(v) => {
+                self.runtime_config.set_str(key, &v, ModSource::Cli);
             }
         }
         self.sync_runtime_to_fields(key);

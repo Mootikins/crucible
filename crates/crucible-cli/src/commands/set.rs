@@ -2,54 +2,30 @@ use crucible_rpc::DaemonClient;
 
 use crate::tui::oil::commands::{validate_set_for_cli, SetEffect, SetError, SetRpcAction};
 
-#[derive(Debug, Clone, PartialEq)]
-enum CliSetError {
-    MissingSession,
-    TuiLocalSetting { key: String, input: String },
-    Parse { input: String, error: String },
-    NotSupportedAsCli { input: String },
-    InvalidValue { key: String, message: String },
-    UnknownKey(String),
+#[cfg(test)]
+fn resolve_session_id(explicit_session_id: Option<String>, env_session_id: Option<String>) -> Option<String> {
+    explicit_session_id.or(env_session_id)
 }
 
-fn resolve_session_id(
-    explicit_session_id: Option<String>,
-    env_session_id: Option<String>,
-) -> Result<String, CliSetError> {
-    explicit_session_id
-        .or(env_session_id)
-        .ok_or(CliSetError::MissingSession)
-}
-
-fn collect_rpc_actions(settings: &[String]) -> Result<Vec<(String, SetRpcAction)>, CliSetError> {
+#[cfg(test)]
+fn collect_rpc_actions(
+    settings: &[String],
+) -> Result<Vec<(String, SetRpcAction)>, (String, SetError)> {
     let mut rpc_actions: Vec<(String, SetRpcAction)> = Vec::new();
 
     for setting in settings {
         match validate_set_for_cli(setting) {
             Ok(SetEffect::DaemonRpc(action)) => rpc_actions.push((setting.clone(), action)),
             Ok(SetEffect::TuiLocal { key, .. }) => {
-                return Err(CliSetError::TuiLocalSetting {
-                    key,
-                    input: setting.clone(),
-                });
+                return Err((
+                    setting.clone(),
+                    SetError::InvalidValue {
+                        key,
+                        message: "this setting is TUI-local".to_string(),
+                    },
+                ));
             }
-            Err(SetError::Parse(e)) => {
-                return Err(CliSetError::Parse {
-                    input: setting.clone(),
-                    error: e.to_string(),
-                });
-            }
-            Err(SetError::NotSupportedAsCli) => {
-                return Err(CliSetError::NotSupportedAsCli {
-                    input: setting.clone(),
-                });
-            }
-            Err(SetError::InvalidValue { key, message }) => {
-                return Err(CliSetError::InvalidValue { key, message });
-            }
-            Err(SetError::UnknownKey(key)) => {
-                return Err(CliSetError::UnknownKey(key));
-            }
+            Err(err) => return Err((setting.clone(), err)),
         }
     }
 
@@ -57,55 +33,53 @@ fn collect_rpc_actions(settings: &[String]) -> Result<Vec<(String, SetRpcAction)
 }
 
 pub async fn execute(settings: Vec<String>, session_id: Option<String>) -> anyhow::Result<()> {
-    // Validate all settings FIRST, before resolving session
-    let rpc_actions = match collect_rpc_actions(&settings) {
-        Ok(actions) => actions,
-        Err(CliSetError::TuiLocalSetting { key, input }) => {
-            eprintln!(
-                "error: '{}' is a TUI-local setting. Use `cru chat --set {}` instead.",
-                key, input
-            );
-            std::process::exit(1);
+    let mut rpc_actions: Vec<(String, SetRpcAction)> = Vec::new();
+    for setting in &settings {
+        match validate_set_for_cli(setting) {
+            Ok(SetEffect::DaemonRpc(action)) => rpc_actions.push((setting.clone(), action)),
+            Ok(SetEffect::TuiLocal { key, .. }) => {
+                eprintln!(
+                    "error: '{}' is a TUI-local setting. Use `cru chat --set {}` instead.",
+                    key, setting
+                );
+                std::process::exit(1);
+            }
+            Err(SetError::Parse(e)) => {
+                eprintln!("error: failed to parse '{}': {}", setting, e);
+                std::process::exit(1);
+            }
+            Err(SetError::NotSupportedAsCli) => {
+                eprintln!(
+                    "error: '{}' is not supported as a CLI setting. \
+                     Use KEY=VALUE syntax (e.g. model=llama3).",
+                    setting
+                );
+                std::process::exit(1);
+            }
+            Err(SetError::InvalidValue { key, message }) => {
+                eprintln!("error: invalid value for '{}': {}", key, message);
+                std::process::exit(1);
+            }
+            Err(SetError::UnknownKey(key)) => {
+                eprintln!(
+                    "error: unknown setting '{}'. Valid keys: model, temperature, thinkingbudget, maxtokens",
+                    key
+                );
+                std::process::exit(1);
+            }
         }
-        Err(CliSetError::Parse { input, error }) => {
-            eprintln!("error: failed to parse '{}': {}", input, error);
-            std::process::exit(1);
-        }
-        Err(CliSetError::NotSupportedAsCli { input }) => {
-            eprintln!(
-                "error: '{}' is not supported as a CLI setting. \
-                 Use KEY=VALUE syntax (e.g. model=llama3).",
-                input
-            );
-            std::process::exit(1);
-        }
-        Err(CliSetError::InvalidValue { key, message }) => {
-            eprintln!("error: invalid value for '{}': {}", key, message);
-            std::process::exit(1);
-        }
-        Err(CliSetError::UnknownKey(key)) => {
-            eprintln!(
-                "error: unknown setting '{}'. Valid keys: model, temperature, thinkingbudget, maxtokens",
-                key
-            );
-            std::process::exit(1);
-        }
-        Err(CliSetError::MissingSession) => unreachable!("collect_rpc_actions doesn't return MissingSession"),
-    };
+    }
 
-    // Only resolve session if we have RPC actions to apply
-    let session_id = match resolve_session_id(session_id, std::env::var("CRU_SESSION").ok()) {
-        Ok(id) => id,
-        Err(CliSetError::MissingSession) => {
+    let session_id = session_id
+        .or_else(|| std::env::var("CRU_SESSION").ok())
+        .unwrap_or_else(|| {
             eprintln!(
                 "error: no session specified. Use --session <ID> or set CRU_SESSION env var.\n\
                  \n\
                  Tip: find session IDs with `cru session daemon list`"
             );
             std::process::exit(1);
-        }
-        Err(_) => unreachable!("resolve_session_id only returns MissingSession"),
-    };
+        });
 
     let client = DaemonClient::connect_or_start()
         .await
@@ -147,7 +121,7 @@ pub async fn execute(settings: Vec<String>, session_id: Option<String>) -> anyho
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tui::oil::commands::{SetEffect, SetError, SetRpcAction, validate_set_for_cli};
+    use crate::tui::oil::commands::{CliValue, SetEffect, SetError, SetRpcAction, validate_set_for_cli};
 
     #[test]
     fn validate_model_ok() {
@@ -183,7 +157,7 @@ mod tests {
         let effect = validate_set_for_cli("perm.autoconfirm_session").unwrap();
         assert!(matches!(
             effect,
-            SetEffect::TuiLocal { key, value: None } if key == "perm.autoconfirm_session"
+            SetEffect::TuiLocal { key, value: CliValue::Enable } if key == "perm.autoconfirm_session"
         ));
     }
 
@@ -192,7 +166,7 @@ mod tests {
         let effect = validate_set_for_cli("perm.autoconfirm_session=true").unwrap();
         assert!(matches!(
             effect,
-            SetEffect::TuiLocal { key, value: Some(v) }
+            SetEffect::TuiLocal { key, value: CliValue::Set(v) }
                 if key == "perm.autoconfirm_session" && v == "true"
         ));
     }
@@ -202,7 +176,7 @@ mod tests {
         let effect = validate_set_for_cli("verbose!").unwrap();
         assert!(matches!(
             effect,
-            SetEffect::TuiLocal { key, value: Some(v) } if key == "verbose" && v == "__toggle__"
+            SetEffect::TuiLocal { key, value: CliValue::Toggle } if key == "verbose"
         ));
     }
 
@@ -229,11 +203,9 @@ mod tests {
 
     #[test]
     fn resolve_session_id_prefers_argument_over_env() {
-        let session = resolve_session_id(
-            Some("arg-session".to_string()),
-            Some("env-session".to_string()),
-        )
-        .unwrap();
+        let session =
+            resolve_session_id(Some("arg-session".to_string()), Some("env-session".to_string()))
+                .unwrap();
         assert_eq!(session, "arg-session");
     }
 
@@ -245,25 +217,19 @@ mod tests {
 
     #[test]
     fn resolve_session_id_without_any_source_errors() {
-        let err = resolve_session_id(None, None).unwrap_err();
-        assert_eq!(err, CliSetError::MissingSession);
+        let err = resolve_session_id(None, None);
+        assert!(err.is_none());
     }
 
     #[test]
     fn collect_rpc_actions_rejects_tui_local_key() {
         let err = collect_rpc_actions(&["verbose=true".to_string()]).unwrap_err();
-        assert_eq!(
-            err,
-            CliSetError::TuiLocalSetting {
-                key: "verbose".to_string(),
-                input: "verbose=true".to_string(),
-            }
-        );
+        assert!(matches!(err, (input, SetError::InvalidValue { key, .. }) if input == "verbose=true" && key == "verbose"));
     }
 
     #[test]
     fn collect_rpc_actions_rejects_missing_explicit_value_for_model() {
         let err = collect_rpc_actions(&["model".to_string()]).unwrap_err();
-        assert!(matches!(err, CliSetError::InvalidValue { key, .. } if key == "model"));
+        assert!(matches!(err, (input, SetError::InvalidValue { key, .. }) if input == "model" && key == "model"));
     }
 }
