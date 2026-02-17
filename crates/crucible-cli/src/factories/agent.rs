@@ -252,8 +252,6 @@ fn build_internal_session_agent(config: &CliAppConfig) -> SessionAgent {
     }
 }
 
-
-
 /// Create an agent via daemon (auto-starts daemon if needed)
 pub async fn create_daemon_agent(
     config: &CliAppConfig,

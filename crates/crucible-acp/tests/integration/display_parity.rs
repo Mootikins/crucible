@@ -158,8 +158,7 @@ fn final_response(request_id: u64) -> serde_json::Value {
 
 #[tokio::test]
 async fn tool_start_with_arguments_emits_chunk_with_args() {
-    let (mut client, mut agent_reader, mut agent_writer) =
-        client_with_custom_transport(Some(500));
+    let (mut client, mut agent_reader, mut agent_writer) = client_with_custom_transport(Some(500));
 
     let chunks: Arc<Mutex<Vec<StreamingChunk>>> = Arc::new(Mutex::new(Vec::new()));
     let chunks_cb = Arc::clone(&chunks);
@@ -224,13 +223,15 @@ async fn tool_start_with_arguments_emits_chunk_with_args() {
     let tc = &tool_calls[0];
     assert_eq!(tc.title, "mcp__crucible__semantic_search");
     assert!(tc.arguments.is_some());
-    assert_eq!(tc.arguments.as_ref().unwrap()["query"], "rust async patterns");
+    assert_eq!(
+        tc.arguments.as_ref().unwrap()["query"],
+        "rust async patterns"
+    );
 }
 
 #[tokio::test]
 async fn tool_start_without_arguments_has_none() {
-    let (mut client, mut agent_reader, mut agent_writer) =
-        client_with_custom_transport(Some(500));
+    let (mut client, mut agent_reader, mut agent_writer) = client_with_custom_transport(Some(500));
 
     let chunks: Arc<Mutex<Vec<StreamingChunk>>> = Arc::new(Mutex::new(Vec::new()));
     let chunks_cb = Arc::clone(&chunks);
@@ -273,7 +274,10 @@ async fn tool_start_without_arguments_has_none() {
 
     match tool_start {
         StreamingChunk::ToolStart { arguments, .. } => {
-            assert!(arguments.is_none(), "arguments should be None when not provided");
+            assert!(
+                arguments.is_none(),
+                "arguments should be None when not provided"
+            );
         }
         _ => unreachable!(),
     }
@@ -281,8 +285,7 @@ async fn tool_start_without_arguments_has_none() {
 
 #[tokio::test]
 async fn tool_start_complex_arguments_preserved() {
-    let (mut client, mut agent_reader, mut agent_writer) =
-        client_with_custom_transport(Some(500));
+    let (mut client, mut agent_reader, mut agent_writer) = client_with_custom_transport(Some(500));
 
     let chunks: Arc<Mutex<Vec<StreamingChunk>>> = Arc::new(Mutex::new(Vec::new()));
     let chunks_cb = Arc::clone(&chunks);
@@ -337,8 +340,13 @@ async fn tool_start_complex_arguments_preserved() {
 
     match tool_start {
         StreamingChunk::ToolStart { arguments, .. } => {
-            let args = arguments.as_ref().expect("complex args should survive roundtrip");
-            assert_eq!(*args, expected_args, "nested JSON should be fully preserved");
+            let args = arguments
+                .as_ref()
+                .expect("complex args should survive roundtrip");
+            assert_eq!(
+                *args, expected_args,
+                "nested JSON should be fully preserved"
+            );
         }
         _ => unreachable!(),
     }
@@ -346,8 +354,7 @@ async fn tool_start_complex_arguments_preserved() {
 
 #[tokio::test]
 async fn tool_end_with_result_emits_chunk() {
-    let (mut client, mut agent_reader, mut agent_writer) =
-        client_with_custom_transport(Some(500));
+    let (mut client, mut agent_reader, mut agent_writer) = client_with_custom_transport(Some(500));
 
     let chunks: Arc<Mutex<Vec<StreamingChunk>>> = Arc::new(Mutex::new(Vec::new()));
     let chunks_cb = Arc::clone(&chunks);
@@ -426,8 +433,7 @@ async fn tool_end_with_result_emits_chunk() {
 
 #[tokio::test]
 async fn tool_end_with_error_emits_error_field() {
-    let (mut client, mut agent_reader, mut agent_writer) =
-        client_with_custom_transport(Some(500));
+    let (mut client, mut agent_reader, mut agent_writer) = client_with_custom_transport(Some(500));
 
     let chunks: Arc<Mutex<Vec<StreamingChunk>>> = Arc::new(Mutex::new(Vec::new()));
     let chunks_cb = Arc::clone(&chunks);
@@ -499,8 +505,7 @@ async fn tool_end_with_error_emits_error_field() {
 
 #[tokio::test]
 async fn tool_end_failed_without_output_has_generic_error() {
-    let (mut client, mut agent_reader, mut agent_writer) =
-        client_with_custom_transport(Some(500));
+    let (mut client, mut agent_reader, mut agent_writer) = client_with_custom_transport(Some(500));
 
     let chunks: Arc<Mutex<Vec<StreamingChunk>>> = Arc::new(Mutex::new(Vec::new()));
     let chunks_cb = Arc::clone(&chunks);
@@ -566,8 +571,7 @@ async fn tool_end_failed_without_output_has_generic_error() {
 
 #[tokio::test]
 async fn stream_without_usage_data_completes_gracefully() {
-    let (mut client, mut agent_reader, mut agent_writer) =
-        client_with_custom_transport(Some(500));
+    let (mut client, mut agent_reader, mut agent_writer) = client_with_custom_transport(Some(500));
 
     tokio::spawn(async move {
         let mut request_line = String::new();
@@ -606,8 +610,7 @@ async fn stream_without_usage_data_completes_gracefully() {
 
 #[tokio::test]
 async fn empty_stream_no_usage_no_chunks_completes() {
-    let (mut client, mut agent_reader, mut agent_writer) =
-        client_with_custom_transport(Some(500));
+    let (mut client, mut agent_reader, mut agent_writer) = client_with_custom_transport(Some(500));
 
     tokio::spawn(async move {
         let mut request_line = String::new();
@@ -632,8 +635,7 @@ async fn empty_stream_no_usage_no_chunks_completes() {
 
 #[tokio::test]
 async fn full_flow_text_tool_result_text_via_callback() {
-    let (mut client, mut agent_reader, mut agent_writer) =
-        client_with_custom_transport(Some(500));
+    let (mut client, mut agent_reader, mut agent_writer) = client_with_custom_transport(Some(500));
 
     let chunks: Arc<Mutex<Vec<StreamingChunk>>> = Arc::new(Mutex::new(Vec::new()));
     let chunks_cb = Arc::clone(&chunks);

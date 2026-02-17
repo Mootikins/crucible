@@ -2,8 +2,8 @@ use async_trait::async_trait;
 use crucible_config::{BackendType, DelegationConfig};
 use crucible_core::background::{JobResult, JobStatus, SubagentBlockingConfig};
 use crucible_core::session::SessionAgent;
-use crucible_core::traits::ChatResult;
 use crucible_core::traits::chat::{AgentHandle, ChatChunk};
+use crucible_core::traits::ChatResult;
 use crucible_daemon::background_manager::{BackgroundJobManager, SubagentContext, SubagentFactory};
 use crucible_daemon::protocol::SessionEventMessage;
 use futures::stream::{self, BoxStream};
@@ -35,7 +35,10 @@ impl MockSubagentHandle {
 
 #[async_trait]
 impl AgentHandle for MockSubagentHandle {
-    fn send_message_stream(&mut self, _message: String) -> BoxStream<'static, ChatResult<ChatChunk>> {
+    fn send_message_stream(
+        &mut self,
+        _message: String,
+    ) -> BoxStream<'static, ChatResult<ChatChunk>> {
         match self.behavior.clone() {
             MockSubagentBehavior::ImmediateSuccess(output) => stream::iter(vec![Ok(ChatChunk {
                 delta: output,
@@ -47,21 +50,19 @@ impl AgentHandle for MockSubagentHandle {
                 subagent_events: None,
             })])
             .boxed(),
-            MockSubagentBehavior::DelayedSuccess { output, delay } => {
-                stream::once(async move {
-                    sleep(delay).await;
-                    Ok(ChatChunk {
-                        delta: output,
-                        done: true,
-                        tool_calls: None,
-                        tool_results: None,
-                        reasoning: None,
-                        usage: None,
-                        subagent_events: None,
-                    })
+            MockSubagentBehavior::DelayedSuccess { output, delay } => stream::once(async move {
+                sleep(delay).await;
+                Ok(ChatChunk {
+                    delta: output,
+                    done: true,
+                    tool_calls: None,
+                    tool_results: None,
+                    reasoning: None,
+                    usage: None,
+                    subagent_events: None,
                 })
-                .boxed()
-            }
+            })
+            .boxed(),
             MockSubagentBehavior::Pending => stream::pending().boxed(),
         }
     }
@@ -160,7 +161,10 @@ async fn wait_for_terminal_result(manager: &BackgroundJobManager, job_id: &str) 
             }
         }
 
-        assert!(Instant::now() < deadline, "timed out waiting for terminal result");
+        assert!(
+            Instant::now() < deadline,
+            "timed out waiting for terminal result"
+        );
         sleep(Duration::from_millis(10)).await;
     }
 }
@@ -169,14 +173,12 @@ async fn wait_for_terminal_result(manager: &BackgroundJobManager, job_id: &str) 
 async fn delegation_pipeline_background_emits_events_and_persists_result() {
     let temp = TempDir::new().expect("temp dir");
     let (event_tx, mut rx) = broadcast::channel(32);
-    let manager = Arc::new(
-        BackgroundJobManager::new(event_tx).with_subagent_factory(make_subagent_factory(
-            MockSubagentBehavior::DelayedSuccess {
-                output: "delegation-result".to_string(),
-                delay: Duration::from_millis(40),
-            },
-        )),
-    );
+    let manager = Arc::new(BackgroundJobManager::new(event_tx).with_subagent_factory(
+        make_subagent_factory(MockSubagentBehavior::DelayedSuccess {
+            output: "delegation-result".to_string(),
+            delay: Duration::from_millis(40),
+        }),
+    ));
 
     let session_id = "session-delegation-events";
     register_delegation_context(
@@ -209,7 +211,10 @@ async fn delegation_pipeline_background_emits_events_and_persists_result() {
 
     assert_eq!(completed.session_id, session_id);
     assert_eq!(completed.data["delegation_id"].as_str(), Some(spawned_id));
-    assert_eq!(completed.data["parent_session_id"].as_str(), Some(session_id));
+    assert_eq!(
+        completed.data["parent_session_id"].as_str(),
+        Some(session_id)
+    );
 
     let result = wait_for_terminal_result(manager.as_ref(), &delegation_id).await;
     assert_eq!(result.info.status, JobStatus::Completed);
@@ -220,14 +225,12 @@ async fn delegation_pipeline_background_emits_events_and_persists_result() {
 async fn delegation_pipeline_blocking_returns_after_completion_with_result() {
     let temp = TempDir::new().expect("temp dir");
     let (event_tx, _) = broadcast::channel(32);
-    let manager = Arc::new(
-        BackgroundJobManager::new(event_tx).with_subagent_factory(make_subagent_factory(
-            MockSubagentBehavior::DelayedSuccess {
-                output: "blocking-result".to_string(),
-                delay: Duration::from_millis(120),
-            },
-        )),
-    );
+    let manager = Arc::new(BackgroundJobManager::new(event_tx).with_subagent_factory(
+        make_subagent_factory(MockSubagentBehavior::DelayedSuccess {
+            output: "blocking-result".to_string(),
+            delay: Duration::from_millis(120),
+        }),
+    ));
 
     let session_id = "session-delegation-blocking";
     register_delegation_context(
@@ -302,10 +305,9 @@ async fn delegation_pipeline_enforces_concurrent_limit() {
         )
         .await
         .expect_err("fourth delegation should be rejected");
-    assert!(
-        err.to_string()
-            .contains("Maximum concurrent delegations (3) exceeded")
-    );
+    assert!(err
+        .to_string()
+        .contains("Maximum concurrent delegations (3) exceeded"));
 
     for id in spawned_ids {
         manager.cancel_job(&id).await;
@@ -316,11 +318,9 @@ async fn delegation_pipeline_enforces_concurrent_limit() {
 async fn delegation_pipeline_rejects_when_disabled() {
     let temp = TempDir::new().expect("temp dir");
     let (event_tx, _) = broadcast::channel(32);
-    let manager = Arc::new(
-        BackgroundJobManager::new(event_tx).with_subagent_factory(make_subagent_factory(
-            MockSubagentBehavior::ImmediateSuccess("unused".to_string()),
-        )),
-    );
+    let manager = Arc::new(BackgroundJobManager::new(event_tx).with_subagent_factory(
+        make_subagent_factory(MockSubagentBehavior::ImmediateSuccess("unused".to_string())),
+    ));
 
     let session_id = "session-delegation-disabled";
     register_delegation_context(

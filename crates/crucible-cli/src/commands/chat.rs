@@ -715,12 +715,8 @@ async fn run_oneshot_chat(
     let mut handle = initialized_agent.into_handle();
     status.success("Ready");
 
-    let _autoconfirm_session = apply_oneshot_set_overrides(
-        &mut handle,
-        &set_overrides,
-        agent_name.is_some(),
-    )
-    .await;
+    let _autoconfirm_session =
+        apply_oneshot_set_overrides(&mut handle, &set_overrides, agent_name.is_some()).await;
 
     let _live_progress = bg_progress.map(LiveProgress::start);
 
@@ -763,7 +759,7 @@ async fn apply_oneshot_set_overrides(
     set_overrides: &[String],
     is_acp: bool,
 ) -> bool {
-    use crate::tui::oil::commands::{CliValue, SetEffect, SetRpcAction, validate_set_for_cli};
+    use crate::tui::oil::commands::{validate_set_for_cli, CliValue, SetEffect, SetRpcAction};
 
     let mut autoconfirm = false;
 
@@ -795,7 +791,10 @@ async fn apply_oneshot_set_overrides(
                     autoconfirm = match value {
                         CliValue::Disable => false,
                         CliValue::Set(v)
-                            if matches!(v.to_ascii_lowercase().as_str(), "false" | "0" | "no" | "off") =>
+                            if matches!(
+                                v.to_ascii_lowercase().as_str(),
+                                "false" | "0" | "no" | "off"
+                            ) =>
                         {
                             false
                         }
@@ -821,10 +820,9 @@ async fn apply_rpc_action(
     use crate::tui::oil::commands::SetRpcAction;
 
     match action {
-        SetRpcAction::SwitchModel(model) => handle
-            .switch_model(&model)
-            .await
-            .map_err(|e| e.to_string()),
+        SetRpcAction::SwitchModel(model) => {
+            handle.switch_model(&model).await.map_err(|e| e.to_string())
+        }
         SetRpcAction::SetThinkingBudget(Some(budget)) => handle
             .set_thinking_budget(budget)
             .await
@@ -834,10 +832,9 @@ async fn apply_rpc_action(
             .set_temperature(temp)
             .await
             .map_err(|e| e.to_string()),
-        SetRpcAction::SetMaxTokens(max) => handle
-            .set_max_tokens(max)
-            .await
-            .map_err(|e| e.to_string()),
+        SetRpcAction::SetMaxTokens(max) => {
+            handle.set_max_tokens(max).await.map_err(|e| e.to_string())
+        }
     }
 }
 

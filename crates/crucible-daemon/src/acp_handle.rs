@@ -8,9 +8,9 @@
 //! and Lua handlers — ACP agents get all of these for free by routing through
 //! this handle instead of being spawned directly by the CLI.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::collections::HashMap;
 
 use async_trait::async_trait;
 use futures::stream::BoxStream;
@@ -252,7 +252,11 @@ impl AgentHandle for AcpAgentHandle {
                     Some(chunk) => {
                         let chat_chunk = match chunk {
                             StreamingChunk::Text(text) => {
-                                debug!(chunk_type = "text", len = text.len(), "ACP streaming chunk");
+                                debug!(
+                                    chunk_type = "text",
+                                    len = text.len(),
+                                    "ACP streaming chunk"
+                                );
                                 ChatChunk {
                                     delta: text,
                                     done: false,
@@ -264,7 +268,11 @@ impl AgentHandle for AcpAgentHandle {
                                 }
                             }
                             StreamingChunk::Thinking(text) => {
-                                debug!(chunk_type = "thinking", len = text.len(), "ACP streaming chunk");
+                                debug!(
+                                    chunk_type = "thinking",
+                                    len = text.len(),
+                                    "ACP streaming chunk"
+                                );
                                 ChatChunk {
                                     delta: String::new(),
                                     done: false,
@@ -367,19 +375,13 @@ impl AgentHandle for AcpAgentHandle {
                                     ))
                                 }
                                 crucible_acp::ClientError::Timeout(msg) => {
-                                    ChatError::Communication(format!(
-                                        "ACP agent timed out: {msg}"
-                                    ))
+                                    ChatError::Communication(format!("ACP agent timed out: {msg}"))
                                 }
                                 crucible_acp::ClientError::Session(msg) => {
-                                    ChatError::AgentUnavailable(format!(
-                                        "ACP session error: {msg}"
-                                    ))
+                                    ChatError::AgentUnavailable(format!("ACP session error: {msg}"))
                                 }
                                 crucible_acp::ClientError::Protocol(e) => {
-                                    ChatError::Communication(format!(
-                                        "ACP protocol error: {e}"
-                                    ))
+                                    ChatError::Communication(format!("ACP protocol error: {e}"))
                                 }
                                 crucible_acp::ClientError::PermissionDenied(msg) => {
                                     ChatError::Communication(format!(
@@ -392,9 +394,7 @@ impl AgentHandle for AcpAgentHandle {
                                     ))
                                 }
                                 crucible_acp::ClientError::Validation(msg) => {
-                                    ChatError::InvalidInput(format!(
-                                        "ACP validation error: {msg}"
-                                    ))
+                                    ChatError::InvalidInput(format!("ACP validation error: {msg}"))
                                 }
                                 crucible_acp::ClientError::NotFound(msg) => {
                                     ChatError::AgentUnavailable(format!(
@@ -420,8 +420,7 @@ impl AgentHandle for AcpAgentHandle {
                             warn!("ACP streaming task dropped (oneshot cancelled)");
                             Some((
                                 Err(ChatError::AgentUnavailable(
-                                    "ACP agent process terminated unexpectedly"
-                                        .to_string(),
+                                    "ACP agent process terminated unexpectedly".to_string(),
                                 )),
                                 None,
                             ))

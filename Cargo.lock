@@ -4002,6 +4002,7 @@ dependencies = [
  "reqwest",
  "rig-core",
  "rmcp",
+ "schemars 1.2.0",
  "serde",
  "serde_json",
  "tempfile",
