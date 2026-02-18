@@ -1,10 +1,4 @@
-# ACP Agent Demo — Crucible spawning an external AI agent
-# with full access to the knowledge graph via Agent Client Protocol.
-#
-# Requirements:
-#   - Claude Code authenticated (OAuth via `claude` CLI)
-#   - cru binary built and kiln processed
-#
+# ACP Agent Demo — Crucible chat with Claude Code
 # Usage: vhs assets/acp-demo.tape
 
 Output assets/acp-demo.gif
@@ -19,24 +13,18 @@ Set Theme "Catppuccin Mocha"
 Set WindowBar Colorful
 Set WindowBarSize 40
 Set Padding 20
-Set TypingSpeed 50ms
-Set PlaybackSpeed 2
+Set TypingSpeed 60ms
+Set PlaybackSpeed 4
 
-# Launch Crucible chat with Claude Code as ACP agent
-# The agent gets MCP tools and Precognition context from the knowledge graph
 Type "cru chat -a claude --no-process --set perm.autoconfirm_session"
 Enter
 Sleep 10s
 
-# Ask a question that exercises the protocol docs from the knowledge graph
-# Precognition will inject ACP/MCP reference docs as context before Claude responds
-# Permission prompts will appear as Claude uses tools — user approves inline
 Type "How does ACP differ from MCP, and how does Crucible use both?"
 Enter
-Sleep 120s
+Sleep 60s
 
-# Exit — first Ctrl+C shows "press again to quit", second confirms
 Ctrl+C
 Sleep 500ms
 Ctrl+C
-Sleep 5s
+Sleep 3s
