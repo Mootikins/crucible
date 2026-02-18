@@ -14,15 +14,15 @@ Set WindowBar Colorful
 Set WindowBarSize 40
 Set Padding 20
 Set TypingSpeed 60ms
-Set PlaybackSpeed 4
+Set PlaybackSpeed 5
 
-Type "cru chat -a claude --no-process --set perm.autoconfirm_session"
+Type "cru chat -a claude -C assets/demo-config.toml --no-process --set perm.autoconfirm_session"
 Enter
 Sleep 10s
 
 Type "How does ACP differ from MCP, and how does Crucible use both?"
 Enter
-Sleep 60s
+Sleep 90s
 
 Ctrl+C
 Sleep 500ms
