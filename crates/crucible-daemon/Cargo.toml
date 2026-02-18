@@ -50,6 +50,7 @@ crucible-web = { path = "../crucible-web", optional = true }
 agent-client-protocol = "0.9.3"
 gix = { version = "0.69", default-features = false, features = ["blocking-network-client"] }
 mlua = { workspace = true }
+notify = { workspace = true }
 scopeguard = "1"
 reqwest = { workspace = true }
 

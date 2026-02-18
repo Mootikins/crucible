@@ -5,8 +5,8 @@ use crate::annotations::{
     DiscoveredView,
 };
 use crate::manifest::{Capability, LoadedPlugin, ManifestError, PluginManifest, PluginState};
-use mlua::{Lua, Value};
-use std::collections::HashMap;
+use mlua::{Function, Lua, RegistryKey, Value};
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use thiserror::Error;
@@ -76,6 +76,11 @@ struct RegisteredItem<T> {
     owner: Option<String>,
 }
 
+#[derive(Debug)]
+struct PackageLoadedSnapshot {
+    entries: HashMap<String, RegistryKey>,
+}
+
 pub struct PluginManager {
     plugins: HashMap<String, LoadedPlugin>,
     search_paths: Vec<PathBuf>,
@@ -83,6 +88,8 @@ pub struct PluginManager {
     commands: Vec<RegisteredItem<DiscoveredCommand>>,
     views: Vec<RegisteredItem<DiscoveredView>>,
     handlers: Vec<RegisteredItem<DiscoveredHandler>>,
+    lua: Lua,
+    on_unload_hooks: HashMap<String, RegistryKey>,
 }
 
 impl Default for PluginManager {
@@ -100,12 +107,18 @@ impl std::fmt::Debug for PluginManager {
             .field("commands_count", &self.commands.len())
             .field("views_count", &self.views.len())
             .field("handlers_count", &self.handlers.len())
+            .field("on_unload_hooks_count", &self.on_unload_hooks.len())
             .finish()
     }
 }
 
 impl PluginManager {
     pub fn new() -> Self {
+        let lua = Lua::new();
+        if let Err(error) = setup_spec_sandbox(&lua) {
+            warn!("Failed to set up plugin runtime sandbox: {}", error);
+        }
+
         Self {
             plugins: HashMap::new(),
             search_paths: Vec::new(),
@@ -113,6 +126,8 @@ impl PluginManager {
             commands: Vec::new(),
             views: Vec::new(),
             handlers: Vec::new(),
+            lua,
+            on_unload_hooks: HashMap::new(),
         }
     }
 
@@ -322,12 +337,14 @@ impl PluginManager {
         }
 
         self.discover_exports_for_plugin(name)?;
+        self.load_plugin_runtime_state(name)?;
 
         let plugin = self
             .plugins
             .get_mut(name)
             .ok_or_else(|| LifecycleError::NotFound(name.to_string()))?;
         plugin.state = PluginState::Active;
+        plugin.last_error = None;
         info!("Loaded plugin: {} v{}", name, plugin.version());
 
         Ok(())
@@ -399,14 +416,36 @@ impl PluginManager {
             .get_mut(name)
             .ok_or_else(|| LifecycleError::NotFound(name.to_string()))?;
         plugin.state = PluginState::Discovered;
+        self.on_unload_hooks.remove(name);
         info!("Unloaded plugin: {}", name);
 
         Ok(())
     }
 
     pub fn reload(&mut self, name: &str) -> LifecycleResult<()> {
+        self.reload_plugin(name)
+    }
+
+    pub fn reload_plugin(&mut self, name: &str) -> LifecycleResult<()> {
+        let snapshot = self.snapshot_package_loaded()?;
+
+        self.call_on_unload_hook(name);
         self.unload(name)?;
-        self.load(name)
+        self.clear_plugin_modules(name)?;
+
+        match self.load_plugin_by_name(name) {
+            Ok(()) => Ok(()),
+            Err(reload_error) => {
+                self.restore_package_loaded(snapshot)?;
+
+                if let Some(plugin) = self.plugins.get_mut(name) {
+                    plugin.state = PluginState::Error;
+                    plugin.last_error = Some(reload_error.to_string());
+                }
+
+                Err(reload_error)
+            }
+        }
     }
 
     pub fn enable(&mut self, name: &str) -> LifecycleResult<()> {
@@ -560,6 +599,259 @@ impl PluginManager {
         }
 
         Ok(())
+    }
+
+    fn load_plugin_runtime_state(&mut self, name: &str) -> LifecycleResult<()> {
+        let (main_path, plugin_dir) = {
+            let plugin = self
+                .plugins
+                .get(name)
+                .ok_or_else(|| LifecycleError::NotFound(name.to_string()))?;
+            (plugin.main_path(), plugin.dir.clone())
+        };
+
+        self.configure_plugin_package_path(&plugin_dir)?;
+
+        let source = std::fs::read_to_string(&main_path).map_err(LifecycleError::Io)?;
+        let is_fennel = main_path.extension().is_some_and(|ext| ext == "fnl");
+
+        let lua_source = if is_fennel {
+            #[cfg(feature = "fennel")]
+            {
+                crate::fennel::compile_fennel(&source).map_err(|e| {
+                    LifecycleError::LoadError(format!(
+                        "Fennel compilation failed for {}: {}",
+                        main_path.display(),
+                        e
+                    ))
+                })?
+            }
+            #[cfg(not(feature = "fennel"))]
+            {
+                return Err(LifecycleError::LoadError(format!(
+                    "Fennel file {} requires the 'fennel' feature",
+                    main_path.display()
+                )));
+            }
+        } else {
+            source
+        };
+
+        let chunk_name = main_path.to_string_lossy().to_string();
+        let result: Value = self
+            .lua
+            .load(&lua_source)
+            .set_name(chunk_name.as_str())
+            .eval()
+            .map_err(|e| {
+                LifecycleError::LoadError(format!("Lua error in {}: {}", chunk_name, e))
+            })?;
+
+        match result {
+            Value::Table(spec_table) => {
+                self.capture_on_unload_hook(name, &spec_table)?;
+                self.package_loaded_table()?
+                    .set(name, spec_table)
+                    .map_err(|e| {
+                        LifecycleError::LoadError(format!(
+                            "Failed to cache plugin module {}: {}",
+                            name, e
+                        ))
+                    })?;
+            }
+            _ => {
+                self.on_unload_hooks.remove(name);
+            }
+        }
+
+        Ok(())
+    }
+
+    fn configure_plugin_package_path(&self, plugin_dir: &Path) -> LifecycleResult<()> {
+        let plugin_dir = plugin_dir.to_string_lossy();
+        self.lua
+            .load(&format!(
+                r#"
+local plugin_dir = {plugin_dir:?}
+local path_entries = {{
+    plugin_dir .. "/?.lua",
+    plugin_dir .. "/?/init.lua",
+}}
+
+for _, entry in ipairs(path_entries) do
+    if not package.path:find(entry, 1, true) then
+        package.path = entry .. ";" .. package.path
+    end
+end
+"#
+            ))
+            .exec()
+            .map_err(|e| {
+                LifecycleError::LoadError(format!(
+                    "Failed to configure package.path for {}: {}",
+                    plugin_dir, e
+                ))
+            })
+    }
+
+    fn capture_on_unload_hook(
+        &mut self,
+        plugin_name: &str,
+        plugin_spec: &mlua::Table,
+    ) -> LifecycleResult<()> {
+        self.on_unload_hooks.remove(plugin_name);
+
+        if let Ok(Value::Function(on_unload)) = plugin_spec.get::<Value>("on_unload") {
+            let key = self.lua.create_registry_value(on_unload).map_err(|e| {
+                LifecycleError::LoadError(format!(
+                    "Failed to store on_unload hook for {}: {}",
+                    plugin_name, e
+                ))
+            })?;
+            self.on_unload_hooks.insert(plugin_name.to_string(), key);
+        }
+
+        Ok(())
+    }
+
+    fn snapshot_package_loaded(&self) -> LifecycleResult<PackageLoadedSnapshot> {
+        let package_loaded = self.package_loaded_table()?;
+        let mut entries = HashMap::new();
+
+        for pair in package_loaded.pairs::<Value, Value>() {
+            let (key, value) = pair.map_err(|e| {
+                LifecycleError::LoadError(format!("Failed to iterate package.loaded: {}", e))
+            })?;
+
+            if let Value::String(key) = key {
+                let key = key
+                    .to_str()
+                    .map_err(|e| {
+                        LifecycleError::LoadError(format!(
+                            "Failed to decode package.loaded key: {}",
+                            e
+                        ))
+                    })?
+                    .to_string();
+
+                let value_key = self.lua.create_registry_value(value).map_err(|e| {
+                    LifecycleError::LoadError(format!(
+                        "Failed to snapshot package.loaded entry {}: {}",
+                        key, e
+                    ))
+                })?;
+                entries.insert(key, value_key);
+            }
+        }
+
+        Ok(PackageLoadedSnapshot { entries })
+    }
+
+    fn call_on_unload_hook(&self, plugin_name: &str) {
+        let Some(hook_key) = self.on_unload_hooks.get(plugin_name) else {
+            return;
+        };
+
+        match self.lua.registry_value::<Function>(hook_key) {
+            Ok(on_unload) => {
+                if let Err(error) = on_unload.call::<()>(()) {
+                    warn!("on_unload hook failed for {}: {}", plugin_name, error);
+                }
+            }
+            Err(error) => {
+                warn!(
+                    "Failed to retrieve on_unload hook for {}: {}",
+                    plugin_name, error
+                );
+            }
+        }
+    }
+
+    fn clear_plugin_modules(&self, plugin_name: &str) -> LifecycleResult<()> {
+        self.lua
+            .load(&format!(
+                r#"
+local name = {plugin_name:?}
+for k, _ in pairs(package.loaded) do
+    if type(k) == "string" and (k == name or k:sub(1, #name + 1) == name .. ".") then
+        package.loaded[k] = nil
+    end
+end
+"#
+            ))
+            .exec()
+            .map_err(|e| {
+                LifecycleError::LoadError(format!(
+                    "Failed to clear package.loaded entries for {}: {}",
+                    plugin_name, e
+                ))
+            })
+    }
+
+    fn restore_package_loaded(&self, snapshot: PackageLoadedSnapshot) -> LifecycleResult<()> {
+        let package_loaded = self.package_loaded_table()?;
+        let mut existing_keys = HashSet::new();
+
+        for pair in package_loaded.pairs::<Value, Value>() {
+            let (key, _) = pair.map_err(|e| {
+                LifecycleError::LoadError(format!("Failed to inspect package.loaded: {}", e))
+            })?;
+
+            if let Value::String(key) = key {
+                let key = key
+                    .to_str()
+                    .map_err(|e| {
+                        LifecycleError::LoadError(format!(
+                            "Failed to decode package.loaded key: {}",
+                            e
+                        ))
+                    })?
+                    .to_string();
+                existing_keys.insert(key);
+            }
+        }
+
+        for key in existing_keys {
+            package_loaded.set(key, Value::Nil).map_err(|e| {
+                LifecycleError::LoadError(format!("Failed to clear package.loaded: {}", e))
+            })?;
+        }
+
+        for (key, value_key) in snapshot.entries {
+            let value = self.lua.registry_value::<Value>(&value_key).map_err(|e| {
+                LifecycleError::LoadError(format!(
+                    "Failed to restore package.loaded entry {}: {}",
+                    key, e
+                ))
+            })?;
+            package_loaded.set(key, value).map_err(|e| {
+                LifecycleError::LoadError(format!("Failed to write package.loaded entry: {}", e))
+            })?;
+        }
+
+        Ok(())
+    }
+
+    fn package_loaded_table(&self) -> LifecycleResult<mlua::Table> {
+        let package: mlua::Table = self.lua.globals().get("package").map_err(|e| {
+            LifecycleError::LoadError(format!("Failed to access package table: {}", e))
+        })?;
+        package.get("loaded").map_err(|e| {
+            LifecycleError::LoadError(format!("Failed to access package.loaded table: {}", e))
+        })
+    }
+
+    fn load_plugin_by_name(&mut self, name: &str) -> LifecycleResult<()> {
+        self.load(name)
+    }
+
+    pub fn eval_runtime<T>(&self, source: &str) -> LifecycleResult<T>
+    where
+        T: mlua::FromLua,
+    {
+        self.lua.load(source).eval().map_err(|e| {
+            LifecycleError::LoadError(format!("Failed to evaluate plugin runtime Lua: {}", e))
+        })
     }
 
     fn register_spec_exports(&mut self, spec: PluginSpec, source_path: &str, owner: &str) {
