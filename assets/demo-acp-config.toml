@@ -1,0 +1,57 @@
+# Crucible ACP Demo Configuration
+# Extends demo-config.toml with delegation settings for cross-agent demos.
+# Used by delegation-demo.tape for recording Claude → Cursor delegation.
+
+kiln_path = "docs"
+
+[providers]
+default_embedding = "ollama"
+
+[providers.ollama]
+backend = "ollama"
+endpoint = "https://llama.krohnos.io"
+timeout_secs = 120
+batch_size = 50
+
+[providers.ollama.models]
+embedding = "nomic-embed-text-v1.5-q8_0"
+
+[llm]
+default = "demo"
+
+[llm.providers.demo]
+type = "ollama"
+endpoint = "https://llama.krohnos.io"
+default_model = "qwen3-4b-instruct-2507-q8_0"
+temperature = 0.3
+max_tokens = 2048
+
+[chat]
+agent_preference = "crucible"
+internal_backend = "rig"
+provider = "ollama"
+model = "qwen3-4b-instruct-2507-q8_0"
+endpoint = "https://llama.krohnos.io"
+
+[cli]
+show_progress = false
+confirm_destructive = true
+verbose = false
+
+[storage]
+mode = "embedded"
+
+# ACP Agent Profiles with Delegation Configuration
+[acp.agents.claude]
+extends = "claude"
+
+[acp.agents.claude.delegation]
+enabled = true
+max_depth = 1
+allowed_targets = ["cursor", "opencode"]
+
+[acp.agents.cursor]
+extends = "cursor"
+
+[acp.agents.opencode]
+extends = "opencode"
