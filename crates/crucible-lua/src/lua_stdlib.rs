@@ -6,6 +6,716 @@
 
 use mlua::{Lua, Result};
 
+const LUA_TEST_MOCKS: &str = r#"
+local test_mocks = {}
+local _calls = {}
+local _fixtures = {}
+
+local function record_call(module, method, ...)
+    if not _calls[module] then _calls[module] = {} end
+    if not _calls[module][method] then _calls[module][method] = {} end
+    table.insert(_calls[module][method], { ... })
+end
+
+local function default_fixtures()
+    return {
+        kiln = { notes = {}, outlinks = {}, backlinks = {}, neighbors = {} },
+        graph = { notes = {}, outlinks = {}, backlinks = {}, neighbors = {} },
+        http = { responses = {} },
+        fs = { files = {}, dirs = {} },
+        session = { temperature = 0.7, max_tokens = nil, model = "mock-model", mode = "act", thinking_budget = nil },
+    }
+end
+
+local function deep_copy(orig)
+    if type(orig) ~= "table" then return orig end
+    local copy = {}
+    for k, v in pairs(orig) do copy[k] = deep_copy(v) end
+    return copy
+end
+
+local function create_kiln_mock(fixtures)
+    local kiln = {}
+    function kiln.list(limit)
+        record_call("kiln", "list", limit)
+        local notes = fixtures.kiln.notes or {}
+        if limit and limit < #notes then
+            local result = {}
+            for i = 1, limit do result[i] = deep_copy(notes[i]) end
+            return result
+        end
+        return deep_copy(notes)
+    end
+    function kiln.get(path)
+        record_call("kiln", "get", path)
+        for _, note in ipairs(fixtures.kiln.notes or {}) do
+            if note.path == path then return deep_copy(note) end
+        end
+        return nil
+    end
+    function kiln.search(query, opts)
+        record_call("kiln", "search", query, opts)
+        local results = {}
+        local limit = (opts and opts.limit) or 100
+        local count = 0
+        for _, note in ipairs(fixtures.kiln.notes or {}) do
+            if count >= limit then break end
+            local searchable = (note.title or "") .. " " .. (note.content or "")
+            if string.find(searchable:lower(), query:lower(), 1, true) then
+                table.insert(results, { path = note.path, score = 1.0 })
+                count = count + 1
+            end
+        end
+        return results
+    end
+    function kiln.outlinks(path)
+        record_call("kiln", "outlinks", path)
+        local links = fixtures.kiln.outlinks and fixtures.kiln.outlinks[path]
+        return links and deep_copy(links) or {}
+    end
+    function kiln.backlinks(path)
+        record_call("kiln", "backlinks", path)
+        local links = fixtures.kiln.backlinks and fixtures.kiln.backlinks[path]
+        return links and deep_copy(links) or {}
+    end
+    function kiln.neighbors(path, depth)
+        record_call("kiln", "neighbors", path, depth)
+        local links = fixtures.kiln.neighbors and fixtures.kiln.neighbors[path]
+        return links and deep_copy(links) or {}
+    end
+    return kiln
+end
+
+local function create_graph_mock(fixtures)
+    local graph = {}
+    function graph.get_note(path)
+        record_call("graph", "get_note", path)
+        for _, note in ipairs(fixtures.graph.notes or {}) do
+            if note.path == path then return deep_copy(note) end
+        end
+        return nil
+    end
+    function graph.get_outlinks(path)
+        record_call("graph", "get_outlinks", path)
+        local links = fixtures.graph.outlinks and fixtures.graph.outlinks[path]
+        return links and deep_copy(links) or {}
+    end
+    function graph.get_backlinks(path)
+        record_call("graph", "get_backlinks", path)
+        local links = fixtures.graph.backlinks and fixtures.graph.backlinks[path]
+        return links and deep_copy(links) or {}
+    end
+    function graph.get_neighbors(path, depth)
+        record_call("graph", "get_neighbors", path, depth)
+        local links = fixtures.graph.neighbors and fixtures.graph.neighbors[path]
+        return links and deep_copy(links) or {}
+    end
+    function graph.search_semantic(query, opts)
+        record_call("graph", "search_semantic", query, opts)
+        local results = {}
+        for _, note in ipairs(fixtures.graph.notes or {}) do
+            local searchable = (note.title or "") .. " " .. (note.content or "")
+            if string.find(searchable:lower(), query:lower(), 1, true) then
+                table.insert(results, { path = note.path, score = 0.9 })
+            end
+        end
+        return results
+    end
+    return graph
+end
+
+local function create_http_mock(fixtures)
+    local mock_http = {}
+    local default_response = { status = 200, body = "", ok = true, headers = {} }
+    local function make_response(method, url, opts)
+        record_call("http", method, url, opts)
+        local resp = (fixtures.http.responses or {})[url] or default_response
+        return { status = resp.status or 200, body = resp.body or "", ok = resp.ok ~= false, headers = resp.headers or {} }
+    end
+    function mock_http.get(url, opts) return make_response("get", url, opts) end
+    function mock_http.post(url, opts) return make_response("post", url, opts) end
+    function mock_http.put(url, opts) return make_response("put", url, opts) end
+    function mock_http.delete(url, opts) return make_response("delete", url, opts) end
+    function mock_http.request(opts)
+        local url = opts and opts.url or ""
+        record_call("http", "request", opts)
+        local resp = (fixtures.http.responses or {})[url] or default_response
+        return { status = resp.status or 200, body = resp.body or "", ok = resp.ok ~= false, headers = resp.headers or {} }
+    end
+    return mock_http
+end
+
+local function create_fs_mock(fixtures)
+    local mock_fs = {}
+    local files = {}
+    local dirs = {}
+    for k, v in pairs(fixtures.fs.files or {}) do files[k] = v end
+    for k, v in pairs(fixtures.fs.dirs or {}) do dirs[k] = v end
+    function mock_fs.read(path)
+        record_call("fs", "read", path)
+        if files[path] ~= nil then return files[path] end
+        error("File not found: " .. path)
+    end
+    function mock_fs.write(path, content)
+        record_call("fs", "write", path, content)
+        files[path] = content
+    end
+    function mock_fs.exists(path)
+        record_call("fs", "exists", path)
+        return files[path] ~= nil or dirs[path] ~= nil
+    end
+    function mock_fs.mkdir(path)
+        record_call("fs", "mkdir", path)
+        dirs[path] = true
+    end
+    function mock_fs.list(path)
+        record_call("fs", "list", path)
+        local result = {}
+        local prefix = path
+        if prefix:sub(-1) ~= "/" then prefix = prefix .. "/" end
+        for k in pairs(files) do
+            if k:sub(1, #prefix) == prefix then
+                local rest = k:sub(#prefix + 1)
+                if not rest:find("/") then table.insert(result, rest) end
+            end
+        end
+        for k in pairs(dirs) do
+            if k:sub(1, #prefix) == prefix then
+                local rest = k:sub(#prefix + 1)
+                if rest ~= "" and not rest:find("/") then table.insert(result, rest) end
+            end
+        end
+        return result
+    end
+    return mock_fs
+end
+
+local function create_session_mock(fixtures)
+    local session = {}
+    local state = {
+        temperature = fixtures.session.temperature,
+        max_tokens = fixtures.session.max_tokens,
+        model = fixtures.session.model or "mock-model",
+        mode = fixtures.session.mode or "act",
+        thinking_budget = fixtures.session.thinking_budget,
+    }
+    function session.get_temperature() record_call("session", "get_temperature"); return state.temperature end
+    function session.set_temperature(val) record_call("session", "set_temperature", val); state.temperature = val end
+    function session.get_max_tokens() record_call("session", "get_max_tokens"); return state.max_tokens end
+    function session.set_max_tokens(val) record_call("session", "set_max_tokens", val); state.max_tokens = val end
+    function session.get_model() record_call("session", "get_model"); return state.model end
+    function session.get_mode() record_call("session", "get_mode"); return state.mode end
+    function session.set_mode(val) record_call("session", "set_mode", val); state.mode = val end
+    function session.get_thinking_budget() record_call("session", "get_thinking_budget"); return state.thinking_budget end
+    function session.set_thinking_budget(val) record_call("session", "set_thinking_budget", val); state.thinking_budget = val end
+    return session
+end
+
+function test_mocks.setup(overrides)
+    overrides = overrides or {}
+    _fixtures = default_fixtures()
+    for module, config in pairs(overrides) do
+        if _fixtures[module] then
+            for k, v in pairs(config) do _fixtures[module][k] = v end
+        end
+    end
+    _calls = {}
+    cru = cru or {}
+    cru.kiln = create_kiln_mock(_fixtures)
+    cru.graph = create_graph_mock(_fixtures)
+    cru.http = create_http_mock(_fixtures)
+    cru.fs = create_fs_mock(_fixtures)
+    cru.session = create_session_mock(_fixtures)
+    http = cru.http
+    fs = cru.fs
+    if crucible then
+        crucible.kiln = cru.kiln
+        crucible.graph = cru.graph
+        crucible.http = cru.http
+        crucible.fs = cru.fs
+        crucible.session = cru.session
+    end
+end
+
+function test_mocks.reset()
+    _calls = {}
+    _fixtures = default_fixtures()
+    test_mocks.setup()
+end
+
+function test_mocks.get_calls(module, method)
+    if not _calls[module] then return {} end
+    if not _calls[module][method] then return {} end
+    return _calls[module][method]
+end
+
+_G.test_mocks = test_mocks
+"#;
+
+const LUA_TEST_RUNNER: &str = r#"
+-- test_runner.lua - Minimal test runner for Crucible plugins
+--
+-- Provides describe/it/before_each/after_each/pending globals and assert table.
+-- No external dependencies — pure Lua with pcall/error only.
+
+local COLORS = {
+    reset = "\27[0m",
+    green = "\27[32m",
+    red = "\27[31m",
+    yellow = "\27[33m",
+}
+
+local test_state = {
+    suites = {},
+    current_suite = nil,
+    tests = {},
+    before_each_stack = {},
+    after_each_stack = {},
+    results = {
+        passed = 0,
+        failed = 0,
+        pending = 0,
+        errors = {},
+    },
+}
+
+local _original_assert = assert
+local assert = setmetatable({}, {
+    __call = function(_, ...)
+        return _original_assert(...)
+    end,
+})
+
+local function format_value(val)
+    if type(val) == "string" then
+        return '"' .. val .. '"'
+    elseif type(val) == "table" then
+        return "{...}"
+    else
+        return tostring(val)
+    end
+end
+
+function assert.equal(expected, actual)
+    if expected ~= actual then
+        error(string.format(
+            "Expected: %s\nActual: %s",
+            format_value(expected),
+            format_value(actual)
+        ), 2)
+    end
+end
+
+function assert.deep_equal(expected, actual)
+    local function deep_eq(a, b, seen)
+        seen = seen or {}
+        if type(a) == "table" and type(b) == "table" then
+            if seen[a] or seen[b] then
+                return true
+            end
+            seen[a] = true
+            seen[b] = true
+        end
+        if type(a) ~= type(b) then
+            return false
+        end
+        if type(a) ~= "table" then
+            return a == b
+        end
+        for k, v in pairs(a) do
+            if not deep_eq(v, b[k], seen) then
+                return false
+            end
+        end
+        for k in pairs(b) do
+            if a[k] == nil then
+                return false
+            end
+        end
+        return true
+    end
+    if not deep_eq(expected, actual) then
+        error(string.format(
+            "Expected: %s\nActual: %s",
+            format_value(expected),
+            format_value(actual)
+        ), 2)
+    end
+end
+
+function assert.truthy(val)
+    if not val then
+        error(string.format("Expected truthy value, got: %s", format_value(val)), 2)
+    end
+end
+
+function assert.falsy(val)
+    if val then
+        error(string.format("Expected falsy value, got: %s", format_value(val)), 2)
+    end
+end
+
+function assert.is_nil(val)
+    if val ~= nil then
+        error(string.format("Expected nil, got: %s", format_value(val)), 2)
+    end
+end
+
+function assert.is_string(val)
+    if type(val) ~= "string" then
+        error(string.format("Expected string, got: %s", type(val)), 2)
+    end
+end
+
+function assert.is_number(val)
+    if type(val) ~= "number" then
+        error(string.format("Expected number, got: %s", type(val)), 2)
+    end
+end
+
+function assert.is_table(val)
+    if type(val) ~= "table" then
+        error(string.format("Expected table, got: %s", type(val)), 2)
+    end
+end
+
+function assert.is_function(val)
+    if type(val) ~= "function" then
+        error(string.format("Expected function, got: %s", type(val)), 2)
+    end
+end
+
+function assert.has_error(fn, expected_msg)
+    local ok, err = pcall(fn)
+    if ok then
+        error("Expected function to raise an error, but it succeeded", 2)
+    end
+    if expected_msg and not string.find(tostring(err), expected_msg, 1, true) then
+        error(string.format(
+            "Expected error message to contain: %s\nActual: %s",
+            expected_msg,
+            tostring(err)
+        ), 2)
+    end
+end
+
+function describe(name, fn)
+    local suite = {
+        name = name,
+        parent = test_state.current_suite,
+        tests = {},
+        before_each_fns = {},
+        after_each_fns = {},
+    }
+    local prev_suite = test_state.current_suite
+    test_state.current_suite = suite
+    local ok, err = pcall(fn)
+    test_state.current_suite = prev_suite
+    if not ok then
+        error(string.format("Error in describe block '%s': %s", name, err), 2)
+    end
+    for _, test in ipairs(suite.tests) do
+        table.insert(test_state.tests, test)
+    end
+end
+
+function it(name, fn)
+    if not test_state.current_suite then
+        error("it() must be called inside describe()", 2)
+    end
+    local test = {
+        name = name,
+        fn = fn,
+        suite = test_state.current_suite,
+        status = "pending",
+        error = nil,
+        traceback = nil,
+    }
+    table.insert(test_state.current_suite.tests, test)
+end
+
+function pending(name, fn)
+    if not test_state.current_suite then
+        error("pending() must be called inside describe()", 2)
+    end
+    local test = {
+        name = name,
+        fn = fn,
+        suite = test_state.current_suite,
+        status = "pending",
+        error = nil,
+        traceback = nil,
+        is_pending = true,
+    }
+    table.insert(test_state.current_suite.tests, test)
+end
+
+function before_each(fn)
+    if not test_state.current_suite then
+        error("before_each() must be called inside describe()", 2)
+    end
+    table.insert(test_state.current_suite.before_each_fns, fn)
+end
+
+function after_each(fn)
+    if not test_state.current_suite then
+        error("after_each() must be called inside describe()", 2)
+    end
+    table.insert(test_state.current_suite.after_each_fns, fn)
+end
+
+local function get_line_number(traceback)
+    local line = string.match(traceback, ":(%d+):")
+    return line or "?"
+end
+
+local function run_test(test)
+    local before_fns = {}
+    local after_fns = {}
+    local suite = test.suite
+    while suite do
+        table.insert(before_fns, 1, suite.before_each_fns)
+        table.insert(after_fns, 1, suite.after_each_fns)
+        suite = suite.parent
+    end
+    for _, fns in ipairs(before_fns) do
+        for _, fn in ipairs(fns) do
+            local ok, err = pcall(fn)
+            if not ok then
+                test.status = "failed"
+                test.error = err
+                test.traceback = debug.traceback()
+                return
+            end
+        end
+    end
+    local ok, err = pcall(test.fn)
+    if ok then
+        test.status = "passed"
+    else
+        test.status = "failed"
+        test.error = err
+        test.traceback = debug.traceback()
+    end
+    for i = #after_fns, 1, -1 do
+        local fns = after_fns[i]
+        for _, fn in ipairs(fns) do
+            local ok, err = pcall(fn)
+            if not ok and test.status == "passed" then
+                test.status = "failed"
+                test.error = err
+                test.traceback = debug.traceback()
+            end
+        end
+    end
+end
+
+function run_tests()
+    test_state.results = {
+        passed = 0,
+        failed = 0,
+        pending = 0,
+        errors = {},
+    }
+    for _, test in ipairs(test_state.tests) do
+        if test.is_pending then
+            test_state.results.pending = test_state.results.pending + 1
+            print(string.format("%s⊘ %s%s", COLORS.yellow, test.name, COLORS.reset))
+        else
+            run_test(test)
+            if test.status == "passed" then
+                test_state.results.passed = test_state.results.passed + 1
+                print(string.format("%s✓ %s%s", COLORS.green, test.name, COLORS.reset))
+            else
+                test_state.results.failed = test_state.results.failed + 1
+                local line = get_line_number(test.traceback or "")
+                print(string.format(
+                    "%s✗ %s%s\n  %s (line %s)",
+                    COLORS.red,
+                    test.name,
+                    COLORS.reset,
+                    test.error or "Unknown error",
+                    line
+                ))
+                table.insert(test_state.results.errors, {
+                    name = test.name,
+                    error = test.error,
+                    traceback = test.traceback,
+                })
+            end
+        end
+    end
+    local total = test_state.results.passed + test_state.results.failed + test_state.results.pending
+    print(string.format(
+        "\n%s%d passed%s, %s%d failed%s, %s%d pending%s (total: %d)",
+        COLORS.green,
+        test_state.results.passed,
+        COLORS.reset,
+        COLORS.red,
+        test_state.results.failed,
+        COLORS.reset,
+        COLORS.yellow,
+        test_state.results.pending,
+        COLORS.reset,
+        total
+    ))
+    return test_state.results
+end
+
+_G.describe = describe
+_G.it = it
+_G.pending = pending
+_G.before_each = before_each
+_G.after_each = after_each
+_G.assert = assert
+_G.run_tests = run_tests
+"#;
+
+const LUA_QOL: &str = r#"
+-- ============================================================================
+-- cru.inspect — Pretty-print any Lua value with cycle detection
+-- ============================================================================
+
+do
+    local function inspect_impl(value, opts, seen, depth)
+        opts = opts or {}
+        local max_depth = opts.max_depth
+        local indent_str = opts.indent or "  "
+        seen = seen or {}
+        depth = depth or 0
+
+        local t = type(value)
+
+        -- Handle nil, boolean, number
+        if t == "nil" then
+            return "nil"
+        elseif t == "boolean" then
+            return tostring(value)
+        elseif t == "number" then
+            return tostring(value)
+        elseif t == "string" then
+            return string.format("%q", value)
+        elseif t == "function" then
+            return "<function>"
+        elseif t == "userdata" then
+            return "<userdata>"
+        elseif t == "thread" then
+            return "<thread>"
+        elseif t == "table" then
+            -- Check for cycles
+            if seen[value] then
+                return "<cycle: table>"
+            end
+
+            -- Check depth limit
+            if max_depth and depth >= max_depth then
+                return "{...}"
+            end
+
+            seen[value] = true
+            local indent = indent_str:rep(depth)
+            local next_indent = indent_str:rep(depth + 1)
+            local parts = {}
+
+            for k, v in pairs(value) do
+                local key_str
+                if type(k) == "string" then
+                    key_str = k
+                else
+                    key_str = "[" .. inspect_impl(k, opts, seen, depth + 1) .. "]"
+                end
+                local val_str = inspect_impl(v, opts, seen, depth + 1)
+                table.insert(parts, next_indent .. key_str .. " = " .. val_str)
+            end
+
+            if #parts == 0 then
+                return "{}"
+            else
+                return "{\n" .. table.concat(parts, ",\n") .. "\n" .. indent .. "}"
+            end
+        else
+            return tostring(value)
+        end
+    end
+
+    function cru.inspect(value, opts)
+        return inspect_impl(value, opts)
+    end
+end
+
+-- ============================================================================
+-- cru.tbl_deep_extend — Deep merge tables with behavior semantics
+-- ============================================================================
+
+do
+    local function deep_extend_impl(behavior, result, ...)
+        local tables = {...}
+        for _, tbl in ipairs(tables) do
+            if type(tbl) == "table" then
+                for k, v in pairs(tbl) do
+                    if behavior == "force" then
+                        -- Last wins: always override
+                        if type(v) == "table" and type(result[k]) == "table" then
+                            -- Recurse for nested tables
+                            deep_extend_impl(behavior, result[k], v)
+                        else
+                            result[k] = v
+                        end
+                    elseif behavior == "keep" then
+                        -- First wins: skip if already set
+                        if result[k] == nil then
+                            if type(v) == "table" then
+                                -- Deep copy the table
+                                result[k] = {}
+                                deep_extend_impl(behavior, result[k], v)
+                            else
+                                result[k] = v
+                            end
+                        elseif type(v) == "table" and type(result[k]) == "table" then
+                            -- Recurse even if key exists
+                            deep_extend_impl(behavior, result[k], v)
+                        end
+                    end
+                end
+            end
+        end
+        return result
+    end
+
+    function cru.tbl_deep_extend(behavior, ...)
+        cru.check.one_of(behavior, {"force", "keep"}, "behavior")
+        local result = {}
+        return deep_extend_impl(behavior, result, ...)
+    end
+end
+
+-- ============================================================================
+-- cru.tbl_get — Safe nested key access
+-- ============================================================================
+
+function cru.tbl_get(t, ...)
+    if type(t) ~= "table" then return nil end
+    local keys = {...}
+    local current = t
+    for _, key in ipairs(keys) do
+        if type(current) ~= "table" then
+            return nil
+        end
+        current = current[key]
+        if current == nil then
+            return nil
+        end
+    end
+    return current
+end
+
+-- ============================================================================
+-- cru.on_error — Overridable error handler hook
+-- ============================================================================
+
+cru.on_error = nil
+"#;
+
 const LUA_STDLIB: &str = r#"
 -- ============================================================================
 -- cru.retry — Exponential backoff with jitter
@@ -289,12 +999,123 @@ do
 end
 "#;
 
-/// Register the pure Lua standard library (retry, emitter, check).
+const LUA_HEALTH: &str = r#"
+-- health.lua - Plugin self-diagnostics (Neovim vim.health-inspired)
+--
+-- Provides cru.health module for plugins to report health status.
+-- Plugins write a health.lua returning {check = function() ... end}
+--
+-- Usage:
+--   cru.health.start("my-plugin")
+--   cru.health.ok("Database connected")
+--   cru.health.warn("Cache miss rate high", {"Consider increasing cache size"})
+--   cru.health.error("API key missing", {"Set CRUCIBLE_API_KEY env var"})
+--   local results = cru.health.get_results()
+--   -- results = {
+--   --   name = "my-plugin",
+--   --   healthy = false,  -- error makes this false
+--   --   checks = [
+--   --     {level="ok", msg="Database connected"},
+--   --     {level="warn", msg="Cache miss rate high", advice=["..."]},
+--   --     {level="error", msg="API key missing", advice=["..."]},
+--   --   ]
+--   -- }
+
+local health = {}
+
+-- Internal state: current check results
+local _state = {
+    name = nil,
+    checks = {},
+    healthy = true,
+}
+
+-- Start a new health check section (resets state)
+function health.start(name)
+    cru.check.string(name, "name")
+    _state = {
+        name = name,
+        checks = {},
+        healthy = true,
+    }
+end
+
+-- Add an OK check (does not affect healthy status)
+function health.ok(msg)
+    cru.check.string(msg, "msg")
+    table.insert(_state.checks, {
+        level = "ok",
+        msg = msg,
+    })
+end
+
+-- Add a warning check (does not affect healthy status)
+function health.warn(msg, advice)
+    cru.check.string(msg, "msg")
+    if advice ~= nil then
+        cru.check.table(advice, "advice")
+    end
+    table.insert(_state.checks, {
+        level = "warn",
+        msg = msg,
+        advice = advice,
+    })
+end
+
+-- Add an error check (sets healthy = false)
+function health.error(msg, advice)
+    cru.check.string(msg, "msg")
+    if advice ~= nil then
+        cru.check.table(advice, "advice")
+    end
+    _state.healthy = false
+    table.insert(_state.checks, {
+        level = "error",
+        msg = msg,
+        advice = advice,
+    })
+end
+
+-- Add an info check (does not affect healthy status)
+function health.info(msg)
+    cru.check.string(msg, "msg")
+    table.insert(_state.checks, {
+        level = "info",
+        msg = msg,
+    })
+end
+
+-- Get current results and reset state
+function health.get_results()
+    local results = {
+        name = _state.name,
+        healthy = _state.healthy,
+        checks = _state.checks,
+    }
+    -- Reset state for next check
+    _state = {
+        name = nil,
+        checks = {},
+        healthy = true,
+    }
+    return results
+end
+
+-- Register as global cru.health
+cru.health = health
+"#;
+
+/// Register the pure Lua standard library (retry, emitter, check, test_runner, health).
 ///
 /// Must be called after `setup_globals` creates the `cru` table and after
 /// `register_timer_module` (since `cru.retry` depends on `cru.timer.sleep`).
 pub fn register_lua_stdlib(lua: &Lua) -> Result<()> {
-    lua.load(LUA_STDLIB).exec()
+    lua.load(LUA_TEST_RUNNER).set_name("test_runner").exec()?;
+    lua.load(LUA_TEST_MOCKS).set_name("test_mocks").exec()?;
+    lua.load(LUA_STDLIB).exec()?;
+    lua.load(LUA_QOL).set_name("qol").exec()?;
+    lua.load(LUA_HEALTH).set_name("health").exec()?;
+    lua.load("_G.inspect = cru.inspect").exec()
 }
 
 #[cfg(test)]
@@ -528,6 +1349,7 @@ mod tests {
         assert!(cru.get::<Table>("emitter").is_ok());
         assert!(cru.get::<Table>("check").is_ok());
         assert!(cru.get::<mlua::Function>("retry").is_ok());
+        assert!(cru.get::<Table>("health").is_ok());
     }
 
     #[test]
