@@ -4,17 +4,10 @@
 
 kiln_path = "docs"
 
-[providers]
-default_embedding = "ollama"
+[enrichment.provider]
+type = "fastembed"
 
-[providers.ollama]
-backend = "ollama"
-endpoint = "https://llama.krohnos.io"
-timeout_secs = 120
-batch_size = 50
-
-[providers.ollama.models]
-embedding = "nomic-embed-text-v1.5-q8_0"
+[enrichment.pipeline]
 
 [llm]
 default = "demo"
@@ -27,11 +20,7 @@ temperature = 0.3
 max_tokens = 2048
 
 [chat]
-agent_preference = "crucible"
-internal_backend = "rig"
-provider = "ollama"
-model = "qwen3-4b-instruct-2507-q8_0"
-endpoint = "https://llama.krohnos.io"
+agent_preference = "acp"
 
 [cli]
 show_progress = false

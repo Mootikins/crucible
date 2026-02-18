@@ -1,0 +1,6 @@
+EXISTS: YES
+Duration: 22.000000s
+Size: 1983733 bytes
+Content: Claude provides comparison table (Direction, State, Streaming, Crucible role) + summary about ACP vs MCP
+Takes: 12 (took many due to stale binary, missing daemon, ACP selection bug, Claude timing)
+Compressed: Yes (ffmpeg palette optimization, 48 colors, 7fps, 960px width)
