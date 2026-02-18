@@ -9,7 +9,7 @@
 No cloud. No lock-in. Your AI chats live as markdown files in git, wired into a knowledge graph you control.
 
 <p align="center">
-  <img src="assets/demo.gif" alt="Crucible chat demo" width="720" />
+  <img src="assets/demo.gif" alt="Crucible chat with Precognition" width="720" />
 </p>
 
 > **Early Development**: APIs and storage formats may change. Contributions welcome!
@@ -73,7 +73,7 @@ First run prompts for a kiln path and detects available LLM providers. A backgro
 - `BackTab` cycles modes: Normal → Plan → Auto
 
 <p align="center">
-  <img src="assets/cru-overview.gif" alt="Crucible overview" width="720" />
+  <img src="assets/delegation-demo.gif" alt="Cross-agent delegation: Claude delegating to Cursor" width="720" />
 </p>
 
 ## Features
