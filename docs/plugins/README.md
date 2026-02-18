@@ -122,6 +122,91 @@ Lower numbers run earlier:
 - `priority = 100` - Late (default)
 - `priority = 200` - Very late (audit, logging)
 
+## Testing
+
+Each example plugin includes a `tests/` directory with test files. Run them with:
+
+```bash
+# Test a specific plugin
+cru plugin test docs/plugins/todo-list
+
+# Test with verbose output
+cru plugin test docs/plugins/todo-list --verbose
+```
+
+### Test File Structure
+
+Tests use `describe`/`it` blocks with a built-in assertion library:
+
+```lua
+-- tests/init_test.lua
+
+describe("my_tool", function()
+    before_each(function()
+        test_mocks.setup({
+            kiln = { search = function() return {} end },
+        })
+    end)
+
+    after_each(function()
+        test_mocks.reset()
+    end)
+
+    it("returns expected result", function()
+        local plugin = require("init")
+        local result = plugin.tools.my_tool.fn({ query = "test" })
+        assert.equal(result.count, 0)
+    end)
+end)
+```
+
+### Mocking
+
+The `test_mocks` global lets you stub `cru.*` APIs so tests don't need a running Crucible instance:
+
+```lua
+test_mocks.setup({
+    kiln = {
+        search = function(query)
+            return {{ title = "Mock Note", score = 0.95 }}
+        end,
+    },
+})
+```
+
+Call `test_mocks.reset()` in `after_each` to clean up between tests.
+
+## Health Checks
+
+Plugins can include a `health.lua` file that reports diagnostic information. This helps users verify that a plugin's dependencies and configuration are correct.
+
+```lua
+-- health.lua
+
+local function check()
+    cru.health.start("my-plugin")
+
+    if cru.kiln then
+        cru.health.ok("Kiln API available")
+    else
+        cru.health.error("Kiln API missing", {
+            "Add 'kiln' to capabilities in plugin.yaml",
+        })
+    end
+
+    cru.health.info("Version 1.0.0")
+    return cru.health.get_results()
+end
+
+return { check = check }
+```
+
+Run health checks with:
+
+```bash
+cru plugin health docs/plugins/todo-list
+```
+
 ## Fennel Support
 
 Crucible also supports Fennel (Lisp syntax that compiles to Lua):
@@ -135,7 +220,7 @@ Crucible also supports Fennel (Lisp syntax that compiles to Lua):
 {:my_tool my-tool}
 ```
 
-Place `.fnl` files in the same plugin directories.
+Place `.fnl` files in the same plugin directories. Fennel test files (`*_test.fnl`) are also supported by the test runner.
 
 ## Documentation
 

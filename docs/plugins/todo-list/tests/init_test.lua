@@ -1,0 +1,85 @@
+--- Tests for todo-list plugin
+
+describe("todo-list", function()
+    local plugin = require("init")
+
+    describe("tasks_list", function()
+        it("returns a table with count and tasks fields", function()
+            local result = plugin.tools.tasks_list.fn({ file = "nonexistent.md" })
+            assert.equal(type(result), "table")
+            assert.equal(result.count, 0)
+            assert.deep_equal(result.tasks, {})
+        end)
+
+        it("uses TASKS.md as default file", function()
+            local result = plugin.tools.tasks_list.fn({})
+            assert.equal(result.file, "TASKS.md")
+        end)
+
+        it("respects custom file path", function()
+            local result = plugin.tools.tasks_list.fn({ file = "custom.md" })
+            assert.equal(result.file, "custom.md")
+        end)
+    end)
+
+    describe("tasks_add", function()
+        it("rejects empty text", function()
+            local result = plugin.tools.tasks_add.fn({ text = "" })
+            assert.truthy(result.error)
+        end)
+
+        it("rejects nil text", function()
+            local result = plugin.tools.tasks_add.fn({})
+            assert.truthy(result.error)
+        end)
+    end)
+
+    describe("tasks_complete", function()
+        it("requires a task ID", function()
+            local result = plugin.tools.tasks_complete.fn({})
+            assert.truthy(result.error)
+            assert.equal(result.error, "Task ID is required")
+        end)
+
+        it("rejects invalid task IDs", function()
+            local result = plugin.tools.tasks_complete.fn({ id = 999 })
+            assert.truthy(result.error)
+        end)
+
+        it("rejects non-numeric IDs", function()
+            local result = plugin.tools.tasks_complete.fn({ id = "abc" })
+            assert.truthy(result.error)
+        end)
+    end)
+
+    describe("tasks_next", function()
+        it("returns a message when no tasks file exists", function()
+            local result = plugin.tools.tasks_next.fn({ file = "nonexistent.md" })
+            -- With no file, there are no tasks, so all are "completed"
+            assert.truthy(result.message)
+            assert.equal(result.total, 0)
+        end)
+    end)
+
+    describe("plugin metadata", function()
+        it("exports the correct name", function()
+            assert.equal(plugin.name, "todo-list")
+        end)
+
+        it("exports a version string", function()
+            assert.equal(type(plugin.version), "string")
+        end)
+
+        it("exports all expected tools", function()
+            assert.truthy(plugin.tools.tasks_list)
+            assert.truthy(plugin.tools.tasks_add)
+            assert.truthy(plugin.tools.tasks_complete)
+            assert.truthy(plugin.tools.tasks_next)
+        end)
+
+        it("exports the /tasks command", function()
+            assert.truthy(plugin.commands.tasks)
+            assert.equal(type(plugin.commands.tasks.fn), "function")
+        end)
+    end)
+end)
