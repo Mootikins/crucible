@@ -279,6 +279,13 @@ pub enum Commands {
     )]
     Tools(ToolsCommands),
 
+    /// Manage and develop Lua plugins
+    #[command(
+        subcommand,
+        long_about = "Manage and develop Lua plugins.\n\nTest, scaffold, generate type stubs, and run health checks for Crucible plugins.\n\nExamples:\n  # Run plugin tests\n  cru plugin test ./my-plugin\n\n  # Scaffold a new plugin\n  cru plugin new my-plugin\n\n  # Generate LuaLS type stubs\n  cru plugin stubs\n\n  # Run health checks\n  cru plugin health ./my-plugin"
+    )]
+    Plugin(crate::commands::plugin::PluginCommands),
+
     /// Initialize a new kiln (Crucible workspace)
     #[command(
         long_about = "Initialize a new kiln (Crucible workspace) with configuration and directory structure.\n\nExamples:\n  # Initialize kiln in current directory\n  cru init\n\n  # Initialize in specific directory\n  cru init --path ~/my-kiln\n\n  # Interactive setup with provider selection\n  cru init --interactive\n\n  # Force overwrite existing kiln\n  cru init --force",
