@@ -4,10 +4,17 @@
 
 kiln_path = "docs"
 
-[enrichment.provider]
-type = "fastembed"
+[providers]
+default_embedding = "ollama"
 
-[enrichment.pipeline]
+[providers.ollama]
+backend = "ollama"
+endpoint = "https://llm.example.com"
+timeout_secs = 120
+batch_size = 50
+
+[providers.ollama.models]
+embedding = "nomic-embed-text-v1.5-q8_0"
 
 [llm]
 default = "demo"
@@ -20,7 +27,11 @@ temperature = 0.3
 max_tokens = 2048
 
 [chat]
-agent_preference = "acp"
+agent_preference = "crucible"
+internal_backend = "rig"
+provider = "ollama"
+model = "qwen3-4b-instruct-2507-q8_0"
+endpoint = "https://llm.example.com"
 
 [cli]
 show_progress = false
