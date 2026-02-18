@@ -320,11 +320,7 @@ pub async fn create_daemon_agent(
     let is_acp = params
         .agent_type
         .map(|t| t == AgentType::Acp)
-        .unwrap_or_else(|| {
-            // If an agent name was explicitly provided (via -a flag), treat as ACP
-            params.agent_name.is_some()
-                || config.chat.agent_preference == crucible_config::AgentPreference::Acp
-        });
+        .unwrap_or_else(|| config.chat.agent_preference == crucible_config::AgentPreference::Acp);
 
     if is_new_session {
         let session_agent = if is_acp {
