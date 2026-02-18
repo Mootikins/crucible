@@ -1,0 +1,75 @@
+--- Tests for daily-notes plugin
+
+describe("daily-notes", function()
+    local plugin = require("init")
+
+    describe("daily_create", function()
+        it("rejects invalid date formats", function()
+            local result = plugin.tools.daily_create.fn({ date = "not-a-date" })
+            assert.truthy(result.error)
+            assert.equal(result.error, "Invalid date format. Use YYYY-MM-DD")
+        end)
+
+        it("accepts YYYY-MM-DD dates", function()
+            local result = plugin.tools.daily_create.fn({ date = "2025-06-15" })
+            assert.equal(type(result), "table")
+            assert.falsy(result.error == "Invalid date format. Use YYYY-MM-DD")
+        end)
+    end)
+
+    describe("daily_open", function()
+        it("returns a path and date for today", function()
+            local result = plugin.tools.daily_open.fn({})
+            assert.truthy(result.path)
+            assert.truthy(result.date)
+        end)
+
+        it("returns a path containing the requested date", function()
+            local result = plugin.tools.daily_open.fn({ date = "2025-03-20" })
+            assert.truthy(result.path)
+            assert.truthy(result.path:find("2025%-03%-20"))
+        end)
+    end)
+
+    describe("daily_list", function()
+        it("returns the requested number of days", function()
+            local result = plugin.tools.daily_list.fn({ days = 3 })
+            assert.equal(result.count, 3)
+            assert.equal(#result.notes, 3)
+        end)
+
+        it("defaults to 7 days", function()
+            local result = plugin.tools.daily_list.fn({})
+            assert.equal(result.count, 7)
+        end)
+
+        it("includes date and exists fields for each note", function()
+            local result = plugin.tools.daily_list.fn({ days = 1 })
+            local note = result.notes[1]
+            assert.truthy(note.date)
+            assert.equal(type(note.exists), "boolean")
+            assert.truthy(note.path)
+        end)
+    end)
+
+    describe("plugin metadata", function()
+        it("exports the correct name", function()
+            assert.equal(plugin.name, "daily-notes")
+        end)
+
+        it("exports a version string", function()
+            assert.equal(type(plugin.version), "string")
+        end)
+
+        it("exports all expected tools", function()
+            assert.truthy(plugin.tools.daily_create)
+            assert.truthy(plugin.tools.daily_open)
+            assert.truthy(plugin.tools.daily_list)
+        end)
+
+        it("exports the /daily command", function()
+            assert.truthy(plugin.commands.daily)
+            assert.equal(type(plugin.commands.daily.fn), "function")
+        end)
+    end)
+end)
