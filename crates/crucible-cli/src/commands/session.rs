@@ -438,6 +438,9 @@ async fn resume(config: CliConfig, id: String) -> Result<()> {
         vec![],
         Some(id),
         vec![],
+        None,
+        None,
+        1.0,
     )
     .await
 }

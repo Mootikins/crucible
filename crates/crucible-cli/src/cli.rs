@@ -127,6 +127,18 @@ pub enum Commands {
         /// Can be toggled during session with /plan and /normal commands
         #[arg(long)]
         plan: bool,
+
+        /// Record TUI session to a JSONL file for later replay
+        #[arg(long, conflicts_with = "replay")]
+        record: Option<PathBuf>,
+
+        /// Replay a previously recorded JSONL session
+        #[arg(long, conflicts_with = "record")]
+        replay: Option<PathBuf>,
+
+        /// Playback speed multiplier for replay (default: 1.0)
+        #[arg(long, default_value = "1.0")]
+        replay_speed: f64,
     },
 
     /// Start MCP server exposing Crucible tools for external AI agents

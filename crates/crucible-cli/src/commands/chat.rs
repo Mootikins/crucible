@@ -81,6 +81,9 @@ pub async fn execute(
     env_overrides: Vec<String>,
     resume_session_id: Option<String>,
     set_overrides: Vec<String>,
+    record: Option<PathBuf>,
+    replay: Option<PathBuf>,
+    replay_speed: f64,
 ) -> Result<()> {
     let initial_mode = if read_only { "plan" } else { "normal" };
 
@@ -108,6 +111,9 @@ pub async fn execute(
                 working_dir,
                 resume_session_id,
                 set_overrides,
+                record,
+                replay,
+                replay_speed,
             )
             .await
         }
@@ -305,6 +311,9 @@ async fn run_interactive_chat(
     working_dir: Option<std::path::PathBuf>,
     resume_session_id: Option<String>,
     set_overrides: Vec<String>,
+    record: Option<PathBuf>,
+    replay: Option<PathBuf>,
+    replay_speed: f64,
 ) -> Result<()> {
     use crate::chat::bridge::AgentEventBridge;
     use crate::chat::session::{index_kiln_notes, index_workspace_files};
@@ -368,7 +377,10 @@ async fn run_interactive_chat(
         .with_context_limit(context_limit)
         .with_show_thinking(config.chat.show_thinking)
         .with_agent_name(agent_name)
-        .with_initial_sets(parsed_set_overrides);
+        .with_initial_sets(parsed_set_overrides)
+        .with_record_path(record)
+        .with_replay_path(replay)
+        .with_replay_speed(replay_speed);
 
     info!("Starting oil chat with model: {}", model_name);
 
