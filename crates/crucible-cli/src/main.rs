@@ -366,6 +366,10 @@ async fn main() -> Result<()> {
             commands::tools::execute(config, cmd).await?;
         }
 
+        Some(Commands::Plugin(cmd)) => {
+            commands::plugin::execute(config, cmd).await?;
+        }
+
         Some(Commands::Init {
             path,
             force,

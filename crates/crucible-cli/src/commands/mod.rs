@@ -12,6 +12,7 @@ pub mod set;
 pub mod skills;
 pub mod tasks;
 pub mod tools;
+pub mod plugin;
 #[cfg(feature = "web")]
 pub mod web;
 
