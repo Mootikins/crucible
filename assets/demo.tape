@@ -10,20 +10,16 @@ Set Theme "Catppuccin Mocha"
 Set WindowBar Colorful
 Set WindowBarSize 40
 Set Padding 20
-Set TypingSpeed 100ms
+Set TypingSpeed 60ms
 Set PlaybackSpeed 3
-
-Type "cru stats -C assets/demo-config.toml --no-process"
-Enter
-Sleep 4s
 
 Type "cru chat -C assets/demo-config.toml --internal --local --no-process"
 Enter
 Sleep 5s
 
-Type "What are wikilinks and how does the knowledge graph work?"
+Type "How does Crucible use wikilinks to build a knowledge graph?"
 Enter
-Sleep 60s
+Sleep 42s
 
 Ctrl+C
 Sleep 2s
