@@ -3,7 +3,9 @@
 use crucible_lua::{
     register_oq_module, register_shell_module, LuaExecutor, LuaToolRegistry, ShellPolicy,
 };
+use crucible_lua::{lifecycle::PluginManager, manifest::PluginState};
 use serde_json::json;
+use std::path::Path;
 use tempfile::TempDir;
 use tokio::fs;
 
@@ -358,6 +360,91 @@ async fn test_tool_schema_generation() {
     // Query should be required
     let required = schema["required"].as_array().unwrap();
     assert!(required.iter().any(|v| v == "query"));
+}
+
+// ============================================================================
+// FENNEL COMPILE VIA LUA GLOBAL
+// ============================================================================
+
+#[cfg(feature = "fennel")]
+#[test]
+fn test_fennel_compile_via_lua_global() {
+    let executor = LuaExecutor::new().unwrap();
+    let lua = executor.lua();
+
+    let has_fennel: bool = lua
+        .load("return fennel ~= nil")
+        .eval()
+        .expect("should be able to check fennel global");
+    assert!(has_fennel, "fennel global should be available in LuaExecutor");
+
+    let compiled: String = lua
+        .load(r#"return fennel.compileString("(+ 1 1)")"#)
+        .eval()
+        .expect("fennel.compileString should compile simple Fennel");
+
+    assert!(
+        !compiled.is_empty(),
+        "compiled Lua should not be empty: got {:?}",
+        compiled
+    );
+
+    let result: i32 = lua
+        .load(&compiled)
+        .eval()
+        .expect("compiled Fennel should execute as valid Lua");
+    assert_eq!(result, 2, "compiled (+ 1 1) should return 2");
+
+    let bad_result: Result<String, _> = lua
+        .load(r#"return fennel.compileString("(invalid syntax ][")"#)
+        .eval();
+    assert!(
+        bad_result.is_err(),
+        "invalid Fennel should produce compilation error"
+    );
+}
+
+#[cfg(feature = "fennel")]
+#[test]
+fn test_fennel_test_runner_integration() {
+    let executor = LuaExecutor::new().unwrap();
+    let lua = executor.lua();
+
+    lua.load("test_mocks.setup()")
+        .set_name("test_mocks_setup")
+        .exec()
+        .expect("test_mocks.setup() should succeed");
+
+    let fennel_test_source = r#"
+(describe "fennel basics" (fn []
+  (it "arithmetic works" (fn []
+    (assert.equal 2 (+ 1 1))))
+  (it "string concatenation works" (fn []
+    (assert.equal "hello world" (.. "hello" " " "world"))))))
+"#;
+
+    let compiled: String = lua
+        .load(&format!(
+            "return fennel.compileString({:?})",
+            fennel_test_source
+        ))
+        .eval()
+        .expect("Fennel test source should compile");
+
+    lua.load(&compiled)
+        .set_name("fennel_test.fnl")
+        .exec()
+        .expect("compiled Fennel test should load");
+
+    let results: mlua::Table = lua
+        .load("return run_tests()")
+        .eval()
+        .expect("run_tests() should return results");
+
+    let passed: usize = results.get("passed").unwrap();
+    let failed: usize = results.get("failed").unwrap();
+    assert_eq!(passed, 2, "both Fennel tests should pass");
+    assert_eq!(failed, 0, "no Fennel tests should fail");
 }
 
 // ============================================================================
@@ -862,4 +949,914 @@ mod fennel_tests {
             Err(e) => panic!("Test failed: {}", e),
         }
     }
+}
+
+// ============================================================================
+// HEALTH MODULE INTEGRATION TESTS
+// ============================================================================
+
+#[tokio::test]
+async fn test_health_collect_ok_and_warn() {
+    let executor = LuaExecutor::new().unwrap();
+
+    let source = r#"
+function handler(args)
+    cru.health.start("test-plugin")
+    cru.health.ok("Database connected")
+    cru.health.ok("Cache initialized")
+    cru.health.warn("Memory usage at 75%", {"Consider increasing heap size"})
+    cru.health.info("Last sync: 5 minutes ago")
+    
+    local results = cru.health.get_results()
+    return {
+        name = results.name,
+        healthy = results.healthy,
+        check_count = #results.checks,
+        first_check_level = results.checks[1].level,
+        first_check_msg = results.checks[1].msg,
+        warn_check_level = results.checks[3].level,
+        warn_has_advice = results.checks[3].advice ~= nil,
+    }
+end
+"#;
+
+    let result = executor
+        .execute_source(source, false, json!({}))
+        .await
+        .unwrap();
+
+    assert!(result.success);
+    let content = result.content.unwrap();
+    assert_eq!(content["name"], "test-plugin");
+    assert_eq!(content["healthy"], true);
+    assert_eq!(content["check_count"], 4);
+    assert_eq!(content["first_check_level"], "ok");
+    assert_eq!(content["first_check_msg"], "Database connected");
+    assert_eq!(content["warn_check_level"], "warn");
+    assert_eq!(content["warn_has_advice"], true);
+}
+
+#[tokio::test]
+async fn test_health_error_makes_unhealthy() {
+    let executor = LuaExecutor::new().unwrap();
+
+    let source = r#"
+function handler(args)
+    cru.health.start("failing-plugin")
+    cru.health.ok("Config loaded")
+    cru.health.error("API key missing", {"Set CRUCIBLE_API_KEY env var", "Or use config file"})
+    cru.health.warn("Fallback mode active")
+    
+    local results = cru.health.get_results()
+    return {
+        name = results.name,
+        healthy = results.healthy,
+        check_count = #results.checks,
+        error_check_level = results.checks[2].level,
+        error_msg = results.checks[2].msg,
+        error_advice_count = results.checks[2].advice and #results.checks[2].advice or 0,
+    }
+end
+"#;
+
+    let result = executor
+        .execute_source(source, false, json!({}))
+        .await
+        .unwrap();
+
+    assert!(result.success);
+    let content = result.content.unwrap();
+    assert_eq!(content["name"], "failing-plugin");
+    assert_eq!(content["healthy"], false);
+    assert_eq!(content["check_count"], 3);
+    assert_eq!(content["error_check_level"], "error");
+    assert_eq!(content["error_msg"], "API key missing");
+    assert_eq!(content["error_advice_count"], 2);
+}
+
+#[test]
+fn test_plugin_template_yaml_is_valid() {
+    let template_yaml = include_str!("../../crucible-cli/src/commands/plugin/templates/plugin.yaml");
+    let substituted = template_yaml.replace("{{name}}", "test-plugin");
+    
+    let parsed: Result<serde_yaml::Value, _> = serde_yaml::from_str(&substituted);
+    assert!(parsed.is_ok(), "plugin.yaml template should be valid YAML");
+    
+    let manifest = parsed.unwrap();
+    assert!(manifest["name"].is_string(), "name field should be present");
+    assert!(manifest["version"].is_string(), "version field should be present");
+    assert!(manifest["main"].is_string(), "main field should be present");
+    assert_eq!(manifest["main"].as_str().unwrap(), "init.lua");
+}
+
+#[test]
+fn test_plugin_template_init_lua_is_syntactically_valid() {
+    let template_lua = include_str!("../../crucible-cli/src/commands/plugin/templates/init.lua");
+    let substituted = template_lua.replace("{{name}}", "test-plugin");
+    
+    let lua = mlua::Lua::new();
+    let result = lua.load(&substituted).eval::<mlua::Value>();
+    
+    assert!(result.is_ok(), "init.lua template should be syntactically valid Lua: {:?}", result.err());
+}
+
+#[test]
+fn test_plugin_template_tool_annotation_format() {
+    let template_lua = include_str!("../../crucible-cli/src/commands/plugin/templates/init.lua");
+    
+    assert!(template_lua.contains("@tool name=\"greet\""), "Should have @tool annotation");
+    assert!(template_lua.contains("@param name string"), "Should have @param annotation");
+    assert!(template_lua.contains("on_session_start"), "Should have on_session_start hook");
+    assert!(template_lua.contains("return {"), "Should return a plugin spec");
+}
+
+#[test]
+fn test_plugin_template_health_lua_is_syntactically_valid() {
+    let template_lua = include_str!("../../crucible-cli/src/commands/plugin/templates/health.lua");
+    let substituted = template_lua.replace("{{name}}", "test-plugin");
+    
+    let lua = mlua::Lua::new();
+    let result = lua.load(&substituted).eval::<mlua::Value>();
+    
+    assert!(result.is_ok(), "health.lua template should be syntactically valid Lua: {:?}", result.err());
+}
+
+#[tokio::test]
+async fn test_cru_inspect_simple_values() {
+    let executor = LuaExecutor::new().unwrap();
+
+    let source = r#"
+function handler(args)
+    return {
+        nil_str = cru.inspect(nil),
+        bool_true = cru.inspect(true),
+        bool_false = cru.inspect(false),
+        number = cru.inspect(42),
+        string = cru.inspect("hello"),
+        func = cru.inspect(function() end),
+    }
+end
+"#;
+
+    let result = executor
+        .execute_source(source, false, json!({}))
+        .await
+        .unwrap();
+
+    assert!(result.success);
+    let content = result.content.unwrap();
+    assert_eq!(content["nil_str"], "nil");
+    assert_eq!(content["bool_true"], "true");
+    assert_eq!(content["bool_false"], "false");
+    assert_eq!(content["number"], "42");
+    assert_eq!(content["string"], "\"hello\"");
+    assert_eq!(content["func"], "<function>");
+}
+
+#[tokio::test]
+async fn test_cru_inspect_tables() {
+    let executor = LuaExecutor::new().unwrap();
+
+    let source = r#"
+function handler(args)
+    local empty = {}
+    local simple = {a = 1, b = "test"}
+    local nested = {x = {y = {z = 42}}}
+    
+    return {
+        empty = cru.inspect(empty),
+        simple = cru.inspect(simple),
+        nested = cru.inspect(nested),
+    }
+end
+"#;
+
+    let result = executor
+        .execute_source(source, false, json!({}))
+        .await
+        .unwrap();
+
+    assert!(result.success);
+    let content = result.content.unwrap();
+    assert_eq!(content["empty"], "{}");
+    assert!(content["simple"].as_str().unwrap().contains("a = 1"));
+    assert!(content["simple"].as_str().unwrap().contains("b = \"test\""));
+    assert!(content["nested"].as_str().unwrap().contains("z = 42"));
+}
+
+#[tokio::test]
+async fn test_cru_inspect_cycle_detection() {
+    let executor = LuaExecutor::new().unwrap();
+
+    let source = r#"
+function handler(args)
+    local t = {a = 1}
+    t.self = t
+    
+    local result = cru.inspect(t)
+    return {
+        has_cycle = string.find(result, "cycle") ~= nil,
+        result = result,
+    }
+end
+"#;
+
+    let result = executor
+        .execute_source(source, false, json!({}))
+        .await
+        .unwrap();
+
+    assert!(result.success);
+    let content = result.content.unwrap();
+    assert_eq!(content["has_cycle"], true);
+    assert!(content["result"].as_str().unwrap().contains("cycle"));
+}
+
+#[tokio::test]
+async fn test_cru_inspect_depth_limit() {
+    let executor = LuaExecutor::new().unwrap();
+
+    let source = r#"
+function handler(args)
+    local deep = {a = {b = {c = {d = 42}}}}
+    
+    local unlimited = cru.inspect(deep)
+    local limited = cru.inspect(deep, {max_depth = 2})
+    
+    return {
+        unlimited_has_42 = string.find(unlimited, "42") ~= nil,
+        limited_has_42 = string.find(limited, "42") ~= nil,
+        limited_has_dots = string.find(limited, "%.%.%.") ~= nil,
+    }
+end
+"#;
+
+    let result = executor
+        .execute_source(source, false, json!({}))
+        .await
+        .unwrap();
+
+    assert!(result.success);
+    let content = result.content.unwrap();
+    assert_eq!(content["unlimited_has_42"], true);
+    assert_eq!(content["limited_has_42"], false);
+    assert_eq!(content["limited_has_dots"], true);
+}
+
+#[tokio::test]
+async fn test_cru_inspect_global_alias() {
+    let executor = LuaExecutor::new().unwrap();
+
+    let source = r#"
+function handler(args)
+    local result = inspect({x = 1})
+    return {
+        has_x = string.find(result, "x") ~= nil,
+        is_string = type(result) == "string",
+    }
+end
+"#;
+
+    let result = executor
+        .execute_source(source, false, json!({}))
+        .await
+        .unwrap();
+
+    assert!(result.success);
+    let content = result.content.unwrap();
+    assert_eq!(content["has_x"], true);
+    assert_eq!(content["is_string"], true);
+}
+
+#[tokio::test]
+async fn test_cru_tbl_deep_extend_force() {
+    let executor = LuaExecutor::new().unwrap();
+
+    let source = r#"
+function handler(args)
+    local t1 = {a = 1, b = {x = 10}}
+    local t2 = {b = {x = 20, y = 30}, c = 3}
+    
+    local result = cru.tbl_deep_extend("force", t1, t2)
+    
+    return {
+        a = result.a,
+        b_x = result.b.x,
+        b_y = result.b.y,
+        c = result.c,
+    }
+end
+"#;
+
+    let result = executor
+        .execute_source(source, false, json!({}))
+        .await
+        .unwrap();
+
+    assert!(result.success);
+    let content = result.content.unwrap();
+    assert_eq!(content["a"], 1);
+    assert_eq!(content["b_x"], 20);
+    assert_eq!(content["b_y"], 30);
+    assert_eq!(content["c"], 3);
+}
+
+#[tokio::test]
+async fn test_cru_tbl_deep_extend_keep() {
+    let executor = LuaExecutor::new().unwrap();
+
+    let source = r#"
+function handler(args)
+    local t1 = {a = 1, b = {x = 10}}
+    local t2 = {b = {x = 20, y = 30}, c = 3}
+    
+    local result = cru.tbl_deep_extend("keep", t1, t2)
+    
+    return {
+        a = result.a,
+        b_x = result.b.x,
+        b_y = result.b.y,
+        c = result.c,
+    }
+end
+"#;
+
+    let result = executor
+        .execute_source(source, false, json!({}))
+        .await
+        .unwrap();
+
+    assert!(result.success);
+    let content = result.content.unwrap();
+    assert_eq!(content["a"], 1);
+    assert_eq!(content["b_x"], 10);
+    assert_eq!(content["b_y"], 30);
+    assert_eq!(content["c"], 3);
+}
+
+#[tokio::test]
+async fn test_cru_tbl_deep_extend_multiple_tables() {
+    let executor = LuaExecutor::new().unwrap();
+
+    let source = r#"
+function handler(args)
+    local t1 = {a = 1}
+    local t2 = {b = 2}
+    local t3 = {c = 3}
+    
+    local result = cru.tbl_deep_extend("force", t1, t2, t3)
+    
+    return {
+        a = result.a,
+        b = result.b,
+        c = result.c,
+    }
+end
+"#;
+
+    let result = executor
+        .execute_source(source, false, json!({}))
+        .await
+        .unwrap();
+
+    assert!(result.success);
+    let content = result.content.unwrap();
+    assert_eq!(content["a"], 1);
+    assert_eq!(content["b"], 2);
+    assert_eq!(content["c"], 3);
+}
+
+#[tokio::test]
+async fn test_cru_tbl_get_simple() {
+    let executor = LuaExecutor::new().unwrap();
+
+    let source = r#"
+function handler(args)
+    local t = {a = 1, b = 2}
+    
+    return {
+        a = cru.tbl_get(t, "a"),
+        b = cru.tbl_get(t, "b"),
+        missing = cru.tbl_get(t, "c"),
+    }
+end
+"#;
+
+    let result = executor
+        .execute_source(source, false, json!({}))
+        .await
+        .unwrap();
+
+    assert!(result.success);
+    let content = result.content.unwrap();
+    assert_eq!(content["a"], 1);
+    assert_eq!(content["b"], 2);
+    assert!(content["missing"].is_null());
+}
+
+#[tokio::test]
+async fn test_cru_tbl_get_nested() {
+    let executor = LuaExecutor::new().unwrap();
+
+    let source = r#"
+function handler(args)
+    local t = {a = {b = {c = 42}}}
+    
+    return {
+        deep = cru.tbl_get(t, "a", "b", "c"),
+        partial = cru.tbl_get(t, "a", "b"),
+        missing = cru.tbl_get(t, "a", "x", "y"),
+    }
+end
+"#;
+
+    let result = executor
+        .execute_source(source, false, json!({}))
+        .await
+        .unwrap();
+
+    assert!(result.success);
+    let content = result.content.unwrap();
+    assert_eq!(content["deep"], 42);
+    assert!(content["partial"].is_object());
+    assert!(content["missing"].is_null());
+}
+
+#[tokio::test]
+async fn test_cru_tbl_get_non_table_intermediate() {
+    let executor = LuaExecutor::new().unwrap();
+
+    let source = r#"
+function handler(args)
+    local t = {a = 42}
+    
+    local result = cru.tbl_get(t, "a", "b", "c")
+    
+    return {
+        is_nil = result == nil,
+    }
+end
+"#;
+
+    let result = executor
+        .execute_source(source, false, json!({}))
+        .await
+        .unwrap();
+
+    assert!(result.success);
+    let content = result.content.unwrap();
+    assert_eq!(content["is_nil"], true);
+}
+
+#[tokio::test]
+async fn test_cru_on_error_initialization() {
+    let executor = LuaExecutor::new().unwrap();
+
+    let source = r#"
+function handler(args)
+    return {
+        is_nil = cru.on_error == nil,
+        is_function_after_set = (function()
+            cru.on_error = function(err, name, tb) return "handled" end
+            return type(cru.on_error) == "function"
+        end)(),
+    }
+end
+"#;
+
+    let result = executor
+        .execute_source(source, false, json!({}))
+        .await
+        .unwrap();
+
+    assert!(result.success);
+    let content = result.content.unwrap();
+    assert_eq!(content["is_nil"], true);
+    assert_eq!(content["is_function_after_set"], true);
+}
+
+// ============================================================================
+// TEST MOCKS INTEGRATION TESTS
+// ============================================================================
+
+#[tokio::test]
+async fn test_mock_globals_exist() {
+    let executor = LuaExecutor::new().unwrap();
+
+    let source = r#"
+function handler(args)
+    return {
+        has_test_mocks = test_mocks ~= nil,
+        type_test_mocks = type(test_mocks),
+        has_describe = describe ~= nil,
+        has_cru = cru ~= nil,
+        has_cru_kiln = cru.kiln ~= nil,
+    }
+end
+"#;
+    let result = executor
+        .execute_source(source, false, serde_json::json!({}))
+        .await
+        .unwrap();
+    assert!(result.success, "Failed: {:?}", result.error);
+    let content = result.content.unwrap();
+    eprintln!("DEBUG: {:?}", content);
+    assert_eq!(content["has_test_mocks"], true, "test_mocks should exist, type={}", content["type_test_mocks"]);
+}
+
+#[tokio::test]
+async fn test_mock_kiln_returns_configured_fixtures() {
+    let executor = LuaExecutor::new().unwrap();
+
+    let source = r#"
+function handler(args)
+    test_mocks.setup({
+        kiln = {
+            notes = {
+                { title = "Alpha", path = "alpha.md", content = "First note about rust" },
+                { title = "Beta", path = "beta.md", content = "Second note about lua" },
+                { title = "Gamma", path = "gamma.md", content = "Third note about testing" },
+            },
+        },
+    })
+
+    local all_notes = cru.kiln.list()
+    local limited = cru.kiln.list(2)
+    local found = cru.kiln.get("beta.md")
+    local missing = cru.kiln.get("nonexistent.md")
+    local search_results = cru.kiln.search("lua", { limit = 10 })
+
+    local list_calls = test_mocks.get_calls("kiln", "list")
+    local get_calls = test_mocks.get_calls("kiln", "get")
+    local search_calls = test_mocks.get_calls("kiln", "search")
+
+    return {
+        all_count = #all_notes,
+        limited_count = #limited,
+        found_title = found and found.title or nil,
+        missing_is_nil = missing == nil,
+        search_count = #search_results,
+        search_path = search_results[1] and search_results[1].path or nil,
+        list_call_count = #list_calls,
+        get_call_count = #get_calls,
+        search_call_count = #search_calls,
+        search_first_arg = search_calls[1] and search_calls[1][1] or nil,
+    }
+end
+"#;
+
+    let result = executor
+        .execute_source(source, false, json!({}))
+        .await
+        .unwrap();
+    assert!(result.success, "Failed: {:?}", result.error);
+    let content = result.content.unwrap();
+
+    assert_eq!(content["all_count"], 3);
+    assert_eq!(content["limited_count"], 2);
+    assert_eq!(content["found_title"], "Beta");
+    assert_eq!(content["missing_is_nil"], true);
+    assert_eq!(content["search_count"], 1);
+    assert_eq!(content["search_path"], "beta.md");
+    assert_eq!(content["list_call_count"], 2);
+    assert_eq!(content["get_call_count"], 2);
+    assert_eq!(content["search_call_count"], 1);
+    assert_eq!(content["search_first_arg"], "lua");
+}
+
+#[tokio::test]
+async fn test_mock_http_records_requests_and_returns_responses() {
+    let executor = LuaExecutor::new().unwrap();
+
+    let source = r#"
+function handler(args)
+    test_mocks.setup({
+        http = {
+            responses = {
+                ["https://api.example.com/data"] = {
+                    status = 200,
+                    body = '{"result": "success"}',
+                    ok = true,
+                },
+                ["https://api.example.com/error"] = {
+                    status = 500,
+                    body = "Internal Server Error",
+                    ok = false,
+                },
+            },
+        },
+    })
+
+    local ok_resp = cru.http.get("https://api.example.com/data")
+    local err_resp = cru.http.post("https://api.example.com/error", {
+        body = '{"key": "value"}',
+    })
+    local default_resp = cru.http.get("https://unknown.com")
+
+    local get_calls = test_mocks.get_calls("http", "get")
+    local post_calls = test_mocks.get_calls("http", "post")
+
+    return {
+        ok_status = ok_resp.status,
+        ok_body = ok_resp.body,
+        ok_ok = ok_resp.ok,
+        err_status = err_resp.status,
+        err_ok = err_resp.ok,
+        default_status = default_resp.status,
+        default_ok = default_resp.ok,
+        get_call_count = #get_calls,
+        post_call_count = #post_calls,
+        first_get_url = get_calls[1] and get_calls[1][1] or nil,
+        first_post_url = post_calls[1] and post_calls[1][1] or nil,
+    }
+end
+"#;
+
+    let result = executor
+        .execute_source(source, false, json!({}))
+        .await
+        .unwrap();
+    assert!(result.success, "Failed: {:?}", result.error);
+    let content = result.content.unwrap();
+
+    assert_eq!(content["ok_status"], 200);
+    assert_eq!(content["ok_body"], r#"{"result": "success"}"#);
+    assert_eq!(content["ok_ok"], true);
+    assert_eq!(content["err_status"], 500);
+    assert_eq!(content["err_ok"], false);
+    assert_eq!(content["default_status"], 200);
+    assert_eq!(content["default_ok"], true);
+    assert_eq!(content["get_call_count"], 2);
+    assert_eq!(content["post_call_count"], 1);
+    assert_eq!(content["first_get_url"], "https://api.example.com/data");
+    assert_eq!(content["first_post_url"], "https://api.example.com/error");
+}
+
+#[tokio::test]
+async fn test_mock_reset_clears_call_history_and_fixtures() {
+    let executor = LuaExecutor::new().unwrap();
+
+    let source = r#"
+function handler(args)
+    test_mocks.setup({
+        kiln = {
+            notes = {
+                { title = "Note", path = "note.md", content = "content" },
+            },
+        },
+    })
+
+    cru.kiln.list()
+    cru.kiln.get("note.md")
+    cru.http.get("https://example.com")
+
+    local pre_reset_kiln_list = #test_mocks.get_calls("kiln", "list")
+    local pre_reset_kiln_get = #test_mocks.get_calls("kiln", "get")
+    local pre_reset_http_get = #test_mocks.get_calls("http", "get")
+    local pre_reset_notes = #cru.kiln.list()
+
+    test_mocks.reset()
+
+    local post_reset_kiln_list = #test_mocks.get_calls("kiln", "list")
+    local post_reset_http_get = #test_mocks.get_calls("http", "get")
+
+    local post_notes = cru.kiln.list()
+    local post_list_calls = #test_mocks.get_calls("kiln", "list")
+
+    return {
+        pre_kiln_list = pre_reset_kiln_list,
+        pre_kiln_get = pre_reset_kiln_get,
+        pre_http_get = pre_reset_http_get,
+        pre_note_count = pre_reset_notes,
+        post_kiln_list = post_reset_kiln_list,
+        post_http_get = post_reset_http_get,
+        post_note_count = #post_notes,
+        post_list_calls = post_list_calls,
+    }
+end
+"#;
+
+    let result = executor
+        .execute_source(source, false, json!({}))
+        .await
+        .unwrap();
+    assert!(result.success, "Failed: {:?}", result.error);
+    let content = result.content.unwrap();
+
+    assert_eq!(content["pre_kiln_list"], 1);
+    assert_eq!(content["pre_kiln_get"], 1);
+    assert_eq!(content["pre_http_get"], 1);
+    assert_eq!(content["pre_note_count"], 1);
+    assert_eq!(content["post_kiln_list"], 0, "reset should clear kiln list calls");
+    assert_eq!(content["post_http_get"], 0, "reset should clear http get calls");
+    assert_eq!(content["post_note_count"], 0, "reset should return empty default fixtures");
+    assert_eq!(content["post_list_calls"], 1, "new call after reset should be recorded");
+}
+
+fn create_plugin_files(root: &Path, name: &str, init_source: &str, module_source: &str) {
+    let plugin_dir = root.join(name);
+    std::fs::create_dir_all(plugin_dir.join(name)).unwrap();
+
+    std::fs::write(
+        plugin_dir.join("plugin.yaml"),
+        format!(
+            "name: {name}\nversion: \"1.0.0\"\nmain: init.lua\nexports:\n  auto_discover: true\n"
+        ),
+    )
+    .unwrap();
+    std::fs::write(plugin_dir.join("init.lua"), init_source).unwrap();
+    std::fs::write(plugin_dir.join(name).join("core.lua"), module_source).unwrap();
+}
+
+#[test]
+fn test_reload_picks_up_changes() {
+    let temp = TempDir::new().unwrap();
+    let plugin_name = "reload_sample";
+    let init_source = r#"
+local core = require("reload_sample.core")
+return {
+    name = "reload_sample",
+    version = "1.0.0",
+    tools = {
+        current_value = {
+            desc = "Read current module value",
+            fn = function()
+                return core.value
+            end,
+        },
+    },
+}
+"#;
+
+    create_plugin_files(
+        temp.path(),
+        plugin_name,
+        init_source,
+        "return { value = 'v1' }\n",
+    );
+
+    let mut manager = PluginManager::new().with_search_paths(vec![temp.path().to_path_buf()]);
+    manager.discover().unwrap();
+    manager.load(plugin_name).unwrap();
+
+    let before: String = manager
+        .eval_runtime("local mod = require('reload_sample.core'); return mod.value")
+        .unwrap();
+    assert_eq!(before, "v1");
+
+    std::fs::write(
+        temp.path()
+            .join(plugin_name)
+            .join(plugin_name)
+            .join("core.lua"),
+        "return { value = 'v2' }\n",
+    )
+    .unwrap();
+
+    manager.reload_plugin(plugin_name).unwrap();
+
+    let after: String = manager
+        .eval_runtime("local mod = require('reload_sample.core'); return mod.value")
+        .unwrap();
+    assert_eq!(after, "v2");
+}
+
+#[test]
+fn test_on_unload_hook_fires_on_reload() {
+    let temp = TempDir::new().unwrap();
+    let plugin_name = "reload_hook";
+    let init_source = r#"
+_G.reload_trace = (_G.reload_trace or "") .. "L"
+local core = require("reload_hook.core")
+
+return {
+    name = "reload_hook",
+    version = "1.0.0",
+    on_unload = function()
+        _G.reload_trace = (_G.reload_trace or "") .. "U"
+    end,
+    tools = {
+        current_value = {
+            desc = "Read current module value",
+            fn = function()
+                return core.value
+            end,
+        },
+    },
+}
+"#;
+
+    create_plugin_files(
+        temp.path(),
+        plugin_name,
+        init_source,
+        "return { value = 'v1' }\n",
+    );
+
+    let mut manager = PluginManager::new().with_search_paths(vec![temp.path().to_path_buf()]);
+    manager.discover().unwrap();
+    manager.load(plugin_name).unwrap();
+
+    let initial_trace: String = manager.eval_runtime("return _G.reload_trace").unwrap();
+    assert_eq!(initial_trace, "L");
+
+    std::fs::write(
+        temp.path()
+            .join(plugin_name)
+            .join(plugin_name)
+            .join("core.lua"),
+        "return { value = 'v2' }\n",
+    )
+    .unwrap();
+
+    manager.reload_plugin(plugin_name).unwrap();
+
+    let trace_after_reload: String = manager.eval_runtime("return _G.reload_trace").unwrap();
+    assert_eq!(trace_after_reload, "LUL");
+}
+
+#[test]
+fn test_reload_failure_leaves_old_plugin_intact() {
+    let temp = TempDir::new().unwrap();
+
+    let fragile_init = r#"
+local core = require("fragile_plugin.core")
+return {
+    name = "fragile_plugin",
+    version = "1.0.0",
+    tools = {
+        fragile = {
+            desc = "Fragile value",
+            fn = function()
+                return core.value
+            end,
+        },
+    },
+}
+"#;
+    create_plugin_files(
+        temp.path(),
+        "fragile_plugin",
+        fragile_init,
+        "return { value = 'good' }\n",
+    );
+
+    let stable_init = r#"
+local core = require("stable_plugin.core")
+return {
+    name = "stable_plugin",
+    version = "1.0.0",
+    tools = {
+        stable = {
+            desc = "Stable value",
+            fn = function()
+                return core.value
+            end,
+        },
+    },
+}
+"#;
+    create_plugin_files(
+        temp.path(),
+        "stable_plugin",
+        stable_init,
+        "return { value = 'stable' }\n",
+    );
+
+    let mut manager = PluginManager::new().with_search_paths(vec![temp.path().to_path_buf()]);
+    manager.discover().unwrap();
+    manager.load("fragile_plugin").unwrap();
+    manager.load("stable_plugin").unwrap();
+
+    let fragile_before: String = manager
+        .eval_runtime("local mod = require('fragile_plugin.core'); return mod.value")
+        .unwrap();
+    let stable_before: String = manager
+        .eval_runtime("local mod = require('stable_plugin.core'); return mod.value")
+        .unwrap();
+    assert_eq!(fragile_before, "good");
+    assert_eq!(stable_before, "stable");
+
+    std::fs::write(
+        temp.path().join("fragile_plugin").join("init.lua"),
+        "return { name = 'fragile_plugin', tools = {\n",
+    )
+    .unwrap();
+
+    let reload_result = manager.reload_plugin("fragile_plugin");
+    assert!(reload_result.is_err());
+
+    let fragile_state = manager.get("fragile_plugin").unwrap().state;
+    let stable_state = manager.get("stable_plugin").unwrap().state;
+    assert_eq!(fragile_state, PluginState::Error);
+    assert_eq!(stable_state, PluginState::Active);
+
+    let fragile_after: String = manager
+        .eval_runtime("local mod = require('fragile_plugin.core'); return mod.value")
+        .unwrap();
+    let stable_after: String = manager
+        .eval_runtime("local mod = require('stable_plugin.core'); return mod.value")
+        .unwrap();
+    assert_eq!(fragile_after, "good");
+    assert_eq!(stable_after, "stable");
 }
