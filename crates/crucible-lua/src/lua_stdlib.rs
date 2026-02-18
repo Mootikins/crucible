@@ -34,164 +34,141 @@ local function deep_copy(orig)
     return copy
 end
 
-local function create_kiln_mock(fixtures)
-    local kiln = {}
-    function kiln.list(limit)
-        record_call("kiln", "list", limit)
-        local notes = fixtures.kiln.notes or {}
-        if limit and limit < #notes then
-            local result = {}
-            for i = 1, limit do result[i] = deep_copy(notes[i]) end
-            return result
-        end
-        return deep_copy(notes)
+local function link_lookup(mod_name, fixture_data, field)
+    return function(path, ...)
+        record_call(mod_name, field, path, ...)
+        local map = fixture_data[field] and fixture_data[field][path]
+        return map and deep_copy(map) or {}
     end
-    function kiln.get(path)
-        record_call("kiln", "get", path)
-        for _, note in ipairs(fixtures.kiln.notes or {}) do
-            if note.path == path then return deep_copy(note) end
-        end
-        return nil
-    end
-    function kiln.search(query, opts)
-        record_call("kiln", "search", query, opts)
+end
+
+local function note_search(mod_name, fixture_data, method_name, score)
+    return function(query, opts)
+        record_call(mod_name, method_name, query, opts)
         local results = {}
         local limit = (opts and opts.limit) or 100
         local count = 0
-        for _, note in ipairs(fixtures.kiln.notes or {}) do
+        for _, note in ipairs(fixture_data.notes or {}) do
             if count >= limit then break end
             local searchable = (note.title or "") .. " " .. (note.content or "")
             if string.find(searchable:lower(), query:lower(), 1, true) then
-                table.insert(results, { path = note.path, score = 1.0 })
+                table.insert(results, { path = note.path, score = score })
                 count = count + 1
             end
         end
         return results
     end
-    function kiln.outlinks(path)
-        record_call("kiln", "outlinks", path)
-        local links = fixtures.kiln.outlinks and fixtures.kiln.outlinks[path]
-        return links and deep_copy(links) or {}
-    end
-    function kiln.backlinks(path)
-        record_call("kiln", "backlinks", path)
-        local links = fixtures.kiln.backlinks and fixtures.kiln.backlinks[path]
-        return links and deep_copy(links) or {}
-    end
-    function kiln.neighbors(path, depth)
-        record_call("kiln", "neighbors", path, depth)
-        local links = fixtures.kiln.neighbors and fixtures.kiln.neighbors[path]
-        return links and deep_copy(links) or {}
-    end
-    return kiln
+end
+
+local function create_kiln_mock(fixtures)
+    local f = fixtures.kiln
+    return {
+        list = function(limit)
+            record_call("kiln", "list", limit)
+            local notes = f.notes or {}
+            if limit and limit < #notes then
+                local result = {}
+                for i = 1, limit do result[i] = deep_copy(notes[i]) end
+                return result
+            end
+            return deep_copy(notes)
+        end,
+        get = function(path)
+            record_call("kiln", "get", path)
+            for _, note in ipairs(f.notes or {}) do
+                if note.path == path then return deep_copy(note) end
+            end
+            return nil
+        end,
+        search = note_search("kiln", f, "search", 1.0),
+        outlinks = link_lookup("kiln", f, "outlinks"),
+        backlinks = link_lookup("kiln", f, "backlinks"),
+        neighbors = link_lookup("kiln", f, "neighbors"),
+    }
 end
 
 local function create_graph_mock(fixtures)
-    local graph = {}
-    function graph.get_note(path)
-        record_call("graph", "get_note", path)
-        for _, note in ipairs(fixtures.graph.notes or {}) do
-            if note.path == path then return deep_copy(note) end
-        end
-        return nil
-    end
-    function graph.get_outlinks(path)
-        record_call("graph", "get_outlinks", path)
-        local links = fixtures.graph.outlinks and fixtures.graph.outlinks[path]
-        return links and deep_copy(links) or {}
-    end
-    function graph.get_backlinks(path)
-        record_call("graph", "get_backlinks", path)
-        local links = fixtures.graph.backlinks and fixtures.graph.backlinks[path]
-        return links and deep_copy(links) or {}
-    end
-    function graph.get_neighbors(path, depth)
-        record_call("graph", "get_neighbors", path, depth)
-        local links = fixtures.graph.neighbors and fixtures.graph.neighbors[path]
-        return links and deep_copy(links) or {}
-    end
-    function graph.search_semantic(query, opts)
-        record_call("graph", "search_semantic", query, opts)
-        local results = {}
-        for _, note in ipairs(fixtures.graph.notes or {}) do
-            local searchable = (note.title or "") .. " " .. (note.content or "")
-            if string.find(searchable:lower(), query:lower(), 1, true) then
-                table.insert(results, { path = note.path, score = 0.9 })
+    local f = fixtures.graph
+    return {
+        get_note = function(path)
+            record_call("graph", "get_note", path)
+            for _, note in ipairs(f.notes or {}) do
+                if note.path == path then return deep_copy(note) end
             end
-        end
-        return results
-    end
-    return graph
+            return nil
+        end,
+        get_outlinks = link_lookup("graph", f, "outlinks"),
+        get_backlinks = link_lookup("graph", f, "backlinks"),
+        get_neighbors = link_lookup("graph", f, "neighbors"),
+        search_semantic = note_search("graph", f, "search_semantic", 0.9),
+    }
 end
 
 local function create_http_mock(fixtures)
-    local mock_http = {}
-    local default_response = { status = 200, body = "", ok = true, headers = {} }
-    local function make_response(method, url, opts)
+    local default_resp = { status = 200, body = "", ok = true, headers = {} }
+    local function respond(method, url, opts)
         record_call("http", method, url, opts)
-        local resp = (fixtures.http.responses or {})[url] or default_response
-        return { status = resp.status or 200, body = resp.body or "", ok = resp.ok ~= false, headers = resp.headers or {} }
+        local r = (fixtures.http.responses or {})[url] or default_resp
+        return { status = r.status or 200, body = r.body or "", ok = r.ok ~= false, headers = r.headers or {} }
     end
-    function mock_http.get(url, opts) return make_response("get", url, opts) end
-    function mock_http.post(url, opts) return make_response("post", url, opts) end
-    function mock_http.put(url, opts) return make_response("put", url, opts) end
-    function mock_http.delete(url, opts) return make_response("delete", url, opts) end
-    function mock_http.request(opts)
-        local url = opts and opts.url or ""
-        record_call("http", "request", opts)
-        local resp = (fixtures.http.responses or {})[url] or default_response
-        return { status = resp.status or 200, body = resp.body or "", ok = resp.ok ~= false, headers = resp.headers or {} }
-    end
-    return mock_http
+    return {
+        get = function(url, opts) return respond("get", url, opts) end,
+        post = function(url, opts) return respond("post", url, opts) end,
+        put = function(url, opts) return respond("put", url, opts) end,
+        delete = function(url, opts) return respond("delete", url, opts) end,
+        request = function(opts)
+            local url = opts and opts.url or ""
+            return respond("request", url, opts)
+        end,
+    }
 end
 
 local function create_fs_mock(fixtures)
-    local mock_fs = {}
     local files = {}
     local dirs = {}
     for k, v in pairs(fixtures.fs.files or {}) do files[k] = v end
     for k, v in pairs(fixtures.fs.dirs or {}) do dirs[k] = v end
-    function mock_fs.read(path)
-        record_call("fs", "read", path)
-        if files[path] ~= nil then return files[path] end
-        error("File not found: " .. path)
-    end
-    function mock_fs.write(path, content)
-        record_call("fs", "write", path, content)
-        files[path] = content
-    end
-    function mock_fs.exists(path)
-        record_call("fs", "exists", path)
-        return files[path] ~= nil or dirs[path] ~= nil
-    end
-    function mock_fs.mkdir(path)
-        record_call("fs", "mkdir", path)
-        dirs[path] = true
-    end
-    function mock_fs.list(path)
-        record_call("fs", "list", path)
-        local result = {}
-        local prefix = path
-        if prefix:sub(-1) ~= "/" then prefix = prefix .. "/" end
-        for k in pairs(files) do
-            if k:sub(1, #prefix) == prefix then
-                local rest = k:sub(#prefix + 1)
-                if not rest:find("/") then table.insert(result, rest) end
+    return {
+        read = function(path)
+            record_call("fs", "read", path)
+            if files[path] ~= nil then return files[path] end
+            error("File not found: " .. path)
+        end,
+        write = function(path, content)
+            record_call("fs", "write", path, content)
+            files[path] = content
+        end,
+        exists = function(path)
+            record_call("fs", "exists", path)
+            return files[path] ~= nil or dirs[path] ~= nil
+        end,
+        mkdir = function(path)
+            record_call("fs", "mkdir", path)
+            dirs[path] = true
+        end,
+        list = function(path)
+            record_call("fs", "list", path)
+            local result = {}
+            local prefix = path
+            if prefix:sub(-1) ~= "/" then prefix = prefix .. "/" end
+            for k in pairs(files) do
+                if k:sub(1, #prefix) == prefix then
+                    local rest = k:sub(#prefix + 1)
+                    if not rest:find("/") then table.insert(result, rest) end
+                end
             end
-        end
-        for k in pairs(dirs) do
-            if k:sub(1, #prefix) == prefix then
-                local rest = k:sub(#prefix + 1)
-                if rest ~= "" and not rest:find("/") then table.insert(result, rest) end
+            for k in pairs(dirs) do
+                if k:sub(1, #prefix) == prefix then
+                    local rest = k:sub(#prefix + 1)
+                    if rest ~= "" and not rest:find("/") then table.insert(result, rest) end
+                end
             end
-        end
-        return result
-    end
-    return mock_fs
+            return result
+        end,
+    }
 end
 
 local function create_session_mock(fixtures)
-    local session = {}
     local state = {
         temperature = fixtures.session.temperature,
         max_tokens = fixtures.session.max_tokens,
@@ -199,15 +176,17 @@ local function create_session_mock(fixtures)
         mode = fixtures.session.mode or "act",
         thinking_budget = fixtures.session.thinking_budget,
     }
-    function session.get_temperature() record_call("session", "get_temperature"); return state.temperature end
-    function session.set_temperature(val) record_call("session", "set_temperature", val); state.temperature = val end
-    function session.get_max_tokens() record_call("session", "get_max_tokens"); return state.max_tokens end
-    function session.set_max_tokens(val) record_call("session", "set_max_tokens", val); state.max_tokens = val end
-    function session.get_model() record_call("session", "get_model"); return state.model end
-    function session.get_mode() record_call("session", "get_mode"); return state.mode end
-    function session.set_mode(val) record_call("session", "set_mode", val); state.mode = val end
-    function session.get_thinking_budget() record_call("session", "get_thinking_budget"); return state.thinking_budget end
-    function session.set_thinking_budget(val) record_call("session", "set_thinking_budget", val); state.thinking_budget = val end
+    local session = {}
+    for _, field in ipairs({"temperature", "max_tokens", "model", "mode", "thinking_budget"}) do
+        session["get_" .. field] = function()
+            record_call("session", "get_" .. field)
+            return state[field]
+        end
+        session["set_" .. field] = function(val)
+            record_call("session", "set_" .. field, val)
+            state[field] = val
+        end
+    end
     return session
 end
 

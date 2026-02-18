@@ -169,6 +169,24 @@ end
     Ok(())
 }
 
+fn is_test_file(path: &Path) -> bool {
+    let stem = path.file_stem().and_then(|name| name.to_str());
+    let ext = path.extension().and_then(|e| e.to_str());
+    matches!((stem, ext), (Some(s), Some("lua" | "fnl")) if s.ends_with("_test"))
+}
+
+fn collect_test_files_from(dir: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
+    for entry in
+        std::fs::read_dir(dir).with_context(|| format!("failed to read {}", dir.display()))?
+    {
+        let path = entry?.path();
+        if path.is_file() && is_test_file(&path) {
+            out.push(path);
+        }
+    }
+    Ok(())
+}
+
 fn discover_test_files(path: &Path) -> Result<Vec<PathBuf>> {
     if path.is_file() {
         return Ok(vec![path.to_path_buf()]);
@@ -178,44 +196,10 @@ fn discover_test_files(path: &Path) -> Result<Vec<PathBuf>> {
 
     let tests_dir = path.join("tests");
     if tests_dir.is_dir() {
-        for entry in std::fs::read_dir(&tests_dir)
-            .with_context(|| format!("failed to read {}", tests_dir.display()))?
-        {
-            let entry = entry?;
-            let test_path = entry.path();
-            if !test_path.is_file() {
-                continue;
-            }
-
-            let stem = test_path.file_stem().and_then(|name| name.to_str());
-            let ext = test_path.extension().and_then(|extension| extension.to_str());
-
-            if let (Some(stem), Some(ext)) = (stem, ext) {
-                if stem.ends_with("_test") && (ext == "lua" || ext == "fnl") {
-                    files.push(test_path);
-                }
-            }
-        }
+        collect_test_files_from(&tests_dir, &mut files)?;
     }
 
-    for entry in std::fs::read_dir(path)
-        .with_context(|| format!("failed to read {}", path.display()))?
-    {
-        let entry = entry?;
-        let test_path = entry.path();
-        if !test_path.is_file() {
-            continue;
-        }
-
-        let stem = test_path.file_stem().and_then(|name| name.to_str());
-        let ext = test_path.extension().and_then(|extension| extension.to_str());
-
-        if let (Some(stem), Some(ext)) = (stem, ext) {
-            if stem.ends_with("_test") && (ext == "lua" || ext == "fnl") {
-                files.push(test_path);
-            }
-        }
-    }
+    collect_test_files_from(path, &mut files)?;
 
     files.sort();
     files.dedup();

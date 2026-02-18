@@ -6,6 +6,36 @@ use std::path::PathBuf;
 use super::HealthArgs;
 use crate::config::CliConfig;
 
+struct CheckResult {
+    level: String,
+    msg: String,
+    advice: Vec<String>,
+}
+
+fn extract_checks(checks: &mlua::Table) -> Result<Vec<CheckResult>> {
+    let len = checks.len()? as usize;
+    let mut out = Vec::with_capacity(len);
+    for i in 1..=len {
+        let check: mlua::Table = checks.get(i)?;
+        let level: String = check.get("level")?;
+        let msg: String = check.get("msg")?;
+        let advice_table: Option<mlua::Table> = check.get("advice").ok();
+        let advice = match advice_table {
+            Some(tbl) => {
+                let alen = tbl.len()? as usize;
+                let mut items = Vec::with_capacity(alen);
+                for j in 1..=alen {
+                    items.push(tbl.get::<String>(j)?);
+                }
+                items
+            }
+            None => Vec::new(),
+        };
+        out.push(CheckResult { level, msg, advice });
+    }
+    Ok(out)
+}
+
 pub async fn execute(_config: CliConfig, args: HealthArgs) -> Result<()> {
     // Validate path exists
     if !args.path.exists() {
@@ -57,35 +87,20 @@ pub async fn execute(_config: CliConfig, args: HealthArgs) -> Result<()> {
     // Extract results
     let name: String = results.get("name")?;
     let healthy: bool = results.get("healthy")?;
-    let checks: mlua::Table = results.get("checks")?;
+    let checks_table: mlua::Table = results.get("checks")?;
+    let checks = extract_checks(&checks_table)?;
 
-    // If JSON output requested, print JSON and exit
     if args.json {
-        let mut checks_vec = Vec::new();
-        let checks_len = checks.len()? as usize;
-        for i in 1..=checks_len {
-            let check: mlua::Table = checks.get(i)?;
-            let level: String = check.get("level")?;
-            let msg: String = check.get("msg")?;
-            let advice: Option<mlua::Table> = check.get("advice").ok();
-
-            let mut check_obj = json!({
-                "level": level,
-                "msg": msg,
-            });
-
-            if let Some(advice_table) = advice {
-                let mut advice_vec = Vec::new();
-                let advice_len = advice_table.len()? as usize;
-                for j in 1..=advice_len {
-                    let item: String = advice_table.get(j)?;
-                    advice_vec.push(item);
+        let checks_vec: Vec<_> = checks
+            .iter()
+            .map(|c| {
+                let mut obj = json!({ "level": c.level, "msg": c.msg });
+                if !c.advice.is_empty() {
+                    obj["advice"] = json!(c.advice);
                 }
-                check_obj["advice"] = json!(advice_vec);
-            }
-
-            checks_vec.push(check_obj);
-        }
+                obj
+            })
+            .collect();
 
         let output = json!({
             "name": name,
@@ -95,7 +110,6 @@ pub async fn execute(_config: CliConfig, args: HealthArgs) -> Result<()> {
 
         println!("{}", serde_json::to_string_pretty(&output)?);
     } else {
-        // Format and print results
         let plugin_name = args.path
             .file_name()
             .and_then(|n| n.to_str())
@@ -104,37 +118,23 @@ pub async fn execute(_config: CliConfig, args: HealthArgs) -> Result<()> {
         println!("== Health: {} ==", plugin_name);
         println!();
 
-        let checks_len = checks.len()? as usize;
-        for i in 1..=checks_len {
-            let check: mlua::Table = checks.get(i)?;
-            let level: String = check.get("level")?;
-            let msg: String = check.get("msg")?;
-            let advice: Option<mlua::Table> = check.get("advice").ok();
-
-            match level.as_str() {
-                "ok" => println!("✅ {}", msg),
+        for c in &checks {
+            match c.level.as_str() {
+                "ok" => println!("✅ {}", c.msg),
                 "warn" => {
-                    println!("⚠️  {}", msg);
-                    if let Some(advice_table) = advice {
-                        let advice_len = advice_table.len()? as usize;
-                        for j in 1..=advice_len {
-                            let item: String = advice_table.get(j)?;
-                            println!("   → {}", item);
-                        }
+                    println!("⚠️  {}", c.msg);
+                    for item in &c.advice {
+                        println!("   → {}", item);
                     }
                 }
                 "error" => {
-                    println!("❌ {}", msg);
-                    if let Some(advice_table) = advice {
-                        let advice_len = advice_table.len()? as usize;
-                        for j in 1..=advice_len {
-                            let item: String = advice_table.get(j)?;
-                            println!("   → {}", item);
-                        }
+                    println!("❌ {}", c.msg);
+                    for item in &c.advice {
+                        println!("   → {}", item);
                     }
                 }
-                "info" => println!("ℹ️  {}", msg),
-                _ => println!("? {}", msg),
+                "info" => println!("ℹ️  {}", c.msg),
+                _ => println!("? {}", c.msg),
             }
         }
 
