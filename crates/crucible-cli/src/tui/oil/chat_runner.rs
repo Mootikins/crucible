@@ -825,28 +825,69 @@ impl OilChatRunner {
                         let tx = msg_tx.clone();
                         tokio::spawn(async move {
                             match crucible_rpc::DaemonClient::connect().await {
-                                Ok(client) => match client.plugin_reload(&name).await {
-                                    Ok(result) => {
-                                        let tools = result
-                                            .get("tools")
-                                            .and_then(|v| v.as_u64())
-                                            .unwrap_or(0);
-                                        let services = result
-                                            .get("services")
-                                            .and_then(|v| v.as_u64())
-                                            .unwrap_or(0);
-                                        let _ = tx.send(ChatAppMsg::Status(format!(
-                                            "Reloaded '{}' ({} tools, {} services)",
-                                            name, tools, services
-                                        )));
+                                Ok(client) => {
+                                    if name.is_empty() {
+                                        match client.plugin_list().await {
+                                            Ok(plugins) if plugins.is_empty() => {
+                                                let _ = tx.send(ChatAppMsg::Status(
+                                                    "No plugins loaded".to_string(),
+                                                ));
+                                            }
+                                            Ok(plugins) => {
+                                                let mut ok = 0usize;
+                                                let mut errs = Vec::new();
+                                                for p in &plugins {
+                                                    match client.plugin_reload(p).await {
+                                                        Ok(_) => ok += 1,
+                                                        Err(e) => errs.push(format!("{}: {}", p, e)),
+                                                    }
+                                                }
+                                                if errs.is_empty() {
+                                                    let _ = tx.send(ChatAppMsg::Status(format!(
+                                                        "✓ Reloaded {} plugin(s)",
+                                                        ok
+                                                    )));
+                                                } else {
+                                                    let _ = tx.send(ChatAppMsg::Error(format!(
+                                                        "Reloaded {}/{}: {}",
+                                                        ok,
+                                                        plugins.len(),
+                                                        errs.join("; ")
+                                                    )));
+                                                }
+                                            }
+                                            Err(e) => {
+                                                let _ = tx.send(ChatAppMsg::Error(format!(
+                                                    "Failed to list plugins: {}",
+                                                    e
+                                                )));
+                                            }
+                                        }
+                                    } else {
+                                        match client.plugin_reload(&name).await {
+                                            Ok(result) => {
+                                                let tools = result
+                                                    .get("tools")
+                                                    .and_then(|v| v.as_u64())
+                                                    .unwrap_or(0);
+                                                let services = result
+                                                    .get("services")
+                                                    .and_then(|v| v.as_u64())
+                                                    .unwrap_or(0);
+                                                let _ = tx.send(ChatAppMsg::Status(format!(
+                                                    "✓ Reloaded '{}' ({} tools, {} services)",
+                                                    name, tools, services
+                                                )));
+                                            }
+                                            Err(e) => {
+                                                let _ = tx.send(ChatAppMsg::Error(format!(
+                                                    "✗ Plugin reload failed: {}",
+                                                    e
+                                                )));
+                                            }
+                                        }
                                     }
-                                    Err(e) => {
-                                        let _ = tx.send(ChatAppMsg::Error(format!(
-                                            "Plugin reload failed: {}",
-                                            e
-                                        )));
-                                    }
-                                },
+                                }
                                 Err(e) => {
                                     let _ = tx.send(ChatAppMsg::Error(format!(
                                         "Cannot connect to daemon: {}",

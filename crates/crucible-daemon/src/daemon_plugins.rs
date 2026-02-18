@@ -417,6 +417,26 @@ impl DaemonPluginLoader {
             .collect()
     }
 
+    /// Return `(plugin_name, plugin_dir)` pairs for all loaded plugins.
+    ///
+    /// Used by the plugin file watcher to know which directories to monitor
+    /// and which plugin name to reload when a file changes.
+    pub fn loaded_plugin_dirs(&self) -> Vec<(String, PathBuf)> {
+        self.plugin_manager
+            .list()
+            .filter(|p| p.state == crucible_lua::PluginState::Active)
+            .filter_map(|p| {
+                let name = p.manifest.name.clone();
+                let dir = p.dir.clone();
+                if dir.exists() {
+                    Some((name, dir))
+                } else {
+                    None
+                }
+            })
+            .collect()
+    }
+
     /// Borrow the underlying [`LuaExecutor`].
     #[allow(dead_code)]
     pub fn executor(&self) -> &LuaExecutor {
