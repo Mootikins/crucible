@@ -53,6 +53,8 @@ jobs:
         run: mkdir -p crates/crucible-web/web/dist && echo "<html></html>" > crates/crucible-web/web/dist/index.html
       - name: Run tests with nextest
         run: cargo nextest run --profile ci --workspace
+      - name: Verify Lua stubs are not stale
+        run: cargo nextest run --profile ci -p crucible-lua -E 'test(stubs)' --no-capture
 
   test-sqlite:
     name: Test SQLite Backend
