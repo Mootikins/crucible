@@ -58,6 +58,7 @@ mod node;
 mod output;
 mod overlay;
 pub mod planning;
+pub mod replay_agent;
 pub mod recording;
 mod render;
 mod runner;

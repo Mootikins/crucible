@@ -24,6 +24,8 @@ use tokio::sync::mpsc;
 
 use crate::context_enricher::ContextEnricher;
 use crate::tui::oil::commands::{SetEffect, SetRpcAction};
+use crate::tui::oil::replay_agent::ReplayAgentHandle;
+use crate::tui::oil::recording::{self, DemoEvent, RecordingWriter, TimestampedEvent};
 
 pub struct OilChatRunner {
     terminal: Terminal,
@@ -47,6 +49,10 @@ pub struct OilChatRunner {
     enricher: Option<Arc<ContextEnricher>>,
     agent_name: Option<String>,
     initial_sets: Vec<SetEffect>,
+    record_path: Option<PathBuf>,
+    replay_path: Option<PathBuf>,
+    replay_speed: f64,
+    is_replay: bool,
 }
 
 impl OilChatRunner {
@@ -77,6 +83,10 @@ impl OilChatRunner {
             enricher: None,
             agent_name: None,
             initial_sets: Vec::new(),
+            record_path: None,
+            replay_path: None,
+            replay_speed: 1.0,
+            is_replay: false,
         }
     }
 
@@ -173,6 +183,21 @@ impl OilChatRunner {
         self
     }
 
+    pub fn with_record_path(mut self, path: Option<PathBuf>) -> Self {
+        self.record_path = path;
+        self
+    }
+
+    pub fn with_replay_path(mut self, path: Option<PathBuf>) -> Self {
+        self.replay_path = path;
+        self
+    }
+
+    pub fn with_replay_speed(mut self, speed: f64) -> Self {
+        self.replay_speed = speed;
+        self
+    }
+
     fn is_acp_session(&self) -> bool {
         self.agent_name.is_some()
     }
@@ -245,12 +270,31 @@ impl OilChatRunner {
         let tree = app.view(&ctx);
         let _ = self.terminal.render(&tree)?;
 
+        let (msg_tx, msg_rx) = mpsc::unbounded_channel::<ChatAppMsg>();
+
+        if let Some(replay_path) = self.replay_path.clone() {
+            let mut agent = ReplayAgentHandle::from_file(&replay_path, self.replay_speed)?;
+            self.is_replay = true;
+            app.set_status("Replay");
+
+            let interaction_rx = agent.take_interaction_receiver();
+            tracing::debug!(
+                has_rx = interaction_rx.is_some(),
+                "take_interaction_receiver"
+            );
+
+            self.event_loop(&mut app, &mut agent, bridge, msg_tx, msg_rx, interaction_rx)
+                .await?;
+
+            self.terminal.exit()?;
+            return Ok(());
+        }
+
         let selection = self.discover_agent().await;
         let mut agent = create_agent(selection).await?;
+        self.is_replay = false;
 
         app.set_status("Ready");
-
-        let (msg_tx, msg_rx) = mpsc::unbounded_channel::<ChatAppMsg>();
 
         if !self.initial_sets.is_empty() {
             for effect in std::mem::take(&mut self.initial_sets) {
@@ -339,6 +383,24 @@ impl OilChatRunner {
         let mut tick_interval = tokio::time::interval(self.tick_rate);
         let mut session_cmd_rx = self.session_cmd_rx.take();
 
+        let mut recording_writer: Option<RecordingWriter> =
+            if let Some(ref path) = self.record_path {
+                match RecordingWriter::create(path) {
+                    Ok(mut writer) => {
+                        let (cols, rows) = crossterm::terminal::size().unwrap_or((80, 24));
+                        let _ = writer.write_header(cols, rows, "cru chat");
+                        tracing::info!(path = %path.display(), "Recording session");
+                        Some(writer)
+                    }
+                    Err(e) => {
+                        tracing::warn!(error = %e, "Failed to create recording file");
+                        None
+                    }
+                }
+            } else {
+                None
+            };
+
         loop {
             if app.take_needs_full_redraw() {
                 self.terminal.force_full_redraw()?;
@@ -362,6 +424,11 @@ impl OilChatRunner {
             }
 
             while let Ok(msg) = msg_rx.try_recv() {
+                if let Some(ref mut writer) = recording_writer {
+                    if let Some(event) = recording::from_chat_app_msg(&msg, writer.elapsed_ms()) {
+                        let _ = writer.write_event(&event);
+                    }
+                }
                 let mut action =
                     Self::process_message(&msg, app, agent, bridge, &mut active_stream);
                 while let Action::Send(follow_up) = action {
@@ -549,7 +616,18 @@ impl OilChatRunner {
                 }
             };
 
-            if let Some(ev) = event {
+            if let Some(ref ev) = event {
+                if let Some(ref mut writer) = recording_writer {
+                    if let Event::Key(key_event) = ev {
+                        let _ = writer.write_event(&TimestampedEvent {
+                            ts_ms: writer.elapsed_ms(),
+                            event: DemoEvent::KeyPress {
+                                key: format!("{:?}", key_event.code),
+                                modifiers: format!("{:?}", key_event.modifiers),
+                            },
+                        });
+                    }
+                }
                 let action = app.update(ev.clone());
                 tracing::trace!(?ev, ?action, "processed event");
                 if self
@@ -819,7 +897,7 @@ impl OilChatRunner {
                             }
                         }
                     }
-                    ChatAppMsg::ReloadPlugin(ref name) => {
+                    ChatAppMsg::ReloadPlugin(ref name) if !self.is_replay => {
                         tracing::info!(plugin = %name, "Plugin reload requested");
                         let name = name.clone();
                         let tx = msg_tx.clone();
@@ -897,12 +975,12 @@ impl OilChatRunner {
                             }
                         });
                     }
-                    ChatAppMsg::ExecuteSlashCommand(ref cmd) => {
+                    ChatAppMsg::ExecuteSlashCommand(ref cmd) if !self.is_replay => {
                         tracing::info!(command = %cmd, "Forwarding slash command as user message");
                         let stream = agent.send_message_stream(cmd.clone());
                         *active_stream = Some(stream);
                     }
-                    ChatAppMsg::ExportSession(ref export_path) => {
+                    ChatAppMsg::ExportSession(ref export_path) if !self.is_replay => {
                         let session_dir = match app.session_dir() {
                             Some(dir) => dir.to_path_buf(),
                             None => {
@@ -946,6 +1024,9 @@ impl OilChatRunner {
                             }
                         }
                     }
+                    ChatAppMsg::ReloadPlugin(_)
+                    | ChatAppMsg::ExecuteSlashCommand(_)
+                    | ChatAppMsg::ExportSession(_) => {}
                     _ => {}
                 }
                 let action = app.on_message(msg);

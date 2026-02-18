@@ -285,6 +285,9 @@ async fn main() -> Result<()> {
             context_size,
             plan,
             set_overrides,
+            record,
+            replay,
+            replay_speed,
         }) => {
             commands::chat::execute(
                 config,
@@ -299,6 +302,9 @@ async fn main() -> Result<()> {
                 env,
                 resume,
                 set_overrides,
+                record,
+                replay,
+                replay_speed,
             )
             .await?
         }
@@ -400,7 +406,7 @@ async fn main() -> Result<()> {
                 config,
                 None,
                 None,
-                false, // read_only: false = normal mode (not plan mode)
+                false,
                 false,
                 cli.no_process,
                 Some(5),
@@ -409,6 +415,9 @@ async fn main() -> Result<()> {
                 vec![],
                 None,
                 vec![],
+                None,
+                None,
+                1.0,
             )
             .await?
         }
