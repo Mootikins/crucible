@@ -33,6 +33,11 @@ async fn main() -> Result<()> {
 
     let config = CliAppConfig::load(None, None, None).unwrap_or_default();
     let mcp_config = config.mcp.as_ref();
+    let plugin_watch = config
+        .plugins
+        .get("watch")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
     let plugin_config = config.plugins.clone();
     let llm_config = if config.llm.has_providers() {
         Some(config.llm)
@@ -51,6 +56,7 @@ async fn main() -> Result<()> {
         &sock_path,
         mcp_config,
         plugin_config,
+        plugin_watch,
         llm_config,
         permission_config,
         web_config,

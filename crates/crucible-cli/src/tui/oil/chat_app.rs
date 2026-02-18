@@ -1561,11 +1561,8 @@ impl OilChatApp {
                 }
             }
             "reload" => {
-                self.notification_area
-                    .add(crucible_core::types::Notification::warning(
-                        "Usage: :reload <plugin_name>".to_string(),
-                    ));
-                Action::Continue
+                // Empty name signals "reload all plugins"
+                Action::Send(ChatAppMsg::ReloadPlugin(String::new()))
             }
             _ if command.starts_with("export ") => {
                 let path = command

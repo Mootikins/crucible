@@ -87,6 +87,7 @@ pub struct Server {
     event_tx: broadcast::Sender<SessionEventMessage>,
     dispatcher: Arc<RpcDispatcher>,
     plugin_loader: Arc<Mutex<Option<DaemonPluginLoader>>>,
+    plugin_watch: bool,
     #[cfg(feature = "web")]
     web_config: Option<crucible_config::WebConfig>,
 }
@@ -101,6 +102,7 @@ impl Server {
             path,
             mcp_config,
             std::collections::HashMap::new(),
+            false,
             None,
             None,
             None,
@@ -113,6 +115,7 @@ impl Server {
         path: &Path,
         mcp_config: Option<&crucible_config::McpConfig>,
         plugin_config: std::collections::HashMap<String, serde_json::Value>,
+        plugin_watch: bool,
         llm_config: Option<crucible_config::LlmConfig>,
         permission_config: Option<crucible_config::components::permissions::PermissionConfig>,
         #[allow(unused_variables)] web_config: Option<crucible_config::WebConfig>,
@@ -202,6 +205,7 @@ impl Server {
             event_tx,
             dispatcher,
             plugin_loader,
+            plugin_watch,
             #[cfg(feature = "web")]
             web_config,
         })
@@ -277,6 +281,14 @@ impl Server {
                             Err(e) => warn!("Service '{}' failed: {}", name, e),
                         }
                     });
+                }
+
+                if self.plugin_watch {
+                    let plugin_dirs = loader.loaded_plugin_dirs();
+                    if !plugin_dirs.is_empty() {
+                        let plugin_loader_clone = self.plugin_loader.clone();
+                        spawn_plugin_watcher(plugin_dirs, plugin_loader_clone);
+                    }
                 }
             }
         }
@@ -1876,6 +1888,124 @@ async fn handle_project_get(req: Request, pm: &Arc<ProjectManager>) -> Response 
         },
         None => Response::success(req.id, serde_json::Value::Null),
     }
+}
+
+fn spawn_plugin_watcher(
+    plugin_dirs: Vec<(String, PathBuf)>,
+    plugin_loader: Arc<Mutex<Option<DaemonPluginLoader>>>,
+) {
+    use notify::{RecursiveMode, Watcher};
+
+    let dir_to_plugin: std::collections::HashMap<PathBuf, String> = plugin_dirs
+        .iter()
+        .map(|(name, dir)| (dir.clone(), name.clone()))
+        .collect();
+
+    let watch_dirs: Vec<PathBuf> = plugin_dirs.into_iter().map(|(_, dir)| dir).collect();
+
+    let (sync_tx, sync_rx) = std::sync::mpsc::channel::<PathBuf>();
+
+    let mut watcher = match notify::recommended_watcher(
+        move |res: std::result::Result<notify::Event, notify::Error>| {
+            if let Ok(event) = res {
+                if !event.kind.is_modify() && !event.kind.is_create() {
+                    return;
+                }
+                for path in &event.paths {
+                    let ext = path.extension().and_then(|e| e.to_str());
+                    if matches!(ext, Some("lua") | Some("fnl")) {
+                        let _ = sync_tx.send(path.clone());
+                    }
+                }
+            }
+        },
+    ) {
+        Ok(w) => w,
+        Err(e) => {
+            warn!("Failed to create plugin file watcher: {}", e);
+            return;
+        }
+    };
+
+    for dir in &watch_dirs {
+        if let Err(e) = watcher.watch(dir, RecursiveMode::Recursive) {
+            warn!("Failed to watch plugin dir {}: {}", dir.display(), e);
+        }
+    }
+
+    info!(
+        "Plugin file watcher active for {} director(ies)",
+        watch_dirs.len()
+    );
+
+    tokio::spawn(async move {
+        let _watcher_guard = watcher;
+        let debounce = tokio::time::Duration::from_millis(500);
+        let mut pending: std::collections::HashMap<String, tokio::time::Instant> =
+            std::collections::HashMap::new();
+
+        loop {
+            let next_fire = pending.values().copied().min();
+
+            let timeout = match next_fire {
+                Some(t) => t.saturating_duration_since(tokio::time::Instant::now()),
+                None => tokio::time::Duration::from_millis(100),
+            };
+
+            tokio::time::sleep(timeout).await;
+
+            while let Ok(changed_path) = sync_rx.try_recv() {
+                if let Some(plugin_name) = find_owning_plugin(&changed_path, &dir_to_plugin) {
+                    pending.insert(plugin_name, tokio::time::Instant::now() + debounce);
+                }
+            }
+
+            let now = tokio::time::Instant::now();
+            let ready: Vec<String> = pending
+                .iter()
+                .filter(|(_, &t)| t <= now)
+                .map(|(name, _)| name.clone())
+                .collect();
+
+            for name in ready {
+                pending.remove(&name);
+                let mut guard = plugin_loader.lock().await;
+                if let Some(ref mut loader) = *guard {
+                    match loader.reload_plugin(&name).await {
+                        Ok(_spec) => {
+                            info!("Plugin '{}' auto-reloaded due to file change", name);
+                            let service_fns = loader.take_service_fns();
+                            drop(guard);
+                            for (svc_name, func) in service_fns {
+                                info!("Re-spawning service after auto-reload: {}", svc_name);
+                                tokio::spawn(async move {
+                                    match func.call_async::<()>(()).await {
+                                        Ok(()) => info!("Service '{}' completed", svc_name),
+                                        Err(e) => warn!("Service '{}' failed: {}", svc_name, e),
+                                    }
+                                });
+                            }
+                        }
+                        Err(e) => {
+                            warn!("Auto-reload failed for plugin '{}': {}", name, e);
+                        }
+                    }
+                }
+            }
+        }
+    });
+}
+
+fn find_owning_plugin(
+    path: &Path,
+    dir_to_plugin: &std::collections::HashMap<PathBuf, String>,
+) -> Option<String> {
+    for (dir, name) in dir_to_plugin {
+        if path.starts_with(dir) {
+            return Some(name.clone());
+        }
+    }
+    None
 }
 
 #[cfg(test)]
