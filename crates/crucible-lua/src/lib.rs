@@ -74,6 +74,7 @@ mod registry;
 pub mod schema;
 pub mod session;
 mod session_api;
+pub mod stubs;
 mod sessions;
 mod shell;
 pub mod statusline;
