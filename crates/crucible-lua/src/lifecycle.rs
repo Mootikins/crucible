@@ -6,7 +6,7 @@ use crate::annotations::{
 };
 use crate::manifest::{Capability, LoadedPlugin, ManifestError, PluginManifest, PluginState};
 use mlua::{Function, Lua, RegistryKey, Value};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use thiserror::Error;
@@ -74,11 +74,6 @@ struct RegisteredItem<T> {
     item: T,
     handle: RegistrationHandle,
     owner: Option<String>,
-}
-
-#[derive(Debug)]
-struct PackageLoadedSnapshot {
-    entries: HashMap<String, RegistryKey>,
 }
 
 pub struct PluginManager {
@@ -427,17 +422,13 @@ impl PluginManager {
     }
 
     pub fn reload_plugin(&mut self, name: &str) -> LifecycleResult<()> {
-        let snapshot = self.snapshot_package_loaded()?;
-
         self.call_on_unload_hook(name);
         self.unload(name)?;
         self.clear_plugin_modules(name)?;
 
-        match self.load_plugin_by_name(name) {
+        match self.load(name) {
             Ok(()) => Ok(()),
             Err(reload_error) => {
-                self.restore_package_loaded(snapshot)?;
-
                 if let Some(plugin) = self.plugins.get_mut(name) {
                     plugin.state = PluginState::Error;
                     plugin.last_error = Some(reload_error.to_string());
@@ -650,14 +641,18 @@ impl PluginManager {
         match result {
             Value::Table(spec_table) => {
                 self.capture_on_unload_hook(name, &spec_table)?;
-                self.package_loaded_table()?
-                    .set(name, spec_table)
-                    .map_err(|e| {
-                        LifecycleError::LoadError(format!(
-                            "Failed to cache plugin module {}: {}",
-                            name, e
-                        ))
-                    })?;
+                let package: mlua::Table = self.lua.globals().get("package").map_err(|e| {
+                    LifecycleError::LoadError(format!("Failed to access package table: {}", e))
+                })?;
+                let loaded: mlua::Table = package.get("loaded").map_err(|e| {
+                    LifecycleError::LoadError(format!("Failed to access package.loaded: {}", e))
+                })?;
+                loaded.set(name, spec_table).map_err(|e| {
+                    LifecycleError::LoadError(format!(
+                        "Failed to cache plugin module {}: {}",
+                        name, e
+                    ))
+                })?;
             }
             _ => {
                 self.on_unload_hooks.remove(name);
@@ -714,39 +709,6 @@ end
         Ok(())
     }
 
-    fn snapshot_package_loaded(&self) -> LifecycleResult<PackageLoadedSnapshot> {
-        let package_loaded = self.package_loaded_table()?;
-        let mut entries = HashMap::new();
-
-        for pair in package_loaded.pairs::<Value, Value>() {
-            let (key, value) = pair.map_err(|e| {
-                LifecycleError::LoadError(format!("Failed to iterate package.loaded: {}", e))
-            })?;
-
-            if let Value::String(key) = key {
-                let key = key
-                    .to_str()
-                    .map_err(|e| {
-                        LifecycleError::LoadError(format!(
-                            "Failed to decode package.loaded key: {}",
-                            e
-                        ))
-                    })?
-                    .to_string();
-
-                let value_key = self.lua.create_registry_value(value).map_err(|e| {
-                    LifecycleError::LoadError(format!(
-                        "Failed to snapshot package.loaded entry {}: {}",
-                        key, e
-                    ))
-                })?;
-                entries.insert(key, value_key);
-            }
-        }
-
-        Ok(PackageLoadedSnapshot { entries })
-    }
-
     fn call_on_unload_hook(&self, plugin_name: &str) {
         let Some(hook_key) = self.on_unload_hooks.get(plugin_name) else {
             return;
@@ -786,63 +748,6 @@ end
                     plugin_name, e
                 ))
             })
-    }
-
-    fn restore_package_loaded(&self, snapshot: PackageLoadedSnapshot) -> LifecycleResult<()> {
-        let package_loaded = self.package_loaded_table()?;
-        let mut existing_keys = HashSet::new();
-
-        for pair in package_loaded.pairs::<Value, Value>() {
-            let (key, _) = pair.map_err(|e| {
-                LifecycleError::LoadError(format!("Failed to inspect package.loaded: {}", e))
-            })?;
-
-            if let Value::String(key) = key {
-                let key = key
-                    .to_str()
-                    .map_err(|e| {
-                        LifecycleError::LoadError(format!(
-                            "Failed to decode package.loaded key: {}",
-                            e
-                        ))
-                    })?
-                    .to_string();
-                existing_keys.insert(key);
-            }
-        }
-
-        for key in existing_keys {
-            package_loaded.set(key, Value::Nil).map_err(|e| {
-                LifecycleError::LoadError(format!("Failed to clear package.loaded: {}", e))
-            })?;
-        }
-
-        for (key, value_key) in snapshot.entries {
-            let value = self.lua.registry_value::<Value>(&value_key).map_err(|e| {
-                LifecycleError::LoadError(format!(
-                    "Failed to restore package.loaded entry {}: {}",
-                    key, e
-                ))
-            })?;
-            package_loaded.set(key, value).map_err(|e| {
-                LifecycleError::LoadError(format!("Failed to write package.loaded entry: {}", e))
-            })?;
-        }
-
-        Ok(())
-    }
-
-    fn package_loaded_table(&self) -> LifecycleResult<mlua::Table> {
-        let package: mlua::Table = self.lua.globals().get("package").map_err(|e| {
-            LifecycleError::LoadError(format!("Failed to access package table: {}", e))
-        })?;
-        package.get("loaded").map_err(|e| {
-            LifecycleError::LoadError(format!("Failed to access package.loaded table: {}", e))
-        })
-    }
-
-    fn load_plugin_by_name(&mut self, name: &str) -> LifecycleResult<()> {
-        self.load(name)
     }
 
     pub fn eval_runtime<T>(&self, source: &str) -> LifecycleResult<T>
