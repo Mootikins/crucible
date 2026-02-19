@@ -8,7 +8,7 @@ use crucible_protocol::{RecordedEvent, RecordingFooter, RecordingHeader, Session
 use tokio::time::sleep;
 use tokio::sync::broadcast;
 use tokio::task::JoinHandle;
-use tracing::warn;
+use tracing::{debug, warn};
 
 pub struct ReplaySession {
     replay_source: PathBuf,
@@ -109,6 +109,13 @@ impl ReplaySession {
             let mut previous_ts: Option<DateTime<Utc>> = None;
             let total_events = self.events.len();
 
+            debug!(
+                session_id = %self.header.session_id,
+                recording_mode = %self.header.recording_mode,
+                started_at = %self.header.started_at,
+                "Starting replay"
+            );
+
             if self.footer.is_none() {
                 warn!(
                     source = %self.replay_source.display(),
@@ -155,7 +162,6 @@ impl ReplaySession {
             complete.msg_type = "replay_event".to_string();
             let _ = self.event_tx.send(complete);
 
-            let _ = &self.header;
             Ok(())
         })
     }
