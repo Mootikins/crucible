@@ -50,10 +50,7 @@ pub async fn execute(_config: CliConfig, args: HealthArgs) -> Result<()> {
     let health_path = match health_path {
         Some(path) => path,
         None => {
-            println!(
-                "No health.lua found in {}",
-                args.path.display()
-            );
+            println!("No health.lua found in {}", args.path.display());
             return Ok(());
         }
     };
@@ -79,9 +76,7 @@ pub async fn execute(_config: CliConfig, args: HealthArgs) -> Result<()> {
     check_fn.call::<()>(())?;
 
     // Get results from cru.health
-    let get_results: mlua::Function = lua
-        .load("return cru.health.get_results")
-        .eval()?;
+    let get_results: mlua::Function = lua.load("return cru.health.get_results").eval()?;
     let results: mlua::Table = get_results.call(())?;
 
     // Extract results
@@ -110,7 +105,8 @@ pub async fn execute(_config: CliConfig, args: HealthArgs) -> Result<()> {
 
         println!("{}", serde_json::to_string_pretty(&output)?);
     } else {
-        let plugin_name = args.path
+        let plugin_name = args
+            .path
             .file_name()
             .and_then(|n| n.to_str())
             .unwrap_or("unknown");

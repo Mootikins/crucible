@@ -265,7 +265,10 @@ fn test_plugin_reload_picks_up_changes() {
     assert_eq!(before, "v1");
 
     fs::write(
-        temp.path().join(plugin_name).join(plugin_name).join("core.lua"),
+        temp.path()
+            .join(plugin_name)
+            .join(plugin_name)
+            .join("core.lua"),
         "return { value = 'v2' }\n",
     )
     .unwrap();
@@ -286,8 +289,7 @@ fn test_plugin_reload_picks_up_changes() {
 fn test_fennel_test_execution() {
     let temp = TempDir::new().unwrap();
     let fennel_test_path = temp.path().join("fennel_test.fnl");
-    let fennel_source =
-        "(describe \"fennel\" (fn [] (it \"works\" (fn [] (assert.equal 1 1)))))";
+    let fennel_source = "(describe \"fennel\" (fn [] (it \"works\" (fn [] (assert.equal 1 1)))))";
     fs::write(&fennel_test_path, fennel_source).unwrap();
 
     let executor = LuaExecutor::new().unwrap();

@@ -70,10 +70,10 @@ async fn test_chat_command_does_not_double_open_database() -> Result<()> {
         vec![],                           // env_overrides
         None,                             // resume (session ID)
         vec![],                           // set_overrides
-        None,   // record
-        None,   // replay
-        1.0,    // replay_speed
-        None,   // replay_auto_exit
+        None,                             // record
+        None,                             // replay
+        1.0,                              // replay_speed
+        None,                             // replay_auto_exit
     )
     .await;
 
