@@ -12,6 +12,7 @@ use crate::protocol::{
     Request, Response, SessionEventMessage, INTERNAL_ERROR, INVALID_PARAMS, METHOD_NOT_FOUND,
     PARSE_ERROR,
 };
+use crate::recording::RecordingWriter;
 use crate::rpc::{RpcContext, RpcDispatcher};
 use crate::rpc_helpers::{
     optional_i64_param, optional_str_param, optional_u64_param, require_array_param,
@@ -342,6 +343,7 @@ impl Server {
                     _ = persist_cancel_clone.cancelled() => {
                         debug!("Persist task received shutdown signal, draining remaining events");
                         while let Ok(event) = persist_rx.try_recv() {
+                            forward_to_recording(&sm_clone, &event);
                             if let Err(e) = persist_event(&event, &sm_clone, &storage).await {
                                 warn!(session_id = %event.session_id, error = %e, "Failed to persist event during shutdown drain");
                             }
@@ -351,6 +353,7 @@ impl Server {
                     result = persist_rx.recv() => {
                         match result {
                             Ok(event) => {
+                                forward_to_recording(&sm_clone, &event);
                                 if let Err(e) = persist_event(&event, &sm_clone, &storage).await {
                                     warn!(session_id = %event.session_id, event = %event.event, error = %e, "Failed to persist event");
                                 }
@@ -573,6 +576,17 @@ async fn handle_client(
     subscription_manager.remove_client(client_id);
 
     Ok(())
+}
+
+fn forward_to_recording(sm: &SessionManager, event: &SessionEventMessage) {
+    if let Some(tx) = sm.get_recording_sender(&event.session_id) {
+        if tx.try_send(event.clone()).is_err() {
+            warn!(
+                session_id = %event.session_id,
+                "Recording channel full or closed, dropping event"
+            );
+        }
+    }
 }
 
 fn should_persist(event: &SessionEventMessage) -> bool {
@@ -1091,16 +1105,31 @@ async fn handle_session_create(
         )
         .await
     {
-        Ok(session) => Response::success(
-            req.id,
-            serde_json::json!({
-                "session_id": session.id,
-                "type": session.session_type.as_prefix(),
-                "kiln": session.kiln,
-                "workspace": session.workspace,
-                "state": format!("{}", session.state),
-            }),
-        ),
+        Ok(session) => {
+            if session.recording_mode == Some(RecordingMode::Granular) {
+                let session_dir = FileSessionStorage::session_dir_for(&session);
+                let recording_path = session_dir.join("recording.jsonl");
+                let (writer, tx) = RecordingWriter::new(
+                    recording_path,
+                    session.id.clone(),
+                    RecordingMode::Granular,
+                    None,
+                );
+                sm.set_recording_sender(&session.id, tx);
+                let _handle = writer.start();
+            }
+
+            Response::success(
+                req.id,
+                serde_json::json!({
+                    "session_id": session.id,
+                    "type": session.session_type.as_prefix(),
+                    "kiln": session.kiln,
+                    "workspace": session.workspace,
+                    "state": format!("{}", session.state),
+                }),
+            )
+        }
         Err(e) => internal_error(req.id, e),
     }
 }
@@ -2996,6 +3025,198 @@ mod tests {
             assert!(
                 get_response.contains("granular"),
                 "recording_mode should be 'granular'"
+            );
+
+            let _ = shutdown_handle.send(());
+            let _ = server_task.await;
+        }
+
+        #[tokio::test]
+        async fn test_granular_session_creates_recording_file() {
+            use std::time::Duration;
+
+            let tmp = TempDir::new().unwrap();
+            let sock_path = tmp.path().join("test.sock");
+            let kiln_path = tmp.path().join("kiln");
+            std::fs::create_dir_all(&kiln_path).unwrap();
+
+            let server = Server::bind(&sock_path, None).await.unwrap();
+            let event_tx = server.event_sender();
+            let shutdown_handle = server.shutdown_handle();
+            let server_task = tokio::spawn(server.run());
+
+            tokio::time::sleep(Duration::from_millis(50)).await;
+
+            let mut client = UnixStream::connect(&sock_path).await.unwrap();
+
+            let create_req = format!(
+                r#"{{"jsonrpc":"2.0","id":1,"method":"session.create","params":{{"type":"chat","kiln":"{}","recording_mode":"granular"}}}}"#,
+                kiln_path.display()
+            );
+            client.write_all(create_req.as_bytes()).await.unwrap();
+            client.write_all(b"\n").await.unwrap();
+
+            let mut buf = vec![0u8; 4096];
+            let n = client.read(&mut buf).await.unwrap();
+            let response: serde_json::Value = serde_json::from_slice(&buf[..n]).unwrap();
+            let session_id = response["result"]["session_id"]
+                .as_str()
+                .unwrap()
+                .to_string();
+
+            let event = SessionEventMessage::text_delta(&session_id, "hello world");
+            event_tx.send(event).unwrap();
+
+            // Wait for recording writer flush (500ms interval + margin)
+            tokio::time::sleep(Duration::from_millis(700)).await;
+
+            let session_dir = kiln_path
+                .join(".crucible")
+                .join("sessions")
+                .join(&session_id);
+            let recording_path = session_dir.join("recording.jsonl");
+
+            assert!(
+                recording_path.exists(),
+                "recording.jsonl should exist for granular session"
+            );
+
+            let content = tokio::fs::read_to_string(&recording_path).await.unwrap();
+            let lines: Vec<&str> = content.lines().collect();
+            assert!(
+                lines.len() >= 2,
+                "Should have header + at least 1 event, got {} lines",
+                lines.len()
+            );
+
+            let _ = shutdown_handle.send(());
+            let _ = server_task.await;
+        }
+
+        #[tokio::test]
+        async fn test_non_granular_session_has_no_recording_file() {
+            use std::time::Duration;
+
+            let tmp = TempDir::new().unwrap();
+            let sock_path = tmp.path().join("test.sock");
+            let kiln_path = tmp.path().join("kiln");
+            std::fs::create_dir_all(&kiln_path).unwrap();
+
+            let server = Server::bind(&sock_path, None).await.unwrap();
+            let event_tx = server.event_sender();
+            let shutdown_handle = server.shutdown_handle();
+            let server_task = tokio::spawn(server.run());
+
+            tokio::time::sleep(Duration::from_millis(50)).await;
+
+            let mut client = UnixStream::connect(&sock_path).await.unwrap();
+
+            let create_req = format!(
+                r#"{{"jsonrpc":"2.0","id":1,"method":"session.create","params":{{"type":"chat","kiln":"{}"}}}}"#,
+                kiln_path.display()
+            );
+            client.write_all(create_req.as_bytes()).await.unwrap();
+            client.write_all(b"\n").await.unwrap();
+
+            let mut buf = vec![0u8; 4096];
+            let n = client.read(&mut buf).await.unwrap();
+            let response: serde_json::Value = serde_json::from_slice(&buf[..n]).unwrap();
+            let session_id = response["result"]["session_id"]
+                .as_str()
+                .unwrap()
+                .to_string();
+
+            let event = SessionEventMessage::user_message(&session_id, "msg-1", "hello");
+            event_tx.send(event).unwrap();
+
+            tokio::time::sleep(Duration::from_millis(300)).await;
+
+            let session_dir = kiln_path
+                .join(".crucible")
+                .join("sessions")
+                .join(&session_id);
+            let recording_path = session_dir.join("recording.jsonl");
+
+            assert!(
+                !recording_path.exists(),
+                "recording.jsonl should NOT exist for non-granular session"
+            );
+
+            let _ = shutdown_handle.send(());
+            let _ = server_task.await;
+        }
+
+        #[tokio::test]
+        async fn test_granular_recording_stops_on_session_end() {
+            use std::time::Duration;
+
+            let tmp = TempDir::new().unwrap();
+            let sock_path = tmp.path().join("test.sock");
+            let kiln_path = tmp.path().join("kiln");
+            std::fs::create_dir_all(&kiln_path).unwrap();
+
+            let server = Server::bind(&sock_path, None).await.unwrap();
+            let event_tx = server.event_sender();
+            let shutdown_handle = server.shutdown_handle();
+            let server_task = tokio::spawn(server.run());
+
+            tokio::time::sleep(Duration::from_millis(50)).await;
+
+            let mut client = UnixStream::connect(&sock_path).await.unwrap();
+
+            let create_req = format!(
+                r#"{{"jsonrpc":"2.0","id":1,"method":"session.create","params":{{"type":"chat","kiln":"{}","recording_mode":"granular"}}}}"#,
+                kiln_path.display()
+            );
+            client.write_all(create_req.as_bytes()).await.unwrap();
+            client.write_all(b"\n").await.unwrap();
+
+            let mut buf = vec![0u8; 4096];
+            let n = client.read(&mut buf).await.unwrap();
+            let response: serde_json::Value = serde_json::from_slice(&buf[..n]).unwrap();
+            let session_id = response["result"]["session_id"]
+                .as_str()
+                .unwrap()
+                .to_string();
+
+            let event = SessionEventMessage::text_delta(&session_id, "before end");
+            event_tx.send(event).unwrap();
+            tokio::time::sleep(Duration::from_millis(100)).await;
+
+            // End the session
+            let end_req = format!(
+                r#"{{"jsonrpc":"2.0","id":2,"method":"session.end","params":{{"session_id":"{}"}}}}"#,
+                session_id
+            );
+            client.write_all(end_req.as_bytes()).await.unwrap();
+            client.write_all(b"\n").await.unwrap();
+
+            buf.fill(0);
+            let n = client.read(&mut buf).await.unwrap();
+            let end_response = String::from_utf8_lossy(&buf[..n]);
+            assert!(
+                end_response.contains("\"state\":\"ended\""),
+                "Session should be ended: {}",
+                end_response
+            );
+
+            // Wait for writer to flush footer
+            tokio::time::sleep(Duration::from_millis(300)).await;
+
+            let session_dir = kiln_path
+                .join(".crucible")
+                .join("sessions")
+                .join(&session_id);
+            let recording_path = session_dir.join("recording.jsonl");
+            let content = tokio::fs::read_to_string(&recording_path).await.unwrap();
+            let lines: Vec<&str> = content.lines().collect();
+
+            // Last line should be footer with total_events
+            let last_line = lines.last().unwrap();
+            let footer: serde_json::Value = serde_json::from_str(last_line).unwrap();
+            assert!(
+                footer.get("total_events").is_some(),
+                "Footer should have total_events field"
             );
 
             let _ = shutdown_handle.send(());

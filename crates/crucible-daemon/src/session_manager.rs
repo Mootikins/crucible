@@ -5,9 +5,11 @@
 
 use crate::session_storage::{FileSessionStorage, SessionStorage};
 use crucible_core::session::{RecordingMode, Session, SessionState, SessionSummary, SessionType};
+use crucible_protocol::SessionEventMessage;
 use dashmap::DashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use tokio::sync::mpsc;
 use tracing::{debug, info};
 
 /// Manages active sessions in the daemon.
@@ -16,10 +18,9 @@ use tracing::{debug, info};
 /// The manager tracks all active sessions and their state.
 /// Sessions are automatically persisted to storage on create and state changes.
 pub struct SessionManager {
-    /// Active sessions indexed by session ID (lock-free concurrent access)
     sessions: DashMap<String, Session>,
-    /// Storage backend for session persistence
     storage: Arc<dyn SessionStorage>,
+    recording_senders: DashMap<String, mpsc::Sender<SessionEventMessage>>,
 }
 
 impl SessionManager {
@@ -33,6 +34,7 @@ impl SessionManager {
         Self {
             sessions: DashMap::new(),
             storage,
+            recording_senders: DashMap::new(),
         }
     }
 
@@ -289,7 +291,19 @@ impl SessionManager {
         Ok(previous)
     }
 
-    /// End a session, persist the state change, and remove it from the in-memory map.
+    pub fn set_recording_sender(&self, session_id: &str, tx: mpsc::Sender<SessionEventMessage>) {
+        self.recording_senders.insert(session_id.to_string(), tx);
+    }
+
+    pub fn get_recording_sender(&self, session_id: &str) -> Option<mpsc::Sender<SessionEventMessage>> {
+        self.recording_senders.get(session_id).map(|r| r.clone())
+    }
+
+    #[allow(dead_code)]
+    pub fn remove_recording_sender(&self, session_id: &str) {
+        self.recording_senders.remove(session_id);
+    }
+
     pub async fn end_session(&self, session_id: &str) -> Result<Session, SessionError> {
         let session = {
             let mut entry = self
@@ -307,6 +321,8 @@ impl SessionManager {
 
         self.storage.save(&session).await?;
 
+        // Drop recording sender to trigger graceful writer shutdown
+        self.recording_senders.remove(session_id);
         self.sessions.remove(session_id);
         info!(session_id = %session_id, "Session ended and removed from memory");
         Ok(session)
