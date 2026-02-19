@@ -23,27 +23,24 @@ This makes demo recording **deterministic** — no waiting for LLM latency, no v
 
 ## Recording New Fixtures
 
-Recording is daemon-managed. The `--record` flag (no path argument) creates a session with `recording_mode: granular`. The daemon writes `recording.jsonl` to the session directory.
+Recording is daemon-managed. The `--record` flag accepts a path argument and records the session to that file.
 
 ```bash
-# Start a chat session with granular recording enabled
-cru chat --record [agent flags]
+# Start a chat session with recording enabled
+cru chat --record assets/fixtures/<name>.jsonl [agent flags]
 
 # Example: Record with Claude Code
-cru chat --record -a claude
+cru chat --record assets/fixtures/demo.jsonl -a claude
 
 # Example: Record with internal Rig agent
-cru chat --record --internal --local
+cru chat --record assets/fixtures/demo.jsonl --internal --local
 ```
 
-Interact normally, type queries, use tools, etc. When you exit, the recording is saved to the session directory. Then copy it to the fixtures folder:
+Interact normally, type queries, use tools, etc. When you exit, the recording is saved to the specified path. You can then use it to regenerate GIFs:
 
 ```bash
-# Find the session ID
-cru session list
-
-# Copy the recording to fixtures
-cp ~/.crucible/sessions/<session-id>/recording.jsonl assets/fixtures/<name>.jsonl
+# Regenerate GIF from the fixture
+just demo <name>
 ```
 
 ## Regenerating GIFs
