@@ -72,3 +72,4 @@ test-slow = []           # Performance benchmarks and timing tests
 tempfile = { workspace = true }
 futures = { workspace = true }
 rand = { workspace = true }
+crucible-rpc = { path = "../crucible-rpc" }
