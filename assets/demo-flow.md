@@ -136,36 +136,28 @@ Fixtures are stored in `assets/fixtures/` as JSONL files (one JSON object per li
 
 ### Recording Fixtures
 
-Recording is now daemon-managed. The `--record` flag (no path argument) creates a daemon session with `recording_mode: granular`, and the daemon writes `recording.jsonl` to the session directory automatically.
+The `--record` flag accepts a path argument and records the session directly to that file.
 
 To record a new fixture:
 
 ```bash
 # Record demo fixture (internal Rig agent)
-cru chat --record -C assets/demo-config.toml --internal --local --no-process
+cru chat --record assets/fixtures/demo.jsonl -C assets/demo-config.toml --internal --local --no-process
 # Type your query, interact with the chat, and press Ctrl+C to stop recording
 
 # Record acp-demo fixture (Claude Code via ACP)
-cru chat --record -a claude --no-process --set perm.autoconfirm_session
+cru chat --record assets/fixtures/acp-demo.jsonl -a claude --no-process --set perm.autoconfirm_session
 # Type your query and press Ctrl+C
 
 # Record delegation-demo fixture (Claude delegating to Cursor)
-cru chat --record -a claude -C assets/demo-acp-config.toml --no-process --set perm.autoconfirm_session
+cru chat --record assets/fixtures/delegation-demo.jsonl -a claude -C assets/demo-acp-config.toml --no-process --set perm.autoconfirm_session
 # Type your delegation query and press Ctrl+C
 ```
 
-After recording, copy the fixture from the session directory:
-
-```bash
-# Find the session that was just recorded
-cru session list
-
-# Copy the recording to the fixtures directory
-cp ~/.crucible/sessions/<session-id>/recording.jsonl assets/fixtures/<name>.jsonl
-```
+The recording is saved directly to the specified path and ready for GIF generation.
 
 **Notes on recording:**
-- `--record` creates a granular recording session (daemon writes `recording.jsonl` to the session directory)
+- `--record <path>` records the session to the specified JSONL file
 - `--no-process` skips file embedding on startup (faster recording)
 - `--set perm.autoconfirm_session` auto-confirms session creation for unattended recording
 - Fixtures must exist before GIF generation (see below)
