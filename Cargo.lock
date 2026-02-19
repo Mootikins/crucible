@@ -3752,6 +3752,7 @@ dependencies = [
  "crucible-pipeline",
  "crucible-protocol",
  "crucible-rig",
+ "crucible-rpc",
  "crucible-sqlite",
  "crucible-surrealdb",
  "crucible-tools",
