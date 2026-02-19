@@ -100,9 +100,14 @@ impl ReplaySession {
         })
     }
 
+    pub fn session(&self) -> &Session {
+        &self.replay_session
+    }
+
     pub fn start(self) -> JoinHandle<Result<()>> {
         tokio::spawn(async move {
             let mut previous_ts: Option<DateTime<Utc>> = None;
+            let total_events = self.events.len();
 
             if self.footer.is_none() {
                 warn!(
@@ -141,6 +146,14 @@ impl ReplaySession {
                     );
                 }
             }
+
+            let mut complete = SessionEventMessage::new(
+                self.replay_session.id.clone(),
+                "replay_complete".to_string(),
+                serde_json::json!({"status": "complete", "total_events": total_events}),
+            );
+            complete.msg_type = "replay_event".to_string();
+            let _ = self.event_tx.send(complete);
 
             let _ = &self.header;
             Ok(())

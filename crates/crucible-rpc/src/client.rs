@@ -867,6 +867,18 @@ impl DaemonClient {
         .await
     }
 
+    pub async fn session_replay(
+        &self,
+        recording_path: &Path,
+        speed: f64,
+    ) -> Result<serde_json::Value> {
+        let params = serde_json::json!({
+            "recording_path": recording_path.to_string_lossy(),
+            "speed": speed,
+        });
+        self.call("session.replay", params).await
+    }
+
     pub async fn session_resume_from_storage(
         &self,
         session_id: &str,
