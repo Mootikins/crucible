@@ -318,7 +318,10 @@ impl DaemonClient {
     }
 
     fn is_event(msg: &serde_json::Value) -> bool {
-        msg.get("type").and_then(|t| t.as_str()) == Some("event")
+        matches!(
+            msg.get("type").and_then(|t| t.as_str()),
+            Some("event" | "replay_event")
+        )
     }
 
     fn dispatch_event(msg: &serde_json::Value, event_tx: &mpsc::UnboundedSender<SessionEvent>) {
