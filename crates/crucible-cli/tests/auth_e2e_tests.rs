@@ -1,5 +1,6 @@
 mod auth_e2e_helpers;
 
+use assert_cmd::Command;
 use auth_e2e_helpers::AuthTestEnv;
 use serial_test::serial;
 
@@ -234,4 +235,45 @@ fn auth_login_creates_file_with_restricted_permissions() {
     let metadata = std::fs::metadata(env.secrets_file_path()).unwrap();
     let mode = metadata.permissions().mode() & 0o777;
     assert_eq!(mode, 0o600, "secrets.toml should have 0600 permissions");
+}
+
+#[test]
+#[serial]
+fn error_invalid_subcommand_shows_suggestion() {
+    let mut cmd = Command::cargo_bin("cru").unwrap();
+    cmd.arg("chta");
+
+    cmd.assert()
+        .failure()
+        .stderr(predicates::str::contains("unrecognized subcommand"))
+        .stderr(predicates::str::contains("chat"));
+}
+
+#[test]
+#[serial]
+fn error_missing_required_arg_shows_help() {
+    let mut cmd = Command::cargo_bin("cru").unwrap();
+    cmd.arg("session").arg("resume");
+
+    cmd.assert()
+        .failure()
+        .stderr(predicates::str::contains("required arguments"))
+        .stderr(predicates::str::contains("Usage:"));
+}
+
+#[test]
+#[serial]
+fn error_conflicting_args_shows_message() {
+    let mut cmd = Command::cargo_bin("cru").unwrap();
+    cmd.arg("chat")
+        .arg("--record")
+        .arg("recording.jsonl")
+        .arg("--replay")
+        .arg("replay.jsonl");
+
+    cmd.assert()
+        .failure()
+        .stderr(predicates::str::contains("cannot be used with"))
+        .stderr(predicates::str::contains("--record"))
+        .stderr(predicates::str::contains("--replay"));
 }

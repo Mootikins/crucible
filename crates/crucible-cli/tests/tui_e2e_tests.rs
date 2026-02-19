@@ -1504,45 +1504,6 @@ fn smoke_chat_help() {
 
 /// Test that invalid subcommand shows helpful error with suggestions
 #[test]
-fn error_invalid_subcommand_shows_suggestion() {
-    require_binary!();
-
-    let config = TuiTestConfig::new("chta");
-    let mut session = TuiTestSession::spawn(config).expect("Failed to spawn");
-
-    session
-        .expect_regex(r"(?i)(error|invalid|unrecognized|unknown)")
-        .expect("Should show error message");
-    session.expect_eof().expect("Should exit");
-}
-
-/// `cru config init` without path defaults to CWD and runs provider detection,
-/// so it no longer errors. This test verifies it produces output and exits.
-#[test]
-#[ignore = "init without path now succeeds with provider detection — slow and environment-dependent"]
-fn error_missing_required_arg_shows_help() {
-    require_binary!();
-
-    let config = TuiTestConfig::new("config init");
-    let mut session = TuiTestSession::spawn(config).expect("Failed to spawn");
-
-    session.expect_eof().expect("Should exit");
-}
-
-/// Test that conflicting arguments show clear error
-#[test]
-#[ignore = "requires built binary with conflicting args"]
-fn error_conflicting_args_shows_message() {
-    require_binary!();
-
-    let config = TuiTestConfig::new("chat");
-    let mut session = TuiTestSession::spawn(config).expect("Failed to spawn");
-
-    session
-        .expect_regex(r"(?i)(error|conflict|cannot)")
-        .expect("Should show conflict error");
-    session.expect_eof().expect("Should exit");
-}
 
 /// Test that invalid option shows helpful error
 #[test]
