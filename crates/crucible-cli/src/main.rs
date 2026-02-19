@@ -288,6 +288,7 @@ async fn main() -> Result<()> {
             record,
             replay,
             replay_speed,
+            replay_auto_exit,
         }) => {
             commands::chat::execute(
                 config,
@@ -305,6 +306,7 @@ async fn main() -> Result<()> {
                 record,
                 replay,
                 replay_speed,
+                replay_auto_exit,
             )
             .await?
         }
@@ -418,6 +420,7 @@ async fn main() -> Result<()> {
                 None,
                 None,
                 1.0,
+                None,
             )
             .await?
         }

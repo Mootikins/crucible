@@ -52,6 +52,8 @@ pub struct OilChatRunner {
     record_path: Option<PathBuf>,
     replay_path: Option<PathBuf>,
     replay_speed: f64,
+    replay_auto_exit: Option<u64>,
+    replay_remaining_completes: usize,
     is_replay: bool,
 }
 
@@ -86,6 +88,8 @@ impl OilChatRunner {
             record_path: None,
             replay_path: None,
             replay_speed: 1.0,
+            replay_auto_exit: None,
+            replay_remaining_completes: 0,
             is_replay: false,
         }
     }
@@ -198,6 +202,11 @@ impl OilChatRunner {
         self
     }
 
+    pub fn with_replay_auto_exit(mut self, delay: Option<u64>) -> Self {
+        self.replay_auto_exit = delay;
+        self
+    }
+
     fn is_acp_session(&self) -> bool {
         self.agent_name.is_some()
     }
@@ -275,7 +284,18 @@ impl OilChatRunner {
         if let Some(replay_path) = self.replay_path.clone() {
             let mut agent = ReplayAgentHandle::from_file(&replay_path, self.replay_speed)?;
             self.is_replay = true;
+            app.set_precognition(false);
             app.set_status("Replay");
+
+            let user_msgs = agent.user_messages();
+            let replay_turn_count = user_msgs.len();
+            self.replay_remaining_completes = replay_turn_count;
+            if let Some((first, rest)) = user_msgs.split_first() {
+                let _ = msg_tx.send(ChatAppMsg::UserMessage(first.clone()));
+                for msg in rest {
+                    let _ = msg_tx.send(ChatAppMsg::QueueMessage(msg.clone()));
+                }
+            }
 
             let interaction_rx = agent.take_interaction_receiver();
             tracing::debug!(
@@ -293,6 +313,7 @@ impl OilChatRunner {
         let selection = self.discover_agent().await;
         let mut agent = create_agent(selection).await?;
         self.is_replay = false;
+        self.replay_remaining_completes = 0;
 
         app.set_status("Ready");
 
@@ -382,6 +403,14 @@ impl OilChatRunner {
         let mut event_stream = EventStream::new();
         let mut tick_interval = tokio::time::interval(self.tick_rate);
         let mut session_cmd_rx = self.session_cmd_rx.take();
+        let mut replay_auto_exit_deadline = if self.is_replay
+            && self.replay_remaining_completes == 0
+            && self.replay_auto_exit.is_some()
+        {
+            Some(tokio::time::Instant::now())
+        } else {
+            None
+        };
 
         let mut recording_writer: Option<RecordingWriter> =
             if let Some(ref path) = self.record_path {
@@ -427,6 +456,15 @@ impl OilChatRunner {
                 if let Some(ref mut writer) = recording_writer {
                     if let Some(event) = recording::from_chat_app_msg(&msg, writer.elapsed_ms()) {
                         let _ = writer.write_event(&event);
+                    }
+                }
+                if self.is_replay
+                    && matches!(msg, ChatAppMsg::StreamComplete)
+                    && self.replay_remaining_completes > 0
+                {
+                    self.replay_remaining_completes -= 1;
+                    if self.replay_remaining_completes == 0 && self.replay_auto_exit.is_some() {
+                        replay_auto_exit_deadline = Some(tokio::time::Instant::now());
                     }
                 }
                 let mut action =
@@ -613,6 +651,25 @@ impl OilChatRunner {
                         let _ = app.on_message(msg);
                     }
                     None
+                }
+
+                _ = async {
+                    match replay_auto_exit_deadline {
+                        Some(deadline_start) => {
+                            let delay_ms = self.replay_auto_exit.unwrap_or(0);
+                            tokio::time::sleep_until(
+                                deadline_start + Duration::from_millis(delay_ms),
+                            )
+                            .await;
+                        }
+                        None => std::future::pending::<()>().await,
+                    }
+                }, if self.is_replay
+                    && self.replay_remaining_completes == 0
+                    && replay_auto_exit_deadline.is_some()
+                    && self.replay_auto_exit.is_some() => {
+                    tracing::info!("Replay auto-exit triggered");
+                    break;
                 }
             };
 
