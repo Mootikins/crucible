@@ -2,6 +2,7 @@
 
 use crate::agent_factory::{create_agent_from_session_config, AgentFactoryError};
 use crate::background_manager::{BackgroundJobManager, SubagentContext};
+use crate::event_emitter::emit_event;
 use crate::permission_bridge::{DaemonPermissionGate, PermissionPromptCallback};
 use crate::protocol::SessionEventMessage;
 use crate::session_manager::{SessionError, SessionManager};
@@ -142,6 +143,7 @@ struct SessionLuaState {
 }
 
 struct PendingPermission {
+    #[allow(dead_code)]
     request: PermRequest,
     response_tx: oneshot::Sender<PermResponse>,
 }
@@ -248,6 +250,7 @@ impl AgentManager {
         }
     }
 
+    #[allow(dead_code)]
     pub fn await_permission(
         &self,
         session_id: &str,
@@ -301,6 +304,7 @@ impl AgentManager {
         Ok(())
     }
 
+    #[allow(dead_code)]
     pub fn get_pending_permission(
         &self,
         session_id: &str,
@@ -311,6 +315,7 @@ impl AgentManager {
             .and_then(|perms| perms.get(permission_id).map(|p| p.request.clone()))
     }
 
+    #[allow(dead_code)]
     pub fn list_pending_permissions(&self, session_id: &str) -> Vec<(PermissionId, PermRequest)> {
         self.pending_permissions
             .get(session_id)
@@ -450,14 +455,10 @@ impl AgentManager {
 
         let message_id = format!("msg-{}", uuid::Uuid::new_v4());
 
-        if event_tx
-            .send(SessionEventMessage::user_message(
-                session_id,
-                &message_id,
-                &content,
-            ))
-            .is_err()
-        {
+        if !emit_event(
+            event_tx,
+            SessionEventMessage::user_message(session_id, &message_id, &content),
+        ) {
             warn!(session_id = %session_id, "No subscribers for user_message event");
         }
 
@@ -475,10 +476,10 @@ impl AgentManager {
             tokio::select! {
                 _ = cancel_rx => {
                     debug!(session_id = %session_id_owned, "Request cancelled");
-                    if event_tx_clone.send(SessionEventMessage::ended(
-                        &session_id_owned,
-                        "cancelled",
-                    )).is_err() {
+                    if !emit_event(
+                        &event_tx_clone,
+                        SessionEventMessage::ended(&session_id_owned, "cancelled"),
+                    ) {
                         warn!(session_id = %session_id_owned, "No subscribers for cancelled event");
                     }
                 }
@@ -622,11 +623,14 @@ impl AgentManager {
                     .insert(permission_id.clone(), pending);
 
                 let interaction_request = InteractionRequest::Permission(perm_request);
-                let _ = event_tx_owned.send(SessionEventMessage::interaction_requested(
-                    &session_id_owned,
-                    &permission_id,
-                    &interaction_request,
-                ));
+                let _ = emit_event(
+                    &event_tx_owned,
+                    SessionEventMessage::interaction_requested(
+                        &session_id_owned,
+                        &permission_id,
+                        &interaction_request,
+                    ),
+                );
 
                 let result =
                     tokio::time::timeout(std::time::Duration::from_secs(300), response_rx).await;
@@ -741,19 +745,21 @@ impl AgentManager {
                             delta_len = chunk.delta.len(),
                             "Sending text_delta event"
                         );
-                        let send_result = event_tx
-                            .send(SessionEventMessage::text_delta(session_id, &chunk.delta));
-                        if send_result.is_err() {
+                        let send_result = emit_event(
+                            event_tx,
+                            SessionEventMessage::text_delta(session_id, &chunk.delta),
+                        );
+                        if !send_result {
                             warn!(session_id = %session_id, "No subscribers for text_delta event");
                         }
                     }
 
                     if let Some(reasoning) = &chunk.reasoning {
                         debug!(session_id = %session_id, "Sending thinking event");
-                        if event_tx
-                            .send(SessionEventMessage::thinking(session_id, reasoning))
-                            .is_err()
-                        {
+                        if !emit_event(
+                            event_tx,
+                            SessionEventMessage::thinking(session_id, reasoning),
+                        ) {
                             warn!(session_id = %session_id, "No subscribers for thinking event");
                         }
                     }
@@ -809,15 +815,15 @@ impl AgentManager {
                                                 tc.name, resource_desc
                                             );
 
-                                            if event_tx
-                                                .send(SessionEventMessage::tool_result(
+                                            if !emit_event(
+                                                event_tx,
+                                                SessionEventMessage::tool_result(
                                                     session_id,
                                                     &call_id,
                                                     &tc.name,
                                                     serde_json::json!({ "error": error_msg }),
-                                                ))
-                                                .is_err()
-                                            {
+                                                ),
+                                            ) {
                                                 warn!(
                                                     session_id = %session_id,
                                                     tool = %tc.name,
@@ -858,14 +864,14 @@ impl AgentManager {
                                             );
 
                                             // Emit the interaction request event
-                                            if event_tx
-                                                .send(SessionEventMessage::interaction_requested(
+                                            if !emit_event(
+                                                event_tx,
+                                                SessionEventMessage::interaction_requested(
                                                     session_id,
                                                     &permission_id,
                                                     &interaction_request,
-                                                ))
-                                                .is_err()
-                                            {
+                                                ),
+                                            ) {
                                                 warn!(
                                                     session_id = %session_id,
                                                     tool = %tc.name,
@@ -963,15 +969,15 @@ impl AgentManager {
                                                 );
 
                                                 // Emit tool_result with error so LLM sees the denial
-                                                if event_tx
-                                                    .send(SessionEventMessage::tool_result(
+                                                if !emit_event(
+                                                    event_tx,
+                                                    SessionEventMessage::tool_result(
                                                         session_id,
                                                         &call_id,
                                                         &tc.name,
                                                         serde_json::json!({ "error": error_msg }),
-                                                    ))
-                                                    .is_err()
-                                                {
+                                                    ),
+                                                ) {
                                                     warn!(
                                                         session_id = %session_id,
                                                         tool = %tc.name,
@@ -986,12 +992,12 @@ impl AgentManager {
                                 }
                             }
 
-                            if event_tx
-                                .send(SessionEventMessage::tool_call(
+                            if !emit_event(
+                                event_tx,
+                                SessionEventMessage::tool_call(
                                     session_id, &call_id, &tc.name, args,
-                                ))
-                                .is_err()
-                            {
+                                ),
+                            ) {
                                 warn!(session_id = %session_id, tool = %tc.name, "No subscribers for tool_call event");
                             }
                         }
@@ -1005,12 +1011,12 @@ impl AgentManager {
                             } else {
                                 serde_json::json!({ "result": tr.result })
                             };
-                            if event_tx
-                                .send(SessionEventMessage::tool_result(
+                            if !emit_event(
+                                event_tx,
+                                SessionEventMessage::tool_result(
                                     session_id, &call_id, &tr.name, result,
-                                ))
-                                .is_err()
-                            {
+                                ),
+                            ) {
                                 warn!(session_id = %session_id, tool = %tr.name, "No subscribers for tool_result event");
                             }
                         }
@@ -1023,15 +1029,15 @@ impl AgentManager {
                             response_len = accumulated_response.len(),
                             "Sending message_complete event"
                         );
-                        if event_tx
-                            .send(SessionEventMessage::message_complete(
+                        if !emit_event(
+                            event_tx,
+                            SessionEventMessage::message_complete(
                                 session_id,
                                 message_id,
                                 accumulated_response.clone(),
                                 chunk.usage.as_ref(),
-                            ))
-                            .is_err()
-                        {
+                            ),
+                        ) {
                             warn!(session_id = %session_id, "No subscribers for message_complete event");
                         }
 
@@ -1052,8 +1058,9 @@ impl AgentManager {
                                 "Processing handler injection"
                             );
 
-                            if event_tx
-                                .send(SessionEventMessage::new(
+                            if !emit_event(
+                                event_tx,
+                                SessionEventMessage::new(
                                     session_id,
                                     "injection_pending",
                                     serde_json::json!({
@@ -1061,9 +1068,8 @@ impl AgentManager {
                                         "position": &position,
                                         "is_continuation": true,
                                     }),
-                                ))
-                                .is_err()
-                            {
+                                ),
+                            ) {
                                 warn!(session_id = %session_id, "No subscribers for injection_pending event");
                             }
 
@@ -1093,13 +1099,10 @@ impl AgentManager {
                 }
                 Err(e) => {
                     error!(session_id = %session_id, error = %e, "Agent stream error");
-                    if event_tx
-                        .send(SessionEventMessage::ended(
-                            session_id,
-                            format!("error: {}", e),
-                        ))
-                        .is_err()
-                    {
+                    if !emit_event(
+                        event_tx,
+                        SessionEventMessage::ended(session_id, format!("error: {}", e)),
+                    ) {
                         warn!(session_id = %session_id, "No subscribers for error event");
                     }
                     break;
@@ -1462,11 +1465,14 @@ impl AgentManager {
         );
 
         if let Some(tx) = event_tx {
-            let _ = tx.send(SessionEventMessage::model_switched(
-                session_id,
-                &agent_config.model,
-                agent_config.provider.as_str(),
-            ));
+            let _ = emit_event(
+                tx,
+                SessionEventMessage::model_switched(
+                    session_id,
+                    &agent_config.model,
+                    agent_config.provider.as_str(),
+                ),
+            );
         }
 
         Ok(())
@@ -1556,11 +1562,14 @@ impl AgentManager {
         );
 
         if let Some(tx) = event_tx {
-            let _ = tx.send(SessionEventMessage::new(
-                session_id,
-                "thinking_budget_changed",
-                serde_json::json!({ "budget": budget }),
-            ));
+            let _ = emit_event(
+                tx,
+                SessionEventMessage::new(
+                    session_id,
+                    "thinking_budget_changed",
+                    serde_json::json!({ "budget": budget }),
+                ),
+            );
         }
 
         Ok(())
@@ -1600,11 +1609,14 @@ impl AgentManager {
         );
 
         if let Some(tx) = event_tx {
-            let _ = tx.send(SessionEventMessage::new(
-                session_id,
-                "temperature_changed",
-                serde_json::json!({ "temperature": temperature }),
-            ));
+            let _ = emit_event(
+                tx,
+                SessionEventMessage::new(
+                    session_id,
+                    "temperature_changed",
+                    serde_json::json!({ "temperature": temperature }),
+                ),
+            );
         }
 
         Ok(())
@@ -1637,11 +1649,14 @@ impl AgentManager {
         );
 
         if let Some(tx) = event_tx {
-            let _ = tx.send(SessionEventMessage::new(
-                session_id,
-                "notification_added",
-                serde_json::json!({ "notification_id": notification.id }),
-            ));
+            let _ = emit_event(
+                tx,
+                SessionEventMessage::new(
+                    session_id,
+                    "notification_added",
+                    serde_json::json!({ "notification_id": notification.id }),
+                ),
+            );
         }
 
         Ok(())
@@ -1678,11 +1693,14 @@ impl AgentManager {
             );
 
             if let Some(tx) = event_tx {
-                let _ = tx.send(SessionEventMessage::new(
-                    session_id,
-                    "notification_dismissed",
-                    serde_json::json!({ "notification_id": notification_id }),
-                ));
+                let _ = emit_event(
+                    tx,
+                    SessionEventMessage::new(
+                        session_id,
+                        "notification_dismissed",
+                        serde_json::json!({ "notification_id": notification_id }),
+                    ),
+                );
             }
         }
 
@@ -1718,11 +1736,14 @@ impl AgentManager {
         );
 
         if let Some(tx) = event_tx {
-            let _ = tx.send(SessionEventMessage::new(
-                session_id,
-                "max_tokens_changed",
-                serde_json::json!({ "max_tokens": max_tokens }),
-            ));
+            let _ = emit_event(
+                tx,
+                SessionEventMessage::new(
+                    session_id,
+                    "max_tokens_changed",
+                    serde_json::json!({ "max_tokens": max_tokens }),
+                ),
+            );
         }
 
         Ok(())
@@ -1847,7 +1868,13 @@ mod tests {
         let session_manager = Arc::new(SessionManager::with_storage(storage));
 
         let session = session_manager
-            .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![], None)
+            .create_session(
+                SessionType::Chat,
+                tmp.path().to_path_buf(),
+                None,
+                vec![],
+                None,
+            )
             .await
             .unwrap();
 
@@ -1883,7 +1910,13 @@ mod tests {
         let session_manager = Arc::new(SessionManager::with_storage(storage));
 
         let session = session_manager
-            .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![], None)
+            .create_session(
+                SessionType::Chat,
+                tmp.path().to_path_buf(),
+                None,
+                vec![],
+                None,
+            )
             .await
             .unwrap();
 
@@ -1914,7 +1947,13 @@ mod tests {
         let session_manager = Arc::new(SessionManager::with_storage(storage));
 
         let session = session_manager
-            .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![], None)
+            .create_session(
+                SessionType::Chat,
+                tmp.path().to_path_buf(),
+                None,
+                vec![],
+                None,
+            )
             .await
             .unwrap();
 
@@ -1944,7 +1983,13 @@ mod tests {
         let session_manager = Arc::new(SessionManager::with_storage(storage));
 
         let session = session_manager
-            .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![], None)
+            .create_session(
+                SessionType::Chat,
+                tmp.path().to_path_buf(),
+                None,
+                vec![],
+                None,
+            )
             .await
             .unwrap();
 
@@ -1988,7 +2033,13 @@ mod tests {
         let session_manager = Arc::new(SessionManager::with_storage(storage));
 
         let session = session_manager
-            .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![], None)
+            .create_session(
+                SessionType::Chat,
+                tmp.path().to_path_buf(),
+                None,
+                vec![],
+                None,
+            )
             .await
             .unwrap();
 
@@ -2027,7 +2078,13 @@ mod tests {
         let session_manager = Arc::new(SessionManager::with_storage(storage));
 
         let session = session_manager
-            .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![], None)
+            .create_session(
+                SessionType::Chat,
+                tmp.path().to_path_buf(),
+                None,
+                vec![],
+                None,
+            )
             .await
             .unwrap();
 
@@ -2093,7 +2150,13 @@ mod tests {
         let session_manager = Arc::new(SessionManager::with_storage(storage));
 
         let session = session_manager
-            .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![], None)
+            .create_session(
+                SessionType::Chat,
+                tmp.path().to_path_buf(),
+                None,
+                vec![],
+                None,
+            )
             .await
             .unwrap();
 
@@ -2132,7 +2195,13 @@ mod tests {
         let session_manager = Arc::new(SessionManager::with_storage(storage));
 
         let session = session_manager
-            .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![], None)
+            .create_session(
+                SessionType::Chat,
+                tmp.path().to_path_buf(),
+                None,
+                vec![],
+                None,
+            )
             .await
             .unwrap();
 
@@ -2169,7 +2238,13 @@ mod tests {
         let session_manager = Arc::new(SessionManager::with_storage(storage));
 
         let session = session_manager
-            .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![], None)
+            .create_session(
+                SessionType::Chat,
+                tmp.path().to_path_buf(),
+                None,
+                vec![],
+                None,
+            )
             .await
             .unwrap();
 
@@ -3299,7 +3374,13 @@ mod tests {
             let session_manager = Arc::new(SessionManager::with_storage(storage));
 
             let session = session_manager
-                .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![], None)
+                .create_session(
+                    SessionType::Chat,
+                    tmp.path().to_path_buf(),
+                    None,
+                    vec![],
+                    None,
+                )
                 .await
                 .unwrap();
 
@@ -3367,7 +3448,13 @@ mod tests {
             let session_manager = Arc::new(SessionManager::with_storage(storage));
 
             let session = session_manager
-                .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![], None)
+                .create_session(
+                    SessionType::Chat,
+                    tmp.path().to_path_buf(),
+                    None,
+                    vec![],
+                    None,
+                )
                 .await
                 .unwrap();
 
@@ -3424,7 +3511,13 @@ mod tests {
             let session_manager = Arc::new(SessionManager::with_storage(storage));
 
             let session = session_manager
-                .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![], None)
+                .create_session(
+                    SessionType::Chat,
+                    tmp.path().to_path_buf(),
+                    None,
+                    vec![],
+                    None,
+                )
                 .await
                 .unwrap();
 
@@ -3478,7 +3571,13 @@ mod tests {
             let session_manager = Arc::new(SessionManager::with_storage(storage));
 
             let session = session_manager
-                .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![], None)
+                .create_session(
+                    SessionType::Chat,
+                    tmp.path().to_path_buf(),
+                    None,
+                    vec![],
+                    None,
+                )
                 .await
                 .unwrap();
 
@@ -3530,7 +3629,13 @@ mod tests {
         let session_manager = Arc::new(SessionManager::with_storage(storage));
 
         let session = session_manager
-            .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![], None)
+            .create_session(
+                SessionType::Chat,
+                tmp.path().to_path_buf(),
+                None,
+                vec![],
+                None,
+            )
             .await
             .unwrap();
 
@@ -3596,7 +3701,13 @@ mod tests {
         let session_manager = Arc::new(SessionManager::with_storage(storage));
 
         let session = session_manager
-            .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![], None)
+            .create_session(
+                SessionType::Chat,
+                tmp.path().to_path_buf(),
+                None,
+                vec![],
+                None,
+            )
             .await
             .unwrap();
 
@@ -3634,7 +3745,13 @@ mod tests {
         let session_manager = Arc::new(SessionManager::with_storage(storage));
 
         let session = session_manager
-            .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![], None)
+            .create_session(
+                SessionType::Chat,
+                tmp.path().to_path_buf(),
+                None,
+                vec![],
+                None,
+            )
             .await
             .unwrap();
 
@@ -3935,7 +4052,13 @@ mod tests {
         let session_manager = Arc::new(SessionManager::with_storage(storage));
 
         let session = session_manager
-            .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![], None)
+            .create_session(
+                SessionType::Chat,
+                tmp.path().to_path_buf(),
+                None,
+                vec![],
+                None,
+            )
             .await
             .unwrap();
 
@@ -3997,7 +4120,13 @@ mod tests {
         let session_manager = Arc::new(SessionManager::with_storage(storage));
 
         let session = session_manager
-            .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![], None)
+            .create_session(
+                SessionType::Chat,
+                tmp.path().to_path_buf(),
+                None,
+                vec![],
+                None,
+            )
             .await
             .unwrap();
 
@@ -4063,7 +4192,13 @@ mod tests {
         let session_manager = Arc::new(SessionManager::with_storage(storage));
 
         let session = session_manager
-            .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![], None)
+            .create_session(
+                SessionType::Chat,
+                tmp.path().to_path_buf(),
+                None,
+                vec![],
+                None,
+            )
             .await
             .unwrap();
 
@@ -4106,7 +4241,13 @@ mod tests {
         let session_manager = Arc::new(SessionManager::with_storage(storage));
 
         let session = session_manager
-            .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![], None)
+            .create_session(
+                SessionType::Chat,
+                tmp.path().to_path_buf(),
+                None,
+                vec![],
+                None,
+            )
             .await
             .unwrap();
 
@@ -4148,7 +4289,13 @@ mod tests {
         let session_manager = Arc::new(SessionManager::with_storage(storage));
 
         let session = session_manager
-            .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![], None)
+            .create_session(
+                SessionType::Chat,
+                tmp.path().to_path_buf(),
+                None,
+                vec![],
+                None,
+            )
             .await
             .unwrap();
 
@@ -4188,7 +4335,13 @@ mod tests {
         let session_manager = Arc::new(SessionManager::with_storage(storage));
 
         let session = session_manager
-            .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![], None)
+            .create_session(
+                SessionType::Chat,
+                tmp.path().to_path_buf(),
+                None,
+                vec![],
+                None,
+            )
             .await
             .unwrap();
 
@@ -4265,7 +4418,13 @@ mod tests {
         let session_manager = Arc::new(SessionManager::with_storage(storage));
 
         let session = session_manager
-            .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![], None)
+            .create_session(
+                SessionType::Chat,
+                tmp.path().to_path_buf(),
+                None,
+                vec![],
+                None,
+            )
             .await
             .unwrap();
 
@@ -4326,7 +4485,13 @@ mod tests {
         let session_manager = Arc::new(SessionManager::with_storage(storage));
 
         let session = session_manager
-            .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![], None)
+            .create_session(
+                SessionType::Chat,
+                tmp.path().to_path_buf(),
+                None,
+                vec![],
+                None,
+            )
             .await
             .unwrap();
 
@@ -4381,7 +4546,13 @@ mod tests {
         let session_manager = Arc::new(SessionManager::with_storage(storage));
 
         let session = session_manager
-            .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![], None)
+            .create_session(
+                SessionType::Chat,
+                tmp.path().to_path_buf(),
+                None,
+                vec![],
+                None,
+            )
             .await
             .unwrap();
 

@@ -665,7 +665,7 @@ impl PluginManager {
     fn configure_plugin_package_path(&self, plugin_dir: &Path) -> LifecycleResult<()> {
         let plugin_dir = plugin_dir.to_string_lossy();
         self.lua
-            .load(&format!(
+            .load(format!(
                 r#"
 local plugin_dir = {plugin_dir:?}
 local path_entries = {{
@@ -731,7 +731,7 @@ end
 
     fn clear_plugin_modules(&self, plugin_name: &str) -> LifecycleResult<()> {
         self.lua
-            .load(&format!(
+            .load(format!(
                 r#"
 local name = {plugin_name:?}
 for k, _ in pairs(package.loaded) do
