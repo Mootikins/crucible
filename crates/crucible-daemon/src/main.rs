@@ -11,6 +11,8 @@ mod permission_bridge;
 mod project_manager;
 mod protocol;
 mod recording;
+#[allow(dead_code)]
+mod replay;
 mod rpc;
 mod rpc_helpers;
 mod server;

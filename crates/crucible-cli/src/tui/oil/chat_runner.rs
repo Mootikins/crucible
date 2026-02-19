@@ -24,7 +24,7 @@ use tokio::sync::mpsc;
 
 use crate::context_enricher::ContextEnricher;
 use crate::tui::oil::commands::{SetEffect, SetRpcAction};
-use crate::tui::oil::recording::{self, DemoEvent, RecordingWriter, TimestampedEvent};
+use crate::tui::oil::recording::{self, DemoEvent, TimestampedEvent};
 use crate::tui::oil::replay_agent::ReplayAgentHandle;
 
 pub struct OilChatRunner {
@@ -49,7 +49,7 @@ pub struct OilChatRunner {
     enricher: Option<Arc<ContextEnricher>>,
     agent_name: Option<String>,
     initial_sets: Vec<SetEffect>,
-    record_path: Option<PathBuf>,
+    recording_mode: Option<String>,
     replay_path: Option<PathBuf>,
     replay_speed: f64,
     replay_auto_exit: Option<u64>,
@@ -85,7 +85,7 @@ impl OilChatRunner {
             enricher: None,
             agent_name: None,
             initial_sets: Vec::new(),
-            record_path: None,
+            recording_mode: None,
             replay_path: None,
             replay_speed: 1.0,
             replay_auto_exit: None,
@@ -187,8 +187,8 @@ impl OilChatRunner {
         self
     }
 
-    pub fn with_record_path(mut self, path: Option<PathBuf>) -> Self {
-        self.record_path = path;
+    pub fn with_recording_mode(mut self, mode: Option<String>) -> Self {
+        self.recording_mode = mode;
         self
     }
 
@@ -412,24 +412,6 @@ impl OilChatRunner {
             None
         };
 
-        let mut recording_writer: Option<RecordingWriter> = if let Some(ref path) = self.record_path
-        {
-            match RecordingWriter::create(path) {
-                Ok(mut writer) => {
-                    let (cols, rows) = crossterm::terminal::size().unwrap_or((80, 24));
-                    let _ = writer.write_header(cols, rows, "cru chat");
-                    tracing::info!(path = %path.display(), "Recording session");
-                    Some(writer)
-                }
-                Err(e) => {
-                    tracing::warn!(error = %e, "Failed to create recording file");
-                    None
-                }
-            }
-        } else {
-            None
-        };
-
         loop {
             if app.take_needs_full_redraw() {
                 self.terminal.force_full_redraw()?;
@@ -453,11 +435,6 @@ impl OilChatRunner {
             }
 
             while let Ok(msg) = msg_rx.try_recv() {
-                if let Some(ref mut writer) = recording_writer {
-                    if let Some(event) = recording::from_chat_app_msg(&msg, writer.elapsed_ms()) {
-                        let _ = writer.write_event(&event);
-                    }
-                }
                 if self.is_replay
                     && matches!(msg, ChatAppMsg::StreamComplete)
                     && self.replay_remaining_completes > 0
@@ -674,17 +651,6 @@ impl OilChatRunner {
             };
 
             if let Some(ref ev) = event {
-                if let Some(ref mut writer) = recording_writer {
-                    if let Event::Key(key_event) = ev {
-                        let _ = writer.write_event(&TimestampedEvent {
-                            ts_ms: writer.elapsed_ms(),
-                            event: DemoEvent::KeyPress {
-                                key: format!("{:?}", key_event.code),
-                                modifiers: format!("{:?}", key_event.modifiers),
-                            },
-                        });
-                    }
-                }
                 let action = app.update(ev.clone());
                 tracing::trace!(?ev, ?action, "processed event");
                 if self
