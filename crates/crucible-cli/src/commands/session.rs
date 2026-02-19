@@ -702,6 +702,11 @@ async fn daemon_execute(config: CliConfig, cmd: DaemonSessionCommands) -> Result
         DaemonSessionCommands::Load { session_id } => {
             daemon_load(&client, &config, &session_id).await
         }
+        DaemonSessionCommands::Replay {
+            recording_path,
+            speed,
+            raw,
+        } => daemon_replay(&config, &recording_path, speed, raw).await,
     }
 }
 
@@ -1014,6 +1019,117 @@ async fn daemon_subscribe(session_ids: &[String]) -> Result<()> {
             }
             None => {
                 eprintln!("Event channel closed");
+                break;
+            }
+        }
+    }
+
+    Ok(())
+}
+
+async fn daemon_replay(
+    _config: &CliConfig,
+    recording_path: &str,
+    speed: f64,
+    raw: bool,
+) -> Result<()> {
+    use crucible_rpc::DaemonClient;
+    use std::io::Write;
+    use std::path::Path;
+
+    let (client, mut event_rx) = DaemonClient::connect_or_start_with_events().await?;
+
+    let result = client
+        .session_replay(Path::new(recording_path), speed)
+        .await?;
+
+    let session_id = result["session_id"]
+        .as_str()
+        .ok_or_else(|| anyhow!("Missing session_id in replay response"))?;
+
+    client.session_subscribe(&[session_id]).await?;
+
+    if !raw {
+        eprintln!(
+            "Replaying {} at {}x speed (session: {})",
+            recording_path, speed, session_id
+        );
+    }
+
+    loop {
+        match event_rx.recv().await {
+            Some(event) => {
+                if event.session_id != session_id {
+                    continue;
+                }
+
+                if event.event_type == "replay_complete" {
+                    if !raw {
+                        eprintln!("[replay complete]");
+                    }
+                    break;
+                }
+
+                if raw {
+                    println!(
+                        "{}",
+                        serde_json::json!({
+                            "session_id": event.session_id,
+                            "event_type": event.event_type,
+                            "data": event.data,
+                        })
+                    );
+                } else {
+                    match event.event_type.as_str() {
+                        "text_delta" => {
+                            if let Some(content) =
+                                event.data.get("content").and_then(|v| v.as_str())
+                            {
+                                print!("{}", content);
+                                std::io::stdout().flush().ok();
+                            }
+                        }
+                        "thinking" => {
+                            if let Some(content) =
+                                event.data.get("content").and_then(|v| v.as_str())
+                            {
+                                eprintln!("[thinking] {}", content);
+                            }
+                        }
+                        "tool_call" => {
+                            let tool = event
+                                .data
+                                .get("tool")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("?");
+                            eprintln!("[tool_call] {}", tool);
+                        }
+                        "tool_result" => {
+                            let tool = event
+                                .data
+                                .get("tool")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("?");
+                            eprintln!("[tool_result] {}", tool);
+                        }
+                        "message_complete" => {
+                            println!();
+                            eprintln!("[complete]");
+                        }
+                        "ended" => {
+                            eprintln!("[ended]");
+                            break;
+                        }
+                        other => {
+                            eprintln!("[{}]", other);
+                        }
+                    }
+                }
+            }
+            None => {
+                if !raw {
+                    eprintln!("[replay complete]");
+                }
                 break;
             }
         }

@@ -13,6 +13,7 @@ use crate::protocol::{
     PARSE_ERROR,
 };
 use crate::recording::RecordingWriter;
+use crate::replay::ReplaySession;
 use crate::rpc::{RpcContext, RpcDispatcher};
 use crate::rpc_helpers::{
     optional_i64_param, optional_str_param, optional_u64_param, require_array_param,
@@ -745,6 +746,9 @@ async fn handle_legacy_request(
         }
         "session.get_max_tokens" => handle_session_get_max_tokens(req, agent_manager).await,
         "session.test_interaction" => handle_session_test_interaction(req, event_tx).await,
+        "session.replay" => {
+            handle_session_replay(req, session_manager, event_tx).await
+        }
         "plugin.reload" => handle_plugin_reload(req, plugin_loader).await,
         "plugin.list" => handle_plugin_list(req, plugin_loader).await,
         "project.register" => handle_project_register(req, project_manager).await,
@@ -1325,6 +1329,44 @@ async fn handle_session_end(
             )
         }
         Err(e) => invalid_state_error(req.id, "end", e),
+    }
+}
+
+async fn handle_session_replay(
+    req: Request,
+    sm: &Arc<SessionManager>,
+    event_tx: &broadcast::Sender<SessionEventMessage>,
+) -> Response {
+    let recording_path = require_str_param!(req, "recording_path");
+    let speed = req
+        .params
+        .get("speed")
+        .and_then(|v| v.as_f64())
+        .unwrap_or(1.0);
+
+    let recording_path = PathBuf::from(recording_path);
+    let replay_session_id = format!("replay-{}", uuid::Uuid::new_v4());
+
+    match ReplaySession::new(
+        recording_path,
+        speed,
+        event_tx.clone(),
+        replay_session_id.clone(),
+    ) {
+        Ok(replay) => {
+            sm.register_transient(replay.session().clone());
+            let _handle = replay.start();
+
+            Response::success(
+                req.id,
+                serde_json::json!({
+                    "session_id": replay_session_id,
+                    "status": "replaying",
+                    "speed": speed,
+                }),
+            )
+        }
+        Err(e) => internal_error(req.id, e),
     }
 }
 
