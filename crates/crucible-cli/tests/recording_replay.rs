@@ -287,3 +287,180 @@ async fn test_replay_agent_empty_recording() -> anyhow::Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn test_replay_user_messages_single_turn() -> anyhow::Result<()> {
+    // Create a temporary file
+    let temp_file = NamedTempFile::new()?;
+    let path = temp_file.path().to_path_buf();
+
+    // Write a recording with a single user message
+    {
+        let mut writer = RecordingWriter::create(&path)?;
+        writer.write_header(80, 24, "test")?;
+
+        writer.write_event(&TimestampedEvent {
+            ts_ms: 0,
+            event: DemoEvent::UserMessage {
+                content: "hello".into(),
+            },
+        })?;
+
+        writer.write_event(&TimestampedEvent {
+            ts_ms: 100,
+            event: DemoEvent::TextDelta {
+                delta: "Hi!".into(),
+            },
+        })?;
+
+        writer.write_event(&TimestampedEvent {
+            ts_ms: 200,
+            event: DemoEvent::StreamComplete,
+        })?;
+    } // Writer dropped, file flushed
+
+    // Create replay agent and call user_messages()
+    let agent = ReplayAgentHandle::from_file(&path, 100.0)?;
+    let messages = agent.user_messages();
+
+    assert_eq!(messages.len(), 1, "should have 1 user message");
+    assert_eq!(messages[0], "hello", "user message should be 'hello'");
+
+    Ok(())
+}
+
+#[test]
+fn test_replay_user_messages_multi_turn() -> anyhow::Result<()> {
+    // Create a temporary file
+    let temp_file = NamedTempFile::new()?;
+    let path = temp_file.path().to_path_buf();
+
+    // Write a recording with multiple user messages
+    {
+        let mut writer = RecordingWriter::create(&path)?;
+        writer.write_header(80, 24, "test")?;
+
+        writer.write_event(&TimestampedEvent {
+            ts_ms: 0,
+            event: DemoEvent::UserMessage {
+                content: "first".into(),
+            },
+        })?;
+
+        writer.write_event(&TimestampedEvent {
+            ts_ms: 100,
+            event: DemoEvent::TextDelta {
+                delta: "Response 1".into(),
+            },
+        })?;
+
+        writer.write_event(&TimestampedEvent {
+            ts_ms: 200,
+            event: DemoEvent::StreamComplete,
+        })?;
+
+        writer.write_event(&TimestampedEvent {
+            ts_ms: 300,
+            event: DemoEvent::UserMessage {
+                content: "second".into(),
+            },
+        })?;
+
+        writer.write_event(&TimestampedEvent {
+            ts_ms: 400,
+            event: DemoEvent::TextDelta {
+                delta: "Response 2".into(),
+            },
+        })?;
+
+        writer.write_event(&TimestampedEvent {
+            ts_ms: 500,
+            event: DemoEvent::StreamComplete,
+        })?;
+    } // Writer dropped, file flushed
+
+    // Create replay agent and call user_messages()
+    let agent = ReplayAgentHandle::from_file(&path, 100.0)?;
+    let messages = agent.user_messages();
+
+    assert_eq!(messages.len(), 2, "should have 2 user messages");
+    assert_eq!(messages[0], "first", "first user message should be 'first'");
+    assert_eq!(messages[1], "second", "second user message should be 'second'");
+
+    Ok(())
+}
+
+#[test]
+fn test_replay_user_messages_empty_fixture() -> anyhow::Result<()> {
+    // Create a temporary file
+    let temp_file = NamedTempFile::new()?;
+    let path = temp_file.path().to_path_buf();
+
+    // Write a minimal recording with only header (no events)
+    {
+        let mut writer = RecordingWriter::create(&path)?;
+        writer.write_header(80, 24, "test")?;
+    } // Writer dropped, file flushed
+
+    // Create replay agent and call user_messages()
+    let agent = ReplayAgentHandle::from_file(&path, 100.0)?;
+    let messages = agent.user_messages();
+
+    assert_eq!(messages.len(), 0, "should have 0 user messages");
+    assert!(messages.is_empty(), "messages should be empty");
+
+    Ok(())
+}
+
+#[test]
+fn test_replay_user_messages_skips_non_user_events() -> anyhow::Result<()> {
+    // Create a temporary file
+    let temp_file = NamedTempFile::new()?;
+    let path = temp_file.path().to_path_buf();
+
+    // Write a recording with mixed events, only UserMessage should be extracted
+    {
+        let mut writer = RecordingWriter::create(&path)?;
+        writer.write_header(80, 24, "test")?;
+
+        writer.write_event(&TimestampedEvent {
+            ts_ms: 0,
+            event: DemoEvent::TextDelta {
+                delta: "This is not a user message".into(),
+            },
+        })?;
+
+        writer.write_event(&TimestampedEvent {
+            ts_ms: 100,
+            event: DemoEvent::ToolCall {
+                name: "search".into(),
+                args: "{}".into(),
+                call_id: Some("call-1".into()),
+            },
+        })?;
+
+        writer.write_event(&TimestampedEvent {
+            ts_ms: 200,
+            event: DemoEvent::UserMessage {
+                content: "only_this".into(),
+            },
+        })?;
+
+        writer.write_event(&TimestampedEvent {
+            ts_ms: 300,
+            event: DemoEvent::StreamComplete,
+        })?;
+    } // Writer dropped, file flushed
+
+    // Create replay agent and call user_messages()
+    let agent = ReplayAgentHandle::from_file(&path, 100.0)?;
+    let messages = agent.user_messages();
+
+    assert_eq!(messages.len(), 1, "should have 1 user message");
+    assert_eq!(
+        messages[0], "only_this",
+        "should only extract UserMessage, not TextDelta or ToolCall"
+    );
+
+    Ok(())
+}

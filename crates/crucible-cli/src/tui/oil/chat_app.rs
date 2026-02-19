@@ -818,6 +818,10 @@ impl OilChatApp {
         self.show_thinking = show;
     }
 
+    pub fn set_precognition(&mut self, val: bool) {
+        self.precognition = val;
+    }
+
     pub fn precognition(&self) -> bool {
         self.precognition
     }

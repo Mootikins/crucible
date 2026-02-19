@@ -29,6 +29,18 @@ impl ReplayAgentHandle {
         })
     }
 
+    /// Returns all UserMessage content strings from the recording, in order.
+    /// Used for auto-input during replay: caller injects these via msg_tx.
+    pub fn user_messages(&self) -> Vec<String> {
+        self.events
+            .iter()
+            .filter_map(|tev| match &tev.event {
+                DemoEvent::UserMessage { content } => Some(content.clone()),
+                _ => None,
+            })
+            .collect()
+    }
+
     fn map_event(event: DemoEvent) -> Option<ChatResult<ChatChunk>> {
         match event {
             DemoEvent::TextDelta { delta } => Some(Ok(ChatChunk {
