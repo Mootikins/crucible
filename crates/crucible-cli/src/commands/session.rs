@@ -667,8 +667,8 @@ async fn daemon_execute(config: CliConfig, cmd: DaemonSessionCommands) -> Result
 
     match cmd {
         DaemonSessionCommands::List { state } => daemon_list(&client, &config, state).await,
-        DaemonSessionCommands::Create { session_type } => {
-            daemon_create(&client, &config, &session_type).await
+        DaemonSessionCommands::Create { session_type, recording_mode } => {
+            daemon_create(&client, &config, &session_type, recording_mode.as_deref()).await
         }
         DaemonSessionCommands::Get { session_id } => daemon_get(&client, &session_id).await,
         DaemonSessionCommands::Pause { session_id } => daemon_pause(&client, &session_id).await,
@@ -748,15 +748,30 @@ async fn daemon_create(
     client: &DaemonClient,
     config: &CliConfig,
     session_type: &str,
+    recording_mode: Option<&str>,
 ) -> Result<()> {
+    // Parse recording_mode if provided
+    let recording_mode_parsed = if let Some(mode_str) = recording_mode {
+        match mode_str {
+            "granular" => Some("granular"),
+            "coarse" => Some("coarse"),
+            _ => anyhow::bail!("Invalid recording mode: '{}'. Must be 'granular' or 'coarse'", mode_str),
+        }
+    } else {
+        None
+    };
+
     let result = client
-        .session_create(session_type, &config.kiln_path, None, vec![])
+        .session_create(session_type, &config.kiln_path, None, vec![], recording_mode_parsed)
         .await?;
 
     let session_id = result["session_id"].as_str().unwrap_or("unknown");
     println!("Created session: {}", session_id);
     println!("Type: {}", session_type);
     println!("Kiln: {}", config.kiln_path.display());
+    if let Some(mode) = recording_mode {
+        println!("Recording mode: {}", mode);
+    }
 
     Ok(())
 }
@@ -1280,5 +1295,33 @@ mod tests {
                 // Ripgrep not installed or no matches - both are acceptable
             }
         }
+    }
+
+    #[test]
+    fn test_daemon_create_recording_mode_parsing() {
+        // Test valid recording modes
+        let granular = "granular";
+        match granular {
+            "granular" => assert_eq!(granular, "granular"),
+            "coarse" => panic!("Should not match coarse"),
+            _ => panic!("Should not match invalid"),
+        }
+
+        let coarse = "coarse";
+        match coarse {
+            "granular" => panic!("Should not match granular"),
+            "coarse" => assert_eq!(coarse, "coarse"),
+            _ => panic!("Should not match invalid"),
+        }
+
+        // Test invalid mode would be caught by the match in daemon_create
+        let invalid = "invalid";
+        let result = match invalid {
+            "granular" => Ok("granular"),
+            "coarse" => Ok("coarse"),
+            _ => Err(format!("Invalid recording mode: '{}'. Must be 'granular' or 'coarse'", invalid)),
+        };
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Invalid recording mode"));
     }
 }

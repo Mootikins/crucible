@@ -74,7 +74,7 @@ impl DaemonSessionApi for DaemonSessionBridge {
                 .unwrap_or_else(crucible_config::crucible_home);
             let connected: Vec<PathBuf> = connected_kilns.into_iter().map(PathBuf::from).collect();
             let session = sm
-                .create_session(st, kiln_path, workspace.map(PathBuf::from), connected)
+                .create_session(st, kiln_path, workspace.map(PathBuf::from), connected, None)
                 .await
                 .map_err(|e| e.to_string())?;
             Ok(serde_json::json!({
