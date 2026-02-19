@@ -126,10 +126,64 @@ Used by Scene 3 and Scene 4 (ACP agents).
 
 ---
 
-## Regenerating Assets
+## Replay-Based Pipeline
+
+The demo GIFs are generated deterministically from pre-recorded JSONL fixtures using VHS. This replaces the old workflow of running live LLM sessions during recording.
+
+### Fixture Location
+
+Fixtures are stored in `assets/fixtures/` as JSONL files (one JSON object per line, representing recorded chat events).
+
+### Recording Fixtures
+
+To record a new fixture for a demo, use `just demo-record`:
 
 ```bash
-# Generate all GIFs
+# Record demo fixture (internal Rig agent)
+just demo-record demo -C assets/demo-config.toml --internal --local --no-process
+# Then type your query, interact with the chat, and press Ctrl+C to stop recording
+
+# Record acp-demo fixture (Claude Code via ACP)
+just demo-record acp-demo -a claude --no-process --set perm.autoconfirm_session
+# Type your query and press Ctrl+C
+
+# Record delegation-demo fixture (Claude delegating to Cursor)
+just demo-record delegation-demo -a claude -C assets/demo-acp-config.toml --no-process --set perm.autoconfirm_session
+# Type your delegation query and press Ctrl+C
+```
+
+**Notes on recording:**
+- The `--record` flag captures all chat events to a JSONL file
+- `--no-process` skips file embedding on startup (faster recording)
+- `--set perm.autoconfirm_session` auto-confirms session creation for unattended recording
+- Fixtures must exist before GIF generation (see below)
+
+### Regenerating GIFs
+
+Once fixtures are recorded, regenerate GIFs deterministically:
+
+```bash
+# Generate a single GIF from its fixture
+just demo demo
+
+# Generate all demo GIFs
+just demo-all
+```
+
+This runs VHS on each `.tape` file, which replays the corresponding JSONL fixture and captures the terminal output as a GIF.
+
+**Notes:**
+- GIF generation is deterministic once fixtures are recorded
+- If the Ollama endpoint is unavailable, overview GIF still works (`--no-process`)
+- The `--no-process` flag skips file embedding on startup (faster, but no Precognition/auto-RAG)
+- To enable Precognition context injection, remove `--no-process` from recording (adds ~20s startup for 155 files)
+
+## Regenerating Assets (Legacy)
+
+For manual VHS recording without fixtures:
+
+```bash
+# Generate all GIFs (requires live LLM sessions)
 vhs assets/overview.tape
 vhs assets/demo.tape
 vhs assets/acp-demo.tape
