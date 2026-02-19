@@ -17,6 +17,7 @@ use crate::rpc_helpers::{
 use crate::session_manager::SessionManager;
 use crate::session_storage::{FileSessionStorage, SessionStorage};
 use anyhow::Result;
+use crucible_core::session::RecordingMode;
 
 use crate::protocol::RequestId;
 use crate::subscription::{ClientId, SubscriptionManager};
@@ -1068,13 +1069,16 @@ async fn handle_session_create(
         })
         .unwrap_or_default();
 
+    let recording_mode = optional_str_param!(req, "recording_mode")
+        .and_then(|s| s.parse::<RecordingMode>().ok());
+
     let project_path = workspace.as_ref().unwrap_or(&kiln);
     if let Err(e) = pm.register_if_missing(project_path) {
         tracing::warn!(path = %project_path.display(), error = %e, "Failed to auto-register project");
     }
 
     match sm
-        .create_session(session_type, kiln, workspace, connected_kilns)
+        .create_session(session_type, kiln, workspace, connected_kilns, recording_mode)
         .await
     {
         Ok(session) => Response::success(
@@ -1141,9 +1145,8 @@ async fn handle_session_get(req: Request, sm: &Arc<SessionManager>) -> Response 
     let session_id = require_str_param!(req, "session_id");
 
     match sm.get_session(session_id) {
-        Some(session) => Response::success(
-            req.id,
-            serde_json::json!({
+        Some(session) => {
+            let mut response = serde_json::json!({
                 "session_id": session.id,
                 "type": session.session_type.as_prefix(),
                 "kiln": session.kiln,
@@ -1154,8 +1157,14 @@ async fn handle_session_get(req: Request, sm: &Arc<SessionManager>) -> Response 
                 "title": session.title,
                 "continued_from": session.continued_from,
                 "agent": session.agent,
-            }),
-        ),
+            });
+
+            if let Some(mode) = session.recording_mode {
+                response["recording_mode"] = serde_json::json!(format!("{}", mode));
+            }
+
+            Response::success(req.id, response)
+        }
         None => Response::error(
             req.id,
             INVALID_PARAMS,
@@ -2736,7 +2745,7 @@ mod tests {
             let tmp = TempDir::new().unwrap();
             let sm = Arc::new(SessionManager::new());
             let session = sm
-                .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![])
+                .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![], None)
                 .await
                 .unwrap();
 
@@ -2759,7 +2768,7 @@ mod tests {
             let tmp = TempDir::new().unwrap();
             let sm = Arc::new(SessionManager::new());
             let session = sm
-                .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![])
+                .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![], None)
                 .await
                 .unwrap();
 
@@ -2801,6 +2810,123 @@ mod tests {
                     event_name
                 );
             }
+        }
+
+        #[tokio::test]
+        async fn test_session_create_with_granular_recording_mode() {
+            let tmp = TempDir::new().unwrap();
+            let sock_path = tmp.path().join("test.sock");
+
+            let server = Server::bind(&sock_path, None).await.unwrap();
+            let shutdown_handle = server.shutdown_handle();
+            let server_task = tokio::spawn(server.run());
+
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+            let mut client = UnixStream::connect(&sock_path).await.unwrap();
+            client
+                .write_all(
+                    b"{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"session.create\",\"params\":{\"recording_mode\":\"granular\"}}\n",
+                )
+                .await
+                .unwrap();
+
+            let mut buf = vec![0u8; 2048];
+            let n = client.read(&mut buf).await.unwrap();
+            let response = String::from_utf8_lossy(&buf[..n]);
+
+            assert!(response.contains("\"result\""), "Should have successful result");
+            assert!(response.contains("\"session_id\""), "Should have session_id in response");
+
+            let _ = shutdown_handle.send(());
+            let _ = server_task.await;
+        }
+
+        #[tokio::test]
+        async fn test_session_create_default_no_recording_mode() {
+            let tmp = TempDir::new().unwrap();
+            let sock_path = tmp.path().join("test.sock");
+
+            let server = Server::bind(&sock_path, None).await.unwrap();
+            let shutdown_handle = server.shutdown_handle();
+            let server_task = tokio::spawn(server.run());
+
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+            let mut client = UnixStream::connect(&sock_path).await.unwrap();
+            // Create session without recording_mode parameter
+            client
+                .write_all(
+                    b"{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"session.create\",\"params\":{}}\n",
+                )
+                .await
+                .unwrap();
+
+            let mut buf = vec![0u8; 2048];
+            let n = client.read(&mut buf).await.unwrap();
+            let response = String::from_utf8_lossy(&buf[..n]);
+
+            assert!(response.contains("\"result\""), "Should have successful result");
+            assert!(response.contains("\"session_id\""), "Should have session_id in response");
+
+            let _ = shutdown_handle.send(());
+            let _ = server_task.await;
+        }
+
+        #[tokio::test]
+        async fn test_session_get_includes_recording_mode() {
+            let tmp = TempDir::new().unwrap();
+            let sock_path = tmp.path().join("test.sock");
+
+            let server = Server::bind(&sock_path, None).await.unwrap();
+            let shutdown_handle = server.shutdown_handle();
+            let server_task = tokio::spawn(server.run());
+
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+            let mut client = UnixStream::connect(&sock_path).await.unwrap();
+
+            // First, create a session with granular recording mode
+            client
+                .write_all(
+                    b"{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"session.create\",\"params\":{\"recording_mode\":\"granular\"}}\n",
+                )
+                .await
+                .unwrap();
+
+            let mut buf = vec![0u8; 2048];
+            let n = client.read(&mut buf).await.unwrap();
+            let response_str = String::from_utf8_lossy(&buf[..n]);
+
+            // Extract session_id from response
+            let response: serde_json::Value = serde_json::from_str(&response_str)
+                .expect("Failed to parse create response");
+            let session_id = response["result"]["session_id"]
+                .as_str()
+                .expect("No session_id in response");
+
+            // Now get the session and verify recording_mode is in response
+            let get_request = format!(
+                "{{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"session.get\",\"params\":{{\"session_id\":\"{}\"}}}}\n",
+                session_id
+            );
+            client.write_all(get_request.as_bytes()).await.unwrap();
+
+            let mut buf = vec![0u8; 2048];
+            let n = client.read(&mut buf).await.unwrap();
+            let get_response = String::from_utf8_lossy(&buf[..n]);
+
+            assert!(
+                get_response.contains("recording_mode"),
+                "session.get response should include recording_mode field"
+            );
+            assert!(
+                get_response.contains("granular"),
+                "recording_mode should be 'granular'"
+            );
+
+            let _ = shutdown_handle.send(());
+            let _ = server_task.await;
         }
     }
 }

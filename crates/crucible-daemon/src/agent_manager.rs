@@ -1847,7 +1847,7 @@ mod tests {
         let session_manager = Arc::new(SessionManager::with_storage(storage));
 
         let session = session_manager
-            .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![])
+            .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![], None)
             .await
             .unwrap();
 
@@ -1883,7 +1883,7 @@ mod tests {
         let session_manager = Arc::new(SessionManager::with_storage(storage));
 
         let session = session_manager
-            .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![])
+            .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![], None)
             .await
             .unwrap();
 
@@ -1914,7 +1914,7 @@ mod tests {
         let session_manager = Arc::new(SessionManager::with_storage(storage));
 
         let session = session_manager
-            .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![])
+            .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![], None)
             .await
             .unwrap();
 
@@ -1944,7 +1944,7 @@ mod tests {
         let session_manager = Arc::new(SessionManager::with_storage(storage));
 
         let session = session_manager
-            .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![])
+            .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![], None)
             .await
             .unwrap();
 
@@ -1988,7 +1988,7 @@ mod tests {
         let session_manager = Arc::new(SessionManager::with_storage(storage));
 
         let session = session_manager
-            .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![])
+            .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![], None)
             .await
             .unwrap();
 
@@ -2027,7 +2027,7 @@ mod tests {
         let session_manager = Arc::new(SessionManager::with_storage(storage));
 
         let session = session_manager
-            .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![])
+            .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![], None)
             .await
             .unwrap();
 
@@ -2093,7 +2093,7 @@ mod tests {
         let session_manager = Arc::new(SessionManager::with_storage(storage));
 
         let session = session_manager
-            .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![])
+            .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![], None)
             .await
             .unwrap();
 
@@ -2132,7 +2132,7 @@ mod tests {
         let session_manager = Arc::new(SessionManager::with_storage(storage));
 
         let session = session_manager
-            .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![])
+            .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![], None)
             .await
             .unwrap();
 
@@ -2169,7 +2169,7 @@ mod tests {
         let session_manager = Arc::new(SessionManager::with_storage(storage));
 
         let session = session_manager
-            .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![])
+            .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![], None)
             .await
             .unwrap();
 
@@ -3299,7 +3299,7 @@ mod tests {
             let session_manager = Arc::new(SessionManager::with_storage(storage));
 
             let session = session_manager
-                .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![])
+                .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![], None)
                 .await
                 .unwrap();
 
@@ -3367,7 +3367,7 @@ mod tests {
             let session_manager = Arc::new(SessionManager::with_storage(storage));
 
             let session = session_manager
-                .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![])
+                .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![], None)
                 .await
                 .unwrap();
 
@@ -3424,7 +3424,7 @@ mod tests {
             let session_manager = Arc::new(SessionManager::with_storage(storage));
 
             let session = session_manager
-                .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![])
+                .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![], None)
                 .await
                 .unwrap();
 
@@ -3478,7 +3478,7 @@ mod tests {
             let session_manager = Arc::new(SessionManager::with_storage(storage));
 
             let session = session_manager
-                .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![])
+                .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![], None)
                 .await
                 .unwrap();
 
@@ -3530,7 +3530,7 @@ mod tests {
         let session_manager = Arc::new(SessionManager::with_storage(storage));
 
         let session = session_manager
-            .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![])
+            .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![], None)
             .await
             .unwrap();
 
@@ -3596,7 +3596,7 @@ mod tests {
         let session_manager = Arc::new(SessionManager::with_storage(storage));
 
         let session = session_manager
-            .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![])
+            .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![], None)
             .await
             .unwrap();
 
@@ -3634,7 +3634,7 @@ mod tests {
         let session_manager = Arc::new(SessionManager::with_storage(storage));
 
         let session = session_manager
-            .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![])
+            .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![], None)
             .await
             .unwrap();
 
@@ -3935,7 +3935,7 @@ mod tests {
         let session_manager = Arc::new(SessionManager::with_storage(storage));
 
         let session = session_manager
-            .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![])
+            .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![], None)
             .await
             .unwrap();
 
@@ -3997,7 +3997,7 @@ mod tests {
         let session_manager = Arc::new(SessionManager::with_storage(storage));
 
         let session = session_manager
-            .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![])
+            .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![], None)
             .await
             .unwrap();
 
@@ -4063,7 +4063,7 @@ mod tests {
         let session_manager = Arc::new(SessionManager::with_storage(storage));
 
         let session = session_manager
-            .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![])
+            .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![], None)
             .await
             .unwrap();
 
@@ -4106,7 +4106,7 @@ mod tests {
         let session_manager = Arc::new(SessionManager::with_storage(storage));
 
         let session = session_manager
-            .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![])
+            .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![], None)
             .await
             .unwrap();
 
@@ -4148,7 +4148,7 @@ mod tests {
         let session_manager = Arc::new(SessionManager::with_storage(storage));
 
         let session = session_manager
-            .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![])
+            .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![], None)
             .await
             .unwrap();
 
@@ -4188,7 +4188,7 @@ mod tests {
         let session_manager = Arc::new(SessionManager::with_storage(storage));
 
         let session = session_manager
-            .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![])
+            .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![], None)
             .await
             .unwrap();
 
@@ -4265,7 +4265,7 @@ mod tests {
         let session_manager = Arc::new(SessionManager::with_storage(storage));
 
         let session = session_manager
-            .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![])
+            .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![], None)
             .await
             .unwrap();
 
@@ -4326,7 +4326,7 @@ mod tests {
         let session_manager = Arc::new(SessionManager::with_storage(storage));
 
         let session = session_manager
-            .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![])
+            .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![], None)
             .await
             .unwrap();
 
@@ -4381,7 +4381,7 @@ mod tests {
         let session_manager = Arc::new(SessionManager::with_storage(storage));
 
         let session = session_manager
-            .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![])
+            .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![], None)
             .await
             .unwrap();
 

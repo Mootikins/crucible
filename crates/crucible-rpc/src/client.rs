@@ -785,6 +785,7 @@ impl DaemonClient {
         kiln: &Path,
         workspace: Option<&Path>,
         connect_kilns: Vec<&Path>,
+        recording_mode: Option<&str>,
     ) -> Result<serde_json::Value> {
         let mut params = serde_json::json!({
             "type": session_type,
@@ -800,6 +801,10 @@ impl DaemonClient {
                 .iter()
                 .map(|p| p.to_string_lossy())
                 .collect::<Vec<_>>());
+        }
+
+        if let Some(mode) = recording_mode {
+            params["recording_mode"] = serde_json::json!(mode);
         }
 
         self.call("session.create", params).await
@@ -1289,7 +1294,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
 
         let result = client
-            .session_create("chat", tmp.path(), None, vec![])
+            .session_create("chat", tmp.path(), None, vec![], None)
             .await
             .unwrap();
         let session_id = result["session_id"].as_str().unwrap();
@@ -1314,7 +1319,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
 
         let result = client
-            .session_create("chat", tmp.path(), None, vec![])
+            .session_create("chat", tmp.path(), None, vec![], None)
             .await
             .unwrap();
         let session_id = result["session_id"].as_str().unwrap();
@@ -1336,7 +1341,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
 
         let result = client
-            .session_create("chat", tmp.path(), None, vec![])
+            .session_create("chat", tmp.path(), None, vec![], None)
             .await
             .unwrap();
         let session_id = result["session_id"].as_str().unwrap();
@@ -1357,7 +1362,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
 
         let result = client
-            .session_create("chat", tmp.path(), None, vec![])
+            .session_create("chat", tmp.path(), None, vec![], None)
             .await
             .unwrap();
         let session_id = result["session_id"].as_str().unwrap();
@@ -1377,7 +1382,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
 
         let result = client
-            .session_create("chat", tmp.path(), None, vec![])
+            .session_create("chat", tmp.path(), None, vec![], None)
             .await
             .unwrap();
         let session_id = result["session_id"].as_str().unwrap();

@@ -114,6 +114,7 @@ async fn create_session(
             &req.kiln,
             req.workspace.as_deref(),
             vec![],
+            None,
         )
         .await
         .map_err(|e| WebError::Daemon(e.to_string()))?;

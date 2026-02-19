@@ -462,6 +462,10 @@ pub enum DaemonSessionCommands {
         /// Session type (chat, agent, workflow)
         #[arg(short = 't', long, default_value = "chat")]
         session_type: String,
+
+        /// Recording mode (granular, coarse)
+        #[arg(long)]
+        recording_mode: Option<String>,
     },
 
     /// Get details of a daemon session
@@ -1242,9 +1246,11 @@ mod tests {
         let cli = Cli::try_parse_from(["cru", "session", "daemon", "create"]).unwrap();
         if let Some(Commands::Session(SessionCommands::Daemon(DaemonSessionCommands::Create {
             session_type,
+            recording_mode,
         }))) = cli.command
         {
-            assert_eq!(session_type, "chat"); // Default value
+            assert_eq!(session_type, "chat");
+            assert_eq!(recording_mode, None);
         } else {
             panic!("Expected Session Daemon Create command");
         }
@@ -1256,9 +1262,11 @@ mod tests {
             Cli::try_parse_from(["cru", "session", "daemon", "create", "-t", "workflow"]).unwrap();
         if let Some(Commands::Session(SessionCommands::Daemon(DaemonSessionCommands::Create {
             session_type,
+            recording_mode,
         }))) = cli.command
         {
             assert_eq!(session_type, "workflow");
+            assert_eq!(recording_mode, None);
         } else {
             panic!("Expected Session Daemon Create command");
         }
