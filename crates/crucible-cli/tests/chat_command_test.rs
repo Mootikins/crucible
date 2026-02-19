@@ -70,9 +70,10 @@ async fn test_chat_command_does_not_double_open_database() -> Result<()> {
         vec![],                           // env_overrides
         None,                             // resume (session ID)
         vec![],                           // set_overrides
-        None,                             // record
-        None,                             // replay
-        1.0,                              // replay_speed
+        None,   // record
+        None,   // replay
+        1.0,    // replay_speed
+        None,   // replay_auto_exit
     )
     .await;
 
@@ -171,6 +172,7 @@ async fn test_chat_command_with_minimal_config() -> Result<()> {
         None,   // record
         None,   // replay
         1.0,    // replay_speed
+        None,   // replay_auto_exit
     )
     .await;
 

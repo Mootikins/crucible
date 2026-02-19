@@ -139,6 +139,10 @@ pub enum Commands {
         /// Playback speed multiplier for replay (default: 1.0)
         #[arg(long, default_value = "1.0")]
         replay_speed: f64,
+
+        /// Auto-exit after replay completes. Optional value is delay in milliseconds (default: 2000).
+        #[arg(long, value_name = "DELAY_MS", num_args = 0..=1, default_missing_value = "2000")]
+        replay_auto_exit: Option<u64>,
     },
 
     /// Start MCP server exposing Crucible tools for external AI agents

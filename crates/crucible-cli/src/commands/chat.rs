@@ -84,6 +84,7 @@ pub async fn execute(
     record: Option<PathBuf>,
     replay: Option<PathBuf>,
     replay_speed: f64,
+    replay_auto_exit: Option<u64>,
 ) -> Result<()> {
     let initial_mode = if read_only { "plan" } else { "normal" };
 
@@ -114,6 +115,7 @@ pub async fn execute(
                 record,
                 replay,
                 replay_speed,
+                replay_auto_exit,
             )
             .await
         }
@@ -314,6 +316,7 @@ async fn run_interactive_chat(
     record: Option<PathBuf>,
     replay: Option<PathBuf>,
     replay_speed: f64,
+    replay_auto_exit: Option<u64>,
 ) -> Result<()> {
     use crate::chat::bridge::AgentEventBridge;
     use crate::chat::session::{index_kiln_notes, index_workspace_files};
@@ -380,7 +383,8 @@ async fn run_interactive_chat(
         .with_initial_sets(parsed_set_overrides)
         .with_record_path(record)
         .with_replay_path(replay)
-        .with_replay_speed(replay_speed);
+        .with_replay_speed(replay_speed)
+        .with_replay_auto_exit(replay_auto_exit);
 
     info!("Starting oil chat with model: {}", model_name);
 

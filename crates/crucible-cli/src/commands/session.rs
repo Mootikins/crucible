@@ -441,6 +441,7 @@ async fn resume(config: CliConfig, id: String) -> Result<()> {
         None,
         None,
         1.0,
+        None,
     )
     .await
 }
