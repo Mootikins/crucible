@@ -24,8 +24,8 @@ use tokio::sync::mpsc;
 
 use crate::context_enricher::ContextEnricher;
 use crate::tui::oil::commands::{SetEffect, SetRpcAction};
-use crate::tui::oil::replay_agent::ReplayAgentHandle;
 use crate::tui::oil::recording::{self, DemoEvent, RecordingWriter, TimestampedEvent};
+use crate::tui::oil::replay_agent::ReplayAgentHandle;
 
 pub struct OilChatRunner {
     terminal: Terminal,
@@ -412,23 +412,23 @@ impl OilChatRunner {
             None
         };
 
-        let mut recording_writer: Option<RecordingWriter> =
-            if let Some(ref path) = self.record_path {
-                match RecordingWriter::create(path) {
-                    Ok(mut writer) => {
-                        let (cols, rows) = crossterm::terminal::size().unwrap_or((80, 24));
-                        let _ = writer.write_header(cols, rows, "cru chat");
-                        tracing::info!(path = %path.display(), "Recording session");
-                        Some(writer)
-                    }
-                    Err(e) => {
-                        tracing::warn!(error = %e, "Failed to create recording file");
-                        None
-                    }
+        let mut recording_writer: Option<RecordingWriter> = if let Some(ref path) = self.record_path
+        {
+            match RecordingWriter::create(path) {
+                Ok(mut writer) => {
+                    let (cols, rows) = crossterm::terminal::size().unwrap_or((80, 24));
+                    let _ = writer.write_header(cols, rows, "cru chat");
+                    tracing::info!(path = %path.display(), "Recording session");
+                    Some(writer)
                 }
-            } else {
-                None
-            };
+                Err(e) => {
+                    tracing::warn!(error = %e, "Failed to create recording file");
+                    None
+                }
+            }
+        } else {
+            None
+        };
 
         loop {
             if app.take_needs_full_redraw() {
@@ -974,7 +974,9 @@ impl OilChatRunner {
                                                 for p in &plugins {
                                                     match client.plugin_reload(p).await {
                                                         Ok(_) => ok += 1,
-                                                        Err(e) => errs.push(format!("{}: {}", p, e)),
+                                                        Err(e) => {
+                                                            errs.push(format!("{}: {}", p, e))
+                                                        }
                                                     }
                                                 }
                                                 if errs.is_empty() {

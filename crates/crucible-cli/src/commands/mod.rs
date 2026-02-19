@@ -6,13 +6,13 @@ pub mod daemon;
 pub mod init;
 pub mod mcp;
 pub mod models;
+pub mod plugin;
 pub mod process;
 pub mod session;
 pub mod set;
 pub mod skills;
 pub mod tasks;
 pub mod tools;
-pub mod plugin;
 #[cfg(feature = "web")]
 pub mod web;
 

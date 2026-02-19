@@ -8,8 +8,12 @@ use crate::config::CliConfig;
 
 pub async fn execute(_config: CliConfig, args: StubsArgs) -> Result<()> {
     let output_dir = resolve_output_dir(args.output)?;
-    std::fs::create_dir_all(&output_dir)
-        .with_context(|| format!("Failed to create output directory: {}", output_dir.display()))?;
+    std::fs::create_dir_all(&output_dir).with_context(|| {
+        format!(
+            "Failed to create output directory: {}",
+            output_dir.display()
+        )
+    })?;
 
     if args.verify {
         let cru_lua_path = output_dir.join("cru.lua");

@@ -22,7 +22,10 @@ pub async fn execute(_config: CliConfig, args: TestArgs) -> Result<()> {
     let executor = LuaExecutor::new().context("failed to initialize Lua runtime")?;
 
     // Set package.path to include the plugin root so test files can `require("init")` etc.
-    let plugin_root = args.path.canonicalize().unwrap_or_else(|_| args.path.clone());
+    let plugin_root = args
+        .path
+        .canonicalize()
+        .unwrap_or_else(|_| args.path.clone());
     let plugin_root_str = plugin_root.to_string_lossy();
     executor
         .lua()
@@ -88,12 +91,7 @@ end
         let file_contents = match std::fs::read_to_string(file) {
             Ok(contents) => contents,
             Err(err) => {
-                eprintln!(
-                    "{} Failed to read {}: {}",
-                    "✗".red(),
-                    file.display(),
-                    err
-                );
+                eprintln!("{} Failed to read {}: {}", "✗".red(), file.display(), err);
                 load_failures += 1;
                 continue;
             }
@@ -218,8 +216,8 @@ fn compile_fennel(lua: &mlua::Lua, source: &str) -> Result<Option<String>> {
         Err(_) => return Ok(None),
     };
 
-    let compiled: String = compile_string.call(source).map_err(|e| {
-        anyhow::anyhow!("Fennel compilation error: {}", e)
-    })?;
+    let compiled: String = compile_string
+        .call(source)
+        .map_err(|e| anyhow::anyhow!("Fennel compilation error: {}", e))?;
     Ok(Some(compiled))
 }
