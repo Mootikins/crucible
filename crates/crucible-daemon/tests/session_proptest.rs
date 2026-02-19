@@ -61,7 +61,13 @@ async fn state_transitions_follow_rules_fuzz() {
         let tmp = TempDir::new().unwrap();
         let manager = SessionManager::new();
         let session = manager
-            .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![], None)
+            .create_session(
+                SessionType::Chat,
+                tmp.path().to_path_buf(),
+                None,
+                vec![],
+                None,
+            )
             .await
             .unwrap();
 
@@ -124,7 +130,13 @@ async fn ended_sessions_reject_all_state_changes_fuzz() {
         let tmp = TempDir::new().unwrap();
         let manager = SessionManager::new();
         let session = manager
-            .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![], None)
+            .create_session(
+                SessionType::Chat,
+                tmp.path().to_path_buf(),
+                None,
+                vec![],
+                None,
+            )
             .await
             .unwrap();
 
@@ -159,7 +171,13 @@ async fn pause_resume_cycle_is_idempotent() {
         let tmp = TempDir::new().unwrap();
         let manager = SessionManager::new();
         let session = manager
-            .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![], None)
+            .create_session(
+                SessionType::Chat,
+                tmp.path().to_path_buf(),
+                None,
+                vec![],
+                None,
+            )
             .await
             .unwrap();
 
@@ -180,7 +198,13 @@ async fn concurrent_pause_requests_one_succeeds() {
     let tmp = TempDir::new().unwrap();
     let manager = std::sync::Arc::new(SessionManager::new());
     let session = manager
-        .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![], None)
+        .create_session(
+            SessionType::Chat,
+            tmp.path().to_path_buf(),
+            None,
+            vec![],
+            None,
+        )
         .await
         .unwrap();
 
@@ -215,7 +239,13 @@ async fn concurrent_different_ops_maintain_consistency() {
     let tmp = TempDir::new().unwrap();
     let manager = std::sync::Arc::new(SessionManager::new());
     let session = manager
-        .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![], None)
+        .create_session(
+            SessionType::Chat,
+            tmp.path().to_path_buf(),
+            None,
+            vec![],
+            None,
+        )
         .await
         .unwrap();
 

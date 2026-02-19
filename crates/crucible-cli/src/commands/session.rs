@@ -667,9 +667,10 @@ async fn daemon_execute(config: CliConfig, cmd: DaemonSessionCommands) -> Result
 
     match cmd {
         DaemonSessionCommands::List { state } => daemon_list(&client, &config, state).await,
-        DaemonSessionCommands::Create { session_type, recording_mode } => {
-            daemon_create(&client, &config, &session_type, recording_mode.as_deref()).await
-        }
+        DaemonSessionCommands::Create {
+            session_type,
+            recording_mode,
+        } => daemon_create(&client, &config, &session_type, recording_mode.as_deref()).await,
         DaemonSessionCommands::Get { session_id } => daemon_get(&client, &session_id).await,
         DaemonSessionCommands::Pause { session_id } => daemon_pause(&client, &session_id).await,
         DaemonSessionCommands::Resume { session_id } => daemon_resume(&client, &session_id).await,
@@ -755,14 +756,23 @@ async fn daemon_create(
         match mode_str {
             "granular" => Some("granular"),
             "coarse" => Some("coarse"),
-            _ => anyhow::bail!("Invalid recording mode: '{}'. Must be 'granular' or 'coarse'", mode_str),
+            _ => anyhow::bail!(
+                "Invalid recording mode: '{}'. Must be 'granular' or 'coarse'",
+                mode_str
+            ),
         }
     } else {
         None
     };
 
     let result = client
-        .session_create(session_type, &config.kiln_path, None, vec![], recording_mode_parsed)
+        .session_create(
+            session_type,
+            &config.kiln_path,
+            None,
+            vec![],
+            recording_mode_parsed,
+        )
         .await?;
 
     let session_id = result["session_id"].as_str().unwrap_or("unknown");
@@ -1319,7 +1329,10 @@ mod tests {
         let result = match invalid {
             "granular" => Ok("granular"),
             "coarse" => Ok("coarse"),
-            _ => Err(format!("Invalid recording mode: '{}'. Must be 'granular' or 'coarse'", invalid)),
+            _ => Err(format!(
+                "Invalid recording mode: '{}'. Must be 'granular' or 'coarse'",
+                invalid
+            )),
         };
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("Invalid recording mode"));

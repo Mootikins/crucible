@@ -66,7 +66,10 @@ fn test_recording_writer_reader_roundtrip() -> anyhow::Result<()> {
     // Verify first event
     match &events[0].event {
         DemoEvent::UserMessage { content } => {
-            assert_eq!(content, "hello", "first event should be UserMessage with 'hello'");
+            assert_eq!(
+                content, "hello",
+                "first event should be UserMessage with 'hello'"
+            );
         }
         _ => panic!("first event should be UserMessage"),
     }
@@ -82,7 +85,10 @@ fn test_recording_writer_reader_roundtrip() -> anyhow::Result<()> {
     // Verify third event
     match &events[2].event {
         DemoEvent::TextDelta { delta } => {
-            assert_eq!(delta, "there!", "third event should be TextDelta with 'there!'");
+            assert_eq!(
+                delta, "there!",
+                "third event should be TextDelta with 'there!'"
+            );
         }
         _ => panic!("third event should be TextDelta"),
     }
@@ -145,7 +151,11 @@ async fn test_replay_agent_produces_correct_chunks() -> anyhow::Result<()> {
         .collect::<Vec<_>>()
         .await;
 
-    assert_eq!(chunks.len(), 3, "should have 3 chunks (2 TextDelta + 1 StreamComplete)");
+    assert_eq!(
+        chunks.len(),
+        3,
+        "should have 3 chunks (2 TextDelta + 1 StreamComplete)"
+    );
 
     // Verify first chunk
     let chunk0 = chunks[0].as_ref().expect("first chunk should be Ok");
@@ -154,7 +164,10 @@ async fn test_replay_agent_produces_correct_chunks() -> anyhow::Result<()> {
 
     // Verify second chunk
     let chunk1 = chunks[1].as_ref().expect("second chunk should be Ok");
-    assert_eq!(chunk1.delta, " world", "second chunk delta should be ' world'");
+    assert_eq!(
+        chunk1.delta, " world",
+        "second chunk delta should be ' world'"
+    );
     assert!(!chunk1.done, "second chunk should not be done");
 
     // Verify third chunk (StreamComplete)
@@ -209,7 +222,11 @@ async fn test_replay_agent_handles_tool_calls() -> anyhow::Result<()> {
         .collect::<Vec<_>>()
         .await;
 
-    assert_eq!(chunks.len(), 3, "should have 3 chunks (ToolCall + ToolResultDelta + StreamComplete)");
+    assert_eq!(
+        chunks.len(),
+        3,
+        "should have 3 chunks (ToolCall + ToolResultDelta + StreamComplete)"
+    );
 
     // Verify first chunk (ToolCall)
     let chunk0 = chunks[0].as_ref().expect("first chunk should be Ok");
@@ -219,7 +236,10 @@ async fn test_replay_agent_handles_tool_calls() -> anyhow::Result<()> {
     );
     let tool_calls = chunk0.tool_calls.as_ref().unwrap();
     assert_eq!(tool_calls.len(), 1, "should have 1 tool call");
-    assert_eq!(tool_calls[0].name, "search", "tool call name should be 'search'");
+    assert_eq!(
+        tool_calls[0].name, "search",
+        "tool call name should be 'search'"
+    );
     assert_eq!(
         tool_calls[0].id,
         Some("call-1".to_string()),
@@ -234,7 +254,10 @@ async fn test_replay_agent_handles_tool_calls() -> anyhow::Result<()> {
     );
     let tool_results = chunk1.tool_results.as_ref().unwrap();
     assert_eq!(tool_results.len(), 1, "should have 1 tool result");
-    assert_eq!(tool_results[0].name, "search", "tool result name should be 'search'");
+    assert_eq!(
+        tool_results[0].name, "search",
+        "tool result name should be 'search'"
+    );
     assert_eq!(
         tool_results[0].result, "result",
         "tool result should be 'result'"
@@ -385,7 +408,10 @@ fn test_replay_user_messages_multi_turn() -> anyhow::Result<()> {
 
     assert_eq!(messages.len(), 2, "should have 2 user messages");
     assert_eq!(messages[0], "first", "first user message should be 'first'");
-    assert_eq!(messages[1], "second", "second user message should be 'second'");
+    assert_eq!(
+        messages[1], "second",
+        "second user message should be 'second'"
+    );
 
     Ok(())
 }

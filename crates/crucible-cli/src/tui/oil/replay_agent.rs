@@ -61,7 +61,11 @@ impl ReplayAgentHandle {
                 usage: None,
                 subagent_events: None,
             })),
-            DemoEvent::ToolCall { name, args, call_id } => {
+            DemoEvent::ToolCall {
+                name,
+                args,
+                call_id,
+            } => {
                 let arguments = if args.is_empty() {
                     None
                 } else {

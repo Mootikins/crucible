@@ -1,9 +1,9 @@
 //! Integration tests for Lua/Fennel tool discovery and execution
 
+use crucible_lua::{lifecycle::PluginManager, manifest::PluginState};
 use crucible_lua::{
     register_oq_module, register_shell_module, LuaExecutor, LuaToolRegistry, ShellPolicy,
 };
-use crucible_lua::{lifecycle::PluginManager, manifest::PluginState};
 use serde_json::json;
 use std::path::Path;
 use tempfile::TempDir;
@@ -376,7 +376,10 @@ fn test_fennel_compile_via_lua_global() {
         .load("return fennel ~= nil")
         .eval()
         .expect("should be able to check fennel global");
-    assert!(has_fennel, "fennel global should be available in LuaExecutor");
+    assert!(
+        has_fennel,
+        "fennel global should be available in LuaExecutor"
+    );
 
     let compiled: String = lua
         .load(r#"return fennel.compileString("(+ 1 1)")"#)
@@ -1036,15 +1039,19 @@ end
 
 #[test]
 fn test_plugin_template_yaml_is_valid() {
-    let template_yaml = include_str!("../../crucible-cli/src/commands/plugin/templates/plugin.yaml");
+    let template_yaml =
+        include_str!("../../crucible-cli/src/commands/plugin/templates/plugin.yaml");
     let substituted = template_yaml.replace("{{name}}", "test-plugin");
-    
+
     let parsed: Result<serde_yaml::Value, _> = serde_yaml::from_str(&substituted);
     assert!(parsed.is_ok(), "plugin.yaml template should be valid YAML");
-    
+
     let manifest = parsed.unwrap();
     assert!(manifest["name"].is_string(), "name field should be present");
-    assert!(manifest["version"].is_string(), "version field should be present");
+    assert!(
+        manifest["version"].is_string(),
+        "version field should be present"
+    );
     assert!(manifest["main"].is_string(), "main field should be present");
     assert_eq!(manifest["main"].as_str().unwrap(), "init.lua");
 }
@@ -1053,32 +1060,52 @@ fn test_plugin_template_yaml_is_valid() {
 fn test_plugin_template_init_lua_is_syntactically_valid() {
     let template_lua = include_str!("../../crucible-cli/src/commands/plugin/templates/init.lua");
     let substituted = template_lua.replace("{{name}}", "test-plugin");
-    
+
     let lua = mlua::Lua::new();
     let result = lua.load(&substituted).eval::<mlua::Value>();
-    
-    assert!(result.is_ok(), "init.lua template should be syntactically valid Lua: {:?}", result.err());
+
+    assert!(
+        result.is_ok(),
+        "init.lua template should be syntactically valid Lua: {:?}",
+        result.err()
+    );
 }
 
 #[test]
 fn test_plugin_template_tool_annotation_format() {
     let template_lua = include_str!("../../crucible-cli/src/commands/plugin/templates/init.lua");
-    
-    assert!(template_lua.contains("@tool name=\"greet\""), "Should have @tool annotation");
-    assert!(template_lua.contains("@param name string"), "Should have @param annotation");
-    assert!(template_lua.contains("on_session_start"), "Should have on_session_start hook");
-    assert!(template_lua.contains("return {"), "Should return a plugin spec");
+
+    assert!(
+        template_lua.contains("@tool name=\"greet\""),
+        "Should have @tool annotation"
+    );
+    assert!(
+        template_lua.contains("@param name string"),
+        "Should have @param annotation"
+    );
+    assert!(
+        template_lua.contains("on_session_start"),
+        "Should have on_session_start hook"
+    );
+    assert!(
+        template_lua.contains("return {"),
+        "Should return a plugin spec"
+    );
 }
 
 #[test]
 fn test_plugin_template_health_lua_is_syntactically_valid() {
     let template_lua = include_str!("../../crucible-cli/src/commands/plugin/templates/health.lua");
     let substituted = template_lua.replace("{{name}}", "test-plugin");
-    
+
     let lua = mlua::Lua::new();
     let result = lua.load(&substituted).eval::<mlua::Value>();
-    
-    assert!(result.is_ok(), "health.lua template should be syntactically valid Lua: {:?}", result.err());
+
+    assert!(
+        result.is_ok(),
+        "health.lua template should be syntactically valid Lua: {:?}",
+        result.err()
+    );
 }
 
 #[tokio::test]
@@ -1461,7 +1488,11 @@ end
     assert!(result.success, "Failed: {:?}", result.error);
     let content = result.content.unwrap();
     eprintln!("DEBUG: {:?}", content);
-    assert_eq!(content["has_test_mocks"], true, "test_mocks should exist, type={}", content["type_test_mocks"]);
+    assert_eq!(
+        content["has_test_mocks"], true,
+        "test_mocks should exist, type={}",
+        content["type_test_mocks"]
+    );
 }
 
 #[tokio::test]
@@ -1647,10 +1678,22 @@ end
     assert_eq!(content["pre_kiln_get"], 1);
     assert_eq!(content["pre_http_get"], 1);
     assert_eq!(content["pre_note_count"], 1);
-    assert_eq!(content["post_kiln_list"], 0, "reset should clear kiln list calls");
-    assert_eq!(content["post_http_get"], 0, "reset should clear http get calls");
-    assert_eq!(content["post_note_count"], 0, "reset should return empty default fixtures");
-    assert_eq!(content["post_list_calls"], 1, "new call after reset should be recorded");
+    assert_eq!(
+        content["post_kiln_list"], 0,
+        "reset should clear kiln list calls"
+    );
+    assert_eq!(
+        content["post_http_get"], 0,
+        "reset should clear http get calls"
+    );
+    assert_eq!(
+        content["post_note_count"], 0,
+        "reset should return empty default fixtures"
+    );
+    assert_eq!(
+        content["post_list_calls"], 1,
+        "new call after reset should be recorded"
+    );
 }
 
 fn create_plugin_files(root: &Path, name: &str, init_source: &str, module_source: &str) {
