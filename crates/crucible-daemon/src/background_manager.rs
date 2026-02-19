@@ -26,6 +26,7 @@
 //! }
 //! ```
 
+use crate::event_emitter::emit_event;
 use crate::protocol::SessionEventMessage;
 use async_trait::async_trait;
 use crucible_config::AgentProfile;
@@ -186,6 +187,7 @@ impl BackgroundJobManager {
         }
     }
 
+    #[allow(dead_code)]
     pub fn with_subagent_factory(mut self, factory: SubagentFactory) -> Self {
         self.subagent_factory = Some(Arc::new(factory));
         self
@@ -196,6 +198,7 @@ impl BackgroundJobManager {
             .insert(session_id.to_string(), config);
     }
 
+    #[allow(dead_code)]
     pub fn unregister_subagent_context(&self, session_id: &str) {
         self.subagent_contexts.remove(session_id);
     }
@@ -216,14 +219,17 @@ impl BackgroundJobManager {
         let timeout = timeout.unwrap_or(DEFAULT_BASH_TIMEOUT);
         let (cancel_tx, cancel_rx) = oneshot::channel();
 
-        let _ = self.event_tx.send(SessionEventMessage::new(
-            session_id,
-            events::BASH_SPAWNED,
-            serde_json::json!({
-                "job_id": job_id,
-                "command": command,
-            }),
-        ));
+        let _ = emit_event(
+            &self.event_tx,
+            SessionEventMessage::new(
+                session_id,
+                events::BASH_SPAWNED,
+                serde_json::json!({
+                    "job_id": job_id,
+                    "command": command,
+                }),
+            ),
+        );
 
         info!(
             job_id = %job_id,
@@ -344,10 +350,10 @@ impl BackgroundJobManager {
             )
         };
 
-        if event_tx
-            .send(SessionEventMessage::new(session_id, event_type, event_data))
-            .is_err()
-        {
+        if !emit_event(
+            event_tx,
+            SessionEventMessage::new(session_id, event_type, event_data),
+        ) {
             warn!(job_id = %job_id, "No subscribers for bash completion event");
         }
         Self::emit_background_completed(event_tx, session_id, job_id, result, "bash");
@@ -370,8 +376,9 @@ impl BackgroundJobManager {
             summary
         };
 
-        if event_tx
-            .send(SessionEventMessage::new(
+        if !emit_event(
+            event_tx,
+            SessionEventMessage::new(
                 session_id,
                 events::BACKGROUND_COMPLETED,
                 serde_json::json!({
@@ -379,9 +386,8 @@ impl BackgroundJobManager {
                     "kind": kind,
                     "summary": summary,
                 }),
-            ))
-            .is_err()
-        {
+            ),
+        ) {
             warn!(job_id = %job_id, kind = %kind, "No subscribers for background completion event");
         }
     }
@@ -586,6 +592,7 @@ impl BackgroundJobManager {
         true
     }
 
+    #[allow(dead_code)]
     pub async fn cleanup_session(&self, session_id: &str, clear_history: bool) {
         let job_ids: Vec<JobId> = self
             .running
@@ -605,6 +612,7 @@ impl BackgroundJobManager {
         debug!(session_id = %session_id, "Session cleanup completed");
     }
 
+    #[allow(dead_code)]
     pub fn running_count(&self, session_id: &str) -> usize {
         self.running
             .iter()
@@ -612,6 +620,7 @@ impl BackgroundJobManager {
             .count()
     }
 
+    #[allow(dead_code)]
     pub fn total_running_count(&self) -> usize {
         self.running.len()
     }
@@ -891,28 +900,34 @@ impl BackgroundJobManager {
             );
         }
 
-        let _ = self.event_tx.send(SessionEventMessage::new(
-            session_id,
-            events::SUBAGENT_SPAWNED,
-            serde_json::json!({
-                "job_id": job_id,
-                "session_link": session_link,
-                "prompt": truncate(&prompt, 100),
-            }),
-        ));
+        let _ = emit_event(
+            &self.event_tx,
+            SessionEventMessage::new(
+                session_id,
+                events::SUBAGENT_SPAWNED,
+                serde_json::json!({
+                    "job_id": job_id,
+                    "session_link": session_link,
+                    "prompt": truncate(&prompt, 100),
+                }),
+            ),
+        );
 
         if is_delegation {
             if let Some(ref parent_id) = parent_session_id {
-                let _ = self.event_tx.send(SessionEventMessage::new(
-                    parent_id,
-                    events::DELEGATION_SPAWNED,
-                    serde_json::json!({
-                        "delegation_id": job_id,
-                        "prompt": truncate(&prompt, 100),
-                        "parent_session_id": parent_id,
-                        "target_agent": effective_target_name,
-                    }),
-                ));
+                let _ = emit_event(
+                    &self.event_tx,
+                    SessionEventMessage::new(
+                        parent_id,
+                        events::DELEGATION_SPAWNED,
+                        serde_json::json!({
+                            "delegation_id": job_id,
+                            "prompt": truncate(&prompt, 100),
+                            "parent_session_id": parent_id,
+                            "target_agent": effective_target_name,
+                        }),
+                    ),
+                );
             }
         }
 
@@ -1168,10 +1183,10 @@ impl BackgroundJobManager {
             )
         };
 
-        if event_tx
-            .send(SessionEventMessage::new(session_id, event_type, event_data))
-            .is_err()
-        {
+        if !emit_event(
+            event_tx,
+            SessionEventMessage::new(session_id, event_type, event_data),
+        ) {
             warn!(job_id = %job_id, "No subscribers for subagent completion event");
         }
 
@@ -1196,7 +1211,10 @@ impl BackgroundJobManager {
                 )
             };
 
-            let _ = event_tx.send(SessionEventMessage::new(parent_id, deleg_type, deleg_data));
+            let _ = emit_event(
+                event_tx,
+                SessionEventMessage::new(parent_id, deleg_type, deleg_data),
+            );
         }
 
         Self::emit_background_completed(event_tx, session_id, job_id, result, "subagent");

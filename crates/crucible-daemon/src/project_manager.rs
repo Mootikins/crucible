@@ -61,6 +61,7 @@ impl ProjectManager {
         Ok(project)
     }
 
+    #[allow(dead_code)]
     pub fn find_by_repository(&self, repo_root: &Path) -> Vec<Project> {
         self.projects
             .iter()
