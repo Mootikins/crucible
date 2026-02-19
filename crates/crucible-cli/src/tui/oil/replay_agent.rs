@@ -10,12 +10,17 @@ use futures::StreamExt;
 
 use super::recording::{DemoEvent, RecordingReader, TimestampedEvent};
 
+#[deprecated(
+    since = "0.1.0",
+    note = "Use daemon replay session via create_daemon_replay_agent instead"
+)]
 pub struct ReplayAgentHandle {
     events: Vec<TimestampedEvent>,
     cursor: usize,
     replay_speed: f64,
 }
 
+#[allow(deprecated)]
 impl ReplayAgentHandle {
     pub fn from_file(path: &Path, replay_speed: f64) -> anyhow::Result<Self> {
         let mut reader = RecordingReader::open(path)?;
@@ -142,6 +147,7 @@ impl ReplayAgentHandle {
 }
 
 #[async_trait]
+#[allow(deprecated)]
 impl AgentHandle for ReplayAgentHandle {
     fn send_message_stream(
         &mut self,
