@@ -194,6 +194,10 @@ pub struct Session {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub agent: Option<SessionAgent>,
 
+    /// Recording mode for this session (coarse or granular)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub recording_mode: Option<RecordingMode>,
+
     /// Notification queue for this session
     #[serde(
         default,
@@ -222,6 +226,7 @@ impl Session {
             parent_session_id: None,
             title: None,
             agent: None,
+            recording_mode: None,
             notifications: crate::types::NotificationQueue::new(),
         }
     }
@@ -262,6 +267,12 @@ impl Session {
         self
     }
 
+    /// Set the recording mode for this session.
+    pub fn with_recording_mode(mut self, mode: RecordingMode) -> Self {
+        self.recording_mode = Some(mode);
+        self
+    }
+
     /// Get the storage path for this session.
     ///
     /// When the kiln is the crucible home (`~/.crucible/`), returns
@@ -283,6 +294,16 @@ impl Session {
     /// Get the path to the JSONL event log.
     pub fn jsonl_path(&self) -> PathBuf {
         self.storage_path().join("session.jsonl")
+    }
+
+    /// Get the path to the granular recording JSONL file.
+    pub fn recording_jsonl_path(&self) -> &'static str {
+        "recording.jsonl"
+    }
+
+    /// Check if this session is in granular recording mode.
+    pub fn is_granular(&self) -> bool {
+        matches!(self.recording_mode, Some(RecordingMode::Granular))
     }
 
     /// Get the artifacts directory path.
@@ -318,6 +339,16 @@ impl Session {
     pub fn is_active(&self) -> bool {
         self.state == SessionState::Active
     }
+}
+
+/// Recording granularity for session events.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RecordingMode {
+    /// Coarse-grained recording (default): only major events
+    Coarse,
+    /// Granular recording: all events including keystroke-level details
+    Granular,
 }
 
 /// Type of session, determines logging format and behavior.
@@ -1051,5 +1082,100 @@ mod tests {
         let json = serde_json::to_string(&session).unwrap();
         // parent_session_id should not appear in JSON when None
         assert!(!json.contains("parent_session_id"));
+    }
+
+    // =============================================================================
+    // RecordingMode Tests (TDD)
+    // =============================================================================
+
+    #[test]
+    fn test_recording_mode_serialization() {
+        // RecordingMode::Granular should serialize to "granular"
+        let granular = RecordingMode::Granular;
+        let json = serde_json::to_string(&granular).unwrap();
+        assert_eq!(json, "\"granular\"");
+
+        // RecordingMode::Coarse should serialize to "coarse"
+        let coarse = RecordingMode::Coarse;
+        let json = serde_json::to_string(&coarse).unwrap();
+        assert_eq!(json, "\"coarse\"");
+    }
+
+    #[test]
+    fn test_session_recording_mode_roundtrip() {
+        // Create Session with recording_mode, serialize, deserialize, verify
+        let kiln = PathBuf::from("/home/user/notes");
+        let session =
+            Session::new(SessionType::Chat, kiln).with_recording_mode(RecordingMode::Granular);
+
+        let json = serde_json::to_string(&session).unwrap();
+        assert!(json.contains("\"recording_mode\":\"granular\""));
+
+        let parsed: Session = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.recording_mode, Some(RecordingMode::Granular));
+    }
+
+    #[test]
+    fn test_session_default_no_recording_mode() {
+        // Session::new() should have recording_mode: None
+        let kiln = PathBuf::from("/home/user/notes");
+        let session = Session::new(SessionType::Chat, kiln);
+
+        assert_eq!(session.recording_mode, None);
+        assert!(!session.is_granular());
+    }
+
+    #[test]
+    fn test_session_is_granular() {
+        let kiln = PathBuf::from("/home/user/notes");
+
+        // Granular mode returns true
+        let granular_session = Session::new(SessionType::Chat, kiln.clone())
+            .with_recording_mode(RecordingMode::Granular);
+        assert!(granular_session.is_granular());
+
+        // Coarse mode returns false
+        let coarse_session = Session::new(SessionType::Chat, kiln.clone())
+            .with_recording_mode(RecordingMode::Coarse);
+        assert!(!coarse_session.is_granular());
+
+        // None returns false
+        let no_mode_session = Session::new(SessionType::Chat, kiln);
+        assert!(!no_mode_session.is_granular());
+    }
+
+    #[test]
+    fn test_session_recording_jsonl_path() {
+        let kiln = PathBuf::from("/home/user/notes");
+        let session = Session::new(SessionType::Chat, kiln);
+
+        assert_eq!(session.recording_jsonl_path(), "recording.jsonl");
+    }
+
+    #[test]
+    fn test_session_recording_mode_omitted_when_none() {
+        // When recording_mode is None, it should be omitted from JSON
+        let kiln = PathBuf::from("/home/user/notes");
+        let session = Session::new(SessionType::Chat, kiln);
+
+        let json = serde_json::to_string(&session).unwrap();
+        assert!(!json.contains("recording_mode"));
+    }
+
+    #[test]
+    fn test_session_recording_mode_backward_compat_old_json_without_field() {
+        // Old JSON without recording_mode should deserialize to None
+        let old_json = r#"{
+            "id": "chat-2025-01-08T1530-abc123",
+            "session_type": "chat",
+            "kiln": "/home/user/notes",
+            "workspace": "/home/user/notes",
+            "state": "active",
+            "started_at": "2025-01-08T15:30:00Z"
+        }"#;
+
+        let session: Session = serde_json::from_str(old_json).unwrap();
+        assert_eq!(session.recording_mode, None);
+        assert!(!session.is_granular());
     }
 }
