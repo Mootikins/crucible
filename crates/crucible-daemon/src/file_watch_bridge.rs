@@ -10,6 +10,7 @@ use std::sync::Arc;
 use tokio::sync::broadcast;
 use tracing::debug;
 
+use crate::event_emitter::emit_event;
 use crate::protocol::SessionEventMessage;
 
 /// Bridges `SessionEvent` emissions from the watch system into the daemon's
@@ -62,7 +63,7 @@ impl EventEmitter for DaemonEventBridge {
 
         if let Some(msg) = msg {
             debug!(event_type = %msg.event, "Broadcasting file event via daemon bus");
-            let _ = self.event_tx.send(msg);
+            let _ = emit_event(&self.event_tx, msg);
         }
 
         Ok(EmitOutcome::new(event))

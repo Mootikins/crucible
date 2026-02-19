@@ -5,6 +5,7 @@
 //! `SessionAgent` contains fully-resolved configuration.
 
 use crate::acp_handle::AcpAgentHandle;
+use crate::event_emitter::emit_event;
 use crate::protocol::SessionEventMessage;
 use crucible_acp::client::PermissionRequestHandler;
 use crucible_config::credentials::resolve_copilot_oauth_token;
@@ -156,11 +157,10 @@ pub async fn create_agent_from_session_config(
     let push_event: EventPushCallback = Arc::new(move |_event| {
         // TODO: Convert SessionEvent to SessionEventMessage and send
         // For now, events are handled through the agent's event stream
-        let _ = event_tx_clone.send(SessionEventMessage::new(
-            "session",
-            "interaction_event",
-            serde_json::json!({}),
-        ));
+        let _ = emit_event(
+            &event_tx_clone,
+            SessionEventMessage::new("session", "interaction_event", serde_json::json!({})),
+        );
     });
     let interaction_ctx = Arc::new(InteractionContext::new(registry, push_event));
 

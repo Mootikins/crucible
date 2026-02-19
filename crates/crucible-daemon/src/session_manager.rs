@@ -161,6 +161,7 @@ impl SessionManager {
     /// List sessions filtered by criteria (in-memory only).
     ///
     /// For listing that includes persisted sessions, use `list_sessions_filtered_async`.
+    #[allow(dead_code)]
     pub fn list_sessions_filtered(
         &self,
         kiln: Option<&PathBuf>,
@@ -429,7 +430,13 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let manager = SessionManager::new();
         let session = manager
-            .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![], None)
+            .create_session(
+                SessionType::Chat,
+                tmp.path().to_path_buf(),
+                None,
+                vec![],
+                None,
+            )
             .await
             .unwrap();
 
@@ -487,7 +494,13 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let manager = SessionManager::new();
         let session = manager
-            .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![], None)
+            .create_session(
+                SessionType::Chat,
+                tmp.path().to_path_buf(),
+                None,
+                vec![],
+                None,
+            )
             .await
             .unwrap();
         let session_id = session.id.clone();
@@ -503,11 +516,23 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let manager = SessionManager::new();
         manager
-            .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![], None)
+            .create_session(
+                SessionType::Chat,
+                tmp.path().to_path_buf(),
+                None,
+                vec![],
+                None,
+            )
             .await
             .unwrap();
         manager
-            .create_session(SessionType::Agent, tmp.path().to_path_buf(), None, vec![], None)
+            .create_session(
+                SessionType::Agent,
+                tmp.path().to_path_buf(),
+                None,
+                vec![],
+                None,
+            )
             .await
             .unwrap();
 
@@ -551,7 +576,13 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let manager = SessionManager::new();
         let session = manager
-            .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![], None)
+            .create_session(
+                SessionType::Chat,
+                tmp.path().to_path_buf(),
+                None,
+                vec![],
+                None,
+            )
             .await
             .unwrap();
         let session_id = session.id.clone();
@@ -576,7 +607,13 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let manager = SessionManager::new();
         let session = manager
-            .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![], None)
+            .create_session(
+                SessionType::Chat,
+                tmp.path().to_path_buf(),
+                None,
+                vec![],
+                None,
+            )
             .await
             .unwrap();
         let session_id = session.id.clone();
@@ -594,7 +631,13 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let manager = SessionManager::new();
         let session = manager
-            .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![], None)
+            .create_session(
+                SessionType::Chat,
+                tmp.path().to_path_buf(),
+                None,
+                vec![],
+                None,
+            )
             .await
             .unwrap();
         let session_id = session.id.clone();
@@ -611,7 +654,13 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let manager = SessionManager::new();
         let session = manager
-            .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![], None)
+            .create_session(
+                SessionType::Chat,
+                tmp.path().to_path_buf(),
+                None,
+                vec![],
+                None,
+            )
             .await
             .unwrap();
         let session_id = session.id.clone();
@@ -636,11 +685,23 @@ mod tests {
         assert_eq!(manager.total_count(), 0);
 
         let session1 = manager
-            .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![], None)
+            .create_session(
+                SessionType::Chat,
+                tmp.path().to_path_buf(),
+                None,
+                vec![],
+                None,
+            )
             .await
             .unwrap();
         let session2 = manager
-            .create_session(SessionType::Agent, tmp.path().to_path_buf(), None, vec![], None)
+            .create_session(
+                SessionType::Agent,
+                tmp.path().to_path_buf(),
+                None,
+                vec![],
+                None,
+            )
             .await
             .unwrap();
 
@@ -661,7 +722,13 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let manager = SessionManager::new();
         let session = manager
-            .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![], None)
+            .create_session(
+                SessionType::Chat,
+                tmp.path().to_path_buf(),
+                None,
+                vec![],
+                None,
+            )
             .await
             .unwrap();
 
@@ -681,7 +748,13 @@ mod tests {
         let manager = SessionManager::with_storage(storage.clone());
 
         let session = manager
-            .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![], None)
+            .create_session(
+                SessionType::Chat,
+                tmp.path().to_path_buf(),
+                None,
+                vec![],
+                None,
+            )
             .await
             .unwrap();
 
@@ -721,7 +794,13 @@ mod tests {
         let manager = SessionManager::with_storage(storage.clone());
 
         let session = manager
-            .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![], None)
+            .create_session(
+                SessionType::Chat,
+                tmp.path().to_path_buf(),
+                None,
+                vec![],
+                None,
+            )
             .await
             .unwrap();
         let session_id = session.id.clone();
@@ -749,7 +828,13 @@ mod tests {
 
         let manager1 = SessionManager::with_storage(storage.clone());
         let session = manager1
-            .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![], None)
+            .create_session(
+                SessionType::Chat,
+                tmp.path().to_path_buf(),
+                None,
+                vec![],
+                None,
+            )
             .await
             .unwrap();
         let session_id = session.id.clone();
@@ -778,18 +863,36 @@ mod tests {
         let manager1 = SessionManager::with_storage(storage.clone());
 
         let _active_session = manager1
-            .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![], None)
+            .create_session(
+                SessionType::Chat,
+                tmp.path().to_path_buf(),
+                None,
+                vec![],
+                None,
+            )
             .await
             .unwrap();
 
         let paused_session = manager1
-            .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![], None)
+            .create_session(
+                SessionType::Chat,
+                tmp.path().to_path_buf(),
+                None,
+                vec![],
+                None,
+            )
             .await
             .unwrap();
         manager1.pause_session(&paused_session.id).await.unwrap();
 
         let _ended_session = manager1
-            .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![], None)
+            .create_session(
+                SessionType::Chat,
+                tmp.path().to_path_buf(),
+                None,
+                vec![],
+                None,
+            )
             .await
             .unwrap();
         manager1.end_session(&_ended_session.id).await.unwrap();

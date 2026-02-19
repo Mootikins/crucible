@@ -33,6 +33,7 @@ use crucible_core::types::mode::default_internal_modes;
 
 /// Errors specific to ACP agent handle creation and management.
 #[derive(Error, Debug)]
+#[allow(dead_code)]
 pub enum AcpHandleError {
     #[error("ACP connection failed: {0}")]
     Connection(String),

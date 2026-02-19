@@ -3,6 +3,9 @@
 use crate::agent_manager::AgentManager;
 use crate::background_manager::BackgroundJobManager;
 use crate::daemon_plugins::DaemonPluginLoader;
+use crate::event_emitter::emit_event;
+#[cfg(test)]
+use crate::event_emitter::stamp_event;
 use crate::kiln_manager::KilnManager;
 use crate::project_manager::ProjectManager;
 use crate::protocol::{
@@ -95,6 +98,7 @@ pub struct Server {
 
 impl Server {
     /// Bind to a Unix socket path
+    #[allow(dead_code)]
     pub async fn bind(
         path: &Path,
         mcp_config: Option<&crucible_config::McpConfig>,
@@ -1069,8 +1073,8 @@ async fn handle_session_create(
         })
         .unwrap_or_default();
 
-    let recording_mode = optional_str_param!(req, "recording_mode")
-        .and_then(|s| s.parse::<RecordingMode>().ok());
+    let recording_mode =
+        optional_str_param!(req, "recording_mode").and_then(|s| s.parse::<RecordingMode>().ok());
 
     let project_path = workspace.as_ref().unwrap_or(&kiln);
     if let Err(e) = pm.register_if_missing(project_path) {
@@ -1078,7 +1082,13 @@ async fn handle_session_create(
     }
 
     match sm
-        .create_session(session_type, kiln, workspace, connected_kilns, recording_mode)
+        .create_session(
+            session_type,
+            kiln,
+            workspace,
+            connected_kilns,
+            recording_mode,
+        )
         .await
     {
         Ok(session) => Response::success(
@@ -1403,14 +1413,17 @@ async fn handle_session_interaction_respond(
         }
     }
 
-    let _ = event_tx.send(SessionEventMessage::new(
-        session_id,
-        "interaction_completed",
-        serde_json::json!({
-            "request_id": request_id,
-            "response": response,
-        }),
-    ));
+    let _ = emit_event(
+        event_tx,
+        SessionEventMessage::new(
+            session_id,
+            "interaction_completed",
+            serde_json::json!({
+                "request_id": request_id,
+                "response": response,
+            }),
+        ),
+    );
 
     Response::success(
         req.id,
@@ -1469,14 +1482,17 @@ async fn handle_session_test_interaction(
         }
     };
 
-    let _ = event_tx.send(SessionEventMessage::new(
-        session_id.to_string(),
-        "interaction_requested",
-        serde_json::json!({
-            "request_id": request_id,
-            "request": request,
-        }),
-    ));
+    let _ = emit_event(
+        event_tx,
+        SessionEventMessage::new(
+            session_id.to_string(),
+            "interaction_requested",
+            serde_json::json!({
+                "request_id": request_id,
+                "request": request,
+            }),
+        ),
+    );
 
     Response::success(
         req.id,
@@ -2687,6 +2703,39 @@ mod tests {
         let _ = server_task.await;
     }
 
+    #[test]
+    fn test_emitted_event_has_timestamp() {
+        let seq_counter = std::sync::atomic::AtomicU64::new(0);
+        let event = SessionEventMessage::text_delta("test-session", "hello");
+
+        let stamped = stamp_event(event, &seq_counter);
+
+        assert!(stamped.timestamp.is_some());
+    }
+
+    #[test]
+    fn test_emitted_events_have_increasing_seq() {
+        let seq_counter = std::sync::atomic::AtomicU64::new(0);
+
+        let events: Vec<SessionEventMessage> = (0..5)
+            .map(|_| {
+                stamp_event(
+                    SessionEventMessage::text_delta("test-session", "x"),
+                    &seq_counter,
+                )
+            })
+            .collect();
+
+        let seqs: Vec<u64> = events.into_iter().map(|event| event.seq.unwrap()).collect();
+        assert_eq!(seqs, vec![1, 2, 3, 4, 5]);
+    }
+
+    #[test]
+    fn test_timestamp_not_in_constructor() {
+        let event = SessionEventMessage::text_delta("test-session", "hello");
+        assert!(event.timestamp.is_none());
+    }
+
     mod persist_event_tests {
         use super::*;
         use crate::session_manager::SessionError;
@@ -2745,7 +2794,13 @@ mod tests {
             let tmp = TempDir::new().unwrap();
             let sm = Arc::new(SessionManager::new());
             let session = sm
-                .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![], None)
+                .create_session(
+                    SessionType::Chat,
+                    tmp.path().to_path_buf(),
+                    None,
+                    vec![],
+                    None,
+                )
                 .await
                 .unwrap();
 
@@ -2768,7 +2823,13 @@ mod tests {
             let tmp = TempDir::new().unwrap();
             let sm = Arc::new(SessionManager::new());
             let session = sm
-                .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![], None)
+                .create_session(
+                    SessionType::Chat,
+                    tmp.path().to_path_buf(),
+                    None,
+                    vec![],
+                    None,
+                )
                 .await
                 .unwrap();
 
@@ -2835,8 +2896,14 @@ mod tests {
             let n = client.read(&mut buf).await.unwrap();
             let response = String::from_utf8_lossy(&buf[..n]);
 
-            assert!(response.contains("\"result\""), "Should have successful result");
-            assert!(response.contains("\"session_id\""), "Should have session_id in response");
+            assert!(
+                response.contains("\"result\""),
+                "Should have successful result"
+            );
+            assert!(
+                response.contains("\"session_id\""),
+                "Should have session_id in response"
+            );
 
             let _ = shutdown_handle.send(());
             let _ = server_task.await;
@@ -2866,8 +2933,14 @@ mod tests {
             let n = client.read(&mut buf).await.unwrap();
             let response = String::from_utf8_lossy(&buf[..n]);
 
-            assert!(response.contains("\"result\""), "Should have successful result");
-            assert!(response.contains("\"session_id\""), "Should have session_id in response");
+            assert!(
+                response.contains("\"result\""),
+                "Should have successful result"
+            );
+            assert!(
+                response.contains("\"session_id\""),
+                "Should have session_id in response"
+            );
 
             let _ = shutdown_handle.send(());
             let _ = server_task.await;
@@ -2899,8 +2972,8 @@ mod tests {
             let response_str = String::from_utf8_lossy(&buf[..n]);
 
             // Extract session_id from response
-            let response: serde_json::Value = serde_json::from_str(&response_str)
-                .expect("Failed to parse create response");
+            let response: serde_json::Value =
+                serde_json::from_str(&response_str).expect("Failed to parse create response");
             let session_id = response["result"]["session_id"]
                 .as_str()
                 .expect("No session_id in response");
