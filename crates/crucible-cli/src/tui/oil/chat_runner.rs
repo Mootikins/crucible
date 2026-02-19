@@ -24,8 +24,6 @@ use tokio::sync::mpsc;
 
 use crate::context_enricher::ContextEnricher;
 use crate::tui::oil::commands::{SetEffect, SetRpcAction};
-use crate::tui::oil::recording::{self, DemoEvent, TimestampedEvent};
-use crate::tui::oil::replay_agent::ReplayAgentHandle;
 
 pub struct OilChatRunner {
     terminal: Terminal,
@@ -282,26 +280,29 @@ impl OilChatRunner {
         let (msg_tx, msg_rx) = mpsc::unbounded_channel::<ChatAppMsg>();
 
         if let Some(replay_path) = self.replay_path.clone() {
-            let mut agent = ReplayAgentHandle::from_file(&replay_path, self.replay_speed)?;
+            let (mut agent, replay_session_id, event_rx) =
+                crate::factories::create_daemon_replay_agent(&replay_path, self.replay_speed)
+                    .await?;
+
+            tracing::info!(
+                session_id = %replay_session_id,
+                speed = self.replay_speed,
+                "Connected to daemon replay session"
+            );
+
             self.is_replay = true;
+            self.replay_remaining_completes = 1;
             app.set_precognition(false);
             app.set_status("Replay");
 
-            let user_msgs = agent.user_messages();
-            let replay_turn_count = user_msgs.len();
-            self.replay_remaining_completes = replay_turn_count;
-            if let Some((first, rest)) = user_msgs.split_first() {
-                let _ = msg_tx.send(ChatAppMsg::UserMessage(first.clone()));
-                for msg in rest {
-                    let _ = msg_tx.send(ChatAppMsg::QueueMessage(msg.clone()));
-                }
-            }
+            let msg_tx_clone = msg_tx.clone();
+            tokio::spawn(replay_event_consumer(
+                replay_session_id,
+                event_rx,
+                msg_tx_clone,
+            ));
 
             let interaction_rx = agent.take_interaction_receiver();
-            tracing::debug!(
-                has_rx = interaction_rx.is_some(),
-                "take_interaction_receiver"
-            );
 
             self.event_loop(&mut app, &mut agent, bridge, msg_tx, msg_rx, interaction_rx)
                 .await?;
@@ -435,14 +436,18 @@ impl OilChatRunner {
             }
 
             while let Ok(msg) = msg_rx.try_recv() {
-                if self.is_replay
-                    && matches!(msg, ChatAppMsg::StreamComplete)
-                    && self.replay_remaining_completes > 0
-                {
-                    self.replay_remaining_completes -= 1;
-                    if self.replay_remaining_completes == 0 && self.replay_auto_exit.is_some() {
-                        replay_auto_exit_deadline = Some(tokio::time::Instant::now());
+                if self.is_replay {
+                    if matches!(msg, ChatAppMsg::Status(ref s) if s == "Replay complete") {
+                        self.replay_remaining_completes = 0;
+                        if self.replay_auto_exit.is_some() {
+                            replay_auto_exit_deadline = Some(tokio::time::Instant::now());
+                        }
                     }
+                    let action = app.on_message(msg);
+                    if action.is_quit() {
+                        return Ok(());
+                    }
+                    continue;
                 }
                 let mut action =
                     Self::process_message(&msg, app, agent, bridge, &mut active_stream);
@@ -1189,6 +1194,111 @@ impl OilChatRunner {
                 error,
             }),
             _ => None,
+        }
+    }
+}
+
+async fn replay_event_consumer(
+    replay_session_id: String,
+    mut event_rx: tokio::sync::mpsc::UnboundedReceiver<crucible_rpc::SessionEvent>,
+    msg_tx: tokio::sync::mpsc::UnboundedSender<ChatAppMsg>,
+) {
+    while let Some(event) = event_rx.recv().await {
+        if event.session_id != replay_session_id {
+            continue;
+        }
+
+        let msg = match event.event_type.as_str() {
+            "user_message" => event
+                .data
+                .get("content")
+                .and_then(|v| v.as_str())
+                .map(|c| ChatAppMsg::UserMessage(c.to_string())),
+            "text_delta" => event
+                .data
+                .get("content")
+                .and_then(|v| v.as_str())
+                .map(|c| ChatAppMsg::TextDelta(c.to_string())),
+            "thinking" => event
+                .data
+                .get("content")
+                .and_then(|v| v.as_str())
+                .map(|c| ChatAppMsg::ThinkingDelta(c.to_string())),
+            "tool_call" => {
+                let name = event
+                    .data
+                    .get("tool")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("tool")
+                    .to_string();
+                let args = event
+                    .data
+                    .get("args")
+                    .map(|v| v.to_string())
+                    .unwrap_or_default();
+                let call_id = event
+                    .data
+                    .get("call_id")
+                    .and_then(|v| v.as_str())
+                    .map(String::from);
+                Some(ChatAppMsg::ToolCall {
+                    name,
+                    args,
+                    call_id,
+                })
+            }
+            "tool_result" => {
+                let name = event
+                    .data
+                    .get("tool")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("tool")
+                    .to_string();
+                let call_id = event
+                    .data
+                    .get("call_id")
+                    .and_then(|v| v.as_str())
+                    .map(String::from);
+                let result_data = event.data.get("result");
+                let error = result_data
+                    .and_then(|r| r.get("error"))
+                    .and_then(|e| e.as_str());
+
+                if let Some(err) = error {
+                    Some(ChatAppMsg::ToolResultError {
+                        name,
+                        error: err.to_string(),
+                        call_id,
+                    })
+                } else {
+                    let result_str = result_data
+                        .and_then(|r| r.get("result"))
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string();
+                    let _ = msg_tx.send(ChatAppMsg::ToolResultDelta {
+                        name: name.clone(),
+                        delta: result_str,
+                        call_id: call_id.clone(),
+                    });
+                    Some(ChatAppMsg::ToolResultComplete { name, call_id })
+                }
+            }
+            "message_complete" => Some(ChatAppMsg::StreamComplete),
+            "replay_complete" => {
+                let _ = msg_tx.send(ChatAppMsg::Status("Replay complete".to_string()));
+                return;
+            }
+            _ => {
+                tracing::trace!(event_type = %event.event_type, "Replay consumer: skipping event");
+                None
+            }
+        };
+
+        if let Some(msg) = msg {
+            if msg_tx.send(msg).is_err() {
+                return;
+            }
         }
     }
 }

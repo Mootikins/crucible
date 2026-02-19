@@ -385,6 +385,54 @@ async fn create_new_daemon_session(
     Ok(session_id)
 }
 
+/// Returns `(no-op agent handle, replay_session_id, event_rx)`.
+/// Real events flow through `event_rx` to a consumer task; agent handle is for type compatibility.
+pub async fn create_daemon_replay_agent(
+    replay_path: &std::path::Path,
+    speed: f64,
+) -> Result<(
+    Box<dyn AgentHandle + Send + Sync>,
+    String,
+    tokio::sync::mpsc::UnboundedReceiver<crucible_rpc::SessionEvent>,
+)> {
+    use crucible_rpc::{DaemonAgentHandle, DaemonClient};
+    use std::sync::Arc;
+
+    info!("Connecting to daemon for replay session");
+    let (client, event_rx) = DaemonClient::connect_or_start_with_events()
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to connect to daemon: {}", e))?;
+
+    let replay_response = client
+        .session_replay(replay_path, speed)
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to start daemon replay: {}", e))?;
+
+    let replay_session_id = replay_response
+        .get("session_id")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| anyhow::anyhow!("No session_id in replay response"))?
+        .to_string();
+
+    let client = Arc::new(client);
+
+    client
+        .session_subscribe(&[&replay_session_id])
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to subscribe to replay session: {}", e))?;
+
+    info!(
+        session_id = %replay_session_id,
+        speed = speed,
+        "Daemon replay session created and subscribed"
+    );
+
+    let (_, dummy_rx) = tokio::sync::mpsc::unbounded_channel();
+    let handle = DaemonAgentHandle::new(client, replay_session_id.clone(), dummy_rx);
+
+    Ok((Box::new(handle), replay_session_id, event_rx))
+}
+
 /// Create an agent via daemon (always required)
 ///
 /// The daemon is now always required for agent execution.
