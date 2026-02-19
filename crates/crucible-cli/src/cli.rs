@@ -534,6 +534,20 @@ pub enum DaemonSessionCommands {
         /// Session ID to load
         session_id: String,
     },
+
+    /// Replay a recorded session
+    Replay {
+        /// Path to recording.jsonl file
+        recording_path: String,
+
+        /// Playback speed multiplier (default 1.0, 0 = instant)
+        #[arg(long, default_value = "1.0")]
+        speed: f64,
+
+        /// Show raw JSON events instead of formatted output
+        #[arg(long)]
+        raw: bool,
+    },
 }
 
 /// Agent card management subcommands

@@ -145,6 +145,10 @@ impl SessionManager {
         self.sessions.get(session_id).map(|r| r.clone())
     }
 
+    pub fn register_transient(&self, session: Session) {
+        self.sessions.insert(session.id.clone(), session);
+    }
+
     pub async fn update_session(&self, session: &Session) -> Result<(), SessionError> {
         self.storage.save(session).await?;
         self.sessions.insert(session.id.clone(), session.clone());
