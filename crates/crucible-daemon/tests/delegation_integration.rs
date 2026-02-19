@@ -429,7 +429,7 @@ async fn test_root_session_delegation_succeeds() {
     );
 
     let session = session_manager
-        .create_session(SessionType::Chat, temp.path().to_path_buf(), None, vec![])
+        .create_session(SessionType::Chat, temp.path().to_path_buf(), None, vec![], None)
         .await
         .expect("session should be created");
 
@@ -498,7 +498,7 @@ async fn test_delegation_to_acp_agent_creates_acp_session() {
     );
 
     let session = session_manager
-        .create_session(SessionType::Chat, temp.path().to_path_buf(), None, vec![])
+        .create_session(SessionType::Chat, temp.path().to_path_buf(), None, vec![], None)
         .await
         .expect("session should be created");
 
@@ -573,7 +573,7 @@ async fn test_cross_agent_delegation_full_pipeline() {
     );
 
     let session = session_manager
-        .create_session(SessionType::Chat, temp.path().to_path_buf(), None, vec![])
+        .create_session(SessionType::Chat, temp.path().to_path_buf(), None, vec![], None)
         .await
         .expect("session should be created");
 
