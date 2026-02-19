@@ -402,6 +402,47 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_session_storage_append_event_includes_timestamp() {
+        use crucible_protocol::SessionEventMessage;
+        use serde_json::json;
+
+        let tmp = TempDir::new().unwrap();
+        let storage = FileSessionStorage::new();
+
+        let session = Session::new(SessionType::Chat, tmp.path().to_path_buf());
+        storage.save(&session).await.unwrap();
+
+        // Create an event with timestamp
+        let event = SessionEventMessage::new(
+            &session.id,
+            "user_message",
+            json!({"content": "hello"}),
+        )
+        .with_timestamp();
+
+        // Serialize and append
+        let json_str = serde_json::to_string(&event).unwrap();
+        storage.append_event(&session, &json_str).await.unwrap();
+
+        // Read back and verify timestamp is present
+        let jsonl_path = tmp
+            .path()
+            .join(".crucible")
+            .join("sessions")
+            .join(&session.id)
+            .join("session.jsonl");
+        let content = tokio::fs::read_to_string(&jsonl_path).await.unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&content.lines().next().unwrap()).unwrap();
+
+        // Verify timestamp field exists and is ISO8601 format
+        assert!(parsed.get("timestamp").is_some(), "timestamp field missing from persisted event");
+        let timestamp_str = parsed.get("timestamp").unwrap().as_str().unwrap();
+        // Basic ISO8601 validation: should contain T and Z
+        assert!(timestamp_str.contains('T'), "timestamp not in ISO8601 format");
+        assert!(timestamp_str.ends_with('Z'), "timestamp should end with Z (UTC)");
+    }
+
+    #[tokio::test]
     async fn test_session_storage_load_nonexistent() {
         let tmp = TempDir::new().unwrap();
         let storage = FileSessionStorage::new();
