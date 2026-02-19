@@ -590,6 +590,10 @@ fn forward_to_recording(sm: &SessionManager, event: &SessionEventMessage) {
 }
 
 fn should_persist(event: &SessionEventMessage) -> bool {
+    if event.msg_type != "event" {
+        return false;
+    }
+
     matches!(
         event.event.as_str(),
         "user_message"
@@ -2900,6 +2904,14 @@ mod tests {
                     event_name
                 );
             }
+
+            let mut replay_event =
+                SessionEventMessage::new("test", "user_message", serde_json::json!({}));
+            replay_event.msg_type = "replay_event".to_string();
+            assert!(
+                !should_persist(&replay_event),
+                "replay events should not be persisted"
+            );
         }
 
         #[tokio::test]

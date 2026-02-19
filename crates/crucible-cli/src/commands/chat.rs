@@ -374,6 +374,8 @@ async fn run_interactive_chat(
         );
     }
 
+    let recording_mode = record.map(|_| "granular".to_string());
+
     let mut runner = OilChatRunner::new()?
         .with_mode(mode)
         .with_model(&model_name)
@@ -381,7 +383,7 @@ async fn run_interactive_chat(
         .with_show_thinking(config.chat.show_thinking)
         .with_agent_name(agent_name)
         .with_initial_sets(parsed_set_overrides)
-        .with_record_path(record)
+        .with_recording_mode(recording_mode.clone())
         .with_replay_path(replay)
         .with_replay_speed(replay_speed)
         .with_replay_auto_exit(replay_auto_exit);
@@ -552,6 +554,7 @@ async fn run_interactive_chat(
     let config_for_factory = config;
     let initial_mode_str = initial_mode.to_string();
     let resume_id_for_factory = resume_session_id;
+    let recording_mode_for_factory = recording_mode.clone();
     let factory = move |selection: AgentSelection| {
         let config = config_for_factory.clone();
         let default_agent = default_agent.clone();
@@ -560,6 +563,7 @@ async fn run_interactive_chat(
         let working_dir = working_dir.clone();
         let initial_mode = initial_mode_str.clone();
         let resume_session_id = resume_id_for_factory.clone();
+        let recording_mode = recording_mode_for_factory.clone();
 
         async move {
             match selection {
@@ -570,7 +574,8 @@ async fn run_interactive_chat(
                         .with_read_only(is_read_only(&initial_mode))
                         .with_max_context_tokens(max_context_tokens)
                         .with_env_overrides(parsed_env)
-                        .with_resume_session_id(resume_session_id);
+                        .with_resume_session_id(resume_session_id)
+                        .with_recording_mode(recording_mode);
 
                     if let Some(wd) = working_dir {
                         params = params.with_working_dir(wd);
@@ -585,7 +590,8 @@ async fn run_interactive_chat(
                         .with_read_only(is_read_only(&initial_mode))
                         .with_max_context_tokens(max_context_tokens)
                         .with_env_overrides(parsed_env)
-                        .with_resume_session_id(resume_session_id);
+                        .with_resume_session_id(resume_session_id)
+                        .with_recording_mode(recording_mode);
 
                     if let Some(wd) = working_dir {
                         params = params.with_working_dir(wd);

@@ -34,6 +34,7 @@ pub mod permission_bridge;
 pub mod project_manager;
 pub mod protocol;
 pub mod recording;
+pub mod replay;
 pub mod rpc;
 pub mod rpc_helpers;
 pub mod server;
