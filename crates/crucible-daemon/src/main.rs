@@ -10,6 +10,7 @@ mod lifecycle;
 mod permission_bridge;
 mod project_manager;
 mod protocol;
+mod recording;
 mod rpc;
 mod rpc_helpers;
 mod server;

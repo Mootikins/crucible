@@ -89,7 +89,7 @@ impl FileSessionStorage {
     /// When the kiln is the crucible home (`~/.crucible/`), sessions go directly
     /// to `~/.crucible/sessions/{id}` to avoid double-nesting `.crucible/.crucible/`.
     /// Otherwise returns `{kiln}/.crucible/sessions/{session_id}/`.
-    fn session_dir(session: &Session) -> std::path::PathBuf {
+    pub fn session_dir_for(session: &Session) -> std::path::PathBuf {
         Self::sessions_base(&session.kiln).join(&session.id)
     }
 
@@ -114,7 +114,7 @@ impl FileSessionStorage {
 #[async_trait]
 impl SessionStorage for FileSessionStorage {
     async fn save(&self, session: &Session) -> Result<(), SessionError> {
-        let dir = Self::session_dir(session);
+        let dir = Self::session_dir_for(session);
         fs::create_dir_all(&dir)
             .await
             .map_err(|e| SessionError::IoError(e.to_string()))?;
@@ -192,7 +192,7 @@ impl SessionStorage for FileSessionStorage {
     }
 
     async fn append_event(&self, session: &Session, event: &str) -> Result<(), SessionError> {
-        let dir = Self::session_dir(session);
+        let dir = Self::session_dir_for(session);
 
         // Ensure directory exists
         fs::create_dir_all(&dir)
@@ -224,7 +224,7 @@ impl SessionStorage for FileSessionStorage {
         role: &str,
         content: &str,
     ) -> Result<(), SessionError> {
-        let dir = Self::session_dir(session);
+        let dir = Self::session_dir_for(session);
 
         // Ensure directory exists
         fs::create_dir_all(&dir)
