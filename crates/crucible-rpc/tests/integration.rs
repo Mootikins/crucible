@@ -81,7 +81,7 @@ async fn test_interaction_event_flows_to_receiver() {
     let client = std::sync::Arc::new(client);
 
     let result = client
-        .session_create("chat", kiln_dir.path(), None, vec![])
+        .session_create("chat", kiln_dir.path(), None, vec![], None)
         .await
         .expect("session_create failed");
 
@@ -750,7 +750,7 @@ async fn test_session_create_and_list() {
         .expect("Failed to connect");
 
     let result = client
-        .session_create("chat", kiln_dir.path(), None, vec![])
+        .session_create("chat", kiln_dir.path(), None, vec![], None)
         .await
         .expect("session_create failed");
 
@@ -791,7 +791,7 @@ async fn test_session_subscribe_and_unsubscribe() {
     let client = std::sync::Arc::new(client);
 
     let result = client
-        .session_create("chat", kiln_dir.path(), None, vec![])
+        .session_create("chat", kiln_dir.path(), None, vec![], None)
         .await
         .expect("session_create failed");
 
@@ -829,7 +829,7 @@ async fn test_daemon_agent_handle_creation() {
     let client = std::sync::Arc::new(client);
 
     let result = client
-        .session_create("chat", kiln_dir.path(), None, vec![])
+        .session_create("chat", kiln_dir.path(), None, vec![], None)
         .await
         .expect("session_create failed");
 
@@ -861,7 +861,7 @@ async fn test_session_configure_agent() {
         .expect("Failed to connect");
 
     let result = client
-        .session_create("chat", kiln_dir.path(), None, vec![])
+        .session_create("chat", kiln_dir.path(), None, vec![], None)
         .await
         .expect("session_create failed");
 
@@ -910,7 +910,7 @@ async fn test_session_send_message_returns_message_id() {
         .expect("Failed to connect");
 
     let result = client
-        .session_create("chat", kiln_dir.path(), None, vec![])
+        .session_create("chat", kiln_dir.path(), None, vec![], None)
         .await
         .expect("session_create failed");
 
@@ -953,7 +953,7 @@ async fn test_session_cancel() {
         .expect("Failed to connect");
 
     let result = client
-        .session_create("chat", kiln_dir.path(), None, vec![])
+        .session_create("chat", kiln_dir.path(), None, vec![], None)
         .await
         .expect("session_create failed");
 
@@ -986,13 +986,13 @@ async fn test_tui_sessions_command_flow() {
         .expect("Failed to connect");
 
     let session1 = client
-        .session_create("chat", kiln_dir.path(), Some(workspace_dir.path()), vec![])
+        .session_create("chat", kiln_dir.path(), Some(workspace_dir.path()), vec![], None)
         .await
         .expect("session_create 1 failed");
     let session1_id = session1["session_id"].as_str().unwrap();
 
     let session2 = client
-        .session_create("chat", kiln_dir.path(), Some(workspace_dir.path()), vec![])
+        .session_create("chat", kiln_dir.path(), Some(workspace_dir.path()), vec![], None)
         .await
         .expect("session_create 2 failed");
     let session2_id = session2["session_id"].as_str().unwrap();
@@ -1032,7 +1032,7 @@ async fn test_tui_resume_command_flow() {
         .expect("Failed to connect");
 
     let create_result = client
-        .session_create("chat", kiln_dir.path(), None, vec![])
+        .session_create("chat", kiln_dir.path(), None, vec![], None)
         .await
         .expect("session_create failed");
     let session_id = create_result["session_id"]
@@ -1072,7 +1072,7 @@ async fn test_tui_daemon_agent_full_flow() {
     let client = std::sync::Arc::new(client);
 
     let create_result = client
-        .session_create("chat", kiln_dir.path(), None, vec![])
+        .session_create("chat", kiln_dir.path(), None, vec![], None)
         .await
         .expect("session_create failed");
     let session_id = create_result["session_id"]
@@ -1138,7 +1138,7 @@ async fn test_event_streaming_with_background_reader() {
     let client = Arc::new(client);
 
     let result = client
-        .session_create("chat", kiln_dir.path(), None, vec![])
+        .session_create("chat", kiln_dir.path(), None, vec![], None)
         .await
         .expect("session_create failed");
     let session_id = result["session_id"]
@@ -1420,7 +1420,7 @@ async fn test_session_switch_model() {
         .expect("Failed to connect");
 
     let result = client
-        .session_create("chat", kiln_dir.path(), None, vec![])
+        .session_create("chat", kiln_dir.path(), None, vec![], None)
         .await
         .expect("session_create failed");
 
@@ -1489,7 +1489,7 @@ async fn test_daemon_agent_handle_switch_model() {
     let client = std::sync::Arc::new(client);
 
     let result = client
-        .session_create("chat", kiln_dir.path(), None, vec![])
+        .session_create("chat", kiln_dir.path(), None, vec![], None)
         .await
         .expect("session_create failed");
 
