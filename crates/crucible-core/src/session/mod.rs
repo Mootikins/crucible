@@ -26,4 +26,4 @@
 
 mod types;
 
-pub use types::{Session, SessionAgent, SessionState, SessionSummary, SessionType};
+pub use types::{RecordingMode, Session, SessionAgent, SessionState, SessionSummary, SessionType};

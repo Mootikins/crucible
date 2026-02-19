@@ -364,7 +364,7 @@ async fn create_new_daemon_session(
     workspace: &std::path::Path,
 ) -> Result<String> {
     let result = client
-        .session_create("chat", &config.kiln_path, Some(workspace), vec![])
+        .session_create("chat", &config.kiln_path, Some(workspace), vec![], None)
         .await?;
 
     let session_id = result["session_id"]

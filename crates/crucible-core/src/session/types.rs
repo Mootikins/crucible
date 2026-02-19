@@ -5,6 +5,7 @@ use crucible_config::{AgentProfile, BackendType, DelegationConfig};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::str::FromStr;
 
 /// Agent configuration bound to a session.
 ///
@@ -349,6 +350,27 @@ pub enum RecordingMode {
     Coarse,
     /// Granular recording: all events including keystroke-level details
     Granular,
+}
+
+impl FromStr for RecordingMode {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "coarse" => Ok(RecordingMode::Coarse),
+            "granular" => Ok(RecordingMode::Granular),
+            _ => Err(format!("Invalid recording mode: {}", s)),
+        }
+    }
+}
+
+impl std::fmt::Display for RecordingMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            RecordingMode::Coarse => write!(f, "coarse"),
+            RecordingMode::Granular => write!(f, "granular"),
+        }
+    }
 }
 
 /// Type of session, determines logging format and behavior.

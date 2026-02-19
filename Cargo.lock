@@ -3966,6 +3966,7 @@ dependencies = [
 name = "crucible-protocol"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "crucible-core",
  "dirs 6.0.0",
  "serde",
