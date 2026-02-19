@@ -118,6 +118,19 @@ docs-open:
 clean:
     cargo clean
 
+# === Demo & Recording ===
+
+# Generate demo GIF from replay fixture
+demo name:
+    vhs assets/{{name}}.tape
+
+# Generate all demo GIFs
+demo-all: (demo "demo") (demo "acp-demo") (demo "delegation-demo") (demo "overview")
+
+# Record a new demo fixture (requires live agent)
+demo-record name *args:
+    cargo run -p crucible-cli -- chat --record assets/fixtures/{{name}}.jsonl {{args}}
+
 # === MCP Server ===
 
 # Start MCP server (SSE on port 3847)

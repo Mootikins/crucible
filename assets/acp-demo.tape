@@ -16,15 +16,7 @@ Set Padding 20
 Set TypingSpeed 60ms
 Set PlaybackSpeed 4
 
-Type "cru chat -a claude --no-process --set perm.autoconfirm_session"
+Type "cru chat --replay assets/fixtures/acp-demo.jsonl --replay-auto-exit"
 Enter
-Sleep 10s
-
-Type "How does ACP differ from MCP, and how does Crucible use both?"
-Enter
-Sleep 60s
-
-Ctrl+C
-Sleep 500ms
-Ctrl+C
-Sleep 3s
+Wait+Screen /Replay/
+Sleep 2s

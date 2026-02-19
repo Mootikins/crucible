@@ -13,13 +13,7 @@ Set Padding 20
 Set TypingSpeed 60ms
 Set PlaybackSpeed 3
 
-Type "cru chat -C assets/demo-config.toml --internal --local --no-process"
+Type "cru chat --replay assets/fixtures/demo.jsonl --replay-auto-exit"
 Enter
-Sleep 5s
-
-Type "How does Crucible use wikilinks to build a knowledge graph?"
-Enter
-Sleep 42s
-
-Ctrl+C
+Wait+Screen /Replay/
 Sleep 2s
