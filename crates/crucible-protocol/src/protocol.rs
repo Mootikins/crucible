@@ -1,3 +1,4 @@
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -76,23 +77,34 @@ pub const METHOD_NOT_FOUND: i32 = -32601;
 pub const INVALID_PARAMS: i32 = -32602;
 pub const INTERNAL_ERROR: i32 = -32603;
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionEventMessage {
     #[serde(rename = "type")]
-    pub msg_type: &'static str,
+    pub msg_type: String,
     pub session_id: String,
     pub event: String,
     pub data: Value,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub timestamp: Option<DateTime<Utc>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub seq: Option<u64>,
 }
 
 impl SessionEventMessage {
     pub fn new(session_id: impl Into<String>, event: impl Into<String>, data: Value) -> Self {
         Self {
-            msg_type: "event",
+            msg_type: "event".to_string(),
             session_id: session_id.into(),
             event: event.into(),
             data,
+            timestamp: None,
+            seq: None,
         }
+    }
+
+    pub fn with_timestamp(mut self) -> Self {
+        self.timestamp = Some(Utc::now());
+        self
     }
 
     pub fn text_delta(session_id: impl Into<String>, content: impl Into<String>) -> Self {
@@ -251,6 +263,52 @@ impl SessionEventMessage {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chrono::Utc;
+
+    #[test]
+    fn test_session_event_message_timestamp_roundtrip() {
+        let mut event = SessionEventMessage::text_delta("chat-test", "hello");
+        let now = Utc::now();
+        event.timestamp = Some(now);
+
+        let json = serde_json::to_string(&event).unwrap();
+        let deserialized: SessionEventMessage = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(deserialized.timestamp, Some(now));
+        assert_eq!(deserialized.session_id, "chat-test");
+    }
+
+    #[test]
+    fn test_session_event_message_seq_roundtrip() {
+        let mut event = SessionEventMessage::text_delta("chat-test", "hello");
+        event.seq = Some(42);
+
+        let json = serde_json::to_string(&event).unwrap();
+        let deserialized: SessionEventMessage = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(deserialized.seq, Some(42));
+    }
+
+    #[test]
+    fn test_session_event_message_backward_compat() {
+        let json =
+            r#"{"type":"event","session_id":"s1","event":"text_delta","data":{"content":"hi"}}"#;
+        let deserialized: SessionEventMessage = serde_json::from_str(json).unwrap();
+
+        assert_eq!(deserialized.timestamp, None);
+        assert_eq!(deserialized.seq, None);
+        assert_eq!(deserialized.session_id, "s1");
+        assert_eq!(deserialized.event, "text_delta");
+    }
+
+    #[test]
+    fn test_session_event_message_omits_none_fields() {
+        let event = SessionEventMessage::text_delta("chat-test", "hello");
+        let json = serde_json::to_string(&event).unwrap();
+
+        assert!(!json.contains("\"timestamp\""));
+        assert!(!json.contains("\"seq\""));
+    }
 
     #[test]
     fn test_response_success_serialization() {
