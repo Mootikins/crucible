@@ -4,12 +4,12 @@ Pre-recorded JSONL event streams from real Crucible chat sessions. These fixture
 
 ## What Are Fixtures?
 
-Fixtures are `.jsonl` files containing serialized session events (user messages, LLM responses, tool calls, etc.) captured from actual chat sessions. When you run `cru chat --replay <fixture.jsonl>`, the TUI:
+Fixtures are `.jsonl` files containing recorded session events (user messages, LLM responses, tool calls, etc.) captured from actual chat sessions. When you run `cru chat --replay <fixture.jsonl>`, the daemon:
 
-1. Auto-injects user messages from the fixture
-2. Streams pre-recorded LLM responses
-3. Replays tool calls and state changes
-4. Automatically exits after the final response (with `--replay-auto-exit`)
+1. Creates a replay session and parses the recording
+2. Emits events with original timing (adjustable via `--replay-speed`)
+3. Streams events to the TUI, which auto-injects user messages and renders responses
+4. Automatically exits after the final event (with `--replay-auto-exit`)
 
 This makes demo recording **deterministic** — no waiting for LLM latency, no variable response times, no network failures.
 
@@ -23,20 +23,28 @@ This makes demo recording **deterministic** — no waiting for LLM latency, no v
 
 ## Recording New Fixtures
 
-To capture a new fixture from a real chat session:
+Recording is daemon-managed. The `--record` flag (no path argument) creates a session with `recording_mode: granular`. The daemon writes `recording.jsonl` to the session directory.
 
 ```bash
-# Start a chat session with recording enabled
-cru chat --record assets/fixtures/<name>.jsonl [agent flags]
+# Start a chat session with granular recording enabled
+cru chat --record [agent flags]
 
 # Example: Record with Claude Code
-cru chat --record assets/fixtures/my-demo.jsonl -a claude
+cru chat --record -a claude
 
 # Example: Record with internal Rig agent
-cru chat --record assets/fixtures/my-demo.jsonl --internal --local
+cru chat --record --internal --local
 ```
 
-The `--record` flag captures all session events to the JSONL file. Interact normally — type queries, use tools, etc. When you exit the session, the fixture is saved.
+Interact normally, type queries, use tools, etc. When you exit, the recording is saved to the session directory. Then copy it to the fixtures folder:
+
+```bash
+# Find the session ID
+cru session list
+
+# Copy the recording to fixtures
+cp ~/.crucible/sessions/<session-id>/recording.jsonl assets/fixtures/<name>.jsonl
+```
 
 ## Regenerating GIFs
 
@@ -61,15 +69,38 @@ The VHS tapes reference fixtures via `--replay` and `--replay-auto-exit`, ensuri
 
 ## Fixture Format
 
-Fixtures are JSONL (JSON Lines) — one JSON object per line, each representing a session event:
+Fixtures are JSONL (JSON Lines) with three sections: a header, recorded events, and a footer.
 
 ```json
-{"type": "user_message", "content": "How does Crucible work?", "timestamp": "2025-02-18T10:30:00Z"}
-{"type": "llm_response", "content": "Crucible is a local-first AI assistant...", "timestamp": "2025-02-18T10:30:05Z"}
-{"type": "tool_call", "tool": "search", "args": {"query": "knowledge graph"}, "timestamp": "2025-02-18T10:30:10Z"}
+{"version":1,"session_id":"abc123","recording_mode":"granular","started_at":"2026-01-01T00:00:00Z"}
+{"ts":"2026-01-01T00:00:01Z","seq":1,"event":"user_message","session_id":"abc123","data":{"content":"How does Crucible work?"}}
+{"ts":"2026-01-01T00:00:05Z","seq":2,"event":"text_delta","session_id":"abc123","data":{"content":"Crucible is..."}}
+{"ts":"2026-01-01T00:00:10Z","seq":3,"event":"tool_call","session_id":"abc123","data":{"tool":"search","args":{"query":"knowledge graph"}}}
+{"ended_at":"2026-01-01T00:01:00Z","total_events":42,"duration_ms":60000}
 ```
 
-See `crucible-core/src/session/types.rs` for the canonical `SessionEvent` type.
+- **Line 1 (RecordingHeader):** version, session_id, recording_mode, started_at
+- **Lines 2..N (RecordedEvent):** ts, seq (monotonic), event type, session_id, data payload
+- **Last line (RecordingFooter):** ended_at, total_events, duration_ms
+
+See `crucible-daemon/src/recording.rs` for the canonical types.
+
+## Headless Replay
+
+You can replay fixtures without the TUI using `cru session replay`:
+
+```bash
+# Replay at normal speed with text output
+cru session replay assets/fixtures/demo.jsonl
+
+# Replay at 2x speed
+cru session replay assets/fixtures/demo.jsonl --speed 2
+
+# Instant replay with raw JSON events
+cru session replay assets/fixtures/demo.jsonl --speed 0 --raw
+```
+
+This is useful for testing, CI, or piping replay output to other tools.
 
 ## Updating Fixtures
 
@@ -82,7 +113,10 @@ If you need to update a fixture (e.g., to fix a response or add new content):
 
 2. **Record a new one:**
    ```bash
-   cru chat --record assets/fixtures/<name>.jsonl [agent flags]
+   cru chat --record [agent flags]
+   # interact, then exit
+   cru session list
+   cp ~/.crucible/sessions/<session-id>/recording.jsonl assets/fixtures/<name>.jsonl
    ```
 
 3. **Regenerate the GIF:**
