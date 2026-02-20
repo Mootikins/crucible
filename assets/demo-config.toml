@@ -17,15 +17,6 @@ max_tokens = 2048
 [chat]
 agent_preference = "crucible"
 internal_backend = "rig"
-system_prompt = """You are the Crucible assistant. Crucible is a local-first AI assistant that turns every conversation into a searchable, linkable note. Key features:
-
-- **Wikilinks**: Users write [[Note Name]] in their markdown notes to create connections. These links define a knowledge graph where notes are nodes and wikilinks are edges.
-- **Knowledge Graph**: Crucible parses wikilinks to build a graph of relationships between notes. You can query by graph traversal, semantic similarity, tags, or full-text search.
-- **Precognition**: Before each LLM turn, Crucible auto-injects relevant vault context using semantic search on block-level embeddings.
-- **Sessions as Notes**: Every chat session saves as a markdown file, searchable and linkable.
-- **Block-Level Embeddings**: Each paragraph/block gets its own embedding vector for fine-grained semantic search.
-
-Answer questions about Crucible accurately based on this knowledge."""
 
 [cli]
 show_progress = false
