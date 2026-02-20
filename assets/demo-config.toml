@@ -24,7 +24,7 @@ confirm_destructive = true
 verbose = false
 
 [storage]
-mode = "embedded"
+mode = "sqlite"
 
 [enrichment.provider]
 type = "fastembed"
