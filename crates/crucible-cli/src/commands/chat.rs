@@ -166,71 +166,71 @@ fn parse_env_overrides(env_overrides: &[String]) -> std::collections::HashMap<St
 }
 
 async fn run_preflight_checks(config: &mut CliConfig) -> Result<()> {
-    let global_kiln = if config.kiln_path.join(".crucible").is_dir() {
-        Some(config.kiln_path.as_path())
-    } else {
-        None
-    };
-
-    let discovered = discover_kiln(None, global_kiln);
+    let config_kiln_valid = config.kiln_path.join(".crucible").is_dir();
     let providers = detect_providers(&config.chat);
 
-    match discovered {
-        Some(found) => {
-            info!(
-                "Discovered kiln at {} (via {:?})",
-                found.path.display(),
-                found.source
-            );
-            if found.source != DiscoverySource::CliFlag {
-                config.kiln_path = found.path;
+    if !config_kiln_valid {
+        // Config kiln not valid, try discovery
+        let discovered = discover_kiln(None, None);
+        match discovered {
+            Some(found) => {
+                info!(
+                    "Discovered kiln at {} (via {:?})",
+                    found.path.display(),
+                    found.source
+                );
+                if found.source != DiscoverySource::CliFlag {
+                    config.kiln_path = found.path;
+                }
+            }
+            None => {
+                info!("No kiln found, prompting for path");
+                println!(
+                    "{} No kiln found. A kiln is a folder where Crucible stores your notes and sessions.",
+                    "Setup:".cyan().bold()
+                );
+                println!("  {} A kiln is like a vault — it holds all your markdown notes, embeddings, and chat history.", "What is a kiln?".dimmed());
+                println!("  {} A good default is a folder in your home directory or Documents (e.g., ~/crucible).", "Tip:".dimmed());
+
+                let path_input: String = dialoguer::Input::new()
+                    .with_prompt("Kiln path")
+                    .default("~/crucible".to_string())
+                    .interact_text()?;
+
+                let expanded = crate::kiln_validate::expand_tilde(path_input.trim());
+
+                if !expanded.exists() {
+                    std::fs::create_dir_all(&expanded)?;
+                }
+
+                let crucible_dir = expanded.join(".crucible");
+                if !crucible_dir.join("config.toml").exists() {
+                    let (provider, model) = if let Some(p) = providers.first() {
+                        let m = p
+                            .default_model
+                            .clone()
+                            .unwrap_or_else(|| "llama3.2".to_string());
+                        (p.provider_type.clone(), m)
+                    } else {
+                        ("ollama".to_string(), "llama3.2".to_string())
+                    };
+
+                    let config_content =
+                        crate::commands::init::generate_config_with_provider(&provider, &model);
+                    crate::commands::init::create_kiln_with_config(
+                        &crucible_dir,
+                        &config_content,
+                        false,
+                    )?;
+
+                    println!("{} Kiln initialized at {}", "✓".green(), expanded.display());
+                }
+
+                config.kiln_path = expanded;
             }
         }
-        None => {
-            info!("No kiln found, prompting for path");
-            println!(
-                "{} No kiln found. A kiln is a folder where Crucible stores your notes and sessions.",
-                "Setup:".cyan().bold()
-            );
-            println!("  {} A kiln is like a vault — it holds all your markdown notes, embeddings, and chat history.", "What is a kiln?".dimmed());
-            println!("  {} A good default is a folder in your home directory or Documents (e.g., ~/crucible).", "Tip:".dimmed());
-
-            let path_input: String = dialoguer::Input::new()
-                .with_prompt("Kiln path")
-                .default("~/crucible".to_string())
-                .interact_text()?;
-
-            let expanded = crate::kiln_validate::expand_tilde(path_input.trim());
-
-            if !expanded.exists() {
-                std::fs::create_dir_all(&expanded)?;
-            }
-
-            let crucible_dir = expanded.join(".crucible");
-            if !crucible_dir.join("config.toml").exists() {
-                let (provider, model) = if let Some(p) = providers.first() {
-                    let m = p
-                        .default_model
-                        .clone()
-                        .unwrap_or_else(|| "llama3.2".to_string());
-                    (p.provider_type.clone(), m)
-                } else {
-                    ("ollama".to_string(), "llama3.2".to_string())
-                };
-
-                let config_content =
-                    crate::commands::init::generate_config_with_provider(&provider, &model);
-                crate::commands::init::create_kiln_with_config(
-                    &crucible_dir,
-                    &config_content,
-                    false,
-                )?;
-
-                println!("{} Kiln initialized at {}", "✓".green(), expanded.display());
-            }
-
-            config.kiln_path = expanded;
-        }
+    } else {
+        info!("Using kiln from config: {}", config.kiln_path.display());
     }
 
     if providers.is_empty() {
