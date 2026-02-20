@@ -36,6 +36,7 @@
 use crate::{SurrealClient, SurrealDbConfig, SurrealNoteStore};
 use anyhow::Result;
 use async_trait::async_trait;
+use crucible_core::database::{DocumentId, SearchResult as DbSearchResult};
 use crucible_core::storage::NoteStore;
 use std::sync::Arc;
 
@@ -326,10 +327,29 @@ impl KnowledgeRepository for SurrealKnowledgeRepository {
 
     async fn search_vectors(
         &self,
-        _vector: Vec<f32>,
+        vector: Vec<f32>,
     ) -> CrucibleResult<Vec<crucible_core::types::SearchResult>> {
-        // Vector search requires an embedding provider, which is not available here.
-        // This is a placeholder - callers should use semantic_search directly with a provider.
-        Ok(Vec::new())
+        let store = SurrealNoteStore::new((*self.client).clone());
+        let results = store
+            .search(&vector, 20, None)
+            .await
+            .map_err(|e| CrucibleError::DatabaseError(format!("Vector search failed: {}", e)))?;
+
+        Ok(results
+            .into_iter()
+            .map(|r| {
+                let snippet = if r.note.title.is_empty() {
+                    None
+                } else {
+                    Some(r.note.title.chars().take(200).collect::<String>())
+                };
+                DbSearchResult {
+                    document_id: DocumentId(r.note.path),
+                    score: r.score as f64,
+                    highlights: None,
+                    snippet,
+                }
+            })
+            .collect())
     }
 }
