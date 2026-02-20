@@ -367,6 +367,7 @@ async fn test_opencode_with_sse_mcp() {
         temp.path().to_path_buf(),
         knowledge_repo,
         embedding_provider,
+        None,
     )
     .await
     {
@@ -377,10 +378,9 @@ async fn test_opencode_with_sse_mcp() {
         }
     };
 
-    let sse_url = mcp_host.sse_url();
-    eprintln!("MCP host running at: {}", sse_url);
+    let mcp_url = mcp_host.mcp_url();
+    eprintln!("MCP host running at: {}", mcp_url);
 
-    // Create ACP client
     let config = ClientConfig {
         agent_path: opencode_path,
         agent_args: Some(vec!["acp".to_string()]),
@@ -392,16 +392,14 @@ async fn test_opencode_with_sse_mcp() {
 
     let mut client = CrucibleAcpClient::new(config);
 
-    // Connect with SSE MCP (this is what cru chat uses!)
-    eprintln!("Connecting to OpenCode with SSE MCP...");
+    eprintln!("Connecting to OpenCode with Streamable HTTP MCP...");
     let session = client
-        .connect_with_sse_mcp(&sse_url)
+        .connect_with_sse_mcp(&mcp_url)
         .await
-        .expect("Failed to connect to opencode with SSE MCP");
+        .expect("Failed to connect to opencode with MCP");
 
     eprintln!("Session established: {}", session.id());
 
-    // Send a simple prompt
     let prompt_request: PromptRequest = serde_json::from_value(serde_json::json!({
         "sessionId": session.id().to_string(),
         "prompt": [{"text": "say hello"}],
@@ -411,30 +409,26 @@ async fn test_opencode_with_sse_mcp() {
 
     eprintln!("Sending prompt: 'say hello'");
 
-    // This is where the SSE path bug might manifest
     let result = client.send_prompt_with_streaming(prompt_request).await;
 
     match result {
         Ok((content, tool_calls, response)) => {
-            eprintln!("--- SSE MCP RESULT ---");
+            eprintln!("--- MCP RESULT ---");
             eprintln!("Content length: {} chars", content.len());
             eprintln!("Content: '{}'", content);
             eprintln!("Tool calls: {}", tool_calls.len());
             eprintln!("Stop reason: {:?}", response.stop_reason);
 
-            // If SSE path is broken, content will be empty
             assert!(
                 !content.is_empty(),
-                "BUG: SSE MCP path returned empty content. \
-                 The connect_with_sse_mcp path is broken compared to connect_with_handshake."
+                "MCP path returned empty content — tool discovery may have failed."
             );
         }
         Err(e) => {
-            panic!("Failed to get streaming response via SSE MCP: {}", e);
+            panic!("Failed to get streaming response via MCP: {}", e);
         }
     }
 
-    // Cleanup
     mcp_host.shutdown();
 }
 
@@ -654,6 +648,7 @@ async fn test_opencode_raw_sse_mcp() {
         temp.path().to_path_buf(),
         knowledge_repo,
         embedding_provider,
+        None,
     )
     .await
     {
@@ -664,8 +659,8 @@ async fn test_opencode_raw_sse_mcp() {
         }
     };
 
-    let sse_url = mcp_host.sse_url();
-    eprintln!("MCP host at: {}", sse_url);
+    let mcp_url = mcp_host.mcp_url();
+    eprintln!("MCP host at: {}", mcp_url);
 
     // Spawn opencode
     let mut child = Command::new(&opencode_path)
@@ -711,7 +706,7 @@ async fn test_opencode_raw_sse_mcp() {
     let format1 = serde_json::json!({
         "type": "sse",
         "name": "crucible",
-        "url": sse_url,
+        "url": mcp_url,
         "headers": {}
     });
 
@@ -719,7 +714,7 @@ async fn test_opencode_raw_sse_mcp() {
     let format2 = serde_json::json!({
         "type": "Sse",
         "name": "crucible",
-        "url": sse_url,
+        "url": mcp_url,
         "headers": []
     });
 
@@ -727,7 +722,7 @@ async fn test_opencode_raw_sse_mcp() {
     let format3 = serde_json::json!({
         "type": "sse",
         "name": "crucible",
-        "url": sse_url,
+        "url": mcp_url,
         "headers": []
     });
 
@@ -735,7 +730,7 @@ async fn test_opencode_raw_sse_mcp() {
     let format4 = serde_json::json!({
         "type": "sse",
         "name": "crucible",
-        "url": sse_url,
+        "url": mcp_url,
         "headers": [{"name": "X-Test", "value": "test"}]
     });
 
