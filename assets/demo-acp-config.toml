@@ -2,7 +2,7 @@
 # Extends demo-config.toml with delegation settings for cross-agent demos.
 # Used by delegation-demo.tape for recording Claude → Cursor delegation.
 
-kiln_path = "docs"
+kiln_path = "/home/moot/crucible/docs"
 
 [llm]
 default = "demo"
@@ -23,7 +23,21 @@ confirm_destructive = true
 verbose = false
 
 [storage]
-mode = "embedded"
+mode = "sqlite"
+
+[enrichment.provider]
+type = "fastembed"
+model = "BAAI/bge-small-en-v1.5"
+batch_size = 32
+dimensions = 384
+
+[enrichment.pipeline]
+worker_count = 4
+batch_size = 16
+max_queue_size = 1000
+timeout_ms = 30000
+retry_attempts = 3
+retry_delay_ms = 1000
 
 # ACP Agent Profiles with Delegation Configuration
 [acp.agents.claude]
