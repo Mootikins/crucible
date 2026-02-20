@@ -704,15 +704,15 @@ impl CrucibleAcpClient {
 
     /// Connect to agent with full ACP protocol handshake using SSE MCP server
     ///
-    /// This performs the complete connection sequence with an in-process SSE MCP server:
+    /// This performs the complete connection sequence with an in-process MCP server:
     /// 1. Spawn agent process
     /// 2. Send InitializeRequest
-    /// 3. Send NewSessionRequest with SSE MCP server URL
+    /// 3. Send NewSessionRequest with Streamable HTTP MCP server URL
     /// 4. Return session
     ///
     /// # Arguments
     ///
-    /// * `sse_url` - URL to the SSE MCP server (e.g., "http://127.0.0.1:12345/sse")
+    /// * `mcp_url` - URL to the Streamable HTTP MCP server (e.g., "http://127.0.0.1:12345/mcp")
     ///
     /// # Returns
     ///
@@ -721,12 +721,12 @@ impl CrucibleAcpClient {
     /// # Errors
     ///
     /// Returns an error if any step of the handshake fails
-    pub async fn connect_with_sse_mcp(&mut self, sse_url: &str) -> Result<AcpSession> {
+    pub async fn connect_with_sse_mcp(&mut self, mcp_url: &str) -> Result<AcpSession> {
         use agent_client_protocol::{
-            InitializeRequest, McpServer, McpServerSse, NewSessionRequest,
+            InitializeRequest, McpServer, McpServerHttp, NewSessionRequest,
         };
 
-        tracing::info!(agent = %self.agent_name, sse_url = %sse_url, "Connecting to agent with SSE MCP server");
+        tracing::info!(agent = %self.agent_name, mcp_url = %mcp_url, "Connecting to agent with Streamable HTTP MCP server");
 
         // 1. Spawn agent process
         let _process = self.spawn_agent().await?;
@@ -737,10 +737,10 @@ impl CrucibleAcpClient {
         let _init_response = self.initialize(init_request).await?;
         tracing::debug!(agent = %self.agent_name, "ACP protocol initialization complete");
 
-        // 3. Send NewSessionRequest with SSE MCP server
-        let crucible_mcp_server = McpServer::Sse(McpServerSse::new("crucible", sse_url));
+        // 3. Send NewSessionRequest with Streamable HTTP MCP server
+        let crucible_mcp_server = McpServer::Http(McpServerHttp::new("crucible", mcp_url));
 
-        tracing::debug!(agent = %self.agent_name, "Configuring SSE MCP server");
+        tracing::debug!(agent = %self.agent_name, "Configuring Streamable HTTP MCP server");
 
         let cwd = self
             .config
