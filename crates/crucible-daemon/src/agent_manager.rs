@@ -554,9 +554,14 @@ impl AgentManager {
             None
         };
 
+        let session_for_factory = self.session_manager.get_session(session_id);
+        let kiln_path = session_for_factory.as_ref().map(|s| s.kiln.as_path());
+
         let agent = create_agent_from_session_config(
             &resolved_config,
             workspace,
+            kiln_path,
+            Some(session_id),
             Some(self.background_manager.clone()),
             event_tx,
             self.mcp_gateway.clone(),
@@ -565,7 +570,7 @@ impl AgentManager {
         .await?;
 
         if resolved_config.delegation_config.is_some() {
-            if let Some(session) = self.session_manager.get_session(session_id) {
+            if let Some(session) = session_for_factory {
                 let parent_session_id = session
                     .parent_session_id
                     .clone()
