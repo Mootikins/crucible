@@ -48,7 +48,7 @@ cru 0.1.0
 Interactive chat session with internal Rig agent asking about wikilinks and knowledge graphs.
 
 ```bash
-$ cru chat -C assets/demo-config.toml --internal --local --no-process
+$ cru chat -C assets/demo-config.toml --no-process
 > How does Crucible use wikilinks to build a knowledge graph?
 ```
 
@@ -58,7 +58,7 @@ $ cru chat -C assets/demo-config.toml --internal --local --no-process
 - Knowledge graph explanation with wikilink syntax examples
 - Session persistence and response formatting
 
-**Agent:** Internal Rig agent (Ollama `qwen3-4b-instruct-2507-q8_0`)
+**Agent:** Internal Rig agent (Ollama `qwen3-4b-instruct-2507-q8_0`) — the default when no `-a` flag is provided
 
 ---
 
@@ -113,7 +113,7 @@ Used by Scene 1 and Scene 2 (internal chat).
 - **Kiln:** `docs/` (155 markdown files)
 - **LLM:** `qwen3-4b-instruct-2507-q8_0` via Ollama at `https://llm.example.com`
 - **Storage:** Embedded (no daemon needed)
-- **Flags:** `--internal --local --no-process` for self-contained recording
+- **Flags:** `--no-process` for faster startup (skips file embedding)
 
 ### `demo-acp-config.toml`
 
@@ -142,8 +142,9 @@ To record a new fixture:
 
 ```bash
 # Record demo fixture (internal Rig agent)
-cru chat --record assets/fixtures/demo.jsonl -C assets/demo-config.toml --internal --local --no-process
+cru chat --record assets/fixtures/demo.jsonl -C assets/demo-config.toml
 # Type your query, interact with the chat, and press Ctrl+C to stop recording
+# Note: Precognition requires pre-processed kiln. Run `cru process -C assets/demo-config.toml` before recording if vectors don't exist.
 
 # Record acp-demo fixture (Claude Code via ACP)
 cru chat --record assets/fixtures/acp-demo.jsonl -a claude --no-process --set perm.autoconfirm_session

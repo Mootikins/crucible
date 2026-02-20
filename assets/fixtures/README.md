@@ -33,7 +33,7 @@ cru chat --record assets/fixtures/<name>.jsonl [agent flags]
 cru chat --record assets/fixtures/demo.jsonl -a claude
 
 # Example: Record with internal Rig agent
-cru chat --record assets/fixtures/demo.jsonl --internal --local
+cru chat --record assets/fixtures/demo.jsonl -C assets/demo-config.toml
 ```
 
 Interact normally, type queries, use tools, etc. When you exit, the recording is saved to the specified path. You can then use it to regenerate GIFs:
