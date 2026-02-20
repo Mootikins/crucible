@@ -8,6 +8,7 @@ use crucible_core::parser::{Frontmatter, FrontmatterFormat, ParsedNote, Wikilink
 use crucible_core::traits::{KnowledgeRepository, NoteInfo};
 use crucible_core::types::{DocumentId, SearchResult};
 use crucible_core::{CrucibleError, Result as CrucibleResult};
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use crate::note_store::SqliteNoteStore;
@@ -30,12 +31,32 @@ use crate::note_store::SqliteNoteStore;
 /// ```
 pub struct SqliteKnowledgeRepository {
     store: Arc<SqliteNoteStore>,
+    kiln_path: Option<PathBuf>,
 }
 
 impl SqliteKnowledgeRepository {
     /// Create a new repository backed by a SqliteNoteStore
     pub fn new(store: Arc<SqliteNoteStore>) -> Self {
-        Self { store }
+        Self {
+            store,
+            kiln_path: None,
+        }
+    }
+
+    /// Create a new repository with a kiln path for reading file content as snippets
+    pub fn with_kiln_path(store: Arc<SqliteNoteStore>, kiln_path: PathBuf) -> Self {
+        Self {
+            store,
+            kiln_path: Some(kiln_path),
+        }
+    }
+
+    /// Read the first ~500 characters of a note file as a snippet
+    fn read_note_snippet(&self, note_path: &str) -> Option<String> {
+        let kiln_path = self.kiln_path.as_ref()?;
+        let full_path = kiln_path.join(note_path);
+        let content = std::fs::read_to_string(&full_path).ok()?;
+        Some(content.chars().take(500).collect())
     }
 }
 
@@ -126,21 +147,26 @@ impl KnowledgeRepository for SqliteKnowledgeRepository {
     async fn search_vectors(&self, vector: Vec<f32>) -> CrucibleResult<Vec<SearchResult>> {
         use crucible_core::storage::NoteStore;
 
-        // Use the NoteStore's search capability
         let results = self
             .store
             .search(&vector, 10, None)
             .await
             .map_err(|e| CrucibleError::DatabaseError(format!("Search failed: {}", e)))?;
 
-        // Convert NoteStore SearchResults to KnowledgeRepository SearchResults
         let converted: Vec<SearchResult> = results
             .into_iter()
-            .map(|r| SearchResult {
-                document_id: DocumentId(r.note.path),
-                score: r.score as f64,
-                highlights: None,
-                snippet: None,
+            .map(|r| {
+                let snippet = self
+                    .read_note_snippet(&r.note.path)
+                    .unwrap_or_else(|| {
+                        format!("{}\nTags: {}", r.note.title, r.note.tags.join(", "))
+                    });
+                SearchResult {
+                    document_id: DocumentId(r.note.path),
+                    score: r.score as f64,
+                    highlights: None,
+                    snippet: Some(snippet),
+                }
             })
             .collect();
 
@@ -148,11 +174,15 @@ impl KnowledgeRepository for SqliteKnowledgeRepository {
     }
 }
 
-/// Create a KnowledgeRepository backed by SQLite.
-///
-/// This is a convenience factory function.
 pub fn create_knowledge_repository(store: Arc<SqliteNoteStore>) -> Arc<dyn KnowledgeRepository> {
     Arc::new(SqliteKnowledgeRepository::new(store))
+}
+
+pub fn create_knowledge_repository_with_kiln(
+    store: Arc<SqliteNoteStore>,
+    kiln_path: PathBuf,
+) -> Arc<dyn KnowledgeRepository> {
+    Arc::new(SqliteKnowledgeRepository::with_kiln_path(store, kiln_path))
 }
 
 #[cfg(test)]

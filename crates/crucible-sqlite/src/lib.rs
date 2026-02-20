@@ -60,4 +60,7 @@ pub use fts::{FtsIndex, FtsResult};
 pub use graph_query::SqliteGraphQueryExecutor;
 pub use graph_view::SqliteGraphView;
 pub use note_store::{create_note_store, SqliteNoteStore};
-pub use repository::{create_knowledge_repository, SqliteKnowledgeRepository};
+pub use repository::{
+    create_knowledge_repository, create_knowledge_repository_with_kiln,
+    SqliteKnowledgeRepository,
+};
