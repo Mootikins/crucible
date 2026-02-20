@@ -391,7 +391,7 @@ impl NoteStore for SurrealNoteStore {
                 tags: $tags,
                 links_to: $links_to,
                 properties: $properties,
-                updated_at: $updated_at
+                updated_at: type::datetime($updated_at)
             }
         "#;
 
