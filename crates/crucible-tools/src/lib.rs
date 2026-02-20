@@ -52,7 +52,7 @@ pub use extended_mcp_server::{ExtendedMcpServer, ExtendedMcpService};
 pub use kiln::KilnTools;
 pub use mcp_client::{create_stdio_executor, create_stdio_executor_with_env, RmcpExecutor};
 pub use mcp_gateway::{GatewayError, GatewayResult, McpGatewayManager, UpstreamClient};
-pub use mcp_server::CrucibleMcpServer;
+pub use mcp_server::{CrucibleMcpServer, DelegationContext};
 pub use notes::NoteTools;
 pub use search::SearchTools;
 pub use tool_discovery::{
@@ -77,7 +77,9 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 /// ```
 pub fn init() {
     tracing::info!("Initializing crucible-tools v{}", VERSION);
-    tracing::info!("12 tools available: 6 NoteTools, 3 SearchTools, 3 KilnTools");
+    tracing::info!(
+        "13 tools available: 6 NoteTools, 3 SearchTools, 3 KilnTools, 1 DelegationTool"
+    );
 }
 
 /// Get library information

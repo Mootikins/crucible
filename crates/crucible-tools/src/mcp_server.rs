@@ -27,12 +27,15 @@
 #![allow(missing_docs)]
 
 use crate::{KilnTools, NoteTools, SearchTools};
+use crucible_core::background::{BackgroundSpawner, JobStatus, SubagentBlockingConfig};
 use crucible_core::enrichment::EmbeddingProvider;
 use crucible_core::storage::NoteStore;
 use crucible_core::traits::KnowledgeRepository;
 use rmcp::handler::server::tool::ToolRouter;
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::{model::CallToolResult, tool, tool_handler, tool_router, ServerHandler};
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
 // Re-export parameter types from individual modules
@@ -53,7 +56,28 @@ pub struct CrucibleMcpServer {
     note_tools: NoteTools,
     search_tools: SearchTools,
     kiln_tools: KilnTools,
+    delegation_context: Option<DelegationContext>,
     tool_router: ToolRouter<Self>,
+}
+
+#[derive(Clone)]
+pub struct DelegationContext {
+    pub background_spawner: Arc<dyn BackgroundSpawner>,
+    pub session_id: String,
+    pub targets: Vec<String>,
+    pub enabled: bool,
+    pub depth: u32,
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct DelegateSessionParams {
+    pub prompt: String,
+    #[serde(default)]
+    pub description: Option<String>,
+    #[serde(default)]
+    pub target: Option<String>,
+    #[serde(default)]
+    pub background: Option<bool>,
 }
 
 impl CrucibleMcpServer {
@@ -69,10 +93,20 @@ impl CrucibleMcpServer {
         knowledge_repo: Arc<dyn KnowledgeRepository>,
         embedding_provider: Arc<dyn EmbeddingProvider>,
     ) -> Self {
+        Self::new_with_delegation(kiln_path, knowledge_repo, embedding_provider, None)
+    }
+
+    pub fn new_with_delegation(
+        kiln_path: String,
+        knowledge_repo: Arc<dyn KnowledgeRepository>,
+        embedding_provider: Arc<dyn EmbeddingProvider>,
+        delegation_context: Option<DelegationContext>,
+    ) -> Self {
         Self {
             note_tools: NoteTools::new(kiln_path.clone()),
             search_tools: SearchTools::new(kiln_path.clone(), knowledge_repo, embedding_provider),
             kiln_tools: KilnTools::new(kiln_path),
+            delegation_context,
             tool_router: Self::tool_router(),
         }
     }
@@ -105,6 +139,7 @@ impl CrucibleMcpServer {
                 note_store,
             ),
             kiln_tools: KilnTools::new(kiln_path),
+            delegation_context: None,
             tool_router: Self::tool_router(),
         }
     }
@@ -125,7 +160,7 @@ impl CrucibleMcpServer {
     ///
     /// # Returns
     ///
-    /// The count of available tools (expected: 12)
+    /// The count of available tools
     #[must_use]
     pub fn tool_count(&self) -> usize {
         self.tool_router.list_all().len()
@@ -229,6 +264,103 @@ impl CrucibleMcpServer {
     pub async fn get_kiln_stats(&self) -> Result<CallToolResult, rmcp::ErrorData> {
         self.kiln_tools.get_kiln_stats().await
     }
+
+    #[tool(description = "Delegate work to a child agent session")]
+    pub async fn delegate_session(
+        &self,
+        params: Parameters<DelegateSessionParams>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let params = params.0;
+
+        let delegation = self.delegation_context.as_ref().ok_or_else(|| {
+            rmcp::ErrorData::internal_error(
+                "delegate_session unavailable: no daemon delegation context",
+                None,
+            )
+        })?;
+
+        if !delegation.enabled {
+            return Err(rmcp::ErrorData::invalid_params(
+                "delegate_session is disabled for this session",
+                None,
+            ));
+        }
+
+        if let Some(target) = params.target.as_ref() {
+            if !delegation.targets.is_empty() && !delegation.targets.contains(target) {
+                return Err(rmcp::ErrorData::invalid_params(
+                    format!(
+                        "target '{target}' is not allowed. Available targets: {}",
+                        delegation.targets.join(", ")
+                    ),
+                    None,
+                ));
+            }
+        }
+
+        let child_depth = delegation.depth.saturating_add(1);
+        let mut context_parts = vec![format!("Delegation depth: {child_depth}")];
+        if let Some(description) = params.description.as_ref().filter(|d| !d.is_empty()) {
+            context_parts.push(format!("Description: {description}"));
+        }
+        if let Some(target) = params.target.as_ref() {
+            context_parts.push(format!("Target agent: {target}"));
+        }
+        let context = Some(context_parts.join("\n"));
+
+        if params.background.unwrap_or(false) {
+            let job_id = delegation
+                .background_spawner
+                .spawn_subagent(&delegation.session_id, params.prompt, context)
+                .await
+                .map_err(|e| {
+                    rmcp::ErrorData::internal_error(
+                        format!("Failed to spawn delegated session: {e}"),
+                        None,
+                    )
+                })?;
+
+            let content = rmcp::model::Content::json(serde_json::json!({
+                "delegation_id": job_id,
+                "status": "spawned",
+            }))?;
+            return Ok(CallToolResult::success(vec![content]));
+        }
+
+        let result = delegation
+            .background_spawner
+            .spawn_subagent_blocking(
+                &delegation.session_id,
+                params.prompt,
+                context,
+                SubagentBlockingConfig::default(),
+                None,
+            )
+            .await
+            .map_err(|e| {
+                rmcp::ErrorData::internal_error(
+                    format!("Failed to run delegated session: {e}"),
+                    None,
+                )
+            })?;
+
+        let content = if result.info.status == JobStatus::Completed {
+            serde_json::json!({
+                "delegation_id": format!("deleg-{}", result.info.id),
+                "status": "completed",
+                "result": result.output.unwrap_or_default(),
+            })
+        } else {
+            serde_json::json!({
+                "delegation_id": format!("deleg-{}", result.info.id),
+                "status": "failed",
+                "error": result.error.unwrap_or_else(|| format!("Delegated session ended with status {}", result.info.status)),
+            })
+        };
+
+        let content = rmcp::model::Content::json(content)?;
+        Ok(CallToolResult::success(vec![content]))
+    }
 }
 
 // ===== ServerHandler Implementation =====
@@ -252,7 +384,7 @@ impl ServerHandler for CrucibleMcpServer {
                 icons: None,
                 website_url: None,
             },
-            instructions: Some("Crucible MCP server exposing 12 tools for knowledge management: 6 note operations, 3 search capabilities, and 3 kiln metadata functions.".into()),
+            instructions: Some("Crucible MCP server exposing 13 tools for knowledge management: 6 note operations, 3 search capabilities, 3 kiln metadata functions, and session delegation.".into()),
         }
     }
 }
@@ -261,7 +393,9 @@ impl ServerHandler for CrucibleMcpServer {
 mod tests {
     use super::*;
 
+    use crucible_core::background::{JobError, JobInfo, JobKind, JobResult};
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
     use tempfile::TempDir;
 
     // Mock implementations for testing
@@ -319,6 +453,64 @@ mod tests {
         }
     }
 
+    struct MockBackgroundSpawner {
+        spawn_calls: AtomicUsize,
+    }
+
+    #[async_trait::async_trait]
+    impl BackgroundSpawner for MockBackgroundSpawner {
+        async fn spawn_bash(
+            &self,
+            _session_id: &str,
+            _command: String,
+            _workdir: Option<std::path::PathBuf>,
+            _timeout: Option<std::time::Duration>,
+        ) -> Result<String, JobError> {
+            Err(JobError::SpawnFailed("not implemented in test".to_string()))
+        }
+
+        async fn spawn_subagent(
+            &self,
+            _session_id: &str,
+            _prompt: String,
+            _context: Option<String>,
+        ) -> Result<String, JobError> {
+            self.spawn_calls.fetch_add(1, Ordering::SeqCst);
+            Ok("job-test".to_string())
+        }
+
+        async fn spawn_subagent_blocking(
+            &self,
+            session_id: &str,
+            _prompt: String,
+            _context: Option<String>,
+            _config: SubagentBlockingConfig,
+            _cancel_rx: Option<tokio::sync::oneshot::Receiver<()>>,
+        ) -> Result<JobResult, JobError> {
+            let mut info = JobInfo::new(
+                session_id.to_string(),
+                JobKind::Subagent {
+                    prompt: "test".to_string(),
+                    context: None,
+                },
+            );
+            info.mark_completed();
+            Ok(JobResult::success(info, "done".to_string()))
+        }
+
+        fn list_jobs(&self, _session_id: &str) -> Vec<JobInfo> {
+            vec![]
+        }
+
+        fn get_job_result(&self, _job_id: &String) -> Option<JobResult> {
+            None
+        }
+
+        async fn cancel_job(&self, _job_id: &String) -> bool {
+            false
+        }
+    }
+
     #[test]
     fn test_server_creation() {
         let temp = TempDir::new().unwrap();
@@ -348,5 +540,65 @@ mod tests {
 
         // This should compile and not panic - the tool_router macro generates the router
         let _router = CrucibleMcpServer::tool_router();
+    }
+
+    #[tokio::test]
+    async fn test_delegate_session_without_context_returns_graceful_error() {
+        let temp = TempDir::new().unwrap();
+        let knowledge_repo = Arc::new(MockKnowledgeRepository) as Arc<dyn KnowledgeRepository>;
+        let embedding_provider = Arc::new(MockEmbeddingProvider) as Arc<dyn EmbeddingProvider>;
+        let server = CrucibleMcpServer::new(
+            temp.path().to_str().unwrap().to_string(),
+            knowledge_repo,
+            embedding_provider,
+        );
+
+        let result = server
+            .delegate_session(Parameters(DelegateSessionParams {
+                prompt: "test".to_string(),
+                description: Some("desc".to_string()),
+                target: None,
+                background: Some(true),
+            }))
+            .await;
+
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.message.contains("no daemon delegation context"));
+    }
+
+    #[tokio::test]
+    async fn test_delegate_session_spawns_background_subagent() {
+        let temp = TempDir::new().unwrap();
+        let knowledge_repo = Arc::new(MockKnowledgeRepository) as Arc<dyn KnowledgeRepository>;
+        let embedding_provider = Arc::new(MockEmbeddingProvider) as Arc<dyn EmbeddingProvider>;
+        let spawner = Arc::new(MockBackgroundSpawner {
+            spawn_calls: AtomicUsize::new(0),
+        });
+
+        let server = CrucibleMcpServer::new_with_delegation(
+            temp.path().to_str().unwrap().to_string(),
+            knowledge_repo,
+            embedding_provider,
+            Some(DelegationContext {
+                background_spawner: spawner.clone(),
+                session_id: "chat-parent".to_string(),
+                targets: vec!["opencode".to_string()],
+                enabled: true,
+                depth: 0,
+            }),
+        );
+
+        let result = server
+            .delegate_session(Parameters(DelegateSessionParams {
+                prompt: "do work".to_string(),
+                description: Some("desc".to_string()),
+                target: Some("opencode".to_string()),
+                background: Some(true),
+            }))
+            .await;
+
+        assert!(result.is_ok());
+        assert_eq!(spawner.spawn_calls.load(Ordering::SeqCst), 1);
     }
 }

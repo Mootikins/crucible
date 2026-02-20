@@ -1,7 +1,7 @@
 //! Extended MCP Server with Lua tools
 //!
 //! This server combines:
-//! - **`CrucibleMcpServer`** (12 tools): Note, Search, and Kiln operations
+//! - **`CrucibleMcpServer`** (13 tools): Note, Search, Kiln, and delegation operations
 //! - **`LuaTools`** (dynamic): Scripts from configured plugins/ directories
 //!
 //! All responses are formatted with TOON for token efficiency.
@@ -45,7 +45,7 @@ use tracing::{debug, info, warn};
 /// Extended MCP server exposing Crucible kiln tools plus Lua plugins.
 ///
 /// This server aggregates tools from multiple sources:
-/// - **Kiln tools** (12): `NoteTools`, `SearchTools`, `KilnTools` via `CrucibleMcpServer`
+/// - **Kiln tools** (13): `NoteTools`, `SearchTools`, `KilnTools`, delegation via `CrucibleMcpServer`
 /// - **Lua tools** (dynamic): Scripts from plugins/ directories prefixed with `lua_`
 /// - **Gateway tools** (dynamic): Tools from upstream MCP servers with configured prefixes
 ///
@@ -76,8 +76,12 @@ impl ExtendedMcpServer {
         embedding_provider: Arc<dyn EmbeddingProvider>,
         plugin_dir: impl AsRef<Path>,
     ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
-        let kiln_server =
-            CrucibleMcpServer::new(kiln_path.clone(), knowledge_repo, embedding_provider);
+        let kiln_server = CrucibleMcpServer::new_with_delegation(
+            kiln_path.clone(),
+            knowledge_repo,
+            embedding_provider,
+            None,
+        );
 
         let plugin_dir = plugin_dir.as_ref().to_path_buf();
         let kiln_path_ref = Path::new(&kiln_path);
@@ -168,7 +172,8 @@ impl ExtendedMcpServer {
         knowledge_repo: Arc<dyn KnowledgeRepository>,
         embedding_provider: Arc<dyn EmbeddingProvider>,
     ) -> Self {
-        let kiln_server = CrucibleMcpServer::new(kiln_path, knowledge_repo, embedding_provider);
+        let kiln_server =
+            CrucibleMcpServer::new_with_delegation(kiln_path, knowledge_repo, embedding_provider, None);
         let lua_registry = Arc::new(RwLock::new(
             LuaToolRegistry::new().expect("Failed to create Lua registry"),
         ));
@@ -818,9 +823,9 @@ mod tests {
         .await
         .unwrap();
 
-        // Should have at least the 12 kiln tools
+        // Should have at least the 13 kiln tools
         let count = server.tool_count().await;
-        assert!(count >= 12);
+        assert!(count >= 13);
     }
 
     #[tokio::test]
@@ -836,7 +841,7 @@ mod tests {
         );
 
         let tools = server.list_all_tools().await;
-        assert_eq!(tools.len(), 14); // 12 kiln tools + 2 discovery tools
+        assert_eq!(tools.len(), 15); // 13 kiln tools + 2 discovery tools
     }
 
     #[test]
