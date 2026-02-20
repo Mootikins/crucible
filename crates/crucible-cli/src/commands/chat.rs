@@ -374,7 +374,8 @@ async fn run_interactive_chat(
         );
     }
 
-    let recording_mode = record.map(|_| "granular".to_string());
+    let recording_mode = record.as_ref().map(|_| "granular".to_string());
+    let recording_path = record;
 
     let mut runner = OilChatRunner::new()?
         .with_mode(mode)
@@ -384,6 +385,7 @@ async fn run_interactive_chat(
         .with_agent_name(agent_name)
         .with_initial_sets(parsed_set_overrides)
         .with_recording_mode(recording_mode.clone())
+        .with_recording_path(recording_path.clone())
         .with_replay_path(replay)
         .with_replay_speed(replay_speed)
         .with_replay_auto_exit(replay_auto_exit);
@@ -555,6 +557,7 @@ async fn run_interactive_chat(
     let initial_mode_str = initial_mode.to_string();
     let resume_id_for_factory = resume_session_id;
     let recording_mode_for_factory = recording_mode.clone();
+    let recording_path_for_factory = recording_path.clone();
     let factory = move |selection: AgentSelection| {
         let config = config_for_factory.clone();
         let default_agent = default_agent.clone();
@@ -564,6 +567,7 @@ async fn run_interactive_chat(
         let initial_mode = initial_mode_str.clone();
         let resume_session_id = resume_id_for_factory.clone();
         let recording_mode = recording_mode_for_factory.clone();
+        let recording_path = recording_path_for_factory.clone();
 
         async move {
             match selection {
@@ -575,7 +579,8 @@ async fn run_interactive_chat(
                         .with_max_context_tokens(max_context_tokens)
                         .with_env_overrides(parsed_env)
                         .with_resume_session_id(resume_session_id)
-                        .with_recording_mode(recording_mode);
+                        .with_recording_mode(recording_mode)
+                        .with_recording_path(recording_path);
 
                     if let Some(wd) = working_dir {
                         params = params.with_working_dir(wd);
@@ -591,7 +596,8 @@ async fn run_interactive_chat(
                         .with_max_context_tokens(max_context_tokens)
                         .with_env_overrides(parsed_env)
                         .with_resume_session_id(resume_session_id)
-                        .with_recording_mode(recording_mode);
+                        .with_recording_mode(recording_mode)
+                        .with_recording_path(recording_path);
 
                     if let Some(wd) = working_dir {
                         params = params.with_working_dir(wd);
