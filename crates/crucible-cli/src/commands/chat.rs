@@ -530,22 +530,16 @@ async fn run_interactive_chat(
     runner = runner.with_session_dir(session_dir);
 
     // Best-effort enricher for precognition (auto-RAG)
-    #[cfg(feature = "storage-surrealdb")]
+    // Works with any storage backend that supports KnowledgeRepository (sqlite, embedded)
     match factories::get_storage(&config).await {
         Ok(storage_handle) => {
-            match storage_handle
-                .get_embedded_for_operation(&config, "precognition enricher")
-                .await
-            {
-                Ok(storage_client) => {
-                    let core = Arc::new(KilnContext::from_storage(storage_client, config.clone()));
-                    let enricher = Arc::new(ContextEnricher::new(core, None));
-                    runner = runner.with_enricher(enricher);
-                    debug!("Precognition enricher initialized");
-                }
-                Err(e) => {
-                    debug!("No embedded storage for precognition: {}", e);
-                }
+            if storage_handle.as_knowledge_repository().is_some() {
+                let core = Arc::new(KilnContext::from_storage_handle(storage_handle, config.clone()));
+                let enricher = Arc::new(ContextEnricher::new(core, None));
+                runner = runner.with_enricher(enricher);
+                debug!("Precognition enricher initialized");
+            } else {
+                debug!("No knowledge repository available for precognition (lightweight mode)");
             }
         }
         Err(e) => {
