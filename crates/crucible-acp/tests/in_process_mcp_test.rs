@@ -283,3 +283,89 @@ async fn test_in_process_mcp_host_graceful_shutdown() {
         "Endpoint should not be reachable after shutdown"
     );
 }
+
+/// Test that tools/list over HTTP returns all 13 tools including delegate_session
+#[tokio::test]
+async fn test_tools_list_over_http_returns_delegate_session() {
+    let temp = TempDir::new().unwrap();
+    let knowledge_repo = Arc::new(MockKnowledgeRepository) as Arc<dyn KnowledgeRepository>;
+    let embedding_provider = Arc::new(MockEmbeddingProvider) as Arc<dyn EmbeddingProvider>;
+
+    let host = start_mcp_host(
+        temp.path().to_path_buf(),
+        knowledge_repo,
+        embedding_provider,
+    )
+    .await;
+
+    let url = host.mcp_url();
+    let client = reqwest::Client::new();
+
+    // Step 1: Initialize
+    let init_resp = client
+        .post(&url)
+        .header("Content-Type", "application/json")
+        .header("Accept", "application/json, text/event-stream")
+        .body(r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"test","version":"0.1.0"}}}"#)
+        .send()
+        .await
+        .expect("initialize should succeed");
+
+    assert!(init_resp.status().is_success());
+    let session_id = init_resp
+        .headers()
+        .get("mcp-session-id")
+        .expect("should have session id")
+        .to_str()
+        .unwrap()
+        .to_string();
+
+    // Step 2: Send initialized notification
+    let _notif_resp = client
+        .post(&url)
+        .header("Content-Type", "application/json")
+        .header("Accept", "application/json, text/event-stream")
+        .header("Mcp-Session-Id", &session_id)
+        .body(r#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#)
+        .send()
+        .await
+        .expect("initialized notification should succeed");
+
+    // Step 3: List tools
+    let tools_resp = client
+        .post(&url)
+        .header("Content-Type", "application/json")
+        .header("Accept", "application/json, text/event-stream")
+        .header("Mcp-Session-Id", &session_id)
+        .body(r#"{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}"#)
+        .send()
+        .await
+        .expect("tools/list should succeed");
+
+    assert!(tools_resp.status().is_success(), "tools/list status: {}", tools_resp.status());
+
+    let body = tools_resp.text().await.unwrap();
+    eprintln!("tools/list response: {}", body);
+
+    // Parse SSE format: extract JSON from "data: {...}" lines
+    let json_str = body
+        .lines()
+        .find(|line| line.starts_with("data: {"))
+        .and_then(|line| line.strip_prefix("data: "))
+        .expect("should find data line with JSON");
+
+    let parsed: serde_json::Value = serde_json::from_str(json_str).expect("should be valid JSON");
+    let tools = parsed["result"]["tools"].as_array().expect("should have tools array");
+
+    let tool_names: Vec<&str> = tools.iter().map(|t| t["name"].as_str().unwrap()).collect();
+    eprintln!("Tool names: {:?}", tool_names);
+
+    assert_eq!(tools.len(), 13, "Should have 13 tools, got: {:?}", tool_names);
+    assert!(
+        tool_names.contains(&"delegate_session"),
+        "Should contain delegate_session, got: {:?}",
+        tool_names
+    );
+
+    host.shutdown().await;
+}
