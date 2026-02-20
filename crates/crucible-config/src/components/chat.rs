@@ -50,6 +50,11 @@ pub struct ChatConfig {
     /// or understanding model reasoning.
     #[serde(default)]
     pub show_thinking: bool,
+    /// Custom system prompt for the internal agent
+    ///
+    /// When set, this replaces the default system prompt. Useful for
+    /// giving the agent domain-specific context about your knowledge base.
+    pub system_prompt: Option<String>,
 }
 
 fn default_true() -> bool {
@@ -68,6 +73,7 @@ impl Default for ChatConfig {
             timeout_secs: None,
             size_aware_prompts: true,
             show_thinking: false,
+            system_prompt: None,
         }
     }
 }
