@@ -420,7 +420,7 @@ impl AgentHandle for DaemonAgentHandle {
 
         let result = match self
             .client
-            .session_create("chat", kiln, Some(ws), vec![], None)
+            .session_create("chat", kiln, Some(ws), vec![], None, None)
             .await
         {
             Ok(r) => r,

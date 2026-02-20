@@ -1097,6 +1097,7 @@ async fn handle_session_create(
 
     let recording_mode =
         optional_str_param!(req, "recording_mode").and_then(|s| s.parse::<RecordingMode>().ok());
+    let custom_recording_path = optional_str_param!(req, "recording_path").map(PathBuf::from);
 
     let project_path = workspace.as_ref().unwrap_or(&kiln);
     if let Err(e) = pm.register_if_missing(project_path) {
@@ -1115,8 +1116,13 @@ async fn handle_session_create(
     {
         Ok(session) => {
             if session.recording_mode == Some(RecordingMode::Granular) {
-                let session_dir = FileSessionStorage::session_dir_for(&session);
-                let recording_path = session_dir.join("recording.jsonl");
+                let recording_path = match custom_recording_path {
+                    Some(ref p) => p.clone(),
+                    None => {
+                        let session_dir = FileSessionStorage::session_dir_for(&session);
+                        session_dir.join("recording.jsonl")
+                    }
+                };
                 let (writer, tx) = RecordingWriter::new(
                     recording_path,
                     session.id.clone(),
