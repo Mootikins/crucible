@@ -1632,3 +1632,62 @@ async fn test_session_replay_rpc_invalid_path() {
 
     server.shutdown().await;
 }
+
+/// Regression: DaemonAgentHandle::drop() must call session.end so RecordingWriter writes footer.
+/// Without the Drop impl, `:q` never ended the session and the recording footer was missing.
+#[tokio::test]
+async fn test_recording_footer_regression_drop_ends_session() {
+    use crucible_rpc::DaemonAgentHandle;
+    use std::sync::Arc;
+
+    let server = TestServer::start().await.expect("Failed to start server");
+    let kiln_dir = tempfile::tempdir().expect("Failed to create kiln dir");
+
+    let (client, event_rx) = DaemonClient::connect_to_with_events(&server.socket_path)
+        .await
+        .expect("Failed to connect with events");
+    let client = Arc::new(client);
+
+    // Given: an active session with an agent handle
+    let result = client
+        .session_create("chat", kiln_dir.path(), None, vec![], None, None)
+        .await
+        .expect("session_create failed");
+
+    let session_id = result["session_id"]
+        .as_str()
+        .expect("session_id should be string")
+        .to_string();
+
+    let session_before = client.session_get(&session_id).await.expect("session_get failed");
+    assert_eq!(
+        session_before["state"], "active",
+        "Session should be active before handle drop"
+    );
+
+    let handle =
+        DaemonAgentHandle::new_and_subscribe(client.clone(), session_id.clone(), event_rx)
+            .await
+            .expect("Failed to create agent handle");
+
+    // When: the handle is dropped (simulates :q in TUI)
+    drop(handle);
+
+    // Drop spawns a fire-and-forget task; wait for the RPC round-trip
+    tokio::time::sleep(Duration::from_millis(500)).await;
+
+    // Then: session was ended and cleaned up (session_get returns not-found or state "ended")
+    let session_result = client.session_get(&session_id).await;
+    let session_was_ended = match &session_result {
+        Err(e) => e.to_string().contains("not found") || e.to_string().contains("Not found"),
+        Ok(val) => val.get("state").and_then(|s| s.as_str()) == Some("ended"),
+    };
+    assert!(
+        session_was_ended,
+        "Session should be ended/removed after DaemonAgentHandle drop, got: {:?}. \
+         Recording footer regression — :q must trigger session.end.",
+        session_result,
+    );
+
+    server.shutdown().await;
+}
