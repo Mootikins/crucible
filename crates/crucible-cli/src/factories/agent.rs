@@ -51,6 +51,8 @@ pub struct AgentInitParams {
     pub resume_session_id: Option<String>,
     /// Recording mode for the session ("granular" or "coarse")
     pub recording_mode: Option<String>,
+    /// Custom path for the recording output file
+    pub recording_path: Option<std::path::PathBuf>,
 }
 
 impl AgentInitParams {
@@ -66,6 +68,7 @@ impl AgentInitParams {
             kiln_context: None,
             resume_session_id: None,
             recording_mode: None,
+            recording_path: None,
         }
     }
 
@@ -151,6 +154,11 @@ impl AgentInitParams {
 
     pub fn with_recording_mode(mut self, mode: Option<String>) -> Self {
         self.recording_mode = mode;
+        self
+    }
+
+    pub fn with_recording_path(mut self, path: Option<std::path::PathBuf>) -> Self {
+        self.recording_path = path;
         self
     }
 }
@@ -314,13 +322,13 @@ pub async fn create_daemon_agent(
              } else {
                  info!("No existing session to resume, creating new one");
                  (
-                     create_new_daemon_session(&client, config, &workspace, params.recording_mode.as_deref()).await?,
+                     create_new_daemon_session(&client, config, &workspace, params.recording_mode.as_deref(), params.recording_path.as_deref()).await?,
                      true,
                  )
              }
          }
          None => (
-             create_new_daemon_session(&client, config, &workspace, params.recording_mode.as_deref()).await?,
+             create_new_daemon_session(&client, config, &workspace, params.recording_mode.as_deref(), params.recording_path.as_deref()).await?,
              true,
          ),
     };
@@ -371,9 +379,10 @@ async fn create_new_daemon_session(
     config: &CliAppConfig,
     workspace: &std::path::Path,
     recording_mode: Option<&str>,
+    recording_path: Option<&std::path::Path>,
 ) -> Result<String> {
     let result = client
-        .session_create("chat", &config.kiln_path, Some(workspace), vec![], recording_mode)
+        .session_create("chat", &config.kiln_path, Some(workspace), vec![], recording_mode, recording_path)
         .await?;
 
     let session_id = result["session_id"]

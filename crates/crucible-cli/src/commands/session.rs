@@ -777,6 +777,7 @@ async fn daemon_create(
             None,
             vec![],
             recording_mode_parsed,
+            None,
         )
         .await?;
 

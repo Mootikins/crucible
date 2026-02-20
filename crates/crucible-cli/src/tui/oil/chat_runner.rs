@@ -48,6 +48,7 @@ pub struct OilChatRunner {
     agent_name: Option<String>,
     initial_sets: Vec<SetEffect>,
     recording_mode: Option<String>,
+    recording_path: Option<PathBuf>,
     replay_path: Option<PathBuf>,
     replay_speed: f64,
     replay_auto_exit: Option<u64>,
@@ -84,6 +85,7 @@ impl OilChatRunner {
             agent_name: None,
             initial_sets: Vec::new(),
             recording_mode: None,
+            recording_path: None,
             replay_path: None,
             replay_speed: 1.0,
             replay_auto_exit: None,
@@ -187,6 +189,11 @@ impl OilChatRunner {
 
     pub fn with_recording_mode(mut self, mode: Option<String>) -> Self {
         self.recording_mode = mode;
+        self
+    }
+
+    pub fn with_recording_path(mut self, path: Option<PathBuf>) -> Self {
+        self.recording_path = path;
         self
     }
 
