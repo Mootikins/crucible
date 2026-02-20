@@ -1,6 +1,6 @@
 //! Integration tests for CrucibleMcpServer tool exposure
 //!
-//! These tests verify that the MCP server correctly exposes all 12 Crucible tools
+//! These tests verify that the MCP server correctly exposes all 13 Crucible tools
 //! and that they can be listed and called via the MCP protocol.
 
 use crucible_core::enrichment::EmbeddingProvider;
@@ -82,6 +82,8 @@ const EXPECTED_TOOLS: &[&str] = &[
     "get_kiln_info",
     "get_kiln_roots",
     "get_kiln_stats",
+    // Delegation tool (1)
+    "delegate_session",
 ];
 
 fn create_test_server() -> CrucibleMcpServer {
@@ -96,15 +98,15 @@ fn create_test_server() -> CrucibleMcpServer {
     )
 }
 
-/// Test that CrucibleMcpServer exposes exactly 12 tools
+/// Test that CrucibleMcpServer exposes exactly 13 tools
 #[tokio::test]
-async fn test_mcp_server_exposes_12_tools() {
+async fn test_mcp_server_exposes_13_tools() {
     let server = create_test_server();
 
     let tool_count = server.tool_count();
     assert_eq!(
-        tool_count, 12,
-        "Should expose exactly 12 tools, got {}",
+        tool_count, 13,
+        "Should expose exactly 13 tools, got {}",
         tool_count
     );
 }
@@ -181,12 +183,12 @@ async fn test_server_info_metadata() {
     assert!(info.server_info.title.is_some());
     assert_eq!(info.server_info.title.unwrap(), "Crucible MCP Server");
 
-    // Verify instructions mention 12 tools
+    // Verify instructions mention 13 tools
     assert!(info.instructions.is_some());
     let instructions = info.instructions.unwrap();
     assert!(
-        instructions.contains("12 tools"),
-        "Instructions should mention 12 tools"
+        instructions.contains("13 tools"),
+        "Instructions should mention 13 tools"
     );
 
     // Verify tools capability is advertised
@@ -231,6 +233,12 @@ async fn test_tool_categories() {
         .filter(|t| tool_names.iter().any(|n| n == *t))
         .count();
     assert_eq!(kiln_count, 3, "Should have 3 kiln tools");
+
+    let delegation_count = tool_names
+        .iter()
+        .filter(|t| *t == "delegate_session")
+        .count();
+    assert_eq!(delegation_count, 1, "Should have delegate_session tool");
 }
 
 /// Test tool descriptions are meaningful (not just the tool name)
