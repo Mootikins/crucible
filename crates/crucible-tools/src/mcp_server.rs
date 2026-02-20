@@ -71,11 +71,15 @@ pub struct DelegationContext {
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 pub struct DelegateSessionParams {
+    /// The task or question for the delegated agent to work on
     pub prompt: String,
+    /// Brief human-readable description of what this delegation does
     #[serde(default)]
     pub description: Option<String>,
+    /// Target agent name to delegate to (e.g., "cursor", "opencode"). Omit to use the same agent type.
     #[serde(default)]
     pub target: Option<String>,
+    /// If true, return immediately with a delegation ID. If false (default), wait for the result.
     #[serde(default)]
     pub background: Option<bool>,
 }
@@ -265,7 +269,7 @@ impl CrucibleMcpServer {
         self.kiln_tools.get_kiln_stats().await
     }
 
-    #[tool(description = "Delegate work to a child agent session")]
+    #[tool(description = "Delegate a task to another AI agent (e.g., cursor, opencode). The target agent receives the prompt, executes the task, and returns the result. Use this when asked to hand off work to a specific agent.")]
     pub async fn delegate_session(
         &self,
         params: Parameters<DelegateSessionParams>,
@@ -384,7 +388,7 @@ impl ServerHandler for CrucibleMcpServer {
                 icons: None,
                 website_url: None,
             },
-            instructions: Some("Crucible MCP server exposing 13 tools for knowledge management: 6 note operations, 3 search capabilities, 3 kiln metadata functions, and session delegation.".into()),
+            instructions: Some("Crucible knowledge management server with 13 tools. Notes: create_note, read_note, update_note, delete_note, list_notes, read_metadata. Search: semantic_search, text_search, property_search. Kiln: get_kiln_info, get_kiln_roots, get_kiln_stats. Delegation: delegate_session — hand off tasks to other agents when asked to delegate.".into()),
         }
     }
 }
