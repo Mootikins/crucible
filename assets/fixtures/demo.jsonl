@@ -1,489 +1,81 @@
-{"version":1,"session_id":"chat-2026-02-19T2326-t3foxz","recording_mode":"granular","started_at":"2026-02-19T23:26:35.619497287Z"}
-{"ts":"2026-02-19T23:26:56.764835126Z","seq":1,"event":"user_message","session_id":"chat-2026-02-19T2326-t3foxz","data":{"message_id":"msg-d8426ae9-376e-45d4-8243-b71aef8a2bfb","content":"How does Crucible use wikilinks to build a knowledge graph?"}}
-{"ts":"2026-02-19T23:27:17.947707508Z","seq":2,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":"Cr"}}
-{"ts":"2026-02-19T23:27:17.949954271Z","seq":3,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":"uc"}}
-{"ts":"2026-02-19T23:27:17.972720204Z","seq":4,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":"ible"}}
-{"ts":"2026-02-19T23:27:17.995450828Z","seq":5,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" does"}}
-{"ts":"2026-02-19T23:27:18.017921909Z","seq":6,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" not"}}
-{"ts":"2026-02-19T23:27:18.040392231Z","seq":7,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" use"}}
-{"ts":"2026-02-19T23:27:18.063071257Z","seq":8,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" wik"}}
-{"ts":"2026-02-19T23:27:18.085344864Z","seq":9,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":"il"}}
-{"ts":"2026-02-19T23:27:18.108257223Z","seq":10,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":"inks"}}
-{"ts":"2026-02-19T23:27:18.130139562Z","seq":11,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" to"}}
-{"ts":"2026-02-19T23:27:18.152906035Z","seq":12,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" build"}}
-{"ts":"2026-02-19T23:27:18.175509563Z","seq":13,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" a"}}
-{"ts":"2026-02-19T23:27:18.198697063Z","seq":14,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" knowledge"}}
-{"ts":"2026-02-19T23:27:18.220751048Z","seq":15,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" graph"}}
-{"ts":"2026-02-19T23:27:18.243512581Z","seq":16,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":"."}}
-{"ts":"2026-02-19T23:27:18.265884545Z","seq":17,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" Cruc"}}
-{"ts":"2026-02-19T23:27:18.288231241Z","seq":18,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":"ible"}}
-{"ts":"2026-02-19T23:27:18.310868988Z","seq":19,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" is"}}
-{"ts":"2026-02-19T23:27:18.333131486Z","seq":20,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" a"}}
-{"ts":"2026-02-19T23:27:18.355647926Z","seq":21,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" code"}}
-{"ts":"2026-02-19T23:27:18.378024001Z","seq":22,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" review"}}
-{"ts":"2026-02-19T23:27:18.400574220Z","seq":23,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" tool"}}
-{"ts":"2026-02-19T23:27:18.423070271Z","seq":24,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" designed"}}
-{"ts":"2026-02-19T23:27:18.445524264Z","seq":25,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" to"}}
-{"ts":"2026-02-19T23:27:18.468039534Z","seq":26,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" help"}}
-{"ts":"2026-02-19T23:27:18.490309802Z","seq":27,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" developers"}}
-{"ts":"2026-02-19T23:27:18.512846492Z","seq":28,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" collaborate"}}
-{"ts":"2026-02-19T23:27:18.535791719Z","seq":29,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" and"}}
-{"ts":"2026-02-19T23:27:18.558526723Z","seq":30,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" review"}}
-{"ts":"2026-02-19T23:27:18.581142860Z","seq":31,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" code"}}
-{"ts":"2026-02-19T23:27:18.604509465Z","seq":32,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" changes"}}
-{"ts":"2026-02-19T23:27:18.627281808Z","seq":33,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" efficiently"}}
-{"ts":"2026-02-19T23:27:18.650233925Z","seq":34,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":"."}}
-{"ts":"2026-02-19T23:27:18.673315069Z","seq":35,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" It"}}
-{"ts":"2026-02-19T23:27:18.696350783Z","seq":36,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" focuses"}}
-{"ts":"2026-02-19T23:27:18.718767347Z","seq":37,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" on"}}
-{"ts":"2026-02-19T23:27:18.741624407Z","seq":38,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" code"}}
-{"ts":"2026-02-19T23:27:18.764059940Z","seq":39,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" quality"}}
-{"ts":"2026-02-19T23:27:18.786343397Z","seq":40,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":","}}
-{"ts":"2026-02-19T23:27:18.808765010Z","seq":41,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" security"}}
-{"ts":"2026-02-19T23:27:18.831216323Z","seq":42,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":","}}
-{"ts":"2026-02-19T23:27:18.853747583Z","seq":43,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" and"}}
-{"ts":"2026-02-19T23:27:18.876550235Z","seq":44,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" maintain"}}
-{"ts":"2026-02-19T23:27:18.899000487Z","seq":45,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":"ability"}}
-{"ts":"2026-02-19T23:27:18.921207217Z","seq":46,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" by"}}
-{"ts":"2026-02-19T23:27:18.943593721Z","seq":47,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" analyzing"}}
-{"ts":"2026-02-19T23:27:18.966122071Z","seq":48,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" code"}}
-{"ts":"2026-02-19T23:27:18.988673921Z","seq":49,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" changes"}}
-{"ts":"2026-02-19T23:27:19.011038506Z","seq":50,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" and"}}
-{"ts":"2026-02-19T23:27:19.033568116Z","seq":51,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" providing"}}
-{"ts":"2026-02-19T23:27:19.056130065Z","seq":52,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" feedback"}}
-{"ts":"2026-02-19T23:27:19.078563098Z","seq":53,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":"."}}
-{"ts":"2026-02-19T23:27:19.100822456Z","seq":54,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" Wik"}}
-{"ts":"2026-02-19T23:27:19.123260709Z","seq":55,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":"il"}}
-{"ts":"2026-02-19T23:27:19.145710571Z","seq":56,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":"inks"}}
-{"ts":"2026-02-19T23:27:19.167976089Z","seq":57,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":","}}
-{"ts":"2026-02-19T23:27:19.204694751Z","seq":58,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" which"}}
-{"ts":"2026-02-19T23:27:19.215004210Z","seq":59,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" are"}}
-{"ts":"2026-02-19T23:27:19.238281837Z","seq":60,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" typically"}}
-{"ts":"2026-02-19T23:27:19.262124847Z","seq":61,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" used"}}
-{"ts":"2026-02-19T23:27:19.284446514Z","seq":62,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" in"}}
-{"ts":"2026-02-19T23:27:19.307207357Z","seq":63,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" wik"}}
-{"ts":"2026-02-19T23:27:19.329862643Z","seq":64,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":"is"}}
-{"ts":"2026-02-19T23:27:19.352264317Z","seq":65,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" to"}}
-{"ts":"2026-02-19T23:27:19.375093038Z","seq":66,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" create"}}
-{"ts":"2026-02-19T23:27:19.397932449Z","seq":67,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" hyper"}}
-{"ts":"2026-02-19T23:27:19.420657903Z","seq":68,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":"links"}}
-{"ts":"2026-02-19T23:27:19.443057797Z","seq":69,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" between"}}
-{"ts":"2026-02-19T23:27:19.465657015Z","seq":70,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" pages"}}
-{"ts":"2026-02-19T23:27:19.487927982Z","seq":71,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":","}}
-{"ts":"2026-02-19T23:27:19.510219280Z","seq":72,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" are"}}
-{"ts":"2026-02-19T23:27:19.532559565Z","seq":73,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" not"}}
-{"ts":"2026-02-19T23:27:19.554987558Z","seq":74,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" part"}}
-{"ts":"2026-02-19T23:27:19.577500829Z","seq":75,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" of"}}
-{"ts":"2026-02-19T23:27:19.600017499Z","seq":76,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" Cruc"}}
-{"ts":"2026-02-19T23:27:19.622355485Z","seq":77,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":"ible"}}
-{"ts":"2026-02-19T23:27:19.644926284Z","seq":78,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":"'s"}}
-{"ts":"2026-02-19T23:27:19.667775474Z","seq":79,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" functionality"}}
-{"ts":"2026-02-19T23:27:19.690144689Z","seq":80,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" or"}}
-{"ts":"2026-02-19T23:27:19.712888243Z","seq":81,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" architecture"}}
-{"ts":"2026-02-19T23:27:19.735229298Z","seq":82,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":"."}}
-{"ts":"2026-02-19T23:27:19.757860705Z","seq":83,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" Therefore"}}
-{"ts":"2026-02-19T23:27:19.780344357Z","seq":84,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":","}}
-{"ts":"2026-02-19T23:27:19.803003423Z","seq":85,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" there"}}
-{"ts":"2026-02-19T23:27:19.825351968Z","seq":86,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" is"}}
-{"ts":"2026-02-19T23:27:19.847744443Z","seq":87,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" no"}}
-{"ts":"2026-02-19T23:27:19.870348220Z","seq":88,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" mechanism"}}
-{"ts":"2026-02-19T23:27:19.892806782Z","seq":89,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" in"}}
-{"ts":"2026-02-19T23:27:19.915047951Z","seq":90,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" Cruc"}}
-{"ts":"2026-02-19T23:27:19.937373077Z","seq":91,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":"ible"}}
-{"ts":"2026-02-19T23:27:19.959963516Z","seq":92,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" for"}}
-{"ts":"2026-02-19T23:27:19.982329421Z","seq":93,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" using"}}
-{"ts":"2026-02-19T23:27:20.004770973Z","seq":94,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" wik"}}
-{"ts":"2026-02-19T23:27:20.027181917Z","seq":95,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":"il"}}
-{"ts":"2026-02-19T23:27:20.049573251Z","seq":96,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":"inks"}}
-{"ts":"2026-02-19T23:27:20.071964055Z","seq":97,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" to"}}
-{"ts":"2026-02-19T23:27:20.094674310Z","seq":98,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" build"}}
-{"ts":"2026-02-19T23:27:20.117081194Z","seq":99,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" a"}}
-{"ts":"2026-02-19T23:27:20.139357161Z","seq":100,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" knowledge"}}
-{"ts":"2026-02-19T23:27:20.162220541Z","seq":101,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" graph"}}
-{"ts":"2026-02-19T23:27:20.184848428Z","seq":102,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":"."}}
-{"ts":"2026-02-19T23:27:20.207309080Z","seq":103,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" If"}}
-{"ts":"2026-02-19T23:27:20.229867089Z","seq":104,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" you"}}
-{"ts":"2026-02-19T23:27:20.252288833Z","seq":105,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" have"}}
-{"ts":"2026-02-19T23:27:20.274883221Z","seq":106,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" a"}}
-{"ts":"2026-02-19T23:27:20.297682143Z","seq":107,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" different"}}
-{"ts":"2026-02-19T23:27:20.320069507Z","seq":108,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" context"}}
-{"ts":"2026-02-19T23:27:20.342522349Z","seq":109,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" or"}}
-{"ts":"2026-02-19T23:27:20.365055169Z","seq":110,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" tool"}}
-{"ts":"2026-02-19T23:27:20.387509092Z","seq":111,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" in"}}
-{"ts":"2026-02-19T23:27:20.410000513Z","seq":112,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" mind"}}
-{"ts":"2026-02-19T23:27:20.432426316Z","seq":113,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":","}}
-{"ts":"2026-02-19T23:27:20.454818930Z","seq":114,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" please"}}
-{"ts":"2026-02-19T23:27:20.477224944Z","seq":115,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" clarify"}}
-{"ts":"2026-02-19T23:27:20.499843281Z","seq":116,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" your"}}
-{"ts":"2026-02-19T23:27:20.522224136Z","seq":117,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" question"}}
-{"ts":"2026-02-19T23:27:20.544672758Z","seq":118,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":"."}}
-{"ts":"2026-02-19T23:27:20.567494489Z","seq":119,"event":"message_complete","session_id":"chat-2026-02-19T2326-t3foxz","data":{"message_id":"msg-d8426ae9-376e-45d4-8243-b71aef8a2bfb","full_response":"Crucible does not use wikilinks to build a knowledge graph. Crucible is a code review tool designed to help developers collaborate and review code changes efficiently. It focuses on code quality, security, and maintainability by analyzing code changes and providing feedback. Wikilinks, which are typically used in wikis to create hyperlinks between pages, are not part of Crucible's functionality or architecture. Therefore, there is no mechanism in Crucible for using wikilinks to build a knowledge graph. If you have a different context or tool in mind, please clarify your question.","prompt_tokens":0,"completion_tokens":0,"total_tokens":0}}
-{"ts":"2026-02-19T23:27:35.643796095Z","seq":120,"event":"user_message","session_id":"chat-2026-02-19T2326-t3foxz","data":{"message_id":"msg-59737006-f63d-45c3-8b37-ec5bc417a5a6","content":"What search capabilities does Crucible provide?"}}
-{"ts":"2026-02-19T23:27:35.716146202Z","seq":121,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":"Cr"}}
-{"ts":"2026-02-19T23:27:35.738316413Z","seq":122,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":"uc"}}
-{"ts":"2026-02-19T23:27:35.760918311Z","seq":123,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":"ible"}}
-{"ts":"2026-02-19T23:27:35.783265346Z","seq":124,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":","}}
-{"ts":"2026-02-19T23:27:35.805806896Z","seq":125,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" as"}}
-{"ts":"2026-02-19T23:27:35.828244519Z","seq":126,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" a"}}
-{"ts":"2026-02-19T23:27:35.850658232Z","seq":127,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" code"}}
-{"ts":"2026-02-19T23:27:35.872758275Z","seq":128,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" review"}}
-{"ts":"2026-02-19T23:27:35.895426921Z","seq":129,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" tool"}}
-{"ts":"2026-02-19T23:27:35.917911932Z","seq":130,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":","}}
-{"ts":"2026-02-19T23:27:35.940521410Z","seq":131,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" provides"}}
-{"ts":"2026-02-19T23:27:35.963031700Z","seq":132,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" several"}}
-{"ts":"2026-02-19T23:27:35.985493173Z","seq":133,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" search"}}
-{"ts":"2026-02-19T23:27:36.007971914Z","seq":134,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" capabilities"}}
-{"ts":"2026-02-19T23:27:36.030430126Z","seq":135,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" tailored"}}
-{"ts":"2026-02-19T23:27:36.052711554Z","seq":136,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" to"}}
-{"ts":"2026-02-19T23:27:36.075087059Z","seq":137,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" help"}}
-{"ts":"2026-02-19T23:27:36.097630358Z","seq":138,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" developers"}}
-{"ts":"2026-02-19T23:27:36.120697112Z","seq":139,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" efficiently"}}
-{"ts":"2026-02-19T23:27:36.142983699Z","seq":140,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" navigate"}}
-{"ts":"2026-02-19T23:27:36.165385913Z","seq":141,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" and"}}
-{"ts":"2026-02-19T23:27:36.187987661Z","seq":142,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" analyze"}}
-{"ts":"2026-02-19T23:27:36.210210200Z","seq":143,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" code"}}
-{"ts":"2026-02-19T23:27:36.232573025Z","seq":144,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" changes"}}
-{"ts":"2026-02-19T23:27:36.254966230Z","seq":145,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":"."}}
-{"ts":"2026-02-19T23:27:36.277396463Z","seq":146,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" These"}}
-{"ts":"2026-02-19T23:27:36.299808556Z","seq":147,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" include"}}
-{"ts":"2026-02-19T23:27:36.322373535Z","seq":148,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":":"}}
-{"ts":"2026-02-19T23:27:36.344600384Z","seq":149,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":"\n\n1"}}
-{"ts":"2026-02-19T23:27:36.367036957Z","seq":150,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":"."}}
-{"ts":"2026-02-19T23:27:36.389433141Z","seq":151,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" **"}}
-{"ts":"2026-02-19T23:27:36.412081818Z","seq":152,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":"Search"}}
-{"ts":"2026-02-19T23:27:36.434455302Z","seq":153,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" by"}}
-{"ts":"2026-02-19T23:27:36.456732190Z","seq":154,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" Commit"}}
-{"ts":"2026-02-19T23:27:36.479107405Z","seq":155,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" Message"}}
-{"ts":"2026-02-19T23:27:36.501312795Z","seq":156,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":"**:"}}
-{"ts":"2026-02-19T23:27:36.523818875Z","seq":157,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" Users"}}
-{"ts":"2026-02-19T23:27:36.546729844Z","seq":158,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" can"}}
-{"ts":"2026-02-19T23:27:36.569644372Z","seq":159,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" search"}}
-{"ts":"2026-02-19T23:27:36.592283579Z","seq":160,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" through"}}
-{"ts":"2026-02-19T23:27:36.614984494Z","seq":161,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" commit"}}
-{"ts":"2026-02-19T23:27:36.638197243Z","seq":162,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" messages"}}
-{"ts":"2026-02-19T23:27:36.661023084Z","seq":163,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" to"}}
-{"ts":"2026-02-19T23:27:36.684178635Z","seq":164,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" find"}}
-{"ts":"2026-02-19T23:27:36.707182871Z","seq":165,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" specific"}}
-{"ts":"2026-02-19T23:27:36.729777169Z","seq":166,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" changes"}}
-{"ts":"2026-02-19T23:27:36.752677008Z","seq":167,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":","}}
-{"ts":"2026-02-19T23:27:36.775187659Z","seq":168,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" issues"}}
-{"ts":"2026-02-19T23:27:36.797755977Z","seq":169,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":","}}
-{"ts":"2026-02-19T23:27:36.820231729Z","seq":170,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" or"}}
-{"ts":"2026-02-19T23:27:36.842808078Z","seq":171,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" keywords"}}
-{"ts":"2026-02-19T23:27:36.865107435Z","seq":172,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" related"}}
-{"ts":"2026-02-19T23:27:36.887417531Z","seq":173,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" to"}}
-{"ts":"2026-02-19T23:27:36.909821445Z","seq":174,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" a"}}
-{"ts":"2026-02-19T23:27:36.932442922Z","seq":175,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" particular"}}
-{"ts":"2026-02-19T23:27:36.954818887Z","seq":176,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" feature"}}
-{"ts":"2026-02-19T23:27:36.977204751Z","seq":177,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":","}}
-{"ts":"2026-02-19T23:27:36.999548577Z","seq":178,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" bug"}}
-{"ts":"2026-02-19T23:27:37.022058468Z","seq":179,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" fix"}}
-{"ts":"2026-02-19T23:27:37.044384144Z","seq":180,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":","}}
-{"ts":"2026-02-19T23:27:37.066838726Z","seq":181,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" or"}}
-{"ts":"2026-02-19T23:27:37.090320757Z","seq":182,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" task"}}
-{"ts":"2026-02-19T23:27:37.113840917Z","seq":183,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":"."}}
-{"ts":"2026-02-19T23:27:37.136371547Z","seq":184,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":"\n\n2"}}
-{"ts":"2026-02-19T23:27:37.159157390Z","seq":185,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":"."}}
-{"ts":"2026-02-19T23:27:37.181789617Z","seq":186,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" **"}}
-{"ts":"2026-02-19T23:27:37.204203870Z","seq":187,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":"Search"}}
-{"ts":"2026-02-19T23:27:37.227320972Z","seq":188,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" by"}}
-{"ts":"2026-02-19T23:27:37.250113665Z","seq":189,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" File"}}
-{"ts":"2026-02-19T23:27:37.272923176Z","seq":190,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" or"}}
-{"ts":"2026-02-19T23:27:37.295338570Z","seq":191,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" Path"}}
-{"ts":"2026-02-19T23:27:37.317786392Z","seq":192,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":"**:"}}
-{"ts":"2026-02-19T23:27:37.340297023Z","seq":193,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" Cruc"}}
-{"ts":"2026-02-19T23:27:37.362648658Z","seq":194,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":"ible"}}
-{"ts":"2026-02-19T23:27:37.385353703Z","seq":195,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" allows"}}
-{"ts":"2026-02-19T23:27:37.407831494Z","seq":196,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" users"}}
-{"ts":"2026-02-19T23:27:37.430234098Z","seq":197,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" to"}}
-{"ts":"2026-02-19T23:27:37.452602493Z","seq":198,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" search"}}
-{"ts":"2026-02-19T23:27:37.474889911Z","seq":199,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" for"}}
-{"ts":"2026-02-19T23:27:37.497438360Z","seq":200,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" specific"}}
-{"ts":"2026-02-19T23:27:37.520036118Z","seq":201,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" files"}}
-{"ts":"2026-02-19T23:27:37.542799451Z","seq":202,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" or"}}
-{"ts":"2026-02-19T23:27:37.565049859Z","seq":203,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" directories"}}
-{"ts":"2026-02-19T23:27:37.587374275Z","seq":204,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" within"}}
-{"ts":"2026-02-19T23:27:37.609815638Z","seq":205,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" a"}}
-{"ts":"2026-02-19T23:27:37.632377687Z","seq":206,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" repository"}}
-{"ts":"2026-02-19T23:27:37.654697634Z","seq":207,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":","}}
-{"ts":"2026-02-19T23:27:37.677179365Z","seq":208,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" making"}}
-{"ts":"2026-02-19T23:27:37.700168901Z","seq":209,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" it"}}
-{"ts":"2026-02-19T23:27:37.722728340Z","seq":210,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" easy"}}
-{"ts":"2026-02-19T23:27:37.745341678Z","seq":211,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" to"}}
-{"ts":"2026-02-19T23:27:37.768023183Z","seq":212,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" locate"}}
-{"ts":"2026-02-19T23:27:37.790553953Z","seq":213,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" relevant"}}
-{"ts":"2026-02-19T23:27:37.812895339Z","seq":214,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" code"}}
-{"ts":"2026-02-19T23:27:37.835340461Z","seq":215,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" changes"}}
-{"ts":"2026-02-19T23:27:37.857777584Z","seq":216,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":"."}}
-{"ts":"2026-02-19T23:27:37.880292025Z","seq":217,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":"\n\n3"}}
-{"ts":"2026-02-19T23:27:37.902690239Z","seq":218,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":"."}}
-{"ts":"2026-02-19T23:27:37.925261867Z","seq":219,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" **"}}
-{"ts":"2026-02-19T23:27:37.947822157Z","seq":220,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":"Search"}}
-{"ts":"2026-02-19T23:27:37.970264749Z","seq":221,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" by"}}
-{"ts":"2026-02-19T23:27:37.992720281Z","seq":222,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" Code"}}
-{"ts":"2026-02-19T23:27:38.015208863Z","seq":223,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" Changes"}}
-{"ts":"2026-02-19T23:27:38.037563518Z","seq":224,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":"**:"}}
-{"ts":"2026-02-19T23:27:38.059813646Z","seq":225,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" Users"}}
-{"ts":"2026-02-19T23:27:38.082265459Z","seq":226,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" can"}}
-{"ts":"2026-02-19T23:27:38.104681872Z","seq":227,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" search"}}
-{"ts":"2026-02-19T23:27:38.127138015Z","seq":228,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" for"}}
-{"ts":"2026-02-19T23:27:38.149496290Z","seq":229,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" specific"}}
-{"ts":"2026-02-19T23:27:38.171870254Z","seq":230,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" code"}}
-{"ts":"2026-02-19T23:27:38.194804502Z","seq":231,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" patterns"}}
-{"ts":"2026-02-19T23:27:38.218048401Z","seq":232,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":","}}
-{"ts":"2026-02-19T23:27:38.240699007Z","seq":233,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" such"}}
-{"ts":"2026-02-19T23:27:38.263463780Z","seq":234,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" as"}}
-{"ts":"2026-02-19T23:27:38.286197834Z","seq":235,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" function"}}
-{"ts":"2026-02-19T23:27:38.308713594Z","seq":236,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" names"}}
-{"ts":"2026-02-19T23:27:38.331454028Z","seq":237,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":","}}
-{"ts":"2026-02-19T23:27:38.353990888Z","seq":238,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" variable"}}
-{"ts":"2026-02-19T23:27:38.376702942Z","seq":239,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" names"}}
-{"ts":"2026-02-19T23:27:38.399029008Z","seq":240,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":","}}
-{"ts":"2026-02-19T23:27:38.421604907Z","seq":241,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" or"}}
-{"ts":"2026-02-19T23:27:38.444224834Z","seq":242,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" specific"}}
-{"ts":"2026-02-19T23:27:38.467465503Z","seq":243,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" syntax"}}
-{"ts":"2026-02-19T23:27:38.489903776Z","seq":244,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":","}}
-{"ts":"2026-02-19T23:27:38.512296890Z","seq":245,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" to"}}
-{"ts":"2026-02-19T23:27:38.534760012Z","seq":246,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" identify"}}
-{"ts":"2026-02-19T23:27:38.557235874Z","seq":247,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" changes"}}
-{"ts":"2026-02-19T23:27:38.579925189Z","seq":248,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" that"}}
-{"ts":"2026-02-19T23:27:38.603013252Z","seq":249,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" match"}}
-{"ts":"2026-02-19T23:27:38.625824984Z","seq":250,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" certain"}}
-{"ts":"2026-02-19T23:27:38.648494569Z","seq":251,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" criteria"}}
-{"ts":"2026-02-19T23:27:38.671323160Z","seq":252,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":"."}}
-{"ts":"2026-02-19T23:27:38.694390864Z","seq":253,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":"\n\n4"}}
-{"ts":"2026-02-19T23:27:38.717131798Z","seq":254,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":"."}}
-{"ts":"2026-02-19T23:27:38.740508882Z","seq":255,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" **"}}
-{"ts":"2026-02-19T23:27:38.762988314Z","seq":256,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":"Search"}}
-{"ts":"2026-02-19T23:27:38.785474355Z","seq":257,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" by"}}
-{"ts":"2026-02-19T23:27:38.808047644Z","seq":258,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" Author"}}
-{"ts":"2026-02-19T23:27:38.830753498Z","seq":259,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" or"}}
-{"ts":"2026-02-19T23:27:38.853231850Z","seq":260,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" Contributor"}}
-{"ts":"2026-02-19T23:27:38.875915445Z","seq":261,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":"**:"}}
-{"ts":"2026-02-19T23:27:38.898445125Z","seq":262,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" Cruc"}}
-{"ts":"2026-02-19T23:27:38.921198209Z","seq":263,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":"ible"}}
-{"ts":"2026-02-19T23:27:38.943941922Z","seq":264,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" enables"}}
-{"ts":"2026-02-19T23:27:38.966393125Z","seq":265,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" filtering"}}
-{"ts":"2026-02-19T23:27:38.989048011Z","seq":266,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" code"}}
-{"ts":"2026-02-19T23:27:39.011539212Z","seq":267,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" changes"}}
-{"ts":"2026-02-19T23:27:39.033973935Z","seq":268,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" by"}}
-{"ts":"2026-02-19T23:27:39.056482466Z","seq":269,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" the"}}
-{"ts":"2026-02-19T23:27:39.079181941Z","seq":270,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" author"}}
-{"ts":"2026-02-19T23:27:39.101598254Z","seq":271,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" or"}}
-{"ts":"2026-02-19T23:27:39.124063016Z","seq":272,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" contributor"}}
-{"ts":"2026-02-19T23:27:39.146599076Z","seq":273,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":","}}
-{"ts":"2026-02-19T23:27:39.169098477Z","seq":274,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" helping"}}
-{"ts":"2026-02-19T23:27:39.191958137Z","seq":275,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" teams"}}
-{"ts":"2026-02-19T23:27:39.214377490Z","seq":276,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" track"}}
-{"ts":"2026-02-19T23:27:39.237390815Z","seq":277,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" contributions"}}
-{"ts":"2026-02-19T23:27:39.260061651Z","seq":278,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" and"}}
-{"ts":"2026-02-19T23:27:39.282565542Z","seq":279,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" identify"}}
-{"ts":"2026-02-19T23:27:39.305236528Z","seq":280,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" specific"}}
-{"ts":"2026-02-19T23:27:39.327720569Z","seq":281,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" developers"}}
-{"ts":"2026-02-19T23:27:39.350399885Z","seq":282,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":"'"}}
-{"ts":"2026-02-19T23:27:39.373039331Z","seq":283,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" work"}}
-{"ts":"2026-02-19T23:27:39.395507643Z","seq":284,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":"."}}
-{"ts":"2026-02-19T23:27:39.418089772Z","seq":285,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":"\n\n5"}}
-{"ts":"2026-02-19T23:27:39.440451797Z","seq":286,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":"."}}
-{"ts":"2026-02-19T23:27:39.462905089Z","seq":287,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" **"}}
-{"ts":"2026-02-19T23:27:39.485431839Z","seq":288,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":"Search"}}
-{"ts":"2026-02-19T23:27:39.507867852Z","seq":289,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" by"}}
-{"ts":"2026-02-19T23:27:39.530847458Z","seq":290,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" Date"}}
-{"ts":"2026-02-19T23:27:39.554091477Z","seq":291,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" Range"}}
-{"ts":"2026-02-19T23:27:39.576972306Z","seq":292,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":"**:"}}
-{"ts":"2026-02-19T23:27:39.599990931Z","seq":293,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" Users"}}
-{"ts":"2026-02-19T23:27:39.622826342Z","seq":294,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" can"}}
-{"ts":"2026-02-19T23:27:39.645662223Z","seq":295,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" filter"}}
-{"ts":"2026-02-19T23:27:39.668384397Z","seq":296,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" changes"}}
-{"ts":"2026-02-19T23:27:39.691599807Z","seq":297,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" based"}}
-{"ts":"2026-02-19T23:27:39.714700919Z","seq":298,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" on"}}
-{"ts":"2026-02-19T23:27:39.737551090Z","seq":299,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" a"}}
-{"ts":"2026-02-19T23:27:39.760510437Z","seq":300,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" specific"}}
-{"ts":"2026-02-19T23:27:39.783448305Z","seq":301,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" date"}}
-{"ts":"2026-02-19T23:27:39.805858438Z","seq":302,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" range"}}
-{"ts":"2026-02-19T23:27:39.828465276Z","seq":303,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":","}}
-{"ts":"2026-02-19T23:27:39.851055934Z","seq":304,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" which"}}
-{"ts":"2026-02-19T23:27:39.873619383Z","seq":305,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" is"}}
-{"ts":"2026-02-19T23:27:39.896311058Z","seq":306,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" useful"}}
-{"ts":"2026-02-19T23:27:39.918828219Z","seq":307,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" for"}}
-{"ts":"2026-02-19T23:27:39.941296260Z","seq":308,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" reviewing"}}
-{"ts":"2026-02-19T23:27:39.963786402Z","seq":309,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" changes"}}
-{"ts":"2026-02-19T23:27:39.986314162Z","seq":310,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" related"}}
-{"ts":"2026-02-19T23:27:40.008905030Z","seq":311,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" to"}}
-{"ts":"2026-02-19T23:27:40.031572966Z","seq":312,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" a"}}
-{"ts":"2026-02-19T23:27:40.054108476Z","seq":313,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" particular"}}
-{"ts":"2026-02-19T23:27:40.077024044Z","seq":314,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" release"}}
-{"ts":"2026-02-19T23:27:40.099538004Z","seq":315,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" or"}}
-{"ts":"2026-02-19T23:27:40.122150792Z","seq":316,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" time"}}
-{"ts":"2026-02-19T23:27:40.144866206Z","seq":317,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" period"}}
-{"ts":"2026-02-19T23:27:40.167409016Z","seq":318,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":"."}}
-{"ts":"2026-02-19T23:27:40.190218208Z","seq":319,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":"\n\n6"}}
-{"ts":"2026-02-19T23:27:40.213193504Z","seq":320,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":"."}}
-{"ts":"2026-02-19T23:27:40.236039235Z","seq":321,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" **"}}
-{"ts":"2026-02-19T23:27:40.258643652Z","seq":322,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":"Search"}}
-{"ts":"2026-02-19T23:27:40.281354397Z","seq":323,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" by"}}
-{"ts":"2026-02-19T23:27:40.303935665Z","seq":324,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" Change"}}
-{"ts":"2026-02-19T23:27:40.326594322Z","seq":325,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" Type"}}
-{"ts":"2026-02-19T23:27:40.349230758Z","seq":326,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":"**:"}}
-{"ts":"2026-02-19T23:27:40.371832366Z","seq":327,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" Cruc"}}
-{"ts":"2026-02-19T23:27:40.394363056Z","seq":328,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":"ible"}}
-{"ts":"2026-02-19T23:27:40.416969284Z","seq":329,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" supports"}}
-{"ts":"2026-02-19T23:27:40.439564172Z","seq":330,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" searching"}}
-{"ts":"2026-02-19T23:27:40.462086412Z","seq":331,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" for"}}
-{"ts":"2026-02-19T23:27:40.484697630Z","seq":332,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" changes"}}
-{"ts":"2026-02-19T23:27:40.507253619Z","seq":333,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" based"}}
-{"ts":"2026-02-19T23:27:40.530658443Z","seq":334,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" on"}}
-{"ts":"2026-02-19T23:27:40.553609900Z","seq":335,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" their"}}
-{"ts":"2026-02-19T23:27:40.576419611Z","seq":336,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" type"}}
-{"ts":"2026-02-19T23:27:40.599132356Z","seq":337,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" ("}}
-{"ts":"2026-02-19T23:27:40.621727814Z","seq":338,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":"e"}}
-{"ts":"2026-02-19T23:27:40.644498267Z","seq":339,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":".g"}}
-{"ts":"2026-02-19T23:27:40.667562971Z","seq":340,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":".,"}}
-{"ts":"2026-02-19T23:27:40.690554347Z","seq":341,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" additions"}}
-{"ts":"2026-02-19T23:27:40.713290051Z","seq":342,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":","}}
-{"ts":"2026-02-19T23:27:40.736475401Z","seq":343,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" delet"}}
-{"ts":"2026-02-19T23:27:40.759230474Z","seq":344,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":"ions"}}
-{"ts":"2026-02-19T23:27:40.782029446Z","seq":345,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":","}}
-{"ts":"2026-02-19T23:27:40.804866967Z","seq":346,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" modifications"}}
-{"ts":"2026-02-19T23:27:40.828090136Z","seq":347,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":"),"}}
-{"ts":"2026-02-19T23:27:40.850889448Z","seq":348,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" allowing"}}
-{"ts":"2026-02-19T23:27:40.873606572Z","seq":349,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" users"}}
-{"ts":"2026-02-19T23:27:40.897044215Z","seq":350,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" to"}}
-{"ts":"2026-02-19T23:27:40.919734390Z","seq":351,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" focus"}}
-{"ts":"2026-02-19T23:27:40.942365327Z","seq":352,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" on"}}
-{"ts":"2026-02-19T23:27:40.965340363Z","seq":353,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" specific"}}
-{"ts":"2026-02-19T23:27:40.988169384Z","seq":354,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" types"}}
-{"ts":"2026-02-19T23:27:41.010904538Z","seq":355,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" of"}}
-{"ts":"2026-02-19T23:27:41.033556704Z","seq":356,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" modifications"}}
-{"ts":"2026-02-19T23:27:41.056519971Z","seq":357,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":"."}}
-{"ts":"2026-02-19T23:27:41.078962054Z","seq":358,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":"\n\n7"}}
-{"ts":"2026-02-19T23:27:41.101552702Z","seq":359,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":"."}}
-{"ts":"2026-02-19T23:27:41.124087872Z","seq":360,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" **"}}
-{"ts":"2026-02-19T23:27:41.147171186Z","seq":361,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":"Search"}}
-{"ts":"2026-02-19T23:27:41.169733344Z","seq":362,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" by"}}
-{"ts":"2026-02-19T23:27:41.192508247Z","seq":363,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" Labels"}}
-{"ts":"2026-02-19T23:27:41.215299489Z","seq":364,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" or"}}
-{"ts":"2026-02-19T23:27:41.237935696Z","seq":365,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" Tags"}}
-{"ts":"2026-02-19T23:27:41.260536614Z","seq":366,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":"**:"}}
-{"ts":"2026-02-19T23:27:41.283444163Z","seq":367,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" If"}}
-{"ts":"2026-02-19T23:27:41.306536286Z","seq":368,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" changes"}}
-{"ts":"2026-02-19T23:27:41.329416015Z","seq":369,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" are"}}
-{"ts":"2026-02-19T23:27:41.352292705Z","seq":370,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" tagged"}}
-{"ts":"2026-02-19T23:27:41.375113536Z","seq":371,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" with"}}
-{"ts":"2026-02-19T23:27:41.397851210Z","seq":372,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" labels"}}
-{"ts":"2026-02-19T23:27:41.420452968Z","seq":373,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" ("}}
-{"ts":"2026-02-19T23:27:41.443295678Z","seq":374,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":"e"}}
-{"ts":"2026-02-19T23:27:41.466119159Z","seq":375,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":".g"}}
-{"ts":"2026-02-19T23:27:41.488881802Z","seq":376,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":".,"}}
-{"ts":"2026-02-19T23:27:41.511876568Z","seq":377,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" \""}}
-{"ts":"2026-02-19T23:27:41.534742868Z","seq":378,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":"bug"}}
-{"ts":"2026-02-19T23:27:41.557819172Z","seq":379,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":"\","}}
-{"ts":"2026-02-19T23:27:41.580847087Z","seq":380,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" \""}}
-{"ts":"2026-02-19T23:27:41.603691997Z","seq":381,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":"enh"}}
-{"ts":"2026-02-19T23:27:41.627010873Z","seq":382,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":"ancement"}}
-{"ts":"2026-02-19T23:27:41.649675839Z","seq":383,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":"\","}}
-{"ts":"2026-02-19T23:27:41.672873129Z","seq":384,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" \""}}
-{"ts":"2026-02-19T23:27:41.696307322Z","seq":385,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":"security"}}
-{"ts":"2026-02-19T23:27:41.718962198Z","seq":386,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":"\"),"}}
-{"ts":"2026-02-19T23:27:41.741774600Z","seq":387,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" users"}}
-{"ts":"2026-02-19T23:27:41.764571572Z","seq":388,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" can"}}
-{"ts":"2026-02-19T23:27:41.787395073Z","seq":389,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" filter"}}
-{"ts":"2026-02-19T23:27:41.810192635Z","seq":390,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" results"}}
-{"ts":"2026-02-19T23:27:41.833558610Z","seq":391,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" based"}}
-{"ts":"2026-02-19T23:27:41.856238405Z","seq":392,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" on"}}
-{"ts":"2026-02-19T23:27:41.879227011Z","seq":393,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" these"}}
-{"ts":"2026-02-19T23:27:41.901831349Z","seq":394,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" tags"}}
-{"ts":"2026-02-19T23:27:41.926493825Z","seq":395,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":"."}}
-{"ts":"2026-02-19T23:27:41.947726104Z","seq":396,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":"\n\nThese"}}
-{"ts":"2026-02-19T23:27:41.970284853Z","seq":397,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" search"}}
-{"ts":"2026-02-19T23:27:41.993151183Z","seq":398,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" capabilities"}}
-{"ts":"2026-02-19T23:27:42.015888487Z","seq":399,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" are"}}
-{"ts":"2026-02-19T23:27:42.038405117Z","seq":400,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" designed"}}
-{"ts":"2026-02-19T23:27:42.061166980Z","seq":401,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" to"}}
-{"ts":"2026-02-19T23:27:42.084218534Z","seq":402,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" streamline"}}
-{"ts":"2026-02-19T23:27:42.107158602Z","seq":403,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" code"}}
-{"ts":"2026-02-19T23:27:42.129903315Z","seq":404,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" review"}}
-{"ts":"2026-02-19T23:27:42.152797614Z","seq":405,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" workflows"}}
-{"ts":"2026-02-19T23:27:42.175766481Z","seq":406,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":","}}
-{"ts":"2026-02-19T23:27:42.198662450Z","seq":407,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" improve"}}
-{"ts":"2026-02-19T23:27:42.221333626Z","seq":408,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" collaboration"}}
-{"ts":"2026-02-19T23:27:42.244381410Z","seq":409,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":","}}
-{"ts":"2026-02-19T23:27:42.267635418Z","seq":410,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" and"}}
-{"ts":"2026-02-19T23:27:42.290531937Z","seq":411,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" help"}}
-{"ts":"2026-02-19T23:27:42.313644600Z","seq":412,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" developers"}}
-{"ts":"2026-02-19T23:27:42.336678424Z","seq":413,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" quickly"}}
-{"ts":"2026-02-19T23:27:42.359542394Z","seq":414,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" locate"}}
-{"ts":"2026-02-19T23:27:42.382683496Z","seq":415,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" and"}}
-{"ts":"2026-02-19T23:27:42.406064320Z","seq":416,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" understand"}}
-{"ts":"2026-02-19T23:27:42.428928510Z","seq":417,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" relevant"}}
-{"ts":"2026-02-19T23:27:42.451755741Z","seq":418,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" code"}}
-{"ts":"2026-02-19T23:27:42.474798806Z","seq":419,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" changes"}}
-{"ts":"2026-02-19T23:27:42.497806601Z","seq":420,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":"."}}
-{"ts":"2026-02-19T23:27:42.520939483Z","seq":421,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" However"}}
-{"ts":"2026-02-19T23:27:42.544731335Z","seq":422,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":","}}
-{"ts":"2026-02-19T23:27:42.567876437Z","seq":423,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" Cruc"}}
-{"ts":"2026-02-19T23:27:42.591097846Z","seq":424,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":"ible"}}
-{"ts":"2026-02-19T23:27:42.614190229Z","seq":425,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" does"}}
-{"ts":"2026-02-19T23:27:42.637158846Z","seq":426,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" not"}}
-{"ts":"2026-02-19T23:27:42.660328366Z","seq":427,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" provide"}}
-{"ts":"2026-02-19T23:27:42.683246985Z","seq":428,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" advanced"}}
-{"ts":"2026-02-19T23:27:42.706672548Z","seq":429,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" semantic"}}
-{"ts":"2026-02-19T23:27:42.729842828Z","seq":430,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" search"}}
-{"ts":"2026-02-19T23:27:42.752836504Z","seq":431,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" or"}}
-{"ts":"2026-02-19T23:27:42.775599437Z","seq":432,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" natural"}}
-{"ts":"2026-02-19T23:27:42.798592093Z","seq":433,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" language"}}
-{"ts":"2026-02-19T23:27:42.821674807Z","seq":434,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" processing"}}
-{"ts":"2026-02-19T23:27:42.844780249Z","seq":435,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" features"}}
-{"ts":"2026-02-19T23:27:42.867972709Z","seq":436,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" typically"}}
-{"ts":"2026-02-19T23:27:42.890918627Z","seq":437,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" associated"}}
-{"ts":"2026-02-19T23:27:42.913961661Z","seq":438,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" with"}}
-{"ts":"2026-02-19T23:27:42.937057184Z","seq":439,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" knowledge"}}
-{"ts":"2026-02-19T23:27:42.960091879Z","seq":440,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" graphs"}}
-{"ts":"2026-02-19T23:27:42.983151963Z","seq":441,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" or"}}
-{"ts":"2026-02-19T23:27:43.006300464Z","seq":442,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" wik"}}
-{"ts":"2026-02-19T23:27:43.029391757Z","seq":443,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":"is"}}
-{"ts":"2026-02-19T23:27:43.052462771Z","seq":444,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":"."}}
-{"ts":"2026-02-19T23:27:43.075558404Z","seq":445,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" Its"}}
-{"ts":"2026-02-19T23:27:43.098612488Z","seq":446,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" search"}}
-{"ts":"2026-02-19T23:27:43.121760270Z","seq":447,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" functionality"}}
-{"ts":"2026-02-19T23:27:43.144781285Z","seq":448,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" is"}}
-{"ts":"2026-02-19T23:27:43.167956066Z","seq":449,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" focused"}}
-{"ts":"2026-02-19T23:27:43.191086347Z","seq":450,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" on"}}
-{"ts":"2026-02-19T23:27:43.214051084Z","seq":451,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" code"}}
-{"ts":"2026-02-19T23:27:43.237172786Z","seq":452,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" and"}}
-{"ts":"2026-02-19T23:27:43.260355847Z","seq":453,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" change"}}
-{"ts":"2026-02-19T23:27:43.283986424Z","seq":454,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" metadata"}}
-{"ts":"2026-02-19T23:27:43.307367068Z","seq":455,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" rather"}}
-{"ts":"2026-02-19T23:27:43.330346614Z","seq":456,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" than"}}
-{"ts":"2026-02-19T23:27:43.353478706Z","seq":457,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" building"}}
-{"ts":"2026-02-19T23:27:43.376943818Z","seq":458,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" a"}}
-{"ts":"2026-02-19T23:27:43.399990362Z","seq":459,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" knowledge"}}
-{"ts":"2026-02-19T23:27:43.422900231Z","seq":460,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" graph"}}
-{"ts":"2026-02-19T23:27:43.446068282Z","seq":461,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" from"}}
-{"ts":"2026-02-19T23:27:43.469151335Z","seq":462,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" wik"}}
-{"ts":"2026-02-19T23:27:43.492678815Z","seq":463,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":"il"}}
-{"ts":"2026-02-19T23:27:43.515572444Z","seq":464,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":"inks"}}
-{"ts":"2026-02-19T23:27:43.539048475Z","seq":465,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" or"}}
-{"ts":"2026-02-19T23:27:43.562076520Z","seq":466,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" other"}}
-{"ts":"2026-02-19T23:27:43.585430816Z","seq":467,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" external"}}
-{"ts":"2026-02-19T23:27:43.608547288Z","seq":468,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" sources"}}
-{"ts":"2026-02-19T23:27:43.632186304Z","seq":469,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":"."}}
-{"ts":"2026-02-19T23:27:43.679202935Z","seq":470,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" \n\nIf"}}
-{"ts":"2026-02-19T23:27:43.702709796Z","seq":471,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" you"}}
-{"ts":"2026-02-19T23:27:43.726045192Z","seq":472,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" have"}}
-{"ts":"2026-02-19T23:27:43.749882302Z","seq":473,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" a"}}
-{"ts":"2026-02-19T23:27:43.773092972Z","seq":474,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" specific"}}
-{"ts":"2026-02-19T23:27:43.796258133Z","seq":475,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" use"}}
-{"ts":"2026-02-19T23:27:43.819262198Z","seq":476,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" case"}}
-{"ts":"2026-02-19T23:27:43.842357401Z","seq":477,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" or"}}
-{"ts":"2026-02-19T23:27:43.865603290Z","seq":478,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" need"}}
-{"ts":"2026-02-19T23:27:43.888847168Z","seq":479,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" further"}}
-{"ts":"2026-02-19T23:27:43.911811375Z","seq":480,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" clarification"}}
-{"ts":"2026-02-19T23:27:43.935638476Z","seq":481,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":","}}
-{"ts":"2026-02-19T23:27:43.958464587Z","seq":482,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" feel"}}
-{"ts":"2026-02-19T23:27:43.981685116Z","seq":483,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" free"}}
-{"ts":"2026-02-19T23:27:44.004550646Z","seq":484,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" to"}}
-{"ts":"2026-02-19T23:27:44.027527773Z","seq":485,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":" ask"}}
-{"ts":"2026-02-19T23:27:44.051122220Z","seq":486,"event":"text_delta","session_id":"chat-2026-02-19T2326-t3foxz","data":{"content":"!"}}
-{"ts":"2026-02-19T23:27:44.074564443Z","seq":487,"event":"message_complete","session_id":"chat-2026-02-19T2326-t3foxz","data":{"message_id":"msg-59737006-f63d-45c3-8b37-ec5bc417a5a6","full_response":"Crucible, as a code review tool, provides several search capabilities tailored to help developers efficiently navigate and analyze code changes. These include:\n\n1. **Search by Commit Message**: Users can search through commit messages to find specific changes, issues, or keywords related to a particular feature, bug fix, or task.\n\n2. **Search by File or Path**: Crucible allows users to search for specific files or directories within a repository, making it easy to locate relevant code changes.\n\n3. **Search by Code Changes**: Users can search for specific code patterns, such as function names, variable names, or specific syntax, to identify changes that match certain criteria.\n\n4. **Search by Author or Contributor**: Crucible enables filtering code changes by the author or contributor, helping teams track contributions and identify specific developers' work.\n\n5. **Search by Date Range**: Users can filter changes based on a specific date range, which is useful for reviewing changes related to a particular release or time period.\n\n6. **Search by Change Type**: Crucible supports searching for changes based on their type (e.g., additions, deletions, modifications), allowing users to focus on specific types of modifications.\n\n7. **Search by Labels or Tags**: If changes are tagged with labels (e.g., \"bug\", \"enhancement\", \"security\"), users can filter results based on these tags.\n\nThese search capabilities are designed to streamline code review workflows, improve collaboration, and help developers quickly locate and understand relevant code changes. However, Crucible does not provide advanced semantic search or natural language processing features typically associated with knowledge graphs or wikis. Its search functionality is focused on code and change metadata rather than building a knowledge graph from wikilinks or other external sources. \n\nIf you have a specific use case or need further clarification, feel free to ask!","prompt_tokens":0,"completion_tokens":0,"total_tokens":0}}
-{"ended_at": "2026-02-19T23:27:44.074564443Z", "total_events": 487, "duration_ms": 68455}
+{"version":1,"session_id":"chat-2026-02-20T0012-lkg3j7","recording_mode":"granular","started_at":"2026-02-20T00:12:07.188331244Z"}
+{"ts":"2026-02-20T00:12:32.805238871Z","seq":1,"event":"user_message","session_id":"chat-2026-02-20T0012-lkg3j7","data":{"message_id":"msg-e387c423-9e08-46cc-9f7c-777326dc3028","content":"How does Crucible use wikilinks to build a knowledge graph?"}}
+{"ts":"2026-02-20T00:12:32.844912130Z","seq":2,"event":"text_delta","session_id":"chat-2026-02-20T0012-lkg3j7","data":{"content":"Cr"}}
+{"ts":"2026-02-20T00:12:32.868627202Z","seq":3,"event":"text_delta","session_id":"chat-2026-02-20T0012-lkg3j7","data":{"content":"uc"}}
+{"ts":"2026-02-20T00:12:32.892130721Z","seq":4,"event":"text_delta","session_id":"chat-2026-02-20T0012-lkg3j7","data":{"content":"ible"}}
+{"ts":"2026-02-20T00:12:32.915542053Z","seq":5,"event":"text_delta","session_id":"chat-2026-02-20T0012-lkg3j7","data":{"content":" does"}}
+{"ts":"2026-02-20T00:12:32.938965354Z","seq":6,"event":"text_delta","session_id":"chat-2026-02-20T0012-lkg3j7","data":{"content":" not"}}
+{"ts":"2026-02-20T00:12:32.962459993Z","seq":7,"event":"text_delta","session_id":"chat-2026-02-20T0012-lkg3j7","data":{"content":" use"}}
+{"ts":"2026-02-20T00:12:32.985780957Z","seq":8,"event":"text_delta","session_id":"chat-2026-02-20T0012-lkg3j7","data":{"content":" wik"}}
+{"ts":"2026-02-20T00:12:33.009262707Z","seq":9,"event":"text_delta","session_id":"chat-2026-02-20T0012-lkg3j7","data":{"content":"il"}}
+{"ts":"2026-02-20T00:12:33.032705187Z","seq":10,"event":"text_delta","session_id":"chat-2026-02-20T0012-lkg3j7","data":{"content":"inks"}}
+{"ts":"2026-02-20T00:12:33.056160168Z","seq":11,"event":"text_delta","session_id":"chat-2026-02-20T0012-lkg3j7","data":{"content":" to"}}
+{"ts":"2026-02-20T00:12:33.079711845Z","seq":12,"event":"text_delta","session_id":"chat-2026-02-20T0012-lkg3j7","data":{"content":" build"}}
+{"ts":"2026-02-20T00:12:33.103366369Z","seq":13,"event":"text_delta","session_id":"chat-2026-02-20T0012-lkg3j7","data":{"content":" a"}}
+{"ts":"2026-02-20T00:12:33.126819899Z","seq":14,"event":"text_delta","session_id":"chat-2026-02-20T0012-lkg3j7","data":{"content":" knowledge"}}
+{"ts":"2026-02-20T00:12:33.150425535Z","seq":15,"event":"text_delta","session_id":"chat-2026-02-20T0012-lkg3j7","data":{"content":" graph"}}
+{"ts":"2026-02-20T00:12:33.174170616Z","seq":16,"event":"text_delta","session_id":"chat-2026-02-20T0012-lkg3j7","data":{"content":"."}}
+{"ts":"2026-02-20T00:12:33.197491961Z","seq":17,"event":"text_delta","session_id":"chat-2026-02-20T0012-lkg3j7","data":{"content":" Cruc"}}
+{"ts":"2026-02-20T00:12:33.220921292Z","seq":18,"event":"text_delta","session_id":"chat-2026-02-20T0012-lkg3j7","data":{"content":"ible"}}
+{"ts":"2026-02-20T00:12:33.244407931Z","seq":19,"event":"text_delta","session_id":"chat-2026-02-20T0012-lkg3j7","data":{"content":" is"}}
+{"ts":"2026-02-20T00:12:33.267846242Z","seq":20,"event":"text_delta","session_id":"chat-2026-02-20T0012-lkg3j7","data":{"content":" a"}}
+{"ts":"2026-02-20T00:12:33.291230764Z","seq":21,"event":"text_delta","session_id":"chat-2026-02-20T0012-lkg3j7","data":{"content":" tool"}}
+{"ts":"2026-02-20T00:12:33.314691334Z","seq":22,"event":"text_delta","session_id":"chat-2026-02-20T0012-lkg3j7","data":{"content":" designed"}}
+{"ts":"2026-02-20T00:12:33.338108346Z","seq":23,"event":"text_delta","session_id":"chat-2026-02-20T0012-lkg3j7","data":{"content":" for"}}
+{"ts":"2026-02-20T00:12:33.361476269Z","seq":24,"event":"text_delta","session_id":"chat-2026-02-20T0012-lkg3j7","data":{"content":" code"}}
+{"ts":"2026-02-20T00:12:33.384693606Z","seq":25,"event":"text_delta","session_id":"chat-2026-02-20T0012-lkg3j7","data":{"content":" review"}}
+{"ts":"2026-02-20T00:12:33.407991481Z","seq":26,"event":"text_delta","session_id":"chat-2026-02-20T0012-lkg3j7","data":{"content":" and"}}
+{"ts":"2026-02-20T00:12:33.431277226Z","seq":27,"event":"text_delta","session_id":"chat-2026-02-20T0012-lkg3j7","data":{"content":" collaboration"}}
+{"ts":"2026-02-20T00:12:33.454819344Z","seq":28,"event":"text_delta","session_id":"chat-2026-02-20T0012-lkg3j7","data":{"content":","}}
+{"ts":"2026-02-20T00:12:33.478265264Z","seq":29,"event":"text_delta","session_id":"chat-2026-02-20T0012-lkg3j7","data":{"content":" primarily"}}
+{"ts":"2026-02-20T00:12:33.501531680Z","seq":30,"event":"text_delta","session_id":"chat-2026-02-20T0012-lkg3j7","data":{"content":" focused"}}
+{"ts":"2026-02-20T00:12:33.525131386Z","seq":31,"event":"text_delta","session_id":"chat-2026-02-20T0012-lkg3j7","data":{"content":" on"}}
+{"ts":"2026-02-20T00:12:33.548246597Z","seq":32,"event":"text_delta","session_id":"chat-2026-02-20T0012-lkg3j7","data":{"content":" helping"}}
+{"ts":"2026-02-20T00:12:33.571571321Z","seq":33,"event":"text_delta","session_id":"chat-2026-02-20T0012-lkg3j7","data":{"content":" developers"}}
+{"ts":"2026-02-20T00:12:33.595299573Z","seq":34,"event":"text_delta","session_id":"chat-2026-02-20T0012-lkg3j7","data":{"content":" review"}}
+{"ts":"2026-02-20T00:12:33.618741524Z","seq":35,"event":"text_delta","session_id":"chat-2026-02-20T0012-lkg3j7","data":{"content":" and"}}
+{"ts":"2026-02-20T00:12:33.642233273Z","seq":36,"event":"text_delta","session_id":"chat-2026-02-20T0012-lkg3j7","data":{"content":" discuss"}}
+{"ts":"2026-02-20T00:12:33.665934975Z","seq":37,"event":"text_delta","session_id":"chat-2026-02-20T0012-lkg3j7","data":{"content":" code"}}
+{"ts":"2026-02-20T00:12:33.689173982Z","seq":38,"event":"text_delta","session_id":"chat-2026-02-20T0012-lkg3j7","data":{"content":" changes"}}
+{"ts":"2026-02-20T00:12:33.712512246Z","seq":39,"event":"text_delta","session_id":"chat-2026-02-20T0012-lkg3j7","data":{"content":"."}}
+{"ts":"2026-02-20T00:12:33.736015605Z","seq":40,"event":"text_delta","session_id":"chat-2026-02-20T0012-lkg3j7","data":{"content":" It"}}
+{"ts":"2026-02-20T00:12:33.759301640Z","seq":41,"event":"text_delta","session_id":"chat-2026-02-20T0012-lkg3j7","data":{"content":" does"}}
+{"ts":"2026-02-20T00:12:33.783009543Z","seq":42,"event":"text_delta","session_id":"chat-2026-02-20T0012-lkg3j7","data":{"content":" not"}}
+{"ts":"2026-02-20T00:12:33.806272429Z","seq":43,"event":"text_delta","session_id":"chat-2026-02-20T0012-lkg3j7","data":{"content":" rely"}}
+{"ts":"2026-02-20T00:12:33.829644311Z","seq":44,"event":"text_delta","session_id":"chat-2026-02-20T0012-lkg3j7","data":{"content":" on"}}
+{"ts":"2026-02-20T00:12:33.852722713Z","seq":45,"event":"text_delta","session_id":"chat-2026-02-20T0012-lkg3j7","data":{"content":" wik"}}
+{"ts":"2026-02-20T00:12:33.876127205Z","seq":46,"event":"text_delta","session_id":"chat-2026-02-20T0012-lkg3j7","data":{"content":"il"}}
+{"ts":"2026-02-20T00:12:33.899390161Z","seq":47,"event":"text_delta","session_id":"chat-2026-02-20T0012-lkg3j7","data":{"content":"inks"}}
+{"ts":"2026-02-20T00:12:33.922701096Z","seq":48,"event":"text_delta","session_id":"chat-2026-02-20T0012-lkg3j7","data":{"content":" or"}}
+{"ts":"2026-02-20T00:12:33.946047119Z","seq":49,"event":"text_delta","session_id":"chat-2026-02-20T0012-lkg3j7","data":{"content":" any"}}
+{"ts":"2026-02-20T00:12:33.969542428Z","seq":50,"event":"text_delta","session_id":"chat-2026-02-20T0012-lkg3j7","data":{"content":" form"}}
+{"ts":"2026-02-20T00:12:33.993273390Z","seq":51,"event":"text_delta","session_id":"chat-2026-02-20T0012-lkg3j7","data":{"content":" of"}}
+{"ts":"2026-02-20T00:12:34.016591015Z","seq":52,"event":"text_delta","session_id":"chat-2026-02-20T0012-lkg3j7","data":{"content":" knowledge"}}
+{"ts":"2026-02-20T00:12:34.040223849Z","seq":53,"event":"text_delta","session_id":"chat-2026-02-20T0012-lkg3j7","data":{"content":" graph"}}
+{"ts":"2026-02-20T00:12:34.064081607Z","seq":54,"event":"text_delta","session_id":"chat-2026-02-20T0012-lkg3j7","data":{"content":" construction"}}
+{"ts":"2026-02-20T00:12:34.088101311Z","seq":55,"event":"text_delta","session_id":"chat-2026-02-20T0012-lkg3j7","data":{"content":" for"}}
+{"ts":"2026-02-20T00:12:34.111539561Z","seq":56,"event":"text_delta","session_id":"chat-2026-02-20T0012-lkg3j7","data":{"content":" its"}}
+{"ts":"2026-02-20T00:12:34.136425068Z","seq":57,"event":"text_delta","session_id":"chat-2026-02-20T0012-lkg3j7","data":{"content":" core"}}
+{"ts":"2026-02-20T00:12:34.160943856Z","seq":58,"event":"text_delta","session_id":"chat-2026-02-20T0012-lkg3j7","data":{"content":" functionality"}}
+{"ts":"2026-02-20T00:12:34.183992379Z","seq":59,"event":"text_delta","session_id":"chat-2026-02-20T0012-lkg3j7","data":{"content":"."}}
+{"ts":"2026-02-20T00:12:34.207072081Z","seq":60,"event":"text_delta","session_id":"chat-2026-02-20T0012-lkg3j7","data":{"content":" If"}}
+{"ts":"2026-02-20T00:12:34.231243589Z","seq":61,"event":"text_delta","session_id":"chat-2026-02-20T0012-lkg3j7","data":{"content":" you"}}
+{"ts":"2026-02-20T00:12:34.254785247Z","seq":62,"event":"text_delta","session_id":"chat-2026-02-20T0012-lkg3j7","data":{"content":" have"}}
+{"ts":"2026-02-20T00:12:34.278393042Z","seq":63,"event":"text_delta","session_id":"chat-2026-02-20T0012-lkg3j7","data":{"content":" a"}}
+{"ts":"2026-02-20T00:12:34.301628919Z","seq":64,"event":"text_delta","session_id":"chat-2026-02-20T0012-lkg3j7","data":{"content":" different"}}
+{"ts":"2026-02-20T00:12:34.325144918Z","seq":65,"event":"text_delta","session_id":"chat-2026-02-20T0012-lkg3j7","data":{"content":" context"}}
+{"ts":"2026-02-20T00:12:34.348531890Z","seq":66,"event":"text_delta","session_id":"chat-2026-02-20T0012-lkg3j7","data":{"content":" or"}}
+{"ts":"2026-02-20T00:12:34.371873454Z","seq":67,"event":"text_delta","session_id":"chat-2026-02-20T0012-lkg3j7","data":{"content":" are"}}
+{"ts":"2026-02-20T00:12:34.395029563Z","seq":68,"event":"text_delta","session_id":"chat-2026-02-20T0012-lkg3j7","data":{"content":" referring"}}
+{"ts":"2026-02-20T00:12:34.418211311Z","seq":69,"event":"text_delta","session_id":"chat-2026-02-20T0012-lkg3j7","data":{"content":" to"}}
+{"ts":"2026-02-20T00:12:34.441535156Z","seq":70,"event":"text_delta","session_id":"chat-2026-02-20T0012-lkg3j7","data":{"content":" a"}}
+{"ts":"2026-02-20T00:12:34.464700925Z","seq":71,"event":"text_delta","session_id":"chat-2026-02-20T0012-lkg3j7","data":{"content":" different"}}
+{"ts":"2026-02-20T00:12:34.488135365Z","seq":72,"event":"text_delta","session_id":"chat-2026-02-20T0012-lkg3j7","data":{"content":" system"}}
+{"ts":"2026-02-20T00:12:34.511722962Z","seq":73,"event":"text_delta","session_id":"chat-2026-02-20T0012-lkg3j7","data":{"content":","}}
+{"ts":"2026-02-20T00:12:34.535173862Z","seq":74,"event":"text_delta","session_id":"chat-2026-02-20T0012-lkg3j7","data":{"content":" please"}}
+{"ts":"2026-02-20T00:12:34.558595483Z","seq":75,"event":"text_delta","session_id":"chat-2026-02-20T0012-lkg3j7","data":{"content":" clarify"}}
+{"ts":"2026-02-20T00:12:34.582189419Z","seq":76,"event":"text_delta","session_id":"chat-2026-02-20T0012-lkg3j7","data":{"content":" your"}}
+{"ts":"2026-02-20T00:12:34.605302090Z","seq":77,"event":"text_delta","session_id":"chat-2026-02-20T0012-lkg3j7","data":{"content":" question"}}
+{"ts":"2026-02-20T00:12:34.628900716Z","seq":78,"event":"text_delta","session_id":"chat-2026-02-20T0012-lkg3j7","data":{"content":"."}}
+{"ts":"2026-02-20T00:12:34.652640597Z","seq":79,"event":"message_complete","session_id":"chat-2026-02-20T0012-lkg3j7","data":{"message_id":"msg-e387c423-9e08-46cc-9f7c-777326dc3028","full_response":"Crucible does not use wikilinks to build a knowledge graph. Crucible is a tool designed for code review and collaboration, primarily focused on helping developers review and discuss code changes. It does not rely on wikilinks or any form of knowledge graph construction for its core functionality. If you have a different context or are referring to a different system, please clarify your question.","prompt_tokens":0,"completion_tokens":0,"total_tokens":0}}
+{"total_events":79,"ended_at":"2026-02-20T00:13:56.000000000Z"}
