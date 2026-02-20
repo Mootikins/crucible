@@ -2,7 +2,7 @@
 # Used by VHS tape files for reproducible demo recordings.
 # Points to docs/ as the kiln (ships with the repo, 155 notes).
 
-kiln_path = "docs"
+kiln_path = "./docs"
 
 [llm]
 default = "demo"
