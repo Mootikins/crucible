@@ -244,7 +244,7 @@ fn build_internal_session_agent(config: &CliAppConfig) -> SessionAgent {
         provider_key: Some(provider_key),
         provider: backend_type,
         model,
-        system_prompt: config.chat.system_prompt.clone().unwrap_or_default(),
+        system_prompt: String::new(),
         temperature: effective_llm
             .as_ref()
             .map(|p| p.temperature as f64)
