@@ -558,6 +558,23 @@ impl AgentHandle for DaemonAgentHandle {
     }
 }
 
+impl Drop for DaemonAgentHandle {
+    fn drop(&mut self) {
+        let client = Arc::clone(&self.client);
+        let session_id = self.session_id.clone();
+        // try_current() returns None if tokio runtime is gone (shutdown, sync context).
+        if let Ok(handle) = tokio::runtime::Handle::try_current() {
+            handle.spawn(async move {
+                if let Err(e) = client.session_end(&session_id).await {
+                    tracing::debug!(session_id = %session_id, error = %e, "Failed to end session on drop");
+                } else {
+                    tracing::info!(session_id = %session_id, "Session ended on agent handle drop");
+                }
+            });
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
