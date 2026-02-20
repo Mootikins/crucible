@@ -9,7 +9,7 @@
 //! When `cru chat` starts, it:
 //! 1. Creates an `InProcessMcpHost` which starts an HTTP server on `127.0.0.1:0`
 //! 2. Gets the bound address and constructs an endpoint URL
-//! 3. Passes that URL to the agent via `McpServer::Sse` in `NewSessionRequest`
+//! 3. Passes that URL to the agent via `McpServer::Http` in `NewSessionRequest`
 //! 4. The agent connects to the endpoint and discovers Crucible's tools
 //!
 //! This keeps all tool execution in-process, sharing the same database connection.
@@ -24,7 +24,7 @@ use tracing::{debug, error, info};
 use crate::{ClientError, Result};
 use crucible_core::enrichment::EmbeddingProvider;
 use crucible_core::traits::KnowledgeRepository;
-use crucible_tools::CrucibleMcpServer;
+use crucible_tools::{CrucibleMcpServer, DelegationContext};
 
 /// Hosts an MCP server in-process using streamable HTTP transport
 pub struct InProcessMcpHost {
@@ -38,6 +38,7 @@ impl InProcessMcpHost {
         kiln_path: PathBuf,
         knowledge_repo: Arc<dyn KnowledgeRepository>,
         embedding_provider: Arc<dyn EmbeddingProvider>,
+        delegation_context: Option<DelegationContext>,
     ) -> Result<Self> {
         use rmcp::transport::streamable_http_server::{
             session::local::LocalSessionManager, tower::StreamableHttpService,
@@ -62,10 +63,11 @@ impl InProcessMcpHost {
 
         info!("MCP streamable HTTP server bound to {}", actual_addr);
 
-        let mcp_server = CrucibleMcpServer::new(
+        let mcp_server = CrucibleMcpServer::new_with_delegation(
             kiln_path.to_string_lossy().to_string(),
             knowledge_repo,
             embedding_provider,
+            delegation_context,
         );
 
         let service = StreamableHttpService::new(
@@ -104,7 +106,7 @@ impl InProcessMcpHost {
         })
     }
 
-    pub fn sse_url(&self) -> String {
+    pub fn mcp_url(&self) -> String {
         format!("http://{}/mcp", self.address)
     }
 
@@ -199,6 +201,7 @@ mod tests {
             temp.path().to_path_buf(),
             knowledge_repo,
             embedding_provider,
+            None,
         )
         .await
         {
@@ -212,7 +215,7 @@ mod tests {
             }
         };
 
-        let url = host.sse_url();
+        let url = host.mcp_url();
 
         // URL should be localhost with some port
         assert!(
@@ -240,6 +243,7 @@ mod tests {
             temp.path().to_path_buf(),
             knowledge_repo,
             embedding_provider,
+            None,
         )
         .await
         {
@@ -253,7 +257,7 @@ mod tests {
             }
         };
 
-        let _url = host.sse_url();
+        let _url = host.mcp_url();
 
         // Drop should trigger shutdown
         drop(host);

@@ -59,6 +59,8 @@ pub enum AgentFactoryError {
 pub async fn create_agent_from_session_config(
     agent_config: &SessionAgent,
     workspace: &Path,
+    kiln_path: Option<&Path>,
+    parent_session_id: Option<&str>,
     background_spawner: Option<Arc<dyn BackgroundSpawner>>,
     event_tx: &broadcast::Sender<SessionEventMessage>,
     mcp_gateway: Option<Arc<tokio::sync::RwLock<crucible_tools::mcp_gateway::McpGatewayManager>>>,
@@ -68,9 +70,12 @@ pub async fn create_agent_from_session_config(
         let handle = AcpAgentHandle::new(
             agent_config,
             workspace,
+            kiln_path,
             None,
             None,
-            None,
+            background_spawner,
+            parent_session_id,
+            agent_config.delegation_config.as_ref(),
             None,
             acp_permission_handler,
         )
@@ -239,6 +244,8 @@ mod tests {
                 &config,
                 Path::new("/tmp"),
                 None,
+                None,
+                None,
                 &event_tx,
                 None,
                 None,
@@ -260,6 +267,8 @@ mod tests {
         let result = create_agent_from_session_config(
             &config,
             Path::new("/tmp"),
+            None,
+            None,
             None,
             &event_tx,
             None,

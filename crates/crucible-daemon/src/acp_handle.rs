@@ -21,7 +21,8 @@ use tracing::{debug, info, warn};
 use crucible_acp::client::{ClientConfig, CrucibleAcpClient, PermissionRequestHandler};
 use crucible_acp::streaming::{channel_callback, StreamingChunk};
 use crucible_acp::InProcessMcpHost;
-use crucible_config::AcpConfig;
+use crucible_config::{AcpConfig, DelegationConfig};
+use crucible_core::background::BackgroundSpawner;
 use crucible_core::enrichment::EmbeddingProvider;
 use crucible_core::session::SessionAgent;
 use crucible_core::traits::chat::{
@@ -30,6 +31,7 @@ use crucible_core::traits::chat::{
 use crucible_core::traits::KnowledgeRepository;
 use crucible_core::types::acp::schema::{AvailableCommand, SessionModeState};
 use crucible_core::types::mode::default_internal_modes;
+use crucible_tools::DelegationContext;
 
 /// Errors specific to ACP agent handle creation and management.
 #[derive(Error, Debug)]
@@ -46,6 +48,61 @@ pub enum AcpHandleError {
 
     #[error("Configuration error: {0}")]
     Config(String),
+}
+
+struct EmptyKnowledgeRepository;
+
+#[async_trait::async_trait]
+impl KnowledgeRepository for EmptyKnowledgeRepository {
+    async fn get_note_by_name(
+        &self,
+        _name: &str,
+    ) -> crucible_core::Result<Option<crucible_core::parser::ParsedNote>> {
+        Ok(None)
+    }
+
+    async fn list_notes(
+        &self,
+        _path: Option<&str>,
+    ) -> crucible_core::Result<Vec<crucible_core::traits::knowledge::NoteInfo>> {
+        Ok(vec![])
+    }
+
+    async fn search_vectors(
+        &self,
+        _vector: Vec<f32>,
+    ) -> crucible_core::Result<Vec<crucible_core::types::SearchResult>> {
+        Ok(vec![])
+    }
+}
+
+struct EmptyEmbeddingProvider;
+
+#[async_trait::async_trait]
+impl EmbeddingProvider for EmptyEmbeddingProvider {
+    async fn embed(&self, _text: &str) -> anyhow::Result<Vec<f32>> {
+        anyhow::bail!("Embedding provider unavailable in ACP MCP host")
+    }
+
+    async fn embed_batch(&self, _texts: &[&str]) -> anyhow::Result<Vec<Vec<f32>>> {
+        anyhow::bail!("Embedding provider unavailable in ACP MCP host")
+    }
+
+    fn model_name(&self) -> &str {
+        "unavailable"
+    }
+
+    fn dimensions(&self) -> usize {
+        0
+    }
+
+    fn provider_name(&self) -> &str {
+        "none"
+    }
+
+    async fn list_models(&self) -> anyhow::Result<Vec<String>> {
+        Ok(vec![])
+    }
 }
 
 /// Daemon-side handle to an ACP agent process.
@@ -84,6 +141,9 @@ impl AcpAgentHandle {
     /// * `kiln_path` - Optional kiln path for MCP server
     /// * `knowledge_repo` - Optional repository for MCP semantic search
     /// * `embedding_provider` - Optional embedding provider for MCP
+    /// * `background_spawner` - Optional spawner used by delegate_session
+    /// * `parent_session_id` - Parent daemon session id
+    /// * `delegation_config` - Delegation limits and allowlist for this agent
     /// * `acp_config` - Optional ACP configuration (timeouts, etc.)
     pub async fn new(
         agent_config: &SessionAgent,
@@ -91,6 +151,9 @@ impl AcpAgentHandle {
         kiln_path: Option<&Path>,
         knowledge_repo: Option<Arc<dyn KnowledgeRepository>>,
         embedding_provider: Option<Arc<dyn EmbeddingProvider>>,
+        background_spawner: Option<Arc<dyn BackgroundSpawner>>,
+        parent_session_id: Option<&str>,
+        delegation_config: Option<&DelegationConfig>,
         acp_config: Option<&AcpConfig>,
         permission_handler: Option<PermissionRequestHandler>,
     ) -> Result<Self, AcpHandleError> {
@@ -106,12 +169,25 @@ impl AcpAgentHandle {
         if let Some(handler) = permission_handler {
             client = client.with_permission_handler(handler);
         }
-        let mcp_host = if let (Some(kiln), Some(repo), Some(embed)) =
-            (kiln_path, knowledge_repo, embedding_provider)
-        {
-            match InProcessMcpHost::start(kiln.to_path_buf(), repo, embed).await {
+        let delegation_context = parent_session_id.and_then(|session_id| {
+            background_spawner.clone().map(|spawner| DelegationContext {
+                background_spawner: spawner,
+                session_id: session_id.to_string(),
+                targets: delegation_config
+                    .and_then(|c| c.allowed_targets.clone())
+                    .unwrap_or_default(),
+                enabled: delegation_config.map(|c| c.enabled).unwrap_or(false),
+                depth: 0,
+            })
+        });
+
+        let mcp_host = if let Some(kiln) = kiln_path {
+            let repo = knowledge_repo.unwrap_or_else(|| Arc::new(EmptyKnowledgeRepository));
+            let embed = embedding_provider.unwrap_or_else(|| Arc::new(EmptyEmbeddingProvider));
+
+            match InProcessMcpHost::start(kiln.to_path_buf(), repo, embed, delegation_context).await {
                 Ok(host) => {
-                    info!(url = %host.sse_url(), "In-process MCP server started");
+                    info!(url = %host.mcp_url(), "In-process MCP server started");
                     Some(host)
                 }
                 Err(e) => {
@@ -128,7 +204,7 @@ impl AcpAgentHandle {
 
         let session = if let Some(ref host) = mcp_host {
             client
-                .connect_with_sse_mcp(&host.sse_url())
+                .connect_with_sse_mcp(&host.mcp_url())
                 .await
                 .map_err(|e| AcpHandleError::Connection(e.to_string()))?
         } else {
