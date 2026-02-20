@@ -152,7 +152,7 @@ impl KilnContext {
         // Use KnowledgeRepository trait for search (works with both embedded and daemon)
         let knowledge_repo = self
             .storage_handle
-            .as_knowledge_repository()
+            .as_knowledge_repository(Some(self.config.kiln_path.as_path()))
             .ok_or_else(|| {
                 tracing::error!("Knowledge repository not available (lightweight mode)");
                 anyhow!("Semantic search not supported in lightweight mode")

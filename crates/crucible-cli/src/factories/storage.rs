@@ -331,7 +331,7 @@ impl StorageHandle {
         use crucible_core::traits::KnowledgeRepository;
 
         let repo = self
-            .as_knowledge_repository()
+            .as_knowledge_repository(None)
             .ok_or_else(|| anyhow::anyhow!("list_notes not supported in lightweight mode"))?;
 
         repo.list_notes(path_filter)
@@ -389,14 +389,9 @@ impl StorageHandle {
         }
     }
 
-    /// Get a KnowledgeRepository trait object for this storage
-    ///
-    /// Works for both embedded and daemon modes, allowing chat and other
-    /// features to access knowledge base without requiring embedded access.
-    ///
-    /// Returns None for lightweight mode (no SurrealDB).
     pub fn as_knowledge_repository(
         &self,
+        kiln_path: Option<&std::path::Path>,
     ) -> Option<Arc<dyn crucible_core::traits::KnowledgeRepository>> {
         match self {
             #[cfg(feature = "storage-surrealdb")]
@@ -406,9 +401,18 @@ impl StorageHandle {
             }
             StorageHandle::Lightweight(_) => None,
             #[cfg(feature = "storage-sqlite")]
-            StorageHandle::Sqlite(store) => Some(crucible_sqlite::create_knowledge_repository(
-                Arc::clone(store),
-            )),
+            StorageHandle::Sqlite(store) => {
+                if let Some(kp) = kiln_path {
+                    Some(crucible_sqlite::create_knowledge_repository_with_kiln(
+                        Arc::clone(store),
+                        kp.to_path_buf(),
+                    ))
+                } else {
+                    Some(crucible_sqlite::create_knowledge_repository(
+                        Arc::clone(store),
+                    ))
+                }
+            }
         }
     }
 
