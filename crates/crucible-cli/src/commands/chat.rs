@@ -533,7 +533,7 @@ async fn run_interactive_chat(
     // Works with any storage backend that supports KnowledgeRepository (sqlite, embedded)
     match factories::get_storage(&config).await {
         Ok(storage_handle) => {
-            if storage_handle.as_knowledge_repository().is_some() {
+            if storage_handle.as_knowledge_repository(Some(config.kiln_path.as_path())).is_some() {
                 let core = Arc::new(KilnContext::from_storage_handle(storage_handle, config.clone()));
                 let enricher = Arc::new(ContextEnricher::new(core, None));
                 runner = runner.with_enricher(enricher);
@@ -567,6 +567,7 @@ async fn run_interactive_chat(
             match selection {
                 AgentSelection::Acp(agent_name) => {
                     let mut params = factories::AgentInitParams::new()
+                        .with_type(factories::AgentType::Acp)
                         .with_agent_name_opt(Some(agent_name).or(default_agent))
                         .with_provider_opt(provider_key)
                         .with_read_only(is_read_only(&initial_mode))

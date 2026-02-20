@@ -120,8 +120,8 @@ pub async fn execute(config: CliConfig, args: McpArgs) -> Result<()> {
     // Create knowledge repository from storage
     let knowledge_repo = core
         .storage_handle()
-        .as_knowledge_repository()
-        .ok_or_else(|| anyhow::anyhow!("MCP server requires SurrealDB storage"))?;
+        .as_knowledge_repository(Some(core.kiln_root()))
+        .ok_or_else(|| anyhow::anyhow!("MCP server requires a knowledge-capable storage backend"))?;
 
     // Determine Just directory
     let just_dir = args
