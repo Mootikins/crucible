@@ -22,7 +22,7 @@ async fn start_mcp_host(
     knowledge_repo: Arc<dyn KnowledgeRepository>,
     embedding_provider: Arc<dyn EmbeddingProvider>,
 ) -> InProcessMcpHost {
-    match InProcessMcpHost::start(kiln_path, knowledge_repo, embedding_provider).await {
+    match InProcessMcpHost::start(kiln_path, knowledge_repo, embedding_provider, None).await {
         Ok(host) => host,
         Err(err) => {
             if is_permission_denied(&err) {
@@ -91,7 +91,7 @@ impl EmbeddingProvider for MockEmbeddingProvider {
     }
 }
 
-/// Test that the in-process MCP host starts and provides a valid SSE URL
+/// Test that the in-process MCP host starts and provides a valid URL
 #[tokio::test]
 async fn test_in_process_mcp_host_provides_valid_sse_url() {
     let temp = TempDir::new().unwrap();
@@ -105,7 +105,7 @@ async fn test_in_process_mcp_host_provides_valid_sse_url() {
     )
     .await;
 
-    let url = host.sse_url();
+    let url = host.mcp_url();
 
     // Verify URL format
     assert!(
@@ -136,7 +136,7 @@ async fn test_in_process_mcp_sse_endpoint_is_reachable() {
     )
     .await;
 
-    let url = host.sse_url();
+    let url = host.mcp_url();
 
     // Try to connect to the streamable HTTP endpoint
     let client = reqwest::Client::new();
@@ -162,10 +162,10 @@ async fn test_in_process_mcp_sse_endpoint_is_reachable() {
     host.shutdown().await;
 }
 
-/// Test that McpServer::Sse can be constructed with the host's URL
+/// Test that McpServer::Http can be constructed with the host's URL
 #[tokio::test]
-async fn test_mcp_server_sse_variant_with_host_url() {
-    use agent_client_protocol::{McpServer, McpServerSse};
+async fn test_mcp_server_http_variant_with_host_url() {
+    use agent_client_protocol::{McpServer, McpServerHttp};
 
     let temp = TempDir::new().unwrap();
     let knowledge_repo = Arc::new(MockKnowledgeRepository) as Arc<dyn KnowledgeRepository>;
@@ -178,25 +178,24 @@ async fn test_mcp_server_sse_variant_with_host_url() {
     )
     .await;
 
-    let url = host.sse_url();
+    let url = host.mcp_url();
 
-    // Construct McpServer::Sse with the host's URL (this is what connect_with_sse_mcp does)
-    let mcp_server = McpServer::Sse(McpServerSse::new("crucible", url.clone()));
+    let mcp_server = McpServer::Http(McpServerHttp::new("crucible", url.clone()));
 
-    // Verify it serializes correctly for the ACP protocol
     let serialized = serde_json::to_value(&mcp_server).expect("Should serialize");
 
     assert_eq!(serialized["name"], "crucible");
     assert_eq!(serialized["url"], url);
     assert!(serialized["headers"].is_array());
+    assert_eq!(serialized["type"], "http");
 
     host.shutdown().await;
 }
 
-/// Test that the ACP NewSessionRequest can include SSE MCP server
+/// Test that the ACP NewSessionRequest can include Streamable HTTP MCP server
 #[tokio::test]
-async fn test_new_session_request_with_sse_mcp() {
-    use agent_client_protocol::{McpServer, McpServerSse, NewSessionRequest};
+async fn test_new_session_request_with_http_mcp() {
+    use agent_client_protocol::{McpServer, McpServerHttp, NewSessionRequest};
     use serde_json::json;
 
     let temp = TempDir::new().unwrap();
@@ -210,10 +209,9 @@ async fn test_new_session_request_with_sse_mcp() {
     )
     .await;
 
-    let url = host.sse_url();
+    let url = host.mcp_url();
 
-    // This mirrors what connect_with_sse_mcp does
-    let mcp_server = McpServer::Sse(McpServerSse::new("crucible", url.clone()));
+    let mcp_server = McpServer::Http(McpServerHttp::new("crucible", url.clone()));
 
     let request: NewSessionRequest = serde_json::from_value(json!({
         "cwd": "/test",
@@ -222,19 +220,17 @@ async fn test_new_session_request_with_sse_mcp() {
     }))
     .expect("Failed to create NewSessionRequest");
 
-    // Verify the request structure
     assert_eq!(request.mcp_servers.len(), 1);
 
     match &request.mcp_servers[0] {
-        McpServer::Sse(sse) => {
-            assert_eq!(&sse.name, "crucible");
-            assert_eq!(&sse.url, &url);
-            assert!(sse.headers.is_empty());
+        McpServer::Http(http) => {
+            assert_eq!(&http.name, "crucible");
+            assert_eq!(&http.url, &url);
+            assert!(http.headers.is_empty());
         }
-        _ => panic!("Expected McpServer::Sse variant"),
+        _ => panic!("Expected McpServer::Http variant"),
     }
 
-    // Verify full serialization for protocol transmission
     let json = serde_json::to_string(&request).expect("Should serialize");
     assert!(json.contains("crucible"));
     assert!(json.contains(&url));
@@ -256,7 +252,7 @@ async fn test_in_process_mcp_host_graceful_shutdown() {
     )
     .await;
 
-    let url = host.sse_url();
+    let url = host.mcp_url();
 
     // Verify endpoint works before shutdown
     let client = reqwest::Client::new();
