@@ -195,7 +195,13 @@ fn supports_reasoning_content(model_name: &str) -> bool {
         || name_lower.contains("reasoning")
 }
 
-fn build_acp_session_agent(params: &AgentInitParams) -> SessionAgent {
+fn build_acp_session_agent(params: &AgentInitParams, config: &CliAppConfig) -> SessionAgent {
+    let delegation_config = params
+        .agent_name
+        .as_ref()
+        .and_then(|agent_name| config.acp.agents.get(agent_name))
+        .and_then(|profile| profile.delegation.clone());
+
     SessionAgent {
         agent_type: "acp".to_string(),
         agent_name: params.agent_name.clone(),
@@ -213,7 +219,7 @@ fn build_acp_session_agent(params: &AgentInitParams) -> SessionAgent {
         agent_card_name: None,
         capabilities: None,
         agent_description: None,
-        delegation_config: None,
+        delegation_config,
     }
 }
 
@@ -340,7 +346,7 @@ pub async fn create_daemon_agent(
 
     if is_new_session {
         let session_agent = if is_acp {
-            build_acp_session_agent(params)
+            build_acp_session_agent(params, config)
         } else {
             build_internal_session_agent(config)
         };
@@ -362,7 +368,7 @@ pub async fn create_daemon_agent(
 
     let handle = if is_new_session {
         let agent_config = if is_acp {
-            build_acp_session_agent(params)
+            build_acp_session_agent(params, config)
         } else {
             build_internal_session_agent(config)
         };
@@ -464,6 +470,17 @@ pub async fn create_agent(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crucible_config::{AgentProfile, DelegationConfig};
+
+    fn test_delegation_config() -> DelegationConfig {
+        DelegationConfig {
+            enabled: true,
+            max_depth: 2,
+            allowed_targets: Some(vec!["tool-agent".to_string(), "search-agent".to_string()]),
+            result_max_bytes: 102400,
+            max_concurrent_delegations: 4,
+        }
+    }
 
     #[test]
     fn test_agent_type_default() {
@@ -581,5 +598,35 @@ mod tests {
         assert!(!supports_reasoning_content("llama3.2"));
         assert!(!supports_reasoning_content("gpt-4o"));
         assert!(!supports_reasoning_content("claude-3-5-sonnet"));
+    }
+
+    #[test]
+    fn test_build_acp_session_agent_includes_delegation_config_when_present() {
+        let mut config = CliAppConfig::default();
+        config.acp.agents.insert(
+            "delegating-agent".to_string(),
+            AgentProfile {
+                delegation: Some(test_delegation_config()),
+                ..Default::default()
+            },
+        );
+
+        let params = AgentInitParams::default().with_agent_name("delegating-agent");
+        let session_agent = build_acp_session_agent(&params, &config);
+
+        assert_eq!(
+            session_agent.delegation_config,
+            Some(test_delegation_config())
+        );
+    }
+
+    #[test]
+    fn test_build_acp_session_agent_omits_delegation_config_when_missing() {
+        let config = CliAppConfig::default();
+        let params = AgentInitParams::default().with_agent_name("non-delegating-agent");
+
+        let session_agent = build_acp_session_agent(&params, &config);
+
+        assert_eq!(session_agent.delegation_config, None);
     }
 }
