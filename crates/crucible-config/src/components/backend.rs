@@ -4,6 +4,7 @@
 //! provider backends for both embeddings and chat. This unifies the previously
 //! separate embedding and LLM provider type enums (both now removed).
 
+use super::trust::TrustLevel;
 use serde::{Deserialize, Serialize};
 
 /// Unified backend type for all providers.
@@ -87,6 +88,14 @@ impl BackendType {
     /// Whether this backend is local (no remote API calls)
     pub fn is_local(&self) -> bool {
         matches!(self, Self::FastEmbed | Self::Burn | Self::Mock)
+    }
+
+    /// Get the default trust level for this backend
+    pub fn default_trust_level(&self) -> TrustLevel {
+        match self {
+            Self::FastEmbed | Self::Burn | Self::Mock => TrustLevel::Local,
+            _ => TrustLevel::Cloud,
+        }
     }
 
     /// Whether this backend requires an API key
@@ -632,5 +641,63 @@ mod tests {
                 variant
             );
         }
+    }
+
+    #[test]
+    fn test_default_trust_level_local_backends() {
+        // Local backends should default to Local trust level
+        assert_eq!(
+            BackendType::FastEmbed.default_trust_level(),
+            crate::components::trust::TrustLevel::Local
+        );
+        assert_eq!(
+            BackendType::Burn.default_trust_level(),
+            crate::components::trust::TrustLevel::Local
+        );
+        assert_eq!(
+            BackendType::Mock.default_trust_level(),
+            crate::components::trust::TrustLevel::Local
+        );
+    }
+
+    #[test]
+    fn test_default_trust_level_cloud_backends() {
+        // All other backends should default to Cloud trust level
+        assert_eq!(
+            BackendType::Ollama.default_trust_level(),
+            crate::components::trust::TrustLevel::Cloud
+        );
+        assert_eq!(
+            BackendType::OpenAI.default_trust_level(),
+            crate::components::trust::TrustLevel::Cloud
+        );
+        assert_eq!(
+            BackendType::Anthropic.default_trust_level(),
+            crate::components::trust::TrustLevel::Cloud
+        );
+        assert_eq!(
+            BackendType::Cohere.default_trust_level(),
+            crate::components::trust::TrustLevel::Cloud
+        );
+        assert_eq!(
+            BackendType::VertexAI.default_trust_level(),
+            crate::components::trust::TrustLevel::Cloud
+        );
+        assert_eq!(
+            BackendType::GitHubCopilot.default_trust_level(),
+            crate::components::trust::TrustLevel::Cloud
+        );
+        assert_eq!(
+            BackendType::OpenRouter.default_trust_level(),
+            crate::components::trust::TrustLevel::Cloud
+        );
+        assert_eq!(
+            BackendType::ZAI.default_trust_level(),
+            crate::components::trust::TrustLevel::Cloud
+        );
+        assert_eq!(
+            BackendType::Custom.default_trust_level(),
+            crate::components::trust::TrustLevel::Cloud
+        );
     }
 }
