@@ -22,6 +22,7 @@ use crate::rpc_helpers::{
 use crate::session_manager::SessionManager;
 use crate::session_storage::{FileSessionStorage, SessionStorage};
 use anyhow::Result;
+use crucible_config::{DataClassification, LlmConfig, TrustLevel, WorkspaceConfig};
 use crucible_core::session::RecordingMode;
 
 use crate::protocol::RequestId;
@@ -94,6 +95,7 @@ pub struct Server {
     dispatcher: Arc<RpcDispatcher>,
     plugin_loader: Arc<Mutex<Option<DaemonPluginLoader>>>,
     plugin_watch: bool,
+    llm_config: Option<LlmConfig>,
     #[cfg(feature = "web")]
     web_config: Option<crucible_config::WebConfig>,
 }
@@ -169,7 +171,7 @@ impl Server {
             session_manager.clone(),
             background_manager.clone(),
             mcp_gateway,
-            llm_config,
+            llm_config.clone(),
             None,
             permission_config,
         ));
@@ -213,6 +215,7 @@ impl Server {
             dispatcher,
             plugin_loader,
             plugin_watch,
+            llm_config,
             #[cfg(feature = "web")]
             web_config,
         })
@@ -444,8 +447,9 @@ impl Server {
                             let event_tx = self.event_tx.clone();
                             let event_rx = self.event_tx.subscribe();
                             let pl = self.plugin_loader.clone();
+                            let llm_config = self.llm_config.clone();
                             tokio::spawn(async move {
-                                if let Err(e) = handle_client(stream, dispatcher, km, sm, am, sub_m, pm, event_tx, event_rx, pl).await {
+                                if let Err(e) = handle_client(stream, dispatcher, km, sm, am, sub_m, pm, event_tx, event_rx, pl, llm_config).await {
                                     error!("Client error: {}", e);
                                 }
                             });
@@ -494,6 +498,7 @@ async fn handle_client(
     event_tx: broadcast::Sender<SessionEventMessage>,
     mut event_rx: broadcast::Receiver<SessionEventMessage>,
     plugin_loader: Arc<Mutex<Option<DaemonPluginLoader>>>,
+    llm_config: Option<LlmConfig>,
 ) -> Result<()> {
     let client_id = ClientId::new();
     let (reader, writer) = stream.into_split();
@@ -555,6 +560,7 @@ async fn handle_client(
                     &project_manager,
                     &event_tx,
                     &plugin_loader,
+                    &llm_config,
                 )
                 .await
             }
@@ -659,6 +665,7 @@ async fn handle_request(
     project_manager: &Arc<ProjectManager>,
     event_tx: &broadcast::Sender<SessionEventMessage>,
     plugin_loader: &Arc<Mutex<Option<DaemonPluginLoader>>>,
+    llm_config: &Option<LlmConfig>,
 ) -> Response {
     let req_clone = req.clone();
     let resp = dispatcher.dispatch(client_id, req).await;
@@ -673,6 +680,7 @@ async fn handle_request(
                 project_manager,
                 event_tx,
                 plugin_loader,
+                llm_config,
             )
             .await;
         }
@@ -690,6 +698,7 @@ async fn handle_legacy_request(
     project_manager: &Arc<ProjectManager>,
     event_tx: &broadcast::Sender<SessionEventMessage>,
     plugin_loader: &Arc<Mutex<Option<DaemonPluginLoader>>>,
+    llm_config: &Option<LlmConfig>,
 ) -> Response {
     tracing::debug!("Legacy handler for method={:?}", req.method);
 
@@ -706,7 +715,9 @@ async fn handle_legacy_request(
         "note.list" => handle_note_list(req, kiln_manager).await,
         "process_file" => handle_process_file(req, kiln_manager).await,
         "process_batch" => handle_process_batch(req, kiln_manager).await,
-        "session.create" => handle_session_create(req, session_manager, project_manager).await,
+        "session.create" => {
+            handle_session_create(req, session_manager, project_manager, llm_config).await
+        }
         "session.list" => handle_session_list(req, session_manager).await,
         "session.get" => handle_session_get(req, session_manager).await,
         "session.pause" => handle_session_pause(req, session_manager).await,
@@ -1063,6 +1074,7 @@ async fn handle_session_create(
     req: Request,
     sm: &Arc<SessionManager>,
     pm: &Arc<ProjectManager>,
+    llm_config: &Option<LlmConfig>,
 ) -> Response {
     let session_type_str = optional_str_param!(req, "type").unwrap_or("chat");
     let session_type = match session_type_str {
@@ -1083,6 +1095,12 @@ async fn handle_session_create(
         .unwrap_or_else(crucible_config::crucible_home);
 
     let workspace = optional_str_param!(req, "workspace").map(PathBuf::from);
+
+    let provider_trust_level = resolve_provider_trust_level_for_create(&req, llm_config);
+    let classification = resolve_kiln_classification_for_create(&kiln, workspace.as_ref());
+    if let Err(message) = validate_trust_level(provider_trust_level, classification) {
+        return Response::error(req.id, INVALID_PARAMS, message);
+    }
 
     let connected_kilns: Vec<PathBuf> = req
         .params
@@ -1146,6 +1164,85 @@ async fn handle_session_create(
         }
         Err(e) => internal_error(req.id, e),
     }
+}
+
+fn validate_trust_level(
+    provider_trust_level: TrustLevel,
+    classification: DataClassification,
+) -> Result<(), String> {
+    if provider_trust_level.satisfies(classification) {
+        return Ok(());
+    }
+
+    Err(format!(
+        "Provider trust level '{}' is insufficient for kiln data classification '{}'. Requires '{}' trust or higher.",
+        provider_trust_level,
+        classification,
+        classification.required_trust_level()
+    ))
+}
+
+fn resolve_provider_trust_level_for_create(req: &Request, llm_config: &Option<LlmConfig>) -> TrustLevel {
+    if optional_str_param!(req, "agent_type") == Some("acp") {
+        return TrustLevel::Cloud;
+    }
+
+    if let Some(provider_key) = optional_str_param!(req, "provider_key") {
+        if let Some(config) = llm_config
+            .as_ref()
+            .and_then(|cfg| cfg.get_provider(provider_key))
+        {
+            return config.effective_trust_level();
+        }
+    }
+
+    if let Some(provider_name) = optional_str_param!(req, "provider") {
+        if let Ok(backend) = provider_name.parse::<crucible_config::BackendType>() {
+            return backend.default_trust_level();
+        }
+    }
+
+    llm_config
+        .as_ref()
+        .and_then(LlmConfig::default_provider)
+        .map(|(_, provider)| provider.effective_trust_level())
+        .unwrap_or(TrustLevel::Cloud)
+}
+
+fn resolve_kiln_classification_for_create(
+    kiln: &Path,
+    workspace: Option<&PathBuf>,
+) -> DataClassification {
+    let workspace_path = workspace.cloned().unwrap_or_else(|| kiln.to_path_buf());
+    let config_path = workspace_path.join(".crucible").join("workspace.toml");
+    let content = match std::fs::read_to_string(config_path) {
+        Ok(content) => content,
+        Err(_) => return DataClassification::Public,
+    };
+    let config = match toml::from_str::<WorkspaceConfig>(&content) {
+        Ok(config) => config,
+        Err(_) => return DataClassification::Public,
+    };
+
+    let kiln_canonical = std::fs::canonicalize(kiln).ok();
+    for attachment in &config.kilns {
+        let attachment_path = if attachment.path.is_absolute() {
+            attachment.path.clone()
+        } else {
+            workspace_path.join(&attachment.path)
+        };
+
+        let matches = match (&kiln_canonical, std::fs::canonicalize(&attachment_path).ok()) {
+            (Some(kc), Some(ac)) => kc == &ac,
+            _ => attachment_path == kiln,
+        };
+
+        if matches {
+            return attachment.effective_classification();
+        }
+    }
+
+    DataClassification::Public
 }
 
 async fn handle_session_list(req: Request, sm: &Arc<SessionManager>) -> Response {
@@ -2117,9 +2214,173 @@ fn find_owning_plugin(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::session_storage::FileSessionStorage;
+    use serde_json::json;
+    use std::collections::HashMap;
+    use std::sync::Arc;
     use tempfile::TempDir;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::UnixStream;
+
+    fn build_llm_config(default_key: &str, provider_type: crucible_config::BackendType) -> LlmConfig {
+        build_llm_config_with_trust(default_key, provider_type, None)
+    }
+
+    fn build_llm_config_with_trust(
+        default_key: &str,
+        provider_type: crucible_config::BackendType,
+        trust_level: Option<crucible_config::TrustLevel>,
+    ) -> LlmConfig {
+        let mut providers = HashMap::new();
+        providers.insert(
+            default_key.to_string(),
+            crucible_config::LlmProviderConfig {
+                provider_type,
+                endpoint: None,
+                default_model: None,
+                temperature: None,
+                max_tokens: None,
+                timeout_secs: None,
+                api_key: None,
+                available_models: None,
+                trust_level,
+            },
+        );
+        LlmConfig {
+            default: Some(default_key.to_string()),
+            providers,
+        }
+    }
+
+    fn create_session_request(kiln: &Path, workspace: &Path, provider_key: &str) -> Request {
+        serde_json::from_value(json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "session.create",
+            "params": {
+                "type": "chat",
+                "kiln": kiln,
+                "workspace": workspace,
+                "provider_key": provider_key
+            }
+        }))
+        .unwrap()
+    }
+
+    fn write_workspace_config(
+        workspace: &Path,
+        kiln_relative_path: &str,
+        classification: Option<&str>,
+    ) {
+        let crucible_dir = workspace.join(".crucible");
+        std::fs::create_dir_all(&crucible_dir).unwrap();
+        let mut config = format!(
+            "[workspace]\nname = \"test\"\n\n[[kilns]]\npath = \"{}\"\n",
+            kiln_relative_path
+        );
+        if let Some(classification) = classification {
+            config.push_str(&format!("data_classification = \"{}\"\n", classification));
+        }
+        std::fs::write(crucible_dir.join("workspace.toml"), config).unwrap();
+    }
+
+    #[tokio::test]
+    async fn cloud_provider_confidential_kiln_returns_insufficient_error() {
+        let tmp = TempDir::new().unwrap();
+        let workspace = tmp.path().join("workspace");
+        let kiln = workspace.join("notes");
+        std::fs::create_dir_all(&kiln).unwrap();
+        write_workspace_config(&workspace, "./notes", Some("confidential"));
+
+        let llm_config = Some(build_llm_config("cloud", crucible_config::BackendType::OpenAI));
+        let request = create_session_request(&kiln, &workspace, "cloud");
+
+        let storage = Arc::new(FileSessionStorage::new());
+        let sm = Arc::new(SessionManager::with_storage(storage));
+        let pm = Arc::new(ProjectManager::new(tmp.path().join("projects.json")));
+
+        let response = handle_session_create(request, &sm, &pm, &llm_config).await;
+        let error = response.error.expect("expected trust-level rejection");
+
+        assert_eq!(error.code, INVALID_PARAMS);
+        assert!(error.message.contains("insufficient"));
+        assert!(error.message.contains("cloud"));
+        assert!(error.message.contains("confidential"));
+        assert_eq!(sm.list_sessions().len(), 0);
+    }
+
+    #[tokio::test]
+    async fn local_provider_confidential_kiln_allows_session_creation() {
+        let tmp = TempDir::new().unwrap();
+        let workspace = tmp.path().join("workspace");
+        let kiln = workspace.join("notes");
+        std::fs::create_dir_all(&kiln).unwrap();
+        write_workspace_config(&workspace, "./notes", Some("confidential"));
+
+        let llm_config = Some(build_llm_config("local", crucible_config::BackendType::Mock));
+        let request = create_session_request(&kiln, &workspace, "local");
+
+        let storage = Arc::new(FileSessionStorage::new());
+        let sm = Arc::new(SessionManager::with_storage(storage));
+        let pm = Arc::new(ProjectManager::new(tmp.path().join("projects.json")));
+
+        let response = handle_session_create(request, &sm, &pm, &llm_config).await;
+
+        assert!(response.error.is_none());
+        assert!(response.result.is_some());
+        assert_eq!(sm.list_sessions().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn cloud_provider_public_or_missing_classification_allows_session_creation() {
+        let tmp = TempDir::new().unwrap();
+        let workspace = tmp.path().join("workspace");
+        let kiln = workspace.join("notes");
+        std::fs::create_dir_all(&kiln).unwrap();
+        write_workspace_config(&workspace, "./notes", None);
+
+        let llm_config = Some(build_llm_config("cloud", crucible_config::BackendType::OpenAI));
+        let request = create_session_request(&kiln, &workspace, "cloud");
+
+        let storage = Arc::new(FileSessionStorage::new());
+        let sm = Arc::new(SessionManager::with_storage(storage));
+        let pm = Arc::new(ProjectManager::new(tmp.path().join("projects.json")));
+
+        let response = handle_session_create(request, &sm, &pm, &llm_config).await;
+
+        assert!(response.error.is_none());
+        assert!(response.result.is_some());
+        assert_eq!(sm.list_sessions().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn untrusted_provider_internal_kiln_returns_error() {
+        let tmp = TempDir::new().unwrap();
+        let workspace = tmp.path().join("workspace");
+        let kiln = workspace.join("notes");
+        std::fs::create_dir_all(&kiln).unwrap();
+        write_workspace_config(&workspace, "./notes", Some("internal"));
+
+        let llm_config = Some(build_llm_config_with_trust(
+            "untrusted",
+            crucible_config::BackendType::Custom,
+            Some(crucible_config::TrustLevel::Untrusted),
+        ));
+        let request = create_session_request(&kiln, &workspace, "untrusted");
+
+        let storage = Arc::new(FileSessionStorage::new());
+        let sm = Arc::new(SessionManager::with_storage(storage));
+        let pm = Arc::new(ProjectManager::new(tmp.path().join("projects.json")));
+
+        let response = handle_session_create(request, &sm, &pm, &llm_config).await;
+        let error = response.error.expect("expected trust-level rejection");
+
+        assert_eq!(error.code, INVALID_PARAMS);
+        assert!(error.message.contains("insufficient"));
+        assert!(error.message.contains("untrusted"));
+        assert!(error.message.contains("internal"));
+        assert_eq!(sm.list_sessions().len(), 0);
+    }
 
     #[tokio::test]
     async fn test_server_ping() {

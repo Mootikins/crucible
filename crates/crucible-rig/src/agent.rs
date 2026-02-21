@@ -747,14 +747,10 @@ mod tests {
             names.contains("spawn_subagent"),
             "should have spawn_subagent"
         );
-        assert!(
-            names.contains("delegate_session"),
-            "should have delegate_session"
-        );
         assert_eq!(
             names.len(),
-            11,
-            "auto mode with background spawner should have 11 tools (6 + 5)"
+            10,
+            "auto mode with background spawner should have 10 tools (6 + 4)"
         );
     }
 
