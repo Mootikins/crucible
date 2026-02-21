@@ -29,16 +29,32 @@ const PLAN_FALLBACK_TOOL_NAMES: &[(&str, &str)] = &[
 ];
 
 #[derive(Clone)]
+/// Adapter for running MCP tools in-process without stdio transport.
+/// Wraps a `CrucibleMcpServer` and exposes its tools as Rig-compatible tools.
 pub struct InProcessMcpAdapter {
     server: Arc<CrucibleMcpServer>,
 }
 
 impl InProcessMcpAdapter {
+    /// Creates a new in-process MCP adapter.
+    ///
+    /// # Arguments
+    ///
+    /// * `server` - The MCP server instance to wrap
+    ///
+    /// # Returns
+    ///
+    /// A new `InProcessMcpAdapter` instance
     #[must_use]
     pub fn new(server: Arc<CrucibleMcpServer>) -> Self {
         Self { server }
     }
 
+    /// Lists all available tool names from the MCP server.
+    ///
+    /// # Returns
+    ///
+    /// A vector of tool names as strings
     #[must_use]
     pub fn list_tool_names(&self) -> Vec<String> {
         self.server
@@ -48,6 +64,17 @@ impl InProcessMcpAdapter {
             .collect()
     }
 
+    /// Creates Rig-compatible tools from the MCP server.
+    ///
+    /// Filters tools based on the specified mode (e.g., "plan" mode uses a subset of tools).
+    ///
+    /// # Arguments
+    ///
+    /// * `mode` - The tool selection mode ("plan" or other modes)
+    ///
+    /// # Returns
+    ///
+    /// A vector of boxed Rig tools
     #[must_use]
     pub fn create_rig_tools(&self, mode: &str) -> Vec<Box<dyn rig::tool::ToolDyn>> {
         let all_tools = self.server.list_tools();
@@ -94,11 +121,11 @@ fn filter_plan_tools(all_tools: Vec<McpTool>) -> Vec<McpTool> {
 }
 
 #[derive(Debug, thiserror::Error)]
+/// Error type for in-process MCP tool execution.
 pub enum InProcessToolError {
+    /// Tool execution failed with the given error message.
     #[error("tool execution failed: {0}")]
     ToolExecution(String),
-    #[error("invalid tool arguments: {0}")]
-    InvalidArguments(String),
 }
 
 #[derive(Clone)]
