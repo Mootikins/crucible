@@ -382,6 +382,14 @@ pub enum SessionCommands {
         /// Output format (table, json)
         #[arg(short = 'f', long, default_value = "table")]
         format: String,
+
+        /// Filter by daemon state (active, paused, ended)
+        #[arg(long)]
+        state: Option<String>,
+
+        /// Include persisted sessions from storage in addition to daemon sessions
+        #[arg(long)]
+        all: bool,
     },
 
     /// Search sessions by title
@@ -442,21 +450,6 @@ pub enum SessionCommands {
         dry_run: bool,
     },
 
-    /// Manage daemon sessions (live sessions)
-    #[command(subcommand)]
-    Daemon(DaemonSessionCommands),
-}
-
-/// Daemon session management subcommands
-#[derive(Subcommand, Debug)]
-pub enum DaemonSessionCommands {
-    /// List active daemon sessions
-    List {
-        /// Filter by state (active, paused, ended)
-        #[arg(long)]
-        state: Option<String>,
-    },
-
     /// Create a new daemon session
     Create {
         /// Session type (chat, agent, workflow)
@@ -468,20 +461,14 @@ pub enum DaemonSessionCommands {
         recording_mode: Option<String>,
     },
 
-    /// Get details of a daemon session
-    Get {
-        /// Session ID
-        session_id: String,
-    },
-
     /// Pause a daemon session
     Pause {
         /// Session ID
         session_id: String,
     },
 
-    /// Resume a paused daemon session
-    Resume {
+    /// Unpause a paused daemon session
+    Unpause {
         /// Session ID
         session_id: String,
     },
@@ -524,6 +511,7 @@ pub enum DaemonSessionCommands {
     },
 
     /// Subscribe to session events (for debugging)
+    #[command(hide = true)]
     Subscribe {
         /// Session IDs to subscribe to
         session_ids: Vec<String>,
@@ -536,6 +524,7 @@ pub enum DaemonSessionCommands {
     },
 
     /// Replay a recorded session
+    #[command(hide = true)]
     Replay {
         /// Path to recording.jsonl file
         recording_path: String,

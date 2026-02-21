@@ -79,7 +79,7 @@ pub async fn execute(settings: Vec<String>, session_id: Option<String>) -> anyho
             eprintln!(
                 "error: no session specified. Use --session <ID> or set CRU_SESSION env var.\n\
                  \n\
-                 Tip: find session IDs with `cru session daemon list`"
+                 Tip: find session IDs with `cru session list`"
             );
             std::process::exit(1);
         });
