@@ -841,7 +841,7 @@ mod tests {
         );
 
         let tools = server.list_all_tools().await;
-        assert_eq!(tools.len(), 15); // 13 kiln tools + 2 discovery tools
+        assert_eq!(tools.len(), 18); // 13 kiln tools + 3 job tools + 2 discovery tools
     }
 
     #[test]

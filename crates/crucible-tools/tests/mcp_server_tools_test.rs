@@ -84,6 +84,10 @@ const EXPECTED_TOOLS: &[&str] = &[
     "get_kiln_stats",
     // Delegation tool (1)
     "delegate_session",
+    // Job tools (3)
+    "list_jobs",
+    "get_job_result",
+    "cancel_job",
 ];
 
 fn create_test_server() -> CrucibleMcpServer {
@@ -98,15 +102,15 @@ fn create_test_server() -> CrucibleMcpServer {
     )
 }
 
-/// Test that CrucibleMcpServer exposes exactly 13 tools
+/// Test that CrucibleMcpServer exposes exactly 16 tools
 #[tokio::test]
 async fn test_mcp_server_exposes_13_tools() {
     let server = create_test_server();
 
     let tool_count = server.tool_count();
     assert_eq!(
-        tool_count, 13,
-        "Should expose exactly 13 tools, got {}",
+        tool_count, 16,
+        "Should expose exactly 16 tools, got {}",
         tool_count
     );
 }
