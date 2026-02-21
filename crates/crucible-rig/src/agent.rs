@@ -26,8 +26,8 @@ use crate::kiln_tools::{KilnContext, ListNotesTool, ReadNoteTool, SemanticSearch
 use crate::mcp_proxy_tool::McpProxyTool;
 use crate::providers::RigClient;
 use crate::workspace_tools::{
-    AskUserTool, BashTool, CancelJobTool, EditFileTool, GetJobResultTool, GlobTool, GrepTool,
-    ListJobsTool, ReadFileTool, SpawnSubagentTool, WorkspaceContext, WriteFileTool,
+    AskUserTool, BashTool, EditFileTool, GlobTool, GrepTool, ReadFileTool, WorkspaceContext,
+    WriteFileTool,
 };
 use crucible_core::agent::AgentCard;
 use crucible_core::prompts::ModelSize;
@@ -112,14 +112,6 @@ fn attach_tools<M: CompletionModel>(
             .tool(SemanticSearchTool::new(kiln.clone()))
             .tool(ReadNoteTool::new(kiln.clone()))
             .tool(ListNotesTool::new(kiln.clone()));
-    }
-
-    if !read_only && ctx.has_background_spawner() {
-        builder = builder
-            .tool(ListJobsTool::new(ctx.clone()))
-            .tool(GetJobResultTool::new(ctx.clone()))
-            .tool(CancelJobTool::new(ctx.clone()))
-            .tool(SpawnSubagentTool::new(ctx.clone()));
     }
 
     if !read_only {
@@ -694,7 +686,7 @@ mod tests {
     }
 
     #[test]
-    fn workspace_context_with_background_spawner_includes_background_tools() {
+    fn workspace_context_with_background_spawner_has_same_tools() {
         use async_trait::async_trait;
         use crucible_core::background::{BackgroundSpawner, JobError, JobId, JobInfo, JobResult};
         use std::path::PathBuf;
@@ -737,20 +729,14 @@ mod tests {
         let tools = ctx.tools_for_mode("auto");
         let names = tool_names(&tools);
 
-        assert!(names.contains("list_jobs"), "should have list_jobs");
-        assert!(
-            names.contains("get_job_result"),
-            "should have get_job_result"
-        );
-        assert!(names.contains("cancel_job"), "should have cancel_job");
-        assert!(
-            names.contains("spawn_subagent"),
-            "should have spawn_subagent"
-        );
+        assert!(!names.contains("list_jobs"));
+        assert!(!names.contains("get_job_result"));
+        assert!(!names.contains("cancel_job"));
+        assert!(!names.contains("spawn_subagent"));
         assert_eq!(
             names.len(),
-            10,
-            "auto mode with background spawner should have 10 tools (6 + 4)"
+            6,
+            "background spawner should not add Rig job tools (MCP proxy handles these)"
         );
     }
 
