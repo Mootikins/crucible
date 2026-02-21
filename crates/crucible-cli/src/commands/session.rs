@@ -6,7 +6,9 @@ use crate::cli::SessionCommands;
 use crate::config::CliConfig;
 use anyhow::{anyhow, Result};
 use chrono::{Duration, Utc};
+use crucible_acp::discovery::default_agent_profiles;
 use crucible_config::BackendType;
+use crucible_core::session::SessionAgent;
 use crucible_core::storage::NoteStore;
 use crucible_observe::{
     extract_session_content, list_sessions, load_events, render_to_markdown, LogEvent,
@@ -42,12 +44,20 @@ pub async fn execute(config: CliConfig, cmd: SessionCommands) -> Result<()> {
         } => cleanup(config, older_than, dry_run).await,
         SessionCommands::Create {
             session_type,
+            agent,
             recording_mode,
         } => {
             let client = DaemonClient::connect_or_start()
                 .await
                 .map_err(|e| anyhow!("Failed to connect to daemon: {}", e))?;
-            daemon_create(&client, &config, &session_type, recording_mode.as_deref()).await
+            daemon_create(
+                &client,
+                &config,
+                &session_type,
+                agent.as_deref(),
+                recording_mode.as_deref(),
+            )
+            .await
         }
         SessionCommands::Pause { session_id } => {
             let client = DaemonClient::connect_or_start()
@@ -806,6 +816,7 @@ async fn daemon_create(
     client: &DaemonClient,
     config: &CliConfig,
     session_type: &str,
+    agent: Option<&str>,
     recording_mode: Option<&str>,
 ) -> Result<()> {
     // Parse recording_mode if provided
@@ -834,14 +845,36 @@ async fn daemon_create(
         .await?;
 
     let session_id = result["session_id"].as_str().unwrap_or("unknown");
+
+    if let Some(agent_name) = agent {
+        let profile = resolve_acp_profile(config, agent_name)
+            .ok_or_else(|| anyhow!("Unknown ACP agent profile: {}", agent_name))?;
+        let session_agent = SessionAgent::from_profile(&profile, agent_name);
+        client
+            .session_configure_agent(session_id, &session_agent)
+            .await?;
+    }
+
     println!("Created session: {}", session_id);
     println!("Type: {}", session_type);
     println!("Kiln: {}", config.kiln_path.display());
     if let Some(mode) = recording_mode {
         println!("Recording mode: {}", mode);
     }
+    if let Some(agent_name) = agent {
+        println!("Configured agent: {} (acp)", agent_name);
+    }
 
     Ok(())
+}
+
+fn resolve_acp_profile(config: &CliConfig, agent_name: &str) -> Option<crucible_config::AgentProfile> {
+    let builtins = default_agent_profiles();
+    if let Some(profile) = builtins.get(agent_name) {
+        return Some(profile.clone());
+    }
+
+    config.acp.agents.get(agent_name).cloned()
 }
 
 /// Pause a daemon session

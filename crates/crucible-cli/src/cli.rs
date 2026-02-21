@@ -456,6 +456,10 @@ pub enum SessionCommands {
         #[arg(short = 't', long, default_value = "chat")]
         session_type: String,
 
+        /// ACP agent profile to configure for the new session
+        #[arg(short = 'a', long)]
+        agent: Option<String>,
+
         /// Recording mode (granular, coarse)
         #[arg(long)]
         recording_mode: Option<String>,
