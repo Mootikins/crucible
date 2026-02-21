@@ -11,10 +11,12 @@ use crucible_acp::client::PermissionRequestHandler;
 use crucible_config::credentials::resolve_copilot_oauth_token;
 use crucible_config::{BackendType, LlmProviderConfig};
 use crucible_core::background::BackgroundSpawner;
+use crucible_core::enrichment::EmbeddingProvider;
 use crucible_core::interaction_registry::InteractionRegistry;
 use crucible_core::prompts::ModelSize;
 use crucible_core::session::SessionAgent;
 use crucible_core::traits::chat::AgentHandle;
+use crucible_core::traits::KnowledgeRepository;
 use crucible_core::{EventPushCallback, InteractionContext};
 use crucible_rig::{
     create_client, mcp_tools_from_gateway, AgentConfig, HandleBuildOpts, McpProxyTool,
@@ -52,7 +54,8 @@ pub enum AgentFactoryError {
 /// * `workspace` - Working directory for the agent (for workspace tools)
 /// * `background_spawner` - Optional spawner for background tasks (subagents, long bash)
 /// * `event_tx` - Broadcast sender for session events (used for InteractionContext)
-///
+/// * `knowledge_repo` - Optional knowledge repository for search tools (used by CrucibleMcpServer)
+/// * `embedding_provider` - Optional embedding provider for semantic search (used by CrucibleMcpServer)
 /// # Returns
 ///
 /// A boxed `AgentHandle` ready for streaming messages.
@@ -65,6 +68,8 @@ pub async fn create_agent_from_session_config(
     event_tx: &broadcast::Sender<SessionEventMessage>,
     mcp_gateway: Option<Arc<tokio::sync::RwLock<crucible_tools::mcp_gateway::McpGatewayManager>>>,
     acp_permission_handler: Option<PermissionRequestHandler>,
+    _knowledge_repo: Option<Arc<dyn KnowledgeRepository>>,
+    _embedding_provider: Option<Arc<dyn EmbeddingProvider>>,
 ) -> Result<Box<dyn AgentHandle + Send + Sync>, AgentFactoryError> {
     if agent_config.agent_type == "acp" {
         let handle = AcpAgentHandle::new(
@@ -249,6 +254,8 @@ mod tests {
                 &event_tx,
                 None,
                 None,
+                None,
+                None,
             )
             .await
         });
@@ -271,6 +278,8 @@ mod tests {
             None,
             None,
             &event_tx,
+            None,
+            None,
             None,
             None,
         )
