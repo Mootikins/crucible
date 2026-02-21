@@ -27,6 +27,7 @@
 #![allow(missing_docs)]
 
 use crate::{KilnTools, NoteTools, SearchTools};
+use crucible_config::{DataClassification, TrustLevel};
 use crucible_core::background::{BackgroundSpawner, JobStatus, SubagentBlockingConfig};
 use crucible_core::enrichment::EmbeddingProvider;
 use crucible_core::storage::NoteStore;
@@ -67,6 +68,7 @@ pub struct DelegationContext {
     pub targets: Vec<String>,
     pub enabled: bool,
     pub depth: u32,
+    pub data_classification: DataClassification,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
@@ -330,6 +332,19 @@ impl CrucibleMcpServer {
                     None,
                 ));
             }
+        }
+
+        let child_trust_level = TrustLevel::Cloud;
+        if !child_trust_level.satisfies(delegation.data_classification) {
+            return Err(rmcp::ErrorData::invalid_params(
+                format!(
+                    "Delegated agent's trust level '{}' is insufficient for kiln data classification '{}'. Requires '{}' trust.",
+                    child_trust_level,
+                    delegation.data_classification,
+                    delegation.data_classification.required_trust_level(),
+                ),
+                None,
+            ));
         }
 
         let child_depth = delegation.depth.saturating_add(1);
@@ -702,6 +717,7 @@ mod tests {
                 targets: vec!["opencode".to_string()],
                 enabled: true,
                 depth: 0,
+                data_classification: DataClassification::Public,
             }),
         );
 
@@ -737,6 +753,7 @@ mod tests {
                 targets: vec!["my-custom-agent".to_string(), "another-agent".to_string()],
                 enabled: true,
                 depth: 0,
+                data_classification: DataClassification::Public,
             }),
         );
 
@@ -812,6 +829,7 @@ mod tests {
                 targets: vec![],
                 enabled: true,
                 depth: 0,
+                data_classification: DataClassification::Public,
             }),
         );
 
@@ -911,8 +929,93 @@ mod tests {
                 targets: vec![],
                 enabled: true,
                 depth: 0,
+                data_classification: DataClassification::Public,
             }),
         )
+    }
+
+    fn make_server_with_delegation_classification(
+        data_classification: DataClassification,
+    ) -> (CrucibleMcpServer, Arc<MockBackgroundSpawner>) {
+        let temp = TempDir::new().unwrap();
+        let spawner = Arc::new(MockBackgroundSpawner {
+            spawn_calls: AtomicUsize::new(0),
+        });
+        let server = CrucibleMcpServer::new_with_delegation(
+            temp.path().to_str().unwrap().to_string(),
+            Arc::new(MockKnowledgeRepository) as Arc<dyn KnowledgeRepository>,
+            Arc::new(MockEmbeddingProvider) as Arc<dyn EmbeddingProvider>,
+            Some(DelegationContext {
+                background_spawner: spawner.clone(),
+                session_id: "chat-parent".to_string(),
+                targets: vec![],
+                enabled: true,
+                depth: 0,
+                data_classification,
+            }),
+        );
+
+        (server, spawner)
+    }
+
+    #[tokio::test]
+    async fn test_delegation_allowed_for_internal_kiln() {
+        let (server, spawner) =
+            make_server_with_delegation_classification(DataClassification::Internal);
+
+        let result = server
+            .delegate_session(Parameters(DelegateSessionParams {
+                prompt: "do work".to_string(),
+                description: Some("desc".to_string()),
+                target: None,
+                background: Some(true),
+            }))
+            .await;
+
+        assert!(result.is_ok());
+        assert_eq!(spawner.spawn_calls.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn test_delegation_blocked_for_confidential_kiln() {
+        let (server, spawner) =
+            make_server_with_delegation_classification(DataClassification::Confidential);
+
+        let result = server
+            .delegate_session(Parameters(DelegateSessionParams {
+                prompt: "do work".to_string(),
+                description: Some("desc".to_string()),
+                target: None,
+                background: Some(true),
+            }))
+            .await;
+
+        assert!(result.is_err());
+        assert_eq!(spawner.spawn_calls.load(Ordering::SeqCst), 0);
+
+        let err = result.unwrap_err();
+        assert!(err.message.contains("insufficient"));
+        assert!(err.message.contains("cloud"));
+        assert!(err.message.contains("confidential"));
+        assert!(err.message.contains("local"));
+    }
+
+    #[tokio::test]
+    async fn test_delegation_allowed_for_public_kiln() {
+        let (server, spawner) =
+            make_server_with_delegation_classification(DataClassification::Public);
+
+        let result = server
+            .delegate_session(Parameters(DelegateSessionParams {
+                prompt: "do work".to_string(),
+                description: Some("desc".to_string()),
+                target: None,
+                background: Some(true),
+            }))
+            .await;
+
+        assert!(result.is_ok());
+        assert_eq!(spawner.spawn_calls.load(Ordering::SeqCst), 1);
     }
 
     #[tokio::test]
