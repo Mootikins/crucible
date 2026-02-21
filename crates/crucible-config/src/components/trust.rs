@@ -10,21 +10,18 @@ use serde::{Deserialize, Serialize};
 ///
 /// Trust levels are ordered from most to least trustworthy:
 /// `Local > Cloud > Untrusted`
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, Default,
+)]
 #[serde(rename_all = "lowercase")]
 pub enum TrustLevel {
     /// Untrusted environment (lowest trust)
     Untrusted,
     /// Cloud-based environment (medium trust)
+    #[default]
     Cloud,
     /// Local environment (highest trust)
     Local,
-}
-
-impl Default for TrustLevel {
-    fn default() -> Self {
-        Self::Cloud
-    }
 }
 
 impl TrustLevel {
@@ -50,21 +47,16 @@ impl std::fmt::Display for TrustLevel {
 }
 
 /// Data classification level indicating sensitivity of data
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum DataClassification {
     /// Public data (lowest sensitivity)
+    #[default]
     Public,
     /// Internal data (medium sensitivity)
     Internal,
     /// Confidential data (highest sensitivity)
     Confidential,
-}
-
-impl Default for DataClassification {
-    fn default() -> Self {
-        Self::Public
-    }
 }
 
 impl DataClassification {

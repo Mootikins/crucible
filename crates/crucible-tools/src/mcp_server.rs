@@ -181,8 +181,7 @@ impl CrucibleMcpServer {
                 if let Some(delegate_tool) = tools.iter_mut().find(|t| t.name == "delegate_session") {
                     let targets_str = delegation_context.targets.join(", ");
                     let new_desc = format!(
-                        "Delegate a task to another AI agent. Available delegation targets: {}. The target agent receives the prompt, executes the task, and returns the result.",
-                        targets_str
+                        "Delegate a task to another AI agent. Available delegation targets: {targets_str}. The target agent receives the prompt, executes the task, and returns the result."
                     );
                     delegate_tool.description = Some(new_desc.into());
                 }
@@ -514,7 +513,7 @@ impl ServerHandler for CrucibleMcpServer {
                 icons: None,
                 website_url: None,
             },
-            instructions: Some("Crucible knowledge management server with 13 tools. Notes: create_note, read_note, update_note, delete_note, list_notes, read_metadata. Search: semantic_search, text_search, property_search. Kiln: get_kiln_info, get_kiln_roots, get_kiln_stats. Delegation: delegate_session — hand off tasks to other agents when asked to delegate.".into()),
+            instructions: Some("Crucible knowledge management server with 16 tools. Notes: create_note, read_note, update_note, delete_note, list_notes, read_metadata. Search: semantic_search, text_search, property_search. Kiln: get_kiln_info, get_kiln_roots, get_kiln_stats. Delegation: delegate_session — hand off tasks to other agents when asked to delegate. Jobs: list_jobs, get_job_result, cancel_job — manage background jobs.".into()),
         }
     }
 

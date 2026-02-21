@@ -1,7 +1,7 @@
 //! Extended MCP Server with Lua tools
 //!
 //! This server combines:
-//! - **`CrucibleMcpServer`** (13 tools): Note, Search, Kiln, and delegation operations
+//! - **`CrucibleMcpServer`** (16 tools): Note, Search, Kiln, delegation, and job management operations
 //! - **`LuaTools`** (dynamic): Scripts from configured plugins/ directories
 //!
 //! All responses are formatted with TOON for token efficiency.

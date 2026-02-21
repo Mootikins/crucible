@@ -65,9 +65,6 @@ pub fn is_safe(tool_name: &str) -> bool {
             | "get_kiln_info"
             | "get_outlinks"
             | "get_inlinks"
-            | "list_jobs"
-            | "get_job_result"
-            | "cancel_job"
     )
 }
 
@@ -2863,10 +2860,10 @@ mod tests {
         }
 
         #[test]
-        fn job_management_tools_are_safe() {
-            assert!(is_safe("list_jobs"));
-            assert!(is_safe("get_job_result"));
-            assert!(is_safe("cancel_job"));
+        fn job_management_tools_are_not_safe() {
+            assert!(!is_safe("list_jobs"));
+            assert!(!is_safe("get_job_result"));
+            assert!(!is_safe("cancel_job"));
         }
 
         #[test]
