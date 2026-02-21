@@ -2,7 +2,7 @@
 //!
 //! Commands for listing, viewing, resuming, and managing chat sessions.
 
-use crate::cli::{DaemonSessionCommands, SessionCommands};
+use crate::cli::SessionCommands;
 use crate::config::CliConfig;
 use anyhow::{anyhow, Result};
 use chrono::{Duration, Utc};
@@ -24,7 +24,9 @@ pub async fn execute(config: CliConfig, cmd: SessionCommands) -> Result<()> {
             limit,
             session_type,
             format,
-        } => list(config, limit, session_type, format).await,
+            state,
+            all,
+        } => list(config, limit, session_type, format, state, all).await,
         SessionCommands::Search { query, limit } => search(config, query, limit).await,
         SessionCommands::Show { id, format } => show(config, id, format).await,
         SessionCommands::Resume { id } => resume(config, id).await,
@@ -38,7 +40,63 @@ pub async fn execute(config: CliConfig, cmd: SessionCommands) -> Result<()> {
             older_than,
             dry_run,
         } => cleanup(config, older_than, dry_run).await,
-        SessionCommands::Daemon(subcmd) => daemon_execute(config, subcmd).await,
+        SessionCommands::Create {
+            session_type,
+            recording_mode,
+        } => {
+            let client = DaemonClient::connect_or_start()
+                .await
+                .map_err(|e| anyhow!("Failed to connect to daemon: {}", e))?;
+            daemon_create(&client, &config, &session_type, recording_mode.as_deref()).await
+        }
+        SessionCommands::Pause { session_id } => {
+            let client = DaemonClient::connect_or_start()
+                .await
+                .map_err(|e| anyhow!("Failed to connect to daemon: {}", e))?;
+            daemon_pause(&client, &session_id).await
+        }
+        SessionCommands::Unpause { session_id } => {
+            let client = DaemonClient::connect_or_start()
+                .await
+                .map_err(|e| anyhow!("Failed to connect to daemon: {}", e))?;
+            unpause(&client, &session_id).await
+        }
+        SessionCommands::End { session_id } => {
+            let client = DaemonClient::connect_or_start()
+                .await
+                .map_err(|e| anyhow!("Failed to connect to daemon: {}", e))?;
+            daemon_end(&client, &session_id).await
+        }
+        SessionCommands::Send {
+            session_id,
+            message,
+            raw,
+        } => daemon_send(&config, &session_id, &message, raw).await,
+        SessionCommands::Configure {
+            session_id,
+            provider,
+            model,
+            endpoint,
+        } => {
+            let provider_type = BackendType::from_str(&provider)
+                .map_err(|e| anyhow!("Invalid provider '{}': {}", provider, e))?;
+            let client = DaemonClient::connect_or_start()
+                .await
+                .map_err(|e| anyhow!("Failed to connect to daemon: {}", e))?;
+            daemon_configure(&client, &config, &session_id, provider_type, &model, endpoint).await
+        }
+        SessionCommands::Subscribe { session_ids } => daemon_subscribe(&session_ids).await,
+        SessionCommands::Load { session_id } => {
+            let client = DaemonClient::connect_or_start()
+                .await
+                .map_err(|e| anyhow!("Failed to connect to daemon: {}", e))?;
+            daemon_load(&client, &config, &session_id).await
+        }
+        SessionCommands::Replay {
+            recording_path,
+            speed,
+            raw,
+        } => daemon_replay(&config, &recording_path, speed, raw).await,
     }
 }
 
@@ -49,6 +107,29 @@ fn sessions_dir(config: &CliConfig) -> PathBuf {
 
 /// List recent sessions
 async fn list(
+    config: CliConfig,
+    limit: u32,
+    session_type: Option<String>,
+    format: String,
+    state: Option<String>,
+    all: bool,
+) -> Result<()> {
+    let client = DaemonClient::connect_or_start()
+        .await
+        .map_err(|e| anyhow!("Failed to connect to daemon: {}", e))?;
+
+    daemon_list(&client, &config, session_type.as_deref(), state.as_deref()).await?;
+
+    if all {
+        println!();
+        println!("Persisted sessions:");
+        list_persisted(config, limit, session_type, format).await?;
+    }
+
+    Ok(())
+}
+
+async fn list_persisted(
     config: CliConfig,
     limit: u32,
     session_type: Option<String>,
@@ -293,6 +374,31 @@ fn extract_session_id_from_path(path: &str) -> String {
 
 /// Show session details
 async fn show(config: CliConfig, id: String, format: String) -> Result<()> {
+    if let Ok(client) = DaemonClient::connect_or_start().await {
+        if let Ok(result) = client.session_get(&id).await {
+            match format.as_str() {
+                "json" => {
+                    let json = serde_json::to_string_pretty(&result)?;
+                    println!("{json}");
+                }
+                _ => {
+                    println!(
+                        "Session ID: {}",
+                        result["session_id"].as_str().unwrap_or("?")
+                    );
+                    println!("Type: {}", result["type"].as_str().unwrap_or("?"));
+                    println!("State: {}", result["state"].as_str().unwrap_or("?"));
+                    println!("Kiln: {}", result["kiln"].as_str().unwrap_or("?"));
+                    println!("Started: {}", result["started_at"].as_str().unwrap_or("?"));
+                    if let Some(title) = result["title"].as_str() {
+                        println!("Title: {}", title);
+                    }
+                }
+            }
+            return Ok(());
+        }
+    }
+
     let sessions_path = sessions_dir(&config);
     let session_id = SessionId::parse(&id)?;
     let session_dir = sessions_path.join(session_id.as_str());
@@ -655,69 +761,15 @@ fn truncate(s: &str, max_len: usize) -> String {
     }
 }
 
-// =========================================================================
-// Daemon Session Commands
-// =========================================================================
-
-/// Execute a daemon session subcommand
-async fn daemon_execute(config: CliConfig, cmd: DaemonSessionCommands) -> Result<()> {
-    let client = DaemonClient::connect_or_start()
-        .await
-        .map_err(|e| anyhow!("Failed to connect to daemon: {}", e))?;
-
-    match cmd {
-        DaemonSessionCommands::List { state } => daemon_list(&client, &config, state).await,
-        DaemonSessionCommands::Create {
-            session_type,
-            recording_mode,
-        } => daemon_create(&client, &config, &session_type, recording_mode.as_deref()).await,
-        DaemonSessionCommands::Get { session_id } => daemon_get(&client, &session_id).await,
-        DaemonSessionCommands::Pause { session_id } => daemon_pause(&client, &session_id).await,
-        DaemonSessionCommands::Resume { session_id } => daemon_resume(&client, &session_id).await,
-        DaemonSessionCommands::End { session_id } => daemon_end(&client, &session_id).await,
-        DaemonSessionCommands::Send {
-            session_id,
-            message,
-            raw,
-        } => daemon_send(&client, &config, &session_id, &message, raw).await,
-        DaemonSessionCommands::Configure {
-            session_id,
-            provider,
-            model,
-            endpoint,
-        } => {
-            let provider_type = BackendType::from_str(&provider)
-                .map_err(|e| anyhow!("Invalid provider '{}': {}", provider, e))?;
-            daemon_configure(
-                &client,
-                &config,
-                &session_id,
-                provider_type,
-                &model,
-                endpoint,
-            )
-            .await
-        }
-        DaemonSessionCommands::Subscribe { session_ids } => daemon_subscribe(&session_ids).await,
-        DaemonSessionCommands::Load { session_id } => {
-            daemon_load(&client, &config, &session_id).await
-        }
-        DaemonSessionCommands::Replay {
-            recording_path,
-            speed,
-            raw,
-        } => daemon_replay(&config, &recording_path, speed, raw).await,
-    }
-}
-
 /// List daemon sessions
 async fn daemon_list(
     client: &DaemonClient,
     config: &CliConfig,
-    state: Option<String>,
+    session_type: Option<&str>,
+    state: Option<&str>,
 ) -> Result<()> {
     let result = client
-        .session_list(Some(&config.kiln_path), None, None, state.as_deref())
+        .session_list(Some(&config.kiln_path), None, session_type, state)
         .await?;
 
     let sessions = result["sessions"].as_array();
@@ -792,26 +844,6 @@ async fn daemon_create(
     Ok(())
 }
 
-/// Get details of a daemon session
-async fn daemon_get(client: &DaemonClient, session_id: &str) -> Result<()> {
-    let result = client.session_get(session_id).await?;
-
-    println!(
-        "Session ID: {}",
-        result["session_id"].as_str().unwrap_or("?")
-    );
-    println!("Type: {}", result["type"].as_str().unwrap_or("?"));
-    println!("State: {}", result["state"].as_str().unwrap_or("?"));
-    println!("Kiln: {}", result["kiln"].as_str().unwrap_or("?"));
-    println!("Started: {}", result["started_at"].as_str().unwrap_or("?"));
-
-    if let Some(title) = result["title"].as_str() {
-        println!("Title: {}", title);
-    }
-
-    Ok(())
-}
-
 /// Pause a daemon session
 async fn daemon_pause(client: &DaemonClient, session_id: &str) -> Result<()> {
     let result = client.session_pause(session_id).await?;
@@ -823,8 +855,7 @@ async fn daemon_pause(client: &DaemonClient, session_id: &str) -> Result<()> {
     Ok(())
 }
 
-/// Resume a paused daemon session
-async fn daemon_resume(client: &DaemonClient, session_id: &str) -> Result<()> {
+async fn unpause(client: &DaemonClient, session_id: &str) -> Result<()> {
     let result = client.session_resume(session_id).await?;
     println!("Resumed session: {}", session_id);
     println!(
@@ -842,7 +873,6 @@ async fn daemon_end(client: &DaemonClient, session_id: &str) -> Result<()> {
 }
 
 async fn daemon_send(
-    _client: &DaemonClient,
     config: &CliConfig,
     session_id: &str,
     message: &str,
@@ -1189,7 +1219,7 @@ mod tests {
         };
 
         // Should not error with empty sessions
-        let result = list(config, 10, None, "table".to_string()).await;
+        let result = list_persisted(config, 10, None, "table".to_string()).await;
         assert!(result.is_ok());
     }
 
@@ -1206,7 +1236,7 @@ mod tests {
             ..Default::default()
         };
 
-        let result = list(config, 10, None, "table".to_string()).await;
+        let result = list_persisted(config, 10, None, "table".to_string()).await;
         assert!(result.is_ok());
     }
 
