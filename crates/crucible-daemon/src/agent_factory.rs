@@ -16,17 +16,214 @@ use crucible_core::interaction_registry::InteractionRegistry;
 use crucible_core::prompts::ModelSize;
 use crucible_core::session::SessionAgent;
 use crucible_core::traits::chat::AgentHandle;
+use crucible_core::traits::mcp::McpToolInfo;
 use crucible_core::traits::KnowledgeRepository;
 use crucible_core::{EventPushCallback, InteractionContext};
 use crucible_rig::{
     create_client, mcp_tools_from_gateway, AgentConfig, HandleBuildOpts, McpProxyTool,
     WorkspaceContext,
 };
+use crucible_tools::in_process_adapter::InProcessMcpAdapter;
+use crucible_tools::mcp_server::CrucibleMcpServer;
 use std::path::Path;
 use std::sync::Arc;
 use thiserror::Error;
 use tokio::sync::broadcast;
 use tracing::{debug, info};
+
+struct EmptyKnowledgeRepository;
+
+#[async_trait::async_trait]
+impl KnowledgeRepository for EmptyKnowledgeRepository {
+    async fn get_note_by_name(
+        &self,
+        _name: &str,
+    ) -> crucible_core::Result<Option<crucible_core::parser::ParsedNote>> {
+        Ok(None)
+    }
+
+    async fn list_notes(
+        &self,
+        _path: Option<&str>,
+    ) -> crucible_core::Result<Vec<crucible_core::traits::knowledge::NoteInfo>> {
+        Ok(vec![])
+    }
+
+    async fn search_vectors(
+        &self,
+        _vector: Vec<f32>,
+    ) -> crucible_core::Result<Vec<crucible_core::types::SearchResult>> {
+        Ok(vec![])
+    }
+}
+
+struct EmptyEmbeddingProvider;
+
+#[async_trait::async_trait]
+impl EmbeddingProvider for EmptyEmbeddingProvider {
+    async fn embed(&self, _text: &str) -> anyhow::Result<Vec<f32>> {
+        anyhow::bail!("Embedding provider unavailable for in-process MCP adapter")
+    }
+
+    async fn embed_batch(&self, _texts: &[&str]) -> anyhow::Result<Vec<Vec<f32>>> {
+        anyhow::bail!("Embedding provider unavailable for in-process MCP adapter")
+    }
+
+    fn model_name(&self) -> &str {
+        "unavailable"
+    }
+
+    fn dimensions(&self) -> usize {
+        0
+    }
+
+    fn provider_name(&self) -> &str {
+        "none"
+    }
+
+    async fn list_models(&self) -> anyhow::Result<Vec<String>> {
+        Ok(vec![])
+    }
+}
+
+async fn create_internal_mcp_tools(
+    workspace: &Path,
+    kiln_path: Option<&Path>,
+    mcp_gateway: Option<Arc<tokio::sync::RwLock<crucible_tools::mcp_gateway::McpGatewayManager>>>,
+    server_names: &[String],
+    knowledge_repo: Option<Arc<dyn KnowledgeRepository>>,
+    embedding_provider: Option<Arc<dyn EmbeddingProvider>>,
+    mode: &str,
+    gateway_all_tools_override: Option<&[McpToolInfo]>,
+) -> Vec<McpProxyTool> {
+    let mut combined_tools = Vec::new();
+
+    if let Some(kiln_path) = kiln_path {
+        let knowledge_repo: Arc<dyn KnowledgeRepository> =
+            knowledge_repo.unwrap_or_else(|| Arc::new(EmptyKnowledgeRepository));
+        let embedding_provider: Arc<dyn EmbeddingProvider> =
+            embedding_provider.unwrap_or_else(|| Arc::new(EmptyEmbeddingProvider));
+        let server = CrucibleMcpServer::new(
+            kiln_path.display().to_string(),
+            knowledge_repo,
+            embedding_provider,
+        );
+        let adapter = InProcessMcpAdapter::new(Arc::new(server));
+        let adapter_gateway = Arc::new(tokio::sync::RwLock::new(
+            crucible_tools::mcp_gateway::McpGatewayManager::new(),
+        ));
+
+        for tool in adapter.create_rig_tools(mode) {
+            let definition = tool.definition(String::new()).await;
+            let info = McpToolInfo {
+                name: definition.name.clone(),
+                prefixed_name: definition.name,
+                description: Some(definition.description),
+                input_schema: definition.parameters,
+                upstream: "crucible".to_string(),
+            };
+            combined_tools.push(McpProxyTool::new(&info, adapter_gateway.clone()));
+        }
+
+        info!(
+            count = combined_tools.len(),
+            kiln = %kiln_path.display(),
+            mode,
+            "Resolved in-process Crucible MCP adapter tools"
+        );
+    } else {
+        debug!(
+            workspace = %workspace.display(),
+            "Skipping in-process Crucible MCP adapter tools because kiln path is unavailable"
+        );
+    }
+
+    let user_mcp_tools: Vec<McpProxyTool> = if let Some(ref gw) = mcp_gateway {
+        let gw_read = gw.read().await;
+        debug!(
+            tool_count = gw_read.tool_count(),
+            mcp_servers = ?server_names,
+            "MCP gateway available for agent"
+        );
+
+        if !server_names.is_empty() {
+            let all_tools_owned;
+            let all_tools: &[McpToolInfo] = if let Some(override_tools) = gateway_all_tools_override {
+                override_tools
+            } else {
+                all_tools_owned = gw_read.all_tools();
+                &all_tools_owned
+            };
+            drop(gw_read);
+            let tools = mcp_tools_from_gateway(gw, server_names, all_tools);
+            info!(count = tools.len(), servers = ?server_names, "Resolved MCP proxy tools");
+            tools
+        } else {
+            vec![]
+        }
+    } else {
+        vec![]
+    };
+
+    combined_tools.extend(user_mcp_tools);
+    combined_tools
+}
+
+#[cfg(test)]
+async fn create_internal_mcp_tool_names_for_tests(
+    workspace: &Path,
+    kiln_path: Option<&Path>,
+    mcp_gateway: Option<Arc<tokio::sync::RwLock<crucible_tools::mcp_gateway::McpGatewayManager>>>,
+    server_names: &[String],
+    knowledge_repo: Option<Arc<dyn KnowledgeRepository>>,
+    embedding_provider: Option<Arc<dyn EmbeddingProvider>>,
+    mode: &str,
+    gateway_all_tools_override: Option<&[McpToolInfo]>,
+) -> Vec<String> {
+    let mut names = Vec::new();
+
+    if let Some(kiln_path) = kiln_path {
+        let knowledge_repo: Arc<dyn KnowledgeRepository> =
+            knowledge_repo.unwrap_or_else(|| Arc::new(EmptyKnowledgeRepository));
+        let embedding_provider: Arc<dyn EmbeddingProvider> =
+            embedding_provider.unwrap_or_else(|| Arc::new(EmptyEmbeddingProvider));
+        let server = CrucibleMcpServer::new(
+            kiln_path.display().to_string(),
+            knowledge_repo,
+            embedding_provider,
+        );
+        let adapter = InProcessMcpAdapter::new(Arc::new(server));
+        for tool in adapter.create_rig_tools(mode) {
+            names.push(tool.definition(String::new()).await.name);
+        }
+    } else {
+        debug!(
+            workspace = %workspace.display(),
+            "Skipping in-process Crucible MCP adapter tools because kiln path is unavailable"
+        );
+    }
+
+    if let Some(ref gw) = mcp_gateway {
+        let gw_read = gw.read().await;
+        if !server_names.is_empty() {
+            let all_tools_owned;
+            let all_tools: &[McpToolInfo] = if let Some(override_tools) = gateway_all_tools_override {
+                override_tools
+            } else {
+                all_tools_owned = gw_read.all_tools();
+                &all_tools_owned
+            };
+            names.extend(
+                all_tools
+                    .iter()
+                    .filter(|tool| server_names.contains(&tool.upstream))
+                    .map(|tool| tool.prefixed_name.clone()),
+            );
+        }
+    }
+
+    names
+}
 
 #[derive(Error, Debug)]
 pub enum AgentFactoryError {
@@ -96,25 +293,18 @@ pub async fn create_agent_from_session_config(
         )));
     }
 
-    let mcp_tools: Vec<McpProxyTool> = if let Some(ref gw) = mcp_gateway {
-        let gw_read = gw.read().await;
-        debug!(
-            tool_count = gw_read.tool_count(),
-            mcp_servers = ?agent_config.mcp_servers,
-            "MCP gateway available for agent"
-        );
-        if !agent_config.mcp_servers.is_empty() {
-            let all_tools = gw_read.all_tools();
-            drop(gw_read);
-            let tools = mcp_tools_from_gateway(gw, &agent_config.mcp_servers, &all_tools);
-            info!(count = tools.len(), servers = ?agent_config.mcp_servers, "Resolved MCP proxy tools");
-            tools
-        } else {
-            vec![]
-        }
-    } else {
-        vec![]
-    };
+    let mode = "auto";
+    let mcp_tools = create_internal_mcp_tools(
+        workspace,
+        kiln_path,
+        mcp_gateway.clone(),
+        &agent_config.mcp_servers,
+        _knowledge_repo,
+        _embedding_provider,
+        mode,
+        None,
+    )
+    .await;
 
     info!(
         provider = %agent_config.provider,
@@ -215,6 +405,29 @@ pub async fn create_agent_from_session_config(
 mod tests {
     use super::*;
     use std::collections::HashMap;
+    use tokio::sync::RwLock;
+
+    async fn build_internal_tool_names_for_tests(
+        workspace: &Path,
+        kiln_path: Option<&Path>,
+        knowledge_repo: Option<Arc<dyn KnowledgeRepository>>,
+        embedding_provider: Option<Arc<dyn EmbeddingProvider>>,
+        mcp_gateway: Option<Arc<RwLock<crucible_tools::mcp_gateway::McpGatewayManager>>>,
+        user_tools: &[McpToolInfo],
+        mode: &str,
+    ) -> Vec<String> {
+        create_internal_mcp_tool_names_for_tests(
+            workspace,
+            kiln_path,
+            mcp_gateway,
+            &["gh".to_string()],
+            knowledge_repo,
+            embedding_provider,
+            mode,
+            Some(user_tools),
+        )
+        .await
+    }
 
     fn test_agent_config() -> SessionAgent {
         SessionAgent {
@@ -264,6 +477,65 @@ mod tests {
             result,
             Err(AgentFactoryError::UnsupportedAgentType(_))
         ));
+    }
+
+    #[tokio::test]
+    async fn internal_tools_include_adapter_tools() {
+        let gateway = Arc::new(RwLock::new(
+            crucible_tools::mcp_gateway::McpGatewayManager::new(),
+        ));
+
+        let names = build_internal_tool_names_for_tests(
+            Path::new("/tmp"),
+            Some(Path::new("/tmp")),
+            None,
+            None,
+            Some(gateway),
+            &[],
+            "auto",
+        )
+        .await;
+
+        assert!(names.iter().any(|name| name == "semantic_search"));
+        assert!(names.iter().any(|name| name == "delegate_session"));
+        assert!(names.iter().any(|name| name == "list_jobs"));
+    }
+
+    #[tokio::test]
+    async fn adapter_tools_come_before_user_mcp_tools() {
+        let gateway = Arc::new(RwLock::new(
+            crucible_tools::mcp_gateway::McpGatewayManager::new(),
+        ));
+
+        let user_tools = vec![McpToolInfo {
+            name: "search_repos".to_string(),
+            prefixed_name: "gh_search_repos".to_string(),
+            description: Some("Search repos".to_string()),
+            input_schema: serde_json::json!({"type": "object"}),
+            upstream: "gh".to_string(),
+        }];
+
+        let names = build_internal_tool_names_for_tests(
+            Path::new("/tmp"),
+            Some(Path::new("/tmp")),
+            None,
+            None,
+            Some(gateway),
+            &user_tools,
+            "auto",
+        )
+        .await;
+
+        let adapter_idx = names
+            .iter()
+            .position(|name| name == "semantic_search")
+            .expect("semantic_search tool missing");
+        let user_idx = names
+            .iter()
+            .position(|name| name == "gh_search_repos")
+            .expect("user MCP tool missing");
+
+        assert!(adapter_idx < user_idx);
     }
 
     #[tokio::test]
