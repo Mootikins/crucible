@@ -16,6 +16,7 @@ pub mod permissions;
 pub mod storage;
 
 pub mod backend;
+pub mod trust;
 
 pub use acp::*;
 pub use chat::*;
@@ -34,3 +35,4 @@ pub use permissions::{
 pub use storage::*;
 
 pub use backend::BackendType;
+pub use trust::{DataClassification, TrustLevel};

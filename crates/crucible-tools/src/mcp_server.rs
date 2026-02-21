@@ -605,4 +605,107 @@ mod tests {
         assert!(result.is_ok());
         assert_eq!(spawner.spawn_calls.load(Ordering::SeqCst), 1);
     }
+
+    #[test]
+    fn test_delegate_session_description_includes_target_hints() {
+        let temp = TempDir::new().unwrap();
+        let knowledge_repo = Arc::new(MockKnowledgeRepository) as Arc<dyn KnowledgeRepository>;
+        let embedding_provider = Arc::new(MockEmbeddingProvider) as Arc<dyn EmbeddingProvider>;
+        let spawner = Arc::new(MockBackgroundSpawner {
+            spawn_calls: AtomicUsize::new(0),
+        });
+
+        let server = CrucibleMcpServer::new_with_delegation(
+            temp.path().to_str().unwrap().to_string(),
+            knowledge_repo,
+            embedding_provider,
+            Some(DelegationContext {
+                background_spawner: spawner.clone(),
+                session_id: "chat-parent".to_string(),
+                targets: vec!["cursor".to_string(), "opencode".to_string()],
+                enabled: true,
+                depth: 0,
+            }),
+        );
+
+        let tools = server.list_tools();
+        let delegate_tool = tools
+            .iter()
+            .find(|t| t.name == "delegate_session")
+            .expect("delegate_session tool should exist");
+
+        // Description should contain both target names
+        assert!(
+            delegate_tool.description.contains("cursor"),
+            "Description should contain 'cursor' target. Got: {}",
+            delegate_tool.description
+        );
+        assert!(
+            delegate_tool.description.contains("opencode"),
+            "Description should contain 'opencode' target. Got: {}",
+            delegate_tool.description
+        );
+    }
+
+    #[test]
+    fn test_delegate_session_description_generic_when_no_targets() {
+        let temp = TempDir::new().unwrap();
+        let knowledge_repo = Arc::new(MockKnowledgeRepository) as Arc<dyn KnowledgeRepository>;
+        let embedding_provider = Arc::new(MockEmbeddingProvider) as Arc<dyn EmbeddingProvider>;
+
+        let server = CrucibleMcpServer::new(
+            temp.path().to_str().unwrap().to_string(),
+            knowledge_repo,
+            embedding_provider,
+        );
+
+        let tools = server.list_tools();
+        let delegate_tool = tools
+            .iter()
+            .find(|t| t.name == "delegate_session")
+            .expect("delegate_session tool should exist");
+
+        // Description should NOT contain "Available targets:" when no delegation context
+        assert!(
+            !delegate_tool.description.contains("Available targets:"),
+            "Description should not have 'Available targets:' when no context. Got: {}",
+            delegate_tool.description
+        );
+    }
+
+    #[test]
+    fn test_delegate_session_description_generic_when_empty_targets() {
+        let temp = TempDir::new().unwrap();
+        let knowledge_repo = Arc::new(MockKnowledgeRepository) as Arc<dyn KnowledgeRepository>;
+        let embedding_provider = Arc::new(MockEmbeddingProvider) as Arc<dyn EmbeddingProvider>;
+        let spawner = Arc::new(MockBackgroundSpawner {
+            spawn_calls: AtomicUsize::new(0),
+        });
+
+        let server = CrucibleMcpServer::new_with_delegation(
+            temp.path().to_str().unwrap().to_string(),
+            knowledge_repo,
+            embedding_provider,
+            Some(DelegationContext {
+                background_spawner: spawner.clone(),
+                session_id: "chat-parent".to_string(),
+                targets: vec![],
+                enabled: true,
+                depth: 0,
+            }),
+        );
+
+        let tools = server.list_tools();
+        let delegate_tool = tools
+            .iter()
+            .find(|t| t.name == "delegate_session")
+            .expect("delegate_session tool should exist");
+
+        // Description should NOT contain "Available targets:" when targets is empty
+        assert!(
+            !delegate_tool.description.contains("Available targets:"),
+            "Description should not have 'Available targets:' when targets empty. Got: {}",
+            delegate_tool.description
+        );
+    }
 }

@@ -133,23 +133,7 @@ fn create_tool(
     }
 }
 
-/// Get the system prompt for Crucible
-///
-/// Provides concise context about the knowledge base and tools.
-/// Designed to be low-token while covering essential information.
-pub fn get_crucible_system_prompt() -> String {
-    "You are working with Crucible, a knowledge management system. \
-You have 10 tools for working with markdown notes in a 'kiln' (knowledge repository):
 
-Notes: read_note, create_note, update_note, delete_note, list_notes, read_metadata
-Search: text_search, property_search, semantic_search
-Kiln: get_kiln_info
-
-When referencing notes, use simple names (\"My Note\") or wikilinks (\"[[My Note]]\"). \
-The system finds notes anywhere in the kiln. Full paths (\"folder/note.md\") also work. \
-Notes support YAML frontmatter for metadata."
-        .to_string()
-}
 
 /// Discover and register all Crucible tools
 ///
@@ -808,14 +792,7 @@ mod tests {
         assert_eq!(descriptor, deserialized);
     }
 
-    #[test]
-    fn crucible_system_prompt_is_non_empty_and_well_formed() {
-        let prompt = get_crucible_system_prompt();
-        assert!(!prompt.trim().is_empty());
-        assert!(prompt.contains("You are working with Crucible"));
-        assert!(prompt.contains("read_note"));
-        assert!(prompt.contains("semantic_search"));
-    }
+
 
     #[tokio::test]
     async fn core_tool_executor_trait_contract_is_satisfied() {
