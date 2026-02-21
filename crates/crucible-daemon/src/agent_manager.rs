@@ -1800,12 +1800,20 @@ mod tests {
     use super::*;
     use crate::session_storage::FileSessionStorage;
     use crucible_core::session::SessionType;
-    use crucible_core::traits::chat::{AgentHandle, ChatChunk, ChatResult};
+    use crucible_core::traits::chat::{
+        AgentHandle, ChatChunk, ChatResult, ChatToolCall, ChatToolResult,
+    };
     use futures::stream::BoxStream;
+    use futures::StreamExt;
     use std::collections::HashMap;
     use tempfile::TempDir;
+    use tokio::time::{timeout, Duration};
 
     struct MockAgent;
+
+    struct StreamingMockAgent {
+        chunks: Vec<ChatChunk>,
+    }
 
     #[async_trait::async_trait]
     impl AgentHandle for MockAgent {
@@ -1820,6 +1828,40 @@ mod tests {
         async fn set_mode_str(&mut self, _: &str) -> ChatResult<()> {
             Ok(())
         }
+    }
+
+    #[async_trait::async_trait]
+    impl AgentHandle for StreamingMockAgent {
+        fn send_message_stream(&mut self, _: String) -> BoxStream<'static, ChatResult<ChatChunk>> {
+            let chunks = self.chunks.clone();
+            futures::stream::iter(chunks.into_iter().map(Ok)).boxed()
+        }
+
+        fn is_connected(&self) -> bool {
+            true
+        }
+
+        async fn set_mode_str(&mut self, _: &str) -> ChatResult<()> {
+            Ok(())
+        }
+    }
+
+    async fn next_event_or_skip(
+        event_rx: &mut broadcast::Receiver<SessionEventMessage>,
+        event_name: &str,
+    ) -> SessionEventMessage {
+        timeout(Duration::from_secs(2), async {
+            loop {
+                match event_rx.recv().await {
+                    Ok(event) if event.event == event_name => return event,
+                    Ok(_) => continue,
+                    Err(broadcast::error::RecvError::Lagged(_)) => continue,
+                    Err(err) => panic!("event channel closed while waiting for {event_name}: {err}"),
+                }
+            }
+        })
+        .await
+        .unwrap_or_else(|_| panic!("timed out waiting for {event_name}"))
     }
 
     fn test_agent() -> SessionAgent {
@@ -2272,6 +2314,293 @@ mod tests {
         assert_eq!(event.event, "model_switched");
         assert_eq!(event.data["model_id"], "gpt-4");
         assert_eq!(event.data["provider"], "ollama");
+    }
+
+    #[tokio::test]
+    async fn send_message_emits_text_delta_events_in_order() {
+        let tmp = TempDir::new().unwrap();
+        let storage = Arc::new(FileSessionStorage::new());
+        let session_manager = Arc::new(SessionManager::with_storage(storage));
+
+        let session = session_manager
+            .create_session(
+                SessionType::Chat,
+                tmp.path().to_path_buf(),
+                None,
+                vec![],
+                None,
+            )
+            .await
+            .unwrap();
+
+        let agent_manager = create_test_agent_manager(session_manager.clone());
+        agent_manager
+            .configure_agent(&session.id, test_agent())
+            .await
+            .unwrap();
+
+        agent_manager.agent_cache.insert(
+            session.id.clone(),
+            Arc::new(Mutex::new(Box::new(StreamingMockAgent {
+                chunks: vec![
+                    ChatChunk {
+                        delta: "hello".to_string(),
+                        done: false,
+                        tool_calls: None,
+                        tool_results: None,
+                        reasoning: None,
+                        usage: None,
+                        subagent_events: None,
+                    },
+                    ChatChunk {
+                        delta: " world".to_string(),
+                        done: true,
+                        tool_calls: None,
+                        tool_results: None,
+                        reasoning: None,
+                        usage: None,
+                        subagent_events: None,
+                    },
+                ],
+            }))),
+        );
+
+        let (event_tx, mut event_rx) = broadcast::channel::<SessionEventMessage>(64);
+        let message_id = agent_manager
+            .send_message(&session.id, "test".to_string(), &event_tx)
+            .await
+            .unwrap();
+
+        let user_message = next_event_or_skip(&mut event_rx, "user_message").await;
+        assert_eq!(user_message.data["content"], "test");
+        assert_eq!(user_message.data["message_id"], message_id);
+
+        let first_delta = next_event_or_skip(&mut event_rx, "text_delta").await;
+        assert_eq!(first_delta.data["content"], "hello");
+
+        let second_delta = next_event_or_skip(&mut event_rx, "text_delta").await;
+        assert_eq!(second_delta.data["content"], " world");
+
+        let complete = next_event_or_skip(&mut event_rx, "message_complete").await;
+        assert_eq!(complete.data["message_id"], message_id);
+        assert_eq!(complete.data["full_response"], "hello world");
+    }
+
+    #[tokio::test]
+    async fn send_message_emits_thinking_before_text_delta() {
+        let tmp = TempDir::new().unwrap();
+        let storage = Arc::new(FileSessionStorage::new());
+        let session_manager = Arc::new(SessionManager::with_storage(storage));
+
+        let session = session_manager
+            .create_session(
+                SessionType::Chat,
+                tmp.path().to_path_buf(),
+                None,
+                vec![],
+                None,
+            )
+            .await
+            .unwrap();
+
+        let agent_manager = create_test_agent_manager(session_manager.clone());
+        agent_manager
+            .configure_agent(&session.id, test_agent())
+            .await
+            .unwrap();
+
+        agent_manager.agent_cache.insert(
+            session.id.clone(),
+            Arc::new(Mutex::new(Box::new(StreamingMockAgent {
+                chunks: vec![
+                    ChatChunk {
+                        delta: String::new(),
+                        done: false,
+                        tool_calls: None,
+                        tool_results: None,
+                        reasoning: Some("thinking...".to_string()),
+                        usage: None,
+                        subagent_events: None,
+                    },
+                    ChatChunk {
+                        delta: "response".to_string(),
+                        done: true,
+                        tool_calls: None,
+                        tool_results: None,
+                        reasoning: None,
+                        usage: None,
+                        subagent_events: None,
+                    },
+                ],
+            }))),
+        );
+
+        let (event_tx, mut event_rx) = broadcast::channel::<SessionEventMessage>(64);
+        agent_manager
+            .send_message(&session.id, "test".to_string(), &event_tx)
+            .await
+            .unwrap();
+
+        let user_message = next_event_or_skip(&mut event_rx, "user_message").await;
+        assert_eq!(user_message.data["content"], "test");
+
+        let first_after_user = timeout(Duration::from_secs(2), event_rx.recv())
+            .await
+            .expect("timed out waiting for first post-user event")
+            .expect("event channel closed");
+        assert_eq!(first_after_user.event, "thinking");
+        assert_eq!(first_after_user.data["content"], "thinking...");
+
+        let second_after_user = timeout(Duration::from_secs(2), event_rx.recv())
+            .await
+            .expect("timed out waiting for second post-user event")
+            .expect("event channel closed");
+        assert_eq!(second_after_user.event, "text_delta");
+        assert_eq!(second_after_user.data["content"], "response");
+
+        let complete = next_event_or_skip(&mut event_rx, "message_complete").await;
+        assert_eq!(complete.data["full_response"], "response");
+    }
+
+    #[tokio::test]
+    async fn send_message_emits_tool_call_and_tool_result_events() {
+        let tmp = TempDir::new().unwrap();
+        let storage = Arc::new(FileSessionStorage::new());
+        let session_manager = Arc::new(SessionManager::with_storage(storage));
+
+        let session = session_manager
+            .create_session(
+                SessionType::Chat,
+                tmp.path().to_path_buf(),
+                None,
+                vec![],
+                None,
+            )
+            .await
+            .unwrap();
+
+        let agent_manager = create_test_agent_manager(session_manager.clone());
+        agent_manager
+            .configure_agent(&session.id, test_agent())
+            .await
+            .unwrap();
+
+        agent_manager.agent_cache.insert(
+            session.id.clone(),
+            Arc::new(Mutex::new(Box::new(StreamingMockAgent {
+                chunks: vec![
+                    ChatChunk {
+                        delta: String::new(),
+                        done: false,
+                        tool_calls: Some(vec![ChatToolCall {
+                            name: "read_file".to_string(),
+                            arguments: Some(serde_json::json!({ "path": "test.md" })),
+                            id: Some("call1".to_string()),
+                        }]),
+                        tool_results: None,
+                        reasoning: None,
+                        usage: None,
+                        subagent_events: None,
+                    },
+                    ChatChunk {
+                        delta: String::new(),
+                        done: false,
+                        tool_calls: None,
+                        tool_results: Some(vec![ChatToolResult {
+                            name: "read_file".to_string(),
+                            result: "content".to_string(),
+                            error: None,
+                            call_id: Some("call1".to_string()),
+                        }]),
+                        reasoning: None,
+                        usage: None,
+                        subagent_events: None,
+                    },
+                    ChatChunk {
+                        delta: "Done.".to_string(),
+                        done: true,
+                        tool_calls: None,
+                        tool_results: None,
+                        reasoning: None,
+                        usage: None,
+                        subagent_events: None,
+                    },
+                ],
+            }))),
+        );
+
+        let (event_tx, mut event_rx) = broadcast::channel::<SessionEventMessage>(64);
+        let message_id = agent_manager
+            .send_message(&session.id, "test".to_string(), &event_tx)
+            .await
+            .unwrap();
+
+        let user_message = next_event_or_skip(&mut event_rx, "user_message").await;
+        assert_eq!(user_message.data["content"], "test");
+
+        let tool_call = next_event_or_skip(&mut event_rx, "tool_call").await;
+        assert_eq!(tool_call.data["tool"], "read_file");
+        assert_eq!(tool_call.data["args"]["path"], "test.md");
+
+        let tool_result = next_event_or_skip(&mut event_rx, "tool_result").await;
+        assert_eq!(tool_result.data["tool"], "read_file");
+        assert_eq!(tool_result.data["result"]["result"], "content");
+
+        let complete = next_event_or_skip(&mut event_rx, "message_complete").await;
+        assert_eq!(complete.data["message_id"], message_id);
+        assert_eq!(complete.data["full_response"], "Done.");
+    }
+
+    #[tokio::test]
+    async fn send_message_emits_message_complete_for_empty_done_chunk() {
+        let tmp = TempDir::new().unwrap();
+        let storage = Arc::new(FileSessionStorage::new());
+        let session_manager = Arc::new(SessionManager::with_storage(storage));
+
+        let session = session_manager
+            .create_session(
+                SessionType::Chat,
+                tmp.path().to_path_buf(),
+                None,
+                vec![],
+                None,
+            )
+            .await
+            .unwrap();
+
+        let agent_manager = create_test_agent_manager(session_manager.clone());
+        agent_manager
+            .configure_agent(&session.id, test_agent())
+            .await
+            .unwrap();
+
+        agent_manager.agent_cache.insert(
+            session.id.clone(),
+            Arc::new(Mutex::new(Box::new(StreamingMockAgent {
+                chunks: vec![ChatChunk {
+                    delta: String::new(),
+                    done: true,
+                    tool_calls: None,
+                    tool_results: None,
+                    reasoning: None,
+                    usage: None,
+                    subagent_events: None,
+                }],
+            }))),
+        );
+
+        let (event_tx, mut event_rx) = broadcast::channel::<SessionEventMessage>(64);
+        let message_id = agent_manager
+            .send_message(&session.id, "test".to_string(), &event_tx)
+            .await
+            .unwrap();
+
+        let user_message = next_event_or_skip(&mut event_rx, "user_message").await;
+        assert_eq!(user_message.data["content"], "test");
+
+        let complete = next_event_or_skip(&mut event_rx, "message_complete").await;
+        assert_eq!(complete.data["message_id"], message_id);
+        assert_eq!(complete.data["full_response"], "");
     }
 
     mod event_dispatch {
