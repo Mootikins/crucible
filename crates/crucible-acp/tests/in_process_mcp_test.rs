@@ -284,7 +284,7 @@ async fn test_in_process_mcp_host_graceful_shutdown() {
     );
 }
 
-/// Test that tools/list over HTTP returns all 13 tools including delegate_session
+/// Test that tools/list over HTTP returns all 16 tools including delegate_session
 #[tokio::test]
 async fn test_tools_list_over_http_returns_delegate_session() {
     let temp = TempDir::new().unwrap();
@@ -360,7 +360,7 @@ async fn test_tools_list_over_http_returns_delegate_session() {
     let tool_names: Vec<&str> = tools.iter().map(|t| t["name"].as_str().unwrap()).collect();
     eprintln!("Tool names: {:?}", tool_names);
 
-    assert_eq!(tools.len(), 13, "Should have 13 tools, got: {:?}", tool_names);
+    assert_eq!(tools.len(), 16, "Should have 16 tools, got: {:?}", tool_names);
     assert!(
         tool_names.contains(&"delegate_session"),
         "Should contain delegate_session, got: {:?}",
