@@ -65,6 +65,9 @@ pub fn is_safe(tool_name: &str) -> bool {
             | "get_kiln_info"
             | "get_outlinks"
             | "get_inlinks"
+            | "list_jobs"
+            | "get_job_result"
+            | "cancel_job"
     )
 }
 
@@ -2860,6 +2863,13 @@ mod tests {
         }
 
         #[test]
+        fn job_management_tools_are_safe() {
+            assert!(is_safe("list_jobs"));
+            assert!(is_safe("get_job_result"));
+            assert!(is_safe("cancel_job"));
+        }
+
+        #[test]
         fn write_tools_are_not_safe() {
             assert!(!is_safe("write_file"));
             assert!(!is_safe("edit_file"));
@@ -2876,6 +2886,11 @@ mod tests {
             assert!(!is_safe("some_custom_tool"));
             assert!(!is_safe("fs_write_file")); // MCP prefixed tools
             assert!(!is_safe("gh_create_issue"));
+        }
+
+        #[test]
+        fn delegate_session_is_not_safe() {
+            assert!(!is_safe("delegate_session"));
         }
     }
 
