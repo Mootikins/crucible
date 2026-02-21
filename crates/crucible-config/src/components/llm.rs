@@ -32,6 +32,10 @@ pub struct LlmProviderConfig {
     /// Available models for this provider
     #[serde(skip_serializing_if = "Option::is_none")]
     pub available_models: Option<Vec<String>>,
+
+    /// Trust level for this provider (uses backend default if not set)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub trust_level: Option<super::trust::TrustLevel>,
 }
 
 impl LlmProviderConfig {
@@ -76,6 +80,12 @@ impl LlmProviderConfig {
     /// Get the API key (already resolved if `{env:VAR}` was used)
     pub fn api_key(&self) -> Option<String> {
         self.api_key.clone()
+    }
+
+    /// Get the effective trust level, using explicit override or backend default
+    pub fn effective_trust_level(&self) -> super::trust::TrustLevel {
+        self.trust_level
+            .unwrap_or_else(|| self.provider_type.default_trust_level())
     }
 
     /// Get effective models for this provider, using hardcoded fallback for Anthropic/OpenAI/ZAI
@@ -126,6 +136,7 @@ pub struct LlmProviderConfigBuilder {
     timeout_secs: Option<u64>,
     api_key: Option<String>,
     available_models: Option<Vec<String>>,
+    trust_level: Option<super::trust::TrustLevel>,
 }
 
 impl LlmProviderConfigBuilder {
@@ -140,6 +151,7 @@ impl LlmProviderConfigBuilder {
             timeout_secs: None,
             api_key: None,
             available_models: None,
+            trust_level: None,
         }
     }
 
@@ -227,6 +239,7 @@ impl LlmProviderConfigBuilder {
             timeout_secs: self.timeout_secs,
             api_key: self.api_key,
             available_models: self.available_models,
+            trust_level: self.trust_level,
         }
     }
 }
@@ -297,6 +310,7 @@ mod tests {
             timeout_secs: None,
             api_key: None,
             available_models: None,
+            trust_level: None,
         };
 
         assert_eq!(ollama.endpoint(), "http://localhost:11434");
@@ -314,6 +328,7 @@ mod tests {
             timeout_secs: None,
             api_key: None,
             available_models: None,
+            trust_level: None,
         };
 
         assert_eq!(openai.endpoint(), "https://api.openai.com/v1");
@@ -328,6 +343,7 @@ mod tests {
             timeout_secs: None,
             api_key: None,
             available_models: None,
+            trust_level: None,
         };
 
         assert_eq!(anthropic.endpoint(), "https://api.anthropic.com/v1");
@@ -342,6 +358,7 @@ mod tests {
             timeout_secs: None,
             api_key: None,
             available_models: None,
+            trust_level: None,
         };
 
         assert_eq!(copilot.endpoint(), "https://api.githubcopilot.com");
@@ -382,6 +399,7 @@ mod tests {
             timeout_secs: Some(300),
             api_key: None,
             available_models: None,
+            trust_level: None,
         };
 
         assert_eq!(config.endpoint(), "http://192.168.1.100:11434");
@@ -402,6 +420,7 @@ mod tests {
             timeout_secs: None,
             api_key: Some("sk-test-key-123".to_string()),
             available_models: None,
+            trust_level: None,
         };
 
         assert_eq!(config.api_key(), Some("sk-test-key-123".to_string()));
@@ -421,6 +440,7 @@ mod tests {
                 timeout_secs: None,
                 api_key: None,
                 available_models: None,
+                trust_level: None,
             },
         );
         providers.insert(
@@ -434,6 +454,7 @@ mod tests {
                 timeout_secs: None,
                 api_key: Some("OPENAI_API_KEY".to_string()),
                 available_models: None,
+                trust_level: None,
             },
         );
 
@@ -462,6 +483,7 @@ mod tests {
                 timeout_secs: None,
                 api_key: None,
                 available_models: None,
+                trust_level: None,
             },
         );
 
@@ -490,6 +512,7 @@ mod tests {
                 timeout_secs: None,
                 api_key: None,
                 available_models: None,
+                trust_level: None,
             },
         );
         providers.insert(
@@ -503,6 +526,7 @@ mod tests {
                 timeout_secs: None,
                 api_key: None,
                 available_models: None,
+                trust_level: None,
             },
         );
 
@@ -537,6 +561,7 @@ mod tests {
                 timeout_secs: None,
                 api_key: None,
                 available_models: None,
+                trust_level: None,
             },
         );
 
@@ -571,6 +596,7 @@ mod tests {
                 timeout_secs: None,
                 api_key: None,
                 available_models: None,
+                trust_level: None,
             },
         );
 
@@ -593,6 +619,7 @@ mod tests {
             timeout_secs: None,
             api_key: None,
             available_models: Some(vec!["model-a".to_string(), "model-b".to_string()]),
+            trust_level: None,
         };
 
         assert_eq!(
@@ -612,6 +639,7 @@ mod tests {
             timeout_secs: None,
             api_key: None,
             available_models: None,
+            trust_level: None,
         };
 
         assert_eq!(config.available_models, None);
@@ -631,6 +659,7 @@ mod tests {
                 timeout_secs: None,
                 api_key: None,
                 available_models: Some(vec!["llama3.2".to_string()]),
+                trust_level: None,
             },
         );
         providers.insert(
@@ -644,6 +673,7 @@ mod tests {
                 timeout_secs: None,
                 api_key: None,
                 available_models: Some(vec!["gpt-4o".to_string(), "gpt-4o-mini".to_string()]),
+                trust_level: None,
             },
         );
 
@@ -687,6 +717,7 @@ mod tests {
                 timeout_secs: None,
                 api_key: None,
                 available_models: None,
+                trust_level: None,
             },
         );
         // OpenAI without available_models should use hardcoded fallback
@@ -701,6 +732,7 @@ mod tests {
                 timeout_secs: None,
                 api_key: None,
                 available_models: None,
+                trust_level: None,
             },
         );
 
@@ -783,6 +815,7 @@ mod tests {
             timeout_secs: None,
             api_key: None,
             available_models: None,
+            trust_level: None,
         };
 
         assert_eq!(config.endpoint(), "https://api.z.ai/api/coding/paas/v4");
@@ -799,6 +832,7 @@ mod tests {
             timeout_secs: None,
             api_key: None,
             available_models: None,
+            trust_level: None,
         };
 
         assert_eq!(config.model(), "GLM-4.7");
@@ -815,6 +849,7 @@ mod tests {
             timeout_secs: None,
             api_key: None,
             available_models: None,
+            trust_level: None,
         };
 
         let models = config.effective_models();
@@ -840,6 +875,7 @@ mod tests {
             timeout_secs: None,
             api_key: None,
             available_models: Some(custom_models.clone()),
+            trust_level: None,
         };
 
         assert_eq!(config.effective_models(), custom_models);
@@ -853,5 +889,115 @@ mod tests {
         assert_eq!(BackendType::GitHubCopilot.as_str(), "github-copilot");
         assert_eq!(BackendType::OpenRouter.as_str(), "openrouter");
         assert_eq!(BackendType::ZAI.as_str(), "zai");
+    }
+
+    #[test]
+    fn test_effective_trust_level_uses_backend_default() {
+        // When trust_level is None, should use backend's default
+        let config = LlmProviderConfig {
+            provider_type: BackendType::FastEmbed,
+            endpoint: None,
+            default_model: None,
+            temperature: None,
+            max_tokens: None,
+            timeout_secs: None,
+            api_key: None,
+            available_models: None,
+            trust_level: None,
+        };
+        assert_eq!(
+            config.effective_trust_level(),
+            super::super::trust::TrustLevel::Local
+        );
+
+        let config = LlmProviderConfig {
+            provider_type: BackendType::OpenAI,
+            endpoint: None,
+            default_model: None,
+            temperature: None,
+            max_tokens: None,
+            timeout_secs: None,
+            api_key: None,
+            available_models: None,
+            trust_level: None,
+        };
+        assert_eq!(
+            config.effective_trust_level(),
+            super::super::trust::TrustLevel::Cloud
+        );
+    }
+
+    #[test]
+    fn test_effective_trust_level_explicit_override() {
+        // When trust_level is Some, should use explicit value
+        let config = LlmProviderConfig {
+            provider_type: BackendType::OpenAI,
+            endpoint: None,
+            default_model: None,
+            temperature: None,
+            max_tokens: None,
+            timeout_secs: None,
+            api_key: None,
+            available_models: None,
+            trust_level: Some(super::super::trust::TrustLevel::Local),
+        };
+        assert_eq!(
+            config.effective_trust_level(),
+            super::super::trust::TrustLevel::Local
+        );
+    }
+
+    #[test]
+    fn test_trust_level_serde_skip_none() {
+        // When trust_level is None, it should not be serialized
+        let config = LlmProviderConfig {
+            provider_type: BackendType::OpenAI,
+            endpoint: None,
+            default_model: None,
+            temperature: None,
+            max_tokens: None,
+            timeout_secs: None,
+            api_key: None,
+            available_models: None,
+            trust_level: None,
+        };
+        let json = serde_json::to_string(&config).expect("Failed to serialize");
+        assert!(!json.contains("trust_level"));
+    }
+
+    #[test]
+    fn test_trust_level_serde_include_some() {
+        // When trust_level is Some, it should be serialized
+        let config = LlmProviderConfig {
+            provider_type: BackendType::OpenAI,
+            endpoint: None,
+            default_model: None,
+            temperature: None,
+            max_tokens: None,
+            timeout_secs: None,
+            api_key: None,
+            available_models: None,
+            trust_level: Some(super::super::trust::TrustLevel::Local),
+        };
+        let json = serde_json::to_string(&config).expect("Failed to serialize");
+        assert!(json.contains("trust_level"));
+        assert!(json.contains("local"));
+    }
+
+    #[test]
+    fn test_trust_level_toml_backward_compat() {
+        // TOML without trust_level field should deserialize with None
+        let toml_str = r#"
+type = "openai"
+endpoint = "https://api.openai.com/v1"
+default_model = "gpt-4"
+"#;
+        let config: LlmProviderConfig =
+            toml::from_str(toml_str).expect("Failed to deserialize TOML");
+        assert_eq!(config.trust_level, None);
+        assert_eq!(
+            config.effective_trust_level(),
+            super::super::trust::TrustLevel::Cloud
+        );
     }
 }

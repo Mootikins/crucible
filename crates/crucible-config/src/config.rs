@@ -2171,6 +2171,7 @@ allowed_tools = ["search_*"]
                 timeout_secs: Some(300),
                 api_key: None,
                 available_models: None,
+                trust_level: None,
             },
         );
 
@@ -2266,6 +2267,7 @@ max_tokens = 4096
                 timeout_secs: None,
                 api_key: None,
                 available_models: None,
+                trust_level: None,
             },
         );
 
