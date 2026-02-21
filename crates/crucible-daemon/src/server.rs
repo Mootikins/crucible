@@ -22,7 +22,7 @@ use crate::rpc_helpers::{
 use crate::session_manager::SessionManager;
 use crate::session_storage::{FileSessionStorage, SessionStorage};
 use anyhow::Result;
-use crucible_config::{DataClassification, LlmConfig, TrustLevel, WorkspaceConfig};
+use crucible_config::{DataClassification, LlmConfig, TrustLevel};
 use crucible_core::session::RecordingMode;
 
 use crate::protocol::RequestId;
@@ -1214,35 +1214,7 @@ fn resolve_kiln_classification_for_create(
     workspace: Option<&PathBuf>,
 ) -> DataClassification {
     let workspace_path = workspace.cloned().unwrap_or_else(|| kiln.to_path_buf());
-    let config_path = workspace_path.join(".crucible").join("workspace.toml");
-    let content = match std::fs::read_to_string(config_path) {
-        Ok(content) => content,
-        Err(_) => return DataClassification::Public,
-    };
-    let config = match toml::from_str::<WorkspaceConfig>(&content) {
-        Ok(config) => config,
-        Err(_) => return DataClassification::Public,
-    };
-
-    let kiln_canonical = std::fs::canonicalize(kiln).ok();
-    for attachment in &config.kilns {
-        let attachment_path = if attachment.path.is_absolute() {
-            attachment.path.clone()
-        } else {
-            workspace_path.join(&attachment.path)
-        };
-
-        let matches = match (&kiln_canonical, std::fs::canonicalize(&attachment_path).ok()) {
-            (Some(kc), Some(ac)) => kc == &ac,
-            _ => attachment_path == kiln,
-        };
-
-        if matches {
-            return attachment.effective_classification();
-        }
-    }
-
-    DataClassification::Public
+    crate::trust_resolution::resolve_kiln_classification(&workspace_path, kiln)
 }
 
 async fn handle_session_list(req: Request, sm: &Arc<SessionManager>) -> Response {
