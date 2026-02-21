@@ -418,10 +418,10 @@ where
     Ok((agent, ctx))
 }
 
-/// Build a Rig agent with workspace tools.
+/// Backward-compatible alias for [`build_agent_with_tools`].
 ///
-/// Returns (agent, workspace_context) - caller should use context to sync mode state.
-/// The `model_size` parameter is accepted for backward compatibility but ignored.
+/// The `model_size` parameter is accepted for compatibility but ignored.
+#[deprecated(note = "Use build_agent_with_tools instead")]
 #[allow(unused_variables)]
 pub fn build_agent_with_kiln_tools<C>(
     config: &AgentConfig,
@@ -434,10 +434,7 @@ where
     C: CompletionClient,
     C::CompletionModel: CompletionModel<Client = C>,
 {
-    let ctx = WorkspaceContext::new(workspace_root.as_ref());
-    let builder = configure_builder(client, config);
-    let agent = attach_tools(builder, &ctx, "normal", mcp_tools);
-    Ok((agent, ctx))
+    build_agent_with_tools(config, client, workspace_root, mcp_tools)
 }
 
 /// Build a Rig agent with a pre-configured WorkspaceContext.
@@ -600,6 +597,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[allow(deprecated)]
     async fn test_build_agent_with_kiln_tools_signature_without_kiln_context() {
         let config = AgentConfig::new("llama3.2", "You are a test assistant.");
         let client = test_ollama_client();

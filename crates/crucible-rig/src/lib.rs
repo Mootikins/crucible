@@ -45,6 +45,7 @@ pub mod workspace_tools;
 pub mod xml_tool_parser;
 
 // Re-export key types
+#[allow(deprecated)]
 pub use agent::{
     build_agent, build_agent_from_components_generic, build_agent_from_config,
     build_agent_with_kiln_tools, build_agent_with_model_size, build_agent_with_tools,
