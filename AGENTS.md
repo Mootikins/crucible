@@ -38,8 +38,16 @@
 | `crucible-acp` | Agent Context Protocol | Protocol types |
 | `crucible-daemon` | Daemon server (cru-server) | `Server`, `SessionManager`, `AgentManager` |
 | `crucible-rpc` | Daemon RPC client library | `DaemonClient`, `DaemonStorageClient` |
-
-See `crates/` for additional crates (lance, query, skills, plugins, pipeline, etc.)
+| `crucible-protocol` | Shared daemon protocol types, socket lifecycle | `Request`, `Response`, `RpcError` |
+| `crucible-observe` | Session logging and observability | `SessionWriter`, `SessionMetadata` |
+| `crucible-enrichment` | Context enrichment, Precognition (auto-RAG) | `EmbeddingHandler`, `DefaultEnrichmentService` |
+| `crucible-pipeline` | Note processing pipeline stages | `NotePipeline`, `NotePipelineConfig` |
+| `crucible-context` | Chat context management, prompt building | `SlidingWindowContext`, `LayeredPromptBuilder` |
+| `crucible-lance` | LanceDB vector storage backend | `LanceStore`, `LanceNoteStore` |
+| `crucible-skills` | Agent skills discovery and loading | `Skill`, `SkillSource`, `SkillScope` |
+| `crucible-query` | Composable query translation pipeline | `SqlSugarSyntax`, `JaqSyntax` |
+| `crucible-benchmarks` | Performance benchmarks and contract tests | `GraphFixture`, `GraphStats` |
+| `zellij-inbox` | Zellij plugin for agent inbox management | `InboxPlugin`, `RenderOptions` |
 
 ### Daemon Architecture
 
@@ -167,6 +175,40 @@ See **[docs/Meta/Systems.md](./docs/Meta/Systems.md)** for full details.
 | **apis** | HTTP, WebSocket, MCP, events |
 | **cli** | Commands, REPL, configuration |
 
+### ACP Delegation Workflow
+
+Crucible can delegate tasks to external AI agents (Claude Code, Cursor, OpenCode, Gemini CLI) through the [Agent Context Protocol](https://agentcontextprotocol.org/). The daemon spawns the external agent process, provides it with Crucible's tools and knowledge graph, and streams results back.
+
+**Interactive ACP sessions:**
+```bash
+cru chat -a claude          # Start interactive chat with Claude Code as the agent
+cru chat -a opencode        # Use OpenCode
+cru chat -a gemini          # Use Gemini CLI
+```
+
+**Programmatic session management:**
+```bash
+cru session create --agent claude --title "Refactor auth module"
+cru session send <id> "Analyze the auth module and suggest improvements"
+cru session show <id>
+```
+
+**Cross-agent delegation:** An internal Crucible agent can delegate subtasks to an ACP agent using the `delegate_session` tool. The daemon enforces delegation depth limits and trust boundaries.
+
+**Trust model:** The `delegation_config` in `crucible.toml` controls which agents can be delegated to, maximum delegation depth, and allowed tool sets. Custom agent profiles extend built-in ones:
+
+```toml
+[acp.agents.my-claude]
+extends = "claude"
+env = { ANTHROPIC_BASE_URL = "http://localhost:4000" }
+```
+
+**Key files:**
+- Agent profiles and ACP types: `crucible-acp/`
+- Agent spawning and lifecycle: `crucible-daemon/src/agents/`
+- Delegation tool: `crucible-tools/src/tools/delegate_session.rs`
+- CLI agent flag: `crucible-cli/src/commands/chat.rs` (`-a` / `--agent`)
+
 ## Project Structure
 
 ```
@@ -179,14 +221,25 @@ crucible/
 │   ├── crucible-tools/          # MCP server and tools
 │   ├── crucible-daemon/         # Daemon server (cru-server)
 │   ├── crucible-rpc/            # Daemon RPC client library
-│   ├── crucible-surrealdb/      # Database layer
+│   ├── crucible-protocol/       # Shared daemon protocol types
+│   ├── crucible-observe/        # Session logging and observability
+│   ├── crucible-enrichment/     # Context enrichment, Precognition
+│   ├── crucible-pipeline/       # Note processing pipeline
+│   ├── crucible-context/        # Chat context management
+│   ├── crucible-sqlite/         # SQLite storage (default)
+│   ├── crucible-surrealdb/      # SurrealDB storage (advanced)
+│   ├── crucible-lance/          # LanceDB vector storage
 │   ├── crucible-lua/            # Lua/Luau with Fennel
 │   ├── crucible-llm/            # Embedding backends
 │   ├── crucible-rig/            # LLM chat via Rig
 │   ├── crucible-parser/         # Markdown parsing
 │   ├── crucible-config/         # Configuration types
 │   ├── crucible-watch/          # File watching
-│   └── ...                      # lance, query, sqlite, skills, plugins, etc.
+│   ├── crucible-acp/            # Agent Context Protocol
+│   ├── crucible-skills/         # Agent skills discovery
+│   ├── crucible-query/          # Query translation pipeline
+│   ├── crucible-benchmarks/     # Performance benchmarks
+│   └── zellij-inbox/            # Zellij inbox plugin
 ├── vendor/                      # Patched upstream dependencies
 ├── docs/                        # Documentation kiln (user guides + test fixture)
 ├── justfile                     # Development recipes
