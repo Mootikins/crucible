@@ -10,6 +10,7 @@ use crate::mcp_server::{CancelJobParams, CrucibleMcpServer, DelegateSessionParam
 use crate::notes::{CreateNoteParams, DeleteNoteParams, ListNotesParams, ReadMetadataParams, ReadNoteParams, UpdateNoteParams};
 use crate::search::{PropertySearchParams, SemanticSearchParams, TextSearchParams};
 
+/// Read-only tools available in "plan" mode.
 const PLAN_TOOL_NAMES: &[&str] = &[
     "semantic_search",
     "text_search",
@@ -18,14 +19,9 @@ const PLAN_TOOL_NAMES: &[&str] = &[
     "read_note",
     "read_metadata",
     "get_kiln_info",
-    "get_outlinks",
-    "get_inlinks",
+    "get_kiln_roots",
+    "get_kiln_stats",
     "list_jobs",
-];
-
-const PLAN_FALLBACK_TOOL_NAMES: &[(&str, &str)] = &[
-    ("get_outlinks", "get_kiln_roots"),
-    ("get_inlinks", "get_kiln_stats"),
 ];
 
 #[derive(Clone)]
@@ -36,25 +32,13 @@ pub struct InProcessMcpAdapter {
 }
 
 impl InProcessMcpAdapter {
-    /// Creates a new in-process MCP adapter.
-    ///
-    /// # Arguments
-    ///
-    /// * `server` - The MCP server instance to wrap
-    ///
-    /// # Returns
-    ///
-    /// A new `InProcessMcpAdapter` instance
+    /// Creates a new adapter wrapping the given MCP server.
     #[must_use]
     pub fn new(server: Arc<CrucibleMcpServer>) -> Self {
         Self { server }
     }
 
     /// Lists all available tool names from the MCP server.
-    ///
-    /// # Returns
-    ///
-    /// A vector of tool names as strings
     #[must_use]
     pub fn list_tool_names(&self) -> Vec<String> {
         self.server
@@ -64,17 +48,7 @@ impl InProcessMcpAdapter {
             .collect()
     }
 
-    /// Creates Rig-compatible tools from the MCP server.
-    ///
-    /// Filters tools based on the specified mode (e.g., "plan" mode uses a subset of tools).
-    ///
-    /// # Arguments
-    ///
-    /// * `mode` - The tool selection mode ("plan" or other modes)
-    ///
-    /// # Returns
-    ///
-    /// A vector of boxed Rig tools
+    /// Creates Rig-compatible tools, filtered by mode ("plan" uses read-only subset).
     #[must_use]
     pub fn create_rig_tools(&self, mode: &str) -> Vec<Box<dyn rig::tool::ToolDyn>> {
         let all_tools = self.server.list_tools();
@@ -95,28 +69,10 @@ impl InProcessMcpAdapter {
 }
 
 fn filter_plan_tools(all_tools: Vec<McpTool>) -> Vec<McpTool> {
-    let available_names: HashSet<String> = all_tools.iter().map(|tool| tool.name.to_string()).collect();
-
-    let mut wanted_names: HashSet<String> = HashSet::new();
-    for name in PLAN_TOOL_NAMES {
-        if available_names.contains(*name) {
-            let _ = wanted_names.insert((*name).to_string());
-            continue;
-        }
-
-        if let Some((_, replacement)) = PLAN_FALLBACK_TOOL_NAMES
-            .iter()
-            .find(|(missing, _)| missing == name)
-        {
-            if available_names.contains(*replacement) {
-                let _ = wanted_names.insert((*replacement).to_string());
-            }
-        }
-    }
-
+    let plan_names: HashSet<&str> = PLAN_TOOL_NAMES.iter().copied().collect();
     all_tools
         .into_iter()
-        .filter(|tool| wanted_names.contains(tool.name.as_ref()))
+        .filter(|tool| plan_names.contains(tool.name.as_ref()))
         .collect()
 }
 

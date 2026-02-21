@@ -217,50 +217,19 @@ async fn create_internal_mcp_tool_names_for_tests(
     mode: &str,
     gateway_all_tools_override: Option<&[McpToolInfo]>,
 ) -> Vec<String> {
-    let mut names = Vec::new();
-
-    if let Some(kiln_path) = kiln_path {
-        let knowledge_repo: Arc<dyn KnowledgeRepository> =
-            knowledge_repo.unwrap_or_else(|| Arc::new(EmptyKnowledgeRepository));
-        let embedding_provider: Arc<dyn EmbeddingProvider> =
-            embedding_provider.unwrap_or_else(|| Arc::new(EmptyEmbeddingProvider));
-        let server = CrucibleMcpServer::new_with_delegation(
-            kiln_path.display().to_string(),
-            knowledge_repo,
-            embedding_provider,
-            delegation_context,
-        );
-        let adapter = InProcessMcpAdapter::new(Arc::new(server));
-        for tool in adapter.create_rig_tools(mode) {
-            names.push(tool.definition(String::new()).await.name);
-        }
-    } else {
-        debug!(
-            workspace = %workspace.display(),
-            "Skipping in-process Crucible MCP adapter tools because kiln path is unavailable"
-        );
-    }
-
-    if let Some(ref gw) = mcp_gateway {
-        let gw_read = gw.read().await;
-        if !server_names.is_empty() {
-            let all_tools_owned;
-            let all_tools: &[McpToolInfo] = if let Some(override_tools) = gateway_all_tools_override {
-                override_tools
-            } else {
-                all_tools_owned = gw_read.all_tools();
-                &all_tools_owned
-            };
-            names.extend(
-                all_tools
-                    .iter()
-                    .filter(|tool| server_names.contains(&tool.upstream))
-                    .map(|tool| tool.prefixed_name.clone()),
-            );
-        }
-    }
-
-    names
+    let tools = create_internal_mcp_tools(
+        workspace,
+        kiln_path,
+        mcp_gateway,
+        server_names,
+        knowledge_repo,
+        embedding_provider,
+        delegation_context,
+        mode,
+        gateway_all_tools_override,
+    )
+    .await;
+    tools.into_iter().map(|t| t.tool_name().to_string()).collect()
 }
 
 #[derive(Error, Debug)]

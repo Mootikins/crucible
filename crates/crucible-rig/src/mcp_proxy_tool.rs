@@ -61,6 +61,11 @@ impl McpProxyTool {
             gateway,
         }
     }
+
+    /// Returns the tool name (the prefixed name from [`McpToolInfo`]).
+    pub fn tool_name(&self) -> &str {
+        &self.name
+    }
 }
 
 impl Tool for McpProxyTool {
