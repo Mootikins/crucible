@@ -42,9 +42,6 @@ pub struct AgentInitParams {
     /// Working directory for the agent (where it should operate)
     /// Distinct from kiln_path which is where knowledge is stored.
     pub working_dir: Option<std::path::PathBuf>,
-    /// Optional kiln context for knowledge base access
-    /// When provided, agent will have semantic_search, read_note, list_notes tools
-    pub kiln_context: Option<crucible_rig::KilnContext>,
     /// Resume an existing daemon session instead of creating a new one.
     /// If Some(session_id), resume that specific session.
     /// If Some(""), resume most recent session for the workspace.
@@ -65,7 +62,6 @@ impl AgentInitParams {
             max_context_tokens: None,
             env_overrides: std::collections::HashMap::new(),
             working_dir: None,
-            kiln_context: None,
             resume_session_id: None,
             recording_mode: None,
             recording_path: None,
@@ -74,17 +70,6 @@ impl AgentInitParams {
 
     pub fn with_resume_session_id(mut self, session_id: Option<String>) -> Self {
         self.resume_session_id = session_id;
-        self
-    }
-
-    /// Set kiln context for knowledge base access
-    ///
-    /// When provided, the internal agent will have access to kiln tools:
-    /// - semantic_search: Search notes using embeddings
-    /// - read_note: Read note content from the kiln
-    /// - list_notes: List notes in a directory
-    pub fn with_kiln_context(mut self, ctx: crucible_rig::KilnContext) -> Self {
-        self.kiln_context = Some(ctx);
         self
     }
 
