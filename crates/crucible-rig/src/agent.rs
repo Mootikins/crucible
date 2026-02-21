@@ -12,7 +12,6 @@
 //!
 //! // Create components once
 //! let components = AgentComponents::new(config, client, workspace_ctx)
-//!     .with_kiln(kiln_ctx)
 //!     .with_model_size(ModelSize::Medium);
 //!
 //! // Build initial agent
@@ -22,7 +21,6 @@
 //! let new_handle = rebuild_agent_handle(&components, "qwen3-8b")?;
 //! ```
 
-use crate::kiln_tools::{KilnContext, ListNotesTool, ReadNoteTool, SemanticSearchTool};
 use crate::mcp_proxy_tool::McpProxyTool;
 use crate::providers::RigClient;
 use crate::workspace_tools::{
@@ -89,7 +87,6 @@ fn is_read_only_mode(mode_id: &str) -> bool {
 fn attach_tools<M: CompletionModel>(
     builder: AgentBuilder<M>,
     ctx: &WorkspaceContext,
-    kiln_ctx: Option<&KilnContext>,
     mode_id: &str,
     mcp_tools: Vec<McpProxyTool>,
 ) -> Agent<M> {
@@ -105,13 +102,6 @@ fn attach_tools<M: CompletionModel>(
             .tool(EditFileTool::new(ctx.clone()))
             .tool(WriteFileTool::new(ctx.clone()))
             .tool(BashTool::new(ctx.clone()));
-    }
-
-    if let Some(kiln) = kiln_ctx {
-        builder = builder
-            .tool(SemanticSearchTool::new(kiln.clone()))
-            .tool(ReadNoteTool::new(kiln.clone()))
-            .tool(ListNotesTool::new(kiln.clone()));
     }
 
     if !read_only {
@@ -236,8 +226,6 @@ pub struct AgentComponents {
     pub client: RigClient,
     /// Workspace context for tool execution
     pub workspace_ctx: WorkspaceContext,
-    /// Optional kiln context for knowledge base tools
-    pub kiln_ctx: Option<KilnContext>,
     /// Model size classification for tool selection
     pub model_size: ModelSize,
     /// Current mode (plan/normal/auto) for tool selection
@@ -257,7 +245,6 @@ impl AgentComponents {
             config,
             client,
             workspace_ctx,
-            kiln_ctx: None,
             model_size: ModelSize::Medium,
             mode_id: "normal".to_string(),
             ollama_endpoint: None,
@@ -269,12 +256,6 @@ impl AgentComponents {
     /// Set the MCP gateway for upstream tool injection.
     pub fn with_mcp_gateway(mut self, gateway: Arc<RwLock<McpGatewayManager>>) -> Self {
         self.mcp_gateway = Some(gateway);
-        self
-    }
-
-    /// Set the kiln context for knowledge base tools.
-    pub fn with_kiln(mut self, kiln_ctx: KilnContext) -> Self {
-        self.kiln_ctx = Some(kiln_ctx);
         self
     }
 
@@ -317,8 +298,6 @@ where
     pub agent: Agent<M>,
     /// Workspace context for tool execution.
     pub workspace_ctx: WorkspaceContext,
-    /// Optional kiln context for knowledge base tools.
-    pub kiln_ctx: Option<KilnContext>,
 }
 
 /// Build an agent from components with a specific model.
@@ -337,21 +316,13 @@ where
 {
     let config = components.config_for_model(model);
     let ctx = components.workspace_ctx.clone();
-    let kiln_ctx = components.kiln_ctx.clone();
 
     let builder = configure_builder(client, &config);
-    let agent = attach_tools(
-        builder,
-        &ctx,
-        kiln_ctx.as_ref(),
-        &components.mode_id,
-        mcp_tools,
-    );
+    let agent = attach_tools(builder, &ctx, &components.mode_id, mcp_tools);
 
     Ok(BuiltAgent {
         agent,
         workspace_ctx: ctx,
-        kiln_ctx,
     })
 }
 
@@ -443,11 +414,11 @@ where
 {
     let ctx = WorkspaceContext::new(workspace_root.as_ref());
     let builder = configure_builder(client, config);
-    let agent = attach_tools(builder, &ctx, None, "normal", mcp_tools);
+    let agent = attach_tools(builder, &ctx, "normal", mcp_tools);
     Ok((agent, ctx))
 }
 
-/// Build a Rig agent with workspace tools plus optional kiln tools.
+/// Build a Rig agent with workspace tools.
 ///
 /// Returns (agent, workspace_context) - caller should use context to sync mode state.
 /// The `model_size` parameter is accepted for backward compatibility but ignored.
@@ -457,7 +428,6 @@ pub fn build_agent_with_kiln_tools<C>(
     client: &C,
     workspace_root: impl AsRef<Path>,
     model_size: crucible_core::prompts::ModelSize,
-    kiln_ctx: Option<KilnContext>,
     mcp_tools: Vec<McpProxyTool>,
 ) -> AgentBuildResult<(Agent<C::CompletionModel>, WorkspaceContext)>
 where
@@ -466,7 +436,7 @@ where
 {
     let ctx = WorkspaceContext::new(workspace_root.as_ref());
     let builder = configure_builder(client, config);
-    let agent = attach_tools(builder, &ctx, kiln_ctx.as_ref(), "normal", mcp_tools);
+    let agent = attach_tools(builder, &ctx, "normal", mcp_tools);
     Ok((agent, ctx))
 }
 
@@ -486,7 +456,7 @@ where
     C::CompletionModel: CompletionModel<Client = C>,
 {
     let builder = configure_builder(client, config);
-    Ok(attach_tools(builder, ctx, None, "normal", mcp_tools))
+    Ok(attach_tools(builder, ctx, "normal", mcp_tools))
 }
 
 /// Build a Rig agent with a pre-configured WorkspaceContext.
@@ -505,7 +475,7 @@ where
     C::CompletionModel: CompletionModel<Client = C>,
 {
     let builder = configure_builder(client, config);
-    Ok(attach_tools(builder, ctx, None, "normal", mcp_tools))
+    Ok(attach_tools(builder, ctx, "normal", mcp_tools))
 }
 
 #[cfg(test)]
@@ -625,6 +595,22 @@ mod tests {
         let client = test_ollama_client();
 
         let result = build_agent_from_config(&config, &client);
+
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_build_agent_with_kiln_tools_signature_without_kiln_context() {
+        let config = AgentConfig::new("llama3.2", "You are a test assistant.");
+        let client = test_ollama_client();
+
+        let result = build_agent_with_kiln_tools(
+            &config,
+            &client,
+            "/tmp/test",
+            crucible_core::prompts::ModelSize::Medium,
+            vec![],
+        );
 
         assert!(result.is_ok());
     }
