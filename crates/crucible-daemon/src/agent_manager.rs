@@ -9,10 +9,12 @@ use crate::session_manager::{SessionError, SessionManager};
 use crucible_acp::discovery::default_agent_profiles;
 use crucible_config::components::permissions::PermissionConfig;
 use crucible_config::{AcpConfig, AgentProfile, BackendType, PatternStore};
+use crucible_core::enrichment::EmbeddingProvider;
 use crucible_core::events::SessionEvent;
 use crucible_core::interaction::{InteractionRequest, PermRequest, PermResponse, PermissionScope};
 use crucible_core::session::SessionAgent;
 use crucible_core::traits::chat::AgentHandle;
+use crucible_core::traits::KnowledgeRepository;
 use crucible_core::traits::PermissionGate;
 use crucible_lua::{
     execute_permission_hooks, register_crucible_on_api, register_permission_hook_api,
@@ -171,6 +173,10 @@ pub struct AgentManager {
     llm_config: Option<crucible_config::LlmConfig>,
     acp_config: Option<AcpConfig>,
     permission_config: Option<PermissionConfig>,
+    /// Knowledge repository for search tools (threaded to agent factory for CrucibleMcpServer)
+    knowledge_repo: Option<Arc<dyn KnowledgeRepository>>,
+    /// Embedding provider for semantic search (threaded to agent factory for CrucibleMcpServer)
+    embedding_provider: Option<Arc<dyn EmbeddingProvider>>,
 }
 
 impl AgentManager {
@@ -195,7 +201,25 @@ impl AgentManager {
             llm_config,
             acp_config,
             permission_config,
+            knowledge_repo: None,
+            embedding_provider: None,
         }
+    }
+
+    /// Set the knowledge repository for search tools.
+    /// These will be threaded through to the agent factory for CrucibleMcpServer creation.
+    #[allow(dead_code)]
+    pub fn with_knowledge_repo(mut self, repo: Option<Arc<dyn KnowledgeRepository>>) -> Self {
+        self.knowledge_repo = repo;
+        self
+    }
+
+    /// Set the embedding provider for semantic search.
+    /// These will be threaded through to the agent factory for CrucibleMcpServer creation.
+    #[allow(dead_code)]
+    pub fn with_embedding_provider(mut self, provider: Option<Arc<dyn EmbeddingProvider>>) -> Self {
+        self.embedding_provider = provider;
+        self
     }
 
     pub fn get_session_with_agent(
@@ -566,6 +590,8 @@ impl AgentManager {
             event_tx,
             self.mcp_gateway.clone(),
             acp_permission_handler,
+            self.knowledge_repo.clone(),
+            self.embedding_provider.clone(),
         )
         .await?;
 
