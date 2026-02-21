@@ -9,7 +9,7 @@ use crate::event_emitter::emit_event;
 use crate::protocol::SessionEventMessage;
 use crucible_acp::client::PermissionRequestHandler;
 use crucible_config::credentials::resolve_copilot_oauth_token;
-use crucible_config::{BackendType, LlmProviderConfig};
+use crucible_config::{BackendType, DataClassification, LlmProviderConfig};
 use crucible_core::background::BackgroundSpawner;
 use crucible_core::enrichment::EmbeddingProvider;
 use crucible_core::interaction_registry::InteractionRegistry;
@@ -25,6 +25,7 @@ use crucible_rig::{
 };
 use crucible_tools::in_process_adapter::InProcessMcpAdapter;
 use crucible_tools::mcp_server::CrucibleMcpServer;
+use crucible_tools::DelegationContext;
 use std::path::Path;
 use std::sync::Arc;
 use thiserror::Error;
@@ -86,6 +87,38 @@ impl EmbeddingProvider for EmptyEmbeddingProvider {
     }
 }
 
+/// Build a `DelegationContext` for the internal agent's MCP server.
+///
+/// Follows the exact pattern from `AcpAgentHandle::new()` — requires both
+/// `parent_session_id` and `background_spawner` to be present.  When either
+/// is `None` the result is `None` and the MCP server falls back to the
+/// non-delegation constructor.
+fn build_internal_delegation_context(
+    agent_config: &SessionAgent,
+    parent_session_id: Option<&str>,
+    background_spawner: Option<Arc<dyn BackgroundSpawner>>,
+    workspace: &Path,
+    kiln_path: Option<&Path>,
+) -> Option<DelegationContext> {
+    parent_session_id.and_then(|session_id| {
+        background_spawner.map(|spawner| {
+            let delegation_config = agent_config.delegation_config.as_ref();
+            DelegationContext {
+                background_spawner: spawner,
+                session_id: session_id.to_string(),
+                targets: delegation_config
+                    .and_then(|c| c.allowed_targets.clone())
+                    .unwrap_or_default(),
+                enabled: delegation_config.map(|c| c.enabled).unwrap_or(false),
+                depth: 0,
+                data_classification: kiln_path
+                    .map(|kiln| crate::trust_resolution::resolve_kiln_classification(workspace, kiln))
+                    .unwrap_or(DataClassification::Public),
+            }
+        })
+    })
+}
+
 async fn create_internal_mcp_tools(
     workspace: &Path,
     kiln_path: Option<&Path>,
@@ -93,6 +126,7 @@ async fn create_internal_mcp_tools(
     server_names: &[String],
     knowledge_repo: Option<Arc<dyn KnowledgeRepository>>,
     embedding_provider: Option<Arc<dyn EmbeddingProvider>>,
+    delegation_context: Option<DelegationContext>,
     mode: &str,
     gateway_all_tools_override: Option<&[McpToolInfo]>,
 ) -> Vec<McpProxyTool> {
@@ -103,10 +137,11 @@ async fn create_internal_mcp_tools(
             knowledge_repo.unwrap_or_else(|| Arc::new(EmptyKnowledgeRepository));
         let embedding_provider: Arc<dyn EmbeddingProvider> =
             embedding_provider.unwrap_or_else(|| Arc::new(EmptyEmbeddingProvider));
-        let server = CrucibleMcpServer::new(
+        let server = CrucibleMcpServer::new_with_delegation(
             kiln_path.display().to_string(),
             knowledge_repo,
             embedding_provider,
+            delegation_context,
         );
         let adapter = InProcessMcpAdapter::new(Arc::new(server));
         let adapter_gateway = Arc::new(tokio::sync::RwLock::new(
@@ -177,6 +212,7 @@ async fn create_internal_mcp_tool_names_for_tests(
     server_names: &[String],
     knowledge_repo: Option<Arc<dyn KnowledgeRepository>>,
     embedding_provider: Option<Arc<dyn EmbeddingProvider>>,
+    delegation_context: Option<DelegationContext>,
     mode: &str,
     gateway_all_tools_override: Option<&[McpToolInfo]>,
 ) -> Vec<String> {
@@ -187,10 +223,11 @@ async fn create_internal_mcp_tool_names_for_tests(
             knowledge_repo.unwrap_or_else(|| Arc::new(EmptyKnowledgeRepository));
         let embedding_provider: Arc<dyn EmbeddingProvider> =
             embedding_provider.unwrap_or_else(|| Arc::new(EmptyEmbeddingProvider));
-        let server = CrucibleMcpServer::new(
+        let server = CrucibleMcpServer::new_with_delegation(
             kiln_path.display().to_string(),
             knowledge_repo,
             embedding_provider,
+            delegation_context,
         );
         let adapter = InProcessMcpAdapter::new(Arc::new(server));
         for tool in adapter.create_rig_tools(mode) {
@@ -294,6 +331,13 @@ pub async fn create_agent_from_session_config(
     }
 
     let mode = "auto";
+    let delegation_context = build_internal_delegation_context(
+        agent_config,
+        parent_session_id,
+        background_spawner.clone(),
+        workspace,
+        kiln_path,
+    );
     let mcp_tools = create_internal_mcp_tools(
         workspace,
         kiln_path,
@@ -301,6 +345,7 @@ pub async fn create_agent_from_session_config(
         &agent_config.mcp_servers,
         _knowledge_repo,
         _embedding_provider,
+        delegation_context,
         mode,
         None,
     )
@@ -423,6 +468,7 @@ mod tests {
             &["gh".to_string()],
             knowledge_repo,
             embedding_provider,
+            None,
             mode,
             Some(user_tools),
         )
@@ -557,5 +603,138 @@ mod tests {
         )
         .await;
         assert!(result.is_ok());
+    }
+
+    // --- Delegation context wiring tests ---
+
+    use crucible_config::DelegationConfig;
+    use crucible_core::background::{JobError, JobId, JobInfo, JobResult};
+    use std::path::PathBuf;
+    use std::time::Duration;
+
+    struct MockSpawner;
+
+    #[async_trait::async_trait]
+    impl BackgroundSpawner for MockSpawner {
+        async fn spawn_bash(
+            &self,
+            _session_id: &str,
+            _command: String,
+            _workdir: Option<PathBuf>,
+            _timeout: Option<Duration>,
+        ) -> Result<JobId, JobError> {
+            unimplemented!()
+        }
+
+        async fn spawn_subagent(
+            &self,
+            _session_id: &str,
+            _prompt: String,
+            _context: Option<String>,
+        ) -> Result<JobId, JobError> {
+            unimplemented!()
+        }
+
+        fn list_jobs(&self, _session_id: &str) -> Vec<JobInfo> {
+            vec![]
+        }
+
+        fn get_job_result(&self, _job_id: &JobId) -> Option<JobResult> {
+            None
+        }
+
+        async fn cancel_job(&self, _job_id: &JobId) -> bool {
+            false
+        }
+    }
+
+    #[test]
+    fn delegation_context_built_when_config_present() {
+        let mut config = test_agent_config();
+        config.delegation_config = Some(DelegationConfig {
+            enabled: true,
+            max_depth: 2,
+            allowed_targets: Some(vec!["cursor".to_string(), "opencode".to_string()]),
+            result_max_bytes: 51200,
+            max_concurrent_delegations: 3,
+        });
+
+        let spawner: Arc<dyn BackgroundSpawner> = Arc::new(MockSpawner);
+        let ctx = build_internal_delegation_context(
+            &config,
+            Some("session-123"),
+            Some(spawner),
+            Path::new("/tmp"),
+            Some(Path::new("/tmp/kiln")),
+        );
+
+        let ctx = ctx.expect("delegation context should be Some");
+        assert!(ctx.enabled);
+        assert_eq!(ctx.session_id, "session-123");
+        assert_eq!(ctx.targets, vec!["cursor".to_string(), "opencode".to_string()]);
+        assert_eq!(ctx.depth, 0);
+    }
+
+    #[test]
+    fn delegation_context_disabled_without_delegation_config() {
+        // delegation_config = None -> context exists but enabled = false
+        let config = test_agent_config();
+        let spawner: Arc<dyn BackgroundSpawner> = Arc::new(MockSpawner);
+        let ctx = build_internal_delegation_context(
+            &config,
+            Some("session-123"),
+            Some(spawner),
+            Path::new("/tmp"),
+            Some(Path::new("/tmp/kiln")),
+        );
+
+        let ctx = ctx.expect("context present when spawner + session_id exist");
+        assert!(!ctx.enabled, "should be disabled when delegation_config is None");
+        assert!(ctx.targets.is_empty());
+    }
+
+    #[test]
+    fn delegation_context_none_without_spawner() {
+        let mut config = test_agent_config();
+        config.delegation_config = Some(DelegationConfig {
+            enabled: true,
+            max_depth: 1,
+            allowed_targets: None,
+            result_max_bytes: 51200,
+            max_concurrent_delegations: 3,
+        });
+
+        let ctx = build_internal_delegation_context(
+            &config,
+            Some("session-123"),
+            None,
+            Path::new("/tmp"),
+            Some(Path::new("/tmp/kiln")),
+        );
+
+        assert!(ctx.is_none(), "should be None without background_spawner");
+    }
+
+    #[test]
+    fn delegation_context_none_without_session_id() {
+        let mut config = test_agent_config();
+        config.delegation_config = Some(DelegationConfig {
+            enabled: true,
+            max_depth: 1,
+            allowed_targets: None,
+            result_max_bytes: 51200,
+            max_concurrent_delegations: 3,
+        });
+
+        let spawner: Arc<dyn BackgroundSpawner> = Arc::new(MockSpawner);
+        let ctx = build_internal_delegation_context(
+            &config,
+            None,
+            Some(spawner),
+            Path::new("/tmp"),
+            Some(Path::new("/tmp/kiln")),
+        );
+
+        assert!(ctx.is_none(), "should be None without parent_session_id");
     }
 }
