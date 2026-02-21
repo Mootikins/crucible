@@ -36,7 +36,6 @@ pub mod completion;
 pub mod crucible_agent;
 pub mod github_copilot;
 pub mod handle;
-pub mod kiln_tools;
 pub mod mcp_proxy_tool;
 pub mod openai_reasoning;
 pub mod providers;
@@ -75,8 +74,6 @@ pub use workspace_tools::{
 // Re-export MCP proxy tool (for upstream MCP tool integration)
 pub use mcp_proxy_tool::{mcp_tools_from_gateway, McpProxyError, McpProxyTool};
 
-// Re-export kiln tools (for knowledge base access)
-pub use kiln_tools::{KilnContext, KilnToolError, ListNotesTool, ReadNoteTool, SemanticSearchTool};
 
 // Re-export GitHub Copilot client
 pub use github_copilot::{
