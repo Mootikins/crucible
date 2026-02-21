@@ -84,6 +84,21 @@ pub struct DelegateSessionParams {
     pub background: Option<bool>,
 }
 
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct ListJobsParams {}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct GetJobResultParams {
+    /// The job ID to retrieve the result for
+    pub job_id: String,
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct CancelJobParams {
+    /// The job ID to cancel
+    pub job_id: String,
+}
+
 impl CrucibleMcpServer {
     /// Create a new MCP server for a kiln
     ///
@@ -157,7 +172,22 @@ impl CrucibleMcpServer {
     /// A vector of tool definitions including name, description, and input schema
     #[must_use]
     pub fn list_tools(&self) -> Vec<rmcp::model::Tool> {
-        self.tool_router.list_all()
+        let mut tools = self.tool_router.list_all();
+
+        if let Some(delegation_context) = &self.delegation_context {
+            if !delegation_context.targets.is_empty() {
+                if let Some(delegate_tool) = tools.iter_mut().find(|t| t.name == "delegate_session") {
+                    let targets_str = delegation_context.targets.join(", ");
+                    let new_desc = format!(
+                        "Delegate a task to another AI agent. Available delegation targets: {}. The target agent receives the prompt, executes the task, and returns the result.",
+                        targets_str
+                    );
+                    delegate_tool.description = Some(new_desc.into());
+                }
+            }
+        }
+
+        tools
     }
 
     /// Get the number of tools exposed by this server
@@ -365,9 +395,90 @@ impl CrucibleMcpServer {
         let content = rmcp::model::Content::json(content)?;
         Ok(CallToolResult::success(vec![content]))
     }
+
+    // ===== Job Tools (3) =====
+
+    #[tool(description = "List all background jobs (running and completed) for the current session")]
+    pub async fn list_jobs(
+        &self,
+        _params: Parameters<ListJobsParams>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let delegation = self.delegation_context.as_ref().ok_or_else(|| {
+            rmcp::ErrorData::internal_error(
+                "list_jobs unavailable: no daemon delegation context",
+                None,
+            )
+        })?;
+
+        let jobs = delegation
+            .background_spawner
+            .list_jobs(&delegation.session_id);
+        let content = rmcp::model::Content::json(
+            serde_json::to_value(&jobs).map_err(|e| {
+                rmcp::ErrorData::internal_error(format!("Failed to serialize jobs: {e}"), None)
+            })?,
+        )?;
+        Ok(CallToolResult::success(vec![content]))
+    }
+
+    #[tool(description = "Get the result of a specific background job by ID")]
+    pub async fn get_job_result(
+        &self,
+        params: Parameters<GetJobResultParams>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let params = params.0;
+        let delegation = self.delegation_context.as_ref().ok_or_else(|| {
+            rmcp::ErrorData::internal_error(
+                "get_job_result unavailable: no daemon delegation context",
+                None,
+            )
+        })?;
+
+        match delegation.background_spawner.get_job_result(&params.job_id) {
+            Some(result) => {
+                let content = rmcp::model::Content::json(
+                    serde_json::to_value(&result).map_err(|e| {
+                        rmcp::ErrorData::internal_error(
+                            format!("Failed to serialize job result: {e}"),
+                            None,
+                        )
+                    })?,
+                )?;
+                Ok(CallToolResult::success(vec![content]))
+            }
+            None => Err(rmcp::ErrorData::invalid_params(
+                format!("Job not found: {}", params.job_id),
+                None,
+            )),
+        }
+    }
+
+    #[tool(description = "Cancel a running background job by ID")]
+    pub async fn cancel_job(
+        &self,
+        params: Parameters<CancelJobParams>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let params = params.0;
+        let delegation = self.delegation_context.as_ref().ok_or_else(|| {
+            rmcp::ErrorData::internal_error(
+                "cancel_job unavailable: no daemon delegation context",
+                None,
+            )
+        })?;
+
+        let cancelled = delegation
+            .background_spawner
+            .cancel_job(&params.job_id)
+            .await;
+        let content = rmcp::model::Content::json(serde_json::json!({
+            "job_id": params.job_id,
+            "cancelled": cancelled,
+        }))?;
+        Ok(CallToolResult::success(vec![content]))
+    }
 }
 
-// ===== ServerHandler Implementation =====
+// ===== ServerHandler Implementation ====
 // Automatically implements call_tool and list_tools using the tool_router field
 
 #[tool_handler]
@@ -391,6 +502,7 @@ impl ServerHandler for CrucibleMcpServer {
             instructions: Some("Crucible knowledge management server with 13 tools. Notes: create_note, read_note, update_note, delete_note, list_notes, read_metadata. Search: semantic_search, text_search, property_search. Kiln: get_kiln_info, get_kiln_roots, get_kiln_stats. Delegation: delegate_session — hand off tasks to other agents when asked to delegate.".into()),
         }
     }
+
 }
 
 #[cfg(test)]
@@ -622,7 +734,7 @@ mod tests {
             Some(DelegationContext {
                 background_spawner: spawner.clone(),
                 session_id: "chat-parent".to_string(),
-                targets: vec!["cursor".to_string(), "opencode".to_string()],
+                targets: vec!["my-custom-agent".to_string(), "another-agent".to_string()],
                 enabled: true,
                 depth: 0,
             }),
@@ -634,16 +746,20 @@ mod tests {
             .find(|t| t.name == "delegate_session")
             .expect("delegate_session tool should exist");
 
-        // Description should contain both target names
+        let desc = delegate_tool
+            .description
+            .as_ref()
+            .map(|d| d.as_ref())
+            .unwrap_or("");
         assert!(
-            delegate_tool.description.contains("cursor"),
-            "Description should contain 'cursor' target. Got: {}",
-            delegate_tool.description
+            desc.contains("my-custom-agent"),
+            "Description should contain 'my-custom-agent' target. Got: {}",
+            desc
         );
         assert!(
-            delegate_tool.description.contains("opencode"),
-            "Description should contain 'opencode' target. Got: {}",
-            delegate_tool.description
+            desc.contains("another-agent"),
+            "Description should contain 'another-agent' target. Got: {}",
+            desc
         );
     }
 
@@ -665,11 +781,15 @@ mod tests {
             .find(|t| t.name == "delegate_session")
             .expect("delegate_session tool should exist");
 
-        // Description should NOT contain "Available targets:" when no delegation context
+        let desc = delegate_tool
+            .description
+            .as_ref()
+            .map(|d| d.as_ref())
+            .unwrap_or("");
         assert!(
-            !delegate_tool.description.contains("Available targets:"),
+            !desc.contains("Available targets:"),
             "Description should not have 'Available targets:' when no context. Got: {}",
-            delegate_tool.description
+            desc
         );
     }
 
@@ -701,11 +821,210 @@ mod tests {
             .find(|t| t.name == "delegate_session")
             .expect("delegate_session tool should exist");
 
-        // Description should NOT contain "Available targets:" when targets is empty
+        let desc = delegate_tool
+            .description
+            .as_ref()
+            .map(|d| d.as_ref())
+            .unwrap_or("");
         assert!(
-            !delegate_tool.description.contains("Available targets:"),
+            !desc.contains("Available targets:"),
             "Description should not have 'Available targets:' when targets empty. Got: {}",
-            delegate_tool.description
+            desc
+        );
+    }
+
+    struct MockJobBackgroundSpawner;
+
+    #[async_trait::async_trait]
+    impl BackgroundSpawner for MockJobBackgroundSpawner {
+        async fn spawn_bash(
+            &self,
+            _session_id: &str,
+            _command: String,
+            _workdir: Option<std::path::PathBuf>,
+            _timeout: Option<std::time::Duration>,
+        ) -> Result<String, JobError> {
+            Err(JobError::SpawnFailed("not implemented".to_string()))
+        }
+
+        async fn spawn_subagent(
+            &self,
+            _session_id: &str,
+            _prompt: String,
+            _context: Option<String>,
+        ) -> Result<String, JobError> {
+            Err(JobError::SpawnFailed("not implemented".to_string()))
+        }
+
+        fn list_jobs(&self, session_id: &str) -> Vec<JobInfo> {
+            let mut info = JobInfo::new(
+                session_id.to_string(),
+                JobKind::Subagent {
+                    prompt: "test task".to_string(),
+                    context: None,
+                },
+            );
+            info.id = "job-test-123".to_string();
+            vec![info]
+        }
+
+        fn get_job_result(&self, job_id: &String) -> Option<JobResult> {
+            if job_id == "job-test-123" {
+                let mut info = JobInfo::new(
+                    "test-session".to_string(),
+                    JobKind::Subagent {
+                        prompt: "test".to_string(),
+                        context: None,
+                    },
+                );
+                info.id = "job-test-123".to_string();
+                info.mark_completed();
+                Some(JobResult::success(info, "completed output".to_string()))
+            } else {
+                None
+            }
+        }
+
+        async fn cancel_job(&self, job_id: &String) -> bool {
+            job_id == "job-test-123"
+        }
+    }
+
+    fn make_server_without_delegation() -> CrucibleMcpServer {
+        let temp = TempDir::new().unwrap();
+        CrucibleMcpServer::new(
+            temp.path().to_str().unwrap().to_string(),
+            Arc::new(MockKnowledgeRepository) as Arc<dyn KnowledgeRepository>,
+            Arc::new(MockEmbeddingProvider) as Arc<dyn EmbeddingProvider>,
+        )
+    }
+
+    fn make_server_with_job_spawner() -> CrucibleMcpServer {
+        let temp = TempDir::new().unwrap();
+        CrucibleMcpServer::new_with_delegation(
+            temp.path().to_str().unwrap().to_string(),
+            Arc::new(MockKnowledgeRepository) as Arc<dyn KnowledgeRepository>,
+            Arc::new(MockEmbeddingProvider) as Arc<dyn EmbeddingProvider>,
+            Some(DelegationContext {
+                background_spawner: Arc::new(MockJobBackgroundSpawner),
+                session_id: "test-session".to_string(),
+                targets: vec![],
+                enabled: true,
+                depth: 0,
+            }),
+        )
+    }
+
+    #[tokio::test]
+    async fn test_list_jobs_without_context_returns_error() {
+        let server = make_server_without_delegation();
+        let result = server.list_jobs(Parameters(ListJobsParams {})).await;
+
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.message.contains("no daemon delegation context"));
+    }
+
+    #[tokio::test]
+    async fn test_list_jobs_returns_jobs_for_session() {
+        let server = make_server_with_job_spawner();
+        let result = server.list_jobs(Parameters(ListJobsParams {})).await;
+
+        assert!(result.is_ok());
+        let call_result = result.unwrap();
+        assert!(!call_result.content.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_get_job_result_without_context_returns_error() {
+        let server = make_server_without_delegation();
+        let result = server
+            .get_job_result(Parameters(GetJobResultParams {
+                job_id: "job-test-123".to_string(),
+            }))
+            .await;
+
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.message.contains("no daemon delegation context"));
+    }
+
+    #[tokio::test]
+    async fn test_get_job_result_returns_result_for_known_job() {
+        let server = make_server_with_job_spawner();
+        let result = server
+            .get_job_result(Parameters(GetJobResultParams {
+                job_id: "job-test-123".to_string(),
+            }))
+            .await;
+
+        assert!(result.is_ok());
+        let call_result = result.unwrap();
+        assert!(!call_result.content.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_get_job_result_unknown_job_returns_error() {
+        let server = make_server_with_job_spawner();
+        let result = server
+            .get_job_result(Parameters(GetJobResultParams {
+                job_id: "nonexistent-job".to_string(),
+            }))
+            .await;
+
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.message.contains("Job not found"));
+    }
+
+    #[tokio::test]
+    async fn test_cancel_job_without_context_returns_error() {
+        let server = make_server_without_delegation();
+        let result = server
+            .cancel_job(Parameters(CancelJobParams {
+                job_id: "job-test-123".to_string(),
+            }))
+            .await;
+
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.message.contains("no daemon delegation context"));
+    }
+
+    #[tokio::test]
+    async fn test_cancel_job_returns_cancelled_status() {
+        let server = make_server_with_job_spawner();
+        let result = server
+            .cancel_job(Parameters(CancelJobParams {
+                job_id: "job-test-123".to_string(),
+            }))
+            .await;
+
+        assert!(result.is_ok());
+        let call_result = result.unwrap();
+        assert!(!call_result.content.is_empty());
+    }
+
+    #[test]
+    fn test_job_tools_appear_in_tool_router() {
+        let server = make_server_with_job_spawner();
+        let tools = server.list_tools();
+        let tool_names: Vec<&str> = tools.iter().map(|t| t.name.as_ref()).collect();
+
+        assert!(
+            tool_names.contains(&"list_jobs"),
+            "list_jobs should be in tool list: {:?}",
+            tool_names
+        );
+        assert!(
+            tool_names.contains(&"get_job_result"),
+            "get_job_result should be in tool list: {:?}",
+            tool_names
+        );
+        assert!(
+            tool_names.contains(&"cancel_job"),
+            "cancel_job should be in tool list: {:?}",
+            tool_names
         );
     }
 }
