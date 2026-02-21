@@ -17,6 +17,7 @@
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
+use axum::http::{header::ACCEPT, HeaderValue};
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info};
@@ -25,6 +26,38 @@ use crate::{ClientError, Result};
 use crucible_core::enrichment::EmbeddingProvider;
 use crucible_core::traits::KnowledgeRepository;
 use crucible_tools::{CrucibleMcpServer, DelegationContext};
+
+async fn ensure_streamable_accept(
+    mut request: axum::http::Request<axum::body::Body>,
+    next: axum::middleware::Next,
+) -> axum::response::Response {
+    let existing_accept_values: Vec<String> = request
+        .headers()
+        .get_all(ACCEPT)
+        .iter()
+        .filter_map(|value| value.to_str().ok().map(ToOwned::to_owned))
+        .collect();
+
+    let has_event_stream_accept = existing_accept_values
+        .iter()
+        .any(|accept| accept.to_ascii_lowercase().contains("text/event-stream"));
+
+    if !has_event_stream_accept {
+        let merged_accept = if existing_accept_values.is_empty() {
+            "text/event-stream".to_string()
+        } else {
+            format!("{}, text/event-stream", existing_accept_values.join(", "))
+        };
+
+        request
+            .headers_mut()
+            .insert(ACCEPT, HeaderValue::from_str(&merged_accept).unwrap_or_else(|_| {
+                HeaderValue::from_static("text/event-stream")
+            }));
+    }
+
+    next.run(request).await
+}
 
 /// Hosts an MCP server in-process using streamable HTTP transport
 pub struct InProcessMcpHost {
@@ -80,7 +113,9 @@ impl InProcessMcpHost {
             },
         );
 
-        let router = axum::Router::new().nest_service("/mcp", service);
+        let router = axum::Router::new()
+            .nest_service("/mcp", service)
+            .layer(axum::middleware::from_fn(ensure_streamable_accept));
 
         let ct = shutdown.child_token();
         let server = axum::serve(listener, router).with_graceful_shutdown(async move {
