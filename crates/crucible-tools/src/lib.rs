@@ -35,6 +35,7 @@
 
 pub mod extended_mcp_server;
 pub mod kiln;
+pub mod in_process_adapter;
 pub mod mcp_client;
 pub mod mcp_gateway;
 pub mod mcp_server;
