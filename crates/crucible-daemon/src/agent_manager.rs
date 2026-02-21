@@ -35,22 +35,48 @@ use tracing::{debug, error, info, warn};
 /// Unique identifier for a pending permission request.
 pub type PermissionId = String;
 
-/// Check if a tool is destructive and requires permission before execution.
+/// Check if a tool is safe to execute without requiring explicit permission.
 ///
-/// Destructive tools can modify files, execute commands, or change state.
-/// Read-only tools that only query data do not require permission.
+/// Safe tools are read-only operations that only query data without modifying state.
+/// Unsafe tools can modify files, execute commands, or change state and require permission.
 ///
-/// # Returns
+/// # Safe Tools (is_safe=true)
 ///
-/// `true` for tools that modify state:
-/// - `write`, `bash`, `delete` - file/command operations
-/// - `create_note`, `update_note`, `delete_note` - note mutations
+/// **MCP Tools (10 read-only):**
+/// - `semantic_search` — Search notes using semantic similarity
+/// - `text_search` — Fast full-text search across notes
+/// - `property_search` — Search notes by frontmatter properties (includes tags)
+/// - `list_notes` — List notes in a directory
+/// - `read_note` — Read note content with optional line range
+/// - `read_metadata` — Read note metadata without loading full content
+/// - `get_kiln_info` — Get comprehensive kiln information including root path and statistics
+/// - `get_outlinks` — Get kiln roots information (alias for get_kiln_roots)
+/// - `get_inlinks` — Get kiln statistics (alias for get_kiln_stats)
+/// - `list_jobs` — List all background jobs (running and completed) for the current session
 ///
-/// `false` for read-only tools:
-/// - `read_note`, `read_metadata` - reading content
-/// - `text_search`, `property_search`, `semantic_search` - search operations
+/// **Workspace Tools (Rig-native, 3 read-only):**
+/// - `read_file` — Read file content
+/// - `glob` — Find files matching patterns
+/// - `grep` — Search file contents
 ///
-/// Default-deny: only explicitly safe tools skip the permission prompt.
+/// # Unsafe Tools (is_safe=false)
+///
+/// **MCP Tools (6 mutating):**
+/// - `create_note` — Create a new note in the kiln
+/// - `update_note` — Update an existing note
+/// - `delete_note` — Delete a note from the kiln
+/// - `delegate_session` — Delegate a task to another AI agent
+/// - `create_job` — Create a background job (not exposed in MCP)
+/// - `cancel_job` — Cancel a running background job by ID
+///
+/// **Workspace Tools (Rig-native, 3 mutating):**
+/// - `write` — Write file content
+/// - `edit` — Edit file content
+/// - `bash` — Execute shell commands
+///
+/// # Default-Deny Policy
+///
+/// Only explicitly safe tools skip the permission prompt.
 /// Everything unknown (including all external MCP tools) requires permission.
 pub fn is_safe(tool_name: &str) -> bool {
     matches!(
@@ -67,6 +93,7 @@ pub fn is_safe(tool_name: &str) -> bool {
             | "get_kiln_info"
             | "get_outlinks"
             | "get_inlinks"
+            | "list_jobs"
     )
 }
 
@@ -3215,16 +3242,14 @@ mod tests {
         }
 
         #[test]
-        fn job_management_tools_are_not_safe() {
-            assert!(!is_safe("list_jobs"));
-            assert!(!is_safe("get_job_result"));
-            assert!(!is_safe("cancel_job"));
+        fn list_jobs_is_safe() {
+            assert!(is_safe("list_jobs"), "list_jobs should be safe");
         }
 
         #[test]
         fn write_tools_are_not_safe() {
-            assert!(!is_safe("write_file"));
-            assert!(!is_safe("edit_file"));
+            assert!(!is_safe("write"));
+            assert!(!is_safe("edit"));
             assert!(!is_safe("bash"));
             assert!(!is_safe("create_note"));
             assert!(!is_safe("update_note"));
@@ -3243,6 +3268,11 @@ mod tests {
         #[test]
         fn delegate_session_is_not_safe() {
             assert!(!is_safe("delegate_session"));
+        }
+
+        #[test]
+        fn cancel_job_is_not_safe() {
+            assert!(!is_safe("cancel_job"));
         }
     }
 
