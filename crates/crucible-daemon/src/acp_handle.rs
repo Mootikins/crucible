@@ -21,7 +21,7 @@ use tracing::{debug, info, warn};
 use crucible_acp::client::{ClientConfig, CrucibleAcpClient, PermissionRequestHandler};
 use crucible_acp::streaming::{channel_callback, StreamingChunk};
 use crucible_acp::InProcessMcpHost;
-use crucible_config::{AcpConfig, DelegationConfig};
+use crucible_config::{AcpConfig, DataClassification, DelegationConfig, WorkspaceConfig};
 use crucible_core::background::BackgroundSpawner;
 use crucible_core::enrichment::EmbeddingProvider;
 use crucible_core::session::SessionAgent;
@@ -178,6 +178,9 @@ impl AcpAgentHandle {
                     .unwrap_or_default(),
                 enabled: delegation_config.map(|c| c.enabled).unwrap_or(false),
                 depth: 0,
+                data_classification: kiln_path
+                    .map(|kiln| resolve_kiln_classification(workspace, kiln))
+                    .unwrap_or(DataClassification::Public),
             })
         });
 
@@ -234,6 +237,38 @@ impl AcpAgentHandle {
             cached_thinking_budget: agent_config.thinking_budget,
         })
     }
+}
+
+fn resolve_kiln_classification(workspace: &Path, kiln: &Path) -> DataClassification {
+    let config_path = workspace.join(".crucible").join("workspace.toml");
+    let content = match std::fs::read_to_string(config_path) {
+        Ok(content) => content,
+        Err(_) => return DataClassification::Public,
+    };
+    let config = match toml::from_str::<WorkspaceConfig>(&content) {
+        Ok(config) => config,
+        Err(_) => return DataClassification::Public,
+    };
+
+    let kiln_canonical = std::fs::canonicalize(kiln).ok();
+    for attachment in &config.kilns {
+        let attachment_path = if attachment.path.is_absolute() {
+            attachment.path.clone()
+        } else {
+            workspace.join(&attachment.path)
+        };
+
+        let matches = match (&kiln_canonical, std::fs::canonicalize(&attachment_path).ok()) {
+            (Some(kc), Some(ac)) => kc == &ac,
+            _ => attachment_path == kiln,
+        };
+
+        if matches {
+            return attachment.effective_classification();
+        }
+    }
+
+    DataClassification::Public
 }
 
 #[async_trait]
