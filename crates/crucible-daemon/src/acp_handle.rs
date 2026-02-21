@@ -145,6 +145,7 @@ impl AcpAgentHandle {
     /// * `parent_session_id` - Parent daemon session id
     /// * `delegation_config` - Delegation limits and allowlist for this agent
     /// * `acp_config` - Optional ACP configuration (timeouts, etc.)
+    #[allow(clippy::too_many_arguments)]
     pub async fn new(
         agent_config: &SessionAgent,
         workspace: &Path,
