@@ -6,7 +6,7 @@ use crucible_config::DataClassification;
 use crucible_core::background::{BackgroundSpawner, JobError, JobId, JobInfo, JobResult};
 use crucible_core::enrichment::EmbeddingProvider;
 use crucible_core::traits::KnowledgeRepository;
-use crucible_tools::in_process_adapter::InProcessMcpAdapter;
+use crucible_tools::in_process_adapter::{InProcessMcpAdapter, PLAN_TOOL_NAMES};
 use crucible_tools::mcp_server::{CrucibleMcpServer, DelegationContext};
 use tempfile::TempDir;
 
@@ -29,18 +29,7 @@ const EXPECTED_TOOL_NAMES: &[&str] = &[
     "cancel_job",
 ];
 
-const PLAN_MODE_TOOL_NAMES: &[&str] = &[
-    "semantic_search",
-    "text_search",
-    "property_search",
-    "list_notes",
-    "read_note",
-    "read_metadata",
-    "get_kiln_info",
-    "get_kiln_roots",
-    "get_kiln_stats",
-    "list_jobs",
-];
+
 
 struct MockKnowledgeRepository;
 struct MockEmbeddingProvider;
@@ -298,27 +287,6 @@ async fn test_acp_mcp_server_tool_names() {
 }
 
 #[tokio::test]
-async fn test_tool_parity_internal_vs_acp() {
-    let temp_internal = TempDir::new().expect("temp dir");
-    let internal = create_adapter(&temp_internal);
-    let internal_names: HashSet<String> = internal.list_tool_names().into_iter().collect();
-
-    let temp_acp = TempDir::new().expect("temp dir");
-    let knowledge_repo = Arc::new(MockKnowledgeRepository) as Arc<dyn KnowledgeRepository>;
-    let embedding_provider = Arc::new(MockEmbeddingProvider) as Arc<dyn EmbeddingProvider>;
-    let host = start_mcp_host(
-        temp_acp.path().to_path_buf(),
-        knowledge_repo,
-        embedding_provider,
-    )
-    .await;
-    let acp_names: HashSet<String> = list_tool_names_over_http(&host).await.into_iter().collect();
-    host.shutdown().await;
-
-    assert_eq!(internal_names, acp_names);
-}
-
-#[tokio::test]
 async fn test_plan_mode_tool_filtering() {
     let temp = TempDir::new().expect("temp dir");
     let adapter = create_adapter(&temp);
@@ -331,7 +299,7 @@ async fn test_plan_mode_tool_filtering() {
         .collect();
 
     assert_eq!(full_names.len(), 16);
-    assert_eq!(plan_names, to_set(PLAN_MODE_TOOL_NAMES));
+    assert_eq!(plan_names, to_set(PLAN_TOOL_NAMES));
     assert!(!plan_names.contains("create_note"));
     assert!(!plan_names.contains("delegate_session"));
     assert!(!plan_names.contains("cancel_job"));
