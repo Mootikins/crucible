@@ -64,7 +64,7 @@ cru chat -a claude
 cru mcp
 ```
 
-First run prompts for a kiln path and detects available LLM providers. A background daemon auto-spawns for session persistence and file watching.
+First run prompts for a kiln path and detects available LLM providers. A background daemon (`cru-server`) auto-spawns to manage session state, file watching, and multi-session support. It communicates over a Unix socket and restarts automatically if stopped.
 
 **In a chat session:**
 - Type naturally, the agent responds with access to your knowledge base
@@ -121,6 +121,8 @@ Built-in agents (auto-discovered if installed):
 | codex | `npx @zed-industries/codex-acp` | `npm install -g @zed-industries/codex-acp` |
 | cursor | `cursor-acp` | `npm install -g cursor-acp` |
 
+Agents can delegate tasks to each other. An ACP agent like Claude can hand off work to Cursor or OpenCode mid-conversation using the `delegate_session` tool, then incorporate the results. Delegation works both directions: internal agents can delegate to ACP agents, and ACP agents can delegate to other ACP agents.
+
 Custom profiles go in `crucible.toml`:
 
 ```toml
@@ -162,8 +164,12 @@ See the [plugin guide](./docs/Help/Concepts/Scripting%20Languages.md) for the fu
 | `cru mcp` | | Start MCP server for external AI agents |
 | `cru process` | `p` | Parse, enrich, and store markdown files |
 | `cru init` | `i` | Initialize a new kiln (workspace) |
-| `cru session list` | `s` | List recent chat sessions |
-| `cru session resume <id>` | | Resume a previous session |
+| `cru session create` | | Create a new session (add `--agent <profile>` for ACP) |
+| `cru session list` | `s` | List sessions (live by default, `--all` includes persisted) |
+| `cru session show <id>` | | Show session details (daemon first, file fallback) |
+| `cru session resume <id>` | | Resume a previous session in the TUI |
+| `cru session pause <id>` | | Pause a running daemon session |
+| `cru session unpause <id>` | | Unpause a paused daemon session |
 | `cru session export <id>` | | Export session to markdown |
 | `cru session search <q>` | | Search sessions by title |
 | `cru stats` | | Display kiln statistics |
