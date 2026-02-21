@@ -68,8 +68,8 @@ pub use tools::{attach_mcp_tools, discover_crucible_tools, McpToolError, McpTool
 
 // Re-export workspace tools (always available)
 pub use workspace_tools::{
-    BashTool, CancelJobTool, EditFileTool, GetJobResultTool, GlobTool, GrepTool, ListJobsTool,
-    ReadFileTool, SpawnSubagentTool, WorkspaceContext, WorkspaceToolError, WriteFileTool,
+    BashTool, EditFileTool, GlobTool, GrepTool, ReadFileTool, WorkspaceContext,
+    WorkspaceToolError, WriteFileTool,
 };
 
 // Re-export MCP proxy tool (for upstream MCP tool integration)
