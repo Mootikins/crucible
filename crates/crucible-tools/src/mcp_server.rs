@@ -957,6 +957,27 @@ mod tests {
         (server, spawner)
     }
 
+    fn make_server_with_delegation_disabled(
+        data_classification: DataClassification,
+    ) -> CrucibleMcpServer {
+        let temp = TempDir::new().unwrap();
+        CrucibleMcpServer::new_with_delegation(
+            temp.path().to_str().unwrap().to_string(),
+            Arc::new(MockKnowledgeRepository) as Arc<dyn KnowledgeRepository>,
+            Arc::new(MockEmbeddingProvider) as Arc<dyn EmbeddingProvider>,
+            Some(DelegationContext {
+                background_spawner: Arc::new(MockBackgroundSpawner {
+                    spawn_calls: AtomicUsize::new(0),
+                }),
+                session_id: "chat-parent".to_string(),
+                targets: vec![],
+                enabled: false,
+                depth: 0,
+                data_classification,
+            }),
+        )
+    }
+
     #[tokio::test]
     async fn test_delegation_allowed_for_internal_kiln() {
         let (server, spawner) =
@@ -1015,6 +1036,53 @@ mod tests {
 
         assert!(result.is_ok());
         assert_eq!(spawner.spawn_calls.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn test_delegation_disabled_fires_before_trust_check() {
+        // enabled=false + Confidential: should get "disabled" error, not trust error
+        let server = make_server_with_delegation_disabled(DataClassification::Confidential);
+        let result = server
+            .delegate_session(Parameters(DelegateSessionParams {
+                prompt: "do work".to_string(),
+                description: None,
+                target: None,
+                background: Some(true),
+            }))
+            .await;
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(
+            err.message.contains("disabled"),
+            "Expected 'disabled' error but got: {}",
+            err.message
+        );
+        assert!(
+            !err.message.contains("insufficient"),
+            "Should not get trust error, got: {}",
+            err.message
+        );
+    }
+
+    #[tokio::test]
+    async fn test_delegation_disabled_with_public_kiln() {
+        // enabled=false + Public: should still get "disabled" error
+        let server = make_server_with_delegation_disabled(DataClassification::Public);
+        let result = server
+            .delegate_session(Parameters(DelegateSessionParams {
+                prompt: "do work".to_string(),
+                description: None,
+                target: None,
+                background: Some(true),
+            }))
+            .await;
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(
+            err.message.contains("disabled"),
+            "Expected 'disabled' error but got: {}",
+            err.message
+        );
     }
 
     #[tokio::test]
