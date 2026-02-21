@@ -286,6 +286,41 @@ async fn test_in_process_mcp_host_graceful_shutdown() {
 
 /// Test that tools/list over HTTP returns all 16 tools including delegate_session
 #[tokio::test]
+async fn test_streamable_http_accept_header_without_sse_still_succeeds() {
+    let temp = TempDir::new().unwrap();
+    let knowledge_repo = Arc::new(MockKnowledgeRepository) as Arc<dyn KnowledgeRepository>;
+    let embedding_provider = Arc::new(MockEmbeddingProvider) as Arc<dyn EmbeddingProvider>;
+
+    let host = start_mcp_host(
+        temp.path().to_path_buf(),
+        knowledge_repo,
+        embedding_provider,
+    )
+    .await;
+
+    let url = host.mcp_url();
+    let client = reqwest::Client::new();
+
+    let init_resp = client
+        .post(&url)
+        .header("Content-Type", "application/json")
+        .header("Accept", "application/json")
+        .body(r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"test","version":"0.1.0"}}}"#)
+        .send()
+        .await
+        .expect("initialize should succeed");
+
+    assert!(
+        init_resp.status().is_success(),
+        "missing text/event-stream should still succeed, got: {}",
+        init_resp.status()
+    );
+
+    host.shutdown().await;
+}
+
+/// Test that tools/list over HTTP returns all 16 tools including delegate_session
+#[tokio::test]
 async fn test_tools_list_over_http_returns_delegate_session() {
     let temp = TempDir::new().unwrap();
     let knowledge_repo = Arc::new(MockKnowledgeRepository) as Arc<dyn KnowledgeRepository>;
