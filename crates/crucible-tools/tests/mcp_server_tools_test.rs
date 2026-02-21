@@ -187,12 +187,12 @@ async fn test_server_info_metadata() {
     assert!(info.server_info.title.is_some());
     assert_eq!(info.server_info.title.unwrap(), "Crucible MCP Server");
 
-    // Verify instructions mention 13 tools
+    // Verify instructions mention 16 tools
     assert!(info.instructions.is_some());
     let instructions = info.instructions.unwrap();
     assert!(
-        instructions.contains("13 tools"),
-        "Instructions should mention 13 tools"
+        instructions.contains("16 tools"),
+        "Instructions should mention 16 tools"
     );
 
     // Verify tools capability is advertised
