@@ -3516,4 +3516,104 @@ mod tests {
             let _ = server_task.await;
         }
     }
+
+    // Tests for resolve_provider_trust_level_for_create
+    #[test]
+    fn provider_trust_acp_agent_always_cloud() {
+        let req: Request = serde_json::from_value(json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "session.create",
+            "params": {
+                "agent_type": "acp",
+                "kiln": "/tmp/kiln"
+            }
+        }))
+        .unwrap();
+        // Even with a Local-trust provider in config, ACP always returns Cloud
+        let llm_config = Some(build_llm_config_with_trust(
+            "local-provider",
+            crucible_config::BackendType::Mock,
+            Some(crucible_config::TrustLevel::Local),
+        ));
+        let result = resolve_provider_trust_level_for_create(&req, &llm_config);
+        assert_eq!(result, crucible_config::TrustLevel::Cloud);
+    }
+
+    #[test]
+    fn provider_trust_bare_backend_name_cloud() {
+        let req: Request = serde_json::from_value(json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "session.create",
+            "params": {
+                "provider": "ollama",
+                "kiln": "/tmp/kiln"
+            }
+        }))
+        .unwrap();
+        let result = resolve_provider_trust_level_for_create(&req, &None);
+        assert_eq!(result, crucible_config::TrustLevel::Cloud);
+    }
+
+    #[test]
+    fn provider_trust_bare_backend_name_local() {
+        let req: Request = serde_json::from_value(json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "session.create",
+            "params": {
+                "provider": "fastembed",
+                "kiln": "/tmp/kiln"
+            }
+        }))
+        .unwrap();
+        let result = resolve_provider_trust_level_for_create(&req, &None);
+        assert_eq!(result, crucible_config::TrustLevel::Local);
+    }
+
+    #[test]
+    fn provider_trust_default_provider_fallback() {
+        // No agent_type, no provider_key, no provider → falls back to default provider in llm_config
+        let req: Request = serde_json::from_value(json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "session.create",
+            "params": {
+                "kiln": "/tmp/kiln"
+            }
+        }))
+        .unwrap();
+        // Build config where default provider is Local trust
+        let llm_config = Some(build_llm_config_with_trust(
+            "my-local",
+            crucible_config::BackendType::Mock,
+            Some(crucible_config::TrustLevel::Local),
+        ));
+        let result = resolve_provider_trust_level_for_create(&req, &llm_config);
+        assert_eq!(result, crucible_config::TrustLevel::Local);
+    }
+
+    // Tests for resolve_kiln_classification_for_create wrapper
+    #[test]
+    fn kiln_classification_workspace_none_uses_kiln_dir() {
+        let tmp = TempDir::new().unwrap();
+        let kiln = tmp.path().join("kiln");
+        std::fs::create_dir_all(&kiln).unwrap();
+        // No workspace.toml at kiln dir → defaults to Public
+        let result = resolve_kiln_classification_for_create(&kiln, None);
+        assert_eq!(result, crucible_config::DataClassification::Public);
+    }
+
+    #[test]
+    fn kiln_classification_relative_path_matches() {
+        let tmp = TempDir::new().unwrap();
+        let workspace = tmp.path().join("workspace");
+        let kiln = workspace.join("notes");
+        std::fs::create_dir_all(&kiln).unwrap();
+        write_workspace_config(&workspace, "./notes", Some("internal"));
+
+        let result = resolve_kiln_classification_for_create(&kiln, Some(&workspace));
+        assert_eq!(result, crucible_config::DataClassification::Internal);
+    }
 }
