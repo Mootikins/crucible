@@ -21,6 +21,7 @@ mod session_manager;
 mod session_storage;
 mod subscription;
 mod tools_bridge;
+mod trust_resolution;
 
 use anyhow::Result;
 use crucible_config::CliAppConfig;
