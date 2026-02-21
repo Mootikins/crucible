@@ -273,8 +273,8 @@ pub async fn create_agent_from_session_config(
     event_tx: &broadcast::Sender<SessionEventMessage>,
     mcp_gateway: Option<Arc<tokio::sync::RwLock<crucible_tools::mcp_gateway::McpGatewayManager>>>,
     acp_permission_handler: Option<PermissionRequestHandler>,
-    _knowledge_repo: Option<Arc<dyn KnowledgeRepository>>,
-    _embedding_provider: Option<Arc<dyn EmbeddingProvider>>,
+    knowledge_repo: Option<Arc<dyn KnowledgeRepository>>,
+    embedding_provider: Option<Arc<dyn EmbeddingProvider>>,
 ) -> Result<Box<dyn AgentHandle + Send + Sync>, AgentFactoryError> {
     if agent_config.agent_type == "acp" {
         let handle = AcpAgentHandle::new(
@@ -314,8 +314,8 @@ pub async fn create_agent_from_session_config(
         kiln_path,
         mcp_gateway.clone(),
         &agent_config.mcp_servers,
-        _knowledge_repo,
-        _embedding_provider,
+        knowledge_repo,
+        embedding_provider,
         delegation_context,
         mode,
         None,

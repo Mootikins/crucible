@@ -11,7 +11,7 @@ use crate::notes::{CreateNoteParams, DeleteNoteParams, ListNotesParams, ReadMeta
 use crate::search::{PropertySearchParams, SemanticSearchParams, TextSearchParams};
 
 /// Read-only tools available in "plan" mode.
-const PLAN_TOOL_NAMES: &[&str] = &[
+pub const PLAN_TOOL_NAMES: &[&str] = &[
     "semantic_search",
     "text_search",
     "property_search",
@@ -78,7 +78,7 @@ fn filter_plan_tools(all_tools: Vec<McpTool>) -> Vec<McpTool> {
 
 #[derive(Debug, thiserror::Error)]
 /// Error type for in-process MCP tool execution.
-pub enum InProcessToolError {
+enum InProcessToolError {
     /// Tool execution failed with the given error message.
     #[error("tool execution failed: {0}")]
     ToolExecution(String),

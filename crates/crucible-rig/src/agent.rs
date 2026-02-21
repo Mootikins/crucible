@@ -418,49 +418,11 @@ where
     Ok((agent, ctx))
 }
 
-/// Backward-compatible alias for [`build_agent_with_tools`].
-///
-/// The `model_size` parameter is accepted for compatibility but ignored.
-#[deprecated(note = "Use build_agent_with_tools instead")]
-#[allow(unused_variables)]
-pub fn build_agent_with_kiln_tools<C>(
-    config: &AgentConfig,
-    client: &C,
-    workspace_root: impl AsRef<Path>,
-    model_size: crucible_core::prompts::ModelSize,
-    mcp_tools: Vec<McpProxyTool>,
-) -> AgentBuildResult<(Agent<C::CompletionModel>, WorkspaceContext)>
-where
-    C: CompletionClient,
-    C::CompletionModel: CompletionModel<Client = C>,
-{
-    build_agent_with_tools(config, client, workspace_root, mcp_tools)
-}
-
 /// Build a Rig agent with a pre-configured WorkspaceContext.
 ///
 /// Use this when you need to inject a background spawner or other context.
 #[allow(unused_variables)]
 pub fn build_agent_with_model_size<C>(
-    config: &AgentConfig,
-    client: &C,
-    ctx: &WorkspaceContext,
-    model_size: crucible_core::prompts::ModelSize,
-    mcp_tools: Vec<McpProxyTool>,
-) -> AgentBuildResult<Agent<C::CompletionModel>>
-where
-    C: CompletionClient,
-    C::CompletionModel: CompletionModel<Client = C>,
-{
-    let builder = configure_builder(client, config);
-    Ok(attach_tools(builder, ctx, "normal", mcp_tools))
-}
-
-/// Build a Rig agent with a pre-configured WorkspaceContext.
-///
-/// Use this when you need to inject a background spawner or other context.
-#[allow(unused_variables)]
-pub fn build_agent_with_context<C>(
     config: &AgentConfig,
     client: &C,
     ctx: &WorkspaceContext,
@@ -592,23 +554,6 @@ mod tests {
         let client = test_ollama_client();
 
         let result = build_agent_from_config(&config, &client);
-
-        assert!(result.is_ok());
-    }
-
-    #[tokio::test]
-    #[allow(deprecated)]
-    async fn test_build_agent_with_kiln_tools_signature_without_kiln_context() {
-        let config = AgentConfig::new("llama3.2", "You are a test assistant.");
-        let client = test_ollama_client();
-
-        let result = build_agent_with_kiln_tools(
-            &config,
-            &client,
-            "/tmp/test",
-            crucible_core::prompts::ModelSize::Medium,
-            vec![],
-        );
 
         assert!(result.is_ok());
     }
