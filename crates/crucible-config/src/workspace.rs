@@ -3,6 +3,7 @@
 //! Defines the `.crucible/workspace.toml` format for workspace-level configuration.
 //! A workspace can contain multiple kiln attachments and security overrides.
 
+use crate::components::DataClassification;
 use crate::security::ShellPolicy;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -39,6 +40,19 @@ pub struct KilnAttachment {
     /// Optional display name for the kiln
     #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
+    /// Optional data classification for the kiln
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub data_classification: Option<DataClassification>,
+}
+
+impl KilnAttachment {
+    /// Get the effective data classification for this kiln.
+    ///
+    /// Returns the configured classification, or `DataClassification::Public` if not set.
+    pub fn effective_classification(&self) -> DataClassification {
+        self.data_classification
+            .unwrap_or(DataClassification::Public)
+    }
 }
 
 /// Security configuration for workspace
@@ -121,6 +135,7 @@ name = "Minimal"
             kilns: vec![KilnAttachment {
                 path: PathBuf::from("./notes"),
                 name: Some("Notes".to_string()),
+                data_classification: None,
             }],
             security: SecurityConfig {
                 shell: ShellPolicy {
@@ -164,5 +179,102 @@ name = "Test"
         // Default security config should be empty (deny-all)
         assert_eq!(config.security.shell.whitelist.len(), 0);
         assert_eq!(config.security.shell.blacklist.len(), 0);
+    }
+
+    #[test]
+    fn kiln_attachment_with_data_classification_confidential() {
+        let toml = r#"
+[workspace]
+name = "Test"
+
+[[kilns]]
+path = "./docs"
+data_classification = "confidential"
+"#;
+
+        let config: WorkspaceConfig = toml::from_str(toml).expect("Failed to parse");
+
+        assert_eq!(config.kilns[0].path, PathBuf::from("./docs"));
+        assert_eq!(
+            config.kilns[0].data_classification,
+            Some(DataClassification::Confidential)
+        );
+        assert_eq!(
+            config.kilns[0].effective_classification(),
+            DataClassification::Confidential
+        );
+    }
+
+    #[test]
+    fn kiln_attachment_with_data_classification_internal() {
+        let toml = r#"
+[workspace]
+name = "Test"
+
+[[kilns]]
+path = "./docs"
+data_classification = "internal"
+"#;
+
+        let config: WorkspaceConfig = toml::from_str(toml).expect("Failed to parse");
+
+        assert_eq!(config.kilns[0].path, PathBuf::from("./docs"));
+        assert_eq!(
+            config.kilns[0].data_classification,
+            Some(DataClassification::Internal)
+        );
+        assert_eq!(
+            config.kilns[0].effective_classification(),
+            DataClassification::Internal
+        );
+    }
+
+    #[test]
+    fn kiln_attachment_without_data_classification_defaults_to_public() {
+        let toml = r#"
+[workspace]
+name = "Test"
+
+[[kilns]]
+path = "./docs"
+"#;
+
+        let config: WorkspaceConfig = toml::from_str(toml).expect("Failed to parse");
+
+        assert_eq!(config.kilns[0].path, PathBuf::from("./docs"));
+        assert_eq!(config.kilns[0].data_classification, None);
+        assert_eq!(
+            config.kilns[0].effective_classification(),
+            DataClassification::Public
+        );
+    }
+
+    #[test]
+    fn kiln_attachment_roundtrip_with_classification() {
+        let config = WorkspaceConfig {
+            workspace: WorkspaceMeta {
+                name: "Test Workspace".to_string(),
+            },
+            kilns: vec![KilnAttachment {
+                path: PathBuf::from("./notes"),
+                name: Some("Notes".to_string()),
+                data_classification: Some(DataClassification::Confidential),
+            }],
+            security: SecurityConfig {
+                shell: ShellPolicy {
+                    whitelist: vec![],
+                    blacklist: vec![],
+                },
+            },
+        };
+
+        let toml = toml::to_string(&config).expect("Failed to serialize");
+        let parsed: WorkspaceConfig = toml::from_str(&toml).expect("Failed to re-parse");
+
+        assert_eq!(config, parsed);
+        assert_eq!(
+            parsed.kilns[0].effective_classification(),
+            DataClassification::Confidential
+        );
     }
 }
