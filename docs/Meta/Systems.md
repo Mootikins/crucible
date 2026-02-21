@@ -24,6 +24,7 @@ This document defines the orthogonal systems that make up Crucible. Each system 
 | **apis** | HTTP REST, WebSocket, events | `crucible-web` |
 | **cli** | Commands, REPL, TUI, configuration | `crucible-cli`, `crucible-config` |
 | **daemon** | Multi-session server, RPC, agent management | `crucible-daemon`, `crucible-rpc` |
+| **observe** | Session logging, event streams, observability | `crucible-observe` |
 
 ## System Descriptions
 
@@ -69,6 +70,7 @@ AI agent infrastructure. Manages agent definitions and execution.
 - LLM providers (Ollama, OpenAI-compatible)
 - Context management (sliding window, compaction)
 - Tool registry and MCP integration
+- Delegation: agents can delegate tasks to other agents (internal or ACP) via the `delegate_session` tool, configured through `DelegationConfig` (enabled, max_depth, allowed_targets)
 
 See: [[Help/Concepts/Agents & Protocols]], [[Help/Extending/Internal Agent]]
 
@@ -128,6 +130,17 @@ Multi-session server for concurrent agent access.
 - Kiln management
 
 See: [[Help/Core/Sessions]], AGENTS.md Daemon Architecture section
+
+### observe
+
+Session logging and observability. Captures session events as append-only streams.
+
+- Append-only JSONL event logs per session
+- Human-readable markdown export on demand
+- Optional SQLite indexing for fast session queries
+- Event types: user messages, assistant responses, tool calls, thinking blocks, errors
+
+See: [[Help/Core/Sessions]]
 
 ## Rust/Lua Boundary
 

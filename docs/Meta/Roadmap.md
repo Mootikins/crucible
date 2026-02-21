@@ -2,7 +2,7 @@
 description: Phase-based development timeline for Crucible
 type: roadmap
 status: active
-updated: 2026-01-30
+updated: 2026-02-21
 tags:
   - meta
   - planning
@@ -67,7 +67,9 @@ Key areas: [[Meta/Product#Workflow Automation]]
 
 > See [[Meta/Product]] for detailed status of each feature.
 
-**Focus**: Browser UI, Tauri desktop, rich rendering, note types.
+**Focus**: Web UI polish, Tauri desktop, rich rendering, note types.
+
+> **Note**: The `crucible-web` crate (SolidJS + Axum) already provides an early web chat interface. Phase 3 focuses on polishing it for general use.
 
 Key areas: [[Meta/Product#Web & Desktop]], [[Meta/Product#Note-Taking & Authoring]]
 

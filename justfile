@@ -150,11 +150,11 @@ bench:
 
 # === Web Interface ===
 
-# Build Svelte frontend and run web server (for production-like dev)
+# Build SolidJS frontend and run web server (for production-like dev)
 web: web-build
     cargo run -p crucible-cli -- web --host 0.0.0.0 --port 3000
 
-# Build only the Svelte frontend
+# Build only the SolidJS frontend
 web-build:
     cd crates/crucible-web/web && bun install && bun run build
 
@@ -173,6 +173,20 @@ web-dev:
 # Build release with embedded web assets
 release-web: web-build
     cargo build -p crucible-cli --release
+
+# === Daemon Management ===
+
+# Start the background daemon
+daemon-start:
+    cru daemon start
+
+# Stop the background daemon
+daemon-stop:
+    cru daemon stop
+
+# Check daemon status
+daemon-status:
+    cru daemon status
 
 # === Coverage ===
 
