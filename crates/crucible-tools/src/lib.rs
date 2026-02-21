@@ -78,7 +78,7 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 pub fn init() {
     tracing::info!("Initializing crucible-tools v{}", VERSION);
     tracing::info!(
-        "13 tools available: 6 NoteTools, 3 SearchTools, 3 KilnTools, 1 DelegationTool"
+        "16 tools available: 6 NoteTools, 3 SearchTools, 3 KilnTools, 1 DelegationTool, 3 JobTools"
     );
 }
 
