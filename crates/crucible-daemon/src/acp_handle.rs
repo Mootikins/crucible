@@ -665,7 +665,7 @@ fn resolve_agent_command(
 ) -> Result<ResolvedCommand, AcpHandleError> {
     let known: &[(&str, &str, &[&str])] = &[
         ("opencode", "opencode", &["acp"]),
-        ("claude", "npx", &["@zed-industries/claude-code-acp"]),
+        ("claude", "npx", &["@zed-industries/claude-agent-acp"]),
         ("gemini", "gemini", &[]),
         ("codex", "npx", &["@zed-industries/codex-acp"]),
         ("cursor", "cursor-acp", &[]),
@@ -751,7 +751,7 @@ mod tests {
         let config = test_session_agent("claude");
         let (cmd, args, _) = resolve_agent_command("claude", &config, None).unwrap();
         assert_eq!(cmd, "npx");
-        assert_eq!(args, vec!["@zed-industries/claude-code-acp"]);
+        assert_eq!(args, vec!["@zed-industries/claude-agent-acp"]);
     }
 
     #[test]
