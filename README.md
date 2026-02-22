@@ -116,7 +116,7 @@ Built-in agents (auto-discovered if installed):
 | Agent | Command | Install |
 |-------|---------|---------|
 | opencode | `opencode` | `go install github.com/grafana/opencode@latest` |
-| claude | `npx @zed-industries/claude-code-acp` | `npm install -g @zed-industries/claude-code-acp` |
+| claude | `npx @zed-industries/claude-agent-acp` | `npm install -g @zed-industries/claude-agent-acp` |
 | gemini | `gemini` | `npm install -g gemini-cli` |
 | codex | `npx @zed-industries/codex-acp` | `npm install -g @zed-industries/codex-acp` |
 | cursor | `cursor-acp` | `npm install -g cursor-acp` |

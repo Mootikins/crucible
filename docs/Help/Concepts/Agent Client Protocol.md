@@ -154,7 +154,7 @@ Crucible ships with profiles for common ACP-compatible agents:
 | Agent | Command | Install |
 |-------|---------|---------|
 | OpenCode | `opencode acp` | `go install github.com/grafana/opencode@latest` |
-| Claude Code | `npx @zed-industries/claude-code-acp` | `npm install -g @zed-industries/claude-code-acp` |
+| Claude Code | `npx @zed-industries/claude-agent-acp` | `npm install -g @zed-industries/claude-agent-acp` |
 | Gemini CLI | `gemini` | `npm install -g gemini-cli` |
 | Codex | `npx @zed-industries/codex-acp` | `npm install -g @zed-industries/codex-acp` |
 | Cursor | `cursor-acp` | `npm install -g cursor-acp` |
