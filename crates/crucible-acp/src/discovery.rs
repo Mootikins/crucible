@@ -122,7 +122,7 @@ pub fn default_agent_profiles() -> HashMap<String, AgentProfile> {
         AgentProfile {
             extends: None,
             command: Some("npx".to_string()),
-            args: Some(vec!["@zed-industries/claude-code-acp".to_string()]),
+            args: Some(vec!["@zed-industries/claude-agent-acp".to_string()]),
             env: HashMap::new(),
             description: Some("Claude Code via ACP".to_string()),
             capabilities: None,
@@ -309,7 +309,7 @@ pub async fn discover_agent(preferred: Option<&str>, acp_config: &AcpConfig) -> 
          • gemini: npm install -g gemini-cli\n\
          \n\
          Bridge agents (require base CLI):\n\
-         • claude: npm install -g @zed-industries/claude-code-acp\n\
+         • claude: npm install -g @zed-industries/claude-agent-acp\n\
          • codex: npm install -g @zed-industries/codex-acp\n\
          • cursor: npm install -g cursor-acp\n\
          \n\
@@ -337,7 +337,7 @@ pub fn get_agent_help() -> String {
 
 • claude
   Requirements: Claude Code CLI installed
-  Bridge: npm install -g @zed-industries/claude-code-acp
+   Bridge: npm install -g @zed-industries/claude-agent-acp
   Connects to Claude Code agent
 
 • gemini
@@ -877,7 +877,7 @@ mod tests {
         assert_eq!(agent.command, "npx");
         assert_eq!(
             agent.args,
-            vec!["@zed-industries/claude-code-acp".to_string()]
+            vec!["@zed-industries/claude-agent-acp".to_string()]
         );
     }
 

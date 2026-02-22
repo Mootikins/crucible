@@ -463,6 +463,29 @@ impl CrucibleAcpClient {
             .take()
             .ok_or_else(|| ClientError::Connection("Failed to capture agent stdout".to_string()))?;
 
+        // Forward stderr to tracing for debugging
+        if let Some(stderr) = child.stderr.take() {
+            let agent_name = self.agent_name.clone();
+            tokio::spawn(async move {
+                use tokio::io::AsyncBufReadExt;
+                let mut reader = tokio::io::BufReader::new(stderr);
+                let mut line = String::new();
+                loop {
+                    line.clear();
+                    match reader.read_line(&mut line).await {
+                        Ok(0) => break, // EOF
+                        Ok(_) => {
+                            let trimmed = line.trim();
+                            if !trimmed.is_empty() {
+                                tracing::debug!(agent = %agent_name, "[agent stderr] {}", trimmed);
+                            }
+                        }
+                        Err(_) => break,
+                    }
+                }
+            });
+        }
+
         // Store stdio handles and process in the client
         self.agent_stdin = Some(stdin);
         self.agent_stdout = Some(BufReader::new(stdout));
