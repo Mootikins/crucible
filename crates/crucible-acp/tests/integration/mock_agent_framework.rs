@@ -100,15 +100,15 @@ fn test_mock_agent_handles_initialize() {
     assert_eq!(agent_info["name"], "mock-opencode");
     assert_eq!(agent_info["version"], "1.0.0");
 
-    // Verify MCP capabilities
+    // Verify MCP capabilities (ACP schema: http/sse booleans)
     let mcp_capabilities = &result["agentCapabilities"]["mcpCapabilities"];
-    assert!(
-        mcp_capabilities.get("terminal").is_some(),
-        "Should have terminal capability"
+    assert_eq!(
+        mcp_capabilities["http"], true,
+        "OpenCode mock should report http=true"
     );
-    assert!(
-        mcp_capabilities.get("fs.readTextFile").is_some(),
-        "Should have fs.readTextFile capability"
+    assert_eq!(
+        mcp_capabilities["sse"], false,
+        "OpenCode mock should report sse=false"
     );
 }
 

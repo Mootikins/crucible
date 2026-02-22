@@ -20,7 +20,7 @@ async fn test_claude_acp_complete_handshake_with_auth() {
 
     // connect_with_handshake will succeed because mock agent doesn't
     // actually enforce auth (it just advertises requiring it)
-    let result = client.connect_with_handshake().await;
+    let result = client.connect_with_best_mcp(None).await;
 
     assert!(
         result.is_ok(),
@@ -44,7 +44,7 @@ async fn test_claude_acp_initialization_auth_detection() {
 
     // Claude-ACP config sets requires_auth = true
     // The mock agent advertises auth_methods in initialize response
-    let result = client.connect_with_handshake().await;
+    let result = client.connect_with_best_mcp(None).await;
 
     // Connection should succeed (mock doesn't actually enforce auth)
     assert!(
@@ -60,7 +60,7 @@ async fn test_claude_acp_capabilities() {
     let config = MockStdioAgentConfig::claude_acp();
     let (mut client, _handle) = ThreadedMockAgent::spawn_with_client(config);
 
-    let result = client.connect_with_handshake().await;
+    let result = client.connect_with_best_mcp(None).await;
     assert!(result.is_ok(), "Connection should succeed");
     assert!(client.is_connected());
 }
@@ -71,7 +71,7 @@ async fn test_claude_acp_session_after_auth() {
     let config = MockStdioAgentConfig::claude_acp();
     let (mut client, _handle) = ThreadedMockAgent::spawn_with_client(config);
 
-    let result = client.connect_with_handshake().await;
+    let result = client.connect_with_best_mcp(None).await;
     assert!(result.is_ok(), "Should complete handshake");
 
     let session = result.unwrap();

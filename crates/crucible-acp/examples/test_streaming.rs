@@ -33,7 +33,7 @@ async fn main() {
     // Connect and handshake
     println!("\n=== Connecting and performing handshake ===");
     let session = client
-        .connect_with_handshake()
+        .connect_with_best_mcp(None)
         .await
         .expect("Handshake failed");
 

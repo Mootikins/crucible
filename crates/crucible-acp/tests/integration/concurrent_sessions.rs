@@ -203,8 +203,8 @@ async fn concurrent_dual_sessions_isolated_no_cross_contamination() {
         ThreadedMockAgent::spawn_with_client(MockStdioAgentConfig::opencode());
 
     let (session_a, session_b) = tokio::join!(
-        client_a.connect_with_handshake(),
-        client_b.connect_with_handshake()
+        client_a.connect_with_best_mcp(None),
+        client_b.connect_with_best_mcp(None)
     );
 
     let session_a = session_a.expect("session A should connect");

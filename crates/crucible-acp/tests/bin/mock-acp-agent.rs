@@ -68,6 +68,14 @@ fn main() {
                 config.inject_errors = true;
                 i += 1;
             }
+            "--mcp-http" => {
+                config.mcp_http = true;
+                i += 1;
+            }
+            "--mcp-sse" => {
+                config.mcp_sse = true;
+                i += 1;
+            }
             "--help" | "-h" => {
                 println!("Mock ACP Agent - Integration Testing Tool");
                 println!();
@@ -79,6 +87,8 @@ fn main() {
                 println!("  --protocol-version <n>   Protocol version to advertise (default: 1)");
                 println!("  --delay <ms>             Response delay in milliseconds");
                 println!("  --inject-errors          Inject errors in responses");
+                println!("  --mcp-http               Advertise HTTP MCP transport support");
+                println!("  --mcp-sse                Advertise SSE MCP transport support");
                 println!("  --help, -h               Show this help message");
                 std::process::exit(0);
             }
