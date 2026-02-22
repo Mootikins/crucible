@@ -797,18 +797,32 @@ impl AgentManager {
             match result {
                 Ok(chunk) => {
                     if !chunk.delta.is_empty() {
-                        accumulated_response.push_str(&chunk.delta);
-                        debug!(
-                            session_id = %session_id,
-                            delta_len = chunk.delta.len(),
-                            "Sending text_delta event"
-                        );
-                        let send_result = emit_event(
-                            event_tx,
-                            SessionEventMessage::text_delta(session_id, &chunk.delta),
-                        );
-                        if !send_result {
-                            warn!(session_id = %session_id, "No subscribers for text_delta event");
+                        // Guard: some LLM backends (both internal and ACP) re-send the
+                        // full accumulated response as a final streaming delta. Detect
+                        // this by checking if the incoming delta exactly matches what
+                        // we've already accumulated, and skip it to prevent duplication.
+                        if !accumulated_response.is_empty()
+                            && chunk.delta == *accumulated_response
+                        {
+                            debug!(
+                                session_id = %session_id,
+                                delta_len = chunk.delta.len(),
+                                "Skipping duplicate full-text delta (matches accumulated response)"
+                            );
+                        } else {
+                            accumulated_response.push_str(&chunk.delta);
+                            debug!(
+                                session_id = %session_id,
+                                delta_len = chunk.delta.len(),
+                                "Sending text_delta event"
+                            );
+                            let send_result = emit_event(
+                                event_tx,
+                                SessionEventMessage::text_delta(session_id, &chunk.delta),
+                            );
+                            if !send_result {
+                                warn!(session_id = %session_id, "No subscribers for text_delta event");
+                            }
                         }
                     }
 
