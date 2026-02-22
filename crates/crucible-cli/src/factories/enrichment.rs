@@ -178,6 +178,7 @@ mod tests {
                 timeout_secs: None,
                 api_key: None,
                 available_models: None,
+                trust_level: None,
             },
         );
         config2.llm.providers.insert(
@@ -191,6 +192,7 @@ mod tests {
                 timeout_secs: None,
                 api_key: None,
                 available_models: None,
+                trust_level: None,
             },
         );
 
@@ -225,6 +227,7 @@ mod tests {
                 timeout_secs: None,
                 api_key: None,
                 available_models: None,
+                trust_level: None,
             },
         );
         config2.llm.providers.insert(
@@ -238,6 +241,7 @@ mod tests {
                 timeout_secs: None,
                 api_key: None,
                 available_models: None,
+                trust_level: None,
             },
         );
 
