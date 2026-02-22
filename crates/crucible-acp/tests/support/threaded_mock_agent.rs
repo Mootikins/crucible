@@ -14,7 +14,7 @@
 //! let (client, _agent_handle) = ThreadedMockAgent::spawn_with_client(config).await;
 //!
 //! // Now use client normally - it's connected to the in-process mock agent
-//! let result = client.connect_with_handshake().await;
+//! let result = client.connect_with_best_mcp(None).await;
 //! ```
 
 use super::mock_stdio_agent::{MockStdioAgent, MockStdioAgentConfig};

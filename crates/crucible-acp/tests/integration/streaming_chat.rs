@@ -19,7 +19,7 @@ async fn test_streaming_chat_with_mock_agent() {
     let (mut client, _handle) = ThreadedMockAgent::spawn_with_client(config);
 
     // Connect and perform handshake
-    let result = client.connect_with_handshake().await;
+    let result = client.connect_with_best_mcp(None).await;
     assert!(
         result.is_ok(),
         "Should complete handshake: {:?}",
@@ -58,7 +58,7 @@ async fn test_prompt_with_streaming_response() {
 
     // Connect and get session
     let session = client
-        .connect_with_handshake()
+        .connect_with_best_mcp(None)
         .await
         .expect("Should complete handshake");
 

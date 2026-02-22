@@ -17,7 +17,7 @@ async fn test_opencode_complete_handshake() {
     let (mut client, _handle) = ThreadedMockAgent::spawn_with_client(config);
 
     // Attempt to connect with full handshake
-    let result = client.connect_with_handshake().await;
+    let result = client.connect_with_best_mcp(None).await;
 
     // This should succeed
     if let Err(ref e) = result {
@@ -46,7 +46,7 @@ async fn test_opencode_initialization() {
     let (mut client, _handle) = ThreadedMockAgent::spawn_with_client(config);
 
     // connect_with_handshake performs initialization internally
-    let result = client.connect_with_handshake().await;
+    let result = client.connect_with_best_mcp(None).await;
     assert!(result.is_ok(), "Initialization should succeed");
 }
 
@@ -56,7 +56,7 @@ async fn test_opencode_session_creation() {
     let config = MockStdioAgentConfig::opencode();
     let (mut client, _handle) = ThreadedMockAgent::spawn_with_client(config);
 
-    let result = client.connect_with_handshake().await;
+    let result = client.connect_with_best_mcp(None).await;
     assert!(result.is_ok(), "Should create session");
 
     let session = result.unwrap();
@@ -73,6 +73,6 @@ async fn test_opencode_error_handling() {
     config.inject_errors = true;
     let (mut client, _handle) = ThreadedMockAgent::spawn_with_client(config);
 
-    let result = client.connect_with_handshake().await;
+    let result = client.connect_with_best_mcp(None).await;
     assert!(result.is_err(), "Should fail when errors are injected");
 }

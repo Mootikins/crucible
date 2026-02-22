@@ -42,8 +42,12 @@ pub struct MockStdioAgentConfig {
     pub response_delay_ms: Option<u64>,
     /// Whether to inject errors
     pub inject_errors: bool,
-    /// Custom capabilities to advertise
+    /// Custom capabilities to advertise (legacy, kept for backward compat)
     pub capabilities: Vec<String>,
+    /// Whether agent advertises HTTP MCP support (ACP spec: McpCapabilities.http)
+    pub mcp_http: bool,
+    /// Whether agent advertises SSE MCP support (ACP spec: McpCapabilities.sse)
+    pub mcp_sse: bool,
 }
 
 impl Default for MockStdioAgentConfig {
@@ -59,6 +63,8 @@ impl Default for MockStdioAgentConfig {
                 "fs.writeTextFile".to_string(),
                 "terminal".to_string(),
             ],
+            mcp_http: false,
+            mcp_sse: false,
         }
     }
 }
@@ -77,6 +83,8 @@ impl MockStdioAgentConfig {
                 "fs.writeTextFile".to_string(),
                 "terminal".to_string(),
             ],
+            mcp_http: true,
+            mcp_sse: false,
         }
     }
 
@@ -94,6 +102,8 @@ impl MockStdioAgentConfig {
                 "terminal".to_string(),
                 "loadSession".to_string(),
             ],
+            mcp_http: true,
+            mcp_sse: false,
         }
     }
 
@@ -109,6 +119,8 @@ impl MockStdioAgentConfig {
                 "fs.readTextFile".to_string(),
                 "fs.writeTextFile".to_string(),
             ],
+            mcp_http: false,
+            mcp_sse: false,
         }
     }
 
@@ -125,6 +137,8 @@ impl MockStdioAgentConfig {
                 "fs.writeTextFile".to_string(),
                 "terminal".to_string(),
             ],
+            mcp_http: true,
+            mcp_sse: false,
         }
     }
 }
@@ -239,7 +253,12 @@ impl MockStdioAgent {
 
         let response: InitializeResponse = serde_json::from_value(json!({
             "protocolVersion": self.config.protocol_version,
-            "agentCapabilities": {},
+            "agentCapabilities": {
+                "mcpCapabilities": {
+                    "http": self.config.mcp_http,
+                    "sse": self.config.mcp_sse
+                }
+            },
             "authMethods": auth_methods_json,
             "agentInfo": {
                 "name": name,
@@ -252,18 +271,7 @@ impl MockStdioAgent {
         .expect("Failed to create InitializeResponse");
 
         // Serialize to JSON value
-        let mut result = serde_json::to_value(&response).unwrap();
-
-        // Add custom MCP capabilities (non-standard extension for testing)
-        // This supports the legacy capability format expected by tests
-        let mut capabilities_map = serde_json::Map::new();
-        for cap in &self.config.capabilities {
-            capabilities_map.insert(cap.clone(), json!({}));
-        }
-
-        if let Some(agent_caps) = result.get_mut("agentCapabilities") {
-            agent_caps["mcpCapabilities"] = json!(capabilities_map);
-        }
+        let result = serde_json::to_value(&response).unwrap();
 
         // Wrap in JSON-RPC 2.0 response format
         json!({
