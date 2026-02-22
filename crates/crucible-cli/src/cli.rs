@@ -1223,113 +1223,110 @@ mod tests {
         ));
     }
 
-    #[test]
-    fn test_session_daemon_list_parses() {
-        let cli = Cli::try_parse_from(["cru", "session", "daemon", "list"]).unwrap();
-        assert!(matches!(
-            cli.command,
-            Some(Commands::Session(SessionCommands::Daemon(
-                DaemonSessionCommands::List { state: None }
-            )))
-        ));
-    }
+
 
     #[test]
-    fn test_session_daemon_list_with_state_parses() {
-        let cli =
-            Cli::try_parse_from(["cru", "session", "daemon", "list", "--state", "active"]).unwrap();
-        if let Some(Commands::Session(SessionCommands::Daemon(DaemonSessionCommands::List {
+    fn test_session_list_with_state_parses() {
+        let cli = Cli::try_parse_from(["cru", "session", "list", "--state", "active"]).unwrap();
+        if let Some(Commands::Session(SessionCommands::List {
             state,
-        }))) = cli.command
+            ..
+        })) = cli.command
         {
             assert_eq!(state, Some("active".to_string()));
         } else {
-            panic!("Expected Session Daemon List command");
+            panic!("Expected Session List command");
         }
     }
 
     #[test]
-    fn test_session_daemon_create_parses() {
-        let cli = Cli::try_parse_from(["cru", "session", "daemon", "create"]).unwrap();
-        if let Some(Commands::Session(SessionCommands::Daemon(DaemonSessionCommands::Create {
+    fn test_session_list_with_all_flag_parses() {
+        let cli = Cli::try_parse_from(["cru", "session", "list", "--all"]).unwrap();
+        if let Some(Commands::Session(SessionCommands::List {
+            all,
+            ..
+        })) = cli.command
+        {
+            assert!(all);
+        } else {
+            panic!("Expected Session List command with --all flag");
+        }
+    }
+
+    #[test]
+    fn test_session_create_parses() {
+        let cli = Cli::try_parse_from(["cru", "session", "create"]).unwrap();
+        if let Some(Commands::Session(SessionCommands::Create {
             session_type,
+            agent,
             recording_mode,
-        }))) = cli.command
+        })) = cli.command
         {
             assert_eq!(session_type, "chat");
+            assert_eq!(agent, None);
             assert_eq!(recording_mode, None);
         } else {
-            panic!("Expected Session Daemon Create command");
+            panic!("Expected Session Create command");
         }
     }
 
     #[test]
-    fn test_session_daemon_create_with_type_parses() {
-        let cli =
-            Cli::try_parse_from(["cru", "session", "daemon", "create", "-t", "workflow"]).unwrap();
-        if let Some(Commands::Session(SessionCommands::Daemon(DaemonSessionCommands::Create {
+    fn test_session_create_with_type_parses() {
+        let cli = Cli::try_parse_from(["cru", "session", "create", "-t", "workflow"]).unwrap();
+        if let Some(Commands::Session(SessionCommands::Create {
             session_type,
+            agent,
             recording_mode,
-        }))) = cli.command
+        })) = cli.command
         {
             assert_eq!(session_type, "workflow");
+            assert_eq!(agent, None);
             assert_eq!(recording_mode, None);
         } else {
-            panic!("Expected Session Daemon Create command");
+            panic!("Expected Session Create command");
+        }
+    }
+
+
+
+
+
+    #[test]
+    fn test_session_pause_parses() {
+        let cli = Cli::try_parse_from(["cru", "session", "pause", "session-123"]).unwrap();
+        if let Some(Commands::Session(SessionCommands::Pause {
+            session_id,
+        })) = cli.command
+        {
+            assert_eq!(session_id, "session-123");
+        } else {
+            panic!("Expected Session Pause command");
         }
     }
 
     #[test]
-    fn test_session_daemon_get_parses() {
-        let cli = Cli::try_parse_from(["cru", "session", "daemon", "get", "session-123"]).unwrap();
-        if let Some(Commands::Session(SessionCommands::Daemon(DaemonSessionCommands::Get {
+    fn test_session_unpause_parses() {
+        let cli = Cli::try_parse_from(["cru", "session", "unpause", "session-123"]).unwrap();
+        if let Some(Commands::Session(SessionCommands::Unpause {
             session_id,
-        }))) = cli.command
+        })) = cli.command
         {
             assert_eq!(session_id, "session-123");
         } else {
-            panic!("Expected Session Daemon Get command");
+            panic!("Expected Session Unpause command");
         }
     }
 
     #[test]
-    fn test_session_daemon_pause_parses() {
-        let cli =
-            Cli::try_parse_from(["cru", "session", "daemon", "pause", "session-123"]).unwrap();
-        if let Some(Commands::Session(SessionCommands::Daemon(DaemonSessionCommands::Pause {
+    fn test_session_end_parses() {
+        let cli = Cli::try_parse_from(["cru", "session", "end", "session-123"]).unwrap();
+        if let Some(Commands::Session(SessionCommands::End {
             session_id,
-        }))) = cli.command
+        })) = cli.command
         {
             assert_eq!(session_id, "session-123");
         } else {
-            panic!("Expected Session Daemon Pause command");
-        }
-    }
-
-    #[test]
-    fn test_session_daemon_resume_parses() {
-        let cli =
-            Cli::try_parse_from(["cru", "session", "daemon", "resume", "session-123"]).unwrap();
-        if let Some(Commands::Session(SessionCommands::Daemon(DaemonSessionCommands::Resume {
-            session_id,
-        }))) = cli.command
-        {
-            assert_eq!(session_id, "session-123");
-        } else {
-            panic!("Expected Session Daemon Resume command");
-        }
-    }
-
-    #[test]
-    fn test_session_daemon_end_parses() {
-        let cli = Cli::try_parse_from(["cru", "session", "daemon", "end", "session-123"]).unwrap();
-        if let Some(Commands::Session(SessionCommands::Daemon(DaemonSessionCommands::End {
-            session_id,
-        }))) = cli.command
-        {
-            assert_eq!(session_id, "session-123");
-        } else {
-            panic!("Expected Session Daemon End command");
+            panic!("Expected Session End command");
         }
     }
 }
