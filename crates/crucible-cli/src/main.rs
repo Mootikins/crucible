@@ -111,6 +111,10 @@ fn parse_log_level(level: &str) -> Option<LevelFilter> {
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    // Install ring as the rustls CryptoProvider before any TLS usage.
+    // Both ring and aws-lc-rs are compiled (via lancedb), so rustls can't auto-detect.
+    let _ = rustls::crypto::ring::default_provider().install_default();
+
     let cli = Cli::parse();
 
     // Load configuration first (before logging) to get config file log level

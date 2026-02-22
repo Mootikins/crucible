@@ -75,6 +75,7 @@ async-trait = { workspace = true }
 
 # HTTP client for provider detection
 reqwest = { workspace = true }
+rustls = { version = "0.23", default-features = false, features = ["ring", "tls12"] }
 
 # Serialization
 serde = { workspace = true }

@@ -586,8 +586,22 @@ impl ContainerList {
                         // Replace placeholder with content
                         *last = text.to_string();
                     } else {
-                        // Append to existing content
-                        last.push_str(text);
+                        // Defense-in-depth: detect full-text re-sends from LLM backends.
+                        // Some backends emit the accumulated response as a final delta.
+                        // If the incoming text (minus leading newline) exactly matches
+                        // the existing block content (minus leading newline), skip it.
+                        let incoming = text.trim_start_matches('\n');
+                        let existing = last.trim_start_matches('\n');
+                        if !incoming.is_empty() && incoming == existing {
+                            tracing::debug!(
+                                incoming_len = text.len(),
+                                existing_len = last.len(),
+                                "Skipping duplicate full-text delta in append_text"
+                            );
+                        } else {
+                            // Append to existing content
+                            last.push_str(text);
+                        }
                     }
                 }
             } else {
@@ -1058,6 +1072,43 @@ mod tests {
         } else {
             panic!("Expected AssistantResponse");
         }
+    }
+
+    /// Reproduces exact append_text sequence captured from cursor-acp duplication bug.
+    /// Log showed 3 calls:
+    ///   1. "\nHello — I'm " (17 bytes, streaming delta)
+    ///   2. "here to help with the Crucible codebase or anything else you're working on." (77 bytes, streaming continuation)
+    ///   3. "\nHello — I'm here to help with the Crucible codebase or anything else you're working on." (94 bytes, FULL TEXT re-sent)
+    /// The third call duplicated the response text in the viewport.
+    #[test]
+    fn repro_cursor_acp_text_duplication() {
+        let mut list = ContainerList::new();
+        list.add_user_message("Say hello in one sentence".to_string());
+        list.start_assistant_response();
+
+        // Exact deltas from the reproduction log
+        list.append_text("\nHello \u{2014} I'm ");
+        list.append_text("here to help with the Crucible codebase or anything else you're working on.");
+        list.append_text("\nHello \u{2014} I'm here to help with the Crucible codebase or anything else you're working on.");
+
+        let blocks = match list.containers.last() {
+            Some(ChatContainer::AssistantResponse { blocks, .. }) => blocks,
+            _ => panic!("Expected AssistantResponse"),
+        };
+
+        // The full concatenated text across all blocks
+        let full_text: String = blocks.join("\n\n");
+
+        // The greeting text must appear exactly ONCE
+        let greeting = "Hello \u{2014} I'm here to help with the Crucible codebase or anything else you're working on.";
+        let count = full_text.matches(greeting).count();
+        assert_eq!(
+            count, 1,
+            "Expected greeting to appear exactly once, but appeared {} times.\nBlocks ({}):\n{:#?}",
+            count,
+            blocks.len(),
+            blocks
+        );
     }
 
     #[test]
