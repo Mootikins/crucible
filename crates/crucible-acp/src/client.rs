@@ -217,6 +217,8 @@ pub struct CrucibleAcpClient {
     /// Latest available slash commands advertised by the agent
     available_commands: Vec<AvailableCommand>,
     permission_handler: Option<PermissionRequestHandler>,
+    /// Agent's MCP transport capabilities, populated after initialize()
+    agent_mcp_capabilities: Option<agent_client_protocol::McpCapabilities>,
 }
 
 // Manual Debug implementation since Child doesn't implement Debug
@@ -233,6 +235,7 @@ impl std::fmt::Debug for CrucibleAcpClient {
             .field("boxed_reader", &self.boxed_reader.is_some())
             .field("available_commands", &self.available_commands.len())
             .field("permission_handler", &self.permission_handler.is_some())
+            .field("agent_mcp_capabilities", &self.agent_mcp_capabilities)
             .finish()
     }
 }
@@ -273,6 +276,7 @@ impl CrucibleAcpClient {
             boxed_reader: None,
             available_commands: Vec::new(),
             permission_handler: None,
+            agent_mcp_capabilities: None,
         }
     }
 
@@ -289,6 +293,26 @@ impl CrucibleAcpClient {
     /// Get the latest slash commands advertised by the agent
     pub fn available_commands(&self) -> &[AvailableCommand] {
         &self.available_commands
+    }
+
+    /// Whether the agent reported HTTP MCP transport support during initialization.
+    ///
+    /// Returns `false` if `initialize()` has not been called yet.
+    pub fn agent_supports_http_mcp(&self) -> bool {
+        self.agent_mcp_capabilities
+            .as_ref()
+            .map(|c| c.http)
+            .unwrap_or(false)
+    }
+
+    /// Whether the agent reported SSE MCP transport support during initialization.
+    ///
+    /// Returns `false` if `initialize()` has not been called yet.
+    pub fn agent_supports_sse_mcp(&self) -> bool {
+        self.agent_mcp_capabilities
+            .as_ref()
+            .map(|c| c.sse)
+            .unwrap_or(false)
     }
 
     /// Create a client with a pre-connected in-process transport
@@ -327,6 +351,7 @@ impl CrucibleAcpClient {
             boxed_reader: Some(reader),
             available_commands: Vec::new(),
             permission_handler: None,
+            agent_mcp_capabilities: None,
         }
     }
 
@@ -590,6 +615,20 @@ impl CrucibleAcpClient {
         let init_response: agent_client_protocol::InitializeResponse =
             serde_json::from_value(result.clone())?;
 
+        // Store agent MCP capabilities for transport negotiation
+        self.agent_mcp_capabilities =
+            Some(init_response.agent_capabilities.mcp_capabilities.clone());
+
+        tracing::info!(
+            agent = %self.agent_name,
+            protocol_version = %init_response.protocol_version,
+            http_mcp = init_response.agent_capabilities.mcp_capabilities.http,
+            sse_mcp = init_response.agent_capabilities.mcp_capabilities.sse,
+            load_session = init_response.agent_capabilities.load_session,
+            agent_info = ?init_response.agent_info,
+            "ACP initialization complete — agent capabilities received"
+        );
+
         Ok(init_response)
     }
 
@@ -687,6 +726,7 @@ impl CrucibleAcpClient {
     /// # Errors
     ///
     /// Returns an error if any step of the handshake fails
+    #[deprecated(note = "Use connect_with_best_mcp(None) instead — it negotiates transport from agent capabilities")]
     pub async fn connect_with_handshake(&mut self) -> Result<AcpSession> {
         use agent_client_protocol::{InitializeRequest, NewSessionRequest};
 
@@ -759,6 +799,7 @@ impl CrucibleAcpClient {
     /// # Errors
     ///
     /// Returns an error if any step of the handshake fails
+    #[deprecated(note = "Use connect_with_best_mcp(Some(url)) instead — it negotiates transport from agent capabilities")]
     pub async fn connect_with_sse_mcp(&mut self, mcp_url: &str) -> Result<AcpSession> {
         use agent_client_protocol::{
             InitializeRequest, McpServer, McpServerHttp, NewSessionRequest,
@@ -805,6 +846,99 @@ impl CrucibleAcpClient {
             TransportConfig::default(),
             session_response.session_id.to_string(),
         ))
+    }
+
+    /// Connect to agent with capability-aware MCP transport negotiation.
+    ///
+    /// This performs the complete connection sequence and picks the best MCP
+    /// transport based on the agent's reported capabilities:
+    ///
+    /// 1. Spawn agent process (or use pre-connected transport)
+    /// 2. Send InitializeRequest — reads agent capabilities
+    /// 3. Choose transport:
+    ///    - HTTP if `mcp_url` is provided AND agent reports `mcp_capabilities.http == true`
+    ///    - Stdio otherwise (all agents MUST support stdio per ACP spec)
+    /// 4. Create session with chosen transport
+    ///
+    /// # Arguments
+    ///
+    /// * `mcp_url` - Optional URL to an in-process HTTP MCP server. If `None` or if
+    ///   the agent doesn't support HTTP, falls back to stdio transport.
+    pub async fn connect_with_best_mcp(
+        &mut self,
+        mcp_url: Option<&str>,
+    ) -> Result<AcpSession> {
+        use agent_client_protocol::{InitializeRequest, McpServer, McpServerHttp, NewSessionRequest};
+
+        tracing::debug!(agent = %self.agent_name, mcp_url = ?mcp_url, "Starting capability-aware ACP handshake");
+
+        // 1. Spawn agent process (no-op if transport already connected)
+        let _process = self.spawn_agent().await?;
+
+        // 2. Initialize — this stores agent capabilities on self
+        let init_request = InitializeRequest::new(1u16.into());
+        let _init_response = self.initialize(init_request).await?;
+
+        // 3. Choose transport based on agent capabilities
+        let crucible_mcp_server = if let Some(url) = mcp_url {
+            if self.agent_supports_http_mcp() {
+                tracing::info!(
+                    agent = %self.agent_name,
+                    url = %url,
+                    "Agent supports HTTP MCP — using Streamable HTTP transport"
+                );
+                McpServer::Http(McpServerHttp::new("crucible", url))
+            } else {
+                tracing::warn!(
+                    agent = %self.agent_name,
+                    "Agent does not support HTTP MCP, falling back to stdio transport"
+                );
+                Self::build_stdio_mcp_server()
+            }
+        } else {
+            tracing::debug!(agent = %self.agent_name, "No MCP URL provided, using stdio transport");
+            Self::build_stdio_mcp_server()
+        };
+
+        // 4. Create session with chosen transport
+        let cwd = self
+            .config
+            .working_dir
+            .clone()
+            .or_else(|| std::env::current_dir().ok())
+            .unwrap_or_else(|| PathBuf::from("/"));
+
+        let session_request = NewSessionRequest::new(cwd).mcp_servers(vec![crucible_mcp_server]);
+        let session_response = self.create_new_session(session_request).await?;
+
+        self.mark_connected();
+
+        tracing::info!(
+            agent = %self.agent_name,
+            session_id = %session_response.session_id,
+            "ACP agent connected with session"
+        );
+
+        use crate::session::TransportConfig;
+        Ok(AcpSession::new(
+            TransportConfig::default(),
+            session_response.session_id.to_string(),
+        ))
+    }
+
+    /// Build a stdio MCP server configuration pointing to `cru mcp`.
+    ///
+    /// This is the universal fallback — all ACP agents MUST support stdio transport.
+    fn build_stdio_mcp_server() -> agent_client_protocol::McpServer {
+        use agent_client_protocol::{McpServer, McpServerStdio};
+
+        let cru_command = std::env::current_exe()
+            .unwrap_or_else(|_| PathBuf::from("cru"))
+            .parent()
+            .map(|p| p.join("cru"))
+            .unwrap_or_else(|| PathBuf::from("cru"));
+
+        McpServer::Stdio(McpServerStdio::new("crucible", cru_command).args(vec!["mcp".to_string()]))
     }
 
     /// Write a JSON request to the agent's stdin
@@ -2858,7 +2992,7 @@ mod tests {
         let _ = result; // Accept either outcome
     }
 
-    // Test that connect_with_handshake() method exists and attempts full handshake
+    // Test that connect_with_best_mcp() method exists and attempts full handshake
     #[tokio::test]
     async fn test_connect_performs_protocol_handshake() {
         let (cmd, args) = get_simple_command();
@@ -2872,12 +3006,13 @@ mod tests {
         };
         let mut client = CrucibleAcpClient::new(config);
 
-        // connect_with_handshake() should:
+        // connect_with_best_mcp() should:
         // 1. Spawn agent
-        // 2. Send InitializeRequest
-        // 3. Send NewSessionRequest
-        // 4. Return session
-        let result = client.connect_with_handshake().await;
+        // 2. Send InitializeRequest (reads capabilities)
+        // 3. Choose transport based on capabilities
+        // 4. Send NewSessionRequest
+        // 5. Return session
+        let result = client.connect_with_best_mcp(None).await;
 
         // Cat won't respond with valid ACP protocol, so this will fail
         // But it verifies the method exists and attempts the handshake

@@ -124,3 +124,105 @@ fn session_acp_lifecycle_with_mock_agent_profile() {
             session_id
         )));
 }
+
+/// Test 12: Mock agent with --mcp-http flag creates session successfully.
+///
+/// Validates that an HTTP-capable mock agent can go through the full
+/// create → send → end lifecycle when using capability-aware transport.
+#[test]
+#[ignore = "requires daemon and mock-acp-agent binary"]
+fn session_acp_lifecycle_with_http_capable_mock() {
+    let mock_path = mock_agent_path();
+    assert!(
+        mock_path.exists(),
+        "mock-acp-agent binary not found at {}",
+        mock_path.display()
+    );
+
+    let daemon = TestDaemon::start_with_extra_config(&format!(
+        "\n[acp.agents.mock-http]\ncommand = \"{}\"\nargs = [\"--mcp-http\"]\ndescription = \"Mock ACP agent with HTTP MCP support\"\n",
+        toml_escape(&mock_path)
+    ));
+
+    let create_output = daemon
+        .command()
+        .args(["session", "create", "--agent", "mock-http"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Configured agent: mock-http (acp)"))
+        .get_output()
+        .stdout
+        .clone();
+
+    let session_id = extract_session_id(&create_output);
+
+    daemon
+        .command()
+        .args([
+            "session",
+            "send",
+            &session_id,
+            "hello from http-capable mock",
+        ])
+        .assert()
+        .success();
+
+    daemon
+        .command()
+        .args(["session", "end", &session_id])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(format!(
+            "Ended session: {}",
+            session_id
+        )));
+}
+
+/// Test 13: Mock agent without HTTP support (stdio-only) still creates session.
+///
+/// Validates that a stdio-only mock agent can go through the full lifecycle
+/// even when the daemon has an in-process MCP host running.
+#[test]
+#[ignore = "requires daemon and mock-acp-agent binary"]
+fn session_acp_lifecycle_with_stdio_only_mock() {
+    let mock_path = mock_agent_path();
+    assert!(
+        mock_path.exists(),
+        "mock-acp-agent binary not found at {}",
+        mock_path.display()
+    );
+
+    // No --mcp-http flag: agent reports mcp_http=false
+    let daemon = TestDaemon::start_with_extra_config(&format!(
+        "\n[acp.agents.mock-stdio]\ncommand = \"{}\"\nargs = []\ndescription = \"Mock ACP agent (stdio only)\"\n",
+        toml_escape(&mock_path)
+    ));
+
+    let create_output = daemon
+        .command()
+        .args(["session", "create", "--agent", "mock-stdio"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Configured agent: mock-stdio (acp)"))
+        .get_output()
+        .stdout
+        .clone();
+
+    let session_id = extract_session_id(&create_output);
+
+    daemon
+        .command()
+        .args(["session", "send", &session_id, "hello from stdio-only mock"])
+        .assert()
+        .success();
+
+    daemon
+        .command()
+        .args(["session", "end", &session_id])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(format!(
+            "Ended session: {}",
+            session_id
+        )));
+}

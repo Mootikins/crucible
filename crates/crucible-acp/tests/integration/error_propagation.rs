@@ -162,7 +162,7 @@ async fn test_error_connection_timeout_when_agent_never_responds() {
         std::future::pending::<()>().await;
     });
 
-    let connect_task = tokio::spawn(async move { client.connect_with_handshake().await });
+    let connect_task = tokio::spawn(async move { client.connect_with_best_mcp(None).await });
 
     tokio::task::yield_now().await;
     tokio::time::advance(std::time::Duration::from_secs(301)).await;
@@ -268,7 +268,7 @@ async fn test_error_stream_abort_from_threaded_mock_agent_is_recoverable() {
     let (mut client, handle) = ThreadedMockAgent::spawn_with_client(config);
 
     let _ = client
-        .connect_with_handshake()
+        .connect_with_best_mcp(None)
         .await
         .expect("handshake should succeed before abort");
 

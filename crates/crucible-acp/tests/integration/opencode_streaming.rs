@@ -85,7 +85,7 @@ async fn test_opencode_streaming_returns_content() {
     // Connect with handshake
     eprintln!("Connecting to OpenCode...");
     let session = client
-        .connect_with_handshake()
+        .connect_with_best_mcp(None)
         .await
         .expect("Failed to connect to opencode");
 
@@ -394,7 +394,7 @@ async fn test_opencode_with_sse_mcp() {
 
     eprintln!("Connecting to OpenCode with Streamable HTTP MCP...");
     let session = client
-        .connect_with_sse_mcp(&mcp_url)
+        .connect_with_best_mcp(Some(&mcp_url))
         .await
         .expect("Failed to connect to opencode with MCP");
 

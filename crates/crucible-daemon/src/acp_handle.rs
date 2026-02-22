@@ -206,17 +206,11 @@ impl AcpAgentHandle {
             None
         };
 
-        let session = if let Some(ref host) = mcp_host {
-            client
-                .connect_with_sse_mcp(&host.mcp_url())
-                .await
-                .map_err(|e| AcpHandleError::Connection(e.to_string()))?
-        } else {
-            client
-                .connect_with_handshake()
-                .await
-                .map_err(|e| AcpHandleError::Connection(e.to_string()))?
-        };
+        let mcp_url = mcp_host.as_ref().map(|h| h.mcp_url());
+        let session = client
+            .connect_with_best_mcp(mcp_url.as_deref())
+            .await
+            .map_err(|e| AcpHandleError::Connection(e.to_string()))?;
 
         let session_id = session.id().to_string();
         info!(session_id = %session_id, "ACP agent connected");

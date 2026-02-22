@@ -404,3 +404,82 @@ async fn test_tools_list_over_http_returns_delegate_session() {
 
     host.shutdown().await;
 }
+
+// Bring in the mock agent support for transport negotiation tests
+#[path = "support/mod.rs"]
+mod support;
+
+/// Test 10: HTTP-capable agent gets connected via connect_with_best_mcp
+/// with in-process MCP host running.
+#[tokio::test]
+async fn test_http_capable_agent_gets_http_transport_with_mcp_host() {
+    let temp = TempDir::new().unwrap();
+    let knowledge_repo = Arc::new(MockKnowledgeRepository) as Arc<dyn KnowledgeRepository>;
+    let embedding_provider = Arc::new(MockEmbeddingProvider) as Arc<dyn EmbeddingProvider>;
+
+    let host = start_mcp_host(
+        temp.path().to_path_buf(),
+        knowledge_repo,
+        embedding_provider,
+    )
+    .await;
+
+    let mcp_url = host.mcp_url();
+
+    // Create a mock agent that supports HTTP MCP
+    let config = support::MockStdioAgentConfig {
+        mcp_http: true,
+        ..support::MockStdioAgentConfig::opencode()
+    };
+    let (mut client, _handle) = support::ThreadedMockAgent::spawn_with_client(config);
+
+    let session = client
+        .connect_with_best_mcp(Some(&mcp_url))
+        .await
+        .expect("connect_with_best_mcp should succeed for HTTP-capable agent");
+
+    assert!(!session.id().is_empty(), "Session ID should be non-empty");
+    assert!(
+        client.agent_supports_http_mcp(),
+        "Agent should report HTTP MCP support"
+    );
+
+    host.shutdown().await;
+}
+
+/// Test 11: Stdio-only agent still gets a valid session with MCP host running.
+#[tokio::test]
+async fn test_stdio_only_agent_still_gets_session_with_mcp_host() {
+    let temp = TempDir::new().unwrap();
+    let knowledge_repo = Arc::new(MockKnowledgeRepository) as Arc<dyn KnowledgeRepository>;
+    let embedding_provider = Arc::new(MockEmbeddingProvider) as Arc<dyn EmbeddingProvider>;
+
+    let host = start_mcp_host(
+        temp.path().to_path_buf(),
+        knowledge_repo,
+        embedding_provider,
+    )
+    .await;
+
+    let mcp_url = host.mcp_url();
+
+    // Create a mock agent that does NOT support HTTP MCP
+    let config = support::MockStdioAgentConfig {
+        mcp_http: false,
+        ..support::MockStdioAgentConfig::gemini()
+    };
+    let (mut client, _handle) = support::ThreadedMockAgent::spawn_with_client(config);
+
+    let session = client
+        .connect_with_best_mcp(Some(&mcp_url))
+        .await
+        .expect("connect_with_best_mcp should succeed for stdio-only agent via fallback");
+
+    assert!(!session.id().is_empty(), "Session ID should be non-empty");
+    assert!(
+        !client.agent_supports_http_mcp(),
+        "Agent should not report HTTP MCP support"
+    );
+
+    host.shutdown().await;
+}
