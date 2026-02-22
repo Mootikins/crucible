@@ -374,12 +374,17 @@ async fn run_interactive_chat(
         );
     }
 
+    let display_model = agent_name
+        .as_deref()
+        .map(|n| n.to_string())
+        .unwrap_or_else(|| model_name.clone());
+
     let recording_mode = record.as_ref().map(|_| "granular".to_string());
     let recording_path = record;
 
     let mut runner = OilChatRunner::new()?
         .with_mode(mode)
-        .with_model(&model_name)
+        .with_model(&display_model)
         .with_context_limit(context_limit)
         .with_show_thinking(config.chat.show_thinking)
         .with_agent_name(agent_name)
@@ -390,7 +395,7 @@ async fn run_interactive_chat(
         .with_replay_speed(replay_speed)
         .with_replay_auto_exit(replay_auto_exit);
 
-    info!("Starting oil chat with model: {}", model_name);
+    info!("Starting oil chat with model: {} (display: {})", model_name, display_model);
 
     if let Some(ref session_id) = resume_session_id {
         info!("Will resume session: {}", session_id);
