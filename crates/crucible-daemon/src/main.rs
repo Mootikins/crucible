@@ -31,6 +31,12 @@ use server::Server;
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    // Install ring as the rustls CryptoProvider before any TLS usage.
+    // Both ring and aws-lc-rs are compiled (via lancedb), so rustls can't auto-detect.
+    rustls::crypto::ring::default_provider()
+        .install_default()
+        .expect("Failed to install rustls CryptoProvider");
+
     tracing_subscriber::fmt::init();
     tracing::info!("cru-server starting");
 

@@ -98,6 +98,11 @@ struct StreamingState {
     notification_count: usize,
     tool_segment_index: std::collections::HashMap<String, usize>,
     tool_block_active: bool,
+    /// Raw accumulated text (for deduplication of full-text re-sends).
+    /// Some ACP agents (e.g. cursor-acp) send the complete accumulated text
+    /// as a final notification before the JSON-RPC response. We track the
+    /// accumulated text here to detect and skip these re-sends.
+    accumulated_text: String,
 }
 
 impl StreamingState {
@@ -105,6 +110,7 @@ impl StreamingState {
         if text.trim().is_empty() {
             return;
         }
+        self.accumulated_text.push_str(text);
         let chunk = text.to_string();
         if let Some(ResponseSegment::Text(last)) = self.segments.last_mut() {
             last.push_str(&chunk);
@@ -112,6 +118,15 @@ impl StreamingState {
             self.segments.push(ResponseSegment::Text(chunk));
         }
         self.tool_block_active = false;
+    }
+
+    /// Check if incoming text is a full re-send of already-accumulated content.
+    /// Some ACP agents (e.g. cursor-acp) emit the complete response as a final
+    /// `session/update` notification. We detect this by checking if the incoming
+    /// text equals the accumulated text so far.
+    fn is_duplicate_resend(&self, text: &str) -> bool {
+        !self.accumulated_text.is_empty()
+            && text.trim() == self.accumulated_text.trim()
     }
 
     fn formatted_output(&self) -> String {
@@ -1209,8 +1224,16 @@ impl CrucibleAcpClient {
         match notification.update {
             SessionUpdate::AgentMessageChunk(chunk) => match chunk.content {
                 ContentBlock::Text(text_block) => {
+                    // Skip full-text re-sends from agents like cursor-acp that
+                    // emit accumulated text as a final notification
+                    if state.is_duplicate_resend(&text_block.text) {
+                        tracing::debug!(
+                            text_len = text_block.text.len(),
+                            "Skipping duplicate full-text re-send from agent"
+                        );
+                        return;
+                    }
                     state.append_text(&text_block.text);
-                    // Emit the text chunk via callback
                     callback(StreamingChunk::Text(text_block.text));
                 }
                 other => {

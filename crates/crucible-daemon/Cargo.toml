@@ -53,6 +53,7 @@ mlua = { workspace = true }
 notify = { workspace = true }
 scopeguard = "1"
 reqwest = { workspace = true }
+rustls = { version = "0.23", default-features = false, features = ["ring", "tls12"] }
 
 [features]
 default = ["storage-sqlite"]
