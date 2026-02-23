@@ -95,6 +95,7 @@ fn real_session_agent(agent_name: &str) -> SessionAgent {
         capabilities: None,
         agent_description: None,
         delegation_config: None,
+        precognition_enabled: false,
     }
 }
 
