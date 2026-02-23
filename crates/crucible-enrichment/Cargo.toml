@@ -5,35 +5,12 @@ authors.workspace = true
 license.workspace = true
 edition.workspace = true
 rust-version.workspace = true
-description = "Enrichment layer for Crucible - embeddings, metadata extraction, and relation inference"
+description = "Enrichment layer for Crucible - thin re-export shim (types moved to crucible-daemon)"
 
 [lib]
 name = "crucible_enrichment"
 path = "src/lib.rs"
 
 [dependencies]
-# Dependency Inversion: Only depend on crucible-core for abstractions
-crucible-core = { path = "../crucible-core" }
-
-# Async
-tokio = { workspace = true }
-async-trait = { workspace = true }
-
-# Error handling
-anyhow = { workspace = true }
-thiserror = { workspace = true }
-
-# Serialization
-serde = { workspace = true, features = ["derive"] }
-
-# Time
-chrono = { workspace = true, features = ["serde"] }
-
-# Logging
-tracing = { workspace = true }
-
-# System info
-num_cpus = { workspace = true }
-
-[dev-dependencies]
-tempfile = { workspace = true }
+# Thin shim: re-exports from crucible-daemon::enrichment
+crucible-daemon = { path = "../crucible-daemon" }

@@ -3339,7 +3339,6 @@ dependencies = [
  "crucible-acp",
  "crucible-config",
  "crucible-core",
- "crucible-enrichment",
  "crucible-llm",
  "crucible-lua",
  "crucible-observe",
@@ -3377,16 +3376,7 @@ dependencies = [
 name = "crucible-enrichment"
 version = "0.1.0"
 dependencies = [
- "anyhow",
- "async-trait",
- "chrono",
- "crucible-core",
- "num_cpus",
- "serde",
- "tempfile",
- "thiserror 2.0.18",
- "tokio",
- "tracing",
+ "crucible-daemon",
 ]
 
 [[package]]
