@@ -2247,9 +2247,11 @@ impl AgentManager {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::llm_hooks::LlmHook;
     use crate::precognition::DaemonPrecognition;
     use crate::session_storage::FileSessionStorage;
     use async_trait::async_trait;
+    use crucible_core::events::llm_hook_context::{PostLlmContext, PreLlmContext, PreLlmResult};
     use crucible_core::enrichment::EmbeddingProvider;
     use crucible_core::parser::ParsedNote;
     use crucible_core::session::SessionType;
@@ -2263,6 +2265,8 @@ mod tests {
     use futures::StreamExt;
     use std::collections::HashMap;
     use std::fs;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Mutex as StdMutex;
     use tempfile::TempDir;
     use tokio::time::{timeout, Duration};
 
@@ -2270,6 +2274,58 @@ mod tests {
 
     struct StreamingMockAgent {
         chunks: Vec<ChatChunk>,
+    }
+
+    struct CountingStreamAgent {
+        send_calls: Arc<AtomicUsize>,
+        last_prompt: Arc<StdMutex<Option<String>>>,
+        response: String,
+    }
+
+    struct ModifyPromptHook {
+        suffix: String,
+        pre_calls: Arc<AtomicUsize>,
+    }
+
+    #[async_trait]
+    impl LlmHook for ModifyPromptHook {
+        async fn on_pre_llm(&self, mut ctx: PreLlmContext) -> anyhow::Result<PreLlmResult> {
+            self.pre_calls.fetch_add(1, Ordering::SeqCst);
+            ctx.prompt.push_str(&self.suffix);
+            Ok(PreLlmResult::Continue(ctx))
+        }
+
+        async fn on_post_llm(&self, _ctx: &PostLlmContext) -> anyhow::Result<()> {
+            Ok(())
+        }
+    }
+
+    struct CancelHook {
+        reason: String,
+    }
+
+    #[async_trait]
+    impl LlmHook for CancelHook {
+        async fn on_pre_llm(&self, _ctx: PreLlmContext) -> anyhow::Result<PreLlmResult> {
+            Ok(PreLlmResult::Cancel(self.reason.clone()))
+        }
+
+        async fn on_post_llm(&self, _ctx: &PostLlmContext) -> anyhow::Result<()> {
+            Ok(())
+        }
+    }
+
+    struct ErrorHook;
+
+    #[async_trait]
+    impl LlmHook for ErrorHook {
+        async fn on_pre_llm(&self, _ctx: PreLlmContext) -> anyhow::Result<PreLlmResult> {
+            anyhow::bail!("test pre-llm hook failure")
+        }
+
+        async fn on_post_llm(&self, _ctx: &PostLlmContext) -> anyhow::Result<()> {
+            Ok(())
+        }
     }
 
     struct MockKnowledgeRepository {
@@ -2351,6 +2407,35 @@ mod tests {
         fn send_message_stream(&mut self, _: String) -> BoxStream<'static, ChatResult<ChatChunk>> {
             let chunks = self.chunks.clone();
             futures::stream::iter(chunks.into_iter().map(Ok)).boxed()
+        }
+
+        fn is_connected(&self) -> bool {
+            true
+        }
+
+        async fn set_mode_str(&mut self, _: &str) -> ChatResult<()> {
+            Ok(())
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl AgentHandle for CountingStreamAgent {
+        fn send_message_stream(&mut self, prompt: String) -> BoxStream<'static, ChatResult<ChatChunk>> {
+            self.send_calls.fetch_add(1, Ordering::SeqCst);
+            *self.last_prompt.lock().expect("last_prompt lock poisoned") = Some(prompt);
+
+            let chunk = ChatChunk {
+                delta: self.response.clone(),
+                done: true,
+                tool_calls: None,
+                tool_results: None,
+                reasoning: None,
+                usage: None,
+                subagent_events: None,
+                precognition_notes_count: None,
+            };
+
+            futures::stream::iter(vec![Ok(chunk)]).boxed()
         }
 
         fn is_connected(&self) -> bool {
@@ -2937,6 +3022,277 @@ mod tests {
         let complete = next_event_or_skip(&mut event_rx, "message_complete").await;
         assert_eq!(complete.data["message_id"], message_id);
         assert_eq!(complete.data["full_response"], "hello world");
+    }
+
+    #[tokio::test]
+    async fn hook_chain_pre_llm_modifies_prompt() {
+        let tmp = TempDir::new().unwrap();
+        let storage = Arc::new(FileSessionStorage::new());
+        let session_manager = Arc::new(SessionManager::with_storage(storage));
+
+        let session = session_manager
+            .create_session(
+                SessionType::Chat,
+                tmp.path().to_path_buf(),
+                None,
+                vec![],
+                None,
+            )
+            .await
+            .unwrap();
+
+        let mut agent_manager = create_test_agent_manager(session_manager.clone());
+        agent_manager
+            .configure_agent(&session.id, test_agent())
+            .await
+            .unwrap();
+
+        let pre_calls = Arc::new(AtomicUsize::new(0));
+        Arc::get_mut(&mut agent_manager.hook_chain)
+            .expect("hook_chain should be uniquely owned in test")
+            .add_hook(Box::new(ModifyPromptHook {
+                suffix: " [hooked]".to_string(),
+                pre_calls: pre_calls.clone(),
+            }));
+
+        let send_calls = Arc::new(AtomicUsize::new(0));
+        let last_prompt = Arc::new(StdMutex::new(None));
+        agent_manager.agent_cache.insert(
+            session.id.clone(),
+            Arc::new(Mutex::new(Box::new(CountingStreamAgent {
+                send_calls: send_calls.clone(),
+                last_prompt: last_prompt.clone(),
+                response: "ok".to_string(),
+            }) as BoxedAgentHandle)),
+        );
+
+        let (event_tx, mut event_rx) = broadcast::channel::<SessionEventMessage>(64);
+        agent_manager
+            .send_message(&session.id, "hello".to_string(), &event_tx)
+            .await
+            .unwrap();
+
+        let _ = next_event_or_skip(&mut event_rx, "user_message").await;
+        let complete = next_event_or_skip(&mut event_rx, "message_complete").await;
+        assert_eq!(complete.data["full_response"], "ok");
+
+        assert_eq!(pre_calls.load(Ordering::SeqCst), 1);
+        assert_eq!(send_calls.load(Ordering::SeqCst), 1);
+        assert_eq!(
+            last_prompt.lock().unwrap().clone(),
+            Some("hello [hooked]".to_string())
+        );
+    }
+
+    #[tokio::test]
+    async fn hook_chain_post_llm_event_emitted() {
+        let tmp = TempDir::new().unwrap();
+        let storage = Arc::new(FileSessionStorage::new());
+        let session_manager = Arc::new(SessionManager::with_storage(storage));
+
+        let session = session_manager
+            .create_session(
+                SessionType::Chat,
+                tmp.path().to_path_buf(),
+                None,
+                vec![],
+                None,
+            )
+            .await
+            .unwrap();
+
+        let agent_manager = create_test_agent_manager(session_manager.clone());
+        agent_manager
+            .configure_agent(&session.id, test_agent())
+            .await
+            .unwrap();
+
+        let send_calls = Arc::new(AtomicUsize::new(0));
+        let last_prompt = Arc::new(StdMutex::new(None));
+        agent_manager.agent_cache.insert(
+            session.id.clone(),
+            Arc::new(Mutex::new(Box::new(CountingStreamAgent {
+                send_calls: send_calls.clone(),
+                last_prompt,
+                response: "post event response".to_string(),
+            }) as BoxedAgentHandle)),
+        );
+
+        let (event_tx, mut event_rx) = broadcast::channel::<SessionEventMessage>(64);
+        agent_manager
+            .send_message(&session.id, "hello".to_string(), &event_tx)
+            .await
+            .unwrap();
+
+        let _ = next_event_or_skip(&mut event_rx, "user_message").await;
+        let _ = next_event_or_skip(&mut event_rx, "message_complete").await;
+        let post_event = next_event_or_skip(&mut event_rx, "post_llm_call").await;
+
+        assert_eq!(post_event.data["response_summary"], "post event response");
+        assert_eq!(post_event.data["model"], "llama3.2");
+        assert_eq!(send_calls.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn hook_chain_cancel_prevents_llm_call() {
+        let tmp = TempDir::new().unwrap();
+        let storage = Arc::new(FileSessionStorage::new());
+        let session_manager = Arc::new(SessionManager::with_storage(storage));
+
+        let session = session_manager
+            .create_session(
+                SessionType::Chat,
+                tmp.path().to_path_buf(),
+                None,
+                vec![],
+                None,
+            )
+            .await
+            .unwrap();
+
+        let mut agent_manager = create_test_agent_manager(session_manager.clone());
+        agent_manager
+            .configure_agent(&session.id, test_agent())
+            .await
+            .unwrap();
+
+        Arc::get_mut(&mut agent_manager.hook_chain)
+            .expect("hook_chain should be uniquely owned in test")
+            .add_hook(Box::new(CancelHook {
+                reason: "blocked by test hook".to_string(),
+            }));
+
+        let send_calls = Arc::new(AtomicUsize::new(0));
+        let last_prompt = Arc::new(StdMutex::new(None));
+        agent_manager.agent_cache.insert(
+            session.id.clone(),
+            Arc::new(Mutex::new(Box::new(CountingStreamAgent {
+                send_calls: send_calls.clone(),
+                last_prompt,
+                response: "should-not-run".to_string(),
+            }) as BoxedAgentHandle)),
+        );
+
+        let (event_tx, mut event_rx) = broadcast::channel::<SessionEventMessage>(64);
+        agent_manager
+            .send_message(&session.id, "cancel me".to_string(), &event_tx)
+            .await
+            .unwrap();
+
+        let _ = next_event_or_skip(&mut event_rx, "user_message").await;
+        let ended = next_event_or_skip(&mut event_rx, "ended").await;
+        assert!(ended.data["reason"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("pre-llm hook cancelled request: blocked by test hook"));
+
+        assert_eq!(send_calls.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    async fn hook_chain_empty_chain_passes_through() {
+        let tmp = TempDir::new().unwrap();
+        let storage = Arc::new(FileSessionStorage::new());
+        let session_manager = Arc::new(SessionManager::with_storage(storage));
+
+        let session = session_manager
+            .create_session(
+                SessionType::Chat,
+                tmp.path().to_path_buf(),
+                None,
+                vec![],
+                None,
+            )
+            .await
+            .unwrap();
+
+        let agent_manager = create_test_agent_manager(session_manager.clone());
+        agent_manager
+            .configure_agent(&session.id, test_agent())
+            .await
+            .unwrap();
+
+        let send_calls = Arc::new(AtomicUsize::new(0));
+        let last_prompt = Arc::new(StdMutex::new(None));
+        agent_manager.agent_cache.insert(
+            session.id.clone(),
+            Arc::new(Mutex::new(Box::new(CountingStreamAgent {
+                send_calls: send_calls.clone(),
+                last_prompt: last_prompt.clone(),
+                response: "plain".to_string(),
+            }) as BoxedAgentHandle)),
+        );
+
+        let (event_tx, mut event_rx) = broadcast::channel::<SessionEventMessage>(64);
+        agent_manager
+            .send_message(&session.id, "no hooks".to_string(), &event_tx)
+            .await
+            .unwrap();
+
+        let _ = next_event_or_skip(&mut event_rx, "user_message").await;
+        let complete = next_event_or_skip(&mut event_rx, "message_complete").await;
+        assert_eq!(complete.data["full_response"], "plain");
+
+        assert_eq!(send_calls.load(Ordering::SeqCst), 1);
+        assert_eq!(
+            last_prompt.lock().unwrap().clone(),
+            Some("no hooks".to_string())
+        );
+    }
+
+    #[tokio::test]
+    async fn hook_chain_error_fails_open() {
+        let tmp = TempDir::new().unwrap();
+        let storage = Arc::new(FileSessionStorage::new());
+        let session_manager = Arc::new(SessionManager::with_storage(storage));
+
+        let session = session_manager
+            .create_session(
+                SessionType::Chat,
+                tmp.path().to_path_buf(),
+                None,
+                vec![],
+                None,
+            )
+            .await
+            .unwrap();
+
+        let mut agent_manager = create_test_agent_manager(session_manager.clone());
+        agent_manager
+            .configure_agent(&session.id, test_agent())
+            .await
+            .unwrap();
+
+        Arc::get_mut(&mut agent_manager.hook_chain)
+            .expect("hook_chain should be uniquely owned in test")
+            .add_hook(Box::new(ErrorHook));
+
+        let send_calls = Arc::new(AtomicUsize::new(0));
+        let last_prompt = Arc::new(StdMutex::new(None));
+        agent_manager.agent_cache.insert(
+            session.id.clone(),
+            Arc::new(Mutex::new(Box::new(CountingStreamAgent {
+                send_calls: send_calls.clone(),
+                last_prompt: last_prompt.clone(),
+                response: "fail-open".to_string(),
+            }) as BoxedAgentHandle)),
+        );
+
+        let (event_tx, mut event_rx) = broadcast::channel::<SessionEventMessage>(64);
+        agent_manager
+            .send_message(&session.id, "keep going".to_string(), &event_tx)
+            .await
+            .unwrap();
+
+        let _ = next_event_or_skip(&mut event_rx, "user_message").await;
+        let complete = next_event_or_skip(&mut event_rx, "message_complete").await;
+        assert_eq!(complete.data["full_response"], "fail-open");
+
+        assert_eq!(send_calls.load(Ordering::SeqCst), 1);
+        assert_eq!(
+            last_prompt.lock().unwrap().clone(),
+            Some("keep going".to_string())
+        );
     }
 
     #[tokio::test]
