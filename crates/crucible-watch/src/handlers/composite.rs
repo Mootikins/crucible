@@ -59,9 +59,7 @@ impl Clone for CoordinationStrategy {
 /// State of an individual handler.
 #[derive(Debug, Clone)]
 pub struct HandlerState {
-    /// Handler name
-    #[allow(dead_code)] // Used for debugging/logging
-    name: String,
+    /// Number of successful operations
     /// Number of successful operations
     success_count: u64,
     /// Number of failed operations
@@ -93,7 +91,7 @@ impl CompositeHandler {
             states.insert(
                 name.clone(),
                 HandlerState {
-                    name,
+
                     success_count: 0,
                     error_count: 0,
                     last_execution: None,

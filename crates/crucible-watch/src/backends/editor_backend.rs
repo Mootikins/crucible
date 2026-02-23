@@ -1,10 +1,10 @@
 //! Editor integration backend for low-frequency inode watching.
 
-#![allow(dead_code)]
+
 
 use crate::{
     error::{Error, Result},
-    events::{EventMetadata, FileEvent, FileEventKind},
+    events::FileEvent,
     traits::{BackendCapabilities, FileWatcher, WatchConfig, WatchHandle},
 };
 
@@ -12,10 +12,10 @@ use crate::{
 use async_trait::async_trait;
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::time::{Duration, Instant, SystemTime};
+use std::time::Duration;
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, info, warn};
 
 /// Configuration for editor integration.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -53,36 +53,13 @@ mod duration_serde {
     }
 }
 
-/// State for tracking file changes via inode monitoring.
-#[derive(Debug, Clone)]
-struct InodeState {
-    /// File inode number
-    inode: Option<u64>,
-    /// Last modification time
-    modified_time: Option<SystemTime>,
-    /// File size
-    size: Option<u64>,
-    /// Last known content hash (optional)
-    #[allow(dead_code)]
-    content_hash: Option<String>,
-}
-
 /// State information for an editor watch.
 #[derive(Debug, Clone)]
 struct EditorWatchState {
-    /// Watch configuration
-    config: WatchConfig,
     /// Path being watched
     watched_path: PathBuf,
     /// Editor configuration
     editor_config: EditorConfig,
-    /// File states tracked by inode
-    file_states: HashMap<PathBuf, InodeState>,
-    /// Last time this watch was checked
-    last_check: Instant,
-    /// Editor-specific state
-    #[allow(dead_code)]
-    editor_state: HashMap<String, serde_json::Value>,
 }
 
 /// Editor integration backend for low-frequency file watching.
@@ -99,12 +76,7 @@ pub struct EditorWatcher {
     capabilities: BackendCapabilities,
 }
 
-#[allow(dead_code)]
-impl Default for EditorWatcher {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+
 
 impl EditorWatcher {
     /// Create a new editor watcher.
@@ -174,316 +146,6 @@ impl EditorWatcher {
         Ok(())
     }
 
-    /// Stop the background monitoring task.
-    async fn stop_monitoring_task(&mut self) -> Result<()> {
-        if let Some(shutdown_tx) = self.shutdown_tx.take() {
-            let _ = shutdown_tx.send(()).await;
-        }
-
-        if let Some(task) = self.monitor_task.take() {
-            let _ = task.await;
-        }
-
-        Ok(())
-    }
-
-    /// Get file inode information.
-    fn get_file_inode(&self, path: &PathBuf) -> Result<Option<u64>> {
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::MetadataExt;
-            let metadata = std::fs::metadata(path).map_err(Error::Io)?;
-            Ok(Some(metadata.ino()))
-        }
-
-        #[cfg(not(unix))]
-        {
-            // On Windows, we could use file ID or other alternatives
-            // For now, return None to indicate inode tracking not available
-            Ok(None)
-        }
-    }
-
-    /// Update inode-based file state.
-    async fn update_inode_state(&self, path: &PathBuf, state: &mut InodeState) -> Result<bool> {
-        let metadata = std::fs::metadata(path).map_err(Error::Io)?;
-
-        let modified_time = metadata.modified().ok();
-        let size = Some(metadata.len());
-        let inode = self.get_file_inode(path)?;
-
-        let mut changed = false;
-
-        // Check for changes
-        if state.inode != inode {
-            changed = true;
-            state.inode = inode;
-        }
-
-        if state.modified_time != modified_time {
-            changed = true;
-            state.modified_time = modified_time;
-        }
-
-        if state.size != size {
-            changed = true;
-            state.size = size;
-        }
-
-        Ok(changed)
-    }
-
-    /// Monitor a specific watch for changes.
-    async fn monitor_watch(&mut self, watch_id: &str) -> Result<()> {
-        // Clone what we need to avoid borrow conflicts
-        let (detect_inode_changes, _editor_type) = {
-            let watch_state = self
-                .watches
-                .get(watch_id)
-                .ok_or_else(|| Error::WatchNotFound(watch_id.to_string()))?;
-            (
-                watch_state.editor_config.detect_inode_changes,
-                watch_state.editor_config.editor_type.clone(),
-            )
-        };
-
-        // Update last check time
-        {
-            let watch_state = self
-                .watches
-                .get_mut(watch_id)
-                .ok_or_else(|| Error::WatchNotFound(watch_id.to_string()))?;
-            watch_state.last_check = Instant::now();
-        }
-
-        // If inode detection is enabled, check for changes
-        if detect_inode_changes {
-            self.check_inode_changes_for_watch(watch_id).await?;
-        }
-
-        // Editor-specific monitoring
-        self.check_editor_changes_for_watch(watch_id).await?;
-
-        Ok(())
-    }
-
-    /// Check for inode-based changes for a specific watch.
-    async fn check_inode_changes_for_watch(&mut self, watch_id: &str) -> Result<()> {
-        // Extract what we need to avoid multiple mutable borrows
-        let (watch_path, detect_inode) = {
-            let watch_state = self
-                .watches
-                .get(watch_id)
-                .ok_or_else(|| Error::WatchNotFound(watch_id.to_string()))?;
-            (
-                PathBuf::from(&watch_state.config.id),
-                watch_state.editor_config.detect_inode_changes,
-            )
-        };
-
-        if !detect_inode {
-            return Ok(());
-        }
-
-        // Collect events to send
-        let mut events_to_send = Vec::new();
-
-        if !watch_path.exists() {
-            let watch_state = self
-                .watches
-                .get_mut(watch_id)
-                .ok_or_else(|| Error::WatchNotFound(watch_id.to_string()))?;
-            if let Some(prev_state) = watch_state.file_states.get(&watch_path) {
-                if prev_state.inode.is_some() {
-                    events_to_send.push((FileEventKind::Deleted, watch_path.clone()));
-                    watch_state.file_states.remove(&watch_path);
-                }
-            }
-        } else {
-            let watch_state = self
-                .watches
-                .get_mut(watch_id)
-                .ok_or_else(|| Error::WatchNotFound(watch_id.to_string()))?;
-
-            // Update or create inode state
-            let file_state = watch_state
-                .file_states
-                .entry(watch_path.clone())
-                .or_insert_with(|| InodeState {
-                    inode: None,
-                    modified_time: None,
-                    size: None,
-                    content_hash: None,
-                });
-
-            let previous_inode = file_state.inode;
-            let changed = Self::update_inode_state_static(&watch_path, file_state).await?;
-
-            if changed {
-                if previous_inode.is_none() {
-                    events_to_send.push((FileEventKind::Created, watch_path.clone()));
-                } else {
-                    events_to_send.push((FileEventKind::Modified, watch_path.clone()));
-                }
-            }
-        }
-
-        // Send events after releasing the borrow
-        for (kind, path) in events_to_send {
-            self.send_event(kind, path).await;
-        }
-
-        Ok(())
-    }
-
-    /// Static helper to update inode state without self borrow.
-    async fn update_inode_state_static(
-        watch_path: &PathBuf,
-        file_state: &mut InodeState,
-    ) -> Result<bool> {
-        let metadata = std::fs::metadata(watch_path).map_err(Error::Io)?;
-
-        let new_modified = metadata.modified().ok();
-        let new_size = Some(metadata.len());
-        let new_inode = Self::get_inode_from_metadata(&metadata);
-
-        let changed = file_state.inode != new_inode
-            || file_state.modified_time != new_modified
-            || file_state.size != new_size;
-
-        file_state.inode = new_inode;
-        file_state.modified_time = new_modified;
-        file_state.size = new_size;
-
-        Ok(changed)
-    }
-
-    /// Get inode number from metadata (platform-specific).
-    fn get_inode_from_metadata(metadata: &std::fs::Metadata) -> Option<u64> {
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::MetadataExt;
-            Some(metadata.ino())
-        }
-        #[cfg(not(unix))]
-        {
-            // On non-Unix systems, use file index if available
-            #[cfg(windows)]
-            {
-                use std::os::windows::fs::MetadataExt;
-                // metadata.file_index() is unstable
-                None
-            }
-            #[cfg(not(windows))]
-            {
-                None
-            }
-        }
-    }
-
-    /// Check for inode-based changes.
-    async fn check_inode_changes(&mut self, watch_state: &mut EditorWatchState) -> Result<()> {
-        let watch_path = PathBuf::from(&watch_state.config.id);
-
-        if !watch_path.exists() {
-            // Check if file was deleted
-            if let Some(prev_state) = watch_state.file_states.get(&watch_path) {
-                if prev_state.inode.is_some() {
-                    self.send_event(FileEventKind::Deleted, watch_path.clone())
-                        .await;
-                    watch_state.file_states.remove(&watch_path);
-                }
-            }
-            return Ok(());
-        }
-
-        // Update or create inode state
-        let file_state = watch_state
-            .file_states
-            .entry(watch_path.clone())
-            .or_insert_with(|| InodeState {
-                inode: None,
-                modified_time: None,
-                size: None,
-                content_hash: None,
-            });
-
-        let previous_inode = file_state.inode;
-        let changed = self.update_inode_state(&watch_path, file_state).await?;
-
-        if changed {
-            if previous_inode.is_none() {
-                // File was created
-                self.send_event(FileEventKind::Created, watch_path.clone())
-                    .await;
-            } else {
-                // File was modified
-                self.send_event(FileEventKind::Modified, watch_path.clone())
-                    .await;
-            }
-        }
-
-        Ok(())
-    }
-
-    /// Check for editor-specific changes for a specific watch.
-    async fn check_editor_changes_for_watch(&mut self, _watch_id: &str) -> Result<()> {
-        // For now, just return Ok - editor-specific checks need more complex refactoring
-        // TODO: Implement proper editor-specific change detection without borrow conflicts
-        Ok(())
-    }
-
-    /// Check for editor-specific changes.
-    async fn check_editor_changes(&mut self, watch_state: &mut EditorWatchState) -> Result<()> {
-        match watch_state.editor_config.editor_type.as_str() {
-            "vscode" => self.check_vscode_changes(watch_state).await,
-            "vim" => self.check_vim_changes(watch_state).await,
-            "emacs" => self.check_emacs_changes(watch_state).await,
-            _ => {
-                debug!(
-                    "No specific monitoring for editor type: {}",
-                    watch_state.editor_config.editor_type
-                );
-                Ok(())
-            }
-        }
-    }
-
-    /// Check VSCode-specific changes.
-    async fn check_vscode_changes(&self, _watch_state: &mut EditorWatchState) -> Result<()> {
-        // TODO: Implement VSCode-specific monitoring
-        // This could involve checking workspace state, extensions, etc.
-        debug!("VSCode-specific monitoring not yet implemented");
-        Ok(())
-    }
-
-    /// Check Vim-specific changes.
-    async fn check_vim_changes(&self, _watch_state: &mut EditorWatchState) -> Result<()> {
-        // TODO: Implement Vim-specific monitoring
-        // This could involve checking swap files, viminfo, etc.
-        debug!("Vim-specific monitoring not yet implemented");
-        Ok(())
-    }
-
-    /// Check Emacs-specific changes.
-    async fn check_emacs_changes(&self, _watch_state: &mut EditorWatchState) -> Result<()> {
-        // TODO: Implement Emacs-specific monitoring
-        // This could involve checking auto-save files, etc.
-        debug!("Emacs-specific monitoring not yet implemented");
-        Ok(())
-    }
-
-    /// Send a file event.
-    async fn send_event(&self, kind: FileEventKind, path: PathBuf) {
-        if let Some(ref sender) = self.event_sender {
-            let metadata = EventMetadata::new("editor".to_string(), "default".to_string());
-
-            let event = FileEvent::with_metadata(kind, path, metadata);
-            if let Err(e) = sender.send(event) {
-                error!("Failed to send editor event: {}", e);
-            }
-        }
-    }
 
     /// Update editor configuration.
     pub fn update_editor_config(&mut self, watch_id: &str, config: EditorConfig) -> Result<()> {
@@ -539,12 +201,8 @@ impl FileWatcher for EditorWatcher {
 
         // Create editor watch state
         let watch_state = EditorWatchState {
-            config: config.clone(),
             watched_path: path.clone(),
             editor_config,
-            file_states: HashMap::new(),
-            last_check: Instant::now(),
-            editor_state: HashMap::new(),
         };
 
         self.watches.insert(watch_id.clone(), watch_state);

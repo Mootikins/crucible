@@ -7,7 +7,7 @@ use crate::{
 };
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -42,35 +42,11 @@ pub struct ObsidianKilnConfig {
 
 /// Configuration for synchronization behavior.
 #[derive(Debug, Clone)]
-pub struct SyncConfig {
-    /// Debounce delay for sync operations
-    #[allow(dead_code)]
-    sync_debounce: std::time::Duration,
-    /// Whether to sync frontmatter changes
-    #[allow(dead_code)]
-    sync_frontmatter: bool,
-    /// Whether to sync content changes
-    #[allow(dead_code)]
-    sync_content: bool,
-    /// Whether to trigger Obsidian reindex
-    trigger_reindex: bool,
-    /// Maximum batch size for sync operations
-    #[allow(dead_code)]
-    max_batch_size: usize,
-}
+pub struct SyncConfig;
 
 /// Current synchronization state.
 #[derive(Debug, Clone, Default)]
 struct SyncState {
-    /// Files currently being processed
-    #[allow(dead_code)]
-    processing_files: HashMap<PathBuf, std::time::Instant>,
-    /// Last full sync timestamp
-    #[allow(dead_code)]
-    last_full_sync: Option<chrono::DateTime<chrono::Utc>>,
-    /// Pending changes to sync
-    #[allow(dead_code)]
-    pending_changes: Vec<FileEvent>,
     /// Sync statistics
     stats: SyncStats,
 }
@@ -275,29 +251,7 @@ impl ObsidianSyncHandler {
         Ok(())
     }
 
-    #[allow(dead_code)]
-    async fn trigger_obsidian_reindex(&self, config: &ObsidianKilnConfig) -> Result<()> {
-        if !self.sync_config.trigger_reindex {
-            return Ok(());
-        }
 
-        debug!("Triggering Obsidian reindex");
-
-        if config.use_local_api {
-            let api_port = config
-                .api_port
-                .ok_or_else(|| Error::Config("Obsidian API port not configured".to_string()))?;
-
-            let url = format!("http://localhost:{}/api/reindex", api_port);
-            // TODO: Implement actual API call
-            debug!("Would trigger Obsidian reindex via API: {}", url);
-        } else {
-            // TODO: Implement file system based reindex trigger
-            debug!("Would trigger Obsidian reindex via file system");
-        }
-
-        Ok(())
-    }
 }
 
 #[async_trait]
@@ -365,12 +319,6 @@ impl EventHandler for ObsidianSyncHandler {
 
 impl Default for SyncConfig {
     fn default() -> Self {
-        Self {
-            sync_debounce: std::time::Duration::from_millis(300),
-            sync_frontmatter: true,
-            sync_content: true,
-            trigger_reindex: false,
-            max_batch_size: 50,
-        }
+        Self
     }
 }

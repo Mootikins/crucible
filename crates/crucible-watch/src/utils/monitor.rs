@@ -42,15 +42,6 @@ impl PerformanceMonitor {
         }
     }
 
-    /// Create a performance monitor with custom history size.
-    #[allow(dead_code)]
-    pub fn with_history_size(max_history_size: usize) -> Self {
-        Self {
-            max_history_size,
-            ..Self::new()
-        }
-    }
-
     /// Record that an event was processed.
     pub fn record_event_processed(&mut self, processing_time: Duration) {
         let processing_time_nanos = processing_time.as_nanos() as u64;
@@ -147,71 +138,6 @@ impl PerformanceMonitor {
         let p99 = times.get(p99_idx.min(len - 1)).unwrap_or(&0.0);
 
         (*p50, *p95, *p99)
-    }
-
-    /// Reset all statistics.
-    #[allow(dead_code)]
-    pub fn reset(&mut self) {
-        self.total_events.store(0, Ordering::Relaxed);
-        self.total_processing_time.store(0, Ordering::Relaxed);
-        self.processing_times.clear();
-        self.events_per_second.store(0, Ordering::Relaxed);
-        self.events_in_last_second.store(0, Ordering::Relaxed);
-        self.max_memory_usage.store(0, Ordering::Relaxed);
-        self.current_memory_usage.store(0, Ordering::Relaxed);
-        self.last_calculation = Instant::now();
-    }
-
-    /// Check if performance is degraded.
-    #[allow(dead_code)]
-    pub fn is_performance_degraded(&self) -> bool {
-        let stats = self.get_stats();
-
-        // Consider performance degraded if:
-        // - Average processing time > 100ms
-        // - Events per second < 10
-        // - P95 processing time > 500ms
-        stats.avg_processing_time_ms > 100.0
-            || stats.events_per_second < 10
-            || stats.p95_processing_time_ms > 500.0
-    }
-
-    /// Get performance recommendations.
-    #[allow(dead_code)]
-    pub fn get_recommendations(&self) -> Vec<String> {
-        let mut recommendations = Vec::new();
-        let stats = self.get_stats();
-
-        if stats.avg_processing_time_ms > 100.0 {
-            recommendations.push(
-                "Average processing time is high (>100ms). Consider optimizing handlers or reducing batch sizes.".to_string()
-            );
-        }
-
-        if stats.events_per_second < 10 {
-            recommendations.push(
-                "Low events per second rate. Consider increasing debounce delay or reducing event filtering.".to_string()
-            );
-        }
-
-        if stats.p95_processing_time_ms > 500.0 {
-            recommendations.push(
-                "P95 processing time is very high (>500ms). Check for blocking operations in handlers.".to_string()
-            );
-        }
-
-        if stats.current_memory_usage_bytes > 100 * 1024 * 1024 {
-            // 100MB
-            recommendations.push(
-                "High memory usage detected. Consider reducing queue sizes or increasing processing frequency.".to_string()
-            );
-        }
-
-        if recommendations.is_empty() {
-            recommendations.push("Performance looks good.".to_string());
-        }
-
-        recommendations
     }
 }
 

@@ -44,20 +44,6 @@ impl Debouncer {
         }
     }
 
-    /// Set the maximum batch size.
-    #[allow(dead_code)]
-    pub fn with_max_batch_size(mut self, size: usize) -> Self {
-        self.max_batch_size = size;
-        self
-    }
-
-    /// Enable or disable deduplication.
-    #[allow(dead_code)]
-    pub fn with_deduplication(mut self, enabled: bool) -> Self {
-        self.deduplicate = enabled;
-        self
-    }
-
     /// Process an incoming event.
     pub async fn process_event(&mut self, event: FileEvent) -> Option<FileEvent> {
         trace!("Processing event: {:?}", event.kind);
@@ -194,50 +180,4 @@ impl Debouncer {
             debug!("Cleaned up {} old pending events", removed);
         }
     }
-
-    /// Force emit all pending events immediately.
-    #[allow(dead_code)]
-    pub async fn flush(&mut self) -> Vec<FileEvent> {
-        let _now = Instant::now();
-        let mut events = Vec::new();
-
-        // Collect all pending events
-        for (_key, pending) in self.pending_events.drain() {
-            events.push(pending.event);
-        }
-
-        debug!("Flushed {} pending events", events.len());
-        events
-    }
-
-    /// Get the number of pending events.
-    #[allow(dead_code)]
-    pub fn pending_count(&self) -> usize {
-        self.pending_events.len()
-    }
-
-    /// Get statistics about the debouncer.
-    #[allow(dead_code)]
-    pub fn get_stats(&self) -> DebouncerStats {
-        DebouncerStats {
-            pending_events: self.pending_events.len(),
-            delay_ms: self.delay.as_millis(),
-            max_batch_size: self.max_batch_size,
-            deduplication_enabled: self.deduplicate,
-        }
-    }
-}
-
-/// Statistics for the debouncer.
-#[allow(dead_code)]
-#[derive(Debug, Clone)]
-pub struct DebouncerStats {
-    /// Number of pending events
-    pub pending_events: usize,
-    /// Debounce delay in milliseconds
-    pub delay_ms: u128,
-    /// Maximum batch size
-    pub max_batch_size: usize,
-    /// Whether deduplication is enabled
-    pub deduplication_enabled: bool,
 }
