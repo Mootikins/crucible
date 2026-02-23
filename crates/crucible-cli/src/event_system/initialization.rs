@@ -18,7 +18,7 @@
 
 use anyhow::{Context, Result};
 use crucible_core::events::{Reactor, ReactorEventEmitter};
-use crucible_enrichment::{EmbeddingHandler, EmbeddingHandlerAdapter};
+use crucible_daemon::enrichment::{EmbeddingHandler, EmbeddingHandlerAdapter};
 use crucible_watch::{WatchManager, WatchManagerConfig};
 use std::path::Path;
 use std::sync::Arc;
@@ -82,7 +82,7 @@ pub async fn initialize_event_system(config: &CliConfig) -> Result<EventSystemHa
         Ok(embedding_provider) => {
             debug!("Registering EmbeddingHandler (priority 200)");
             let enrichment_service =
-                crucible_enrichment::create_default_enrichment_service(Some(embedding_provider))?;
+                crucible_daemon::enrichment::create_default_enrichment_service(Some(embedding_provider))?;
             let embedding_handler = EmbeddingHandler::new(enrichment_service);
             reactor
                 .register(Box::new(EmbeddingHandlerAdapter::new(embedding_handler)))

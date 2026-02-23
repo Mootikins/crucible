@@ -3207,13 +3207,11 @@ dependencies = [
  "crucible-config",
  "crucible-core",
  "crucible-daemon",
- "crucible-enrichment",
  "crucible-lance",
  "crucible-llm",
  "crucible-lua",
  "crucible-observe",
  "crucible-oil",
- "crucible-pipeline",
  "crucible-rig",
  "crucible-rpc",
  "crucible-skills",
@@ -3374,13 +3372,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "crucible-enrichment"
-version = "0.1.0"
-dependencies = [
- "crucible-daemon",
-]
-
-[[package]]
 name = "crucible-lance"
 version = "0.1.0"
 dependencies = [
@@ -3529,13 +3520,6 @@ dependencies = [
  "tokio",
  "tokio-test",
  "toml 0.9.12+spec-1.1.0",
-]
-
-[[package]]
-name = "crucible-pipeline"
-version = "0.1.0"
-dependencies = [
- "crucible-daemon",
 ]
 
 [[package]]
