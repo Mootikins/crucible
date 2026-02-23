@@ -590,10 +590,8 @@ impl OilChatRunner {
 
 
                             if let Some(notes_count) = chunk.precognition_notes_count {
-                                if notes_count > 0 {
-                                    if msg_tx.send(ChatAppMsg::PrecognitionResult { notes_count }).is_err() {
-                                        tracing::warn!("UI channel closed, PrecognitionResult dropped");
-                                    }
+                                if notes_count > 0 && msg_tx.send(ChatAppMsg::PrecognitionResult { notes_count }).is_err() {
+                                    tracing::warn!("UI channel closed, PrecognitionResult dropped");
                                 }
                             }
 

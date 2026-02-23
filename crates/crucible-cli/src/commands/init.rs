@@ -198,7 +198,7 @@ fn write_workspace_config(crucible_dir: &Path, classification: DataClassificatio
     if let Some(kiln) = config
         .kilns
         .iter_mut()
-        .find(|k| k.path == PathBuf::from("."))
+        .find(|k| k.path == Path::new("."))
     {
         kiln.data_classification = Some(classification);
     } else {

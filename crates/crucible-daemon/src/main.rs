@@ -8,6 +8,7 @@ mod event_emitter;
 mod file_watch_bridge;
 mod kiln_manager;
 mod llm_hooks;
+mod multi_kiln_search;
 mod lifecycle;
 mod permission_bridge;
 mod precognition;
