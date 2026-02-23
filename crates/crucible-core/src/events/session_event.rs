@@ -182,6 +182,12 @@ pub enum SessionEvent {
         notes_count: usize,
         /// Summary of the query used for enrichment.
         query_summary: String,
+        /// Number of kilns searched during enrichment.
+        kilns_searched: usize,
+        /// Number of kilns filtered out by trust level.
+        kilns_filtered: usize,
+        /// Number of kilns that failed during search.
+        kilns_failed: usize,
     },
 
     /// Emitted when a kiln requires data classification before use.
@@ -1442,11 +1448,17 @@ impl SessionEvent {
             Self::PrecognitionComplete {
                 notes_count,
                 query_summary,
+                kilns_searched,
+                kilns_filtered,
+                kilns_failed,
             } => {
                 format!(
-                    "notes={}, query={}",
+                    "notes={}, query={}, searched={}, filtered={}, failed={}",
                     notes_count,
-                    truncate(query_summary, max_len)
+                    truncate(query_summary, max_len),
+                    kilns_searched,
+                    kilns_filtered,
+                    kilns_failed
                 )
             }
             Self::ClassificationRequired { kiln_path } => {
@@ -1594,6 +1606,7 @@ impl SessionEvent {
             Self::PrecognitionComplete {
                 notes_count,
                 query_summary,
+                ..
             } => Some(format!("notes={}, query={}", notes_count, query_summary)),
             Self::ClassificationRequired { kiln_path } => Some(kiln_path.display().to_string()),
         };
@@ -1692,6 +1705,7 @@ impl SessionEvent {
             Self::PrecognitionComplete {
                 notes_count,
                 query_summary,
+                ..
             } => notes_count.to_string().len() + query_summary.len() + 50,
             Self::ClassificationRequired { .. } => 50,
         };

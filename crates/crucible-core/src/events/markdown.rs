@@ -458,6 +458,7 @@ impl EventToMarkdown for SessionEvent {
             SessionEvent::PrecognitionComplete {
                 notes_count,
                 query_summary,
+                ..
             } => {
                 format!(
                     "**Notes Found:** {}\n**Query:** {}\n",

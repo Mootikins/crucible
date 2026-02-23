@@ -634,6 +634,9 @@ impl AgentManager {
                                                     let event = SessionEvent::PrecognitionComplete {
                                                         notes_count: results.len(),
                                                         query_summary: query_summary.clone(),
+                                                        kilns_searched: sources.len(),
+                                                        kilns_filtered: 0,
+                                                        kilns_failed: 0,
                                                     };
                                                     if !emit_event(
                                                         event_tx,
@@ -666,6 +669,9 @@ impl AgentManager {
                                                     let event = SessionEvent::PrecognitionComplete {
                                                         notes_count: 0,
                                                         query_summary: query_summary.clone(),
+                                                        kilns_searched: 1,
+                                                        kilns_filtered: 0,
+                                                        kilns_failed: 1,
                                                     };
                                                     if !emit_event(
                                                         event_tx,
@@ -700,6 +706,9 @@ impl AgentManager {
                                             let event = SessionEvent::PrecognitionComplete {
                                                 notes_count: 0,
                                                 query_summary: query_summary.clone(),
+                                                kilns_searched: 1,
+                                                kilns_filtered: 0,
+                                                kilns_failed: 1,
                                             };
                                             if !emit_event(
                                                 event_tx,
