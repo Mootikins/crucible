@@ -511,6 +511,11 @@ pub async fn get_storage(config: &CliConfig) -> Result<StorageHandle> {
 
     match storage_config.mode {
         StorageMode::Embedded => {
+            warn!(
+                "Non-daemon storage mode detected. Chat knowledge features (Precognition, semantic search) \
+                 require daemon mode. Set storage.mode = 'daemon' in crucible.toml. \
+                 Non-daemon chat will be removed in a future version."
+            );
             #[cfg(feature = "storage-surrealdb")]
             {
                 debug!("Using embedded storage mode");
@@ -556,6 +561,11 @@ pub async fn get_storage(config: &CliConfig) -> Result<StorageHandle> {
             ))))
         }
         StorageMode::Lightweight => {
+            warn!(
+                "Non-daemon storage mode detected. Chat knowledge features (Precognition, semantic search) \
+                 require daemon mode. Set storage.mode = 'daemon' in crucible.toml. \
+                 Non-daemon chat will be removed in a future version."
+            );
             info!("Using lightweight storage mode (LanceDB + ripgrep)");
             let lance_path = config.kiln_path.join(".crucible").join("lance");
             let store = crucible_lance::LanceNoteStore::new(lance_path.to_string_lossy().as_ref())
@@ -564,6 +574,11 @@ pub async fn get_storage(config: &CliConfig) -> Result<StorageHandle> {
             Ok(StorageHandle::Lightweight(Arc::new(store)))
         }
         StorageMode::Sqlite => {
+            warn!(
+                "Non-daemon storage mode detected. Chat knowledge features (Precognition, semantic search) \
+                 require daemon mode. Set storage.mode = 'daemon' in crucible.toml. \
+                 Non-daemon chat will be removed in a future version."
+            );
             #[cfg(feature = "storage-sqlite")]
             {
                 info!("Using SQLite storage mode (experimental)");
