@@ -18,11 +18,9 @@ use futures::stream::BoxStream;
 use futures::StreamExt;
 use std::io;
 use std::path::PathBuf;
-use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc;
 
-use crate::context_enricher::ContextEnricher;
 use crate::tui::oil::commands::{SetEffect, SetRpcAction};
 
 pub struct OilChatRunner {
@@ -44,7 +42,6 @@ pub struct OilChatRunner {
     show_thinking: bool,
     session_cmd_rx: Option<mpsc::UnboundedReceiver<SessionCommand>>,
     slash_commands: Vec<(String, String)>,
-    enricher: Option<Arc<ContextEnricher>>,
     agent_name: Option<String>,
     initial_sets: Vec<SetEffect>,
     recording_mode: Option<String>,
@@ -81,7 +78,6 @@ impl OilChatRunner {
             show_thinking: false,
             session_cmd_rx: None,
             slash_commands: Vec::new(),
-            enricher: None,
             agent_name: None,
             initial_sets: Vec::new(),
             recording_mode: None,
@@ -169,11 +165,6 @@ impl OilChatRunner {
 
     pub fn with_mcp_config(mut self, config: crucible_config::mcp::McpConfig) -> Self {
         self.mcp_config = Some(config);
-        self
-    }
-
-    pub fn with_enricher(mut self, enricher: Arc<ContextEnricher>) -> Self {
-        self.enricher = Some(enricher);
         self
     }
 
@@ -907,46 +898,12 @@ impl OilChatRunner {
                     }
                     ChatAppMsg::UserMessage(ref content) => {
                         if active_stream.is_none() {
-                            if app.precognition()
-                                && self.enricher.is_some()
-                                && !content.starts_with("/search")
-                            {
-                                let enricher =
-                                    self.enricher.clone().expect("checked is_some above");
-                                let content = content.clone();
-                                let top_k = app.precognition_results();
-                                let tx = msg_tx.clone();
-                                tokio::spawn(async move {
-                                    match enricher.enrich_with_results_n(&content, top_k).await {
-                                        Ok(result) => {
-                                            let notes_count = result.notes_found.len();
-                                            if notes_count > 0 {
-                                                let _ = tx.send(ChatAppMsg::PrecognitionResult {
-                                                    notes_count,
-                                                });
-                                            }
-                                            let _ = tx.send(ChatAppMsg::EnrichedMessage {
-                                                original: content,
-                                                enriched: result.prompt,
-                                            });
-                                        }
-                                        Err(e) => {
-                                            tracing::warn!("Precognition enrichment failed: {}", e);
-                                            let _ = tx.send(ChatAppMsg::EnrichedMessage {
-                                                original: content.clone(),
-                                                enriched: content,
-                                            });
-                                        }
-                                    }
-                                });
-                            } else {
-                                bridge.ring.push(SessionEvent::MessageReceived {
-                                    content: content.clone(),
-                                    participant_id: "user".to_string(),
-                                });
-                                let stream = agent.send_message_stream(content.clone());
-                                *active_stream = Some(stream);
-                            }
+                            bridge.ring.push(SessionEvent::MessageReceived {
+                                content: content.clone(),
+                                participant_id: "user".to_string(),
+                            });
+                            let stream = agent.send_message_stream(content.clone());
+                            *active_stream = Some(stream);
                         }
                     }
                     ChatAppMsg::ReloadPlugin(ref name) if !self.is_replay => {
