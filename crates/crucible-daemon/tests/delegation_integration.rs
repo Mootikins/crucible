@@ -51,6 +51,7 @@ impl AgentHandle for MockSubagentHandle {
                 reasoning: None,
                 usage: None,
                 subagent_events: None,
+                precognition_notes_count: None,
             })])
             .boxed(),
             MockSubagentBehavior::DelayedSuccess { output, delay } => stream::once(async move {
@@ -63,6 +64,7 @@ impl AgentHandle for MockSubagentHandle {
                     reasoning: None,
                     usage: None,
                     subagent_events: None,
+                    precognition_notes_count: None,
                 })
             })
             .boxed(),

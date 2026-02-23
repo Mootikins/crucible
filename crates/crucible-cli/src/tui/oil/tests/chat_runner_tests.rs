@@ -51,6 +51,7 @@ impl MockAgent {
             reasoning: None,
             usage: None,
             subagent_events: None,
+            precognition_notes_count: None,
         }])
     }
 
@@ -65,6 +66,7 @@ impl MockAgent {
                 reasoning: None,
                 usage: None,
                 subagent_events: None,
+                precognition_notes_count: None,
             })
             .collect();
 
@@ -466,6 +468,7 @@ mod daemon_event_to_tui_tests {
             reasoning: None,
             usage: None,
             subagent_events: None,
+            precognition_notes_count: None,
         };
 
         for msg in chunk_to_app_msgs(chunk) {
@@ -502,6 +505,7 @@ mod daemon_event_to_tui_tests {
             reasoning: None,
             usage: None,
             subagent_events: None,
+            precognition_notes_count: None,
         };
 
         for msg in chunk_to_app_msgs(chunk) {
@@ -543,6 +547,7 @@ mod daemon_event_to_tui_tests {
             reasoning: None,
             usage: None,
             subagent_events: None,
+            precognition_notes_count: None,
         };
 
         for msg in chunk_to_app_msgs(chunk) {
@@ -576,6 +581,7 @@ mod daemon_event_to_tui_tests {
             reasoning: None,
             usage: None,
             subagent_events: None,
+            precognition_notes_count: None,
         };
 
         for msg in chunk_to_app_msgs(chunk) {
@@ -599,6 +605,7 @@ mod daemon_event_to_tui_tests {
                 reasoning: None,
                 usage: None,
                 subagent_events: None,
+                precognition_notes_count: None,
             },
             ChatChunk {
                 delta: "am ".to_string(),
@@ -608,6 +615,7 @@ mod daemon_event_to_tui_tests {
                 reasoning: None,
                 usage: None,
                 subagent_events: None,
+                precognition_notes_count: None,
             },
             ChatChunk {
                 delta: "Claude!".to_string(),
@@ -617,6 +625,7 @@ mod daemon_event_to_tui_tests {
                 reasoning: None,
                 usage: None,
                 subagent_events: None,
+                precognition_notes_count: None,
             },
         ];
 
@@ -657,6 +666,7 @@ mod daemon_event_to_tui_tests {
                 total_tokens: 150,
             }),
             subagent_events: None,
+            precognition_notes_count: None,
         };
 
         for msg in chunk_to_app_msgs_with_limit(chunk, 1000) {
@@ -692,6 +702,7 @@ mod daemon_event_to_tui_tests {
                 total_tokens: 2500,
             }),
             subagent_events: None,
+            precognition_notes_count: None,
         };
 
         for msg in chunk_to_app_msgs_with_limit(chunk, 0) {

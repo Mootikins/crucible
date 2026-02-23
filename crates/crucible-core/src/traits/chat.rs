@@ -91,6 +91,9 @@ pub struct ChatChunk {
     /// Subagent lifecycle events (spawned, completed, failed)
     #[serde(default)]
     pub subagent_events: Option<Vec<ChatSubagentEvent>>,
+    /// Notes count from daemon-side Precognition enrichment
+    #[serde(default)]
+    pub precognition_notes_count: Option<usize>,
 }
 
 /// Result from a completed tool execution
@@ -629,6 +632,7 @@ mod tests {
                         reasoning: None,
                         usage: None,
                         subagent_events: None,
+                        precognition_notes_count: None,
                     })
                 },
             )))

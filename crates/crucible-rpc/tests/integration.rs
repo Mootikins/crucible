@@ -888,6 +888,7 @@ async fn test_session_configure_agent() {
         capabilities: None,
         agent_description: None,
         delegation_config: None,
+        precognition_enabled: true,
     };
 
     let result = client.session_configure_agent(&session_id, &agent).await;
@@ -1103,6 +1104,7 @@ async fn test_tui_daemon_agent_full_flow() {
         capabilities: None,
         agent_description: None,
         delegation_config: None,
+        precognition_enabled: true,
     };
 
     client
@@ -1250,6 +1252,7 @@ mod event_flow_tests {
                     reasoning: None,
                     usage: None,
                     subagent_events: None,
+                    precognition_notes_count: None,
                 })
             }
             "thinking" => {
@@ -1262,6 +1265,7 @@ mod event_flow_tests {
                     reasoning: Some(content.to_string()),
                     usage: None,
                     subagent_events: None,
+                    precognition_notes_count: None,
                 })
             }
             "tool_call" => {
@@ -1280,6 +1284,7 @@ mod event_flow_tests {
                     reasoning: None,
                     usage: None,
                     subagent_events: None,
+                    precognition_notes_count: None,
                 })
             }
             "tool_result" => {
@@ -1303,6 +1308,7 @@ mod event_flow_tests {
                     reasoning: None,
                     usage: None,
                     subagent_events: None,
+                    precognition_notes_count: None,
                 })
             }
             "message_complete" | "ended" => Some(crucible_core::traits::chat::ChatChunk {
@@ -1313,6 +1319,7 @@ mod event_flow_tests {
                 reasoning: None,
                 usage: None,
                 subagent_events: None,
+                precognition_notes_count: None,
             }),
             _ => None,
         }
@@ -1447,6 +1454,7 @@ async fn test_session_switch_model() {
         capabilities: None,
         agent_description: None,
         delegation_config: None,
+        precognition_enabled: true,
     };
 
     client
@@ -1516,6 +1524,7 @@ async fn test_daemon_agent_handle_switch_model() {
         capabilities: None,
         agent_description: None,
         delegation_config: None,
+        precognition_enabled: true,
     };
 
     client

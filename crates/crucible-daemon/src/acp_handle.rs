@@ -340,6 +340,7 @@ impl AgentHandle for AcpAgentHandle {
                                     reasoning: None,
                                     usage: None,
                                     subagent_events: None,
+                                    precognition_notes_count: None,
                                 }
                             }
                             StreamingChunk::Thinking(text) => {
@@ -356,6 +357,7 @@ impl AgentHandle for AcpAgentHandle {
                                     reasoning: Some(text),
                                     usage: None,
                                     subagent_events: None,
+                                    precognition_notes_count: None,
                                 }
                             }
                             StreamingChunk::ToolStart {
@@ -382,6 +384,7 @@ impl AgentHandle for AcpAgentHandle {
                                     reasoning: None,
                                     usage: None,
                                     subagent_events: None,
+                                    precognition_notes_count: None,
                                 }
                             }
                             StreamingChunk::ToolEnd { id, result, error } => {
@@ -402,6 +405,7 @@ impl AgentHandle for AcpAgentHandle {
                                     reasoning: None,
                                     usage: None,
                                     subagent_events: None,
+                                    precognition_notes_count: None,
                                 }
                             }
                         };
@@ -437,6 +441,7 @@ impl AgentHandle for AcpAgentHandle {
                                     reasoning: None,
                                     usage: None,
                                     subagent_events: None,
+                                    precognition_notes_count: None,
                                 }),
                                 None,
                             ))

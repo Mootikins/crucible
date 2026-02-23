@@ -2582,6 +2582,7 @@ mod tests {
                         reasoning: None,
                         usage: None,
                         subagent_events: None,
+                        precognition_notes_count: None,
                     },
                     ChatChunk {
                         delta: " world".to_string(),
@@ -2591,6 +2592,7 @@ mod tests {
                         reasoning: None,
                         usage: None,
                         subagent_events: None,
+                        precognition_notes_count: None,
                     },
                 ],
             }))),
@@ -2650,6 +2652,7 @@ mod tests {
                     reasoning: None,
                     usage: None,
                     subagent_events: None,
+                    precognition_notes_count: None,
                 }],
             }))),
         );
@@ -2697,6 +2700,7 @@ mod tests {
                     reasoning: None,
                     usage: None,
                     subagent_events: None,
+                    precognition_notes_count: None,
                 }],
             }))),
         );
@@ -2743,6 +2747,7 @@ mod tests {
                     reasoning: None,
                     usage: None,
                     subagent_events: None,
+                    precognition_notes_count: None,
                 }],
             }))),
         );
@@ -2792,6 +2797,7 @@ mod tests {
                         reasoning: Some("thinking...".to_string()),
                         usage: None,
                         subagent_events: None,
+                        precognition_notes_count: None,
                     },
                     ChatChunk {
                         delta: "response".to_string(),
@@ -2801,6 +2807,7 @@ mod tests {
                         reasoning: None,
                         usage: None,
                         subagent_events: None,
+                        precognition_notes_count: None,
                     },
                 ],
             }))),
@@ -2872,6 +2879,7 @@ mod tests {
                         reasoning: None,
                         usage: None,
                         subagent_events: None,
+                        precognition_notes_count: None,
                     },
                     ChatChunk {
                         delta: String::new(),
@@ -2886,6 +2894,7 @@ mod tests {
                         reasoning: None,
                         usage: None,
                         subagent_events: None,
+                        precognition_notes_count: None,
                     },
                     ChatChunk {
                         delta: "Done.".to_string(),
@@ -2895,6 +2904,7 @@ mod tests {
                         reasoning: None,
                         usage: None,
                         subagent_events: None,
+                        precognition_notes_count: None,
                     },
                 ],
             }))),
@@ -2956,6 +2966,7 @@ mod tests {
                     reasoning: None,
                     usage: None,
                     subagent_events: None,
+                    precognition_notes_count: None,
                 }],
             }))),
         );

@@ -220,6 +220,7 @@ mod tests {
                     reasoning: None,
                     usage: None,
                     subagent_events: None,
+                    precognition_notes_count: None,
                 }),
                 Ok(crucible_core::traits::chat::ChatChunk {
                     delta: String::new(),
@@ -229,6 +230,7 @@ mod tests {
                     reasoning: None,
                     usage: None,
                     subagent_events: None,
+                    precognition_notes_count: None,
                 }),
             ]))
         }

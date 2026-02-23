@@ -429,6 +429,7 @@ where
                                     reasoning: None,
                                     usage: None,
                                     subagent_events: None,
+                                    precognition_notes_count: None,
                                 });
                             }
                             ReasoningChunk::Reasoning(reasoning) => {
@@ -441,6 +442,7 @@ where
                                     reasoning: Some(reasoning),
                                     usage: None,
                                     subagent_events: None,
+                                    precognition_notes_count: None,
                                 });
                             }
                             ReasoningChunk::ToolCall { id, name, arguments } => {
@@ -462,6 +464,7 @@ where
                                     reasoning: None,
                                     usage: None,
                                     subagent_events: None,
+                                    precognition_notes_count: None,
                                 });
                             }
                             ReasoningChunk::Done => {
@@ -487,6 +490,7 @@ where
                                     reasoning: None,
                                     usage: None,
                                     subagent_events: None,
+                                    precognition_notes_count: None,
                                 });
                                 return;
                             }
@@ -509,6 +513,7 @@ where
                 reasoning: None,
                 usage: None,
                 subagent_events: None,
+                precognition_notes_count: None,
             });
         })
     }
@@ -669,6 +674,7 @@ where
                                                     reasoning: None,
                                                     usage: None,
                                                     subagent_events: None,
+                                                    precognition_notes_count: None,
                                                 });
                                                 // Immediately emit error result (shows as red failed tool)
                                                 yield Ok(ChatChunk {
@@ -684,6 +690,7 @@ where
                                                     reasoning: None,
                                                     usage: None,
                                                     subagent_events: None,
+                                                    precognition_notes_count: None,
                                                 });
                                             } else {
                                                 yield Ok(ChatChunk {
@@ -694,6 +701,7 @@ where
                                                     reasoning: None,
                                                     usage: None,
                                                     subagent_events: None,
+                                                    precognition_notes_count: None,
                                                 });
                                             }
                                         }
@@ -712,6 +720,7 @@ where
                                                 reasoning: None,
                                                 usage: None,
                                                 subagent_events: None,
+                                                precognition_notes_count: None,
                                             });
                                             emitted_text_len = parse_result.cleaned_text.len();
                                         }
@@ -747,6 +756,7 @@ where
                                                     reasoning: None,
                                                     usage: None,
                                                     subagent_events: None,
+                                                    precognition_notes_count: None,
                                                 });
                                             }
                                             emitted_text_len = accumulated_text.len();
@@ -761,6 +771,7 @@ where
                                             reasoning: None,
                                             usage: None,
                                             subagent_events: None,
+                                            precognition_notes_count: None,
                                         });
                                         emitted_text_len = accumulated_text.len();
                                     }
@@ -802,6 +813,7 @@ where
                                         reasoning: None,
                                         usage: None,
                                         subagent_events: None,
+                                        precognition_notes_count: None,
                                     });
                                     // Immediately emit error result (shows as red failed tool)
                                     yield Ok(ChatChunk {
@@ -817,6 +829,7 @@ where
                                         reasoning: None,
                                         usage: None,
                                         subagent_events: None,
+                                        precognition_notes_count: None,
                                     });
                                 } else {
                                     // Emit tool call immediately via tool_calls field
@@ -829,6 +842,7 @@ where
                                         reasoning: None,
                                         usage: None,
                                         subagent_events: None,
+                                        precognition_notes_count: None,
                                     });
                                 }
                             }
@@ -844,6 +858,7 @@ where
                                         reasoning: Some(reasoning_text),
                                         usage: None,
                                         subagent_events: None,
+                                        precognition_notes_count: None,
                                     });
                                 }
                             }
@@ -858,6 +873,7 @@ where
                                         reasoning: Some(reasoning),
                                         usage: None,
                                         subagent_events: None,
+                                        precognition_notes_count: None,
                                     });
                                 }
                             }
@@ -912,6 +928,7 @@ where
                             reasoning: None,
                             usage: None,
                             subagent_events: None,
+                            precognition_notes_count: None,
                         });
 
                         tool_results.push(tr);
@@ -941,6 +958,7 @@ where
                                     reasoning: None,
                                     usage: None,
                                     subagent_events: None,
+                                    precognition_notes_count: None,
                                 });
                             }
                         }
@@ -1010,6 +1028,7 @@ where
                             reasoning: None,
                             usage,
                             subagent_events: None,
+                            precognition_notes_count: None,
                         });
                     }
                     Err(e) => {
@@ -1057,6 +1076,7 @@ where
                     reasoning: None,
                     usage: None,
                     subagent_events: None,
+                    precognition_notes_count: None,
                 });
             }
         })
