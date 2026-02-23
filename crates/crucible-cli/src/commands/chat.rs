@@ -534,24 +534,6 @@ async fn run_interactive_chat(
     std::fs::create_dir_all(&session_dir).ok();
     runner = runner.with_session_dir(session_dir);
 
-    // Best-effort enricher for precognition (auto-RAG)
-    // Works with any storage backend that supports KnowledgeRepository (sqlite, embedded)
-    match factories::get_storage(&config).await {
-        Ok(storage_handle) => {
-            if storage_handle.as_knowledge_repository(Some(config.kiln_path.as_path())).is_some() {
-                let core = Arc::new(KilnContext::from_storage_handle(storage_handle, config.clone()));
-                let enricher = Arc::new(ContextEnricher::new(core, None));
-                runner = runner.with_enricher(enricher);
-                debug!("Precognition enricher initialized");
-            } else {
-                debug!("No knowledge repository available for precognition (lightweight mode)");
-            }
-        }
-        Err(e) => {
-            debug!("No storage available for precognition: {}", e);
-        }
-    }
-
     let config_for_factory = config;
     let initial_mode_str = initial_mode.to_string();
     let resume_id_for_factory = resume_session_id;
