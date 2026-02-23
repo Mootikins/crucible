@@ -150,7 +150,7 @@ pub enum SessionEvent {
     /// Post-event after LLM call completes (fire-and-forget notification).
     ///
     /// Emitted after the LLM returns a response. This is a fire-and-forget notification
-    /// event (not a direct-call hook like PreLlmContext/PostLlmContext). Handlers can use
+    /// event (not a direct-call hook). Handlers can use
     /// this event to:
     /// - Log LLM response metrics and performance
     /// - Update UI with response statistics

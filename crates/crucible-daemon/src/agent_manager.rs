@@ -4,7 +4,6 @@ use crate::agent_factory::{create_agent_from_session_config, AgentFactoryError};
 use crate::background_manager::{BackgroundJobManager, SubagentContext};
 use crate::event_emitter::emit_event;
 use crate::kiln_manager::KilnManager;
-use crate::llm_hooks::LlmHookChain;
 use crate::multi_kiln_search::{search_across_kilns, KilnSearchSource};
 use crate::permission_bridge::{DaemonPermissionGate, PermissionPromptCallback};
 use crate::protocol::SessionEventMessage;
@@ -13,8 +12,8 @@ use crate::trust_resolution::resolve_provider_trust;
 use crucible_acp::discovery::default_agent_profiles;
 use crucible_config::components::permissions::PermissionConfig;
 use crucible_config::{AcpConfig, AgentProfile, BackendType, PatternStore};
-use crucible_core::events::llm_hook_context::{PostLlmContext, PreLlmContext, PreLlmResult};
-use crucible_core::events::SessionEvent;
+use crucible_core::discovery::DiscoveryPaths;
+use crucible_core::events::{Reactor, ReactorEmitResult as EmitResult, SessionEvent};
 use crucible_core::interaction::{InteractionRequest, PermRequest, PermResponse, PermissionScope};
 use crucible_core::session::SessionAgent;
 use crucible_core::traits::chat::AgentHandle;
@@ -167,11 +166,12 @@ type BoxedAgentHandle = Box<dyn AgentHandle + Send + Sync>;
 use mlua::RegistryKey;
 use std::sync::Mutex as StdMutex;
 
-pub(crate) struct SessionLuaState {
+pub(crate) struct SessionEventState {
     pub(crate) lua: Lua,
-    registry: LuaScriptHandlerRegistry,
-    permission_hooks: Arc<StdMutex<Vec<PermissionHook>>>,
-    permission_functions: Arc<StdMutex<HashMap<String, RegistryKey>>>,
+    pub(crate) registry: LuaScriptHandlerRegistry,
+    pub(crate) permission_hooks: Arc<StdMutex<Vec<PermissionHook>>>,
+    pub(crate) permission_functions: Arc<StdMutex<HashMap<String, RegistryKey>>>,
+    pub(crate) reactor: Reactor,
 }
 
 struct PendingPermission {
@@ -199,9 +199,8 @@ pub struct AgentManager {
     kiln_manager: Arc<KilnManager>,
     session_manager: Arc<SessionManager>,
     background_manager: Arc<BackgroundJobManager>,
-    lua_states: Arc<DashMap<String, Arc<Mutex<SessionLuaState>>>>,
+    session_states: Arc<DashMap<String, Arc<tokio::sync::Mutex<SessionEventState>>>>,
     pending_permissions: Arc<DashMap<String, HashMap<PermissionId, PendingPermission>>>,
-    hook_chain: Arc<LlmHookChain>,
     mcp_gateway: Option<Arc<tokio::sync::RwLock<crucible_tools::mcp_gateway::McpGatewayManager>>>,
     llm_config: Option<crucible_config::LlmConfig>,
     acp_config: Option<AcpConfig>,
@@ -226,9 +225,8 @@ impl AgentManager {
             kiln_manager,
             session_manager,
             background_manager,
-            lua_states: Arc::new(DashMap::new()),
+            session_states: Arc::new(DashMap::new()),
             pending_permissions: Arc::new(DashMap::new()),
-            hook_chain: Arc::new(LlmHookChain::new()),
             mcp_gateway,
             llm_config,
             acp_config,
@@ -271,7 +269,7 @@ impl AgentManager {
     }
 
     pub fn cleanup_session(&self, session_id: &str) {
-        if self.lua_states.remove(session_id).is_some() {
+        if self.session_states.remove(session_id).is_some() {
             debug!(session_id = %session_id, "Cleaned up Lua state for session");
         }
 
@@ -366,8 +364,8 @@ impl AgentManager {
             .unwrap_or_default()
     }
 
-    fn get_or_create_lua_state(&self, session_id: &str) -> Arc<Mutex<SessionLuaState>> {
-        if let Some(state) = self.lua_states.get(session_id) {
+    fn get_or_create_session_state(&self, session_id: &str) -> Arc<Mutex<SessionEventState>> {
+        if let Some(state) = self.session_states.get(session_id) {
             return state.clone();
         }
 
@@ -386,13 +384,57 @@ impl AgentManager {
         register_permission_hook_api(&lua, permission_hooks.clone(), permission_functions.clone())
             .expect("Failed to register crucible.permissions API");
 
-        let state = Arc::new(Mutex::new(SessionLuaState {
+        let reactor = Reactor::new();
+
+        let mut reactor = reactor;
+        {
+            let kiln_path = self
+                .session_manager
+                .get_session(session_id)
+                .map(|s| s.kiln.clone());
+            if let Some(kiln_path) = kiln_path {
+                let paths = DiscoveryPaths::new("handlers", Some(kiln_path.as_path()));
+                let existing = paths.existing_paths();
+                if !existing.is_empty() {
+                    match LuaScriptHandlerRegistry::discover(&existing) {
+                        Ok(handler_registry) => match handler_registry.to_core_handlers() {
+                            Ok(handlers) => {
+                                let mut loaded_count = 0;
+                                for handler in handlers {
+                                    let name = handler.name().to_string();
+                                    if let Err(e) = reactor.register(handler) {
+                                        warn!("Failed to register Lua handler {}: {}", name, e);
+                                    } else {
+                                        loaded_count += 1;
+                                        debug!("Loaded Lua handler: {}", name);
+                                    }
+                                }
+                                if loaded_count > 0 {
+                                    info!(session_id = %session_id, "Loaded {} Lua handlers", loaded_count);
+                                }
+                            }
+                            Err(e) => {
+                                warn!("Failed to create core handlers from Lua: {}", e);
+                            }
+                        },
+                        Err(e) => {
+                            warn!("Failed to discover Lua handlers: {}", e);
+                        }
+                    }
+                } else {
+                    debug!(session_id = %session_id, "No handler directories found, skipping Lua handlers");
+                }
+            }
+        }
+
+        let state = Arc::new(Mutex::new(SessionEventState {
             lua,
             registry,
             permission_hooks,
             permission_functions,
+            reactor,
         }));
-        self.lua_states
+        self.session_states
             .insert(session_id.to_string(), state.clone());
         state
     }
@@ -759,11 +801,10 @@ impl AgentManager {
         let session_id_owned = session_id.to_string();
         let message_id_clone = message_id.clone();
         let request_state = self.request_state.clone();
-        let lua_state = self.get_or_create_lua_state(session_id);
+        let session_state = self.get_or_create_session_state(session_id);
         let workspace_path = session.workspace.clone();
 
         let pending_permissions = self.pending_permissions.clone();
-        let hook_chain = self.hook_chain.clone();
         let model = agent_config.model.clone();
 
         let task = tokio::spawn(async move {
@@ -786,11 +827,10 @@ impl AgentManager {
                     &message_id_clone,
                     &event_tx_clone,
                     &mut accumulated_response,
-                    lua_state,
+                    session_state,
                     false,
                     pending_permissions,
                     workspace_path,
-                    hook_chain,
                     model,
                 ) => {}
             }
@@ -1051,43 +1091,53 @@ impl AgentManager {
         message_id: &str,
         event_tx: &broadcast::Sender<SessionEventMessage>,
         accumulated_response: &mut String,
-        lua_state: Arc<Mutex<SessionLuaState>>,
+        session_state: Arc<Mutex<SessionEventState>>,
         is_continuation: bool,
         pending_permissions: Arc<DashMap<String, HashMap<PermissionId, PendingPermission>>>,
         workspace_path: PathBuf,
-        hook_chain: Arc<LlmHookChain>,
         model: String,
     ) {
-        let pre_ctx = PreLlmContext {
-            prompt: content,
-            model: if model.is_empty() {
-                "unknown".to_string()
-            } else {
-                model.clone()
-            },
-            system_prompt: None,
-            context_messages: vec![],
-            session_id: session_id.to_string(),
-        };
-
-        let prompt = match hook_chain.run_pre_llm(pre_ctx).await {
-            PreLlmResult::Continue(modified_ctx) => modified_ctx.prompt,
-            PreLlmResult::Cancel(reason) => {
-                if !emit_event(
-                    event_tx,
-                    SessionEventMessage::ended(
-                        session_id,
-                        format!("error: pre-llm hook cancelled request: {reason}"),
-                    ),
-                ) {
-                    warn!(session_id = %session_id, "No subscribers for pre_llm cancellation event");
+        let content = {
+            let mut state = session_state.lock().await;
+            let pre_event = SessionEvent::PreLlmCall {
+                prompt: content.clone(),
+                model: model.clone(),
+            };
+            match state.reactor.emit(pre_event).await {
+                Ok(EmitResult::Completed { event, .. }) => {
+                    if let SessionEvent::PreLlmCall { prompt, .. } = event {
+                        prompt
+                    } else {
+                        warn!(session_id = %session_id, "PreLlmCall handler returned unexpected event type, using original prompt");
+                        content
+                    }
                 }
-                return;
+                Ok(EmitResult::Cancelled { by_handler, .. }) => {
+                    warn!(session_id = %session_id, handler = %by_handler, "PreLlmCall cancelled by handler");
+                    if !emit_event(
+                        event_tx,
+                        SessionEventMessage::ended(
+                            session_id,
+                            format!("cancelled by handler: {}", by_handler),
+                        ),
+                    ) {
+                        warn!(session_id = %session_id, "No subscribers for cancelled event");
+                    }
+                    return;
+                }
+                Ok(EmitResult::Failed { handler, error, .. }) => {
+                    warn!(session_id = %session_id, handler = %handler, error = %error, "PreLlmCall handler failed, using original prompt (fail-open)");
+                    content
+                }
+                Err(error) => {
+                    warn!(session_id = %session_id, error = %error, "PreLlmCall emit failed, using original prompt (fail-open)");
+                    content
+                }
             }
         };
 
         let mut agent_guard = agent.lock().await;
-        let mut stream = agent_guard.send_message_stream(prompt);
+        let mut stream = agent_guard.send_message_stream(content);
 
         while let Some(result) = stream.next().await {
             match result {
@@ -1139,6 +1189,52 @@ impl AgentManager {
                                 .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
                             let args = tc.arguments.clone().unwrap_or(serde_json::Value::Null);
 
+                            {
+                                let mut state = session_state.lock().await;
+                                let pre_tool_event = SessionEvent::PreToolCall {
+                                    name: tc.name.clone(),
+                                    args: args.clone(),
+                                };
+                                match state.reactor.emit(pre_tool_event).await {
+                                    Ok(EmitResult::Cancelled { by_handler, .. }) => {
+                                        warn!(
+                                            session_id = %session_id,
+                                            tool = %tc.name,
+                                            handler = %by_handler,
+                                            "PreToolCall cancelled by handler"
+                                        );
+                                        let error_msg =
+                                            format!("Tool call denied by handler: {}", by_handler);
+                                        if !emit_event(
+                                            event_tx,
+                                            SessionEventMessage::tool_result(
+                                                session_id,
+                                                &call_id,
+                                                &tc.name,
+                                                serde_json::json!({ "error": error_msg }),
+                                            ),
+                                        ) {
+                                            warn!(
+                                                session_id = %session_id,
+                                                tool = %tc.name,
+                                                "No subscribers for handler denied tool_result event"
+                                            );
+                                        }
+                                        continue;
+                                    }
+                                    Ok(EmitResult::Failed { handler, error, .. }) => {
+                                        warn!(
+                                            session_id = %session_id,
+                                            tool = %tc.name,
+                                            handler = %handler,
+                                            error = %error,
+                                            "PreToolCall handler failed, continuing (fail-open)"
+                                        );
+                                    }
+                                    Ok(EmitResult::Completed { .. }) | Err(_) => {}
+                                }
+                            }
+
                             if !is_safe(&tc.name) {
                                 // Check if tool call matches a whitelisted pattern
                                 let project_path = workspace_path.to_string_lossy();
@@ -1157,7 +1253,7 @@ impl AgentManager {
                                 } else {
                                     // Check Lua permission hooks (with 1-second timeout)
                                     let hook_result = Self::execute_permission_hooks_with_timeout(
-                                        &lua_state, &tc.name, &args, session_id,
+                                        &session_state, &tc.name, &args, session_id,
                                     )
                                     .await;
 
@@ -1412,7 +1508,7 @@ impl AgentManager {
                             session_id,
                             message_id,
                             accumulated_response,
-                            &lua_state,
+                            &session_state,
                             is_continuation,
                         )
                         .await;
@@ -1453,11 +1549,10 @@ impl AgentManager {
                                 &injection_message_id,
                                 event_tx,
                                 accumulated_response,
-                                lua_state,
+                                session_state.clone(),
                                 true,
                                 pending_permissions.clone(),
                                 workspace_path.clone(),
-                                hook_chain.clone(),
                                 model.clone(),
                             ))
                             .await;
@@ -1479,22 +1574,12 @@ impl AgentManager {
             }
         }
 
-        let post_ctx = PostLlmContext {
-            response: accumulated_response.clone(),
-            model: if model.is_empty() {
-                "unknown".to_string()
-            } else {
-                model.clone()
-            },
-            session_id: session_id.to_string(),
-            duration_ms: 0,
-            token_count: None,
-        };
-
-        hook_chain.run_post_llm(&post_ctx).await;
-
         let response_summary: String = accumulated_response.chars().take(200).collect();
-        let post_model = post_ctx.model.clone();
+        let post_model = if model.is_empty() {
+            "unknown".to_string()
+        } else {
+            model.clone()
+        };
         let post_event = SessionEvent::PostLlmCall {
             response_summary: response_summary.clone(),
             model: post_model.clone(),
@@ -1516,18 +1601,30 @@ impl AgentManager {
         ) {
             warn!(session_id = %session_id, "No subscribers for post_llm_call event");
         }
+        {
+            let mut state = session_state.lock().await;
+            let reactor_post_event = SessionEvent::PostLlmCall {
+                response_summary: response_summary.clone(),
+                model: post_model.clone(),
+                duration_ms: 0,
+                token_count: None,
+            };
+            if let Err(e) = state.reactor.emit(reactor_post_event).await {
+                warn!(session_id = %session_id, error = %e, "PostLlmCall Reactor emit failed (non-fatal)");
+            }
+        }
     }
 
     async fn dispatch_turn_complete_handlers(
         session_id: &str,
         message_id: &str,
         response: &str,
-        lua_state: &Arc<Mutex<SessionLuaState>>,
+        session_state: &Arc<Mutex<SessionEventState>>,
         is_continuation: bool,
     ) -> Option<(String, String)> {
         use crucible_lua::ScriptHandlerResult;
 
-        let state = lua_state.lock().await;
+        let state = session_state.lock().await;
         let handlers = state.registry.runtime_handlers_for("turn:complete");
 
         if handlers.is_empty() {
@@ -1660,7 +1757,7 @@ impl AgentManager {
     }
 
     async fn execute_permission_hooks_with_timeout(
-        lua_state: &Arc<Mutex<SessionLuaState>>,
+        session_state: &Arc<Mutex<SessionEventState>>,
         tool_name: &str,
         args: &serde_json::Value,
         session_id: &str,
@@ -1677,7 +1774,7 @@ impl AgentManager {
             file_path,
         };
 
-        let state = lua_state.lock().await;
+        let state = session_state.lock().await;
         let hooks_guard = state.permission_hooks.lock().unwrap();
         let functions_guard = state.permission_functions.lock().unwrap();
 
@@ -2247,12 +2344,10 @@ impl AgentManager {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::llm_hooks::LlmHook;
-    use crate::precognition::DaemonPrecognition;
     use crate::session_storage::FileSessionStorage;
     use async_trait::async_trait;
-    use crucible_core::events::llm_hook_context::{PostLlmContext, PreLlmContext, PreLlmResult};
     use crucible_core::enrichment::EmbeddingProvider;
+    use crucible_core::events::handler::{Handler, HandlerContext, HandlerResult};
     use crucible_core::parser::ParsedNote;
     use crucible_core::session::SessionType;
     use crucible_core::traits::chat::{
@@ -2260,13 +2355,11 @@ mod tests {
     };
     use crucible_core::traits::knowledge::NoteInfo;
     use crucible_core::traits::KnowledgeRepository;
-    use crucible_core::types::{DocumentId, SearchResult};
+    use crucible_core::types::SearchResult;
     use futures::stream::BoxStream;
     use futures::StreamExt;
     use std::collections::HashMap;
     use std::fs;
-    use std::sync::atomic::{AtomicUsize, Ordering};
-    use std::sync::Mutex as StdMutex;
     use tempfile::TempDir;
     use tokio::time::{timeout, Duration};
 
@@ -2276,54 +2369,78 @@ mod tests {
         chunks: Vec<ChatChunk>,
     }
 
-    struct CountingStreamAgent {
-        send_calls: Arc<AtomicUsize>,
-        last_prompt: Arc<StdMutex<Option<String>>>,
-        response: String,
+    struct MockHandler {
+        name: String,
+        event_pattern: String,
+        call_count: Arc<std::sync::atomic::AtomicUsize>,
+        behavior: MockHandlerBehavior,
     }
 
-    struct ModifyPromptHook {
-        suffix: String,
-        pre_calls: Arc<AtomicUsize>,
+    enum MockHandlerBehavior {
+        Passthrough,
+        ModifyPrompt(String),
+        Cancel,
+        FatalError(String),
     }
 
-    #[async_trait]
-    impl LlmHook for ModifyPromptHook {
-        async fn on_pre_llm(&self, mut ctx: PreLlmContext) -> anyhow::Result<PreLlmResult> {
-            self.pre_calls.fetch_add(1, Ordering::SeqCst);
-            ctx.prompt.push_str(&self.suffix);
-            Ok(PreLlmResult::Continue(ctx))
+    #[async_trait::async_trait]
+    impl Handler for MockHandler {
+        fn name(&self) -> &str {
+            &self.name
         }
 
-        async fn on_post_llm(&self, _ctx: &PostLlmContext) -> anyhow::Result<()> {
-            Ok(())
+        fn event_pattern(&self) -> &str {
+            &self.event_pattern
+        }
+
+        async fn handle(
+            &self,
+            _ctx: &mut HandlerContext,
+            event: SessionEvent,
+        ) -> HandlerResult<SessionEvent> {
+            self.call_count
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+
+            match &self.behavior {
+                MockHandlerBehavior::Passthrough => HandlerResult::Continue(event),
+                MockHandlerBehavior::ModifyPrompt(new_prompt) => {
+                    if let SessionEvent::PreLlmCall { model, .. } = event {
+                        HandlerResult::Continue(SessionEvent::PreLlmCall {
+                            prompt: new_prompt.clone(),
+                            model,
+                        })
+                    } else {
+                        HandlerResult::Continue(event)
+                    }
+                }
+                MockHandlerBehavior::Cancel => HandlerResult::Cancel,
+                MockHandlerBehavior::FatalError(msg) => {
+                    HandlerResult::FatalError(crucible_core::events::EventError::other(msg.clone()))
+                }
+            }
         }
     }
 
-    struct CancelHook {
-        reason: String,
+    struct PromptCapturingAgent {
+        received_prompt: Arc<std::sync::Mutex<Option<String>>>,
+        chunks: Vec<ChatChunk>,
     }
 
-    #[async_trait]
-    impl LlmHook for CancelHook {
-        async fn on_pre_llm(&self, _ctx: PreLlmContext) -> anyhow::Result<PreLlmResult> {
-            Ok(PreLlmResult::Cancel(self.reason.clone()))
+    #[async_trait::async_trait]
+    impl AgentHandle for PromptCapturingAgent {
+        fn send_message_stream(&mut self, content: String) -> BoxStream<'static, ChatResult<ChatChunk>> {
+            if let Ok(mut guard) = self.received_prompt.try_lock() {
+                *guard = Some(content);
+            }
+            let chunks = self.chunks.clone();
+            futures::stream::iter(chunks.into_iter().map(Ok)).boxed()
         }
 
-        async fn on_post_llm(&self, _ctx: &PostLlmContext) -> anyhow::Result<()> {
-            Ok(())
-        }
-    }
-
-    struct ErrorHook;
-
-    #[async_trait]
-    impl LlmHook for ErrorHook {
-        async fn on_pre_llm(&self, _ctx: PreLlmContext) -> anyhow::Result<PreLlmResult> {
-            anyhow::bail!("test pre-llm hook failure")
+        fn is_connected(&self) -> bool {
+            true
         }
 
-        async fn on_post_llm(&self, _ctx: &PostLlmContext) -> anyhow::Result<()> {
+        async fn set_mode_str(&mut self, _: &str) -> ChatResult<()> {
             Ok(())
         }
     }
@@ -2407,35 +2524,6 @@ mod tests {
         fn send_message_stream(&mut self, _: String) -> BoxStream<'static, ChatResult<ChatChunk>> {
             let chunks = self.chunks.clone();
             futures::stream::iter(chunks.into_iter().map(Ok)).boxed()
-        }
-
-        fn is_connected(&self) -> bool {
-            true
-        }
-
-        async fn set_mode_str(&mut self, _: &str) -> ChatResult<()> {
-            Ok(())
-        }
-    }
-
-    #[async_trait::async_trait]
-    impl AgentHandle for CountingStreamAgent {
-        fn send_message_stream(&mut self, prompt: String) -> BoxStream<'static, ChatResult<ChatChunk>> {
-            self.send_calls.fetch_add(1, Ordering::SeqCst);
-            *self.last_prompt.lock().expect("last_prompt lock poisoned") = Some(prompt);
-
-            let chunk = ChatChunk {
-                delta: self.response.clone(),
-                done: true,
-                tool_calls: None,
-                tool_results: None,
-                reasoning: None,
-                usage: None,
-                subagent_events: None,
-                precognition_notes_count: None,
-            };
-
-            futures::stream::iter(vec![Ok(chunk)]).boxed()
         }
 
         fn is_connected(&self) -> bool {
@@ -2542,6 +2630,569 @@ mod tests {
             None,
             None,
         )
+    }
+
+    #[tokio::test]
+    async fn reactor_pre_llm_modifies_prompt() {
+        let tmp = TempDir::new().unwrap();
+        let storage = Arc::new(FileSessionStorage::new());
+        let session_manager = Arc::new(SessionManager::with_storage(storage));
+        let session = session_manager
+            .create_session(
+                SessionType::Chat,
+                tmp.path().to_path_buf(),
+                None,
+                vec![],
+                None,
+            )
+            .await
+            .unwrap();
+
+        let agent_manager = create_test_agent_manager(session_manager.clone());
+        agent_manager
+            .configure_agent(&session.id, test_agent())
+            .await
+            .unwrap();
+
+        let call_count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let handler = MockHandler {
+            name: "test-modify-prompt".to_string(),
+            event_pattern: "pre_llm_call".to_string(),
+            call_count: call_count.clone(),
+            behavior: MockHandlerBehavior::ModifyPrompt("MODIFIED: hello".to_string()),
+        };
+        let session_state = agent_manager.get_or_create_session_state(&session.id);
+        session_state
+            .lock()
+            .await
+            .reactor
+            .register(Box::new(handler))
+            .unwrap();
+
+        let received_prompt = Arc::new(std::sync::Mutex::new(None::<String>));
+        agent_manager.agent_cache.insert(
+            session.id.clone(),
+            Arc::new(Mutex::new(Box::new(PromptCapturingAgent {
+                received_prompt: received_prompt.clone(),
+                chunks: vec![ChatChunk {
+                    delta: "ok".to_string(),
+                    done: true,
+                    tool_calls: None,
+                    tool_results: None,
+                    reasoning: None,
+                    usage: None,
+                    subagent_events: None,
+                    precognition_notes_count: None,
+                }],
+            }) as BoxedAgentHandle)),
+        );
+
+        let (event_tx, mut event_rx) = broadcast::channel::<SessionEventMessage>(64);
+        agent_manager
+            .send_message(&session.id, "hello".to_string(), &event_tx)
+            .await
+            .unwrap();
+
+        let _ = next_event_or_skip(&mut event_rx, "message_complete").await;
+        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+
+        assert_eq!(call_count.load(std::sync::atomic::Ordering::SeqCst), 1);
+        let prompt = received_prompt.lock().unwrap();
+        assert_eq!(prompt.as_deref(), Some("MODIFIED: hello"));
+    }
+
+    #[tokio::test]
+    async fn reactor_pre_llm_cancel_aborts() {
+        let tmp = TempDir::new().unwrap();
+        let storage = Arc::new(FileSessionStorage::new());
+        let session_manager = Arc::new(SessionManager::with_storage(storage));
+        let session = session_manager
+            .create_session(
+                SessionType::Chat,
+                tmp.path().to_path_buf(),
+                None,
+                vec![],
+                None,
+            )
+            .await
+            .unwrap();
+
+        let agent_manager = create_test_agent_manager(session_manager.clone());
+        agent_manager
+            .configure_agent(&session.id, test_agent())
+            .await
+            .unwrap();
+
+        let call_count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let handler = MockHandler {
+            name: "test-cancel-pre-llm".to_string(),
+            event_pattern: "pre_llm_call".to_string(),
+            call_count: call_count.clone(),
+            behavior: MockHandlerBehavior::Cancel,
+        };
+        let session_state = agent_manager.get_or_create_session_state(&session.id);
+        session_state
+            .lock()
+            .await
+            .reactor
+            .register(Box::new(handler))
+            .unwrap();
+
+        let received_prompt = Arc::new(std::sync::Mutex::new(None::<String>));
+        agent_manager.agent_cache.insert(
+            session.id.clone(),
+            Arc::new(Mutex::new(Box::new(PromptCapturingAgent {
+                received_prompt: received_prompt.clone(),
+                chunks: vec![ChatChunk {
+                    delta: "should-not-run".to_string(),
+                    done: true,
+                    tool_calls: None,
+                    tool_results: None,
+                    reasoning: None,
+                    usage: None,
+                    subagent_events: None,
+                    precognition_notes_count: None,
+                }],
+            }) as BoxedAgentHandle)),
+        );
+
+        let (event_tx, mut event_rx) = broadcast::channel::<SessionEventMessage>(64);
+        agent_manager
+            .send_message(&session.id, "hello".to_string(), &event_tx)
+            .await
+            .unwrap();
+
+        let ended = next_event_or_skip(&mut event_rx, "ended").await;
+
+        assert_eq!(call_count.load(std::sync::atomic::Ordering::SeqCst), 1);
+        assert!(ended.data["reason"].as_str().unwrap_or_default().contains("cancelled by handler"));
+        let prompt = received_prompt.lock().unwrap();
+        assert!(prompt.is_none());
+    }
+
+    #[tokio::test]
+    async fn reactor_pre_llm_empty_passthrough() {
+        let tmp = TempDir::new().unwrap();
+        let storage = Arc::new(FileSessionStorage::new());
+        let session_manager = Arc::new(SessionManager::with_storage(storage));
+        let session = session_manager
+            .create_session(
+                SessionType::Chat,
+                tmp.path().to_path_buf(),
+                None,
+                vec![],
+                None,
+            )
+            .await
+            .unwrap();
+
+        let agent_manager = create_test_agent_manager(session_manager.clone());
+        agent_manager
+            .configure_agent(&session.id, test_agent())
+            .await
+            .unwrap();
+
+        let received_prompt = Arc::new(std::sync::Mutex::new(None::<String>));
+        agent_manager.agent_cache.insert(
+            session.id.clone(),
+            Arc::new(Mutex::new(Box::new(PromptCapturingAgent {
+                received_prompt: received_prompt.clone(),
+                chunks: vec![ChatChunk {
+                    delta: "ok".to_string(),
+                    done: true,
+                    tool_calls: None,
+                    tool_results: None,
+                    reasoning: None,
+                    usage: None,
+                    subagent_events: None,
+                    precognition_notes_count: None,
+                }],
+            }) as BoxedAgentHandle)),
+        );
+
+        let (event_tx, mut event_rx) = broadcast::channel::<SessionEventMessage>(64);
+        agent_manager
+            .send_message(&session.id, "hello".to_string(), &event_tx)
+            .await
+            .unwrap();
+
+        let _ = next_event_or_skip(&mut event_rx, "message_complete").await;
+
+        let prompt = received_prompt.lock().unwrap();
+        assert_eq!(prompt.as_deref(), Some("hello"));
+    }
+
+    #[tokio::test]
+    async fn reactor_pre_llm_error_fails_open() {
+        let tmp = TempDir::new().unwrap();
+        let storage = Arc::new(FileSessionStorage::new());
+        let session_manager = Arc::new(SessionManager::with_storage(storage));
+        let session = session_manager
+            .create_session(
+                SessionType::Chat,
+                tmp.path().to_path_buf(),
+                None,
+                vec![],
+                None,
+            )
+            .await
+            .unwrap();
+
+        let agent_manager = create_test_agent_manager(session_manager.clone());
+        agent_manager
+            .configure_agent(&session.id, test_agent())
+            .await
+            .unwrap();
+
+        let call_count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let handler = MockHandler {
+            name: "test-fatal-pre-llm".to_string(),
+            event_pattern: "pre_llm_call".to_string(),
+            call_count: call_count.clone(),
+            behavior: MockHandlerBehavior::FatalError("boom".to_string()),
+        };
+        let session_state = agent_manager.get_or_create_session_state(&session.id);
+        session_state
+            .lock()
+            .await
+            .reactor
+            .register(Box::new(handler))
+            .unwrap();
+
+        let received_prompt = Arc::new(std::sync::Mutex::new(None::<String>));
+        agent_manager.agent_cache.insert(
+            session.id.clone(),
+            Arc::new(Mutex::new(Box::new(PromptCapturingAgent {
+                received_prompt: received_prompt.clone(),
+                chunks: vec![ChatChunk {
+                    delta: "ok".to_string(),
+                    done: true,
+                    tool_calls: None,
+                    tool_results: None,
+                    reasoning: None,
+                    usage: None,
+                    subagent_events: None,
+                    precognition_notes_count: None,
+                }],
+            }) as BoxedAgentHandle)),
+        );
+
+        let (event_tx, mut event_rx) = broadcast::channel::<SessionEventMessage>(64);
+        agent_manager
+            .send_message(&session.id, "hello".to_string(), &event_tx)
+            .await
+            .unwrap();
+
+        let _ = next_event_or_skip(&mut event_rx, "message_complete").await;
+
+        assert_eq!(call_count.load(std::sync::atomic::Ordering::SeqCst), 1);
+        let prompt = received_prompt.lock().unwrap();
+        assert_eq!(prompt.as_deref(), Some("hello"));
+    }
+
+    #[tokio::test]
+    async fn reactor_post_llm_fires_after_stream() {
+        let tmp = TempDir::new().unwrap();
+        let storage = Arc::new(FileSessionStorage::new());
+        let session_manager = Arc::new(SessionManager::with_storage(storage));
+        let session = session_manager
+            .create_session(
+                SessionType::Chat,
+                tmp.path().to_path_buf(),
+                None,
+                vec![],
+                None,
+            )
+            .await
+            .unwrap();
+
+        let agent_manager = create_test_agent_manager(session_manager.clone());
+        agent_manager
+            .configure_agent(&session.id, test_agent())
+            .await
+            .unwrap();
+
+        let call_count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let handler = MockHandler {
+            name: "test-post-llm".to_string(),
+            event_pattern: "post_llm_call".to_string(),
+            call_count: call_count.clone(),
+            behavior: MockHandlerBehavior::Passthrough,
+        };
+        let session_state = agent_manager.get_or_create_session_state(&session.id);
+        session_state
+            .lock()
+            .await
+            .reactor
+            .register(Box::new(handler))
+            .unwrap();
+
+        agent_manager.agent_cache.insert(
+            session.id.clone(),
+            Arc::new(Mutex::new(Box::new(StreamingMockAgent {
+                chunks: vec![ChatChunk {
+                    delta: "ok".to_string(),
+                    done: true,
+                    tool_calls: None,
+                    tool_results: None,
+                    reasoning: None,
+                    usage: None,
+                    subagent_events: None,
+                    precognition_notes_count: None,
+                }],
+            }) as BoxedAgentHandle)),
+        );
+
+        let (event_tx, mut event_rx) = broadcast::channel::<SessionEventMessage>(64);
+        agent_manager
+            .send_message(&session.id, "hello".to_string(), &event_tx)
+            .await
+            .unwrap();
+
+        let _ = next_event_or_skip(&mut event_rx, "message_complete").await;
+        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+
+        assert_eq!(call_count.load(std::sync::atomic::Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn reactor_pre_tool_cancel_denies() {
+        let tmp = TempDir::new().unwrap();
+        let storage = Arc::new(FileSessionStorage::new());
+        let session_manager = Arc::new(SessionManager::with_storage(storage));
+        let session = session_manager
+            .create_session(
+                SessionType::Chat,
+                tmp.path().to_path_buf(),
+                None,
+                vec![],
+                None,
+            )
+            .await
+            .unwrap();
+
+        let agent_manager = create_test_agent_manager(session_manager.clone());
+        agent_manager
+            .configure_agent(&session.id, test_agent())
+            .await
+            .unwrap();
+
+        let call_count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let handler = MockHandler {
+            name: "test-pre-tool-cancel".to_string(),
+            event_pattern: "pre_tool_call".to_string(),
+            call_count: call_count.clone(),
+            behavior: MockHandlerBehavior::Cancel,
+        };
+        let session_state = agent_manager.get_or_create_session_state(&session.id);
+        session_state
+            .lock()
+            .await
+            .reactor
+            .register(Box::new(handler))
+            .unwrap();
+
+        agent_manager.agent_cache.insert(
+            session.id.clone(),
+            Arc::new(Mutex::new(Box::new(StreamingMockAgent {
+                chunks: vec![
+                    ChatChunk {
+                        delta: String::new(),
+                        done: false,
+                        tool_calls: Some(vec![ChatToolCall {
+                            name: "write".to_string(),
+                            arguments: Some(serde_json::json!({ "path": "foo.txt", "content": "x" })),
+                            id: Some("call-pre-tool-cancel".to_string()),
+                        }]),
+                        tool_results: None,
+                        reasoning: None,
+                        usage: None,
+                        subagent_events: None,
+                        precognition_notes_count: None,
+                    },
+                    ChatChunk {
+                        delta: "done".to_string(),
+                        done: true,
+                        tool_calls: None,
+                        tool_results: None,
+                        reasoning: None,
+                        usage: None,
+                        subagent_events: None,
+                        precognition_notes_count: None,
+                    },
+                ],
+            }) as BoxedAgentHandle)),
+        );
+
+        let (event_tx, mut event_rx) = broadcast::channel::<SessionEventMessage>(64);
+        agent_manager
+            .send_message(&session.id, "run tool".to_string(), &event_tx)
+            .await
+            .unwrap();
+
+        let tool_result = next_event_or_skip(&mut event_rx, "tool_result").await;
+        let _ = next_event_or_skip(&mut event_rx, "message_complete").await;
+
+        assert_eq!(call_count.load(std::sync::atomic::Ordering::SeqCst), 1);
+        assert_eq!(tool_result.data["tool"], "write");
+        assert!(tool_result.data["result"]["error"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("Tool call denied by handler"));
+    }
+
+    #[tokio::test]
+    async fn reactor_persists_across_messages() {
+        let tmp = TempDir::new().unwrap();
+        let storage = Arc::new(FileSessionStorage::new());
+        let session_manager = Arc::new(SessionManager::with_storage(storage));
+        let session = session_manager
+            .create_session(
+                SessionType::Chat,
+                tmp.path().to_path_buf(),
+                None,
+                vec![],
+                None,
+            )
+            .await
+            .unwrap();
+
+        let agent_manager = create_test_agent_manager(session_manager.clone());
+        agent_manager
+            .configure_agent(&session.id, test_agent())
+            .await
+            .unwrap();
+
+        let call_count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let handler = MockHandler {
+            name: "test-persists".to_string(),
+            event_pattern: "pre_llm_call".to_string(),
+            call_count: call_count.clone(),
+            behavior: MockHandlerBehavior::Passthrough,
+        };
+        let session_state = agent_manager.get_or_create_session_state(&session.id);
+        session_state
+            .lock()
+            .await
+            .reactor
+            .register(Box::new(handler))
+            .unwrap();
+
+        agent_manager.agent_cache.insert(
+            session.id.clone(),
+            Arc::new(Mutex::new(Box::new(StreamingMockAgent {
+                chunks: vec![ChatChunk {
+                    delta: "ok".to_string(),
+                    done: true,
+                    tool_calls: None,
+                    tool_results: None,
+                    reasoning: None,
+                    usage: None,
+                    subagent_events: None,
+                    precognition_notes_count: None,
+                }],
+            }) as BoxedAgentHandle)),
+        );
+
+        let (event_tx, mut event_rx) = broadcast::channel::<SessionEventMessage>(64);
+        agent_manager
+            .send_message(&session.id, "one".to_string(), &event_tx)
+            .await
+            .unwrap();
+        let _ = next_event_or_skip(&mut event_rx, "message_complete").await;
+
+        agent_manager
+            .send_message(&session.id, "two".to_string(), &event_tx)
+            .await
+            .unwrap();
+        let _ = next_event_or_skip(&mut event_rx, "message_complete").await;
+        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+
+        assert_eq!(call_count.load(std::sync::atomic::Ordering::SeqCst), 2);
+    }
+
+    #[tokio::test]
+    async fn reactor_cleanup_drops_state() {
+        let tmp = TempDir::new().unwrap();
+        let storage = Arc::new(FileSessionStorage::new());
+        let session_manager = Arc::new(SessionManager::with_storage(storage));
+        let session = session_manager
+            .create_session(
+                SessionType::Chat,
+                tmp.path().to_path_buf(),
+                None,
+                vec![],
+                None,
+            )
+            .await
+            .unwrap();
+
+        let agent_manager = create_test_agent_manager(session_manager);
+
+        let _ = agent_manager.get_or_create_session_state(&session.id);
+        assert!(agent_manager.session_states.contains_key(&session.id));
+
+        agent_manager.cleanup_session(&session.id);
+
+        assert!(!agent_manager.session_states.contains_key(&session.id));
+    }
+
+    #[tokio::test]
+    async fn reactor_lua_handler_discovery_empty_dir() {
+        let tmp = TempDir::new().unwrap();
+        let storage = Arc::new(FileSessionStorage::new());
+        let session_manager = Arc::new(SessionManager::with_storage(storage));
+        let session = session_manager
+            .create_session(
+                SessionType::Chat,
+                tmp.path().to_path_buf(),
+                None,
+                vec![],
+                None,
+            )
+            .await
+            .unwrap();
+
+        let agent_manager = create_test_agent_manager(session_manager.clone());
+        agent_manager
+            .configure_agent(&session.id, test_agent())
+            .await
+            .unwrap();
+
+        let session_state = agent_manager.get_or_create_session_state(&session.id);
+        {
+            let state = session_state.lock().await;
+            assert!(state.reactor.is_empty());
+        }
+
+        let received_prompt = Arc::new(std::sync::Mutex::new(None::<String>));
+        agent_manager.agent_cache.insert(
+            session.id.clone(),
+            Arc::new(Mutex::new(Box::new(PromptCapturingAgent {
+                received_prompt: received_prompt.clone(),
+                chunks: vec![ChatChunk {
+                    delta: "ok".to_string(),
+                    done: true,
+                    tool_calls: None,
+                    tool_results: None,
+                    reasoning: None,
+                    usage: None,
+                    subagent_events: None,
+                    precognition_notes_count: None,
+                }],
+            }) as BoxedAgentHandle)),
+        );
+
+        let (event_tx, mut event_rx) = broadcast::channel::<SessionEventMessage>(64);
+        agent_manager
+            .send_message(&session.id, "hello".to_string(), &event_tx)
+            .await
+            .unwrap();
+
+        let _ = next_event_or_skip(&mut event_rx, "message_complete").await;
+
+        let prompt = received_prompt.lock().unwrap();
+        assert_eq!(prompt.as_deref(), Some("hello"));
     }
 
     #[tokio::test]
@@ -3025,277 +3676,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn hook_chain_pre_llm_modifies_prompt() {
-        let tmp = TempDir::new().unwrap();
-        let storage = Arc::new(FileSessionStorage::new());
-        let session_manager = Arc::new(SessionManager::with_storage(storage));
-
-        let session = session_manager
-            .create_session(
-                SessionType::Chat,
-                tmp.path().to_path_buf(),
-                None,
-                vec![],
-                None,
-            )
-            .await
-            .unwrap();
-
-        let mut agent_manager = create_test_agent_manager(session_manager.clone());
-        agent_manager
-            .configure_agent(&session.id, test_agent())
-            .await
-            .unwrap();
-
-        let pre_calls = Arc::new(AtomicUsize::new(0));
-        Arc::get_mut(&mut agent_manager.hook_chain)
-            .expect("hook_chain should be uniquely owned in test")
-            .add_hook(Box::new(ModifyPromptHook {
-                suffix: " [hooked]".to_string(),
-                pre_calls: pre_calls.clone(),
-            }));
-
-        let send_calls = Arc::new(AtomicUsize::new(0));
-        let last_prompt = Arc::new(StdMutex::new(None));
-        agent_manager.agent_cache.insert(
-            session.id.clone(),
-            Arc::new(Mutex::new(Box::new(CountingStreamAgent {
-                send_calls: send_calls.clone(),
-                last_prompt: last_prompt.clone(),
-                response: "ok".to_string(),
-            }) as BoxedAgentHandle)),
-        );
-
-        let (event_tx, mut event_rx) = broadcast::channel::<SessionEventMessage>(64);
-        agent_manager
-            .send_message(&session.id, "hello".to_string(), &event_tx)
-            .await
-            .unwrap();
-
-        let _ = next_event_or_skip(&mut event_rx, "user_message").await;
-        let complete = next_event_or_skip(&mut event_rx, "message_complete").await;
-        assert_eq!(complete.data["full_response"], "ok");
-
-        assert_eq!(pre_calls.load(Ordering::SeqCst), 1);
-        assert_eq!(send_calls.load(Ordering::SeqCst), 1);
-        assert_eq!(
-            last_prompt.lock().unwrap().clone(),
-            Some("hello [hooked]".to_string())
-        );
-    }
-
-    #[tokio::test]
-    async fn hook_chain_post_llm_event_emitted() {
-        let tmp = TempDir::new().unwrap();
-        let storage = Arc::new(FileSessionStorage::new());
-        let session_manager = Arc::new(SessionManager::with_storage(storage));
-
-        let session = session_manager
-            .create_session(
-                SessionType::Chat,
-                tmp.path().to_path_buf(),
-                None,
-                vec![],
-                None,
-            )
-            .await
-            .unwrap();
-
-        let agent_manager = create_test_agent_manager(session_manager.clone());
-        agent_manager
-            .configure_agent(&session.id, test_agent())
-            .await
-            .unwrap();
-
-        let send_calls = Arc::new(AtomicUsize::new(0));
-        let last_prompt = Arc::new(StdMutex::new(None));
-        agent_manager.agent_cache.insert(
-            session.id.clone(),
-            Arc::new(Mutex::new(Box::new(CountingStreamAgent {
-                send_calls: send_calls.clone(),
-                last_prompt,
-                response: "post event response".to_string(),
-            }) as BoxedAgentHandle)),
-        );
-
-        let (event_tx, mut event_rx) = broadcast::channel::<SessionEventMessage>(64);
-        agent_manager
-            .send_message(&session.id, "hello".to_string(), &event_tx)
-            .await
-            .unwrap();
-
-        let _ = next_event_or_skip(&mut event_rx, "user_message").await;
-        let _ = next_event_or_skip(&mut event_rx, "message_complete").await;
-        let post_event = next_event_or_skip(&mut event_rx, "post_llm_call").await;
-
-        assert_eq!(post_event.data["response_summary"], "post event response");
-        assert_eq!(post_event.data["model"], "llama3.2");
-        assert_eq!(send_calls.load(Ordering::SeqCst), 1);
-    }
-
-    #[tokio::test]
-    async fn hook_chain_cancel_prevents_llm_call() {
-        let tmp = TempDir::new().unwrap();
-        let storage = Arc::new(FileSessionStorage::new());
-        let session_manager = Arc::new(SessionManager::with_storage(storage));
-
-        let session = session_manager
-            .create_session(
-                SessionType::Chat,
-                tmp.path().to_path_buf(),
-                None,
-                vec![],
-                None,
-            )
-            .await
-            .unwrap();
-
-        let mut agent_manager = create_test_agent_manager(session_manager.clone());
-        agent_manager
-            .configure_agent(&session.id, test_agent())
-            .await
-            .unwrap();
-
-        Arc::get_mut(&mut agent_manager.hook_chain)
-            .expect("hook_chain should be uniquely owned in test")
-            .add_hook(Box::new(CancelHook {
-                reason: "blocked by test hook".to_string(),
-            }));
-
-        let send_calls = Arc::new(AtomicUsize::new(0));
-        let last_prompt = Arc::new(StdMutex::new(None));
-        agent_manager.agent_cache.insert(
-            session.id.clone(),
-            Arc::new(Mutex::new(Box::new(CountingStreamAgent {
-                send_calls: send_calls.clone(),
-                last_prompt,
-                response: "should-not-run".to_string(),
-            }) as BoxedAgentHandle)),
-        );
-
-        let (event_tx, mut event_rx) = broadcast::channel::<SessionEventMessage>(64);
-        agent_manager
-            .send_message(&session.id, "cancel me".to_string(), &event_tx)
-            .await
-            .unwrap();
-
-        let _ = next_event_or_skip(&mut event_rx, "user_message").await;
-        let ended = next_event_or_skip(&mut event_rx, "ended").await;
-        assert!(ended.data["reason"]
-            .as_str()
-            .unwrap_or_default()
-            .contains("pre-llm hook cancelled request: blocked by test hook"));
-
-        assert_eq!(send_calls.load(Ordering::SeqCst), 0);
-    }
-
-    #[tokio::test]
-    async fn hook_chain_empty_chain_passes_through() {
-        let tmp = TempDir::new().unwrap();
-        let storage = Arc::new(FileSessionStorage::new());
-        let session_manager = Arc::new(SessionManager::with_storage(storage));
-
-        let session = session_manager
-            .create_session(
-                SessionType::Chat,
-                tmp.path().to_path_buf(),
-                None,
-                vec![],
-                None,
-            )
-            .await
-            .unwrap();
-
-        let agent_manager = create_test_agent_manager(session_manager.clone());
-        agent_manager
-            .configure_agent(&session.id, test_agent())
-            .await
-            .unwrap();
-
-        let send_calls = Arc::new(AtomicUsize::new(0));
-        let last_prompt = Arc::new(StdMutex::new(None));
-        agent_manager.agent_cache.insert(
-            session.id.clone(),
-            Arc::new(Mutex::new(Box::new(CountingStreamAgent {
-                send_calls: send_calls.clone(),
-                last_prompt: last_prompt.clone(),
-                response: "plain".to_string(),
-            }) as BoxedAgentHandle)),
-        );
-
-        let (event_tx, mut event_rx) = broadcast::channel::<SessionEventMessage>(64);
-        agent_manager
-            .send_message(&session.id, "no hooks".to_string(), &event_tx)
-            .await
-            .unwrap();
-
-        let _ = next_event_or_skip(&mut event_rx, "user_message").await;
-        let complete = next_event_or_skip(&mut event_rx, "message_complete").await;
-        assert_eq!(complete.data["full_response"], "plain");
-
-        assert_eq!(send_calls.load(Ordering::SeqCst), 1);
-        assert_eq!(
-            last_prompt.lock().unwrap().clone(),
-            Some("no hooks".to_string())
-        );
-    }
-
-    #[tokio::test]
-    async fn hook_chain_error_fails_open() {
-        let tmp = TempDir::new().unwrap();
-        let storage = Arc::new(FileSessionStorage::new());
-        let session_manager = Arc::new(SessionManager::with_storage(storage));
-
-        let session = session_manager
-            .create_session(
-                SessionType::Chat,
-                tmp.path().to_path_buf(),
-                None,
-                vec![],
-                None,
-            )
-            .await
-            .unwrap();
-
-        let mut agent_manager = create_test_agent_manager(session_manager.clone());
-        agent_manager
-            .configure_agent(&session.id, test_agent())
-            .await
-            .unwrap();
-
-        Arc::get_mut(&mut agent_manager.hook_chain)
-            .expect("hook_chain should be uniquely owned in test")
-            .add_hook(Box::new(ErrorHook));
-
-        let send_calls = Arc::new(AtomicUsize::new(0));
-        let last_prompt = Arc::new(StdMutex::new(None));
-        agent_manager.agent_cache.insert(
-            session.id.clone(),
-            Arc::new(Mutex::new(Box::new(CountingStreamAgent {
-                send_calls: send_calls.clone(),
-                last_prompt: last_prompt.clone(),
-                response: "fail-open".to_string(),
-            }) as BoxedAgentHandle)),
-        );
-
-        let (event_tx, mut event_rx) = broadcast::channel::<SessionEventMessage>(64);
-        agent_manager
-            .send_message(&session.id, "keep going".to_string(), &event_tx)
-            .await
-            .unwrap();
-
-        let _ = next_event_or_skip(&mut event_rx, "user_message").await;
-        let complete = next_event_or_skip(&mut event_rx, "message_complete").await;
-        assert_eq!(complete.data["full_response"], "fail-open");
-
-        assert_eq!(send_calls.load(Ordering::SeqCst), 1);
-        assert_eq!(
-            last_prompt.lock().unwrap().clone(),
-            Some("keep going".to_string())
-        );
-    }
-
-    #[tokio::test]
     async fn test_precognition_skipped_when_disabled() {
         let tmp = TempDir::new().unwrap();
         let storage = Arc::new(FileSessionStorage::new());
@@ -3447,111 +3827,13 @@ mod tests {
         assert_no_event_until_message_complete(&mut event_rx, "precognition_complete").await;
     }
 
-    #[tokio::test]
-    async fn test_daemon_precognition_format_matches_expected() {
-        let knowledge_repo = Arc::new(MockKnowledgeRepository {
-            results: vec![
-                SearchResult {
-                    document_id: DocumentId("docs/alpha.md".to_string()),
-                    score: 0.93,
-                    highlights: None,
-                    snippet: Some("Alpha snippet".to_string()),
-                    kiln_path: None,
-                },
-                SearchResult {
-                    document_id: DocumentId("docs/beta.md".to_string()),
-                    score: 0.79,
-                    highlights: None,
-                    snippet: Some("Beta snippet".to_string()),
-                    kiln_path: None,
-                },
-            ],
-        });
-        let embedding_provider = Arc::new(MockEmbeddingProvider { should_fail: false });
-        let precognition = DaemonPrecognition::new(knowledge_repo, embedding_provider);
+    
 
-        let result = precognition.enrich("test query", 5).await.unwrap();
+    
 
-        let expected = "# Context from Knowledge Base\n\n## Context #1: alpha (similarity: 0.93)\n\nAlpha snippet\n\n## Context #2: beta (similarity: 0.79)\n\nBeta snippet\n\n\n---\n\n# User Query\n\ntest query";
-        assert_eq!(result.enriched_prompt, expected);
-        assert_eq!(result.notes_count, 2);
-    }
+    
 
-    #[tokio::test]
-    async fn test_precognition_event_has_correct_notes_count() {
-        let knowledge_repo = Arc::new(MockKnowledgeRepository {
-            results: vec![
-                SearchResult {
-                    document_id: DocumentId("docs/alpha.md".to_string()),
-                    score: 0.93,
-                    highlights: None,
-                    snippet: Some("Alpha snippet".to_string()),
-                    kiln_path: None,
-                },
-                SearchResult {
-                    document_id: DocumentId("docs/beta.md".to_string()),
-                    score: 0.79,
-                    highlights: None,
-                    snippet: Some("Beta snippet".to_string()),
-                    kiln_path: None,
-                },
-                SearchResult {
-                    document_id: DocumentId("docs/gamma.md".to_string()),
-                    score: 0.55,
-                    highlights: None,
-                    snippet: Some("Gamma snippet".to_string()),
-                    kiln_path: None,
-                },
-            ],
-        });
-        let embedding_provider = Arc::new(MockEmbeddingProvider { should_fail: false });
-        let precognition = DaemonPrecognition::new(knowledge_repo, embedding_provider);
-
-        let result = precognition.enrich("count notes", 2).await.unwrap();
-
-        assert_eq!(result.notes_count, 2);
-        assert!(result
-            .enriched_prompt
-            .contains("## Context #1: alpha (similarity: 0.93)"));
-        assert!(result
-            .enriched_prompt
-            .contains("## Context #2: beta (similarity: 0.79)"));
-        assert!(!result
-            .enriched_prompt
-            .contains("## Context #3: gamma (similarity: 0.55)"));
-    }
-
-    #[tokio::test]
-    async fn test_precognition_enrichment_error_fallback() {
-        let knowledge_repo = Arc::new(MockKnowledgeRepository {
-            results: vec![SearchResult {
-                document_id: DocumentId("docs/alpha.md".to_string()),
-                score: 0.93,
-                highlights: None,
-                snippet: Some("Alpha snippet".to_string()),
-                kiln_path: None,
-            }],
-        });
-        let embedding_provider = Arc::new(MockEmbeddingProvider { should_fail: true });
-        let precognition = DaemonPrecognition::new(knowledge_repo, embedding_provider);
-
-        let result = precognition.enrich("fallback query", 5).await.unwrap();
-
-        assert_eq!(result.notes_count, 0);
-        assert_eq!(result.enriched_prompt, "fallback query");
-    }
-
-    #[tokio::test]
-    async fn test_precognition_empty_results_returns_original() {
-        let knowledge_repo = Arc::new(MockKnowledgeRepository { results: vec![] });
-        let embedding_provider = Arc::new(MockEmbeddingProvider { should_fail: false });
-        let precognition = DaemonPrecognition::new(knowledge_repo, embedding_provider);
-
-        let result = precognition.enrich("empty query", 5).await.unwrap();
-
-        assert_eq!(result.notes_count, 0);
-        assert_eq!(result.enriched_prompt, "empty query");
-    }
+    
 
     #[tokio::test]
     async fn test_precognition_complete_event_emitted_when_enrichment_runs() {
@@ -3849,8 +4131,8 @@ mod tests {
             let session_manager = Arc::new(SessionManager::with_storage(storage));
             let agent_manager = create_test_agent_manager(session_manager);
 
-            let lua_state = agent_manager.get_or_create_lua_state("test-session");
-            let state = lua_state.lock().await;
+            let session_state = agent_manager.get_or_create_session_state("test-session");
+            let state = session_state.lock().await;
 
             state
                 .lua
@@ -3885,8 +4167,8 @@ mod tests {
             let session_manager = Arc::new(SessionManager::with_storage(storage));
             let agent_manager = create_test_agent_manager(session_manager);
 
-            let lua_state = agent_manager.get_or_create_lua_state("test-session");
-            let state = lua_state.lock().await;
+            let session_state = agent_manager.get_or_create_session_state("test-session");
+            let state = session_state.lock().await;
 
             state
                 .lua
@@ -3930,8 +4212,8 @@ mod tests {
             let session_manager = Arc::new(SessionManager::with_storage(storage));
             let agent_manager = create_test_agent_manager(session_manager);
 
-            let lua_state = agent_manager.get_or_create_lua_state("test-session");
-            let state = lua_state.lock().await;
+            let session_state = agent_manager.get_or_create_session_state("test-session");
+            let state = session_state.lock().await;
 
             state
                 .lua
@@ -3974,11 +4256,11 @@ mod tests {
             let session_manager = Arc::new(SessionManager::with_storage(storage));
             let agent_manager = create_test_agent_manager(session_manager);
 
-            let lua_state_1 = agent_manager.get_or_create_lua_state("session-1");
-            let lua_state_2 = agent_manager.get_or_create_lua_state("session-2");
+            let session_state_1 = agent_manager.get_or_create_session_state("session-1");
+            let session_state_2 = agent_manager.get_or_create_session_state("session-2");
 
             {
-                let state = lua_state_1.lock().await;
+                let state = session_state_1.lock().await;
                 state
                     .lua
                     .load(
@@ -3993,7 +4275,7 @@ mod tests {
             }
 
             {
-                let state = lua_state_2.lock().await;
+                let state = session_state_2.lock().await;
                 state
                     .lua
                     .load(
@@ -4010,8 +4292,8 @@ mod tests {
                     .unwrap();
             }
 
-            let state_1 = lua_state_1.lock().await;
-            let state_2 = lua_state_2.lock().await;
+            let state_1 = session_state_1.lock().await;
+            let state_2 = session_state_2.lock().await;
 
             let handlers_1 = state_1.registry.runtime_handlers_for("turn:complete");
             let handlers_2 = state_2.registry.runtime_handlers_for("turn:complete");
@@ -4026,8 +4308,8 @@ mod tests {
             let session_manager = Arc::new(SessionManager::with_storage(storage));
             let agent_manager = create_test_agent_manager(session_manager);
 
-            let lua_state = agent_manager.get_or_create_lua_state("test-session");
-            let state = lua_state.lock().await;
+            let session_state = agent_manager.get_or_create_session_state("test-session");
+            let state = session_state.lock().await;
 
             state
                 .lua
@@ -4070,8 +4352,8 @@ mod tests {
             let session_manager = Arc::new(SessionManager::with_storage(storage));
             let agent_manager = create_test_agent_manager(session_manager);
 
-            let lua_state = agent_manager.get_or_create_lua_state("test-session");
-            let state = lua_state.lock().await;
+            let session_state = agent_manager.get_or_create_session_state("test-session");
+            let state = session_state.lock().await;
 
             state
                 .lua
@@ -4110,11 +4392,11 @@ mod tests {
             let session_manager = Arc::new(SessionManager::with_storage(storage));
             let agent_manager = create_test_agent_manager(session_manager);
 
-            let lua_state = agent_manager.get_or_create_lua_state("test-session");
+            let session_state = agent_manager.get_or_create_session_state("test-session");
 
             // Register handler that returns inject
             {
-                let state = lua_state.lock().await;
+                let state = session_state.lock().await;
                 state
                     .lua
                     .load(
@@ -4133,7 +4415,7 @@ mod tests {
                 "test-session",
                 "msg-123",
                 "Some response",
-                &lua_state,
+                &session_state,
                 false, // is_continuation
             )
             .await;
@@ -4149,11 +4431,11 @@ mod tests {
             let session_manager = Arc::new(SessionManager::with_storage(storage));
             let agent_manager = create_test_agent_manager(session_manager);
 
-            let lua_state = agent_manager.get_or_create_lua_state("test-session");
+            let session_state = agent_manager.get_or_create_session_state("test-session");
 
             // Register two handlers that both return inject
             {
-                let state = lua_state.lock().await;
+                let state = session_state.lock().await;
                 state
                     .lua
                     .load(
@@ -4175,7 +4457,7 @@ mod tests {
                 "test-session",
                 "msg-123",
                 "Some response",
-                &lua_state,
+                &session_state,
                 false,
             )
             .await;
@@ -4191,10 +4473,10 @@ mod tests {
             let session_manager = Arc::new(SessionManager::with_storage(storage));
             let agent_manager = create_test_agent_manager(session_manager);
 
-            let lua_state = agent_manager.get_or_create_lua_state("test-session");
+            let session_state = agent_manager.get_or_create_session_state("test-session");
 
             {
-                let state = lua_state.lock().await;
+                let state = session_state.lock().await;
                 state
                     .lua
                     .load(
@@ -4212,7 +4494,7 @@ mod tests {
                 "test-session",
                 "msg-123",
                 "Some response",
-                &lua_state,
+                &session_state,
                 false,
             )
             .await;
@@ -4229,11 +4511,11 @@ mod tests {
             let session_manager = Arc::new(SessionManager::with_storage(storage));
             let agent_manager = create_test_agent_manager(session_manager);
 
-            let lua_state = agent_manager.get_or_create_lua_state("test-session");
+            let session_state = agent_manager.get_or_create_session_state("test-session");
 
             // Register handler that checks is_continuation and skips if true
             {
-                let state = lua_state.lock().await;
+                let state = session_state.lock().await;
                 state
                     .lua
                     .load(
@@ -4257,7 +4539,7 @@ mod tests {
                 "test-session",
                 "msg-123",
                 "Some response",
-                &lua_state,
+                &session_state,
                 true, // is_continuation
             )
             .await;
@@ -4269,7 +4551,7 @@ mod tests {
             );
 
             // Verify the flag was received
-            let state = lua_state.lock().await;
+            let state = session_state.lock().await;
             let received: bool = state
                 .lua
                 .load("return received_continuation")
@@ -4287,10 +4569,10 @@ mod tests {
             let session_manager = Arc::new(SessionManager::with_storage(storage));
             let agent_manager = create_test_agent_manager(session_manager);
 
-            let lua_state = agent_manager.get_or_create_lua_state("test-session");
+            let session_state = agent_manager.get_or_create_session_state("test-session");
 
             {
-                let state = lua_state.lock().await;
+                let state = session_state.lock().await;
                 state
                     .lua
                     .load(
@@ -4308,7 +4590,7 @@ mod tests {
                 "test-session",
                 "msg-123",
                 "Some response",
-                &lua_state,
+                &session_state,
                 false,
             )
             .await;
@@ -4325,16 +4607,16 @@ mod tests {
 
         let session_id = "test-session";
 
-        let _ = agent_manager.get_or_create_lua_state(session_id);
+        let _ = agent_manager.get_or_create_session_state(session_id);
         assert!(
-            agent_manager.lua_states.contains_key(session_id),
+            agent_manager.session_states.contains_key(session_id),
             "Lua state should exist after creation"
         );
 
         agent_manager.cleanup_session(session_id);
 
         assert!(
-            !agent_manager.lua_states.contains_key(session_id),
+            !agent_manager.session_states.contains_key(session_id),
             "Lua state should be removed after cleanup"
         );
     }

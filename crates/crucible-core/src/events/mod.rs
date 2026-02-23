@@ -105,7 +105,6 @@ pub mod builtin_handlers;
 pub mod dependency;
 pub mod emitter;
 pub mod handler;
-pub mod llm_hook_context;
 pub mod markdown;
 pub mod reactor;
 pub mod ring;
@@ -149,8 +148,6 @@ pub use session_event::{
     EntityType, FileChangeKind, InputType, NoteChangeType, NotePayload, Priority, SessionEvent,
     SessionEventConfig, TerminalStream, ToolCall, ToolProvider,
 };
-// LLM hook context types
-pub use llm_hook_context::{PostLlmContext, PreLlmContext, PreLlmResult};
 
 // Ring buffer for event storage
 pub use ring::{EventRing, OverflowCallback};
