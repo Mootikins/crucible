@@ -430,7 +430,7 @@ mod tests {
             .join("session.jsonl");
         let content = tokio::fs::read_to_string(&jsonl_path).await.unwrap();
         let parsed: serde_json::Value =
-            serde_json::from_str(&content.lines().next().unwrap()).unwrap();
+            serde_json::from_str(content.lines().next().unwrap()).unwrap();
 
         // Verify timestamp field exists and is ISO8601 format
         assert!(

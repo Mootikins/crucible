@@ -893,10 +893,9 @@ async fn handle_kiln_set_classification(req: Request, _km: &Arc<KilnManager>) ->
 
     // Update classification on the first kiln entry (or the matching one)
     let mut updated = false;
-    for kiln in &mut config.kilns {
+    if let Some(kiln) = config.kilns.iter_mut().next() {
         kiln.data_classification = Some(classification);
         updated = true;
-        break; // Update first kiln entry
     }
 
     if !updated {
