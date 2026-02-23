@@ -7,7 +7,7 @@ members = [
     "crates/crucible-enrichment",
     "crates/crucible-pipeline",
     "crates/crucible-cli",
-    "crates/crucible-surrealdb",
+
     "crates/crucible-sqlite",
     "crates/crucible-config",
     "crates/crucible-acp",
@@ -133,7 +133,7 @@ mockall = "0.14"
 test-case = "3.3"
 
 # Database
-surrealdb = { version = "2", features = ["kv-mem"] }
+
 comfy-table = "7"
 
 # Procedural macro dependencies
@@ -168,7 +168,7 @@ crucible-acp = { path = "crates/crucible-acp" }
 crucible-tools = { path = "crates/crucible-tools" }
 crucible-llm = { path = "crates/crucible-llm", default-features = false }
 crucible-skills = { path = "crates/crucible-skills" }
-crucible-surrealdb = { path = "crates/crucible-surrealdb" }
+
 crucible-lua = { path = "crates/crucible-lua" }
 crucible-rig = { path = "crates/crucible-rig" }
 crucible-web = { path = "crates/crucible-web" }

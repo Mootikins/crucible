@@ -4,8 +4,6 @@
 //! This includes storage access, semantic search, and configuration.
 
 use anyhow::{anyhow, Result};
-#[cfg(feature = "storage-surrealdb")]
-use crucible_surrealdb::adapters::SurrealClientHandle;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -15,54 +13,17 @@ use crate::factories::StorageHandle;
 /// Runtime context for interacting with a Kiln
 ///
 /// Provides access to:
-/// - Storage (SurrealDB via opaque handle or daemon RPC)
+/// - Storage (SQLite, daemon RPC, or lightweight)
 /// - Semantic search capabilities
 /// - Configuration
 #[derive(Clone)]
 pub struct KilnContext {
-    /// Storage backend - either embedded SurrealDB or daemon client
+    /// Storage backend - either daemon client, SQLite, or lightweight
     storage_handle: StorageHandle,
     config: Arc<CliConfig>,
 }
 
 impl KilnContext {
-    /// Create a new facade from configuration (requires SurrealDB)
-    #[cfg(feature = "storage-surrealdb")]
-    pub async fn from_config(config: CliConfig) -> Result<Self> {
-        // Initialize storage using factory function
-        let storage_config = crucible_surrealdb::SurrealDbConfig {
-            path: config.database_path_str()?,
-            namespace: "crucible".to_string(),
-            database: "kiln".to_string(),
-            max_connections: Some(10),
-            timeout_seconds: Some(30),
-        };
-
-        let storage = crucible_surrealdb::adapters::create_surreal_client(storage_config)
-            .await
-            .map_err(|e| anyhow!("Failed to create storage client: {}", e))?;
-
-        // Initialize schema
-        crucible_surrealdb::kiln_integration::initialize_kiln_schema(storage.inner()).await?;
-
-        Ok(Self {
-            storage_handle: StorageHandle::Embedded(storage),
-            config: Arc::new(config),
-        })
-    }
-
-    /// Create a facade from an existing storage client (requires SurrealDB)
-    ///
-    /// This constructor reuses an existing storage connection instead of creating a new one.
-    /// Useful when the storage client is already initialized elsewhere (e.g., for pipeline processing).
-    #[cfg(feature = "storage-surrealdb")]
-    pub fn from_storage(storage: SurrealClientHandle, config: CliConfig) -> Self {
-        Self {
-            storage_handle: StorageHandle::Embedded(storage),
-            config: Arc::new(config),
-        }
-    }
-
     /// Create a facade from a StorageHandle (supports both embedded and daemon)
     ///
     /// This is the preferred constructor for daemon mode where we don't have
@@ -77,14 +38,6 @@ impl KilnContext {
     /// Get a reference to the storage handle
     pub fn storage_handle(&self) -> &StorageHandle {
         &self.storage_handle
-    }
-
-    /// Get a reference to the embedded storage client handle (if available)
-    ///
-    /// Returns None if running in daemon or lightweight mode.
-    #[cfg(feature = "storage-surrealdb")]
-    pub fn storage(&self) -> Option<&SurrealClientHandle> {
-        self.storage_handle.try_embedded()
     }
 
     /// Get a reference to the configuration
@@ -206,59 +159,14 @@ impl KilnContext {
         &self,
         query: &str,
         limit: usize,
-        rerank_limit: usize,
+        _rerank_limit: usize,
     ) -> Result<Vec<SemanticSearchResult>> {
-        // Reranking requires embedded mode (direct SurrealDB access)
-        // In daemon mode, fall back to basic semantic search
-        #[cfg(feature = "storage-surrealdb")]
-        if let Some(storage) = self.storage_handle.try_embedded() {
-            // Get embedding config from composite config and convert to provider config
-            let embedding_config =
-                crate::factories::enrichment::embedding_provider_config_from_cli(&self.config);
-
-            // Create embedding provider using factory function
-            let provider = crucible_llm::embeddings::create_provider(embedding_config).await?;
-
-            // Perform search with reranking
-            let results = crucible_surrealdb::kiln_integration::semantic_search_with_reranking(
-                storage.inner(),
-                query,
-                rerank_limit, // initial_limit (candidates to retrieve)
-                None,         // reranker (None for now, TODO: add reranker support)
-                limit,        // final_limit (results to return)
-                provider,     // embedding_provider
-            )
-            .await?;
-
-            // Convert to facade result type
-            return Ok(results
-                .into_iter()
-                .map(|(doc_id, similarity)| {
-                    let title = doc_id
-                        .split('/')
-                        .next_back()
-                        .unwrap_or(&doc_id)
-                        .trim_end_matches(".md")
-                        .to_string();
-
-                    SemanticSearchResult {
-                        doc_id,
-                        title,
-                        snippet: String::new(), // TODO: Extract snippet from document content
-                        similarity: similarity as f32,
-                    }
-                })
-                .collect());
-        }
-
-        {
-            // Fall back to basic semantic search (daemon, sqlite, lightweight modes)
-            // Reranking is not supported via RPC yet
-            tracing::debug!(
-                "Reranking not available in this storage mode, using basic semantic search"
-            );
-            self.semantic_search(query, limit).await
-        }
+        // Fall back to basic semantic search (daemon, sqlite, lightweight modes)
+        // Reranking is not supported via RPC yet
+        tracing::debug!(
+            "Reranking not available in this storage mode, using basic semantic search"
+        );
+        self.semantic_search(query, limit).await
     }
 }
 

@@ -7,8 +7,6 @@
 
 use anyhow::Result;
 use crucible_core::events::Reactor;
-#[cfg(feature = "storage-surrealdb")]
-use crucible_surrealdb::adapters::SurrealClientHandle;
 use crucible_watch::WatchManager;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -23,29 +21,11 @@ pub struct EventSystemHandle {
     pub reactor: Arc<RwLock<Reactor>>,
     /// The file system watch manager
     pub watch_manager: Arc<RwLock<WatchManager>>,
-    /// Storage handle for database access
-    #[cfg(feature = "storage-surrealdb")]
-    storage_client: SurrealClientHandle,
 }
 
 impl EventSystemHandle {
     /// Create a new event system handle.
-    #[cfg(feature = "storage-surrealdb")]
     pub(crate) fn new(
-        reactor: Arc<RwLock<Reactor>>,
-        watch_manager: Arc<RwLock<WatchManager>>,
-        storage_client: SurrealClientHandle,
-    ) -> Self {
-        Self {
-            reactor,
-            watch_manager,
-            storage_client,
-        }
-    }
-
-    /// Create a new event system handle without storage (non-SurrealDB modes).
-    #[cfg(not(feature = "storage-surrealdb"))]
-    pub(crate) fn new_without_storage(
         reactor: Arc<RwLock<Reactor>>,
         watch_manager: Arc<RwLock<WatchManager>>,
     ) -> Self {
@@ -63,12 +43,6 @@ impl EventSystemHandle {
     /// Get access to the watch manager.
     pub fn watch_manager(&self) -> &Arc<RwLock<WatchManager>> {
         &self.watch_manager
-    }
-
-    /// Get access to the storage client.
-    #[cfg(feature = "storage-surrealdb")]
-    pub fn storage_client(&self) -> &SurrealClientHandle {
-        &self.storage_client
     }
 
     /// Gracefully shutdown the event system.

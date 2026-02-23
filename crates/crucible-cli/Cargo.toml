@@ -29,7 +29,7 @@ default = ["fastembed", "web"]
 web = ["dep:crucible-web"]
 
 # Storage backend selection (mutually exclusive in practice)
-storage-surrealdb = ["dep:crucible-surrealdb"]
+
 storage-sqlite = ["dep:crucible-sqlite"]
 
 # Local embedding support (includes ONNX Runtime download)
@@ -46,7 +46,7 @@ test-utils = []          # Expose testing utilities for integration tests
 
 [dependencies]
 crucible-core = { path = "../crucible-core" }
-crucible-surrealdb = { path = "../crucible-surrealdb", optional = true }
+
 crucible-sqlite = { path = "../crucible-sqlite", optional = true }
 crucible-config = { path = "../crucible-config", features = ["toml"] }
 crucible-llm = { path = "../crucible-llm", default-features = false }
