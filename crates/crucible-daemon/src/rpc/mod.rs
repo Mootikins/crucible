@@ -12,6 +12,6 @@ pub use context::RpcContext;
 #[allow(unused_imports)]
 pub use dispatch::{RpcDispatcher, METHODS};
 #[allow(unused_imports)]
-pub use error::{RpcResult, ToRpcError};
+pub use error::RpcResult;
 #[allow(unused_imports)]
 pub use params::parse_params;
