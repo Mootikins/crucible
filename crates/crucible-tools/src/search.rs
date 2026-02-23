@@ -18,7 +18,6 @@
 
 use crucible_core::storage::NoteStore;
 use crucible_core::{enrichment::EmbeddingProvider, traits::KnowledgeRepository};
-use crucible_skills::storage::SkillStore;
 use grep::regex::RegexMatcher;
 use grep::searcher::{sinks::UTF8, Searcher};
 use ignore::WalkBuilder;
@@ -53,7 +52,6 @@ pub struct SearchTools {
     kiln_path: String,
     knowledge_repo: Arc<dyn KnowledgeRepository>,
     embedding_provider: Arc<dyn EmbeddingProvider>,
-    skill_store: Option<Arc<SkillStore>>,
     /// Optional NoteStore for indexed property searches
     note_store: Option<Arc<dyn NoteStore>>,
 }
@@ -99,32 +97,10 @@ impl SearchTools {
             kiln_path,
             knowledge_repo,
             embedding_provider,
-            skill_store: None,
             note_store: None,
         }
     }
 
-    /// Create SearchTools with skill search support
-    #[allow(missing_docs)]
-    pub fn with_skill_store(
-        kiln_path: String,
-        knowledge_repo: Arc<dyn KnowledgeRepository>,
-        embedding_provider: Arc<dyn EmbeddingProvider>,
-        skill_store: Arc<SkillStore>,
-    ) -> Self {
-        Self {
-            kiln_path,
-            knowledge_repo,
-            embedding_provider,
-            skill_store: Some(skill_store),
-            note_store: None,
-        }
-    }
-
-    /// Create SearchTools with NoteStore for optimized property searches
-    ///
-    /// When a NoteStore is provided, `property_search` uses the indexed metadata
-    /// instead of walking the filesystem, providing faster queries on large kilns.
     pub fn with_note_store(
         kiln_path: String,
         knowledge_repo: Arc<dyn KnowledgeRepository>,
@@ -135,29 +111,11 @@ impl SearchTools {
             kiln_path,
             knowledge_repo,
             embedding_provider,
-            skill_store: None,
             note_store: Some(note_store),
         }
     }
 
-    /// Create SearchTools with both SkillStore and NoteStore
-    pub fn with_stores(
-        kiln_path: String,
-        knowledge_repo: Arc<dyn KnowledgeRepository>,
-        embedding_provider: Arc<dyn EmbeddingProvider>,
-        skill_store: Arc<SkillStore>,
-        note_store: Arc<dyn NoteStore>,
-    ) -> Self {
-        Self {
-            kiln_path,
-            knowledge_repo,
-            embedding_provider,
-            skill_store: Some(skill_store),
-            note_store: Some(note_store),
-        }
-    }
 }
-
 #[tool_router]
 impl SearchTools {
     #[tool(description = "Search notes and skills using semantic similarity")]
@@ -195,26 +153,6 @@ impl SearchTools {
             })
             .collect();
 
-        // Search skills if skill_store is available
-        if let Some(ref skill_store) = self.skill_store {
-            match skill_store.search_by_embedding(&embedding, limit).await {
-                Ok(skill_results) => {
-                    for skill_result in skill_results {
-                        all_results.push(serde_json::json!({
-                            "type": "skill",
-                            "name": skill_result.name,
-                            "description": skill_result.description,
-                            "scope": skill_result.scope,
-                            "score": skill_result.relevance
-                        }));
-                    }
-                }
-                Err(e) => {
-                    tracing::warn!("Skill search failed: {}", e);
-                    // Continue without skill results
-                }
-            }
-        }
 
         // Sort all results by score descending
         all_results.sort_by(|a, b| {
