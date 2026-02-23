@@ -37,7 +37,7 @@ crucible-core = { path = "../crucible-core" }
 crucible-config = { path = "../crucible-config" }
 crucible-protocol = { path = "../crucible-protocol" }
 crucible-rig = { path = "../crucible-rig" }
-crucible-surrealdb = { workspace = true, optional = true }
+
 crucible-sqlite = { path = "../crucible-sqlite", optional = true }
 crucible-pipeline = { path = "../crucible-pipeline" }
 crucible-enrichment = { path = "../crucible-enrichment" }
@@ -63,7 +63,7 @@ default = ["storage-sqlite"]
 web = ["dep:crucible-web"]
 
 # Storage backend selection (mutually exclusive in practice)
-storage-surrealdb = ["dep:crucible-surrealdb"]
+
 storage-sqlite = ["dep:crucible-sqlite"]
 
 # Test tier flags (see justfile for usage)

@@ -625,91 +625,12 @@ async fn run_oneshot_chat(
     status.update("Initializing storage...");
     let storage_handle = factories::get_storage(&config).await?;
 
-    #[cfg(feature = "storage-surrealdb")]
-    let storage_client = {
-        let client = storage_handle
-            .get_embedded_for_operation(&config, "chat initialization")
-            .await?;
-        factories::initialize_surrealdb_schema(&client).await?;
-        Some(client)
-    };
-    #[cfg(not(feature = "storage-surrealdb"))]
-    let storage_client: Option<()> = None;
+    let _storage_client: Option<()> = None;
 
     status.update("Discovering agent...");
     let initialized_agent = factories::create_agent(&config, agent_params).await?;
 
-    let bg_progress: Option<BackgroundProgress> = if !no_process && !no_context {
-        #[cfg(feature = "storage-surrealdb")]
-        {
-            use crate::sync::quick_sync_check;
-
-            let storage_client = storage_client.as_ref().expect("storage required for sync");
-            status.update("Checking for file changes...");
-            let sync_status = quick_sync_check(storage_client, &config.kiln_path).await?;
-
-            if sync_status.needs_processing() {
-                let pending = sync_status.pending_count();
-                status.update(&format!(
-                    "Starting background indexing ({pending} files)..."
-                ));
-
-                let note_store = storage_handle.note_store().ok_or_else(|| {
-                    anyhow::anyhow!("Storage mode does not support background indexing")
-                })?;
-                let pipeline = factories::create_pipeline(note_store, &config, false).await?;
-                let files_to_process = sync_status.files_to_process();
-                let bg_pipeline = Arc::new(pipeline);
-                let progress = BackgroundProgress::new(pending);
-
-                let bg_pipeline_clone = bg_pipeline.clone();
-                let progress_clone = progress.clone();
-                tokio::spawn(async move {
-                    for file in files_to_process {
-                        match bg_pipeline_clone.process(&file).await {
-                            Ok(_) => progress_clone.inc_completed(),
-                            Err(e) => {
-                                tracing::warn!(
-                                    "Background process failed for {}: {}",
-                                    file.display(),
-                                    e
-                                );
-                                progress_clone.inc_failed();
-                            }
-                        }
-                    }
-                });
-
-                let watch_config = config.clone();
-                let watch_pipeline = bg_pipeline;
-                tokio::spawn(async move {
-                    if let Err(e) = spawn_background_watch(watch_config, watch_pipeline).await {
-                        tracing::error!("Background watch failed: {}", e);
-                    }
-                });
-
-                Some(progress)
-            } else {
-                if let Some(note_store) = storage_handle.note_store() {
-                    let pipeline = factories::create_pipeline(note_store, &config, false).await?;
-                    let watch_config = config.clone();
-                    let watch_pipeline = Arc::new(pipeline);
-                    tokio::spawn(async move {
-                        if let Err(e) = spawn_background_watch(watch_config, watch_pipeline).await {
-                            tracing::error!("Background watch failed: {}", e);
-                        }
-                    });
-                }
-                None
-            }
-        }
-        #[cfg(not(feature = "storage-surrealdb"))]
-        {
-            None
-        }
-    } else {
-        None
-    };
+    let bg_progress: Option<BackgroundProgress> = None;
 
     status.update("Initializing core...");
     let core = Arc::new(KilnContext::from_storage_handle(storage_handle, config));

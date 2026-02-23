@@ -1,7 +1,7 @@
 //! Multi-kiln connection manager
 //!
 //! Manages connections to multiple kilns on-demand with idle timeout.
-//! Supports both SQLite (default) and SurrealDB backends via feature flags.
+//! Supports SQLite backend via feature flags.
 
 use anyhow::Result;
 use std::collections::HashMap;
@@ -26,25 +26,16 @@ use crucible_config::EmbeddingProviderConfig;
 #[cfg(feature = "storage-sqlite")]
 use crucible_sqlite::{adapters as sqlite_adapters, SqliteClientHandle, SqliteConfig};
 
-#[cfg(feature = "storage-surrealdb")]
-use crucible_surrealdb::adapters::SurrealClientHandle;
-
-#[cfg(all(feature = "storage-surrealdb", not(feature = "storage-sqlite")))]
-use crucible_surrealdb::{adapters as surreal_adapters, SurrealDbConfig};
-
 // ===========================================================================
 // Backend Abstraction
 // ===========================================================================
 
-/// Storage backend handle that wraps either SQLite or SurrealDB client
+/// Storage backend handle that wraps the SQLite client
 #[derive(Clone)]
-#[allow(dead_code)] // Variants may appear unused when both features enabled (SQLite takes precedence)
+#[allow(dead_code)] // Variants may appear unused depending on feature flags
 pub enum StorageHandle {
     #[cfg(feature = "storage-sqlite")]
     Sqlite(SqliteClientHandle),
-
-    #[cfg(feature = "storage-surrealdb")]
-    Surreal(SurrealClientHandle),
 }
 
 impl StorageHandle {
@@ -53,9 +44,6 @@ impl StorageHandle {
         match self {
             #[cfg(feature = "storage-sqlite")]
             StorageHandle::Sqlite(_) => "sqlite",
-
-            #[cfg(feature = "storage-surrealdb")]
-            StorageHandle::Surreal(_) => "surrealdb",
         }
     }
 
@@ -64,9 +52,6 @@ impl StorageHandle {
         match self {
             #[cfg(feature = "storage-sqlite")]
             StorageHandle::Sqlite(client) => client.as_note_store(),
-
-            #[cfg(feature = "storage-surrealdb")]
-            StorageHandle::Surreal(client) => client.as_note_store(),
         }
     }
 
@@ -88,19 +73,6 @@ impl StorageHandle {
                     .into_iter()
                     .map(|r| (r.note.path, r.score as f64))
                     .collect())
-            }
-
-            #[cfg(feature = "storage-surrealdb")]
-            StorageHandle::Surreal(client) => {
-                use crucible_core::database::SearchResult;
-                let repo = client.as_knowledge_repository();
-                let results: Vec<SearchResult> = repo.search_vectors(vector).await?;
-                let pairs: Vec<(String, f64)> = results
-                    .into_iter()
-                    .take(limit)
-                    .map(|r| (r.document_id.0, r.score))
-                    .collect();
-                Ok(pairs)
             }
         }
     }
@@ -141,13 +113,6 @@ impl StorageHandle {
                     })
                     .collect())
             }
-
-            #[cfg(feature = "storage-surrealdb")]
-            StorageHandle::Surreal(client) => {
-                let repo = client.as_knowledge_repository();
-                let notes: Vec<NoteInfo> = repo.list_notes(path_filter).await?;
-                Ok(notes)
-            }
         }
     }
 
@@ -160,16 +125,13 @@ impl StorageHandle {
     ///
     /// Currently does a linear scan over all notes (O(n)). For large kilns with
     /// 10k+ notes, consider adding backend-specific indexed queries (e.g., SQL
-    /// LIKE with index, or SurrealDB string functions).
+    /// LIKE with index).
     pub async fn get_note_by_name(&self, name: &str) -> Result<Option<NoteRecord>> {
         use crucible_core::storage::NoteStore;
 
         let records: Vec<NoteRecord> = match self {
             #[cfg(feature = "storage-sqlite")]
             StorageHandle::Sqlite(client) => client.as_note_store().list().await?,
-
-            #[cfg(feature = "storage-surrealdb")]
-            StorageHandle::Surreal(client) => client.as_note_store().list().await?,
         };
 
         let name_lower = name.to_lowercase();
@@ -184,9 +146,6 @@ impl StorageHandle {
         match self {
             #[cfg(feature = "storage-sqlite")]
             StorageHandle::Sqlite(client) => client.as_knowledge_repository(),
-
-            #[cfg(feature = "storage-surrealdb")]
-            StorageHandle::Surreal(client) => client.as_knowledge_repository(),
         }
     }
 }
@@ -238,12 +197,10 @@ impl KilnManager {
             }
         }
 
-        // Use backend-specific database names so SQLite and SurrealDB can coexist
+        // Use backend-specific database names
         #[cfg(feature = "storage-sqlite")]
         let db_path = canonical.join(".crucible").join("crucible-sqlite.db");
 
-        #[cfg(all(feature = "storage-surrealdb", not(feature = "storage-sqlite")))]
-        let db_path = canonical.join(".crucible").join("crucible-surreal.db");
         info!("Opening kiln at {:?}", db_path);
 
         let handle = create_storage_handle(&db_path).await?;
@@ -591,7 +548,7 @@ fn create_pipeline(handle: &StorageHandle) -> Result<NotePipeline> {
 }
 
 /// Create a storage handle for the given database path.
-/// Uses SQLite by default, SurrealDB if SQLite feature is disabled.
+/// Uses SQLite as the default backend.
 #[allow(clippy::needless_return)] // Returns needed for cfg-gated branches
 async fn create_storage_handle(db_path: &Path) -> Result<StorageHandle> {
     // SQLite is the default backend
@@ -602,26 +559,8 @@ async fn create_storage_handle(db_path: &Path) -> Result<StorageHandle> {
         return Ok(StorageHandle::Sqlite(client));
     }
 
-    // Fall back to SurrealDB if SQLite is not enabled
-    #[cfg(all(feature = "storage-surrealdb", not(feature = "storage-sqlite")))]
-    {
-        let config = SurrealDbConfig {
-            path: db_path.to_string_lossy().to_string(),
-            namespace: "crucible".to_string(),
-            database: "kiln".to_string(),
-            ..Default::default()
-        };
-
-        let client = surreal_adapters::create_surreal_client(config).await?;
-
-        // Initialize schema on first open (idempotent)
-        crucible_surrealdb::kiln_integration::initialize_kiln_schema(client.inner()).await?;
-
-        return Ok(StorageHandle::Surreal(client));
-    }
-
     // If neither feature is enabled, compilation will fail here
-    #[cfg(not(any(feature = "storage-sqlite", feature = "storage-surrealdb")))]
+    #[cfg(not(feature = "storage-sqlite"))]
     {
         compile_error!("At least one storage backend must be enabled");
     }
