@@ -69,6 +69,27 @@ impl DataClassification {
         }
     }
 
+    /// Return all classification variants.
+    ///
+    /// Useful for building prompts or UI selectors without hardcoding levels.
+    pub fn all() -> &'static [DataClassification] {
+        &[
+            DataClassification::Public,
+            DataClassification::Internal,
+            DataClassification::Confidential,
+        ]
+    }
+
+    /// Parse a classification from a string (case-insensitive).
+    pub fn from_str_insensitive(s: &str) -> Option<DataClassification> {
+        match s.to_lowercase().as_str() {
+            "public" => Some(DataClassification::Public),
+            "internal" => Some(DataClassification::Internal),
+            "confidential" => Some(DataClassification::Confidential),
+            _ => None,
+        }
+    }
+
     /// Get the classification as a string
     pub fn as_str(&self) -> &'static str {
         match self {

@@ -32,6 +32,7 @@ pub mod file_watch_bridge;
 pub mod kiln_manager;
 pub mod lifecycle;
 pub mod permission_bridge;
+pub mod precognition;
 pub mod project_manager;
 pub mod protocol;
 pub mod recording;

@@ -264,7 +264,7 @@ impl KilnManager {
 
         let mut conns = self.connections.write().await;
         conns.insert(
-            canonical,
+            canonical.clone(),
             KilnConnection {
                 handle,
                 pipeline,
@@ -273,7 +273,23 @@ impl KilnManager {
                 enrichment_config,
             },
         );
+        // Drop the write lock before checking classification
+        drop(conns);
 
+        // Check if workspace has a data classification configured.
+        // If not, emit ClassificationRequired so clients can prompt the user.
+        let classification =
+            crate::trust_resolution::resolve_kiln_classification(&canonical, &canonical);
+        if classification.is_none() {
+            if let Some(ref tx) = self.event_tx {
+                let event = SessionEventMessage::new(
+                    "system",
+                    "classification_required",
+                    serde_json::json!({ "kiln_path": canonical.to_string_lossy() }),
+                );
+                crate::event_emitter::emit_event(tx, event);
+            }
+        }
         Ok(())
     }
 

@@ -114,6 +114,7 @@ impl EventToMarkdown for SessionEvent {
             SessionEvent::SessionResumed { .. } => "SessionResumed",
             SessionEvent::TerminalOutput { .. } => "TerminalOutput",
             SessionEvent::PrecognitionComplete { .. } => "PrecognitionComplete",
+            SessionEvent::ClassificationRequired { .. } => "ClassificationRequired",
         }
     }
 
@@ -461,6 +462,9 @@ impl EventToMarkdown for SessionEvent {
                     "**Notes Found:** {}\n**Query:** {}\n",
                     notes_count, query_summary
                 )
+            }
+            SessionEvent::ClassificationRequired { kiln_path } => {
+                format!("**Kiln Path:** `{}`\n**Action Required:** Set data classification via `kiln.set_classification`\n", kiln_path.display())
             }
         };
 

@@ -164,6 +164,17 @@ pub enum SessionEvent {
         query_summary: String,
     },
 
+
+    /// Emitted when a kiln requires data classification before use.
+    ///
+    /// This event is emitted when a kiln is opened but has no `data_classification`
+    /// configured in its workspace config. Clients should prompt the user to set
+    /// a classification level via `kiln.set_classification`.
+    ClassificationRequired {
+        /// Path to the kiln that needs classification.
+        kiln_path: PathBuf,
+    },
+
     /// System is awaiting human input (HIL gate / idle prompt).
     ///
     /// Fired when the system pauses and needs human interaction to proceed.
@@ -651,6 +662,7 @@ impl SessionEvent {
             Self::PreParse { .. } => "pre_parse",
             Self::PreLlmCall { .. } => "pre_llm_call",
             Self::PrecognitionComplete { .. } => "precognition_complete",
+            Self::ClassificationRequired { .. } => "classification_required",
             Self::AwaitingInput { .. } => "awaiting_input",
             Self::InteractionRequested { .. } => "interaction_requested",
             Self::InteractionCompleted { .. } => "interaction_completed",
@@ -709,6 +721,7 @@ impl SessionEvent {
             Self::PreParse { path, .. } => format!("pre:parse:{}", path.display()),
             Self::PreLlmCall { model, .. } => format!("pre:llm:{}", model),
             Self::PrecognitionComplete { .. } => "precognition:complete".into(),
+            Self::ClassificationRequired { kiln_path, .. } => format!("classification:required:{}", kiln_path.display()),
             Self::AwaitingInput { input_type, .. } => format!("await:{}", input_type),
             Self::InteractionRequested {
                 request_id,
@@ -1053,6 +1066,7 @@ impl SessionEvent {
             Self::PreLlmCall { .. } => "PreLlmCall",
             Self::AwaitingInput { .. } => "AwaitingInput",
             Self::PrecognitionComplete { .. } => "PrecognitionComplete",
+            Self::ClassificationRequired { .. } => "ClassificationRequired",
             Self::InteractionRequested { .. } => "InteractionRequested",
             Self::InteractionCompleted { .. } => "InteractionCompleted",
             Self::SessionStateChanged { .. } => "SessionStateChanged",
@@ -1407,6 +1421,9 @@ impl SessionEvent {
                     truncate(query_summary, max_len)
                 )
             }
+            Self::ClassificationRequired { kiln_path } => {
+                format!("kiln_path={}", kiln_path.display())
+            }
         }
     }
 
@@ -1549,6 +1566,7 @@ impl SessionEvent {
                 notes_count,
                 query_summary,
             } => Some(format!("notes={}, query={}", notes_count, query_summary)),
+            Self::ClassificationRequired { kiln_path } => Some(kiln_path.display().to_string()),
         };
 
         payload.map(|p| truncate(&p, max_len).to_string())
@@ -1645,6 +1663,7 @@ impl SessionEvent {
                 notes_count,
                 query_summary,
             } => notes_count.to_string().len() + query_summary.len() + 50,
+            Self::ClassificationRequired { .. } => 50,
         };
 
         // Rough estimate: ~4 characters per token

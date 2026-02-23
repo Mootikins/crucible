@@ -545,6 +545,23 @@ impl DaemonClient {
         Ok(())
     }
 
+
+    pub async fn kiln_set_classification(
+        &self,
+        path: &Path,
+        classification: &str,
+    ) -> Result<()> {
+        self.call(
+            "kiln.set_classification",
+            serde_json::json!({
+                "path": path.to_string_lossy(),
+                "classification": classification
+            }),
+        )
+        .await?;
+        Ok(())
+    }
+
     pub async fn kiln_list(&self) -> Result<Vec<serde_json::Value>> {
         let result = self.call("kiln.list", serde_json::json!({})).await?;
         Ok(result.as_array().cloned().unwrap_or_default())

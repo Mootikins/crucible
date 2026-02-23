@@ -112,7 +112,7 @@ fn build_internal_delegation_context(
                 enabled: delegation_config.map(|c| c.enabled).unwrap_or(false),
                 depth: 0,
                 data_classification: kiln_path
-                    .map(|kiln| crate::trust_resolution::resolve_kiln_classification(workspace, kiln))
+                    .and_then(|kiln| crate::trust_resolution::resolve_kiln_classification(workspace, kiln))
                     .unwrap_or(DataClassification::Public),
             }
         })
