@@ -527,7 +527,7 @@ fn create_pipeline(handle: &StorageHandle) -> Result<NotePipeline> {
 
     // Enrichment service with embeddings disabled
     // TODO: Add embedding support with daemon configuration
-    let enrichment_service = crucible_enrichment::create_default_enrichment_service(None)?;
+    let enrichment_service = crate::enrichment::create_default_enrichment_service(None)?;
 
     // Get NoteStore from handle
     let note_store = handle.as_note_store();
