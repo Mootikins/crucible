@@ -20,6 +20,7 @@ pub mod interaction_registry;
 pub mod merkle;
 pub mod note;
 pub mod parser;
+pub mod protocol;
 pub mod processing;
 pub mod project;
 pub mod prompts;
