@@ -15,7 +15,6 @@ async-stream = "0.3"
 futures = { workspace = true }
 chrono = { workspace = true }
 
-crucible-protocol = { path = "../crucible-protocol" }
 crucible-core = { workspace = true }
 
 [target.'cfg(unix)'.dependencies]
