@@ -18,6 +18,8 @@ use thiserror::Error;
 use tokio::sync::Mutex;
 use tracing::{debug, info, warn};
 
+use crate::empty_providers::{EmptyEmbeddingProvider, EmptyKnowledgeRepository};
+
 use crucible_acp::client::{ClientConfig, CrucibleAcpClient, PermissionRequestHandler};
 use crucible_acp::streaming::{channel_callback, StreamingChunk};
 use crucible_acp::InProcessMcpHost;
@@ -48,61 +50,6 @@ pub enum AcpHandleError {
 
     #[error("Configuration error: {0}")]
     Config(String),
-}
-
-struct EmptyKnowledgeRepository;
-
-#[async_trait::async_trait]
-impl KnowledgeRepository for EmptyKnowledgeRepository {
-    async fn get_note_by_name(
-        &self,
-        _name: &str,
-    ) -> crucible_core::Result<Option<crucible_core::parser::ParsedNote>> {
-        Ok(None)
-    }
-
-    async fn list_notes(
-        &self,
-        _path: Option<&str>,
-    ) -> crucible_core::Result<Vec<crucible_core::traits::knowledge::NoteInfo>> {
-        Ok(vec![])
-    }
-
-    async fn search_vectors(
-        &self,
-        _vector: Vec<f32>,
-    ) -> crucible_core::Result<Vec<crucible_core::types::SearchResult>> {
-        Ok(vec![])
-    }
-}
-
-struct EmptyEmbeddingProvider;
-
-#[async_trait::async_trait]
-impl EmbeddingProvider for EmptyEmbeddingProvider {
-    async fn embed(&self, _text: &str) -> anyhow::Result<Vec<f32>> {
-        anyhow::bail!("Embedding provider unavailable in ACP MCP host")
-    }
-
-    async fn embed_batch(&self, _texts: &[&str]) -> anyhow::Result<Vec<Vec<f32>>> {
-        anyhow::bail!("Embedding provider unavailable in ACP MCP host")
-    }
-
-    fn model_name(&self) -> &str {
-        "unavailable"
-    }
-
-    fn dimensions(&self) -> usize {
-        0
-    }
-
-    fn provider_name(&self) -> &str {
-        "none"
-    }
-
-    async fn list_models(&self) -> anyhow::Result<Vec<String>> {
-        Ok(vec![])
-    }
 }
 
 /// Daemon-side handle to an ACP agent process.

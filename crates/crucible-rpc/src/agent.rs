@@ -204,26 +204,14 @@ fn session_event_to_chat_chunk(event: &SessionEvent) -> Option<ChatChunk> {
             let content = event.data.get("content")?.as_str()?;
             Some(ChatChunk {
                 delta: content.to_string(),
-                done: false,
-                tool_calls: None,
-                tool_results: None,
-                reasoning: None,
-                usage: None,
-                subagent_events: None,
-                precognition_notes_count: None,
+                ..Default::default()
             })
         }
         "thinking" => {
             let content = event.data.get("content")?.as_str()?;
             Some(ChatChunk {
-                delta: String::new(),
-                done: false,
-                tool_calls: None,
-                tool_results: None,
                 reasoning: Some(content.to_string()),
-                usage: None,
-                subagent_events: None,
-                precognition_notes_count: None,
+                ..Default::default()
             })
         }
         "tool_call" => {
@@ -232,18 +220,12 @@ fn session_event_to_chat_chunk(event: &SessionEvent) -> Option<ChatChunk> {
             let args = event.data.get("args").cloned();
 
             Some(ChatChunk {
-                delta: String::new(),
-                done: false,
                 tool_calls: Some(vec![ChatToolCall {
                     name: tool.to_string(),
                     arguments: args,
                     id: call_id.map(String::from),
                 }]),
-                tool_results: None,
-                reasoning: None,
-                usage: None,
-                subagent_events: None,
-                precognition_notes_count: None,
+                ..Default::default()
             })
         }
         "tool_result" => {
@@ -273,19 +255,13 @@ fn session_event_to_chat_chunk(event: &SessionEvent) -> Option<ChatChunk> {
             };
 
             Some(ChatChunk {
-                delta: String::new(),
-                done: false,
-                tool_calls: None,
                 tool_results: Some(vec![ChatToolResult {
                     name,
                     result: result_str,
                     error,
                     call_id: call_id_str,
                 }]),
-                reasoning: None,
-                usage: None,
-                subagent_events: None,
-                precognition_notes_count: None,
+                ..Default::default()
             })
         }
         "message_complete" => {
@@ -311,14 +287,9 @@ fn session_event_to_chat_chunk(event: &SessionEvent) -> Option<ChatChunk> {
                     }
                 });
             Some(ChatChunk {
-                delta: String::new(),
                 done: true,
-                tool_calls: None,
-                tool_results: None,
-                reasoning: None,
                 usage,
-                subagent_events: None,
-                precognition_notes_count: None,
+                ..Default::default()
             })
         }
         "ended" => Some(ChatChunk {
@@ -338,14 +309,8 @@ fn session_event_to_chat_chunk(event: &SessionEvent) -> Option<ChatChunk> {
                 .and_then(|v| v.as_u64())
                 .map(|n| n as usize);
             Some(ChatChunk {
-                delta: String::new(),
-                done: false,
-                tool_calls: None,
-                tool_results: None,
-                reasoning: None,
-                usage: None,
-                subagent_events: None,
                 precognition_notes_count: notes_count,
+                ..Default::default()
             })
         }
         _ => {
