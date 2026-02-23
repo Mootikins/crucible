@@ -5,6 +5,7 @@
 //! `SessionAgent` contains fully-resolved configuration.
 
 use crate::acp_handle::AcpAgentHandle;
+use crate::empty_providers::{EmptyEmbeddingProvider, EmptyKnowledgeRepository};
 use crate::event_emitter::emit_event;
 use crate::protocol::SessionEventMessage;
 use crucible_acp::client::PermissionRequestHandler;
@@ -31,61 +32,6 @@ use std::sync::Arc;
 use thiserror::Error;
 use tokio::sync::broadcast;
 use tracing::{debug, info};
-
-struct EmptyKnowledgeRepository;
-
-#[async_trait::async_trait]
-impl KnowledgeRepository for EmptyKnowledgeRepository {
-    async fn get_note_by_name(
-        &self,
-        _name: &str,
-    ) -> crucible_core::Result<Option<crucible_core::parser::ParsedNote>> {
-        Ok(None)
-    }
-
-    async fn list_notes(
-        &self,
-        _path: Option<&str>,
-    ) -> crucible_core::Result<Vec<crucible_core::traits::knowledge::NoteInfo>> {
-        Ok(vec![])
-    }
-
-    async fn search_vectors(
-        &self,
-        _vector: Vec<f32>,
-    ) -> crucible_core::Result<Vec<crucible_core::types::SearchResult>> {
-        Ok(vec![])
-    }
-}
-
-struct EmptyEmbeddingProvider;
-
-#[async_trait::async_trait]
-impl EmbeddingProvider for EmptyEmbeddingProvider {
-    async fn embed(&self, _text: &str) -> anyhow::Result<Vec<f32>> {
-        anyhow::bail!("Embedding provider unavailable for in-process MCP adapter")
-    }
-
-    async fn embed_batch(&self, _texts: &[&str]) -> anyhow::Result<Vec<Vec<f32>>> {
-        anyhow::bail!("Embedding provider unavailable for in-process MCP adapter")
-    }
-
-    fn model_name(&self) -> &str {
-        "unavailable"
-    }
-
-    fn dimensions(&self) -> usize {
-        0
-    }
-
-    fn provider_name(&self) -> &str {
-        "none"
-    }
-
-    async fn list_models(&self) -> anyhow::Result<Vec<String>> {
-        Ok(vec![])
-    }
-}
 
 /// Build a `DelegationContext` for the internal agent's MCP server.
 ///

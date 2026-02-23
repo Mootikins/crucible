@@ -25,7 +25,6 @@ members = [
     "crates/crucible-query",
     "crates/zellij-inbox",
     "crates/crucible-lance",
-    "crates/crucible-benchmarks",
     "crates/crucible-observe",
     "crates/crucible-oil",
 ]

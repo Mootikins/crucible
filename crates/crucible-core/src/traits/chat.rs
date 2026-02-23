@@ -72,7 +72,7 @@ pub enum ChatError {
 }
 
 /// Chunk from streaming response
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ChatChunk {
     pub delta: String,
     pub done: bool,

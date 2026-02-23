@@ -554,40 +554,30 @@ async fn run_interactive_chat(
         let recording_path = recording_path_for_factory.clone();
 
         async move {
+            // Build common params once
+            let mut params = factories::AgentInitParams::new()
+                .with_provider_opt(provider_key)
+                .with_read_only(is_read_only(&initial_mode))
+                .with_max_context_tokens(max_context_tokens)
+                .with_env_overrides(parsed_env)
+                .with_resume_session_id(resume_session_id)
+                .with_recording_mode(recording_mode)
+                .with_recording_path(recording_path);
+
+            // Apply ACP-specific fields if needed
+            if let AgentSelection::Acp(agent_name) = &selection {
+                params = params
+                    .with_type(factories::AgentType::Acp)
+                    .with_agent_name_opt(Some(agent_name.clone()).or(default_agent));
+            }
+
+            // Apply working directory if provided
+            if let Some(wd) = working_dir {
+                params = params.with_working_dir(wd);
+            }
+
             match selection {
-                AgentSelection::Acp(agent_name) => {
-                    let mut params = factories::AgentInitParams::new()
-                        .with_type(factories::AgentType::Acp)
-                        .with_agent_name_opt(Some(agent_name).or(default_agent))
-                        .with_provider_opt(provider_key)
-                        .with_read_only(is_read_only(&initial_mode))
-                        .with_max_context_tokens(max_context_tokens)
-                        .with_env_overrides(parsed_env)
-                        .with_resume_session_id(resume_session_id)
-                        .with_recording_mode(recording_mode)
-                        .with_recording_path(recording_path);
-
-                    if let Some(wd) = working_dir {
-                        params = params.with_working_dir(wd);
-                    }
-
-                    let agent = factories::create_agent(&config, params).await?;
-                    Ok(agent.into_handle())
-                }
-                AgentSelection::Internal => {
-                    let mut params = factories::AgentInitParams::new()
-                        .with_provider_opt(provider_key)
-                        .with_read_only(is_read_only(&initial_mode))
-                        .with_max_context_tokens(max_context_tokens)
-                        .with_env_overrides(parsed_env)
-                        .with_resume_session_id(resume_session_id)
-                        .with_recording_mode(recording_mode)
-                        .with_recording_path(recording_path);
-
-                    if let Some(wd) = working_dir {
-                        params = params.with_working_dir(wd);
-                    }
-
+                AgentSelection::Acp(_) | AgentSelection::Internal => {
                     let agent = factories::create_agent(&config, params).await?;
                     Ok(agent.into_handle())
                 }

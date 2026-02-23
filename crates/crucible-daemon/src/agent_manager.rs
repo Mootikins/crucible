@@ -167,11 +167,87 @@ use mlua::RegistryKey;
 use std::sync::Mutex as StdMutex;
 
 pub(crate) struct SessionEventState {
-    pub(crate) lua: Lua,
-    pub(crate) registry: LuaScriptHandlerRegistry,
-    pub(crate) permission_hooks: Arc<StdMutex<Vec<PermissionHook>>>,
-    pub(crate) permission_functions: Arc<StdMutex<HashMap<String, RegistryKey>>>,
+    lua: Lua,
+    registry: LuaScriptHandlerRegistry,
+    permission_hooks: Arc<StdMutex<Vec<PermissionHook>>>,
+    permission_functions: Arc<StdMutex<HashMap<String, RegistryKey>>>,
     pub(crate) reactor: Reactor,
+}
+
+
+/// Discover Lua handler files and register them with the Reactor.
+/// Logs warnings on discovery/conversion failures, returns silently on empty dirs.
+fn discover_and_register_lua_handlers(reactor: &mut Reactor, kiln_path: &std::path::Path, session_id: &str) {
+    let paths = DiscoveryPaths::new("handlers", Some(kiln_path));
+    let existing = paths.existing_paths();
+    if existing.is_empty() {
+        debug!(session_id = %session_id, "No handler directories found, skipping Lua handlers");
+        return;
+    }
+
+    let handler_registry = match LuaScriptHandlerRegistry::discover(&existing) {
+        Ok(r) => r,
+        Err(e) => {
+            warn!("Failed to discover Lua handlers: {}", e);
+            return;
+        }
+    };
+
+    let handlers = match handler_registry.to_core_handlers() {
+        Ok(h) => h,
+        Err(e) => {
+            warn!("Failed to create core handlers from Lua: {}", e);
+            return;
+        }
+    };
+
+    let mut loaded_count = 0;
+    for handler in handlers {
+        let name = handler.name().to_string();
+        if let Err(e) = reactor.register(handler) {
+            warn!("Failed to register Lua handler {}: {}", name, e);
+        } else {
+            loaded_count += 1;
+            debug!("Loaded Lua handler: {}", name);
+        }
+    }
+    if loaded_count > 0 {
+        info!(session_id = %session_id, "Loaded {} Lua handlers", loaded_count);
+    }
+}
+
+fn emit_precognition_event(
+    event_tx: &broadcast::Sender<SessionEventMessage>,
+    session_id: &str,
+    query: &str,
+    notes_count: usize,
+    kilns_searched: usize,
+    kilns_failed: usize,
+) {
+    let query_summary = query.chars().take(100).collect::<String>();
+    let event = SessionEvent::PrecognitionComplete {
+        notes_count,
+        query_summary: query_summary.clone(),
+        kilns_searched,
+        kilns_filtered: 0,
+        kilns_failed,
+    };
+    if !emit_event(
+        event_tx,
+        SessionEventMessage::new(
+            session_id,
+            event.event_type(),
+            serde_json::json!({
+                "notes_count": notes_count,
+                "query_summary": query_summary,
+            }),
+        ),
+    ) {
+        warn!(
+            session_id = %session_id,
+            "No subscribers for precognition_complete event"
+        );
+    }
 }
 
 struct PendingPermission {
@@ -384,47 +460,9 @@ impl AgentManager {
         register_permission_hook_api(&lua, permission_hooks.clone(), permission_functions.clone())
             .expect("Failed to register crucible.permissions API");
 
-        let reactor = Reactor::new();
-
-        let mut reactor = reactor;
-        {
-            let kiln_path = self
-                .session_manager
-                .get_session(session_id)
-                .map(|s| s.kiln.clone());
-            if let Some(kiln_path) = kiln_path {
-                let paths = DiscoveryPaths::new("handlers", Some(kiln_path.as_path()));
-                let existing = paths.existing_paths();
-                if !existing.is_empty() {
-                    match LuaScriptHandlerRegistry::discover(&existing) {
-                        Ok(handler_registry) => match handler_registry.to_core_handlers() {
-                            Ok(handlers) => {
-                                let mut loaded_count = 0;
-                                for handler in handlers {
-                                    let name = handler.name().to_string();
-                                    if let Err(e) = reactor.register(handler) {
-                                        warn!("Failed to register Lua handler {}: {}", name, e);
-                                    } else {
-                                        loaded_count += 1;
-                                        debug!("Loaded Lua handler: {}", name);
-                                    }
-                                }
-                                if loaded_count > 0 {
-                                    info!(session_id = %session_id, "Loaded {} Lua handlers", loaded_count);
-                                }
-                            }
-                            Err(e) => {
-                                warn!("Failed to create core handlers from Lua: {}", e);
-                            }
-                        },
-                        Err(e) => {
-                            warn!("Failed to discover Lua handlers: {}", e);
-                        }
-                    }
-                } else {
-                    debug!(session_id = %session_id, "No handler directories found, skipping Lua handlers");
-                }
-            }
+        let mut reactor = Reactor::new();
+        if let Some(kiln_path) = self.session_manager.get_session(session_id).map(|s| s.kiln.clone()) {
+            discover_and_register_lua_handlers(&mut reactor, &kiln_path, session_id);
         }
 
         let state = Arc::new(Mutex::new(SessionEventState {
@@ -482,6 +520,178 @@ impl AgentManager {
         );
 
         Ok(())
+    }
+
+    /// Returns the original content unchanged on any failure.
+    async fn enrich_with_precognition(
+        &self,
+        session_id: &str,
+        original_content: &str,
+        session: &crucible_core::session::Session,
+        agent_config: &SessionAgent,
+        event_tx: &broadcast::Sender<SessionEventMessage>,
+    ) -> String {
+        let kiln_path = session.kiln.as_path();
+
+        let handle = match self.kiln_manager.get_or_open(kiln_path).await {
+            Ok(h) => h,
+            Err(error) => {
+                warn!(session_id = %session_id, error = %error, "Failed to open kiln for precognition");
+                return original_content.to_string();
+            }
+        };
+
+        let primary_config = match self.kiln_manager.get_enrichment_config(kiln_path).await {
+            Some(c) => c,
+            None => return original_content.to_string(),
+        };
+
+        let embedding_provider =
+            match crate::embedding::get_or_create_embedding_provider(&primary_config).await {
+                Ok(p) => p,
+                Err(error) => {
+                    warn!(session_id = %session_id, error = %error, "Failed to create embedding provider for precognition");
+                    return original_content.to_string();
+                }
+            };
+
+        let query_embedding = match embedding_provider.embed(original_content).await {
+            Ok(e) => e,
+            Err(error) => {
+                warn!(session_id = %session_id, error = %error, "Precognition embedding failed");
+                emit_precognition_event(event_tx, session_id, original_content, 0, 1, 1);
+                return original_content.to_string();
+            }
+        };
+
+        let mut sources = vec![KilnSearchSource {
+            kiln_path: session.kiln.clone(),
+            knowledge_repo: handle.as_knowledge_repository(),
+            is_primary: true,
+        }];
+
+        for connected_kiln in &session.connected_kilns {
+            let connected_handle = match self.kiln_manager.get_or_open(connected_kiln).await {
+                Ok(handle) => handle,
+                Err(error) => {
+                    warn!(
+                        session_id = %session_id,
+                        kiln = %connected_kiln.display(),
+                        error = %error,
+                        "Failed to open connected kiln for precognition"
+                    );
+                    continue;
+                }
+            };
+
+            let Some(connected_config) = self
+                .kiln_manager
+                .get_enrichment_config(connected_kiln)
+                .await
+            else {
+                debug!(
+                    session_id = %session_id,
+                    kiln = %connected_kiln.display(),
+                    "Skipping connected kiln without enrichment config"
+                );
+                continue;
+            };
+
+            if connected_config.model_name() != primary_config.model_name() {
+                warn!(
+                    session_id = %session_id,
+                    kiln = %connected_kiln.display(),
+                    primary_model = primary_config.model_name(),
+                    connected_model = connected_config.model_name(),
+                    "Skipping connected kiln with mismatched embedding model"
+                );
+                continue;
+            }
+
+            sources.push(KilnSearchSource {
+                kiln_path: connected_kiln.clone(),
+                knowledge_repo: connected_handle.as_knowledge_repository(),
+                is_primary: false,
+            });
+        }
+
+        let provider_trust = resolve_provider_trust(agent_config, self.llm_config.as_ref());
+        let kilns_searched = sources.len();
+
+        let results = match search_across_kilns(
+            &sources,
+            query_embedding,
+            5,
+            Some(provider_trust),
+            &session.workspace,
+        )
+        .await
+        {
+            Ok(r) => r,
+            Err(error) => {
+                warn!(session_id = %session_id, error = %error, "Precognition search across kilns failed");
+                emit_precognition_event(
+                    event_tx,
+                    session_id,
+                    original_content,
+                    0,
+                    kilns_searched,
+                    1,
+                );
+                return original_content.to_string();
+            }
+        };
+
+        let mut enriched_prompt = original_content.to_string();
+        if !results.is_empty() {
+            let context = results
+                .iter()
+                .enumerate()
+                .map(|(i, result)| {
+                    let title = result
+                        .document_id
+                        .0
+                        .split('/')
+                        .next_back()
+                        .unwrap_or(&result.document_id.0)
+                        .trim_end_matches(".md");
+
+                    let kiln_label = result
+                        .kiln_path
+                        .as_ref()
+                        .filter(|path| path != &&session.kiln)
+                        .and_then(|path| path.file_name())
+                        .and_then(|name| name.to_str())
+                        .map(|name| format!(" [from: {name}]"))
+                        .unwrap_or_default();
+
+                    format!(
+                        "## Context #{}: {}{} (similarity: {:.2})\n\n{}\n",
+                        i + 1,
+                        title,
+                        kiln_label,
+                        result.score,
+                        result.snippet.clone().unwrap_or_default()
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join("\n");
+
+            enriched_prompt = format!(
+                "# Context from Knowledge Base\n\n{}\n\n---\n\n# User Query\n\n{}",
+                context, original_content
+            );
+        }
+
+        emit_precognition_event(
+            event_tx,
+            session_id,
+            original_content,
+            results.len(),
+            kilns_searched,
+            0,
+        );
+        enriched_prompt
     }
 
     pub async fn send_message(
@@ -543,257 +753,18 @@ impl AgentManager {
             warn!(session_id = %session_id, "No subscribers for user_message event");
         }
 
-        let has_kiln = !session.kiln.as_os_str().is_empty();
         let content = if agent_config.precognition_enabled
             && !original_content.starts_with("/search")
-            && has_kiln
+            && !session.kiln.as_os_str().is_empty()
         {
-            let kiln_path = session.kiln.as_path();
-            match self.kiln_manager.get_or_open(kiln_path).await {
-                Ok(handle) => {
-                    match self.kiln_manager.get_enrichment_config(kiln_path).await {
-                        Some(primary_config) => {
-                            match crate::embedding::get_or_create_embedding_provider(&primary_config)
-                                .await
-                            {
-                                Ok(embedding_provider) => {
-                                    match embedding_provider.embed(&original_content).await {
-                                        Ok(query_embedding) => {
-                                            let mut sources = vec![KilnSearchSource {
-                                                kiln_path: session.kiln.clone(),
-                                                knowledge_repo: handle.as_knowledge_repository(),
-                                                is_primary: true,
-                                            }];
-
-                                            for connected_kiln in &session.connected_kilns {
-                                                let connected_handle =
-                                                    match self.kiln_manager.get_or_open(connected_kiln).await
-                                                    {
-                                                        Ok(handle) => handle,
-                                                        Err(error) => {
-                                                            warn!(
-                                                                session_id = %session_id,
-                                                                kiln = %connected_kiln.display(),
-                                                                error = %error,
-                                                                "Failed to open connected kiln for precognition"
-                                                            );
-                                                            continue;
-                                                        }
-                                                    };
-
-                                                let Some(connected_config) = self
-                                                    .kiln_manager
-                                                    .get_enrichment_config(connected_kiln)
-                                                    .await
-                                                else {
-                                                    debug!(
-                                                        session_id = %session_id,
-                                                        kiln = %connected_kiln.display(),
-                                                        "Skipping connected kiln without enrichment config"
-                                                    );
-                                                    continue;
-                                                };
-
-                                                if connected_config.model_name()
-                                                    != primary_config.model_name()
-                                                {
-                                                    warn!(
-                                                        session_id = %session_id,
-                                                        kiln = %connected_kiln.display(),
-                                                        primary_model = primary_config.model_name(),
-                                                        connected_model = connected_config.model_name(),
-                                                        "Skipping connected kiln with mismatched embedding model"
-                                                    );
-                                                    continue;
-                                                }
-
-                                                sources.push(KilnSearchSource {
-                                                    kiln_path: connected_kiln.clone(),
-                                                    knowledge_repo: connected_handle
-                                                        .as_knowledge_repository(),
-                                                    is_primary: false,
-                                                });
-                                            }
-
-                                            let provider_trust =
-                                                resolve_provider_trust(&agent_config, self.llm_config.as_ref());
-
-                                            match search_across_kilns(
-                                                &sources,
-                                                query_embedding,
-                                                5,
-                                                Some(provider_trust),
-                                                &session.workspace,
-                                            )
-                                            .await
-                                            {
-                                                Ok(results) => {
-                                                    let mut enriched_prompt = original_content.clone();
-                                                    if !results.is_empty() {
-                                                        let context = results
-                                                            .iter()
-                                                            .enumerate()
-                                                            .map(|(i, result)| {
-                                                                let title = result
-                                                                    .document_id
-                                                                    .0
-                                                                    .split('/')
-                                                                    .next_back()
-                                                                    .unwrap_or(&result.document_id.0)
-                                                                    .trim_end_matches(".md");
-
-                                                                let kiln_label = result
-                                                                    .kiln_path
-                                                                    .as_ref()
-                                                                    .filter(|path| path != &&session.kiln)
-                                                                    .and_then(|path| path.file_name())
-                                                                    .and_then(|name| name.to_str())
-                                                                    .map(|name| format!(" [from: {name}]"))
-                                                                    .unwrap_or_default();
-
-                                                                format!(
-                                                                    "## Context #{}: {}{} (similarity: {:.2})\n\n{}\n",
-                                                                    i + 1,
-                                                                    title,
-                                                                    kiln_label,
-                                                                    result.score,
-                                                                    result.snippet.clone().unwrap_or_default()
-                                                                )
-                                                            })
-                                                            .collect::<Vec<_>>()
-                                                            .join("\n");
-
-                                                        enriched_prompt = format!(
-                                                            "# Context from Knowledge Base\n\n{}\n\n---\n\n# User Query\n\n{}",
-                                                            context, original_content
-                                                        );
-                                                    }
-
-                                                    let query_summary = original_content
-                                                        .chars()
-                                                        .take(100)
-                                                        .collect::<String>();
-                                                    let event = SessionEvent::PrecognitionComplete {
-                                                        notes_count: results.len(),
-                                                        query_summary: query_summary.clone(),
-                                                        kilns_searched: sources.len(),
-                                                        kilns_filtered: 0,
-                                                        kilns_failed: 0,
-                                                    };
-                                                    if !emit_event(
-                                                        event_tx,
-                                                        SessionEventMessage::new(
-                                                            session_id,
-                                                            event.event_type(),
-                                                            serde_json::json!({
-                                                                "notes_count": results.len(),
-                                                                "query_summary": query_summary,
-                                                            }),
-                                                        ),
-                                                    ) {
-                                                        warn!(
-                                                            session_id = %session_id,
-                                                            "No subscribers for precognition_complete event"
-                                                        );
-                                                    }
-                                                    enriched_prompt
-                                                }
-                                                Err(error) => {
-                                                    warn!(
-                                                        session_id = %session_id,
-                                                        error = %error,
-                                                        "Precognition search across kilns failed"
-                                                    );
-                                                    let query_summary = original_content
-                                                        .chars()
-                                                        .take(100)
-                                                        .collect::<String>();
-                                                    let event = SessionEvent::PrecognitionComplete {
-                                                        notes_count: 0,
-                                                        query_summary: query_summary.clone(),
-                                                        kilns_searched: 1,
-                                                        kilns_filtered: 0,
-                                                        kilns_failed: 1,
-                                                    };
-                                                    if !emit_event(
-                                                        event_tx,
-                                                        SessionEventMessage::new(
-                                                            session_id,
-                                                            event.event_type(),
-                                                            serde_json::json!({
-                                                                "notes_count": 0,
-                                                                "query_summary": query_summary,
-                                                            }),
-                                                        ),
-                                                    ) {
-                                                        warn!(
-                                                            session_id = %session_id,
-                                                            "No subscribers for precognition_complete event"
-                                                        );
-                                                    }
-                                                    original_content.clone()
-                                                }
-                                            }
-                                        }
-                                        Err(error) => {
-                                            warn!(
-                                                session_id = %session_id,
-                                                error = %error,
-                                                "Precognition embedding failed"
-                                            );
-                                            let query_summary = original_content
-                                                .chars()
-                                                .take(100)
-                                                .collect::<String>();
-                                            let event = SessionEvent::PrecognitionComplete {
-                                                notes_count: 0,
-                                                query_summary: query_summary.clone(),
-                                                kilns_searched: 1,
-                                                kilns_filtered: 0,
-                                                kilns_failed: 1,
-                                            };
-                                            if !emit_event(
-                                                event_tx,
-                                                SessionEventMessage::new(
-                                                    session_id,
-                                                    event.event_type(),
-                                                    serde_json::json!({
-                                                        "notes_count": 0,
-                                                        "query_summary": query_summary,
-                                                    }),
-                                                ),
-                                            ) {
-                                                warn!(
-                                                    session_id = %session_id,
-                                                    "No subscribers for precognition_complete event"
-                                                );
-                                            }
-                                            original_content.clone()
-                                        }
-                                    }
-                                }
-                                Err(error) => {
-                                    warn!(
-                                        session_id = %session_id,
-                                        error = %error,
-                                        "Failed to create embedding provider for precognition"
-                                    );
-                                    original_content.clone()
-                                }
-                            }
-                        }
-                        None => original_content.clone(),
-                    }
-                }
-                Err(error) => {
-                    warn!(
-                        session_id = %session_id,
-                        error = %error,
-                        "Failed to open kiln for precognition"
-                    );
-                    original_content.clone()
-                }
-            }
+            self.enrich_with_precognition(
+                session_id,
+                &original_content,
+                &session,
+                &agent_config,
+                event_tx,
+            )
+            .await
         } else {
             original_content.clone()
         };
@@ -1136,6 +1107,8 @@ impl AgentManager {
             }
         };
 
+        let stream_start = Instant::now();
+
         let mut agent_guard = agent.lock().await;
         let mut stream = agent_guard.send_message_stream(content);
 
@@ -1231,7 +1204,15 @@ impl AgentManager {
                                             "PreToolCall handler failed, continuing (fail-open)"
                                         );
                                     }
-                                    Ok(EmitResult::Completed { .. }) | Err(_) => {}
+                                    Ok(EmitResult::Completed { .. }) => {}
+                                    Err(error) => {
+                                        warn!(
+                                            session_id = %session_id,
+                                            tool = %tc.name,
+                                            error = %error,
+                                            "PreToolCall emit failed, continuing (fail-open)"
+                                        );
+                                    }
                                 }
                             }
 
@@ -1574,27 +1555,20 @@ impl AgentManager {
             }
         }
 
+        let duration_ms = stream_start.elapsed().as_millis() as u64;
         let response_summary: String = accumulated_response.chars().take(200).collect();
-        let post_model = if model.is_empty() {
-            "unknown".to_string()
-        } else {
-            model.clone()
-        };
-        let post_event = SessionEvent::PostLlmCall {
-            response_summary: response_summary.clone(),
-            model: post_model.clone(),
-            duration_ms: 0,
-            token_count: None,
-        };
+        if model.is_empty() {
+            warn!(session_id = %session_id, "PostLlmCall model string is empty, possible upstream issue");
+        }
         if !emit_event(
             event_tx,
             SessionEventMessage::new(
                 session_id,
-                post_event.event_type(),
+                "post_llm_call",
                 serde_json::json!({
-                    "response_summary": response_summary,
-                    "model": post_model,
-                    "duration_ms": 0,
+                    "response_summary": &response_summary,
+                    "model": &model,
+                    "duration_ms": duration_ms,
                     "token_count": Option::<u64>::None,
                 }),
             ),
@@ -1603,14 +1577,14 @@ impl AgentManager {
         }
         {
             let mut state = session_state.lock().await;
-            let reactor_post_event = SessionEvent::PostLlmCall {
-                response_summary: response_summary.clone(),
-                model: post_model.clone(),
-                duration_ms: 0,
+            let post_event = SessionEvent::PostLlmCall {
+                response_summary,
+                model,
+                duration_ms,
                 token_count: None,
             };
-            if let Err(e) = state.reactor.emit(reactor_post_event).await {
-                warn!(session_id = %session_id, error = %e, "PostLlmCall Reactor emit failed (non-fatal)");
+            if let Err(e) = state.reactor.emit(post_event).await {
+                warn!(session_id = %session_id, error = %e, "PostLlmCall Reactor emit failed (fail-open)");
             }
         }
     }
@@ -2429,9 +2403,7 @@ mod tests {
     #[async_trait::async_trait]
     impl AgentHandle for PromptCapturingAgent {
         fn send_message_stream(&mut self, content: String) -> BoxStream<'static, ChatResult<ChatChunk>> {
-            if let Ok(mut guard) = self.received_prompt.try_lock() {
-                *guard = Some(content);
-            }
+            *self.received_prompt.lock().unwrap() = Some(content);
             let chunks = self.chunks.clone();
             futures::stream::iter(chunks.into_iter().map(Ok)).boxed()
         }
@@ -2578,6 +2550,102 @@ mod tests {
         .expect("timed out waiting for message_complete");
     }
 
+    struct ReactorTestHarness {
+        agent_manager: AgentManager,
+        session_id: String,
+        event_tx: broadcast::Sender<SessionEventMessage>,
+        event_rx: broadcast::Receiver<SessionEventMessage>,
+        _tmp: TempDir,
+    }
+
+    impl ReactorTestHarness {
+        async fn new() -> Self {
+            let tmp = TempDir::new().unwrap();
+            let storage = Arc::new(FileSessionStorage::new());
+            let session_manager = Arc::new(SessionManager::with_storage(storage));
+            let session = session_manager
+                .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![], None)
+                .await
+                .unwrap();
+            let agent_manager = create_test_agent_manager(session_manager.clone());
+            agent_manager
+                .configure_agent(&session.id, test_agent())
+                .await
+                .unwrap();
+            let (event_tx, event_rx) = broadcast::channel::<SessionEventMessage>(64);
+            Self {
+                agent_manager,
+                session_id: session.id,
+                event_tx,
+                event_rx,
+                _tmp: tmp,
+            }
+        }
+
+        async fn register_handler(&self, handler: MockHandler) {
+            let session_state = self.agent_manager.get_or_create_session_state(&self.session_id);
+            session_state
+                .lock()
+                .await
+                .reactor
+                .register(Box::new(handler))
+                .unwrap();
+        }
+
+        fn inject_capturing_agent(
+            &self,
+            chunks: Vec<ChatChunk>,
+        ) -> Arc<std::sync::Mutex<Option<String>>> {
+            let received_prompt = Arc::new(std::sync::Mutex::new(None::<String>));
+            self.agent_manager.agent_cache.insert(
+                self.session_id.clone(),
+                Arc::new(Mutex::new(Box::new(PromptCapturingAgent {
+                    received_prompt: received_prompt.clone(),
+                    chunks,
+                }) as BoxedAgentHandle)),
+            );
+            received_prompt
+        }
+
+        fn inject_streaming_agent(&self, chunks: Vec<ChatChunk>) {
+            self.agent_manager.agent_cache.insert(
+                self.session_id.clone(),
+                Arc::new(Mutex::new(
+                    Box::new(StreamingMockAgent { chunks }) as BoxedAgentHandle,
+                )),
+            );
+        }
+
+        fn default_ok_chunks() -> Vec<ChatChunk> {
+            vec![ChatChunk {
+                delta: "ok".to_string(),
+                done: true,
+                tool_calls: None,
+                tool_results: None,
+                reasoning: None,
+                usage: None,
+                subagent_events: None,
+                precognition_notes_count: None,
+            }]
+        }
+
+        async fn send(&mut self, msg: &str) {
+            self.agent_manager
+                .send_message(&self.session_id, msg.to_string(), &self.event_tx)
+                .await
+                .unwrap();
+        }
+
+        async fn wait_for(&mut self, event_name: &str) -> SessionEventMessage {
+            next_event_or_skip(&mut self.event_rx, event_name).await
+        }
+
+        #[allow(dead_code)]
+        async fn assert_no_event_until_complete(&mut self, event_name: &str) {
+            assert_no_event_until_message_complete(&mut self.event_rx, event_name).await;
+        }
+    }
+
     fn test_agent() -> SessionAgent {
         SessionAgent {
             agent_type: "internal".to_string(),
@@ -2634,67 +2702,20 @@ mod tests {
 
     #[tokio::test]
     async fn reactor_pre_llm_modifies_prompt() {
-        let tmp = TempDir::new().unwrap();
-        let storage = Arc::new(FileSessionStorage::new());
-        let session_manager = Arc::new(SessionManager::with_storage(storage));
-        let session = session_manager
-            .create_session(
-                SessionType::Chat,
-                tmp.path().to_path_buf(),
-                None,
-                vec![],
-                None,
-            )
-            .await
-            .unwrap();
-
-        let agent_manager = create_test_agent_manager(session_manager.clone());
-        agent_manager
-            .configure_agent(&session.id, test_agent())
-            .await
-            .unwrap();
+        let mut h = ReactorTestHarness::new().await;
 
         let call_count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
-        let handler = MockHandler {
+        h.register_handler(MockHandler {
             name: "test-modify-prompt".to_string(),
             event_pattern: "pre_llm_call".to_string(),
             call_count: call_count.clone(),
             behavior: MockHandlerBehavior::ModifyPrompt("MODIFIED: hello".to_string()),
-        };
-        let session_state = agent_manager.get_or_create_session_state(&session.id);
-        session_state
-            .lock()
-            .await
-            .reactor
-            .register(Box::new(handler))
-            .unwrap();
+        })
+        .await;
+        let received_prompt = h.inject_capturing_agent(ReactorTestHarness::default_ok_chunks());
 
-        let received_prompt = Arc::new(std::sync::Mutex::new(None::<String>));
-        agent_manager.agent_cache.insert(
-            session.id.clone(),
-            Arc::new(Mutex::new(Box::new(PromptCapturingAgent {
-                received_prompt: received_prompt.clone(),
-                chunks: vec![ChatChunk {
-                    delta: "ok".to_string(),
-                    done: true,
-                    tool_calls: None,
-                    tool_results: None,
-                    reasoning: None,
-                    usage: None,
-                    subagent_events: None,
-                    precognition_notes_count: None,
-                }],
-            }) as BoxedAgentHandle)),
-        );
-
-        let (event_tx, mut event_rx) = broadcast::channel::<SessionEventMessage>(64);
-        agent_manager
-            .send_message(&session.id, "hello".to_string(), &event_tx)
-            .await
-            .unwrap();
-
-        let _ = next_event_or_skip(&mut event_rx, "message_complete").await;
-        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+        h.send("hello").await;
+        h.wait_for("message_complete").await;
 
         assert_eq!(call_count.load(std::sync::atomic::Ordering::SeqCst), 1);
         let prompt = received_prompt.lock().unwrap();
@@ -2703,66 +2724,30 @@ mod tests {
 
     #[tokio::test]
     async fn reactor_pre_llm_cancel_aborts() {
-        let tmp = TempDir::new().unwrap();
-        let storage = Arc::new(FileSessionStorage::new());
-        let session_manager = Arc::new(SessionManager::with_storage(storage));
-        let session = session_manager
-            .create_session(
-                SessionType::Chat,
-                tmp.path().to_path_buf(),
-                None,
-                vec![],
-                None,
-            )
-            .await
-            .unwrap();
-
-        let agent_manager = create_test_agent_manager(session_manager.clone());
-        agent_manager
-            .configure_agent(&session.id, test_agent())
-            .await
-            .unwrap();
+        let mut h = ReactorTestHarness::new().await;
 
         let call_count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
-        let handler = MockHandler {
+        h.register_handler(MockHandler {
             name: "test-cancel-pre-llm".to_string(),
             event_pattern: "pre_llm_call".to_string(),
             call_count: call_count.clone(),
             behavior: MockHandlerBehavior::Cancel,
-        };
-        let session_state = agent_manager.get_or_create_session_state(&session.id);
-        session_state
-            .lock()
-            .await
-            .reactor
-            .register(Box::new(handler))
-            .unwrap();
+        })
+        .await;
 
-        let received_prompt = Arc::new(std::sync::Mutex::new(None::<String>));
-        agent_manager.agent_cache.insert(
-            session.id.clone(),
-            Arc::new(Mutex::new(Box::new(PromptCapturingAgent {
-                received_prompt: received_prompt.clone(),
-                chunks: vec![ChatChunk {
-                    delta: "should-not-run".to_string(),
-                    done: true,
-                    tool_calls: None,
-                    tool_results: None,
-                    reasoning: None,
-                    usage: None,
-                    subagent_events: None,
-                    precognition_notes_count: None,
-                }],
-            }) as BoxedAgentHandle)),
-        );
+        let received_prompt = h.inject_capturing_agent(vec![ChatChunk {
+            delta: "should-not-run".to_string(),
+            done: true,
+            tool_calls: None,
+            tool_results: None,
+            reasoning: None,
+            usage: None,
+            subagent_events: None,
+            precognition_notes_count: None,
+        }]);
 
-        let (event_tx, mut event_rx) = broadcast::channel::<SessionEventMessage>(64);
-        agent_manager
-            .send_message(&session.id, "hello".to_string(), &event_tx)
-            .await
-            .unwrap();
-
-        let ended = next_event_or_skip(&mut event_rx, "ended").await;
+        h.send("hello").await;
+        let ended = h.wait_for("ended").await;
 
         assert_eq!(call_count.load(std::sync::atomic::Ordering::SeqCst), 1);
         assert!(ended.data["reason"].as_str().unwrap_or_default().contains("cancelled by handler"));
@@ -2772,51 +2757,11 @@ mod tests {
 
     #[tokio::test]
     async fn reactor_pre_llm_empty_passthrough() {
-        let tmp = TempDir::new().unwrap();
-        let storage = Arc::new(FileSessionStorage::new());
-        let session_manager = Arc::new(SessionManager::with_storage(storage));
-        let session = session_manager
-            .create_session(
-                SessionType::Chat,
-                tmp.path().to_path_buf(),
-                None,
-                vec![],
-                None,
-            )
-            .await
-            .unwrap();
+        let mut h = ReactorTestHarness::new().await;
+        let received_prompt = h.inject_capturing_agent(ReactorTestHarness::default_ok_chunks());
 
-        let agent_manager = create_test_agent_manager(session_manager.clone());
-        agent_manager
-            .configure_agent(&session.id, test_agent())
-            .await
-            .unwrap();
-
-        let received_prompt = Arc::new(std::sync::Mutex::new(None::<String>));
-        agent_manager.agent_cache.insert(
-            session.id.clone(),
-            Arc::new(Mutex::new(Box::new(PromptCapturingAgent {
-                received_prompt: received_prompt.clone(),
-                chunks: vec![ChatChunk {
-                    delta: "ok".to_string(),
-                    done: true,
-                    tool_calls: None,
-                    tool_results: None,
-                    reasoning: None,
-                    usage: None,
-                    subagent_events: None,
-                    precognition_notes_count: None,
-                }],
-            }) as BoxedAgentHandle)),
-        );
-
-        let (event_tx, mut event_rx) = broadcast::channel::<SessionEventMessage>(64);
-        agent_manager
-            .send_message(&session.id, "hello".to_string(), &event_tx)
-            .await
-            .unwrap();
-
-        let _ = next_event_or_skip(&mut event_rx, "message_complete").await;
+        h.send("hello").await;
+        h.wait_for("message_complete").await;
 
         let prompt = received_prompt.lock().unwrap();
         assert_eq!(prompt.as_deref(), Some("hello"));
@@ -2824,66 +2769,21 @@ mod tests {
 
     #[tokio::test]
     async fn reactor_pre_llm_error_fails_open() {
-        let tmp = TempDir::new().unwrap();
-        let storage = Arc::new(FileSessionStorage::new());
-        let session_manager = Arc::new(SessionManager::with_storage(storage));
-        let session = session_manager
-            .create_session(
-                SessionType::Chat,
-                tmp.path().to_path_buf(),
-                None,
-                vec![],
-                None,
-            )
-            .await
-            .unwrap();
-
-        let agent_manager = create_test_agent_manager(session_manager.clone());
-        agent_manager
-            .configure_agent(&session.id, test_agent())
-            .await
-            .unwrap();
+        let mut h = ReactorTestHarness::new().await;
 
         let call_count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
-        let handler = MockHandler {
+        h.register_handler(MockHandler {
             name: "test-fatal-pre-llm".to_string(),
             event_pattern: "pre_llm_call".to_string(),
             call_count: call_count.clone(),
             behavior: MockHandlerBehavior::FatalError("boom".to_string()),
-        };
-        let session_state = agent_manager.get_or_create_session_state(&session.id);
-        session_state
-            .lock()
-            .await
-            .reactor
-            .register(Box::new(handler))
-            .unwrap();
+        })
+        .await;
 
-        let received_prompt = Arc::new(std::sync::Mutex::new(None::<String>));
-        agent_manager.agent_cache.insert(
-            session.id.clone(),
-            Arc::new(Mutex::new(Box::new(PromptCapturingAgent {
-                received_prompt: received_prompt.clone(),
-                chunks: vec![ChatChunk {
-                    delta: "ok".to_string(),
-                    done: true,
-                    tool_calls: None,
-                    tool_results: None,
-                    reasoning: None,
-                    usage: None,
-                    subagent_events: None,
-                    precognition_notes_count: None,
-                }],
-            }) as BoxedAgentHandle)),
-        );
+        let received_prompt = h.inject_capturing_agent(ReactorTestHarness::default_ok_chunks());
 
-        let (event_tx, mut event_rx) = broadcast::channel::<SessionEventMessage>(64);
-        agent_manager
-            .send_message(&session.id, "hello".to_string(), &event_tx)
-            .await
-            .unwrap();
-
-        let _ = next_event_or_skip(&mut event_rx, "message_complete").await;
+        h.send("hello").await;
+        h.wait_for("message_complete").await;
 
         assert_eq!(call_count.load(std::sync::atomic::Ordering::SeqCst), 1);
         let prompt = received_prompt.lock().unwrap();
@@ -2892,146 +2792,69 @@ mod tests {
 
     #[tokio::test]
     async fn reactor_post_llm_fires_after_stream() {
-        let tmp = TempDir::new().unwrap();
-        let storage = Arc::new(FileSessionStorage::new());
-        let session_manager = Arc::new(SessionManager::with_storage(storage));
-        let session = session_manager
-            .create_session(
-                SessionType::Chat,
-                tmp.path().to_path_buf(),
-                None,
-                vec![],
-                None,
-            )
-            .await
-            .unwrap();
-
-        let agent_manager = create_test_agent_manager(session_manager.clone());
-        agent_manager
-            .configure_agent(&session.id, test_agent())
-            .await
-            .unwrap();
+        let mut h = ReactorTestHarness::new().await;
 
         let call_count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
-        let handler = MockHandler {
+        h.register_handler(MockHandler {
             name: "test-post-llm".to_string(),
             event_pattern: "post_llm_call".to_string(),
             call_count: call_count.clone(),
             behavior: MockHandlerBehavior::Passthrough,
-        };
-        let session_state = agent_manager.get_or_create_session_state(&session.id);
-        session_state
-            .lock()
-            .await
-            .reactor
-            .register(Box::new(handler))
-            .unwrap();
+        })
+        .await;
 
-        agent_manager.agent_cache.insert(
-            session.id.clone(),
-            Arc::new(Mutex::new(Box::new(StreamingMockAgent {
-                chunks: vec![ChatChunk {
-                    delta: "ok".to_string(),
-                    done: true,
-                    tool_calls: None,
-                    tool_results: None,
-                    reasoning: None,
-                    usage: None,
-                    subagent_events: None,
-                    precognition_notes_count: None,
-                }],
-            }) as BoxedAgentHandle)),
-        );
+        h.inject_streaming_agent(ReactorTestHarness::default_ok_chunks());
 
-        let (event_tx, mut event_rx) = broadcast::channel::<SessionEventMessage>(64);
-        agent_manager
-            .send_message(&session.id, "hello".to_string(), &event_tx)
-            .await
-            .unwrap();
-
-        let _ = next_event_or_skip(&mut event_rx, "message_complete").await;
-        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+        h.send("hello").await;
+        h.wait_for("message_complete").await;
 
         assert_eq!(call_count.load(std::sync::atomic::Ordering::SeqCst), 1);
     }
 
     #[tokio::test]
     async fn reactor_pre_tool_cancel_denies() {
-        let tmp = TempDir::new().unwrap();
-        let storage = Arc::new(FileSessionStorage::new());
-        let session_manager = Arc::new(SessionManager::with_storage(storage));
-        let session = session_manager
-            .create_session(
-                SessionType::Chat,
-                tmp.path().to_path_buf(),
-                None,
-                vec![],
-                None,
-            )
-            .await
-            .unwrap();
-
-        let agent_manager = create_test_agent_manager(session_manager.clone());
-        agent_manager
-            .configure_agent(&session.id, test_agent())
-            .await
-            .unwrap();
+        let mut h = ReactorTestHarness::new().await;
 
         let call_count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
-        let handler = MockHandler {
+        h.register_handler(MockHandler {
             name: "test-pre-tool-cancel".to_string(),
             event_pattern: "pre_tool_call".to_string(),
             call_count: call_count.clone(),
             behavior: MockHandlerBehavior::Cancel,
-        };
-        let session_state = agent_manager.get_or_create_session_state(&session.id);
-        session_state
-            .lock()
-            .await
-            .reactor
-            .register(Box::new(handler))
-            .unwrap();
+        })
+        .await;
 
-        agent_manager.agent_cache.insert(
-            session.id.clone(),
-            Arc::new(Mutex::new(Box::new(StreamingMockAgent {
-                chunks: vec![
-                    ChatChunk {
-                        delta: String::new(),
-                        done: false,
-                        tool_calls: Some(vec![ChatToolCall {
-                            name: "write".to_string(),
-                            arguments: Some(serde_json::json!({ "path": "foo.txt", "content": "x" })),
-                            id: Some("call-pre-tool-cancel".to_string()),
-                        }]),
-                        tool_results: None,
-                        reasoning: None,
-                        usage: None,
-                        subagent_events: None,
-                        precognition_notes_count: None,
-                    },
-                    ChatChunk {
-                        delta: "done".to_string(),
-                        done: true,
-                        tool_calls: None,
-                        tool_results: None,
-                        reasoning: None,
-                        usage: None,
-                        subagent_events: None,
-                        precognition_notes_count: None,
-                    },
-                ],
-            }) as BoxedAgentHandle)),
-        );
+        h.inject_streaming_agent(vec![
+            ChatChunk {
+                delta: String::new(),
+                done: false,
+                tool_calls: Some(vec![ChatToolCall {
+                    name: "write".to_string(),
+                    arguments: Some(serde_json::json!({ "path": "foo.txt", "content": "x" })),
+                    id: Some("call-pre-tool-cancel".to_string()),
+                }]),
+                tool_results: None,
+                reasoning: None,
+                usage: None,
+                subagent_events: None,
+                precognition_notes_count: None,
+            },
+            ChatChunk {
+                delta: "done".to_string(),
+                done: true,
+                tool_calls: None,
+                tool_results: None,
+                reasoning: None,
+                usage: None,
+                subagent_events: None,
+                precognition_notes_count: None,
+            },
+        ]);
 
-        let (event_tx, mut event_rx) = broadcast::channel::<SessionEventMessage>(64);
-        agent_manager
-            .send_message(&session.id, "run tool".to_string(), &event_tx)
-            .await
-            .unwrap();
+        h.send("run tool").await;
 
-        let tool_result = next_event_or_skip(&mut event_rx, "tool_result").await;
-        let _ = next_event_or_skip(&mut event_rx, "message_complete").await;
+        let tool_result = h.wait_for("tool_result").await;
+        h.wait_for("message_complete").await;
 
         assert_eq!(call_count.load(std::sync::atomic::Ordering::SeqCst), 1);
         assert_eq!(tool_result.data["tool"], "write");
@@ -3043,156 +2866,83 @@ mod tests {
 
     #[tokio::test]
     async fn reactor_persists_across_messages() {
-        let tmp = TempDir::new().unwrap();
-        let storage = Arc::new(FileSessionStorage::new());
-        let session_manager = Arc::new(SessionManager::with_storage(storage));
-        let session = session_manager
-            .create_session(
-                SessionType::Chat,
-                tmp.path().to_path_buf(),
-                None,
-                vec![],
-                None,
-            )
-            .await
-            .unwrap();
-
-        let agent_manager = create_test_agent_manager(session_manager.clone());
-        agent_manager
-            .configure_agent(&session.id, test_agent())
-            .await
-            .unwrap();
+        let mut h = ReactorTestHarness::new().await;
 
         let call_count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
-        let handler = MockHandler {
+        h.register_handler(MockHandler {
             name: "test-persists".to_string(),
             event_pattern: "pre_llm_call".to_string(),
             call_count: call_count.clone(),
             behavior: MockHandlerBehavior::Passthrough,
-        };
-        let session_state = agent_manager.get_or_create_session_state(&session.id);
-        session_state
-            .lock()
-            .await
-            .reactor
-            .register(Box::new(handler))
-            .unwrap();
+        })
+        .await;
 
-        agent_manager.agent_cache.insert(
-            session.id.clone(),
-            Arc::new(Mutex::new(Box::new(StreamingMockAgent {
-                chunks: vec![ChatChunk {
-                    delta: "ok".to_string(),
-                    done: true,
-                    tool_calls: None,
-                    tool_results: None,
-                    reasoning: None,
-                    usage: None,
-                    subagent_events: None,
-                    precognition_notes_count: None,
-                }],
-            }) as BoxedAgentHandle)),
-        );
+        h.inject_streaming_agent(ReactorTestHarness::default_ok_chunks());
 
-        let (event_tx, mut event_rx) = broadcast::channel::<SessionEventMessage>(64);
-        agent_manager
-            .send_message(&session.id, "one".to_string(), &event_tx)
-            .await
-            .unwrap();
-        let _ = next_event_or_skip(&mut event_rx, "message_complete").await;
+        h.send("one").await;
+        h.wait_for("message_complete").await;
 
-        agent_manager
-            .send_message(&session.id, "two".to_string(), &event_tx)
-            .await
-            .unwrap();
-        let _ = next_event_or_skip(&mut event_rx, "message_complete").await;
-        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+        h.send("two").await;
+        h.wait_for("message_complete").await;
 
         assert_eq!(call_count.load(std::sync::atomic::Ordering::SeqCst), 2);
     }
 
     #[tokio::test]
     async fn reactor_cleanup_drops_state() {
-        let tmp = TempDir::new().unwrap();
-        let storage = Arc::new(FileSessionStorage::new());
-        let session_manager = Arc::new(SessionManager::with_storage(storage));
-        let session = session_manager
-            .create_session(
-                SessionType::Chat,
-                tmp.path().to_path_buf(),
-                None,
-                vec![],
-                None,
-            )
-            .await
-            .unwrap();
+        let h = ReactorTestHarness::new().await;
 
-        let agent_manager = create_test_agent_manager(session_manager);
+        let _ = h.agent_manager.get_or_create_session_state(&h.session_id);
+        assert!(h.agent_manager.session_states.contains_key(&h.session_id));
 
-        let _ = agent_manager.get_or_create_session_state(&session.id);
-        assert!(agent_manager.session_states.contains_key(&session.id));
+        h.agent_manager.cleanup_session(&h.session_id);
 
-        agent_manager.cleanup_session(&session.id);
-
-        assert!(!agent_manager.session_states.contains_key(&session.id));
+        assert!(!h.agent_manager.session_states.contains_key(&h.session_id));
     }
 
     #[tokio::test]
     async fn reactor_lua_handler_discovery_empty_dir() {
-        let tmp = TempDir::new().unwrap();
-        let storage = Arc::new(FileSessionStorage::new());
-        let session_manager = Arc::new(SessionManager::with_storage(storage));
-        let session = session_manager
-            .create_session(
-                SessionType::Chat,
-                tmp.path().to_path_buf(),
-                None,
-                vec![],
-                None,
-            )
-            .await
-            .unwrap();
+        let mut h = ReactorTestHarness::new().await;
 
-        let agent_manager = create_test_agent_manager(session_manager.clone());
-        agent_manager
-            .configure_agent(&session.id, test_agent())
-            .await
-            .unwrap();
-
-        let session_state = agent_manager.get_or_create_session_state(&session.id);
+        let session_state = h.agent_manager.get_or_create_session_state(&h.session_id);
         {
             let state = session_state.lock().await;
             assert!(state.reactor.is_empty());
         }
 
-        let received_prompt = Arc::new(std::sync::Mutex::new(None::<String>));
-        agent_manager.agent_cache.insert(
-            session.id.clone(),
-            Arc::new(Mutex::new(Box::new(PromptCapturingAgent {
-                received_prompt: received_prompt.clone(),
-                chunks: vec![ChatChunk {
-                    delta: "ok".to_string(),
-                    done: true,
-                    tool_calls: None,
-                    tool_results: None,
-                    reasoning: None,
-                    usage: None,
-                    subagent_events: None,
-                    precognition_notes_count: None,
-                }],
-            }) as BoxedAgentHandle)),
-        );
+        let received_prompt = h.inject_capturing_agent(ReactorTestHarness::default_ok_chunks());
 
-        let (event_tx, mut event_rx) = broadcast::channel::<SessionEventMessage>(64);
-        agent_manager
-            .send_message(&session.id, "hello".to_string(), &event_tx)
-            .await
-            .unwrap();
-
-        let _ = next_event_or_skip(&mut event_rx, "message_complete").await;
+        h.send("hello").await;
+        h.wait_for("message_complete").await;
 
         let prompt = received_prompt.lock().unwrap();
         assert_eq!(prompt.as_deref(), Some("hello"));
+    }
+
+    #[test]
+    fn event_patterns_match_event_type() {
+        let _repo = MockKnowledgeRepository { results: vec![] };
+        let _embedding = MockEmbeddingProvider { should_fail: false };
+
+        let pre_llm = SessionEvent::PreLlmCall {
+            prompt: String::new(),
+            model: String::new(),
+        };
+        assert_eq!(pre_llm.event_type(), "pre_llm_call");
+
+        let post_llm = SessionEvent::PostLlmCall {
+            response_summary: String::new(),
+            model: String::new(),
+            duration_ms: 0,
+            token_count: None,
+        };
+        assert_eq!(post_llm.event_type(), "post_llm_call");
+
+        let pre_tool = SessionEvent::PreToolCall {
+            name: String::new(),
+            args: serde_json::Value::Null,
+        };
+        assert_eq!(pre_tool.event_type(), "pre_tool_call");
     }
 
     #[tokio::test]
