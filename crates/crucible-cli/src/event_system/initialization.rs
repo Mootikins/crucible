@@ -17,7 +17,7 @@
 //! the new storage system in a future update.
 
 use anyhow::{Context, Result};
-use crucible_core::events::{Reactor, ReactorEventEmitter, SessionEvent};
+use crucible_core::events::{Reactor, ReactorEventEmitter};
 use crucible_enrichment::{EmbeddingHandler, EmbeddingHandlerAdapter};
 use crucible_watch::{WatchManager, WatchManagerConfig};
 use std::path::Path;
@@ -67,15 +67,6 @@ pub async fn initialize_event_system(config: &CliConfig) -> Result<EventSystemHa
     // Create Reactor for unified event dispatch
     debug!("Creating Reactor");
     let mut reactor = Reactor::new();
-
-    // Initialize database (SurrealDB only)
-    #[cfg(feature = "storage-surrealdb")]
-    let storage_client = {
-        debug!("Initializing database storage");
-        let client = factories::create_surrealdb_storage(config).await?;
-        factories::initialize_surrealdb_schema(&client).await?;
-        client
-    };
 
     // Create shared reactor for the ReactorEventEmitter
     // We need to wrap it now so handlers can get a reference to the emitter
@@ -139,21 +130,10 @@ pub async fn initialize_event_system(config: &CliConfig) -> Result<EventSystemHa
         handler_count
     );
 
-    #[cfg(feature = "storage-surrealdb")]
-    {
-        Ok(EventSystemHandle::new(
-            reactor_arc,
-            watch_manager,
-            storage_client,
-        ))
-    }
-    #[cfg(not(feature = "storage-surrealdb"))]
-    {
-        Ok(EventSystemHandle::new_without_storage(
-            reactor_arc,
-            watch_manager,
-        ))
-    }
+    Ok(EventSystemHandle::new(
+        reactor_arc,
+        watch_manager,
+    ))
 }
 
 fn load_lua_handlers(reactor: &mut Reactor, kiln_path: &Path) {

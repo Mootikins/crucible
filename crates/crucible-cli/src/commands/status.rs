@@ -87,9 +87,6 @@ async fn show_global_status(
     _recent: bool,
 ) -> Result<()> {
     // Determine storage mode
-    #[cfg(feature = "storage-surrealdb")]
-    let is_embedded = storage.is_embedded();
-    #[cfg(not(feature = "storage-surrealdb"))]
     let is_embedded = false;
 
     let mode = if is_embedded {

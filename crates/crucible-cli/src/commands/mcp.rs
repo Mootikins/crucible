@@ -27,7 +27,6 @@ use tracing::{debug, info, warn};
 
 use crate::config::CliConfig;
 use crate::core_facade::KilnContext;
-#[cfg(not(feature = "storage-surrealdb"))]
 use crate::factories;
 
 /// MCP server command arguments
@@ -99,9 +98,6 @@ pub async fn execute(config: CliConfig, args: McpArgs) -> Result<()> {
     debug!("Transport: {}", if args.stdio { "stdio" } else { "SSE" });
 
     // Initialize core facade
-    #[cfg(feature = "storage-surrealdb")]
-    let core = Arc::new(KilnContext::from_config(config.clone()).await?);
-    #[cfg(not(feature = "storage-surrealdb"))]
     let core = {
         let storage_handle = factories::get_storage(&config).await?;
         Arc::new(KilnContext::from_storage_handle(
