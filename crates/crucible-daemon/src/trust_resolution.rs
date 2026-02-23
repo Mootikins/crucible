@@ -6,20 +6,20 @@ use crucible_config::{DataClassification, WorkspaceConfig};
 
 /// Resolve the data classification for a kiln by reading the workspace config.
 ///
-/// Falls back to `DataClassification::Public` if:
+/// Returns `None` if:
 /// - The workspace.toml does not exist
 /// - The TOML is unparseable
 /// - The kiln is not found in the [[kilns]] list
-pub(crate) fn resolve_kiln_classification(workspace: &Path, kiln: &Path) -> DataClassification {
+/// - The kiln entry has no `data_classification` set
+///
+/// Callers must handle the `None` case explicitly — no silent default to `Public`.
+pub(crate) fn resolve_kiln_classification(
+    workspace: &Path,
+    kiln: &Path,
+) -> Option<DataClassification> {
     let config_path = workspace.join(".crucible").join("workspace.toml");
-    let content = match std::fs::read_to_string(config_path) {
-        Ok(content) => content,
-        Err(_) => return DataClassification::Public,
-    };
-    let config = match toml::from_str::<WorkspaceConfig>(&content) {
-        Ok(config) => config,
-        Err(_) => return DataClassification::Public,
-    };
+    let content = std::fs::read_to_string(config_path).ok()?;
+    let config = toml::from_str::<WorkspaceConfig>(&content).ok()?;
 
     let kiln_canonical = std::fs::canonicalize(kiln).ok();
     for attachment in &config.kilns {
@@ -38,11 +38,11 @@ pub(crate) fn resolve_kiln_classification(workspace: &Path, kiln: &Path) -> Data
         };
 
         if matches {
-            return attachment.effective_classification();
+            return attachment.data_classification;
         }
     }
 
-    DataClassification::Public
+    None
 }
 
 #[cfg(test)]
@@ -75,11 +75,11 @@ mod tests {
         write_workspace_config(&workspace, "./notes", Some("confidential"));
 
         let result = resolve_kiln_classification(&workspace, &kiln);
-        assert_eq!(result, DataClassification::Confidential);
+        assert_eq!(result, Some(DataClassification::Confidential));
     }
 
     #[test]
-    fn classification_missing_config_defaults_public() {
+    fn classification_missing_config_returns_none() {
         let tmp = TempDir::new().unwrap();
         let workspace = tmp.path().join("ws");
         let kiln = workspace.join("notes");
@@ -87,11 +87,11 @@ mod tests {
         // No .crucible/workspace.toml written
 
         let result = resolve_kiln_classification(&workspace, &kiln);
-        assert_eq!(result, DataClassification::Public);
+        assert_eq!(result, None);
     }
 
     #[test]
-    fn classification_bad_toml_defaults_public() {
+    fn classification_bad_toml_returns_none() {
         let tmp = TempDir::new().unwrap();
         let workspace = tmp.path().join("ws");
         let kiln = workspace.join("notes");
@@ -105,11 +105,11 @@ mod tests {
         .unwrap();
 
         let result = resolve_kiln_classification(&workspace, &kiln);
-        assert_eq!(result, DataClassification::Public);
+        assert_eq!(result, None);
     }
 
     #[test]
-    fn classification_no_matching_kiln_defaults_public() {
+    fn classification_no_matching_kiln_returns_none() {
         let tmp = TempDir::new().unwrap();
         let workspace = tmp.path().join("ws");
         let kiln = workspace.join("notes");
@@ -120,6 +120,31 @@ mod tests {
         write_workspace_config(&workspace, "./other", Some("confidential"));
 
         let result = resolve_kiln_classification(&workspace, &kiln);
-        assert_eq!(result, DataClassification::Public);
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn classification_kiln_found_but_no_classification_returns_none() {
+        let tmp = TempDir::new().unwrap();
+        let workspace = tmp.path().join("ws");
+        let kiln = workspace.join("notes");
+        fs::create_dir_all(&kiln).unwrap();
+        // Config has the kiln but no data_classification field
+        write_workspace_config(&workspace, "./notes", None);
+
+        let result = resolve_kiln_classification(&workspace, &kiln);
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn classification_explicit_public_returns_some_public() {
+        let tmp = TempDir::new().unwrap();
+        let workspace = tmp.path().join("ws");
+        let kiln = workspace.join("notes");
+        fs::create_dir_all(&kiln).unwrap();
+        write_workspace_config(&workspace, "./notes", Some("public"));
+
+        let result = resolve_kiln_classification(&workspace, &kiln);
+        assert_eq!(result, Some(DataClassification::Public));
     }
 }
