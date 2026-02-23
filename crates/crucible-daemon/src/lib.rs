@@ -48,6 +48,7 @@ pub mod session_storage;
 pub mod subscription;
 pub mod tools_bridge;
 pub mod trust_resolution;
+pub mod pipeline;
 
 pub use acp_handle::{AcpAgentHandle, AcpHandleError};
 pub use agent_factory::{create_agent_from_session_config, AgentFactoryError};
