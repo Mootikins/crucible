@@ -14,7 +14,7 @@ use tracing::{info, warn};
 use crucible_core::processing::InMemoryChangeDetectionStore;
 use crucible_core::storage::note_store::NoteRecord;
 use crucible_core::traits::{KnowledgeRepository, NoteInfo};
-use crucible_pipeline::{NotePipeline, NotePipelineConfig, ParserBackend};
+use crate::pipeline::{NotePipeline, NotePipelineConfig, ParserBackend};
 use crucible_watch::{EventFilter, WatchManager, WatchManagerConfig};
 
 use crate::file_watch_bridge::create_event_bridge;
@@ -315,7 +315,7 @@ impl KilnManager {
         conn.last_access = Instant::now();
 
         // Process file through pipeline
-        use crucible_pipeline::ProcessingResult;
+        use crate::pipeline::ProcessingResult;
         match conn.pipeline.process(file_path).await {
             Ok(ProcessingResult::Success { .. }) => Ok(true),
             Ok(ProcessingResult::Skipped) => Ok(false),
@@ -332,7 +332,7 @@ impl KilnManager {
         kiln_path: &Path,
         file_paths: &[PathBuf],
     ) -> Result<(usize, usize, Vec<(PathBuf, String)>)> {
-        use crucible_pipeline::ProcessingResult;
+        use crate::pipeline::ProcessingResult;
 
         // Ensure kiln is open
         self.open(kiln_path).await?;
