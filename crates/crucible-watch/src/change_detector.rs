@@ -26,7 +26,7 @@
 //! ```
 
 use std::collections::HashMap;
-use std::path::Path;
+
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime};
 
@@ -35,7 +35,7 @@ use tokio::sync::RwLock;
 use tracing::{debug, info, trace, warn};
 
 use crate::error::Error;
-use crate::types::FileInfo;
+
 
 // Import the traits and types from crucible-core
 use crucible_core::traits::change_detection::{
@@ -171,34 +171,7 @@ impl ChangeDetector {
         Self::new(storage, ChangeDetectorConfig::default())
     }
 
-    /// Convert FileInfo to FileHashInfo for storage operations
-    ///
-    /// # Arguments
-    ///
-    /// * `file_info` - FileInfo to convert
-    ///
-    /// # Returns
-    ///
-    /// FileHashInfo compatible with storage operations
-    #[allow(dead_code)] // Conversion helper for future batch operations
-    fn file_info_to_hash_info(&self, file_info: &FileInfo) -> FileHashInfo {
-        file_info.to_file_hash_info()
-    }
 
-    /// Convert FileHashInfo to FileInfo for results
-    ///
-    /// # Arguments
-    ///
-    /// * `file_hash_info` - FileHashInfo to convert
-    /// * `root_path` - Root path to resolve absolute paths
-    ///
-    /// # Returns
-    ///
-    /// FileInfo for use in change detection results
-    #[allow(dead_code)] // Conversion helper for future batch operations
-    fn hash_info_to_file_info(&self, file_hash_info: FileHashInfo, root_path: &Path) -> FileInfo {
-        FileInfo::from_file_hash_info(file_hash_info, root_path)
-    }
 
     /// Batch lookup with caching support
     ///

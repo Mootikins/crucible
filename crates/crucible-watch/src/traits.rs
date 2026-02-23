@@ -321,14 +321,3 @@ pub trait EventHandler: Send + Sync {
         true
     }
 }
-
-/// Trait for event filtering and transformation.
-#[async_trait]
-#[allow(dead_code)]
-pub trait EventProcessor: Send + Sync {
-    /// Process a batch of events and return the transformed events.
-    async fn process(&self, events: Vec<FileEvent>) -> Result<Vec<FileEvent>>;
-
-    /// Get the processor name.
-    fn name(&self) -> &'static str;
-}
