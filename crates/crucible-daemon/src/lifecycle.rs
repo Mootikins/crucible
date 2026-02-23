@@ -1,4 +1,4 @@
-pub use crucible_protocol::{remove_socket, socket_path};
+pub use crucible_core::protocol::{remove_socket, socket_path};
 
 use anyhow::Result;
 

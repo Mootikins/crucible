@@ -3344,7 +3344,6 @@ dependencies = [
  "crucible-lua",
  "crucible-observe",
  "crucible-pipeline",
- "crucible-protocol",
  "crucible-rig",
  "crucible-rpc",
  "crucible-sqlite",
@@ -3559,18 +3558,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "crucible-protocol"
-version = "0.1.0"
-dependencies = [
- "chrono",
- "crucible-core",
- "dirs 6.0.0",
- "serde",
- "serde_json",
- "tempfile",
-]
-
-[[package]]
 name = "crucible-query"
 version = "0.1.0"
 dependencies = [
@@ -3623,7 +3610,6 @@ dependencies = [
  "crucible-config",
  "crucible-core",
  "crucible-daemon",
- "crucible-protocol",
  "crucible-sqlite",
  "futures",
  "libc",
