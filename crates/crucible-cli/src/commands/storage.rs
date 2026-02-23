@@ -107,15 +107,14 @@ async fn execute_mode(config: &CliConfig) -> Result<()> {
 
     output::header("Storage Mode");
 
-    // Get storage mode from config, defaulting to Embedded if not set
+    // Get storage mode from config, defaulting to Sqlite if not set
     let mode = config
         .storage
         .as_ref()
         .map(|s| s.mode)
-        .unwrap_or(StorageMode::Embedded);
+        .unwrap_or_default();
 
     let mode_name = match mode {
-        StorageMode::Embedded => "embedded (full)",
         StorageMode::Daemon => "daemon",
         StorageMode::Lightweight => "lightweight",
         StorageMode::Sqlite => "sqlite (experimental)",
@@ -130,11 +129,7 @@ async fn execute_mode(config: &CliConfig) -> Result<()> {
             println!("  Backend: LanceDB (vector store)");
             println!("  Use case: Quick prototyping, search-focused workflows");
         }
-        StorageMode::Embedded => {
-            println!("  Description: Complete EAV graph storage");
-            println!("  Backend: SurrealDB + RocksDB (embedded)");
-            println!("  Use case: Full knowledge graph, semantic search");
-        }
+
         StorageMode::Daemon => {
             println!("  Description: Client-server mode with shared database");
             println!("  Backend: SurrealDB daemon process");
