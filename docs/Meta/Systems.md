@@ -16,7 +16,7 @@ This document defines the orthogonal systems that make up Crucible. Each system 
 | System | Scope | Crates |
 |--------|-------|--------|
 | **parser** | Markdown → structured data (extensions, frontmatter, blocks) | `crucible-parser`, `crucible-core/parser` |
-| **storage** | Persistence: SQLite (default), SurrealDB (advanced) | `crucible-sqlite`, `crucible-surrealdb` |
+| **storage** | Persistence: SQLite (default) | `crucible-sqlite` |
 | **sync** | Merkle-CRDT sync across devices, collaborators, and federated agents | `crucible-sync` (future) |
 | **agents** | Agent cards, handles, LLM providers, tool registry | `crucible-core/agents`, `crucible-llm`, `crucible-tools`, `crucible-acp` |
 | **workflows** | Definitions (markup) + sessions (logging, resumption) | `crucible-core/workflow` (future) |
@@ -44,7 +44,6 @@ See: [[Help/Concepts/The Knowledge Graph]]
 Persistence layer. Stores and retrieves structured data.
 
 - SQLite (default) — fast, lightweight, recommended for most users
-- SurrealDB (advanced) — EAV graph model, richer queries, higher memory
 - Content-addressed block storage
 - Merkle tree integrity verification
 - Kiln management
