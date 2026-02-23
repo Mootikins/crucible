@@ -147,6 +147,26 @@ pub enum SessionEvent {
         model: String,
     },
 
+    /// Post-event after LLM call completes (fire-and-forget notification).
+    ///
+    /// Emitted after the LLM returns a response. This is a fire-and-forget notification
+    /// event (not a direct-call hook like PreLlmContext/PostLlmContext). Handlers can use
+    /// this event to:
+    /// - Log LLM response metrics and performance
+    /// - Update UI with response statistics
+    /// - Trigger post-processing or analysis
+    /// - Record token usage for billing/monitoring
+    PostLlmCall {
+        /// Summary of the response (first 200 chars, truncated).
+        response_summary: String,
+        /// The model that was used.
+        model: String,
+        /// Duration of the LLM call in milliseconds.
+        duration_ms: u64,
+        /// Token count if available from the provider.
+        token_count: Option<u64>,
+    },
+
     /// Precognition (context enrichment) completed.
     ///
     /// Emitted when Precognition finishes enriching the prompt with relevant notes
@@ -660,6 +680,7 @@ impl SessionEvent {
             Self::PreToolCall { .. } => "pre_tool_call",
             Self::PreParse { .. } => "pre_parse",
             Self::PreLlmCall { .. } => "pre_llm_call",
+            Self::PostLlmCall { .. } => "post_llm_call",
             Self::PrecognitionComplete { .. } => "precognition_complete",
             Self::ClassificationRequired { .. } => "classification_required",
             Self::AwaitingInput { .. } => "awaiting_input",
@@ -813,6 +834,7 @@ impl SessionEvent {
             Self::McpAttached { server, .. } => server.clone(),
             Self::ToolDiscovered { name, .. } => name.clone(),
             Self::Custom { name, .. } => name.clone(),
+            Self::PostLlmCall { model, .. } => format!("post:llm:{}", model),
         }
     }
 
@@ -1065,6 +1087,7 @@ impl SessionEvent {
             Self::PreToolCall { .. } => "PreToolCall",
             Self::PreParse { .. } => "PreParse",
             Self::PreLlmCall { .. } => "PreLlmCall",
+            Self::PostLlmCall { .. } => "PostLlmCall",
             Self::AwaitingInput { .. } => "AwaitingInput",
             Self::PrecognitionComplete { .. } => "PrecognitionComplete",
             Self::ClassificationRequired { .. } => "ClassificationRequired",
@@ -1364,6 +1387,10 @@ impl SessionEvent {
             Self::PreLlmCall { prompt, model } => {
                 format!("model={}, prompt_len={}", model, prompt.len())
             }
+            Self::PostLlmCall { response_summary, model, duration_ms, token_count } => {
+                let tokens_str = token_count.map_or("none".to_string(), |t| t.to_string());
+                format!("model={}, duration={}ms, tokens={}, summary_len={}", model, duration_ms, tokens_str, response_summary.len())
+            }
             Self::AwaitingInput {
                 input_type,
                 context,
@@ -1549,6 +1576,7 @@ impl SessionEvent {
             Self::PreToolCall { args, .. } => Some(args.to_string()),
             Self::PreParse { path } => Some(path.display().to_string()),
             Self::PreLlmCall { prompt, .. } => Some(prompt.clone()),
+            Self::PostLlmCall { response_summary, .. } => Some(response_summary.clone()),
             Self::AwaitingInput { context, .. } => context.clone(),
             Self::InteractionRequested { .. } => None,
             Self::InteractionCompleted { .. } => None,
@@ -1651,6 +1679,7 @@ impl SessionEvent {
             Self::PreToolCall { name, .. } => name.len() + 50,
             Self::PreParse { .. } => 50,
             Self::PreLlmCall { prompt, .. } => prompt.len(),
+            Self::PostLlmCall { response_summary, .. } => response_summary.len(),
             Self::AwaitingInput { context, .. } => context.as_ref().map_or(20, |c| c.len() + 20),
             // Interaction events
             Self::InteractionRequested { .. } => 100, // Request metadata

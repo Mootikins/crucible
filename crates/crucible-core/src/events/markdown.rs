@@ -115,6 +115,7 @@ impl EventToMarkdown for SessionEvent {
             SessionEvent::TerminalOutput { .. } => "TerminalOutput",
             SessionEvent::PrecognitionComplete { .. } => "PrecognitionComplete",
             SessionEvent::ClassificationRequired { .. } => "ClassificationRequired",
+            SessionEvent::PostLlmCall { .. } => "PostLlmCall",
         }
     }
 
@@ -465,6 +466,20 @@ impl EventToMarkdown for SessionEvent {
             }
             SessionEvent::ClassificationRequired { kiln_path } => {
                 format!("**Kiln Path:** `{}`\n**Action Required:** Set data classification via `kiln.set_classification`\n", kiln_path.display())
+            }
+            SessionEvent::PostLlmCall {
+                response_summary,
+                model,
+                duration_ms,
+                token_count,
+            } => {
+                let token_info = token_count
+                    .map(|t| format!("\n**Tokens:** {}\n", t))
+                    .unwrap_or_default();
+                format!(
+                    "**Model:** {}\n**Duration:** {}ms{}**Response:** {}\n",
+                    model, duration_ms, token_info, response_summary
+                )
             }
         };
 

@@ -12,6 +12,7 @@
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::path::PathBuf;
 
 // Re-export common database types from existing modules
 pub use crate::note::NoteNode;
@@ -930,6 +931,7 @@ pub struct SearchResult {
     pub score: f64,
     pub highlights: Option<Vec<String>>,
     pub snippet: Option<String>,
+    pub kiln_path: Option<PathBuf>,
 }
 
 /// Unified search result that can represent either a note or a skill
@@ -1096,6 +1098,7 @@ mod tests {
                 score: 0.85,
                 highlights: Some(vec!["memory safety".to_string()]),
                 snippet: Some("Rust is a systems programming language...".to_string()),
+                kiln_path: None,
             },
         };
 
@@ -1162,6 +1165,7 @@ mod tests {
                     score: 0.60,
                     highlights: None,
                     snippet: None,
+                    kiln_path: None,
                 },
             },
             UnifiedSearchResult::Skill {
@@ -1176,6 +1180,7 @@ mod tests {
                     score: 0.75,
                     highlights: None,
                     snippet: None,
+                    kiln_path: None,
                 },
             },
         ];
