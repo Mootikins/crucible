@@ -9,6 +9,7 @@ mod file_watch_bridge;
 mod kiln_manager;
 mod lifecycle;
 mod permission_bridge;
+mod precognition;
 mod project_manager;
 mod protocol;
 mod recording;
