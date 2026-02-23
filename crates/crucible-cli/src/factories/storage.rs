@@ -391,7 +391,7 @@ impl StorageHandle {
 
     pub fn as_knowledge_repository(
         &self,
-        kiln_path: Option<&std::path::Path>,
+        _kiln_path: Option<&std::path::Path>,
     ) -> Option<Arc<dyn crucible_core::traits::KnowledgeRepository>> {
         match self {
             #[cfg(feature = "storage-surrealdb")]
