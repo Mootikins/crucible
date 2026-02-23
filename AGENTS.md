@@ -28,7 +28,6 @@
 | `crucible-web` | Browser chat UI (SolidJS + Axum) | HTTP/SSE endpoints |
 | `crucible-tools` | MCP server and tools | Tool implementations |
 | `crucible-sqlite` | SQLite storage (default); fast, lightweight | `SqliteStorage` |
-| `crucible-surrealdb` | SurrealDB storage (advanced); EAV schema | `SurrealStorage`, `EavGraph` |
 | `crucible-lua` | Lua/Luau with Fennel support | `LuaExecutor`, `FennelCompiler` |
 | `crucible-llm` | Embedding backends | `EmbeddingBackend` (FastEmbed, Burn, LlamaCpp) |
 | `crucible-rig` | LLM chat via Rig | Ollama, OpenAI, Anthropic adapters |
@@ -36,17 +35,12 @@
 | `crucible-config` | Configuration types and loading | `AppConfig`, provider configs |
 | `crucible-watch` | File system watching | Change detection |
 | `crucible-acp` | Agent Context Protocol | Protocol types |
-| `crucible-daemon` | Daemon server (cru-server) | `Server`, `SessionManager`, `AgentManager` |
+| `crucible-daemon` | Daemon server (cru-server); includes enrichment pipeline and note processing | `Server`, `SessionManager`, `AgentManager` |
 | `crucible-rpc` | Daemon RPC client library | `DaemonClient`, `DaemonStorageClient` |
-| `crucible-protocol` | Shared daemon protocol types, socket lifecycle | `Request`, `Response`, `RpcError` |
 | `crucible-observe` | Session logging and observability | `SessionWriter`, `SessionMetadata` |
-| `crucible-enrichment` | Context enrichment, Precognition (auto-RAG) | `EmbeddingHandler`, `DefaultEnrichmentService` |
-| `crucible-pipeline` | Note processing pipeline stages | `NotePipeline`, `NotePipelineConfig` |
-| `crucible-context` | Chat context management, prompt building | `SlidingWindowContext`, `LayeredPromptBuilder` |
 | `crucible-lance` | LanceDB vector storage backend | `LanceStore`, `LanceNoteStore` |
 | `crucible-skills` | Agent skills discovery and loading | `Skill`, `SkillSource`, `SkillScope` |
 | `crucible-query` | Composable query translation pipeline | `SqlSugarSyntax`, `JaqSyntax` |
-| `crucible-benchmarks` | Performance benchmarks and contract tests | `GraphFixture`, `GraphStats` |
 | `zellij-inbox` | Zellij plugin for agent inbox management | `InboxPlugin`, `RenderOptions` |
 
 ### Daemon Architecture
@@ -141,6 +135,9 @@ use crucible_core::types::hashing::{FileHash, HashAlgorithm};
 use crucible_core::traits::provider::{Provider, CanEmbed, CanChat};
 use crucible_core::traits::{CompletionBackend, BackendError, ContextMessage};
 use crucible_core::traits::{StorageResult, ChatResult, BackendResult, ToolResult};
+use crucible_core::protocol::{Request, Response, RpcError, SessionEventMessage};
+use crucible_daemon::enrichment::{EmbeddingHandler, create_default_enrichment_service};
+use crucible_daemon::pipeline::{NotePipeline, NotePipelineConfig};
 ```
 
 ### LLM Provider System
@@ -169,7 +166,7 @@ See **[docs/Meta/Systems.md](./docs/Meta/Systems.md)** for full details.
 | **chat** | TUI/Web interfaces, session persistence |
 | **agents** | Agent cards, LLM providers, tools |
 | **parser** | Markdown → structured data |
-| **storage** | SQLite (default), SurrealDB (advanced), Merkle trees |
+| **storage** | SQLite (default), Merkle trees |
 | **scripting** | Lua/Fennel runtimes |
 | **workflows** | Definitions + sessions |
 | **apis** | HTTP, WebSocket, MCP, events |
@@ -221,13 +218,8 @@ crucible/
 │   ├── crucible-tools/          # MCP server and tools
 │   ├── crucible-daemon/         # Daemon server (cru-server)
 │   ├── crucible-rpc/            # Daemon RPC client library
-│   ├── crucible-protocol/       # Shared daemon protocol types
 │   ├── crucible-observe/        # Session logging and observability
-│   ├── crucible-enrichment/     # Context enrichment, Precognition
-│   ├── crucible-pipeline/       # Note processing pipeline
-│   ├── crucible-context/        # Chat context management
 │   ├── crucible-sqlite/         # SQLite storage (default)
-│   ├── crucible-surrealdb/      # SurrealDB storage (advanced)
 │   ├── crucible-lance/          # LanceDB vector storage
 │   ├── crucible-lua/            # Lua/Luau with Fennel
 │   ├── crucible-llm/            # Embedding backends
@@ -238,7 +230,6 @@ crucible/
 │   ├── crucible-acp/            # Agent Context Protocol
 │   ├── crucible-skills/         # Agent skills discovery
 │   ├── crucible-query/          # Query translation pipeline
-│   ├── crucible-benchmarks/     # Performance benchmarks
 │   └── zellij-inbox/            # Zellij inbox plugin
 ├── vendor/                      # Patched upstream dependencies
 ├── docs/                        # Documentation kiln (user guides + test fixture)
