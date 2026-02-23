@@ -79,6 +79,7 @@ pub async fn get_or_create_embedding_provider(
 /// Clear the embedding provider cache.
 ///
 /// Useful for testing or when config changes require fresh providers.
+#[cfg(test)]
 pub fn clear_embedding_provider_cache() {
     EMBEDDING_PROVIDER_CACHE.lock().unwrap().clear();
 }

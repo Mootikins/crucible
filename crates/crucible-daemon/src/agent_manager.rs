@@ -3345,14 +3345,10 @@ mod tests {
             };
 
             for handler in &handlers {
-                let result =
+                let _result =
                     state
                         .registry
                         .execute_runtime_handler(&state.lua, &handler.name, &event);
-                match result {
-                    Ok(_) => {}
-                    Err(_) => {}
-                }
             }
 
             let order: Vec<String> = state.lua.load("return execution_order").eval().unwrap();
@@ -4451,7 +4447,7 @@ mod tests {
                 .unwrap();
 
             let before = session_manager.get_session(&session.id).unwrap();
-            let before_provider = before.agent.as_ref().unwrap().provider.clone();
+            let before_provider = before.agent.as_ref().unwrap().provider;
             let before_endpoint = before.agent.as_ref().unwrap().endpoint.clone();
 
             // Switch to unprefixed model (should only change model, not provider)
@@ -4514,7 +4510,7 @@ mod tests {
                 .unwrap();
 
             let before = session_manager.get_session(&session.id).unwrap();
-            let before_provider = before.agent.as_ref().unwrap().provider.clone();
+            let before_provider = before.agent.as_ref().unwrap().provider;
 
             agent_manager
                 .switch_model(&session.id, "unknown/model", None)
