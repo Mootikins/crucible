@@ -3335,6 +3335,7 @@ dependencies = [
  "agent-client-protocol",
  "anyhow",
  "async-trait",
+ "blake3",
  "chrono",
  "crucible-acp",
  "crucible-config",
@@ -3342,7 +3343,7 @@ dependencies = [
  "crucible-llm",
  "crucible-lua",
  "crucible-observe",
- "crucible-pipeline",
+ "crucible-parser",
  "crucible-rig",
  "crucible-rpc",
  "crucible-sqlite",
@@ -3534,17 +3535,7 @@ dependencies = [
 name = "crucible-pipeline"
 version = "0.1.0"
 dependencies = [
- "anyhow",
- "async-trait",
- "blake3",
- "chrono",
- "crucible-core",
- "crucible-parser",
- "serde_json",
- "tempfile",
- "thiserror 2.0.18",
- "tokio",
- "tracing",
+ "crucible-daemon",
 ]
 
 [[package]]
