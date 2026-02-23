@@ -35,7 +35,6 @@ futures = { workspace = true }
 tokio-util = { version = "0.7", features = ["rt"] }
 crucible-core = { path = "../crucible-core" }
 crucible-config = { path = "../crucible-config" }
-crucible-protocol = { path = "../crucible-protocol" }
 crucible-rig = { path = "../crucible-rig" }
 
 crucible-sqlite = { path = "../crucible-sqlite", optional = true }

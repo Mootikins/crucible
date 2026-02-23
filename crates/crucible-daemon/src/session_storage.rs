@@ -403,7 +403,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_session_storage_append_event_includes_timestamp() {
-        use crucible_protocol::SessionEventMessage;
+        use crucible_core::protocol::SessionEventMessage;
         use serde_json::json;
 
         let tmp = TempDir::new().unwrap();

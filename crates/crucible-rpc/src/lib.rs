@@ -18,4 +18,4 @@ pub use agent::DaemonAgentHandle;
 pub use client::{DaemonCapabilities, DaemonClient, SessionEvent, VersionCheck};
 pub use storage::{DaemonNoteStore, DaemonStorageClient};
 
-pub use crucible_protocol::socket_path;
+pub use crucible_core::protocol::socket_path;

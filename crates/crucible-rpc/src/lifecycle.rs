@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use tracing::debug;
 
 pub fn default_socket_path() -> PathBuf {
-    crucible_protocol::socket_path()
+    crucible_core::protocol::socket_path()
 }
 
 /// Check if daemon is running (socket exists and accepts connections)

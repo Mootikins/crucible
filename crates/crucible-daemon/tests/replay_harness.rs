@@ -4,7 +4,7 @@
 //! for building replay test fixtures without manual JSON serialization.
 
 use chrono::{Duration, Utc};
-use crucible_protocol::recording::{RecordedEvent, RecordingFooter, RecordingHeader};
+use crucible_daemon::{RecordedEvent, RecordingFooter, RecordingHeader};
 use serde_json::{json, Value};
 use tempfile::NamedTempFile;
 

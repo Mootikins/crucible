@@ -88,7 +88,7 @@ impl Drop for DaemonClient {
 impl DaemonClient {
     /// Connect to the daemon at the default socket path (simple mode)
     pub async fn connect() -> Result<Self> {
-        let path = crucible_protocol::socket_path();
+        let path = crucible_core::protocol::socket_path();
         Self::connect_to(&path).await
     }
 
@@ -242,7 +242,7 @@ impl DaemonClient {
     /// }
     /// ```
     pub async fn connect_with_events() -> Result<(Self, mpsc::UnboundedReceiver<SessionEvent>)> {
-        let path = crucible_protocol::socket_path();
+        let path = crucible_core::protocol::socket_path();
         Self::connect_to_with_events(&path).await
     }
 
