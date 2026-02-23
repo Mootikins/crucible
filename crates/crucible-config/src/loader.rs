@@ -361,39 +361,3 @@ impl ConfigFormat {
     }
 }
 
-/// Builder for creating configuration loaders with fluent interface.
-pub struct ConfigLoaderBuilder {
-    loader: ConfigLoader,
-}
-
-impl ConfigLoaderBuilder {
-    /// Create a new builder.
-    pub fn new() -> Self {
-        Self {
-            loader: ConfigLoader::new(),
-        }
-    }
-
-    /// Add a search path.
-    pub fn search_path<P: AsRef<Path>>(mut self, path: P) -> Self {
-        self.loader = self.loader.add_search_path(path);
-        self
-    }
-
-    /// Set the format.
-    pub fn format(mut self, format: ConfigFormat) -> Self {
-        self.loader.format = format;
-        self
-    }
-
-    /// Build the loader.
-    pub fn build(self) -> ConfigLoader {
-        self.loader
-    }
-}
-
-impl Default for ConfigLoaderBuilder {
-    fn default() -> Self {
-        Self::new()
-    }
-}

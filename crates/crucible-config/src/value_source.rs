@@ -66,21 +66,6 @@ impl ValueSource {
     }
 }
 
-/// A configuration value with its source
-#[derive(Debug, Clone)]
-pub struct ValueWithSource<T> {
-    /// The actual value
-    pub value: T,
-    /// Where the value came from
-    pub source: ValueSource,
-}
-
-impl<T> ValueWithSource<T> {
-    /// Create a new value with source
-    pub fn new(value: T, source: ValueSource) -> Self {
-        Self { value, source }
-    }
-}
 
 /// A map of configuration values with their sources
 #[derive(Debug, Clone, Default)]
@@ -173,69 +158,3 @@ macro_rules! track_value {
     };
 }
 
-/// Helper to build a source map during config loading
-pub struct SourceMapBuilder {
-    map: ValueSourceMap,
-    config_file: Option<String>,
-}
-
-impl SourceMapBuilder {
-    /// Create a new builder
-    pub fn new() -> Self {
-        Self {
-            map: ValueSourceMap::new(),
-            config_file: None,
-        }
-    }
-
-    /// Set the config file path
-    pub fn config_file(mut self, path: Option<String>) -> Self {
-        self.config_file = path;
-        self
-    }
-
-    /// Add a file value
-    pub fn file_value(mut self, path: &str) -> Self {
-        self.map.set(
-            path,
-            ValueSource::File {
-                path: self.config_file.clone(),
-            },
-        );
-        self
-    }
-
-    /// Add an environment value
-    pub fn env_value(mut self, path: &str, var: &str) -> Self {
-        self.map.set(
-            path,
-            ValueSource::Environment {
-                var: var.to_string(),
-            },
-        );
-        self
-    }
-
-    /// Add a CLI value
-    pub fn cli_value(mut self, path: &str) -> Self {
-        self.map.set(path, ValueSource::Cli);
-        self
-    }
-
-    /// Add a default value
-    pub fn default_value(mut self, path: &str) -> Self {
-        self.map.set(path, ValueSource::Default);
-        self
-    }
-
-    /// Build the source map
-    pub fn build(self) -> ValueSourceMap {
-        self.map
-    }
-}
-
-impl Default for SourceMapBuilder {
-    fn default() -> Self {
-        Self::new()
-    }
-}
