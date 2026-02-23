@@ -3567,7 +3567,6 @@ dependencies = [
  "crucible-acp",
  "crucible-cli",
  "crucible-config",
- "crucible-context",
  "crucible-core",
  "crucible-daemon",
  "crucible-enrichment",
@@ -3648,18 +3647,6 @@ dependencies = [
  "thiserror 2.0.18",
  "tokio",
  "toml 0.9.12+spec-1.1.0",
- "tracing",
-]
-
-[[package]]
-name = "crucible-context"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "crucible-core",
- "futures",
- "tempfile",
- "tokio",
  "tracing",
 ]
 
