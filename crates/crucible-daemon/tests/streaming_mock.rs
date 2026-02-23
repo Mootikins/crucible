@@ -39,6 +39,7 @@ impl StreamingMockAgent {
                 reasoning: None,
                 usage: None,
                 subagent_events: None,
+                precognition_notes_count: None,
             })
             .collect();
 
@@ -58,6 +59,7 @@ impl StreamingMockAgent {
                 reasoning: Some(thinking.to_string()),
                 usage: None,
                 subagent_events: None,
+                precognition_notes_count: None,
             },
             ChatChunk {
                 delta: response.to_string(),
@@ -67,6 +69,7 @@ impl StreamingMockAgent {
                 reasoning: None,
                 usage: None,
                 subagent_events: None,
+                precognition_notes_count: None,
             },
         ];
 
@@ -92,6 +95,7 @@ impl StreamingMockAgent {
                 reasoning: None,
                 usage: None,
                 subagent_events: None,
+                precognition_notes_count: None,
             },
             ChatChunk {
                 delta: String::new(),
@@ -106,6 +110,7 @@ impl StreamingMockAgent {
                 reasoning: None,
                 usage: None,
                 subagent_events: None,
+                precognition_notes_count: None,
             },
             ChatChunk {
                 delta: text_after.to_string(),
@@ -115,6 +120,7 @@ impl StreamingMockAgent {
                 reasoning: None,
                 usage: None,
                 subagent_events: None,
+                precognition_notes_count: None,
             },
         ];
 
@@ -134,6 +140,7 @@ impl StreamingMockAgent {
                 reasoning: None,
                 usage: None,
                 subagent_events: Some(events),
+                precognition_notes_count: None,
             },
             ChatChunk {
                 delta: final_text.to_string(),
@@ -143,6 +150,7 @@ impl StreamingMockAgent {
                 reasoning: None,
                 usage: None,
                 subagent_events: None,
+                precognition_notes_count: None,
             },
         ];
 
@@ -159,6 +167,7 @@ impl StreamingMockAgent {
             reasoning: None,
             usage: None,
             subagent_events: None,
+            precognition_notes_count: None,
         }];
 
         Self { chunks }

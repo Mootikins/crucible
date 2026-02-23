@@ -210,6 +210,7 @@ fn session_event_to_chat_chunk(event: &SessionEvent) -> Option<ChatChunk> {
                 reasoning: None,
                 usage: None,
                 subagent_events: None,
+                precognition_notes_count: None,
             })
         }
         "thinking" => {
@@ -222,6 +223,7 @@ fn session_event_to_chat_chunk(event: &SessionEvent) -> Option<ChatChunk> {
                 reasoning: Some(content.to_string()),
                 usage: None,
                 subagent_events: None,
+                precognition_notes_count: None,
             })
         }
         "tool_call" => {
@@ -241,6 +243,7 @@ fn session_event_to_chat_chunk(event: &SessionEvent) -> Option<ChatChunk> {
                 reasoning: None,
                 usage: None,
                 subagent_events: None,
+                precognition_notes_count: None,
             })
         }
         "tool_result" => {
@@ -282,6 +285,7 @@ fn session_event_to_chat_chunk(event: &SessionEvent) -> Option<ChatChunk> {
                 reasoning: None,
                 usage: None,
                 subagent_events: None,
+                precognition_notes_count: None,
             })
         }
         "message_complete" => {
@@ -314,6 +318,7 @@ fn session_event_to_chat_chunk(event: &SessionEvent) -> Option<ChatChunk> {
                 reasoning: None,
                 usage,
                 subagent_events: None,
+                precognition_notes_count: None,
             })
         }
         "ended" => Some(ChatChunk {
@@ -324,7 +329,25 @@ fn session_event_to_chat_chunk(event: &SessionEvent) -> Option<ChatChunk> {
             reasoning: None,
             usage: None,
             subagent_events: None,
+            precognition_notes_count: None,
         }),
+        "precognition_complete" => {
+            let notes_count = event
+                .data
+                .get("notes_count")
+                .and_then(|v| v.as_u64())
+                .map(|n| n as usize);
+            Some(ChatChunk {
+                delta: String::new(),
+                done: false,
+                tool_calls: None,
+                tool_results: None,
+                reasoning: None,
+                usage: None,
+                subagent_events: None,
+                precognition_notes_count: notes_count,
+            })
+        }
         _ => {
             tracing::debug!("Unknown session event type: {}", event.event_type);
             None
