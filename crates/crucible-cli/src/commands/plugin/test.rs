@@ -29,7 +29,7 @@ pub async fn execute(_config: CliConfig, args: TestArgs) -> Result<()> {
     let plugin_root_str = plugin_root.to_string_lossy();
     executor
         .lua()
-        .load(&format!(
+        .load(format!(
             r#"
 local plugin_root = {plugin_root_str:?}
 local entries = {{

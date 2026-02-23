@@ -56,12 +56,14 @@ impl LlmHookChain {
     }
 
     /// Add a hook to the end of the chain.
+    #[allow(dead_code)]
     pub fn add_hook(&mut self, hook: Box<dyn LlmHook + Send + Sync>) {
         self.hooks.push(hook);
     }
 
     /// Register a Lua-backed hook that bridges to `on_pre_llm_call` / `on_post_llm_call`
     /// global functions in the session's Lua state.
+    #[allow(dead_code)]
     pub(crate) fn register_lua_hook(&mut self, lua_state: Arc<Mutex<SessionLuaState>>) {
         self.hooks.push(Box::new(LuaLlmHook::new(lua_state)));
     }
@@ -142,6 +144,7 @@ impl LlmHookChain {
 ///
 /// The JSON context deliberately excludes `context_messages` — only `prompt`,
 /// `model`, `session_id`, and `system_prompt` are exposed to Lua.
+#[allow(dead_code)]
 pub(crate) struct LuaLlmHook {
     lua_state: Arc<Mutex<SessionLuaState>>,
 }
