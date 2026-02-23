@@ -3,6 +3,7 @@ mod agent_factory;
 mod agent_manager;
 mod background_manager;
 mod daemon_plugins;
+mod embedding;
 mod event_emitter;
 mod file_watch_bridge;
 mod kiln_manager;

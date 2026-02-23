@@ -243,9 +243,11 @@ mod tests {
 
         let (event_tx, _) = broadcast::channel(16);
         let (shutdown_tx, _) = broadcast::channel(1);
+        let kiln_manager = Arc::new(KilnManager::new());
         let session_manager = Arc::new(SessionManager::new());
         let background_manager = Arc::new(BackgroundJobManager::new(event_tx.clone()));
         let agent_manager = Arc::new(AgentManager::new(
+            kiln_manager.clone(),
             session_manager.clone(),
             background_manager,
             None,
@@ -255,7 +257,7 @@ mod tests {
         ));
 
         RpcContext::new(
-            Arc::new(KilnManager::new()),
+            kiln_manager,
             session_manager,
             agent_manager,
             Arc::new(SubscriptionManager::new()),

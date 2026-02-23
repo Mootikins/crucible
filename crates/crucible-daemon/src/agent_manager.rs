@@ -3,18 +3,17 @@
 use crate::agent_factory::{create_agent_from_session_config, AgentFactoryError};
 use crate::background_manager::{BackgroundJobManager, SubagentContext};
 use crate::event_emitter::emit_event;
+use crate::kiln_manager::KilnManager;
 use crate::permission_bridge::{DaemonPermissionGate, PermissionPromptCallback};
 use crate::protocol::SessionEventMessage;
 use crate::session_manager::{SessionError, SessionManager};
 use crucible_acp::discovery::default_agent_profiles;
 use crucible_config::components::permissions::PermissionConfig;
 use crucible_config::{AcpConfig, AgentProfile, BackendType, PatternStore};
-use crucible_core::enrichment::EmbeddingProvider;
 use crucible_core::events::SessionEvent;
 use crucible_core::interaction::{InteractionRequest, PermRequest, PermResponse, PermissionScope};
 use crucible_core::session::SessionAgent;
 use crucible_core::traits::chat::AgentHandle;
-use crucible_core::traits::KnowledgeRepository;
 use crucible_core::traits::PermissionGate;
 use crucible_lua::{
     execute_permission_hooks, register_crucible_on_api, register_permission_hook_api,
@@ -191,7 +190,9 @@ pub(crate) struct ResolvedProvider {
 
 pub struct AgentManager {
     request_state: Arc<DashMap<String, RequestState>>,
+    // TODO: invalidate agent_cache entries on kiln hot-swap (multi-kiln support)
     agent_cache: Arc<DashMap<String, Arc<Mutex<BoxedAgentHandle>>>>,
+    kiln_manager: Arc<KilnManager>,
     session_manager: Arc<SessionManager>,
     background_manager: Arc<BackgroundJobManager>,
     lua_states: Arc<DashMap<String, Arc<Mutex<SessionLuaState>>>>,
@@ -200,14 +201,11 @@ pub struct AgentManager {
     llm_config: Option<crucible_config::LlmConfig>,
     acp_config: Option<AcpConfig>,
     permission_config: Option<PermissionConfig>,
-    /// Knowledge repository for search tools (threaded to agent factory for CrucibleMcpServer)
-    knowledge_repo: Option<Arc<dyn KnowledgeRepository>>,
-    /// Embedding provider for semantic search (threaded to agent factory for CrucibleMcpServer)
-    embedding_provider: Option<Arc<dyn EmbeddingProvider>>,
 }
 
 impl AgentManager {
     pub fn new(
+        kiln_manager: Arc<KilnManager>,
         session_manager: Arc<SessionManager>,
         background_manager: Arc<BackgroundJobManager>,
         mcp_gateway: Option<
@@ -220,6 +218,7 @@ impl AgentManager {
         Self {
             request_state: Arc::new(DashMap::new()),
             agent_cache: Arc::new(DashMap::new()),
+            kiln_manager,
             session_manager,
             background_manager,
             lua_states: Arc::new(DashMap::new()),
@@ -228,25 +227,7 @@ impl AgentManager {
             llm_config,
             acp_config,
             permission_config,
-            knowledge_repo: None,
-            embedding_provider: None,
         }
-    }
-
-    /// Set the knowledge repository for search tools.
-    /// These will be threaded through to the agent factory for CrucibleMcpServer creation.
-    #[allow(dead_code)]
-    pub fn with_knowledge_repo(mut self, repo: Option<Arc<dyn KnowledgeRepository>>) -> Self {
-        self.knowledge_repo = repo;
-        self
-    }
-
-    /// Set the embedding provider for semantic search.
-    /// These will be threaded through to the agent factory for CrucibleMcpServer creation.
-    #[allow(dead_code)]
-    pub fn with_embedding_provider(mut self, provider: Option<Arc<dyn EmbeddingProvider>>) -> Self {
-        self.embedding_provider = provider;
-        self
     }
 
     pub fn get_session_with_agent(
@@ -607,6 +588,25 @@ impl AgentManager {
 
         let session_for_factory = self.session_manager.get_session(session_id);
         let kiln_path = session_for_factory.as_ref().map(|s| s.kiln.as_path());
+        let mut knowledge_repo = None;
+        let mut embedding_provider = None;
+
+        if let Some(kiln_path) = kiln_path {
+            let storage = self
+                .kiln_manager
+                .get_or_open(kiln_path)
+                .await
+                .map_err(|e| AgentFactoryError::AgentBuild(e.to_string()))?;
+            knowledge_repo = Some(storage.as_knowledge_repository());
+
+            if let Some(config) = self.kiln_manager.get_enrichment_config(kiln_path).await {
+                embedding_provider = Some(
+                    crate::embedding::get_or_create_embedding_provider(&config)
+                        .await
+                        .map_err(|e| AgentFactoryError::AgentBuild(e.to_string()))?,
+                );
+            }
+        }
 
         let agent = create_agent_from_session_config(
             &resolved_config,
@@ -617,8 +617,8 @@ impl AgentManager {
             event_tx,
             self.mcp_gateway.clone(),
             acp_permission_handler,
-            self.knowledge_repo.clone(),
-            self.embedding_provider.clone(),
+            knowledge_repo,
+            embedding_provider,
         )
         .await?;
 
@@ -1652,6 +1652,53 @@ impl AgentManager {
         Ok(agent_config.thinking_budget)
     }
 
+    pub async fn set_precognition(
+        &self,
+        session_id: &str,
+        enabled: bool,
+        event_tx: Option<&broadcast::Sender<SessionEventMessage>>,
+    ) -> Result<(), AgentError> {
+        if self.request_state.contains_key(session_id) {
+            return Err(AgentError::ConcurrentRequest(session_id.to_string()));
+        }
+
+        let (mut session, mut agent_config) = self.get_session_with_agent(session_id)?;
+
+        agent_config.precognition_enabled = enabled;
+        session.agent = Some(agent_config.clone());
+
+        self.session_manager
+            .update_session(&session)
+            .await
+            .map_err(AgentError::Session)?;
+
+        self.invalidate_agent_cache(session_id);
+
+        info!(
+            session_id = %session_id,
+            enabled = enabled,
+            "Precognition toggle updated (agent cache invalidated)"
+        );
+
+        if let Some(tx) = event_tx {
+            let _ = emit_event(
+                tx,
+                SessionEventMessage::new(
+                    session_id,
+                    "precognition_toggled",
+                    serde_json::json!({ "enabled": enabled }),
+                ),
+            );
+        }
+
+        Ok(())
+    }
+
+    pub fn get_precognition(&self, session_id: &str) -> Result<bool, AgentError> {
+        let (_, agent_config) = self.get_session_with_agent(session_id)?;
+        Ok(agent_config.precognition_enabled)
+    }
+
     pub async fn set_temperature(
         &self,
         session_id: &str,
@@ -1950,13 +1997,22 @@ mod tests {
             capabilities: None,
             agent_description: None,
             delegation_config: None,
+            precognition_enabled: false,
         }
     }
 
     fn create_test_agent_manager(session_manager: Arc<SessionManager>) -> AgentManager {
         let (event_tx, _) = broadcast::channel(16);
         let background_manager = Arc::new(BackgroundJobManager::new(event_tx));
-        AgentManager::new(session_manager, background_manager, None, None, None, None)
+        AgentManager::new(
+            Arc::new(KilnManager::new()),
+            session_manager,
+            background_manager,
+            None,
+            None,
+            None,
+            None,
+        )
     }
 
     fn create_test_agent_manager_with_providers(
@@ -1966,6 +2022,7 @@ mod tests {
         let (event_tx, _) = broadcast::channel(16);
         let background_manager = Arc::new(BackgroundJobManager::new(event_tx));
         AgentManager::new(
+            Arc::new(KilnManager::new()),
             session_manager,
             background_manager,
             None,
@@ -4078,6 +4135,7 @@ mod tests {
         let (event_tx, _) = broadcast::channel(16);
         let background_manager = Arc::new(BackgroundJobManager::new(event_tx));
         let agent_manager = AgentManager::new(
+            Arc::new(KilnManager::new()),
             session_manager.clone(),
             background_manager,
             None,
@@ -4130,6 +4188,7 @@ mod tests {
         let (event_tx, _) = broadcast::channel(16);
         let background_manager = Arc::new(BackgroundJobManager::new(event_tx));
         let agent_manager = AgentManager::new(
+            Arc::new(KilnManager::new()),
             session_manager.clone(),
             background_manager,
             None,
@@ -4187,6 +4246,7 @@ mod tests {
         let (event_tx, _) = broadcast::channel(16);
         let background_manager = Arc::new(BackgroundJobManager::new(event_tx));
         let agent_manager = AgentManager::new(
+            Arc::new(KilnManager::new()),
             session_manager.clone(),
             background_manager,
             None,
@@ -4216,6 +4276,7 @@ mod tests {
         let (event_tx, _) = broadcast::channel(16);
         let background_manager = Arc::new(BackgroundJobManager::new(event_tx));
         AgentManager::new(
+            Arc::new(KilnManager::new()),
             session_manager,
             background_manager,
             None,
@@ -4232,6 +4293,7 @@ mod tests {
         let (event_tx, _) = broadcast::channel(16);
         let background_manager = Arc::new(BackgroundJobManager::new(event_tx));
         AgentManager::new(
+            Arc::new(KilnManager::new()),
             session_manager,
             background_manager,
             None,

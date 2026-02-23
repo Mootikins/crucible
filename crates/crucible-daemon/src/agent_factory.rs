@@ -465,6 +465,7 @@ mod tests {
             capabilities: None,
             agent_description: None,
             delegation_config: None,
+            precognition_enabled: false,
         }
     }
 

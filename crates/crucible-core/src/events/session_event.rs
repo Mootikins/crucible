@@ -147,6 +147,23 @@ pub enum SessionEvent {
         model: String,
     },
 
+    /// Precognition (context enrichment) completed.
+    ///
+    /// Emitted when Precognition finishes enriching the prompt with relevant notes
+    /// from the knowledge base. This event provides feedback about how many notes
+    /// were found and a summary of the query used for enrichment.
+    ///
+    /// Handlers can use this event to:
+    /// - Display "N notes found" feedback in the status bar
+    /// - Log enrichment statistics
+    /// - Trigger UI updates to show enrichment progress
+    PrecognitionComplete {
+        /// Number of notes found and injected into context.
+        notes_count: usize,
+        /// Summary of the query used for enrichment.
+        query_summary: String,
+    },
+
     /// System is awaiting human input (HIL gate / idle prompt).
     ///
     /// Fired when the system pauses and needs human interaction to proceed.
@@ -633,6 +650,7 @@ impl SessionEvent {
             Self::PreToolCall { .. } => "pre_tool_call",
             Self::PreParse { .. } => "pre_parse",
             Self::PreLlmCall { .. } => "pre_llm_call",
+            Self::PrecognitionComplete { .. } => "precognition_complete",
             Self::AwaitingInput { .. } => "awaiting_input",
             Self::InteractionRequested { .. } => "interaction_requested",
             Self::InteractionCompleted { .. } => "interaction_completed",
@@ -690,6 +708,7 @@ impl SessionEvent {
             Self::PreToolCall { name, .. } => format!("pre:tool:{}", name),
             Self::PreParse { path, .. } => format!("pre:parse:{}", path.display()),
             Self::PreLlmCall { model, .. } => format!("pre:llm:{}", model),
+            Self::PrecognitionComplete { .. } => "precognition:complete".into(),
             Self::AwaitingInput { input_type, .. } => format!("await:{}", input_type),
             Self::InteractionRequested {
                 request_id,
@@ -1033,6 +1052,7 @@ impl SessionEvent {
             Self::PreParse { .. } => "PreParse",
             Self::PreLlmCall { .. } => "PreLlmCall",
             Self::AwaitingInput { .. } => "AwaitingInput",
+            Self::PrecognitionComplete { .. } => "PrecognitionComplete",
             Self::InteractionRequested { .. } => "InteractionRequested",
             Self::InteractionCompleted { .. } => "InteractionCompleted",
             Self::SessionStateChanged { .. } => "SessionStateChanged",
@@ -1377,6 +1397,16 @@ impl SessionEvent {
                     content_base64.len()
                 )
             }
+            Self::PrecognitionComplete {
+                notes_count,
+                query_summary,
+            } => {
+                format!(
+                    "notes={}, query={}",
+                    notes_count,
+                    truncate(query_summary, max_len)
+                )
+            }
         }
     }
 
@@ -1515,6 +1545,10 @@ impl SessionEvent {
             Self::SessionPaused { session_id } => Some(format!("session={}", session_id)),
             Self::SessionResumed { session_id } => Some(format!("session={}", session_id)),
             Self::TerminalOutput { content_base64, .. } => Some(content_base64.clone()),
+            Self::PrecognitionComplete {
+                notes_count,
+                query_summary,
+            } => Some(format!("notes={}, query={}", notes_count, query_summary)),
         };
 
         payload.map(|p| truncate(&p, max_len).to_string())
@@ -1607,6 +1641,10 @@ impl SessionEvent {
             Self::SessionPaused { .. } => 50,
             Self::SessionResumed { .. } => 50,
             Self::TerminalOutput { content_base64, .. } => content_base64.len(),
+            Self::PrecognitionComplete {
+                notes_count,
+                query_summary,
+            } => notes_count.to_string().len() + query_summary.len() + 50,
         };
 
         // Rough estimate: ~4 characters per token

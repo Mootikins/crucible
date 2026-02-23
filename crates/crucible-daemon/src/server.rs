@@ -15,6 +15,7 @@ use crate::protocol::{
 use crate::recording::RecordingWriter;
 use crate::replay::ReplaySession;
 use crate::rpc::{RpcContext, RpcDispatcher};
+use crate::optional_bool_param;
 use crate::rpc_helpers::{
     optional_i64_param, optional_str_param, optional_u64_param, require_array_param,
     require_f64_param, require_obj_param, require_str_param,
@@ -168,6 +169,7 @@ impl Server {
         let session_manager = Arc::new(SessionManager::new());
         let background_manager = Arc::new(BackgroundJobManager::new(event_tx.clone()));
         let agent_manager = Arc::new(AgentManager::new(
+            kiln_manager.clone(),
             session_manager.clone(),
             background_manager.clone(),
             mcp_gateway,
@@ -740,6 +742,12 @@ async fn handle_legacy_request(
         }
         "session.get_thinking_budget" => {
             handle_session_get_thinking_budget(req, agent_manager).await
+        }
+        "session.set_precognition" => {
+            handle_session_set_precognition(req, agent_manager, event_tx).await
+        }
+        "session.get_precognition" => {
+            handle_session_get_precognition(req, agent_manager).await
         }
         "session.add_notification" => {
             handle_session_add_notification(req, agent_manager, event_tx).await
@@ -1777,6 +1785,60 @@ async fn handle_session_get_thinking_budget(req: Request, am: &Arc<AgentManager>
         Err(e) => internal_error(req.id, e),
     }
 }
+
+async fn handle_session_set_precognition(
+    req: Request,
+    am: &Arc<AgentManager>,
+    event_tx: &broadcast::Sender<SessionEventMessage>,
+) -> Response {
+    let session_id = require_str_param!(req, "session_id");
+    let enabled = optional_bool_param!(req, "enabled").unwrap_or(true);
+
+    match am
+        .set_precognition(session_id, enabled, Some(event_tx))
+        .await
+    {
+        Ok(()) => Response::success(
+            req.id,
+            serde_json::json!({
+                "session_id": session_id,
+                "precognition_enabled": enabled,
+            }),
+        ),
+        Err(crate::agent_manager::AgentError::SessionNotFound(id)) => {
+            session_not_found(req.id, &id)
+        }
+        Err(crate::agent_manager::AgentError::NoAgentConfigured(id)) => {
+            agent_not_configured(req.id, &id)
+        }
+        Err(crate::agent_manager::AgentError::ConcurrentRequest(id)) => {
+            concurrent_request(req.id, &id)
+        }
+        Err(e) => internal_error(req.id, e),
+    }
+}
+
+async fn handle_session_get_precognition(req: Request, am: &Arc<AgentManager>) -> Response {
+    let session_id = require_str_param!(req, "session_id");
+
+    match am.get_precognition(session_id) {
+        Ok(enabled) => Response::success(
+            req.id,
+            serde_json::json!({
+                "session_id": session_id,
+                "precognition_enabled": enabled,
+            }),
+        ),
+        Err(crate::agent_manager::AgentError::SessionNotFound(id)) => {
+            session_not_found(req.id, &id)
+        }
+        Err(crate::agent_manager::AgentError::NoAgentConfigured(id)) => {
+            agent_not_configured(req.id, &id)
+        }
+        Err(e) => internal_error(req.id, e),
+    }
+}
+
 
 async fn handle_session_add_notification(
     req: Request,
