@@ -348,6 +348,7 @@ impl KnowledgeRepository for SurrealKnowledgeRepository {
                     score: r.score as f64,
                     highlights: None,
                     snippet,
+                    kiln_path: None,
                 }
             })
             .collect())

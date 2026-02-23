@@ -168,18 +168,21 @@ mod tests {
                     score: 0.93,
                     highlights: None,
                     snippet: Some("Alpha snippet".to_string()),
+                    kiln_path: None,
                 },
                 SearchResult {
                     document_id: DocumentId("docs/beta.md".to_string()),
                     score: 0.79,
                     highlights: None,
                     snippet: Some("Beta snippet".to_string()),
+                    kiln_path: None,
                 },
                 SearchResult {
                     document_id: DocumentId("docs/gamma.md".to_string()),
                     score: 0.66,
                     highlights: None,
                     snippet: Some("Gamma snippet".to_string()),
+                    kiln_path: None,
                 },
             ],
         });
