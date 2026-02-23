@@ -180,7 +180,9 @@ impl AcpAgentHandle {
                 enabled: delegation_config.map(|c| c.enabled).unwrap_or(false),
                 depth: 0,
                 data_classification: kiln_path
-                    .and_then(|kiln| crate::trust_resolution::resolve_kiln_classification(workspace, kiln))
+                    .and_then(|kiln| {
+                        crate::trust_resolution::resolve_kiln_classification(workspace, kiln)
+                    })
                     .unwrap_or(DataClassification::Public),
             })
         });
@@ -189,7 +191,8 @@ impl AcpAgentHandle {
             let repo = knowledge_repo.unwrap_or_else(|| Arc::new(EmptyKnowledgeRepository));
             let embed = embedding_provider.unwrap_or_else(|| Arc::new(EmptyEmbeddingProvider));
 
-            match InProcessMcpHost::start(kiln.to_path_buf(), repo, embed, delegation_context).await {
+            match InProcessMcpHost::start(kiln.to_path_buf(), repo, embed, delegation_context).await
+            {
                 Ok(host) => {
                     info!(url = %host.mcp_url(), "In-process MCP server started");
                     Some(host)

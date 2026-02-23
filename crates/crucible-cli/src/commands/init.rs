@@ -7,7 +7,7 @@ use tokio::task;
 use crate::kiln_validate::{expand_tilde, validate_kiln_path, ValidationSeverity};
 use crate::provider_detect::{detect_providers, DetectedProvider};
 use crucible_config::components::DataClassification;
-use crucible_config::{KilnAttachment, WorkspaceConfig, WorkspaceMeta, SecurityConfig};
+use crucible_config::{KilnAttachment, SecurityConfig, WorkspaceConfig, WorkspaceMeta};
 
 pub async fn execute(path: Option<PathBuf>, force: bool, interactive: bool) -> Result<()> {
     let target_path = match path {
@@ -66,7 +66,6 @@ pub async fn execute(path: Option<PathBuf>, force: bool, interactive: bool) -> R
     } else {
         ("ollama".to_string(), "llama3.2".to_string())
     };
-
 
     let classification = if interactive {
         prompt_classification_selection()?
@@ -156,7 +155,6 @@ fn prompt_provider_selection(providers: &[DetectedProvider]) -> Result<(String, 
     Ok((selected.provider_type.clone(), model))
 }
 
-
 fn prompt_classification_selection() -> Result<DataClassification> {
     use dialoguer::{theme::ColorfulTheme, Select};
 
@@ -173,10 +171,7 @@ fn prompt_classification_selection() -> Result<DataClassification> {
     Ok(levels[selection])
 }
 
-fn write_workspace_config(
-    crucible_dir: &Path,
-    classification: DataClassification,
-) -> Result<()> {
+fn write_workspace_config(crucible_dir: &Path, classification: DataClassification) -> Result<()> {
     let workspace_toml_path = crucible_dir.join("workspace.toml");
 
     // Read existing workspace config or create a new one
@@ -200,7 +195,11 @@ fn write_workspace_config(
     };
 
     // Ensure there's a kiln entry for "." with the classification
-    if let Some(kiln) = config.kilns.iter_mut().find(|k| k.path == PathBuf::from(".")) {
+    if let Some(kiln) = config
+        .kilns
+        .iter_mut()
+        .find(|k| k.path == PathBuf::from("."))
+    {
         kiln.data_classification = Some(classification);
     } else {
         config.kilns.push(KilnAttachment {

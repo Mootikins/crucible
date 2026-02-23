@@ -5,7 +5,9 @@
 
 use async_trait::async_trait;
 use crucible_core::session::SessionType;
-use crucible_core::traits::chat::{AgentHandle, ChatChunk, ChatSubagentEvent, ChatToolCall, ChatToolResult, SubagentEventType};
+use crucible_core::traits::chat::{
+    AgentHandle, ChatChunk, ChatSubagentEvent, ChatToolCall, ChatToolResult, SubagentEventType,
+};
 use crucible_core::traits::ChatResult;
 use crucible_daemon::background_manager::BackgroundJobManager;
 use crucible_daemon::protocol::SessionEventMessage;
@@ -81,7 +83,12 @@ impl StreamingMockAgent {
     /// Chunk 1: `tool_calls=Some(vec![ChatToolCall{...}])`
     /// Chunk 2: `tool_results=Some(vec![ChatToolResult{...}])`
     /// Chunk 3: `delta=text_after, done=true`
-    pub fn with_tool_call(tool_name: &str, args: serde_json::Value, result: &str, text_after: &str) -> Self {
+    pub fn with_tool_call(
+        tool_name: &str,
+        args: serde_json::Value,
+        result: &str,
+        text_after: &str,
+    ) -> Self {
         let chunks = vec![
             ChatChunk {
                 delta: String::new(),
@@ -176,7 +183,10 @@ impl StreamingMockAgent {
 
 #[async_trait]
 impl AgentHandle for StreamingMockAgent {
-    fn send_message_stream(&mut self, _message: String) -> BoxStream<'static, ChatResult<ChatChunk>> {
+    fn send_message_stream(
+        &mut self,
+        _message: String,
+    ) -> BoxStream<'static, ChatResult<ChatChunk>> {
         let chunks = self.chunks.clone();
         stream::iter(chunks.into_iter().map(Ok)).boxed()
     }
@@ -271,11 +281,19 @@ mod tests {
         let mut agent = StreamingMockAgent::text_only(&["hello", "world"]);
         let mut stream = agent.send_message_stream("test".to_string());
 
-        let chunk1 = stream.next().await.expect("chunk 1 missing").expect("chunk 1 error");
+        let chunk1 = stream
+            .next()
+            .await
+            .expect("chunk 1 missing")
+            .expect("chunk 1 error");
         assert_eq!(chunk1.delta, "hello");
         assert!(!chunk1.done);
 
-        let chunk2 = stream.next().await.expect("chunk 2 missing").expect("chunk 2 error");
+        let chunk2 = stream
+            .next()
+            .await
+            .expect("chunk 2 missing")
+            .expect("chunk 2 error");
         assert_eq!(chunk2.delta, "world");
         assert!(chunk2.done);
 
@@ -287,7 +305,11 @@ mod tests {
         let mut agent = StreamingMockAgent::empty();
         let mut stream = agent.send_message_stream("test".to_string());
 
-        let chunk = stream.next().await.expect("chunk missing").expect("chunk error");
+        let chunk = stream
+            .next()
+            .await
+            .expect("chunk missing")
+            .expect("chunk error");
         assert_eq!(chunk.delta, "");
         assert!(chunk.done);
 
@@ -299,12 +321,20 @@ mod tests {
         let mut agent = StreamingMockAgent::with_thinking("thinking...", "response");
         let mut stream = agent.send_message_stream("test".to_string());
 
-        let chunk1 = stream.next().await.expect("chunk 1 missing").expect("chunk 1 error");
+        let chunk1 = stream
+            .next()
+            .await
+            .expect("chunk 1 missing")
+            .expect("chunk 1 error");
         assert_eq!(chunk1.reasoning, Some("thinking...".to_string()));
         assert_eq!(chunk1.delta, "");
         assert!(!chunk1.done);
 
-        let chunk2 = stream.next().await.expect("chunk 2 missing").expect("chunk 2 error");
+        let chunk2 = stream
+            .next()
+            .await
+            .expect("chunk 2 missing")
+            .expect("chunk 2 error");
         assert_eq!(chunk2.delta, "response");
         assert!(chunk2.done);
 
@@ -314,17 +344,26 @@ mod tests {
     #[tokio::test]
     async fn test_with_tool_call_yields_call_result_response() {
         let args = serde_json::json!({"query": "test"});
-        let mut agent = StreamingMockAgent::with_tool_call("search", args.clone(), "found 5 results", "Done!");
+        let mut agent =
+            StreamingMockAgent::with_tool_call("search", args.clone(), "found 5 results", "Done!");
         let mut stream = agent.send_message_stream("test".to_string());
 
-        let chunk1 = stream.next().await.expect("chunk 1 missing").expect("chunk 1 error");
+        let chunk1 = stream
+            .next()
+            .await
+            .expect("chunk 1 missing")
+            .expect("chunk 1 error");
         assert!(chunk1.tool_calls.is_some());
         let calls = chunk1.tool_calls.unwrap();
         assert_eq!(calls.len(), 1);
         assert_eq!(calls[0].name, "search");
         assert!(!chunk1.done);
 
-        let chunk2 = stream.next().await.expect("chunk 2 missing").expect("chunk 2 error");
+        let chunk2 = stream
+            .next()
+            .await
+            .expect("chunk 2 missing")
+            .expect("chunk 2 error");
         assert!(chunk2.tool_results.is_some());
         let results = chunk2.tool_results.unwrap();
         assert_eq!(results.len(), 1);
@@ -332,7 +371,11 @@ mod tests {
         assert_eq!(results[0].result, "found 5 results");
         assert!(!chunk2.done);
 
-        let chunk3 = stream.next().await.expect("chunk 3 missing").expect("chunk 3 error");
+        let chunk3 = stream
+            .next()
+            .await
+            .expect("chunk 3 missing")
+            .expect("chunk 3 error");
         assert_eq!(chunk3.delta, "Done!");
         assert!(chunk3.done);
 
@@ -361,7 +404,11 @@ mod tests {
         let mut agent = StreamingMockAgent::with_subagent_events(events.clone(), "All done");
         let mut stream = agent.send_message_stream("test".to_string());
 
-        let chunk1 = stream.next().await.expect("chunk 1 missing").expect("chunk 1 error");
+        let chunk1 = stream
+            .next()
+            .await
+            .expect("chunk 1 missing")
+            .expect("chunk 1 error");
         assert!(chunk1.subagent_events.is_some());
         let subagent_events = chunk1.subagent_events.unwrap();
         assert_eq!(subagent_events.len(), 2);
@@ -369,7 +416,11 @@ mod tests {
         assert_eq!(subagent_events[1].event_type, SubagentEventType::Completed);
         assert!(!chunk1.done);
 
-        let chunk2 = stream.next().await.expect("chunk 2 missing").expect("chunk 2 error");
+        let chunk2 = stream
+            .next()
+            .await
+            .expect("chunk 2 missing")
+            .expect("chunk 2 error");
         assert_eq!(chunk2.delta, "All done");
         assert!(chunk2.done);
 

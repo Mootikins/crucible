@@ -408,9 +408,9 @@ impl StorageHandle {
                         kp.to_path_buf(),
                     ))
                 } else {
-                    Some(crucible_sqlite::create_knowledge_repository(
-                        Arc::clone(store),
-                    ))
+                    Some(crucible_sqlite::create_knowledge_repository(Arc::clone(
+                        store,
+                    )))
                 }
             }
         }

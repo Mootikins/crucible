@@ -178,7 +178,8 @@ impl CrucibleMcpServer {
 
         if let Some(delegation_context) = &self.delegation_context {
             if !delegation_context.targets.is_empty() {
-                if let Some(delegate_tool) = tools.iter_mut().find(|t| t.name == "delegate_session") {
+                if let Some(delegate_tool) = tools.iter_mut().find(|t| t.name == "delegate_session")
+                {
                     let targets_str = delegation_context.targets.join(", ");
                     let new_desc = format!(
                         "Delegate a task to another AI agent. Available delegation targets: {targets_str}. The target agent receives the prompt, executes the task, and returns the result."
@@ -300,7 +301,9 @@ impl CrucibleMcpServer {
         self.kiln_tools.get_kiln_stats().await
     }
 
-    #[tool(description = "Delegate a task to another AI agent (e.g., cursor, opencode). The target agent receives the prompt, executes the task, and returns the result. Use this when asked to hand off work to a specific agent.")]
+    #[tool(
+        description = "Delegate a task to another AI agent (e.g., cursor, opencode). The target agent receives the prompt, executes the task, and returns the result. Use this when asked to hand off work to a specific agent."
+    )]
     pub async fn delegate_session(
         &self,
         params: Parameters<DelegateSessionParams>,
@@ -412,7 +415,9 @@ impl CrucibleMcpServer {
 
     // ===== Job Tools (3) =====
 
-    #[tool(description = "List all background jobs (running and completed) for the current session")]
+    #[tool(
+        description = "List all background jobs (running and completed) for the current session"
+    )]
     pub async fn list_jobs(
         &self,
         _params: Parameters<ListJobsParams>,
@@ -427,11 +432,9 @@ impl CrucibleMcpServer {
         let jobs = delegation
             .background_spawner
             .list_jobs(&delegation.session_id);
-        let content = rmcp::model::Content::json(
-            serde_json::to_value(&jobs).map_err(|e| {
-                rmcp::ErrorData::internal_error(format!("Failed to serialize jobs: {e}"), None)
-            })?,
-        )?;
+        let content = rmcp::model::Content::json(serde_json::to_value(&jobs).map_err(|e| {
+            rmcp::ErrorData::internal_error(format!("Failed to serialize jobs: {e}"), None)
+        })?)?;
         Ok(CallToolResult::success(vec![content]))
     }
 
@@ -450,14 +453,13 @@ impl CrucibleMcpServer {
 
         match delegation.background_spawner.get_job_result(&params.job_id) {
             Some(result) => {
-                let content = rmcp::model::Content::json(
-                    serde_json::to_value(&result).map_err(|e| {
+                let content =
+                    rmcp::model::Content::json(serde_json::to_value(&result).map_err(|e| {
                         rmcp::ErrorData::internal_error(
                             format!("Failed to serialize job result: {e}"),
                             None,
                         )
-                    })?,
-                )?;
+                    })?)?;
                 Ok(CallToolResult::success(vec![content]))
             }
             None => Err(rmcp::ErrorData::invalid_params(
@@ -516,7 +518,6 @@ impl ServerHandler for CrucibleMcpServer {
             instructions: Some("Crucible knowledge management server with 16 tools. Notes: create_note, read_note, update_note, delete_note, list_notes, read_metadata. Search: semantic_search, text_search, property_search. Kiln: get_kiln_info, get_kiln_roots, get_kiln_stats. Delegation: delegate_session — hand off tasks to other agents when asked to delegate. Jobs: list_jobs, get_job_result, cancel_job — manage background jobs.".into()),
         }
     }
-
 }
 
 #[cfg(test)]
@@ -524,8 +525,8 @@ mod tests {
     use super::*;
 
     use crucible_core::background::{JobError, JobInfo, JobKind, JobResult};
-    use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
     use tempfile::TempDir;
 
     // Mock implementations for testing

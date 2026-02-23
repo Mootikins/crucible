@@ -34,9 +34,9 @@
 #![warn(clippy::pedantic)]
 
 pub mod extended_mcp_server;
-pub mod kiln;
 /// In-process MCP adapter for running tools without stdio transport.
 pub mod in_process_adapter;
+pub mod kiln;
 pub mod mcp_client;
 pub mod mcp_gateway;
 pub mod mcp_server;

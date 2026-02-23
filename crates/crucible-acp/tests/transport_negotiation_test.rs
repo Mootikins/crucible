@@ -39,7 +39,10 @@ async fn capabilities_stored_after_initialize() {
     // Perform initialize (but not full connect — just the init step)
     use agent_client_protocol::InitializeRequest;
     let init_request = InitializeRequest::new(1u16.into());
-    let init_response = client.initialize(init_request).await.expect("initialize should succeed");
+    let init_response = client
+        .initialize(init_request)
+        .await
+        .expect("initialize should succeed");
 
     // Verify capabilities were stored
     assert!(
@@ -94,10 +97,7 @@ async fn agent_reporting_http_support_gets_http_transport() {
         .expect("connect_with_best_mcp should succeed");
 
     // Verify session was created
-    assert!(
-        !session.id().is_empty(),
-        "Session ID should be non-empty"
-    );
+    assert!(!session.id().is_empty(), "Session ID should be non-empty");
 
     // Verify the client reports HTTP support after initialization
     assert!(
@@ -120,10 +120,7 @@ async fn agent_without_http_support_falls_back_to_stdio() {
         .await
         .expect("connect_with_best_mcp should succeed even with stdio fallback");
 
-    assert!(
-        !session.id().is_empty(),
-        "Session ID should be non-empty"
-    );
+    assert!(!session.id().is_empty(), "Session ID should be non-empty");
 
     // Verify the client does NOT report HTTP support
     assert!(
@@ -146,10 +143,7 @@ async fn agent_with_no_mcp_url_always_gets_stdio() {
         .await
         .expect("connect_with_best_mcp(None) should succeed");
 
-    assert!(
-        !session.id().is_empty(),
-        "Session ID should be non-empty"
-    );
+    assert!(!session.id().is_empty(), "Session ID should be non-empty");
 
     // Agent does support HTTP, but since we provided no URL, stdio is used
     assert!(

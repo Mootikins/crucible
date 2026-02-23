@@ -149,7 +149,9 @@ fn session_acp_lifecycle_with_http_capable_mock() {
         .args(["session", "create", "--agent", "mock-http"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("Configured agent: mock-http (acp)"))
+        .stdout(predicate::str::contains(
+            "Configured agent: mock-http (acp)",
+        ))
         .get_output()
         .stdout
         .clone();
@@ -203,7 +205,9 @@ fn session_acp_lifecycle_with_stdio_only_mock() {
         .args(["session", "create", "--agent", "mock-stdio"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("Configured agent: mock-stdio (acp)"))
+        .stdout(predicate::str::contains(
+            "Configured agent: mock-stdio (acp)",
+        ))
         .get_output()
         .stdout
         .clone();

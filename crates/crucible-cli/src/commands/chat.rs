@@ -395,7 +395,10 @@ async fn run_interactive_chat(
         .with_replay_speed(replay_speed)
         .with_replay_auto_exit(replay_auto_exit);
 
-    info!("Starting oil chat with model: {} (display: {})", model_name, display_model);
+    info!(
+        "Starting oil chat with model: {} (display: {})",
+        model_name, display_model
+    );
 
     if let Some(ref session_id) = resume_session_id {
         info!("Will resume session: {}", session_id);

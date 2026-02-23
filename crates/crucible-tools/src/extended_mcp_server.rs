@@ -172,8 +172,12 @@ impl ExtendedMcpServer {
         knowledge_repo: Arc<dyn KnowledgeRepository>,
         embedding_provider: Arc<dyn EmbeddingProvider>,
     ) -> Self {
-        let kiln_server =
-            CrucibleMcpServer::new_with_delegation(kiln_path, knowledge_repo, embedding_provider, None);
+        let kiln_server = CrucibleMcpServer::new_with_delegation(
+            kiln_path,
+            knowledge_repo,
+            embedding_provider,
+            None,
+        );
         let lua_registry = Arc::new(RwLock::new(
             LuaToolRegistry::new().expect("Failed to create Lua registry"),
         ));

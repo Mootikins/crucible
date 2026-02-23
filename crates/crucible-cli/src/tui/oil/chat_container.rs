@@ -1088,7 +1088,9 @@ mod tests {
 
         // Exact deltas from the reproduction log
         list.append_text("\nHello \u{2014} I'm ");
-        list.append_text("here to help with the Crucible codebase or anything else you're working on.");
+        list.append_text(
+            "here to help with the Crucible codebase or anything else you're working on.",
+        );
         list.append_text("\nHello \u{2014} I'm here to help with the Crucible codebase or anything else you're working on.");
 
         let blocks = match list.containers.last() {
@@ -1103,7 +1105,8 @@ mod tests {
         let greeting = "Hello \u{2014} I'm here to help with the Crucible codebase or anything else you're working on.";
         let count = full_text.matches(greeting).count();
         assert_eq!(
-            count, 1,
+            count,
+            1,
             "Expected greeting to appear exactly once, but appeared {} times.\nBlocks ({}):\n{:#?}",
             count,
             blocks.len(),

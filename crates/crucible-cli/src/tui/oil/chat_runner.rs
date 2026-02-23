@@ -1196,8 +1196,8 @@ fn extract_user_messages_from_recording(path: &std::path::Path) -> Result<Vec<St
 
     let mut user_messages = Vec::new();
     for line in lines {
-        let line =
-            line.with_context(|| format!("Failed reading replay event line from {}", path.display()))?;
+        let line = line
+            .with_context(|| format!("Failed reading replay event line from {}", path.display()))?;
         if line.trim().is_empty() {
             continue;
         }

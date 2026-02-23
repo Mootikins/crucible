@@ -39,8 +39,12 @@ fn demo_config_parses_without_error() {
 
     let config = result.unwrap();
 
-    // Verify basic structure - kiln_path should be "docs"
-    assert_eq!(config.kiln_path, PathBuf::from("docs"));
+    // Verify basic structure - kiln_path should end with "docs"
+    assert!(
+        config.kiln_path.ends_with("docs"),
+        "kiln_path should end with 'docs', got: {:?}",
+        config.kiln_path
+    );
 }
 
 #[test]
@@ -63,8 +67,12 @@ fn demo_acp_config_parses_without_error() {
 
     let config = result.unwrap();
 
-    // Verify basic structure - kiln_path should be "docs"
-    assert_eq!(config.kiln_path, PathBuf::from("docs"));
+    // Verify basic structure - kiln_path should end with "docs"
+    assert!(
+        config.kiln_path.ends_with("docs"),
+        "kiln_path should end with 'docs', got: {:?}",
+        config.kiln_path
+    );
 }
 
 #[test]

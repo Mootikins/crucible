@@ -93,7 +93,15 @@ pub async fn execute(config: CliConfig, cmd: SessionCommands) -> Result<()> {
             let client = DaemonClient::connect_or_start()
                 .await
                 .map_err(|e| anyhow!("Failed to connect to daemon: {}", e))?;
-            daemon_configure(&client, &config, &session_id, provider_type, &model, endpoint).await
+            daemon_configure(
+                &client,
+                &config,
+                &session_id,
+                provider_type,
+                &model,
+                endpoint,
+            )
+            .await
         }
         SessionCommands::Subscribe { session_ids } => daemon_subscribe(&session_ids).await,
         SessionCommands::Load { session_id } => {
@@ -868,7 +876,10 @@ async fn daemon_create(
     Ok(())
 }
 
-fn resolve_acp_profile(config: &CliConfig, agent_name: &str) -> Option<crucible_config::AgentProfile> {
+fn resolve_acp_profile(
+    config: &CliConfig,
+    agent_name: &str,
+) -> Option<crucible_config::AgentProfile> {
     let builtins = default_agent_profiles();
     if let Some(profile) = builtins.get(agent_name) {
         return Some(profile.clone());
@@ -905,12 +916,7 @@ async fn daemon_end(client: &DaemonClient, session_id: &str) -> Result<()> {
     Ok(())
 }
 
-async fn daemon_send(
-    config: &CliConfig,
-    session_id: &str,
-    message: &str,
-    raw: bool,
-) -> Result<()> {
+async fn daemon_send(config: &CliConfig, session_id: &str, message: &str, raw: bool) -> Result<()> {
     use crucible_rpc::DaemonClient;
     use std::io::Write;
 

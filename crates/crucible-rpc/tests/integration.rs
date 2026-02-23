@@ -987,13 +987,27 @@ async fn test_tui_sessions_command_flow() {
         .expect("Failed to connect");
 
     let session1 = client
-        .session_create("chat", kiln_dir.path(), Some(workspace_dir.path()), vec![], None, None)
+        .session_create(
+            "chat",
+            kiln_dir.path(),
+            Some(workspace_dir.path()),
+            vec![],
+            None,
+            None,
+        )
         .await
         .expect("session_create 1 failed");
     let session1_id = session1["session_id"].as_str().unwrap();
 
     let session2 = client
-        .session_create("chat", kiln_dir.path(), Some(workspace_dir.path()), vec![], None, None)
+        .session_create(
+            "chat",
+            kiln_dir.path(),
+            Some(workspace_dir.path()),
+            vec![],
+            None,
+            None,
+        )
         .await
         .expect("session_create 2 failed");
     let session2_id = session2["session_id"].as_str().unwrap();
@@ -1571,7 +1585,14 @@ async fn test_session_create_with_granular_recording_mode() {
         .expect("Failed to connect");
 
     let result = client
-        .session_create("chat", kiln_dir.path(), None, vec![], Some("granular"), None)
+        .session_create(
+            "chat",
+            kiln_dir.path(),
+            None,
+            vec![],
+            Some("granular"),
+            None,
+        )
         .await
         .expect("session_create with recording_mode failed");
 
@@ -1629,9 +1650,7 @@ async fn test_session_replay_rpc_invalid_path() {
 
     // Call session.replay with a nonexistent path
     let nonexistent_path = std::path::PathBuf::from("/nonexistent/recording.jsonl");
-    let result = client
-        .session_replay(&nonexistent_path, 1.0)
-        .await;
+    let result = client.session_replay(&nonexistent_path, 1.0).await;
 
     // Verify we get an error, not a panic
     assert!(
@@ -1668,16 +1687,18 @@ async fn test_recording_footer_regression_drop_ends_session() {
         .expect("session_id should be string")
         .to_string();
 
-    let session_before = client.session_get(&session_id).await.expect("session_get failed");
+    let session_before = client
+        .session_get(&session_id)
+        .await
+        .expect("session_get failed");
     assert_eq!(
         session_before["state"], "active",
         "Session should be active before handle drop"
     );
 
-    let handle =
-        DaemonAgentHandle::new_and_subscribe(client.clone(), session_id.clone(), event_rx)
-            .await
-            .expect("Failed to create agent handle");
+    let handle = DaemonAgentHandle::new_and_subscribe(client.clone(), session_id.clone(), event_rx)
+        .await
+        .expect("Failed to create agent handle");
 
     // When: the handle is dropped (simulates :q in TUI)
     drop(handle);

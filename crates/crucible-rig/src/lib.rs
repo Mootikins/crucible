@@ -67,13 +67,12 @@ pub use tools::{attach_mcp_tools, discover_crucible_tools, McpToolError, McpTool
 
 // Re-export workspace tools (always available)
 pub use workspace_tools::{
-    BashTool, EditFileTool, GlobTool, GrepTool, ReadFileTool, WorkspaceContext,
-    WorkspaceToolError, WriteFileTool,
+    BashTool, EditFileTool, GlobTool, GrepTool, ReadFileTool, WorkspaceContext, WorkspaceToolError,
+    WriteFileTool,
 };
 
 // Re-export MCP proxy tool (for upstream MCP tool integration)
 pub use mcp_proxy_tool::{mcp_tools_from_gateway, McpProxyError, McpProxyTool};
-
 
 // Re-export GitHub Copilot client
 pub use github_copilot::{
