@@ -4,7 +4,7 @@ use crate::agent_factory::{create_agent_from_session_config, AgentFactoryError};
 use crate::background_manager::{BackgroundJobManager, SubagentContext};
 use crate::event_emitter::emit_event;
 use crate::kiln_manager::KilnManager;
-use crate::llm_hooks::{LlmHook as _, LlmHookChain};
+use crate::llm_hooks::LlmHookChain;
 use crate::multi_kiln_search::{search_across_kilns, KilnSearchSource};
 use crate::permission_bridge::{DaemonPermissionGate, PermissionPromptCallback};
 use crate::protocol::SessionEventMessage;

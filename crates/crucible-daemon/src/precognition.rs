@@ -4,17 +4,20 @@ use crucible_core::traits::KnowledgeRepository;
 use std::sync::Arc;
 use tracing::{debug, info, warn};
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PrecognitionResult {
     pub enriched_prompt: String,
     pub notes_count: usize,
 }
 
+#[allow(dead_code)]
 pub struct DaemonPrecognition {
     knowledge_repo: Arc<dyn KnowledgeRepository>,
     embedding_provider: Arc<dyn EmbeddingProvider>,
 }
 
+#[allow(dead_code)]
 impl DaemonPrecognition {
     pub fn new(
         knowledge_repo: Arc<dyn KnowledgeRepository>,
