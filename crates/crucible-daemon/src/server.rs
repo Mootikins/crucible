@@ -1,6 +1,6 @@
 //! Unix socket server for JSON-RPC
 
-use crate::agent_manager::AgentManager;
+use crate::agent_manager::{AgentError, AgentManager};
 use crate::background_manager::BackgroundJobManager;
 use crate::daemon_plugins::DaemonPluginLoader;
 use crate::event_emitter::emit_event;
@@ -79,6 +79,15 @@ fn concurrent_request(req_id: Option<RequestId>, session_id: &str) -> Response {
         INVALID_PARAMS,
         format!("Request already in progress for session: {}", session_id),
     )
+}
+
+fn agent_error_to_response(req_id: Option<RequestId>, err: AgentError) -> Response {
+    match err {
+        AgentError::SessionNotFound(id) => session_not_found(req_id, &id),
+        AgentError::NoAgentConfigured(id) => agent_not_configured(req_id, &id),
+        AgentError::ConcurrentRequest(id) => concurrent_request(req_id, &id),
+        e => internal_error(req_id, e),
+    }
 }
 
 /// Daemon server that listens on a Unix socket
@@ -1856,16 +1865,7 @@ async fn handle_session_set_thinking_budget(
                 "thinking_budget": budget,
             }),
         ),
-        Err(crate::agent_manager::AgentError::SessionNotFound(id)) => {
-            session_not_found(req.id, &id)
-        }
-        Err(crate::agent_manager::AgentError::NoAgentConfigured(id)) => {
-            agent_not_configured(req.id, &id)
-        }
-        Err(crate::agent_manager::AgentError::ConcurrentRequest(id)) => {
-            concurrent_request(req.id, &id)
-        }
-        Err(e) => internal_error(req.id, e),
+        Err(e) => agent_error_to_response(req.id, e),
     }
 }
 
@@ -1909,16 +1909,7 @@ async fn handle_session_set_precognition(
                 "precognition_enabled": enabled,
             }),
         ),
-        Err(crate::agent_manager::AgentError::SessionNotFound(id)) => {
-            session_not_found(req.id, &id)
-        }
-        Err(crate::agent_manager::AgentError::NoAgentConfigured(id)) => {
-            agent_not_configured(req.id, &id)
-        }
-        Err(crate::agent_manager::AgentError::ConcurrentRequest(id)) => {
-            concurrent_request(req.id, &id)
-        }
-        Err(e) => internal_error(req.id, e),
+        Err(e) => agent_error_to_response(req.id, e),
     }
 }
 
@@ -2040,16 +2031,7 @@ async fn handle_session_set_temperature(
                 "temperature": temperature,
             }),
         ),
-        Err(crate::agent_manager::AgentError::SessionNotFound(id)) => {
-            session_not_found(req.id, &id)
-        }
-        Err(crate::agent_manager::AgentError::NoAgentConfigured(id)) => {
-            agent_not_configured(req.id, &id)
-        }
-        Err(crate::agent_manager::AgentError::ConcurrentRequest(id)) => {
-            concurrent_request(req.id, &id)
-        }
-        Err(e) => internal_error(req.id, e),
+        Err(e) => agent_error_to_response(req.id, e),
     }
 }
 
@@ -2094,16 +2076,7 @@ async fn handle_session_set_max_tokens(
                 "max_tokens": max_tokens,
             }),
         ),
-        Err(crate::agent_manager::AgentError::SessionNotFound(id)) => {
-            session_not_found(req.id, &id)
-        }
-        Err(crate::agent_manager::AgentError::NoAgentConfigured(id)) => {
-            agent_not_configured(req.id, &id)
-        }
-        Err(crate::agent_manager::AgentError::ConcurrentRequest(id)) => {
-            concurrent_request(req.id, &id)
-        }
-        Err(e) => internal_error(req.id, e),
+        Err(e) => agent_error_to_response(req.id, e),
     }
 }
 
