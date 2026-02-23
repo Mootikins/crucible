@@ -13,13 +13,13 @@
 use crucible_config::{AcpConfig, AgentProfile, BackendType, DelegationConfig};
 use crucible_core::background::{JobResult, JobStatus};
 use crucible_core::session::RecordingMode;
+use crucible_core::session::SessionAgent;
 use crucible_core::traits::chat::AgentHandle;
 use crucible_daemon::acp_handle::AcpAgentHandle;
 use crucible_daemon::background_manager::{BackgroundJobManager, SubagentContext, SubagentFactory};
 use crucible_daemon::protocol::SessionEventMessage;
 use crucible_daemon::recording::RecordingWriter;
 use futures::StreamExt;
-use crucible_core::session::SessionAgent;
 use std::collections::HashMap;
 use std::future::Future;
 use std::path::{Path, PathBuf};
@@ -109,11 +109,7 @@ fn make_acp_subagent_factory() -> SubagentFactory {
             .map_err(|e| e.to_string())
         })
             as Pin<
-                Box<
-                    dyn Future<
-                            Output = Result<Box<dyn AgentHandle + Send + Sync>, String>,
-                        > + Send,
-                >,
+                Box<dyn Future<Output = Result<Box<dyn AgentHandle + Send + Sync>, String>> + Send>,
             >
     })
 }
@@ -256,7 +252,9 @@ async fn mock_acp_agent_returns_message_response() {
 
     assert!(!chunks.is_empty(), "Expected at least one response chunk");
     assert!(
-        chunks.iter().any(|chunk| matches!(chunk, Ok(chunk) if chunk.done)),
+        chunks
+            .iter()
+            .any(|chunk| matches!(chunk, Ok(chunk) if chunk.done)),
         "Expected at least one done=true ChatChunk"
     );
 }
@@ -329,9 +327,13 @@ async fn inject_errors_causes_handshake_failure() {
 async fn delegation_depth_limit_enforced() {
     let temp = TempDir::new().expect("temp dir");
     let (event_tx, _) = broadcast::channel(32);
-    let manager = Arc::new(BackgroundJobManager::new(event_tx).with_subagent_factory(Box::new(
-        |_agent, _workspace| Box::pin(async { Err("factory should not be called".to_string()) }),
-    )));
+    let manager = Arc::new(
+        BackgroundJobManager::new(event_tx).with_subagent_factory(Box::new(
+            |_agent, _workspace| {
+                Box::pin(async { Err("factory should not be called".to_string()) })
+            },
+        )),
+    );
 
     let session_id = "session-depth-limit-smoke";
     let mut agent = mock_session_agent("test-agent");
@@ -402,13 +404,22 @@ async fn mock_acp_delegation_emits_events() {
     let spawned = next_event(&mut rx, "delegation_spawned").await;
     let completed = next_event(&mut rx, "delegation_completed").await;
 
-    assert_eq!(spawned.data["delegation_id"].as_str(), Some(delegation_id.as_str()));
+    assert_eq!(
+        spawned.data["delegation_id"].as_str(),
+        Some(delegation_id.as_str())
+    );
     assert_eq!(spawned.session_id, session_id);
     assert_eq!(spawned.data["parent_session_id"].as_str(), Some(session_id));
 
     assert_eq!(completed.session_id, session_id);
-    assert_eq!(completed.data["delegation_id"].as_str(), Some(delegation_id.as_str()));
-    assert_eq!(completed.data["parent_session_id"].as_str(), Some(session_id));
+    assert_eq!(
+        completed.data["delegation_id"].as_str(),
+        Some(delegation_id.as_str())
+    );
+    assert_eq!(
+        completed.data["parent_session_id"].as_str(),
+        Some(session_id)
+    );
 
     let result = wait_for_terminal_result(manager.as_ref(), &delegation_id).await;
     assert_eq!(result.info.status, JobStatus::Completed);
@@ -432,7 +443,8 @@ async fn mock_acp_delegation_captured_in_recording() {
 
     let (event_tx, mut assertion_rx) = broadcast::channel(64);
     let manager = Arc::new(
-        BackgroundJobManager::new(event_tx.clone()).with_subagent_factory(make_acp_subagent_factory()),
+        BackgroundJobManager::new(event_tx.clone())
+            .with_subagent_factory(make_acp_subagent_factory()),
     );
 
     let (stop_tx, mut stop_rx) = oneshot::channel::<()>();
@@ -472,8 +484,14 @@ async fn mock_acp_delegation_captured_in_recording() {
     let spawned = next_event(&mut assertion_rx, "delegation_spawned").await;
     let completed = next_event(&mut assertion_rx, "delegation_completed").await;
 
-    assert_eq!(spawned.data["delegation_id"].as_str(), Some(delegation_id.as_str()));
-    assert_eq!(completed.data["delegation_id"].as_str(), Some(delegation_id.as_str()));
+    assert_eq!(
+        spawned.data["delegation_id"].as_str(),
+        Some(delegation_id.as_str())
+    );
+    assert_eq!(
+        completed.data["delegation_id"].as_str(),
+        Some(delegation_id.as_str())
+    );
 
     let result = wait_for_terminal_result(manager.as_ref(), &delegation_id).await;
     assert_eq!(result.info.status, JobStatus::Completed);

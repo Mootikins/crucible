@@ -507,7 +507,8 @@ impl AgentManager {
 
                     match self.kiln_manager.get_enrichment_config(kiln_path).await {
                         Some(config) => {
-                            match crate::embedding::get_or_create_embedding_provider(&config).await {
+                            match crate::embedding::get_or_create_embedding_provider(&config).await
+                            {
                                 Ok(embedding_provider) => {
                                     let precognition = crate::precognition::DaemonPrecognition::new(
                                         knowledge_repo,
@@ -885,8 +886,7 @@ impl AgentManager {
                         // full accumulated response as a final streaming delta. Detect
                         // this by checking if the incoming delta exactly matches what
                         // we've already accumulated, and skip it to prevent duplication.
-                        if !accumulated_response.is_empty()
-                            && chunk.delta == *accumulated_response
+                        if !accumulated_response.is_empty() && chunk.delta == *accumulated_response
                         {
                             debug!(
                                 session_id = %session_id,
@@ -1996,14 +1996,22 @@ impl AgentManager {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::precognition::DaemonPrecognition;
     use crate::session_storage::FileSessionStorage;
+    use async_trait::async_trait;
+    use crucible_core::enrichment::EmbeddingProvider;
+    use crucible_core::parser::ParsedNote;
     use crucible_core::session::SessionType;
     use crucible_core::traits::chat::{
         AgentHandle, ChatChunk, ChatResult, ChatToolCall, ChatToolResult,
     };
+    use crucible_core::traits::knowledge::NoteInfo;
+    use crucible_core::traits::KnowledgeRepository;
+    use crucible_core::types::{DocumentId, SearchResult};
     use futures::stream::BoxStream;
     use futures::StreamExt;
     use std::collections::HashMap;
+    use std::fs;
     use tempfile::TempDir;
     use tokio::time::{timeout, Duration};
 
@@ -2011,6 +2019,65 @@ mod tests {
 
     struct StreamingMockAgent {
         chunks: Vec<ChatChunk>,
+    }
+
+    struct MockKnowledgeRepository {
+        results: Vec<SearchResult>,
+    }
+
+    #[async_trait]
+    impl KnowledgeRepository for MockKnowledgeRepository {
+        async fn get_note_by_name(&self, _name: &str) -> crucible_core::Result<Option<ParsedNote>> {
+            Ok(None)
+        }
+
+        async fn list_notes(&self, _path: Option<&str>) -> crucible_core::Result<Vec<NoteInfo>> {
+            Ok(vec![])
+        }
+
+        async fn search_vectors(
+            &self,
+            _vector: Vec<f32>,
+        ) -> crucible_core::Result<Vec<SearchResult>> {
+            Ok(self.results.clone())
+        }
+    }
+
+    struct MockEmbeddingProvider {
+        should_fail: bool,
+    }
+
+    #[async_trait]
+    impl EmbeddingProvider for MockEmbeddingProvider {
+        async fn embed(&self, _text: &str) -> anyhow::Result<Vec<f32>> {
+            if self.should_fail {
+                return Err(anyhow::anyhow!("embedding failed"));
+            }
+            Ok(vec![0.1, 0.2, 0.3])
+        }
+
+        async fn embed_batch(&self, _texts: &[&str]) -> anyhow::Result<Vec<Vec<f32>>> {
+            if self.should_fail {
+                return Err(anyhow::anyhow!("batch embedding failed"));
+            }
+            Ok(vec![vec![0.1, 0.2, 0.3]])
+        }
+
+        fn model_name(&self) -> &str {
+            "mock-model"
+        }
+
+        fn dimensions(&self) -> usize {
+            3
+        }
+
+        fn provider_name(&self) -> &str {
+            "mock"
+        }
+
+        async fn list_models(&self) -> anyhow::Result<Vec<String>> {
+            Ok(vec!["mock-model".to_string()])
+        }
     }
 
     #[async_trait::async_trait]
@@ -2054,7 +2121,9 @@ mod tests {
                     Ok(event) if event.event == event_name => return event,
                     Ok(_) => continue,
                     Err(broadcast::error::RecvError::Lagged(_)) => continue,
-                    Err(err) => panic!("event channel closed while waiting for {event_name}: {err}"),
+                    Err(err) => {
+                        panic!("event channel closed while waiting for {event_name}: {err}")
+                    }
                 }
             }
         })
@@ -2639,7 +2708,10 @@ mod tests {
         let agent_manager = create_test_agent_manager(session_manager.clone());
         let mut agent = test_agent();
         agent.precognition_enabled = false;
-        agent_manager.configure_agent(&session.id, agent).await.unwrap();
+        agent_manager
+            .configure_agent(&session.id, agent)
+            .await
+            .unwrap();
 
         agent_manager.agent_cache.insert(
             session.id.clone(),
@@ -2687,7 +2759,10 @@ mod tests {
         let agent_manager = create_test_agent_manager(session_manager.clone());
         let mut agent = test_agent();
         agent.precognition_enabled = true;
-        agent_manager.configure_agent(&session.id, agent).await.unwrap();
+        agent_manager
+            .configure_agent(&session.id, agent)
+            .await
+            .unwrap();
 
         agent_manager.agent_cache.insert(
             session.id.clone(),
@@ -2734,7 +2809,10 @@ mod tests {
         let agent_manager = create_test_agent_manager(session_manager.clone());
         let mut agent = test_agent();
         agent.precognition_enabled = true;
-        agent_manager.configure_agent(&session.id, agent).await.unwrap();
+        agent_manager
+            .configure_agent(&session.id, agent)
+            .await
+            .unwrap();
 
         agent_manager.agent_cache.insert(
             session.id.clone(),
@@ -2760,6 +2838,169 @@ mod tests {
 
         let _ = next_event_or_skip(&mut event_rx, "user_message").await;
         assert_no_event_until_message_complete(&mut event_rx, "precognition_complete").await;
+    }
+
+    #[tokio::test]
+    async fn test_daemon_precognition_format_matches_expected() {
+        let knowledge_repo = Arc::new(MockKnowledgeRepository {
+            results: vec![
+                SearchResult {
+                    document_id: DocumentId("docs/alpha.md".to_string()),
+                    score: 0.93,
+                    highlights: None,
+                    snippet: Some("Alpha snippet".to_string()),
+                },
+                SearchResult {
+                    document_id: DocumentId("docs/beta.md".to_string()),
+                    score: 0.79,
+                    highlights: None,
+                    snippet: Some("Beta snippet".to_string()),
+                },
+            ],
+        });
+        let embedding_provider = Arc::new(MockEmbeddingProvider { should_fail: false });
+        let precognition = DaemonPrecognition::new(knowledge_repo, embedding_provider);
+
+        let result = precognition.enrich("test query", 5).await.unwrap();
+
+        let expected = "# Context from Knowledge Base\n\n## Context #1: alpha (similarity: 0.93)\n\nAlpha snippet\n\n## Context #2: beta (similarity: 0.79)\n\nBeta snippet\n\n\n---\n\n# User Query\n\ntest query";
+        assert_eq!(result.enriched_prompt, expected);
+        assert_eq!(result.notes_count, 2);
+    }
+
+    #[tokio::test]
+    async fn test_precognition_event_has_correct_notes_count() {
+        let knowledge_repo = Arc::new(MockKnowledgeRepository {
+            results: vec![
+                SearchResult {
+                    document_id: DocumentId("docs/alpha.md".to_string()),
+                    score: 0.93,
+                    highlights: None,
+                    snippet: Some("Alpha snippet".to_string()),
+                },
+                SearchResult {
+                    document_id: DocumentId("docs/beta.md".to_string()),
+                    score: 0.79,
+                    highlights: None,
+                    snippet: Some("Beta snippet".to_string()),
+                },
+                SearchResult {
+                    document_id: DocumentId("docs/gamma.md".to_string()),
+                    score: 0.55,
+                    highlights: None,
+                    snippet: Some("Gamma snippet".to_string()),
+                },
+            ],
+        });
+        let embedding_provider = Arc::new(MockEmbeddingProvider { should_fail: false });
+        let precognition = DaemonPrecognition::new(knowledge_repo, embedding_provider);
+
+        let result = precognition.enrich("count notes", 2).await.unwrap();
+
+        assert_eq!(result.notes_count, 2);
+        assert!(result
+            .enriched_prompt
+            .contains("## Context #1: alpha (similarity: 0.93)"));
+        assert!(result
+            .enriched_prompt
+            .contains("## Context #2: beta (similarity: 0.79)"));
+        assert!(!result
+            .enriched_prompt
+            .contains("## Context #3: gamma (similarity: 0.55)"));
+    }
+
+    #[tokio::test]
+    async fn test_precognition_enrichment_error_fallback() {
+        let knowledge_repo = Arc::new(MockKnowledgeRepository {
+            results: vec![SearchResult {
+                document_id: DocumentId("docs/alpha.md".to_string()),
+                score: 0.93,
+                highlights: None,
+                snippet: Some("Alpha snippet".to_string()),
+            }],
+        });
+        let embedding_provider = Arc::new(MockEmbeddingProvider { should_fail: true });
+        let precognition = DaemonPrecognition::new(knowledge_repo, embedding_provider);
+
+        let result = precognition.enrich("fallback query", 5).await.unwrap();
+
+        assert_eq!(result.notes_count, 0);
+        assert_eq!(result.enriched_prompt, "fallback query");
+    }
+
+    #[tokio::test]
+    async fn test_precognition_empty_results_returns_original() {
+        let knowledge_repo = Arc::new(MockKnowledgeRepository { results: vec![] });
+        let embedding_provider = Arc::new(MockEmbeddingProvider { should_fail: false });
+        let precognition = DaemonPrecognition::new(knowledge_repo, embedding_provider);
+
+        let result = precognition.enrich("empty query", 5).await.unwrap();
+
+        assert_eq!(result.notes_count, 0);
+        assert_eq!(result.enriched_prompt, "empty query");
+    }
+
+    #[tokio::test]
+    async fn test_precognition_complete_event_emitted_when_enrichment_runs() {
+        crate::embedding::clear_embedding_provider_cache();
+
+        let tmp = TempDir::new().unwrap();
+        fs::write(
+            tmp.path().join("crucible.toml"),
+            "[enrichment]\n[enrichment.provider]\ntype = \"ollama\"\nmodel = \"nomic-embed-text\"\nbase_url = \"http://127.0.0.1:9\"\n\n[enrichment.pipeline]\n",
+        )
+        .unwrap();
+
+        let storage = Arc::new(FileSessionStorage::new());
+        let session_manager = Arc::new(SessionManager::with_storage(storage));
+        let session = session_manager
+            .create_session(
+                SessionType::Chat,
+                tmp.path().to_path_buf(),
+                Some(tmp.path().to_path_buf()),
+                vec![],
+                None,
+            )
+            .await
+            .unwrap();
+
+        let agent_manager = create_test_agent_manager(session_manager.clone());
+        let mut agent = test_agent();
+        agent.precognition_enabled = true;
+        agent_manager
+            .configure_agent(&session.id, agent)
+            .await
+            .unwrap();
+
+        agent_manager.agent_cache.insert(
+            session.id.clone(),
+            Arc::new(Mutex::new(Box::new(StreamingMockAgent {
+                chunks: vec![ChatChunk {
+                    delta: "ok".to_string(),
+                    done: true,
+                    tool_calls: None,
+                    tool_results: None,
+                    reasoning: None,
+                    usage: None,
+                    subagent_events: None,
+                    precognition_notes_count: None,
+                }],
+            }))),
+        );
+
+        let (event_tx, mut event_rx) = broadcast::channel::<SessionEventMessage>(64);
+        agent_manager
+            .send_message(&session.id, "hello precognition".to_string(), &event_tx)
+            .await
+            .unwrap();
+
+        let _ = next_event_or_skip(&mut event_rx, "user_message").await;
+        let event = next_event_or_skip(&mut event_rx, "precognition_complete").await;
+
+        assert_eq!(event.data["notes_count"], 0);
+        assert_eq!(event.data["query_summary"], "hello precognition");
+
+        crate::embedding::clear_embedding_provider_cache();
     }
 
     #[tokio::test]

@@ -7,6 +7,7 @@ use crate::event_emitter::emit_event;
 #[cfg(test)]
 use crate::event_emitter::stamp_event;
 use crate::kiln_manager::KilnManager;
+use crate::optional_bool_param;
 use crate::project_manager::ProjectManager;
 use crate::protocol::{
     Request, Response, SessionEventMessage, INTERNAL_ERROR, INVALID_PARAMS, METHOD_NOT_FOUND,
@@ -15,7 +16,6 @@ use crate::protocol::{
 use crate::recording::RecordingWriter;
 use crate::replay::ReplaySession;
 use crate::rpc::{RpcContext, RpcDispatcher};
-use crate::optional_bool_param;
 use crate::rpc_helpers::{
     optional_i64_param, optional_str_param, optional_u64_param, require_array_param,
     require_f64_param, require_obj_param, require_str_param,
@@ -747,9 +747,7 @@ async fn handle_legacy_request(
         "session.set_precognition" => {
             handle_session_set_precognition(req, agent_manager, event_tx).await
         }
-        "session.get_precognition" => {
-            handle_session_get_precognition(req, agent_manager).await
-        }
+        "session.get_precognition" => handle_session_get_precognition(req, agent_manager).await,
         "session.add_notification" => {
             handle_session_add_notification(req, agent_manager, event_tx).await
         }
@@ -766,9 +764,7 @@ async fn handle_legacy_request(
         }
         "session.get_max_tokens" => handle_session_get_max_tokens(req, agent_manager).await,
         "session.test_interaction" => handle_session_test_interaction(req, event_tx).await,
-        "session.replay" => {
-            handle_session_replay(req, session_manager, event_tx).await
-        }
+        "session.replay" => handle_session_replay(req, session_manager, event_tx).await,
         "plugin.reload" => handle_plugin_reload(req, plugin_loader).await,
         "plugin.list" => handle_plugin_list(req, plugin_loader).await,
         "project.register" => handle_project_register(req, project_manager).await,
@@ -841,7 +837,10 @@ async fn handle_kiln_set_classification(req: Request, _km: &Arc<KilnManager>) ->
     let classification = match DataClassification::from_str_insensitive(classification_str) {
         Some(c) => c,
         None => {
-            let valid: Vec<&str> = DataClassification::all().iter().map(|c| c.as_str()).collect();
+            let valid: Vec<&str> = DataClassification::all()
+                .iter()
+                .map(|c| c.as_str())
+                .collect();
             return Response::error(
                 req.id,
                 INVALID_PARAMS,
@@ -1293,7 +1292,10 @@ fn validate_trust_level(
     ))
 }
 
-fn resolve_provider_trust_level_for_create(req: &Request, llm_config: &Option<LlmConfig>) -> TrustLevel {
+fn resolve_provider_trust_level_for_create(
+    req: &Request,
+    llm_config: &Option<LlmConfig>,
+) -> TrustLevel {
     if optional_str_param!(req, "agent_type") == Some("acp") {
         return TrustLevel::Cloud;
     }
@@ -1942,7 +1944,6 @@ async fn handle_session_get_precognition(req: Request, am: &Arc<AgentManager>) -
     }
 }
 
-
 async fn handle_session_add_notification(
     req: Request,
     am: &Arc<AgentManager>,
@@ -2359,7 +2360,10 @@ mod tests {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::UnixStream;
 
-    fn build_llm_config(default_key: &str, provider_type: crucible_config::BackendType) -> LlmConfig {
+    fn build_llm_config(
+        default_key: &str,
+        provider_type: crucible_config::BackendType,
+    ) -> LlmConfig {
         build_llm_config_with_trust(default_key, provider_type, None)
     }
 
@@ -2429,7 +2433,10 @@ mod tests {
         std::fs::create_dir_all(&kiln).unwrap();
         write_workspace_config(&workspace, "./notes", Some("confidential"));
 
-        let llm_config = Some(build_llm_config("cloud", crucible_config::BackendType::OpenAI));
+        let llm_config = Some(build_llm_config(
+            "cloud",
+            crucible_config::BackendType::OpenAI,
+        ));
         let request = create_session_request(&kiln, &workspace, "cloud");
 
         let storage = Arc::new(FileSessionStorage::new());
@@ -2454,7 +2461,10 @@ mod tests {
         std::fs::create_dir_all(&kiln).unwrap();
         write_workspace_config(&workspace, "./notes", Some("confidential"));
 
-        let llm_config = Some(build_llm_config("local", crucible_config::BackendType::Mock));
+        let llm_config = Some(build_llm_config(
+            "local",
+            crucible_config::BackendType::Mock,
+        ));
         let request = create_session_request(&kiln, &workspace, "local");
 
         let storage = Arc::new(FileSessionStorage::new());
@@ -2476,7 +2486,10 @@ mod tests {
         std::fs::create_dir_all(&kiln).unwrap();
         write_workspace_config(&workspace, "./notes", None);
 
-        let llm_config = Some(build_llm_config("cloud", crucible_config::BackendType::OpenAI));
+        let llm_config = Some(build_llm_config(
+            "cloud",
+            crucible_config::BackendType::OpenAI,
+        ));
         let request = create_session_request(&kiln, &workspace, "cloud");
 
         let storage = Arc::new(FileSessionStorage::new());

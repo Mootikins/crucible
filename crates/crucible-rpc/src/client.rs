@@ -545,12 +545,7 @@ impl DaemonClient {
         Ok(())
     }
 
-
-    pub async fn kiln_set_classification(
-        &self,
-        path: &Path,
-        classification: &str,
-    ) -> Result<()> {
+    pub async fn kiln_set_classification(&self, path: &Path, classification: &str) -> Result<()> {
         self.call(
             "kiln.set_classification",
             serde_json::json!({
@@ -1091,11 +1086,7 @@ impl DaemonClient {
     }
 
     /// Set whether Precognition (auto-RAG) is enabled for a session.
-    pub async fn session_set_precognition(
-        &self,
-        session_id: &str,
-        enabled: bool,
-    ) -> Result<()> {
+    pub async fn session_set_precognition(&self, session_id: &str, enabled: bool) -> Result<()> {
         self.call_with_retry(
             "session.set_precognition",
             serde_json::json!({

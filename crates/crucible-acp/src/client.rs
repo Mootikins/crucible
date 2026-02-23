@@ -125,8 +125,7 @@ impl StreamingState {
     /// `session/update` notification. We detect this by checking if the incoming
     /// text equals the accumulated text so far.
     fn is_duplicate_resend(&self, text: &str) -> bool {
-        !self.accumulated_text.is_empty()
-            && text.trim() == self.accumulated_text.trim()
+        !self.accumulated_text.is_empty() && text.trim() == self.accumulated_text.trim()
     }
 
     fn formatted_output(&self) -> String {
@@ -726,7 +725,9 @@ impl CrucibleAcpClient {
     /// # Errors
     ///
     /// Returns an error if any step of the handshake fails
-    #[deprecated(note = "Use connect_with_best_mcp(None) instead — it negotiates transport from agent capabilities")]
+    #[deprecated(
+        note = "Use connect_with_best_mcp(None) instead — it negotiates transport from agent capabilities"
+    )]
     pub async fn connect_with_handshake(&mut self) -> Result<AcpSession> {
         use agent_client_protocol::{InitializeRequest, NewSessionRequest};
 
@@ -799,7 +800,9 @@ impl CrucibleAcpClient {
     /// # Errors
     ///
     /// Returns an error if any step of the handshake fails
-    #[deprecated(note = "Use connect_with_best_mcp(Some(url)) instead — it negotiates transport from agent capabilities")]
+    #[deprecated(
+        note = "Use connect_with_best_mcp(Some(url)) instead — it negotiates transport from agent capabilities"
+    )]
     pub async fn connect_with_sse_mcp(&mut self, mcp_url: &str) -> Result<AcpSession> {
         use agent_client_protocol::{
             InitializeRequest, McpServer, McpServerHttp, NewSessionRequest,
@@ -864,11 +867,10 @@ impl CrucibleAcpClient {
     ///
     /// * `mcp_url` - Optional URL to an in-process HTTP MCP server. If `None` or if
     ///   the agent doesn't support HTTP, falls back to stdio transport.
-    pub async fn connect_with_best_mcp(
-        &mut self,
-        mcp_url: Option<&str>,
-    ) -> Result<AcpSession> {
-        use agent_client_protocol::{InitializeRequest, McpServer, McpServerHttp, NewSessionRequest};
+    pub async fn connect_with_best_mcp(&mut self, mcp_url: Option<&str>) -> Result<AcpSession> {
+        use agent_client_protocol::{
+            InitializeRequest, McpServer, McpServerHttp, NewSessionRequest,
+        };
 
         tracing::debug!(agent = %self.agent_name, mcp_url = ?mcp_url, "Starting capability-aware ACP handshake");
 

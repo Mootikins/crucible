@@ -101,10 +101,8 @@ async fn test_streaming_response_events_arrive_in_order() {
 
     let events = replay_and_collect(&fixture).await;
 
-    let text_events: Vec<&SessionEventMessage> = events
-        .iter()
-        .filter(|e| e.event == "text_delta")
-        .collect();
+    let text_events: Vec<&SessionEventMessage> =
+        events.iter().filter(|e| e.event == "text_delta").collect();
     assert_eq!(text_events.len(), 3, "Expected 3 text_delta events");
 
     let seqs: Vec<u64> = text_events.iter().map(|e| e.seq.unwrap_or(0)).collect();
@@ -144,7 +142,10 @@ async fn test_multi_turn_conversation_boundaries() {
     );
 
     let events = replay_and_collect(&fixture).await;
-    let complete_count = events.iter().filter(|e| e.event == "message_complete").count();
+    let complete_count = events
+        .iter()
+        .filter(|e| e.event == "message_complete")
+        .count();
     assert_eq!(
         complete_count, 2,
         "Expected two message_complete events for two turns"
@@ -155,12 +156,10 @@ async fn test_multi_turn_conversation_boundaries() {
 async fn test_model_switch_event_propagated() {
     let fixture = create_test_recording(
         "model-switch",
-        vec![
-            (
-                "model_switched".to_string(),
-                json!({"model_name": "test-model-v2"}),
-            ),
-        ],
+        vec![(
+            "model_switched".to_string(),
+            json!({"model_name": "test-model-v2"}),
+        )],
     );
 
     let events = replay_and_collect(&fixture).await;
@@ -254,10 +253,8 @@ async fn test_malformed_line_in_fixture_skipped() {
     std::fs::write(&fixture, format!("{}\n", lines.join("\n"))).expect("Write malformed fixture");
 
     let events = replay_and_collect(&fixture).await;
-    let text_events: Vec<&SessionEventMessage> = events
-        .iter()
-        .filter(|e| e.event == "text_delta")
-        .collect();
+    let text_events: Vec<&SessionEventMessage> =
+        events.iter().filter(|e| e.event == "text_delta").collect();
 
     assert_eq!(text_events.len(), 2, "Valid events should still arrive");
     assert_eq!(
