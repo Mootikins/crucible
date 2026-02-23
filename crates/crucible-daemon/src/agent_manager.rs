@@ -5,9 +5,11 @@ use crate::background_manager::{BackgroundJobManager, SubagentContext};
 use crate::event_emitter::emit_event;
 use crate::kiln_manager::KilnManager;
 use crate::llm_hooks::{LlmHook as _, LlmHookChain};
+use crate::multi_kiln_search::{search_across_kilns, KilnSearchSource};
 use crate::permission_bridge::{DaemonPermissionGate, PermissionPromptCallback};
 use crate::protocol::SessionEventMessage;
 use crate::session_manager::{SessionError, SessionManager};
+use crate::trust_resolution::resolve_provider_trust;
 use crucible_acp::discovery::default_agent_profiles;
 use crucible_config::components::permissions::PermissionConfig;
 use crucible_config::{AcpConfig, AgentProfile, BackendType, PatternStore};
@@ -507,26 +509,196 @@ impl AgentManager {
             let kiln_path = session.kiln.as_path();
             match self.kiln_manager.get_or_open(kiln_path).await {
                 Ok(handle) => {
-                    let knowledge_repo = handle.as_knowledge_repository();
-
                     match self.kiln_manager.get_enrichment_config(kiln_path).await {
-                        Some(config) => {
-                            match crate::embedding::get_or_create_embedding_provider(&config).await
+                        Some(primary_config) => {
+                            match crate::embedding::get_or_create_embedding_provider(&primary_config)
+                                .await
                             {
                                 Ok(embedding_provider) => {
-                                    let precognition = crate::precognition::DaemonPrecognition::new(
-                                        knowledge_repo,
-                                        embedding_provider,
-                                    );
+                                    match embedding_provider.embed(&original_content).await {
+                                        Ok(query_embedding) => {
+                                            let mut sources = vec![KilnSearchSource {
+                                                kiln_path: session.kiln.clone(),
+                                                knowledge_repo: handle.as_knowledge_repository(),
+                                                is_primary: true,
+                                            }];
 
-                                    match precognition.enrich(&original_content, 5).await {
-                                        Ok(result) => {
+                                            for connected_kiln in &session.connected_kilns {
+                                                let connected_handle =
+                                                    match self.kiln_manager.get_or_open(connected_kiln).await
+                                                    {
+                                                        Ok(handle) => handle,
+                                                        Err(error) => {
+                                                            warn!(
+                                                                session_id = %session_id,
+                                                                kiln = %connected_kiln.display(),
+                                                                error = %error,
+                                                                "Failed to open connected kiln for precognition"
+                                                            );
+                                                            continue;
+                                                        }
+                                                    };
+
+                                                let Some(connected_config) = self
+                                                    .kiln_manager
+                                                    .get_enrichment_config(connected_kiln)
+                                                    .await
+                                                else {
+                                                    debug!(
+                                                        session_id = %session_id,
+                                                        kiln = %connected_kiln.display(),
+                                                        "Skipping connected kiln without enrichment config"
+                                                    );
+                                                    continue;
+                                                };
+
+                                                if connected_config.model_name()
+                                                    != primary_config.model_name()
+                                                {
+                                                    warn!(
+                                                        session_id = %session_id,
+                                                        kiln = %connected_kiln.display(),
+                                                        primary_model = primary_config.model_name(),
+                                                        connected_model = connected_config.model_name(),
+                                                        "Skipping connected kiln with mismatched embedding model"
+                                                    );
+                                                    continue;
+                                                }
+
+                                                sources.push(KilnSearchSource {
+                                                    kiln_path: connected_kiln.clone(),
+                                                    knowledge_repo: connected_handle
+                                                        .as_knowledge_repository(),
+                                                    is_primary: false,
+                                                });
+                                            }
+
+                                            let provider_trust =
+                                                resolve_provider_trust(&agent_config, self.llm_config.as_ref());
+
+                                            match search_across_kilns(
+                                                &sources,
+                                                query_embedding,
+                                                5,
+                                                Some(provider_trust),
+                                                &session.workspace,
+                                            )
+                                            .await
+                                            {
+                                                Ok(results) => {
+                                                    let mut enriched_prompt = original_content.clone();
+                                                    if !results.is_empty() {
+                                                        let context = results
+                                                            .iter()
+                                                            .enumerate()
+                                                            .map(|(i, result)| {
+                                                                let title = result
+                                                                    .document_id
+                                                                    .0
+                                                                    .split('/')
+                                                                    .next_back()
+                                                                    .unwrap_or(&result.document_id.0)
+                                                                    .trim_end_matches(".md");
+
+                                                                let kiln_label = result
+                                                                    .kiln_path
+                                                                    .as_ref()
+                                                                    .filter(|path| path != &&session.kiln)
+                                                                    .and_then(|path| path.file_name())
+                                                                    .and_then(|name| name.to_str())
+                                                                    .map(|name| format!(" [from: {name}]"))
+                                                                    .unwrap_or_default();
+
+                                                                format!(
+                                                                    "## Context #{}: {}{} (similarity: {:.2})\n\n{}\n",
+                                                                    i + 1,
+                                                                    title,
+                                                                    kiln_label,
+                                                                    result.score,
+                                                                    result.snippet.clone().unwrap_or_default()
+                                                                )
+                                                            })
+                                                            .collect::<Vec<_>>()
+                                                            .join("\n");
+
+                                                        enriched_prompt = format!(
+                                                            "# Context from Knowledge Base\n\n{}\n\n---\n\n# User Query\n\n{}",
+                                                            context, original_content
+                                                        );
+                                                    }
+
+                                                    let query_summary = original_content
+                                                        .chars()
+                                                        .take(100)
+                                                        .collect::<String>();
+                                                    let event = SessionEvent::PrecognitionComplete {
+                                                        notes_count: results.len(),
+                                                        query_summary: query_summary.clone(),
+                                                    };
+                                                    if !emit_event(
+                                                        event_tx,
+                                                        SessionEventMessage::new(
+                                                            session_id,
+                                                            event.event_type(),
+                                                            serde_json::json!({
+                                                                "notes_count": results.len(),
+                                                                "query_summary": query_summary,
+                                                            }),
+                                                        ),
+                                                    ) {
+                                                        warn!(
+                                                            session_id = %session_id,
+                                                            "No subscribers for precognition_complete event"
+                                                        );
+                                                    }
+                                                    enriched_prompt
+                                                }
+                                                Err(error) => {
+                                                    warn!(
+                                                        session_id = %session_id,
+                                                        error = %error,
+                                                        "Precognition search across kilns failed"
+                                                    );
+                                                    let query_summary = original_content
+                                                        .chars()
+                                                        .take(100)
+                                                        .collect::<String>();
+                                                    let event = SessionEvent::PrecognitionComplete {
+                                                        notes_count: 0,
+                                                        query_summary: query_summary.clone(),
+                                                    };
+                                                    if !emit_event(
+                                                        event_tx,
+                                                        SessionEventMessage::new(
+                                                            session_id,
+                                                            event.event_type(),
+                                                            serde_json::json!({
+                                                                "notes_count": 0,
+                                                                "query_summary": query_summary,
+                                                            }),
+                                                        ),
+                                                    ) {
+                                                        warn!(
+                                                            session_id = %session_id,
+                                                            "No subscribers for precognition_complete event"
+                                                        );
+                                                    }
+                                                    original_content.clone()
+                                                }
+                                            }
+                                        }
+                                        Err(error) => {
+                                            warn!(
+                                                session_id = %session_id,
+                                                error = %error,
+                                                "Precognition embedding failed"
+                                            );
                                             let query_summary = original_content
                                                 .chars()
                                                 .take(100)
                                                 .collect::<String>();
                                             let event = SessionEvent::PrecognitionComplete {
-                                                notes_count: result.notes_count,
+                                                notes_count: 0,
                                                 query_summary: query_summary.clone(),
                                             };
                                             if !emit_event(
@@ -535,7 +707,7 @@ impl AgentManager {
                                                     session_id,
                                                     event.event_type(),
                                                     serde_json::json!({
-                                                        "notes_count": result.notes_count,
+                                                        "notes_count": 0,
                                                         "query_summary": query_summary,
                                                     }),
                                                 ),
@@ -545,14 +717,6 @@ impl AgentManager {
                                                     "No subscribers for precognition_complete event"
                                                 );
                                             }
-                                            result.enriched_prompt
-                                        }
-                                        Err(error) => {
-                                            warn!(
-                                                session_id = %session_id,
-                                                error = %error,
-                                                "Precognition enrichment failed"
-                                            );
                                             original_content.clone()
                                         }
                                     }
