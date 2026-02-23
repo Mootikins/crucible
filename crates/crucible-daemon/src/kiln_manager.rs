@@ -13,12 +13,14 @@ use tracing::{info, warn};
 
 use crucible_core::processing::InMemoryChangeDetectionStore;
 use crucible_core::storage::note_store::NoteRecord;
-use crucible_core::traits::NoteInfo;
+use crucible_core::traits::{NoteInfo, KnowledgeRepository};
 use crucible_pipeline::{NotePipeline, NotePipelineConfig, ParserBackend};
 use crucible_watch::{EventFilter, WatchManager, WatchManagerConfig};
 
 use crate::file_watch_bridge::create_event_bridge;
 use crate::protocol::SessionEventMessage;
+
+use crucible_config::EmbeddingProviderConfig;
 
 // Backend-specific imports
 #[cfg(feature = "storage-sqlite")]
@@ -176,6 +178,17 @@ impl StorageHandle {
                 || r.title.to_lowercase().contains(&name_lower)
         }))
     }
+
+    /// Get a KnowledgeRepository trait object for this storage backend
+    pub fn as_knowledge_repository(&self) -> Arc<dyn KnowledgeRepository> {
+        match self {
+            #[cfg(feature = "storage-sqlite")]
+            StorageHandle::Sqlite(client) => client.as_knowledge_repository(),
+
+            #[cfg(feature = "storage-surrealdb")]
+            StorageHandle::Surreal(client) => client.as_knowledge_repository(),
+        }
+    }
 }
 
 // ===========================================================================
@@ -188,6 +201,7 @@ pub struct KilnConnection {
     pub pipeline: NotePipeline,
     pub last_access: Instant,
     watch_manager: Option<WatchManager>,
+    pub enrichment_config: Option<EmbeddingProviderConfig>,
 }
 
 /// Manages connections to multiple kilns
@@ -245,6 +259,9 @@ impl KilnManager {
 
         let watch_manager = self.start_watch_manager(&canonical).await;
 
+        // Try to load enrichment config from kiln's crucible.toml
+        let enrichment_config = load_enrichment_config(&canonical).await;
+
         let mut conns = self.connections.write().await;
         conns.insert(
             canonical,
@@ -253,6 +270,7 @@ impl KilnManager {
                 pipeline,
                 last_access: Instant::now(),
                 watch_manager,
+                enrichment_config,
             },
         );
 
@@ -379,6 +397,16 @@ impl KilnManager {
     }
 
     /// Get handle for a kiln, opening if needed
+    /// Get enrichment configuration for a kiln if it's already open
+    pub async fn get_enrichment_config(&self, kiln_path: &Path) -> Option<EmbeddingProviderConfig> {
+        let canonical = kiln_path
+            .canonicalize()
+            .unwrap_or_else(|_| kiln_path.to_path_buf());
+
+        let conns = self.connections.read().await;
+        conns.get(&canonical).and_then(|conn| conn.enrichment_config.clone())
+    }
+
     pub async fn get_or_open(&self, kiln_path: &Path) -> Result<StorageHandle> {
         let canonical = kiln_path
             .canonicalize()
@@ -475,6 +503,40 @@ impl Default for KilnManager {
 // ===========================================================================
 // Backend Factory
 // ===========================================================================
+
+// ===========================================================================
+// Enrichment Configuration Loading
+// ===========================================================================
+
+/// Load enrichment configuration from a kiln's crucible.toml
+///
+/// Attempts to read `{kiln_path}/crucible.toml` and extract the enrichment
+/// provider configuration. Returns None if the file doesn't exist or has no
+/// enrichment section.
+async fn load_enrichment_config(kiln_path: &Path) -> Option<EmbeddingProviderConfig> {
+    let config_path = kiln_path.join("crucible.toml");
+    
+    // Try to read the config file
+    let config_content = match tokio::fs::read_to_string(&config_path).await {
+        Ok(content) => content,
+        Err(_) => {
+            // File doesn't exist or can't be read - this is fine, enrichment is optional
+            return None;
+        }
+    };
+    
+    // Parse as TOML
+    let config: crucible_config::Config = match toml::from_str(&config_content) {
+        Ok(cfg) => cfg,
+        Err(e) => {
+            warn!("Failed to parse crucible.toml at {:?}: {}", config_path, e);
+            return None;
+        }
+    };
+    
+    // Extract enrichment provider config
+    config.enrichment.map(|enrichment| enrichment.provider)
+}
 
 /// Create a NotePipeline for daemon-side file processing
 ///
