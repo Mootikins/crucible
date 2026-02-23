@@ -149,6 +149,9 @@ taffy = "0.7"
 # Lua scripting (for lua_view)
 mlua = { workspace = true }
 
+# TOML serialization (for workspace.toml)
+toml = { workspace = true }
+
 [dev-dependencies]
 crucible-cli = { path = ".", features = ["test-utils"] }  # Enable test utilities
 crucible-config = { path = "../crucible-config", features = ["test-utils"] }

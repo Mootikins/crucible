@@ -6,6 +6,8 @@ use tokio::task;
 
 use crate::kiln_validate::{expand_tilde, validate_kiln_path, ValidationSeverity};
 use crate::provider_detect::{detect_providers, DetectedProvider};
+use crucible_config::components::DataClassification;
+use crucible_config::{KilnAttachment, WorkspaceConfig, WorkspaceMeta, SecurityConfig};
 
 pub async fn execute(path: Option<PathBuf>, force: bool, interactive: bool) -> Result<()> {
     let target_path = match path {
@@ -65,10 +67,21 @@ pub async fn execute(path: Option<PathBuf>, force: bool, interactive: bool) -> R
         ("ollama".to_string(), "llama3.2".to_string())
     };
 
+
+    let classification = if interactive {
+        prompt_classification_selection()?
+    } else {
+        DataClassification::Public
+    };
     let config_content = generate_config_with_provider(&provider, &model);
     let target_for_display = target_path.clone();
-    task::spawn_blocking(move || create_kiln_with_config(&crucible_dir, &config_content, force))
-        .await??;
+    let classification_for_write = classification;
+    task::spawn_blocking(move || {
+        create_kiln_with_config(&crucible_dir, &config_content, force)?;
+        write_workspace_config(&crucible_dir, classification_for_write)?;
+        Ok::<(), anyhow::Error>(())
+    })
+    .await??;
 
     println!(
         "{} Kiln initialized at: {}",
@@ -77,6 +90,7 @@ pub async fn execute(path: Option<PathBuf>, force: bool, interactive: bool) -> R
     );
     println!("  Provider: {}", provider.cyan());
     println!("  Model: {}", model.cyan());
+    println!("  Classification: {}", classification.as_str().cyan());
 
     if validation.markdown_file_count > 0 {
         println!(
@@ -140,6 +154,66 @@ fn prompt_provider_selection(providers: &[DetectedProvider]) -> Result<(String, 
         .interact_text()?;
 
     Ok((selected.provider_type.clone(), model))
+}
+
+
+fn prompt_classification_selection() -> Result<DataClassification> {
+    use dialoguer::{theme::ColorfulTheme, Select};
+
+    let theme = ColorfulTheme::default();
+    let levels = DataClassification::all();
+    let items: Vec<&str> = levels.iter().map(|c| c.as_str()).collect();
+
+    let selection = Select::with_theme(&theme)
+        .with_prompt("Data classification for this kiln")
+        .items(&items)
+        .default(0)
+        .interact()?;
+
+    Ok(levels[selection])
+}
+
+fn write_workspace_config(
+    crucible_dir: &Path,
+    classification: DataClassification,
+) -> Result<()> {
+    let workspace_toml_path = crucible_dir.join("workspace.toml");
+
+    // Read existing workspace config or create a new one
+    let mut config = if workspace_toml_path.exists() {
+        let content = fs::read_to_string(&workspace_toml_path)?;
+        toml::from_str(&content).unwrap_or_else(|_| WorkspaceConfig {
+            workspace: WorkspaceMeta {
+                name: "Crucible Workspace".to_string(),
+            },
+            kilns: vec![],
+            security: SecurityConfig::default(),
+        })
+    } else {
+        WorkspaceConfig {
+            workspace: WorkspaceMeta {
+                name: "Crucible Workspace".to_string(),
+            },
+            kilns: vec![],
+            security: SecurityConfig::default(),
+        }
+    };
+
+    // Ensure there's a kiln entry for "." with the classification
+    if let Some(kiln) = config.kilns.iter_mut().find(|k| k.path == PathBuf::from(".")) {
+        kiln.data_classification = Some(classification);
+    } else {
+        config.kilns.push(KilnAttachment {
+            path: PathBuf::from("."),
+            name: None,
+            data_classification: Some(classification),
+        });
+    }
+
+    let toml_str = toml::to_string_pretty(&config)?;
+    fs::write(&workspace_toml_path, toml_str)?;
+
+    Ok(())
 }
 
 pub fn generate_config_with_provider(provider: &str, model: &str) -> String {

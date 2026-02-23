@@ -486,13 +486,97 @@ impl AgentManager {
         };
 
         let message_id = format!("msg-{}", uuid::Uuid::new_v4());
+        let original_content = content;
 
         if !emit_event(
             event_tx,
-            SessionEventMessage::user_message(session_id, &message_id, &content),
+            SessionEventMessage::user_message(session_id, &message_id, &original_content),
         ) {
             warn!(session_id = %session_id, "No subscribers for user_message event");
         }
+
+        let has_kiln = !session.kiln.as_os_str().is_empty();
+        let content = if agent_config.precognition_enabled
+            && !original_content.starts_with("/search")
+            && has_kiln
+        {
+            let kiln_path = session.kiln.as_path();
+            match self.kiln_manager.get_or_open(kiln_path).await {
+                Ok(handle) => {
+                    let knowledge_repo = handle.as_knowledge_repository();
+
+                    match self.kiln_manager.get_enrichment_config(kiln_path).await {
+                        Some(config) => {
+                            match crate::embedding::get_or_create_embedding_provider(&config).await {
+                                Ok(embedding_provider) => {
+                                    let precognition = crate::precognition::DaemonPrecognition::new(
+                                        knowledge_repo,
+                                        embedding_provider,
+                                    );
+
+                                    match precognition.enrich(&original_content, 5).await {
+                                        Ok(result) => {
+                                            let query_summary = original_content
+                                                .chars()
+                                                .take(100)
+                                                .collect::<String>();
+                                            let event = SessionEvent::PrecognitionComplete {
+                                                notes_count: result.notes_count,
+                                                query_summary: query_summary.clone(),
+                                            };
+                                            if !emit_event(
+                                                event_tx,
+                                                SessionEventMessage::new(
+                                                    session_id,
+                                                    event.event_type(),
+                                                    serde_json::json!({
+                                                        "notes_count": result.notes_count,
+                                                        "query_summary": query_summary,
+                                                    }),
+                                                ),
+                                            ) {
+                                                warn!(
+                                                    session_id = %session_id,
+                                                    "No subscribers for precognition_complete event"
+                                                );
+                                            }
+                                            result.enriched_prompt
+                                        }
+                                        Err(error) => {
+                                            warn!(
+                                                session_id = %session_id,
+                                                error = %error,
+                                                "Precognition enrichment failed"
+                                            );
+                                            original_content.clone()
+                                        }
+                                    }
+                                }
+                                Err(error) => {
+                                    warn!(
+                                        session_id = %session_id,
+                                        error = %error,
+                                        "Failed to create embedding provider for precognition"
+                                    );
+                                    original_content.clone()
+                                }
+                            }
+                        }
+                        None => original_content.clone(),
+                    }
+                }
+                Err(error) => {
+                    warn!(
+                        session_id = %session_id,
+                        error = %error,
+                        "Failed to open kiln for precognition"
+                    );
+                    original_content.clone()
+                }
+            }
+        } else {
+            original_content.clone()
+        };
 
         let session_id_owned = session_id.to_string();
         let message_id_clone = message_id.clone();
@@ -1978,6 +2062,29 @@ mod tests {
         .unwrap_or_else(|_| panic!("timed out waiting for {event_name}"))
     }
 
+    async fn assert_no_event_until_message_complete(
+        event_rx: &mut broadcast::Receiver<SessionEventMessage>,
+        event_name: &str,
+    ) {
+        timeout(Duration::from_secs(2), async {
+            loop {
+                match event_rx.recv().await {
+                    Ok(event) if event.event == event_name => {
+                        panic!("unexpected {event_name} event: {event:?}")
+                    }
+                    Ok(event) if event.event == "message_complete" => return,
+                    Ok(_) => continue,
+                    Err(broadcast::error::RecvError::Lagged(_)) => continue,
+                    Err(err) => {
+                        panic!("event channel closed while waiting for message_complete: {err}")
+                    }
+                }
+            }
+        })
+        .await
+        .expect("timed out waiting for message_complete");
+    }
+
     fn test_agent() -> SessionAgent {
         SessionAgent {
             agent_type: "internal".to_string(),
@@ -2508,6 +2615,146 @@ mod tests {
         let complete = next_event_or_skip(&mut event_rx, "message_complete").await;
         assert_eq!(complete.data["message_id"], message_id);
         assert_eq!(complete.data["full_response"], "hello world");
+    }
+
+    #[tokio::test]
+    async fn test_precognition_skipped_when_disabled() {
+        let tmp = TempDir::new().unwrap();
+        let storage = Arc::new(FileSessionStorage::new());
+        let session_manager = Arc::new(SessionManager::with_storage(storage));
+
+        let session = session_manager
+            .create_session(
+                SessionType::Chat,
+                tmp.path().to_path_buf(),
+                Some(tmp.path().to_path_buf()),
+                vec![],
+                None,
+            )
+            .await
+            .unwrap();
+
+        let agent_manager = create_test_agent_manager(session_manager.clone());
+        let mut agent = test_agent();
+        agent.precognition_enabled = false;
+        agent_manager.configure_agent(&session.id, agent).await.unwrap();
+
+        agent_manager.agent_cache.insert(
+            session.id.clone(),
+            Arc::new(Mutex::new(Box::new(StreamingMockAgent {
+                chunks: vec![ChatChunk {
+                    delta: "ok".to_string(),
+                    done: true,
+                    tool_calls: None,
+                    tool_results: None,
+                    reasoning: None,
+                    usage: None,
+                    subagent_events: None,
+                }],
+            }))),
+        );
+
+        let (event_tx, mut event_rx) = broadcast::channel::<SessionEventMessage>(64);
+        agent_manager
+            .send_message(&session.id, "hello".to_string(), &event_tx)
+            .await
+            .unwrap();
+
+        let _ = next_event_or_skip(&mut event_rx, "user_message").await;
+        assert_no_event_until_message_complete(&mut event_rx, "precognition_complete").await;
+    }
+
+    #[tokio::test]
+    async fn test_precognition_skipped_for_search_command() {
+        let tmp = TempDir::new().unwrap();
+        let storage = Arc::new(FileSessionStorage::new());
+        let session_manager = Arc::new(SessionManager::with_storage(storage));
+
+        let session = session_manager
+            .create_session(
+                SessionType::Chat,
+                tmp.path().to_path_buf(),
+                Some(tmp.path().to_path_buf()),
+                vec![],
+                None,
+            )
+            .await
+            .unwrap();
+
+        let agent_manager = create_test_agent_manager(session_manager.clone());
+        let mut agent = test_agent();
+        agent.precognition_enabled = true;
+        agent_manager.configure_agent(&session.id, agent).await.unwrap();
+
+        agent_manager.agent_cache.insert(
+            session.id.clone(),
+            Arc::new(Mutex::new(Box::new(StreamingMockAgent {
+                chunks: vec![ChatChunk {
+                    delta: "ok".to_string(),
+                    done: true,
+                    tool_calls: None,
+                    tool_results: None,
+                    reasoning: None,
+                    usage: None,
+                    subagent_events: None,
+                }],
+            }))),
+        );
+
+        let (event_tx, mut event_rx) = broadcast::channel::<SessionEventMessage>(64);
+        agent_manager
+            .send_message(&session.id, "/search rust".to_string(), &event_tx)
+            .await
+            .unwrap();
+
+        let _ = next_event_or_skip(&mut event_rx, "user_message").await;
+        assert_no_event_until_message_complete(&mut event_rx, "precognition_complete").await;
+    }
+
+    #[tokio::test]
+    async fn test_precognition_skipped_when_no_kiln() {
+        let storage = Arc::new(FileSessionStorage::new());
+        let session_manager = Arc::new(SessionManager::with_storage(storage));
+
+        let session = session_manager
+            .create_session(
+                SessionType::Chat,
+                std::path::PathBuf::new(),
+                None,
+                vec![],
+                None,
+            )
+            .await
+            .unwrap();
+
+        let agent_manager = create_test_agent_manager(session_manager.clone());
+        let mut agent = test_agent();
+        agent.precognition_enabled = true;
+        agent_manager.configure_agent(&session.id, agent).await.unwrap();
+
+        agent_manager.agent_cache.insert(
+            session.id.clone(),
+            Arc::new(Mutex::new(Box::new(StreamingMockAgent {
+                chunks: vec![ChatChunk {
+                    delta: "ok".to_string(),
+                    done: true,
+                    tool_calls: None,
+                    tool_results: None,
+                    reasoning: None,
+                    usage: None,
+                    subagent_events: None,
+                }],
+            }))),
+        );
+
+        let (event_tx, mut event_rx) = broadcast::channel::<SessionEventMessage>(64);
+        agent_manager
+            .send_message(&session.id, "hello".to_string(), &event_tx)
+            .await
+            .unwrap();
+
+        let _ = next_event_or_skip(&mut event_rx, "user_message").await;
+        assert_no_event_until_message_complete(&mut event_rx, "precognition_complete").await;
     }
 
     #[tokio::test]
