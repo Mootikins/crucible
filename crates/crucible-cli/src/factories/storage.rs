@@ -227,16 +227,15 @@ impl StorageHandle {
 /// Get storage based on configuration mode
 ///
 /// This is the preferred entry point for CLI commands that need storage access.
-/// It automatically selects between embedded and daemon mode based on the
+/// It automatically selects the storage backend based on the
 /// `storage.mode` configuration.
 ///
 /// # Storage Modes
 ///
-/// - **Embedded** (default): Direct in-process SurrealDB. Fast, simple, but
-///   single-session only (file locked).
+/// - **Daemon**: Uses the cru-server daemon via Unix socket. Supports
+///   multiple concurrent sessions.
 ///
-/// - **Daemon**: Uses the cru-server daemon via Unix socket. Slower initial
-///   connection (may spawn daemon), but supports multiple concurrent sessions.
+
 ///
 /// # Example
 ///
@@ -258,18 +257,6 @@ pub async fn get_storage(config: &CliConfig) -> Result<StorageHandle> {
     let storage_config = config.storage.clone().unwrap_or_default();
 
     match storage_config.mode {
-        StorageMode::Embedded => {
-            warn!(
-                "Non-daemon storage mode detected. Chat knowledge features (Precognition, semantic search) \
-                 require daemon mode. Set storage.mode = 'daemon' in crucible.toml. \
-                 Non-daemon chat will be removed in a future version."
-            );
-            anyhow::bail!(
-                "Embedded storage mode requires the 'storage-surrealdb' feature.\n\
-                 Build with: cargo build --features storage-surrealdb\n\
-                 Or use storage.mode = \"sqlite\" or \"daemon\" instead."
-            )
-        }
         StorageMode::Daemon => {
             info!("Using daemon storage mode");
             let client = DaemonClient::connect_or_start().await?;

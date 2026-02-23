@@ -87,11 +87,7 @@ async fn show_global_status(
     _recent: bool,
 ) -> Result<()> {
     // Determine storage mode
-    let is_embedded = false;
-
-    let mode = if is_embedded {
-        "embedded"
-    } else if storage.is_daemon() {
+    let mode = if storage.is_daemon() {
         "daemon"
     } else if storage.is_lightweight() {
         "lightweight"
