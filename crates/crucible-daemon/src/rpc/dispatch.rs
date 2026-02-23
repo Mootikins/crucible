@@ -17,6 +17,7 @@ pub const METHODS: &[&str] = &[
     "kiln.open",
     "kiln.close",
     "kiln.list",
+    "kiln.set_classification",
     "search_vectors",
     "list_notes",
     "get_note_by_name",
@@ -276,7 +277,7 @@ mod tests {
 
     #[test]
     fn methods_count() {
-        assert_eq!(METHODS.len(), 48, "Update when adding RPC methods");
+        assert_eq!(METHODS.len(), 49, "Update when adding RPC methods");
     }
 
     #[tokio::test]

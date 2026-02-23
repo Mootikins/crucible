@@ -708,6 +708,7 @@ async fn handle_legacy_request(
         "kiln.open" => handle_kiln_open(req, kiln_manager, plugin_loader).await,
         "kiln.close" => handle_kiln_close(req, kiln_manager).await,
         "kiln.list" => handle_kiln_list(req, kiln_manager).await,
+        "kiln.set_classification" => handle_kiln_set_classification(req, kiln_manager).await,
         "search_vectors" => handle_search_vectors(req, kiln_manager).await,
         "list_notes" => handle_list_notes(req, kiln_manager).await,
         "get_note_by_name" => handle_get_note_by_name(req, kiln_manager).await,
@@ -831,6 +832,106 @@ async fn handle_kiln_list(req: Request, km: &Arc<KilnManager>) -> Response {
         })
         .collect();
     Response::success(req.id, list)
+}
+
+async fn handle_kiln_set_classification(req: Request, _km: &Arc<KilnManager>) -> Response {
+    let path_str = require_str_param!(req, "path");
+    let classification_str = require_str_param!(req, "classification");
+
+    let classification = match DataClassification::from_str_insensitive(classification_str) {
+        Some(c) => c,
+        None => {
+            let valid: Vec<&str> = DataClassification::all().iter().map(|c| c.as_str()).collect();
+            return Response::error(
+                req.id,
+                INVALID_PARAMS,
+                format!(
+                    "Invalid classification '{}'. Valid values: {}",
+                    classification_str,
+                    valid.join(", ")
+                ),
+            );
+        }
+    };
+
+    let workspace = Path::new(path_str);
+    let crucible_dir = workspace.join(".crucible");
+    if let Err(e) = std::fs::create_dir_all(&crucible_dir) {
+        return internal_error(req.id, e);
+    }
+
+    let config_path = crucible_dir.join("workspace.toml");
+    let mut config = if config_path.exists() {
+        match std::fs::read_to_string(&config_path) {
+            Ok(content) => match toml::from_str::<crucible_config::WorkspaceConfig>(&content) {
+                Ok(c) => c,
+                Err(e) => {
+                    return internal_error(
+                        req.id,
+                        format!("Failed to parse workspace.toml: {}", e),
+                    );
+                }
+            },
+            Err(e) => return internal_error(req.id, e),
+        }
+    } else {
+        // Create a minimal workspace config with the kiln path as "."
+        crucible_config::WorkspaceConfig {
+            workspace: crucible_config::WorkspaceMeta {
+                name: workspace
+                    .file_name()
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_else(|| "workspace".to_string()),
+            },
+            kilns: vec![crucible_config::KilnAttachment {
+                path: ".".into(),
+                name: None,
+                data_classification: None,
+            }],
+            security: Default::default(),
+        }
+    };
+
+    // Update classification on the first kiln entry (or the matching one)
+    let mut updated = false;
+    for kiln in &mut config.kilns {
+        kiln.data_classification = Some(classification);
+        updated = true;
+        break; // Update first kiln entry
+    }
+
+    if !updated {
+        // No kiln entries — add one
+        config.kilns.push(crucible_config::KilnAttachment {
+            path: ".".into(),
+            name: None,
+            data_classification: Some(classification),
+        });
+    }
+
+    let toml_str = match toml::to_string_pretty(&config) {
+        Ok(s) => s,
+        Err(e) => return internal_error(req.id, e),
+    };
+
+    if let Err(e) = std::fs::write(&config_path, toml_str) {
+        return internal_error(req.id, e);
+    }
+
+    info!(
+        "Set data classification to '{}' for workspace at {:?}",
+        classification.as_str(),
+        workspace
+    );
+
+    Response::success(
+        req.id,
+        serde_json::json!({
+            "status": "ok",
+            "classification": classification.as_str(),
+            "path": path_str,
+        }),
+    )
 }
 
 async fn handle_search_vectors(req: Request, km: &Arc<KilnManager>) -> Response {
@@ -1106,8 +1207,10 @@ async fn handle_session_create(
 
     let provider_trust_level = resolve_provider_trust_level_for_create(&req, llm_config);
     let classification = resolve_kiln_classification_for_create(&kiln, workspace.as_ref());
-    if let Err(message) = validate_trust_level(provider_trust_level, classification) {
-        return Response::error(req.id, INVALID_PARAMS, message);
+    if let Some(classification) = classification {
+        if let Err(message) = validate_trust_level(provider_trust_level, classification) {
+            return Response::error(req.id, INVALID_PARAMS, message);
+        }
     }
 
     let connected_kilns: Vec<PathBuf> = req
@@ -1220,7 +1323,7 @@ fn resolve_provider_trust_level_for_create(req: &Request, llm_config: &Option<Ll
 fn resolve_kiln_classification_for_create(
     kiln: &Path,
     workspace: Option<&PathBuf>,
-) -> DataClassification {
+) -> Option<DataClassification> {
     let workspace_path = workspace.cloned().unwrap_or_else(|| kiln.to_path_buf());
     crate::trust_resolution::resolve_kiln_classification(&workspace_path, kiln)
 }
@@ -3658,13 +3761,13 @@ mod tests {
 
     // Tests for resolve_kiln_classification_for_create wrapper
     #[test]
-    fn kiln_classification_workspace_none_uses_kiln_dir() {
+    fn kiln_classification_workspace_none_returns_none() {
         let tmp = TempDir::new().unwrap();
         let kiln = tmp.path().join("kiln");
         std::fs::create_dir_all(&kiln).unwrap();
-        // No workspace.toml at kiln dir → defaults to Public
+        // No workspace.toml at kiln dir → returns None (no silent default)
         let result = resolve_kiln_classification_for_create(&kiln, None);
-        assert_eq!(result, crucible_config::DataClassification::Public);
+        assert_eq!(result, None);
     }
 
     #[test]
@@ -3674,8 +3777,7 @@ mod tests {
         let kiln = workspace.join("notes");
         std::fs::create_dir_all(&kiln).unwrap();
         write_workspace_config(&workspace, "./notes", Some("internal"));
-
         let result = resolve_kiln_classification_for_create(&kiln, Some(&workspace));
-        assert_eq!(result, crucible_config::DataClassification::Internal);
+        assert_eq!(result, Some(crucible_config::DataClassification::Internal));
     }
 }
