@@ -105,7 +105,7 @@ pub async fn get_or_create_embedding_provider(
 
 /// Create DefaultEnrichmentService with embedding provider
 ///
-/// Phase 5: Uses public factory function from crucible-enrichment instead of
+/// Phase 5: Uses public factory function from crucible_daemon::enrichment instead of
 /// constructing DefaultEnrichmentService directly.
 /// Uses cached embedding provider for faster repeated calls.
 pub async fn create_default_enrichment_service(
@@ -114,8 +114,8 @@ pub async fn create_default_enrichment_service(
     // Use cached embedding provider
     let embedding_provider = get_or_create_embedding_provider(config).await?;
 
-    // Use public factory function from crucible-enrichment
-    crucible_enrichment::create_default_enrichment_service(Some(embedding_provider))
+    // Use public factory function from crucible_daemon::enrichment
+    crucible_daemon::enrichment::create_default_enrichment_service(Some(embedding_provider))
 }
 
 /// Clear the embedding provider cache (useful for testing)

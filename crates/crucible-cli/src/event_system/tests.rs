@@ -18,7 +18,7 @@ fn create_test_config(kiln_path: std::path::PathBuf) -> crate::config::CliConfig
 
 #[tokio::test]
 async fn test_embedding_handler_priority() {
-    use crucible_enrichment::EmbeddingHandler;
+    use crucible_daemon::enrichment::EmbeddingHandler;
 
     // Verify EmbeddingHandler has a reasonable priority
     const _: () = assert!(EmbeddingHandler::PRIORITY > 0);

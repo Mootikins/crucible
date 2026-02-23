@@ -8,7 +8,7 @@ use crate::config::CliConfig;
 use anyhow::Result;
 use crucible_core::processing::InMemoryChangeDetectionStore;
 use crucible_core::storage::NoteStore;
-use crucible_pipeline::{NotePipeline, NotePipelineConfig, ParserBackend};
+use crucible_daemon::pipeline::{NotePipeline, NotePipelineConfig, ParserBackend};
 use std::sync::Arc;
 
 /// Create NotePipeline with all dependencies wired together
