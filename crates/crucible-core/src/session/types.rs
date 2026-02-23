@@ -78,6 +78,10 @@ pub struct SessionAgent {
     /// Delegation configuration for this agent (from ACP agent profile)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub delegation_config: Option<DelegationConfig>,
+
+    /// Whether Precognition (auto-RAG) is enabled for this session (default: true)
+    #[serde(default = "default_true")]
+    pub precognition_enabled: bool,
 }
 
 impl SessionAgent {
@@ -115,6 +119,7 @@ impl SessionAgent {
             capabilities: profile.capabilities.clone(),
             agent_description: profile.description.clone(),
             delegation_config: profile.delegation.clone(),
+            precognition_enabled: true,
         }
     }
 }
@@ -1200,4 +1205,9 @@ mod tests {
         assert_eq!(session.recording_mode, None);
         assert!(!session.is_granular());
     }
+}
+
+/// Default function for serde: returns true
+fn default_true() -> bool {
+    true
 }

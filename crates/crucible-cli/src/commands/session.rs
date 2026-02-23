@@ -1049,6 +1049,7 @@ async fn daemon_configure(
         capabilities: None,
         agent_description: None,
         delegation_config: None,
+        precognition_enabled: true,
     };
 
     client.session_configure_agent(session_id, &agent).await?;

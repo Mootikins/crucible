@@ -205,6 +205,7 @@ fn build_acp_session_agent(params: &AgentInitParams, config: &CliAppConfig) -> S
         capabilities: None,
         agent_description: None,
         delegation_config,
+        precognition_enabled: true,
     }
 }
 
@@ -256,6 +257,7 @@ fn build_internal_session_agent(config: &CliAppConfig) -> SessionAgent {
         capabilities: None,
         agent_description: None,
         delegation_config: None,
+        precognition_enabled: true,
     }
 }
 

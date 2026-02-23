@@ -1394,6 +1394,7 @@ mod tests {
             capabilities: None,
             agent_description: None,
             delegation_config,
+            precognition_enabled: false,
         }
     }
 

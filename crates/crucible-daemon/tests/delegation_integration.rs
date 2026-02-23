@@ -7,7 +7,7 @@ use crucible_core::traits::chat::{AgentHandle, ChatChunk};
 use crucible_core::traits::ChatResult;
 use crucible_daemon::background_manager::{BackgroundJobManager, SubagentContext, SubagentFactory};
 use crucible_daemon::protocol::SessionEventMessage;
-use crucible_daemon::{AgentManager, FileSessionStorage, SessionManager};
+use crucible_daemon::{AgentManager, FileSessionStorage, KilnManager, SessionManager};
 use futures::stream::{self, BoxStream};
 use futures::StreamExt;
 use std::collections::HashMap;
@@ -104,6 +104,7 @@ fn test_session_agent(enabled: bool, max_concurrent_delegations: u32) -> Session
             result_max_bytes: 51200,
             max_concurrent_delegations,
         }),
+        precognition_enabled: false,
     }
 }
 
@@ -132,6 +133,7 @@ fn test_root_session_agent(enabled: bool, max_concurrent_delegations: u32) -> Se
             result_max_bytes: 51200,
             max_concurrent_delegations,
         }),
+        precognition_enabled: false,
     }
 }
 
@@ -420,6 +422,7 @@ async fn test_root_session_delegation_succeeds() {
         )),
     );
     let agent_manager = AgentManager::new(
+        Arc::new(KilnManager::new()),
         session_manager.clone(),
         background_manager.clone(),
         None,
@@ -495,6 +498,7 @@ async fn test_delegation_to_acp_agent_creates_acp_session() {
     );
 
     let agent_manager = AgentManager::new(
+        Arc::new(KilnManager::new()),
         session_manager.clone(),
         background_manager.clone(),
         None,

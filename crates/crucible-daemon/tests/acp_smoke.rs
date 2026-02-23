@@ -71,6 +71,7 @@ pub fn mock_session_agent(agent_path: &str) -> SessionAgent {
         capabilities: None,
         agent_description: None,
         delegation_config: None,
+        precognition_enabled: false,
     }
 }
 

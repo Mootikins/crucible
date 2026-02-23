@@ -1073,6 +1073,40 @@ impl DaemonClient {
         Ok(budget)
     }
 
+    /// Set whether Precognition (auto-RAG) is enabled for a session.
+    pub async fn session_set_precognition(
+        &self,
+        session_id: &str,
+        enabled: bool,
+    ) -> Result<()> {
+        self.call_with_retry(
+            "session.set_precognition",
+            serde_json::json!({
+                "session_id": session_id,
+                "precognition_enabled": enabled,
+            }),
+        )
+        .await?;
+        Ok(())
+    }
+
+    /// Get whether Precognition is enabled for a session.
+    pub async fn session_get_precognition(&self, session_id: &str) -> Result<bool> {
+        let result = self
+            .call_with_retry(
+                "session.get_precognition",
+                serde_json::json!({ "session_id": session_id }),
+            )
+            .await?;
+
+        let enabled = result
+            .get("precognition_enabled")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(true);
+
+        Ok(enabled)
+    }
+
     pub async fn session_set_temperature(&self, session_id: &str, temperature: f64) -> Result<()> {
         self.call_with_retry(
             "session.set_temperature",

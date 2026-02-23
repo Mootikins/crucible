@@ -113,6 +113,7 @@ impl EventToMarkdown for SessionEvent {
             SessionEvent::SessionPaused { .. } => "SessionPaused",
             SessionEvent::SessionResumed { .. } => "SessionResumed",
             SessionEvent::TerminalOutput { .. } => "TerminalOutput",
+            SessionEvent::PrecognitionComplete { .. } => "PrecognitionComplete",
         }
     }
 
@@ -450,6 +451,15 @@ impl EventToMarkdown for SessionEvent {
                 format!(
                     "**Session:** {}\n**Stream:** {:?}\n**Content (base64):** {}\n",
                     session_id, stream, truncated
+                )
+            }
+            SessionEvent::PrecognitionComplete {
+                notes_count,
+                query_summary,
+            } => {
+                format!(
+                    "**Notes Found:** {}\n**Query:** {}\n",
+                    notes_count, query_summary
                 )
             }
         };

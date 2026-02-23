@@ -144,6 +144,7 @@ async fn create_session(
         capabilities: None,
         agent_description: None,
         delegation_config: None,
+        precognition_enabled: true,
     };
 
     state
