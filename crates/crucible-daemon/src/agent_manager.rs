@@ -4,12 +4,14 @@ use crate::agent_factory::{create_agent_from_session_config, AgentFactoryError};
 use crate::background_manager::{BackgroundJobManager, SubagentContext};
 use crate::event_emitter::emit_event;
 use crate::kiln_manager::KilnManager;
+use crate::llm_hooks::{LlmHook as _, LlmHookChain};
 use crate::permission_bridge::{DaemonPermissionGate, PermissionPromptCallback};
 use crate::protocol::SessionEventMessage;
 use crate::session_manager::{SessionError, SessionManager};
 use crucible_acp::discovery::default_agent_profiles;
 use crucible_config::components::permissions::PermissionConfig;
 use crucible_config::{AcpConfig, AgentProfile, BackendType, PatternStore};
+use crucible_core::events::llm_hook_context::{PostLlmContext, PreLlmContext, PreLlmResult};
 use crucible_core::events::SessionEvent;
 use crucible_core::interaction::{InteractionRequest, PermRequest, PermResponse, PermissionScope};
 use crucible_core::session::SessionAgent;
@@ -163,8 +165,8 @@ type BoxedAgentHandle = Box<dyn AgentHandle + Send + Sync>;
 use mlua::RegistryKey;
 use std::sync::Mutex as StdMutex;
 
-struct SessionLuaState {
-    lua: Lua,
+pub(crate) struct SessionLuaState {
+    pub(crate) lua: Lua,
     registry: LuaScriptHandlerRegistry,
     permission_hooks: Arc<StdMutex<Vec<PermissionHook>>>,
     permission_functions: Arc<StdMutex<HashMap<String, RegistryKey>>>,
@@ -197,6 +199,7 @@ pub struct AgentManager {
     background_manager: Arc<BackgroundJobManager>,
     lua_states: Arc<DashMap<String, Arc<Mutex<SessionLuaState>>>>,
     pending_permissions: Arc<DashMap<String, HashMap<PermissionId, PendingPermission>>>,
+    hook_chain: Arc<LlmHookChain>,
     mcp_gateway: Option<Arc<tokio::sync::RwLock<crucible_tools::mcp_gateway::McpGatewayManager>>>,
     llm_config: Option<crucible_config::LlmConfig>,
     acp_config: Option<AcpConfig>,
@@ -223,6 +226,7 @@ impl AgentManager {
             background_manager,
             lua_states: Arc::new(DashMap::new()),
             pending_permissions: Arc::new(DashMap::new()),
+            hook_chain: Arc::new(LlmHookChain::new()),
             mcp_gateway,
             llm_config,
             acp_config,
@@ -586,6 +590,8 @@ impl AgentManager {
         let workspace_path = session.workspace.clone();
 
         let pending_permissions = self.pending_permissions.clone();
+        let hook_chain = self.hook_chain.clone();
+        let model = agent_config.model.clone();
 
         let task = tokio::spawn(async move {
             let mut accumulated_response = String::new();
@@ -611,6 +617,8 @@ impl AgentManager {
                     false,
                     pending_permissions,
                     workspace_path,
+                    hook_chain,
+                    model,
                 ) => {}
             }
 
@@ -874,9 +882,39 @@ impl AgentManager {
         is_continuation: bool,
         pending_permissions: Arc<DashMap<String, HashMap<PermissionId, PendingPermission>>>,
         workspace_path: PathBuf,
+        hook_chain: Arc<LlmHookChain>,
+        model: String,
     ) {
+        let pre_ctx = PreLlmContext {
+            prompt: content,
+            model: if model.is_empty() {
+                "unknown".to_string()
+            } else {
+                model.clone()
+            },
+            system_prompt: None,
+            context_messages: vec![],
+            session_id: session_id.to_string(),
+        };
+
+        let prompt = match hook_chain.run_pre_llm(pre_ctx).await {
+            PreLlmResult::Continue(modified_ctx) => modified_ctx.prompt,
+            PreLlmResult::Cancel(reason) => {
+                if !emit_event(
+                    event_tx,
+                    SessionEventMessage::ended(
+                        session_id,
+                        format!("error: pre-llm hook cancelled request: {reason}"),
+                    ),
+                ) {
+                    warn!(session_id = %session_id, "No subscribers for pre_llm cancellation event");
+                }
+                return;
+            }
+        };
+
         let mut agent_guard = agent.lock().await;
-        let mut stream = agent_guard.send_message_stream(content);
+        let mut stream = agent_guard.send_message_stream(prompt);
 
         while let Some(result) = stream.next().await {
             match result {
@@ -1244,8 +1282,10 @@ impl AgentManager {
                                 accumulated_response,
                                 lua_state,
                                 true,
-                                pending_permissions,
-                                workspace_path,
+                                pending_permissions.clone(),
+                                workspace_path.clone(),
+                                hook_chain.clone(),
+                                model.clone(),
                             ))
                             .await;
                         }
@@ -1264,6 +1304,44 @@ impl AgentManager {
                     break;
                 }
             }
+        }
+
+        let post_ctx = PostLlmContext {
+            response: accumulated_response.clone(),
+            model: if model.is_empty() {
+                "unknown".to_string()
+            } else {
+                model.clone()
+            },
+            session_id: session_id.to_string(),
+            duration_ms: 0,
+            token_count: None,
+        };
+
+        hook_chain.run_post_llm(&post_ctx).await;
+
+        let response_summary: String = accumulated_response.chars().take(200).collect();
+        let post_model = post_ctx.model.clone();
+        let post_event = SessionEvent::PostLlmCall {
+            response_summary: response_summary.clone(),
+            model: post_model.clone(),
+            duration_ms: 0,
+            token_count: None,
+        };
+        if !emit_event(
+            event_tx,
+            SessionEventMessage::new(
+                session_id,
+                post_event.event_type(),
+                serde_json::json!({
+                    "response_summary": response_summary,
+                    "model": post_model,
+                    "duration_ms": 0,
+                    "token_count": Option::<u64>::None,
+                }),
+            ),
+        ) {
+            warn!(session_id = %session_id, "No subscribers for post_llm_call event");
         }
     }
 

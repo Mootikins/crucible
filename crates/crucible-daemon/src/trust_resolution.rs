@@ -2,7 +2,8 @@
 
 use std::path::Path;
 
-use crucible_config::{DataClassification, WorkspaceConfig};
+use crucible_config::{DataClassification, WorkspaceConfig, LlmConfig, TrustLevel};
+use crucible_core::session::SessionAgent;
 
 /// Resolve the data classification for a kiln by reading the workspace config.
 ///
@@ -43,6 +44,26 @@ pub(crate) fn resolve_kiln_classification(
     }
 
     None
+}
+
+/// Resolve the trust level for an LLM provider at runtime.
+///
+/// Returns the effective trust level based on the agent's provider configuration.
+/// For ACP agents, defaults to Cloud trust. For configured providers, looks up
+/// the trust level from the LLM config. Falls back to Cloud as the default.
+pub(crate) fn resolve_provider_trust(agent: &SessionAgent, llm_config: Option<&LlmConfig>) -> TrustLevel {
+    // ACP agents (identified by agent_name) default to Cloud trust
+    if agent.agent_name.is_some() {
+        return TrustLevel::Cloud;
+    }
+    // Try to look up provider by key in the LLM config
+    if let (Some(key), Some(config)) = (&agent.provider_key, llm_config) {
+        if let Some(provider) = config.providers.get(key) {
+            return provider.effective_trust_level();
+        }
+    }
+    // Fallback: Cloud trust
+    TrustLevel::Cloud
 }
 
 #[cfg(test)]

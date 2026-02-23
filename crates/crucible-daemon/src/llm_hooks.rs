@@ -12,12 +12,16 @@
 //! - Post-LLM: hooks observe only; errors are logged but don't fail
 //! - Fail-open: on timeout or error, original context is preserved
 
+use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
 use crucible_core::events::llm_hook_context::{PostLlmContext, PreLlmContext, PreLlmResult};
+use mlua::{Function, Value};
+use tokio::sync::Mutex;
 use tokio::time::timeout;
 use tracing::warn;
+use crate::agent_manager::SessionLuaState;
 
 /// Async trait for LLM lifecycle hooks.
 ///
@@ -54,6 +58,12 @@ impl LlmHookChain {
     /// Add a hook to the end of the chain.
     pub fn add_hook(&mut self, hook: Box<dyn LlmHook + Send + Sync>) {
         self.hooks.push(hook);
+    }
+
+    /// Register a Lua-backed hook that bridges to `on_pre_llm_call` / `on_post_llm_call`
+    /// global functions in the session's Lua state.
+    pub(crate) fn register_lua_hook(&mut self, lua_state: Arc<Mutex<SessionLuaState>>) {
+        self.hooks.push(Box::new(LuaLlmHook::new(lua_state)));
     }
 
     /// Run pre-LLM hooks sequentially.
@@ -122,6 +132,88 @@ impl LlmHookChain {
                 warn!("LlmHook post_llm error: {e:#}");
             }
         }
+    }
+}
+
+/// LLM lifecycle hook that bridges to Lua plugin functions.
+///
+/// Calls Lua global functions `on_pre_llm_call(ctx_json)` and `on_post_llm_call(ctx_json)`
+/// if they are defined. Missing functions are treated as pass-through (no error).
+///
+/// The JSON context deliberately excludes `context_messages` — only `prompt`,
+/// `model`, `session_id`, and `system_prompt` are exposed to Lua.
+pub(crate) struct LuaLlmHook {
+    lua_state: Arc<Mutex<SessionLuaState>>,
+}
+
+impl LuaLlmHook {
+    pub(crate) fn new(lua_state: Arc<Mutex<SessionLuaState>>) -> Self {
+        Self { lua_state }
+    }
+}
+
+#[async_trait]
+impl LlmHook for LuaLlmHook {
+    async fn on_pre_llm(&self, ctx: PreLlmContext) -> anyhow::Result<PreLlmResult> {
+        let state = self.lua_state.lock().await;
+
+        // Check if function exists in Lua globals
+        let func: Result<Function, _> = state.lua.globals().get("on_pre_llm_call");
+        let func = match func {
+            Ok(f) => f,
+            Err(_) => return Ok(PreLlmResult::Continue(ctx)),
+        };
+
+        // Serialize context to JSON (excluding context_messages per design)
+        let ctx_json = serde_json::json!({
+            "prompt": ctx.prompt,
+            "model": ctx.model,
+            "session_id": ctx.session_id,
+            "system_prompt": ctx.system_prompt,
+        });
+        let json_str = serde_json::to_string(&ctx_json)?;
+
+        // Call Lua function
+        let result: Value = func.call(json_str)?;
+
+        // Parse return: if table has cancel=true, return Cancel
+        if let Value::Table(ref t) = result {
+            if let Ok(true) = t.get::<bool>("cancel") {
+                let reason: String = t
+                    .get::<String>("reason")
+                    .unwrap_or_else(|_| "cancelled by Lua hook".to_string());
+                return Ok(PreLlmResult::Cancel(reason));
+            }
+        }
+
+        // Pass-through on any other return or parse failure
+        Ok(PreLlmResult::Continue(ctx))
+    }
+
+    async fn on_post_llm(&self, ctx: &PostLlmContext) -> anyhow::Result<()> {
+        let state = self.lua_state.lock().await;
+
+        // Check if function exists in Lua globals
+        let func: Result<Function, _> = state.lua.globals().get("on_post_llm_call");
+        let func = match func {
+            Ok(f) => f,
+            Err(_) => return Ok(()),
+        };
+
+        // Serialize context to JSON
+        let ctx_json = serde_json::json!({
+            "response": ctx.response,
+            "model": ctx.model,
+            "session_id": ctx.session_id,
+            "duration_ms": ctx.duration_ms,
+            "token_count": ctx.token_count,
+        });
+        let json_str = serde_json::to_string(&ctx_json)?;
+
+        // Call Lua function, ignore return value
+        let _: Value = func.call(json_str)?;
+
+        Ok(())
     }
 }
 
