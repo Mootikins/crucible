@@ -130,7 +130,7 @@ impl AgentInitParams {
     /// Set the model for an ACP agent (typically OpenCode)
     ///
     /// This adds the OPENCODE_MODEL environment variable, which tells OpenCode
-     /// which model to use. Preserves any existing environment overrides.
+    /// which model to use. Preserves any existing environment overrides.
     pub fn with_model(mut self, model_id: impl Into<String>) -> Self {
         self.env_overrides
             .insert("OPENCODE_MODEL".to_string(), model_id.into());
@@ -312,18 +312,32 @@ pub async fn create_daemon_agent(
                 info!("Resuming most recent daemon session: {}", id);
                 client.session_resume(&id).await?;
                 (id, false)
-             } else {
-                 info!("No existing session to resume, creating new one");
-                 (
-                     create_new_daemon_session(&client, config, &workspace, params.recording_mode.as_deref(), params.recording_path.as_deref()).await?,
-                     true,
-                 )
-             }
-         }
-         None => (
-             create_new_daemon_session(&client, config, &workspace, params.recording_mode.as_deref(), params.recording_path.as_deref()).await?,
-             true,
-         ),
+            } else {
+                info!("No existing session to resume, creating new one");
+                (
+                    create_new_daemon_session(
+                        &client,
+                        config,
+                        &workspace,
+                        params.recording_mode.as_deref(),
+                        params.recording_path.as_deref(),
+                    )
+                    .await?,
+                    true,
+                )
+            }
+        }
+        None => (
+            create_new_daemon_session(
+                &client,
+                config,
+                &workspace,
+                params.recording_mode.as_deref(),
+                params.recording_path.as_deref(),
+            )
+            .await?,
+            true,
+        ),
     };
 
     let is_acp = params
@@ -375,7 +389,14 @@ async fn create_new_daemon_session(
     recording_path: Option<&std::path::Path>,
 ) -> Result<String> {
     let result = client
-        .session_create("chat", &config.kiln_path, Some(workspace), vec![], recording_mode, recording_path)
+        .session_create(
+            "chat",
+            &config.kiln_path,
+            Some(workspace),
+            vec![],
+            recording_mode,
+            recording_path,
+        )
         .await?;
 
     let session_id = result["session_id"]

@@ -584,6 +584,7 @@ mod tests {
             capabilities: None,
             agent_description: None,
             delegation_config: None,
+            precognition_enabled: true,
         };
 
         let json = serde_json::to_string(&agent).unwrap();
@@ -617,6 +618,7 @@ mod tests {
             capabilities: None,
             agent_description: None,
             delegation_config: None,
+            precognition_enabled: true,
         };
 
         let kiln = PathBuf::from("/home/user/notes");
@@ -669,6 +671,7 @@ mod tests {
             capabilities: None,
             agent_description: None,
             delegation_config: None,
+            precognition_enabled: true,
         };
 
         let kiln = PathBuf::from("/home/user/notes");
@@ -703,6 +706,7 @@ mod tests {
             capabilities: None,
             agent_description: None,
             delegation_config: None,
+            precognition_enabled: true,
         };
 
         let json = serde_json::to_string(&agent).unwrap();
@@ -744,6 +748,7 @@ mod tests {
             capabilities: None,
             agent_description: None,
             delegation_config: None,
+            precognition_enabled: true,
         };
 
         let json = serde_json::to_string(&original).unwrap();
@@ -778,6 +783,7 @@ mod tests {
             capabilities: Some(vec!["search".to_string(), "write".to_string()]),
             agent_description: None,
             delegation_config: None,
+            precognition_enabled: true,
         };
 
         let json = serde_json::to_string(&agent).unwrap();
@@ -812,6 +818,7 @@ mod tests {
             capabilities: None,
             agent_description: Some("Claude AI assistant".to_string()),
             delegation_config: None,
+            precognition_enabled: true,
         };
 
         let json = serde_json::to_string(&agent).unwrap();
@@ -856,6 +863,7 @@ mod tests {
             capabilities: None,
             agent_description: None,
             delegation_config: Some(delegation),
+            precognition_enabled: true,
         };
 
         let json = serde_json::to_string(&agent).unwrap();
@@ -932,6 +940,7 @@ mod tests {
             ]),
             agent_description: Some("A full-featured agent".to_string()),
             delegation_config: Some(delegation),
+            precognition_enabled: true,
         };
 
         let json = serde_json::to_string(&original).unwrap();

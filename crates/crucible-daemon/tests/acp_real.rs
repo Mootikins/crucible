@@ -118,16 +118,23 @@ fn make_acp_subagent_factory() -> SubagentFactory {
         let workspace = workspace.to_path_buf();
         Box::pin(async move {
             AcpAgentHandle::new(
-                &agent_config, &workspace, None, None, None, None, None, None, None, None,
+                &agent_config,
+                &workspace,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
             )
             .await
             .map(|handle| Box::new(handle) as Box<dyn AgentHandle + Send + Sync>)
             .map_err(|e| e.to_string())
         })
             as Pin<
-                Box<
-                    dyn Future<Output = Result<Box<dyn AgentHandle + Send + Sync>, String>> + Send,
-                >,
+                Box<dyn Future<Output = Result<Box<dyn AgentHandle + Send + Sync>, String>> + Send>,
             >
     })
 }

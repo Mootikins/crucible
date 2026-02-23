@@ -738,8 +738,6 @@ impl Tool for GrepTool {
     }
 }
 
-
-
 // =============================================================================
 // AskUserTool
 // =============================================================================
@@ -1090,6 +1088,4 @@ mod tests {
         let large_tools = ctx.tools_for_size(ModelSize::Large);
         assert_eq!(large_tools.len(), 6);
     }
-
-
 }

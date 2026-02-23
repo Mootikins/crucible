@@ -88,7 +88,10 @@ impl DaemonPrecognition {
             context, query
         );
 
-        info!(notes_count = top_results.len(), "Daemon query enriched with semantic context");
+        info!(
+            notes_count = top_results.len(),
+            "Daemon query enriched with semantic context"
+        );
 
         Ok(PrecognitionResult {
             enriched_prompt,
@@ -119,7 +122,10 @@ mod tests {
             Ok(vec![])
         }
 
-        async fn search_vectors(&self, _vector: Vec<f32>) -> crucible_core::Result<Vec<SearchResult>> {
+        async fn search_vectors(
+            &self,
+            _vector: Vec<f32>,
+        ) -> crucible_core::Result<Vec<SearchResult>> {
             Ok(self.results.clone())
         }
     }

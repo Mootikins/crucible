@@ -1223,16 +1223,10 @@ mod tests {
         ));
     }
 
-
-
     #[test]
     fn test_session_list_with_state_parses() {
         let cli = Cli::try_parse_from(["cru", "session", "list", "--state", "active"]).unwrap();
-        if let Some(Commands::Session(SessionCommands::List {
-            state,
-            ..
-        })) = cli.command
-        {
+        if let Some(Commands::Session(SessionCommands::List { state, .. })) = cli.command {
             assert_eq!(state, Some("active".to_string()));
         } else {
             panic!("Expected Session List command");
@@ -1242,11 +1236,7 @@ mod tests {
     #[test]
     fn test_session_list_with_all_flag_parses() {
         let cli = Cli::try_parse_from(["cru", "session", "list", "--all"]).unwrap();
-        if let Some(Commands::Session(SessionCommands::List {
-            all,
-            ..
-        })) = cli.command
-        {
+        if let Some(Commands::Session(SessionCommands::List { all, .. })) = cli.command {
             assert!(all);
         } else {
             panic!("Expected Session List command with --all flag");
@@ -1287,17 +1277,10 @@ mod tests {
         }
     }
 
-
-
-
-
     #[test]
     fn test_session_pause_parses() {
         let cli = Cli::try_parse_from(["cru", "session", "pause", "session-123"]).unwrap();
-        if let Some(Commands::Session(SessionCommands::Pause {
-            session_id,
-        })) = cli.command
-        {
+        if let Some(Commands::Session(SessionCommands::Pause { session_id })) = cli.command {
             assert_eq!(session_id, "session-123");
         } else {
             panic!("Expected Session Pause command");
@@ -1307,10 +1290,7 @@ mod tests {
     #[test]
     fn test_session_unpause_parses() {
         let cli = Cli::try_parse_from(["cru", "session", "unpause", "session-123"]).unwrap();
-        if let Some(Commands::Session(SessionCommands::Unpause {
-            session_id,
-        })) = cli.command
-        {
+        if let Some(Commands::Session(SessionCommands::Unpause { session_id })) = cli.command {
             assert_eq!(session_id, "session-123");
         } else {
             panic!("Expected Session Unpause command");
@@ -1320,10 +1300,7 @@ mod tests {
     #[test]
     fn test_session_end_parses() {
         let cli = Cli::try_parse_from(["cru", "session", "end", "session-123"]).unwrap();
-        if let Some(Commands::Session(SessionCommands::End {
-            session_id,
-        })) = cli.command
-        {
+        if let Some(Commands::Session(SessionCommands::End { session_id })) = cli.command {
             assert_eq!(session_id, "session-123");
         } else {
             panic!("Expected Session End command");

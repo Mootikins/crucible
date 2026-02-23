@@ -121,7 +121,9 @@ pub async fn execute(config: CliConfig, args: McpArgs) -> Result<()> {
     let knowledge_repo = core
         .storage_handle()
         .as_knowledge_repository(Some(core.kiln_root()))
-        .ok_or_else(|| anyhow::anyhow!("MCP server requires a knowledge-capable storage backend"))?;
+        .ok_or_else(|| {
+            anyhow::anyhow!("MCP server requires a knowledge-capable storage backend")
+        })?;
 
     // Determine Just directory
     let just_dir = args

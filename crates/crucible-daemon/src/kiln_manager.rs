@@ -13,7 +13,7 @@ use tracing::{info, warn};
 
 use crucible_core::processing::InMemoryChangeDetectionStore;
 use crucible_core::storage::note_store::NoteRecord;
-use crucible_core::traits::{NoteInfo, KnowledgeRepository};
+use crucible_core::traits::{KnowledgeRepository, NoteInfo};
 use crucible_pipeline::{NotePipeline, NotePipelineConfig, ParserBackend};
 use crucible_watch::{EventFilter, WatchManager, WatchManagerConfig};
 
@@ -420,7 +420,9 @@ impl KilnManager {
             .unwrap_or_else(|_| kiln_path.to_path_buf());
 
         let conns = self.connections.read().await;
-        conns.get(&canonical).and_then(|conn| conn.enrichment_config.clone())
+        conns
+            .get(&canonical)
+            .and_then(|conn| conn.enrichment_config.clone())
     }
 
     pub async fn get_or_open(&self, kiln_path: &Path) -> Result<StorageHandle> {
@@ -531,7 +533,7 @@ impl Default for KilnManager {
 /// enrichment section.
 async fn load_enrichment_config(kiln_path: &Path) -> Option<EmbeddingProviderConfig> {
     let config_path = kiln_path.join("crucible.toml");
-    
+
     // Try to read the config file
     let config_content = match tokio::fs::read_to_string(&config_path).await {
         Ok(content) => content,
@@ -540,7 +542,7 @@ async fn load_enrichment_config(kiln_path: &Path) -> Option<EmbeddingProviderCon
             return None;
         }
     };
-    
+
     // Parse as TOML
     let config: crucible_config::Config = match toml::from_str(&config_content) {
         Ok(cfg) => cfg,
@@ -549,7 +551,7 @@ async fn load_enrichment_config(kiln_path: &Path) -> Option<EmbeddingProviderCon
             return None;
         }
     };
-    
+
     // Extract enrichment provider config
     config.enrichment.map(|enrichment| enrichment.provider)
 }

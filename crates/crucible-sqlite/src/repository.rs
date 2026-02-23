@@ -156,11 +156,9 @@ impl KnowledgeRepository for SqliteKnowledgeRepository {
         let converted: Vec<SearchResult> = results
             .into_iter()
             .map(|r| {
-                let snippet = self
-                    .read_note_snippet(&r.note.path)
-                    .unwrap_or_else(|| {
-                        format!("{}\nTags: {}", r.note.title, r.note.tags.join(", "))
-                    });
+                let snippet = self.read_note_snippet(&r.note.path).unwrap_or_else(|| {
+                    format!("{}\nTags: {}", r.note.title, r.note.tags.join(", "))
+                });
                 SearchResult {
                     document_id: DocumentId(r.note.path),
                     score: r.score as f64,

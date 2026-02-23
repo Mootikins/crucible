@@ -413,12 +413,9 @@ mod tests {
         storage.save(&session).await.unwrap();
 
         // Create an event with timestamp
-        let event = SessionEventMessage::new(
-            &session.id,
-            "user_message",
-            json!({"content": "hello"}),
-        )
-        .with_timestamp();
+        let event =
+            SessionEventMessage::new(&session.id, "user_message", json!({"content": "hello"}))
+                .with_timestamp();
 
         // Serialize and append
         let json_str = serde_json::to_string(&event).unwrap();
@@ -432,14 +429,24 @@ mod tests {
             .join(&session.id)
             .join("session.jsonl");
         let content = tokio::fs::read_to_string(&jsonl_path).await.unwrap();
-        let parsed: serde_json::Value = serde_json::from_str(&content.lines().next().unwrap()).unwrap();
+        let parsed: serde_json::Value =
+            serde_json::from_str(&content.lines().next().unwrap()).unwrap();
 
         // Verify timestamp field exists and is ISO8601 format
-        assert!(parsed.get("timestamp").is_some(), "timestamp field missing from persisted event");
+        assert!(
+            parsed.get("timestamp").is_some(),
+            "timestamp field missing from persisted event"
+        );
         let timestamp_str = parsed.get("timestamp").unwrap().as_str().unwrap();
         // Basic ISO8601 validation: should contain T and Z
-        assert!(timestamp_str.contains('T'), "timestamp not in ISO8601 format");
-        assert!(timestamp_str.ends_with('Z'), "timestamp should end with Z (UTC)");
+        assert!(
+            timestamp_str.contains('T'),
+            "timestamp not in ISO8601 format"
+        );
+        assert!(
+            timestamp_str.ends_with('Z'),
+            "timestamp should end with Z (UTC)"
+        );
     }
 
     #[tokio::test]

@@ -213,7 +213,6 @@ impl RigClient {
             }
         }
     }
-
 }
 
 fn make_daemon_handle<C>(
@@ -452,86 +451,86 @@ mod tests {
 
     fn ollama_config() -> LlmProviderConfig {
         LlmProviderConfig {
-                    provider_type: BackendType::Ollama,
-                    endpoint: None,
-                    default_model: Some("llama3.2".into()),
-                    temperature: None,
-                    max_tokens: None,
-                    timeout_secs: None,
-                    api_key: None,
-                    available_models: None,
-                    trust_level: None,
-                }
+            provider_type: BackendType::Ollama,
+            endpoint: None,
+            default_model: Some("llama3.2".into()),
+            temperature: None,
+            max_tokens: None,
+            timeout_secs: None,
+            api_key: None,
+            available_models: None,
+            trust_level: None,
+        }
     }
 
     fn ollama_config_custom_endpoint() -> LlmProviderConfig {
         LlmProviderConfig {
-                    provider_type: BackendType::Ollama,
-                    endpoint: Some("http://192.168.1.100:11434".into()),
-                    default_model: Some("llama3.2".into()),
-                    temperature: None,
-                    max_tokens: None,
-                    timeout_secs: None,
-                    api_key: None,
-                    available_models: None,
-                    trust_level: None,
-                }
+            provider_type: BackendType::Ollama,
+            endpoint: Some("http://192.168.1.100:11434".into()),
+            default_model: Some("llama3.2".into()),
+            temperature: None,
+            max_tokens: None,
+            timeout_secs: None,
+            api_key: None,
+            available_models: None,
+            trust_level: None,
+        }
     }
 
     fn openai_config_with_key() -> LlmProviderConfig {
         LlmProviderConfig {
-                    provider_type: BackendType::OpenAI,
-                    endpoint: None,
-                    default_model: Some("gpt-4o".into()),
-                    temperature: None,
-                    max_tokens: None,
-                    timeout_secs: None,
-                    api_key: Some("TEST_OPENAI_KEY".into()),
-                    available_models: None,
-                    trust_level: None,
-                }
+            provider_type: BackendType::OpenAI,
+            endpoint: None,
+            default_model: Some("gpt-4o".into()),
+            temperature: None,
+            max_tokens: None,
+            timeout_secs: None,
+            api_key: Some("TEST_OPENAI_KEY".into()),
+            available_models: None,
+            trust_level: None,
+        }
     }
 
     fn anthropic_config_with_key() -> LlmProviderConfig {
         LlmProviderConfig {
-                    provider_type: BackendType::Anthropic,
-                    endpoint: None,
-                    default_model: Some("claude-3-5-sonnet-20241022".into()),
-                    temperature: None,
-                    max_tokens: None,
-                    timeout_secs: None,
-                    api_key: Some("TEST_ANTHROPIC_KEY".into()),
-                    available_models: None,
-                    trust_level: None,
-                }
+            provider_type: BackendType::Anthropic,
+            endpoint: None,
+            default_model: Some("claude-3-5-sonnet-20241022".into()),
+            temperature: None,
+            max_tokens: None,
+            timeout_secs: None,
+            api_key: Some("TEST_ANTHROPIC_KEY".into()),
+            available_models: None,
+            trust_level: None,
+        }
     }
 
     fn copilot_config_with_token() -> LlmProviderConfig {
         LlmProviderConfig {
-                    provider_type: BackendType::GitHubCopilot,
-                    endpoint: None,
-                    default_model: Some("gpt-4o".into()),
-                    temperature: None,
-                    max_tokens: None,
-                    timeout_secs: None,
-                    api_key: Some("gho_test_oauth_token".into()),
-                    available_models: None,
-                    trust_level: None,
-                }
+            provider_type: BackendType::GitHubCopilot,
+            endpoint: None,
+            default_model: Some("gpt-4o".into()),
+            temperature: None,
+            max_tokens: None,
+            timeout_secs: None,
+            api_key: Some("gho_test_oauth_token".into()),
+            available_models: None,
+            trust_level: None,
+        }
     }
 
     fn copilot_config_no_token() -> LlmProviderConfig {
         LlmProviderConfig {
-                    provider_type: BackendType::GitHubCopilot,
-                    endpoint: None,
-                    default_model: Some("gpt-4o".into()),
-                    temperature: None,
-                    max_tokens: None,
-                    timeout_secs: None,
-                    api_key: None,
-                    available_models: None,
-                    trust_level: None,
-                }
+            provider_type: BackendType::GitHubCopilot,
+            endpoint: None,
+            default_model: Some("gpt-4o".into()),
+            temperature: None,
+            max_tokens: None,
+            timeout_secs: None,
+            api_key: None,
+            available_models: None,
+            trust_level: None,
+        }
     }
 
     #[test]
@@ -572,16 +571,16 @@ mod tests {
     #[test]
     fn test_create_openai_client_missing_api_key() {
         let config = LlmProviderConfig {
-                    provider_type: BackendType::OpenAI,
-                    endpoint: None,
-                    default_model: Some("gpt-4o".into()),
-                    temperature: None,
-                    max_tokens: None,
-                    timeout_secs: None,
-                    api_key: None,
-                    available_models: None,
-                    trust_level: None,
-                };
+            provider_type: BackendType::OpenAI,
+            endpoint: None,
+            default_model: Some("gpt-4o".into()),
+            temperature: None,
+            max_tokens: None,
+            timeout_secs: None,
+            api_key: None,
+            available_models: None,
+            trust_level: None,
+        };
 
         let client = create_client(&config);
 
@@ -608,16 +607,16 @@ mod tests {
     #[test]
     fn test_create_anthropic_client_missing_api_key() {
         let config = LlmProviderConfig {
-                    provider_type: BackendType::Anthropic,
-                    endpoint: None,
-                    default_model: None,
-                    temperature: None,
-                    max_tokens: None,
-                    timeout_secs: None,
-                    api_key: None,
-                    available_models: None,
-                    trust_level: None,
-                };
+            provider_type: BackendType::Anthropic,
+            endpoint: None,
+            default_model: None,
+            temperature: None,
+            max_tokens: None,
+            timeout_secs: None,
+            api_key: None,
+            available_models: None,
+            trust_level: None,
+        };
 
         let client = create_client(&config);
 
@@ -648,16 +647,16 @@ mod tests {
     #[test]
     fn test_create_openai_compat_client_with_custom_endpoint() {
         let config = LlmProviderConfig {
-                    provider_type: BackendType::OpenAI,
-                    endpoint: Some("https://llama.example.com/v1".into()),
-                    default_model: Some("qwen3-8b".into()),
-                    temperature: None,
-                    max_tokens: None,
-                    timeout_secs: None,
-                    api_key: None,
-                    available_models: None,
-                    trust_level: None,
-                };
+            provider_type: BackendType::OpenAI,
+            endpoint: Some("https://llama.example.com/v1".into()),
+            default_model: Some("qwen3-8b".into()),
+            temperature: None,
+            max_tokens: None,
+            timeout_secs: None,
+            api_key: None,
+            available_models: None,
+            trust_level: None,
+        };
 
         let client = create_client(&config);
         assert!(client.is_ok());
@@ -668,16 +667,16 @@ mod tests {
     #[test]
     fn test_create_openai_compat_no_api_key_required() {
         let config = LlmProviderConfig {
-                    provider_type: BackendType::OpenAI,
-                    endpoint: Some("http://localhost:8080/v1".into()),
-                    default_model: Some("local-model".into()),
-                    temperature: None,
-                    max_tokens: None,
-                    timeout_secs: None,
-                    api_key: Some("NONEXISTENT_API_KEY".into()),
-                    available_models: None,
-                    trust_level: None,
-                };
+            provider_type: BackendType::OpenAI,
+            endpoint: Some("http://localhost:8080/v1".into()),
+            default_model: Some("local-model".into()),
+            temperature: None,
+            max_tokens: None,
+            timeout_secs: None,
+            api_key: Some("NONEXISTENT_API_KEY".into()),
+            available_models: None,
+            trust_level: None,
+        };
 
         let client = create_client(&config);
         assert!(client.is_ok());
@@ -687,16 +686,16 @@ mod tests {
     #[test]
     fn test_real_openai_requires_api_key() {
         let config = LlmProviderConfig {
-                    provider_type: BackendType::OpenAI,
-                    endpoint: None,
-                    default_model: Some("gpt-4o".into()),
-                    temperature: None,
-                    max_tokens: None,
-                    timeout_secs: None,
-                    api_key: None,
-                    available_models: None,
-                    trust_level: None,
-                };
+            provider_type: BackendType::OpenAI,
+            endpoint: None,
+            default_model: Some("gpt-4o".into()),
+            temperature: None,
+            max_tokens: None,
+            timeout_secs: None,
+            api_key: None,
+            available_models: None,
+            trust_level: None,
+        };
 
         let client = create_client(&config);
         assert!(client.is_err());
@@ -740,30 +739,30 @@ mod tests {
 
     fn openrouter_config_with_key() -> LlmProviderConfig {
         LlmProviderConfig {
-                    provider_type: BackendType::OpenRouter,
-                    endpoint: None,
-                    default_model: Some("openai/gpt-4o".into()),
-                    temperature: None,
-                    max_tokens: None,
-                    timeout_secs: None,
-                    api_key: Some("sk-or-test-key".into()),
-                    available_models: None,
-                    trust_level: None,
-                }
+            provider_type: BackendType::OpenRouter,
+            endpoint: None,
+            default_model: Some("openai/gpt-4o".into()),
+            temperature: None,
+            max_tokens: None,
+            timeout_secs: None,
+            api_key: Some("sk-or-test-key".into()),
+            available_models: None,
+            trust_level: None,
+        }
     }
 
     fn openrouter_config_no_key() -> LlmProviderConfig {
         LlmProviderConfig {
-                    provider_type: BackendType::OpenRouter,
-                    endpoint: None,
-                    default_model: Some("openai/gpt-4o".into()),
-                    temperature: None,
-                    max_tokens: None,
-                    timeout_secs: None,
-                    api_key: None,
-                    available_models: None,
-                    trust_level: None,
-                }
+            provider_type: BackendType::OpenRouter,
+            endpoint: None,
+            default_model: Some("openai/gpt-4o".into()),
+            temperature: None,
+            max_tokens: None,
+            timeout_secs: None,
+            api_key: None,
+            available_models: None,
+            trust_level: None,
+        }
     }
 
     #[test]
@@ -791,16 +790,16 @@ mod tests {
         std::env::set_var("TEST_ANTHROPIC_KEY", "test-key-custom");
 
         let config = LlmProviderConfig {
-                    provider_type: BackendType::Anthropic,
-                    endpoint: Some("https://api.z.ai/api/anthropic".into()),
-                    default_model: Some("glm-4-flash".into()),
-                    temperature: None,
-                    max_tokens: None,
-                    timeout_secs: None,
-                    api_key: Some("TEST_ANTHROPIC_KEY".into()),
-                    available_models: None,
-                    trust_level: None,
-                };
+            provider_type: BackendType::Anthropic,
+            endpoint: Some("https://api.z.ai/api/anthropic".into()),
+            default_model: Some("glm-4-flash".into()),
+            temperature: None,
+            max_tokens: None,
+            timeout_secs: None,
+            api_key: Some("TEST_ANTHROPIC_KEY".into()),
+            available_models: None,
+            trust_level: None,
+        };
 
         let client = create_client(&config);
 
@@ -814,16 +813,16 @@ mod tests {
     #[test]
     fn test_create_zai_client() {
         let config = LlmProviderConfig {
-                    provider_type: BackendType::ZAI,
-                    endpoint: Some("https://api.z.ai/api/coding/paas/v4".into()),
-                    default_model: Some("glm-4-flash".into()),
-                    temperature: None,
-                    max_tokens: None,
-                    timeout_secs: None,
-                    api_key: Some("test-key".into()),
-                    available_models: None,
-                    trust_level: None,
-                };
+            provider_type: BackendType::ZAI,
+            endpoint: Some("https://api.z.ai/api/coding/paas/v4".into()),
+            default_model: Some("glm-4-flash".into()),
+            temperature: None,
+            max_tokens: None,
+            timeout_secs: None,
+            api_key: Some("test-key".into()),
+            available_models: None,
+            trust_level: None,
+        };
 
         let client = create_client(&config);
 

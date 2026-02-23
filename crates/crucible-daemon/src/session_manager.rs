@@ -299,7 +299,10 @@ impl SessionManager {
         self.recording_senders.insert(session_id.to_string(), tx);
     }
 
-    pub fn get_recording_sender(&self, session_id: &str) -> Option<mpsc::Sender<SessionEventMessage>> {
+    pub fn get_recording_sender(
+        &self,
+        session_id: &str,
+    ) -> Option<mpsc::Sender<SessionEventMessage>> {
         self.recording_senders.get(session_id).map(|r| r.clone())
     }
 

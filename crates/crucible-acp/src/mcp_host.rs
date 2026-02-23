@@ -14,10 +14,10 @@
 //!
 //! This keeps all tool execution in-process, sharing the same database connection.
 
+use axum::http::{header::ACCEPT, HeaderValue};
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
-use axum::http::{header::ACCEPT, HeaderValue};
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info};
@@ -49,11 +49,11 @@ async fn ensure_streamable_accept(
             format!("{}, text/event-stream", existing_accept_values.join(", "))
         };
 
-        request
-            .headers_mut()
-            .insert(ACCEPT, HeaderValue::from_str(&merged_accept).unwrap_or_else(|_| {
-                HeaderValue::from_static("text/event-stream")
-            }));
+        request.headers_mut().insert(
+            ACCEPT,
+            HeaderValue::from_str(&merged_accept)
+                .unwrap_or_else(|_| HeaderValue::from_static("text/event-stream")),
+        );
     }
 
     next.run(request).await

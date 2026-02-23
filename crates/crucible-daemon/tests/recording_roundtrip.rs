@@ -9,7 +9,10 @@ use crucible_core::session::RecordingMode;
 use crucible_daemon::recording::RecordingWriter;
 use crucible_daemon::replay::ReplaySession;
 use crucible_protocol::SessionEventMessage;
-use replay_harness::{create_test_recording, message_complete, text_delta, thinking, tool_call, tool_result, user_message};
+use replay_harness::{
+    create_test_recording, message_complete, text_delta, thinking, tool_call, tool_result,
+    user_message,
+};
 use serde_json::json;
 use std::time::Duration;
 use tempfile::TempDir;
@@ -34,9 +37,7 @@ async fn collect_replay_events(
 }
 
 /// Helper: write events through RecordingWriter and replay them back.
-async fn roundtrip(
-    events: Vec<SessionEventMessage>,
-) -> Vec<SessionEventMessage> {
+async fn roundtrip(events: Vec<SessionEventMessage>) -> Vec<SessionEventMessage> {
     let dir = TempDir::new().expect("tempdir");
     let path = dir.path().join("recording.jsonl");
 
@@ -60,7 +61,10 @@ async fn roundtrip(
     let replay_handle = replay.start();
 
     let collected = collect_replay_events(&mut replay_rx).await;
-    replay_handle.await.expect("join replay").expect("replay ok");
+    replay_handle
+        .await
+        .expect("join replay")
+        .expect("replay ok");
     collected
 }
 
@@ -117,7 +121,10 @@ async fn tool_call_and_result_survive_roundtrip() {
     assert_eq!(replayed[0].data["args"]["query"], "rust async");
 
     assert_eq!(replayed[1].data["tool"], "semantic_search");
-    assert_eq!(replayed[1].data["result"]["results"][0]["title"], "Async Rust");
+    assert_eq!(
+        replayed[1].data["result"]["results"][0]["title"],
+        "Async Rust"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -179,7 +186,10 @@ async fn delegation_events_survive_roundtrip() {
 
     let completed = &replayed[1].data;
     assert_eq!(completed["id"], "subagent-1");
-    assert_eq!(completed["summary"], "Found 3 issues in the authentication module");
+    assert_eq!(
+        completed["summary"],
+        "Found 3 issues in the authentication module"
+    );
     assert_eq!(completed["exit_code"], 0);
 }
 
@@ -217,7 +227,12 @@ async fn mixed_event_stream_roundtrip() {
 
     let replayed = roundtrip(events).await;
 
-    assert_eq!(replayed.len(), 9, "expected 9 events, got {}", replayed.len());
+    assert_eq!(
+        replayed.len(),
+        9,
+        "expected 9 events, got {}",
+        replayed.len()
+    );
 
     let names: Vec<&str> = replayed.iter().map(|e| e.event.as_str()).collect();
     assert_eq!(
@@ -238,7 +253,10 @@ async fn mixed_event_stream_roundtrip() {
     assert_eq!(replayed[0].data["content"], "What is Rust?");
     assert_eq!(replayed[1].data["content"], "Let me reason about this");
     assert_eq!(replayed[5].data["tool"], "read_file");
-    assert_eq!(replayed[8].data["full_response"], "Rust is a systems programming language. It emphasizes safety.");
+    assert_eq!(
+        replayed[8].data["full_response"],
+        "Rust is a systems programming language. It emphasizes safety."
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -273,7 +291,10 @@ async fn empty_recording_produces_only_replay_complete() {
     assert_eq!(evt.data["total_events"], 0);
     assert_eq!(evt.session_id, "replay-empty");
 
-    replay_handle.await.expect("join replay").expect("replay ok");
+    replay_handle
+        .await
+        .expect("join replay")
+        .expect("replay ok");
 }
 
 // ---------------------------------------------------------------------------
@@ -304,7 +325,10 @@ async fn harness_fixture_roundtrips_through_replay() {
     let replay_handle = replay.start();
 
     let events = collect_replay_events(&mut replay_rx).await;
-    replay_handle.await.expect("join replay").expect("replay ok");
+    replay_handle
+        .await
+        .expect("join replay")
+        .expect("replay ok");
 
     assert_eq!(events.len(), 7);
     let names: Vec<&str> = events.iter().map(|e| e.event.as_str()).collect();

@@ -112,7 +112,9 @@ fn build_internal_delegation_context(
                 enabled: delegation_config.map(|c| c.enabled).unwrap_or(false),
                 depth: 0,
                 data_classification: kiln_path
-                    .and_then(|kiln| crate::trust_resolution::resolve_kiln_classification(workspace, kiln))
+                    .and_then(|kiln| {
+                        crate::trust_resolution::resolve_kiln_classification(workspace, kiln)
+                    })
                     .unwrap_or(DataClassification::Public),
             }
         })
@@ -184,7 +186,8 @@ async fn create_internal_mcp_tools(
 
         if !server_names.is_empty() {
             let all_tools_owned;
-            let all_tools: &[McpToolInfo] = if let Some(override_tools) = gateway_all_tools_override {
+            let all_tools: &[McpToolInfo] = if let Some(override_tools) = gateway_all_tools_override
+            {
                 override_tools
             } else {
                 all_tools_owned = gw_read.all_tools();
@@ -229,7 +232,10 @@ async fn create_internal_mcp_tool_names_for_tests(
         gateway_all_tools_override,
     )
     .await;
-    tools.into_iter().map(|t| t.tool_name().to_string()).collect()
+    tools
+        .into_iter()
+        .map(|t| t.tool_name().to_string())
+        .collect()
 }
 
 #[derive(Error, Debug)]
@@ -643,7 +649,10 @@ mod tests {
         let ctx = ctx.expect("delegation context should be Some");
         assert!(ctx.enabled);
         assert_eq!(ctx.session_id, "session-123");
-        assert_eq!(ctx.targets, vec!["cursor".to_string(), "opencode".to_string()]);
+        assert_eq!(
+            ctx.targets,
+            vec!["cursor".to_string(), "opencode".to_string()]
+        );
         assert_eq!(ctx.depth, 0);
     }
 
@@ -661,7 +670,10 @@ mod tests {
         );
 
         let ctx = ctx.expect("context present when spawner + session_id exist");
-        assert!(!ctx.enabled, "should be disabled when delegation_config is None");
+        assert!(
+            !ctx.enabled,
+            "should be disabled when delegation_config is None"
+        );
         assert!(ctx.targets.is_empty());
     }
 

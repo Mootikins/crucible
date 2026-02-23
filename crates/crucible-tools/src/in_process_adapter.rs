@@ -6,8 +6,13 @@ use rig::tool::Tool;
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::model::{CallToolResult, Tool as McpTool};
 
-use crate::mcp_server::{CancelJobParams, CrucibleMcpServer, DelegateSessionParams, GetJobResultParams, ListJobsParams};
-use crate::notes::{CreateNoteParams, DeleteNoteParams, ListNotesParams, ReadMetadataParams, ReadNoteParams, UpdateNoteParams};
+use crate::mcp_server::{
+    CancelJobParams, CrucibleMcpServer, DelegateSessionParams, GetJobResultParams, ListJobsParams,
+};
+use crate::notes::{
+    CreateNoteParams, DeleteNoteParams, ListNotesParams, ReadMetadataParams, ReadNoteParams,
+    UpdateNoteParams,
+};
 use crate::search::{PropertySearchParams, SemanticSearchParams, TextSearchParams};
 
 /// Read-only tools available in "plan" mode.
@@ -210,7 +215,9 @@ fn first_text(result: &CallToolResult) -> Option<&str> {
         .find_map(|content| content.as_text().map(|text| text.text.as_str()))
 }
 
-fn into_object(value: serde_json::Value) -> Result<serde_json::Map<String, serde_json::Value>, rmcp::ErrorData> {
+fn into_object(
+    value: serde_json::Value,
+) -> Result<serde_json::Map<String, serde_json::Value>, rmcp::ErrorData> {
     match value {
         serde_json::Value::Object(map) => Ok(map),
         serde_json::Value::Null => Ok(serde_json::Map::new()),

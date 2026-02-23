@@ -164,7 +164,6 @@ pub enum SessionEvent {
         query_summary: String,
     },
 
-
     /// Emitted when a kiln requires data classification before use.
     ///
     /// This event is emitted when a kiln is opened but has no `data_classification`
@@ -721,7 +720,9 @@ impl SessionEvent {
             Self::PreParse { path, .. } => format!("pre:parse:{}", path.display()),
             Self::PreLlmCall { model, .. } => format!("pre:llm:{}", model),
             Self::PrecognitionComplete { .. } => "precognition:complete".into(),
-            Self::ClassificationRequired { kiln_path, .. } => format!("classification:required:{}", kiln_path.display()),
+            Self::ClassificationRequired { kiln_path, .. } => {
+                format!("classification:required:{}", kiln_path.display())
+            }
             Self::AwaitingInput { input_type, .. } => format!("await:{}", input_type),
             Self::InteractionRequested {
                 request_id,

@@ -29,8 +29,6 @@ const EXPECTED_TOOL_NAMES: &[&str] = &[
     "cancel_job",
 ];
 
-
-
 struct MockKnowledgeRepository;
 struct MockEmbeddingProvider;
 struct MockBackgroundSpawner;
@@ -316,7 +314,10 @@ async fn test_internal_agent_tool_call_e2e() {
         .find(|tool| tool.name() == "get_kiln_info")
         .expect("get_kiln_info should be available");
 
-    let response = tool.call("{}".to_string()).await.expect("tool call should succeed");
+    let response = tool
+        .call("{}".to_string())
+        .await
+        .expect("tool call should succeed");
 
     assert!(!response.is_empty());
     assert!(response.contains("root"));

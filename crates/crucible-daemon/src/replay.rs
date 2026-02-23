@@ -5,9 +5,9 @@ use anyhow::{anyhow, Context, Result};
 use chrono::{DateTime, Utc};
 use crucible_core::session::{Session, SessionType};
 use crucible_protocol::{RecordedEvent, RecordingFooter, RecordingHeader, SessionEventMessage};
-use tokio::time::sleep;
 use tokio::sync::broadcast;
 use tokio::task::JoinHandle;
+use tokio::time::sleep;
 use tracing::{debug, warn};
 
 pub struct ReplaySession {
@@ -181,7 +181,10 @@ fn scaled_delay(previous: DateTime<Utc>, current: DateTime<Utc>, speed: f64) -> 
 }
 
 fn is_keypress_event(event_name: &str) -> bool {
-    matches!(event_name, "key_press" | "keypress" | "key_press_event" | "KeyPress")
+    matches!(
+        event_name,
+        "key_press" | "keypress" | "key_press_event" | "KeyPress"
+    )
 }
 
 #[cfg(test)]
@@ -271,8 +274,8 @@ mod tests {
         write_recording(&path, &events, None, None);
 
         let (tx, mut rx) = broadcast::channel(16);
-        let replay = ReplaySession::new(path, 0.0, tx, "replay-session".to_string())
-            .expect("create replay");
+        let replay =
+            ReplaySession::new(path, 0.0, tx, "replay-session".to_string()).expect("create replay");
 
         let handle = replay.start();
         let first = rx.recv().await.expect("first event");
@@ -347,7 +350,8 @@ mod tests {
         write_recording(&path, &events, None, None);
 
         let (tx, mut rx) = broadcast::channel(16);
-        let replay = ReplaySession::new(path, 0.0, tx, "replay-instant".to_string()).expect("create");
+        let replay =
+            ReplaySession::new(path, 0.0, tx, "replay-instant".to_string()).expect("create");
 
         let start = Instant::now();
         let handle = replay.start();
@@ -367,7 +371,8 @@ mod tests {
         write_recording(&path, &events, None, Some("not-json"));
 
         let (tx, mut rx) = broadcast::channel(16);
-        let replay = ReplaySession::new(path, 0.0, tx, "replay-malformed".to_string()).expect("create");
+        let replay =
+            ReplaySession::new(path, 0.0, tx, "replay-malformed".to_string()).expect("create");
         let handle = replay.start();
 
         let first = rx.recv().await.expect("first");
@@ -402,7 +407,8 @@ mod tests {
         write_recording(&path, &events, None, None);
 
         let (tx, mut rx) = broadcast::channel(16);
-        let replay = ReplaySession::new(path, 0.0, tx, "replay-no-key".to_string()).expect("create");
+        let replay =
+            ReplaySession::new(path, 0.0, tx, "replay-no-key".to_string()).expect("create");
         let handle = replay.start();
 
         let received = rx.recv().await.expect("text event");

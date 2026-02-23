@@ -10,7 +10,9 @@ pub mod pipeline;
 pub mod storage;
 pub mod watch;
 
-pub use agent::{create_agent, create_daemon_replay_agent, AgentInitParams, AgentType, InitializedAgent};
+pub use agent::{
+    create_agent, create_daemon_replay_agent, AgentInitParams, AgentType, InitializedAgent,
+};
 pub use enrichment::{create_default_enrichment_service, get_or_create_embedding_provider};
 pub use pipeline::create_pipeline;
 pub use storage::{create_daemon_storage, get_storage, StorageHandle};

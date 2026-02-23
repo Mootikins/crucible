@@ -377,7 +377,11 @@ async fn test_tools_list_over_http_returns_delegate_session() {
         .await
         .expect("tools/list should succeed");
 
-    assert!(tools_resp.status().is_success(), "tools/list status: {}", tools_resp.status());
+    assert!(
+        tools_resp.status().is_success(),
+        "tools/list status: {}",
+        tools_resp.status()
+    );
 
     let body = tools_resp.text().await.unwrap();
     eprintln!("tools/list response: {}", body);
@@ -390,12 +394,19 @@ async fn test_tools_list_over_http_returns_delegate_session() {
         .expect("should find data line with JSON");
 
     let parsed: serde_json::Value = serde_json::from_str(json_str).expect("should be valid JSON");
-    let tools = parsed["result"]["tools"].as_array().expect("should have tools array");
+    let tools = parsed["result"]["tools"]
+        .as_array()
+        .expect("should have tools array");
 
     let tool_names: Vec<&str> = tools.iter().map(|t| t["name"].as_str().unwrap()).collect();
     eprintln!("Tool names: {:?}", tool_names);
 
-    assert_eq!(tools.len(), 16, "Should have 16 tools, got: {:?}", tool_names);
+    assert_eq!(
+        tools.len(),
+        16,
+        "Should have 16 tools, got: {:?}",
+        tool_names
+    );
     assert!(
         tool_names.contains(&"delegate_session"),
         "Should contain delegate_session, got: {:?}",

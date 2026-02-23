@@ -80,7 +80,9 @@ fn in_process_adapter_lists_all_unprefixed_tool_names() {
     let names = adapter.list_tool_names();
 
     assert_eq!(names.len(), 16);
-    assert!(names.iter().all(|name| !name.contains('_') || !name.starts_with("crucible_")));
+    assert!(names
+        .iter()
+        .all(|name| !name.contains('_') || !name.starts_with("crucible_")));
     assert!(names.contains(&"semantic_search".to_string()));
     assert!(names.contains(&"create_note".to_string()));
 }
@@ -129,6 +131,9 @@ async fn in_process_adapter_tool_wrapper_calls_server() {
         .find(|tool| tool.name() == "get_kiln_info")
         .expect("get_kiln_info tool");
 
-    let response = tool.call("{}".to_string()).await.expect("tool call response");
+    let response = tool
+        .call("{}".to_string())
+        .await
+        .expect("tool call response");
     assert!(response.contains("root"));
 }

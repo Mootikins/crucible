@@ -133,8 +133,6 @@ fn create_tool(
     }
 }
 
-
-
 /// Discover and register all Crucible tools
 ///
 /// This function scans the crucible-tools crate and registers all available
@@ -791,8 +789,6 @@ mod tests {
 
         assert_eq!(descriptor, deserialized);
     }
-
-
 
     #[tokio::test]
     async fn core_tool_executor_trait_contract_is_satisfied() {
