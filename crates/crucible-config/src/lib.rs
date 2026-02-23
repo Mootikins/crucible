@@ -36,18 +36,12 @@ mod includes;
 mod loader;
 mod patterns;
 mod profile;
-mod resolver;
 mod security;
 mod value_source;
 mod workspace;
-
-// Include test_utils when test-utils feature is enabled
-#[cfg(feature = "test-utils")]
-mod test_utils;
-
 pub use components::*;
 pub use config::{
-    crucible_home, is_crucible_home, CacheConfig, CacheType, CliAppConfig, Config, ConfigError,
+    crucible_home, is_crucible_home, CliAppConfig, Config, ConfigError,
     ConfigValidationError, DatabaseConfig, DatabaseType, EffectiveLlmConfig, LoggingConfig,
     ProcessingConfig, ScmConfig, ServerConfig, WebConfig,
 };
@@ -65,11 +59,7 @@ pub use patterns::{
     BashPatterns, FilePatterns, PatternError, PatternResult, PatternStore, ToolPatterns,
 };
 pub use profile::*;
-pub use resolver::ConfigResolver;
 pub use security::ShellPolicy;
 pub use value_source::*;
 pub use workspace::{KilnAttachment, SecurityConfig, WorkspaceConfig, WorkspaceMeta};
 
-// Export test utilities when feature is enabled
-#[cfg(feature = "test-utils")]
-pub use test_utils::*;
