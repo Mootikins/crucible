@@ -6,10 +6,7 @@ use crate::protocol::{RpcError, INTERNAL_ERROR, INVALID_PARAMS};
 #[allow(dead_code)]
 pub type RpcResult<T> = Result<T, RpcError>;
 
-#[allow(dead_code)]
-pub trait ToRpcError {
-    fn to_rpc_error(&self) -> RpcError;
-}
+
 
 #[allow(dead_code)]
 pub fn agent_error_to_rpc_error(e: AgentError) -> RpcError {

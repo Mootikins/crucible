@@ -138,14 +138,7 @@ pub struct ValueInfo<T> {
     pub source_short: String,
 }
 
-/// Trait for tracking value sources during config loading
-pub trait TrackValueSource {
-    /// Set the source map for tracking
-    fn set_source_map(&mut self, source_map: ValueSourceMap);
 
-    /// Get the source map
-    fn get_source_map(&self) -> &ValueSourceMap;
-}
 
 /// Macro to help with tracking value sources during config loading
 #[macro_export]
