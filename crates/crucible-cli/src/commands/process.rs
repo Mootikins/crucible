@@ -65,7 +65,7 @@ pub async fn execute(
     let use_daemon_pipeline = storage_handle.is_daemon();
 
     // For non-daemon modes, create local pipeline
-    let pipeline: Option<Arc<crucible_pipeline::NotePipeline>> = if !use_daemon_pipeline {
+    let pipeline: Option<Arc<crucible_daemon::pipeline::NotePipeline>> = if !use_daemon_pipeline {
         let note_store = storage_handle
             .note_store()
             .ok_or_else(|| anyhow::anyhow!("Failed to get NoteStore from storage handle"))?;
