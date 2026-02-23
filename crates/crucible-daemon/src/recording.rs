@@ -1,3 +1,7 @@
+//! Recording writer for session-level granular event capture
+//!
+//! Handles writing session events to `recording.jsonl` files with header/footer metadata.
+
 use anyhow::Result;
 use chrono::Utc;
 use crucible_core::session::RecordingMode;
