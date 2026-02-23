@@ -9,7 +9,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::SessionEventMessage;
+use crucible_core::protocol::SessionEventMessage;
 
 /// Header metadata for a recording file
 #[derive(Debug, Clone, Serialize, Deserialize)]
