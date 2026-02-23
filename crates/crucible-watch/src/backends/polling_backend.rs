@@ -1,6 +1,6 @@
 //! Polling-based file watching backend.
 
-#![allow(dead_code)]
+
 
 use crate::{
     error::{Error, Result},
@@ -12,7 +12,7 @@ use crate::{
 use async_trait::async_trait;
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::time::{Duration, Instant, SystemTime};
+use std::time::{Duration, SystemTime};
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 use tracing::{debug, error, info, warn};
@@ -26,8 +26,6 @@ struct WatchState {
     watched_path: PathBuf,
     /// Last known modification times for files
     file_states: HashMap<PathBuf, FileState>,
-    /// Last time this watch was checked
-    last_check: Instant,
 }
 
 /// State information for a single file.
@@ -37,8 +35,6 @@ struct FileState {
     modified_time: Option<SystemTime>,
     /// File size
     size: Option<u64>,
-    /// Whether the file existed
-    existed: bool,
 }
 
 /// Polling-based file watcher for compatibility and low-frequency monitoring.
@@ -57,12 +53,7 @@ pub struct PollingWatcher {
     capabilities: BackendCapabilities,
 }
 
-#[allow(dead_code)]
-impl Default for PollingWatcher {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+
 
 impl PollingWatcher {
     /// Create a new polling watcher.
@@ -128,126 +119,6 @@ impl PollingWatcher {
         Ok(())
     }
 
-    /// Stop the background polling task.
-    async fn stop_polling_task(&mut self) -> Result<()> {
-        if let Some(shutdown_tx) = self.shutdown_tx.take() {
-            let _ = shutdown_tx.send(()).await;
-        }
-
-        if let Some(task) = self.poll_task.take() {
-            let _ = task.await;
-        }
-
-        Ok(())
-    }
-
-    /// Update file states for a watch.
-    async fn update_watch_states(&mut self, watch_id: &str) -> Result<()> {
-        // Get path before borrowing watch_state mutably
-        let (path_buf, exists) = {
-            let watch_state = self
-                .watches
-                .get(watch_id)
-                .ok_or_else(|| Error::WatchNotFound(watch_id.to_string()))?;
-            let path = &watch_state.config.id;
-            let path_buf = PathBuf::from(path);
-            let exists = path_buf.exists();
-            (path_buf, exists)
-        };
-
-        // Process changes and collect events to send
-        let events_to_send = if exists {
-            self.collect_path_change_events(&path_buf, watch_id).await?
-        } else {
-            self.collect_deletion_events(&path_buf, watch_id).await?
-        };
-
-        // Send events after releasing the mutable borrow
-        for (kind, path) in events_to_send {
-            self.send_event(kind, path).await;
-        }
-
-        Ok(())
-    }
-
-    /// Collect events for path changes without sending them.
-    async fn collect_path_change_events(
-        &mut self,
-        path: &PathBuf,
-        watch_id: &str,
-    ) -> Result<Vec<(FileEventKind, PathBuf)>> {
-        let mut events = Vec::new();
-
-        let watch_state = self
-            .watches
-            .get_mut(watch_id)
-            .ok_or_else(|| Error::WatchNotFound(watch_id.to_string()))?;
-
-        watch_state.last_check = Instant::now();
-
-        if let Ok(metadata) = std::fs::metadata(path) {
-            let modified_time = metadata.modified().ok();
-            let size = Some(metadata.len());
-
-            let current_state = FileState {
-                modified_time,
-                size,
-                existed: true,
-            };
-
-            let previous_state = watch_state.file_states.get(path);
-
-            match previous_state {
-                None => {
-                    // File is new
-                    events.push((FileEventKind::Created, path.clone()));
-                }
-                Some(prev) => {
-                    // Check for modifications
-                    if prev.modified_time != modified_time || prev.size != size {
-                        events.push((FileEventKind::Modified, path.clone()));
-                    }
-                }
-            }
-
-            watch_state.file_states.insert(path.clone(), current_state);
-        }
-
-        Ok(events)
-    }
-
-    /// Collect events for path deletion without sending them.
-    async fn collect_deletion_events(
-        &mut self,
-        path: &PathBuf,
-        watch_id: &str,
-    ) -> Result<Vec<(FileEventKind, PathBuf)>> {
-        let mut events = Vec::new();
-
-        let watch_state = self
-            .watches
-            .get_mut(watch_id)
-            .ok_or_else(|| Error::WatchNotFound(watch_id.to_string()))?;
-
-        watch_state.last_check = Instant::now();
-
-        if let Some(prev_state) = watch_state.file_states.get(path) {
-            if prev_state.existed {
-                events.push((FileEventKind::Deleted, path.clone()));
-            }
-        }
-
-        watch_state.file_states.insert(
-            path.clone(),
-            FileState {
-                modified_time: None,
-                size: None,
-                existed: false,
-            },
-        );
-
-        Ok(events)
-    }
 
     /// Check for changes in a specific path.
     async fn check_path_changes(&self, path: &PathBuf, watch_state: &mut WatchState) -> Result<()> {
@@ -260,8 +131,8 @@ impl PollingWatcher {
         let current_state = FileState {
             modified_time,
             size,
-            existed: true,
         };
+
 
         let previous_state = watch_state.file_states.get(path);
 
@@ -282,22 +153,6 @@ impl PollingWatcher {
         Ok(())
     }
 
-    /// Handle deletion of a path.
-    async fn handle_path_deletion(
-        &self,
-        path: &PathBuf,
-        watch_state: &mut WatchState,
-    ) -> Result<()> {
-        if let Some(prev_state) = watch_state.file_states.get(path) {
-            if prev_state.existed {
-                self.send_event(FileEventKind::Deleted, path.clone()).await;
-            }
-        }
-
-        // Remove from file states
-        watch_state.file_states.remove(path);
-        Ok(())
-    }
 
     /// Send a file event.
     async fn send_event(&self, kind: FileEventKind, path: PathBuf) {
@@ -386,7 +241,6 @@ impl FileWatcher for PollingWatcher {
             config: config.clone(),
             watched_path: path.clone(),
             file_states: HashMap::new(),
-            last_check: Instant::now(),
         };
 
         // Initial scan of the directory/file

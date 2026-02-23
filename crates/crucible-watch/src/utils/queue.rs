@@ -64,18 +64,6 @@ impl EventQueue {
         }
     }
 
-    /// Pop an event from the front of the queue.
-    #[allow(dead_code)]
-    pub fn pop(&mut self) -> Option<FileEvent> {
-        if let Some(event) = self.queue.pop_front() {
-            self.size.fetch_sub(1, Ordering::Relaxed);
-            self.processed_events.fetch_add(1, Ordering::Relaxed);
-            Some(event)
-        } else {
-            None
-        }
-    }
-
     /// Drain all events from the queue.
     pub fn drain_all(&mut self) -> Vec<FileEvent> {
         let events: Vec<FileEvent> = self.queue.drain(..).collect();
@@ -89,24 +77,6 @@ impl EventQueue {
     /// Get the current number of events in the queue.
     pub fn len(&self) -> usize {
         self.size.load(Ordering::Relaxed)
-    }
-
-    /// Check if the queue is empty.
-    #[allow(dead_code)]
-    pub fn is_empty(&self) -> bool {
-        self.len() == 0
-    }
-
-    /// Check if the queue is full.
-    #[allow(dead_code)]
-    pub fn is_full(&self) -> bool {
-        self.len() >= self.capacity
-    }
-
-    /// Get the queue capacity.
-    #[allow(dead_code)]
-    pub fn capacity(&self) -> usize {
-        self.capacity
     }
 
     /// Get the fill ratio (0.0 to 1.0).
@@ -127,29 +97,6 @@ impl EventQueue {
             dropped: self.dropped_events.load(Ordering::Relaxed),
             fill_ratio: self.fill_ratio(),
         }
-    }
-
-    /// Reset statistics.
-    #[allow(dead_code)]
-    pub fn reset_stats(&mut self) {
-        self.processed_events.store(0, Ordering::Relaxed);
-        self.dropped_events.store(0, Ordering::Relaxed);
-    }
-
-    /// Resize the queue capacity.
-    #[allow(dead_code)]
-    pub fn resize(&mut self, new_capacity: usize) {
-        if new_capacity < self.len() {
-            // Need to drop some events
-            let drop_count = self.len() - new_capacity;
-            for _ in 0..drop_count {
-                self.queue.pop_front();
-            }
-            self.size.store(new_capacity, Ordering::Relaxed);
-        }
-
-        self.capacity = new_capacity;
-        debug!("Resized queue to capacity: {}", new_capacity);
     }
 }
 

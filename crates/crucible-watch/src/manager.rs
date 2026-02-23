@@ -19,9 +19,7 @@ use tracing::{debug, error, info, warn};
 
 /// Main manager for file watching operations.
 pub struct WatchManager {
-    /// Manager configuration
-    #[allow(dead_code)]
-    config: WatchManagerConfig,
+
     /// Backend registry
     backend_registry: ExtendedBackendRegistry,
     /// Active watchers
@@ -63,7 +61,6 @@ impl WatchManager {
         emitter: Arc<dyn EventEmitter<Event = SessionEvent>>,
     ) -> Result<Self> {
         let manager = Self {
-            config: config.clone(),
             backend_registry: ExtendedBackendRegistry::new(),
             watchers: Arc::new(RwLock::new(HashMap::new())),
             handlers: Arc::new(RwLock::new(HandlerRegistry::new())),
