@@ -32,8 +32,7 @@ async fn process_files_with_change_detection(config: &crate::config::CliConfig) 
         })
         .filter_map(|e| e.ok())
         .filter(|e| {
-            e.path().is_file()
-                && e.path().extension().and_then(|s| s.to_str()) == Some("md")
+            e.path().is_file() && e.path().extension().and_then(|s| s.to_str()) == Some("md")
         })
         .map(|e| e.path().to_path_buf())
         .collect();
@@ -75,7 +74,6 @@ fn parse_log_level(level: &str) -> Option<LevelFilter> {
     }
 }
 
-
 /// Cleans up the standalone daemon socket on drop.
 struct SocketCleanup(std::path::PathBuf);
 impl Drop for SocketCleanup {
@@ -84,23 +82,38 @@ impl Drop for SocketCleanup {
     }
 }
 
-#[tokio::main]
-async fn main() -> Result<()> {
+fn main() -> Result<()> {
+    // Parse CLI before entering the async runtime so we can set env vars safely.
+    let cli = Cli::parse();
+
+    // Standalone mode: configure the socket path BEFORE spawning any threads.
+    // set_var is not thread-safe, so it must happen before the tokio runtime starts.
+    let standalone_sock = if cli.standalone {
+        let pid = std::process::id();
+        let runtime_dir = std::env::var("XDG_RUNTIME_DIR")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|_| std::env::temp_dir());
+        let sock = runtime_dir.join(format!("crucible-standalone-{}.sock", pid));
+        let _ = std::fs::remove_file(&sock);
+        std::env::set_var("CRUCIBLE_SOCKET", &sock);
+        Some(sock)
+    } else {
+        None
+    };
+
+    tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()?
+        .block_on(async_main(cli, standalone_sock))
+}
+
+async fn async_main(cli: Cli, standalone_sock: Option<std::path::PathBuf>) -> Result<()> {
     // Install ring as the rustls CryptoProvider before any TLS usage.
     // Both ring and aws-lc-rs are compiled (via lancedb), so rustls can't auto-detect.
     let _ = rustls::crypto::ring::default_provider().install_default();
 
-    let cli = Cli::parse();
-
-    // Standalone mode: spin up an in-process daemon on a unique temp socket.
-    // CRUCIBLE_SOCKET tells DaemonClient where to connect.
-    let _standalone_guard = if cli.standalone {
-        let pid = std::process::id();
-        let sock = std::path::PathBuf::from(format!("/tmp/crucible-standalone-{}.sock", pid));
-        let _ = std::fs::remove_file(&sock);
-        // SAFETY: set_var is called before any threads are spawned (pre-tokio-spawn).
-        // This will require unsafe{} in Rust 2024 edition — revisit when upgrading.
-        std::env::set_var("CRUCIBLE_SOCKET", &sock);
+    // Standalone mode: start the in-process daemon on the pre-configured socket.
+    let _standalone_guard = if let Some(sock) = standalone_sock {
         let server = crucible_daemon::Server::bind(&sock, None).await?;
         info!("Standalone daemon listening on {:?}", sock);
         tokio::spawn(async move {
@@ -113,6 +126,9 @@ async fn main() -> Result<()> {
                 break;
             }
             tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+        if !sock.exists() {
+            anyhow::bail!("Standalone daemon failed to start (socket not created after 500ms)");
         }
         Some(SocketCleanup(sock))
     } else {
@@ -240,11 +256,12 @@ async fn main() -> Result<()> {
                     Some(std::time::Duration::from_secs(cli.process_timeout))
                 };
 
-                let result = tokio::time::timeout(
-                    timeout_duration.unwrap_or(std::time::Duration::from_secs(u64::MAX)),
-                    process_files_with_change_detection(&config),
-                )
-                .await;
+                let process_future = process_files_with_change_detection(&config);
+                let result = if let Some(dur) = timeout_duration {
+                    tokio::time::timeout(dur, process_future).await
+                } else {
+                    Ok(process_future.await)
+                };
 
                 match result {
                     Ok(process_result) => {

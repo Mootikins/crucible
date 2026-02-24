@@ -60,7 +60,6 @@ impl Clone for CoordinationStrategy {
 #[derive(Debug, Clone)]
 pub struct HandlerState {
     /// Number of successful operations
-    /// Number of successful operations
     success_count: u64,
     /// Number of failed operations
     error_count: u64,
@@ -91,7 +90,6 @@ impl CompositeHandler {
             states.insert(
                 name.clone(),
                 HandlerState {
-
                     success_count: 0,
                     error_count: 0,
                     last_execution: None,
