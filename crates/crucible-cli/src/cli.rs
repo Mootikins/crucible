@@ -71,6 +71,12 @@ pub struct Cli {
     #[arg(long = "no-process", global = true)]
     pub no_process: bool,
 
+    /// Run with an in-process daemon (no background server required).
+    /// Useful for single-session use, restricted environments, or testing.
+    /// Data persists to the kiln's .crucible/ directory.
+    #[arg(long, global = true)]
+    pub standalone: bool,
+
     /// File processing timeout in seconds (default: 300, 0 = no timeout)
     #[arg(long = "process-timeout", global = true, default_value = "300")]
     pub process_timeout: u64,
@@ -648,13 +654,6 @@ pub enum ConfigCommands {
 
 #[derive(Subcommand)]
 pub enum StorageCommands {
-    /// Migrate between storage modes (lightweight <-> full)
-    Migrate {
-        /// Target mode: "lightweight" or "full"
-        #[arg(long)]
-        to: String,
-    },
-
     /// Show current storage mode and quick status
     Mode,
 
@@ -983,27 +982,6 @@ mod tests {
             assert!(env.is_empty());
         } else {
             panic!("Expected Chat command");
-        }
-    }
-
-    #[test]
-    fn test_storage_migrate_parses() {
-        let cli =
-            Cli::try_parse_from(["cru", "storage", "migrate", "--to", "lightweight"]).unwrap();
-        if let Some(Commands::Storage(StorageCommands::Migrate { to })) = cli.command {
-            assert_eq!(to, "lightweight");
-        } else {
-            panic!("Expected Storage Migrate command");
-        }
-    }
-
-    #[test]
-    fn test_storage_migrate_to_full() {
-        let cli = Cli::try_parse_from(["cru", "storage", "migrate", "--to", "full"]).unwrap();
-        if let Some(Commands::Storage(StorageCommands::Migrate { to })) = cli.command {
-            assert_eq!(to, "full");
-        } else {
-            panic!("Expected Storage Migrate command");
         }
     }
 

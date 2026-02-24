@@ -12,13 +12,11 @@
 //!
 //! The `crucible-parser` crate depends on these types and provides implementations.
 
-pub mod adapter;
 pub mod error;
 pub mod extensions;
 pub mod traits;
 pub mod types;
 
-pub use adapter::SurrealDBAdapter;
 // Re-export error types from canonical source (this module)
 pub use error::{ErrorSeverity, ParseError, ParseErrorType, ParserError, ParserResult};
 pub use extensions::{

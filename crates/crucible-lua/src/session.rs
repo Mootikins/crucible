@@ -5,7 +5,7 @@
 //! - `LuaScriptHandlerRegistry` for handler dispatch
 //! - Markdown persistence via `EventToMarkdown`
 //!
-//! This is the Lua equivalent of `crucible_rune::Session`, but simpler
+//! This is the Lua equivalent of other session implementations, but simpler
 //! because it delegates more to core infrastructure.
 
 use crate::error::LuaError;

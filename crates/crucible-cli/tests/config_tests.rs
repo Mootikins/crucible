@@ -179,7 +179,7 @@ fn test_database_path_unique_per_process() {
     // But should contain the process ID for uniqueness
     let db_path = config1.database_path();
     let filename = db_path.file_name().unwrap().to_str().unwrap();
-    assert!(filename.starts_with("crucible-surreal-"));
+    assert!(filename.starts_with("crucible-"));
     assert!(filename.ends_with(".db"));
 
     // Cleanup
@@ -199,8 +199,7 @@ fn test_database_path_derivation() {
     config.kiln_path = kiln_path.clone();
 
     // Database path should be derived from kiln path (no test mode = standard name)
-    // Note: database_path() returns the SurrealDB path with "crucible-surreal.db" name
-    let expected_db_path = kiln_path.join(".crucible").join("crucible-surreal.db");
+    let expected_db_path = kiln_path.join(".crucible").join("crucible.db");
     assert_eq!(config.database_path(), expected_db_path);
 }
 

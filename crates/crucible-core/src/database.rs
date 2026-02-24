@@ -5,7 +5,7 @@
 //! - GraphDB: Graph operations with nodes, edges, and traversals
 //! - DocumentDB: Note operations with collections, search, and aggregations
 //!
-//! These traits allow the same underlying database (like SurrealDB) to be used
+//! These traits allow the same underlying database (like SQLite) to be used
 //! through different data access patterns, enabling evaluation of which model
 //! works best for different Crucible use cases.
 

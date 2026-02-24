@@ -1,6 +1,6 @@
 //! Factory Functions and Adapters for SQLite Backend
 //!
-//! Mirrors the SurrealDB adapters module for daemon compatibility.
+//! Storage adapters for daemon compatibility.
 
 use crate::connection::SqlitePool;
 use crate::note_store::SqliteNoteStore;
@@ -12,8 +12,6 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 /// Opaque handle to a SQLite client.
-///
-/// Mirrors SurrealClientHandle for daemon compatibility.
 #[derive(Clone)]
 pub struct SqliteClientHandle {
     pool: SqlitePool,
@@ -47,8 +45,6 @@ impl SqliteClientHandle {
     }
 
     /// Execute a SQL query and return results
-    ///
-    /// This mirrors SurrealClient::query() for daemon compatibility.
     pub async fn query(&self, sql: &str, _params: &[serde_json::Value]) -> Result<QueryResult> {
         use rusqlite::params_from_iter;
         use std::time::Instant;

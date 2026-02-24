@@ -8,7 +8,7 @@
 use anyhow::Result;
 use crucible_cli::config::CliConfig;
 use crucible_cli::factories::get_storage;
-use crucible_config::StorageMode;
+use crucible_config::StorageConfig;
 use crucible_daemon::Server;
 use crucible_rpc::lifecycle;
 use serial_test::serial;
@@ -64,19 +64,17 @@ impl TestServer {
     }
 }
 
-/// Create a test config with daemon mode
+/// Create a test config (daemon mode is always used)
 fn create_daemon_config(kiln_path: PathBuf) -> CliConfig {
     let mut config = CliConfig {
         kiln_path,
         ..Default::default()
     };
 
-    // Configure for daemon mode
-    config.storage = Some(crucible_config::StorageConfig {
-        mode: StorageMode::Daemon,
-        ..Default::default()
+    // StorageConfig only has idle_timeout_secs now — daemon is always used
+    config.storage = Some(StorageConfig {
+        idle_timeout_secs: 300,
     });
-
     config
 }
 
@@ -146,11 +144,7 @@ async fn test_storage_handle_mode_detection() {
     let storage = get_storage(&config).await.expect("get_storage failed");
 
     assert!(storage.is_daemon(), "Should report as daemon mode");
-    assert!(!storage.is_lightweight(), "Should not report as lightweight mode");
-    assert!(
-        storage.as_daemon_client().is_some(),
-        "as_daemon_client should return Some in daemon mode"
-    );
+    let _ = storage.as_daemon_client(); // Confirms we can access the inner client
 
     server.shutdown().await;
 }
@@ -172,12 +166,11 @@ async fn test_get_storage_fails_when_no_daemon() {
 
     // Short timeout so test doesn't hang
     config.storage = Some(crucible_config::StorageConfig {
-        mode: StorageMode::Daemon,
         idle_timeout_secs: 1,
     });
 
     // This should either:
-    // 1. Spawn cru-server daemon and connect (if binary available)
+    // 1. Spawn cru daemon serve and connect (if binary available)
     // 2. Fail with daemon connection error
     let result = get_storage(&config).await;
 

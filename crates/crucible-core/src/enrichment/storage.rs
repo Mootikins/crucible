@@ -9,12 +9,12 @@ use anyhow::Result;
 /// Trait for storing enriched notes
 ///
 /// This trait defines the contract for persisting enriched notes to storage.
-/// Implementations are provided in the infrastructure layer (crucible-surrealdb).
+/// Implementations are provided in storage backends (crucible-sqlite, crucible-lance).
 ///
 /// ## Dependency Inversion
 ///
 /// By defining this trait in the core domain layer, we ensure that:
-/// - High-level modules (pipeline) don't depend on low-level modules (surrealdb)
+/// - High-level modules (pipeline) don't depend on low-level modules (storage backends)
 /// - Both depend on abstractions (this trait)
 /// - Easy to swap implementations or add new storage backends
 ///

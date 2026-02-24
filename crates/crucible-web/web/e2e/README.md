@@ -19,7 +19,7 @@ End-to-end tests for the Crucible web interface using Playwright.
 3. Start the backend server:
    ```bash
    # From repo root
-   cargo run --bin cru-server
+   cargo run --bin cru -- daemon serve
    ```
 
 4. Build and serve the frontend:

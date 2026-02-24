@@ -1,13 +1,10 @@
 //! Target renderers for GraphIR.
 //!
 //! Renderers convert the backend-agnostic GraphIR into target-specific
-//! query strings (SurrealQL, SQLite SQL, etc.).
+//! query strings (SQLite SQL, etc.).
 
 mod sqlite;
-mod surreal;
-
 pub use sqlite::SqliteRenderer;
-pub use surreal::SurrealRenderer;
 
 use crate::error::RenderError;
 use crate::ir::GraphIR;

@@ -6,84 +6,60 @@ use tracing_subscriber::prelude::*; // For SubscriberExt trait
 
 use crucible_cli::{
     cli::{Cli, Commands},
-    commands, config, factories,
-    sync::SyncStatus,
+    commands, config,
 };
 
-/// Process files with change detection on startup
+/// Process files with change detection on startup via daemon RPC
 ///
-/// Uses the quick_sync_check to detect files needing processing,
-/// then processes them through the NotePipeline.
+/// Discovers files needing processing and sends them to the daemon.
 ///
 /// # Arguments
 ///
 /// * `config` - CLI configuration with kiln path and settings
-///
-/// # Returns
-///
-/// Success or an error describing what failed
 async fn process_files_with_change_detection(config: &crate::config::CliConfig) -> Result<()> {
-    // Step 1: Get storage handle (backend-agnostic)
-    let storage_handle = factories::get_storage(config).await?;
-    debug!("Created storage handle");
+    use crucible_rpc::DaemonClient;
+    use walkdir::WalkDir;
 
-    // Step 2: Get NoteStore for processing
-    let note_store = storage_handle
-        .note_store()
-        .ok_or_else(|| anyhow::anyhow!("Storage mode does not support NoteStore"))?;
-
-    // Step 3: Run quick sync check to find files needing processing
     let kiln_path = &config.kiln_path;
 
-    // For embedded SurrealDB mode, we can use the quick_sync_check
-    // For other modes, we skip this optimization and process all files
-    let sync_status = {
-        debug!("Skipping quick_sync_check, will process all files");
-        SyncStatus::all_new(kiln_path)?
-    };
+    // Discover markdown files
+    let files: Vec<std::path::PathBuf> = WalkDir::new(kiln_path)
+        .follow_links(false)
+        .into_iter()
+        .filter_entry(|e| {
+            let name = e.file_name().to_string_lossy();
+            name != ".crucible" && name != ".git" && name != ".obsidian" && name != "node_modules"
+        })
+        .filter_map(|e| e.ok())
+        .filter(|e| {
+            e.path().is_file()
+                && e.path().extension().and_then(|s| s.to_str()) == Some("md")
+        })
+        .map(|e| e.path().to_path_buf())
+        .collect();
 
-    debug!(
-        "Sync check complete: {} fresh, {} stale, {} new, {} deleted",
-        sync_status.fresh_count,
-        sync_status.stale_files.len(),
-        sync_status.new_files.len(),
-        sync_status.deleted_files.len()
-    );
-
-    // Step 4: Process files if needed
-    if sync_status.needs_processing() {
-        let pending = sync_status.pending_count();
-        info!("Processing {} files...", pending);
-
-        // Create pipeline for processing (backend-agnostic)
-        let pipeline = factories::create_pipeline(note_store, config, false).await?;
-
-        // Process each file
-        let files_to_process = sync_status.files_to_process();
-        let mut success_count = 0;
-        let mut failure_count = 0;
-
-        for file in files_to_process {
-            match pipeline.process(&file).await {
-                Ok(_) => {
-                    debug!("Successfully processed: {}", file.display());
-                    success_count += 1;
-                }
-                Err(e) => {
-                    warn!("Failed to process {}: {}", file.display(), e);
-                    failure_count += 1;
-                }
-            }
-        }
-
-        info!(
-            "File processing complete: {} succeeded, {} failed",
-            success_count, failure_count
-        );
-    } else {
-        debug!("No files need processing - all up to date");
+    if files.is_empty() {
+        debug!("No markdown files found to process");
+        return Ok(());
     }
 
+    info!("Processing {} files via daemon...", files.len());
+
+    // Send to daemon for processing
+    let client = DaemonClient::connect_or_start().await?;
+    match client.process_batch(kiln_path, &files).await {
+        Ok((processed, skipped, errors)) => {
+            info!(
+                "File processing complete: {} processed, {} skipped, {} errors",
+                processed,
+                skipped,
+                errors.len()
+            );
+        }
+        Err(e) => {
+            warn!("Daemon batch processing failed: {}", e);
+        }
+    }
     Ok(())
 }
 /// Parse log level string to LevelFilter
@@ -99,6 +75,15 @@ fn parse_log_level(level: &str) -> Option<LevelFilter> {
     }
 }
 
+
+/// Cleans up the standalone daemon socket on drop.
+struct SocketCleanup(std::path::PathBuf);
+impl Drop for SocketCleanup {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.0);
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     // Install ring as the rustls CryptoProvider before any TLS usage.
@@ -106,6 +91,33 @@ async fn main() -> Result<()> {
     let _ = rustls::crypto::ring::default_provider().install_default();
 
     let cli = Cli::parse();
+
+    // Standalone mode: spin up an in-process daemon on a unique temp socket.
+    // CRUCIBLE_SOCKET tells DaemonClient where to connect.
+    let _standalone_guard = if cli.standalone {
+        let pid = std::process::id();
+        let sock = std::path::PathBuf::from(format!("/tmp/crucible-standalone-{}.sock", pid));
+        let _ = std::fs::remove_file(&sock);
+        // SAFETY: set_var is called before any threads are spawned (pre-tokio-spawn).
+        // This will require unsafe{} in Rust 2024 edition — revisit when upgrading.
+        std::env::set_var("CRUCIBLE_SOCKET", &sock);
+        let server = crucible_daemon::Server::bind(&sock, None).await?;
+        info!("Standalone daemon listening on {:?}", sock);
+        tokio::spawn(async move {
+            if let Err(e) = server.run().await {
+                error!("Standalone daemon error: {}", e);
+            }
+        });
+        for _ in 0..50 {
+            if sock.exists() {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+        Some(SocketCleanup(sock))
+    } else {
+        None
+    };
 
     // Load configuration first (before logging) to get config file log level
     let config = config::CliConfig::load(
@@ -198,11 +210,6 @@ async fn main() -> Result<()> {
     if cli.verbose {
         config.log_config();
     }
-
-    // Note: Storage/Core initialization moved to individual commands that need it.
-    // Creating it here caused database lock conflicts as multiple commands would
-    // try to open the same RocksDB file. Each command now creates its own client
-    // when needed, and the Arc-wrapped SurrealClient ensures cheap cloning.
 
     // Process any pending files on startup using integrated blocking processing
     // Skip for REPL mode, chat (handles own processing), or when explicitly disabled
@@ -419,7 +426,6 @@ async fn main() -> Result<()> {
             .await?
         }
     }
-
 
     Ok(())
 }

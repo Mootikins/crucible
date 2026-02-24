@@ -2,7 +2,7 @@
 //!
 //! This module provides:
 //!
-//! - [`Handler`]: Async trait for event handlers (Rust, Rune, Lua)
+//! - [`Handler`]: Async trait for event handlers (Rust, Lua)
 //! - [`HandlerResult`]: Result enum controlling event flow
 //! - [`HandlerContext`]: Context passed through handler chain
 //!
@@ -14,7 +14,7 @@
 //! Reactor (core owns)
 //!    │
 //!    ├── Rust handlers (built-in)
-//!    ├── Rune handlers (script)
+//!    ├── Lua handlers (script)
 //!    └── Lua handlers (script)
 //!
 //! All handlers implement the same Handler trait and interleave
@@ -286,7 +286,7 @@ impl<E: std::fmt::Debug> std::fmt::Display for HandlerResult<E> {
 /// Async event handler trait.
 ///
 /// Handlers are registered with the Reactor and process events in dependency
-/// + priority order. They can be implemented in Rust, Rune, or Lua.
+/// + priority order. They can be implemented in Rust or Lua.
 ///
 /// # Identification
 ///
@@ -295,7 +295,7 @@ impl<E: std::fmt::Debug> std::fmt::Display for HandlerResult<E> {
 /// - Logging and debugging
 /// - Registration deduplication
 ///
-/// Naming convention: `"language:path:function"` (e.g., `"rune:auth.rn:check_perms"`)
+/// Naming convention: `"language:path:function"` (e.g., `"lua:auth.lua:check_perms"`
 ///
 /// # Dependencies
 ///
@@ -314,7 +314,7 @@ impl<E: std::fmt::Debug> std::fmt::Display for HandlerResult<E> {
 ///
 /// # Async Execution
 ///
-/// The `handle` method is async. For sync scripts (Rune, Lua), implementations
+/// The `handle` method is async. For sync scripts (Lua), implementations
 /// should use `tokio::task::spawn_blocking` to avoid blocking the reactor.
 #[async_trait]
 pub trait Handler: Send + Sync {

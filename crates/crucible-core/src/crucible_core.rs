@@ -5,7 +5,7 @@
 //!
 //! ## Architecture (Dependency Inversion)
 //! - Core defines traits (abstractions) in `traits/` module
-//! - Implementations (SurrealDB, Pulldown, etc.) implement these traits
+//! - Implementations (SQLite, Pulldown, etc.) implement these traits
 //! - Core receives trait objects via Builder pattern
 //! - CLI/REPL/Desktop construct implementations and pass to Core via builder
 //!

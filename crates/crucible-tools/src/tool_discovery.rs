@@ -14,7 +14,7 @@ pub struct DiscoverToolsParams {
     /// Optional search query to filter tools by name or description
     #[serde(default)]
     pub query: Option<String>,
-    /// Optional source filter: "builtin", "rune", "just", "upstream"
+    /// Optional source filter: "builtin", "lua", "just", "upstream"
     #[serde(default)]
     pub source: Option<String>,
     /// Maximum number of results to return (default: 50)
@@ -40,7 +40,7 @@ pub struct ToolInfo {
     pub name: String,
     /// Human-readable description of what the tool does
     pub description: String,
-    /// Source classification: "builtin", "rune", "just", or "upstream"
+    /// Source classification: "builtin", "lua", "just", or "upstream"
     pub source: String,
 }
 
@@ -51,7 +51,7 @@ pub struct ToolSchema {
     pub name: String,
     /// Human-readable description of what the tool does
     pub description: String,
-    /// Source classification: "builtin", "rune", "just", or "upstream"
+    /// Source classification: "builtin", "lua", "just", or "upstream"
     pub source: String,
     /// JSON Schema describing the tool's input parameters
     pub input_schema: serde_json::Value,
@@ -73,8 +73,8 @@ impl ToolDiscovery {
     }
 
     fn classify_source(name: &str) -> &'static str {
-        if name.starts_with("rune_") {
-            "rune"
+        if name.starts_with("lua_") {
+            "lua"
         } else if name.starts_with("just_") {
             "just"
         } else if name.contains("::") || name.starts_with("gh_") || name.starts_with("mcp_") {
@@ -190,7 +190,7 @@ mod tests {
     #[test]
     fn test_classify_source() {
         assert_eq!(ToolDiscovery::classify_source("read_note"), "builtin");
-        assert_eq!(ToolDiscovery::classify_source("rune_my_tool"), "rune");
+        assert_eq!(ToolDiscovery::classify_source("lua_my_tool"), "lua");
         assert_eq!(ToolDiscovery::classify_source("just_build"), "just");
         assert_eq!(
             ToolDiscovery::classify_source("gh_search_repos"),
@@ -202,7 +202,7 @@ mod tests {
     fn test_discover_tools_no_filter() {
         let tools = vec![
             make_tool("read_note", "Read a note"),
-            make_tool("rune_search", "Custom search"),
+            make_tool("lua_search", "Custom search"),
             make_tool("just_build", "Build project"),
         ];
 

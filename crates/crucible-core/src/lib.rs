@@ -43,7 +43,7 @@ pub use crucible_core::CrucibleCore;
 pub use discovery::{DiscoveryConfig, DiscoveryPaths};
 pub use interaction_context::{EventPushCallback, InteractionContext};
 
-// Re-export enrichment traits and types (implementations in crucible-enrichment crate)
+// Re-export enrichment traits and types (implementations in crucible-daemon::enrichment)
 pub use enrichment::{
     BlockEmbedding, CachedEmbedding, EmbeddingCache, EmbeddingProvider, EnrichedNote,
     EnrichedNoteStore, EnrichmentMetadata, EnrichmentService, InferredRelation, RelationType,

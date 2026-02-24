@@ -1,13 +1,13 @@
 //! Intermediate representation for graph queries.
 //!
 //! GraphIR is backend-agnostic and can be rendered to different targets
-//! (SurrealQL, DuckDB SQL, etc.).
+//! (SQLite SQL, DuckDB SQL, etc.).
 
 use serde::{Deserialize, Serialize};
 
 /// Intermediate representation for graph queries.
 ///
-/// Designed to be backend-agnostic (SurrealDB, DuckDB, etc.)
+/// Designed to be backend-agnostic (SQLite, DuckDB, etc.)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GraphIR {
     /// Starting point for the query

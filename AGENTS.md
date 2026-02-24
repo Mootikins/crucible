@@ -35,7 +35,7 @@
 | `crucible-config` | Configuration types and loading | `AppConfig`, provider configs |
 | `crucible-watch` | File system watching | Change detection |
 | `crucible-acp` | Agent Context Protocol | Protocol types |
-| `crucible-daemon` | Daemon server (cru-server); includes enrichment pipeline and note processing | `Server`, `SessionManager`, `AgentManager` |
+| `crucible-daemon` | Daemon server (library); includes enrichment pipeline and note processing | `Server`, `SessionManager`, `AgentManager` |
 | `crucible-rpc` | Daemon RPC client library | `DaemonClient`, `DaemonStorageClient` |
 | `crucible-observe` | Session logging and observability | `SessionWriter`, `SessionMetadata` |
 | `crucible-lance` | LanceDB vector storage backend | `LanceStore`, `LanceNoteStore` |
@@ -45,28 +45,27 @@
 
 ### Daemon Architecture
 
-Crucible uses a **separate daemon binary** (`cru-server`) for multi-session support:
+Crucible uses a **single `cru` binary** with a built-in daemon for multi-session support:
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│  CLI (cru)                    Daemon (cru-server)           │
+│  CLI (cru)                    Daemon (cru daemon serve)     │
 │  ┌─────────────┐              ┌──────────────────────────┐  │
 │  │ cru chat    │◄────────────►│ Unix Socket Server       │  │
 │  │ cru search  │   JSON-RPC   │ ($XDG_RUNTIME_DIR/       │  │
 │  │ cru process │              │  crucible.sock)          │  │
 │  └─────────────┘              │                          │  │
 │                               │ Managers:                │  │
-│  storage.mode = "embedded"    │ • KilnManager            │  │
-│  → Direct DB access           │ • SessionManager         │  │
+│  All storage via daemon RPC   │ • KilnManager            │  │
+│  → DaemonClient.connect()     │ • SessionManager         │  │
 │                               │ • AgentManager           │  │
-│  storage.mode = "daemon"      │ • SubscriptionManager    │  │
-│  → RPC to cru-server          └──────────────────────────┘  │
+│  Auto-spawn: cru daemon serve │ • SubscriptionManager    │  │
+│  (forks self as daemon)       └──────────────────────────┘  │
 └─────────────────────────────────────────────────────────────┘
 ```
-
 - **Socket path**: `$CRUCIBLE_SOCKET` env var, or `$XDG_RUNTIME_DIR/crucible.sock`, or `/tmp/crucible.sock`
-- **Storage modes**: `embedded` (default, direct DB), `daemon` (RPC to cru-server), `sqlite`, `lightweight`
-- **Auto-spawn**: `DaemonClient::connect_or_start()` spawns `cru-server` if not running
+- **Storage**: Daemon-only (SQLite + LanceDB). CLI has zero direct storage access.
+- **Auto-spawn**: `DaemonClient::connect_or_start()` forks `cru daemon serve` if not running
 - **Protocol**: JSON-RPC 2.0 over Unix socket with async event streaming
 
 **RPC methods:**
@@ -100,7 +99,7 @@ When implementing features that affect agent/session behavior (not just UI displ
 
 **Validation:**
 - [ ] RPC field names match between client and server (common bug: `"budget"` vs `"thinking_budget"`)
-- [ ] Test with daemon running (`cru-server`)
+- [ ] Test with daemon running (`cru daemon serve`)
 - [ ] `session.get_*` returns what `session.set_*` stored
 - [ ] State persists across TUI restart (resume session)
 
@@ -216,7 +215,7 @@ crucible/
 │   ├── crucible-oil/            # Terminal rendering primitives
 │   ├── crucible-web/            # Browser-based chat UI
 │   ├── crucible-tools/          # MCP server and tools
-│   ├── crucible-daemon/         # Daemon server (cru-server)
+│   ├── crucible-daemon/         # Daemon server (library)
 │   ├── crucible-rpc/            # Daemon RPC client library
 │   ├── crucible-observe/        # Session logging and observability
 │   ├── crucible-sqlite/         # SQLite storage (default)

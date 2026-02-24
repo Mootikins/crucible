@@ -19,7 +19,7 @@ pub struct EnrichedNote {
     pub parsed: crate::parser::ParsedNote,
 
     /// Merkle tree computed from AST (for future change detection)
-    // merkle_tree moved to infrastructure layer (crucible-enrichment) to avoid circular deps
+    // merkle_tree moved to crucible-daemon::enrichment to avoid circular deps
 
     /// Vector embeddings for blocks (only changed blocks)
     pub embeddings: Vec<BlockEmbedding>,
@@ -35,7 +35,7 @@ impl EnrichedNote {
     /// Create a new enriched note
     pub fn new(
         parsed: crate::parser::ParsedNote,
-        // merkle_tree: moved to EnrichedNoteWithTree in crucible-enrichment
+        // merkle_tree: moved to EnrichedNoteWithTree in crucible-daemon::enrichment
         embeddings: Vec<BlockEmbedding>,
         metadata: EnrichmentMetadata,
         inferred_relations: Vec<InferredRelation>,

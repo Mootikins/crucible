@@ -55,6 +55,12 @@ pub struct PollingWatcher {
 
 
 
+impl Default for PollingWatcher {
+    fn default() -> Self {
+        Self::with_interval(Duration::from_secs(1))
+    }
+}
+
 impl PollingWatcher {
     /// Create a new polling watcher.
     pub fn new() -> Self {

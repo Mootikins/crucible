@@ -23,12 +23,16 @@ pub enum DaemonCommands {
     Stop,
     /// Check daemon status
     Status,
+    /// Internal: run as foreground daemon (used by auto-spawn)
+    #[command(hide = true)]
+    Serve,
 }
 
 pub async fn handle(cmd: DaemonCommands) -> Result<()> {
     match cmd {
         DaemonCommands::Start { foreground, wait } => start_daemon(foreground, wait).await,
         DaemonCommands::Stop => stop_daemon().await,
+        DaemonCommands::Serve => start_daemon(true, false).await,
         DaemonCommands::Status => show_status().await,
     }
 }
@@ -147,47 +151,9 @@ async fn show_status() -> Result<()> {
     Ok(())
 }
 
-/// Ensure daemon is running, starting it if necessary
-pub async fn ensure_daemon() -> Result<DaemonClient> {
-    let sock = socket_path();
-    if !is_daemon_running(&sock) {
-        // Start daemon in background and wait for it to be ready
-        start_daemon(false, true).await?;
-    }
-
-    // Connect with retry
-    for attempt in 0..10 {
-        match DaemonClient::connect().await {
-            Ok(client) => return Ok(client),
-            Err(_) if attempt < 9 => {
-                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-            }
-            Err(e) => return Err(e),
-        }
-    }
-
-    anyhow::bail!("Failed to connect to daemon after starting")
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_daemon_commands_parse() {
-        // Basic smoke test that the commands are defined correctly
-        // Actual integration tests would need a running daemon
-    }
-
-    #[test]
-    fn test_daemon_commands_start_default() {
-        let cmd = DaemonCommands::Start {
-            foreground: false,
-            wait: false,
-        };
-        matches!(cmd, DaemonCommands::Start { .. });
-    }
-
     #[test]
     fn test_daemon_commands_start_foreground() {
         let cmd = DaemonCommands::Start {
@@ -214,18 +180,6 @@ mod tests {
         } else {
             panic!("Expected Start variant");
         }
-    }
-
-    #[test]
-    fn test_daemon_commands_stop() {
-        let cmd = DaemonCommands::Stop;
-        matches!(cmd, DaemonCommands::Stop);
-    }
-
-    #[test]
-    fn test_daemon_commands_status() {
-        let cmd = DaemonCommands::Status;
-        matches!(cmd, DaemonCommands::Status);
     }
 
     #[test]

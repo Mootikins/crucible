@@ -3,7 +3,7 @@
 //!
 //! This handler emits `SessionEvent` variants (FileChanged, FileDeleted, FileMoved)
 //! to the event bus. Embedding generation is handled downstream by `EmbeddingHandler`
-//! in `crucible-enrichment` which listens for `NoteParsed` events.
+//! in `crucible-daemon::enrichment` which listens for `NoteParsed` events.
 
 #![allow(clippy::ptr_arg)]
 
@@ -67,7 +67,7 @@ impl IndexingHandler {
     /// Initialize the database connection (Phase 4 placeholder).
     pub async fn initialize_database(&self, _db_path: &str) -> Result<()> {
         info!("Database initialization will be implemented in Phase 4");
-        // Phase 4: Initialize SurrealDB connection here
+        // Phase 4: Initialize storage connection here
         Ok(())
     }
 

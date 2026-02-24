@@ -7,16 +7,16 @@
 //! The pipeline coordinates four phases:
 //! 1. **Quick Filter**: Check file state (date modified + BLAKE3 hash) to skip unchanged files
 //! 2. **Parse**: Transform markdown to AST using crucible-parser
-//! 3. **Enrich**: Generate embeddings and metadata using crucible-enrichment
+//! 3. **Enrich**: Generate embeddings and metadata using the enrichment module
 //! 4. **Store**: Persist all changes using storage layer
 //!
 //! ## Clear Separation of Concerns
 //!
 //! Infrastructure crates (DO NOT orchestrate):
 //! - `crucible-parser`: Just parses markdown to AST
-//! - `crucible-enrichment`: Just provides enrichment services
+//! - `enrichment module`: Provides enrichment services
 //! - `crucible-llm`: Just provides embedding generation
-//! - `crucible-surrealdb`: Just provides storage operations
+//! - `storage backends`: Provide storage operations
 //!
 //! This module (pipeline):
 //! - Coordinates all four phases in the right order
@@ -30,4 +30,4 @@ pub mod note_pipeline;
 pub use note_pipeline::{NotePipeline, NotePipelineConfig, ParserBackend};
 
 // Re-export core types for convenience (defined in crucible-core)
-pub use crucible_core::processing::{NotePipelineOrchestrator, PipelineMetrics, ProcessingResult};
+pub use crucible_core::processing::ProcessingResult;

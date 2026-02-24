@@ -726,7 +726,7 @@ async fn handle_legacy_request(
         "note.delete" => handle_note_delete(req, kiln_manager).await,
         "note.list" => handle_note_list(req, kiln_manager).await,
         "process_file" => handle_process_file(req, kiln_manager).await,
-        "process_batch" => handle_process_batch(req, kiln_manager).await,
+        "process_batch" => handle_process_batch(req, kiln_manager, event_tx).await,
         "session.create" => {
             handle_session_create(req, session_manager, project_manager, llm_config).await
         }
@@ -780,6 +780,11 @@ async fn handle_legacy_request(
         "project.unregister" => handle_project_unregister(req, project_manager).await,
         "project.list" => handle_project_list(req, project_manager).await,
         "project.get" => handle_project_get(req, project_manager).await,
+        "storage.verify" => handle_storage_verify(req).await,
+        "storage.cleanup" => handle_storage_cleanup(req).await,
+        "storage.backup" => handle_storage_backup(req).await,
+        "storage.restore" => handle_storage_restore(req).await,
+        "session.search" => handle_session_search(req, session_manager).await,
         _ => {
             tracing::warn!("Unknown RPC method: {:?}", req.method);
             Response::error(
@@ -1154,30 +1159,94 @@ async fn handle_process_file(req: Request, km: &Arc<KilnManager>) -> Response {
     }
 }
 
-async fn handle_process_batch(req: Request, km: &Arc<KilnManager>) -> Response {
+async fn handle_process_batch(
+    req: Request,
+    km: &Arc<KilnManager>,
+    event_tx: &broadcast::Sender<SessionEventMessage>,
+) -> Response {
     let kiln_path = require_str_param!(req, "kiln");
     let paths_arr = require_array_param!(req, "paths");
     let paths: Vec<std::path::PathBuf> = paths_arr
         .iter()
         .filter_map(|v: &serde_json::Value| v.as_str().map(std::path::PathBuf::from))
         .collect();
-
+    // Emit start event
+    let _ = event_tx.send(SessionEventMessage::new(
+        "process",
+        "process_start",
+        serde_json::json!({ "total": paths.len(), "kiln": kiln_path }),
+    ));
     match km.process_batch(Path::new(kiln_path), &paths).await {
-        Ok((processed, skipped, errors)) => Response::success(
-            req.id,
-            serde_json::json!({
-                "processed": processed,
-                "skipped": skipped,
-                "errors": errors.iter().map(|(p, _)| {
+        Ok((processed, skipped, errors)) => {
+            // Emit error events per failed file
+            for (path, _) in &errors {
+                let _ = event_tx.send(SessionEventMessage::new(
+                    "process",
+                    "process_progress",
                     serde_json::json!({
-                        "path": p.to_string_lossy(),
-                        "error": "processing failed"
-                    })
-                }).collect::<Vec<_>>()
-            }),
-        ),
+                        "file": path.to_string_lossy(),
+                        "result": "error"
+                    }),
+                ));
+            }
+            // Emit completion event
+            let _ = event_tx.send(SessionEventMessage::new(
+                "process",
+                "process_complete",
+                serde_json::json!({
+                    "processed": processed,
+                    "skipped": skipped,
+                    "errors": errors.len()
+                }),
+            ));
+            Response::success(
+                req.id,
+                serde_json::json!({
+                    "processed": processed,
+                    "skipped": skipped,
+                    "errors": errors.iter().map(|(p, _)| {
+                        serde_json::json!({
+                            "path": p.to_string_lossy(),
+                            "error": "processing failed"
+                        })
+                    }).collect::<Vec<_>>()
+                }),
+            )
+        }
         Err(e) => internal_error(req.id, e),
     }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Storage maintenance RPC stubs
+// ─────────────────────────────────────────────────────────────────────────────
+
+async fn handle_storage_verify(req: Request) -> Response {
+    Response::success(req.id, serde_json::json!({
+        "status": "not_implemented",
+        "message": "Storage verification is not yet implemented. Use `cru process --force` to rebuild storage."
+    }))
+}
+
+async fn handle_storage_cleanup(req: Request) -> Response {
+    Response::success(req.id, serde_json::json!({
+        "status": "not_implemented",
+        "message": "Storage cleanup is not yet implemented."
+    }))
+}
+
+async fn handle_storage_backup(req: Request) -> Response {
+    Response::success(req.id, serde_json::json!({
+        "status": "not_implemented",
+        "message": "Storage backup is not yet implemented. Copy the .crucible directory directly for backup."
+    }))
+}
+
+async fn handle_storage_restore(req: Request) -> Response {
+    Response::success(req.id, serde_json::json!({
+        "status": "not_implemented",
+        "message": "Storage restore is not yet implemented."
+    }))
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1382,6 +1451,102 @@ async fn handle_session_list(req: Request, sm: &Arc<SessionManager>) -> Response
             "total": sessions_json.len(),
         }),
     )
+}
+
+async fn handle_session_search(req: Request, sm: &Arc<SessionManager>) -> Response {
+    let query = require_str_param!(req, "query");
+    let kiln = optional_str_param!(req, "kiln").map(PathBuf::from);
+    let limit = optional_u64_param!(req, "limit").unwrap_or(20) as usize;
+
+    // Determine sessions directory
+    let sessions_path = if let Some(kiln_path) = kiln {
+        kiln_path.join(".crucible").join("sessions")
+    } else {
+        return Response::success(req.id, serde_json::json!({
+            "matches": [],
+            "total": 0,
+            "note": "Specify 'kiln' parameter to search sessions"
+        }));
+    };
+
+    if !sessions_path.exists() {
+        return Response::success(req.id, serde_json::json!({
+            "matches": [],
+            "total": 0
+        }));
+    }
+
+    let query_lower = query.to_lowercase();
+    let mut matches = Vec::new();
+
+    let read_dir = match tokio::fs::read_dir(&sessions_path).await {
+        Ok(rd) => rd,
+        Err(e) => return internal_error(req.id, anyhow::anyhow!("Failed to read sessions dir: {}", e)),
+    };
+
+    let mut rd = read_dir;
+    while let Ok(Some(entry)) = rd.next_entry().await {
+        if matches.len() >= limit {
+            break;
+        }
+        let session_dir = entry.path();
+        if !session_dir.is_dir() {
+            continue;
+        }
+        let session_id = session_dir
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("")
+            .to_string();
+        let jsonl_path = session_dir.join("session.jsonl");
+        if !jsonl_path.exists() {
+            continue;
+        }
+        let content = match tokio::fs::read_to_string(&jsonl_path).await {
+            Ok(c) => c,
+            Err(_) => continue,
+        };
+        for (line_num, line) in content.lines().enumerate() {
+            if line.to_lowercase().contains(&query_lower) {
+                let truncated = if line.len() > 100 {
+                    format!("{}...", &line[..100])
+                } else {
+                    line.to_string()
+                };
+                matches.push(serde_json::json!({
+                    "session_id": session_id,
+                    "line": line_num + 1,
+                    "context": truncated
+                }));
+                break;
+            }
+        }
+    }
+
+    // Also include active sessions matching by title
+    let active_sessions = sm.list_sessions_filtered_async(None, None, None, None).await;
+    for session in &active_sessions {
+        if matches.len() >= limit {
+            break;
+        }
+        if let Some(title) = &session.title {
+            if title.to_lowercase().contains(&query_lower)
+                && !matches.iter().any(|m| m["session_id"] == session.id.as_str())
+            {
+                matches.push(serde_json::json!({
+                    "session_id": session.id,
+                    "line": 0,
+                    "context": format!("[active] {}", title)
+                }));
+            }
+        }
+    }
+
+    let total = matches.len();
+    Response::success(req.id, serde_json::json!({
+        "matches": matches,
+        "total": total
+    }))
 }
 
 async fn handle_session_get(req: Request, sm: &Arc<SessionManager>) -> Response {

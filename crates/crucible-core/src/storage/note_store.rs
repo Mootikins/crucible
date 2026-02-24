@@ -304,7 +304,7 @@ impl Filter {
 /// Storage index over plaintext files
 ///
 /// This trait defines the interface for storing and querying note metadata.
-/// Implementations may use SurrealDB, SQLite, or any other backing store.
+/// Implementations may use SQLite or any other backing store.
 ///
 /// # Thread Safety
 ///

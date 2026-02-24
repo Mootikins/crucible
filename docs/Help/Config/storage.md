@@ -22,16 +22,15 @@ Data is stored in:
 
 ```toml
 [storage]
-# Storage mode: "sqlite" (default), "embedded", "daemon", or "lightweight"
+# Storage mode: "sqlite" (default), "daemon", or "lightweight"
 mode = "sqlite"
 ```
 
 | Mode | Description | Use Case |
 |------|-------------|----------|
 | `sqlite` | SQLite database (default) | Most users, single-user |
-| `embedded` | Embedded SurrealDB | Advanced graph queries |
 | `daemon` | Connect to crucible-daemon | Multi-client, cloud |
-| `lightweight` | Minimal mode | Testing, CI |
+| `lightweight` | Minimal mode with LanceDB | Testing, CI |
 
 ## SQLite (Default)
 
@@ -42,22 +41,9 @@ No configuration needed - just works:
 mode = "sqlite"
 ```
 
-## SurrealDB (Alternative)
+## Daemon Mode
 
-For advanced use cases like cloud deployment or multi-tenant:
-
-```toml
-[storage]
-mode = "embedded"  # Or "daemon" for remote
-
-# SurrealDB-specific options
-namespace = "crucible"
-database = "kiln"
-```
-
-### Daemon Mode
-
-Connect to a running `cru-server` daemon:
+Connect to the daemon for multi-client support (auto-started on first use):
 
 ```toml
 [storage]

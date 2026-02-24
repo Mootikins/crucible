@@ -49,9 +49,6 @@ serde_yaml = "0.9"
 uuid = { version = "1.19", features = ["v4", "serde"] }
 anyhow = "1.0"
 thiserror = "2.0.17"
-# Rune (commented out - not needed for MVP)
-# rune = "0.14"
-# tauri = { version = "2.0", features = [] }  # Removed for CLI MVP - GUI not needed
 regex = "1.12"
 glob = "0.3"
 chrono = { version = "0.4", features = ["serde"] }
@@ -69,17 +66,11 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "rus
 urlencoding = "2.1"
 
 # Vector operations
-ndarray = "0.17"
 
 # Binary serialization
-bincode = "2.0"
 
 # JSON Schema validation
-jsonschema = "0.33"
 schemars = "1.2"
-
-# Rune scripting language
-# rune-modules = "0.14"
 
 # Configuration management
 config = "0.15"
@@ -103,11 +94,8 @@ toml = "0.9"
 futures-util = "0.3"
 tokio-stream = "0.1"
 tokio-tungstenite = { version = "0.26", features = ["rustls-tls-webpki-roots"] }
-hostname = "0.4"
 
 # Metrics and monitoring
-metrics = "0.24"
-metrics-exporter-prometheus = "0.15"
 
 # Web framework for health checks
 axum = "0.8"
@@ -119,10 +107,8 @@ rmcp = { version = "0.13", features = ["macros", "server"] }
 # Testing utilities
 criterion = { version = "0.8", features = ["html_reports"] }
 proptest = "1.8"
-trybuild = "1.0"
 tokio-test = "0.4"
 mockito = "1.7"
-tracing-test = "0.2"
 expectrl = "0.8"
 assert_cmd = "2.1"
 predicates = "3.1"
@@ -135,15 +121,12 @@ test-case = "3.3"
 comfy-table = "7"
 
 # Procedural macro dependencies
-proc-macro2 = "1.0"
-quote = "1.0"
 syn = { version = "2.0", features = ["full"] }
 
 # Additional utilities for event system
 base64 = "0.22"
 
 # Additional dependencies
-rustc_version = "0.4"
 clap = { version = "4.5", features = ["derive"] }
 colored = "3.0"
 
@@ -151,13 +134,8 @@ colored = "3.0"
 indicatif = "0.18"
 dirs = "6.0"
 mlua = { version = "0.11", features = ["vendored", "lua54"] }
-csv = "1.4"
-nu-ansi-term = "0.50"
 crossterm = { version = "0.29", features = ["event-stream"] }
-# reedline removed - event architecture cleanup
-# ratatui removed - event architecture cleanup
 
-# Fuzzy search removed - was for TUI completion
 
 # Internal workspace crates
 crucible-core = { path = "crates/crucible-core" }

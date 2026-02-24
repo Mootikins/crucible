@@ -13,7 +13,7 @@ use anyhow::Result;
 ///
 /// This trait defines the contract for enriching parsed notes with embeddings,
 /// metadata, and inferred relations. Implementations are provided in the
-/// infrastructure layer (crucible-enrichment crate).
+/// infrastructure layer (crucible-daemon::enrichment).
 ///
 /// ## Dependency Inversion
 ///
@@ -72,7 +72,7 @@ pub trait EnrichmentService: Send + Sync {
     async fn enrich_with_tree(
         &self,
         parsed: ParsedNote,
-        // merkle_tree: see EnrichedNoteWithTree in crucible-enrichment
+        // merkle_tree: see EnrichedNoteWithTree in crucible-daemon::enrichment
         changed_block_ids: Vec<String>,
     ) -> Result<EnrichedNote>;
 

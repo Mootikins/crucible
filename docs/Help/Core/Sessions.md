@@ -16,16 +16,16 @@ A session is a continuous sequence of events — a conversation with an AI agent
 Sessions follow Crucible's "plaintext first" philosophy:
 
 - **Markdown is truth** — Each session saves as a markdown file
-- **Daemon manages state** — `cru-server` tracks active sessions via RPC
+- **Daemon manages state** — the daemon tracks active sessions via RPC
 - **Resume on restart** — Load previous sessions with `cru session load`
 
 ### Daemon Integration
 
-Sessions are managed by the daemon (`cru-server`):
+Sessions are managed by the daemon (`cru daemon serve`):
 
 ```
 ┌─────────────────┐         ┌─────────────────────┐
-│ cru chat        │◄───────►│ cru-server          │
+│ cru chat        │◄───────►│ cru daemon serve    │
 │                 │ JSON-RPC│                     │
 │ TUI/CLI client  │         │ SessionManager      │
 │                 │         │ AgentManager        │

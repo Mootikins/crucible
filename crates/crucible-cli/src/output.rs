@@ -163,7 +163,7 @@ pub fn warning(message: &str) {
 /// Show a warning about degraded functionality in lightweight storage mode
 ///
 /// Displays a yellow warning message to stderr that clearly indicates the feature
-/// requires full storage mode (SurrealDB). The message always includes "storage"
+/// requires full storage mode. The message always includes "storage"
 /// to clarify the cause.
 ///
 /// # Example
@@ -171,7 +171,7 @@ pub fn warning(message: &str) {
 /// ```rust
 /// use crucible_cli::output::storage_warning;
 ///
-/// // When lightweight mode can't fulfill a request
+/// // When a feature requires the daemon
 /// storage_warning("SQL queries");
 /// // Prints: ⚠ SQL queries requires full storage mode
 /// ```
