@@ -208,11 +208,19 @@ impl AgentHandle for AcpAgentHandle {
 
         let client_arc = Arc::clone(&self.client);
         let client_opt = {
-            // SAFETY: &mut self prevents concurrent calls at compile time,
+            // &mut self prevents concurrent calls at compile time,
             // so this lock is never contended during normal operation.
-            let mut guard = client_arc.try_lock().expect(
-                "AcpAgentHandle: concurrent send_message_stream (should not happen with &mut self)",
-            );
+            let mut guard = match client_arc.try_lock() {
+                Ok(g) => g,
+                Err(_) => {
+                    return Box::pin(futures::stream::once(async {
+                        Err(ChatError::AgentUnavailable(
+                            "ACP client lock contention (concurrent send_message_stream)"
+                                .to_string(),
+                        ))
+                    }));
+                }
+            };
             guard.take()
         };
 

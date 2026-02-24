@@ -174,10 +174,13 @@ pub(crate) struct SessionEventState {
     pub(crate) reactor: Reactor,
 }
 
-
 /// Discover Lua handler files and register them with the Reactor.
 /// Logs warnings on discovery/conversion failures, returns silently on empty dirs.
-fn discover_and_register_lua_handlers(reactor: &mut Reactor, kiln_path: &std::path::Path, session_id: &str) {
+fn discover_and_register_lua_handlers(
+    reactor: &mut Reactor,
+    kiln_path: &std::path::Path,
+    session_id: &str,
+) {
     let paths = DiscoveryPaths::new("handlers", Some(kiln_path));
     let existing = paths.existing_paths();
     if existing.is_empty() {
@@ -450,18 +453,26 @@ impl AgentManager {
         let permission_hooks = Arc::new(StdMutex::new(Vec::new()));
         let permission_functions = Arc::new(StdMutex::new(HashMap::new()));
 
-        register_crucible_on_api(
+        if let Err(e) = register_crucible_on_api(
             &lua,
             registry.runtime_handlers(),
             registry.handler_functions(),
-        )
-        .expect("Failed to register crucible.on API");
+        ) {
+            error!(session_id = %session_id, error = %e, "Failed to register crucible.on API");
+        }
 
-        register_permission_hook_api(&lua, permission_hooks.clone(), permission_functions.clone())
-            .expect("Failed to register crucible.permissions API");
+        if let Err(e) =
+            register_permission_hook_api(&lua, permission_hooks.clone(), permission_functions.clone())
+        {
+            error!(session_id = %session_id, error = %e, "Failed to register crucible.permissions API");
+        }
 
         let mut reactor = Reactor::new();
-        if let Some(kiln_path) = self.session_manager.get_session(session_id).map(|s| s.kiln.clone()) {
+        if let Some(kiln_path) = self
+            .session_manager
+            .get_session(session_id)
+            .map(|s| s.kiln.clone())
+        {
             discover_and_register_lua_handlers(&mut reactor, &kiln_path, session_id);
         }
 
@@ -546,14 +557,17 @@ impl AgentManager {
             None => return original_content.to_string(),
         };
 
-        let embedding_provider =
-            match crate::embedding::get_or_create_embedding_provider(&primary_config).await {
-                Ok(p) => p,
-                Err(error) => {
-                    warn!(session_id = %session_id, error = %error, "Failed to create embedding provider for precognition");
-                    return original_content.to_string();
-                }
-            };
+        let embedding_provider = match crate::embedding::get_or_create_embedding_provider(
+            &primary_config,
+        )
+        .await
+        {
+            Ok(p) => p,
+            Err(error) => {
+                warn!(session_id = %session_id, error = %error, "Failed to create embedding provider for precognition");
+                return original_content.to_string();
+            }
+        };
 
         let query_embedding = match embedding_provider.embed(original_content).await {
             Ok(e) => e,
@@ -1234,7 +1248,10 @@ impl AgentManager {
                                 } else {
                                     // Check Lua permission hooks (with 1-second timeout)
                                     let hook_result = Self::execute_permission_hooks_with_timeout(
-                                        &session_state, &tc.name, &args, session_id,
+                                        &session_state,
+                                        &tc.name,
+                                        &args,
+                                        session_id,
                                     )
                                     .await;
 
@@ -2402,7 +2419,10 @@ mod tests {
 
     #[async_trait::async_trait]
     impl AgentHandle for PromptCapturingAgent {
-        fn send_message_stream(&mut self, content: String) -> BoxStream<'static, ChatResult<ChatChunk>> {
+        fn send_message_stream(
+            &mut self,
+            content: String,
+        ) -> BoxStream<'static, ChatResult<ChatChunk>> {
             *self.received_prompt.lock().unwrap() = Some(content);
             let chunks = self.chunks.clone();
             futures::stream::iter(chunks.into_iter().map(Ok)).boxed()
@@ -2564,7 +2584,13 @@ mod tests {
             let storage = Arc::new(FileSessionStorage::new());
             let session_manager = Arc::new(SessionManager::with_storage(storage));
             let session = session_manager
-                .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![], None)
+                .create_session(
+                    SessionType::Chat,
+                    tmp.path().to_path_buf(),
+                    None,
+                    vec![],
+                    None,
+                )
                 .await
                 .unwrap();
             let agent_manager = create_test_agent_manager(session_manager.clone());
@@ -2583,7 +2609,9 @@ mod tests {
         }
 
         async fn register_handler(&self, handler: MockHandler) {
-            let session_state = self.agent_manager.get_or_create_session_state(&self.session_id);
+            let session_state = self
+                .agent_manager
+                .get_or_create_session_state(&self.session_id);
             session_state
                 .lock()
                 .await
@@ -2611,7 +2639,7 @@ mod tests {
             self.agent_manager.agent_cache.insert(
                 self.session_id.clone(),
                 Arc::new(Mutex::new(
-                    Box::new(StreamingMockAgent { chunks }) as BoxedAgentHandle,
+                    Box::new(StreamingMockAgent { chunks }) as BoxedAgentHandle
                 )),
             );
         }
@@ -2750,7 +2778,10 @@ mod tests {
         let ended = h.wait_for("ended").await;
 
         assert_eq!(call_count.load(std::sync::atomic::Ordering::SeqCst), 1);
-        assert!(ended.data["reason"].as_str().unwrap_or_default().contains("cancelled by handler"));
+        assert!(ended.data["reason"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("cancelled by handler"));
         let prompt = received_prompt.lock().unwrap();
         assert!(prompt.is_none());
     }
@@ -3576,14 +3607,6 @@ mod tests {
         let _ = next_event_or_skip(&mut event_rx, "user_message").await;
         assert_no_event_until_message_complete(&mut event_rx, "precognition_complete").await;
     }
-
-    
-
-    
-
-    
-
-    
 
     #[tokio::test]
     async fn test_precognition_complete_event_emitted_when_enrichment_runs() {
