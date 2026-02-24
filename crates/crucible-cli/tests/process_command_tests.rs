@@ -66,7 +66,7 @@ fn create_test_config(kiln_path: PathBuf, _db_path: PathBuf) -> CliConfig {
         processing: ProcessingConfig::default(),
         context: None,
         storage: Some(StorageConfig {
-            mode: StorageMode::Embedded,
+            mode: StorageMode::Sqlite,
             idle_timeout_secs: 300,
         }),
         mcp: None,
