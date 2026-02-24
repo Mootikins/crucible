@@ -53,14 +53,14 @@ A knowledge management system where:
 
 ## Knowledge Discovery
 
-- [x] **Semantic Search** `P0` — Vector similarity search with reranking · [[Help/Concepts/Semantic Search]] · `crucible-surrealdb`, `crucible-llm`
-- [x] **Full-text Search** `P0` — Fast text search across all notes · [[Help/CLI/search]] · `crucible-surrealdb`
-- [x] **Knowledge Graph** `P0` — Wikilink-based graph structure and traversal · [[Help/Concepts/The Knowledge Graph]] · `crucible-surrealdb`
+- [x] **Semantic Search** `P0` — Vector similarity search with reranking · [[Help/Concepts/Semantic Search]] · `crucible-sqlite`, `crucible-llm`
+- [x] **Full-text Search** `P0` — Fast text search across all notes · [[Help/CLI/search]] · `crucible-sqlite`
+- [x] **Knowledge Graph** `P0` — Wikilink-based graph structure and traversal · [[Help/Concepts/The Knowledge Graph]] · `crucible-sqlite`
 - [x] **Query System** `P0` — Structured note queries with composable pipeline · [[Help/Query/Query System]] · `crucible-query`
 - [x] **Property Search** `P0` — Search notes by frontmatter properties and tags · `crucible-tools`
-- [x] **Document Clustering** `P0` — Heuristic clustering and MoC detection · `crucible-surrealdb`
-- [ ] **K-Means Clustering** `P2` — K-means implementation (placeholder stub, needs ndarray or similar) · `crucible-surrealdb`
-- [x] **Block-level Embeddings** `P0` — Paragraph-granularity semantic indexing · `crucible-llm`, `crucible-surrealdb`
+- [x] **Document Clustering** `P0` — Heuristic clustering and MoC detection · `crucible-sqlite`
+- [ ] **K-Means Clustering** `P2` — K-means implementation (placeholder stub, needs ndarray or similar) · `crucible-sqlite`
+- [x] **Block-level Embeddings** `P0` — Paragraph-granularity semantic indexing · `crucible-llm`, `crucible-sqlite`
 - [x] **Session Search** `P0` — Past conversations indexed and searchable via session indexing pipeline; `cru session reindex` for batch processing · `crucible-observe`, `crucible-cli`
 
 ## Agent Learning & Memory
@@ -107,7 +107,7 @@ A knowledge management system where:
 - [x] **Subagent Spawning** `P0` — Background job manager for parallel subagent tasks with cancellation · `crucible-daemon`
 
 ### Context & Knowledge
-- [x] **Context Enrichment** `P0` — Inject kiln context into agent conversations · `crucible-context`, `crucible-enrichment`
+- [x] **Context Enrichment** `P0` — Inject kiln context into agent conversations · `crucible-daemon`
 - [x] **File Attachment** `P0` — `@file` context attachment in chat · `crucible-cli`
 - [x] **Rules Files** `P0` — Project-level AI instructions (`.crucible/rules`) · [[Help/Rules Files]] · `crucible-config`
 
@@ -399,13 +399,13 @@ HTTP Gateway (crucible-web wired to daemon)
 ## Storage & Processing
 
 - [x] **SQLite Backend** `P0` — Default storage; fast, lightweight, recommended for most users · [[Help/Config/storage]] · `crucible-sqlite`
-- [x] **SurrealDB Backend** `P0` — Advanced storage with EAV graph and RocksDB engine; richer queries, higher memory · [[Help/Config/storage]] · `crucible-surrealdb`
+- [x] **SurrealDB Backend** `P0` — Advanced storage with EAV graph and RocksDB engine; richer queries, higher memory · [[Help/Config/storage]] · _(removed)_
 - [x] **Vector Embeddings** `P0` — FastEmbed (ONNX) local embedding generation · [[Help/Config/embedding]] · `crucible-llm`
-- [x] **Embedding Reranking** `P0` — Search result reranking for relevance · `crucible-surrealdb`
-- [x] **File Processing** `P0` — Parse, enrich, and index notes via pipeline · [[Help/CLI/process]] · `crucible-pipeline`, `crucible-enrichment`
-- [x] **Transaction Queue** `P0` — Batched database operations with consistency · `crucible-surrealdb`
+- [x] **Embedding Reranking** `P0` — Search result reranking for relevance · `crucible-sqlite`
+- [x] **File Processing** `P0` — Parse, enrich, and index notes via pipeline · [[Help/CLI/process]] · `crucible-daemon`
+- [x] **Transaction Queue** `P0` — Batched database operations with consistency · `crucible-sqlite`
 - [x] **Hash-based Change Detection** `P0` — Content-addressable block hashing · `crucible-core`
-- [x] **Task Storage** `P0` — Task records, history, dependencies, file associations · `crucible-surrealdb`
+- [x] **Task Storage** `P0` — Task records, history, dependencies, file associations · `crucible-sqlite`
 - [x] **Kiln Statistics** `P0` — Note counts, link analysis, storage metrics · [[Help/CLI/stats]] · `crucible-cli`
 - [x] **Daemon Server** `P0` — Unix socket server with 35 RPC methods · `crucible-daemon`
 - [x] **Daemon Client** `P0` — Auto-spawn, reconnect, RPC client library · `crucible-rpc`
