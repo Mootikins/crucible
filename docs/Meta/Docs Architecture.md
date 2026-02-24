@@ -169,7 +169,7 @@ When writing Help/ docs, reference these code locations:
 - `crates/crucible-core/src/parser/types/` - Parser types
 
 ### Storage
-- `crates/crucible-surrealdb/src/` - Database layer
+- `crates/crucible-sqlite/src/` - Database layer
 - `crates/crucible-core/src/storage/` - Storage traits
 
 ### Agents

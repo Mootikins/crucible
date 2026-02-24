@@ -14,7 +14,7 @@ tags:
 
 ## Executive Summary
 
-The crucible-surrealdb crate implements a dual-schema storage layer:
+The crucible-sqlite crate implements the storage layer:
 1. **EAV+Graph Schema** (Primary) - Entity-Attribute-Value with graph relations
 2. **Legacy Embedding Schema** - Being phased out
 
