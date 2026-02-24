@@ -36,7 +36,6 @@ use tracing::{debug, info, trace, warn};
 
 use crate::error::Error;
 
-
 // Import the traits and types from crucible-core
 use crucible_core::traits::change_detection::{
     BatchLookupConfig, ChangeDetectionMetrics, ChangeDetectionResult,
@@ -170,8 +169,6 @@ impl ChangeDetector {
     pub fn with_defaults(storage: Arc<dyn HashLookupStorage>) -> Result<Self, Error> {
         Self::new(storage, ChangeDetectorConfig::default())
     }
-
-
 
     /// Batch lookup with caching support
     ///

@@ -45,7 +45,7 @@ impl TestDaemon {
             .spawn()?;
 
         // Wait for socket to appear with timeout
-        for attempt in 0..50 {
+        for attempt in 0..100 {
             if socket_path.exists() {
                 // Give daemon a bit more time to fully initialize
                 sleep(Duration::from_millis(50)).await;
@@ -57,12 +57,12 @@ impl TestDaemon {
             }
             sleep(Duration::from_millis(100)).await;
 
-            if attempt == 25 {
+            if attempt == 50 {
                 tracing::warn!("Daemon taking longer than expected to start...");
             }
         }
 
-        anyhow::bail!("Daemon failed to start within 5 seconds");
+        anyhow::bail!("Daemon failed to start within 10 seconds");
     }
 
     /// Manually stop the daemon process

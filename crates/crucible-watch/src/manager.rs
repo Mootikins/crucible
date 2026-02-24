@@ -19,7 +19,6 @@ use tracing::{debug, error, info, warn};
 
 /// Main manager for file watching operations.
 pub struct WatchManager {
-
     /// Backend registry
     backend_registry: ExtendedBackendRegistry,
     /// Active watchers

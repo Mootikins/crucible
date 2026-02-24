@@ -21,7 +21,7 @@ use crate::context_enricher::ContextEnricher;
 use crate::core_facade::KilnContext;
 use crate::tui::oil::{AgentSelection, ChatMode, OilChatRunner};
 use crucible_core::events::EventRing;
-use crucible_core::traits::registry::{Registry, RegistryBuilder};
+use crucible_core::traits::registry::RegistryBuilder;
 use walkdir::WalkDir;
 
 /// Default number of context results to include in enriched prompts
@@ -150,6 +150,7 @@ impl ChatSessionConfig {
 }
 
 /// Interactive chat session orchestrator
+#[allow(dead_code)] // Fields stored for WIP chat session features
 pub struct ChatSession {
     config: ChatSessionConfig,
     core: Arc<KilnContext>,
@@ -488,7 +489,8 @@ fn is_hidden_entry(entry: &walkdir::DirEntry) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crucible_core::types::acp::schema::{SessionMode, SessionModeId, SessionModeState};
+    use crucible_core::traits::registry::Registry;
+    use crucible_core::types::acp::schema::SessionModeState;
     use serde_json::json;
 
     // Helper to create a standard mode state with plan/act/auto modes
@@ -770,9 +772,7 @@ mod tests {
     async fn test_initialization_queries_agent_modes() {
         use async_trait::async_trait;
         use crucible_core::traits::chat::{ChatChunk, ChatResult as CoreChatResult};
-        use crucible_core::types::acp::schema::{
-            AvailableCommand, SessionMode, SessionModeId, SessionModeState,
-        };
+        use crucible_core::types::acp::schema::{AvailableCommand, SessionModeState};
         use futures::stream::BoxStream;
 
         struct MockAgentWithModes {
@@ -835,7 +835,7 @@ mod tests {
 
     #[test]
     fn test_mode_registry_populated_from_agent() {
-        use crucible_core::types::acp::schema::{SessionMode, SessionModeId, SessionModeState};
+        use crucible_core::types::acp::schema::SessionModeState;
 
         let mut mode_registry = ModeRegistry::new();
 

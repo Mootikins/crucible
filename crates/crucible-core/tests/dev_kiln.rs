@@ -54,7 +54,11 @@ fn find_lua_files() -> Vec<PathBuf> {
         .into_iter()
         .filter_map(|e| e.ok())
         .filter(|e| e.file_type().is_file())
-        .filter(|e| e.path().extension().is_some_and(|ext| ext == "lua" || ext == "fnl"))
+        .filter(|e| {
+            e.path()
+                .extension()
+                .is_some_and(|ext| ext == "lua" || ext == "fnl")
+        })
         .map(|e| e.path().to_path_buf())
         .collect()
 }
@@ -597,6 +601,7 @@ async fn dev_kiln_lua_scripts_valid_syntax() {
         // Basic syntax validation: check for balanced braces/parens
         let open_braces = content.matches('{').count();
         let close_braces = content.matches('}').count();
+        if open_braces != close_braces {
             failures.push(format!(
                 "{}: Unbalanced braces ({{ {}, }} {})",
                 file_path.display(),
@@ -614,7 +619,10 @@ async fn dev_kiln_lua_scripts_valid_syntax() {
         );
     }
 
-    println!("All {} Lua/Fennel scripts have valid syntax", lua_files.len());
+    println!(
+        "All {} Lua/Fennel scripts have valid syntax",
+        lua_files.len()
+    );
 }
 
 // ============================================================================

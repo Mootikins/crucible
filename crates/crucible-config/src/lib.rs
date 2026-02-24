@@ -41,9 +41,8 @@ mod value_source;
 mod workspace;
 pub use components::*;
 pub use config::{
-    crucible_home, is_crucible_home, CliAppConfig, Config, ConfigError,
-    ConfigValidationError, EffectiveLlmConfig, LoggingConfig,
-    ProcessingConfig, ScmConfig, ServerConfig, WebConfig,
+    crucible_home, is_crucible_home, CliAppConfig, Config, ConfigError, ConfigValidationError,
+    EffectiveLlmConfig, LoggingConfig, ProcessingConfig, ScmConfig, ServerConfig, WebConfig,
 };
 #[cfg(feature = "keyring")]
 pub use credentials::KeyringStore;
@@ -62,4 +61,3 @@ pub use profile::*;
 pub use security::ShellPolicy;
 pub use value_source::*;
 pub use workspace::{KilnAttachment, SecurityConfig, WorkspaceConfig, WorkspaceMeta};
-

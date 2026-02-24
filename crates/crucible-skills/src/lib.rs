@@ -10,7 +10,6 @@ mod error;
 pub mod parser;
 pub mod types;
 
-
 #[cfg(feature = "embeddings")]
 pub mod embedding;
 
@@ -19,7 +18,6 @@ pub use discovery::{FolderDiscovery, SearchPath};
 pub use error::{SkillError, SkillResult};
 pub use parser::SkillParser;
 pub use types::{ResolvedSkill, Skill, SkillScope, SkillSource};
-
 
 #[cfg(feature = "embeddings")]
 pub use embedding::{

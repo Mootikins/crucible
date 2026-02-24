@@ -4,8 +4,8 @@
 //! in their owning kiln's `.crucible/sessions/` directory.
 
 use crate::session_storage::{FileSessionStorage, SessionStorage};
-use crucible_core::session::{RecordingMode, Session, SessionState, SessionSummary, SessionType};
 use crucible_core::protocol::SessionEventMessage;
+use crucible_core::session::{RecordingMode, Session, SessionState, SessionSummary, SessionType};
 use dashmap::DashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;

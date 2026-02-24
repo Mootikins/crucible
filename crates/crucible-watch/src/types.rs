@@ -731,9 +731,9 @@ impl Default for ScanConfig {
                 "*.tmp".to_string(),
                 "*.cache".to_string(),
                 ".git/**".to_string(),
-                ".crucible/**".to_string(), // database directory
-                ".obsidian/**".to_string(), // Obsidian config directory
-                ".trash/**".to_string(),    // Obsidian trash
+                ".crucible/**".to_string(),    // database directory
+                ".obsidian/**".to_string(),    // Obsidian config directory
+                ".trash/**".to_string(),       // Obsidian trash
                 "node_modules/**".to_string(), // Match any depth in node_modules
                 "target/**".to_string(),
             ],

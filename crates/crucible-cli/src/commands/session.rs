@@ -261,7 +261,10 @@ async fn search(config: CliConfig, query: String, limit: u32) -> Result<()> {
     let matches = match search_with_ripgrep(&sessions_path, &query, limit).await {
         Ok(results) => results,
         Err(e) => {
-            tracing::debug!("Ripgrep search failed ({}), falling back to in-memory scan", e);
+            tracing::debug!(
+                "Ripgrep search failed ({}), falling back to in-memory scan",
+                e
+            );
             search_in_memory(&sessions_path, &query, limit).await?
         }
     };

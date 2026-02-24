@@ -36,7 +36,6 @@ pub enum ParserBackend {
     /// Use CrucibleParser (default, regex-based extraction)
     #[default]
     Default,
-
 }
 
 /// Configuration for pipeline behavior

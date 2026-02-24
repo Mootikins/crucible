@@ -1,7 +1,5 @@
 //! Editor integration backend for low-frequency inode watching.
 
-
-
 use crate::{
     error::{Error, Result},
     events::FileEvent,
@@ -76,8 +74,6 @@ pub struct EditorWatcher {
     capabilities: BackendCapabilities,
 }
 
-
-
 impl Default for EditorWatcher {
     fn default() -> Self {
         Self::with_default_config()
@@ -151,7 +147,6 @@ impl EditorWatcher {
 
         Ok(())
     }
-
 
     /// Update editor configuration.
     pub fn update_editor_config(&mut self, watch_id: &str, config: EditorConfig) -> Result<()> {

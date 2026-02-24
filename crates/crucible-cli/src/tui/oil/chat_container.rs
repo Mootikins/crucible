@@ -1079,6 +1079,7 @@ mod tests {
     ///   1. "\nHello — I'm " (17 bytes, streaming delta)
     ///   2. "here to help with the Crucible codebase or anything else you're working on." (77 bytes, streaming continuation)
     ///   3. "\nHello — I'm here to help with the Crucible codebase or anything else you're working on." (94 bytes, FULL TEXT re-sent)
+    ///
     /// The third call duplicated the response text in the viewport.
     #[test]
     fn repro_cursor_acp_text_duplication() {

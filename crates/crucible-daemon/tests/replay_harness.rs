@@ -83,6 +83,7 @@ pub fn tool_result(name: &str, result: Value) -> (String, Value) {
     )
 }
 
+#[allow(dead_code)]
 pub fn thinking(content: &str) -> (String, Value) {
     ("thinking".to_string(), json!({"content": content}))
 }

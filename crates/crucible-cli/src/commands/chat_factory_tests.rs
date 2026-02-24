@@ -8,6 +8,7 @@ use crate::tui::AgentSelection;
 #[test]
 fn test_factory_pattern_compiles() {
     // Verify the factory pattern structure compiles
+    #[allow(dead_code)] // Compile-time check only — not called at runtime
     async fn factory(selection: AgentSelection) -> anyhow::Result<()> {
         match selection {
             AgentSelection::Acp(agent_name) => {

@@ -134,20 +134,7 @@ impl Default for ModeRegistry {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crucible_core::types::{SessionMode, SessionModeId};
     use serde_json::json;
-    use std::sync::Arc;
-
-    // Helper to create SessionMode (workaround for non_exhaustive)
-    fn test_session_mode(id: &str, name: &str, description: Option<&str>) -> SessionMode {
-        serde_json::from_value(json!({
-            "id": id,
-            "name": name,
-            "description": description,
-            "_meta": null,
-        }))
-        .expect("Failed to create test SessionMode")
-    }
 
     // Helper to create a test SessionModeState
     fn test_agent_mode_state() -> SessionModeState {

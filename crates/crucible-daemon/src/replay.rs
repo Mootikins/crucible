@@ -1,11 +1,11 @@
 use std::path::PathBuf;
 use std::time::Duration;
 
+use crate::recording::{RecordedEvent, RecordingFooter, RecordingHeader};
 use anyhow::{anyhow, Context, Result};
 use chrono::{DateTime, Utc};
-use crucible_core::session::{Session, SessionType};
 use crucible_core::protocol::SessionEventMessage;
-use crate::recording::{RecordedEvent, RecordingFooter, RecordingHeader};
+use crucible_core::session::{Session, SessionType};
 use tokio::sync::broadcast;
 use tokio::task::JoinHandle;
 use tokio::time::sleep;

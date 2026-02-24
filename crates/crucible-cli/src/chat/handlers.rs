@@ -168,44 +168,6 @@ impl CommandHandler for SearchHandler {
 /// Shows all static and dynamic commands with descriptions
 pub struct HelpHandler;
 
-impl HelpHandler {
-    #[allow(dead_code)]
-    fn format_commands(commands: Vec<crucible_core::traits::chat::CommandDescriptor>) -> String {
-        if commands.is_empty() {
-            return "No commands available.".bright_yellow().to_string();
-        }
-
-        let mut output = String::new();
-        output.push_str(&format!("{}\n", "Available Commands:".bright_cyan().bold()));
-
-        for cmd in commands {
-            let hint = cmd
-                .input_hint
-                .map(|h| format!(" <{}>", h))
-                .unwrap_or_default();
-            let options = if cmd.secondary_options.is_empty() {
-                String::new()
-            } else {
-                let labels: Vec<_> = cmd
-                    .secondary_options
-                    .iter()
-                    .map(|o| o.label.as_str())
-                    .collect();
-                format!(" [options: {}]", labels.join(", "))
-            };
-
-            output.push_str(&format!(
-                "\n  /{}{}\n",
-                cmd.name.bright_white().bold(),
-                format!("{}{}", hint, options).dimmed()
-            ));
-            output.push_str(&format!("    {}\n", cmd.description.dimmed()));
-        }
-
-        output
-    }
-}
-
 #[async_trait]
 impl CommandHandler for HelpHandler {
     async fn execute(&self, _args: &str, _ctx: &mut dyn ChatContext) -> ChatResult<()> {

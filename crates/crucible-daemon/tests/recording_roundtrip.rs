@@ -5,10 +5,10 @@
 
 mod replay_harness;
 
+use crucible_core::protocol::SessionEventMessage;
 use crucible_core::session::RecordingMode;
 use crucible_daemon::recording::RecordingWriter;
 use crucible_daemon::replay::ReplaySession;
-use crucible_core::protocol::SessionEventMessage;
 use replay_harness::{
     create_test_recording, message_complete, text_delta, thinking, tool_call, tool_result,
     user_message,

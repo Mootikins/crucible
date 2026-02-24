@@ -1,3 +1,4 @@
+use crate::trust_resolution::resolve_kiln_classification;
 use anyhow::Result;
 use crucible_config::{DataClassification, TrustLevel};
 use crucible_core::database::{DocumentId, SearchResult};
@@ -6,7 +7,6 @@ use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use crate::trust_resolution::resolve_kiln_classification;
 
 pub struct KilnSearchSource {
     pub kiln_path: PathBuf,
@@ -199,8 +199,18 @@ mod tests {
         fs::create_dir_all(&kiln_b).unwrap();
 
         let sources = vec![
-            mock_source(kiln_a, vec![mock_result("a-1", 0.2), mock_result("a-2", 0.9)], false, true),
-            mock_source(kiln_b, vec![mock_result("b-1", 0.6), mock_result("b-2", 0.3)], false, false),
+            mock_source(
+                kiln_a,
+                vec![mock_result("a-1", 0.2), mock_result("a-2", 0.9)],
+                false,
+                true,
+            ),
+            mock_source(
+                kiln_b,
+                vec![mock_result("b-1", 0.6), mock_result("b-2", 0.3)],
+                false,
+                false,
+            ),
         ];
 
         let results = search_across_kilns(&sources, vec![0.1, 0.2], 10, None, tmp.path())
@@ -246,7 +256,12 @@ mod tests {
 
         let sources = vec![
             mock_source(bad, vec![mock_result("bad-doc", 0.9)], true, false),
-            mock_source(good.clone(), vec![mock_result("good-doc", 0.7)], false, true),
+            mock_source(
+                good.clone(),
+                vec![mock_result("good-doc", 0.7)],
+                false,
+                true,
+            ),
         ];
 
         let results = search_across_kilns(&sources, vec![0.1, 0.2], 10, None, tmp.path())
@@ -268,7 +283,12 @@ mod tests {
 
         let sources = vec![
             mock_source(kiln_a.clone(), vec![mock_result("doc-a", 0.6)], false, true),
-            mock_source(kiln_b.clone(), vec![mock_result("doc-b", 0.5)], false, false),
+            mock_source(
+                kiln_b.clone(),
+                vec![mock_result("doc-b", 0.5)],
+                false,
+                false,
+            ),
         ];
 
         let results = search_across_kilns(&sources, vec![0.1, 0.2], 10, None, tmp.path())
@@ -276,12 +296,12 @@ mod tests {
             .unwrap();
 
         assert_eq!(results.len(), 2);
-        assert!(results.iter().any(|r| {
-            r.document_id.0 == "doc-a" && r.kiln_path.as_ref() == Some(&kiln_a)
-        }));
-        assert!(results.iter().any(|r| {
-            r.document_id.0 == "doc-b" && r.kiln_path.as_ref() == Some(&kiln_b)
-        }));
+        assert!(results
+            .iter()
+            .any(|r| { r.document_id.0 == "doc-a" && r.kiln_path.as_ref() == Some(&kiln_a) }));
+        assert!(results
+            .iter()
+            .any(|r| { r.document_id.0 == "doc-b" && r.kiln_path.as_ref() == Some(&kiln_b) }));
     }
 
     #[tokio::test]
@@ -302,7 +322,12 @@ mod tests {
         );
 
         let sources = vec![
-            mock_source(primary.clone(), vec![mock_result("primary-doc", 0.5)], false, true),
+            mock_source(
+                primary.clone(),
+                vec![mock_result("primary-doc", 0.5)],
+                false,
+                true,
+            ),
             mock_source(
                 confidential,
                 vec![mock_result("confidential-doc", 0.99)],

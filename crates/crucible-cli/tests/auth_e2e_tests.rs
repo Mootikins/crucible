@@ -1,3 +1,4 @@
+#![allow(deprecated)]
 mod auth_e2e_helpers;
 
 use assert_cmd::Command;

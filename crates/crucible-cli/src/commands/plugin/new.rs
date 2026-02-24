@@ -1,6 +1,5 @@
 use anyhow::Result;
 use std::fs;
-use std::path::PathBuf;
 
 use super::NewArgs;
 use crate::config::CliConfig;

@@ -179,7 +179,6 @@ pub struct Config {
     /// Enrichment configuration (includes embedding provider).
     pub enrichment: Option<EnrichmentConfig>,
 
-
     /// CLI configuration.
     #[serde(default)]
     pub cli: Option<CliConfig>,
@@ -297,7 +296,6 @@ impl Config {
             field: "enrichment".to_string(),
         })
     }
-
 
     /// Get the effective server configuration.
     pub fn server(&self) -> Result<ServerConfig, ConfigError> {
@@ -1517,8 +1515,6 @@ verbose = false
         })
     }
 }
-
-
 
 /// Server configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]

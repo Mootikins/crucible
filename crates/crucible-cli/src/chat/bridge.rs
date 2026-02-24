@@ -123,7 +123,6 @@ mod tests {
         }
 
         /// Create a mock that returns a single complete response.
-        #[allow(dead_code)]
         fn single(response: &str) -> Self {
             Self::new(vec![response.to_string()])
         }

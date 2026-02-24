@@ -1502,9 +1502,6 @@ fn smoke_chat_help() {
 // Error Message Tests
 // =============================================================================
 
-/// Test that invalid subcommand shows helpful error with suggestions
-#[test]
-
 /// Test that invalid option shows helpful error
 #[test]
 fn error_invalid_option_value() {

@@ -66,8 +66,6 @@ impl KilnContext {
         query: &str,
         limit: usize,
     ) -> Result<Vec<SemanticSearchResult>> {
-        use crucible_core::traits::KnowledgeRepository;
-
         tracing::debug!(
             "semantic_search called with query={:?}, limit={}",
             query,
@@ -75,8 +73,7 @@ impl KilnContext {
         );
 
         // Get embedding config from composite config and convert to provider config
-        let embedding_config =
-            crate::factories::embedding_provider_config_from_cli(&self.config);
+        let embedding_config = crate::factories::embedding_provider_config_from_cli(&self.config);
         tracing::debug!("embedding config: {:?}", embedding_config);
 
         // Create embedding provider using factory function
@@ -140,7 +137,6 @@ impl KilnContext {
     /// # Arguments
     /// * `query` - The search query string
     /// * `limit` - Maximum number of results to return
-    /// * `rerank_limit` - Number of candidates to retrieve before reranking
     ///
     /// # Returns
     /// Vector of search results with document IDs and similarity scores
@@ -148,7 +144,6 @@ impl KilnContext {
         &self,
         query: &str,
         limit: usize,
-        _rerank_limit: usize,
     ) -> Result<Vec<SemanticSearchResult>> {
         // Reranking not supported via RPC yet — fall back to basic search
         tracing::debug!(

@@ -34,6 +34,7 @@ use crucible_core::traits::chat::{is_read_only, mode_display_name};
 /// Currently Crucible supports a single kiln_path. This function is designed
 /// to support future multi-kiln configurations where multiple kilns can be
 /// attached to a workspace.
+#[allow(dead_code)] // Prepared for future multi-kiln support
 fn select_session_kiln(config: &CliConfig) -> Option<PathBuf> {
     let kiln_path = &config.kiln_path;
 
@@ -575,8 +576,7 @@ async fn run_interactive_chat(
 
             match selection {
                 AgentSelection::Acp(_) | AgentSelection::Internal => {
-                    let agent = factories::create_agent(&config, params).await?;
-                    Ok(agent.into_handle())
+                    factories::create_agent(&config, params).await
                 }
                 AgentSelection::Cancelled => {
                     anyhow::bail!("Agent selection was cancelled")
@@ -625,15 +625,11 @@ async fn run_oneshot_chat(
     let _storage_client: Option<()> = None;
 
     status.update("Discovering agent...");
-    let initialized_agent = factories::create_agent(&config, agent_params).await?;
+    let mut handle = factories::create_agent(&config, agent_params).await?;
 
     let bg_progress: Option<BackgroundProgress> = None;
-
     status.update("Initializing core...");
     let core = Arc::new(KilnContext::from_storage_handle(storage_handle, config));
-
-    status.update("Connecting to agent...");
-    let mut handle = initialized_agent.into_handle();
     status.success("Ready");
 
     let _autoconfirm_session =
@@ -680,7 +676,7 @@ async fn apply_oneshot_set_overrides(
     set_overrides: &[String],
     is_acp: bool,
 ) -> bool {
-    use crate::tui::oil::commands::{validate_set_for_cli, CliValue, SetEffect, SetRpcAction};
+    use crate::tui::oil::commands::{validate_set_for_cli, CliValue, SetEffect};
 
     let mut autoconfirm = false;
 
@@ -758,7 +754,6 @@ async fn apply_rpc_action(
         }
     }
 }
-
 
 use crate::tui::oil::chat_app::{ChatItem, Role};
 

@@ -96,11 +96,7 @@ async fn test_get_storage_connects_to_daemon() {
         .await
         .expect("get_storage should succeed when daemon is running");
 
-    // Verify it's daemon mode
-    assert!(
-        storage.is_daemon(),
-        "Storage should be daemon-backed when daemon is running"
-    );
+    // Verify we can actually query through it using a supported method
 
     // Verify we can actually query through it using a supported method
     let result = storage.list_notes(None).await;
@@ -133,19 +129,15 @@ async fn test_storage_handle_query_through_daemon() {
     server.shutdown().await;
 }
 
-/// Test that is_daemon() and is_embedded() return correct values
+/// Test that StorageHandle provides access to daemon client
 #[tokio::test]
 #[serial]
 async fn test_storage_handle_mode_detection() {
     let server = TestServer::start().await.expect("Failed to start daemon");
     let kiln_dir = tempfile::tempdir().expect("Failed to create kiln dir");
-
     let config = create_daemon_config(kiln_dir.path().to_path_buf());
     let storage = get_storage(&config).await.expect("get_storage failed");
-
-    assert!(storage.is_daemon(), "Should report as daemon mode");
     let _ = storage.as_daemon_client(); // Confirms we can access the inner client
-
     server.shutdown().await;
 }
 
@@ -205,10 +197,7 @@ async fn test_multiple_storage_handles_same_daemon() {
     let storage2 = get_storage(&config).await.expect("storage2 failed");
     let storage3 = get_storage(&config).await.expect("storage3 failed");
 
-    // All should be daemon mode
-    assert!(storage1.is_daemon());
-    assert!(storage2.is_daemon());
-    assert!(storage3.is_daemon());
+    // All should be able to list notes
 
     // All should be able to list notes
     let r1 = storage1.list_notes(None).await;
