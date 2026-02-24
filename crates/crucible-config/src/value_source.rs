@@ -66,7 +66,6 @@ impl ValueSource {
     }
 }
 
-
 /// A map of configuration values with their sources
 #[derive(Debug, Clone, Default)]
 pub struct ValueSourceMap {
@@ -138,8 +137,6 @@ pub struct ValueInfo<T> {
     pub source_short: String,
 }
 
-
-
 /// Macro to help with tracking value sources during config loading
 #[macro_export]
 macro_rules! track_value {
@@ -150,4 +147,3 @@ macro_rules! track_value {
         $value
     };
 }
-

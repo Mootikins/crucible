@@ -195,11 +195,7 @@ fn write_workspace_config(crucible_dir: &Path, classification: DataClassificatio
     };
 
     // Ensure there's a kiln entry for "." with the classification
-    if let Some(kiln) = config
-        .kilns
-        .iter_mut()
-        .find(|k| k.path == Path::new("."))
-    {
+    if let Some(kiln) = config.kilns.iter_mut().find(|k| k.path == Path::new(".")) {
         kiln.data_classification = Some(classification);
     } else {
         config.kilns.push(KilnAttachment {

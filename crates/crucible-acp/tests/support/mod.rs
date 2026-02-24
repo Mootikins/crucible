@@ -1,3 +1,5 @@
+#![allow(unused_imports)]
+
 //! Test support utilities for ACP integration tests
 //!
 //! This module provides mock agents and test helpers for integration testing.

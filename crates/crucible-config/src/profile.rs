@@ -19,7 +19,6 @@ pub struct ProfileConfig {
     /// Enrichment configuration (includes embedding provider) for this profile.
     pub enrichment: Option<EnrichmentConfig>,
 
-
     /// Server configuration for this profile.
     pub server: Option<ServerConfig>,
 
@@ -245,4 +244,3 @@ impl std::fmt::Display for Environment {
         write!(f, "{}", self.as_str())
     }
 }
-

@@ -4,7 +4,6 @@
 
 use anyhow::Result;
 use crucible_skills::discovery::{default_discovery_paths, FolderDiscovery};
-use std::path::PathBuf;
 
 use crate::cli::SkillsCommands;
 use crate::config::CliConfig;

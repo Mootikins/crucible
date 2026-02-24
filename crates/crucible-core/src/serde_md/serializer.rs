@@ -444,6 +444,7 @@ mod tests {
 
     #[test]
     fn test_tagged_enum() {
+        #[allow(dead_code)]
         #[derive(serde::Serialize)]
         #[serde(tag = "type", rename_all = "snake_case")]
         enum Event {

@@ -11,10 +11,10 @@ use std::time::Instant;
 use tokio::sync::{broadcast, RwLock};
 use tracing::{info, warn};
 
+use crate::pipeline::{NotePipeline, NotePipelineConfig, ParserBackend};
 use crucible_core::processing::InMemoryChangeDetectionStore;
 use crucible_core::storage::note_store::NoteRecord;
 use crucible_core::traits::{KnowledgeRepository, NoteInfo};
-use crate::pipeline::{NotePipeline, NotePipelineConfig, ParserBackend};
 use crucible_watch::{EventFilter, WatchManager, WatchManagerConfig};
 
 use crate::file_watch_bridge::create_event_bridge;

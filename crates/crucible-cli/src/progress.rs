@@ -136,22 +136,6 @@ impl StatusLine {
 
         self.last_len = 0;
     }
-
-    /// Complete with an error message
-    #[allow(dead_code)]
-    pub fn error(&mut self, message: &str) {
-        use colored::Colorize;
-        use std::io::{self, Write};
-
-        // Clear previous line
-        print!("\r{}\r", " ".repeat(self.last_len));
-
-        // Print error message
-        println!("{} {}", "✗".red(), message);
-        io::stdout().flush().unwrap();
-
-        self.last_len = 0;
-    }
 }
 
 impl Default for StatusLine {

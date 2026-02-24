@@ -128,19 +128,16 @@ impl ContextEnricher {
     pub async fn enrich_with_reranking(
         &self,
         query: &str,
-        candidate_count: Option<usize>,
+        _candidate_count: Option<usize>,
     ) -> Result<String> {
-        let rerank_limit = candidate_count.unwrap_or(self.context_size * 3);
-
         debug!(
-            "Enriching query with reranking ({} candidates -> {} results)",
-            rerank_limit, self.context_size
+            "Enriching query with reranking ({} results)",
+            self.context_size
         );
-
         // Perform semantic search with reranking
         let results = self
             .core
-            .semantic_search_with_reranking(query, self.context_size, rerank_limit)
+            .semantic_search_with_reranking(query, self.context_size)
             .await?;
 
         if results.is_empty() {
