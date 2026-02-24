@@ -2,7 +2,7 @@
 //!
 //! This module defines the core abstractions that enable dependency inversion:
 //! - Core defines traits (abstractions)
-//! - Implementations (SurrealDB, Pulldown parser, etc.) depend on Core for trait definitions
+//! - Implementations (SQLite, Pulldown parser, etc.) depend on Core for trait definitions
 //! - Core orchestrates through trait interfaces, never depends on concrete implementations
 //!
 //! ## Architecture Pattern
@@ -20,9 +20,9 @@
 //!          ▼
 //! ┌─────────────────┐
 //! │ Implementations │  ← Depend on Core for trait definitions
-//! │  - SurrealDB    │
+//! │  - SQLite       │
 //! │  - Pulldown     │
-//! │  - Rune MCP     │
+//! │  - Lua MCP      │
 //! └─────────────────┘
 //! ```
 

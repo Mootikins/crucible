@@ -30,7 +30,7 @@
 //!
 //! # Architecture
 //!
-//! Unlike Rune which requires macros for different function arities, Lua can
+//! Unlike other runtimes which may require macros for different function arities, Lua can
 //! simply accept a table of arguments. This makes the implementation simpler:
 //!
 //! ```text

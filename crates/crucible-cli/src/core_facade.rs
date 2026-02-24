@@ -3,7 +3,7 @@
 //! Provides the runtime context for interacting with a Kiln (knowledge base).
 //! This includes storage access, semantic search, and configuration.
 
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -12,22 +12,18 @@ use crate::factories::StorageHandle;
 
 /// Runtime context for interacting with a Kiln
 ///
-/// Provides access to:
-/// - Storage (SQLite, daemon RPC, or lightweight)
-/// - Semantic search capabilities
+/// - Storage (daemon RPC)
+/// - Semantic search
 /// - Configuration
 #[derive(Clone)]
 pub struct KilnContext {
-    /// Storage backend - either daemon client, SQLite, or lightweight
+    /// Storage backend (daemon client via RPC)
     storage_handle: StorageHandle,
     config: Arc<CliConfig>,
 }
 
 impl KilnContext {
-    /// Create a facade from a StorageHandle (supports both embedded and daemon)
-    ///
-    /// This is the preferred constructor for daemon mode where we don't have
-    /// direct access to the embedded SurrealDB client.
+    /// Create a KilnContext from a StorageHandle.
     pub fn from_storage_handle(storage_handle: StorageHandle, config: CliConfig) -> Self {
         Self {
             storage_handle,
@@ -80,7 +76,7 @@ impl KilnContext {
 
         // Get embedding config from composite config and convert to provider config
         let embedding_config =
-            crate::factories::enrichment::embedding_provider_config_from_cli(&self.config);
+            crate::factories::embedding_provider_config_from_cli(&self.config);
         tracing::debug!("embedding config: {:?}", embedding_config);
 
         // Create embedding provider using factory function
@@ -102,14 +98,7 @@ impl KilnContext {
             query_embedding.len()
         );
 
-        // Use KnowledgeRepository trait for search (works with both embedded and daemon)
-        let knowledge_repo = self
-            .storage_handle
-            .as_knowledge_repository(Some(self.config.kiln_path.as_path()))
-            .ok_or_else(|| {
-                tracing::error!("Knowledge repository not available (lightweight mode)");
-                anyhow!("Semantic search not supported in lightweight mode")
-            })?;
+        let knowledge_repo = self.storage_handle.as_knowledge_repository();
 
         tracing::debug!("Searching vectors...");
         let results = knowledge_repo
@@ -161,8 +150,7 @@ impl KilnContext {
         limit: usize,
         _rerank_limit: usize,
     ) -> Result<Vec<SemanticSearchResult>> {
-        // Fall back to basic semantic search (daemon, sqlite, lightweight modes)
-        // Reranking is not supported via RPC yet
+        // Reranking not supported via RPC yet — fall back to basic search
         tracing::debug!(
             "Reranking not available in this storage mode, using basic semantic search"
         );

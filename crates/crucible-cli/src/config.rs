@@ -142,17 +142,13 @@ verbose = false
     fn test_database_path_derivation() {
         let temp = TempDir::new().unwrap();
         let _kiln_path = temp.path().join("kiln");
-
         let config = CliConfig::default();
         // Note: We can't set kiln_path via builder in this simplified version,
         // so we test the default behavior
-
-        // Database path should be derived from kiln path (no test mode = standard name)
-        // Note: database_path() returns the SurrealDB path
         let expected_db_path = config
             .kiln_path
             .join(".crucible")
-            .join("crucible-surreal.db");
+            .join("crucible.db");
         assert_eq!(config.database_path(), expected_db_path);
     }
 

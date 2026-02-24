@@ -6,7 +6,7 @@
 //! ## Design
 //!
 //! The Reactor:
-//! - Owns all handlers (Rust, Rune, Lua)
+//! - Owns all handlers (Rust, Lua)
 //! - Maintains dependency graph for ordering
 //! - Dispatches events through matching handlers
 //! - Handles async execution with spawn_blocking for sync scripts
@@ -21,7 +21,6 @@
 //! // Register handlers (any language)
 //! reactor.register(Box::new(LoggingHandler))?;
 //! reactor.register(Box::new(PersistHandler))?;
-//! reactor.register(rune_handler)?;
 //! reactor.register(lua_handler)?;
 //!
 //! // Emit an event - handlers run in dependency + priority order
@@ -120,7 +119,7 @@ pub type ReactorResult<T> = Result<T, ReactorError>;
 /// The Reactor - central event dispatcher.
 ///
 /// Owns all handlers and dispatches events through them in dependency + priority
-/// order. This is the single event loop that all handlers (Rust, Rune, Lua)
+/// order. This is the single event loop that all handlers (Rust, Lua)
 /// register with.
 ///
 /// ## Handler Ordering
@@ -130,7 +129,7 @@ pub type ReactorResult<T> = Result<T, ReactorError>;
 ///
 /// ## Async Execution
 ///
-/// The `emit` method is async. Script handlers (Rune, Lua) should use
+/// The `emit` method is async. Script handlers (Lua) should use
 /// `tokio::task::spawn_blocking` internally to avoid blocking the reactor.
 pub struct Reactor {
     /// Handlers stored by name.

@@ -8,7 +8,7 @@
 //! - **Trait defines contract**: `get`, `contains`, `list`, `len`
 //! - **Implementations choose storage**: HashMap, BTreeMap, Vec, etc.
 //! - **Builder pattern**: Mutation during init, immutable at runtime
-//! - **Rune-ready**: Simple interface for scripting exposure
+//! - **Lua-ready**: Simple interface for scripting exposure
 
 use std::borrow::Borrow;
 

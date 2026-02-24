@@ -112,7 +112,7 @@ impl From<SessionId> for Uuid {
 /// directory, chat mode, and context enrichment settings.
 ///
 /// Note: Other crates define different session configurations:
-/// - `crucible_rune::ReactorSessionConfig` - reactor/handler execution config
+///
 /// - `crucible_acp::TransportConfig` - transport layer config (timeouts)
 /// - `crucible_cli::chat::ChatSessionConfig` - CLI user interface config
 ///

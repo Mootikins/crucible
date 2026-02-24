@@ -9,8 +9,8 @@ use std::collections::HashMap;
 /// Supports both simple [[target]] and aliased [[target|alias]] forms,
 /// as well as embeds ![[target]].
 ///
-/// Note: This is distinct from `crucible_surrealdb::schema_types::Wikilink`
-/// which is the persistent storage representation with database record IDs.
+/// Note: This is the ephemeral parser representation. The persistent storage
+/// representation with database record IDs lives in the storage layer.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Wikilink {
     /// Target note name (without .md extension)
@@ -109,9 +109,8 @@ impl Wikilink {
 /// Ephemeral type representing a tag extracted from parsing a markdown note.
 /// Contains the tag name, path components, and source offset.
 ///
-/// Note: This is distinct from storage-layer tag types:
-/// - `crucible_surrealdb::schema_types::Tag` - persistent record with metadata (color, usage_count)
-/// - `crucible_surrealdb::eav_graph::types::Tag` - EAV graph representation
+/// Note: This is the ephemeral parser representation. The persistent storage
+/// representation with metadata (color, usage_count) lives in the storage layer.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Tag {
     /// Full tag name (without #)

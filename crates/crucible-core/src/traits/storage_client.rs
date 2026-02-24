@@ -11,7 +11,7 @@ use serde_json::Value;
 /// Client abstraction for storage queries
 ///
 /// This trait enables CLI and tools to query storage without knowing whether
-/// they're talking directly to SurrealDB or through the daemon.
+/// they're talking directly to the storage backend or through the daemon.
 ///
 /// ## Design
 ///
@@ -22,7 +22,7 @@ use serde_json::Value;
 /// ## Implementations
 ///
 /// - `DaemonStorageClient` (in crucible-rpc) - queries through daemon
-/// - `DirectStorageClient` (future) - direct SurrealDB access for testing
+/// - `DirectStorageClient` (future) - direct storage backend access for testing
 #[async_trait]
 pub trait StorageClient: Send + Sync {
     /// Execute a raw query and return JSON

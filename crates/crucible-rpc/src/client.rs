@@ -182,25 +182,17 @@ impl DaemonClient {
 
     async fn start_daemon() -> Result<()> {
         use std::process::Command;
-
+        // Fork ourselves with `daemon serve` — single binary pattern
         let exe = std::env::current_exe()?;
-        let daemon_exe = if exe.ends_with("cru") {
-            exe.parent()
-                .ok_or_else(|| anyhow::anyhow!("No parent directory"))?
-                .join("cru-server")
-        } else {
-            PathBuf::from("cru-server")
-        };
+        tracing::info!("Starting daemon: {:?} daemon serve", exe);
 
-        tracing::info!("Starting daemon: {:?}", daemon_exe);
-
-        Command::new(daemon_exe)
+        Command::new(&exe)
+            .args(["daemon", "serve"])
             .stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
             .spawn()
             .map_err(|e| anyhow::anyhow!("Failed to spawn daemon: {}", e))?;
-
         Ok(())
     }
 
@@ -788,6 +780,72 @@ impl DaemonClient {
             .unwrap_or_default();
 
         Ok((processed, skipped, errors))
+    }
+
+    // =========================================================================
+    // Storage Maintenance RPC Methods (stubs)
+    // =========================================================================
+
+    pub async fn storage_verify(&self, kiln_path: &Path) -> Result<serde_json::Value> {
+        self.call(
+            "storage.verify",
+            serde_json::json!({ "kiln": kiln_path.to_string_lossy() }),
+        )
+        .await
+    }
+
+    pub async fn storage_cleanup(&self, kiln_path: &Path) -> Result<serde_json::Value> {
+        self.call(
+            "storage.cleanup",
+            serde_json::json!({ "kiln": kiln_path.to_string_lossy() }),
+        )
+        .await
+    }
+
+    pub async fn storage_backup(
+        &self,
+        kiln_path: &Path,
+        dest: &Path,
+    ) -> Result<serde_json::Value> {
+        self.call(
+            "storage.backup",
+            serde_json::json!({
+                "kiln": kiln_path.to_string_lossy(),
+                "dest": dest.to_string_lossy()
+            }),
+        )
+        .await
+    }
+
+    pub async fn storage_restore(
+        &self,
+        kiln_path: &Path,
+        source: &Path,
+    ) -> Result<serde_json::Value> {
+        self.call(
+            "storage.restore",
+            serde_json::json!({
+                "kiln": kiln_path.to_string_lossy(),
+                "source": source.to_string_lossy()
+            }),
+        )
+        .await
+    }
+
+    pub async fn session_search(
+        &self,
+        query: &str,
+        kiln_path: Option<&Path>,
+        limit: Option<usize>,
+    ) -> Result<serde_json::Value> {
+        let mut params = serde_json::json!({ "query": query });
+        if let Some(kiln) = kiln_path {
+            params["kiln"] = serde_json::Value::String(kiln.to_string_lossy().to_string());
+        }
+        if let Some(lim) = limit {
+            params["limit"] = serde_json::Value::Number(serde_json::Number::from(lim));
+        }
+        self.call("session.search", params).await
     }
 
     // =========================================================================

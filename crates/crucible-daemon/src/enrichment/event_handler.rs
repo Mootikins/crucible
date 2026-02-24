@@ -36,8 +36,8 @@ use tracing::{debug, error, info, warn};
 /// # Example
 ///
 /// ```ignore
-/// use crucible_enrichment::EmbeddingHandler;
-/// use crucible_enrichment::create_default_enrichment_service;
+/// use crucible_daemon::enrichment::EmbeddingHandler;
+/// use crucible_daemon::enrichment::create_default_enrichment_service;
 ///
 /// // Create enrichment service
 /// let service = create_default_enrichment_service(Some(embedding_provider))?;
@@ -205,7 +205,7 @@ impl EmbeddingHandler {
 /// # Example
 ///
 /// ```rust,ignore
-/// use crucible_enrichment::{EmbeddingHandler, EmbeddingHandlerAdapter};
+/// use crucible_daemon::enrichment::{EmbeddingHandler, EmbeddingHandlerAdapter};
 /// use crucible_core::events::Reactor;
 ///
 /// let handler = EmbeddingHandler::new(service);

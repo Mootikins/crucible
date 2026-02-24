@@ -13,7 +13,7 @@
 //! The system follows a dependency inversion pattern where business logic depends on
 //! trait abstractions rather than concrete implementations. This enables:
 //! - Comprehensive unit testing with mock implementations
-//! - Multiple storage backends (SurrealDB, SQLite, in-memory)
+//! - Multiple storage backends (SQLite, in-memory)
 //! - Clean separation of concerns
 
 pub mod error;

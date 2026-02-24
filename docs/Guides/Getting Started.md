@@ -146,7 +146,7 @@ On first run, a setup wizard guides you through kiln path, provider, and model c
 
 ## Understanding the Database
 
-Crucible stores processed data in a local SurrealDB database:
+Crucible stores processed data in a local SQLite database:
 
 **Location:** `<kiln_path>/.crucible/kiln.db/`
 
