@@ -32,7 +32,7 @@ pub async fn execute(
     path: Option<PathBuf>,
     force: bool,
     watch: bool,
-    _verbose: bool,
+    verbose: bool,
     dry_run: bool,
     _parallel: Option<usize>,
 ) -> Result<()> {
@@ -42,7 +42,9 @@ pub async fn execute(
     let target_path = path.as_deref().unwrap_or(config.kiln_path.as_path());
 
     info!("Processing path: {}", target_path.display());
-    info!("Force reprocess: {}", force);
+    if force {
+        warn!("--force flag is accepted but not yet forwarded to the daemon pipeline");
+    }
     info!("Watch mode: {}", watch);
     info!("Dry-run mode: {}", dry_run);
 
@@ -91,9 +93,15 @@ pub async fn execute(
         error_count = 0;
         pb.finish_with_message("Dry run complete!");
     } else {
-        let daemon_storage = storage_handle.as_daemon_client();
-
         let kiln_path = config.kiln_path.clone();
+
+        let mut verbose_event_mode = None;
+        if verbose {
+            let (client, event_rx) = DaemonClient::connect_or_start_with_events().await?;
+            client.subscribe_process_events("process-cli").await?;
+            verbose_event_mode = Some((Arc::new(client), event_rx));
+            println!("\n📡 Streaming per-file progress events...");
+        }
 
         // Process in batches to show progress
         let batch_size = 100;
@@ -103,11 +111,89 @@ pub async fn execute(
 
         for chunk in files.chunks(batch_size) {
             let chunk_paths: Vec<PathBuf> = chunk.to_vec();
-            match daemon_storage
-                .daemon_client()
-                .process_batch(&kiln_path, &chunk_paths)
-                .await
-            {
+            let batch_result = if let Some((event_client, event_rx)) = verbose_event_mode.as_mut() {
+                let kiln_for_task = kiln_path.clone();
+                let chunk_for_task = chunk_paths.clone();
+                let event_client = Arc::clone(event_client);
+                let mut batch_task = tokio::spawn(async move {
+                    event_client
+                        .process_batch(&kiln_for_task, &chunk_for_task)
+                        .await
+                });
+
+                let mut batch_id: Option<String> = None;
+                let mut progress_events_seen = 0usize;
+
+                let task_result = loop {
+                    tokio::select! {
+                        result = &mut batch_task => {
+                            break result?;
+                        }
+                        maybe_event = event_rx.recv() => {
+                            let Some(event) = maybe_event else {
+                                continue;
+                            };
+                            if event.session_id != "process" {
+                                continue;
+                            }
+
+                            if event.event_type == "process_start" {
+                                if let Some(id) = event.data.get("batch_id").and_then(|v| v.as_str()) {
+                                    batch_id = Some(id.to_string());
+                                }
+                                continue;
+                            }
+
+                            if event.event_type != "process_progress" {
+                                continue;
+                            }
+
+                            let event_batch_id = event
+                                .data
+                                .get("batch_id")
+                                .and_then(|v| v.as_str())
+                                .map(ToString::to_string);
+
+                            if let Some(expected_id) = batch_id.as_deref() {
+                                if event_batch_id.as_deref() != Some(expected_id) {
+                                    continue;
+                                }
+                            } else if let Some(id) = event_batch_id {
+                                batch_id = Some(id);
+                            }
+
+                            let file = event.data.get("file").and_then(|v| v.as_str()).unwrap_or("<unknown>");
+                            let result = event.data.get("result").and_then(|v| v.as_str()).unwrap_or("unknown");
+                            if result == "error" {
+                                let err = event
+                                    .data
+                                    .get("error_msg")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("processing failed");
+                                println!("  - {} [{}] {}", file, result, err);
+                            } else {
+                                println!("  - {} [{}]", file, result);
+                            }
+                            progress_events_seen += 1;
+                            pb.inc(1);
+                        }
+                    }
+                };
+
+                if progress_events_seen < chunk.len() {
+                    pb.inc((chunk.len() - progress_events_seen) as u64);
+                }
+
+                task_result
+            } else {
+                storage_handle
+                    .as_daemon_client()
+                    .daemon_client()
+                    .process_batch(&kiln_path, &chunk_paths)
+                    .await
+            };
+
+            match batch_result {
                 Ok((proc, skip, errs)) => {
                     total_processed += proc;
                     total_skipped += skip;
@@ -121,7 +207,10 @@ pub async fn execute(
                     eprintln!("Batch processing error: {}", e);
                 }
             }
-            pb.inc(chunk.len() as u64);
+
+            if !verbose {
+                pb.inc(chunk.len() as u64);
+            }
         }
 
         processed_count = total_processed;

@@ -7,7 +7,7 @@ This document describes what each parser (input) and renderer (output) in the cr
 ```
 Query String → [Parser] → GraphIR → [Renderer] → Database Query
               ↑                     ↑
-              Cypher, PGQ, jaq      SQLite, SurrealQL
+              Cypher, PGQ, jaq      SQLite
 ```
 
 ## Parser Capabilities (Input)
@@ -77,18 +77,18 @@ find("Index") -> inlinks
 
 Each renderer converts GraphIR into database-specific query syntax.
 
-| Feature | SQLite | SurrealQL |
-|---------|--------|-----------|
-| **Simple lookup** `SELECT ... WHERE` | ✅ | ✅ |
-| **1-hop traversal** via JOIN | ✅ | ✅ |
-| **N-hop traversal** via CTE | ✅ | ❌ |
-| **Variable-length paths** `*1..3` | ✅ | ❌ |
-| **Bidirectional edges** | ✅ | ✅ |
-| **Filter: Eq, Ne** | ✅ | ✅ |
-| **Filter: Contains** | ✅ (LIKE) | ✅ (IN) |
-| **Filter: StartsWith, EndsWith** | ✅ (LIKE) | ✅ (LIKE) |
-| **Projections with aliases** | ✅ | ❌ |
-| **Parameter binding** | ✅ (`:name`) | ✅ (`$name`) |
+| Feature | SQLite |
+|---------|--------|
+| **Simple lookup** `SELECT ... WHERE` | ✅ |
+| **1-hop traversal** via JOIN | ✅ |
+| **N-hop traversal** via CTE | ✅ |
+| **Variable-length paths** `*1..3` | ✅ |
+| **Bidirectional edges** | ✅ |
+| **Filter: Eq, Ne** | ✅ |
+| **Filter: Contains** | ✅ (LIKE) |
+| **Filter: StartsWith, EndsWith** | ✅ (LIKE) |
+| **Projections with aliases** | ✅ |
+| **Parameter binding** | ✅ (`:name`) |
 
 ### SQLite Renderer
 
@@ -140,21 +140,6 @@ CREATE TABLE edges (
     type TEXT NOT NULL,
     PRIMARY KEY (source, target, type)
 );
-```
-
-### SurrealQL Renderer
-
-Generates SurrealQL for SurrealDB:
-- Simple lookups and 1-hop traversals
-- Uses `FETCH` for following relations
-- SurrealDB parameter style (`$param`)
-
-**Example output:**
-```sql
-SELECT out FROM relations
-WHERE `in`.title = $title
-AND relation_type = "wikilink"
-FETCH out
 ```
 
 ## GraphIR Capabilities
@@ -220,5 +205,4 @@ cargo test -p crucible-query syntax::pgq
 
 # Run renderer tests
 cargo test -p crucible-query render::sqlite
-cargo test -p crucible-query render::surreal
 ```

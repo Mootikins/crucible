@@ -114,11 +114,10 @@ impl SearchTools {
             note_store: Some(note_store),
         }
     }
-
 }
 #[tool_router]
 impl SearchTools {
-    #[tool(description = "Search notes and skills using semantic similarity")]
+    #[tool(description = "Search notes using semantic similarity")]
     pub async fn semantic_search(
         &self,
         params: Parameters<SemanticSearchParams>,
@@ -152,7 +151,6 @@ impl SearchTools {
                 })
             })
             .collect();
-
 
         // Sort all results by score descending
         all_results.sort_by(|a, b| {

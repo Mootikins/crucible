@@ -56,7 +56,9 @@ pub async fn get_or_create_embedding_provider(
 
     // Fast path: return cached provider
     {
-        let cache = EMBEDDING_PROVIDER_CACHE.lock().unwrap();
+        let cache = EMBEDDING_PROVIDER_CACHE
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         if let Some(cached) = cache.get(&cache_key) {
             trace!(key = %cache_key, "Using cached embedding provider");
             return Ok(cached.clone());
@@ -69,7 +71,9 @@ pub async fn get_or_create_embedding_provider(
 
     // Store in cache
     {
-        let mut cache = EMBEDDING_PROVIDER_CACHE.lock().unwrap();
+        let mut cache = EMBEDDING_PROVIDER_CACHE
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         cache.insert(cache_key, provider.clone());
     }
 
@@ -81,7 +85,10 @@ pub async fn get_or_create_embedding_provider(
 /// Useful for testing or when config changes require fresh providers.
 #[cfg(test)]
 pub fn clear_embedding_provider_cache() {
-    EMBEDDING_PROVIDER_CACHE.lock().unwrap().clear();
+    EMBEDDING_PROVIDER_CACHE
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .clear();
 }
 
 #[cfg(test)]

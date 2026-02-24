@@ -1164,57 +1164,112 @@ async fn handle_process_batch(
     km: &Arc<KilnManager>,
     event_tx: &broadcast::Sender<SessionEventMessage>,
 ) -> Response {
+    let request_id = req.id.clone();
     let kiln_path = require_str_param!(req, "kiln");
     let paths_arr = require_array_param!(req, "paths");
     let paths: Vec<std::path::PathBuf> = paths_arr
         .iter()
         .filter_map(|v: &serde_json::Value| v.as_str().map(std::path::PathBuf::from))
         .collect();
+    let batch_id = request_id
+        .as_ref()
+        .map(|id| match id {
+            RequestId::Number(n) => format!("batch-{}", n),
+            RequestId::String(s) => format!("batch-{}", s),
+        })
+        .unwrap_or_else(|| "batch-unknown".to_string());
+
     // Emit start event
     let _ = event_tx.send(SessionEventMessage::new(
         "process",
         "process_start",
-        serde_json::json!({ "total": paths.len(), "kiln": kiln_path }),
+        serde_json::json!({
+            "type": "process_start",
+            "batch_id": &batch_id,
+            "total": paths.len(),
+            "kiln": kiln_path
+        }),
     ));
-    match km.process_batch(Path::new(kiln_path), &paths).await {
-        Ok((processed, skipped, errors)) => {
-            // Emit error events per failed file
-            for (path, _) in &errors {
+
+    let mut processed = 0usize;
+    let mut skipped = 0usize;
+    let mut errors: Vec<(PathBuf, String)> = Vec::new();
+
+    for path in &paths {
+        match km.process_file(Path::new(kiln_path), path).await {
+            Ok(true) => {
+                processed += 1;
                 let _ = event_tx.send(SessionEventMessage::new(
                     "process",
                     "process_progress",
                     serde_json::json!({
+                        "type": "process_progress",
+                        "batch_id": &batch_id,
                         "file": path.to_string_lossy(),
-                        "result": "error"
+                        "result": "processed"
                     }),
                 ));
             }
-            // Emit completion event
-            let _ = event_tx.send(SessionEventMessage::new(
-                "process",
-                "process_complete",
-                serde_json::json!({
-                    "processed": processed,
-                    "skipped": skipped,
-                    "errors": errors.len()
-                }),
-            ));
-            Response::success(
-                req.id,
-                serde_json::json!({
-                    "processed": processed,
-                    "skipped": skipped,
-                    "errors": errors.iter().map(|(p, _)| {
-                        serde_json::json!({
-                            "path": p.to_string_lossy(),
-                            "error": "processing failed"
-                        })
-                    }).collect::<Vec<_>>()
-                }),
-            )
+            Ok(false) => {
+                skipped += 1;
+                let _ = event_tx.send(SessionEventMessage::new(
+                    "process",
+                    "process_progress",
+                    serde_json::json!({
+                        "type": "process_progress",
+                        "batch_id": &batch_id,
+                        "file": path.to_string_lossy(),
+                        "result": "skipped"
+                    }),
+                ));
+            }
+            Err(e) => {
+                let error_msg = e.to_string();
+                errors.push((path.clone(), error_msg.clone()));
+                let _ = event_tx.send(SessionEventMessage::new(
+                    "process",
+                    "process_progress",
+                    serde_json::json!({
+                        "type": "process_progress",
+                        "batch_id": &batch_id,
+                        "file": path.to_string_lossy(),
+                        "result": "error",
+                        "error_msg": error_msg
+                    }),
+                ));
+            }
         }
-        Err(e) => internal_error(req.id, e),
     }
+
+    // Emit completion event
+    let _ = event_tx.send(SessionEventMessage::new(
+        "process",
+        "process_complete",
+        serde_json::json!({
+            "type": "process_complete",
+            "batch_id": &batch_id,
+            "processed": processed,
+            "skipped": skipped,
+            "errors": errors.len()
+        }),
+    ));
+
+    Response::success(
+        request_id,
+        serde_json::json!({
+            "processed": processed,
+            "skipped": skipped,
+            "errors": errors
+                .iter()
+                .map(|(p, err)| {
+                    serde_json::json!({
+                        "path": p.to_string_lossy(),
+                        "error": err
+                    })
+                })
+                .collect::<Vec<_>>()
+        }),
+    )
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1222,31 +1277,43 @@ async fn handle_process_batch(
 // ─────────────────────────────────────────────────────────────────────────────
 
 async fn handle_storage_verify(req: Request) -> Response {
-    Response::success(req.id, serde_json::json!({
-        "status": "not_implemented",
-        "message": "Storage verification is not yet implemented. Use `cru process --force` to rebuild storage."
-    }))
+    Response::success(
+        req.id,
+        serde_json::json!({
+            "status": "not_implemented",
+            "message": "Storage verification is not yet implemented. Use `cru process --force` to rebuild storage."
+        }),
+    )
 }
 
 async fn handle_storage_cleanup(req: Request) -> Response {
-    Response::success(req.id, serde_json::json!({
-        "status": "not_implemented",
-        "message": "Storage cleanup is not yet implemented."
-    }))
+    Response::success(
+        req.id,
+        serde_json::json!({
+            "status": "not_implemented",
+            "message": "Storage cleanup is not yet implemented."
+        }),
+    )
 }
 
 async fn handle_storage_backup(req: Request) -> Response {
-    Response::success(req.id, serde_json::json!({
-        "status": "not_implemented",
-        "message": "Storage backup is not yet implemented. Copy the .crucible directory directly for backup."
-    }))
+    Response::success(
+        req.id,
+        serde_json::json!({
+            "status": "not_implemented",
+            "message": "Storage backup is not yet implemented. Copy the .crucible directory directly for backup."
+        }),
+    )
 }
 
 async fn handle_storage_restore(req: Request) -> Response {
-    Response::success(req.id, serde_json::json!({
-        "status": "not_implemented",
-        "message": "Storage restore is not yet implemented."
-    }))
+    Response::success(
+        req.id,
+        serde_json::json!({
+            "status": "not_implemented",
+            "message": "Storage restore is not yet implemented."
+        }),
+    )
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1462,18 +1529,24 @@ async fn handle_session_search(req: Request, sm: &Arc<SessionManager>) -> Respon
     let sessions_path = if let Some(kiln_path) = kiln {
         kiln_path.join(".crucible").join("sessions")
     } else {
-        return Response::success(req.id, serde_json::json!({
-            "matches": [],
-            "total": 0,
-            "note": "Specify 'kiln' parameter to search sessions"
-        }));
+        return Response::success(
+            req.id,
+            serde_json::json!({
+                "matches": [],
+                "total": 0,
+                "note": "Specify 'kiln' parameter to search sessions"
+            }),
+        );
     };
 
     if !sessions_path.exists() {
-        return Response::success(req.id, serde_json::json!({
-            "matches": [],
-            "total": 0
-        }));
+        return Response::success(
+            req.id,
+            serde_json::json!({
+                "matches": [],
+                "total": 0
+            }),
+        );
     }
 
     let query_lower = query.to_lowercase();
@@ -1481,7 +1554,12 @@ async fn handle_session_search(req: Request, sm: &Arc<SessionManager>) -> Respon
 
     let read_dir = match tokio::fs::read_dir(&sessions_path).await {
         Ok(rd) => rd,
-        Err(e) => return internal_error(req.id, anyhow::anyhow!("Failed to read sessions dir: {}", e)),
+        Err(e) => {
+            return internal_error(
+                req.id,
+                anyhow::anyhow!("Failed to read sessions dir: {}", e),
+            )
+        }
     };
 
     let mut rd = read_dir;
@@ -1509,7 +1587,9 @@ async fn handle_session_search(req: Request, sm: &Arc<SessionManager>) -> Respon
         for (line_num, line) in content.lines().enumerate() {
             if line.to_lowercase().contains(&query_lower) {
                 let truncated = if line.len() > 100 {
-                    format!("{}...", &line[..100])
+                    // Use floor_char_boundary to avoid panicking on multi-byte UTF-8
+                    let end = line.floor_char_boundary(100);
+                    format!("{}...", &line[..end])
                 } else {
                     line.to_string()
                 };
@@ -1524,14 +1604,18 @@ async fn handle_session_search(req: Request, sm: &Arc<SessionManager>) -> Respon
     }
 
     // Also include active sessions matching by title
-    let active_sessions = sm.list_sessions_filtered_async(None, None, None, None).await;
+    let active_sessions = sm
+        .list_sessions_filtered_async(None, None, None, None)
+        .await;
     for session in &active_sessions {
         if matches.len() >= limit {
             break;
         }
         if let Some(title) = &session.title {
             if title.to_lowercase().contains(&query_lower)
-                && !matches.iter().any(|m| m["session_id"] == session.id.as_str())
+                && !matches
+                    .iter()
+                    .any(|m| m["session_id"] == session.id.as_str())
             {
                 matches.push(serde_json::json!({
                     "session_id": session.id,
@@ -1543,10 +1627,13 @@ async fn handle_session_search(req: Request, sm: &Arc<SessionManager>) -> Respon
     }
 
     let total = matches.len();
-    Response::success(req.id, serde_json::json!({
-        "matches": matches,
-        "total": total
-    }))
+    Response::success(
+        req.id,
+        serde_json::json!({
+            "matches": matches,
+            "total": total
+        }),
+    )
 }
 
 async fn handle_session_get(req: Request, sm: &Arc<SessionManager>) -> Response {
@@ -3273,6 +3360,91 @@ mod tests {
 
         let _ = shutdown_handle.send(());
         let _ = server_task.await;
+    }
+
+    #[tokio::test]
+    async fn test_process_batch_emits_per_file_progress_events() {
+        use std::time::Duration;
+
+        let tmp = TempDir::new().unwrap();
+        let kiln_path = tmp.path().join("kiln");
+        std::fs::create_dir_all(&kiln_path).unwrap();
+
+        let good_file = kiln_path.join("ok.md");
+        std::fs::write(&good_file, "# ok\n").unwrap();
+        let missing_file = kiln_path.join("missing.md");
+
+        let km = Arc::new(KilnManager::new());
+        let (event_tx, _) = broadcast::channel(64);
+        let mut event_rx = event_tx.subscribe();
+
+        let req = Request {
+            jsonrpc: "2.0".to_string(),
+            id: Some(RequestId::Number(42)),
+            method: "process_batch".to_string(),
+            params: serde_json::json!({
+                "kiln": kiln_path.to_string_lossy(),
+                "paths": [
+                    good_file.to_string_lossy(),
+                    missing_file.to_string_lossy()
+                ]
+            }),
+        };
+
+        let response = handle_process_batch(req, &km, &event_tx).await;
+        assert!(response.error.is_none());
+
+        let mut events = Vec::new();
+        for _ in 0..4 {
+            let event = tokio::time::timeout(Duration::from_secs(2), event_rx.recv())
+                .await
+                .expect("timed out waiting for process event")
+                .expect("event channel closed unexpectedly");
+            events.push(event);
+        }
+
+        let progress_events: Vec<&SessionEventMessage> = events
+            .iter()
+            .filter(|e| e.event == "process_progress")
+            .collect();
+        assert_eq!(
+            progress_events.len(),
+            2,
+            "expected 2 process_progress events"
+        );
+
+        let processed_event = progress_events
+            .iter()
+            .find(|e| {
+                e.data.get("file").and_then(|v| v.as_str())
+                    == Some(good_file.to_string_lossy().as_ref())
+            })
+            .expect("missing progress event for processed file");
+        assert_eq!(
+            processed_event.data.get("type").and_then(|v| v.as_str()),
+            Some("process_progress")
+        );
+        assert_eq!(
+            processed_event.data.get("result").and_then(|v| v.as_str()),
+            Some("processed")
+        );
+
+        let error_event = progress_events
+            .iter()
+            .find(|e| {
+                e.data.get("file").and_then(|v| v.as_str())
+                    == Some(missing_file.to_string_lossy().as_ref())
+            })
+            .expect("missing progress event for failed file");
+        assert_eq!(
+            error_event.data.get("result").and_then(|v| v.as_str()),
+            Some("error")
+        );
+        assert!(error_event
+            .data
+            .get("error_msg")
+            .and_then(|v| v.as_str())
+            .is_some());
     }
 
     #[tokio::test]

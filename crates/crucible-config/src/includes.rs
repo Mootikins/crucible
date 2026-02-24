@@ -136,10 +136,6 @@ pub struct IncludeConfig {
     #[serde(default)]
     pub profiles: Option<String>,
 
-    /// Database configuration file
-    #[serde(default)]
-    pub database: Option<String>,
-
     /// Additional named includes (for custom sections)
     ///
     /// Any key not matching the explicit fields above will be
@@ -158,7 +154,6 @@ impl IncludeConfig {
             && self.embedding.is_none()
             && self.acp.is_none()
             && self.profiles.is_none()
-            && self.database.is_none()
             && self.custom.is_empty()
     }
 
@@ -186,9 +181,6 @@ impl IncludeConfig {
         }
         if let Some(path) = &self.profiles {
             includes.push(("profiles", path.as_str()));
-        }
-        if let Some(path) = &self.database {
-            includes.push(("database", path.as_str()));
         }
 
         for (section, path) in &self.custom {
