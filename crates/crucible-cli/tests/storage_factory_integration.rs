@@ -146,10 +146,10 @@ async fn test_storage_handle_mode_detection() {
     let storage = get_storage(&config).await.expect("get_storage failed");
 
     assert!(storage.is_daemon(), "Should report as daemon mode");
-    assert!(!storage.is_embedded(), "Should not report as embedded mode");
+    assert!(!storage.is_lightweight(), "Should not report as lightweight mode");
     assert!(
-        storage.try_embedded().is_none(),
-        "try_embedded should return None in daemon mode"
+        storage.as_daemon_client().is_some(),
+        "as_daemon_client should return Some in daemon mode"
     );
 
     server.shutdown().await;
