@@ -1,7 +1,5 @@
 //! Polling-based file watching backend.
 
-
-
 use crate::{
     error::{Error, Result},
     events::{EventMetadata, FileEvent, FileEventKind},
@@ -52,8 +50,6 @@ pub struct PollingWatcher {
     /// Capabilities
     capabilities: BackendCapabilities,
 }
-
-
 
 impl Default for PollingWatcher {
     fn default() -> Self {
@@ -125,7 +121,6 @@ impl PollingWatcher {
         Ok(())
     }
 
-
     /// Check for changes in a specific path.
     async fn check_path_changes(&self, path: &PathBuf, watch_state: &mut WatchState) -> Result<()> {
         let metadata = std::fs::metadata(path).map_err(Error::Io)?;
@@ -138,7 +133,6 @@ impl PollingWatcher {
             modified_time,
             size,
         };
-
 
         let previous_state = watch_state.file_states.get(path);
 
@@ -158,7 +152,6 @@ impl PollingWatcher {
         watch_state.file_states.insert(path.clone(), current_state);
         Ok(())
     }
-
 
     /// Send a file event.
     async fn send_event(&self, kind: FileEventKind, path: PathBuf) {

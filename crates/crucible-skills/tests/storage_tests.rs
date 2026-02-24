@@ -1,4 +1,4 @@
-#![cfg(feature = "storage")]
+// These tests require a live database and are ignored by default.
 
 use chrono::Utc;
 use crucible_skills::{Skill, SkillScope, SkillSource};

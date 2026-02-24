@@ -802,11 +802,7 @@ impl DaemonClient {
         .await
     }
 
-    pub async fn storage_backup(
-        &self,
-        kiln_path: &Path,
-        dest: &Path,
-    ) -> Result<serde_json::Value> {
+    pub async fn storage_backup(&self, kiln_path: &Path, dest: &Path) -> Result<serde_json::Value> {
         self.call(
             "storage.backup",
             serde_json::json!({
@@ -993,6 +989,14 @@ impl DaemonClient {
             serde_json::json!({ "session_ids": session_ids }),
         )
         .await
+    }
+
+    pub async fn subscribe_process_events(&self, batch_id: &str) -> Result<serde_json::Value> {
+        let result = self.session_subscribe(&["process"]).await?;
+        Ok(serde_json::json!({
+            "batch_id": batch_id,
+            "subscription": result
+        }))
     }
 
     pub async fn session_configure_agent(
@@ -1405,6 +1409,19 @@ mod tests {
             let result = client.ping().await.unwrap();
             assert_eq!(result, "pong");
         }
+    }
+
+    #[tokio::test]
+    async fn test_subscribe_process_events() {
+        let (_tmp, sock_path, _handle) = setup_test_server().await;
+
+        let (client, _event_rx) = DaemonClient::connect_to_with_events(&sock_path)
+            .await
+            .unwrap();
+        let result = client.subscribe_process_events("batch-123").await.unwrap();
+
+        assert_eq!(result["batch_id"], "batch-123");
+        assert_eq!(result["subscription"]["subscribed"][0], "process");
     }
 
     #[tokio::test]

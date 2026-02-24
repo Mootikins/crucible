@@ -3,10 +3,6 @@
 //! This library provides the core functionality for the Crucible CLI,
 //! exposing modules for configuration, interactive components, and output formatting.
 //!
-
-// Allow some lints for WIP TUI code - to be cleaned up
-#![allow(dead_code, unused_imports)]
-
 pub mod chat;
 pub mod cli;
 pub mod commands;
@@ -26,4 +22,5 @@ pub mod provider_detect;
 pub mod search;
 pub mod session_logger;
 pub mod sync;
+#[allow(dead_code, unused_imports)] // WIP TUI code — clean up as features stabilize
 pub mod tui;

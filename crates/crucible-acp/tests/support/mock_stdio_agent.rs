@@ -1,3 +1,5 @@
+#![allow(unused)]
+
 //! Mock stdio-based ACP agent for integration testing
 //!
 //! This module provides a mock agent that communicates via stdin/stdout,
@@ -9,10 +11,7 @@ use std::collections::HashMap;
 use std::io::{self, BufRead, Write};
 
 // Import ACP protocol types for proper response construction
-use agent_client_protocol::{
-    AgentCapabilities, AuthMethod, AuthMethodId, Implementation, InitializeResponse,
-    NewSessionResponse, PromptResponse, ProtocolVersion, SessionId, StopReason,
-};
+use agent_client_protocol::{AuthMethod, InitializeResponse, NewSessionResponse, PromptResponse};
 
 /// Defines the behavior profile of a mock agent
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -250,8 +250,6 @@ impl ObsidianSyncHandler {
 
         Ok(())
     }
-
-
 }
 
 #[async_trait]

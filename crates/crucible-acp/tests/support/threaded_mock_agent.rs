@@ -1,3 +1,5 @@
+#![allow(unused)]
+
 //! Threaded mock agent for integration testing without subprocess spawning
 //!
 //! This module provides an in-process mock agent that communicates via

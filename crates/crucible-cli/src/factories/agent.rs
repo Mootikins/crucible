@@ -8,7 +8,7 @@
 //! 3. Default: Internal (Crucible's built-in Rig-based agents)
 
 use anyhow::Result;
-use tracing::{debug, info, warn};
+use tracing::info;
 
 use crucible_config::{BackendType, CliAppConfig};
 use crucible_core::session::SessionAgent;
@@ -152,32 +152,6 @@ impl Default for AgentInitParams {
     fn default() -> Self {
         Self::new()
     }
-}
-
-/// Result of agent initialization — always a ready-to-use AgentHandle.
-///
-/// All agents route through the daemon, which returns a DaemonAgentHandle.
-pub struct InitializedAgent(Box<dyn AgentHandle + Send + Sync>);
-
-impl InitializedAgent {
-    pub fn into_handle(self) -> Box<dyn AgentHandle + Send + Sync> {
-        self.0
-    }
-}
-
-/// Check if a model likely supports reasoning_content in its streaming responses
-///
-/// Models that use extended thinking (Qwen3 with thinking, DeepSeek-R1, etc.)
-/// return their reasoning in a `reasoning_content` field that requires custom
-/// SSE parsing to extract.
-fn supports_reasoning_content(model_name: &str) -> bool {
-    let name_lower = model_name.to_lowercase();
-    // Qwen3 thinking variants
-    name_lower.contains("qwen3") && name_lower.contains("thinking")
-        // DeepSeek R1 reasoning models
-        || name_lower.contains("deepseek") && name_lower.contains("r1")
-        // Any model with explicit "reasoning" in name
-        || name_lower.contains("reasoning")
 }
 
 fn build_acp_session_agent(params: &AgentInitParams, config: &CliAppConfig) -> SessionAgent {
@@ -345,18 +319,17 @@ pub async fn create_daemon_agent(
         .map(|t| t == AgentType::Acp)
         .unwrap_or_else(|| config.chat.agent_preference == crucible_config::AgentPreference::Acp);
 
-    if is_new_session {
-        let session_agent = if is_acp {
+    let session_agent = if is_new_session {
+        let agent = if is_acp {
             build_acp_session_agent(params, config)
         } else {
             build_internal_session_agent(config)
         };
-
-        client
-            .session_configure_agent(&session_id, &session_agent)
-            .await?;
-    }
-
+        client.session_configure_agent(&session_id, &agent).await?;
+        Some(agent)
+    } else {
+        None
+    };
     info!(
         session_id = %session_id,
         resumed = !is_new_session,
@@ -366,16 +339,9 @@ pub async fn create_daemon_agent(
         .await?
         .with_kiln_path(config.kiln_path.clone())
         .with_workspace(workspace.clone());
-
-    let handle = if is_new_session {
-        let agent_config = if is_acp {
-            build_acp_session_agent(params, config)
-        } else {
-            build_internal_session_agent(config)
-        };
-        handle.with_agent_config(agent_config)
-    } else {
-        handle
+    let handle = match session_agent {
+        Some(agent) => handle.with_agent_config(agent),
+        None => handle,
     };
 
     Ok(Box::new(handle))
@@ -456,23 +422,12 @@ pub async fn create_daemon_replay_agent(
     Ok((Box::new(handle), replay_session_id, event_rx))
 }
 
-/// Create an agent via daemon (always required)
-///
-/// The daemon is now always required for agent execution.
-/// It auto-starts if not already running.
+/// Create an agent via daemon (auto-starts if needed).
 pub async fn create_agent(
     config: &CliAppConfig,
     params: AgentInitParams,
-) -> Result<InitializedAgent> {
-    match create_daemon_agent(config, &params).await {
-        Ok(handle) => {
-            info!("Using daemon-backed agent");
-            Ok(InitializedAgent(handle))
-        }
-        Err(e) => {
-            anyhow::bail!("Failed to create agent via daemon: {}", e)
-        }
-    }
+) -> Result<Box<dyn AgentHandle + Send + Sync>> {
+    create_daemon_agent(config, &params).await
 }
 
 #[cfg(test)]
@@ -585,27 +540,6 @@ mod tests {
     fn test_agent_init_params_default_has_empty_env_overrides() {
         let params = AgentInitParams::default();
         assert!(params.env_overrides.is_empty());
-    }
-
-    #[test]
-    fn test_supports_reasoning_content() {
-        // Qwen3 thinking models
-        assert!(supports_reasoning_content("qwen3-4b-thinking-2507-q8_0"));
-        assert!(supports_reasoning_content("Qwen3-8B-Thinking"));
-        assert!(supports_reasoning_content("qwen3-thinking-32b"));
-
-        // DeepSeek R1 models
-        assert!(supports_reasoning_content("deepseek-r1-8b"));
-        assert!(supports_reasoning_content("DeepSeek-R1-Distill"));
-
-        // Generic reasoning in name
-        assert!(supports_reasoning_content("my-reasoning-model"));
-
-        // Not reasoning models
-        assert!(!supports_reasoning_content("qwen3-4b-instruct")); // qwen3 but no thinking
-        assert!(!supports_reasoning_content("llama3.2"));
-        assert!(!supports_reasoning_content("gpt-4o"));
-        assert!(!supports_reasoning_content("claude-3-5-sonnet"));
     }
 
     #[test]

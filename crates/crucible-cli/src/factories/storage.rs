@@ -26,11 +26,6 @@ impl StorageHandle {
         }
     }
 
-    /// Always true — daemon is the only storage backend.
-    pub fn is_daemon(&self) -> bool {
-        true
-    }
-
     /// Get the inner `DaemonStorageClient`.
     pub fn as_daemon_client(&self) -> &Arc<DaemonStorageClient> {
         match self {
@@ -60,9 +55,7 @@ impl StorageHandle {
         }
     }
 
-    pub fn as_knowledge_repository(
-        &self,
-    ) -> Arc<dyn crucible_core::traits::KnowledgeRepository> {
+    pub fn as_knowledge_repository(&self) -> Arc<dyn crucible_core::traits::KnowledgeRepository> {
         match self {
             Self::Daemon(client) => {
                 Arc::clone(client) as Arc<dyn crucible_core::traits::KnowledgeRepository>
@@ -85,7 +78,6 @@ pub async fn get_storage(config: &CliConfig) -> Result<StorageHandle> {
 
     let client = Arc::new(client);
     Ok(StorageHandle::Daemon(Arc::new(DaemonStorageClient::new(
-        client,
-        kiln_path,
+        client, kiln_path,
     ))))
 }

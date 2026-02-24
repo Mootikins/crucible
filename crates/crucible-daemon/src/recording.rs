@@ -4,8 +4,8 @@
 
 use anyhow::Result;
 use chrono::{DateTime, Utc};
-use crucible_core::session::RecordingMode;
 use crucible_core::protocol::SessionEventMessage;
+use crucible_core::session::RecordingMode;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::path::PathBuf;

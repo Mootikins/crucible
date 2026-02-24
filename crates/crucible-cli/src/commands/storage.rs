@@ -2,7 +2,6 @@
 
 use anyhow::Result;
 use std::future::Future;
-use std::path::PathBuf;
 use std::time::Instant;
 
 use crate::cli::StorageCommands;
@@ -105,13 +104,4 @@ async fn execute_stats(config: CliConfig, _format: String) -> Result<()> {
         duration.as_secs_f32()
     ));
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    // StorageOutputFormat was removed — it was unused.
-    // These tests verified From<String> for a type that was never
-    // actually used for formatting. Removed as dead code.
 }

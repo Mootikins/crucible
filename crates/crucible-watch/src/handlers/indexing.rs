@@ -24,7 +24,6 @@ pub struct IndexingHandler {
     emitter: Arc<dyn EventEmitter<Event = SessionEvent>>,
 }
 
-
 impl IndexingHandler {
     pub fn new() -> Result<Self> {
         Self::with_emitter(Arc::new(NoOpEmitter::new()))

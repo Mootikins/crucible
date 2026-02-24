@@ -3,9 +3,6 @@
 //! Provides daemon isolation, command helpers, and config fixtures
 //! used by cli_e2e_internal, cli_e2e_acp, and cli_e2e_delegation tests.
 
-// Deprecation warning is from assert_cmd's cargo_bin() - intentional, matches existing tests
-#![allow(deprecated)]
-
 use assert_cmd::Command;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -14,6 +11,7 @@ use std::thread;
 use std::time::Duration;
 
 /// Create a `cru` CLI command via assert_cmd.
+#[allow(deprecated)]
 pub fn cru() -> Command {
     Command::cargo_bin("cru").unwrap()
 }
@@ -71,7 +69,7 @@ impl TestDaemon {
         // Single binary: daemon runs via `cru daemon serve`
         let cru_exe = env!("CARGO_BIN_EXE_cru");
 
-        let process = StdCommand::new(cru_exe)
+        let mut process = StdCommand::new(cru_exe)
             .args(["daemon", "serve"])
             .env("CRUCIBLE_SOCKET", &socket_path)
             .stdin(Stdio::null())
@@ -92,6 +90,8 @@ impl TestDaemon {
             }
             thread::sleep(Duration::from_millis(100));
         }
+        let _ = process.kill();
+        let _ = process.wait();
         panic!("daemon socket did not appear within 5 seconds");
     }
 

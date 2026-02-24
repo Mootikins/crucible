@@ -143,6 +143,10 @@ impl SqliteRenderer {
                 PatternElement::Edge(edge) => {
                     let edge_alias = format!("e{}", edge_idx);
 
+                    // If no node has been seen yet, create an implicit source node
+                    if node_aliases.is_empty() {
+                        node_aliases.push("n0".to_string());
+                    }
                     let prev_node = &node_aliases[node_aliases.len() - 1];
 
                     // Build JOIN based on direction
