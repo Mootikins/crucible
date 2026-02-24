@@ -64,7 +64,7 @@ cru chat -a claude
 cru mcp
 ```
 
-First run prompts for a kiln path and detects available LLM providers. A background daemon (`cru-server`) auto-spawns to manage session state, file watching, and multi-session support. It communicates over a Unix socket and restarts automatically if stopped.
+First run prompts for a kiln path and detects available LLM providers. A background daemon auto-spawns via `cru daemon serve` to manage session state, file watching, and multi-session support. It communicates over a Unix socket and restarts automatically if stopped.
 
 **In a chat session:**
 - Type naturally, the agent responds with access to your knowledge base

@@ -1,6 +1,6 @@
 # cargo-dist release workflow
 # Triggered on version tags (v*)
-# Builds pre-built binaries for cru and cru-server with SQLite storage
+# Builds pre-built binary for cru (single binary, daemon included)
 
 name: Release
 
@@ -99,11 +99,7 @@ jobs:
           ${{ matrix.use_cross && 'cross' || 'cargo' }} build --release --target ${{ matrix.target }} \
             -p crucible-cli --no-default-features --features storage-sqlite
 
-      # Build cru-server (daemon)
-      - name: Build cru-server
-        run: |
-          ${{ matrix.use_cross && 'cross' || 'cargo' }} build --release --target ${{ matrix.target }} \
-            -p crucible-daemon --no-default-features --features storage-sqlite
+      # Single binary — cru includes the daemon (cru daemon serve)
 
       # Package the binaries
       - name: Package (Unix)
@@ -113,7 +109,7 @@ jobs:
           archive="crucible-${tag}-${{ matrix.target }}"
           mkdir -p "$archive"
           cp "target/${{ matrix.target }}/release/cru" "$archive/"
-          cp "target/${{ matrix.target }}/release/cru-server" "$archive/"
+          # Single binary: only cru needed (daemon runs via `cru daemon serve`)
           cp README.md LICENSE* "$archive/" 2>/dev/null || true
           tar czf "${archive}.tar.gz" "$archive"
           echo "ARCHIVE=${archive}.tar.gz" >> "$GITHUB_ENV"
@@ -136,7 +132,7 @@ jobs:
           tag="${{ needs.create-release.outputs.tag }}"
           cat > install.sh << 'INSTALLER'
           #!/bin/sh
-          # Crucible installer — downloads pre-built cru + cru-server
+          # Crucible installer — downloads pre-built cru binary
           set -eu
 
           REPO="Mootikins/crucible"
@@ -173,10 +169,9 @@ jobs:
           curl -fsSL "$URL" -o "$TMPDIR/$ARCHIVE"
           tar xzf "$TMPDIR/$ARCHIVE" -C "$TMPDIR"
           cp "$TMPDIR/crucible-${CRUCIBLE_VERSION}-${TARGET}/cru" "$INSTALL_DIR/"
-          cp "$TMPDIR/crucible-${CRUCIBLE_VERSION}-${TARGET}/cru-server" "$INSTALL_DIR/"
-          chmod +x "$INSTALL_DIR/cru" "$INSTALL_DIR/cru-server"
+          chmod +x "$INSTALL_DIR/cru"
 
-          echo "Installed cru and cru-server to $INSTALL_DIR"
+          echo "Installed cru to $INSTALL_DIR"
 
           # Check if install dir is in PATH
           case ":$PATH:" in

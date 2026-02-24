@@ -86,28 +86,10 @@ async fn show_global_status(
     detailed: bool,
     _recent: bool,
 ) -> Result<()> {
-    // Determine storage mode
-    let mode = if storage.is_daemon() {
-        "daemon"
-    } else if storage.is_lightweight() {
-        "lightweight"
-    } else {
-        #[cfg(feature = "storage-sqlite")]
-        if storage.is_sqlite() {
-            "sqlite"
-        } else {
-            "unknown"
-        }
-        #[cfg(not(feature = "storage-sqlite"))]
-        "unknown"
-    };
+    // Daemon is the only storage mode
+    let mode = "daemon";
 
-    // Get note count if available
-    let note_count = if let Some(note_store) = storage.note_store() {
-        Some(note_store.list().await?.len())
-    } else {
-        None
-    };
+    let note_count = Some(storage.note_store().list().await?.len());
 
     match output_format {
         OutputFormat::Json => {

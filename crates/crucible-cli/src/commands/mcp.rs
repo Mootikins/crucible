@@ -108,18 +108,12 @@ pub async fn execute(config: CliConfig, args: McpArgs) -> Result<()> {
 
     // Get embedding config and create provider
     let embedding_config =
-        crate::factories::enrichment::embedding_provider_config_from_cli(core.config());
+        crate::factories::embedding_provider_config_from_cli(core.config());
     let llm_provider = crucible_llm::embeddings::create_provider(embedding_config).await?;
 
     let embedding_provider = llm_provider as Arc<dyn EmbeddingProvider>;
 
-    // Create knowledge repository from storage
-    let knowledge_repo = core
-        .storage_handle()
-        .as_knowledge_repository(Some(core.kiln_root()))
-        .ok_or_else(|| {
-            anyhow::anyhow!("MCP server requires a knowledge-capable storage backend")
-        })?;
+    let knowledge_repo = core.storage_handle().as_knowledge_repository();
 
     // Determine Just directory
     let just_dir = args

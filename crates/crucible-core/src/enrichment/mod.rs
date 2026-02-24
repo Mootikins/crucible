@@ -1,7 +1,7 @@
 //! Enrichment Trait Definitions and Domain Types
 //!
 //! This module defines the core traits and types for the enrichment layer.
-//! Actual implementations live in the `crucible-enrichment` crate.
+//! Actual implementations live in `crucible-daemon::enrichment`.
 //!
 //! ## Dependency Inversion Principle (SOLID)
 //!

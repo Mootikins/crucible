@@ -78,6 +78,12 @@ pub struct EditorWatcher {
 
 
 
+impl Default for EditorWatcher {
+    fn default() -> Self {
+        Self::with_default_config()
+    }
+}
+
 impl EditorWatcher {
     /// Create a new editor watcher.
     pub fn new() -> Self {

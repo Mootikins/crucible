@@ -68,16 +68,17 @@ impl TestDaemon {
         let socket_path = temp_dir.path().join("daemon.sock");
         let config_path = write_config(temp_dir.path(), extra_toml);
 
-        let daemon_exe =
-            std::env::var("CARGO_BIN_EXE_cru-server").unwrap_or_else(|_| "cru-server".to_string());
+        // Single binary: daemon runs via `cru daemon serve`
+        let cru_exe = env!("CARGO_BIN_EXE_cru");
 
-        let process = StdCommand::new(daemon_exe)
+        let process = StdCommand::new(cru_exe)
+            .args(["daemon", "serve"])
             .env("CRUCIBLE_SOCKET", &socket_path)
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .spawn()
-            .expect("failed to spawn cru-server");
+            .expect("failed to spawn cru daemon serve");
 
         for _ in 0..50 {
             if socket_path.exists() {

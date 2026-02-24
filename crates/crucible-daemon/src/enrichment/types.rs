@@ -5,6 +5,6 @@
 
 // Re-export core enrichment types
 pub use crucible_core::enrichment::{
-    BlockEmbedding, EmbeddingProvider, EnrichedNote, EnrichmentMetadata, InferredRelation,
+    BlockEmbedding, EnrichedNote, EnrichmentMetadata, InferredRelation,
     RelationType,
 };

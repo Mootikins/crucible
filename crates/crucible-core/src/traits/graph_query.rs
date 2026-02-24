@@ -1,7 +1,7 @@
 //! Graph query execution abstraction
 //!
 //! This trait abstracts graph query execution, allowing the scripting layers
-//! (Rune, Lua) to execute graph queries without depending on specific database
+//! (Lua) to execute graph queries without depending on specific database
 //! implementations.
 //!
 //! ## Architecture
@@ -14,13 +14,13 @@
 //!               ▲
 //!               │ implements
 //! ┌─────────────────────────────────┐
-//! │ crucible-surrealdb              │
-//! │   SurrealGraphExecutor          │  ← Concrete implementation
+//! │ crucible-sqlite / crucible-lance │
+//! │   GraphExecutor implementations  │  ← Concrete implementations
 //! └─────────────────────────────────┘
 //!               ▲
 //!               │ injected into
 //! ┌─────────────┴───────────────────┐
-//! │ crucible-rune / crucible-lua    │
+//! │ crucible-lua                    │
 //! │   graph_module_with_executor()  │  ← Module factories
 //! └─────────────────────────────────┘
 //! ```

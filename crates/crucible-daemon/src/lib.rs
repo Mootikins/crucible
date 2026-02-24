@@ -1,8 +1,8 @@
-//! # Crucible Server (cru-server)
+//! # Crucible Daemon (cru daemon serve)
 //!
 //! Headless backend that provides:
 //! - **Session management**: Create, pause, resume, end chat/agent/workflow sessions
-//! - **Kiln operations**: Open, close, query kilns (SQLite or SurrealDB)
+//! - **Kiln operations**: Open, close, query kilns (SQLite)
 //! - **File processing**: Parse and index markdown files
 //! - **Event persistence**: Auto-save session events to JSONL/markdown
 //!
@@ -14,8 +14,8 @@
 //! ## Usage
 //!
 //! ```bash
-//! # Start server (usually auto-started by CLI)
-//! cru-server
+//! # Start daemon (usually auto-started by CLI)
+//! cru daemon serve
 //!
 //! # Server listens at: $XDG_RUNTIME_DIR/crucible.sock
 //! # Or: /tmp/crucible.sock

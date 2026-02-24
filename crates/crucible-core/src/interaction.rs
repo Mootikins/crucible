@@ -305,7 +305,7 @@ impl QuestionAnswer {
 ///
 /// Unlike [`AskRequest`] which uses simple string choices, `PopupRequest` uses
 /// [`PopupEntry`] items that can include labels, descriptions, and arbitrary data.
-/// This makes it suitable for rich scripted popups from Rune/Lua plugins.
+/// This makes it suitable for rich scripted popups from Lua plugins.
 ///
 /// # Example
 ///

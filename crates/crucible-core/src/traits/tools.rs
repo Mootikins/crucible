@@ -1,6 +1,6 @@
 //! Tool execution abstraction trait
 //!
-//! This trait defines the interface for executing tools (MCP tools, Rune scripts, etc.)
+//! This trait defines the interface for executing tools (MCP tools, Lua scripts, etc.)
 //! as part of the agent workflow.
 
 use async_trait::async_trait;
@@ -37,7 +37,7 @@ pub enum ToolError {
 /// This trait defines the interface for executing tools in Crucible's agent system.
 /// Tools can be implemented as:
 /// - MCP (Model Context Protocol) tools
-/// - Rune scripts with tool definitions
+/// - Lua scripts with tool definitions
 /// - Native Rust functions
 ///
 /// ## Design Rationale

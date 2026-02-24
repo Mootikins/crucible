@@ -828,7 +828,7 @@ pub fn register_ask_module_with_context(
 /// Context for asking questions to an LLM agent instead of a user.
 ///
 /// This enables script-to-agent communication where the "user" answering
-/// questions is another LLM. Mirrors the Rune AgentAskContext pattern.
+/// questions is another LLM. Mirrors the Lua AgentAskContext pattern.
 ///
 /// # Example
 ///

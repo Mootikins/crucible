@@ -12,7 +12,7 @@ use crate::traits::context_ops::ContextMessage;
 /// - Token budget management
 /// - Context trimming strategies
 ///
-/// Designed to be Rune-accessible for future plugin context manipulation.
+/// Designed to be Lua-accessible for future plugin context manipulation.
 pub trait ContextManager: Send + Sync {
     /// Set the system prompt (never trimmed)
     fn set_system_prompt(&mut self, prompt: String);
@@ -40,7 +40,7 @@ pub trait ContextManager: Send + Sync {
     fn message_count(&self) -> usize;
 
     // Future stack operations (documented but not implemented yet)
-    // These will be exposed to Rune plugins
+    // These will be exposed to Lua plugins
     // fn checkpoint(&mut self, name: &str);
     // fn rollback(&mut self, name: &str) -> bool;
     // fn pop(&mut self, n: usize);

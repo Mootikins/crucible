@@ -25,7 +25,7 @@
 //! ## Usage
 //!
 //! ```rust,no_run
-//! use crucible_enrichment::create_default_enrichment_service;
+//! use crucible_daemon::enrichment::create_default_enrichment_service;
 //! use crucible_core::enrichment::EnrichmentService;
 //!
 //! #[tokio::main]
@@ -48,14 +48,8 @@
 pub mod event_handler;
 pub mod types;
 
-// Re-export enrichment types (domain types are public)
-pub use types::{BlockEmbedding, EnrichedNote, EnrichmentMetadata, InferredRelation, RelationType};
-
-// Re-export event handler and adapter
+// Re-export event handler (used by crucible-cli event system)
 pub use event_handler::{EmbeddingHandler, EmbeddingHandlerAdapter};
-
-// Re-export constants (configuration values)
-pub use service::{DEFAULT_MAX_BATCH_SIZE, DEFAULT_MIN_WORDS_FOR_EMBEDDING};
 
 // PRIVATE: Service implementation - use factory function instead
 pub(crate) mod service;

@@ -7,7 +7,7 @@
 //! `KnowledgeRepository` decouples agents and tools from storage implementation details,
 //! enabling:
 //! - Testing without a full database backend
-//! - Future storage backend changes (SurrealDB → something else)
+//! - Future storage backend changes (SQLite → something else)
 //! - Consistent API across different storage mechanisms
 //!
 //! # Relationship to Other Storage Traits
@@ -24,7 +24,7 @@
 //! ## Mid-Level: Database Operations
 //!
 //! - **`crate::traits::storage::Storage`** - Database queries
-//!   - Raw SurrealQL/SQL queries
+//!   - Raw SQL queries
 //!   - Statistics and metadata
 //!   - Schema management
 //!
@@ -49,8 +49,8 @@
 //!
 //! # Implementation Notes
 //!
-//! `SurrealClient` implements `KnowledgeRepository`, providing the primary
-//! implementation used throughout Crucible.
+//! Storage backends implement `KnowledgeRepository`, providing the primary
+//! interface used throughout Crucible.
 
 use crate::parser::ParsedNote;
 use crate::types::SearchResult;
@@ -75,7 +75,7 @@ pub struct NoteInfo {
 
 /// Abstract interface for accessing knowledge in the kiln
 ///
-/// This trait decouples the tool system from the specific storage backend (SurrealDB),
+/// This trait decouples the tool system from the specific storage backend (SQLite),
 /// allowing tools to be tested in isolation and supporting future backend changes.
 #[async_trait]
 pub trait KnowledgeRepository: Send + Sync {

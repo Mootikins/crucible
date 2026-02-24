@@ -10,8 +10,6 @@ mod error;
 pub mod parser;
 pub mod types;
 
-#[cfg(feature = "storage")]
-pub mod storage;
 
 #[cfg(feature = "embeddings")]
 pub mod embedding;
@@ -22,8 +20,6 @@ pub use error::{SkillError, SkillResult};
 pub use parser::SkillParser;
 pub use types::{ResolvedSkill, Skill, SkillScope, SkillSource};
 
-#[cfg(feature = "storage")]
-pub use storage::SkillStore;
 
 #[cfg(feature = "embeddings")]
 pub use embedding::{

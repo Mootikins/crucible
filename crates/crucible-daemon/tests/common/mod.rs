@@ -24,11 +24,20 @@ impl TestDaemon {
         let temp_dir = tempfile::tempdir()?;
         let socket_path = temp_dir.path().join("daemon.sock");
 
-        // Get the daemon binary path
-        let daemon_exe = env!("CARGO_BIN_EXE_cru-server");
-
+        // Single binary: daemon runs via `cru daemon serve`.
+        // Cannot use env!("CARGO_BIN_EXE_cru") — crucible-daemon cannot depend on crucible-cli
+        // (circular: crucible-cli -> crucible-daemon). Locate `cru` at runtime instead.
+        let cru_exe = std::env::var("CARGO_BIN_EXE_cru").unwrap_or_else(|_| {
+            let test_exe = std::env::current_exe().expect("current_exe");
+            let target_dir = test_exe
+                .parent() // deps/
+                .and_then(|p| p.parent()) // debug/ or release/
+                .expect("target dir");
+            target_dir.join("cru").to_string_lossy().to_string()
+        });
         // Spawn daemon with custom socket path via environment variable
-        let process = Command::new(daemon_exe)
+        let process = Command::new(&cru_exe)
+            .args(["daemon", "serve"])
             .env("CRUCIBLE_SOCKET", &socket_path)
             .stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::null())

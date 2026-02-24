@@ -13,7 +13,7 @@ aliases:
 
 # Lua Runtime API
 
-This page documents the `cru.*` Lua API available to plugins running inside the Crucible daemon (`cru-server`). All modules are registered under both the `cru` and `crucible` namespaces. Some modules (like `http`, `oq`, `fs`) are also available as standalone globals for backwards compatibility.
+This page documents the `cru.*` Lua API available to plugins running inside the Crucible daemon. All modules are registered under both the `cru` and `crucible` namespaces. Some modules (like `http`, `oq`, `fs`) are also available as standalone globals for backwards compatibility.
 
 For TUI-specific Lua APIs (Oil rendering primitives), see [[Help/Plugins/Oil-Lua-API]].
 

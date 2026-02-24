@@ -9,7 +9,7 @@
 //! ## Database Operations (This Module)
 //!
 //! - **`Storage`** - Database queries, statistics, and schema management
-//!   - `query()` - Execute database queries (SurrealQL, SQL, etc.)
+//!   - `query()` - Execute database queries (SQL, etc.)
 //!   - `get_stats()` - Database statistics and metadata
 //!   - `list_tables()` - Introspection and autocomplete
 //!   - `initialize_schema()` - Setup tables and indexes
@@ -66,7 +66,7 @@ pub type StorageResult<T> = DbResult<T>;
 ///
 /// Rather than having Core depend on three separate traits (RelationalDB, GraphDB, DocumentDB),
 /// this unified trait captures the actual usage patterns from CrucibleCore:
-/// - `query()` - Execute queries (currently used for raw SurrealDB queries)
+/// - `query()` - Execute queries (currently used for raw SQL queries)
 /// - `get_stats()` - Get database statistics (used for dashboard/status)
 /// - `list_tables()` - List available tables (used for autocomplete)
 /// - `initialize_schema()` - Set up database schema (used at startup)
@@ -79,7 +79,7 @@ pub trait Storage: Send + Sync {
     /// Execute a query and return results
     ///
     /// This is the primary query interface. The query format depends on the underlying
-    /// storage implementation (e.g., SurrealQL for SurrealDB).
+    /// storage implementation (e.g., SQL for SQLite).
     ///
     /// # Arguments
     ///

@@ -1,6 +1,6 @@
 //! Profile configuration for environment-specific settings.
 
-use crate::{ConfigError, DatabaseConfig, EnrichmentConfig, LoggingConfig, ServerConfig};
+use crate::{ConfigError, EnrichmentConfig, LoggingConfig, ServerConfig};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -19,8 +19,6 @@ pub struct ProfileConfig {
     /// Enrichment configuration (includes embedding provider) for this profile.
     pub enrichment: Option<EnrichmentConfig>,
 
-    /// Database configuration for this profile.
-    pub database: Option<DatabaseConfig>,
 
     /// Server configuration for this profile.
     pub server: Option<ServerConfig>,
@@ -45,7 +43,6 @@ impl ProfileConfig {
             description: None,
             environment,
             enrichment: None,
-            database: None,
             server: None,
             logging: None,
             env_vars: HashMap::new(),
@@ -157,9 +154,6 @@ impl ProfileConfig {
         // Override configurations if present in other
         if other.enrichment.is_some() {
             merged.enrichment = other.enrichment;
-        }
-        if other.database.is_some() {
-            merged.database = other.database;
         }
         if other.server.is_some() {
             merged.server = other.server;

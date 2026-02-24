@@ -4,13 +4,8 @@ version.workspace = true
 edition.workspace = true
 description = "Crucible session daemon"
 
-[[bin]]
-name = "cru-server"
-path = "src/main.rs"
-
 [package.metadata.dist]
-dist = true
-features = ["storage-sqlite"]
+dist = false
 
 [package.metadata.binstall]
 pkg-url = "{ repo }/releases/download/v{ version }/crucible-v{ version }-{ target }.tar.gz"

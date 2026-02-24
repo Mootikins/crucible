@@ -294,7 +294,7 @@ impl fmt::Display for HandlerErrorInfo {
 pub trait EventEmitter: Send + Sync {
     /// The event type this emitter handles.
     ///
-    /// This is typically `SessionEvent` from `crucible-rune`, but the trait
+    /// This is typically `SessionEvent` from `crucible-lua`, but the trait
     /// is generic to allow for different event systems.
     type Event: Send + Clone;
 

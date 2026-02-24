@@ -15,7 +15,7 @@
 //!
 //! ## Note
 //!
-//! DocumentProcessor has moved to `crucible-enrichment` crate, as it orchestrates
+//! DocumentProcessor has moved to `crucible-daemon::enrichment`, as it orchestrates
 //! the enrichment pipeline and depends on enrichment services.
 
 pub mod change_detection;

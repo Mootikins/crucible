@@ -1,4 +1,4 @@
-//! Client library for connecting to Crucible daemon (cru-server)
+//! Client library for connecting to Crucible daemon (cru daemon serve)
 //!
 //! Connection patterns:
 //! - `DaemonClient::connect()` - connect to running daemon

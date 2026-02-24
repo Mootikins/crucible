@@ -1393,9 +1393,20 @@ impl SessionEvent {
             Self::PreLlmCall { prompt, model } => {
                 format!("model={}, prompt_len={}", model, prompt.len())
             }
-            Self::PostLlmCall { response_summary, model, duration_ms, token_count } => {
+            Self::PostLlmCall {
+                response_summary,
+                model,
+                duration_ms,
+                token_count,
+            } => {
                 let tokens_str = token_count.map_or("none".to_string(), |t| t.to_string());
-                format!("model={}, duration={}ms, tokens={}, summary_len={}", model, duration_ms, tokens_str, response_summary.len())
+                format!(
+                    "model={}, duration={}ms, tokens={}, summary_len={}",
+                    model,
+                    duration_ms,
+                    tokens_str,
+                    response_summary.len()
+                )
             }
             Self::AwaitingInput {
                 input_type,
@@ -1588,7 +1599,9 @@ impl SessionEvent {
             Self::PreToolCall { args, .. } => Some(args.to_string()),
             Self::PreParse { path } => Some(path.display().to_string()),
             Self::PreLlmCall { prompt, .. } => Some(prompt.clone()),
-            Self::PostLlmCall { response_summary, .. } => Some(response_summary.clone()),
+            Self::PostLlmCall {
+                response_summary, ..
+            } => Some(response_summary.clone()),
             Self::AwaitingInput { context, .. } => context.clone(),
             Self::InteractionRequested { .. } => None,
             Self::InteractionCompleted { .. } => None,
@@ -1692,7 +1705,9 @@ impl SessionEvent {
             Self::PreToolCall { name, .. } => name.len() + 50,
             Self::PreParse { .. } => 50,
             Self::PreLlmCall { prompt, .. } => prompt.len(),
-            Self::PostLlmCall { response_summary, .. } => response_summary.len(),
+            Self::PostLlmCall {
+                response_summary, ..
+            } => response_summary.len(),
             Self::AwaitingInput { context, .. } => context.as_ref().map_or(20, |c| c.len() + 20),
             // Interaction events
             Self::InteractionRequested { .. } => 100, // Request metadata
@@ -2050,15 +2065,13 @@ impl std::fmt::Display for NoteChangeType {
 
 /// Provider of a discovered tool in session events.
 ///
-/// Identifies which system provided a tool (Rune script, Lua script, MCP server,
+/// Identifies which system provided a tool (Lua script, MCP server,
 /// or built-in). This is distinct from `crucible_core::types::ToolSource` which
 /// is used for tool indexing and metadata categorization.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 #[serde(rename_all = "snake_case")]
 #[derive(Default)]
 pub enum ToolProvider {
-    /// Tool from a Rune script.
-    Rune,
     /// Tool from a Lua/Fennel script.
     Lua,
     /// Tool from an MCP server.
@@ -2074,7 +2087,6 @@ pub enum ToolProvider {
 impl std::fmt::Display for ToolProvider {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Rune => write!(f, "rune"),
             Self::Lua => write!(f, "lua"),
             Self::Mcp { server } => write!(f, "mcp:{}", server),
             Self::Builtin => write!(f, "builtin"),
@@ -2855,7 +2867,7 @@ mod tests {
     #[test]
     fn test_tool_provider() {
         assert_eq!(ToolProvider::default(), ToolProvider::Builtin);
-        assert_eq!(format!("{}", ToolProvider::Rune), "rune");
+        assert_eq!(format!("{}", ToolProvider::Lua), "lua");
         assert_eq!(format!("{}", ToolProvider::Lua), "lua");
         assert_eq!(
             format!(

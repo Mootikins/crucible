@@ -1,6 +1,6 @@
 //! HTTP request/response types shared between scripting runtimes.
 //!
-//! Provides a unified HTTP API for Lua and Rune scripts to make network requests.
+//! Provides a unified HTTP API for Lua and other scripts to make network requests.
 //!
 //! # Example
 //!

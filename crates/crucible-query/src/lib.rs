@@ -2,7 +2,7 @@
 //!
 //! This crate provides a modular query translation system that supports
 //! multiple source syntaxes (Cypher, SQL/PGQ, jaq, SQL sugar) and target
-//! backends (SQLite, SurrealDB).
+//! backends (SQLite).
 //!
 //! # Architecture
 //!
@@ -10,7 +10,7 @@
 //! Source Syntax → QuerySyntaxRegistry → GraphIR → TransformChain → QueryRenderer → Output
 //!      ↓              ↓                    ↓            ↓                ↓
 //!   Cypher       (priority-based)      (shared)   (optional)     (capability-based)
-//!   SQL/PGQ      first match wins       types     validation      SQLite, SurrealQL
+//!   SQL/PGQ      first match wins       types     validation      SQLite
 //!   jaq-style
 //!   SQL sugar
 //! ```

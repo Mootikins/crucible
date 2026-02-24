@@ -1,4 +1,4 @@
-//! Discovery path configuration for Rune resources
+//! Discovery path configuration for Lua resources
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;

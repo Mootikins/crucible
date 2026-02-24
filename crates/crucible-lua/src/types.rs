@@ -67,7 +67,7 @@ pub struct LuaExecutionResult {
     pub duration_ms: u64,
 }
 
-/// Unified tool result that both Rune and Lua return
+/// Unified tool result that both Lua and other runtimes return
 ///
 /// This is the common interface for the Rust core to consume.
 #[derive(Debug, Clone, Serialize, Deserialize)]

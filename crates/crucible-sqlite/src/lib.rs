@@ -1,7 +1,7 @@
 //! SQLite storage backend for Crucible
 //!
 //! This crate provides a SQLite-based implementation of Crucible's storage traits,
-//! offering a lightweight alternative to the SurrealDB backend.
+//! offering a lightweight default storage backend.
 //!
 //! ## Features
 //!

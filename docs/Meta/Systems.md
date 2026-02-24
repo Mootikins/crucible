@@ -122,7 +122,7 @@ See: [[Help/CLI/Index]], [[Help/TUI/Index]]
 
 Multi-session server for concurrent agent access.
 
-- Unix socket RPC (`cru-server`)
+- Unix socket RPC (`cru daemon serve`)
 - Session management (create, load, pause, resume)
 - Agent lifecycle (model switching, thinking budget)
 - Event streaming via subscriptions

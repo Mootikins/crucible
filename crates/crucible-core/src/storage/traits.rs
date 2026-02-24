@@ -48,7 +48,6 @@ pub trait ContentHasher: Send + Sync {
 pub enum StorageBackend {
     InMemory,
     FileBased,
-    SurrealDB,
     SQLite,
     Custom(String),
 }

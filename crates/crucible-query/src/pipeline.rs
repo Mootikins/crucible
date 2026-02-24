@@ -1,7 +1,7 @@
 //! Query pipeline orchestration.
 //!
 //! The QueryPipeline orchestrates the parse → transform → render phases.
-//! Follows the NotePipeline pattern from crucible-pipeline.
+//! Follows the NotePipeline pattern from crucible-daemon::pipeline.
 
 use crate::error::PipelineError;
 use crate::render::{QueryRenderer, RenderedQuery};
@@ -11,7 +11,7 @@ use std::sync::Arc;
 
 /// Orchestrates parsing → transform → rendering.
 ///
-/// Follows the NotePipeline pattern from crucible-pipeline.
+/// Follows the NotePipeline pattern from crucible-daemon::pipeline.
 pub struct QueryPipeline {
     syntax_registry: QuerySyntaxRegistry,
     transforms: Vec<Arc<dyn QueryTransform>>,
@@ -112,7 +112,7 @@ impl QueryPipelineBuilder {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::render::SurrealRenderer;
+    use crate::render::SqliteRenderer;
     use crate::syntax::{QuerySyntaxRegistryBuilder, SqlSugarSyntax};
     use crate::transform::ValidateTransform;
 
@@ -125,13 +125,13 @@ mod tests {
         let pipeline = QueryPipelineBuilder::new()
             .syntax_registry(syntax_registry)
             .transform(ValidateTransform)
-            .renderer(SurrealRenderer::default())
+            .renderer(SqliteRenderer::default())
             .build();
 
         let result = pipeline.execute("SELECT outlinks FROM 'Index'").unwrap();
 
         assert!(result.sql.contains("SELECT"));
-        assert!(result.sql.contains("FETCH out"));
+        assert!(result.sql.contains("JOIN"));
     }
 
     #[test]
@@ -142,7 +142,7 @@ mod tests {
 
         let pipeline = QueryPipelineBuilder::new()
             .syntax_registry(syntax_registry)
-            .renderer(SurrealRenderer::default())
+            .renderer(SqliteRenderer::default())
             .build();
 
         let result = pipeline.execute("UNKNOWN query");

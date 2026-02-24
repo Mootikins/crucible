@@ -179,8 +179,6 @@ pub struct Config {
     /// Enrichment configuration (includes embedding provider).
     pub enrichment: Option<EnrichmentConfig>,
 
-    /// Default database configuration.
-    pub database: Option<DatabaseConfig>,
 
     /// CLI configuration.
     #[serde(default)]
@@ -248,7 +246,6 @@ impl Default for Config {
             profile: Some("default".to_string()),
             profiles: HashMap::from([("default".to_string(), ProfileConfig::default())]),
             enrichment: None,
-            database: None,
             cli: Some(CliConfig::default()),
             acp: Some(AcpConfig::default()),
             chat: Some(ChatConfig::default()),
@@ -301,22 +298,6 @@ impl Config {
         })
     }
 
-    /// Get the effective database configuration.
-    pub fn database(&self) -> Result<DatabaseConfig, ConfigError> {
-        if let Some(database) = &self.database {
-            return Ok(database.clone());
-        }
-
-        // Fall back to profile configuration
-        let profile = self.active_profile()?;
-        if let Some(database) = &profile.database {
-            return Ok(database.clone());
-        }
-
-        Err(ConfigError::MissingValue {
-            field: "database".to_string(),
-        })
-    }
 
     /// Get the effective server configuration.
     pub fn server(&self) -> Result<ServerConfig, ConfigError> {
@@ -1009,17 +990,17 @@ impl CliAppConfig {
         info!("  cli.verbose: {}", self.cli.verbose);
     }
 
-    /// Get database path for SurrealDB (always derived from kiln path)
+    /// Get database path (always derived from kiln path)
     ///
-    /// Note: This returns the SurrealDB-specific path. SQLite uses a different
-    /// path (`crucible-sqlite.db`) computed in the storage factory.
+    /// Returns the path to the SQLite database file within the
+    /// `.crucible` directory under the kiln path.
     pub fn database_path(&self) -> std::path::PathBuf {
-        // Only use PID suffix in test mode to prevent RocksDB lock collisions
+        // Only use PID suffix in test mode to prevent database lock collisions
         let db_name = if std::env::var("CRUCIBLE_TEST_MODE").is_ok() {
             let pid = std::process::id();
-            format!("crucible-surreal-{}.db", pid)
+            format!("crucible-{}.db", pid)
         } else {
-            "crucible-surreal.db".to_string()
+            "crucible.db".to_string()
         };
         self.kiln_path.join(".crucible").join(db_name)
     }
@@ -1537,43 +1518,6 @@ verbose = false
     }
 }
 
-/// Database configuration.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct DatabaseConfig {
-    /// Database type.
-    #[serde(rename = "type")]
-    pub db_type: DatabaseType,
-
-    /// Database connection URL.
-    pub url: String,
-
-    /// Maximum number of connections.
-    pub max_connections: Option<u32>,
-
-    /// Connection timeout in seconds.
-    pub timeout_seconds: Option<u64>,
-
-    /// Additional database-specific options.
-    #[serde(flatten)]
-    pub options: HashMap<String, serde_json::Value>,
-}
-
-/// Supported database types.
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "lowercase")]
-pub enum DatabaseType {
-    /// SQLite database.
-    #[default]
-    Sqlite,
-    /// PostgreSQL database.
-    Postgres,
-    /// MySQL database.
-    Mysql,
-    /// SurrealDB database.
-    Surrealdb,
-    /// Custom database type.
-    Custom(String),
-}
 
 
 /// Server configuration.

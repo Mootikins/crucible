@@ -4,7 +4,7 @@
 
 //!
 //! These tests verify the process command correctly:
-//! 1. Uses persistent SurrealDB storage (not in-memory)
+//! 1. Uses persistent SQLite storage (not in-memory)
 //! 2. Produces consistent output with chat command's pre-processing
 //! 3. Implements proper change detection
 //! 4. Executes all 5 pipeline phases
@@ -14,7 +14,7 @@ use crucible_cli::commands::process;
 use crucible_cli::config::{CliAppConfig, CliConfig};
 use crucible_config::{
     AcpConfig, BackendType, ChatConfig, LlmConfig, LlmProviderConfig, ProcessingConfig,
-    StorageConfig, StorageMode,
+    StorageConfig,
 };
 use crucible_core::test_support::fixtures::{create_kiln, KilnFixture};
 use std::path::PathBuf;
@@ -66,7 +66,6 @@ fn create_test_config(kiln_path: PathBuf, _db_path: PathBuf) -> CliConfig {
         processing: ProcessingConfig::default(),
         context: None,
         storage: Some(StorageConfig {
-            mode: StorageMode::Sqlite,
             idle_timeout_secs: 300,
         }),
         mcp: None,
@@ -100,7 +99,7 @@ async fn test_process_executes_pipeline() -> Result<()> {
     // TODO: After implementation, verify:
     // 1. Pipeline was actually invoked (not just a stub)
     // 2. Files were processed through all 5 phases
-    // 3. Data was written to SurrealDB
+    // 3. Data was written to SQLite
 
     Ok(())
 }
@@ -277,10 +276,10 @@ async fn test_all_pipeline_phases_execute() -> Result<()> {
     // Phase 2: Parse (extract blocks, links, tags)
     // Phase 3: Merkle Diff (identify changed blocks)
     // Phase 4: Enrich (generate embeddings)
-    // Phase 5: Store (persist to SurrealDB)
+    // Phase 5: Store (persist to SQLite)
     //
     // Verification approaches:
-    // - Query SurrealDB tables (file_state, enriched_notes, embeddings)
+    // - Query SQLite tables (file_state, enriched_notes, embeddings)
     // - Check for parsed content (blocks, wikilinks, tags)
     // - Verify embeddings were generated for content
     // - Confirm Merkle trees were computed
@@ -297,7 +296,7 @@ async fn test_output_consistency_with_chat_preprocessing() -> Result<()> {
     // This test will:
     // 1. Run process command on test files
     // 2. Run chat command with pre-processing on same files
-    // 3. Compare results from SurrealDB
+    // 3. Compare results from SQLite
     // 4. Assert identical: embeddings, Merkle trees, metadata
 
     Ok(())
@@ -503,7 +502,7 @@ async fn test_dry_run_discovers_files_without_processing() -> Result<()> {
     // AND: Database should be empty (no files were actually processed)
     // TODO: After implementation, verify:
     // 1. Files were discovered (shown in output)
-    // 2. No data was written to SurrealDB
+    // 2. No data was written to SQLite
     // 3. Summary showed "Would process: 3 files"
 
     Ok(())
@@ -867,20 +866,19 @@ async fn test_process_emits_note_events_to_reactor() -> Result<()> {
     let temp_dir = create_test_kiln()?;
     let kiln_path = temp_dir.path().to_path_buf();
 
-    // Create handlers directory with a simple Rune handler
+    // Create handlers directory with a simple Lua handler
     let handlers_dir = kiln_path.join(".crucible").join("handlers");
     std::fs::create_dir_all(&handlers_dir)?;
 
-    // Create a Rune handler that matches note events
-    // The handler uses the wildcard pattern to receive all events
+    // Create a Lua handler that matches note events
     let handler_content = r#"
-// Handler that receives note events
-pub fn handle(event) {
-    // Just pass through - we're testing that it gets called
-    event
-}
+-- Handler that receives note events
+function handle(event)
+    -- Just pass through - we're testing that it gets called
+    return event
+end
 "#;
-    std::fs::write(handlers_dir.join("note_handler.rn"), handler_content)?;
+    std::fs::write(handlers_dir.join("note_handler.lua"), handler_content)?;
 
     let db_dir = TempDir::new()?;
     let db_path = db_dir.path().join("test.db");

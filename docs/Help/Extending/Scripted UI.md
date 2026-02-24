@@ -129,7 +129,7 @@ function choose_database(args)
     local items = {
         ui.panel_item("PostgreSQL", "Full-featured, ACID-compliant RDBMS"),
         ui.panel_item("SQLite", "Embedded, zero-configuration"),
-        ui.panel_item("SurrealDB", "Multi-model with graph queries"),
+        ui.panel_item("MongoDB", "Document database with flexible schema"),
     }
 
     local panel = ui.panel("Select database", items)

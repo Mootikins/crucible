@@ -10,7 +10,7 @@ use serde_json::Value;
 ///
 /// This type is designed to be:
 /// - Serializable (for web UI / IPC)
-/// - Simple enough for scripting (Rune, Lua)
+/// - Simple enough for scripting (Lua)
 /// - Convertible from domain-specific PopupItem enum
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PopupEntry {

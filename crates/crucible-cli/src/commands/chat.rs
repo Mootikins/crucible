@@ -24,9 +24,6 @@ use crate::provider_detect::{
 use crate::tui::oil::{McpServerDisplay, PluginStatusEntry};
 use crate::tui::AgentSelection;
 use crucible_core::traits::chat::{is_read_only, mode_display_name};
-use crucible_daemon::pipeline::NotePipeline;
-use crucible_watch::traits::{DebounceConfig, HandlerConfig, WatchConfig};
-use crucible_watch::{EventFilter, WatchMode};
 
 /// Determine which kiln to save sessions to.
 ///
@@ -602,7 +599,7 @@ async fn run_oneshot_chat(
     working_dir: Option<std::path::PathBuf>,
     resume_session_id: Option<String>,
     no_context: bool,
-    no_process: bool,
+    _no_process: bool,
     context_size: Option<usize>,
     query_text: String,
     set_overrides: Vec<String>,
@@ -762,72 +759,6 @@ async fn apply_rpc_action(
     }
 }
 
-/// Spawn background watch task for chat mode using the event system
-///
-/// This function runs silently in the background, using the full event system
-/// to handle file changes. The event cascade triggers all handlers:
-/// FileChanged -> NoteParsed -> EntityStored -> BlocksUpdated -> EmbeddingGenerated
-///
-/// The background task will be automatically cancelled when the chat
-/// command exits (tokio runtime cleanup).
-async fn spawn_background_watch(config: CliConfig, _pipeline: Arc<NotePipeline>) -> Result<()> {
-    use crate::event_system::initialize_event_system;
-
-    let kiln_path = config.kiln_path.clone();
-
-    // Initialize the full event system
-    let event_handle = initialize_event_system(&config).await?;
-    info!(
-        "Background event system initialized with {} handlers",
-        event_handle.handler_count().await
-    );
-
-    // Add watch for the kiln directory
-    {
-        let mut watch = event_handle.watch_manager().write().await;
-
-        // Configure watch with markdown file filter and debouncing
-        let crucible_dir = kiln_path.join(".crucible");
-        let filter = EventFilter::new()
-            .with_extension("md")
-            .exclude_dir(crucible_dir);
-        let watch_config = WatchConfig {
-            id: "chat-background-watch".to_string(),
-            recursive: true,
-            filter: Some(filter),
-            debounce: DebounceConfig::default(),
-            handler_config: HandlerConfig::default(),
-            mode: WatchMode::Standard,
-            backend_options: Default::default(),
-        };
-
-        watch.add_watch(kiln_path.clone(), watch_config).await?;
-    }
-
-    info!(
-        "Background watch started for chat mode on: {}",
-        kiln_path.display()
-    );
-
-    // The event system handles everything automatically via registered handlers
-    // Just wait until shutdown is requested (channel close or task cancellation)
-    // The event system runs in the background processing events
-    loop {
-        // Sleep and check periodically - this allows cancellation
-        tokio::time::sleep(tokio::time::Duration::from_secs(60)).await;
-
-        // Check if watch is still running
-        if !event_handle.is_watching().await {
-            debug!("Watch manager stopped, exiting background watch loop");
-            break;
-        }
-    }
-
-    // Graceful shutdown
-    event_handle.shutdown().await?;
-    info!("Background watch stopped");
-    Ok(())
-}
 
 use crate::tui::oil::chat_app::{ChatItem, Role};
 
@@ -837,7 +768,7 @@ async fn fetch_resume_history(
 ) -> Result<Vec<ChatItem>> {
     use crucible_rpc::DaemonClient;
 
-    let client = DaemonClient::connect().await?;
+    let client = DaemonClient::connect_or_start().await?;
     let result = client
         .session_resume_from_storage(session_id, kiln_path, None, None)
         .await?;

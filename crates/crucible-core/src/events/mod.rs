@@ -9,7 +9,7 @@
 //! Reactor (core owns)
 //!    │
 //!    ├── Rust handlers (built-in)
-//!    ├── Rune handlers (script)
+//!    ├── Lua handlers (script)
 //!    └── Lua handlers (script)
 //!
 //! All handlers implement the same Handler trait and interleave
@@ -18,7 +18,7 @@
 //!
 //! # Key Components
 //!
-//! - [`Handler`]: Async trait for event handlers (Rust, Rune, Lua)
+//! - [`Handler`]: Async trait for event handlers (Rust, Lua)
 //! - [`HandlerContext`]: Context passed through handler chain
 //! - [`Reactor`]: Central event loop + dispatcher
 //! - [`DependencyGraph`]: Handler ordering via topological sort

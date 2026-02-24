@@ -46,14 +46,6 @@ agent-client-protocol-schema = "0.10.6"
 # Configuration management (for enrichment config types)
 crucible-config = { path = "../crucible-config" }
 
-# NOTE: crucible-enrichment dependency REMOVED to break circular dependency
-# Core only defines EmbeddingProvider trait; enrichment crate provides implementation
-# Higher-level crates (CLI, Tauri) use both as needed
-
-# NOTE: crucible-surrealdb dependency REMOVED to break circular dependency
-# With Dependency Inversion, Core defines Storage trait, surrealdb implements it
-# Higher-level crates (CLI, Tauri) inject the implementation
-
 # File watching (used by processing module)
 notify = { workspace = true }
 

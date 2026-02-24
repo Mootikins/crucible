@@ -1,7 +1,7 @@
 //! Composable context operations for conversation management
 //!
 //! This module provides a set of primitives for manipulating conversation context
-//! that can be composed by scripts (Rune/Lua) in response to events.
+//! that can be composed by scripts (Lua) in response to events.
 //!
 //! ## Design Philosophy
 //!

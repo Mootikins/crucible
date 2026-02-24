@@ -69,7 +69,7 @@ impl ObsidianSyncHandler {
     pub fn new() -> Result<Self> {
         Ok(Self {
             kiln_config: Arc::new(RwLock::new(None)),
-            sync_config: SyncConfig::default(),
+            sync_config: SyncConfig,
             sync_state: Arc::new(RwLock::new(SyncState::default())),
             supported_extensions: vec!["md".to_string()],
         })

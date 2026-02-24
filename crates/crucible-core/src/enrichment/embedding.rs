@@ -160,7 +160,7 @@ pub struct CachedEmbedding {
 /// # Dependency Inversion
 ///
 /// The trait is defined in crucible-core (domain layer), while implementations
-/// live in crucible-surrealdb (infrastructure layer). This allows the enrichment
+/// live in the storage layer (crucible-sqlite, crucible-lance). This allows the enrichment
 /// service to use caching without depending on storage implementation details.
 #[async_trait::async_trait]
 pub trait EmbeddingCache: Send + Sync {

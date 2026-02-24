@@ -6,7 +6,7 @@
 //!
 //! 1. **Quick Filter**: Check file state (date modified + BLAKE3 hash) to skip unchanged files
 //! 2. **Parse**: Transform markdown to AST using crucible-parser
-//! 3. **Enrich**: Generate embeddings and metadata using crucible-enrichment
+//! 3. **Enrich**: Generate embeddings and metadata using the enrichment module
 //! 4. **Store**: Persist all changes using storage layer
 //!
 //! ## Design Principles
@@ -36,9 +36,7 @@ pub enum ParserBackend {
     /// Use CrucibleParser (default, regex-based extraction)
     #[default]
     Default,
-    /// Use markdown-it-rust based parser (AST-based, requires feature flag)
-    #[cfg(feature = "markdown-it-parser")]
-    MarkdownIt,
+
 }
 
 /// Configuration for pipeline behavior
@@ -87,15 +85,8 @@ pub struct NotePipeline {
 
 impl NotePipeline {
     /// Create a parser instance based on the configured backend
-    fn create_parser(backend: ParserBackend) -> Arc<dyn MarkdownParser> {
-        match backend {
-            ParserBackend::Default => Arc::new(CrucibleParser::new()),
-            #[cfg(feature = "markdown-it-parser")]
-            ParserBackend::MarkdownIt => {
-                use crucible_parser::MarkdownItParser;
-                Arc::new(MarkdownItParser::new())
-            }
-        }
+    fn create_parser(_backend: ParserBackend) -> Arc<dyn MarkdownParser> {
+        Arc::new(CrucibleParser::new())
     }
 
     /// Create a new pipeline with dependencies (uses default config)

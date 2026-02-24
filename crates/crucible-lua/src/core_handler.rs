@@ -1,7 +1,7 @@
 //! Lua Handler implementing core's unified Handler trait
 //!
 //! This module bridges Lua scripts to the core event system, allowing Lua
-//! handlers to interleave with Rust and Rune handlers in the unified Reactor.
+//! handlers to interleave with Rust and other handlers in the unified Reactor.
 //!
 //! ## Design
 //!
