@@ -811,7 +811,18 @@ impl OilChatApp {
     }
 
     pub fn set_available_models(&mut self, models: Vec<String>) {
-        self.available_models = models;
+        self.available_models = models.clone();
+        if !models.is_empty() {
+            self.model_list_state = ModelListState::Loaded;
+        }
+    }
+
+    pub fn model_list_state(&self) -> &ModelListState {
+        &self.model_list_state
+    }
+
+    pub fn available_models(&self) -> &[String] {
+        &self.available_models
     }
 
     pub fn set_show_thinking(&mut self, show: bool) {

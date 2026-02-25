@@ -125,7 +125,7 @@ async fn async_main(cli: Cli, standalone_sock: Option<std::path::PathBuf>) -> Re
             None,
             std::collections::HashMap::new(),
             false,
-            None,
+            Some(config.llm.clone()),
             Some(config.acp.clone()),
             None,
             None,
