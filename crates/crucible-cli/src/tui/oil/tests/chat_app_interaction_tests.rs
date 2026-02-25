@@ -1126,7 +1126,6 @@ fn model_command_filters_models() {
 }
 
 #[test]
-#[ignore = "requires Task 8 fix: 15-item popup truncation"]
 fn model_popup_shows_all_twenty_models() {
     let mut app = OilChatApp::default();
     let models = vec![
@@ -1226,8 +1225,7 @@ fn model_popup_shows_exactly_fifteen_models() {
 }
 
 #[test]
-#[ignore = "bug: documents 15-item truncation, fixed in Task 8"]
-fn model_popup_sixteen_model_truncates() {
+fn model_popup_sixteen_models_all_selectable() {
     let mut app = OilChatApp::default();
     let models = vec![
         "ollama/ridge-01".to_string(),
@@ -1269,13 +1267,13 @@ fn model_popup_sixteen_model_truncates() {
 
     assert!(
         app.input_content()
-            .contains(&format!(":model {}", fifteenth_model)),
-        "Selection saturates at the 15th model due to popup truncation"
+            .contains(&format!(":model {}", sixteenth_model)),
+        "16th model should be selectable now that popup limit is raised to 100"
     );
     assert!(
         !app.input_content()
-            .contains(&format!(":model {}", sixteenth_model)),
-        "16th model is not selectable while popup is truncated to 15 items"
+            .contains(&format!(":model {}", fifteenth_model)),
+        "Selection should reach the 16th model, not saturate at the 15th"
     );
 }
 
