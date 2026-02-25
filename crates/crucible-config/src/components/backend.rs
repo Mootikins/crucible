@@ -53,134 +53,236 @@ pub enum BackendType {
     Mock,
 }
 
+struct BackendMetadata {
+    supports_embeddings: bool,
+    supports_chat: bool,
+    is_local: bool,
+    default_trust_level: TrustLevel,
+    requires_api_key: bool,
+    api_key_env_var: Option<&'static str>,
+    as_str: &'static str,
+    default_endpoint: Option<&'static str>,
+    default_embedding_model: Option<&'static str>,
+    default_chat_model: Option<&'static str>,
+}
+
 impl BackendType {
+    const OLLAMA_METADATA: BackendMetadata = BackendMetadata {
+        supports_embeddings: true,
+        supports_chat: true,
+        is_local: false,
+        default_trust_level: TrustLevel::Cloud,
+        requires_api_key: false,
+        api_key_env_var: None,
+        as_str: "ollama",
+        default_endpoint: Some(super::defaults::DEFAULT_OLLAMA_ENDPOINT),
+        default_embedding_model: Some("nomic-embed-text"),
+        default_chat_model: Some(super::defaults::DEFAULT_CHAT_MODEL),
+    };
+
+    const OPENAI_METADATA: BackendMetadata = BackendMetadata {
+        supports_embeddings: true,
+        supports_chat: true,
+        is_local: false,
+        default_trust_level: TrustLevel::Cloud,
+        requires_api_key: true,
+        api_key_env_var: Some("OPENAI_API_KEY"),
+        as_str: "openai",
+        default_endpoint: Some(super::defaults::DEFAULT_OPENAI_ENDPOINT),
+        default_embedding_model: Some("text-embedding-3-small"),
+        default_chat_model: Some(super::defaults::DEFAULT_OPENAI_MODEL),
+    };
+
+    const ANTHROPIC_METADATA: BackendMetadata = BackendMetadata {
+        supports_embeddings: false,
+        supports_chat: true,
+        is_local: false,
+        default_trust_level: TrustLevel::Cloud,
+        requires_api_key: true,
+        api_key_env_var: Some("ANTHROPIC_API_KEY"),
+        as_str: "anthropic",
+        default_endpoint: Some(super::defaults::DEFAULT_ANTHROPIC_ENDPOINT),
+        default_embedding_model: None,
+        default_chat_model: Some(super::defaults::DEFAULT_ANTHROPIC_MODEL),
+    };
+
+    const COHERE_METADATA: BackendMetadata = BackendMetadata {
+        supports_embeddings: true,
+        supports_chat: true,
+        is_local: false,
+        default_trust_level: TrustLevel::Cloud,
+        requires_api_key: true,
+        api_key_env_var: Some("COHERE_API_KEY"),
+        as_str: "cohere",
+        default_endpoint: Some("https://api.cohere.ai/v1"),
+        default_embedding_model: Some("embed-english-v3.0"),
+        default_chat_model: Some("command-r-plus"),
+    };
+
+    const VERTEX_AI_METADATA: BackendMetadata = BackendMetadata {
+        supports_embeddings: true,
+        supports_chat: true,
+        is_local: false,
+        default_trust_level: TrustLevel::Cloud,
+        requires_api_key: true,
+        api_key_env_var: Some("GOOGLE_API_KEY"),
+        as_str: "vertexai",
+        default_endpoint: Some("https://aiplatform.googleapis.com"),
+        default_embedding_model: Some("textembedding-gecko@003"),
+        default_chat_model: Some("gemini-1.5-pro"),
+    };
+
+    const FAST_EMBED_METADATA: BackendMetadata = BackendMetadata {
+        supports_embeddings: true,
+        supports_chat: false,
+        is_local: true,
+        default_trust_level: TrustLevel::Local,
+        requires_api_key: false,
+        api_key_env_var: None,
+        as_str: "fastembed",
+        default_endpoint: None,
+        default_embedding_model: Some("BAAI/bge-small-en-v1.5"),
+        default_chat_model: None,
+    };
+
+    const BURN_METADATA: BackendMetadata = BackendMetadata {
+        supports_embeddings: true,
+        supports_chat: false,
+        is_local: true,
+        default_trust_level: TrustLevel::Local,
+        requires_api_key: false,
+        api_key_env_var: None,
+        as_str: "burn",
+        default_endpoint: None,
+        default_embedding_model: Some("nomic-embed-text"),
+        default_chat_model: None,
+    };
+
+    const GITHUB_COPILOT_METADATA: BackendMetadata = BackendMetadata {
+        supports_embeddings: false,
+        supports_chat: true,
+        is_local: false,
+        default_trust_level: TrustLevel::Cloud,
+        requires_api_key: false,
+        api_key_env_var: None,
+        as_str: "github-copilot",
+        default_endpoint: Some(super::defaults::DEFAULT_GITHUB_COPILOT_ENDPOINT),
+        default_embedding_model: None,
+        default_chat_model: Some(super::defaults::DEFAULT_GITHUB_COPILOT_MODEL),
+    };
+
+    const OPENROUTER_METADATA: BackendMetadata = BackendMetadata {
+        supports_embeddings: false,
+        supports_chat: true,
+        is_local: false,
+        default_trust_level: TrustLevel::Cloud,
+        requires_api_key: true,
+        api_key_env_var: Some("OPENROUTER_API_KEY"),
+        as_str: "openrouter",
+        default_endpoint: Some(super::defaults::DEFAULT_OPENROUTER_ENDPOINT),
+        default_embedding_model: None,
+        default_chat_model: Some(super::defaults::DEFAULT_OPENROUTER_MODEL),
+    };
+
+    const ZAI_METADATA: BackendMetadata = BackendMetadata {
+        supports_embeddings: false,
+        supports_chat: true,
+        is_local: false,
+        default_trust_level: TrustLevel::Cloud,
+        requires_api_key: true,
+        api_key_env_var: Some("GLM_AUTH_TOKEN"),
+        as_str: "zai",
+        default_endpoint: Some(super::defaults::DEFAULT_ZAI_ENDPOINT),
+        default_embedding_model: None,
+        default_chat_model: Some(super::defaults::DEFAULT_ZAI_MODEL),
+    };
+
+    const CUSTOM_METADATA: BackendMetadata = BackendMetadata {
+        supports_embeddings: true,
+        supports_chat: true,
+        is_local: false,
+        default_trust_level: TrustLevel::Cloud,
+        requires_api_key: false,
+        api_key_env_var: None,
+        as_str: "custom",
+        default_endpoint: None,
+        default_embedding_model: None,
+        default_chat_model: None,
+    };
+
+    const MOCK_METADATA: BackendMetadata = BackendMetadata {
+        supports_embeddings: true,
+        supports_chat: false,
+        is_local: true,
+        default_trust_level: TrustLevel::Local,
+        requires_api_key: false,
+        api_key_env_var: None,
+        as_str: "mock",
+        default_endpoint: None,
+        default_embedding_model: Some("mock-embed-model"),
+        default_chat_model: Some("mock-chat-model"),
+    };
+
+    fn metadata(&self) -> &'static BackendMetadata {
+        match self {
+            Self::Ollama => &Self::OLLAMA_METADATA,
+            Self::OpenAI => &Self::OPENAI_METADATA,
+            Self::Anthropic => &Self::ANTHROPIC_METADATA,
+            Self::Cohere => &Self::COHERE_METADATA,
+            Self::VertexAI => &Self::VERTEX_AI_METADATA,
+            Self::FastEmbed => &Self::FAST_EMBED_METADATA,
+            Self::Burn => &Self::BURN_METADATA,
+            Self::GitHubCopilot => &Self::GITHUB_COPILOT_METADATA,
+            Self::OpenRouter => &Self::OPENROUTER_METADATA,
+            Self::ZAI => &Self::ZAI_METADATA,
+            Self::Custom => &Self::CUSTOM_METADATA,
+            Self::Mock => &Self::MOCK_METADATA,
+        }
+    }
+
     /// Whether this backend supports embeddings
     pub fn supports_embeddings(&self) -> bool {
-        matches!(
-            self,
-            Self::Ollama
-                | Self::OpenAI
-                | Self::Cohere
-                | Self::VertexAI
-                | Self::FastEmbed
-                | Self::Burn
-                | Self::Custom
-                | Self::Mock
-        )
+        self.metadata().supports_embeddings
     }
 
     /// Whether this backend supports chat
     pub fn supports_chat(&self) -> bool {
-        matches!(
-            self,
-            Self::Ollama
-                | Self::OpenAI
-                | Self::Anthropic
-                | Self::Cohere
-                | Self::VertexAI
-                | Self::GitHubCopilot
-                | Self::OpenRouter
-                | Self::ZAI
-                | Self::Custom
-        )
+        self.metadata().supports_chat
     }
 
     /// Whether this backend is local (no remote API calls)
     pub fn is_local(&self) -> bool {
-        matches!(self, Self::FastEmbed | Self::Burn | Self::Mock)
+        self.metadata().is_local
     }
 
     /// Get the default trust level for this backend
     pub fn default_trust_level(&self) -> TrustLevel {
-        match self {
-            Self::FastEmbed | Self::Burn | Self::Mock => TrustLevel::Local,
-            _ => TrustLevel::Cloud,
-        }
+        self.metadata().default_trust_level
     }
 
     /// Whether this backend requires an API key
     pub fn requires_api_key(&self) -> bool {
-        matches!(
-            self,
-            Self::OpenAI
-                | Self::Anthropic
-                | Self::Cohere
-                | Self::VertexAI
-                | Self::OpenRouter
-                | Self::ZAI
-        )
+        self.metadata().requires_api_key
     }
 
     /// Get the backend type as a string
     pub fn as_str(&self) -> &'static str {
-        match self {
-            Self::Ollama => "ollama",
-            Self::OpenAI => "openai",
-            Self::Anthropic => "anthropic",
-            Self::Cohere => "cohere",
-            Self::VertexAI => "vertexai",
-            Self::FastEmbed => "fastembed",
-            Self::Burn => "burn",
-            Self::GitHubCopilot => "github-copilot",
-            Self::OpenRouter => "openrouter",
-            Self::ZAI => "zai",
-            Self::Custom => "custom",
-            Self::Mock => "mock",
-        }
+        self.metadata().as_str
     }
 
     /// Get the default endpoint for this backend
     pub fn default_endpoint(&self) -> Option<&'static str> {
-        match self {
-            Self::Ollama => Some(super::defaults::DEFAULT_OLLAMA_ENDPOINT),
-            Self::OpenAI => Some(super::defaults::DEFAULT_OPENAI_ENDPOINT),
-            Self::Anthropic => Some(super::defaults::DEFAULT_ANTHROPIC_ENDPOINT),
-            Self::Cohere => Some("https://api.cohere.ai/v1"),
-            Self::VertexAI => Some("https://aiplatform.googleapis.com"),
-            Self::GitHubCopilot => Some(super::defaults::DEFAULT_GITHUB_COPILOT_ENDPOINT),
-            Self::OpenRouter => Some(super::defaults::DEFAULT_OPENROUTER_ENDPOINT),
-            Self::ZAI => Some(super::defaults::DEFAULT_ZAI_ENDPOINT),
-            Self::FastEmbed => None,
-            Self::Burn => None,
-            Self::Custom => None,
-            Self::Mock => None,
-        }
+        self.metadata().default_endpoint
     }
 
     /// Get default embedding model for this backend (if supported)
     pub fn default_embedding_model(&self) -> Option<&'static str> {
-        match self {
-            Self::Ollama => Some("nomic-embed-text"),
-            Self::OpenAI => Some("text-embedding-3-small"),
-            Self::Cohere => Some("embed-english-v3.0"),
-            Self::VertexAI => Some("textembedding-gecko@003"),
-            Self::FastEmbed => Some("BAAI/bge-small-en-v1.5"),
-            Self::Burn => Some("nomic-embed-text"),
-            Self::Custom => None,
-            Self::Mock => Some("mock-embed-model"),
-            Self::Anthropic => None,
-            Self::GitHubCopilot => None,
-            Self::OpenRouter => None,
-            Self::ZAI => None,
-        }
+        self.metadata().default_embedding_model
     }
 
     /// Get default chat model for this backend (if supported)
     pub fn default_chat_model(&self) -> Option<&'static str> {
-        match self {
-            Self::Ollama => Some(super::defaults::DEFAULT_CHAT_MODEL),
-            Self::OpenAI => Some(super::defaults::DEFAULT_OPENAI_MODEL),
-            Self::Anthropic => Some(super::defaults::DEFAULT_ANTHROPIC_MODEL),
-            Self::Cohere => Some("command-r-plus"),
-            Self::VertexAI => Some("gemini-1.5-pro"),
-            Self::GitHubCopilot => Some(super::defaults::DEFAULT_GITHUB_COPILOT_MODEL),
-            Self::OpenRouter => Some(super::defaults::DEFAULT_OPENROUTER_MODEL),
-            Self::ZAI => Some(super::defaults::DEFAULT_ZAI_MODEL),
-            Self::Custom => None,    // User must specify
-            Self::FastEmbed => None, // No chat support
-            Self::Burn => None,      // No chat support
-            Self::Mock => Some("mock-chat-model"),
-        }
+        self.metadata().default_chat_model
     }
 
     /// Get default max concurrent requests for this backend
@@ -203,20 +305,7 @@ impl BackendType {
 
     /// Get the environment variable name for this backend's API key
     pub fn api_key_env_var(&self) -> Option<&'static str> {
-        match self {
-            Self::OpenAI => Some("OPENAI_API_KEY"),
-            Self::Anthropic => Some("ANTHROPIC_API_KEY"),
-            Self::Cohere => Some("COHERE_API_KEY"),
-            Self::VertexAI => Some("GOOGLE_API_KEY"),
-            Self::OpenRouter => Some("OPENROUTER_API_KEY"),
-            Self::ZAI => Some("GLM_AUTH_TOKEN"),
-            Self::Ollama
-            | Self::FastEmbed
-            | Self::Burn
-            | Self::GitHubCopilot
-            | Self::Custom
-            | Self::Mock => None,
-        }
+        self.metadata().api_key_env_var
     }
 }
 
@@ -1001,10 +1090,7 @@ mod tests {
             BackendType::OpenRouter.api_key_env_var(),
             Some("OPENROUTER_API_KEY")
         );
-        assert_eq!(
-            BackendType::ZAI.api_key_env_var(),
-            Some("GLM_AUTH_TOKEN")
-        );
+        assert_eq!(BackendType::ZAI.api_key_env_var(), Some("GLM_AUTH_TOKEN"));
 
         // Backends with NO API key environment variable
         assert_eq!(BackendType::Ollama.api_key_env_var(), None);
@@ -1030,11 +1116,23 @@ mod tests {
         // Cloud backends → Cloud trust level
         assert_eq!(BackendType::Ollama.default_trust_level(), TrustLevel::Cloud);
         assert_eq!(BackendType::OpenAI.default_trust_level(), TrustLevel::Cloud);
-        assert_eq!(BackendType::Anthropic.default_trust_level(), TrustLevel::Cloud);
+        assert_eq!(
+            BackendType::Anthropic.default_trust_level(),
+            TrustLevel::Cloud
+        );
         assert_eq!(BackendType::Cohere.default_trust_level(), TrustLevel::Cloud);
-        assert_eq!(BackendType::VertexAI.default_trust_level(), TrustLevel::Cloud);
-        assert_eq!(BackendType::GitHubCopilot.default_trust_level(), TrustLevel::Cloud);
-        assert_eq!(BackendType::OpenRouter.default_trust_level(), TrustLevel::Cloud);
+        assert_eq!(
+            BackendType::VertexAI.default_trust_level(),
+            TrustLevel::Cloud
+        );
+        assert_eq!(
+            BackendType::GitHubCopilot.default_trust_level(),
+            TrustLevel::Cloud
+        );
+        assert_eq!(
+            BackendType::OpenRouter.default_trust_level(),
+            TrustLevel::Cloud
+        );
         assert_eq!(BackendType::ZAI.default_trust_level(), TrustLevel::Cloud);
         assert_eq!(BackendType::Custom.default_trust_level(), TrustLevel::Cloud);
     }
@@ -1071,8 +1169,14 @@ mod tests {
     #[test]
     fn test_mock_variant_test_values() {
         // Mock variant should have test infrastructure values
-        assert_eq!(BackendType::Mock.default_embedding_model(), Some("mock-embed-model"));
-        assert_eq!(BackendType::Mock.default_chat_model(), Some("mock-chat-model"));
+        assert_eq!(
+            BackendType::Mock.default_embedding_model(),
+            Some("mock-embed-model")
+        );
+        assert_eq!(
+            BackendType::Mock.default_chat_model(),
+            Some("mock-chat-model")
+        );
         assert_eq!(BackendType::Mock.default_endpoint(), None);
         assert_eq!(BackendType::Mock.api_key_env_var(), None);
         assert!(BackendType::Mock.supports_embeddings());
@@ -1122,7 +1226,12 @@ mod tests {
         for variant in &all_variants {
             let s = variant.as_str();
             assert!(!s.is_empty(), "{:?} has empty as_str()", variant);
-            assert!(!s.contains(' '), "{:?} as_str() contains spaces: '{}'", variant, s);
+            assert!(
+                !s.contains(' '),
+                "{:?} as_str() contains spaces: '{}'",
+                variant,
+                s
+            );
         }
     }
 }
