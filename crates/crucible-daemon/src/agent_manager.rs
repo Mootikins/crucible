@@ -2001,6 +2001,31 @@ impl AgentManager {
                             }
                         }
                     }
+                    BackendType::OpenAI | BackendType::ZAI | BackendType::OpenRouter => {
+                        if provider_config.available_models.is_some() {
+                            provider_config.effective_models()
+                        } else {
+                            let endpoint = provider_config.endpoint();
+                            let api_key = provider_config.api_key();
+                            match self
+                                .list_openai_compatible_models(
+                                    &endpoint,
+                                    api_key.as_deref(),
+                                )
+                                .await
+                            {
+                                Ok(models) => models,
+                                Err(e) => {
+                                    warn!(
+                                        provider_key = %provider_key,
+                                        error = %e,
+                                        "Dynamic model discovery failed, falling back to hardcoded list"
+                                    );
+                                    provider_config.effective_models()
+                                }
+                            }
+                        }
+                    }
                     _ => provider_config.effective_models(),
                 };
 
@@ -2332,6 +2357,85 @@ impl AgentManager {
                 Ok(Vec::new())
             }
         }
+    }
+
+    async fn list_openai_compatible_models(
+        &self,
+        endpoint: &str,
+        api_key: Option<&str>,
+    ) -> Result<Vec<String>, AgentError> {
+        let client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(10))
+            .build()
+            .map_err(|e| AgentError::InvalidModelId(format!("HTTP client error: {}", e)))?;
+
+        let url = format!("{}/models", endpoint.trim_end_matches('/'));
+        let mut request = client.get(&url);
+        if let Some(api_key) = api_key {
+            request = request.bearer_auth(api_key);
+        }
+
+        let response = request.send().await.map_err(|e| {
+            AgentError::InvalidModelId(format!(
+                "Failed to connect to OpenAI-compatible endpoint: {}",
+                e
+            ))
+        })?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            debug!(status = %status, "OpenAI-compatible endpoint returned non-success status");
+            return Err(AgentError::InvalidModelId(format!(
+                "OpenAI-compatible endpoint returned non-success status: {}",
+                status
+            )));
+        }
+
+        let payload: serde_json::Value = response
+            .json()
+            .await
+            .map_err(|e| AgentError::InvalidModelId(format!("Failed to parse models: {}", e)))?;
+
+        Self::parse_openai_compatible_models_payload(payload)
+    }
+
+    fn parse_openai_compatible_models_payload(
+        payload: serde_json::Value,
+    ) -> Result<Vec<String>, AgentError> {
+        fn model_names_from_array(models: &[serde_json::Value]) -> Vec<String> {
+            models
+                .iter()
+                .filter_map(|model| {
+                    let obj = model.as_object()?;
+                    obj.get("id")
+                        .and_then(serde_json::Value::as_str)
+                        .or_else(|| obj.get("name").and_then(serde_json::Value::as_str))
+                        .map(ToString::to_string)
+                })
+                .collect()
+        }
+
+        if let Some(data) = payload.get("data") {
+            let data_models = data.as_array().ok_or_else(|| {
+                AgentError::InvalidModelId(
+                    "Failed to parse models: expected 'data' to be an array".to_string(),
+                )
+            })?;
+            return Ok(model_names_from_array(data_models));
+        }
+
+        if let Some(models) = payload.get("models") {
+            let model_entries = models.as_array().ok_or_else(|| {
+                AgentError::InvalidModelId(
+                    "Failed to parse models: expected 'models' to be an array".to_string(),
+                )
+            })?;
+            return Ok(model_names_from_array(model_entries));
+        }
+
+        Err(AgentError::InvalidModelId(
+            "Failed to parse models: expected 'data' or 'models' key".to_string(),
+        ))
     }
 }
 
@@ -5472,6 +5576,12 @@ mod tests {
 
         let (ollama_endpoint, ollama_server) = start_mock_ollama_tags_server(Vec::new()).await;
 
+        // Use dead endpoints for OpenAI/ZAI/OpenRouter to force fallback to effective_models()
+        let dead_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let dead_addr = dead_listener.local_addr().unwrap();
+        drop(dead_listener);
+        let dead_endpoint = format!("http://{}", dead_addr);
+
         let mut providers = HashMap::new();
         providers.insert(
             "anthropic-fallback".to_string(),
@@ -5479,11 +5589,15 @@ mod tests {
         );
         providers.insert(
             "openai-fallback".to_string(),
-            LlmProviderConfig::builder(BackendType::OpenAI).build(),
+            LlmProviderConfig::builder(BackendType::OpenAI)
+                .endpoint(&dead_endpoint)
+                .build(),
         );
         providers.insert(
             "zai-fallback".to_string(),
-            LlmProviderConfig::builder(BackendType::ZAI).build(),
+            LlmProviderConfig::builder(BackendType::ZAI)
+                .endpoint(&dead_endpoint)
+                .build(),
         );
         providers.insert(
             "ollama-empty".to_string(),
@@ -5493,7 +5607,17 @@ mod tests {
         );
         providers.insert(
             "openrouter-empty".to_string(),
-            LlmProviderConfig::builder(BackendType::OpenRouter).build(),
+            LlmProviderConfig::builder(BackendType::OpenRouter)
+                .endpoint(&dead_endpoint)
+                .build(),
+        );
+        providers.insert(
+            "cohere-empty".to_string(),
+            LlmProviderConfig::builder(BackendType::Cohere).build(),
+        );
+        providers.insert(
+            "custom-empty".to_string(),
+            LlmProviderConfig::builder(BackendType::Custom).build(),
         );
         providers.insert(
             "cohere-empty".to_string(),
@@ -5726,6 +5850,126 @@ mod tests {
         );
     }
 
+    #[test]
+    fn test_openai_compatible_parses_data_models_prefers_id() {
+        let payload = serde_json::json!({
+            "data": [
+                { "id": "gpt-4o", "name": "ignored-name" },
+                { "name": "fallback-name" },
+                { "id": "gpt-4o-mini" }
+            ]
+        });
+
+        let models = AgentManager::parse_openai_compatible_models_payload(payload).unwrap();
+
+        assert_eq!(
+            models,
+            vec![
+                "gpt-4o".to_string(),
+                "fallback-name".to_string(),
+                "gpt-4o-mini".to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn test_openai_compatible_parses_models_fallback_shape() {
+        let payload = serde_json::json!({
+            "models": [
+                { "name": "llama-3.1-70b" },
+                { "id": "deepseek-chat" }
+            ]
+        });
+
+        let models = AgentManager::parse_openai_compatible_models_payload(payload).unwrap();
+
+        assert_eq!(
+            models,
+            vec!["llama-3.1-70b".to_string(), "deepseek-chat".to_string()]
+        );
+    }
+
+    #[test]
+    fn test_openai_compatible_data_key_present_but_invalid_errors() {
+        let payload = serde_json::json!({
+            "data": { "id": "not-an-array" },
+            "models": [{ "name": "should-not-be-used" }]
+        });
+
+        let result = AgentManager::parse_openai_compatible_models_payload(payload);
+
+        assert!(matches!(result, Err(AgentError::InvalidModelId(_))));
+    }
+
+    #[tokio::test]
+    async fn test_openai_compatible_http_includes_auth_header_and_trims_endpoint() {
+        let storage = Arc::new(FileSessionStorage::new());
+        let session_manager = Arc::new(SessionManager::with_storage(storage));
+        let agent_manager = create_test_agent_manager(session_manager);
+
+        let (endpoint, server) = start_mock_openai_models_server(
+            200,
+            serde_json::json!({
+                "data": [
+                    { "id": "gpt-4o" },
+                    { "name": "gpt-4.1-mini" }
+                ]
+            }),
+            Some("test-key"),
+        )
+        .await;
+
+        let models = agent_manager
+            .list_openai_compatible_models(&(endpoint + "/"), Some("test-key"))
+            .await
+            .unwrap();
+        server.await.unwrap();
+
+        assert_eq!(
+            models,
+            vec!["gpt-4o".to_string(), "gpt-4.1-mini".to_string()]
+        );
+    }
+
+    #[tokio::test]
+    async fn test_openai_compatible_non_success_status_returns_error() {
+        let storage = Arc::new(FileSessionStorage::new());
+        let session_manager = Arc::new(SessionManager::with_storage(storage));
+        let agent_manager = create_test_agent_manager(session_manager);
+
+        let (endpoint, server) = start_mock_openai_models_server(
+            503,
+            serde_json::json!({ "error": "service unavailable" }),
+            None,
+        )
+        .await;
+
+        let result = agent_manager
+            .list_openai_compatible_models(&endpoint, None)
+            .await;
+        server.await.unwrap();
+
+        assert!(matches!(result, Err(AgentError::InvalidModelId(_))));
+    }
+
+    #[tokio::test]
+    async fn test_openai_compatible_connection_failure_returns_error() {
+        let storage = Arc::new(FileSessionStorage::new());
+        let session_manager = Arc::new(SessionManager::with_storage(storage));
+        let agent_manager = create_test_agent_manager(session_manager);
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        drop(listener);
+
+        let endpoint = format!("http://{}", addr);
+        let result = agent_manager
+            .list_openai_compatible_models(&endpoint, None)
+            .await;
+
+        assert!(matches!(result, Err(AgentError::InvalidModelId(_))));
+    }
+
     fn create_test_agent_manager_with_llm_config(
         session_manager: Arc<SessionManager>,
         llm_config: crucible_config::LlmConfig,
@@ -5762,6 +6006,57 @@ mod tests {
 
             let response = format!(
                 "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                body.len(),
+                body
+            );
+            tokio::io::AsyncWriteExt::write_all(&mut socket, response.as_bytes())
+                .await
+                .unwrap();
+        });
+
+        (format!("http://{}", addr), handle)
+    }
+
+    async fn start_mock_openai_models_server(
+        status_code: u16,
+        body_json: serde_json::Value,
+        expected_api_key: Option<&str>,
+    ) -> (String, tokio::task::JoinHandle<()>) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let body = body_json.to_string();
+        let expected_auth = expected_api_key.map(|key| format!("Authorization: Bearer {}", key));
+
+        let handle = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let mut buf = [0_u8; 4096];
+            let bytes_read = tokio::io::AsyncReadExt::read(&mut socket, &mut buf)
+                .await
+                .unwrap();
+            let request = String::from_utf8_lossy(&buf[..bytes_read]);
+            let request_lower = request.to_lowercase();
+
+            assert!(
+                request.starts_with("GET /models"),
+                "Expected GET /models request, got: {}",
+                request
+            );
+
+            if let Some(expected_auth) = expected_auth {
+                let expected_auth_lower = expected_auth.to_lowercase();
+                assert!(
+                    request_lower.contains(&expected_auth_lower),
+                    "Expected Authorization header '{}', got request: {}",
+                    expected_auth,
+                    request
+                );
+            }
+
+            let status_text = if status_code == 200 { "OK" } else { "ERROR" };
+            let response = format!(
+                "HTTP/1.1 {} {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                status_code,
+                status_text,
                 body.len(),
                 body
             );
@@ -6870,6 +7165,401 @@ mod tests {
         assert!(
             !agent_manager.request_state.contains_key(&session.id),
             "request_state should be cleaned up after empty stream completes"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_list_models_dynamic_discovery_openai_succeeds() {
+        use crucible_config::{BackendType, LlmConfig, LlmProviderConfig};
+        use std::collections::HashMap;
+
+        let tmp = TempDir::new().unwrap();
+        let storage = Arc::new(FileSessionStorage::new());
+        let session_manager = Arc::new(SessionManager::with_storage(storage));
+
+        let session = session_manager
+            .create_session(
+                SessionType::Chat,
+                tmp.path().to_path_buf(),
+                None,
+                vec![],
+                None,
+            )
+            .await
+            .unwrap();
+
+        // Mock server returns OpenAI-style models
+        let (endpoint, server) = start_mock_openai_models_server(
+            200,
+            serde_json::json!({
+                "data": [
+                    { "id": "gpt-4o" },
+                    { "id": "gpt-4o-mini" },
+                    { "id": "o3-mini" }
+                ]
+            }),
+            Some("test-openai-key"),
+        )
+        .await;
+
+        let mut providers = HashMap::new();
+        providers.insert(
+            "openai-dynamic".to_string(),
+            LlmProviderConfig::builder(BackendType::OpenAI)
+                .endpoint(&endpoint)
+                .api_key("test-openai-key")
+                .build(),
+        );
+
+        let llm_config = LlmConfig {
+            default: Some("openai-dynamic".to_string()),
+            providers,
+        };
+
+        let agent_manager =
+            create_test_agent_manager_with_llm_config(session_manager.clone(), llm_config);
+
+        agent_manager
+            .configure_agent(&session.id, test_agent())
+            .await
+            .unwrap();
+
+        let models = agent_manager.list_models(&session.id).await.unwrap();
+        server.await.unwrap();
+
+        assert!(
+            models.contains(&"openai-dynamic/gpt-4o".to_string()),
+            "Should contain dynamically discovered gpt-4o, got: {:?}",
+            models
+        );
+        assert!(
+            models.contains(&"openai-dynamic/gpt-4o-mini".to_string()),
+            "Should contain dynamically discovered gpt-4o-mini, got: {:?}",
+            models
+        );
+        assert!(
+            models.contains(&"openai-dynamic/o3-mini".to_string()),
+            "Should contain dynamically discovered o3-mini, got: {:?}",
+            models
+        );
+        assert_eq!(
+            models.len(),
+            3,
+            "Should have exactly 3 dynamically discovered models, got: {:?}",
+            models
+        );
+    }
+
+    #[tokio::test]
+    async fn test_list_models_dynamic_discovery_zai_succeeds() {
+        use crucible_config::{BackendType, LlmConfig, LlmProviderConfig};
+        use std::collections::HashMap;
+
+        let tmp = TempDir::new().unwrap();
+        let storage = Arc::new(FileSessionStorage::new());
+        let session_manager = Arc::new(SessionManager::with_storage(storage));
+
+        let session = session_manager
+            .create_session(
+                SessionType::Chat,
+                tmp.path().to_path_buf(),
+                None,
+                vec![],
+                None,
+            )
+            .await
+            .unwrap();
+
+        let (endpoint, server) = start_mock_openai_models_server(
+            200,
+            serde_json::json!({
+                "data": [
+                    { "id": "GLM-5" },
+                    { "id": "GLM-4.7" },
+                    { "id": "GLM-4.5-Flash" }
+                ]
+            }),
+            None,
+        )
+        .await;
+
+        let mut providers = HashMap::new();
+        providers.insert(
+            "zai-dynamic".to_string(),
+            LlmProviderConfig::builder(BackendType::ZAI)
+                .endpoint(&endpoint)
+                .build(),
+        );
+
+        let llm_config = LlmConfig {
+            default: Some("zai-dynamic".to_string()),
+            providers,
+        };
+
+        let agent_manager =
+            create_test_agent_manager_with_llm_config(session_manager.clone(), llm_config);
+
+        agent_manager
+            .configure_agent(&session.id, test_agent())
+            .await
+            .unwrap();
+
+        let models = agent_manager.list_models(&session.id).await.unwrap();
+        server.await.unwrap();
+
+        assert!(
+            models.contains(&"zai-dynamic/GLM-5".to_string()),
+            "Should contain dynamically discovered GLM-5, got: {:?}",
+            models
+        );
+        assert!(
+            models.contains(&"zai-dynamic/GLM-4.7".to_string()),
+            "Should contain dynamically discovered GLM-4.7, got: {:?}",
+            models
+        );
+        assert_eq!(
+            models.len(),
+            3,
+            "Should have exactly 3 dynamically discovered ZAI models, got: {:?}",
+            models
+        );
+    }
+
+    #[tokio::test]
+    async fn test_list_models_dynamic_discovery_openrouter_succeeds() {
+        use crucible_config::{BackendType, LlmConfig, LlmProviderConfig};
+        use std::collections::HashMap;
+
+        let tmp = TempDir::new().unwrap();
+        let storage = Arc::new(FileSessionStorage::new());
+        let session_manager = Arc::new(SessionManager::with_storage(storage));
+
+        let session = session_manager
+            .create_session(
+                SessionType::Chat,
+                tmp.path().to_path_buf(),
+                None,
+                vec![],
+                None,
+            )
+            .await
+            .unwrap();
+
+        let (endpoint, server) = start_mock_openai_models_server(
+            200,
+            serde_json::json!({
+                "data": [
+                    { "id": "anthropic/claude-sonnet-4-20250514" },
+                    { "id": "openai/gpt-4o" },
+                    { "id": "meta-llama/llama-3.3-70b" }
+                ]
+            }),
+            Some("test-or-key"),
+        )
+        .await;
+
+        let mut providers = HashMap::new();
+        providers.insert(
+            "openrouter-dynamic".to_string(),
+            LlmProviderConfig::builder(BackendType::OpenRouter)
+                .endpoint(&endpoint)
+                .api_key("test-or-key")
+                .build(),
+        );
+
+        let llm_config = LlmConfig {
+            default: Some("openrouter-dynamic".to_string()),
+            providers,
+        };
+
+        let agent_manager =
+            create_test_agent_manager_with_llm_config(session_manager.clone(), llm_config);
+
+        agent_manager
+            .configure_agent(&session.id, test_agent())
+            .await
+            .unwrap();
+
+        let models = agent_manager.list_models(&session.id).await.unwrap();
+        server.await.unwrap();
+
+        assert_eq!(
+            models.len(),
+            3,
+            "Should have 3 dynamically discovered OpenRouter models, got: {:?}",
+            models
+        );
+        assert!(
+            models.contains(&"openrouter-dynamic/anthropic/claude-sonnet-4-20250514".to_string()),
+            "Should contain dynamically discovered model, got: {:?}",
+            models
+        );
+    }
+
+    #[tokio::test]
+    async fn test_list_models_dynamic_discovery_fallback_on_api_failure() {
+        use crucible_config::{BackendType, LlmConfig, LlmProviderConfig};
+        use std::collections::HashMap;
+
+        let tmp = TempDir::new().unwrap();
+        let storage = Arc::new(FileSessionStorage::new());
+        let session_manager = Arc::new(SessionManager::with_storage(storage));
+
+        let session = session_manager
+            .create_session(
+                SessionType::Chat,
+                tmp.path().to_path_buf(),
+                None,
+                vec![],
+                None,
+            )
+            .await
+            .unwrap();
+
+        // Mock server returns 503 error
+        let (openai_endpoint, openai_server) = start_mock_openai_models_server(
+            503,
+            serde_json::json!({ "error": "service unavailable" }),
+            None,
+        )
+        .await;
+
+        // ZAI endpoint that refuses connection (bind then drop)
+        let zai_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let zai_addr = zai_listener.local_addr().unwrap();
+        drop(zai_listener);
+        let zai_endpoint = format!("http://{}", zai_addr);
+
+        let mut providers = HashMap::new();
+        providers.insert(
+            "openai-fail".to_string(),
+            LlmProviderConfig::builder(BackendType::OpenAI)
+                .endpoint(&openai_endpoint)
+                .build(),
+        );
+        providers.insert(
+            "zai-fail".to_string(),
+            LlmProviderConfig::builder(BackendType::ZAI)
+                .endpoint(&zai_endpoint)
+                .build(),
+        );
+
+        let llm_config = LlmConfig {
+            default: Some("openai-fail".to_string()),
+            providers,
+        };
+
+        let agent_manager =
+            create_test_agent_manager_with_llm_config(session_manager.clone(), llm_config);
+
+        agent_manager
+            .configure_agent(&session.id, test_agent())
+            .await
+            .unwrap();
+
+        let models = agent_manager.list_models(&session.id).await.unwrap();
+        openai_server.await.unwrap();
+
+        // OpenAI should fall back to hardcoded models
+        let openai_models: Vec<_> = models
+            .iter()
+            .filter(|m| m.starts_with("openai-fail/"))
+            .collect();
+        assert!(
+            !openai_models.is_empty(),
+            "OpenAI should fall back to hardcoded models on API failure, got: {:?}",
+            models
+        );
+
+        // ZAI should fall back to hardcoded models
+        let zai_models: Vec<_> = models
+            .iter()
+            .filter(|m| m.starts_with("zai-fail/"))
+            .collect();
+        assert!(
+            !zai_models.is_empty(),
+            "ZAI should fall back to hardcoded models on API failure, got: {:?}",
+            models
+        );
+    }
+
+    #[tokio::test]
+    async fn test_list_models_explicit_config_skips_dynamic_discovery() {
+        use crucible_config::{BackendType, LlmConfig, LlmProviderConfig};
+        use std::collections::HashMap;
+
+        let tmp = TempDir::new().unwrap();
+        let storage = Arc::new(FileSessionStorage::new());
+        let session_manager = Arc::new(SessionManager::with_storage(storage));
+
+        let session = session_manager
+            .create_session(
+                SessionType::Chat,
+                tmp.path().to_path_buf(),
+                None,
+                vec![],
+                None,
+            )
+            .await
+            .unwrap();
+
+        // No mock server needed — explicit config should bypass API call entirely
+        let mut providers = HashMap::new();
+        providers.insert(
+            "openai-explicit".to_string(),
+            LlmProviderConfig::builder(BackendType::OpenAI)
+                .available_models(vec!["my-custom-model".to_string()])
+                .build(),
+        );
+        providers.insert(
+            "zai-explicit".to_string(),
+            LlmProviderConfig::builder(BackendType::ZAI)
+                .available_models(vec!["custom-glm".to_string()])
+                .build(),
+        );
+        providers.insert(
+            "openrouter-explicit".to_string(),
+            LlmProviderConfig::builder(BackendType::OpenRouter)
+                .available_models(vec!["custom-or-model".to_string()])
+                .build(),
+        );
+
+        let llm_config = LlmConfig {
+            default: Some("openai-explicit".to_string()),
+            providers,
+        };
+
+        let agent_manager =
+            create_test_agent_manager_with_llm_config(session_manager.clone(), llm_config);
+
+        agent_manager
+            .configure_agent(&session.id, test_agent())
+            .await
+            .unwrap();
+
+        let models = agent_manager.list_models(&session.id).await.unwrap();
+
+        // Explicit available_models should be used directly (no API call)
+        assert!(
+            models.contains(&"openai-explicit/my-custom-model".to_string()),
+            "Explicit OpenAI config should be used, got: {:?}",
+            models
+        );
+        assert!(
+            models.contains(&"zai-explicit/custom-glm".to_string()),
+            "Explicit ZAI config should be used, got: {:?}",
+            models
+        );
+        assert!(
+            models.contains(&"openrouter-explicit/custom-or-model".to_string()),
+            "Explicit OpenRouter config should be used, got: {:?}",
+            models
+        );
+        assert_eq!(
+            models.len(),
+            3,
+            "Should have exactly 3 explicitly configured models, got: {:?}",
+            models
         );
     }
 }
