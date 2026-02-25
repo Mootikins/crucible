@@ -66,7 +66,7 @@ async fn test_prompt_with_streaming_response() {
     use agent_client_protocol::PromptRequest;
     let prompt_request: PromptRequest = serde_json::from_value(serde_json::json!({
         "sessionId": session.id().to_string(),
-        "prompt": [{"text": "What is 2+2?"}],
+        "prompt": [{"type": "text", "text": "What is 2+2?"}],
         "_meta": null
     }))
     .expect("Failed to create PromptRequest");
