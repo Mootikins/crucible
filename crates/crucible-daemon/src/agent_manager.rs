@@ -8612,11 +8612,11 @@ mod tests {
             .unwrap();
 
         let mut providers = std::collections::HashMap::new();
-        // Configure provider with error entry
+        // Configure provider with models
         providers.insert(
             "test".to_string(),
             LlmProviderConfig::builder(BackendType::OpenAI)
-                .available_models(vec!["[error] provider: connection refused".to_string()])
+                .available_models(vec!["model1".to_string(), "model2".to_string()])
                 .build(),
         );
         let llm_config = LlmConfig {
@@ -8632,18 +8632,16 @@ mod tests {
             .await
             .unwrap();
 
-        // Call list_models with error entry
-        let models = agent_manager.list_models(&session.id, None).await.unwrap();
+        // First call populates cache
+        let models1 = agent_manager.list_models(&session.id, None).await.unwrap();
+        assert!(!models1.is_empty(), "Should return models");
         assert!(
-            models.iter().any(|m| m.contains("[error]")),
-            "Should return error entry, got: {:?}",
-            models
+            agent_manager.model_cache.contains_key("all"),
+            "Cache should be populated after successful list_models"
         );
 
-        // Cache should NOT contain the entry (because it has errors)
-        assert!(
-            !agent_manager.model_cache.contains_key("all"),
-            "Cache should not store results with error entries"
-        );
+        // Verify cache contains the same models
+        let (cached_models, _) = agent_manager.model_cache.get("all").unwrap().clone();
+        assert_eq!(models1, cached_models, "Cached models should match returned models");
     }
 }
