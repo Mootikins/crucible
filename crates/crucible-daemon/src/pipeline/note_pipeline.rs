@@ -661,4 +661,46 @@ mod tests {
         assert!(!config.force_reprocess);
         assert_eq!(config.parser, ParserBackend::Default);
     }
+
+    #[tokio::test]
+    async fn force_reprocess_overrides_skip() {
+        let change_detector = Arc::new(InMemoryChangeDetectionStore::new());
+        let enrichment: Arc<dyn EnrichmentService> = Arc::new(MockEnrichmentService::new());
+        let store: Arc<dyn NoteStore> = Arc::new(MockNoteStore::new());
+
+        let config = NotePipelineConfig {
+            skip_enrichment: true,
+            force_reprocess: true,
+            ..Default::default()
+        };
+        let pipeline =
+            NotePipeline::with_config(change_detector, enrichment, store, config);
+
+        let tmp = write_temp_note("# Force Test\n\nContent here.\n");
+
+        // First pass
+        let r1 = pipeline.process(tmp.path()).await.unwrap();
+        assert!(!r1.is_skipped(), "first pass should process");
+
+        // Second pass with force_reprocess=true should also process
+        let r2 = pipeline.process(tmp.path()).await.unwrap();
+        assert!(
+            !r2.is_skipped(),
+            "force_reprocess should override skip for same file"
+        );
+    }
+
+    #[tokio::test]
+    async fn empty_markdown_processes_successfully() {
+        let enrichment = Arc::new(MockEnrichmentService::new());
+        let store = Arc::new(MockNoteStore::new());
+        let pipeline = create_pipeline(enrichment, store);
+
+        let tmp = write_temp_note("");
+        let result = pipeline.process(tmp.path()).await.unwrap();
+        assert!(
+            !result.is_skipped(),
+            "empty markdown should process, not skip"
+        );
+    }
 }
