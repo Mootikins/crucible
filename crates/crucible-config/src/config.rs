@@ -2258,4 +2258,69 @@ provider = "openai"
         let parsed = CliAppConfig::load(Some(temp.path().to_path_buf()), None, None);
         assert!(parsed.is_err(), "chat.provider should be rejected");
     }
+
+    // ---- Golden regression tests ----
+
+    #[test]
+    fn database_path_derived_from_kiln() {
+        let config = CliAppConfig {
+            kiln_path: PathBuf::from("/tmp/test"),
+            ..Default::default()
+        };
+        let db_path = config.database_path();
+        assert!(
+            db_path.starts_with("/tmp/test/.crucible"),
+            "database path should be under kiln/.crucible, got: {}",
+            db_path.display()
+        );
+        let filename = db_path.file_name().unwrap().to_string_lossy();
+        assert!(
+            filename.starts_with("crucible") && filename.ends_with(".db"),
+            "database file should be crucible*.db, got: {}",
+            filename
+        );
+    }
+
+    #[test]
+    fn database_path_str_is_valid_utf8() {
+        let config = CliAppConfig {
+            kiln_path: PathBuf::from("/tmp/test"),
+            ..Default::default()
+        };
+        let result = config.database_path_str();
+        assert!(
+            result.is_ok(),
+            "database_path_str should return Ok for ASCII path"
+        );
+    }
+
+    #[test]
+    fn include_config_default_all_none() {
+        let inc = crate::includes::IncludeConfig::default();
+        assert!(
+            inc.is_empty(),
+            "default IncludeConfig should have is_empty() == true"
+        );
+    }
+
+    #[test]
+    fn include_config_deser_without_database_field() {
+        // IncludeConfig has no `database` field; TOML with only `gateway` must succeed.
+        let toml_content = r#"
+gateway = "mcps.toml"
+"#;
+        let inc: crate::includes::IncludeConfig = toml::from_str(toml_content).unwrap();
+        assert_eq!(inc.gateway.as_deref(), Some("mcps.toml"));
+        assert!(!inc.is_empty());
+    }
+
+    #[test]
+    fn logging_level_returns_none_when_unset() {
+        let config = CliAppConfig::default();
+        assert_eq!(
+            config.logging_level(),
+            None,
+            "default config should have no logging level"
+        );
+    }
 }
