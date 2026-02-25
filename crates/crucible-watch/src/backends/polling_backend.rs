@@ -402,8 +402,7 @@ mod tests {
     #[test]
     fn factory_capabilities_recursive() {
         let factory = PollingFactory::new();
-        let caps =
-            <PollingFactory as super::super::WatcherFactory>::capabilities(&factory);
+        let caps = <PollingFactory as super::super::WatcherFactory>::capabilities(&factory);
         assert!(caps.recursive);
     }
 
@@ -411,8 +410,7 @@ mod tests {
     fn factory_capabilities_not_fine_grained() {
         // GOLDEN: captures current behavior
         let factory = PollingFactory::new();
-        let caps =
-            <PollingFactory as super::super::WatcherFactory>::capabilities(&factory);
+        let caps = <PollingFactory as super::super::WatcherFactory>::capabilities(&factory);
         assert!(!caps.fine_grained_events);
     }
 }

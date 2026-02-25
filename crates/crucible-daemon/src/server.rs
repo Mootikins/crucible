@@ -4123,7 +4123,10 @@ mod tests {
     fn truncation_ascii_under_limit() {
         let line = "a".repeat(50);
         let result = truncate_utf8_safe(&line, 100);
-        assert_eq!(result, line, "under-limit ASCII should be returned verbatim");
+        assert_eq!(
+            result, line,
+            "under-limit ASCII should be returned verbatim"
+        );
     }
 
     #[test]

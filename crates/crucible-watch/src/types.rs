@@ -1449,7 +1449,10 @@ mod tests {
 
     #[test]
     fn file_type_markdown_detection() {
-        assert_eq!(FileType::from_path(Path::new("readme.md")), FileType::Markdown);
+        assert_eq!(
+            FileType::from_path(Path::new("readme.md")),
+            FileType::Markdown
+        );
         assert_eq!(
             FileType::from_path(Path::new("doc.markdown")),
             FileType::Markdown
@@ -1460,7 +1463,10 @@ mod tests {
     fn file_type_note_extensions() {
         assert_eq!(FileType::from_path(Path::new("report.pdf")), FileType::Note);
         assert_eq!(FileType::from_path(Path::new("letter.doc")), FileType::Note);
-        assert_eq!(FileType::from_path(Path::new("thesis.docx")), FileType::Note);
+        assert_eq!(
+            FileType::from_path(Path::new("thesis.docx")),
+            FileType::Note
+        );
         assert_eq!(FileType::from_path(Path::new("essay.odt")), FileType::Note);
         assert_eq!(FileType::from_path(Path::new("memo.rtf")), FileType::Note);
     }
@@ -1468,7 +1474,10 @@ mod tests {
     #[test]
     fn file_type_image_extensions() {
         assert_eq!(FileType::from_path(Path::new("photo.png")), FileType::Image);
-        assert_eq!(FileType::from_path(Path::new("avatar.jpg")), FileType::Image);
+        assert_eq!(
+            FileType::from_path(Path::new("avatar.jpg")),
+            FileType::Image
+        );
         assert_eq!(
             FileType::from_path(Path::new("banner.jpeg")),
             FileType::Image
