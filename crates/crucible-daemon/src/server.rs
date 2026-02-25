@@ -2073,7 +2073,26 @@ async fn handle_session_switch_model(
 async fn handle_session_list_models(req: Request, am: &Arc<AgentManager>) -> Response {
     let session_id = require_str_param!(req, "session_id");
 
-    match am.list_models(session_id).await {
+    let classification = match am.get_session_with_agent(session_id) {
+        Ok((session, _)) => {
+            crate::trust_resolution::resolve_kiln_classification(&session.workspace, &session.kiln)
+        }
+        Err(crate::agent_manager::AgentError::SessionNotFound(id)) => {
+            return session_not_found(req.id, &id);
+        }
+        Err(crate::agent_manager::AgentError::NoAgentConfigured(_)) => {
+            return Response::success(
+                req.id,
+                serde_json::json!({
+                    "session_id": session_id,
+                    "models": Vec::<String>::new(),
+                }),
+            );
+        }
+        Err(e) => return internal_error(req.id, e),
+    };
+
+    match am.list_models(session_id, classification).await {
         Ok(models) => Response::success(
             req.id,
             serde_json::json!({

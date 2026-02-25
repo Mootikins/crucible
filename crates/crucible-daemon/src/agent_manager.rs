@@ -11,7 +11,10 @@ use crate::session_manager::{SessionError, SessionManager};
 use crate::trust_resolution::resolve_provider_trust;
 use crucible_acp::discovery::default_agent_profiles;
 use crucible_config::components::permissions::PermissionConfig;
-use crucible_config::{AcpConfig, AgentProfile, BackendType, PatternStore, components::defaults::OPENAI_MODEL_PREFIXES};
+use crucible_config::{
+    AcpConfig, AgentProfile, BackendType, DataClassification, PatternStore,
+    components::defaults::OPENAI_MODEL_PREFIXES,
+};
 use crucible_core::discovery::DiscoveryPaths;
 use crucible_core::events::{Reactor, ReactorEmitResult as EmitResult, SessionEvent};
 use crucible_core::interaction::{InteractionRequest, PermRequest, PermResponse, PermissionScope};
@@ -277,7 +280,7 @@ pub struct AgentManager {
     request_state: Arc<DashMap<String, RequestState>>,
     // TODO: invalidate agent_cache entries on kiln hot-swap (multi-kiln support)
     agent_cache: Arc<DashMap<String, Arc<Mutex<BoxedAgentHandle>>>>,
-    model_cache: Arc<DashMap<String, (Vec<String>, Instant)>>,
+    pub(crate) model_cache: Arc<DashMap<String, (Vec<String>, Instant)>>,
     kiln_manager: Arc<KilnManager>,
     session_manager: Arc<SessionManager>,
     background_manager: Arc<BackgroundJobManager>,
@@ -1984,13 +1987,19 @@ impl AgentManager {
         Ok(())
     }
 
-    pub async fn list_models(&self, session_id: &str) -> Result<Vec<String>, AgentError> {
+    pub async fn list_models(
+        &self,
+        session_id: &str,
+        classification: Option<DataClassification>,
+    ) -> Result<Vec<String>, AgentError> {
         use crucible_config::BackendType;
 
-        if let Some(entry) = self.model_cache.get("all") {
-            let (models, fetched_at) = entry.value();
-            if fetched_at.elapsed() < MODEL_CACHE_TTL {
-                return Ok(models.clone());
+        if classification.is_none() {
+            if let Some(entry) = self.model_cache.get("all") {
+                let (models, fetched_at) = entry.value();
+                if fetched_at.elapsed() < MODEL_CACHE_TTL {
+                    return Ok(models.clone());
+                }
             }
         }
 
@@ -1998,6 +2007,12 @@ impl AgentManager {
 
         if let Some(ref llm_config) = self.llm_config {
             for (provider_key, provider_config) in &llm_config.providers {
+                if let Some(ref classification) = classification {
+                    if !provider_config.effective_trust_level().satisfies(*classification) {
+                        continue;
+                    }
+                }
+
                 let models = match &provider_config.provider_type {
                     BackendType::Ollama => {
                         let endpoint = provider_config
@@ -2108,7 +2123,7 @@ impl AgentManager {
             }
         }
 
-        if !all_models.iter().any(|model| model.starts_with("[error]")) {
+        if classification.is_none() && !all_models.iter().any(|model| model.starts_with("[error]")) {
             self.model_cache
                 .insert("all".to_string(), (all_models.clone(), Instant::now()));
         }
@@ -5423,27 +5438,6 @@ mod tests {
         }
     }
 
-    #[async_trait]
-    trait TrustFilteringListModelsTddExt {
-        async fn list_models(
-            &self,
-            session_id: &str,
-            classification: Option<crucible_config::DataClassification>,
-        ) -> Result<Vec<String>, AgentError>;
-    }
-
-    #[async_trait]
-    impl TrustFilteringListModelsTddExt for AgentManager {
-        async fn list_models(
-            &self,
-            session_id: &str,
-            classification: Option<crucible_config::DataClassification>,
-        ) -> Result<Vec<String>, AgentError> {
-            let _ = classification;
-            AgentManager::list_models(self, session_id).await
-        }
-    }
-
     #[tokio::test]
     async fn test_list_models_returns_all_providers() {
         use crucible_config::{BackendType, LlmConfig, LlmProviderConfig};
@@ -5501,7 +5495,7 @@ mod tests {
             .await
             .unwrap();
 
-        let models = agent_manager.list_models(&session.id).await.unwrap();
+        let models = agent_manager.list_models(&session.id, None).await.unwrap();
 
         assert!(
             models.iter().any(|m| m.starts_with("openai/")),
@@ -5521,7 +5515,6 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "requires trust filtering implementation (Task 6)"]
     async fn test_list_models_trust_excludes_cloud_for_confidential_kiln() {
         use crucible_config::{BackendType, DataClassification, LlmConfig, LlmProviderConfig, TrustLevel};
         use std::collections::HashMap;
@@ -5568,11 +5561,8 @@ mod tests {
             .await
             .unwrap();
 
-        let models = TrustFilteringListModelsTddExt::list_models(
-            &agent_manager,
-            &session.id,
-            Some(DataClassification::Confidential),
-        )
+        let models = agent_manager
+            .list_models(&session.id, Some(DataClassification::Confidential))
         .await
         .unwrap();
 
@@ -5589,7 +5579,6 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "requires trust filtering implementation (Task 6)"]
     async fn test_list_models_trust_returns_all_for_public_kiln() {
         use crucible_config::{BackendType, DataClassification, LlmConfig, LlmProviderConfig, TrustLevel};
         use std::collections::HashMap;
@@ -5636,11 +5625,8 @@ mod tests {
             .await
             .unwrap();
 
-        let models = TrustFilteringListModelsTddExt::list_models(
-            &agent_manager,
-            &session.id,
-            Some(DataClassification::Public),
-        )
+        let models = agent_manager
+            .list_models(&session.id, Some(DataClassification::Public))
         .await
         .unwrap();
 
@@ -5657,7 +5643,6 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "requires trust filtering implementation (Task 6)"]
     async fn test_list_models_trust_returns_all_when_no_classification() {
         use crucible_config::{BackendType, LlmConfig, LlmProviderConfig, TrustLevel};
         use std::collections::HashMap;
@@ -5704,7 +5689,8 @@ mod tests {
             .await
             .unwrap();
 
-        let models = TrustFilteringListModelsTddExt::list_models(&agent_manager, &session.id, None)
+        let models = agent_manager
+            .list_models(&session.id, None)
             .await
             .unwrap();
 
@@ -5721,7 +5707,6 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "requires trust filtering implementation (Task 6)"]
     async fn test_list_models_trust_includes_cloud_for_internal_kiln() {
         use crucible_config::{
             BackendType, DataClassification, LlmConfig, LlmProviderConfig, TrustLevel,
@@ -5776,11 +5761,8 @@ mod tests {
             .await
             .unwrap();
 
-        let models = TrustFilteringListModelsTddExt::list_models(
-            &agent_manager,
-            &session.id,
-            Some(DataClassification::Internal),
-        )
+        let models = agent_manager
+            .list_models(&session.id, Some(DataClassification::Internal))
         .await
         .unwrap();
 
@@ -5893,7 +5875,7 @@ mod tests {
             .await
             .unwrap();
 
-        let models = agent_manager.list_models(&session.id).await.unwrap();
+        let models = agent_manager.list_models(&session.id, None).await.unwrap();
         ollama_server.await.unwrap();
 
         let expected_models = [
@@ -6004,7 +5986,7 @@ mod tests {
             .await
             .unwrap();
 
-        let models = agent_manager.list_models(&session.id).await.unwrap();
+        let models = agent_manager.list_models(&session.id, None).await.unwrap();
         ollama_server.await.unwrap();
 
         let anthropic_count = models
@@ -6100,7 +6082,7 @@ mod tests {
             .await
             .unwrap();
 
-        let models = agent_manager.list_models(&session.id).await.unwrap();
+        let models = agent_manager.list_models(&session.id, None).await.unwrap();
         let expected_total = 2 + 1 + 2;
 
         assert_eq!(
@@ -6146,7 +6128,7 @@ mod tests {
             .await
             .unwrap();
 
-        let models = agent_manager.list_models(&session.id).await.unwrap();
+        let models = agent_manager.list_models(&session.id, None).await.unwrap();
 
         assert!(
             models.is_empty() || models.iter().all(|m| m.starts_with("[error]") || !m.contains('/')),
@@ -6204,7 +6186,7 @@ mod tests {
             .await
             .unwrap();
 
-        let models = agent_manager.list_models(&session.id).await.unwrap();
+        let models = agent_manager.list_models(&session.id, None).await.unwrap();
 
         assert!(
             models.contains(&"anthropic/claude-3-opus".to_string()),
@@ -7000,7 +6982,7 @@ mod tests {
             .await
             .unwrap();
 
-        let models = agent_manager.list_models(&session.id).await.unwrap();
+        let models = agent_manager.list_models(&session.id, None).await.unwrap();
 
         // Verify ZAI models are present with correct prefix
         assert!(
@@ -7079,7 +7061,7 @@ mod tests {
             .await
             .unwrap();
 
-        let models = agent_manager.list_models(&session.id).await.unwrap();
+        let models = agent_manager.list_models(&session.id, None).await.unwrap();
 
         assert!(
             models.contains(&"openai/gpt-4".to_string()),
@@ -7145,7 +7127,7 @@ mod tests {
             .await
             .unwrap();
 
-        let models = agent_manager.list_models(&session.id).await.unwrap();
+        let models = agent_manager.list_models(&session.id, None).await.unwrap();
 
         assert!(
             models.contains(&"new-anthropic/claude-sonnet-4".to_string()),
@@ -7587,7 +7569,7 @@ mod tests {
             .await
             .unwrap();
 
-        let models = agent_manager.list_models(&session.id).await.unwrap();
+        let models = agent_manager.list_models(&session.id, None).await.unwrap();
         server.await.unwrap();
 
         assert!(
@@ -7667,7 +7649,7 @@ mod tests {
             .await
             .unwrap();
 
-        let models = agent_manager.list_models(&session.id).await.unwrap();
+        let models = agent_manager.list_models(&session.id, None).await.unwrap();
         server.await.unwrap();
 
         assert!(
@@ -7743,7 +7725,7 @@ mod tests {
             .await
             .unwrap();
 
-        let models = agent_manager.list_models(&session.id).await.unwrap();
+        let models = agent_manager.list_models(&session.id, None).await.unwrap();
         server.await.unwrap();
 
         assert_eq!(
@@ -7820,7 +7802,7 @@ mod tests {
             .await
             .unwrap();
 
-        let models = agent_manager.list_models(&session.id).await.unwrap();
+        let models = agent_manager.list_models(&session.id, None).await.unwrap();
         openai_server.await.unwrap();
 
         // OpenAI should fall back to hardcoded models
@@ -7900,7 +7882,7 @@ mod tests {
             .await
             .unwrap();
 
-        let models = agent_manager.list_models(&session.id).await.unwrap();
+        let models = agent_manager.list_models(&session.id, None).await.unwrap();
 
         // Explicit available_models should be used directly (no API call)
         assert!(
@@ -7982,7 +7964,7 @@ mod tests {
             .await
             .unwrap();
 
-        let models = agent_manager.list_models(&session.id).await.unwrap();
+        let models = agent_manager.list_models(&session.id, None).await.unwrap();
         ollama_server.await.unwrap();
         let expected_total = 2 + 2 + 2;
 
@@ -8064,7 +8046,7 @@ mod tests {
             .await
             .unwrap();
 
-        let models = agent_manager.list_models(&session.id).await.unwrap();
+        let models = agent_manager.list_models(&session.id, None).await.unwrap();
         server.await.unwrap();
 
         assert!(
@@ -8155,7 +8137,7 @@ mod tests {
             .await
             .unwrap();
 
-        let models = agent_manager.list_models(&session.id).await.unwrap();
+        let models = agent_manager.list_models(&session.id, None).await.unwrap();
         zai_server.await.unwrap();
 
         assert!(
@@ -8239,7 +8221,7 @@ mod tests {
             .await
             .unwrap();
 
-        let models = agent_manager.list_models(&session.id).await.unwrap();
+        let models = agent_manager.list_models(&session.id, None).await.unwrap();
 
         assert!(
             models.contains(&"openai-ok-int/gpt-4o".to_string()),
@@ -8345,7 +8327,7 @@ mod tests {
             .await
             .unwrap();
 
-        let models = agent_manager.list_models(&session.id).await.unwrap();
+        let models = agent_manager.list_models(&session.id, None).await.unwrap();
         server.await.unwrap();
 
         // Verify chat models are present
@@ -8463,7 +8445,7 @@ mod tests {
             .await
             .unwrap();
 
-        let models = agent_manager.list_models(&session.id).await.unwrap();
+        let models = agent_manager.list_models(&session.id, None).await.unwrap();
 
         // OpenAI models should be present
         assert!(
@@ -8491,6 +8473,177 @@ mod tests {
             error_entries.iter().any(|e| e.contains("ollama-dead")),
             "Error entry should mention the provider key 'ollama-dead', got: {:?}",
             error_entries
+        );
+    }
+
+    #[tokio::test]
+    async fn test_model_cache_hit() {
+        use crucible_config::{BackendType, LlmConfig, LlmProviderConfig};
+
+        let tmp = TempDir::new().unwrap();
+        let storage = Arc::new(FileSessionStorage::new());
+        let session_manager = Arc::new(SessionManager::with_storage(storage));
+
+        let session = session_manager
+            .create_session(
+                SessionType::Chat,
+                tmp.path().to_path_buf(),
+                None,
+                vec![],
+                None,
+            )
+            .await
+            .unwrap();
+
+        let mut providers = std::collections::HashMap::new();
+        providers.insert(
+            "test".to_string(),
+            LlmProviderConfig::builder(BackendType::OpenAI)
+                .available_models(vec!["model1".to_string(), "model2".to_string()])
+                .build(),
+        );
+        let llm_config = LlmConfig {
+            default: Some("test".to_string()),
+            providers,
+        };
+
+        let agent_manager =
+            create_test_agent_manager_with_llm_config(session_manager.clone(), llm_config);
+
+        agent_manager
+            .configure_agent(&session.id, test_agent())
+            .await
+            .unwrap();
+
+        // First call should populate cache
+        let models1 = agent_manager.list_models(&session.id, None).await.unwrap();
+        assert!(!models1.is_empty(), "Should return models");
+
+        // Second call should return same result from cache
+        let models2 = agent_manager.list_models(&session.id, None).await.unwrap();
+        assert_eq!(models1, models2, "Cache hit should return identical models");
+
+        // Verify cache entry exists
+        assert!(
+            agent_manager.model_cache.contains_key("all"),
+            "Cache should contain 'all' key"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_model_cache_invalidation() {
+        use crucible_config::{BackendType, LlmConfig, LlmProviderConfig};
+
+        let tmp = TempDir::new().unwrap();
+        let storage = Arc::new(FileSessionStorage::new());
+        let session_manager = Arc::new(SessionManager::with_storage(storage));
+
+        let session = session_manager
+            .create_session(
+                SessionType::Chat,
+                tmp.path().to_path_buf(),
+                None,
+                vec![],
+                None,
+            )
+            .await
+            .unwrap();
+
+        let mut providers = std::collections::HashMap::new();
+        providers.insert(
+            "test".to_string(),
+            LlmProviderConfig::builder(BackendType::OpenAI)
+                .available_models(vec!["model1".to_string()])
+                .build(),
+        );
+        let llm_config = LlmConfig {
+            default: Some("test".to_string()),
+            providers,
+        };
+
+        let agent_manager =
+            create_test_agent_manager_with_llm_config(session_manager.clone(), llm_config);
+
+        agent_manager
+            .configure_agent(&session.id, test_agent())
+            .await
+            .unwrap();
+
+        // First call populates cache
+        let _models1 = agent_manager.list_models(&session.id, None).await.unwrap();
+        assert!(
+            agent_manager.model_cache.contains_key("all"),
+            "Cache should be populated"
+        );
+
+        // Invalidate cache
+        agent_manager.invalidate_model_cache();
+        assert!(
+            !agent_manager.model_cache.contains_key("all"),
+            "Cache should be cleared after invalidation"
+        );
+
+        // Second call should succeed (repopulate cache)
+        let _models2 = agent_manager.list_models(&session.id, None).await.unwrap();
+        assert!(
+            agent_manager.model_cache.contains_key("all"),
+            "Cache should be repopulated after list_models"
+        );
+    }
+
+    #[tokio::test]
+
+    async fn test_model_cache_does_not_cache_errors() {
+        use crucible_config::{BackendType, LlmConfig, LlmProviderConfig};
+
+        let tmp = TempDir::new().unwrap();
+        let storage = Arc::new(FileSessionStorage::new());
+        let session_manager = Arc::new(SessionManager::with_storage(storage));
+
+        let session = session_manager
+            .create_session(
+                SessionType::Chat,
+                tmp.path().to_path_buf(),
+                None,
+                vec![],
+                None,
+            )
+            .await
+            .unwrap();
+
+        let mut providers = std::collections::HashMap::new();
+        // Configure provider with error entry
+        providers.insert(
+            "test".to_string(),
+            LlmProviderConfig::builder(BackendType::OpenAI)
+                .available_models(vec!["[error] provider: connection refused".to_string()])
+                .build(),
+        );
+        let llm_config = LlmConfig {
+            default: Some("test".to_string()),
+            providers,
+        };
+
+        let agent_manager =
+            create_test_agent_manager_with_llm_config(session_manager.clone(), llm_config);
+
+        agent_manager
+            .configure_agent(&session.id, test_agent())
+            .await
+            .unwrap();
+
+        // Call list_models with error entry
+        let models = agent_manager.list_models(&session.id, None).await.unwrap();
+        assert!(
+            models.iter().any(|m| m.contains("[error]")),
+            "Should return error entry, got: {:?}",
+            models
+        );
+
+        // Cache should NOT contain the entry (because it has errors)
+        assert!(
+            !agent_manager.model_cache.contains_key("all"),
+            "Cache should not store results with error entries"
         );
     }
 }
