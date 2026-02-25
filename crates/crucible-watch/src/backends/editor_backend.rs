@@ -306,3 +306,111 @@ impl super::WatcherFactory for EditorFactory {
         self.capabilities.clone()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::traits::FileWatcher;
+
+    #[test]
+    fn default_not_recursive() {
+        let watcher = EditorWatcher::default();
+        let caps = watcher.capabilities();
+        assert!(!caps.recursive);
+    }
+
+    #[test]
+    fn default_fine_grained() {
+        let watcher = EditorWatcher::default();
+        let caps = watcher.capabilities();
+        assert!(caps.fine_grained_events);
+    }
+
+    #[test]
+    fn backend_type_editor() {
+        let watcher = EditorWatcher::new();
+        assert_eq!(watcher.backend_type(), "editor");
+    }
+
+    #[test]
+    fn is_always_available() {
+        let watcher = EditorWatcher::new();
+        assert!(watcher.is_available());
+    }
+
+    #[test]
+    fn initial_watches_empty() {
+        let watcher = EditorWatcher::new();
+        assert!(watcher.active_watches().is_empty());
+    }
+
+    #[test]
+    fn editor_config_serde_roundtrip() {
+        let config = EditorConfig {
+            editor_type: "vscode".to_string(),
+            editor_config: HashMap::from([(
+                "workspace".to_string(),
+                serde_json::json!("/home/user/project"),
+            )]),
+            poll_interval: Duration::from_secs(3),
+            detect_inode_changes: true,
+            use_editor_api: false,
+        };
+
+        let json = serde_json::to_string(&config).unwrap();
+        let roundtripped: EditorConfig = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(roundtripped.editor_type, config.editor_type);
+        assert_eq!(roundtripped.editor_config, config.editor_config);
+        assert_eq!(roundtripped.poll_interval, config.poll_interval);
+        assert_eq!(
+            roundtripped.detect_inode_changes,
+            config.detect_inode_changes
+        );
+        assert_eq!(roundtripped.use_editor_api, config.use_editor_api);
+    }
+
+    #[test]
+    fn duration_serializes_as_millis() {
+        let config = EditorConfig {
+            editor_type: "vim".to_string(),
+            editor_config: HashMap::new(),
+            poll_interval: Duration::from_millis(5000),
+            detect_inode_changes: false,
+            use_editor_api: false,
+        };
+
+        let json = serde_json::to_value(&config).unwrap();
+        assert_eq!(json["poll_interval"], serde_json::json!(5000));
+    }
+
+    #[test]
+    fn factory_platforms() {
+        let factory = EditorFactory::new();
+        let caps =
+            <EditorFactory as super::super::WatcherFactory>::capabilities(&factory);
+        assert_eq!(
+            caps.platforms,
+            vec!["linux".to_string(), "macos".to_string(), "windows".to_string()]
+        );
+    }
+
+    #[test]
+    fn update_config_nonexistent_returns_error() {
+        let mut watcher = EditorWatcher::new();
+        let config = EditorConfig {
+            editor_type: "emacs".to_string(),
+            editor_config: HashMap::new(),
+            poll_interval: Duration::from_secs(1),
+            detect_inode_changes: false,
+            use_editor_api: false,
+        };
+
+        let result = watcher.update_editor_config("nonexistent_watch_id", config);
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            Error::WatchNotFound(id) => assert_eq!(id, "nonexistent_watch_id"),
+            other => panic!("Expected WatchNotFound, got: {:?}", other),
+        }
+    }
+}

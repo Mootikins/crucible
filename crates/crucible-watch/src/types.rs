@@ -1380,4 +1380,112 @@ mod tests {
         assert_eq!(summary.successful_files, 8);
         assert_eq!(summary.skipped_files, 2);
     }
+
+    // --- Serde roundtrip golden tests ---
+
+    #[test]
+    fn file_info_serde_roundtrip() {
+        let now = SystemTime::now();
+        let info = FileInfo::new(
+            PathBuf::from("/root/notes/hello.md"),
+            "notes/hello.md".to_string(),
+            FileHash::zero(),
+            1024,
+            now,
+            FileType::Markdown,
+        );
+        let json = serde_json::to_string(&info).unwrap();
+        let roundtripped: FileInfo = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(roundtripped.path(), info.path());
+        assert_eq!(roundtripped.relative_path(), info.relative_path());
+        assert_eq!(roundtripped.file_size(), info.file_size());
+        assert_eq!(roundtripped.file_type(), info.file_type());
+        assert_eq!(roundtripped.content_hash(), info.content_hash());
+        assert_eq!(roundtripped.is_accessible(), info.is_accessible());
+    }
+
+    #[test]
+    fn file_type_all_variants_roundtrip() {
+        let variants = [
+            FileType::Markdown,
+            FileType::Text,
+            FileType::Code,
+            FileType::Config,
+            FileType::Note,
+            FileType::Image,
+            FileType::Audio,
+            FileType::Video,
+            FileType::Archive,
+            FileType::Binary,
+            FileType::Unknown,
+        ];
+        for variant in &variants {
+            let json = serde_json::to_string(variant).unwrap();
+            let roundtripped: FileType = serde_json::from_str(&json).unwrap();
+            assert_eq!(
+                *variant, roundtripped,
+                "Serde roundtrip failed for {:?}",
+                variant
+            );
+        }
+    }
+
+    #[test]
+    fn scan_config_default_roundtrip() {
+        let config = ScanConfig::default();
+        let json = serde_json::to_string(&config).unwrap();
+        let roundtripped: ScanConfig = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(roundtripped.max_file_size, config.max_file_size);
+        assert_eq!(roundtripped.include_types, config.include_types);
+        assert_eq!(roundtripped.exclude_types, config.exclude_types);
+        assert_eq!(roundtripped.exclude_patterns, config.exclude_patterns);
+        assert_eq!(roundtripped.follow_symlinks, config.follow_symlinks);
+        assert_eq!(roundtripped.calculate_hashes, config.calculate_hashes);
+        assert_eq!(roundtripped.max_depth, config.max_depth);
+        assert_eq!(roundtripped.ignore_hidden, config.ignore_hidden);
+    }
+
+    #[test]
+    fn file_type_markdown_detection() {
+        assert_eq!(FileType::from_path(Path::new("readme.md")), FileType::Markdown);
+        assert_eq!(
+            FileType::from_path(Path::new("doc.markdown")),
+            FileType::Markdown
+        );
+    }
+
+    #[test]
+    fn file_type_note_extensions() {
+        assert_eq!(FileType::from_path(Path::new("report.pdf")), FileType::Note);
+        assert_eq!(FileType::from_path(Path::new("letter.doc")), FileType::Note);
+        assert_eq!(FileType::from_path(Path::new("thesis.docx")), FileType::Note);
+        assert_eq!(FileType::from_path(Path::new("essay.odt")), FileType::Note);
+        assert_eq!(FileType::from_path(Path::new("memo.rtf")), FileType::Note);
+    }
+
+    #[test]
+    fn file_type_image_extensions() {
+        assert_eq!(FileType::from_path(Path::new("photo.png")), FileType::Image);
+        assert_eq!(FileType::from_path(Path::new("avatar.jpg")), FileType::Image);
+        assert_eq!(
+            FileType::from_path(Path::new("banner.jpeg")),
+            FileType::Image
+        );
+        assert_eq!(FileType::from_path(Path::new("icon.svg")), FileType::Image);
+        assert_eq!(FileType::from_path(Path::new("logo.webp")), FileType::Image);
+    }
+
+    #[test]
+    fn file_type_unknown_extension_roundtrip() {
+        assert_eq!(
+            FileType::from_path(Path::new("data.xyz")),
+            FileType::Unknown
+        );
+        assert_eq!(
+            FileType::from_path(Path::new("mystery.qwerty")),
+            FileType::Unknown
+        );
+    }
 }

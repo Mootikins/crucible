@@ -372,3 +372,128 @@ impl EventHandler for CompositeHandler {
         })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Mock handler for testing composite behavior.
+    struct MockHandler {
+        handler_name: &'static str,
+    }
+
+    impl MockHandler {
+        fn new(name: &'static str) -> Self {
+            Self { handler_name: name }
+        }
+    }
+
+    #[async_trait]
+    impl EventHandler for MockHandler {
+        async fn handle(&self, _event: FileEvent) -> Result<()> {
+            Ok(())
+        }
+
+        fn name(&self) -> &'static str {
+            self.handler_name
+        }
+    }
+
+    #[tokio::test]
+    async fn new_has_zero_handlers() {
+        let composite = CompositeHandler::new(CoordinationStrategy::Sequential);
+        assert_eq!(composite.handler_count().await, 0);
+    }
+
+    #[tokio::test]
+    async fn add_handler_increments_count() {
+        let composite = CompositeHandler::new(CoordinationStrategy::Sequential);
+        let mock: Arc<dyn EventHandler> = Arc::new(MockHandler::new("mock_a"));
+        composite.add_handler(mock).await;
+        assert_eq!(composite.handler_count().await, 1);
+    }
+
+    #[tokio::test]
+    async fn remove_handler_by_name() {
+        let composite = CompositeHandler::new(CoordinationStrategy::Sequential);
+        let mock: Arc<dyn EventHandler> = Arc::new(MockHandler::new("removable"));
+        composite.add_handler(mock).await;
+        assert_eq!(composite.handler_count().await, 1);
+
+        let removed = composite.remove_handler("removable").await;
+        assert!(removed);
+        assert_eq!(composite.handler_count().await, 0);
+    }
+
+    #[tokio::test]
+    async fn remove_nonexistent_returns_false() {
+        let composite = CompositeHandler::new(CoordinationStrategy::Sequential);
+        let removed = composite.remove_handler("does_not_exist").await;
+        assert!(!removed);
+    }
+
+    #[tokio::test]
+    async fn enable_disable_handler() {
+        let composite = CompositeHandler::new(CoordinationStrategy::Sequential);
+        let mock: Arc<dyn EventHandler> = Arc::new(MockHandler::new("toggle_me"));
+        composite.add_handler(mock).await;
+
+        // Disable
+        composite
+            .set_handler_enabled("toggle_me", false)
+            .await
+            .unwrap();
+        let states = composite.get_handler_states().await;
+        assert!(!states["toggle_me"].enabled);
+
+        // Re-enable
+        composite
+            .set_handler_enabled("toggle_me", true)
+            .await
+            .unwrap();
+        let states = composite.get_handler_states().await;
+        assert!(states["toggle_me"].enabled);
+    }
+
+    #[test]
+    fn coordination_strategy_debug_all() {
+        let variants: Vec<CoordinationStrategy> = vec![
+            CoordinationStrategy::Sequential,
+            CoordinationStrategy::Concurrent,
+            CoordinationStrategy::PriorityGroups,
+            CoordinationStrategy::Custom(Box::new(|_event, _handlers| vec![])),
+        ];
+        let expected_substrings = ["Sequential", "Concurrent", "PriorityGroups", "Custom"];
+        for (variant, expected) in variants.iter().zip(expected_substrings.iter()) {
+            let debug_str = format!("{:?}", variant);
+            assert!(
+                debug_str.contains(expected),
+                "Debug output '{}' should contain '{}'",
+                debug_str,
+                expected
+            );
+        }
+    }
+
+    #[test]
+    fn handler_name_is_composite() {
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .build()
+            .unwrap();
+        rt.block_on(async {
+            let composite = CompositeHandler::new(CoordinationStrategy::Sequential);
+            assert_eq!(composite.name(), "composite");
+        });
+    }
+
+    #[test]
+    fn handler_priority_is_50() {
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .build()
+            .unwrap();
+        rt.block_on(async {
+            let composite = CompositeHandler::new(CoordinationStrategy::Sequential);
+            assert_eq!(composite.priority(), 50);
+        });
+    }
+}
