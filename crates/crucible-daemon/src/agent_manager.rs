@@ -2131,6 +2131,18 @@ impl AgentManager {
         Ok(all_models)
     }
 
+    /// List all available models without requiring an active session.
+    ///
+    /// This is a convenience wrapper around `list_models` for non-session contexts
+    /// (e.g., the `cru models` CLI command). If `classification` is provided,
+    /// providers whose trust level doesn't satisfy it are excluded.
+    pub async fn list_all_models(
+        &self,
+        classification: Option<DataClassification>,
+    ) -> Result<Vec<String>, AgentError> {
+        self.list_models("", classification).await
+    }
+
     pub async fn set_thinking_budget(
         &self,
         session_id: &str,
