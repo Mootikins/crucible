@@ -7,7 +7,7 @@
 //! - Anthropic: ANTHROPIC_API_KEY env var or credential store
 
 use crucible_config::credentials::{CredentialSource, CredentialStore, SecretsFile};
-use crucible_config::{BackendType, ChatConfig, LlmConfig, DEFAULT_OLLAMA_ENDPOINT};
+use crucible_config::{BackendType, ChatConfig, DEFAULT_OLLAMA_ENDPOINT};
 use std::time::Duration;
 
 /// A detected provider with availability info
@@ -88,158 +88,10 @@ pub async fn check_ollama_models(endpoint: &str) -> Option<Vec<String>> {
     Some(tags.models.into_iter().map(|m| m.name).collect())
 }
 
-/// Fetch available models for a provider, returning formatted as "provider/model"
-pub async fn fetch_provider_models(provider: &BackendType, endpoint: &str) -> Vec<String> {
-    match provider {
-        BackendType::Ollama => fetch_ollama_models(endpoint).await,
-        BackendType::OpenAI => fetch_openai_models(endpoint).await,
-        BackendType::Anthropic => anthropic_models(),
-        BackendType::GitHubCopilot => Vec::new(),
-        BackendType::OpenRouter => Vec::new(),
-        BackendType::ZAI => zai_models(),
-        BackendType::Cohere
-        | BackendType::VertexAI
-        | BackendType::FastEmbed
-        | BackendType::Burn
-        | BackendType::Custom
-        | BackendType::Mock => Vec::new(),
-    }
-}
 
-async fn fetch_ollama_models(endpoint: &str) -> Vec<String> {
-    let client = match reqwest::Client::builder()
-        .timeout(Duration::from_secs(5))
-        .build()
-    {
-        Ok(c) => c,
-        Err(_) => return Vec::new(),
-    };
 
-    let base = endpoint.trim_end_matches('/').trim_end_matches("/v1");
-    let url = format!("{}/api/tags", base);
 
-    let resp = match client.get(&url).send().await {
-        Ok(r) if r.status().is_success() => r,
-        _ => return Vec::new(),
-    };
 
-    #[derive(serde::Deserialize)]
-    struct TagsResponse {
-        models: Vec<ModelInfo>,
-    }
-    #[derive(serde::Deserialize)]
-    struct ModelInfo {
-        name: String,
-    }
-
-    match resp.json::<TagsResponse>().await {
-        Ok(tags) => tags.models.into_iter().map(|m| m.name).collect(),
-        Err(_) => Vec::new(),
-    }
-}
-
-async fn fetch_openai_models(endpoint: &str) -> Vec<String> {
-    let api_key = match std::env::var("OPENAI_API_KEY") {
-        Ok(k) => k,
-        Err(_) => return Vec::new(),
-    };
-
-    let client = match reqwest::Client::builder()
-        .timeout(Duration::from_secs(5))
-        .build()
-    {
-        Ok(c) => c,
-        Err(_) => return Vec::new(),
-    };
-
-    let url = format!("{}/models", endpoint.trim_end_matches('/'));
-    let resp = match client
-        .get(&url)
-        .header("Authorization", format!("Bearer {}", api_key))
-        .send()
-        .await
-    {
-        Ok(r) if r.status().is_success() => r,
-        _ => return Vec::new(),
-    };
-
-    #[derive(serde::Deserialize)]
-    struct ModelsResponse {
-        data: Vec<ModelData>,
-    }
-    #[derive(serde::Deserialize)]
-    struct ModelData {
-        id: String,
-    }
-
-    match resp.json::<ModelsResponse>().await {
-        Ok(models) => models
-            .data
-            .into_iter()
-            .filter(|m| {
-                crucible_config::OPENAI_MODEL_PREFIXES
-                    .iter()
-                    .any(|prefix| m.id.starts_with(prefix))
-            })
-            .map(|m| m.id)
-            .collect(),
-        Err(_) => Vec::new(),
-    }
-}
-
-fn anthropic_models() -> Vec<String> {
-    crucible_config::ANTHROPIC_MODELS
-        .iter()
-        .map(|s| s.to_string())
-        .collect()
-}
-
-fn zai_models() -> Vec<String> {
-    crucible_config::ZAI_MODELS
-        .iter()
-        .map(|s| s.to_string())
-        .collect()
-}
-
-/// Fetch available models from all configured providers in [llm] config
-///
-/// Returns models prefixed with provider key (e.g., "ollama-local/llama3.2")
-/// - Ollama providers: async HTTP fetch in parallel
-/// - Other providers: use effective_models() (hardcoded fallback)
-pub async fn fetch_all_provider_models(llm_config: &LlmConfig) -> Vec<String> {
-    let mut all_models = Vec::new();
-    let mut ollama_futures = Vec::new();
-
-    for (key, config) in &llm_config.providers {
-        match &config.provider_type {
-            BackendType::Ollama => {
-                let key = key.clone();
-                let endpoint = config.endpoint();
-                let fut = async move {
-                    let models = fetch_ollama_models(&endpoint).await;
-                    models
-                        .into_iter()
-                        .map(|model| format!("{}/{}", key, model))
-                        .collect::<Vec<String>>()
-                };
-                ollama_futures.push(fut);
-            }
-            _ => {
-                let models = config.effective_models();
-                for model in models {
-                    all_models.push(format!("{}/{}", key, model));
-                }
-            }
-        }
-    }
-
-    let ollama_results = futures::future::join_all(ollama_futures).await;
-    for result in ollama_results {
-        all_models.extend(result);
-    }
-
-    all_models
-}
 
 /// Fetch context length for a model from OpenAI-compatible /v1/models endpoint
 pub async fn fetch_model_context_length(endpoint: &str, model_id: &str) -> Option<usize> {
@@ -591,36 +443,4 @@ mod tests {
         assert!(result.unwrap() > 0);
     }
 
-    #[tokio::test]
-    async fn test_fetch_all_provider_models_aggregates() {
-        use crucible_config::LlmProviderConfig;
-        use std::collections::HashMap;
-
-        let mut providers = HashMap::new();
-        providers.insert(
-            "anthropic-main".to_string(),
-            LlmProviderConfig::builder(BackendType::Anthropic)
-                .model("claude-3-5-sonnet-20241022")
-                .build(),
-        );
-        providers.insert(
-            "openai-backup".to_string(),
-            LlmProviderConfig::builder(BackendType::OpenAI)
-                .model("gpt-4o")
-                .build(),
-        );
-
-        let llm_config = LlmConfig {
-            default: Some("anthropic-main".to_string()),
-            providers,
-        };
-
-        let models = fetch_all_provider_models(&llm_config).await;
-
-        assert!(!models.is_empty());
-        assert!(models
-            .iter()
-            .any(|m| m.starts_with("anthropic-main/claude")));
-        assert!(models.iter().any(|m| m.starts_with("openai-backup/gpt")));
-    }
 }
