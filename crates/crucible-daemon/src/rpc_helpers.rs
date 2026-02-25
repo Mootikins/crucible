@@ -631,4 +631,52 @@ mod tests {
         assert!(resp.error.is_none());
         assert_eq!(resp.result.unwrap(), false);
     }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // require_obj_param! tests
+    // ─────────────────────────────────────────────────────────────────────────
+
+    fn extract_required_obj(req: Request) -> Response {
+        let obj = require_obj_param!(req, "config");
+        Response::success(req.id, obj.len())
+    }
+
+    #[test]
+    fn require_obj_param_success() {
+        let req = make_request(json!({"config": {"key": "value", "nested": {"a": 1}}}));
+        let resp = extract_required_obj(req);
+
+        assert!(resp.error.is_none());
+        assert_eq!(resp.result.unwrap(), 2); // 2 keys in the object
+    }
+
+    #[test]
+    fn require_obj_param_empty_object() {
+        let req = make_request(json!({"config": {}}));
+        let resp = extract_required_obj(req);
+
+        assert!(resp.error.is_none());
+        assert_eq!(resp.result.unwrap(), 0); // empty object has 0 keys
+    }
+
+    #[test]
+    fn require_obj_param_missing() {
+        let req = make_request(json!({}));
+        let resp = extract_required_obj(req);
+
+        assert!(resp.result.is_none());
+        let err = resp.error.unwrap();
+        assert_eq!(err.code, INVALID_PARAMS);
+        assert!(err.message.contains("'config'"));
+    }
+
+    #[test]
+    fn require_obj_param_wrong_type() {
+        let req = make_request(json!({"config": "not an object"}));
+        let resp = extract_required_obj(req);
+
+        assert!(resp.result.is_none());
+        let err = resp.error.unwrap();
+        assert_eq!(err.code, INVALID_PARAMS);
+    }
 }
