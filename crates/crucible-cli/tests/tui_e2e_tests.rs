@@ -159,9 +159,9 @@ fn chat_startup_shows_prompt() {
     session.wait(Duration::from_millis(500));
 }
 
-/// Test that Ctrl+C exits the TUI
+/// Test that double Ctrl+C exits the TUI
 #[test]
-#[ignore = "requires built binary"]
+#[ignore = "requires built binary and clean daemon shutdown"]
 fn chat_ctrl_c_exits() {
     let mut session = TuiTestBuilder::new()
         .command("chat")
@@ -170,8 +170,11 @@ fn chat_ctrl_c_exits() {
         .expect("Failed to spawn chat");
 
     session.wait(Duration::from_secs(1));
+    // Double Ctrl+C within 300ms triggers quit
     session.send_control('c').expect("Failed to send Ctrl+C");
-    session.expect_eof().expect("Should exit after Ctrl+C");
+    session.wait(Duration::from_millis(100));
+    session.send_control('c').expect("Failed to send second Ctrl+C");
+    session.expect_eof().expect("Should exit after double Ctrl+C");
 }
 
 // =============================================================================
@@ -541,30 +544,35 @@ fn oil_runner_does_not_freeze() {
 
     eprintln!("Input test passed after {:?}", start.elapsed());
 
-    session.send("/quit\r").ok();
+    session.send(":quit\r").ok();
 }
 
-/// Test that /quit command causes exit
+/// Test that :quit REPL command causes exit.
+/// :quit is a REPL command (colon prefix), not a slash command.
+/// /quit would be forwarded to the agent as a slash command.
 #[test]
 #[ignore = "requires built binary"]
-fn oil_quit_with_slash_command() {
+fn oil_quit_with_repl_command() {
     let config = TuiTestConfig::new("chat")
         .with_args(&["--no-process"])
         .with_env("RUST_LOG", "warn")
-        .with_timeout(Duration::from_secs(5));
+        .with_timeout(Duration::from_secs(10));
 
     let mut session = TuiTestSession::spawn(config).expect("Failed to spawn chat");
 
-    session.wait(Duration::from_secs(1));
-    eprintln!("Sending /quit command");
+    // Wait for TUI to initialize and show Ready status
+    session.wait(Duration::from_secs(2));
 
-    session.send("/quit").expect("Failed to send /quit");
-    session.send("\r").expect("Failed to send Enter");
-    session.wait(Duration::from_millis(500));
+    session.send(":quit\r").expect("Failed to send :quit");
+    session.wait(Duration::from_secs(1));
 
     match session.expect_eof() {
-        Ok(_) => eprintln!("/quit worked - test passed"),
-        Err(e) => panic!("/quit command did not exit: {:?}", e),
+        Ok(_) => eprintln!(":quit worked - test passed"),
+        Err(e) => {
+            let screen = session.capture_screen().unwrap_or_default();
+            eprintln!("Screen at timeout: {:?}", screen);
+            panic!(":quit command did not exit: {:?}", e);
+        }
     }
 }
 
@@ -836,18 +844,18 @@ fn oil_mode_cycle() {
     session.wait(Duration::from_secs(1));
 
     session
-        .wait_for_text("Plan", Duration::from_secs(3))
-        .expect("Initial mode should be Plan");
+        .wait_for_text("NORMAL", Duration::from_secs(3))
+        .expect("Initial mode should be NORMAL");
 
     for _ in 0..3 {
         session.send("/mode\r").expect("Failed to send /mode");
         session.wait(Duration::from_millis(300));
     }
 
-    session.send("/quit\r").ok();
+    session.send(":quit\r").ok();
 }
 
-/// Test /act and /plan commands
+/// Test /auto and /plan commands
 #[test]
 #[ignore = "requires built binary"]
 fn oil_explicit_mode_commands() {
@@ -860,15 +868,15 @@ fn oil_explicit_mode_commands() {
 
     session.wait(Duration::from_secs(1));
 
-    session.send_line("/act").expect("Failed to send /act");
+    session.send("/auto\r").expect("Failed to send /auto");
     session
-        .wait_for_text("Act", Duration::from_secs(3))
-        .expect("Should show Act mode indicator");
+        .wait_for_text("AUTO", Duration::from_secs(3))
+        .expect("Should show AUTO mode indicator");
 
-    session.send_line("/plan").expect("Failed to send /plan");
+    session.send("/plan\r").expect("Failed to send /plan");
     session
-        .wait_for_text("Plan", Duration::from_secs(3))
-        .expect("Should show Plan mode indicator");
+        .wait_for_text("PLAN", Duration::from_secs(3))
+        .expect("Should show PLAN mode indicator");
 
     session.send_control('c').ok();
     session.send_control('c').ok();
@@ -1292,7 +1300,7 @@ fn oil_clear_command() {
     let screen_after = session.capture_screen().unwrap_or_default();
     eprintln!("After clear: {}", safe_truncate(&screen_after, 200));
 
-    session.send("/quit\r").ok();
+    session.send(":quit\r").ok();
 }
 
 // =============================================================================
@@ -1300,6 +1308,8 @@ fn oil_clear_command() {
 // =============================================================================
 
 /// Test oil runner at narrow terminal width (60 cols)
+/// NOTE: with_dimensions only affects the vt100 parser, not the actual PTY size.
+/// The TUI still runs at 80x24. This test verifies the mode indicator renders.
 #[test]
 #[ignore = "requires built binary"]
 fn oil_narrow_terminal_60_cols() {
@@ -1314,21 +1324,10 @@ fn oil_narrow_terminal_60_cols() {
     session.wait(Duration::from_secs(1));
 
     session
-        .wait_for_text("Plan", Duration::from_secs(3))
+        .wait_for_text("NORMAL", Duration::from_secs(3))
         .expect("Should show mode indicator at 60 cols");
 
-    session.send("/help\r").expect("Help failed");
-    session
-        .wait_until(
-            |s| {
-                let c = s.contents();
-                c.contains("Commands") || c.contains("/mode")
-            },
-            Duration::from_secs(3),
-        )
-        .expect("Help should render at narrow width");
-
-    session.send("/quit\r").ok();
+    session.send(":quit\r").ok();
 }
 
 /// Test oil runner at very narrow terminal width (40 cols)
@@ -1348,7 +1347,7 @@ fn ink_very_narrow_terminal_40_cols() {
     session.send("test input\r").expect("Input failed");
     session.wait(Duration::from_millis(500));
 
-    session.send("/quit\r").ok();
+    session.send(":quit\r").ok();
 }
 
 /// Test oil runner at wide terminal width (120 cols)
@@ -1366,7 +1365,7 @@ fn oil_wide_terminal_120_cols() {
     session.wait(Duration::from_secs(1));
 
     session
-        .wait_for_text("Plan", Duration::from_secs(3))
+        .wait_for_text("NORMAL", Duration::from_secs(3))
         .expect("Should show mode indicator at 120 cols");
 
     session.send_key(Key::F(1)).expect("F1 failed");
@@ -1380,7 +1379,7 @@ fn oil_wide_terminal_120_cols() {
         )
         .expect("Popup should render at wide width");
 
-    session.send("/quit\r").ok();
+    session.send(":quit\r").ok();
 }
 
 /// Test oil runner at short terminal height (10 rows)
@@ -1400,7 +1399,7 @@ fn oil_short_terminal_10_rows() {
     session.send("test\r").expect("Input failed");
     session.wait(Duration::from_millis(500));
 
-    session.send("/quit\r").ok();
+    session.send(":quit\r").ok();
 }
 
 // =============================================================================
@@ -1651,12 +1650,12 @@ fn vt100_exemplar_screen_content_verification() {
     let mut session = TuiTestSession::spawn(config).expect("Failed to spawn");
 
     session
-        .wait_for_text("Plan", Duration::from_secs(5))
+        .wait_for_text("NORMAL", Duration::from_secs(5))
         .expect("TUI should render mode indicator on startup");
 
-    assert_screen_contains(session.screen(), "Plan");
+    assert_screen_contains(session.screen(), "NORMAL");
 
-    session.send("/quit\r").ok();
+    session.send(":quit\r").ok();
 }
 
 /// Exemplar: popup lifecycle — open, verify content, close, verify gone.
@@ -1677,19 +1676,20 @@ fn vt100_exemplar_popup_lifecycle() {
     let mut session = TuiTestSession::spawn(config).expect("Failed to spawn");
 
     session
-        .wait_for_text("Plan", Duration::from_secs(5))
+        .wait_for_text("NORMAL", Duration::from_secs(5))
         .expect("TUI ready");
 
-    session.send("/help\r").expect("Failed to send /help");
+    // F1 opens the command palette popup
+    session.send_key(Key::F(1)).expect("Failed to send F1");
     session
         .wait_until(
             |s| {
                 let c = s.contents();
-                c.contains("Commands") || c.contains("/mode")
+                c.contains("Commands") || c.contains("/mode") || c.contains("palette")
             },
             Duration::from_secs(3),
         )
-        .expect("Help popup should appear");
+        .expect("Command palette popup should appear");
 
     session.send_key(Key::Escape).expect("Escape failed");
     session.wait(Duration::from_millis(300));
@@ -1700,7 +1700,7 @@ fn vt100_exemplar_popup_lifecycle() {
     // the popup-specific content is no longer rendered.
     assert_screen_not_contains(session.screen(), "Commands");
 
-    session.send("/quit\r").ok();
+    session.send(":quit\r").ok();
 }
 
 /// Exemplar: mode switching verified through the parsed screen.
@@ -1718,24 +1718,24 @@ fn vt100_exemplar_mode_indicator() {
     let mut session = TuiTestSession::spawn(config).expect("Failed to spawn");
 
     session
-        .wait_for_text("Plan", Duration::from_secs(5))
-        .expect("Should start in Plan mode");
+        .wait_for_text("NORMAL", Duration::from_secs(5))
+        .expect("Should start in NORMAL mode");
 
-    session.send_line("/act").expect("Failed to send /act");
+    session.send("/auto\r").expect("Failed to send /auto");
     session
-        .wait_for_text("Act", Duration::from_secs(3))
-        .expect("Should switch to Act mode");
+        .wait_for_text("AUTO", Duration::from_secs(3))
+        .expect("Should switch to AUTO mode");
 
-    assert_screen_contains(session.screen(), "Act");
+    assert_screen_contains(session.screen(), "AUTO");
 
-    session.send_line("/plan").expect("Failed to send /plan");
+    session.send("/plan\r").expect("Failed to send /plan");
     session
-        .wait_for_text("Plan", Duration::from_secs(3))
-        .expect("Should switch back to Plan mode");
+        .wait_for_text("PLAN", Duration::from_secs(3))
+        .expect("Should switch back to PLAN mode");
 
-    assert_screen_contains(session.screen(), "Plan");
+    assert_screen_contains(session.screen(), "PLAN");
 
-    session.send("/quit\r").ok();
+    session.send(":quit\r").ok();
 }
 
 /// Exemplar: terminal size adaptation — same interaction at different widths.
@@ -1755,7 +1755,7 @@ fn vt100_exemplar_terminal_size_adaptation() {
         let mut session = TuiTestSession::spawn(config).expect("Failed to spawn");
 
         session
-            .wait_for_text("Plan", Duration::from_secs(5))
+            .wait_for_text("NORMAL", Duration::from_secs(5))
             .unwrap_or_else(|e| {
                 panic!(
                     "Mode indicator should render at {} ({cols}x{rows}): {e}",
@@ -1763,8 +1763,8 @@ fn vt100_exemplar_terminal_size_adaptation() {
                 )
             });
 
-        assert_screen_contains(session.screen(), "Plan");
+        assert_screen_contains(session.screen(), "NORMAL");
 
-        session.send("/quit\r").ok();
+        session.send(":quit\r").ok();
     }
 }
