@@ -1,4 +1,5 @@
 ---
+title: Trust and Classification
 description: Controlling which providers can see which data
 status: implemented
 tags:

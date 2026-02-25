@@ -1,4 +1,5 @@
 ---
+title: PARA
 description: Organizing by actionability - Projects, Areas, Resources, Archive
 tags:
   - organization

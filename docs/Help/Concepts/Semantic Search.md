@@ -1,4 +1,5 @@
 ---
+title: Semantic Search
 description: How Crucible finds content based on meaning, not just keywords
 status: implemented
 tags:

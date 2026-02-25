@@ -1,4 +1,5 @@
 ---
+title: search
 description: Search operations for finding notes in your kiln
 tags:
   - reference

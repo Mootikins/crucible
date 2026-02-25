@@ -1,4 +1,5 @@
 ---
+title: Extending Crucible
 description: Map of all extension points for customizing and extending Crucible
 status: implemented
 tags:

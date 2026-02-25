@@ -1,4 +1,6 @@
 ---
+title: GitHub Copilot Setup
+description: Documentation note for GitHub Copilot Setup.
 tags:
   - guide
   - llm

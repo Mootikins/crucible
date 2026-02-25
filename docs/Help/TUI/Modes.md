@@ -1,4 +1,5 @@
 ---
+title: Modes
 description: Runtime permission modes for controlling agent actions
 status: implemented
 tags:

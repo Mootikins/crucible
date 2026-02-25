@@ -1,4 +1,5 @@
 ---
+title: Opencode Plan
 description: Plan Mode - System Reminder
 tags:
   - reference

@@ -1,4 +1,6 @@
 ---
+title: FlexLayout Spec
+description: Documentation note for FlexLayout Spec.
 tags: [spec, web, flexlayout]
 ---
 

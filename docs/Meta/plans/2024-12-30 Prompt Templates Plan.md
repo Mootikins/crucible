@@ -1,4 +1,5 @@
 ---
+title: 2024 12 30 Prompt Templates Plan
 description: Size-Aware System Prompt Templates Implementation Plan
 tags:
   - meta

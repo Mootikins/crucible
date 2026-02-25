@@ -1,4 +1,5 @@
 ---
+title: Opencode Beast
 description: Workflow
 tags:
   - reference

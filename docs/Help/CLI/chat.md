@@ -1,4 +1,5 @@
 ---
+title: chat
 description: Interactive AI chat with your knowledge base
 tags:
   - reference

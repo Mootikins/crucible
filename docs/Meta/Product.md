@@ -1,4 +1,5 @@
 ---
+title: Product
 description: Product feature map — capabilities, status, documentation, and dependencies
 type: product
 status: active

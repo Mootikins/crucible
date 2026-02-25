@@ -1,4 +1,5 @@
 ---
+title: OpenRouter Setup
 description: Set up OpenRouter as an LLM provider for access to 100+ models
 tags:
   - guide

@@ -1,4 +1,5 @@
 ---
+title: Agent Skills
 description: Specification reference for Agent Skills — folder-based knowledge packages that agents load via ACP
 status: implemented
 tags:

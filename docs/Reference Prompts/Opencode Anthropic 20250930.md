@@ -1,4 +1,5 @@
 ---
+title: Opencode Anthropic 20250930
 description: Tone and style
 tags:
   - reference

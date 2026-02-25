@@ -1,4 +1,5 @@
 ---
+title: daily notes
 description: Daily Notes Plugin
 tags:
   - plugins

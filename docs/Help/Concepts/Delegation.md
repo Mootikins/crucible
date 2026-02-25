@@ -1,4 +1,5 @@
 ---
+title: Delegation
 description: Cross-agent delegation in Crucible
 status: implemented
 tags:

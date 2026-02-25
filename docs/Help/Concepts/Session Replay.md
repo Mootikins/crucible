@@ -1,4 +1,5 @@
 ---
+title: Session Replay
 description: Play back recorded chat sessions without needing LLM API calls
 status: implemented
 tags:

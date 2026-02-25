@@ -1,4 +1,5 @@
 ---
+title: Opencode Codex
 description: How you work
 tags:
   - reference

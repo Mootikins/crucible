@@ -1,4 +1,5 @@
 ---
+title: 2024 12 30 Prompt Templates Design
 description: System Prompt Template Design
 tags:
   - meta

@@ -1,4 +1,7 @@
 ---
+title: ink testability design
+description: Documentation note for ink testability design.
+tags: []
 status: complete
 completed: 2025 (approximate)
 ---

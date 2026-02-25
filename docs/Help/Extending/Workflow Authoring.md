@@ -1,4 +1,5 @@
 ---
+title: Workflow Authoring
 description: How to create custom workflows in Crucible
 status: implemented
 tags:

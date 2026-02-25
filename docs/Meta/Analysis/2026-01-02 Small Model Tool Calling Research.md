@@ -1,4 +1,5 @@
 ---
+title: 2026 01 02 Small Model Tool Calling Research
 description: Preventing XML-Style Tool Calls in Small LLMs
 tags:
   - meta

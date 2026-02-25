@@ -1,4 +1,5 @@
 ---
+description: Documentation note for Tool Embedding Strategies.
 title: Tool Embedding Strategies
 type: analysis
 status: draft

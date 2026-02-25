@@ -1,4 +1,5 @@
 ---
+title: Commands
 description: Vim-style REPL commands for TUI configuration and control
 tags:
   - tui

@@ -1,4 +1,5 @@
 ---
+title: Configuration
 description: Redirect to Help section configuration docs
 tags:
   - config

@@ -1,4 +1,5 @@
 ---
+title: Component Architecture
 description: TUI component system architecture and rendering pipeline
 tags:
   - tui

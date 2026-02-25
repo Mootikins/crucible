@@ -1,4 +1,5 @@
 ---
+title: 2025 12 23 Opencode Crush TUI Patterns
 description: OpenCode and Crush TUI Pattern Research
 tags:
   - research

@@ -1,4 +1,5 @@
 ---
+title: 2025 12 23 Cross Platform UI Abstractions
 description: Cross-Platform UI Abstractions for Chat/Agent Interface
 tags:
   - research

@@ -1,4 +1,5 @@
 ---
+title: Opencode Build Switch
 description: <system-reminder>
 tags:
   - reference

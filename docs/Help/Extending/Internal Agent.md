@@ -1,4 +1,5 @@
 ---
+title: Internal Agent
 description: Crucible's built-in agent system with session logging and memory
 status: draft
 tags:

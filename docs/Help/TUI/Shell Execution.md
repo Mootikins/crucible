@@ -1,4 +1,5 @@
 ---
+description: Documentation note for Shell Execution.
 title: Shell Execution
 tags: [help, tui, shell]
 ---
