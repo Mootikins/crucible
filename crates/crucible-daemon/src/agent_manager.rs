@@ -28,7 +28,7 @@ use mlua::Lua;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use thiserror::Error;
 use tokio::sync::{broadcast, oneshot, Mutex};
 use tokio::task::JoinHandle;
@@ -36,6 +36,8 @@ use tracing::{debug, error, info, warn};
 
 /// Unique identifier for a pending permission request.
 pub type PermissionId = String;
+
+const MODEL_CACHE_TTL: Duration = Duration::from_secs(300);
 
 /// Check if a tool is safe to execute without requiring explicit permission.
 ///
@@ -275,6 +277,7 @@ pub struct AgentManager {
     request_state: Arc<DashMap<String, RequestState>>,
     // TODO: invalidate agent_cache entries on kiln hot-swap (multi-kiln support)
     agent_cache: Arc<DashMap<String, Arc<Mutex<BoxedAgentHandle>>>>,
+    model_cache: Arc<DashMap<String, (Vec<String>, Instant)>>,
     kiln_manager: Arc<KilnManager>,
     session_manager: Arc<SessionManager>,
     background_manager: Arc<BackgroundJobManager>,
@@ -301,6 +304,7 @@ impl AgentManager {
         Self {
             request_state: Arc::new(DashMap::new()),
             agent_cache: Arc::new(DashMap::new()),
+            model_cache: Arc::new(DashMap::new()),
             kiln_manager,
             session_manager,
             background_manager,
@@ -345,6 +349,10 @@ impl AgentManager {
 
     pub fn invalidate_agent_cache(&self, session_id: &str) {
         self.agent_cache.remove(session_id);
+    }
+
+    pub fn invalidate_model_cache(&self) {
+        self.model_cache.clear();
     }
 
     pub fn cleanup_session(&self, session_id: &str) {
@@ -1979,6 +1987,13 @@ impl AgentManager {
     pub async fn list_models(&self, session_id: &str) -> Result<Vec<String>, AgentError> {
         use crucible_config::BackendType;
 
+        if let Some(entry) = self.model_cache.get("all") {
+            let (models, fetched_at) = entry.value();
+            if fetched_at.elapsed() < MODEL_CACHE_TTL {
+                return Ok(models.clone());
+            }
+        }
+
         let mut all_models = Vec::new();
 
         if let Some(ref llm_config) = self.llm_config {
@@ -2091,6 +2106,11 @@ impl AgentManager {
                     );
                 }
             }
+        }
+
+        if !all_models.iter().any(|model| model.starts_with("[error]")) {
+            self.model_cache
+                .insert("all".to_string(), (all_models.clone(), Instant::now()));
         }
 
         Ok(all_models)
