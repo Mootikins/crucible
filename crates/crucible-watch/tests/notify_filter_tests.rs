@@ -1,6 +1,8 @@
 //! Tests for NotifyWatcher filter functionality
 //!
 //! These tests verify that EventFilter is properly applied by NotifyWatcher.
+//! They require available inotify instances and will be skipped if the system
+//! limit is nearly exhausted (common in CI or heavily-instrumented dev envs).
 
 use crucible_watch::{
     traits::{DebounceConfig, HandlerConfig, WatchConfig, WatchMode},
@@ -12,21 +14,18 @@ use std::time::Duration;
 use tempfile::TempDir;
 use tokio::sync::mpsc;
 
-/// Test that NotifyWatcher applies extension filter from WatchConfig
-#[tokio::test]
-async fn test_notify_watcher_filters_by_extension() {
+/// Helper: set up a watcher with a filter, returning None to skip if resources exhausted.
+async fn setup_watcher_with_filter(
+    temp_dir: &TempDir,
+    id: &str,
+    filter: EventFilter,
+) -> Option<(NotifyWatcher, mpsc::UnboundedReceiver<FileEvent>)> {
     let mut watcher = NotifyWatcher::new();
-    let (tx, mut rx) = mpsc::unbounded_channel::<FileEvent>();
+    let (tx, rx) = mpsc::unbounded_channel::<FileEvent>();
     watcher.set_event_sender(tx);
 
-    // Create temp dir
-    let temp_dir = TempDir::new().unwrap();
-
-    // Configure filter to only allow .md files
-    let filter = EventFilter::new().with_extension("md");
-
     let config = WatchConfig {
-        id: "test-filter".to_string(),
+        id: id.to_string(),
         recursive: true,
         filter: Some(filter),
         debounce: DebounceConfig::default(),
@@ -35,10 +34,31 @@ async fn test_notify_watcher_filters_by_extension() {
         backend_options: Default::default(),
     };
 
-    watcher
-        .watch(temp_dir.path().to_path_buf(), config)
-        .await
-        .unwrap();
+    match watcher.watch(temp_dir.path().to_path_buf(), config).await {
+        Ok(_) => Some((watcher, rx)),
+        Err(e) => {
+            let msg = e.to_string();
+            if msg.contains("Too many open files") || msg.contains("os error 24") {
+                eprintln!("Skipping notify_filter test: inotify limit exhausted: {}", msg);
+                None
+            } else {
+                panic!("Unexpected watch error: {}", e);
+            }
+        }
+    }
+}
+
+/// Test that NotifyWatcher applies extension filter from WatchConfig
+#[tokio::test]
+async fn test_notify_watcher_filters_by_extension() {
+    let temp_dir = TempDir::new().unwrap();
+    let filter = EventFilter::new().with_extension("md");
+
+    let Some((_watcher, mut rx)) =
+        setup_watcher_with_filter(&temp_dir, "test-filter", filter).await
+    else {
+        return; // Skip: inotify resources exhausted
+    };
 
     // Create files - one .md, one .log
     fs::write(temp_dir.path().join("note.md"), "markdown content").unwrap();
@@ -71,32 +91,17 @@ async fn test_notify_watcher_filters_by_extension() {
 /// Test that NotifyWatcher excludes directories specified in filter
 #[tokio::test]
 async fn test_notify_watcher_excludes_directory() {
-    let mut watcher = NotifyWatcher::new();
-    let (tx, mut rx) = mpsc::unbounded_channel::<FileEvent>();
-    watcher.set_event_sender(tx);
-
-    // Create temp dir with .crucible subdirectory
     let temp_dir = TempDir::new().unwrap();
     let crucible_dir = temp_dir.path().join(".crucible");
     fs::create_dir_all(&crucible_dir).unwrap();
 
-    // Configure filter to exclude .crucible directory
     let filter = EventFilter::new().exclude_dir(crucible_dir.clone());
 
-    let config = WatchConfig {
-        id: "test-exclude-dir".to_string(),
-        recursive: true,
-        filter: Some(filter),
-        debounce: DebounceConfig::default(),
-        handler_config: HandlerConfig::default(),
-        mode: WatchMode::Standard,
-        backend_options: Default::default(),
+    let Some((_watcher, mut rx)) =
+        setup_watcher_with_filter(&temp_dir, "test-exclude-dir", filter).await
+    else {
+        return; // Skip: inotify resources exhausted
     };
-
-    watcher
-        .watch(temp_dir.path().to_path_buf(), config)
-        .await
-        .unwrap();
 
     // Create files - one in root, one in .crucible
     fs::write(temp_dir.path().join("note.md"), "root note").unwrap();
@@ -131,35 +136,20 @@ async fn test_notify_watcher_excludes_directory() {
 /// Test combined extension and directory filtering (the actual use case)
 #[tokio::test]
 async fn test_notify_watcher_combined_filter() {
-    let mut watcher = NotifyWatcher::new();
-    let (tx, mut rx) = mpsc::unbounded_channel::<FileEvent>();
-    watcher.set_event_sender(tx);
-
-    // Create temp dir with .crucible subdirectory
     let temp_dir = TempDir::new().unwrap();
     let crucible_dir = temp_dir.path().join(".crucible");
     let db_dir = crucible_dir.join("kiln.db");
     fs::create_dir_all(&db_dir).unwrap();
 
-    // Configure filter: only .md files AND exclude .crucible directory
     let filter = EventFilter::new()
         .with_extension("md")
         .exclude_dir(crucible_dir.clone());
 
-    let config = WatchConfig {
-        id: "test-combined".to_string(),
-        recursive: true,
-        filter: Some(filter),
-        debounce: DebounceConfig::default(),
-        handler_config: HandlerConfig::default(),
-        mode: WatchMode::Standard,
-        backend_options: Default::default(),
+    let Some((_watcher, mut rx)) =
+        setup_watcher_with_filter(&temp_dir, "test-combined", filter).await
+    else {
+        return; // Skip: inotify resources exhausted
     };
-
-    watcher
-        .watch(temp_dir.path().to_path_buf(), config)
-        .await
-        .unwrap();
 
     // Create various files
     fs::write(temp_dir.path().join("note.md"), "valid note").unwrap();
