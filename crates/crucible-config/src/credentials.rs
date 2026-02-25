@@ -573,6 +573,7 @@ pub fn resolve_api_key(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serial_test::serial;
     use tempfile::TempDir;
 
     /// Helper to create a SecretsFile in a temp directory
@@ -720,6 +721,7 @@ mod tests {
     // =========================================================================
 
     #[test]
+    #[serial]
     fn resolve_api_key_env_var_wins() {
         let (mut store, _dir) = temp_store();
         store.set("openai", "store-key").expect("set");
@@ -740,6 +742,7 @@ mod tests {
     // =========================================================================
 
     #[test]
+    #[serial]
     fn resolve_api_key_falls_back_to_store() {
         let (mut store, _dir) = temp_store();
         store.set("openai", "store-key").expect("set");
@@ -758,6 +761,7 @@ mod tests {
     // =========================================================================
 
     #[test]
+    #[serial]
     fn resolve_api_key_falls_back_to_config() {
         let (store, _dir) = temp_store();
         std::env::remove_var("OPENAI_API_KEY");
@@ -774,6 +778,7 @@ mod tests {
     // =========================================================================
 
     #[test]
+    #[serial]
     fn resolve_api_key_returns_none_when_nothing_configured() {
         let (store, _dir) = temp_store();
         std::env::remove_var("OPENAI_API_KEY");
