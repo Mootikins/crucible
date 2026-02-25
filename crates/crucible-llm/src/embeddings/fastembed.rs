@@ -47,7 +47,7 @@
 //!
 //!     // Generate embedding
 //!     let response = provider.embed("Hello, world!").await?;
-//!     println!("Generated {} dimensional embedding", response.dimensions);
+//!     println!("Generated {} dimensional embedding", response.len());
 //!
 //!     Ok(())
 //! }
