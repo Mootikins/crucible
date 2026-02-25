@@ -65,6 +65,53 @@ impl TestDaemon {
         anyhow::bail!("Daemon failed to start within 10 seconds");
     }
 
+    /// Start a test daemon with additional environment variables.
+    pub async fn start_with_env(env_vars: Vec<(&str, &str)>) -> Result<Self> {
+        let temp_dir = tempfile::tempdir()?;
+        let socket_path = temp_dir.path().join("daemon.sock");
+
+        let cru_exe = std::env::var("CARGO_BIN_EXE_cru").unwrap_or_else(|_| {
+            let test_exe = std::env::current_exe().expect("current_exe");
+            let target_dir = test_exe
+                .parent()
+                .and_then(|p| p.parent())
+                .expect("target dir");
+            target_dir.join("cru").to_string_lossy().to_string()
+        });
+
+        let mut cmd = Command::new(&cru_exe);
+        cmd.args(["daemon", "serve"])
+            .env("CRUCIBLE_SOCKET", &socket_path)
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null());
+
+        for (key, value) in &env_vars {
+            cmd.env(key, value);
+        }
+
+        let process = cmd.spawn()?;
+
+        for attempt in 0..100 {
+            if socket_path.exists() {
+                sleep(Duration::from_millis(50)).await;
+                return Ok(Self {
+                    socket_path,
+                    process: Some(process),
+                    temp_dir,
+                });
+            }
+            sleep(Duration::from_millis(100)).await;
+
+            if attempt == 50 {
+                tracing::warn!("Daemon taking longer than expected to start...");
+            }
+        }
+
+        anyhow::bail!("Daemon failed to start within 10 seconds");
+    }
+
+
     /// Manually stop the daemon process
     pub async fn stop(&mut self) -> Result<()> {
         if let Some(mut p) = self.process.take() {
