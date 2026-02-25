@@ -511,7 +511,7 @@ impl DaemonClient {
 
     pub async fn check_version(&self) -> Result<VersionCheck> {
         let caps = self.capabilities().await?;
-        let client_sha = env!("CRUCIBLE_BUILD_SHA");
+        let client_sha = option_env!("CRUCIBLE_BUILD_SHA").unwrap_or("dev");
         let daemon_sha = caps.build_sha.as_deref().unwrap_or("unknown");
 
         if client_sha == daemon_sha {
