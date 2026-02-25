@@ -11,7 +11,7 @@ use crate::session_manager::{SessionError, SessionManager};
 use crate::trust_resolution::resolve_provider_trust;
 use crucible_acp::discovery::default_agent_profiles;
 use crucible_config::components::permissions::PermissionConfig;
-use crucible_config::{AcpConfig, AgentProfile, BackendType, PatternStore};
+use crucible_config::{AcpConfig, AgentProfile, BackendType, PatternStore, components::defaults::OPENAI_MODEL_PREFIXES};
 use crucible_core::discovery::DiscoveryPaths;
 use crucible_core::events::{Reactor, ReactorEmitResult as EmitResult, SessionEvent};
 use crucible_core::interaction::{InteractionRequest, PermRequest, PermResponse, PermissionScope};
@@ -1992,16 +1992,48 @@ impl AgentManager {
                         match self.list_ollama_models(endpoint).await {
                             Ok(models) => models,
                             Err(e) => {
-                                debug!(
+                                warn!(
                                     provider_key = %provider_key,
                                     error = %e,
-                                    "Failed to list Ollama models, skipping"
+                                    "Failed to list Ollama models"
                                 );
+                                all_models.push(format!("[error] {}: {}", provider_key, e));
                                 continue;
                             }
                         }
                     }
-                    BackendType::OpenAI | BackendType::ZAI | BackendType::OpenRouter => {
+                    BackendType::OpenAI => {
+                        if provider_config.available_models.is_some() {
+                            provider_config.effective_models()
+                        } else {
+                            let endpoint = provider_config.endpoint();
+                            let api_key = provider_config.api_key();
+                            match self
+                                .list_openai_compatible_models(
+                                    &endpoint,
+                                    api_key.as_deref(),
+                                )
+                                .await
+                            {
+                                Ok(models) => {
+                                    // Filter OpenAI models using OPENAI_MODEL_PREFIXES
+                                    models
+                                        .into_iter()
+                                        .filter(|m| OPENAI_MODEL_PREFIXES.iter().any(|p| m.starts_with(p)))
+                                        .collect()
+                                }
+                                Err(e) => {
+                                    warn!(
+                                        provider_key = %provider_key,
+                                        error = %e,
+                                        "Dynamic model discovery failed, falling back to hardcoded list"
+                                    );
+                                    provider_config.effective_models()
+                                }
+                            }
+                        }
+                    }
+                    BackendType::ZAI | BackendType::OpenRouter => {
                         if provider_config.available_models.is_some() {
                             provider_config.effective_models()
                         } else {
@@ -2043,7 +2075,15 @@ impl AgentManager {
                 .unwrap_or_else(|| crucible_config::DEFAULT_OLLAMA_ENDPOINT.to_string());
 
             match agent_config.provider.as_str() {
-                "ollama" => return self.list_ollama_models(&endpoint).await,
+                "ollama" => {
+                    match self.list_ollama_models(&endpoint).await {
+                        Ok(models) => return Ok(models),
+                        Err(e) => {
+                            warn!(error = %e, "Failed to list Ollama models (fallback)");
+                            all_models.push(format!("[error] ollama: {}", e));
+                        }
+                    }
+                }
                 _ => {
                     debug!(
                         provider = %agent_config.provider,
@@ -2349,12 +2389,13 @@ impl AgentManager {
                 Ok(tags.models.into_iter().map(|m| m.name).collect())
             }
             Ok(resp) => {
-                debug!(status = %resp.status(), "Ollama returned non-success status");
-                Ok(Vec::new())
+                let status = resp.status();
+                debug!(%status, "Ollama returned non-success status");
+                Err(AgentError::InvalidModelId(format!("Ollama returned HTTP {}", status)))
             }
             Err(e) => {
                 debug!(error = %e, "Failed to connect to Ollama");
-                Ok(Vec::new())
+                Err(AgentError::InvalidModelId(format!("connection failed: {}", e)))
             }
         }
     }
@@ -5786,7 +5827,7 @@ mod tests {
         let models = agent_manager.list_models(&session.id).await.unwrap();
 
         assert!(
-            models.is_empty() || !models[0].contains('/'),
+            models.is_empty() || models.iter().all(|m| m.starts_with("[error]") || !m.contains('/')),
             "Should not prefix models when llm_config is None"
         );
     }
@@ -7560,6 +7601,228 @@ mod tests {
             3,
             "Should have exactly 3 explicitly configured models, got: {:?}",
             models
+        );
+    }
+
+    #[tokio::test]
+    async fn test_openai_model_filtering() {
+        use crucible_config::{BackendType, LlmConfig, LlmProviderConfig};
+        use std::collections::HashMap;
+
+        let tmp = TempDir::new().unwrap();
+        let storage = Arc::new(FileSessionStorage::new());
+        let session_manager = Arc::new(SessionManager::with_storage(storage));
+
+        let session = session_manager
+            .create_session(
+                SessionType::Chat,
+                tmp.path().to_path_buf(),
+                None,
+                vec![],
+                None,
+            )
+            .await
+            .unwrap();
+
+        // Mock server returns 20 models including non-chat models
+        let (endpoint, server) = start_mock_openai_models_server(
+            200,
+            serde_json::json!({
+                "data": [
+                    { "id": "gpt-4o" },
+                    { "id": "gpt-4o-mini" },
+                    { "id": "gpt-4-turbo" },
+                    { "id": "gpt-4" },
+                    { "id": "gpt-3.5-turbo" },
+                    { "id": "o1" },
+                    { "id": "o1-mini" },
+                    { "id": "o3-mini" },
+                    { "id": "o4" },
+                    { "id": "chatgpt-4o-latest" },
+                    { "id": "dall-e-3" },
+                    { "id": "dall-e-2" },
+                    { "id": "whisper-1" },
+                    { "id": "text-embedding-3-large" },
+                    { "id": "text-embedding-3-small" },
+                    { "id": "text-embedding-ada-002" },
+                    { "id": "text-moderation-latest" },
+                    { "id": "text-moderation-stable" },
+                    { "id": "tts-1" },
+                    { "id": "tts-1-hd" }
+                ]
+            }),
+            Some("test-openai-key"),
+        )
+        .await;
+
+        let mut providers = HashMap::new();
+        providers.insert(
+            "openai-filter-test".to_string(),
+            LlmProviderConfig::builder(BackendType::OpenAI)
+                .endpoint(&endpoint)
+                .api_key("test-openai-key")
+                .build(),
+        );
+
+        let llm_config = LlmConfig {
+            default: Some("openai-filter-test".to_string()),
+            providers,
+        };
+
+        let agent_manager =
+            create_test_agent_manager_with_llm_config(session_manager.clone(), llm_config);
+
+        agent_manager
+            .configure_agent(&session.id, test_agent())
+            .await
+            .unwrap();
+
+        let models = agent_manager.list_models(&session.id).await.unwrap();
+        server.await.unwrap();
+
+        // Verify chat models are present
+        assert!(
+            models.contains(&"openai-filter-test/gpt-4o".to_string()),
+            "Should contain gpt-4o, got: {:?}",
+            models
+        );
+        assert!(
+            models.contains(&"openai-filter-test/o1".to_string()),
+            "Should contain o1, got: {:?}",
+            models
+        );
+        assert!(
+            models.contains(&"openai-filter-test/o3-mini".to_string()),
+            "Should contain o3-mini, got: {:?}",
+            models
+        );
+        assert!(
+            models.contains(&"openai-filter-test/gpt-4-turbo".to_string()),
+            "Should contain gpt-4-turbo, got: {:?}",
+            models
+        );
+        assert!(
+            models.contains(&"openai-filter-test/chatgpt-4o-latest".to_string()),
+            "Should contain chatgpt-4o-latest, got: {:?}",
+            models
+        );
+
+        // Verify non-chat models are filtered out
+        assert!(
+            !models.contains(&"openai-filter-test/dall-e-3".to_string()),
+            "Should NOT contain dall-e-3, got: {:?}",
+            models
+        );
+        assert!(
+            !models.contains(&"openai-filter-test/whisper-1".to_string()),
+            "Should NOT contain whisper-1, got: {:?}",
+            models
+        );
+        assert!(
+            !models.contains(&"openai-filter-test/text-embedding-3-small".to_string()),
+            "Should NOT contain text-embedding-3-small, got: {:?}",
+            models
+        );
+        assert!(
+            !models.contains(&"openai-filter-test/tts-1".to_string()),
+            "Should NOT contain tts-1, got: {:?}",
+            models
+        );
+
+        // Verify we have only chat models (10 out of 20 returned)
+        let openai_models: Vec<_> = models
+            .iter()
+            .filter(|m| m.starts_with("openai-filter-test/"))
+            .collect();
+        assert_eq!(
+            openai_models.len(),
+            10,
+            "Should have exactly 10 chat models after filtering, got: {:?}",
+            openai_models
+        );
+    }
+
+    #[tokio::test]
+    async fn test_list_models_ollama_failure() {
+        use crucible_config::{BackendType, LlmConfig, LlmProviderConfig};
+        use std::collections::HashMap;
+
+        let tmp = TempDir::new().unwrap();
+        let storage = Arc::new(FileSessionStorage::new());
+        let session_manager = Arc::new(SessionManager::with_storage(storage));
+
+        let session = session_manager
+            .create_session(
+                SessionType::Chat,
+                tmp.path().to_path_buf(),
+                None,
+                vec![],
+                None,
+            )
+            .await
+            .unwrap();
+
+        // Ollama endpoint that refuses connection (bind then drop)
+        let ollama_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let ollama_addr = ollama_listener.local_addr().unwrap();
+        drop(ollama_listener);
+        let ollama_endpoint = format!("http://{}", ollama_addr);
+
+        let mut providers = HashMap::new();
+        providers.insert(
+            "ollama-dead".to_string(),
+            LlmProviderConfig::builder(BackendType::Ollama)
+                .endpoint(&ollama_endpoint)
+                .build(),
+        );
+        providers.insert(
+            "openai-ok".to_string(),
+            LlmProviderConfig::builder(BackendType::OpenAI)
+                .available_models(vec!["gpt-4o".to_string(), "gpt-4o-mini".to_string()])
+                .build(),
+        );
+
+        let llm_config = LlmConfig {
+            default: Some("openai-ok".to_string()),
+            providers,
+        };
+
+        let agent_manager =
+            create_test_agent_manager_with_llm_config(session_manager.clone(), llm_config);
+
+        agent_manager
+            .configure_agent(&session.id, test_agent())
+            .await
+            .unwrap();
+
+        let models = agent_manager.list_models(&session.id).await.unwrap();
+
+        // OpenAI models should be present
+        assert!(
+            models.contains(&"openai-ok/gpt-4o".to_string()),
+            "OpenAI models should be present, got: {:?}",
+            models
+        );
+        assert!(
+            models.contains(&"openai-ok/gpt-4o-mini".to_string()),
+            "OpenAI models should be present, got: {:?}",
+            models
+        );
+
+        // Ollama error should be surfaced as a special entry
+        let error_entries: Vec<_> = models
+            .iter()
+            .filter(|m| m.starts_with("[error]"))
+            .collect();
+        assert!(
+            !error_entries.is_empty(),
+            "Should have an error entry for failed Ollama provider, got: {:?}",
+            models
+        );
+        assert!(
+            error_entries.iter().any(|e| e.contains("ollama-dead")),
+            "Error entry should mention the provider key 'ollama-dead', got: {:?}",
+            error_entries
         );
     }
 }
