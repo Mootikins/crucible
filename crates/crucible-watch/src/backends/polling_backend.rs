@@ -354,3 +354,65 @@ impl super::WatcherFactory for PollingFactory {
         self.capabilities.clone()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::traits::FileWatcher;
+
+    #[test]
+    fn default_interval_1_second() {
+        let watcher = PollingWatcher::default();
+        assert_eq!(watcher.poll_interval, Duration::from_secs(1));
+    }
+
+    #[test]
+    fn custom_interval() {
+        let watcher = PollingWatcher::with_interval(Duration::from_secs(5));
+        assert_eq!(watcher.poll_interval, Duration::from_secs(5));
+    }
+
+    #[test]
+    fn backend_type_polling() {
+        let watcher = PollingWatcher::new();
+        assert_eq!(watcher.backend_type(), "polling");
+    }
+
+    #[test]
+    fn is_always_available() {
+        let watcher = PollingWatcher::new();
+        assert!(watcher.is_available());
+    }
+
+    #[test]
+    fn initial_watches_empty() {
+        let watcher = PollingWatcher::new();
+        assert!(watcher.active_watches().is_empty());
+    }
+
+    #[test]
+    fn factory_backend_type() {
+        let factory = PollingFactory::new();
+        assert_eq!(
+            <PollingFactory as super::super::WatcherFactory>::backend_type(&factory),
+            crate::WatchBackend::Polling
+        );
+    }
+
+    #[test]
+    fn factory_capabilities_recursive() {
+        let factory = PollingFactory::new();
+        let caps =
+            <PollingFactory as super::super::WatcherFactory>::capabilities(&factory);
+        assert!(caps.recursive);
+    }
+
+    #[test]
+    fn factory_capabilities_not_fine_grained() {
+        // GOLDEN: captures current behavior
+        let factory = PollingFactory::new();
+        let caps =
+            <PollingFactory as super::super::WatcherFactory>::capabilities(&factory);
+        assert!(!caps.fine_grained_events);
+    }
+}
