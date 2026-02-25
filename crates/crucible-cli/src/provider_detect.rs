@@ -61,38 +61,6 @@ pub fn has_api_key_with_source(provider: &str) -> Option<CredentialSource> {
     None
 }
 
-/// Fetch available models from an Ollama endpoint (used by `cru models`)
-pub async fn check_ollama_models(endpoint: &str) -> Option<Vec<String>> {
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(5))
-        .build()
-        .ok()?;
-
-    let url = format!("{}/api/tags", endpoint.trim_end_matches('/'));
-    let resp = client.get(&url).send().await.ok()?;
-
-    if !resp.status().is_success() {
-        return None;
-    }
-
-    #[derive(serde::Deserialize)]
-    struct TagsResponse {
-        models: Vec<ModelInfo>,
-    }
-    #[derive(serde::Deserialize)]
-    struct ModelInfo {
-        name: String,
-    }
-
-    let tags: TagsResponse = resp.json().await.ok()?;
-    Some(tags.models.into_iter().map(|m| m.name).collect())
-}
-
-
-
-
-
-
 /// Fetch context length for a model from OpenAI-compatible /v1/models endpoint
 pub async fn fetch_model_context_length(endpoint: &str, model_id: &str) -> Option<usize> {
     let client = reqwest::Client::builder()
@@ -277,7 +245,6 @@ pub fn detect_providers(config: &ChatConfig) -> Vec<DetectedProvider> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crucible_config::BackendType;
     use serial_test::serial;
 
     #[test]
