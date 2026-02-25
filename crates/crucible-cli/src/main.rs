@@ -239,6 +239,15 @@ async fn async_main(cli: Cli, standalone_sock: Option<std::path::PathBuf>) -> Re
             // Don't block startup with synchronous processing
             debug!("chat mode - skipping main.rs file processing, command handles it");
         }
+        Some(Commands::Daemon(..)) => {
+            // Daemon commands must NOT process files — `daemon serve` IS the daemon,
+            // and calling DaemonClient::connect_or_start() would recursively spawn itself.
+            debug!("daemon command - skipping file processing");
+        }
+        Some(Commands::Mcp { .. }) => {
+            // MCP server uses stdio — don't block startup with file processing
+            debug!("mcp command - skipping file processing");
+        }
         _ => {
             if cli.no_process {
                 info!("File processing skipped due to --no-process flag");
@@ -445,4 +454,62 @@ async fn async_main(cli: Cli, standalone_sock: Option<std::path::PathBuf>) -> Re
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ---- parse_log_level ----
+
+    #[test]
+    fn parse_log_level_all_valid_lowercase() {
+        assert_eq!(parse_log_level("off"), Some(LevelFilter::OFF));
+        assert_eq!(parse_log_level("error"), Some(LevelFilter::ERROR));
+        assert_eq!(parse_log_level("warn"), Some(LevelFilter::WARN));
+        assert_eq!(parse_log_level("info"), Some(LevelFilter::INFO));
+        assert_eq!(parse_log_level("debug"), Some(LevelFilter::DEBUG));
+        assert_eq!(parse_log_level("trace"), Some(LevelFilter::TRACE));
+    }
+
+    #[test]
+    fn parse_log_level_case_insensitive() {
+        assert_eq!(parse_log_level("OFF"), Some(LevelFilter::OFF));
+        assert_eq!(parse_log_level("Debug"), Some(LevelFilter::DEBUG));
+        assert_eq!(parse_log_level("Trace"), Some(LevelFilter::TRACE));
+    }
+
+    #[test]
+    fn parse_log_level_invalid_returns_none() {
+        assert_eq!(parse_log_level("verbose"), None);
+        assert_eq!(parse_log_level(""), None);
+        assert_eq!(parse_log_level("quiet"), None);
+        assert_eq!(parse_log_level("warning"), None);
+    }
+
+    // ---- SocketCleanup ----
+
+    #[test]
+    fn socket_cleanup_removes_file_on_drop() {
+        let dir = tempfile::tempdir().unwrap();
+        let sock = dir.path().join("test.sock");
+        std::fs::write(&sock, b"").unwrap();
+        assert!(sock.exists(), "file should exist before drop");
+
+        {
+            let _guard = SocketCleanup(sock.clone());
+        } // dropped here
+
+        assert!(!sock.exists(), "file should be removed after drop");
+    }
+
+    #[test]
+    fn socket_cleanup_no_panic_on_missing() {
+        let path = std::path::PathBuf::from("/tmp/crucible_nonexistent_socket_test.sock");
+        assert!(!path.exists());
+
+        // Should not panic when dropping a cleanup guard for a nonexistent file
+        let _guard = SocketCleanup(path);
+        drop(_guard);
+    }
 }
