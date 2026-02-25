@@ -1992,8 +1992,6 @@ impl AgentManager {
         session_id: &str,
         classification: Option<DataClassification>,
     ) -> Result<Vec<String>, AgentError> {
-        use crucible_config::BackendType;
-
         if classification.is_none() {
             if let Some(entry) = self.model_cache.get("all") {
                 let (models, fetched_at) = entry.value();
@@ -2013,44 +2011,15 @@ impl AgentManager {
                     }
                 }
 
-                let models = match &provider_config.provider_type {
-                    BackendType::Ollama => {
-                        let endpoint = provider_config
-                            .endpoint
-                            .as_deref()
-                            .unwrap_or(crucible_config::DEFAULT_OLLAMA_ENDPOINT);
-                        match self.list_ollama_models(endpoint).await {
-                            Ok(models) => models,
-                            Err(e) => {
-                                warn!(
-                                    provider_key = %provider_key,
-                                    error = %e,
-                                    "Failed to list Ollama models"
-                                );
-                                all_models.push(format!("[error] {}: {}", provider_key, e));
-                                continue;
-                            }
+                match self.discover_models(provider_key, provider_config).await {
+                    Ok(models) => {
+                        for model in models {
+                            all_models.push(format!("{}/{}", provider_key, model));
                         }
                     }
-                    BackendType::OpenAI => {
-                        self.discover_or_fallback_models(
-                            provider_key,
-                            provider_config,
-                            Some(&|m: &str| {
-                                OPENAI_MODEL_PREFIXES.iter().any(|p| m.starts_with(p))
-                            }),
-                        )
-                        .await
+                    Err(error_entry) => {
+                        all_models.push(error_entry);
                     }
-                    BackendType::ZAI | BackendType::OpenRouter => {
-                        self.discover_or_fallback_models(provider_key, provider_config, None)
-                            .await
-                    }
-                    _ => provider_config.effective_models(),
-                };
-
-                for model in models {
-                    all_models.push(format!("{}/{}", provider_key, model));
                 }
             }
         }
@@ -2087,6 +2056,48 @@ impl AgentManager {
         }
 
         Ok(all_models)
+    }
+
+    /// Dispatch model discovery based on backend type.
+    ///
+    /// Returns `Ok(models)` on success, or `Err(error_entry)` with a
+    /// pre-formatted `[error]` string when discovery fails (currently only Ollama).
+    async fn discover_models(
+        &self,
+        provider_key: &str,
+        provider_config: &LlmProviderConfig,
+    ) -> Result<Vec<String>, String> {
+        use crucible_config::BackendType;
+
+        match provider_config.provider_type {
+            BackendType::Ollama => {
+                let endpoint = provider_config
+                    .endpoint
+                    .as_deref()
+                    .unwrap_or(crucible_config::DEFAULT_OLLAMA_ENDPOINT);
+                self.list_ollama_models(endpoint).await.map_err(|e| {
+                    warn!(
+                        provider_key = %provider_key,
+                        error = %e,
+                        "Failed to list Ollama models"
+                    );
+                    format!("[error] {}: {}", provider_key, e)
+                })
+            }
+            BackendType::OpenAI => Ok(self
+                .discover_or_fallback_models(
+                    provider_key,
+                    provider_config,
+                    Some(&|m: &str| {
+                        OPENAI_MODEL_PREFIXES.iter().any(|p| m.starts_with(p))
+                    }),
+                )
+                .await),
+            BackendType::ZAI | BackendType::OpenRouter => Ok(self
+                .discover_or_fallback_models(provider_key, provider_config, None)
+                .await),
+            _ => Ok(provider_config.effective_models()),
+        }
     }
 
     async fn discover_or_fallback_models(
