@@ -1126,6 +1126,206 @@ fn model_command_filters_models() {
 }
 
 #[test]
+#[ignore = "requires Task 8 fix: 15-item popup truncation"]
+fn model_popup_shows_all_twenty_models() {
+    let mut app = OilChatApp::default();
+    let models = vec![
+        "ollama/atlas-01".to_string(),
+        "zai/atlas-02".to_string(),
+        "openai/atlas-03".to_string(),
+        "anthropic/atlas-04".to_string(),
+        "ollama/atlas-05".to_string(),
+        "zai/atlas-06".to_string(),
+        "openai/atlas-07".to_string(),
+        "anthropic/atlas-08".to_string(),
+        "ollama/atlas-09".to_string(),
+        "zai/atlas-10".to_string(),
+        "openai/atlas-11".to_string(),
+        "anthropic/atlas-12".to_string(),
+        "ollama/atlas-13".to_string(),
+        "zai/atlas-14".to_string(),
+        "openai/atlas-15".to_string(),
+        "anthropic/atlas-16".to_string(),
+        "ollama/atlas-17".to_string(),
+        "zai/atlas-18".to_string(),
+        "openai/atlas-19".to_string(),
+        "anthropic/atlas-20".to_string(),
+    ];
+    let expected_last_model = models[19].clone();
+
+    app.set_available_models(models);
+
+    for c in ":model ".chars() {
+        app.update(Event::Key(key(KeyCode::Char(c))));
+    }
+
+    assert!(
+        app.is_popup_visible(),
+        "Popup should open when typing ':model '"
+    );
+
+    for _ in 0..19 {
+        app.update(Event::Key(key(KeyCode::Down)));
+    }
+
+    app.update(Event::Key(key(KeyCode::Enter)));
+
+    assert!(
+        app.input_content()
+            .contains(&format!(":model {}", expected_last_model)),
+        "Popup should allow selecting the 20th model"
+    );
+}
+
+#[test]
+fn model_popup_shows_exactly_fifteen_models() {
+    let mut app = OilChatApp::default();
+    let models = vec![
+        "ollama/ember-01".to_string(),
+        "zai/ember-02".to_string(),
+        "openai/ember-03".to_string(),
+        "anthropic/ember-04".to_string(),
+        "ollama/ember-05".to_string(),
+        "zai/ember-06".to_string(),
+        "openai/ember-07".to_string(),
+        "anthropic/ember-08".to_string(),
+        "ollama/ember-09".to_string(),
+        "zai/ember-10".to_string(),
+        "openai/ember-11".to_string(),
+        "anthropic/ember-12".to_string(),
+        "ollama/ember-13".to_string(),
+        "zai/ember-14".to_string(),
+        "openai/ember-15".to_string(),
+    ];
+
+    app.set_available_models(models.clone());
+
+    for c in ":model ".chars() {
+        app.update(Event::Key(key(KeyCode::Char(c))));
+    }
+
+    assert!(
+        app.is_popup_visible(),
+        "Popup should open when typing ':model '"
+    );
+
+    let mut rendered_states = String::new();
+    for _ in 0..models.len() {
+        let tree = view_with_default_ctx(&app);
+        rendered_states.push_str(&render_to_string(&tree, 80));
+        app.update(Event::Key(key(KeyCode::Down)));
+    }
+
+    for model in &models {
+        assert!(
+            rendered_states.contains(model),
+            "Popup should render all 15 models across navigable popup states, missing: {}",
+            model
+        );
+    }
+}
+
+#[test]
+#[ignore = "bug: documents 15-item truncation, fixed in Task 8"]
+fn model_popup_sixteen_model_truncates() {
+    let mut app = OilChatApp::default();
+    let models = vec![
+        "ollama/ridge-01".to_string(),
+        "zai/ridge-02".to_string(),
+        "openai/ridge-03".to_string(),
+        "anthropic/ridge-04".to_string(),
+        "ollama/ridge-05".to_string(),
+        "zai/ridge-06".to_string(),
+        "openai/ridge-07".to_string(),
+        "anthropic/ridge-08".to_string(),
+        "ollama/ridge-09".to_string(),
+        "zai/ridge-10".to_string(),
+        "openai/ridge-11".to_string(),
+        "anthropic/ridge-12".to_string(),
+        "ollama/ridge-13".to_string(),
+        "zai/ridge-14".to_string(),
+        "openai/ridge-15".to_string(),
+        "anthropic/ridge-16".to_string(),
+    ];
+    let fifteenth_model = models[14].clone();
+    let sixteenth_model = models[15].clone();
+
+    app.set_available_models(models);
+
+    for c in ":model ".chars() {
+        app.update(Event::Key(key(KeyCode::Char(c))));
+    }
+
+    assert!(
+        app.is_popup_visible(),
+        "Popup should open when typing ':model '"
+    );
+
+    for _ in 0..30 {
+        app.update(Event::Key(key(KeyCode::Down)));
+    }
+
+    app.update(Event::Key(key(KeyCode::Enter)));
+
+    assert!(
+        app.input_content()
+            .contains(&format!(":model {}", fifteenth_model)),
+        "Selection saturates at the 15th model due to popup truncation"
+    );
+    assert!(
+        !app.input_content()
+            .contains(&format!(":model {}", sixteenth_model)),
+        "16th model is not selectable while popup is truncated to 15 items"
+    );
+}
+
+#[test]
+fn model_popup_filter_across_all_provider_prefixes() {
+    let mut app = OilChatApp::default();
+    app.set_available_models(vec![
+        "ollama/visioncraft-alpha".to_string(),
+        "zai/visioncraft-beta".to_string(),
+        "openai/visioncraft-gamma".to_string(),
+        "anthropic/visioncraft-delta".to_string(),
+        "ollama/llama3.2".to_string(),
+        "zai/GLM-4.7".to_string(),
+        "openai/gpt-4o".to_string(),
+        "anthropic/claude-3".to_string(),
+    ]);
+
+    for c in ":model visioncraft".chars() {
+        app.update(Event::Key(key(KeyCode::Char(c))));
+    }
+
+    assert!(app.is_popup_visible(), "Popup should be visible");
+    assert_eq!(
+        app.current_popup_filter(),
+        "visioncraft",
+        "Filter should be 'visioncraft'"
+    );
+
+    let tree = view_with_default_ctx(&app);
+    let output = render_to_string(&tree, 80);
+
+    assert!(
+        output.contains("ollama/visioncraft-alpha"),
+        "Filter should include matching ollama model"
+    );
+    assert!(
+        output.contains("zai/visioncraft-beta"),
+        "Filter should include matching zai model"
+    );
+    assert!(
+        output.contains("openai/visioncraft-gamma"),
+        "Filter should include matching openai model"
+    );
+    assert!(
+        output.contains("anthropic/visioncraft-delta"),
+        "Filter should include matching anthropic model"
+    );
+}
+
+#[test]
 fn model_command_selection_fills_input() {
     let mut app = OilChatApp::default();
     app.set_available_models(vec![
