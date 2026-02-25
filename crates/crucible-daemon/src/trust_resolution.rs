@@ -46,6 +46,18 @@ pub(crate) fn resolve_kiln_classification(
     None
 }
 
+pub fn find_workspace_and_resolve_classification(kiln: &Path) -> Option<DataClassification> {
+    let mut dir = kiln.to_path_buf();
+    loop {
+        if dir.join(".crucible").join("workspace.toml").exists() {
+            return resolve_kiln_classification(&dir, kiln);
+        }
+        if !dir.pop() {
+            return None;
+        }
+    }
+}
+
 /// Resolve the trust level for an LLM provider at runtime.
 ///
 /// Returns the effective trust level based on the agent's provider configuration.
@@ -72,11 +84,11 @@ pub(crate) fn resolve_provider_trust(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::fs;
-    use tempfile::TempDir;
+    use crucible_config::BackendType;
     use crucible_config::LlmProviderConfig;
     use std::collections::HashMap;
-    use crucible_config::BackendType;
+    use std::fs;
+    use tempfile::TempDir;
 
     fn make_test_agent(
         agent_type: &str,
