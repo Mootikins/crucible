@@ -2580,6 +2580,7 @@ mod tests {
     use super::*;
     use crate::session_storage::FileSessionStorage;
     use serde_json::json;
+    use serde_json::Value;
     use std::collections::HashMap;
     use std::sync::Arc;
     use tempfile::TempDir;
@@ -2649,6 +2650,71 @@ mod tests {
             config.push_str(&format!("data_classification = \"{}\"\n", classification));
         }
         std::fs::write(crucible_dir.join("workspace.toml"), config).unwrap();
+    }
+
+    async fn rpc_call(client: &mut UnixStream, request: Value) -> Value {
+        let request = serde_json::to_string(&request).unwrap();
+        client
+            .write_all(format!("{}\n", request).as_bytes())
+            .await
+            .unwrap();
+
+        let mut buf = vec![0u8; 8192];
+        let n = client.read(&mut buf).await.unwrap();
+        serde_json::from_slice(&buf[..n]).unwrap()
+    }
+
+    fn extract_session_id(response: &Value) -> String {
+        response["result"]["session_id"]
+            .as_str()
+            .expect("session.create should return session_id")
+            .to_string()
+    }
+
+    async fn create_chat_session(client: &mut UnixStream, kiln: &Path, id: u64) -> String {
+        let response = rpc_call(
+            client,
+            json!({
+                "jsonrpc": "2.0",
+                "id": id,
+                "method": "session.create",
+                "params": {
+                    "type": "chat",
+                    "kiln": kiln,
+                }
+            }),
+        )
+        .await;
+
+        assert!(response["error"].is_null(), "session.create failed: {response:?}");
+        extract_session_id(&response)
+    }
+
+    async fn configure_internal_mock_agent(
+        client: &mut UnixStream,
+        session_id: &str,
+        id: u64,
+        model: &str,
+    ) -> Value {
+        rpc_call(
+            client,
+            json!({
+                "jsonrpc": "2.0",
+                "id": id,
+                "method": "session.configure_agent",
+                "params": {
+                    "session_id": session_id,
+                    "agent": {
+                        "agent_type": "internal",
+                        "provider": "mock",
+                        "model": model,
+                        "system_prompt": "test",
+                        "provider_key": "mock"
+                    }
+                }
+            }),
+        )
+        .await
     }
 
     #[tokio::test]
@@ -2871,6 +2937,529 @@ mod tests {
         let response = String::from_utf8_lossy(&buf[..n]);
 
         assert!(response.contains("\"result\":[]")); // Empty array initially
+
+        let _ = shutdown_handle.send(());
+        let _ = server_task.await;
+    }
+
+    #[tokio::test]
+    async fn test_search_vectors_rpc_success_and_missing_vector_error() {
+        let tmp = TempDir::new().unwrap();
+        let sock_path = tmp.path().join("test.sock");
+        let kiln_path = tmp.path().join("kiln");
+        std::fs::create_dir_all(&kiln_path).unwrap();
+
+        let server = Server::bind(&sock_path, None).await.unwrap();
+        let shutdown_handle = server.shutdown_handle();
+        let server_task = tokio::spawn(async move { server.run().await });
+
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+        let mut client = UnixStream::connect(&sock_path).await.unwrap();
+
+        let open_response = rpc_call(
+            &mut client,
+            json!({
+                "jsonrpc": "2.0",
+                "id": 10,
+                "method": "kiln.open",
+                "params": { "path": kiln_path }
+            }),
+        )
+        .await;
+        assert!(open_response["error"].is_null(), "kiln.open failed: {open_response:?}");
+
+        let ok_response = rpc_call(
+            &mut client,
+            json!({
+                "jsonrpc": "2.0",
+                "id": 11,
+                "method": "search_vectors",
+                "params": {
+                    "kiln": kiln_path,
+                    "vector": [0.1, 0.2, 0.3],
+                    "limit": 5
+                }
+            }),
+        )
+        .await;
+        assert!(ok_response["error"].is_null(), "search_vectors failed: {ok_response:?}");
+        assert!(ok_response["result"].is_array());
+
+        let err_response = rpc_call(
+            &mut client,
+            json!({
+                "jsonrpc": "2.0",
+                "id": 12,
+                "method": "search_vectors",
+                "params": {
+                    "kiln": kiln_path
+                }
+            }),
+        )
+        .await;
+        assert_eq!(err_response["error"]["code"], INVALID_PARAMS);
+
+        let _ = shutdown_handle.send(());
+        let _ = server_task.await;
+    }
+
+    #[tokio::test]
+    async fn test_session_list_rpc_returns_shape_and_accepts_invalid_filters() {
+        let tmp = TempDir::new().unwrap();
+        let sock_path = tmp.path().join("test.sock");
+        let kiln_path = tmp.path().join("kiln");
+        std::fs::create_dir_all(&kiln_path).unwrap();
+
+        let server = Server::bind(&sock_path, None).await.unwrap();
+        let shutdown_handle = server.shutdown_handle();
+        let server_task = tokio::spawn(async move { server.run().await });
+
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+        let mut client = UnixStream::connect(&sock_path).await.unwrap();
+        let _session_id = create_chat_session(&mut client, &kiln_path, 20).await;
+
+        let ok_response = rpc_call(
+            &mut client,
+            json!({
+                "jsonrpc": "2.0",
+                "id": 21,
+                "method": "session.list",
+                "params": {}
+            }),
+        )
+        .await;
+        assert!(ok_response["error"].is_null(), "session.list failed: {ok_response:?}");
+        assert!(ok_response["result"]["sessions"].is_array());
+        assert!(ok_response["result"]["total"].as_u64().unwrap_or(0) >= 1);
+
+        let invalid_filters_response = rpc_call(
+            &mut client,
+            json!({
+                "jsonrpc": "2.0",
+                "id": 22,
+                "method": "session.list",
+                "params": {
+                    "type": 123,
+                    "state": ["bad"],
+                    "kiln": false
+                }
+            }),
+        )
+        .await;
+        assert!(
+            invalid_filters_response["error"].is_null(),
+            "session.list should ignore invalid optional filters: {invalid_filters_response:?}"
+        );
+        assert!(invalid_filters_response["result"]["sessions"].is_array());
+
+        let _ = shutdown_handle.send(());
+        let _ = server_task.await;
+    }
+
+    #[tokio::test]
+    async fn test_session_pause_rpc_success_and_missing_param_error() {
+        let tmp = TempDir::new().unwrap();
+        let sock_path = tmp.path().join("test.sock");
+        let kiln_path = tmp.path().join("kiln");
+        std::fs::create_dir_all(&kiln_path).unwrap();
+
+        let server = Server::bind(&sock_path, None).await.unwrap();
+        let shutdown_handle = server.shutdown_handle();
+        let server_task = tokio::spawn(async move { server.run().await });
+
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+        let mut client = UnixStream::connect(&sock_path).await.unwrap();
+        let session_id = create_chat_session(&mut client, &kiln_path, 30).await;
+
+        let ok_response = rpc_call(
+            &mut client,
+            json!({
+                "jsonrpc": "2.0",
+                "id": 31,
+                "method": "session.pause",
+                "params": { "session_id": session_id }
+            }),
+        )
+        .await;
+        assert!(ok_response["error"].is_null(), "session.pause failed: {ok_response:?}");
+        assert_eq!(ok_response["result"]["state"], "paused");
+
+        let err_response = rpc_call(
+            &mut client,
+            json!({
+                "jsonrpc": "2.0",
+                "id": 32,
+                "method": "session.pause",
+                "params": {}
+            }),
+        )
+        .await;
+        assert_eq!(err_response["error"]["code"], INVALID_PARAMS);
+
+        let _ = shutdown_handle.send(());
+        let _ = server_task.await;
+    }
+
+    #[tokio::test]
+    async fn test_session_resume_rpc_success_and_missing_param_error() {
+        let tmp = TempDir::new().unwrap();
+        let sock_path = tmp.path().join("test.sock");
+        let kiln_path = tmp.path().join("kiln");
+        std::fs::create_dir_all(&kiln_path).unwrap();
+
+        let server = Server::bind(&sock_path, None).await.unwrap();
+        let shutdown_handle = server.shutdown_handle();
+        let server_task = tokio::spawn(async move { server.run().await });
+
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+        let mut client = UnixStream::connect(&sock_path).await.unwrap();
+        let session_id = create_chat_session(&mut client, &kiln_path, 40).await;
+
+        let _pause_response = rpc_call(
+            &mut client,
+            json!({
+                "jsonrpc": "2.0",
+                "id": 41,
+                "method": "session.pause",
+                "params": { "session_id": session_id }
+            }),
+        )
+        .await;
+
+        let ok_response = rpc_call(
+            &mut client,
+            json!({
+                "jsonrpc": "2.0",
+                "id": 42,
+                "method": "session.resume",
+                "params": { "session_id": session_id }
+            }),
+        )
+        .await;
+        assert!(ok_response["error"].is_null(), "session.resume failed: {ok_response:?}");
+        assert_eq!(ok_response["result"]["state"], "active");
+
+        let err_response = rpc_call(
+            &mut client,
+            json!({
+                "jsonrpc": "2.0",
+                "id": 43,
+                "method": "session.resume",
+                "params": {}
+            }),
+        )
+        .await;
+        assert_eq!(err_response["error"]["code"], INVALID_PARAMS);
+
+        let _ = shutdown_handle.send(());
+        let _ = server_task.await;
+    }
+
+    #[tokio::test]
+    async fn test_session_configure_agent_rpc_success_and_missing_agent_error() {
+        let tmp = TempDir::new().unwrap();
+        let sock_path = tmp.path().join("test.sock");
+        let kiln_path = tmp.path().join("kiln");
+        std::fs::create_dir_all(&kiln_path).unwrap();
+
+        let server = Server::bind(&sock_path, None).await.unwrap();
+        let shutdown_handle = server.shutdown_handle();
+        let server_task = tokio::spawn(async move { server.run().await });
+
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+        let mut client = UnixStream::connect(&sock_path).await.unwrap();
+        let session_id = create_chat_session(&mut client, &kiln_path, 50).await;
+
+        let ok_response = configure_internal_mock_agent(&mut client, &session_id, 51, "mock-initial").await;
+        assert!(
+            ok_response["error"].is_null(),
+            "session.configure_agent failed: {ok_response:?}"
+        );
+        assert_eq!(ok_response["result"]["configured"], true);
+
+        let err_response = rpc_call(
+            &mut client,
+            json!({
+                "jsonrpc": "2.0",
+                "id": 52,
+                "method": "session.configure_agent",
+                "params": {
+                    "session_id": session_id
+                }
+            }),
+        )
+        .await;
+        assert_eq!(err_response["error"]["code"], INVALID_PARAMS);
+
+        let _ = shutdown_handle.send(());
+        let _ = server_task.await;
+    }
+
+    #[tokio::test]
+    async fn test_session_send_message_rpc_no_agent_configured_error_and_missing_content_error() {
+        let tmp = TempDir::new().unwrap();
+        let sock_path = tmp.path().join("test.sock");
+        let kiln_path = tmp.path().join("kiln");
+        std::fs::create_dir_all(&kiln_path).unwrap();
+
+        let server = Server::bind(&sock_path, None).await.unwrap();
+        let shutdown_handle = server.shutdown_handle();
+        let server_task = tokio::spawn(async move { server.run().await });
+
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+        let mut client = UnixStream::connect(&sock_path).await.unwrap();
+        let session_id = create_chat_session(&mut client, &kiln_path, 60).await;
+
+        let no_agent_response = rpc_call(
+            &mut client,
+            json!({
+                "jsonrpc": "2.0",
+                "id": 61,
+                "method": "session.send_message",
+                "params": {
+                    "session_id": session_id,
+                    "content": "hello"
+                }
+            }),
+        )
+        .await;
+        assert!(no_agent_response["error"].is_object());
+        assert_eq!(no_agent_response["error"]["code"], INTERNAL_ERROR);
+
+        let missing_content_response = rpc_call(
+            &mut client,
+            json!({
+                "jsonrpc": "2.0",
+                "id": 62,
+                "method": "session.send_message",
+                "params": {
+                    "session_id": session_id
+                }
+            }),
+        )
+        .await;
+        assert_eq!(missing_content_response["error"]["code"], INVALID_PARAMS);
+
+        let _ = shutdown_handle.send(());
+        let _ = server_task.await;
+    }
+
+    #[tokio::test]
+    async fn test_session_cancel_rpc_success_and_missing_param_error() {
+        let tmp = TempDir::new().unwrap();
+        let sock_path = tmp.path().join("test.sock");
+        let kiln_path = tmp.path().join("kiln");
+        std::fs::create_dir_all(&kiln_path).unwrap();
+
+        let server = Server::bind(&sock_path, None).await.unwrap();
+        let shutdown_handle = server.shutdown_handle();
+        let server_task = tokio::spawn(async move { server.run().await });
+
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+        let mut client = UnixStream::connect(&sock_path).await.unwrap();
+        let session_id = create_chat_session(&mut client, &kiln_path, 70).await;
+
+        let ok_response = rpc_call(
+            &mut client,
+            json!({
+                "jsonrpc": "2.0",
+                "id": 71,
+                "method": "session.cancel",
+                "params": { "session_id": session_id }
+            }),
+        )
+        .await;
+        assert!(ok_response["error"].is_null(), "session.cancel failed: {ok_response:?}");
+        assert!(ok_response["result"]["cancelled"].is_boolean());
+
+        let err_response = rpc_call(
+            &mut client,
+            json!({
+                "jsonrpc": "2.0",
+                "id": 72,
+                "method": "session.cancel",
+                "params": {}
+            }),
+        )
+        .await;
+        assert_eq!(err_response["error"]["code"], INVALID_PARAMS);
+
+        let _ = shutdown_handle.send(());
+        let _ = server_task.await;
+    }
+
+    #[tokio::test]
+    async fn test_session_switch_model_rpc_success_and_empty_model_error() {
+        let tmp = TempDir::new().unwrap();
+        let sock_path = tmp.path().join("test.sock");
+        let kiln_path = tmp.path().join("kiln");
+        std::fs::create_dir_all(&kiln_path).unwrap();
+
+        let server = Server::bind(&sock_path, None).await.unwrap();
+        let shutdown_handle = server.shutdown_handle();
+        let server_task = tokio::spawn(async move { server.run().await });
+
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+        let mut client = UnixStream::connect(&sock_path).await.unwrap();
+        let session_id = create_chat_session(&mut client, &kiln_path, 80).await;
+        let configure_response =
+            configure_internal_mock_agent(&mut client, &session_id, 81, "mock-initial").await;
+        assert!(
+            configure_response["error"].is_null(),
+            "configure failed: {configure_response:?}"
+        );
+
+        let ok_response = rpc_call(
+            &mut client,
+            json!({
+                "jsonrpc": "2.0",
+                "id": 82,
+                "method": "session.switch_model",
+                "params": {
+                    "session_id": session_id,
+                    "model_id": "mock-switched"
+                }
+            }),
+        )
+        .await;
+        assert!(
+            ok_response["error"].is_null(),
+            "session.switch_model failed: {ok_response:?}"
+        );
+        assert_eq!(ok_response["result"]["switched"], true);
+        assert_eq!(ok_response["result"]["model_id"], "mock-switched");
+
+        let err_response = rpc_call(
+            &mut client,
+            json!({
+                "jsonrpc": "2.0",
+                "id": 83,
+                "method": "session.switch_model",
+                "params": {
+                    "session_id": session_id,
+                    "model_id": "   "
+                }
+            }),
+        )
+        .await;
+        assert_eq!(err_response["error"]["code"], INVALID_PARAMS);
+
+        let _ = shutdown_handle.send(());
+        let _ = server_task.await;
+    }
+
+    #[tokio::test]
+    async fn test_session_list_models_rpc_success_and_missing_param_error() {
+        let tmp = TempDir::new().unwrap();
+        let sock_path = tmp.path().join("test.sock");
+        let kiln_path = tmp.path().join("kiln");
+        std::fs::create_dir_all(&kiln_path).unwrap();
+
+        let server = Server::bind(&sock_path, None).await.unwrap();
+        let shutdown_handle = server.shutdown_handle();
+        let server_task = tokio::spawn(async move { server.run().await });
+
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+        let mut client = UnixStream::connect(&sock_path).await.unwrap();
+        let session_id = create_chat_session(&mut client, &kiln_path, 90).await;
+
+        let ok_response = rpc_call(
+            &mut client,
+            json!({
+                "jsonrpc": "2.0",
+                "id": 91,
+                "method": "session.list_models",
+                "params": {
+                    "session_id": session_id
+                }
+            }),
+        )
+        .await;
+        assert!(
+            ok_response["error"].is_null(),
+            "session.list_models failed: {ok_response:?}"
+        );
+        assert!(ok_response["result"]["models"].is_array());
+
+        let err_response = rpc_call(
+            &mut client,
+            json!({
+                "jsonrpc": "2.0",
+                "id": 92,
+                "method": "session.list_models",
+                "params": {}
+            }),
+        )
+        .await;
+        assert_eq!(err_response["error"]["code"], INVALID_PARAMS);
+
+        let _ = shutdown_handle.send(());
+        let _ = server_task.await;
+    }
+
+    #[tokio::test]
+    async fn test_session_set_thinking_budget_rpc_success_and_missing_session_id_error() {
+        let tmp = TempDir::new().unwrap();
+        let sock_path = tmp.path().join("test.sock");
+        let kiln_path = tmp.path().join("kiln");
+        std::fs::create_dir_all(&kiln_path).unwrap();
+
+        let server = Server::bind(&sock_path, None).await.unwrap();
+        let shutdown_handle = server.shutdown_handle();
+        let server_task = tokio::spawn(async move { server.run().await });
+
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+        let mut client = UnixStream::connect(&sock_path).await.unwrap();
+        let session_id = create_chat_session(&mut client, &kiln_path, 100).await;
+        let configure_response =
+            configure_internal_mock_agent(&mut client, &session_id, 101, "mock-budget").await;
+        assert!(
+            configure_response["error"].is_null(),
+            "configure failed: {configure_response:?}"
+        );
+
+        let ok_response = rpc_call(
+            &mut client,
+            json!({
+                "jsonrpc": "2.0",
+                "id": 102,
+                "method": "session.set_thinking_budget",
+                "params": {
+                    "session_id": session_id,
+                    "thinking_budget": 256
+                }
+            }),
+        )
+        .await;
+        assert!(
+            ok_response["error"].is_null(),
+            "session.set_thinking_budget failed: {ok_response:?}"
+        );
+        assert_eq!(ok_response["result"]["thinking_budget"], 256);
+
+        let err_response = rpc_call(
+            &mut client,
+            json!({
+                "jsonrpc": "2.0",
+                "id": 103,
+                "method": "session.set_thinking_budget",
+                "params": {
+                    "thinking_budget": 1
+                }
+            }),
+        )
+        .await;
+        assert_eq!(err_response["error"]["code"], INVALID_PARAMS);
 
         let _ = shutdown_handle.send(());
         let _ = server_task.await;
