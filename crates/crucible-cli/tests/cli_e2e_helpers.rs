@@ -38,7 +38,7 @@ pub fn write_config(dir: &Path, extra_toml: &str) -> PathBuf {
 
     let config_path = dir.join("config.toml");
     let config = format!(
-        "kiln_path = \"{}\"\n\n[chat]\nprovider = \"ollama\"\nmodel = \"llama3.2\"\n{}",
+        "kiln_path = \"{}\"\n\n[llm]\ndefault = \"ollama\"\n\n[llm.providers.ollama]\ntype = \"ollama\"\ndefault_model = \"llama3.2\"\n{}",
         toml_escape(&kiln_path),
         extra_toml,
     );
@@ -70,7 +70,7 @@ impl TestDaemon {
         let cru_exe = env!("CARGO_BIN_EXE_cru");
 
         let mut process = StdCommand::new(cru_exe)
-            .args(["daemon", "serve"])
+            .args(["--config", config_path.to_str().unwrap(), "daemon", "serve"])
             .env("CRUCIBLE_SOCKET", &socket_path)
             .stdin(Stdio::null())
             .stdout(Stdio::null())
