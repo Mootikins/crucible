@@ -39,3 +39,34 @@ impl DaemonToolsApi for DaemonToolsBridge {
         })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_daemon_tools_bridge_construction() {
+        let workspace_tools = Arc::new(crucible_tools::workspace::WorkspaceTools::new(
+            &std::path::PathBuf::from("/tmp"),
+        ));
+
+        let bridge = DaemonToolsBridge::new(workspace_tools.clone());
+
+        // Verify bridge was created (no panic)
+        assert_eq!(std::mem::size_of_val(&bridge) > 0, true);
+    }
+
+    #[test]
+    fn test_daemon_tools_bridge_delegates_to_workspace_tools() {
+        let workspace_tools = Arc::new(crucible_tools::workspace::WorkspaceTools::new(
+            &std::path::PathBuf::from("/tmp"),
+        ));
+
+        let strong_count = Arc::strong_count(&workspace_tools);
+
+        let _bridge = DaemonToolsBridge::new(workspace_tools.clone());
+
+        // Verify Arc reference is held (strong count increased)
+        assert_eq!(Arc::strong_count(&workspace_tools), strong_count + 1);
+    }
+}

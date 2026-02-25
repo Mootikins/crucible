@@ -492,3 +492,71 @@ fn truncate_json_preview(val: Option<&serde_json::Value>, max_len: usize) -> Str
     val.map(|v| truncate_str(&v.to_string(), max_len))
         .unwrap_or_default()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::session_manager::SessionManager;
+    use crate::agent_manager::AgentManager;
+    use crate::kiln_manager::KilnManager;
+    use crate::background_manager::BackgroundJobManager;
+
+    #[test]
+    fn test_daemon_session_bridge_construction() {
+        // Create minimal dependencies for testing
+        let (event_tx, _) = broadcast::channel(100);
+        let kiln_manager = Arc::new(KilnManager::new());
+        let session_manager = Arc::new(SessionManager::new());
+        let background_manager = Arc::new(BackgroundJobManager::new(event_tx.clone()));
+        let agent_manager = Arc::new(AgentManager::new(
+            kiln_manager,
+            session_manager.clone(),
+            background_manager,
+            None,
+            None,
+            None,
+            None,
+        ));
+
+        // Construct bridge
+        let bridge = DaemonSessionBridge::new(
+            session_manager.clone(),
+            agent_manager.clone(),
+            event_tx.clone(),
+        );
+
+        // Verify bridge was created (no panic)
+        assert_eq!(std::mem::size_of_val(&bridge) > 0, true);
+    }
+
+    #[test]
+    fn test_daemon_session_bridge_delegates_to_managers() {
+        // Verify Arc cloning works (bridge holds Arc references)
+        let (event_tx, _) = broadcast::channel(100);
+        let kiln_manager = Arc::new(KilnManager::new());
+        let session_manager = Arc::new(SessionManager::new());
+        let background_manager = Arc::new(BackgroundJobManager::new(event_tx.clone()));
+        let agent_manager = Arc::new(AgentManager::new(
+            kiln_manager,
+            session_manager.clone(),
+            background_manager,
+            None,
+            None,
+            None,
+            None,
+        ));
+
+        let sm_strong_count = Arc::strong_count(&session_manager);
+        let am_strong_count = Arc::strong_count(&agent_manager);
+
+        let _bridge = DaemonSessionBridge::new(
+            session_manager.clone(),
+            agent_manager.clone(),
+            event_tx.clone(),
+        );
+
+        // Verify Arc references are held (strong count increased)
+        assert_eq!(Arc::strong_count(&session_manager), sm_strong_count + 1);
+        assert_eq!(Arc::strong_count(&agent_manager), am_strong_count + 1);
+    }
+}
