@@ -9,7 +9,7 @@
 //!
 //! # Example
 //!
-//! ```ignore
+//! ```text
 //! let manager = BackgroundJobManager::new(event_tx);
 //!
 //! let job_id = manager.spawn_bash(
