@@ -41,7 +41,7 @@ fn bench_embedding_providers(c: &mut Criterion) {
                 let rt = tokio::runtime::Runtime::new().unwrap();
 
                 b.iter(|| {
-                    let batch = black_box(generate_test_texts(batch_size));
+                    let batch_owned = black_box(generate_test_texts(batch_size));
                     let config = EmbeddingProviderConfig::FastEmbed(FastEmbedConfig {
                         model: "BAAI/bge-small-en-v1.5".to_string(),
                         batch_size: batch_size as u32,
@@ -50,8 +50,9 @@ fn bench_embedding_providers(c: &mut Criterion) {
 
                     let provider = rt.block_on(create_provider(config)).unwrap();
 
+                    let batch: Vec<&str> = batch_owned.iter().map(|s| s.as_str()).collect();
                     let start = Instant::now();
-                    rt.block_on(provider.embed_batch(batch)).unwrap();
+                    rt.block_on(provider.embed_batch(&batch)).unwrap();
                     start.elapsed()
                 });
             },
@@ -65,7 +66,7 @@ fn bench_embedding_providers(c: &mut Criterion) {
                 let rt = tokio::runtime::Runtime::new().unwrap();
 
                 b.iter(|| {
-                    let batch = black_box(generate_test_texts(batch_size));
+                    let batch_owned = black_box(generate_test_texts(batch_size));
                     let config = EmbeddingProviderConfig::Burn(BurnEmbedConfig {
                         model: "test-model".to_string(),
                         backend: BurnBackendConfig::Cpu { num_threads: 4 },
@@ -75,8 +76,9 @@ fn bench_embedding_providers(c: &mut Criterion) {
 
                     let provider = rt.block_on(create_provider(config)).unwrap();
 
+                    let batch: Vec<&str> = batch_owned.iter().map(|s| s.as_str()).collect();
                     let start = Instant::now();
-                    rt.block_on(provider.embed_batch(batch)).unwrap();
+                    rt.block_on(provider.embed_batch(&batch)).unwrap();
                     start.elapsed()
                 });
             },
@@ -101,7 +103,7 @@ fn bench_single_vs_batch(c: &mut Criterion) {
 
         b.iter(|| {
             let rt = tokio::runtime::Runtime::new().unwrap();
-            rt.block_on(provider.embed_batch(vec!["single text".to_string()]))
+            rt.block_on(provider.embed_batch(&["single text"]))
                 .unwrap();
         });
     });
@@ -121,7 +123,8 @@ fn bench_single_vs_batch(c: &mut Criterion) {
 
         b.iter(|| {
             let rt = tokio::runtime::Runtime::new().unwrap();
-            rt.block_on(provider.embed_batch(texts.clone())).unwrap();
+            let refs: Vec<&str> = texts.iter().map(|s| s.as_str()).collect();
+            rt.block_on(provider.embed_batch(&refs)).unwrap();
         });
     });
 }
@@ -144,8 +147,9 @@ fn bench_throughput(c: &mut Criterion) {
         let provider = rt.block_on(create_provider(config)).unwrap();
 
         b.iter(|| {
-            let batch = black_box(generate_test_texts(num_texts));
-            rt.block_on(provider.embed_batch(batch)).unwrap();
+            let batch_owned = black_box(generate_test_texts(num_texts));
+            let batch: Vec<&str> = batch_owned.iter().map(|s| s.as_str()).collect();
+            rt.block_on(provider.embed_batch(&batch)).unwrap();
         });
     });
 }
