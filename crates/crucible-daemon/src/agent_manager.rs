@@ -1769,8 +1769,8 @@ impl AgentManager {
         };
 
         let state = session_state.lock().await;
-        let hooks_guard = state.permission_hooks.lock().unwrap();
-        let functions_guard = state.permission_functions.lock().unwrap();
+        let hooks_guard = state.permission_hooks.lock().expect("permission_hooks: poisoned while executing Lua permission hook");
+        let functions_guard = state.permission_functions.lock().expect("permission_functions: poisoned while executing Lua permission hook");
 
         if hooks_guard.is_empty() {
             return PermissionHookResult::Prompt;

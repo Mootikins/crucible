@@ -109,24 +109,24 @@ impl CrucibleClient {
 
     /// Get all session notifications received
     pub fn notifications(&self) -> Vec<SessionNotification> {
-        self.notifications.lock().unwrap().clone()
+        self.notifications.lock().expect("notifications: poisoned while reading session notifications").clone()
     }
 
     /// Clear notifications
     pub fn clear_notifications(&self) {
-        self.notifications.lock().unwrap().clear();
+        self.notifications.lock().expect("notifications: poisoned while clearing session notifications").clear();
     }
 
     /// Get information about the last write operation (for diff display)
     ///
     /// Returns None if no write has occurred yet in this session.
     pub fn last_write_info(&self) -> Option<WriteInfo> {
-        self.last_write.lock().unwrap().clone()
+        self.last_write.lock().expect("last_write: poisoned while reading last write info").clone()
     }
 
     /// Clear the last write info
     pub fn clear_last_write(&self) {
-        *self.last_write.lock().unwrap() = None;
+        *self.last_write.lock().expect("last_write: poisoned while clearing last write info") = None;
     }
 
     /// Set a permission gate for routing permission decisions.
@@ -234,7 +234,7 @@ impl Client for CrucibleClient {
         }
 
         // Store write info for diff display
-        *self.last_write.lock().unwrap() = Some(WriteInfo {
+        *self.last_write.lock().expect("last_write: poisoned while storing write info") = Some(WriteInfo {
             path: args.path.clone(),
             old_content,
             new_content: args.content.clone(),
@@ -282,7 +282,7 @@ impl Client for CrucibleClient {
         tracing::debug!("Session notification: {:?}", args.update);
 
         // Store notification for later retrieval
-        self.notifications.lock().unwrap().push(args);
+        self.notifications.lock().expect("notifications: poisoned while storing session notification").push(args);
 
         Ok(())
     }
