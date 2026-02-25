@@ -74,6 +74,36 @@ mod tests {
     use super::*;
     use std::fs;
     use tempfile::TempDir;
+    use crucible_config::LlmProviderConfig;
+    use std::collections::HashMap;
+    use crucible_config::BackendType;
+
+    fn make_test_agent(
+        agent_type: &str,
+        agent_name: Option<&str>,
+        provider_key: Option<&str>,
+    ) -> SessionAgent {
+        SessionAgent {
+            agent_type: agent_type.to_string(),
+            agent_name: agent_name.map(|s| s.to_string()),
+            provider_key: provider_key.map(|s| s.to_string()),
+            provider: BackendType::Ollama,
+            model: "test-model".to_string(),
+            system_prompt: "You are a test agent.".to_string(),
+            temperature: None,
+            max_tokens: None,
+            max_context_tokens: None,
+            thinking_budget: None,
+            endpoint: None,
+            env_overrides: HashMap::new(),
+            mcp_servers: Vec::new(),
+            agent_card_name: None,
+            capabilities: None,
+            agent_description: None,
+            delegation_config: None,
+            precognition_enabled: true,
+        }
+    }
 
     fn write_workspace_config(
         workspace: &std::path::Path,
@@ -170,5 +200,75 @@ mod tests {
 
         let result = resolve_kiln_classification(&workspace, &kiln);
         assert_eq!(result, Some(DataClassification::Public));
+    }
+
+    // ===== resolve_provider_trust Tests =====
+
+    #[test]
+    fn provider_trust_acp_agent_returns_cloud() {
+        // ACP agents (with agent_name set) always return Cloud trust
+        let agent = make_test_agent("acp", Some("claude"), None);
+        let result = resolve_provider_trust(&agent, None);
+        assert_eq!(result, TrustLevel::Cloud);
+    }
+
+    #[test]
+    fn provider_trust_configured_provider_returns_explicit_level() {
+        // When provider_key exists and provider is found in config,
+        // return the provider's effective trust level
+        let mut providers = HashMap::new();
+        let provider_config = LlmProviderConfig {
+            provider_type: BackendType::Ollama,
+            endpoint: None,
+            default_model: None,
+            temperature: None,
+            max_tokens: None,
+            timeout_secs: None,
+            api_key: None,
+            available_models: None,
+            trust_level: Some(TrustLevel::Local),
+        };
+        providers.insert("local-ollama".to_string(), provider_config);
+
+        let llm_config = LlmConfig {
+            default: None,
+            providers,
+        };
+
+        let agent = make_test_agent("internal", None, Some("local-ollama"));
+        let result = resolve_provider_trust(&agent, Some(&llm_config));
+        assert_eq!(result, TrustLevel::Local);
+    }
+
+    #[test]
+    fn provider_trust_fallback_returns_cloud() {
+        // Fallback case: no agent_name, and either no provider_key or provider not found
+        let agent = make_test_agent("internal", None, Some("nonexistent-provider"));
+        let llm_config = LlmConfig {
+            default: None,
+            providers: HashMap::new(),
+        };
+        let result = resolve_provider_trust(&agent, Some(&llm_config));
+        assert_eq!(result, TrustLevel::Cloud);
+    }
+
+    #[test]
+    fn provider_trust_no_provider_key_returns_cloud() {
+        // Fallback: no provider_key set
+        let agent = make_test_agent("internal", None, None);
+        let llm_config = LlmConfig {
+            default: None,
+            providers: HashMap::new(),
+        };
+        let result = resolve_provider_trust(&agent, Some(&llm_config));
+        assert_eq!(result, TrustLevel::Cloud);
+    }
+
+    #[test]
+    fn provider_trust_no_llm_config_returns_cloud() {
+        // Fallback: no LlmConfig provided
+        let agent = make_test_agent("internal", None, Some("ollama"));
+        let result = resolve_provider_trust(&agent, None);
+        assert_eq!(result, TrustLevel::Cloud);
     }
 }
