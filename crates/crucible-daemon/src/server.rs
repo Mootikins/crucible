@@ -4128,6 +4128,108 @@ mod tests {
         assert!(event.timestamp.is_none());
     }
 
+    #[test]
+    fn test_internal_error_returns_correct_code_and_message() {
+        let req_id = Some(RequestId::Number(42));
+        let err_msg = "database connection failed";
+        let response = internal_error(req_id.clone(), err_msg);
+
+        assert_eq!(response.id, req_id);
+        assert!(response.error.is_some());
+        let error = response.error.unwrap();
+        assert_eq!(error.code, INTERNAL_ERROR);
+        assert_eq!(error.message, "Internal server error");
+        assert!(response.result.is_none());
+    }
+
+    #[test]
+    fn test_invalid_state_error_returns_correct_code_and_message() {
+        let req_id = Some(RequestId::String("test-id".to_string()));
+        let operation = "pause_session";
+        let err_msg = "session already paused";
+        let response = invalid_state_error(req_id.clone(), operation, err_msg);
+
+        assert_eq!(response.id, req_id);
+        assert!(response.error.is_some());
+        let error = response.error.unwrap();
+        assert_eq!(error.code, INVALID_PARAMS);
+        assert!(error.message.contains(operation));
+        assert!(error.message.contains("not allowed"));
+        assert!(response.result.is_none());
+    }
+
+    #[test]
+    fn test_session_not_found_includes_session_id() {
+        let req_id = Some(RequestId::Number(1));
+        let session_id = "sess-123-abc";
+        let response = session_not_found(req_id.clone(), session_id);
+
+        assert_eq!(response.id, req_id);
+        assert!(response.error.is_some());
+        let error = response.error.unwrap();
+        assert_eq!(error.code, INVALID_PARAMS);
+        assert!(error.message.contains(session_id));
+        assert!(error.message.contains("not found"));
+        assert!(response.result.is_none());
+    }
+
+    #[test]
+    fn test_agent_not_configured_includes_session_id() {
+        let req_id = None;
+        let session_id = "sess-xyz-789";
+        let response = agent_not_configured(req_id, session_id);
+
+        assert_eq!(response.id, None);
+        assert!(response.error.is_some());
+        let error = response.error.unwrap();
+        assert_eq!(error.code, INVALID_PARAMS);
+        assert!(error.message.contains(session_id));
+        assert!(error.message.contains("No agent"));
+        assert!(response.result.is_none());
+    }
+
+    #[test]
+    fn test_concurrent_request_includes_session_id() {
+        let req_id = Some(RequestId::Number(99));
+        let session_id = "sess-concurrent-test";
+        let response = concurrent_request(req_id.clone(), session_id);
+
+        assert_eq!(response.id, req_id);
+        assert!(response.error.is_some());
+        let error = response.error.unwrap();
+        assert_eq!(error.code, INVALID_PARAMS);
+        assert!(error.message.contains(session_id));
+        assert!(error.message.contains("already in progress"));
+        assert!(response.result.is_none());
+    }
+
+    #[test]
+    fn test_agent_error_to_response_dispatches_correctly() {
+        // Test SessionNotFound variant
+        let req_id = Some(RequestId::Number(1));
+        let err = AgentError::SessionNotFound("sess-1".to_string());
+        let response = agent_error_to_response(req_id.clone(), err);
+
+        assert_eq!(response.id, req_id);
+        let error = response.error.unwrap();
+        assert_eq!(error.code, INVALID_PARAMS);
+        assert!(error.message.contains("sess-1"));
+
+        // Test NoAgentConfigured variant
+        let err = AgentError::NoAgentConfigured("sess-2".to_string());
+        let response = agent_error_to_response(req_id.clone(), err);
+        let error = response.error.unwrap();
+        assert_eq!(error.code, INVALID_PARAMS);
+        assert!(error.message.contains("sess-2"));
+
+        // Test ConcurrentRequest variant
+        let err = AgentError::ConcurrentRequest("sess-3".to_string());
+        let response = agent_error_to_response(req_id.clone(), err);
+        let error = response.error.unwrap();
+        assert_eq!(error.code, INVALID_PARAMS);
+        assert!(error.message.contains("sess-3"));
+    }
+
     mod persist_event_tests {
         use super::*;
         use crate::session_manager::SessionError;
