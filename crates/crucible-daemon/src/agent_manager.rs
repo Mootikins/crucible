@@ -7605,6 +7605,352 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_list_models_integration_multi_provider() {
+        use crucible_config::{BackendType, LlmConfig, LlmProviderConfig};
+        use std::collections::HashMap;
+
+        let tmp = TempDir::new().unwrap();
+        let storage = Arc::new(FileSessionStorage::new());
+        let session_manager = Arc::new(SessionManager::with_storage(storage));
+
+        let session = session_manager
+            .create_session(
+                SessionType::Chat,
+                tmp.path().to_path_buf(),
+                None,
+                vec![],
+                None,
+            )
+            .await
+            .unwrap();
+
+        let (ollama_endpoint, ollama_server) =
+            start_mock_ollama_tags_server(vec!["llama3.3", "qwen2.5"]).await;
+
+        let mut providers = HashMap::new();
+        providers.insert(
+            "ollama-int".to_string(),
+            LlmProviderConfig::builder(BackendType::Ollama)
+                .endpoint(ollama_endpoint)
+                .build(),
+        );
+        providers.insert(
+            "openai-int".to_string(),
+            LlmProviderConfig::builder(BackendType::OpenAI)
+                .available_models(vec!["gpt-4o".to_string(), "o3-mini".to_string()])
+                .build(),
+        );
+        providers.insert(
+            "zai-int".to_string(),
+            LlmProviderConfig::builder(BackendType::ZAI)
+                .available_models(vec!["GLM-5".to_string(), "GLM-4.7".to_string()])
+                .build(),
+        );
+
+        let llm_config = LlmConfig {
+            default: Some("openai-int".to_string()),
+            providers,
+        };
+
+        let agent_manager =
+            create_test_agent_manager_with_llm_config(session_manager.clone(), llm_config);
+
+        agent_manager
+            .configure_agent(&session.id, test_agent())
+            .await
+            .unwrap();
+
+        let models = agent_manager.list_models(&session.id).await.unwrap();
+        ollama_server.await.unwrap();
+        let expected_total = 2 + 2 + 2;
+
+        assert!(
+            models.contains(&"ollama-int/llama3.3".to_string()),
+            "Should include prefixed Ollama models, got: {:?}",
+            models
+        );
+        assert!(
+            models.contains(&"openai-int/gpt-4o".to_string()),
+            "Should include prefixed OpenAI models, got: {:?}",
+            models
+        );
+        assert!(
+            models.contains(&"zai-int/GLM-5".to_string()),
+            "Should include prefixed ZAI models, got: {:?}",
+            models
+        );
+        assert_eq!(
+            models.len(),
+            expected_total,
+            "Expected {} total models from all providers, got: {:?}",
+            expected_total,
+            models
+        );
+    }
+
+    #[tokio::test]
+    async fn test_list_models_integration_dynamic_discovery() {
+        use crucible_config::{BackendType, LlmConfig, LlmProviderConfig};
+        use std::collections::HashMap;
+
+        let tmp = TempDir::new().unwrap();
+        let storage = Arc::new(FileSessionStorage::new());
+        let session_manager = Arc::new(SessionManager::with_storage(storage));
+
+        let session = session_manager
+            .create_session(
+                SessionType::Chat,
+                tmp.path().to_path_buf(),
+                None,
+                vec![],
+                None,
+            )
+            .await
+            .unwrap();
+
+        let (endpoint, server) = start_mock_openai_models_server(
+            200,
+            serde_json::json!({
+                "data": [
+                    { "id": "gpt-4.1-nano" },
+                    { "id": "o4-mini" }
+                ]
+            }),
+            Some("integration-openai-key"),
+        )
+        .await;
+
+        let mut providers = HashMap::new();
+        providers.insert(
+            "openai-discovery-int".to_string(),
+            LlmProviderConfig::builder(BackendType::OpenAI)
+                .endpoint(&endpoint)
+                .api_key("integration-openai-key")
+                .build(),
+        );
+
+        let llm_config = LlmConfig {
+            default: Some("openai-discovery-int".to_string()),
+            providers,
+        };
+
+        let agent_manager =
+            create_test_agent_manager_with_llm_config(session_manager.clone(), llm_config);
+
+        agent_manager
+            .configure_agent(&session.id, test_agent())
+            .await
+            .unwrap();
+
+        let models = agent_manager.list_models(&session.id).await.unwrap();
+        server.await.unwrap();
+
+        assert!(
+            models.contains(&"openai-discovery-int/gpt-4.1-nano".to_string()),
+            "Should include API-discovered model, got: {:?}",
+            models
+        );
+        assert!(
+            models.contains(&"openai-discovery-int/o4-mini".to_string()),
+            "Should include API-discovered model, got: {:?}",
+            models
+        );
+        assert!(
+            !models.contains(&"openai-discovery-int/gpt-4o".to_string()),
+            "Should not inject hardcoded fallback models when API succeeds, got: {:?}",
+            models
+        );
+        assert_eq!(
+            models.len(),
+            2,
+            "Expected exactly API models from dynamic discovery, got: {:?}",
+            models
+        );
+    }
+
+    #[tokio::test]
+    async fn test_list_models_integration_override_precedence() {
+        use crucible_config::{BackendType, LlmConfig, LlmProviderConfig};
+        use std::collections::HashMap;
+
+        let tmp = TempDir::new().unwrap();
+        let storage = Arc::new(FileSessionStorage::new());
+        let session_manager = Arc::new(SessionManager::with_storage(storage));
+
+        let session = session_manager
+            .create_session(
+                SessionType::Chat,
+                tmp.path().to_path_buf(),
+                None,
+                vec![],
+                None,
+            )
+            .await
+            .unwrap();
+
+        let dead_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let dead_addr = dead_listener.local_addr().unwrap();
+        drop(dead_listener);
+        let dead_endpoint = format!("http://{}", dead_addr);
+
+        let (zai_endpoint, zai_server) = start_mock_openai_models_server(
+            200,
+            serde_json::json!({
+                "data": [
+                    { "id": "GLM-5" },
+                    { "id": "GLM-4.6" }
+                ]
+            }),
+            None,
+        )
+        .await;
+
+        let mut providers = HashMap::new();
+        providers.insert(
+            "openai-override-int".to_string(),
+            LlmProviderConfig::builder(BackendType::OpenAI)
+                .endpoint(&dead_endpoint)
+                .available_models(vec!["gpt-custom-override".to_string()])
+                .build(),
+        );
+        providers.insert(
+            "zai-dynamic-int".to_string(),
+            LlmProviderConfig::builder(BackendType::ZAI)
+                .endpoint(&zai_endpoint)
+                .build(),
+        );
+
+        let llm_config = LlmConfig {
+            default: Some("openai-override-int".to_string()),
+            providers,
+        };
+
+        let agent_manager =
+            create_test_agent_manager_with_llm_config(session_manager.clone(), llm_config);
+
+        agent_manager
+            .configure_agent(&session.id, test_agent())
+            .await
+            .unwrap();
+
+        let models = agent_manager.list_models(&session.id).await.unwrap();
+        zai_server.await.unwrap();
+
+        assert!(
+            models.contains(&"openai-override-int/gpt-custom-override".to_string()),
+            "Should use explicit override model for OpenAI, got: {:?}",
+            models
+        );
+        assert!(
+            !models.contains(&"openai-override-int/gpt-4o".to_string()),
+            "OpenAI override should win over fallback/API discovery, got: {:?}",
+            models
+        );
+        assert!(
+            models.contains(&"zai-dynamic-int/GLM-5".to_string()),
+            "Other providers without overrides should still use dynamic discovery, got: {:?}",
+            models
+        );
+        assert_eq!(
+            models.len(),
+            3,
+            "Expected 1 override + 2 dynamic models, got: {:?}",
+            models
+        );
+    }
+
+    #[tokio::test]
+    async fn test_list_models_integration_partial_failure() {
+        use crucible_config::{BackendType, LlmConfig, LlmProviderConfig};
+        use std::collections::HashMap;
+
+        let tmp = TempDir::new().unwrap();
+        let storage = Arc::new(FileSessionStorage::new());
+        let session_manager = Arc::new(SessionManager::with_storage(storage));
+
+        let session = session_manager
+            .create_session(
+                SessionType::Chat,
+                tmp.path().to_path_buf(),
+                None,
+                vec![],
+                None,
+            )
+            .await
+            .unwrap();
+
+        let ollama_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let ollama_addr = ollama_listener.local_addr().unwrap();
+        drop(ollama_listener);
+        let ollama_dead_endpoint = format!("http://{}", ollama_addr);
+
+        let mut providers = HashMap::new();
+        providers.insert(
+            "ollama-bad-int".to_string(),
+            LlmProviderConfig::builder(BackendType::Ollama)
+                .endpoint(&ollama_dead_endpoint)
+                .build(),
+        );
+        providers.insert(
+            "openai-ok-int".to_string(),
+            LlmProviderConfig::builder(BackendType::OpenAI)
+                .available_models(vec!["gpt-4o".to_string(), "o3-mini".to_string()])
+                .build(),
+        );
+        providers.insert(
+            "zai-ok-int".to_string(),
+            LlmProviderConfig::builder(BackendType::ZAI)
+                .available_models(vec!["GLM-5".to_string(), "GLM-4.7".to_string()])
+                .build(),
+        );
+
+        let llm_config = LlmConfig {
+            default: Some("openai-ok-int".to_string()),
+            providers,
+        };
+
+        let agent_manager =
+            create_test_agent_manager_with_llm_config(session_manager.clone(), llm_config);
+
+        agent_manager
+            .configure_agent(&session.id, test_agent())
+            .await
+            .unwrap();
+
+        let models = agent_manager.list_models(&session.id).await.unwrap();
+
+        assert!(
+            models.contains(&"openai-ok-int/gpt-4o".to_string()),
+            "Working providers should still contribute models, got: {:?}",
+            models
+        );
+        assert!(
+            models.contains(&"zai-ok-int/GLM-5".to_string()),
+            "Working providers should still contribute models, got: {:?}",
+            models
+        );
+
+        let error_entries: Vec<_> = models
+            .iter()
+            .filter(|m| m.starts_with("[error]") && m.contains("ollama-bad-int"))
+            .collect();
+        assert_eq!(
+            error_entries.len(),
+            1,
+            "Should include exactly one surfaced error entry for failed Ollama provider, got: {:?}",
+            models
+        );
+
+        let expected_total = 2 + 2 + 1;
+        assert_eq!(
+            models.len(),
+            expected_total,
+            "Expected 4 models from healthy providers plus 1 error entry, got: {:?}",
+            models
+        );
+    }
+
+    #[tokio::test]
     async fn test_openai_model_filtering() {
         use crucible_config::{BackendType, LlmConfig, LlmProviderConfig};
         use std::collections::HashMap;
