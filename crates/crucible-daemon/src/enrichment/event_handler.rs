@@ -400,4 +400,100 @@ mod tests {
     fn test_priority_constant() {
         assert_eq!(EmbeddingHandler::PRIORITY, 200);
     }
+
+    // --- Golden regression tests for EmbeddingHandlerAdapter ---
+
+    /// Failing enrichment service for testing error paths.
+    struct FailingEnrichmentService;
+
+    #[async_trait::async_trait]
+    impl EnrichmentService for FailingEnrichmentService {
+        async fn enrich(
+            &self,
+            _parsed: ParsedNote,
+            _changed_block_ids: Vec<String>,
+        ) -> anyhow::Result<EnrichedNote> {
+            anyhow::bail!("enrichment failed intentionally")
+        }
+
+        async fn enrich_with_tree(
+            &self,
+            parsed: ParsedNote,
+            changed_block_ids: Vec<String>,
+        ) -> anyhow::Result<EnrichedNote> {
+            self.enrich(parsed, changed_block_ids).await
+        }
+
+        async fn infer_relations(
+            &self,
+            _enriched: &EnrichedNote,
+            _threshold: f64,
+        ) -> anyhow::Result<Vec<InferredRelation>> {
+            Ok(Vec::new())
+        }
+
+        fn min_words_for_embedding(&self) -> usize {
+            5
+        }
+
+        fn max_batch_size(&self) -> usize {
+            10
+        }
+
+        fn has_embedding_provider(&self) -> bool {
+            false
+        }
+    }
+
+    #[test]
+    fn adapter_name() {
+        let service = Arc::new(MockEnrichmentService::new());
+        let handler = EmbeddingHandler::new(service);
+        let adapter = EmbeddingHandlerAdapter::new(handler);
+        assert_eq!(
+            crucible_core::events::Handler::name(&adapter),
+            "embedding_handler"
+        );
+    }
+
+    #[test]
+    fn adapter_priority() {
+        let service = Arc::new(MockEnrichmentService::new());
+        let handler = EmbeddingHandler::new(service);
+        let adapter = EmbeddingHandlerAdapter::new(handler);
+        assert_eq!(crucible_core::events::Handler::priority(&adapter), 200);
+    }
+
+    #[test]
+    fn adapter_dependencies() {
+        let service = Arc::new(MockEnrichmentService::new());
+        let handler = EmbeddingHandler::new(service);
+        let adapter = EmbeddingHandlerAdapter::new(handler);
+        let deps = crucible_core::events::Handler::dependencies(&adapter);
+        assert!(deps.contains(&"storage_handler"));
+        assert!(deps.contains(&"tag_handler"));
+    }
+
+    #[test]
+    fn adapter_event_pattern() {
+        let service = Arc::new(MockEnrichmentService::new());
+        let handler = EmbeddingHandler::new(service);
+        let adapter = EmbeddingHandlerAdapter::new(handler);
+        assert_eq!(
+            crucible_core::events::Handler::event_pattern(&adapter),
+            "*"
+        );
+    }
+
+    #[tokio::test]
+    async fn handle_note_parsed_failure_no_panic() {
+        let service: Arc<dyn EnrichmentService> = Arc::new(FailingEnrichmentService);
+        let handler = EmbeddingHandler::new(service);
+
+        let parsed = create_test_parsed_note();
+        // This should log an error but not panic
+        handler
+            .handle_note_parsed(parsed, vec!["block_0".to_string()])
+            .await;
+    }
 }

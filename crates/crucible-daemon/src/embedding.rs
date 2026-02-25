@@ -129,4 +129,102 @@ mod tests {
         clear_embedding_provider_cache();
         clear_embedding_provider_cache(); // idempotent
     }
+
+    // --- Golden tests for cache key format and concurrent clear ---
+
+    #[test]
+    fn cache_key_format_captures_provider_endpoint_model() {
+        let config = EmbeddingProviderConfig::ollama(
+            Some("http://localhost:11434".into()),
+            Some("nomic-embed-text".into()),
+        );
+        let key = config_cache_key(&config);
+        // GOLDEN: captures current behavior — format is "{:?}|endpoint|model"
+        assert!(
+            key.contains("Ollama"),
+            "key should contain the provider type debug repr: {key}"
+        );
+        assert!(
+            key.contains("http://localhost:11434"),
+            "key should contain the endpoint: {key}"
+        );
+        assert!(
+            key.contains("nomic-embed-text"),
+            "key should contain the model name: {key}"
+        );
+        // Verify pipe-delimited structure
+        assert_eq!(
+            key.matches('|').count(),
+            2,
+            "key should have exactly 2 pipe delimiters: {key}"
+        );
+    }
+
+    #[test]
+    fn cache_key_deterministic_across_clones() {
+        let config = EmbeddingProviderConfig::ollama(
+            Some("http://localhost:11434".into()),
+            Some("nomic-embed-text".into()),
+        );
+        let cloned = config.clone();
+        assert_eq!(
+            config_cache_key(&config),
+            config_cache_key(&cloned),
+            "cloned config must produce an identical cache key"
+        );
+    }
+
+    #[test]
+    fn cache_key_differs_by_endpoint() {
+        let a = EmbeddingProviderConfig::ollama(
+            Some("http://localhost:11434".into()),
+            Some("nomic-embed-text".into()),
+        );
+        let b = EmbeddingProviderConfig::ollama(
+            Some("http://remote-host:11434".into()),
+            Some("nomic-embed-text".into()),
+        );
+        assert_ne!(
+            config_cache_key(&a),
+            config_cache_key(&b),
+            "different endpoints must produce different cache keys"
+        );
+    }
+
+    #[test]
+    fn cache_key_differs_by_model() {
+        let a = EmbeddingProviderConfig::ollama(
+            Some("http://localhost:11434".into()),
+            Some("nomic-embed-text".into()),
+        );
+        let b = EmbeddingProviderConfig::ollama(
+            Some("http://localhost:11434".into()),
+            Some("mxbai-embed-large".into()),
+        );
+        assert_ne!(
+            config_cache_key(&a),
+            config_cache_key(&b),
+            "different models must produce different cache keys"
+        );
+    }
+
+    #[test]
+    fn clear_cache_concurrent_no_panic() {
+        use std::thread;
+
+        // Pre-clear to start from a known state
+        clear_embedding_provider_cache();
+
+        let handles: Vec<_> = (0..4)
+            .map(|_| {
+                thread::spawn(|| {
+                    clear_embedding_provider_cache();
+                })
+            })
+            .collect();
+
+        for h in handles {
+            h.join().expect("concurrent clear_cache thread panicked");
+        }
+    }
 }
