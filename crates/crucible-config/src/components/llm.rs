@@ -858,7 +858,12 @@ mod tests {
             vec![
                 "GLM-5".to_string(),
                 "GLM-4.7".to_string(),
-                "GLM-4.5-Air".to_string()
+                "GLM-4.6".to_string(),
+                "GLM-4.5".to_string(),
+                "GLM-4.5-Air".to_string(),
+                "GLM-4.5-Flash".to_string(),
+                "GLM-4.5v".to_string(),
+                "GLM-4-32b-0414-128k".to_string()
             ]
         );
     }
@@ -999,5 +1004,110 @@ default_model = "gpt-4"
             config.effective_trust_level(),
             super::super::trust::TrustLevel::Cloud
         );
+    }
+
+    #[test]
+    fn effective_models_anthropic_fallback() {
+        let config = LlmProviderConfig::builder(BackendType::Anthropic).build();
+        let models = config.effective_models();
+        assert!(!models.is_empty(), "Anthropic should have non-empty fallback models");
+        assert_eq!(
+            models,
+            vec![
+                "claude-sonnet-4-20250514".to_string(),
+                "claude-3-7-sonnet-20250219".to_string(),
+                "claude-3-5-sonnet-20241022".to_string(),
+                "claude-3-5-haiku-20241022".to_string(),
+                "claude-3-opus-20240229".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn effective_models_openai_fallback() {
+        let config = LlmProviderConfig::builder(BackendType::OpenAI).build();
+        let models = config.effective_models();
+        assert!(!models.is_empty(), "OpenAI should have non-empty fallback models");
+        assert_eq!(
+            models,
+            vec![
+                "gpt-4o".to_string(),
+                "gpt-4o-mini".to_string(),
+                "o1".to_string(),
+                "o3-mini".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn effective_models_zai_fallback() {
+        let config = LlmProviderConfig::builder(BackendType::ZAI).build();
+        let models = config.effective_models();
+        assert_eq!(models.len(), 8, "ZAI should have exactly 8 fallback models");
+        assert_eq!(
+            models,
+            vec![
+                "GLM-5".to_string(),
+                "GLM-4.7".to_string(),
+                "GLM-4.6".to_string(),
+                "GLM-4.5".to_string(),
+                "GLM-4.5-Air".to_string(),
+                "GLM-4.5-Flash".to_string(),
+                "GLM-4.5v".to_string(),
+                "GLM-4-32b-0414-128k".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn effective_models_ollama_returns_empty() {
+        let config = LlmProviderConfig::builder(BackendType::Ollama).build();
+        let models = config.effective_models();
+        assert_eq!(models, Vec::<String>::new(), "Ollama should return empty when no available_models set");
+    }
+
+    #[test]
+    fn effective_models_custom_returns_empty() {
+        let config = LlmProviderConfig::builder(BackendType::Custom).build();
+        let models = config.effective_models();
+        assert_eq!(models, Vec::<String>::new(), "Custom should return empty when no available_models set");
+    }
+
+    #[test]
+    fn effective_models_openrouter_returns_empty() {
+        let config = LlmProviderConfig::builder(BackendType::OpenRouter).build();
+        let models = config.effective_models();
+        assert_eq!(models, Vec::<String>::new(), "OpenRouter should return empty when no available_models set");
+    }
+
+    #[test]
+    fn effective_models_explicit_override_wins() {
+        // Test with Anthropic (has hardcoded fallback)
+        let custom_models = vec!["my-custom-model".to_string()];
+        let config = LlmProviderConfig::builder(BackendType::Anthropic)
+            .available_models(custom_models.clone())
+            .build();
+        assert_eq!(config.effective_models(), custom_models, "Explicit available_models should override Anthropic fallback");
+
+        // Test with OpenAI (has hardcoded fallback)
+        let custom_models = vec!["gpt-5-turbo".to_string()];
+        let config = LlmProviderConfig::builder(BackendType::OpenAI)
+            .available_models(custom_models.clone())
+            .build();
+        assert_eq!(config.effective_models(), custom_models, "Explicit available_models should override OpenAI fallback");
+
+        // Test with ZAI (has hardcoded fallback)
+        let custom_models = vec!["GLM-6".to_string()];
+        let config = LlmProviderConfig::builder(BackendType::ZAI)
+            .available_models(custom_models.clone())
+            .build();
+        assert_eq!(config.effective_models(), custom_models, "Explicit available_models should override ZAI fallback");
+
+        // Test with Ollama (no fallback, but should still respect override)
+        let custom_models = vec!["llama3.1:70b".to_string()];
+        let config = LlmProviderConfig::builder(BackendType::Ollama)
+            .available_models(custom_models.clone())
+            .build();
+        assert_eq!(config.effective_models(), custom_models, "Explicit available_models should work with Ollama");
     }
 }

@@ -75,7 +75,16 @@ pub const ANTHROPIC_MODELS: &[&str] = &[
 ];
 
 /// Available ZAI models (hardcoded fallback when API enumeration unavailable)
-pub const ZAI_MODELS: &[&str] = &["GLM-5", "GLM-4.7", "GLM-4.5-Air"];
+pub const ZAI_MODELS: &[&str] = &[
+    "GLM-5",
+    "GLM-4.7",
+    "GLM-4.6",
+    "GLM-4.5",
+    "GLM-4.5-Air",
+    "GLM-4.5-Flash",
+    "GLM-4.5v",
+    "GLM-4-32b-0414-128k",
+];
 
 /// Hardcoded OpenAI models (fallback when API enumeration unavailable)
 pub const OPENAI_HARDCODED_MODELS: &[&str] = &["gpt-4o", "gpt-4o-mini", "o1", "o3-mini"];
