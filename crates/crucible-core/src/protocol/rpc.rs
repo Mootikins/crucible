@@ -365,4 +365,189 @@ mod tests {
         assert!(json.contains("\"full_response\":\"Hello World!\""));
         assert!(json.contains("\"message_id\":\"msg-123\""));
     }
+
+    // ── Golden regression tests ──────────────────────────────────────
+
+    #[test]
+    fn error_code_constants_match_jsonrpc_spec() {
+        assert_eq!(PARSE_ERROR, -32700);
+        assert_eq!(INVALID_REQUEST, -32600);
+        assert_eq!(METHOD_NOT_FOUND, -32601);
+        assert_eq!(INVALID_PARAMS, -32602);
+        assert_eq!(INTERNAL_ERROR, -32603);
+    }
+
+    #[test]
+    fn request_id_number_json_format() {
+        let id = RequestId::Number(42);
+        let json = serde_json::to_value(&id).unwrap();
+        assert_eq!(json, serde_json::json!(42));
+    }
+
+    #[test]
+    fn request_id_string_json_format() {
+        let id = RequestId::String("abc".to_string());
+        let json = serde_json::to_value(&id).unwrap();
+        assert_eq!(json, serde_json::json!("abc"));
+    }
+
+    #[test]
+    fn request_deser_string_id() {
+        let json = r#"{"jsonrpc":"2.0","id":"abc-123","method":"test"}"#;
+        let req: Request = serde_json::from_str(json).unwrap();
+        assert_eq!(req.id, Some(RequestId::String("abc-123".to_string())));
+    }
+
+    #[test]
+    fn request_deser_no_id() {
+        let json = r#"{"jsonrpc":"2.0","method":"notify"}"#;
+        let req: Request = serde_json::from_str(json).unwrap();
+        assert_eq!(req.id, None);
+    }
+
+    // GOLDEN: captures current behavior — missing params deserializes to Value::Null
+    #[test]
+    fn request_deser_no_params() {
+        let json = r#"{"jsonrpc":"2.0","id":1,"method":"ping"}"#;
+        let req: Request = serde_json::from_str(json).unwrap();
+        assert_eq!(req.params, Value::Null);
+    }
+
+    #[test]
+    fn response_success_omits_error() {
+        let resp = Response::success(Some(RequestId::Number(1)), "ok");
+        let json = serde_json::to_value(&resp).unwrap();
+        assert!(json.get("result").is_some());
+        assert!(json.get("error").is_none());
+    }
+
+    #[test]
+    fn response_error_omits_result() {
+        let resp = Response::error(Some(RequestId::Number(1)), INTERNAL_ERROR, "boom");
+        let json = serde_json::to_value(&resp).unwrap();
+        assert!(json.get("error").is_some());
+        assert!(json.get("result").is_none());
+    }
+
+    #[test]
+    fn response_error_with_data() {
+        let data = serde_json::json!({"detail": "bad field"});
+        let resp = Response::error_with_data(
+            Some(RequestId::Number(1)),
+            INVALID_PARAMS,
+            "invalid",
+            Some(data.clone()),
+        );
+        let json = serde_json::to_value(&resp).unwrap();
+        let err = json.get("error").unwrap();
+        assert_eq!(err.get("data").unwrap(), &data);
+    }
+
+    #[test]
+    fn response_error_without_data() {
+        let resp = Response::error(Some(RequestId::Number(1)), INVALID_PARAMS, "invalid");
+        let json = serde_json::to_value(&resp).unwrap();
+        let err = json.get("error").unwrap();
+        assert!(err.get("data").is_none());
+    }
+
+    #[test]
+    fn event_thinking_factory() {
+        let evt = SessionEventMessage::thinking("s1", "let me think...");
+        assert_eq!(evt.event, "thinking");
+        assert_eq!(evt.data["content"], "let me think...");
+    }
+
+    #[test]
+    fn event_tool_call_factory() {
+        let args = serde_json::json!({"path": "/tmp"});
+        let evt = SessionEventMessage::tool_call("s1", "call-1", "read_file", args.clone());
+        assert_eq!(evt.event, "tool_call");
+        assert_eq!(evt.data["call_id"], "call-1");
+        assert_eq!(evt.data["tool"], "read_file");
+        assert_eq!(evt.data["args"], args);
+    }
+
+    #[test]
+    fn event_tool_result_factory() {
+        let result = serde_json::json!({"content": "file contents"});
+        let evt = SessionEventMessage::tool_result("s1", "call-1", "read_file", result.clone());
+        assert_eq!(evt.event, "tool_result");
+        assert_eq!(evt.data["call_id"], "call-1");
+        assert_eq!(evt.data["tool"], "read_file");
+        assert_eq!(evt.data["result"], result);
+    }
+
+    #[test]
+    fn event_ended_factory() {
+        let evt = SessionEventMessage::ended("s1", "user_cancel");
+        assert_eq!(evt.event, "ended");
+        assert_eq!(evt.data["reason"], "user_cancel");
+    }
+
+    #[test]
+    fn event_model_switched_factory() {
+        let evt = SessionEventMessage::model_switched("s1", "gpt-4o", "openai");
+        assert_eq!(evt.event, "model_switched");
+        assert_eq!(evt.data["model_id"], "gpt-4o");
+        assert_eq!(evt.data["provider"], "openai");
+    }
+
+    #[test]
+    fn event_message_complete_with_usage() {
+        let usage = crate::traits::llm::TokenUsage {
+            prompt_tokens: 100,
+            completion_tokens: 50,
+            total_tokens: 150,
+        };
+        let evt = SessionEventMessage::message_complete("s1", "msg-1", "done", Some(&usage));
+        assert_eq!(evt.event, "message_complete");
+        assert_eq!(evt.data["prompt_tokens"], 100);
+        assert_eq!(evt.data["completion_tokens"], 50);
+        assert_eq!(evt.data["total_tokens"], 150);
+        assert_eq!(evt.data["message_id"], "msg-1");
+        assert_eq!(evt.data["full_response"], "done");
+    }
+
+    // GOLDEN: captures current behavior — no usage means no token keys at all
+    #[test]
+    fn event_message_complete_without_usage() {
+        let evt = SessionEventMessage::message_complete("s1", "msg-1", "done", None);
+        assert_eq!(evt.event, "message_complete");
+        assert!(evt.data.get("prompt_tokens").is_none());
+        assert!(evt.data.get("completion_tokens").is_none());
+        assert!(evt.data.get("total_tokens").is_none());
+        assert_eq!(evt.data["message_id"], "msg-1");
+        assert_eq!(evt.data["full_response"], "done");
+    }
+
+    #[test]
+    fn event_user_message_factory() {
+        let evt = SessionEventMessage::user_message("s1", "msg-42", "hello agent");
+        assert_eq!(evt.event, "user_message");
+        assert_eq!(evt.data["message_id"], "msg-42");
+        assert_eq!(evt.data["content"], "hello agent");
+    }
+
+    #[test]
+    fn event_msg_type_always_event() {
+        let factories: Vec<SessionEventMessage> = vec![
+            SessionEventMessage::text_delta("s1", "x"),
+            SessionEventMessage::thinking("s1", "x"),
+            SessionEventMessage::tool_call("s1", "c", "t", Value::Null),
+            SessionEventMessage::tool_result("s1", "c", "t", Value::Null),
+            SessionEventMessage::ended("s1", "done"),
+            SessionEventMessage::model_switched("s1", "m", "p"),
+            SessionEventMessage::message_complete("s1", "m", "r", None),
+            SessionEventMessage::user_message("s1", "m", "c"),
+            SessionEventMessage::state_changed("s1", "active"),
+        ];
+        for (i, evt) in factories.iter().enumerate() {
+            assert_eq!(
+                evt.msg_type, "event",
+                "factory index {} produced msg_type {:?} instead of \"event\"",
+                i, evt.msg_type
+            );
+        }
+    }
 }
