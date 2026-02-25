@@ -419,6 +419,7 @@ impl OilChatRunner {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn event_loop<A: AgentHandle>(
         &mut self,
         app: &mut OilChatApp,
@@ -773,6 +774,7 @@ impl OilChatRunner {
         app.on_message(msg.clone())
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn process_action<A: AgentHandle>(
         &mut self,
         action: Action<ChatAppMsg>,
