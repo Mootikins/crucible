@@ -18,7 +18,7 @@ pub use crucible_core::types::acp::ToolCallInfo;
 ///
 /// These events are emitted as they arrive from the agent,
 /// enabling real-time display of agent responses.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum StreamingChunk {
     /// Text content from the agent's response
     Text(String),
@@ -418,4 +418,134 @@ mod tests {
             "List All Files Recursively"
         );
     }
+
+    #[test]
+    fn channel_callback_with_text_chunk() {
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let mut callback = channel_callback(tx);
+
+        let chunk = StreamingChunk::Text("Hello, world!".to_string());
+        let result = callback(chunk.clone());
+
+        assert!(result, "Callback should return true on successful send");
+
+        // Verify the chunk was sent to the channel
+        let received = rx.try_recv();
+        assert!(received.is_ok(), "Should receive chunk from channel");
+        assert_eq!(received.unwrap(), chunk);
+    }
+
+    #[test]
+    fn channel_callback_with_thinking_chunk() {
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let mut callback = channel_callback(tx);
+
+        let chunk = StreamingChunk::Thinking("Analyzing the problem...".to_string());
+        let result = callback(chunk.clone());
+
+        assert!(result, "Callback should return true on successful send");
+
+        let received = rx.try_recv();
+        assert!(received.is_ok(), "Should receive thinking chunk from channel");
+        assert_eq!(received.unwrap(), chunk);
+    }
+
+    #[test]
+    fn channel_callback_with_tool_start_chunk() {
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let mut callback = channel_callback(tx);
+
+        let chunk = StreamingChunk::ToolStart {
+            name: "search".to_string(),
+            id: "tool_123".to_string(),
+            arguments: Some(serde_json::json!({ "query": "test" })),
+        };
+        let result = callback(chunk.clone());
+
+        assert!(result, "Callback should return true on successful send");
+
+        let received = rx.try_recv();
+        assert!(received.is_ok(), "Should receive tool start chunk from channel");
+        assert_eq!(received.unwrap(), chunk);
+    }
+
+    #[test]
+    fn channel_callback_with_tool_end_chunk() {
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let mut callback = channel_callback(tx);
+
+        let chunk = StreamingChunk::ToolEnd {
+            id: "tool_123".to_string(),
+            result: Some("Found 5 results".to_string()),
+            error: None,
+        };
+        let result = callback(chunk.clone());
+
+        assert!(result, "Callback should return true on successful send");
+
+        let received = rx.try_recv();
+        assert!(received.is_ok(), "Should receive tool end chunk from channel");
+        assert_eq!(received.unwrap(), chunk);
+    }
+
+    #[test]
+    fn channel_callback_with_tool_error() {
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let mut callback = channel_callback(tx);
+
+        let chunk = StreamingChunk::ToolEnd {
+            id: "tool_456".to_string(),
+            result: None,
+            error: Some("Tool execution failed".to_string()),
+        };
+        let result = callback(chunk.clone());
+
+        assert!(result, "Callback should return true on successful send");
+
+        let received = rx.try_recv();
+        assert!(received.is_ok(), "Should receive tool error chunk from channel");
+        assert_eq!(received.unwrap(), chunk);
+    }
+
+    #[test]
+    fn channel_callback_returns_false_when_receiver_dropped() {
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        let mut callback = channel_callback(tx);
+
+        // Drop the receiver to close the channel
+        drop(rx);
+
+        let chunk = StreamingChunk::Text("This should fail".to_string());
+        let result = callback(chunk);
+
+        assert!(
+            !result,
+            "Callback should return false when receiver is dropped"
+        );
+    }
+
+    #[test]
+    fn channel_callback_multiple_chunks() {
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let mut callback = channel_callback(tx);
+
+        let chunks = vec![
+            StreamingChunk::Text("Hello".to_string()),
+            StreamingChunk::Text(" ".to_string()),
+            StreamingChunk::Text("world".to_string()),
+        ];
+
+        for chunk in chunks.iter() {
+            let result = callback(chunk.clone());
+            assert!(result, "Each callback should succeed");
+        }
+
+        // Verify all chunks were received in order
+        for expected_chunk in chunks {
+            let received = rx.try_recv();
+            assert!(received.is_ok(), "Should receive chunk from channel");
+            assert_eq!(received.unwrap(), expected_chunk);
+        }
+    }
+
 }
