@@ -5403,6 +5403,27 @@ mod tests {
         }
     }
 
+    #[async_trait]
+    trait TrustFilteringListModelsTddExt {
+        async fn list_models(
+            &self,
+            session_id: &str,
+            classification: Option<crucible_config::DataClassification>,
+        ) -> Result<Vec<String>, AgentError>;
+    }
+
+    #[async_trait]
+    impl TrustFilteringListModelsTddExt for AgentManager {
+        async fn list_models(
+            &self,
+            session_id: &str,
+            classification: Option<crucible_config::DataClassification>,
+        ) -> Result<Vec<String>, AgentError> {
+            let _ = classification;
+            AgentManager::list_models(self, session_id).await
+        }
+    }
+
     #[tokio::test]
     async fn test_list_models_returns_all_providers() {
         use crucible_config::{BackendType, LlmConfig, LlmProviderConfig};
@@ -5475,6 +5496,287 @@ mod tests {
         assert!(
             models.contains(&"openai/gpt-3.5-turbo".to_string()),
             "Should contain openai/gpt-3.5-turbo, got: {:?}",
+            models
+        );
+    }
+
+    #[tokio::test]
+    #[ignore = "requires trust filtering implementation (Task 6)"]
+    async fn test_list_models_trust_excludes_cloud_for_confidential_kiln() {
+        use crucible_config::{BackendType, DataClassification, LlmConfig, LlmProviderConfig, TrustLevel};
+        use std::collections::HashMap;
+
+        let tmp = TempDir::new().unwrap();
+        let storage = Arc::new(FileSessionStorage::new());
+        let session_manager = Arc::new(SessionManager::with_storage(storage));
+
+        let session = session_manager
+            .create_session(
+                SessionType::Chat,
+                tmp.path().to_path_buf(),
+                None,
+                vec![],
+                None,
+            )
+            .await
+            .unwrap();
+
+        let mut local = LlmProviderConfig::builder(BackendType::Custom)
+            .available_models(vec!["local-model".to_string()])
+            .build();
+        local.trust_level = Some(TrustLevel::Local);
+
+        let mut cloud = LlmProviderConfig::builder(BackendType::OpenAI)
+            .available_models(vec!["gpt-4o".to_string()])
+            .build();
+        cloud.trust_level = Some(TrustLevel::Cloud);
+
+        let mut providers = HashMap::new();
+        providers.insert("local-custom".to_string(), local);
+        providers.insert("cloud-openai".to_string(), cloud);
+
+        let llm_config = LlmConfig {
+            default: Some("local-custom".to_string()),
+            providers,
+        };
+
+        let agent_manager =
+            create_test_agent_manager_with_llm_config(session_manager.clone(), llm_config);
+
+        agent_manager
+            .configure_agent(&session.id, test_agent())
+            .await
+            .unwrap();
+
+        let models = TrustFilteringListModelsTddExt::list_models(
+            &agent_manager,
+            &session.id,
+            Some(DataClassification::Confidential),
+        )
+        .await
+        .unwrap();
+
+        assert!(
+            models.contains(&"local-custom/local-model".to_string()),
+            "Confidential should keep Local provider models, got: {:?}",
+            models
+        );
+        assert!(
+            !models.iter().any(|m| m.starts_with("cloud-openai/")),
+            "Confidential should exclude Cloud provider models, got: {:?}",
+            models
+        );
+    }
+
+    #[tokio::test]
+    #[ignore = "requires trust filtering implementation (Task 6)"]
+    async fn test_list_models_trust_returns_all_for_public_kiln() {
+        use crucible_config::{BackendType, DataClassification, LlmConfig, LlmProviderConfig, TrustLevel};
+        use std::collections::HashMap;
+
+        let tmp = TempDir::new().unwrap();
+        let storage = Arc::new(FileSessionStorage::new());
+        let session_manager = Arc::new(SessionManager::with_storage(storage));
+
+        let session = session_manager
+            .create_session(
+                SessionType::Chat,
+                tmp.path().to_path_buf(),
+                None,
+                vec![],
+                None,
+            )
+            .await
+            .unwrap();
+
+        let mut local = LlmProviderConfig::builder(BackendType::Custom)
+            .available_models(vec!["local-model".to_string()])
+            .build();
+        local.trust_level = Some(TrustLevel::Local);
+
+        let mut cloud = LlmProviderConfig::builder(BackendType::OpenAI)
+            .available_models(vec!["gpt-4o".to_string()])
+            .build();
+        cloud.trust_level = Some(TrustLevel::Cloud);
+
+        let mut providers = HashMap::new();
+        providers.insert("local-custom".to_string(), local);
+        providers.insert("cloud-openai".to_string(), cloud);
+
+        let llm_config = LlmConfig {
+            default: Some("local-custom".to_string()),
+            providers,
+        };
+
+        let agent_manager =
+            create_test_agent_manager_with_llm_config(session_manager.clone(), llm_config);
+
+        agent_manager
+            .configure_agent(&session.id, test_agent())
+            .await
+            .unwrap();
+
+        let models = TrustFilteringListModelsTddExt::list_models(
+            &agent_manager,
+            &session.id,
+            Some(DataClassification::Public),
+        )
+        .await
+        .unwrap();
+
+        assert!(
+            models.contains(&"local-custom/local-model".to_string()),
+            "Public should include Local provider models, got: {:?}",
+            models
+        );
+        assert!(
+            models.contains(&"cloud-openai/gpt-4o".to_string()),
+            "Public should include Cloud provider models, got: {:?}",
+            models
+        );
+    }
+
+    #[tokio::test]
+    #[ignore = "requires trust filtering implementation (Task 6)"]
+    async fn test_list_models_trust_returns_all_when_no_classification() {
+        use crucible_config::{BackendType, LlmConfig, LlmProviderConfig, TrustLevel};
+        use std::collections::HashMap;
+
+        let tmp = TempDir::new().unwrap();
+        let storage = Arc::new(FileSessionStorage::new());
+        let session_manager = Arc::new(SessionManager::with_storage(storage));
+
+        let session = session_manager
+            .create_session(
+                SessionType::Chat,
+                tmp.path().to_path_buf(),
+                None,
+                vec![],
+                None,
+            )
+            .await
+            .unwrap();
+
+        let mut local = LlmProviderConfig::builder(BackendType::Custom)
+            .available_models(vec!["local-model".to_string()])
+            .build();
+        local.trust_level = Some(TrustLevel::Local);
+
+        let mut cloud = LlmProviderConfig::builder(BackendType::OpenAI)
+            .available_models(vec!["gpt-4o".to_string()])
+            .build();
+        cloud.trust_level = Some(TrustLevel::Cloud);
+
+        let mut providers = HashMap::new();
+        providers.insert("local-custom".to_string(), local);
+        providers.insert("cloud-openai".to_string(), cloud);
+
+        let llm_config = LlmConfig {
+            default: Some("local-custom".to_string()),
+            providers,
+        };
+
+        let agent_manager =
+            create_test_agent_manager_with_llm_config(session_manager.clone(), llm_config);
+
+        agent_manager
+            .configure_agent(&session.id, test_agent())
+            .await
+            .unwrap();
+
+        let models = TrustFilteringListModelsTddExt::list_models(&agent_manager, &session.id, None)
+            .await
+            .unwrap();
+
+        assert!(
+            models.contains(&"local-custom/local-model".to_string()),
+            "No classification should include Local provider models, got: {:?}",
+            models
+        );
+        assert!(
+            models.contains(&"cloud-openai/gpt-4o".to_string()),
+            "No classification should include Cloud provider models, got: {:?}",
+            models
+        );
+    }
+
+    #[tokio::test]
+    #[ignore = "requires trust filtering implementation (Task 6)"]
+    async fn test_list_models_trust_includes_cloud_for_internal_kiln() {
+        use crucible_config::{
+            BackendType, DataClassification, LlmConfig, LlmProviderConfig, TrustLevel,
+        };
+        use std::collections::HashMap;
+
+        let tmp = TempDir::new().unwrap();
+        let storage = Arc::new(FileSessionStorage::new());
+        let session_manager = Arc::new(SessionManager::with_storage(storage));
+
+        let session = session_manager
+            .create_session(
+                SessionType::Chat,
+                tmp.path().to_path_buf(),
+                None,
+                vec![],
+                None,
+            )
+            .await
+            .unwrap();
+
+        let mut local = LlmProviderConfig::builder(BackendType::Custom)
+            .available_models(vec!["local-model".to_string()])
+            .build();
+        local.trust_level = Some(TrustLevel::Local);
+
+        let mut cloud = LlmProviderConfig::builder(BackendType::OpenAI)
+            .available_models(vec!["gpt-4o".to_string()])
+            .build();
+        cloud.trust_level = Some(TrustLevel::Cloud);
+
+        let mut untrusted = LlmProviderConfig::builder(BackendType::Custom)
+            .available_models(vec!["unsafe-model".to_string()])
+            .build();
+        untrusted.trust_level = Some(TrustLevel::Untrusted);
+
+        let mut providers = HashMap::new();
+        providers.insert("local-custom".to_string(), local);
+        providers.insert("cloud-openai".to_string(), cloud);
+        providers.insert("untrusted-custom".to_string(), untrusted);
+
+        let llm_config = LlmConfig {
+            default: Some("local-custom".to_string()),
+            providers,
+        };
+
+        let agent_manager =
+            create_test_agent_manager_with_llm_config(session_manager.clone(), llm_config);
+
+        agent_manager
+            .configure_agent(&session.id, test_agent())
+            .await
+            .unwrap();
+
+        let models = TrustFilteringListModelsTddExt::list_models(
+            &agent_manager,
+            &session.id,
+            Some(DataClassification::Internal),
+        )
+        .await
+        .unwrap();
+
+        assert!(
+            models.contains(&"local-custom/local-model".to_string()),
+            "Internal should include Local provider models, got: {:?}",
+            models
+        );
+        assert!(
+            models.contains(&"cloud-openai/gpt-4o".to_string()),
+            "Internal should include Cloud provider models, got: {:?}",
+            models
+        );
+        assert!(
+            !models.iter().any(|m| m.starts_with("untrusted-custom/")),
+            "Internal should exclude Untrusted provider models, got: {:?}",
             models
         );
     }
