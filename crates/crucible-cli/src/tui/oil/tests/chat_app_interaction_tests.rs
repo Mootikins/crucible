@@ -3,7 +3,7 @@
 //! Tests popup behavior, Ctrl+C handling, command processing, and error states.
 
 use crate::tui::oil::app::{Action, App, ViewContext};
-use crate::tui::oil::chat_app::{ChatAppMsg, ChatMode, OilChatApp};
+use crate::tui::oil::chat_app::{ChatAppMsg, ChatMode, ModelListState, OilChatApp};
 use crate::tui::oil::event::Event;
 use crate::tui::oil::focus::FocusContext;
 use crate::tui::oil::render::render_to_string;
@@ -1678,5 +1678,48 @@ fn model_fetch_failed_shows_error_in_popup() {
             || output.contains("No models"),
         "Should show error when models failed to load: {}",
         output
+    );
+}
+
+#[test]
+fn set_available_models_sets_loaded_state_when_non_empty() {
+    let mut app = OilChatApp::default();
+    assert_eq!(
+        app.model_list_state(),
+        &ModelListState::NotLoaded,
+        "Initial state should be NotLoaded"
+    );
+
+    app.set_available_models(vec![
+        "ollama/llama3".to_string(),
+        "anthropic/claude-3".to_string(),
+    ]);
+
+    assert_eq!(
+        app.model_list_state(),
+        &ModelListState::Loaded,
+        "State should be Loaded after setting non-empty models"
+    );
+    assert_eq!(
+        app.available_models().len(),
+        2,
+        "Models should be stored"
+    );
+}
+
+#[test]
+fn set_available_models_does_not_set_loaded_state_when_empty() {
+    let mut app = OilChatApp::default();
+
+    app.set_available_models(vec![]);
+
+    assert_eq!(
+        app.model_list_state(),
+        &ModelListState::NotLoaded,
+        "State should remain NotLoaded when setting empty models"
+    );
+    assert!(
+        app.available_models().is_empty(),
+        "Models should be empty"
     );
 }
