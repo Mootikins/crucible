@@ -125,6 +125,7 @@ impl Server {
             None,
             None,
             None,
+            None,
         )
         .await
     }
@@ -136,6 +137,7 @@ impl Server {
         plugin_config: std::collections::HashMap<String, serde_json::Value>,
         plugin_watch: bool,
         llm_config: Option<crucible_config::LlmConfig>,
+        acp_config: Option<crucible_config::components::acp::AcpConfig>,
         permission_config: Option<crucible_config::components::permissions::PermissionConfig>,
         #[allow(unused_variables)] web_config: Option<crucible_config::WebConfig>,
     ) -> Result<Self> {
@@ -183,7 +185,7 @@ impl Server {
             background_manager.clone(),
             mcp_gateway,
             llm_config.clone(),
-            None,
+            acp_config,
             permission_config,
         ));
         let subscription_manager = Arc::new(SubscriptionManager::new());
