@@ -35,7 +35,7 @@ use tracing::{debug, error, info, warn};
 ///
 /// # Example
 ///
-/// ```ignore
+/// ```text
 /// use crucible_daemon::enrichment::EmbeddingHandler;
 /// use crucible_daemon::enrichment::create_default_enrichment_service;
 ///
@@ -204,7 +204,7 @@ impl EmbeddingHandler {
 ///
 /// # Example
 ///
-/// ```rust,ignore
+/// ```text
 /// use crucible_daemon::enrichment::{EmbeddingHandler, EmbeddingHandlerAdapter};
 /// use crucible_core::events::Reactor;
 ///

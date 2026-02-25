@@ -13,7 +13,7 @@
 ///
 /// # Example
 ///
-/// ```ignore
+/// ```text
 /// let path = require_str_param!(req, "path");
 /// // `path` is now &str, or function returned early with error
 /// ```
@@ -39,7 +39,7 @@ macro_rules! require_str_param {
 ///
 /// # Example
 ///
-/// ```ignore
+/// ```text
 /// let filter = optional_str_param!(req, "filter");
 /// // `filter` is Option<&str>
 /// ```
@@ -56,7 +56,7 @@ macro_rules! optional_str_param {
 ///
 /// # Example
 ///
-/// ```ignore
+/// ```text
 /// let limit = optional_u64_param!(req, "limit").unwrap_or(20);
 /// // `limit` is u64, defaulting to 20
 /// ```
@@ -74,7 +74,7 @@ macro_rules! optional_u64_param {
 ///
 /// # Example
 ///
-/// ```ignore
+/// ```text
 /// let items = require_array_param!(req, "items");
 /// // `items` is &Vec<Value>, or function returned early with error
 /// ```
@@ -101,7 +101,7 @@ macro_rules! require_array_param {
 ///
 /// # Example
 ///
-/// ```ignore
+/// ```text
 /// let obj = require_obj_param!(req, "config");
 /// // `obj` is &Map<String, Value>, or function returned early with error
 /// ```
@@ -128,7 +128,7 @@ macro_rules! require_obj_param {
 ///
 /// # Example
 ///
-/// ```ignore
+/// ```text
 /// let temperature = require_f64_param!(req, "temperature");
 /// // `temperature` is f64, or function returned early with error
 /// ```
@@ -158,7 +158,7 @@ macro_rules! require_f64_param {
 ///
 /// # Example
 ///
-/// ```ignore
+/// ```text
 /// let temperature = optional_f64_param!(req, "temperature").unwrap_or(0.7);
 /// // `temperature` is f64, defaulting to 0.7
 /// ```
@@ -176,7 +176,7 @@ macro_rules! optional_f64_param {
 ///
 /// # Example
 ///
-/// ```ignore
+/// ```text
 /// let budget = require_i64_param!(req, "thinking_budget");
 /// // `budget` is i64, or function returned early with error
 /// ```
@@ -206,7 +206,7 @@ macro_rules! require_i64_param {
 ///
 /// # Example
 ///
-/// ```ignore
+/// ```text
 /// let budget = optional_i64_param!(req, "thinking_budget");
 /// // `budget` is Option<i64>
 /// ```
@@ -224,7 +224,7 @@ macro_rules! optional_i64_param {
 ///
 /// # Example
 ///
-/// ```ignore
+/// ```text
 /// let enabled = require_bool_param!(req, "enabled");
 /// // `enabled` is bool, or function returned early with error
 /// ```
@@ -254,7 +254,7 @@ macro_rules! require_bool_param {
 ///
 /// # Example
 ///
-/// ```ignore
+/// ```text
 /// let verbose = optional_bool_param!(req, "verbose").unwrap_or(false);
 /// // `verbose` is bool, defaulting to false
 /// ```
