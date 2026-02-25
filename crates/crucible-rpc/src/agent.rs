@@ -15,6 +15,7 @@ use futures::stream::BoxStream;
 use std::path::PathBuf;
 use tokio::sync::mpsc;
 use tokio::sync::Mutex;
+use tokio::task::JoinHandle;
 
 use crate::{DaemonClient, SessionEvent};
 
@@ -40,6 +41,7 @@ pub struct DaemonAgentHandle {
     kiln_path: Option<PathBuf>,
     workspace: Option<PathBuf>,
     cached_agent_config: Option<SessionAgent>,
+    event_router_task: Option<JoinHandle<()>>,
 }
 
 impl DaemonAgentHandle {
@@ -58,7 +60,7 @@ impl DaemonAgentHandle {
 
         let (session_id_tx, session_id_rx) = tokio::sync::watch::channel(session_id.clone());
 
-        tokio::spawn(async move {
+        let event_router_task = tokio::spawn(async move {
             event_router(event_rx, streaming_tx, interaction_tx, session_id_rx).await;
         });
 
@@ -77,6 +79,7 @@ impl DaemonAgentHandle {
             kiln_path: None,
             workspace: None,
             cached_agent_config: None,
+            event_router_task: Some(event_router_task),
         }
     }
 
@@ -548,6 +551,10 @@ impl AgentHandle for DaemonAgentHandle {
 
 impl Drop for DaemonAgentHandle {
     fn drop(&mut self) {
+        if let Some(task) = self.event_router_task.take() {
+            task.abort();
+        }
+
         let client = Arc::clone(&self.client);
         let session_id = self.session_id.clone();
         // try_current() returns None if tokio runtime is gone (shutdown, sync context).

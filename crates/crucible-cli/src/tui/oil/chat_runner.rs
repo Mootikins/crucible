@@ -20,6 +20,7 @@ use std::io;
 use std::path::PathBuf;
 use std::time::Duration;
 use tokio::sync::mpsc;
+use tokio::task::JoinHandle;
 
 use crate::tui::oil::commands::{SetEffect, SetRpcAction};
 
@@ -276,6 +277,7 @@ impl OilChatRunner {
         let _ = self.terminal.render(&tree)?;
 
         let (msg_tx, msg_rx) = mpsc::unbounded_channel::<ChatAppMsg>();
+        let mut background_tasks: Vec<JoinHandle<()>> = Vec::new();
 
         if let Some(replay_path) = self.replay_path.clone() {
             let (mut agent, replay_session_id, event_rx) =
@@ -302,16 +304,27 @@ impl OilChatRunner {
             }
 
             let msg_tx_clone = msg_tx.clone();
-            tokio::spawn(replay_event_consumer(
+            background_tasks.push(tokio::spawn(replay_event_consumer(
                 replay_session_id,
                 event_rx,
                 msg_tx_clone,
-            ));
+            )));
 
             let interaction_rx = agent.take_interaction_receiver();
 
-            self.event_loop(&mut app, &mut agent, bridge, msg_tx, msg_rx, interaction_rx)
-                .await?;
+            let event_loop_result = self
+                .event_loop(
+                    &mut app,
+                    &mut agent,
+                    bridge,
+                    msg_tx,
+                    msg_rx,
+                    interaction_rx,
+                    &mut background_tasks,
+                )
+                .await;
+            Self::abort_background_tasks(&mut background_tasks);
+            event_loop_result?;
 
             self.terminal.exit()?;
             return Ok(());
@@ -351,7 +364,7 @@ impl OilChatRunner {
             if let Some(ref mcp_config) = self.mcp_config {
                 let mcp_config = mcp_config.clone();
                 let mcp_tx = msg_tx.clone();
-                tokio::spawn(async move {
+                background_tasks.push(tokio::spawn(async move {
                     use crucible_tools::mcp_gateway::McpGatewayManager;
                     match McpGatewayManager::from_config(&mcp_config).await {
                         Ok(gateway) => {
@@ -378,7 +391,7 @@ impl OilChatRunner {
                         }
                     }
                     // Drop the gateway — Phase A is display-only
-                });
+                }));
             }
         }
 
@@ -388,8 +401,19 @@ impl OilChatRunner {
             "take_interaction_receiver"
         );
 
-        self.event_loop(&mut app, &mut agent, bridge, msg_tx, msg_rx, interaction_rx)
-            .await?;
+        let event_loop_result = self
+            .event_loop(
+                &mut app,
+                &mut agent,
+                bridge,
+                msg_tx,
+                msg_rx,
+                interaction_rx,
+                &mut background_tasks,
+            )
+            .await;
+        Self::abort_background_tasks(&mut background_tasks);
+        event_loop_result?;
 
         self.terminal.exit()?;
         Ok(())
@@ -405,6 +429,7 @@ impl OilChatRunner {
         mut interaction_rx: Option<
             mpsc::UnboundedReceiver<crucible_core::interaction::InteractionEvent>,
         >,
+        background_tasks: &mut Vec<JoinHandle<()>>,
     ) -> Result<()> {
         let mut active_stream: Option<BoxStream<'static, ChatResult<ChatChunk>>> = None;
         let mut event_stream = EventStream::new();
@@ -672,7 +697,15 @@ impl OilChatRunner {
                 let action = app.update(ev.clone());
                 tracing::trace!(?ev, ?action, "processed event");
                 if self
-                    .process_action(action, app, agent, bridge, &mut active_stream, &msg_tx)
+                    .process_action(
+                        action,
+                        app,
+                        agent,
+                        bridge,
+                        &mut active_stream,
+                        &msg_tx,
+                        background_tasks,
+                    )
                     .await?
                 {
                     tracing::trace!("quit action received, breaking loop");
@@ -748,6 +781,7 @@ impl OilChatRunner {
         bridge: &AgentEventBridge,
         active_stream: &mut Option<BoxStream<'static, ChatResult<ChatChunk>>>,
         msg_tx: &mpsc::UnboundedSender<ChatAppMsg>,
+        background_tasks: &mut Vec<JoinHandle<()>>,
     ) -> io::Result<bool> {
         match action {
             Action::Quit => Ok(true),
@@ -908,7 +942,7 @@ impl OilChatRunner {
                         tracing::info!(plugin = %name, "Plugin reload requested");
                         let name = name.clone();
                         let tx = msg_tx.clone();
-                        tokio::spawn(async move {
+                        background_tasks.push(tokio::spawn(async move {
                             match crucible_rpc::DaemonClient::connect().await {
                                 Ok(client) => {
                                     if name.is_empty() {
@@ -982,7 +1016,7 @@ impl OilChatRunner {
                                     )));
                                 }
                             }
-                        });
+                        }));
                     }
                     ChatAppMsg::ExecuteSlashCommand(ref cmd) if !self.is_replay => {
                         tracing::info!(command = %cmd, "Forwarding slash command as user message");
@@ -1039,8 +1073,16 @@ impl OilChatRunner {
                     _ => {}
                 }
                 let action = app.on_message(msg);
-                Box::pin(self.process_action(action, app, agent, bridge, active_stream, msg_tx))
-                    .await
+                Box::pin(self.process_action(
+                    action,
+                    app,
+                    agent,
+                    bridge,
+                    active_stream,
+                    msg_tx,
+                    background_tasks,
+                ))
+                .await
             }
             Action::Batch(actions) => {
                 for action in actions {
@@ -1051,6 +1093,7 @@ impl OilChatRunner {
                         bridge,
                         active_stream,
                         msg_tx,
+                        background_tasks,
                     ))
                     .await?
                     {
@@ -1059,6 +1102,12 @@ impl OilChatRunner {
                 }
                 Ok(false)
             }
+        }
+    }
+
+    fn abort_background_tasks(background_tasks: &mut Vec<JoinHandle<()>>) {
+        for task in background_tasks.drain(..) {
+            task.abort();
         }
     }
 
