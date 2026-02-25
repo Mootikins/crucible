@@ -1,0 +1,6 @@
+---
+source: crates/crucible-query/src/render/sqlite.rs
+expression: result.sql
+---
+SELECT * FROM notes
+WHERE folder = :filter_0
