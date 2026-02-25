@@ -537,7 +537,7 @@ impl LuaScriptHandlerRegistry {
     ///
     /// A vector of `RuntimeHandler` clones matching the event type, sorted by priority.
     pub fn runtime_handlers_for(&self, event_type: &str) -> Vec<RuntimeHandler> {
-        let handlers = self.runtime_handlers.lock().unwrap();
+        let handlers = self.runtime_handlers.lock().expect("runtime_handlers: poisoned while querying event handlers");
         let mut matching: Vec<RuntimeHandler> = handlers
             .iter()
             .filter(|h| h.event_type == event_type)
@@ -567,7 +567,7 @@ impl LuaScriptHandlerRegistry {
         name: &str,
         event: &SessionEvent,
     ) -> LuaResult<ScriptHandlerResult> {
-        let handler_functions = self.handler_functions.lock().unwrap();
+        let handler_functions = self.handler_functions.lock().expect("handler_functions: poisoned while executing Lua handler function");
         let key = handler_functions
             .get(name)
             .ok_or_else(|| mlua::Error::RuntimeError(format!("Handler not found: {}", name)))?;
