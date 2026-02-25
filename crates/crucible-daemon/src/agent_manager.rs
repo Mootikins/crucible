@@ -461,9 +461,11 @@ impl AgentManager {
             error!(session_id = %session_id, error = %e, "Failed to register crucible.on API");
         }
 
-        if let Err(e) =
-            register_permission_hook_api(&lua, permission_hooks.clone(), permission_functions.clone())
-        {
+        if let Err(e) = register_permission_hook_api(
+            &lua,
+            permission_hooks.clone(),
+            permission_functions.clone(),
+        ) {
             error!(session_id = %session_id, error = %e, "Failed to register crucible.permissions API");
         }
 

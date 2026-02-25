@@ -387,11 +387,14 @@ mod tests {
     #[test]
     fn factory_platforms() {
         let factory = EditorFactory::new();
-        let caps =
-            <EditorFactory as super::super::WatcherFactory>::capabilities(&factory);
+        let caps = <EditorFactory as super::super::WatcherFactory>::capabilities(&factory);
         assert_eq!(
             caps.platforms,
-            vec!["linux".to_string(), "macos".to_string(), "windows".to_string()]
+            vec![
+                "linux".to_string(),
+                "macos".to_string(),
+                "windows".to_string()
+            ]
         );
     }
 

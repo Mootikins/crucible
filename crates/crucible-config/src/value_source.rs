@@ -241,10 +241,7 @@ mod tests {
             detail.contains("profile"),
             "detail should mention 'profile'"
         );
-        assert!(
-            detail.contains("dev"),
-            "detail should contain profile name"
-        );
+        assert!(detail.contains("dev"), "detail should contain profile name");
     }
 
     #[test]
