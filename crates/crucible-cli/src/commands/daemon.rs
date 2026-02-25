@@ -1,10 +1,12 @@
 //! Daemon management commands
 
+use crate::config::CliConfig;
 use anyhow::Result;
 use clap::Subcommand;
 use crucible_daemon::{socket_path, Server};
 use crucible_rpc::lifecycle::is_daemon_running;
 use crucible_rpc::DaemonClient;
+use std::path::PathBuf;
 use std::process::Stdio;
 use tracing::info;
 
@@ -28,16 +30,18 @@ pub enum DaemonCommands {
     Serve,
 }
 
-pub async fn handle(cmd: DaemonCommands) -> Result<()> {
+pub async fn handle(cmd: DaemonCommands, config_path: Option<PathBuf>) -> Result<()> {
     match cmd {
-        DaemonCommands::Start { foreground, wait } => start_daemon(foreground, wait).await,
+        DaemonCommands::Start { foreground, wait } => {
+            start_daemon(foreground, wait, config_path).await
+        }
         DaemonCommands::Stop => stop_daemon().await,
-        DaemonCommands::Serve => start_daemon(true, false).await,
+        DaemonCommands::Serve => start_daemon(true, false, config_path).await,
         DaemonCommands::Status => show_status().await,
     }
 }
 
-async fn start_daemon(foreground: bool, wait: bool) -> Result<()> {
+async fn start_daemon(foreground: bool, wait: bool, config_path: Option<PathBuf>) -> Result<()> {
     let sock = socket_path();
 
     if is_daemon_running(&sock) {
@@ -48,7 +52,18 @@ async fn start_daemon(foreground: bool, wait: bool) -> Result<()> {
     if foreground {
         // Run server directly in this process
         info!("Starting daemon in foreground");
-        let server = Server::bind(&sock, None).await?;
+        let config = CliConfig::load(config_path.clone(), None, None)?;
+        let server = Server::bind_with_plugin_config(
+            &sock,
+            None,
+            std::collections::HashMap::new(),
+            false,
+            None,
+            Some(config.acp.clone()),
+            None,
+            None,
+        )
+        .await?;
 
         println!("Daemon listening on {:?}", sock);
         server.run().await?;
@@ -60,6 +75,9 @@ async fn start_daemon(foreground: bool, wait: bool) -> Result<()> {
         // Use fork via Command with pre_exec
         let mut cmd = std::process::Command::new(&exe);
         cmd.args(["daemon", "start", "--foreground"]);
+        if let Some(path) = config_path {
+            cmd.arg("--config").arg(path);
+        }
 
         // Daemonize: redirect stdio and detach
         cmd.stdin(Stdio::null());

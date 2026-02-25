@@ -910,6 +910,7 @@ impl AgentManager {
             event_tx,
             self.mcp_gateway.clone(),
             acp_permission_handler,
+            self.acp_config.as_ref(),
             knowledge_repo,
             embedding_provider,
         )
