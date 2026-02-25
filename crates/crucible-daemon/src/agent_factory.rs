@@ -670,4 +670,78 @@ mod tests {
 
         assert!(ctx.is_none(), "should be None without parent_session_id");
     }
+
+    #[tokio::test]
+    async fn internal_agent_type_dispatches_to_internal_branch() {
+        // Verify that agent_type == "internal" takes the internal creation path
+        // (not the ACP path). This test validates the dispatch logic by checking
+        // that the function successfully creates an agent handle for internal agents.
+        let config = test_agent_config();
+        assert_eq!(config.agent_type, "internal");
+        
+        let (event_tx, _) = broadcast::channel(16);
+        let result = create_agent_from_session_config(
+            &config,
+            Path::new("/tmp"),
+            None,
+            None,
+            None,
+            &event_tx,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .await;
+        
+        // The internal branch should succeed in creating an agent handle.
+        // (Ollama client creation doesn't validate connectivity, just creates the object.)
+        assert!(
+            result.is_ok(),
+            "Internal agent creation should succeed"
+        );
+    }
+
+    #[tokio::test]
+    async fn acp_agent_type_dispatches_to_acp_branch() {
+        // Verify that agent_type == "acp" takes the ACP creation path
+        // (not the internal path). This test validates the dispatch logic.
+        let mut config = test_agent_config();
+        config.agent_type = "acp".to_string();
+        
+        let (event_tx, _) = broadcast::channel(16);
+        let result = create_agent_from_session_config(
+            &config,
+            Path::new("/tmp"),
+            None,
+            None,
+            None,
+            &event_tx,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .await;
+        
+        // The result will be an error because ACP agent creation requires
+        // proper ACP config and spawner setup, but it should be an AgentBuild error
+        // (from the ACP branch), not an UnsupportedAgentType error.
+        match result {
+            Err(AgentFactoryError::AgentBuild(_)) => {
+                // Expected: ACP branch was taken and failed during ACP agent creation
+            }
+            Err(AgentFactoryError::UnsupportedAgentType(_)) => {
+                panic!("Should not reach UnsupportedAgentType for 'acp' agent type");
+            }
+            Ok(_) => {
+                panic!("Should fail without proper ACP config");
+            }
+            Err(AgentFactoryError::ClientCreation(_)) => {
+                panic!("Should not reach ClientCreation for ACP agent type");
+            }
+        }
+    }
 }
