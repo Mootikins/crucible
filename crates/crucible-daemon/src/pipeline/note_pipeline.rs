@@ -673,8 +673,7 @@ mod tests {
             force_reprocess: true,
             ..Default::default()
         };
-        let pipeline =
-            NotePipeline::with_config(change_detector, enrichment, store, config);
+        let pipeline = NotePipeline::with_config(change_detector, enrichment, store, config);
 
         let tmp = write_temp_note("# Force Test\n\nContent here.\n");
 

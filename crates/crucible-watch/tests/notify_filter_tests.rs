@@ -39,7 +39,10 @@ async fn setup_watcher_with_filter(
         Err(e) => {
             let msg = e.to_string();
             if msg.contains("Too many open files") || msg.contains("os error 24") {
-                eprintln!("Skipping notify_filter test: inotify limit exhausted: {}", msg);
+                eprintln!(
+                    "Skipping notify_filter test: inotify limit exhausted: {}",
+                    msg
+                );
                 None
             } else {
                 panic!("Unexpected watch error: {}", e);

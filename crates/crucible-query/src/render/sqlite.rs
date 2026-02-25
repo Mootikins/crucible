@@ -1457,10 +1457,10 @@ mod tests {
 
     #[test]
     fn pipeline_sql_sugar_outlinks() {
+        use crate::pipeline::QueryPipelineBuilder;
         use crate::render::SqliteRenderer;
         use crate::syntax::{QuerySyntaxRegistryBuilder, SqlSugarSyntax};
         use crate::transform::ValidateTransform;
-        use crate::pipeline::QueryPipelineBuilder;
 
         let syntax_registry = QuerySyntaxRegistryBuilder::new()
             .with_syntax(SqlSugarSyntax)
@@ -1478,10 +1478,10 @@ mod tests {
 
     #[test]
     fn pipeline_sql_sugar_inlinks() {
+        use crate::pipeline::QueryPipelineBuilder;
         use crate::render::SqliteRenderer;
         use crate::syntax::{QuerySyntaxRegistryBuilder, SqlSugarSyntax};
         use crate::transform::ValidateTransform;
-        use crate::pipeline::QueryPipelineBuilder;
 
         let syntax_registry = QuerySyntaxRegistryBuilder::new()
             .with_syntax(SqlSugarSyntax)
@@ -1499,10 +1499,10 @@ mod tests {
 
     #[test]
     fn pipeline_sql_sugar_neighbors() {
+        use crate::pipeline::QueryPipelineBuilder;
         use crate::render::SqliteRenderer;
         use crate::syntax::{QuerySyntaxRegistryBuilder, SqlSugarSyntax};
         use crate::transform::ValidateTransform;
-        use crate::pipeline::QueryPipelineBuilder;
 
         let syntax_registry = QuerySyntaxRegistryBuilder::new()
             .with_syntax(SqlSugarSyntax)

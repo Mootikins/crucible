@@ -88,8 +88,7 @@ async fn test_opencode_streaming_returns_content() {
         Ok(s) => s,
         Err(e) => {
             let msg = e.to_string();
-            if msg.contains("No such file") || msg.contains("spawn") || msg.contains("BrokenPipe")
-            {
+            if msg.contains("No such file") || msg.contains("spawn") || msg.contains("BrokenPipe") {
                 eprintln!(
                     "SKIP: opencode binary found but cannot start ACP session: {}",
                     msg
@@ -173,21 +172,19 @@ async fn test_opencode_line_sequence() {
     let mut reader = BufReader::new(stdout);
 
     // Helper to send JSON-RPC (returns error instead of panicking on broken pipe)
-    let send = |stdin: &mut std::process::ChildStdin,
-                msg: &serde_json::Value|
-     -> std::io::Result<()> {
-        let data = serde_json::to_string(msg).unwrap() + "\n";
-        stdin.write_all(data.as_bytes())?;
-        stdin.flush()
-    };
+    let send =
+        |stdin: &mut std::process::ChildStdin, msg: &serde_json::Value| -> std::io::Result<()> {
+            let data = serde_json::to_string(msg).unwrap() + "\n";
+            stdin.write_all(data.as_bytes())?;
+            stdin.flush()
+        };
 
     // Helper to read line (returns error instead of panicking)
-    let read_line =
-        |reader: &mut BufReader<std::process::ChildStdout>| -> std::io::Result<String> {
-            let mut line = String::new();
-            reader.read_line(&mut line)?;
-            Ok(line.trim().to_string())
-        };
+    let read_line = |reader: &mut BufReader<std::process::ChildStdout>| -> std::io::Result<String> {
+        let mut line = String::new();
+        reader.read_line(&mut line)?;
+        Ok(line.trim().to_string())
+    };
 
     // 1. Initialize
     if send(
@@ -462,8 +459,7 @@ async fn test_opencode_with_sse_mcp() {
         Ok(s) => s,
         Err(e) => {
             let msg = e.to_string();
-            if msg.contains("No such file") || msg.contains("spawn") || msg.contains("BrokenPipe")
-            {
+            if msg.contains("No such file") || msg.contains("spawn") || msg.contains("BrokenPipe") {
                 eprintln!(
                     "SKIP: opencode binary found but cannot start ACP session: {}",
                     msg
@@ -546,20 +542,18 @@ async fn test_opencode_no_mcp() {
     let mut reader = BufReader::new(stdout);
 
     // Helper functions (return errors instead of panicking on broken pipe)
-    let send = |stdin: &mut std::process::ChildStdin,
-                msg: &serde_json::Value|
-     -> std::io::Result<()> {
-        let data = serde_json::to_string(msg).unwrap() + "\n";
-        stdin.write_all(data.as_bytes())?;
-        stdin.flush()
-    };
-
-    let read_line =
-        |reader: &mut BufReader<std::process::ChildStdout>| -> std::io::Result<String> {
-            let mut line = String::new();
-            reader.read_line(&mut line)?;
-            Ok(line.trim().to_string())
+    let send =
+        |stdin: &mut std::process::ChildStdin, msg: &serde_json::Value| -> std::io::Result<()> {
+            let data = serde_json::to_string(msg).unwrap() + "\n";
+            stdin.write_all(data.as_bytes())?;
+            stdin.flush()
         };
+
+    let read_line = |reader: &mut BufReader<std::process::ChildStdout>| -> std::io::Result<String> {
+        let mut line = String::new();
+        reader.read_line(&mut line)?;
+        Ok(line.trim().to_string())
+    };
 
     // 1. Initialize
     if send(
@@ -807,20 +801,18 @@ async fn test_opencode_raw_sse_mcp() {
     let mut reader = BufReader::new(stdout);
 
     // Helper functions (return errors instead of panicking on broken pipe)
-    let send = |stdin: &mut std::process::ChildStdin,
-                msg: &serde_json::Value|
-     -> std::io::Result<()> {
-        let data = serde_json::to_string(msg).unwrap() + "\n";
-        stdin.write_all(data.as_bytes())?;
-        stdin.flush()
-    };
-
-    let read_line =
-        |reader: &mut BufReader<std::process::ChildStdout>| -> std::io::Result<String> {
-            let mut line = String::new();
-            reader.read_line(&mut line)?;
-            Ok(line.trim().to_string())
+    let send =
+        |stdin: &mut std::process::ChildStdin, msg: &serde_json::Value| -> std::io::Result<()> {
+            let data = serde_json::to_string(msg).unwrap() + "\n";
+            stdin.write_all(data.as_bytes())?;
+            stdin.flush()
         };
+
+    let read_line = |reader: &mut BufReader<std::process::ChildStdout>| -> std::io::Result<String> {
+        let mut line = String::new();
+        reader.read_line(&mut line)?;
+        Ok(line.trim().to_string())
+    };
 
     // Initialize
     if send(

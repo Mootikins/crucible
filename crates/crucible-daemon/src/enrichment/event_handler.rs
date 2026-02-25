@@ -479,10 +479,7 @@ mod tests {
         let service = Arc::new(MockEnrichmentService::new());
         let handler = EmbeddingHandler::new(service);
         let adapter = EmbeddingHandlerAdapter::new(handler);
-        assert_eq!(
-            crucible_core::events::Handler::event_pattern(&adapter),
-            "*"
-        );
+        assert_eq!(crucible_core::events::Handler::event_pattern(&adapter), "*");
     }
 
     #[tokio::test]
