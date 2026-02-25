@@ -172,6 +172,8 @@ pub fn write_permission_rule(
 ///
 /// # Examples
 /// ```
+/// use crucible_config::components::permissions::is_hardcoded_denied;
+///
 /// assert_eq!(
 ///     is_hardcoded_denied("bash", "rm -rf /"),
 ///     Some("Destructive: removes root filesystem")
