@@ -700,4 +700,429 @@ mod tests {
             crate::components::trust::TrustLevel::Cloud
         );
     }
+
+    // ========================================================================
+    // COMPREHENSIVE REGRESSION TESTS FOR ALL METHODS × ALL VARIANTS
+    // ========================================================================
+    // These tests lock in the exact values for all 12 variants across all 11 methods.
+    // Total: 12 variants × 11 methods = 132+ assertions minimum.
+
+    #[test]
+    fn test_supports_embeddings_all_variants() {
+        // Multi-capability backends (embeddings + chat)
+        assert!(BackendType::Ollama.supports_embeddings());
+        assert!(BackendType::OpenAI.supports_embeddings());
+        assert!(BackendType::Cohere.supports_embeddings());
+        assert!(BackendType::VertexAI.supports_embeddings());
+
+        // Embedding-only backends
+        assert!(BackendType::FastEmbed.supports_embeddings());
+        assert!(BackendType::Burn.supports_embeddings());
+
+        // Chat-only backends (no embeddings)
+        assert!(!BackendType::Anthropic.supports_embeddings());
+        assert!(!BackendType::GitHubCopilot.supports_embeddings());
+        assert!(!BackendType::OpenRouter.supports_embeddings());
+        assert!(!BackendType::ZAI.supports_embeddings());
+
+        // Utility backends
+        assert!(BackendType::Custom.supports_embeddings());
+        assert!(BackendType::Mock.supports_embeddings());
+    }
+
+    #[test]
+    fn test_supports_chat_all_variants() {
+        // Multi-capability backends (embeddings + chat)
+        assert!(BackendType::Ollama.supports_chat());
+        assert!(BackendType::OpenAI.supports_chat());
+        assert!(BackendType::Cohere.supports_chat());
+        assert!(BackendType::VertexAI.supports_chat());
+
+        // Chat-only backends
+        assert!(BackendType::Anthropic.supports_chat());
+        assert!(BackendType::GitHubCopilot.supports_chat());
+        assert!(BackendType::OpenRouter.supports_chat());
+        assert!(BackendType::ZAI.supports_chat());
+
+        // Embedding-only backends (no chat)
+        assert!(!BackendType::FastEmbed.supports_chat());
+        assert!(!BackendType::Burn.supports_chat());
+
+        // Utility backends
+        assert!(BackendType::Custom.supports_chat());
+        assert!(!BackendType::Mock.supports_chat());
+    }
+
+    #[test]
+    fn test_is_local_all_variants() {
+        // Local backends
+        assert!(BackendType::FastEmbed.is_local());
+        assert!(BackendType::Burn.is_local());
+        assert!(BackendType::Mock.is_local());
+
+        // Cloud backends
+        assert!(!BackendType::Ollama.is_local());
+        assert!(!BackendType::OpenAI.is_local());
+        assert!(!BackendType::Anthropic.is_local());
+        assert!(!BackendType::Cohere.is_local());
+        assert!(!BackendType::VertexAI.is_local());
+        assert!(!BackendType::GitHubCopilot.is_local());
+        assert!(!BackendType::OpenRouter.is_local());
+        assert!(!BackendType::ZAI.is_local());
+        assert!(!BackendType::Custom.is_local());
+    }
+
+    #[test]
+    fn test_requires_api_key_all_variants() {
+        // Backends that require API key
+        assert!(BackendType::OpenAI.requires_api_key());
+        assert!(BackendType::Anthropic.requires_api_key());
+        assert!(BackendType::Cohere.requires_api_key());
+        assert!(BackendType::VertexAI.requires_api_key());
+        assert!(BackendType::OpenRouter.requires_api_key());
+        assert!(BackendType::ZAI.requires_api_key());
+
+        // Backends that do NOT require API key
+        assert!(!BackendType::Ollama.requires_api_key());
+        assert!(!BackendType::FastEmbed.requires_api_key());
+        assert!(!BackendType::Burn.requires_api_key());
+        assert!(!BackendType::GitHubCopilot.requires_api_key()); // OAuth, not API key
+        assert!(!BackendType::Custom.requires_api_key());
+        assert!(!BackendType::Mock.requires_api_key());
+    }
+
+    #[test]
+    fn test_as_str_all_variants() {
+        assert_eq!(BackendType::Ollama.as_str(), "ollama");
+        assert_eq!(BackendType::OpenAI.as_str(), "openai");
+        assert_eq!(BackendType::Anthropic.as_str(), "anthropic");
+        assert_eq!(BackendType::Cohere.as_str(), "cohere");
+        assert_eq!(BackendType::VertexAI.as_str(), "vertexai");
+        assert_eq!(BackendType::FastEmbed.as_str(), "fastembed");
+        assert_eq!(BackendType::Burn.as_str(), "burn");
+        assert_eq!(BackendType::GitHubCopilot.as_str(), "github-copilot");
+        assert_eq!(BackendType::OpenRouter.as_str(), "openrouter");
+        assert_eq!(BackendType::ZAI.as_str(), "zai");
+        assert_eq!(BackendType::Custom.as_str(), "custom");
+        assert_eq!(BackendType::Mock.as_str(), "mock");
+    }
+
+    #[test]
+    fn test_default_endpoint_all_variants() {
+        use crate::components::defaults;
+
+        // Backends with default endpoints
+        assert_eq!(
+            BackendType::Ollama.default_endpoint(),
+            Some(defaults::DEFAULT_OLLAMA_ENDPOINT)
+        );
+        assert_eq!(
+            BackendType::OpenAI.default_endpoint(),
+            Some(defaults::DEFAULT_OPENAI_ENDPOINT)
+        );
+        assert_eq!(
+            BackendType::Anthropic.default_endpoint(),
+            Some(defaults::DEFAULT_ANTHROPIC_ENDPOINT)
+        );
+        assert_eq!(
+            BackendType::Cohere.default_endpoint(),
+            Some("https://api.cohere.ai/v1")
+        );
+        assert_eq!(
+            BackendType::VertexAI.default_endpoint(),
+            Some("https://aiplatform.googleapis.com")
+        );
+        assert_eq!(
+            BackendType::GitHubCopilot.default_endpoint(),
+            Some(defaults::DEFAULT_GITHUB_COPILOT_ENDPOINT)
+        );
+        assert_eq!(
+            BackendType::OpenRouter.default_endpoint(),
+            Some(defaults::DEFAULT_OPENROUTER_ENDPOINT)
+        );
+        assert_eq!(
+            BackendType::ZAI.default_endpoint(),
+            Some(defaults::DEFAULT_ZAI_ENDPOINT)
+        );
+
+        // Backends with NO default endpoint
+        assert_eq!(BackendType::FastEmbed.default_endpoint(), None);
+        assert_eq!(BackendType::Burn.default_endpoint(), None);
+        assert_eq!(BackendType::Custom.default_endpoint(), None);
+        assert_eq!(BackendType::Mock.default_endpoint(), None);
+    }
+
+    #[test]
+    fn test_default_embedding_model_all_variants() {
+        // Multi-capability backends with embedding models
+        assert_eq!(
+            BackendType::Ollama.default_embedding_model(),
+            Some("nomic-embed-text")
+        );
+        assert_eq!(
+            BackendType::OpenAI.default_embedding_model(),
+            Some("text-embedding-3-small")
+        );
+        assert_eq!(
+            BackendType::Cohere.default_embedding_model(),
+            Some("embed-english-v3.0")
+        );
+        assert_eq!(
+            BackendType::VertexAI.default_embedding_model(),
+            Some("textembedding-gecko@003")
+        );
+
+        // Embedding-only backends
+        assert_eq!(
+            BackendType::FastEmbed.default_embedding_model(),
+            Some("BAAI/bge-small-en-v1.5")
+        );
+        assert_eq!(
+            BackendType::Burn.default_embedding_model(),
+            Some("nomic-embed-text")
+        );
+
+        // Chat-only backends (no embedding models)
+        assert_eq!(BackendType::Anthropic.default_embedding_model(), None);
+        assert_eq!(BackendType::GitHubCopilot.default_embedding_model(), None);
+        assert_eq!(BackendType::OpenRouter.default_embedding_model(), None);
+        assert_eq!(BackendType::ZAI.default_embedding_model(), None);
+
+        // Utility backends
+        assert_eq!(BackendType::Custom.default_embedding_model(), None);
+        assert_eq!(
+            BackendType::Mock.default_embedding_model(),
+            Some("mock-embed-model")
+        );
+    }
+
+    #[test]
+    fn test_default_chat_model_all_variants() {
+        use crate::components::defaults;
+
+        // Multi-capability backends with chat models
+        assert_eq!(
+            BackendType::Ollama.default_chat_model(),
+            Some(defaults::DEFAULT_CHAT_MODEL)
+        );
+        assert_eq!(
+            BackendType::OpenAI.default_chat_model(),
+            Some(defaults::DEFAULT_OPENAI_MODEL)
+        );
+        assert_eq!(
+            BackendType::Cohere.default_chat_model(),
+            Some("command-r-plus")
+        );
+        assert_eq!(
+            BackendType::VertexAI.default_chat_model(),
+            Some("gemini-1.5-pro")
+        );
+
+        // Chat-only backends
+        assert_eq!(
+            BackendType::Anthropic.default_chat_model(),
+            Some(defaults::DEFAULT_ANTHROPIC_MODEL)
+        );
+        assert_eq!(
+            BackendType::GitHubCopilot.default_chat_model(),
+            Some(defaults::DEFAULT_GITHUB_COPILOT_MODEL)
+        );
+        assert_eq!(
+            BackendType::OpenRouter.default_chat_model(),
+            Some(defaults::DEFAULT_OPENROUTER_MODEL)
+        );
+        assert_eq!(
+            BackendType::ZAI.default_chat_model(),
+            Some(defaults::DEFAULT_ZAI_MODEL)
+        );
+
+        // Embedding-only backends (no chat models)
+        assert_eq!(BackendType::FastEmbed.default_chat_model(), None);
+        assert_eq!(BackendType::Burn.default_chat_model(), None);
+
+        // Utility backends
+        assert_eq!(BackendType::Custom.default_chat_model(), None);
+        assert_eq!(
+            BackendType::Mock.default_chat_model(),
+            Some("mock-chat-model")
+        );
+    }
+
+    #[test]
+    fn test_default_max_concurrent_all_variants() {
+        // FastEmbed uses runtime num_cpus::get() — NOT hardcoded
+        let expected_fastembed = (num_cpus::get() / 2).max(1);
+        assert_eq!(
+            BackendType::FastEmbed.default_max_concurrent(),
+            expected_fastembed,
+            "FastEmbed should use (num_cpus::get() / 2).max(1)"
+        );
+
+        // GPU-bound backends (sequential)
+        assert_eq!(BackendType::Ollama.default_max_concurrent(), 1);
+        assert_eq!(BackendType::Burn.default_max_concurrent(), 1);
+
+        // Rate-limited cloud backends
+        assert_eq!(BackendType::OpenAI.default_max_concurrent(), 8);
+        assert_eq!(BackendType::Anthropic.default_max_concurrent(), 8);
+        assert_eq!(BackendType::Cohere.default_max_concurrent(), 8);
+        assert_eq!(BackendType::VertexAI.default_max_concurrent(), 8);
+        assert_eq!(BackendType::GitHubCopilot.default_max_concurrent(), 8);
+        assert_eq!(BackendType::OpenRouter.default_max_concurrent(), 8);
+        assert_eq!(BackendType::ZAI.default_max_concurrent(), 8);
+
+        // Testing backend
+        assert_eq!(BackendType::Mock.default_max_concurrent(), 16);
+
+        // Conservative custom backend
+        assert_eq!(BackendType::Custom.default_max_concurrent(), 4);
+    }
+
+    #[test]
+    fn test_api_key_env_var_all_variants() {
+        // Backends with API key environment variables
+        assert_eq!(
+            BackendType::OpenAI.api_key_env_var(),
+            Some("OPENAI_API_KEY")
+        );
+        assert_eq!(
+            BackendType::Anthropic.api_key_env_var(),
+            Some("ANTHROPIC_API_KEY")
+        );
+        assert_eq!(
+            BackendType::Cohere.api_key_env_var(),
+            Some("COHERE_API_KEY")
+        );
+        assert_eq!(
+            BackendType::VertexAI.api_key_env_var(),
+            Some("GOOGLE_API_KEY")
+        );
+        assert_eq!(
+            BackendType::OpenRouter.api_key_env_var(),
+            Some("OPENROUTER_API_KEY")
+        );
+        assert_eq!(
+            BackendType::ZAI.api_key_env_var(),
+            Some("GLM_AUTH_TOKEN")
+        );
+
+        // Backends with NO API key environment variable
+        assert_eq!(BackendType::Ollama.api_key_env_var(), None);
+        assert_eq!(BackendType::FastEmbed.api_key_env_var(), None);
+        assert_eq!(BackendType::Burn.api_key_env_var(), None);
+        assert_eq!(BackendType::GitHubCopilot.api_key_env_var(), None);
+        assert_eq!(BackendType::Custom.api_key_env_var(), None);
+        assert_eq!(BackendType::Mock.api_key_env_var(), None);
+    }
+
+    #[test]
+    fn test_default_trust_level_all_variants() {
+        use crate::components::trust::TrustLevel;
+
+        // Local backends → Local trust level
+        assert_eq!(
+            BackendType::FastEmbed.default_trust_level(),
+            TrustLevel::Local
+        );
+        assert_eq!(BackendType::Burn.default_trust_level(), TrustLevel::Local);
+        assert_eq!(BackendType::Mock.default_trust_level(), TrustLevel::Local);
+
+        // Cloud backends → Cloud trust level
+        assert_eq!(BackendType::Ollama.default_trust_level(), TrustLevel::Cloud);
+        assert_eq!(BackendType::OpenAI.default_trust_level(), TrustLevel::Cloud);
+        assert_eq!(BackendType::Anthropic.default_trust_level(), TrustLevel::Cloud);
+        assert_eq!(BackendType::Cohere.default_trust_level(), TrustLevel::Cloud);
+        assert_eq!(BackendType::VertexAI.default_trust_level(), TrustLevel::Cloud);
+        assert_eq!(BackendType::GitHubCopilot.default_trust_level(), TrustLevel::Cloud);
+        assert_eq!(BackendType::OpenRouter.default_trust_level(), TrustLevel::Cloud);
+        assert_eq!(BackendType::ZAI.default_trust_level(), TrustLevel::Cloud);
+        assert_eq!(BackendType::Custom.default_trust_level(), TrustLevel::Cloud);
+    }
+
+    #[test]
+    fn test_display_impl_delegates_to_as_str() {
+        // Display impl should delegate to as_str()
+        assert_eq!(format!("{}", BackendType::Ollama), "ollama");
+        assert_eq!(format!("{}", BackendType::OpenAI), "openai");
+        assert_eq!(format!("{}", BackendType::Anthropic), "anthropic");
+        assert_eq!(format!("{}", BackendType::Cohere), "cohere");
+        assert_eq!(format!("{}", BackendType::VertexAI), "vertexai");
+        assert_eq!(format!("{}", BackendType::FastEmbed), "fastembed");
+        assert_eq!(format!("{}", BackendType::Burn), "burn");
+        assert_eq!(format!("{}", BackendType::GitHubCopilot), "github-copilot");
+        assert_eq!(format!("{}", BackendType::OpenRouter), "openrouter");
+        assert_eq!(format!("{}", BackendType::ZAI), "zai");
+        assert_eq!(format!("{}", BackendType::Custom), "custom");
+        assert_eq!(format!("{}", BackendType::Mock), "mock");
+    }
+
+    #[test]
+    fn test_custom_variant_optional_fields_are_none() {
+        // Custom variant should have None for all optional fields
+        assert_eq!(BackendType::Custom.default_endpoint(), None);
+        assert_eq!(BackendType::Custom.default_embedding_model(), None);
+        assert_eq!(BackendType::Custom.default_chat_model(), None);
+        assert_eq!(BackendType::Custom.api_key_env_var(), None);
+        // But it should support both embeddings and chat
+        assert!(BackendType::Custom.supports_embeddings());
+        assert!(BackendType::Custom.supports_chat());
+    }
+
+    #[test]
+    fn test_mock_variant_test_values() {
+        // Mock variant should have test infrastructure values
+        assert_eq!(BackendType::Mock.default_embedding_model(), Some("mock-embed-model"));
+        assert_eq!(BackendType::Mock.default_chat_model(), Some("mock-chat-model"));
+        assert_eq!(BackendType::Mock.default_endpoint(), None);
+        assert_eq!(BackendType::Mock.api_key_env_var(), None);
+        assert!(BackendType::Mock.supports_embeddings());
+        assert!(!BackendType::Mock.supports_chat());
+        assert!(BackendType::Mock.is_local());
+        assert_eq!(BackendType::Mock.default_max_concurrent(), 16);
+    }
+
+    #[test]
+    fn test_github_copilot_no_api_key_oauth_only() {
+        use crate::components::defaults;
+
+        // GitHubCopilot uses OAuth, not API key
+        assert!(!BackendType::GitHubCopilot.requires_api_key());
+        assert_eq!(BackendType::GitHubCopilot.api_key_env_var(), None);
+        // But it should have endpoint and model
+        assert_eq!(
+            BackendType::GitHubCopilot.default_endpoint(),
+            Some(defaults::DEFAULT_GITHUB_COPILOT_ENDPOINT)
+        );
+        assert_eq!(
+            BackendType::GitHubCopilot.default_chat_model(),
+            Some(defaults::DEFAULT_GITHUB_COPILOT_MODEL)
+        );
+        // And it's not local
+        assert!(!BackendType::GitHubCopilot.is_local());
+    }
+
+    #[test]
+    fn test_all_variants_have_non_empty_as_str() {
+        // Every variant must have a non-empty as_str() value
+        let all_variants = [
+            BackendType::Ollama,
+            BackendType::OpenAI,
+            BackendType::Anthropic,
+            BackendType::Cohere,
+            BackendType::VertexAI,
+            BackendType::FastEmbed,
+            BackendType::Burn,
+            BackendType::GitHubCopilot,
+            BackendType::OpenRouter,
+            BackendType::ZAI,
+            BackendType::Custom,
+            BackendType::Mock,
+        ];
+
+        for variant in &all_variants {
+            let s = variant.as_str();
+            assert!(!s.is_empty(), "{:?} has empty as_str()", variant);
+            assert!(!s.contains(' '), "{:?} as_str() contains spaces: '{}'", variant, s);
+        }
+    }
 }
