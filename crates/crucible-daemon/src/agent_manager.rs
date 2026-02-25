@@ -5335,6 +5335,297 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_list_models_all_chat_backends_with_explicit_models() {
+        use crucible_config::{BackendType, LlmConfig, LlmProviderConfig};
+        use std::collections::HashMap;
+
+        let tmp = TempDir::new().unwrap();
+        let storage = Arc::new(FileSessionStorage::new());
+        let session_manager = Arc::new(SessionManager::with_storage(storage));
+
+        let session = session_manager
+            .create_session(
+                SessionType::Chat,
+                tmp.path().to_path_buf(),
+                None,
+                vec![],
+                None,
+            )
+            .await
+            .unwrap();
+
+        let (ollama_endpoint, ollama_server) = start_mock_ollama_tags_server(vec!["llama3.2"]).await;
+
+        let mut providers = HashMap::new();
+        providers.insert(
+            "ollama-local".to_string(),
+            LlmProviderConfig::builder(BackendType::Ollama)
+                .endpoint(ollama_endpoint)
+                .available_models(vec!["llama3.2".to_string()])
+                .build(),
+        );
+        providers.insert(
+            "openai-main".to_string(),
+            LlmProviderConfig::builder(BackendType::OpenAI)
+                .available_models(vec!["gpt-4o".to_string()])
+                .build(),
+        );
+        providers.insert(
+            "anthropic-main".to_string(),
+            LlmProviderConfig::builder(BackendType::Anthropic)
+                .available_models(vec!["claude-sonnet-4-20250514".to_string()])
+                .build(),
+        );
+        providers.insert(
+            "cohere-main".to_string(),
+            LlmProviderConfig::builder(BackendType::Cohere)
+                .available_models(vec!["command-r-plus".to_string()])
+                .build(),
+        );
+        providers.insert(
+            "vertex-main".to_string(),
+            LlmProviderConfig::builder(BackendType::VertexAI)
+                .available_models(vec!["gemini-1.5-pro".to_string()])
+                .build(),
+        );
+        providers.insert(
+            "copilot-main".to_string(),
+            LlmProviderConfig::builder(BackendType::GitHubCopilot)
+                .available_models(vec!["gpt-4o".to_string()])
+                .build(),
+        );
+        providers.insert(
+            "openrouter-main".to_string(),
+            LlmProviderConfig::builder(BackendType::OpenRouter)
+                .available_models(vec!["openai/gpt-4o".to_string()])
+                .build(),
+        );
+        providers.insert(
+            "zai-main".to_string(),
+            LlmProviderConfig::builder(BackendType::ZAI)
+                .available_models(vec!["GLM-4.7".to_string()])
+                .build(),
+        );
+        providers.insert(
+            "custom-main".to_string(),
+            LlmProviderConfig::builder(BackendType::Custom)
+                .available_models(vec!["my-custom-model".to_string()])
+                .build(),
+        );
+
+        let llm_config = LlmConfig {
+            default: Some("ollama-local".to_string()),
+            providers,
+        };
+
+        let agent_manager =
+            create_test_agent_manager_with_llm_config(session_manager.clone(), llm_config);
+
+        agent_manager
+            .configure_agent(&session.id, test_agent())
+            .await
+            .unwrap();
+
+        let models = agent_manager.list_models(&session.id).await.unwrap();
+        ollama_server.await.unwrap();
+
+        let expected_models = [
+            "ollama-local/llama3.2",
+            "openai-main/gpt-4o",
+            "anthropic-main/claude-sonnet-4-20250514",
+            "cohere-main/command-r-plus",
+            "vertex-main/gemini-1.5-pro",
+            "copilot-main/gpt-4o",
+            "openrouter-main/openai/gpt-4o",
+            "zai-main/GLM-4.7",
+            "custom-main/my-custom-model",
+        ];
+
+        for expected in expected_models {
+            assert!(
+                models.contains(&expected.to_string()),
+                "Missing model {expected}, got: {:?}",
+                models
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_list_models_effective_models_fallback() {
+        use crucible_config::{BackendType, LlmConfig, LlmProviderConfig};
+        use std::collections::HashMap;
+
+        let tmp = TempDir::new().unwrap();
+        let storage = Arc::new(FileSessionStorage::new());
+        let session_manager = Arc::new(SessionManager::with_storage(storage));
+
+        let session = session_manager
+            .create_session(
+                SessionType::Chat,
+                tmp.path().to_path_buf(),
+                None,
+                vec![],
+                None,
+            )
+            .await
+            .unwrap();
+
+        let (ollama_endpoint, ollama_server) = start_mock_ollama_tags_server(Vec::new()).await;
+
+        let mut providers = HashMap::new();
+        providers.insert(
+            "anthropic-fallback".to_string(),
+            LlmProviderConfig::builder(BackendType::Anthropic).build(),
+        );
+        providers.insert(
+            "openai-fallback".to_string(),
+            LlmProviderConfig::builder(BackendType::OpenAI).build(),
+        );
+        providers.insert(
+            "zai-fallback".to_string(),
+            LlmProviderConfig::builder(BackendType::ZAI).build(),
+        );
+        providers.insert(
+            "ollama-empty".to_string(),
+            LlmProviderConfig::builder(BackendType::Ollama)
+                .endpoint(ollama_endpoint)
+                .build(),
+        );
+        providers.insert(
+            "openrouter-empty".to_string(),
+            LlmProviderConfig::builder(BackendType::OpenRouter).build(),
+        );
+        providers.insert(
+            "cohere-empty".to_string(),
+            LlmProviderConfig::builder(BackendType::Cohere).build(),
+        );
+        providers.insert(
+            "custom-empty".to_string(),
+            LlmProviderConfig::builder(BackendType::Custom).build(),
+        );
+
+        let llm_config = LlmConfig {
+            default: Some("anthropic-fallback".to_string()),
+            providers,
+        };
+
+        let agent_manager =
+            create_test_agent_manager_with_llm_config(session_manager.clone(), llm_config);
+
+        agent_manager
+            .configure_agent(&session.id, test_agent())
+            .await
+            .unwrap();
+
+        let models = agent_manager.list_models(&session.id).await.unwrap();
+        ollama_server.await.unwrap();
+
+        let anthropic_count = models
+            .iter()
+            .filter(|m| m.starts_with("anthropic-fallback/"))
+            .count();
+        let openai_count = models
+            .iter()
+            .filter(|m| m.starts_with("openai-fallback/"))
+            .count();
+        let zai_count = models
+            .iter()
+            .filter(|m| m.starts_with("zai-fallback/"))
+            .count();
+
+        assert!(
+            anthropic_count > 0,
+            "Anthropic should use hardcoded fallback models, got: {:?}",
+            models
+        );
+        assert!(
+            openai_count > 0,
+            "OpenAI should use hardcoded fallback models, got: {:?}",
+            models
+        );
+        assert!(
+            zai_count > 0,
+            "ZAI should use hardcoded fallback models, got: {:?}",
+            models
+        );
+
+        assert!(
+            models
+                .iter()
+                .all(|m| !m.starts_with("ollama-empty/") && !m.starts_with("openrouter-empty/")
+                    && !m.starts_with("cohere-empty/")
+                    && !m.starts_with("custom-empty/")),
+            "Providers without fallback models should contribute no entries, got: {:?}",
+            models
+        );
+    }
+
+    #[tokio::test]
+    async fn test_list_models_count_matches_sum() {
+        use crucible_config::{BackendType, LlmConfig, LlmProviderConfig};
+        use std::collections::HashMap;
+
+        let tmp = TempDir::new().unwrap();
+        let storage = Arc::new(FileSessionStorage::new());
+        let session_manager = Arc::new(SessionManager::with_storage(storage));
+
+        let session = session_manager
+            .create_session(
+                SessionType::Chat,
+                tmp.path().to_path_buf(),
+                None,
+                vec![],
+                None,
+            )
+            .await
+            .unwrap();
+
+        let mut providers = HashMap::new();
+        providers.insert(
+            "openai-count".to_string(),
+            LlmProviderConfig::builder(BackendType::OpenAI)
+                .available_models(vec!["gpt-4o".to_string(), "o3-mini".to_string()])
+                .build(),
+        );
+        providers.insert(
+            "anthropic-count".to_string(),
+            LlmProviderConfig::builder(BackendType::Anthropic)
+                .available_models(vec!["claude-3-7-sonnet-20250219".to_string()])
+                .build(),
+        );
+        providers.insert(
+            "zai-count".to_string(),
+            LlmProviderConfig::builder(BackendType::ZAI)
+                .available_models(vec!["GLM-5".to_string(), "GLM-4.7".to_string()])
+                .build(),
+        );
+
+        let llm_config = LlmConfig {
+            default: Some("openai-count".to_string()),
+            providers,
+        };
+
+        let agent_manager =
+            create_test_agent_manager_with_llm_config(session_manager.clone(), llm_config);
+
+        agent_manager
+            .configure_agent(&session.id, test_agent())
+            .await
+            .unwrap();
+
+        let models = agent_manager.list_models(&session.id).await.unwrap();
+        let expected_total = 2 + 1 + 2;
+
+        assert_eq!(
+            models.len(),
+            expected_total,
+            "Expected {} models total, got {:?}",
+            expected_total,
+            models
+        );
+    }
+
+    #[tokio::test]
     async fn test_list_models_no_llm_config() {
         let tmp = TempDir::new().unwrap();
         let storage = Arc::new(FileSessionStorage::new());
@@ -5450,6 +5741,36 @@ mod tests {
             None,
             None,
         )
+    }
+
+    async fn start_mock_ollama_tags_server(models: Vec<&str>) -> (String, tokio::task::JoinHandle<()>) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        let model_payload = models
+            .into_iter()
+            .map(|name| serde_json::json!({ "name": name }))
+            .collect::<Vec<_>>();
+        let body = serde_json::json!({ "models": model_payload }).to_string();
+
+        let handle = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let mut buf = [0_u8; 1024];
+            let _ = tokio::io::AsyncReadExt::read(&mut socket, &mut buf)
+                .await
+                .unwrap();
+
+            let response = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                body.len(),
+                body
+            );
+            tokio::io::AsyncWriteExt::write_all(&mut socket, response.as_bytes())
+                .await
+                .unwrap();
+        });
+
+        (format!("http://{}", addr), handle)
     }
 
     fn create_test_agent_manager_with_both(
