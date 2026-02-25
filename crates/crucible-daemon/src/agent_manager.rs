@@ -12,7 +12,7 @@ use crate::trust_resolution::resolve_provider_trust;
 use crucible_acp::discovery::default_agent_profiles;
 use crucible_config::components::permissions::PermissionConfig;
 use crucible_config::{
-    AcpConfig, AgentProfile, BackendType, DataClassification, PatternStore,
+    AcpConfig, AgentProfile, BackendType, DataClassification, LlmProviderConfig, PatternStore,
     components::defaults::OPENAI_MODEL_PREFIXES,
 };
 use crucible_core::discovery::DiscoveryPaths;
@@ -2033,60 +2033,18 @@ impl AgentManager {
                         }
                     }
                     BackendType::OpenAI => {
-                        if provider_config.available_models.is_some() {
-                            provider_config.effective_models()
-                        } else {
-                            let endpoint = provider_config.endpoint();
-                            let api_key = provider_config.api_key();
-                            match self
-                                .list_openai_compatible_models(
-                                    &endpoint,
-                                    api_key.as_deref(),
-                                )
-                                .await
-                            {
-                                Ok(models) => {
-                                    // Filter OpenAI models using OPENAI_MODEL_PREFIXES
-                                    models
-                                        .into_iter()
-                                        .filter(|m| OPENAI_MODEL_PREFIXES.iter().any(|p| m.starts_with(p)))
-                                        .collect()
-                                }
-                                Err(e) => {
-                                    warn!(
-                                        provider_key = %provider_key,
-                                        error = %e,
-                                        "Dynamic model discovery failed, falling back to hardcoded list"
-                                    );
-                                    provider_config.effective_models()
-                                }
-                            }
-                        }
+                        self.discover_or_fallback_models(
+                            provider_key,
+                            provider_config,
+                            Some(&|m: &str| {
+                                OPENAI_MODEL_PREFIXES.iter().any(|p| m.starts_with(p))
+                            }),
+                        )
+                        .await
                     }
                     BackendType::ZAI | BackendType::OpenRouter => {
-                        if provider_config.available_models.is_some() {
-                            provider_config.effective_models()
-                        } else {
-                            let endpoint = provider_config.endpoint();
-                            let api_key = provider_config.api_key();
-                            match self
-                                .list_openai_compatible_models(
-                                    &endpoint,
-                                    api_key.as_deref(),
-                                )
-                                .await
-                            {
-                                Ok(models) => models,
-                                Err(e) => {
-                                    warn!(
-                                        provider_key = %provider_key,
-                                        error = %e,
-                                        "Dynamic model discovery failed, falling back to hardcoded list"
-                                    );
-                                    provider_config.effective_models()
-                                }
-                            }
-                        }
+                        self.discover_or_fallback_models(provider_key, provider_config, None)
+                            .await
                     }
                     _ => provider_config.effective_models(),
                 };
@@ -2131,16 +2089,38 @@ impl AgentManager {
         Ok(all_models)
     }
 
-    /// List all available models without requiring an active session.
-    ///
-    /// This is a convenience wrapper around `list_models` for non-session contexts
-    /// (e.g., the `cru models` CLI command). If `classification` is provided,
-    /// providers whose trust level doesn't satisfy it are excluded.
-    pub async fn list_all_models(
+    async fn discover_or_fallback_models(
         &self,
-        classification: Option<DataClassification>,
-    ) -> Result<Vec<String>, AgentError> {
-        self.list_models("", classification).await
+        provider_key: &str,
+        provider_config: &LlmProviderConfig,
+        filter_fn: Option<&(dyn Fn(&str) -> bool + Send + Sync)>,
+    ) -> Vec<String> {
+        if provider_config.available_models.is_some() {
+            return provider_config.effective_models();
+        }
+
+        let endpoint = provider_config.endpoint();
+        let api_key = provider_config.api_key();
+        match self
+            .list_openai_compatible_models(&endpoint, api_key.as_deref())
+            .await
+        {
+            Ok(models) => {
+                if let Some(filter) = filter_fn {
+                    models.into_iter().filter(|m| filter(m)).collect()
+                } else {
+                    models
+                }
+            }
+            Err(e) => {
+                warn!(
+                    provider_key = %provider_key,
+                    error = %e,
+                    "Dynamic model discovery failed, falling back to hardcoded list"
+                );
+                provider_config.effective_models()
+            }
+        }
     }
 
     pub async fn set_thinking_budget(

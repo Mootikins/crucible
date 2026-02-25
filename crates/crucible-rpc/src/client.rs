@@ -59,6 +59,13 @@ impl VersionCheck {
 
 type PendingRequests = Arc<Mutex<HashMap<u64, oneshot::Sender<serde_json::Value>>>>;
 
+fn parse_models_response(result: &serde_json::Value) -> Vec<String> {
+    result["models"]
+        .as_array()
+        .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+        .unwrap_or_default()
+}
+
 /// Client for communicating with the Crucible daemon
 ///
 /// The client supports two modes:
@@ -1091,16 +1098,7 @@ impl DaemonClient {
             )
             .await?;
 
-        let models = result["models"]
-            .as_array()
-            .map(|arr| {
-                arr.iter()
-                    .filter_map(|v| v.as_str().map(String::from))
-                    .collect()
-            })
-            .unwrap_or_default();
-
-        Ok(models)
+        Ok(parse_models_response(&result))
     }
 
     /// List all available models without requiring an active session.
@@ -1116,16 +1114,7 @@ impl DaemonClient {
 
         let result = self.call_with_retry("models.list", params).await?;
 
-        let models = result["models"]
-            .as_array()
-            .map(|arr| {
-                arr.iter()
-                    .filter_map(|v| v.as_str().map(String::from))
-                    .collect()
-            })
-            .unwrap_or_default();
-
-        Ok(models)
+        Ok(parse_models_response(&result))
     }
 
     /// Set the thinking budget for a session's agent.

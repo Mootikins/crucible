@@ -2121,9 +2121,6 @@ async fn handle_session_list_models(req: Request, am: &Arc<AgentManager>) -> Res
 /// List all available models without requiring an active session.
 ///
 /// Accepts an optional `kiln_path` parameter. When provided, the handler
-/// walks up from the kiln path to find a workspace containing
-/// `.crucible/workspace.toml` and resolves the data classification for
-/// trust-based provider filtering.
 async fn handle_models_list(req: Request, am: &Arc<AgentManager>) -> Response {
     let kiln_path = req
         .params
@@ -2131,20 +2128,11 @@ async fn handle_models_list(req: Request, am: &Arc<AgentManager>) -> Response {
         .and_then(|v| v.as_str())
         .map(PathBuf::from);
 
-    let classification = kiln_path.as_ref().and_then(|kiln| {
-        // Walk up from kiln path to find workspace (directory containing .crucible/workspace.toml)
-        let mut dir = kiln.clone();
-        loop {
-            if dir.join(".crucible").join("workspace.toml").exists() {
-                return crate::trust_resolution::resolve_kiln_classification(&dir, kiln);
-            }
-            if !dir.pop() {
-                return None;
-            }
-        }
-    });
+    let classification = kiln_path
+        .as_ref()
+        .and_then(|kiln| crate::trust_resolution::find_workspace_and_resolve_classification(kiln));
 
-    match am.list_all_models(classification).await {
+    match am.list_models("", classification).await {
         Ok(models) => Response::success(
             req.id,
             serde_json::json!({ "models": models }),
