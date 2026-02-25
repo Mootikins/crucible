@@ -225,6 +225,7 @@ pub async fn create_agent_from_session_config(
     event_tx: &broadcast::Sender<SessionEventMessage>,
     mcp_gateway: Option<Arc<tokio::sync::RwLock<crucible_tools::mcp_gateway::McpGatewayManager>>>,
     acp_permission_handler: Option<PermissionRequestHandler>,
+    acp_config: Option<&crucible_config::components::acp::AcpConfig>,
     knowledge_repo: Option<Arc<dyn KnowledgeRepository>>,
     embedding_provider: Option<Arc<dyn EmbeddingProvider>>,
 ) -> Result<Box<dyn AgentHandle + Send + Sync>, AgentFactoryError> {
@@ -238,7 +239,7 @@ pub async fn create_agent_from_session_config(
             background_spawner,
             parent_session_id,
             agent_config.delegation_config.as_ref(),
-            None,
+            acp_config,
             acp_permission_handler,
         )
         .await
@@ -439,6 +440,7 @@ mod tests {
                 None,
                 None,
                 None,
+                None,
             )
             .await
         });
@@ -520,6 +522,7 @@ mod tests {
             None,
             None,
             &event_tx,
+            None,
             None,
             None,
             None,

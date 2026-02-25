@@ -112,9 +112,25 @@ async fn async_main(cli: Cli, standalone_sock: Option<std::path::PathBuf>) -> Re
     // Both ring and aws-lc-rs are compiled (via lancedb), so rustls can't auto-detect.
     let _ = rustls::crypto::ring::default_provider().install_default();
 
+    let config = config::CliConfig::load(
+        cli.config.clone(),
+        cli.embedding_url.clone(),
+        cli.embedding_model.clone(),
+    )?;
+
     // Standalone mode: start the in-process daemon on the pre-configured socket.
     let _standalone_guard = if let Some(sock) = standalone_sock {
-        let server = crucible_daemon::Server::bind(&sock, None).await?;
+        let server = crucible_daemon::Server::bind_with_plugin_config(
+            &sock,
+            None,
+            std::collections::HashMap::new(),
+            false,
+            None,
+            Some(config.acp.clone()),
+            None,
+            None,
+        )
+        .await?;
         info!("Standalone daemon listening on {:?}", sock);
         tokio::spawn(async move {
             if let Err(e) = server.run().await {
@@ -134,13 +150,6 @@ async fn async_main(cli: Cli, standalone_sock: Option<std::path::PathBuf>) -> Re
     } else {
         None
     };
-
-    // Load configuration first (before logging) to get config file log level
-    let config = config::CliConfig::load(
-        cli.config.clone(),
-        cli.embedding_url.clone(),
-        cli.embedding_model.clone(),
-    )?;
 
     // Check if the command uses stdio for communication (needs file logging)
     // MCP and Chat use stdio (stdin/stdout) for JSON-RPC, so we must avoid stderr output
@@ -299,6 +308,7 @@ async fn async_main(cli: Cli, standalone_sock: Option<std::path::PathBuf>) -> Re
     }
 
     // Execute command
+    let cli_config_path = cli.config.clone();
     match cli.command {
         // New ACP-based commands
         Some(Commands::Chat {
@@ -390,7 +400,7 @@ async fn async_main(cli: Cli, standalone_sock: Option<std::path::PathBuf>) -> Re
         }
 
         Some(Commands::Daemon(cmd)) => {
-            commands::daemon::handle(cmd).await?;
+            commands::daemon::handle(cmd, cli_config_path).await?;
         }
 
         Some(Commands::Skills(cmd)) => {
