@@ -63,11 +63,15 @@ async fn test_e2e_daemon_lifecycle() {
         "Expected shutdown confirmation"
     );
 
-    // Wait for daemon to exit
-    tokio::time::sleep(Duration::from_millis(200)).await;
+    // Wait for daemon to exit. The daemon's graceful shutdown cancels persist and
+    // reprocess tasks with 5s timeouts each (sequential), so worst case is ~12s.
+    let deadline = std::time::Instant::now() + Duration::from_secs(15);
+    while daemon.is_running() && std::time::Instant::now() < deadline {
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
 
     // Verify daemon stopped
-    assert!(!daemon.is_running(), "Daemon should have stopped");
+    assert!(!daemon.is_running(), "Daemon should have stopped within 15s of shutdown RPC (graceful shutdown has 10s of task timeouts)");
 
     daemon.stop().await.expect("Failed to cleanup daemon");
 }
