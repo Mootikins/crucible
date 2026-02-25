@@ -1164,4 +1164,357 @@ mod tests {
         assert!(result.sql.contains("e.to_entity_id"));
         assert!(result.sql.contains("e.relation_type"));
     }
+
+    // =========================================================================
+    // Snapshot tests
+    // =========================================================================
+
+    #[test]
+    fn select_all() {
+        let renderer = SqliteRenderer::default();
+        let ir = GraphIR::default();
+        let result = renderer.render(&ir).unwrap();
+        insta::assert_snapshot!(result.sql);
+    }
+
+    #[test]
+    fn find_by_title() {
+        let renderer = SqliteRenderer::default();
+        let ir = GraphIR {
+            source: QuerySource::ByTitle("Index".to_string()),
+            ..Default::default()
+        };
+        let result = renderer.render(&ir).unwrap();
+        insta::assert_snapshot!(result.sql);
+    }
+
+    #[test]
+    fn find_by_path() {
+        let renderer = SqliteRenderer::default();
+        let ir = GraphIR {
+            source: QuerySource::ByPath("notes/index.md".to_string()),
+            ..Default::default()
+        };
+        let result = renderer.render(&ir).unwrap();
+        insta::assert_snapshot!(result.sql);
+    }
+
+    #[test]
+    fn outlinks() {
+        let renderer = SqliteRenderer::default();
+        let ir = GraphIR {
+            source: QuerySource::ByTitle("Index".to_string()),
+            pattern: GraphPattern {
+                elements: vec![
+                    PatternElement::Node(NodePattern {
+                        alias: Some("a".to_string()),
+                        ..Default::default()
+                    }),
+                    PatternElement::Edge(EdgePattern {
+                        direction: EdgeDirection::Out,
+                        edge_type: Some("wikilink".to_string()),
+                        ..Default::default()
+                    }),
+                    PatternElement::Node(NodePattern {
+                        alias: Some("b".to_string()),
+                        ..Default::default()
+                    }),
+                ],
+            },
+            ..Default::default()
+        };
+        let result = renderer.render(&ir).unwrap();
+        insta::assert_snapshot!(result.sql);
+    }
+
+    #[test]
+    fn inlinks() {
+        let renderer = SqliteRenderer::default();
+        let ir = GraphIR {
+            source: QuerySource::ByTitle("Project".to_string()),
+            pattern: GraphPattern {
+                elements: vec![
+                    PatternElement::Node(NodePattern {
+                        alias: Some("a".to_string()),
+                        ..Default::default()
+                    }),
+                    PatternElement::Edge(EdgePattern {
+                        direction: EdgeDirection::In,
+                        edge_type: Some("wikilink".to_string()),
+                        ..Default::default()
+                    }),
+                    PatternElement::Node(NodePattern {
+                        alias: Some("b".to_string()),
+                        ..Default::default()
+                    }),
+                ],
+            },
+            ..Default::default()
+        };
+        let result = renderer.render(&ir).unwrap();
+        insta::assert_snapshot!(result.sql);
+    }
+
+    #[test]
+    fn bidirectional() {
+        let renderer = SqliteRenderer::default();
+        let ir = GraphIR {
+            source: QuerySource::ByTitle("Hub".to_string()),
+            pattern: GraphPattern {
+                elements: vec![
+                    PatternElement::Node(NodePattern {
+                        alias: Some("a".to_string()),
+                        ..Default::default()
+                    }),
+                    PatternElement::Edge(EdgePattern {
+                        direction: EdgeDirection::Both,
+                        edge_type: Some("wikilink".to_string()),
+                        ..Default::default()
+                    }),
+                    PatternElement::Node(NodePattern {
+                        alias: Some("b".to_string()),
+                        ..Default::default()
+                    }),
+                ],
+            },
+            ..Default::default()
+        };
+        let result = renderer.render(&ir).unwrap();
+        insta::assert_snapshot!(result.sql);
+    }
+
+    #[test]
+    fn recursive_range() {
+        let renderer = SqliteRenderer::default();
+        let ir = GraphIR {
+            source: QuerySource::ByPath("index.md".to_string()),
+            pattern: GraphPattern {
+                elements: vec![
+                    PatternElement::Node(NodePattern {
+                        alias: Some("a".to_string()),
+                        ..Default::default()
+                    }),
+                    PatternElement::Edge(EdgePattern {
+                        direction: EdgeDirection::Out,
+                        edge_type: Some("LINKS_TO".to_string()),
+                        quantifier: Some(Quantifier::Range {
+                            min: 1,
+                            max: Some(3),
+                        }),
+                        ..Default::default()
+                    }),
+                    PatternElement::Node(NodePattern {
+                        alias: Some("b".to_string()),
+                        ..Default::default()
+                    }),
+                ],
+            },
+            ..Default::default()
+        };
+        let result = renderer.render(&ir).unwrap();
+        insta::assert_snapshot!(result.sql);
+    }
+
+    #[test]
+    fn recursive_zero_or_more() {
+        let renderer = SqliteRenderer::default();
+        let ir = GraphIR {
+            source: QuerySource::ByPath("index.md".to_string()),
+            pattern: GraphPattern {
+                elements: vec![
+                    PatternElement::Node(NodePattern::default()),
+                    PatternElement::Edge(EdgePattern {
+                        direction: EdgeDirection::Out,
+                        quantifier: Some(Quantifier::ZeroOrMore),
+                        ..Default::default()
+                    }),
+                    PatternElement::Node(NodePattern::default()),
+                ],
+            },
+            ..Default::default()
+        };
+        let result = renderer.render(&ir).unwrap();
+        insta::assert_snapshot!(result.sql);
+    }
+
+    #[test]
+    fn recursive_one_or_more() {
+        let renderer = SqliteRenderer::default();
+        let ir = GraphIR {
+            source: QuerySource::ByPath("index.md".to_string()),
+            pattern: GraphPattern {
+                elements: vec![
+                    PatternElement::Node(NodePattern::default()),
+                    PatternElement::Edge(EdgePattern {
+                        direction: EdgeDirection::Out,
+                        quantifier: Some(Quantifier::OneOrMore),
+                        ..Default::default()
+                    }),
+                    PatternElement::Node(NodePattern::default()),
+                ],
+            },
+            ..Default::default()
+        };
+        let result = renderer.render(&ir).unwrap();
+        insta::assert_snapshot!(result.sql);
+    }
+
+    #[test]
+    fn filter_eq() {
+        let renderer = SqliteRenderer::default();
+        let ir = GraphIR {
+            source: QuerySource::All,
+            filters: vec![Filter {
+                field: "folder".to_string(),
+                op: MatchOp::Eq,
+                value: Value::String("Projects".to_string()),
+            }],
+            ..Default::default()
+        };
+        let result = renderer.render(&ir).unwrap();
+        insta::assert_snapshot!(result.sql);
+    }
+
+    #[test]
+    fn filter_contains() {
+        let renderer = SqliteRenderer::default();
+        let ir = GraphIR {
+            source: QuerySource::All,
+            filters: vec![Filter {
+                field: "title".to_string(),
+                op: MatchOp::Contains,
+                value: Value::String("API".to_string()),
+            }],
+            ..Default::default()
+        };
+        let result = renderer.render(&ir).unwrap();
+        insta::assert_snapshot!(result.sql);
+    }
+
+    #[test]
+    fn filter_starts_with() {
+        let renderer = SqliteRenderer::default();
+        let ir = GraphIR {
+            source: QuerySource::All,
+            filters: vec![Filter {
+                field: "path".to_string(),
+                op: MatchOp::StartsWith,
+                value: Value::String("docs/".to_string()),
+            }],
+            ..Default::default()
+        };
+        let result = renderer.render(&ir).unwrap();
+        insta::assert_snapshot!(result.sql);
+    }
+
+    #[test]
+    fn filter_ends_with() {
+        let renderer = SqliteRenderer::default();
+        let ir = GraphIR {
+            source: QuerySource::All,
+            filters: vec![Filter {
+                field: "path".to_string(),
+                op: MatchOp::EndsWith,
+                value: Value::String(".md".to_string()),
+            }],
+            ..Default::default()
+        };
+        let result = renderer.render(&ir).unwrap();
+        insta::assert_snapshot!(result.sql);
+    }
+
+    #[test]
+    fn crucible_eav_schema() {
+        let renderer = SqliteRenderer::for_crucible_eav();
+        let ir = GraphIR {
+            source: QuerySource::ByTitle("Index".to_string()),
+            pattern: GraphPattern {
+                elements: vec![
+                    PatternElement::Node(NodePattern {
+                        alias: Some("a".to_string()),
+                        ..Default::default()
+                    }),
+                    PatternElement::Edge(EdgePattern {
+                        direction: EdgeDirection::Out,
+                        edge_type: Some("wikilink".to_string()),
+                        ..Default::default()
+                    }),
+                    PatternElement::Node(NodePattern {
+                        alias: Some("b".to_string()),
+                        ..Default::default()
+                    }),
+                ],
+            },
+            ..Default::default()
+        };
+        let result = renderer.render(&ir).unwrap();
+        insta::assert_snapshot!(result.sql);
+    }
+
+    // =========================================================================
+    // Pipeline snapshot tests (SQL sugar → IR → SQLite)
+    // =========================================================================
+
+    #[test]
+    fn pipeline_sql_sugar_outlinks() {
+        use crate::render::SqliteRenderer;
+        use crate::syntax::{QuerySyntaxRegistryBuilder, SqlSugarSyntax};
+        use crate::transform::ValidateTransform;
+        use crate::pipeline::QueryPipelineBuilder;
+
+        let syntax_registry = QuerySyntaxRegistryBuilder::new()
+            .with_syntax(SqlSugarSyntax)
+            .build();
+
+        let pipeline = QueryPipelineBuilder::new()
+            .syntax_registry(syntax_registry)
+            .transform(ValidateTransform)
+            .renderer(SqliteRenderer::default())
+            .build();
+
+        let result = pipeline.execute("SELECT outlinks FROM 'Index'").unwrap();
+        insta::assert_snapshot!(result.sql);
+    }
+
+    #[test]
+    fn pipeline_sql_sugar_inlinks() {
+        use crate::render::SqliteRenderer;
+        use crate::syntax::{QuerySyntaxRegistryBuilder, SqlSugarSyntax};
+        use crate::transform::ValidateTransform;
+        use crate::pipeline::QueryPipelineBuilder;
+
+        let syntax_registry = QuerySyntaxRegistryBuilder::new()
+            .with_syntax(SqlSugarSyntax)
+            .build();
+
+        let pipeline = QueryPipelineBuilder::new()
+            .syntax_registry(syntax_registry)
+            .transform(ValidateTransform)
+            .renderer(SqliteRenderer::default())
+            .build();
+
+        let result = pipeline.execute("SELECT inlinks FROM 'Project'").unwrap();
+        insta::assert_snapshot!(result.sql);
+    }
+
+    #[test]
+    fn pipeline_sql_sugar_neighbors() {
+        use crate::render::SqliteRenderer;
+        use crate::syntax::{QuerySyntaxRegistryBuilder, SqlSugarSyntax};
+        use crate::transform::ValidateTransform;
+        use crate::pipeline::QueryPipelineBuilder;
+
+        let syntax_registry = QuerySyntaxRegistryBuilder::new()
+            .with_syntax(SqlSugarSyntax)
+            .build();
+
+        let pipeline = QueryPipelineBuilder::new()
+            .syntax_registry(syntax_registry)
+            .transform(ValidateTransform)
+            .renderer(SqliteRenderer::default())
+            .build();
+
+        let result = pipeline.execute("SELECT neighbors FROM 'Hub'").unwrap();
+        insta::assert_snapshot!(result.sql);
+    }
 }
