@@ -131,6 +131,7 @@ impl Server {
     }
 
     /// Bind to a Unix socket path with plugin configuration
+    #[allow(clippy::too_many_arguments)]
     pub async fn bind_with_plugin_config(
         path: &Path,
         mcp_config: Option<&crucible_config::McpConfig>,
