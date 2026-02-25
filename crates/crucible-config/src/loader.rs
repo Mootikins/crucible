@@ -360,3 +360,267 @@ impl ConfigFormat {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    // NOTE: Platform-specific paths (macOS/Windows) not tested — Linux CI only.
+    // ConfigLoader::new() resolves dirs::config_dir() which is platform-dependent.
+
+    // =========================================================================
+    // Constructor and builder tests
+    // =========================================================================
+
+    #[test]
+    fn new_includes_default_search_paths() {
+        let loader = ConfigLoader::new();
+        // Should have at least ./config, ./, and a config dir
+        assert!(
+            loader.search_paths.len() >= 3,
+            "expected at least 3 default search paths, got {}",
+            loader.search_paths.len()
+        );
+        assert_eq!(loader.search_paths[0], PathBuf::from("./config"));
+        assert_eq!(loader.search_paths[1], PathBuf::from("./"));
+        assert_eq!(loader.format, ConfigFormat::Auto);
+    }
+
+    #[test]
+    fn with_search_paths_replaces_defaults() {
+        let custom_paths = vec![PathBuf::from("/tmp/a"), PathBuf::from("/tmp/b")];
+        let loader = ConfigLoader::with_search_paths(custom_paths.clone());
+        assert_eq!(loader.search_paths, custom_paths);
+        assert_eq!(loader.format, ConfigFormat::Auto);
+    }
+
+    #[test]
+    fn add_search_path_appends() {
+        let loader = ConfigLoader::with_search_paths(vec![PathBuf::from("/base")])
+            .add_search_path("/extra");
+        assert_eq!(loader.search_paths.len(), 2);
+        assert_eq!(loader.search_paths[1], PathBuf::from("/extra"));
+    }
+
+    #[test]
+    fn with_format_sets_format() {
+        let loader = ConfigLoader::new().with_format(ConfigFormat::Json);
+        assert_eq!(loader.format, ConfigFormat::Json);
+    }
+
+    #[test]
+    fn default_delegates_to_new() {
+        let default_loader = ConfigLoader::default();
+        let new_loader = ConfigLoader::new();
+        assert_eq!(default_loader.search_paths, new_loader.search_paths);
+        assert_eq!(default_loader.format, new_loader.format);
+    }
+
+    // =========================================================================
+    // load_from_str tests
+    // =========================================================================
+
+    #[test]
+    fn load_from_str_valid_toml() {
+        let toml_content = r#"
+            [chat]
+            show_thinking = true
+        "#;
+        let result = ConfigLoader::load_from_str(toml_content, ConfigFormat::Toml);
+        assert!(result.is_ok(), "valid TOML should parse: {:?}", result.err());
+        let config = result.unwrap();
+        // Chat section should have been parsed
+        assert!(config.chat.is_some());
+    }
+
+    #[test]
+    fn load_from_str_valid_json() {
+        let json_content = r#"{"profile": "test"}"#;
+        let result = ConfigLoader::load_from_str(json_content, ConfigFormat::Json);
+        assert!(result.is_ok(), "valid JSON should parse: {:?}", result.err());
+        let config = result.unwrap();
+        assert_eq!(config.profile, Some("test".to_string()));
+    }
+
+    #[test]
+    fn load_from_str_invalid_toml_returns_err() {
+        let bad_toml = "invalid = [[[";
+        let result = ConfigLoader::load_from_str(bad_toml, ConfigFormat::Toml);
+        assert!(result.is_err(), "invalid TOML must return Err, not panic");
+    }
+
+    #[test]
+    fn load_from_str_invalid_json_returns_err() {
+        let bad_json = "{not json at all";
+        let result = ConfigLoader::load_from_str(bad_json, ConfigFormat::Json);
+        assert!(result.is_err(), "invalid JSON must return Err, not panic");
+    }
+
+    #[test]
+    fn load_from_str_auto_detects_toml() {
+        let toml_content = r#"
+            profile = "auto-detected"
+        "#;
+        let result = ConfigLoader::load_from_str(toml_content, ConfigFormat::Auto);
+        assert!(result.is_ok(), "Auto format should detect TOML: {:?}", result.err());
+        let config = result.unwrap();
+        assert_eq!(config.profile, Some("auto-detected".to_string()));
+    }
+
+    #[test]
+    fn load_from_str_auto_unparseable_returns_err() {
+        let garbage = "<<<not any known format>>>";
+        let result = ConfigLoader::load_from_str(garbage, ConfigFormat::Auto);
+        assert!(result.is_err(), "completely unparseable input must return Err");
+    }
+
+    // =========================================================================
+    // load_from_file_sync / save_to_file_sync tests
+    // =========================================================================
+
+    #[test]
+    fn load_from_file_sync_missing_file_returns_err() {
+        let tmp = TempDir::new().unwrap();
+        let missing = tmp.path().join("does_not_exist.toml");
+        let result = ConfigLoader::load_from_file_sync(&missing);
+        assert!(result.is_err(), "missing file must return Err, not panic");
+    }
+
+    #[test]
+    fn load_from_file_sync_valid_toml() {
+        let tmp = TempDir::new().unwrap();
+        let config_path = tmp.path().join("test.toml");
+        std::fs::write(&config_path, r#"profile = "from-file""#).unwrap();
+
+        let result = ConfigLoader::load_from_file_sync(&config_path);
+        assert!(result.is_ok(), "valid TOML file should load: {:?}", result.err());
+        let config = result.unwrap();
+        assert_eq!(config.profile, Some("from-file".to_string()));
+    }
+
+    #[test]
+    fn load_from_file_sync_invalid_extension_returns_err() {
+        let tmp = TempDir::new().unwrap();
+        let config_path = tmp.path().join("config.xml");
+        std::fs::write(&config_path, "<xml/>").unwrap();
+
+        let result = ConfigLoader::load_from_file_sync(&config_path);
+        assert!(result.is_err(), "unsupported extension must return Err");
+    }
+
+    #[test]
+    fn save_and_load_roundtrip_toml() {
+        let tmp = TempDir::new().unwrap();
+        let config_path = tmp.path().join("roundtrip.toml");
+
+        // Create a config with a known value
+        let original_toml = r#"profile = "roundtrip-test""#;
+        let original = ConfigLoader::load_from_str(original_toml, ConfigFormat::Toml).unwrap();
+
+        // Save it
+        ConfigLoader::save_to_file_sync(&original, &config_path).unwrap();
+
+        // Load it back
+        let loaded = ConfigLoader::load_from_file_sync(&config_path).unwrap();
+        assert_eq!(loaded.profile, original.profile);
+    }
+
+    #[test]
+    fn save_to_file_sync_creates_parent_dirs() {
+        let tmp = TempDir::new().unwrap();
+        let nested_path = tmp.path().join("a").join("b").join("c").join("config.toml");
+
+        let config = ConfigLoader::load_from_str("profile = \"nested\"", ConfigFormat::Toml).unwrap();
+        let result = ConfigLoader::save_to_file_sync(&config, &nested_path);
+        assert!(result.is_ok(), "should create parent dirs: {:?}", result.err());
+        assert!(nested_path.exists());
+    }
+
+    #[test]
+    fn save_and_load_roundtrip_json() {
+        let tmp = TempDir::new().unwrap();
+        let config_path = tmp.path().join("roundtrip.json");
+
+        let original = ConfigLoader::load_from_str(r#"{"profile": "json-rt"}"#, ConfigFormat::Json).unwrap();
+        ConfigLoader::save_to_file_sync(&original, &config_path).unwrap();
+
+        let loaded = ConfigLoader::load_from_file_sync(&config_path).unwrap();
+        assert_eq!(loaded.profile, Some("json-rt".to_string()));
+    }
+
+    // =========================================================================
+    // ConfigFormat tests
+    // =========================================================================
+
+    #[test]
+    fn config_format_from_path_known_extensions() {
+        assert_eq!(ConfigFormat::from_path("config.toml").unwrap(), ConfigFormat::Toml);
+        assert_eq!(ConfigFormat::from_path("config.yaml").unwrap(), ConfigFormat::Yaml);
+        assert_eq!(ConfigFormat::from_path("config.yml").unwrap(), ConfigFormat::Yaml);
+        assert_eq!(ConfigFormat::from_path("config.json").unwrap(), ConfigFormat::Json);
+    }
+
+    #[test]
+    fn config_format_from_path_unsupported_extension_returns_err() {
+        let result = ConfigFormat::from_path("config.xml");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn config_format_from_path_no_extension_returns_auto() {
+        let result = ConfigFormat::from_path("config");
+        assert_eq!(result.unwrap(), ConfigFormat::Auto);
+    }
+
+    #[test]
+    fn config_format_extension_returns_correct_strings() {
+        assert_eq!(ConfigFormat::Toml.extension(), "toml");
+        assert_eq!(ConfigFormat::Yaml.extension(), "yaml");
+        assert_eq!(ConfigFormat::Json.extension(), "json");
+        assert_eq!(ConfigFormat::Auto.extension(), "yaml");
+    }
+
+    // =========================================================================
+    // search_paths_sync tests
+    // =========================================================================
+
+    #[test]
+    fn load_from_search_paths_sync_finds_file() {
+        let tmp = TempDir::new().unwrap();
+        let config_dir = tmp.path().join("config");
+        std::fs::create_dir(&config_dir).unwrap();
+        std::fs::write(
+            config_dir.join("crucible.toml"),
+            r#"profile = "found-it""#,
+        ).unwrap();
+
+        let loader = ConfigLoader::with_search_paths(vec![config_dir]);
+        let result = loader.load_from_search_paths_sync("crucible.toml");
+        assert!(result.is_ok(), "should find config in search path: {:?}", result.err());
+        assert_eq!(result.unwrap().profile, Some("found-it".to_string()));
+    }
+
+    #[test]
+    fn load_from_search_paths_sync_tries_extensions() {
+        let tmp = TempDir::new().unwrap();
+        // Place a .toml file but search without extension
+        std::fs::write(
+            tmp.path().join("crucible.toml"),
+            r#"profile = "auto-ext""#,
+        ).unwrap();
+
+        let loader = ConfigLoader::with_search_paths(vec![tmp.path().to_path_buf()]);
+        let result = loader.load_from_search_paths_sync("crucible");
+        assert!(result.is_ok(), "should auto-discover .toml extension: {:?}", result.err());
+        assert_eq!(result.unwrap().profile, Some("auto-ext".to_string()));
+    }
+
+    #[test]
+    fn load_from_search_paths_sync_not_found_returns_err() {
+        let tmp = TempDir::new().unwrap();
+        let loader = ConfigLoader::with_search_paths(vec![tmp.path().to_path_buf()]);
+        let result = loader.load_from_search_paths_sync("nonexistent");
+        assert!(result.is_err(), "missing config must return Err");
+    }
+}

@@ -1105,7 +1105,7 @@ impl OilChatRunner {
         }
     }
 
-    fn abort_background_tasks(background_tasks: &mut Vec<JoinHandle<()>>) {
+    pub(crate) fn abort_background_tasks(background_tasks: &mut Vec<JoinHandle<()>>) {
         for task in background_tasks.drain(..) {
             task.abort();
         }
