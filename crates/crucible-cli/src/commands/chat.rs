@@ -19,7 +19,7 @@ use crate::factories;
 use crate::kiln_discover::{discover_kiln, DiscoverySource};
 use crate::progress::{BackgroundProgress, LiveProgress, StatusLine};
 use crate::provider_detect::{
-    detect_providers, fetch_all_provider_models, fetch_model_context_length, fetch_provider_models,
+    detect_providers, fetch_model_context_length,
 };
 use crate::tui::oil::{McpServerDisplay, PluginStatusEntry};
 use crate::tui::AgentSelection;
@@ -459,13 +459,7 @@ async fn run_interactive_chat(
 
     runner = runner.with_session_command_receiver(session_cmd_rx);
 
-    let provider = effective_llm
-        .as_ref()
-        .map(|p| p.provider_type)
-        .unwrap_or(crucible_config::BackendType::Ollama);
-    let model_endpoint = endpoint.clone();
-
-    let (files, notes, available_models) = tokio::join!(
+    let (files, notes) = tokio::join!(
         tokio::task::spawn_blocking({
             let root = workspace_root.clone();
             move || index_workspace_files(&root)
@@ -474,13 +468,6 @@ async fn run_interactive_chat(
             let root = kiln_root.clone();
             move || index_kiln_notes(&root)
         }),
-        async {
-            if !config.llm.providers.is_empty() {
-                fetch_all_provider_models(&config.llm).await
-            } else {
-                fetch_provider_models(&provider, &model_endpoint).await
-            }
-        },
     );
 
     if let Ok(files) = files {
@@ -488,13 +475,6 @@ async fn run_interactive_chat(
     }
     if let Ok(notes) = notes {
         runner = runner.with_kiln_notes(notes);
-    }
-    if !available_models.is_empty() {
-        debug!(
-            count = available_models.len(),
-            "Discovered models for popup"
-        );
-        runner = runner.with_available_models(available_models);
     }
 
     let mcp_servers: Vec<McpServerDisplay> = config
