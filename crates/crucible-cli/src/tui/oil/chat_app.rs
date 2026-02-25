@@ -2571,7 +2571,7 @@ impl OilChatApp {
                 &filter,
             ),
             AutocompleteKind::Model => {
-                Self::filter_to_popup_items(&self.available_models, &filter, "model", 15)
+                Self::filter_to_popup_items(&self.available_models, &filter, "model", 100)
             }
             AutocompleteKind::CommandArg {
                 ref command,
@@ -2635,7 +2635,7 @@ impl OilChatApp {
                 let source = self.runtime_config.completions_for(opt);
                 match source {
                     CompletionSource::Models => {
-                        Self::filter_to_popup_items(&self.available_models, filter, "model", 15)
+                        Self::filter_to_popup_items(&self.available_models, filter, "model", 100)
                     }
                     CompletionSource::ThinkingPresets => THINKING_PRESETS
                         .iter()
