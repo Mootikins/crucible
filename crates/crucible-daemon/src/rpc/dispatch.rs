@@ -128,7 +128,7 @@ impl RpcDispatcher {
     fn handle_capabilities(&self) -> RpcResult<serde_json::Value> {
         Ok(serde_json::json!({
             "version": env!("CARGO_PKG_VERSION"),
-            "build_sha": env!("CRUCIBLE_BUILD_SHA"),
+            "build_sha": option_env!("CRUCIBLE_BUILD_SHA").unwrap_or("dev"),
             "protocol_version": "1.0",
             "capabilities": {
                 "kilns": true,
