@@ -53,7 +53,7 @@ mod tests {
         let bridge = DaemonToolsBridge::new(workspace_tools.clone());
 
         // Verify bridge was created (no panic)
-        assert_eq!(std::mem::size_of_val(&bridge) > 0, true);
+        assert!(std::mem::size_of_val(&bridge) > 0);
     }
 
     #[test]
