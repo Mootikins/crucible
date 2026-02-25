@@ -518,19 +518,38 @@ async fn dev_kiln_all_wikilinks_resolve() {
 #[tokio::test]
 #[ignore = "slow test - parses all markdown files - run with cargo test --ignored"]
 async fn dev_kiln_code_references_exist() {
-    let workspace_root = dev_kiln_root()
-        .parent()
-        .unwrap()
-        .parent()
-        .unwrap()
-        .to_path_buf();
+    // dev_kiln_root() returns <workspace>/docs, so one parent() gets workspace root
+    let workspace_root = dev_kiln_root().parent().unwrap().to_path_buf();
 
     let md_files = find_markdown_files();
+    let dev_kiln = dev_kiln_root();
+
+    // Historical docs reference crate paths that no longer exist.
+    // Exclude them from code reference validation since they capture
+    // the codebase state at the time they were written.
+    let excluded_prefixes: Vec<PathBuf> = vec![
+        dev_kiln.join("Meta/plans"),
+        dev_kiln.join("Meta/Analysis"),
+        dev_kiln.join("Meta/Research"),
+        dev_kiln.join("research"),
+    ];
+    let excluded_files: Vec<PathBuf> = vec![
+        dev_kiln.join("Meta/backlog.md"),
+    ];
 
     let mut failures = Vec::new();
     let mut total_refs = 0;
+    let mut skipped_files = 0;
 
     for file_path in &md_files {
+        // Skip excluded historical documents
+        if excluded_files.iter().any(|f| file_path == f)
+            || excluded_prefixes.iter().any(|p| file_path.starts_with(p))
+        {
+            skipped_files += 1;
+            continue;
+        }
+
         let content = match tokio::fs::read_to_string(file_path).await {
             Ok(c) => c,
             Err(e) => {
@@ -567,7 +586,7 @@ async fn dev_kiln_code_references_exist() {
         );
     }
 
-    println!("✅ All {} code references exist in repository", total_refs);
+    println!("✅ All {} code references exist in repository ({} historical files skipped)", total_refs, skipped_files);
 }
 
 // ============================================================================

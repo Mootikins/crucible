@@ -1,4 +1,5 @@
 ---
+title: Docs Architecture
 description: Structure, purpose, and conventions for the Crucible documentation kiln
 tags:
   - meta
@@ -173,7 +174,7 @@ When writing Help/ docs, reference these code locations:
 - `crates/crucible-core/src/storage/` - Storage traits
 
 ### Agents
-- `crates/crucible-agents/src/` - Agent implementation
+- `crates/crucible-acp/src/` - Agent implementation
 - `crates/crucible-core/src/traits/chat.rs` - AgentHandle trait
 
 ### Configuration
