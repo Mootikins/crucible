@@ -1103,6 +1103,31 @@ impl DaemonClient {
         Ok(models)
     }
 
+    /// List all available models without requiring an active session.
+    ///
+    /// If `kiln_path` is provided, the daemon resolves the kiln's data classification
+    /// and filters providers whose trust level doesn't satisfy it.
+    pub async fn list_all_models(&self, kiln_path: Option<&Path>) -> Result<Vec<String>> {
+        let params = if let Some(p) = kiln_path {
+            serde_json::json!({ "kiln_path": p.to_string_lossy() })
+        } else {
+            serde_json::json!({})
+        };
+
+        let result = self.call_with_retry("models.list", params).await?;
+
+        let models = result["models"]
+            .as_array()
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str().map(String::from))
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        Ok(models)
+    }
+
     /// Set the thinking budget for a session's agent.
     ///
     /// The thinking budget controls reasoning token allocation for thinking models

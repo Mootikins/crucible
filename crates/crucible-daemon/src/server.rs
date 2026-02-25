@@ -728,6 +728,7 @@ async fn handle_legacy_request(
         "note.get" => handle_note_get(req, kiln_manager).await,
         "note.delete" => handle_note_delete(req, kiln_manager).await,
         "note.list" => handle_note_list(req, kiln_manager).await,
+        "models.list" => handle_models_list(req, agent_manager).await,
         "process_file" => handle_process_file(req, kiln_manager).await,
         "process_batch" => handle_process_batch(req, kiln_manager, event_tx).await,
         "session.create" => {
@@ -2117,6 +2118,45 @@ async fn handle_session_list_models(req: Request, am: &Arc<AgentManager>) -> Res
     }
 }
 
+/// List all available models without requiring an active session.
+///
+/// Accepts an optional `kiln_path` parameter. When provided, the handler
+/// walks up from the kiln path to find a workspace containing
+/// `.crucible/workspace.toml` and resolves the data classification for
+/// trust-based provider filtering.
+async fn handle_models_list(req: Request, am: &Arc<AgentManager>) -> Response {
+    let kiln_path = req
+        .params
+        .get("kiln_path")
+        .and_then(|v| v.as_str())
+        .map(PathBuf::from);
+
+    let classification = kiln_path.as_ref().and_then(|kiln| {
+        // Walk up from kiln path to find workspace (directory containing .crucible/workspace.toml)
+        let mut dir = kiln.clone();
+        loop {
+            if dir.join(".crucible").join("workspace.toml").exists() {
+                return crate::trust_resolution::resolve_kiln_classification(&dir, kiln);
+            }
+            if !dir.pop() {
+                return None;
+            }
+        }
+    });
+
+    match am.list_all_models(classification).await {
+        Ok(models) => Response::success(
+            req.id,
+            serde_json::json!({ "models": models }),
+        ),
+        Err(crate::agent_manager::AgentError::SessionNotFound(_)) => {
+            // No session fallback path hit — return empty list
+            Response::success(req.id, serde_json::json!({ "models": [] }))
+        }
+        Err(e) => internal_error(req.id, e),
+    }
+}
+
 async fn handle_session_set_thinking_budget(
     req: Request,
     am: &Arc<AgentManager>,
@@ -3421,6 +3461,62 @@ mod tests {
         )
         .await;
         assert_eq!(err_response["error"]["code"], INVALID_PARAMS);
+
+        let _ = shutdown_handle.send(());
+        let _ = server_task.await;
+    }
+
+    #[tokio::test]
+    async fn test_models_list_rpc_no_session() {
+        let tmp = TempDir::new().unwrap();
+        let sock_path = tmp.path().join("test.sock");
+
+        let server = Server::bind(&sock_path, None).await.unwrap();
+        let shutdown_handle = server.shutdown_handle();
+        let server_task = tokio::spawn(async move { server.run().await });
+
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+        let mut client = UnixStream::connect(&sock_path).await.unwrap();
+
+        // Call models.list with no params — should succeed without a session
+        let response = rpc_call(
+            &mut client,
+            json!({
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "models.list",
+                "params": {}
+            }),
+        )
+        .await;
+        assert!(
+            response["error"].is_null(),
+            "models.list failed: {response:?}"
+        );
+        assert!(
+            response["result"]["models"].is_array(),
+            "models.list should return a models array: {response:?}"
+        );
+
+        // Call models.list with a kiln_path — should also succeed
+        let response_with_kiln = rpc_call(
+            &mut client,
+            json!({
+                "jsonrpc": "2.0",
+                "id": 2,
+                "method": "models.list",
+                "params": {
+                    "kiln_path": tmp.path().to_string_lossy()
+                }
+            }),
+        )
+        .await;
+        assert!(
+            response_with_kiln["error"].is_null(),
+            "models.list with kiln_path failed: {response_with_kiln:?}"
+        );
+        assert!(response_with_kiln["result"]["models"].is_array());
 
         let _ = shutdown_handle.send(());
         let _ = server_task.await;
