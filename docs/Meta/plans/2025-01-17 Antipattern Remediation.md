@@ -1,4 +1,5 @@
 ---
+title: 2025 01 17 Antipattern Remediation
 description: Antipattern Remediation Plan
 tags:
   - meta

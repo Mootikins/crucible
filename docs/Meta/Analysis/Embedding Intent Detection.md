@@ -1,4 +1,5 @@
 ---
+description: Documentation note for Embedding Intent Detection.
 title: Embedding-Based Intent Detection
 type: analysis
 status: parked

@@ -1,4 +1,5 @@
 ---
+title: Zettelkasten
 description: Atomic linked notes for building interconnected knowledge
 tags:
   - organization

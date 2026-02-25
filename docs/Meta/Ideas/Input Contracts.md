@@ -1,4 +1,6 @@
 ---
+title: Input Contracts
+description: Documentation note for Input Contracts.
 tags:
   - idea
   - contracts

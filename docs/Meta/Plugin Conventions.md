@@ -1,4 +1,5 @@
 ---
+title: Plugin Conventions
 description: Plugin System Architecture Best Practices for Crucible
 tags:
   - help

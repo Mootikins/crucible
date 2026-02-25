@@ -1,4 +1,5 @@
 ---
+title: E2E Testing
 description: How to write and run end-to-end tests for the TUI using expectrl
 tags:
   - tui

@@ -1,4 +1,5 @@
 ---
+title: Script Agent Queries
 description: How scripts can query LLM agents for decisions
 tags:
   - help

@@ -1,4 +1,5 @@
 ---
+title: Query Language Alternatives
 description: Evaluating jaq vs DuckDB for query and data transform needs
 status: open
 created: 2024-12-27

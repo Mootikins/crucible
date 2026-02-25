@@ -1,4 +1,5 @@
 ---
+title: Task Management
 description: Track implementation tasks using structured markdown files
 status: planned
 tags:

@@ -1,4 +1,5 @@
 ---
+title: Agent Client Protocol
 description: Specification reference for the Agent Client Protocol (ACP) — the stdio JSON-RPC protocol Crucible uses to host external AI agents
 status: implemented
 tags:

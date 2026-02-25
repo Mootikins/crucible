@@ -1,4 +1,5 @@
 ---
+title: TUI
 description: Terminal User Interface reference documentation
 tags:
   - tui

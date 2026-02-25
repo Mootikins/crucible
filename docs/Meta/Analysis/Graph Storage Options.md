@@ -1,4 +1,5 @@
 ---
+title: Graph Storage Options
 description: Crucible Graph Storage Options
 tags:
   - meta

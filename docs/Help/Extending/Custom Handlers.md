@@ -1,4 +1,5 @@
 ---
+title: Custom Handlers
 description: Write custom event handlers in Rust or Lua for advanced processing
 status: implemented
 tags:

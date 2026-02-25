@@ -1,4 +1,5 @@
 ---
+title: TUI Testability Refactoring
 description: TUI Testability Refactoring Plan
 tags:
   - meta

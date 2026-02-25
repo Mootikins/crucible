@@ -1,4 +1,5 @@
 ---
+title: Tasks
 description: Active development tasks and backlog for Crucible
 type: tasks
 status: active

@@ -1,4 +1,5 @@
 ---
+title: Opencode Plan Reminder Anthropic
 description: Plan Mode - System Reminder
 tags:
   - reference

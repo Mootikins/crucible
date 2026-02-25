@@ -1,4 +1,5 @@
 ---
+title: Kiln Specialist
 type: agent
 version: "1.0.0"
 description: "Expert in zettelkasten-style atomic note management for Crucible kilns"

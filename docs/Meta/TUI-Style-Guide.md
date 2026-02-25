@@ -1,4 +1,6 @@
 ---
+title: TUI Style Guide
+description: Documentation note for TUI Style Guide.
 tags: [meta, tui, style]
 created: 2026-01-29
 ---

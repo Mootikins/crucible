@@ -1,4 +1,5 @@
 ---
+title: Frontmatter
 description: YAML metadata format for Crucible notes
 tags:
   - help

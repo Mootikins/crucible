@@ -1,4 +1,5 @@
 ---
+description: Documentation note for Configuration.
 title: Lua Configuration
 tags:
   - lua

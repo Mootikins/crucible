@@ -1,4 +1,5 @@
 ---
+title: Small Reasoning Models
 description: Research on ideal problem space for small reasoning models (1-8B parameters)
 tags:
   - research

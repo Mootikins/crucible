@@ -1,4 +1,5 @@
 ---
+title: Ratatui Production Patterns
 description: Ratatui Production Patterns
 tags:
   - meta

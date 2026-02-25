@@ -1,4 +1,5 @@
 ---
+title: Language Basics
 description: Lua scripting reference for Crucible
 status: implemented
 tags:

@@ -1,4 +1,5 @@
 ---
+title: Ink Architecture Reference
 description: Ink Architecture Reference
 tags:
   - meta

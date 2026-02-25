@@ -1,4 +1,5 @@
 ---
+title: Scripting Languages
 description: Lua scripting for Crucible plugins
 status: implemented
 tags:

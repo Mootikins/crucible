@@ -1,4 +1,6 @@
 ---
+title: Tantivy CLI
+description: Documentation note for Tantivy CLI.
 tags:
   - research
   - search

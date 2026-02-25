@@ -1,4 +1,5 @@
 ---
+title: storage
 description: Configuration reference for Crucible storage backends
 tags:
   - help

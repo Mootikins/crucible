@@ -1,4 +1,5 @@
 ---
+title: Wikilinks
 description: Comprehensive reference for wikilink syntax and resolution
 tags:
   - reference

@@ -1,4 +1,5 @@
 ---
+description: Documentation note for Oh My Opencode Patterns.
 title: Patterns from oh-my-opencode
 date: 2026-01-01
 tags: [research, patterns, agents, context-management]

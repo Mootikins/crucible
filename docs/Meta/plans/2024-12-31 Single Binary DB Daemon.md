@@ -1,4 +1,5 @@
 ---
+title: 2024 12 31 Single Binary DB Daemon
 description: Single-Binary DB Daemon - Implementation Plan
 tags:
   - meta

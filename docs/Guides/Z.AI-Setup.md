@@ -1,4 +1,5 @@
 ---
+title: Z.AI Setup
 description: Set up Z.AI GLM Coding Plan as an Anthropic-compatible LLM provider
 tags:
   - guide

@@ -1,4 +1,5 @@
 ---
+title: graph view
 description: Graph View Plugin
 tags:
   - plugins
