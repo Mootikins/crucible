@@ -1,4 +1,5 @@
 ---
+title: Index
 description: The dev-kiln - documentation and working example for Crucible
 status: implemented
 tags:

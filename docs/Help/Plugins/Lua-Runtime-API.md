@@ -1,4 +1,5 @@
 ---
+title: Lua Runtime API
 description: Complete reference for the cru.* Lua API available to daemon plugins
 status: implemented
 tags:

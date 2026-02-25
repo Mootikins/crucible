@@ -1,4 +1,5 @@
 ---
+title: Query
 description: Advanced queries for finding and filtering notes
 status: planned
 tags:

@@ -1,4 +1,5 @@
 ---
+title: todo list
 description: Todo List Plugin
 tags:
   - plugins

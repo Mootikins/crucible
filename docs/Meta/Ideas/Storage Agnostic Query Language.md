@@ -1,4 +1,5 @@
 ---
+title: Storage Agnostic Query Language
 description: Ideas for storage-agnostic query language for wikilink markdown
 status: idea
 tags:

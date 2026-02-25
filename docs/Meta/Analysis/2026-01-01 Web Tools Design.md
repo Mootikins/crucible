@@ -1,4 +1,5 @@
 ---
+title: 2026 01 01 Web Tools Design
 description: Web Tools Design for Crucible
 tags:
   - meta

@@ -1,4 +1,5 @@
 ---
+title: Precognition
 description: How Crucible automatically surfaces relevant notes during conversation
 status: implemented
 tags:

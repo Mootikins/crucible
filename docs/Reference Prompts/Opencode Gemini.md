@@ -1,4 +1,5 @@
 ---
+title: Opencode Gemini
 description: Core Mandates
 tags:
   - reference

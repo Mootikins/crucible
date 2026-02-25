@@ -1,4 +1,5 @@
 ---
+title: MCP Gateway
 description: Connect external MCP servers to add tools from GitHub, databases, and more
 status: implemented
 tags:

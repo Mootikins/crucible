@@ -1,4 +1,5 @@
 ---
+title: Dev Kiln Architecture
 description: Technical architecture of the dev-kiln documentation system
 tags:
   - meta

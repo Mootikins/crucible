@@ -1,4 +1,5 @@
 ---
+title: Windows Setup
 description: Windows-specific configuration, building, and troubleshooting
 tags:
   - guide

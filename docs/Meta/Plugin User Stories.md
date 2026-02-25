@@ -1,4 +1,5 @@
 ---
+title: Plugin User Stories
 status: design
 created: 2024-12-21
 tags:

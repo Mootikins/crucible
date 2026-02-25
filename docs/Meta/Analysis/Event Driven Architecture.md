@@ -1,4 +1,5 @@
 ---
+title: Event Driven Architecture
 description: Event-Driven Architecture
 tags:
   - meta

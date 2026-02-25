@@ -1,4 +1,5 @@
 ---
+title: 2025 12 23 Zellij TUI Patterns
 description: Zellij TUI Implementation Patterns Research
 tags:
   - research

@@ -1,4 +1,5 @@
 ---
+title: Creating Plugins
 description: Build plugins to extend Crucible with tools, hooks, workflows, and more
 status: implemented
 tags:

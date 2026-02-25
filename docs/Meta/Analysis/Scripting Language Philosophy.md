@@ -1,4 +1,5 @@
 ---
+title: Scripting Language Philosophy
 description: Analysis of scripting language choices for Crucible's extension system
 status: decided
 tags:

@@ -1,4 +1,5 @@
 ---
+title: Organization Styles
 description: Overview of different approaches to organizing your kiln
 tags:
   - organization

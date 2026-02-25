@@ -1,4 +1,5 @@
 ---
+title: Plugin Manifest
 description: Plugin manifest format for declaring metadata, dependencies, and capabilities
 status: implemented
 tags:

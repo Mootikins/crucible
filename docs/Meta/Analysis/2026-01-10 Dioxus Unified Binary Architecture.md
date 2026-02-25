@@ -1,4 +1,5 @@
 ---
+title: 2026 01 10 Dioxus Unified Binary Architecture
 description: Dioxus Unified Binary Architecture
 tags:
   - meta

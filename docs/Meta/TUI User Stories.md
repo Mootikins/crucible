@@ -1,4 +1,6 @@
 ---
+title: TUI User Stories
+description: Documentation note for TUI User Stories.
 tags: [meta, ux, tui, user-stories]
 ---
 

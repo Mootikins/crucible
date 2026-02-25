@@ -1,4 +1,5 @@
 ---
+title: Daemon RPC Patterns
 description: Daemon/RPC Architecture Patterns
 tags:
   - meta

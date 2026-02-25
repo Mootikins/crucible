@@ -1,4 +1,5 @@
 ---
+title: Your First Kiln
 description: Create and configure a new knowledge base from scratch
 tags:
   - guide

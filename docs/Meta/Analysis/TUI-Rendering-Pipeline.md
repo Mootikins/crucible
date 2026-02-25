@@ -1,4 +1,5 @@
 ---
+title: TUI Rendering Pipeline
 description: TUI Rendering Pipeline
 tags:
   - meta

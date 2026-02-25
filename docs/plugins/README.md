@@ -1,4 +1,5 @@
 ---
+title: plugins
 description: Plugin Examples
 tags:
   - plugins

@@ -1,4 +1,5 @@
 ---
+title: General Assistant
 type: agent
 version: "1.0.0"
 description: "Default general-purpose assistant for Crucible interactions"

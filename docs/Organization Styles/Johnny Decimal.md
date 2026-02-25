@@ -1,4 +1,5 @@
 ---
+title: Johnny Decimal
 description: Numbered category system for predictable organization
 tags:
   - organization

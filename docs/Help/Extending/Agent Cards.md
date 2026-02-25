@@ -1,4 +1,5 @@
 ---
+title: Agent Cards
 description: Define AI agent personalities and capabilities for your kiln
 status: implemented
 tags:

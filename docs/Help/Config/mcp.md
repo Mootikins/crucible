@@ -1,4 +1,5 @@
 ---
+title: mcp
 description: Configure upstream MCP servers for tool aggregation
 tags:
   - reference

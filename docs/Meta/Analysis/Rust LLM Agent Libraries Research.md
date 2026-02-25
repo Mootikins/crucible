@@ -1,4 +1,5 @@
 ---
+description: Documentation note for Rust LLM Agent Libraries Research.
 title: "Rust LLM Agent Libraries Research"
 date: 2025-12-24
 tags: [research, llm, agents, rust]

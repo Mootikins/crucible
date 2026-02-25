@@ -1,4 +1,5 @@
 ---
+title: Zed System Prompt
 description: First Header
 tags:
   - reference

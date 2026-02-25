@@ -1,4 +1,6 @@
 ---
+title: Rules Files
+description: Documentation note for Rules Files.
 tags: [help, configuration, agents]
 ---
 

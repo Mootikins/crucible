@@ -1,4 +1,5 @@
 ---
+title: Event Hooks
 description: React to events in your kiln with Lua scripts
 status: implemented
 tags:

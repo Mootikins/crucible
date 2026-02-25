@@ -1,4 +1,5 @@
 ---
+title: Core Types Traits
 description: Architecture analysis of crucible-core traits and type organization
 type: analysis
 system: core

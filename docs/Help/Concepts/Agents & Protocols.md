@@ -1,4 +1,5 @@
 ---
+title: Agents & Protocols
 description: Understanding AI agents and how they connect to your kiln
 status: implemented
 tags:

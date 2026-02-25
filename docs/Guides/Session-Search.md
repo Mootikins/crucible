@@ -1,4 +1,5 @@
 ---
+title: Session Search
 description: Search past chat sessions to find conversations and build episodic memory
 tags:
   - guide

@@ -1,4 +1,5 @@
 ---
+title: Claude Code System Prompt
 description: Looking up your own documentation:
 tags:
   - reference

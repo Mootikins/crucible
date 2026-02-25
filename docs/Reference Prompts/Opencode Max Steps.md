@@ -1,4 +1,5 @@
 ---
+title: Opencode Max Steps
 description: CRITICAL - MAXIMUM STEPS REACHED
 tags:
   - reference

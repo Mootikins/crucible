@@ -1,4 +1,5 @@
 ---
+title: Researcher
 description: Deep exploration and context gathering agent
 tags:
   - agent

@@ -1,4 +1,5 @@
 ---
+title: TUI Syntax Styling Options
 description: TUI Syntax Styling Options
 tags:
   - meta

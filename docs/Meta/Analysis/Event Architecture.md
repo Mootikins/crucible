@@ -1,4 +1,5 @@
 ---
+title: Event Architecture
 description: Internal architecture of Crucible's event-driven processing system
 tags:
   - architecture

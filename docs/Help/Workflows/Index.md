@@ -1,4 +1,5 @@
 ---
+title: Workflows
 description: Automate multi-step processes in your kiln
 status: planned
 tags:

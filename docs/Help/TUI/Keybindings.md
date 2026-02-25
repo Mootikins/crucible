@@ -1,4 +1,5 @@
 ---
+description: Documentation note for Keybindings.
 title: TUI Keybindings
 tags: [help, tui, keybindings]
 ---

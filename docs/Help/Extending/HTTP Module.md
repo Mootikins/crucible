@@ -1,4 +1,5 @@
 ---
+title: HTTP Module
 description: Making HTTP requests from Lua scripts
 tags:
   - help

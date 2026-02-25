@@ -1,4 +1,5 @@
 ---
+title: Scripted UI
 description: Create interactive popups and panels from scripts
 status: implemented
 tags:

@@ -1,4 +1,5 @@
 ---
+title: Model Context Protocol
 description: Specification reference for the Model Context Protocol (MCP) — the standard Crucible uses for tool exposure and agent integration
 status: implemented
 tags:

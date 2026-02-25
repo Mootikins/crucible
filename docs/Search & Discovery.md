@@ -1,4 +1,5 @@
 ---
+title: Search & Discovery
 description: Map of all ways to find and navigate content in your kiln
 status: implemented
 tags:

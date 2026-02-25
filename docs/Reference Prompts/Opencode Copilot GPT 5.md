@@ -1,4 +1,5 @@
 ---
+title: Opencode Copilot GPT 5
 description: Workflow
 tags:
   - reference

@@ -1,4 +1,5 @@
 ---
+title: Rig vs Crucible LLM Abstractions
 description: Rig vs Crucible LLM Abstraction Comparison
 tags:
   - meta

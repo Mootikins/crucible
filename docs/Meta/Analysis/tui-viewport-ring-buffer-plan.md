@@ -1,4 +1,5 @@
 ---
+title: tui viewport ring buffer plan
 description: TUI Viewport Ring Buffer Architecture Plan
 tags:
   - meta

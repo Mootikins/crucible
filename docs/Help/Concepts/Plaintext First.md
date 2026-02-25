@@ -1,4 +1,5 @@
 ---
+title: Plaintext First
 description: Why Crucible uses markdown and keeps your files local
 status: implemented
 tags:

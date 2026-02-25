@@ -1,4 +1,5 @@
 ---
+title: Plugin API Sketches
 description: Plugin API Sketches (MVP)
 tags:
   - help

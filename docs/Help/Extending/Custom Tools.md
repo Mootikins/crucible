@@ -1,4 +1,5 @@
 ---
+title: Custom Tools
 description: How to create custom tools for Crucible agents
 tags:
   - help

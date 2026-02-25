@@ -1,4 +1,5 @@
 ---
+title: Tags
 description: Reference for tag syntax and usage
 tags:
   - reference

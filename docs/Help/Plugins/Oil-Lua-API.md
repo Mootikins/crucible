@@ -1,4 +1,5 @@
 ---
+title: Oil Lua API
 description: Oil Lua API Reference
 tags:
   - plugins

@@ -1,4 +1,5 @@
 ---
+title: Executable Markdown and Hooks
 description: Ideas for DAG-based workflow markup and soft/hard hook guides
 status: idea
 tags:

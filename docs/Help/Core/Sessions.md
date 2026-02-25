@@ -1,4 +1,5 @@
 ---
+title: Sessions
 description: Track conversation and execution history
 status: implemented
 tags:

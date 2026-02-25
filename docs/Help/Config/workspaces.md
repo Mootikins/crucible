@@ -1,4 +1,6 @@
 ---
+title: workspaces
+description: Documentation note for workspaces.
 tags:
   - config
   - security

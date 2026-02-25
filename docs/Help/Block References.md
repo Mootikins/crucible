@@ -1,4 +1,5 @@
 ---
+title: Block References
 description: Reference for block ID syntax and embedding
 tags:
   - reference

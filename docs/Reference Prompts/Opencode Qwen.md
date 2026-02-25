@@ -1,4 +1,5 @@
 ---
+title: Opencode Qwen
 description: Tone and style
 tags:
   - reference
