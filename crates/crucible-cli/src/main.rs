@@ -1,6 +1,6 @@
 use anyhow::Result;
 use clap::Parser;
-use tracing::{debug, error, info, warn};
+use tracing::{error, info};
 use tracing_subscriber::filter::LevelFilter;
 use tracing_subscriber::prelude::*; // For SubscriberExt trait
 
@@ -9,58 +9,6 @@ use crucible_cli::{
     commands, config,
 };
 
-/// Process files with change detection on startup via daemon RPC
-///
-/// Discovers files needing processing and sends them to the daemon.
-///
-/// # Arguments
-///
-/// * `config` - CLI configuration with kiln path and settings
-async fn process_files_with_change_detection(config: &crate::config::CliConfig) -> Result<()> {
-    use crucible_rpc::DaemonClient;
-    use walkdir::WalkDir;
-
-    let kiln_path = &config.kiln_path;
-
-    // Discover markdown files
-    let files: Vec<std::path::PathBuf> = WalkDir::new(kiln_path)
-        .follow_links(false)
-        .into_iter()
-        .filter_entry(|e| {
-            let name = e.file_name().to_string_lossy();
-            name != ".crucible" && name != ".git" && name != ".obsidian" && name != "node_modules"
-        })
-        .filter_map(|e| e.ok())
-        .filter(|e| {
-            e.path().is_file() && e.path().extension().and_then(|s| s.to_str()) == Some("md")
-        })
-        .map(|e| e.path().to_path_buf())
-        .collect();
-
-    if files.is_empty() {
-        debug!("No markdown files found to process");
-        return Ok(());
-    }
-
-    info!("Processing {} files via daemon...", files.len());
-
-    // Send to daemon for processing
-    let client = DaemonClient::connect_or_start().await?;
-    match client.process_batch(kiln_path, &files).await {
-        Ok((processed, skipped, errors)) => {
-            info!(
-                "File processing complete: {} processed, {} skipped, {} errors",
-                processed,
-                skipped,
-                errors.len()
-            );
-        }
-        Err(e) => {
-            warn!("Daemon batch processing failed: {}", e);
-        }
-    }
-    Ok(())
-}
 /// Parse log level string to LevelFilter
 fn parse_log_level(level: &str) -> Option<LevelFilter> {
     match level.to_lowercase().as_str() {
@@ -234,77 +182,6 @@ async fn async_main(cli: Cli, standalone_sock: Option<std::path::PathBuf>) -> Re
     // Log configuration in verbose mode
     if cli.verbose {
         config.log_config();
-    }
-
-    // Process any pending files on startup using integrated blocking processing
-    // Skip for REPL mode, chat (handles own processing), or when explicitly disabled
-    match &cli.command {
-        None => {
-            // Chat mode - process files in background like other commands
-            debug!("No command specified, will use chat mode");
-        }
-        Some(Commands::Chat { .. }) => {
-            // Chat command handles its own file processing (background for TUI modes)
-            // Don't block startup with synchronous processing
-            debug!("chat mode - skipping main.rs file processing, command handles it");
-        }
-        Some(Commands::Daemon(..)) => {
-            // Daemon commands must NOT process files — `daemon serve` IS the daemon,
-            // and calling DaemonClient::connect_or_start() would recursively spawn itself.
-            debug!("daemon command - skipping file processing");
-        }
-        Some(Commands::Mcp { .. }) => {
-            // MCP server uses stdio — don't block startup with file processing
-            debug!("mcp command - skipping file processing");
-        }
-        _ => {
-            if cli.no_process {
-                info!("File processing skipped due to --no-process flag");
-                info!("CLI commands may operate on stale data");
-            } else {
-                // Process files before command execution to ensure up-to-date data
-                debug!(
-                    "Starting file processing with timeout: {} seconds",
-                    cli.process_timeout
-                );
-                // Set timeout for file processing
-                let timeout_duration = if cli.process_timeout == 0 {
-                    None // No timeout
-                } else {
-                    Some(std::time::Duration::from_secs(cli.process_timeout))
-                };
-
-                let process_future = process_files_with_change_detection(&config);
-                let result = if let Some(dur) = timeout_duration {
-                    tokio::time::timeout(dur, process_future).await
-                } else {
-                    Ok(process_future.await)
-                };
-
-                match result {
-                    Ok(process_result) => {
-                        match process_result {
-                            Ok(()) => {
-                                debug!("File processing completed successfully");
-                            }
-                            Err(e) => {
-                                error!("File processing failed: {}", e);
-                                info!("CLI commands may operate on stale data");
-                                // Continue execution even if processing fails (graceful degradation)
-                            }
-                        }
-                    }
-                    Err(_timeout_err) => {
-                        warn!(
-                            "File processing timed out after {} seconds",
-                            cli.process_timeout
-                        );
-                        info!("CLI commands may operate on partially updated data");
-                        // Continue execution even if processing times out (graceful degradation)
-                    }
-                }
-            }
-        }
     }
 
     // Execute command
