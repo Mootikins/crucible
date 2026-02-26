@@ -914,6 +914,12 @@ where
                             "Tool result received"
                         );
 
+                        let tool_error = if result_text.starts_with("Error: ") {
+                            Some(result_text.clone())
+                        } else {
+                            None
+                        };
+
                         // Emit tool result to TUI
                         yield Ok(ChatChunk {
                             delta: String::new(),
@@ -922,7 +928,7 @@ where
                             tool_results: Some(vec![ChatToolResult {
                                 name: tool_name,
                                 result: result_text,
-                                error: None, // Rig doesn't distinguish error results
+                                error: tool_error,
                                 call_id: tr.call_id.clone(),
                             }]),
                             reasoning: None,

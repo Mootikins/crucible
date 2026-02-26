@@ -21,12 +21,12 @@ use crucible_core::traits::mcp::McpToolInfo;
 use crucible_core::traits::KnowledgeRepository;
 use crucible_core::{EventPushCallback, InteractionContext};
 use crucible_rig::{
-    create_client, mcp_tools_from_gateway, AgentConfig, HandleBuildOpts, McpProxyTool,
-    WorkspaceContext,
+    create_client, mcp_tools_from_gateway, AgentConfig, HandleBuildOpts, WorkspaceContext,
 };
 use crucible_tools::in_process_adapter::InProcessMcpAdapter;
 use crucible_tools::mcp_server::CrucibleMcpServer;
 use crucible_tools::DelegationContext;
+use rig::tool::ToolDyn;
 use std::path::Path;
 use std::sync::Arc;
 use thiserror::Error;
@@ -78,7 +78,7 @@ async fn create_internal_mcp_tools(
     delegation_context: Option<DelegationContext>,
     mode: &str,
     gateway_all_tools_override: Option<&[McpToolInfo]>,
-) -> Vec<McpProxyTool> {
+) -> Vec<Box<dyn ToolDyn>> {
     let mut combined_tools = Vec::new();
 
     if let Some(kiln_path) = kiln_path {
@@ -93,21 +93,7 @@ async fn create_internal_mcp_tools(
             delegation_context,
         );
         let adapter = InProcessMcpAdapter::new(Arc::new(server));
-        let adapter_gateway = Arc::new(tokio::sync::RwLock::new(
-            crucible_tools::mcp_gateway::McpGatewayManager::new(),
-        ));
-
-        for tool in adapter.create_rig_tools(mode) {
-            let definition = tool.definition(String::new()).await;
-            let info = McpToolInfo {
-                name: definition.name.clone(),
-                prefixed_name: definition.name,
-                description: Some(definition.description),
-                input_schema: definition.parameters,
-                upstream: "crucible".to_string(),
-            };
-            combined_tools.push(McpProxyTool::new(&info, adapter_gateway.clone()));
-        }
+        combined_tools.extend(adapter.create_rig_tools(mode));
 
         info!(
             count = combined_tools.len(),
@@ -122,7 +108,7 @@ async fn create_internal_mcp_tools(
         );
     }
 
-    let user_mcp_tools: Vec<McpProxyTool> = if let Some(ref gw) = mcp_gateway {
+    let user_mcp_tools: Vec<Box<dyn ToolDyn>> = if let Some(ref gw) = mcp_gateway {
         let gw_read = gw.read().await;
         debug!(
             tool_count = gw_read.tool_count(),
@@ -140,7 +126,10 @@ async fn create_internal_mcp_tools(
                 &all_tools_owned
             };
             drop(gw_read);
-            let tools = mcp_tools_from_gateway(gw, server_names, all_tools);
+            let tools = mcp_tools_from_gateway(gw, server_names, all_tools)
+                .into_iter()
+                .map(|tool| Box::new(tool) as Box<dyn ToolDyn>)
+                .collect::<Vec<_>>();
             info!(count = tools.len(), servers = ?server_names, "Resolved MCP proxy tools");
             tools
         } else {
@@ -180,7 +169,7 @@ async fn create_internal_mcp_tool_names_for_tests(
     .await;
     tools
         .into_iter()
-        .map(|t| t.tool_name().to_string())
+        .map(|t| t.name())
         .collect()
 }
 
@@ -373,6 +362,7 @@ pub async fn create_agent_from_session_config(
 #[cfg(test)]
 mod tests {
     use super::*;
+
     use std::collections::HashMap;
     use tokio::sync::RwLock;
 
@@ -743,5 +733,46 @@ mod tests {
                 panic!("Should not reach ClientCreation for ACP agent type");
             }
         }
+    }
+
+    #[tokio::test]
+    async fn test_tool_routing_calls_reach_in_process_server() {
+        let temp_dir = tempfile::TempDir::new().expect("Failed to create temp dir");
+        let kiln_path = temp_dir.path();
+
+        let knowledge_repo: Arc<dyn KnowledgeRepository> =
+            Arc::new(EmptyKnowledgeRepository);
+        let embedding_provider: Arc<dyn EmbeddingProvider> =
+            Arc::new(EmptyEmbeddingProvider);
+
+        let tools = create_internal_mcp_tools(
+            Path::new("/tmp"),
+            Some(kiln_path),
+            None,
+            &[],
+            Some(knowledge_repo),
+            Some(embedding_provider),
+            None,
+            "auto",
+            None,
+        )
+        .await;
+
+        let get_kiln_info_tool = tools
+            .into_iter()
+            .find(|t| t.name() == "get_kiln_info")
+            .expect("get_kiln_info tool should exist in in-process tools");
+
+        let result = get_kiln_info_tool.call("{}".to_string()).await;
+
+        assert!(
+            result.is_ok(),
+            "Tool call should succeed, but got error: {:?}",
+            result
+        );
+        assert!(
+            result.unwrap().contains("Kiln"),
+            "get_kiln_info should return kiln information"
+        );
     }
 }
