@@ -78,10 +78,8 @@ const EXPECTED_TOOLS: &[&str] = &[
     "semantic_search",
     "text_search",
     "property_search",
-    // Kiln tools (3)
+    // Kiln tools (1)
     "get_kiln_info",
-    "get_kiln_roots",
-    "get_kiln_stats",
     // Delegation tool (1)
     "delegate_session",
     // Job tools (3)
@@ -109,8 +107,8 @@ async fn test_mcp_server_exposes_13_tools() {
 
     let tool_count = server.tool_count();
     assert_eq!(
-        tool_count, 16,
-        "Should expose exactly 16 tools, got {}",
+        tool_count, 14,
+        "Should expose exactly 14 tools, got {}",
         tool_count
     );
 }
@@ -187,12 +185,12 @@ async fn test_server_info_metadata() {
     assert!(info.server_info.title.is_some());
     assert_eq!(info.server_info.title.unwrap(), "Crucible MCP Server");
 
-    // Verify instructions mention 16 tools
+    // Verify instructions mention 14 tools
     assert!(info.instructions.is_some());
     let instructions = info.instructions.unwrap();
     assert!(
-        instructions.contains("16 tools"),
-        "Instructions should mention 16 tools"
+        instructions.contains("14 tools"),
+        "Instructions should mention 14 tools"
     );
 
     // Verify tools capability is advertised
@@ -230,13 +228,13 @@ async fn test_tool_categories() {
         .count();
     assert_eq!(search_count, 3, "Should have 3 search tools");
 
-    // Kiln tools (3)
-    let kiln_tools = ["get_kiln_info", "get_kiln_roots", "get_kiln_stats"];
+    // Kiln tools (1)
+    let kiln_tools = ["get_kiln_info"];
     let kiln_count = kiln_tools
         .iter()
         .filter(|t| tool_names.iter().any(|n| n == *t))
         .count();
-    assert_eq!(kiln_count, 3, "Should have 3 kiln tools");
+    assert_eq!(kiln_count, 1, "Should have 1 kiln tool");
 
     let delegation_count = tool_names
         .iter()

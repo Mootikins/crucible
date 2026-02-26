@@ -57,8 +57,6 @@ const MODEL_CACHE_TTL: Duration = Duration::from_secs(300);
 /// - `read_note` — Read note content with optional line range
 /// - `read_metadata` — Read note metadata without loading full content
 /// - `get_kiln_info` — Get comprehensive kiln information including root path and statistics
-/// - `get_kiln_roots` — Get kiln root directories
-/// - `get_kiln_stats` — Get kiln statistics
 /// - `list_jobs` — List all background jobs (running and completed) for the current session
 ///
 /// **Workspace Tools (Rig-native, 3 read-only):**
@@ -98,8 +96,6 @@ pub fn is_safe(tool_name: &str) -> bool {
             | "read_note"
             | "read_metadata"
             | "get_kiln_info"
-            | "get_kiln_roots"
-            | "get_kiln_stats"
             | "list_jobs"
     )
 }
@@ -4496,8 +4492,6 @@ mod tests {
             assert!(is_safe("semantic_search"));
             assert!(is_safe("get_kiln_info"));
             assert!(is_safe("list_notes"));
-            assert!(is_safe("get_kiln_roots"));
-            assert!(is_safe("get_kiln_stats"));
         }
 
         #[test]

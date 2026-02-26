@@ -18,8 +18,6 @@ const EXPECTED_TOOL_NAMES: &[&str] = &[
     "read_note",
     "read_metadata",
     "get_kiln_info",
-    "get_kiln_roots",
-    "get_kiln_stats",
     "list_jobs",
     "create_note",
     "update_note",
@@ -296,7 +294,7 @@ async fn test_plan_mode_tool_filtering() {
         .map(|tool| tool.name())
         .collect();
 
-    assert_eq!(full_names.len(), 16);
+    assert_eq!(full_names.len(), 14);
     assert_eq!(plan_names, to_set(PLAN_TOOL_NAMES));
     assert!(!plan_names.contains("create_note"));
     assert!(!plan_names.contains("delegate_session"));
@@ -320,7 +318,7 @@ async fn test_internal_agent_tool_call_e2e() {
         .expect("tool call should succeed");
 
     assert!(!response.is_empty());
-    assert!(response.contains("root"));
+    assert!(response.contains("name"));
 }
 
 #[tokio::test]

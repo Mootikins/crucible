@@ -51,7 +51,7 @@ use crate::search::{PropertySearchParams, SemanticSearchParams, TextSearchParams
 /// This server aggregates tools from three categories:
 /// - **`NoteTools`** (6 tools): CRUD operations on notes
 /// - **`SearchTools`** (3 tools): Semantic, text, and property search
-/// - **`KilnTools`** (3 tools): Kiln metadata and statistics
+/// - **`KilnTools`** (1 tool): Kiln metadata and statistics
 #[derive(Clone)]
 pub struct CrucibleMcpServer {
     note_tools: NoteTools,
@@ -291,15 +291,6 @@ impl CrucibleMcpServer {
         self.kiln_tools.get_kiln_info().await
     }
 
-    #[tool(description = "Get kiln roots information")]
-    pub async fn get_kiln_roots(&self) -> Result<CallToolResult, rmcp::ErrorData> {
-        self.kiln_tools.get_kiln_roots().await
-    }
-
-    #[tool(description = "Get kiln statistics")]
-    pub async fn get_kiln_stats(&self) -> Result<CallToolResult, rmcp::ErrorData> {
-        self.kiln_tools.get_kiln_stats().await
-    }
 
     #[tool(
         description = "Delegate a task to another AI agent (e.g., cursor, opencode). The target agent receives the prompt, executes the task, and returns the result. Use this when asked to hand off work to a specific agent."
@@ -515,7 +506,7 @@ impl ServerHandler for CrucibleMcpServer {
                 icons: None,
                 website_url: None,
             },
-            instructions: Some("Crucible knowledge management server with 16 tools. Notes: create_note, read_note, update_note, delete_note, list_notes, read_metadata. Search: semantic_search, text_search, property_search. Kiln: get_kiln_info, get_kiln_roots, get_kiln_stats. Delegation: delegate_session — hand off tasks to other agents when asked to delegate. Jobs: list_jobs, get_job_result, cancel_job — manage background jobs.".into()),
+            instructions: Some("Crucible knowledge management server with 14 tools. Notes: create_note, read_note, update_note, delete_note, list_notes, read_metadata. Search: semantic_search, text_search, property_search. Kiln: get_kiln_info. Delegation: delegate_session — hand off tasks to other agents when asked to delegate. Jobs: list_jobs, get_job_result, cancel_job — manage background jobs.".into()),
         }
     }
 }

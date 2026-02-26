@@ -545,8 +545,12 @@ impl ToolExecutor {
         _params: serde_json::Value,
     ) -> Result<serde_json::Value> {
         // Return basic kiln information
+        let name = self.kiln_path
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "unknown".to_string());
         Ok(serde_json::json!({
-            "kiln_path": self.kiln_path.to_string_lossy(),
+            "name": name,
             "exists": self.kiln_path.exists(),
             "is_directory": self.kiln_path.is_dir()
         }))
