@@ -37,6 +37,7 @@ pub mod crucible_agent;
 pub mod github_copilot;
 pub mod handle;
 pub mod mcp_proxy_tool;
+pub mod model_listing;
 pub mod openai_reasoning;
 pub mod providers;
 pub mod session;
@@ -78,3 +79,6 @@ pub use mcp_proxy_tool::{mcp_tools_from_gateway, McpProxyError, McpProxyTool};
 pub use github_copilot::{
     CopilotAuth, CopilotClient, CopilotError, CopilotModel, CopilotResult, DeviceCodeResponse,
 };
+
+// Re-export model listing
+pub use model_listing::{list_models, ModelListingError, ModelListingResult};
