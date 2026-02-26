@@ -2011,15 +2011,9 @@ impl AgentManager {
                     }
                 }
 
-                match self.discover_models(provider_key, provider_config).await {
-                    Ok(models) => {
-                        for model in models {
-                            all_models.push(format!("{}/{}", provider_key, model));
-                        }
-                    }
-                    Err(error_entry) => {
-                        all_models.push(error_entry);
-                    }
+                let models = self.discover_models(provider_key, provider_config).await;
+                for model in models {
+                    all_models.push(format!("{}/{}", provider_key, model));
                 }
             }
         }
@@ -2059,13 +2053,16 @@ impl AgentManager {
     }
 
     /// Dispatch model discovery based on backend type.
+    ///
+    /// Always returns a model list (never fails). Falls back to
+    /// `effective_models()` from config when discovery errors or returns empty.
     async fn discover_models(
         &self,
         provider_key: &str,
         provider_config: &LlmProviderConfig,
-    ) -> Result<Vec<String>, String> {
+    ) -> Vec<String> {
         if provider_config.available_models.is_some() {
-            return Ok(provider_config.effective_models());
+            return provider_config.effective_models();
         }
         let endpoint = provider_config.endpoint();
         let api_key = provider_config.api_key();
@@ -2077,15 +2074,15 @@ impl AgentManager {
         )
         .await
         {
-            Ok(models) if models.is_empty() => Ok(provider_config.effective_models()),
-            Ok(models) => Ok(models),
+            Ok(models) if models.is_empty() => provider_config.effective_models(),
+            Ok(models) => models,
             Err(e) => {
                 warn!(
                     provider_key = %provider_key,
                     error = %e,
                     "Dynamic model discovery failed, using effective_models fallback"
                 );
-                Ok(provider_config.effective_models())
+                provider_config.effective_models()
             }
         }
     }
