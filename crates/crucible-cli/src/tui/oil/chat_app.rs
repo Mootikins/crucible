@@ -1524,11 +1524,12 @@ impl OilChatApp {
             }
             "model" => {
                 if self.model_list_state == ModelListState::NotLoaded {
+                    self.set_input(":model ");
                     self.popup.show = true;
                     self.popup.kind = AutocompleteKind::Model;
                     self.popup.filter.clear();
                     self.popup.selected = 0;
-                    self.popup.trigger_pos = 0;
+                    self.popup.trigger_pos = 7;
                     return Action::Send(ChatAppMsg::FetchModels);
                 }
                 if self.available_models.is_empty() {
@@ -1536,11 +1537,12 @@ impl OilChatApp {
                         "No models available. Type :model <name> to switch.".to_string(),
                     );
                 } else {
+                    self.set_input(":model ");
                     self.popup.show = true;
                     self.popup.kind = AutocompleteKind::Model;
                     self.popup.filter.clear();
                     self.popup.selected = 0;
-                    self.popup.trigger_pos = 0;
+                    self.popup.trigger_pos = 7;
                 }
                 Action::Continue
             }
