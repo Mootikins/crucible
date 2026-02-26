@@ -45,7 +45,7 @@ use tracing::{debug, info, warn};
 /// Extended MCP server exposing Crucible kiln tools plus Lua plugins.
 ///
 /// This server aggregates tools from multiple sources:
-/// - **Kiln tools** (13): `NoteTools`, `SearchTools`, `KilnTools`, delegation via `CrucibleMcpServer`
+/// - **Kiln tools** (11): `NoteTools`, `SearchTools`, `KilnTools`, delegation via `CrucibleMcpServer`
 /// - **Lua tools** (dynamic): Scripts from plugins/ directories prefixed with `lua_`
 /// - **Gateway tools** (dynamic): Tools from upstream MCP servers with configured prefixes
 ///
@@ -845,7 +845,7 @@ mod tests {
         );
 
         let tools = server.list_all_tools().await;
-        assert_eq!(tools.len(), 18); // 13 kiln tools + 3 job tools + 2 discovery tools
+        assert_eq!(tools.len(), 16); // 11 kiln tools + 3 job tools + 2 discovery tools
     }
 
     #[test]

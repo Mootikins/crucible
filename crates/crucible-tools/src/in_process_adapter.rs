@@ -25,8 +25,6 @@ pub const PLAN_TOOL_NAMES: &[&str] = &[
     "read_note",
     "read_metadata",
     "get_kiln_info",
-    "get_kiln_roots",
-    "get_kiln_stats",
     "list_jobs",
 ];
 
@@ -144,8 +142,6 @@ impl InProcessRigTool {
                 self.server.property_search(Parameters(params)).await
             }
             "get_kiln_info" => self.server.get_kiln_info().await,
-            "get_kiln_roots" => self.server.get_kiln_roots().await,
-            "get_kiln_stats" => self.server.get_kiln_stats().await,
             "delegate_session" => {
                 let params = parse_params::<DelegateSessionParams>(params_object)?;
                 self.server.delegate_session(Parameters(params)).await

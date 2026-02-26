@@ -403,8 +403,8 @@ async fn test_tools_list_over_http_returns_delegate_session() {
 
     assert_eq!(
         tools.len(),
-        16,
-        "Should have 16 tools, got: {:?}",
+        14,
+        "Should have 14 tools, got: {:?}",
         tool_names
     );
     assert!(
