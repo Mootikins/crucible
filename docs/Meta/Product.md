@@ -298,7 +298,7 @@ Crucible acts as an **ACP host**, spawning and controlling external AI agents (C
 - [x] **MCP Server** `P0` — Expose kiln as MCP tools for external AI agents · [[Help/Concepts/Agents & Protocols]] · `crucible-tools`
 - [x] **Note Tools** `P0` — `create_note`, `read_note`, `read_metadata`, `update_note`, `delete_note`, `list_notes` · `crucible-tools`
 - [x] **Search Tools** `P0` — `semantic_search`, `text_search`, `property_search` · `crucible-tools`
-- [x] **Kiln Tools** `P0` — `get_kiln_info`, `get_kiln_roots`, `get_kiln_stats` · `crucible-tools`
+- [x] **Kiln Tools** `P0` — `get_kiln_info` · `crucible-tools`
 - [x] **Workspace Tools** `P0` — `read_file`, `edit_file`, `write_file`, `bash`, `glob`, `grep` · `crucible-tools`
 - [x] **TOON Formatting** `P0` — Token-efficient response formatting · `crucible-tools`
 

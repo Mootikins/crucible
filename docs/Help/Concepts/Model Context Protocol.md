@@ -178,9 +178,7 @@ Crucible exposes 12 tools across three categories:
 
 | Tool | Description |
 |------|-------------|
-| `get_kiln_info` | Get comprehensive kiln information including root path and statistics |
-| `get_kiln_roots` | Get kiln roots information |
-| `get_kiln_stats` | Get kiln statistics |
+| `get_kiln_info` | Get kiln name and file statistics (total_files, markdown_files, total_size_bytes) |
 
 ### Connecting External Agents
 

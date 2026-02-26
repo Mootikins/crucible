@@ -771,8 +771,8 @@ mod tests {
             result
         );
         assert!(
-            result.unwrap().contains("Kiln"),
-            "get_kiln_info should return kiln information"
+            result.unwrap().contains("name"),
+            "get_kiln_info should contain name field"
         );
     }
 }

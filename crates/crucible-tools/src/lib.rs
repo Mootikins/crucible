@@ -7,7 +7,7 @@
 //!
 //! - **`NoteTools`** (6): `create_note`, `read_note`, `read_metadata`, `update_note`, `delete_note`, `list_notes`
 //! - **`SearchTools`** (3): `semantic_search`, `text_search`, `property_search`
-//! - **`KilnTools`** (3): `get_kiln_info`, `get_kiln_roots`, `get_kiln_stats`
+//! - **`KilnTools`** (1): `get_kiln_info`
 //! - **`CrucibleMcpServer`** (12): Unified MCP server exposing all tools via stdio transport
 //!
 //! ## Architecture
@@ -82,7 +82,7 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 pub fn init() {
     tracing::info!("Initializing crucible-tools v{}", VERSION);
     tracing::info!(
-        "16 tools available: 6 NoteTools, 3 SearchTools, 3 KilnTools, 1 DelegationTool, 3 JobTools"
+        "14 tools available: 6 NoteTools, 3 SearchTools, 1 KilnTool, 1 DelegationTool, 3 JobTools"
     );
 }
 

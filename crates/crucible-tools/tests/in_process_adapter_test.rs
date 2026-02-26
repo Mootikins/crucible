@@ -79,7 +79,7 @@ fn in_process_adapter_lists_all_unprefixed_tool_names() {
 
     let names = adapter.list_tool_names();
 
-    assert_eq!(names.len(), 16);
+    assert_eq!(names.len(), 14);
     assert!(names
         .iter()
         .all(|name| !name.contains('_') || !name.starts_with("crucible_")));
@@ -102,8 +102,6 @@ async fn in_process_adapter_create_rig_tools_filters_plan_mode() {
         "read_note",
         "read_metadata",
         "get_kiln_info",
-        "get_kiln_roots",
-        "get_kiln_stats",
         "list_jobs",
     ]
     .iter()
@@ -118,7 +116,7 @@ fn in_process_adapter_create_rig_tools_non_plan_returns_all() {
     let (_temp, adapter) = create_adapter();
 
     let tools = adapter.create_rig_tools("auto");
-    assert_eq!(tools.len(), 16);
+    assert_eq!(tools.len(), 14);
 }
 
 #[tokio::test]
@@ -135,7 +133,7 @@ async fn in_process_adapter_tool_wrapper_calls_server() {
         .call("{}".to_string())
         .await
         .expect("tool call response");
-    assert!(response.contains("root"));
+    assert!(response.contains("name"));
 }
 
 /// Integration test verifying the end-to-end tool error format fix.
@@ -236,8 +234,8 @@ async fn get_kiln_info_returns_success_with_metadata() {
         "get_kiln_info should succeed, not return error. Got: {content}"
     );
     assert!(
-        content.contains("root"),
-        "get_kiln_info should contain kiln root path. Got: {content}"
+        content.contains("name"),
+        "get_kiln_info should contain kiln name. Got: {content}"
     );
 }
 
