@@ -76,3 +76,9 @@ WORKTREE.md
 thoughts/
 crates/crucible-cli/proptest-regressions/
 .sisyphus/
+
+# Debug artifacts
+*.png
+*.txt
+.ruff_cache/
+.playwright-mcp/
