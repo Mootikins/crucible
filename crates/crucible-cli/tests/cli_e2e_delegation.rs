@@ -109,15 +109,11 @@ fn session_send_help_exposes_expected_usage() {
 
 #[test]
 fn session_configure_nonexistent_session_fails_gracefully() {
-    let temp = tempfile::tempdir().unwrap();
-    let config_path = write_config(temp.path(), "");
-    let socket_path = temp.path().join("daemon.sock");
+    let daemon = TestDaemon::start();
 
-    cru()
-        .env("CRUCIBLE_SOCKET", &socket_path)
+    daemon
+        .command()
         .args([
-            "--config",
-            config_path.to_str().unwrap(),
             "session",
             "configure",
             "missing-session-id",
