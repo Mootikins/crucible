@@ -1,1 +1,0 @@
-Wikilinks are internal links used in wikis to connect pages to each other. They are typically enclosed in double square brackets, like [[this]]. The knowledge graph is a structured representation of information that connects entities and their relationships, often used to enhance search engines and recommend content.
