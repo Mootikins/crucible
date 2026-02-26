@@ -317,6 +317,7 @@ Guidelines:
 - Use `test-case` for parameterized tests
 - Use `tempfile::TempDir` for filesystem tests (never hardcode `/tmp`)
 - Descriptive test names that explain the scenario
+- **NEVER dismiss test failures as "pre-existing" or "unrelated"** — investigate every failure. If tests fail after your changes, the default assumption is your change broke them. Verify causality before moving on.
 
 ### Snapshot and Golden File Policy
 
