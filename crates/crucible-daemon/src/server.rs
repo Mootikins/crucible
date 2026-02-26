@@ -717,7 +717,7 @@ async fn handle_legacy_request(
     tracing::debug!("Legacy handler for method={:?}", req.method);
 
     match req.method.as_str() {
-        "kiln.open" => handle_kiln_open(req, kiln_manager, plugin_loader).await,
+        "kiln.open" => handle_kiln_open(req, kiln_manager, plugin_loader, event_tx).await,
         "kiln.close" => handle_kiln_close(req, kiln_manager).await,
         "kiln.list" => handle_kiln_list(req, kiln_manager).await,
         "kiln.set_classification" => handle_kiln_set_classification(req, kiln_manager).await,
@@ -804,9 +804,13 @@ async fn handle_kiln_open(
     req: Request,
     km: &Arc<KilnManager>,
     plugin_loader: &Arc<Mutex<Option<DaemonPluginLoader>>>,
+    event_tx: &broadcast::Sender<SessionEventMessage>,
 ) -> Response {
     let path = require_str_param!(req, "path");
     let kiln_path = Path::new(path);
+
+    let process = optional_bool_param!(req, "process").unwrap_or(false);
+    let force = optional_bool_param!(req, "force").unwrap_or(false);
 
     if let Err(e) = km.open(kiln_path).await {
         return internal_error(req.id, e);
@@ -822,7 +826,46 @@ async fn handle_kiln_open(
         }
     }
 
-    Response::success(req.id, serde_json::json!({"status": "ok"}))
+    if process {
+        match km.open_and_process(kiln_path, force).await {
+            Ok((processed, skipped, errors)) => {
+                let _ = event_tx.send(SessionEventMessage::new(
+                    "process",
+                    "process_complete",
+                    serde_json::json!({
+                        "kiln": path,
+                        "processed": processed,
+                        "skipped": skipped,
+                        "errors": errors.len()
+                    }),
+                ));
+
+                Response::success(
+                    req.id,
+                    serde_json::json!({
+                        "status": "ok",
+                        "processed": processed,
+                        "skipped": skipped,
+                        "errors": errors.iter().map(|(p, e)| {
+                            serde_json::json!({"path": p.to_string_lossy(), "error": e})
+                        }).collect::<Vec<_>>()
+                    }),
+                )
+            }
+            Err(e) => {
+                warn!("Processing failed for kiln {:?}: {}", kiln_path, e);
+                Response::success(
+                    req.id,
+                    serde_json::json!({
+                        "status": "ok",
+                        "process_error": e.to_string()
+                    }),
+                )
+            }
+        }
+    } else {
+        Response::success(req.id, serde_json::json!({"status": "ok"}))
+    }
 }
 
 async fn handle_kiln_close(req: Request, km: &Arc<KilnManager>) -> Response {
@@ -2133,10 +2176,7 @@ async fn handle_models_list(req: Request, am: &Arc<AgentManager>) -> Response {
         .and_then(|kiln| crate::trust_resolution::find_workspace_and_resolve_classification(kiln));
 
     match am.list_models("", classification).await {
-        Ok(models) => Response::success(
-            req.id,
-            serde_json::json!({ "models": models }),
-        ),
+        Ok(models) => Response::success(req.id, serde_json::json!({ "models": models })),
         Err(crate::agent_manager::AgentError::SessionNotFound(_)) => {
             // No session fallback path hit — return empty list
             Response::success(req.id, serde_json::json!({ "models": [] }))
@@ -2734,7 +2774,10 @@ mod tests {
         )
         .await;
 
-        assert!(response["error"].is_null(), "session.create failed: {response:?}");
+        assert!(
+            response["error"].is_null(),
+            "session.create failed: {response:?}"
+        );
         extract_session_id(&response)
     }
 
@@ -3015,7 +3058,10 @@ mod tests {
             }),
         )
         .await;
-        assert!(open_response["error"].is_null(), "kiln.open failed: {open_response:?}");
+        assert!(
+            open_response["error"].is_null(),
+            "kiln.open failed: {open_response:?}"
+        );
 
         let ok_response = rpc_call(
             &mut client,
@@ -3031,7 +3077,10 @@ mod tests {
             }),
         )
         .await;
-        assert!(ok_response["error"].is_null(), "search_vectors failed: {ok_response:?}");
+        assert!(
+            ok_response["error"].is_null(),
+            "search_vectors failed: {ok_response:?}"
+        );
         assert!(ok_response["result"].is_array());
 
         let err_response = rpc_call(
@@ -3078,7 +3127,10 @@ mod tests {
             }),
         )
         .await;
-        assert!(ok_response["error"].is_null(), "session.list failed: {ok_response:?}");
+        assert!(
+            ok_response["error"].is_null(),
+            "session.list failed: {ok_response:?}"
+        );
         assert!(ok_response["result"]["sessions"].is_array());
         assert!(ok_response["result"]["total"].as_u64().unwrap_or(0) >= 1);
 
@@ -3132,7 +3184,10 @@ mod tests {
             }),
         )
         .await;
-        assert!(ok_response["error"].is_null(), "session.pause failed: {ok_response:?}");
+        assert!(
+            ok_response["error"].is_null(),
+            "session.pause failed: {ok_response:?}"
+        );
         assert_eq!(ok_response["result"]["state"], "paused");
 
         let err_response = rpc_call(
@@ -3188,7 +3243,10 @@ mod tests {
             }),
         )
         .await;
-        assert!(ok_response["error"].is_null(), "session.resume failed: {ok_response:?}");
+        assert!(
+            ok_response["error"].is_null(),
+            "session.resume failed: {ok_response:?}"
+        );
         assert_eq!(ok_response["result"]["state"], "active");
 
         let err_response = rpc_call(
@@ -3223,7 +3281,8 @@ mod tests {
         let mut client = UnixStream::connect(&sock_path).await.unwrap();
         let session_id = create_chat_session(&mut client, &kiln_path, 50).await;
 
-        let ok_response = configure_internal_mock_agent(&mut client, &session_id, 51, "mock-initial").await;
+        let ok_response =
+            configure_internal_mock_agent(&mut client, &session_id, 51, "mock-initial").await;
         assert!(
             ok_response["error"].is_null(),
             "session.configure_agent failed: {ok_response:?}"
@@ -3324,7 +3383,10 @@ mod tests {
             }),
         )
         .await;
-        assert!(ok_response["error"].is_null(), "session.cancel failed: {ok_response:?}");
+        assert!(
+            ok_response["error"].is_null(),
+            "session.cancel failed: {ok_response:?}"
+        );
         assert!(ok_response["result"]["cancelled"].is_boolean());
 
         let err_response = rpc_call(
