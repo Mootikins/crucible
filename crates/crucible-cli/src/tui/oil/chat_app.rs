@@ -15,7 +15,6 @@ use crate::tui::oil::markdown::{
 use crate::tui::oil::node::*;
 use crate::tui::oil::style::{Color, Gap, Padding, Style};
 use crate::tui::oil::theme::ThemeTokens;
-use crate::tui::oil::utils::terminal_width;
 use crate::tui::oil::viewport_cache::{CachedShellExecution, CachedSubagent, CachedToolCall};
 use crossterm::event::KeyCode;
 use crossterm::terminal::{EnterAlternateScreen, LeaveAlternateScreen};
@@ -879,7 +878,7 @@ impl OilChatApp {
         use crate::tui::oil::components::status_bar::NotificationToastKind;
         use crate::tui::oil::components::{NotificationComponent, NotificationEntry};
 
-        let term_width = terminal_width();
+        let term_width = ctx.terminal_size.0 as usize;
 
         let entries: Vec<NotificationEntry> = self
             .notification_area
@@ -2444,7 +2443,7 @@ impl OilChatApp {
     /// This renders all viewport containers (non-graduated) in order.
     /// Each container is wrapped in scrollback with its stable ID.
     fn render_containers(&self) -> Node {
-        let term_width = terminal_width();
+        let term_width = self.terminal_size.get().0 as usize;
         let containers = self.container_list.viewport_containers();
 
         if containers.is_empty() {
@@ -2531,7 +2530,7 @@ impl OilChatApp {
         let input_mode = ComponentInputMode::from_content(self.input.content());
         let is_focused = !self.popup.show || ctx.is_focused(FOCUS_INPUT);
 
-        InputComponent::new(self.input.content(), self.input.cursor(), terminal_width())
+        InputComponent::new(self.input.content(), self.input.cursor(), ctx.terminal_size.0 as usize)
             .mode(input_mode)
             .focused(is_focused)
             .show_popup(self.popup.show)
@@ -2732,7 +2731,7 @@ impl OilChatApp {
     }
 
     fn calculate_input_height(&self) -> usize {
-        let width = terminal_width();
+        let width = self.terminal_size.get().0 as usize;
         let content = self.input.content();
         let display_content = if content.starts_with(':') || content.starts_with('!') {
             &content[1..]
