@@ -20,7 +20,6 @@ members = [
     "crates/crucible-skills",
     "crates/crucible-rig",
     "crates/crucible-query",
-    "crates/zellij-inbox",
     "crates/crucible-lance",
     "crates/crucible-observe",
     "crates/crucible-oil",
