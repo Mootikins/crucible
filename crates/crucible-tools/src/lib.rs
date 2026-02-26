@@ -33,6 +33,7 @@
 #![warn(clippy::all)]
 #![warn(clippy::pedantic)]
 
+pub mod error_utils;
 pub mod extended_mcp_server;
 /// In-process MCP adapter for running tools without stdio transport.
 pub mod in_process_adapter;
@@ -50,6 +51,7 @@ pub mod workspace;
 
 // ===== PUBLIC API EXPORTS =====
 
+pub use error_utils::strip_tool_error_prefix;
 pub use extended_mcp_server::{ExtendedMcpServer, ExtendedMcpService};
 pub use kiln::KilnTools;
 pub use mcp_client::{create_stdio_executor, create_stdio_executor_with_env, RmcpExecutor};

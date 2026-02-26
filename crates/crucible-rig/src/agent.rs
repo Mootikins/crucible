@@ -21,7 +21,6 @@
 //! let new_handle = rebuild_agent_handle(&components, "qwen3-8b")?;
 //! ```
 
-use crate::mcp_proxy_tool::McpProxyTool;
 use crate::providers::RigClient;
 use crate::workspace_tools::{
     AskUserTool, BashTool, EditFileTool, GlobTool, GrepTool, ReadFileTool, WorkspaceContext,
@@ -33,6 +32,7 @@ use crucible_tools::mcp_gateway::McpGatewayManager;
 use rig::agent::{Agent, AgentBuilder};
 use rig::client::CompletionClient;
 use rig::completion::CompletionModel;
+use rig::tool::ToolDyn;
 use std::path::Path;
 use std::sync::Arc;
 use thiserror::Error;
@@ -88,7 +88,7 @@ fn attach_tools<M: CompletionModel>(
     builder: AgentBuilder<M>,
     ctx: &WorkspaceContext,
     mode_id: &str,
-    mcp_tools: Vec<McpProxyTool>,
+    mcp_tools: Vec<Box<dyn ToolDyn>>,
 ) -> Agent<M> {
     let read_only = is_read_only_mode(mode_id);
 
@@ -110,9 +110,7 @@ fn attach_tools<M: CompletionModel>(
         }
     }
 
-    for mcp_tool in mcp_tools {
-        builder = builder.tool(mcp_tool);
-    }
+    builder = builder.tools(mcp_tools);
 
     builder.build()
 }
@@ -308,7 +306,7 @@ pub fn build_agent_from_components_generic<C>(
     components: &AgentComponents,
     model: &str,
     client: &C,
-    mcp_tools: Vec<McpProxyTool>,
+    mcp_tools: Vec<Box<dyn ToolDyn>>,
 ) -> AgentBuildResult<BuiltAgent<C::CompletionModel>>
 where
     C: CompletionClient,
@@ -406,7 +404,7 @@ pub fn build_agent_with_tools<C>(
     config: &AgentConfig,
     client: &C,
     workspace_root: impl AsRef<Path>,
-    mcp_tools: Vec<McpProxyTool>,
+    mcp_tools: Vec<Box<dyn ToolDyn>>,
 ) -> AgentBuildResult<(Agent<C::CompletionModel>, WorkspaceContext)>
 where
     C: CompletionClient,
@@ -427,7 +425,7 @@ pub fn build_agent_with_model_size<C>(
     client: &C,
     ctx: &WorkspaceContext,
     model_size: crucible_core::prompts::ModelSize,
-    mcp_tools: Vec<McpProxyTool>,
+    mcp_tools: Vec<Box<dyn ToolDyn>>,
 ) -> AgentBuildResult<Agent<C::CompletionModel>>
 where
     C: CompletionClient,

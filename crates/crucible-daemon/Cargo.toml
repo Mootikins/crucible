@@ -42,6 +42,7 @@ crucible-tools = { path = "../crucible-tools" }
 crucible-acp = { path = "../crucible-acp" }
 crucible-web = { path = "../crucible-web", optional = true }
 crucible-llm = { path = "../crucible-llm", default-features = false }
+rig = { package = "rig-core", version = "0.30", features = [] }
 agent-client-protocol = "0.9.3"
 gix = { version = "0.69", default-features = false, features = ["blocking-network-client"] }
 mlua = { workspace = true }
@@ -71,4 +72,5 @@ test-slow = []           # Performance benchmarks and timing tests
 tempfile = { workspace = true }
 futures = { workspace = true }
 rand = { workspace = true }
+rig-core = { version = "0.30", features = [] }
 crucible-rpc = { path = "../crucible-rpc" }

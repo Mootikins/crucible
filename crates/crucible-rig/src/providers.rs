@@ -5,7 +5,6 @@
 use crate::agent::AgentComponents;
 use crate::github_copilot::CopilotClient;
 use crate::handle::RigAgentHandle;
-use crate::mcp_proxy_tool::McpProxyTool;
 use crate::workspace_tools::WorkspaceContext;
 use crate::{build_agent_with_model_size, AgentConfig};
 use crucible_config::llm::LlmProviderConfig;
@@ -15,6 +14,7 @@ use crucible_core::traits::chat::AgentHandle;
 use crucible_tools::mcp_gateway::McpGatewayManager;
 use rig::client::Nothing;
 use rig::providers::{anthropic, ollama, openai, openrouter};
+use rig::tool::ToolDyn;
 use std::sync::Arc;
 use thiserror::Error;
 use tokio::sync::RwLock;
@@ -135,7 +135,7 @@ impl RigClient {
         &self,
         rig_agent_config: &AgentConfig,
         ws_ctx: &WorkspaceContext,
-        mcp_tools: Vec<McpProxyTool>,
+        mcp_tools: Vec<Box<dyn ToolDyn>>,
         opts: HandleBuildOpts,
     ) -> Result<Box<dyn AgentHandle + Send + Sync>, String> {
         match self {
@@ -192,7 +192,7 @@ impl RigClient {
         &self,
         rig_agent_config: &AgentConfig,
         ws_ctx: &WorkspaceContext,
-        mcp_tools: Vec<McpProxyTool>,
+        mcp_tools: Vec<Box<dyn ToolDyn>>,
         opts: &HandleBuildOpts,
     ) -> Result<Box<dyn AgentHandle + Send + Sync>, String> {
         match self {
@@ -219,7 +219,7 @@ fn make_daemon_handle<C>(
     client: &C,
     rig_agent_config: &AgentConfig,
     ws_ctx: &WorkspaceContext,
-    mcp_tools: Vec<McpProxyTool>,
+    mcp_tools: Vec<Box<dyn ToolDyn>>,
     opts: &HandleBuildOpts,
 ) -> Result<Box<dyn AgentHandle + Send + Sync>, String>
 where
