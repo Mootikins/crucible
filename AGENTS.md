@@ -41,7 +41,6 @@
 | `crucible-lance` | LanceDB vector storage backend | `LanceStore`, `LanceNoteStore` |
 | `crucible-skills` | Agent skills discovery and loading | `Skill`, `SkillSource`, `SkillScope` |
 | `crucible-query` | Composable query translation pipeline | `SqlSugarSyntax`, `JaqSyntax` |
-| `zellij-inbox` | Zellij plugin for agent inbox management | `InboxPlugin`, `RenderOptions` |
 
 ### Daemon Architecture
 
@@ -229,7 +228,6 @@ crucible/
 │   ├── crucible-acp/            # Agent Context Protocol
 │   ├── crucible-skills/         # Agent skills discovery
 │   ├── crucible-query/          # Query translation pipeline
-│   └── zellij-inbox/            # Zellij inbox plugin
 ├── vendor/                      # Patched upstream dependencies
 ├── docs/                        # Documentation kiln (user guides + test fixture)
 ├── justfile                     # Development recipes
