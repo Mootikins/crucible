@@ -51,6 +51,7 @@ once_cell = "1.21"
 reqwest = { workspace = true }
 rustls = { version = "0.23", default-features = false, features = ["ring", "tls12"] }
 blake3 = "1.8"
+walkdir = "2.5"
 
 [features]
 default = ["storage-sqlite"]
