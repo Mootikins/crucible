@@ -63,7 +63,6 @@ async fn test_chat_command_does_not_double_open_database() -> Result<()> {
         Some("What is 2+2?".to_string()), // query
         true,                             // read_only (plan mode)
         true,                             // no_context (skip semantic search)
-        true,                             // no_process (skip pipeline - this is key!)
         Some(3),                          // context_size
         None,                             // provider_key
         8192,                             // max_context_tokens
@@ -162,7 +161,6 @@ async fn test_chat_command_with_minimal_config() -> Result<()> {
         Some("test query".to_string()),
         true,   // read_only
         true,   // no_context
-        true,   // no_process
         None,   // context_size
         None,   // provider_key
         8192,   // max_context_tokens

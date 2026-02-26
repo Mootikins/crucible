@@ -18,9 +18,7 @@ use crate::core_facade::KilnContext;
 use crate::factories;
 use crate::kiln_discover::{discover_kiln, DiscoverySource};
 use crate::progress::{BackgroundProgress, LiveProgress, StatusLine};
-use crate::provider_detect::{
-    detect_providers, fetch_model_context_length,
-};
+use crate::provider_detect::{detect_providers, fetch_model_context_length};
 use crate::tui::oil::{McpServerDisplay, PluginStatusEntry};
 use crate::tui::AgentSelection;
 use crucible_core::traits::chat::{is_read_only, mode_display_name};
@@ -72,7 +70,6 @@ pub async fn execute(
     query: Option<String>,
     read_only: bool,
     no_context: bool,
-    no_process: bool,
     context_size: Option<usize>,
     provider_key: Option<String>,
     max_context_tokens: usize,
@@ -128,7 +125,6 @@ pub async fn execute(
                 working_dir,
                 resume_session_id,
                 no_context,
-                no_process,
                 context_size,
                 query_text,
                 set_overrides,
@@ -579,7 +575,6 @@ async fn run_oneshot_chat(
     working_dir: Option<std::path::PathBuf>,
     resume_session_id: Option<String>,
     no_context: bool,
-    _no_process: bool,
     context_size: Option<usize>,
     query_text: String,
     set_overrides: Vec<String>,

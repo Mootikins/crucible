@@ -114,26 +114,9 @@ fn test_global_format_flag() {
 }
 
 #[test]
-fn test_global_no_process_flag() {
-    let mut cmd = Command::cargo_bin("cru").unwrap();
-    cmd.arg("--no-process").arg("--help");
-
-    cmd.assert().success();
-}
-
-#[test]
-fn test_global_process_timeout_flag() {
-    let mut cmd = Command::cargo_bin("cru").unwrap();
-    cmd.arg("--process-timeout").arg("120").arg("--help");
-
-    cmd.assert().success();
-}
-
-#[test]
 fn test_multiple_global_flags() {
     let mut cmd = Command::cargo_bin("cru").unwrap();
     cmd.arg("--verbose")
-        .arg("--no-process")
         .arg("--format")
         .arg("json")
         .arg("--help");
@@ -449,18 +432,6 @@ fn test_invalid_global_flag() {
     cmd.assert()
         .failure()
         .stderr(predicate::str::contains("unexpected argument"));
-}
-
-#[test]
-fn test_invalid_process_timeout_value() {
-    let mut cmd = Command::cargo_bin("cru").unwrap();
-    cmd.arg("--process-timeout")
-        .arg("not-a-number")
-        .arg("--help");
-
-    cmd.assert()
-        .failure()
-        .stderr(predicate::str::contains("invalid value"));
 }
 
 #[test]

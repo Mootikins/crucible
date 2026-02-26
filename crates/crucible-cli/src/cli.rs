@@ -67,19 +67,11 @@ pub struct Cli {
     #[arg(short = 'f', long, global = true, default_value = "table")]
     pub format: String,
 
-    /// Skip file processing on startup (useful for quick commands with potentially stale data)
-    #[arg(long = "no-process", global = true)]
-    pub no_process: bool,
-
     /// Run with an in-process daemon (no background server required).
     /// Useful for single-session use, restricted environments, or testing.
     /// Data persists to the kiln's .crucible/ directory.
     #[arg(long, global = true)]
     pub standalone: bool,
-
-    /// File processing timeout in seconds (default: 300, 0 = no timeout)
-    #[arg(long = "process-timeout", global = true, default_value = "300")]
-    pub process_timeout: u64,
 }
 
 #[derive(Subcommand)]
