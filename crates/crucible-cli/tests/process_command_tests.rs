@@ -17,9 +17,13 @@ use crucible_config::{
     StorageConfig,
 };
 use crucible_core::test_support::fixtures::{create_kiln, KilnFixture};
+use crucible_daemon::Server;
+use crucible_rpc::lifecycle;
+use serial_test::serial;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tempfile::TempDir;
+use tokio::task::JoinHandle;
 use tokio::time::{sleep, Duration};
 
 /// Helper to create a test kiln with sample markdown files
@@ -76,8 +80,37 @@ fn create_test_config(kiln_path: PathBuf, _db_path: PathBuf) -> CliConfig {
     }
 }
 
+/// Test fixture: starts an in-process daemon so process::execute() can connect.
+/// Sets XDG_RUNTIME_DIR so DaemonClient::connect_or_start() finds the socket.
+struct TestServer {
+    _temp_dir: TempDir,
+    _server_handle: JoinHandle<()>,
+    _shutdown_handle: tokio::sync::broadcast::Sender<()>,
+}
+
+impl TestServer {
+    async fn start() -> Result<Self> {
+        let temp_dir = tempfile::tempdir()?;
+        std::env::set_var("XDG_RUNTIME_DIR", temp_dir.path().to_str().unwrap());
+        let socket_path = lifecycle::default_socket_path();
+        let server = Server::bind(&socket_path, None).await?;
+        let shutdown_handle = server.shutdown_handle();
+        let server_handle = tokio::spawn(async move {
+            let _ = server.run().await;
+        });
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        Ok(Self {
+            _temp_dir: temp_dir,
+            _server_handle: server_handle,
+            _shutdown_handle: shutdown_handle,
+        })
+    }
+}
+
 #[tokio::test]
+#[serial]
 async fn test_process_executes_pipeline() -> Result<()> {
+    let _server = TestServer::start().await?;
     // Given: A test kiln with markdown files
     let temp_dir = create_test_kiln()?;
     let kiln_path = temp_dir.path().to_path_buf();
@@ -105,7 +138,9 @@ async fn test_process_executes_pipeline() -> Result<()> {
 }
 
 #[tokio::test]
+#[serial]
 async fn test_storage_persists_across_runs() -> Result<()> {
+    let _server = TestServer::start().await?;
     // Given: A test kiln and persistent database
     let temp_dir = create_test_kiln()?;
     let kiln_path = temp_dir.path().to_path_buf();
@@ -137,7 +172,9 @@ async fn test_storage_persists_across_runs() -> Result<()> {
 }
 
 #[tokio::test]
+#[serial]
 async fn test_change_detection_skips_unchanged_files() -> Result<()> {
+    let _server = TestServer::start().await?;
     // Given: A processed kiln
     let temp_dir = create_test_kiln()?;
     let kiln_path = temp_dir.path().to_path_buf();
@@ -188,7 +225,9 @@ async fn test_change_detection_skips_unchanged_files() -> Result<()> {
 }
 
 #[tokio::test]
+#[serial]
 async fn test_force_flag_overrides_change_detection() -> Result<()> {
+    let _server = TestServer::start().await?;
     // Given: A processed kiln with no file changes
     let temp_dir = create_test_kiln()?;
     let kiln_path = temp_dir.path().to_path_buf();
@@ -220,7 +259,9 @@ async fn test_force_flag_overrides_change_detection() -> Result<()> {
 }
 
 #[tokio::test]
+#[serial]
 async fn test_process_single_file() -> Result<()> {
+    let _server = TestServer::start().await?;
     // Given: A test kiln with multiple files
     let temp_dir = create_test_kiln()?;
     let kiln_path = temp_dir.path().to_path_buf();
@@ -255,7 +296,9 @@ async fn test_process_single_file() -> Result<()> {
 }
 
 #[tokio::test]
+#[serial]
 async fn test_all_pipeline_phases_execute() -> Result<()> {
+    let _server = TestServer::start().await?;
     // Given: A test kiln
     let temp_dir = create_test_kiln()?;
     let kiln_path = temp_dir.path().to_path_buf();
@@ -307,7 +350,9 @@ async fn test_output_consistency_with_chat_preprocessing() -> Result<()> {
 // =============================================================================
 
 #[tokio::test]
+#[serial]
 async fn test_verbose_without_flag_is_quiet() -> Result<()> {
+    let _server = TestServer::start().await?;
     // GIVEN: Test kiln
     let temp_dir = create_test_kiln()?;
     let kiln_path = temp_dir.path().to_path_buf();
@@ -332,7 +377,9 @@ async fn test_verbose_without_flag_is_quiet() -> Result<()> {
 }
 
 #[tokio::test]
+#[serial]
 async fn test_verbose_shows_phase_timings() -> Result<()> {
+    let _server = TestServer::start().await?;
     // GIVEN: Test kiln with files
     let temp_dir = create_test_kiln()?;
     let kiln_path = temp_dir.path().to_path_buf();
@@ -360,7 +407,9 @@ async fn test_verbose_shows_phase_timings() -> Result<()> {
 }
 
 #[tokio::test]
+#[serial]
 async fn test_verbose_shows_detailed_parse_info() -> Result<()> {
+    let _server = TestServer::start().await?;
     // GIVEN: Note with wikilinks, tags, callouts
     let temp_dir = create_test_kiln()?;
     let kiln_path = temp_dir.path().to_path_buf();
@@ -386,7 +435,9 @@ async fn test_verbose_shows_detailed_parse_info() -> Result<()> {
 }
 
 #[tokio::test]
+#[serial]
 async fn test_verbose_shows_merkle_diff_details() -> Result<()> {
+    let _server = TestServer::start().await?;
     // GIVEN: Initially processed file
     let temp_dir = create_test_kiln()?;
     let kiln_path = temp_dir.path().to_path_buf();
@@ -424,7 +475,9 @@ async fn test_verbose_shows_merkle_diff_details() -> Result<()> {
 }
 
 #[tokio::test]
+#[serial]
 async fn test_verbose_shows_enrichment_progress() -> Result<()> {
+    let _server = TestServer::start().await?;
     // GIVEN: Files requiring embeddings
     let temp_dir = create_test_kiln()?;
     let kiln_path = temp_dir.path().to_path_buf();
@@ -450,7 +503,9 @@ async fn test_verbose_shows_enrichment_progress() -> Result<()> {
 }
 
 #[tokio::test]
+#[serial]
 async fn test_verbose_shows_storage_operations() -> Result<()> {
+    let _server = TestServer::start().await?;
     // GIVEN: Processing files
     let temp_dir = create_test_kiln()?;
     let kiln_path = temp_dir.path().to_path_buf();
@@ -480,7 +535,9 @@ async fn test_verbose_shows_storage_operations() -> Result<()> {
 // =============================================================================
 
 #[tokio::test]
+#[serial]
 async fn test_dry_run_discovers_files_without_processing() -> Result<()> {
+    let _server = TestServer::start().await?;
     // GIVEN: A test kiln with markdown files
     let temp_dir = create_test_kiln()?;
     let kiln_path = temp_dir.path().to_path_buf();
@@ -509,7 +566,9 @@ async fn test_dry_run_discovers_files_without_processing() -> Result<()> {
 }
 
 #[tokio::test]
+#[serial]
 async fn test_dry_run_respects_change_detection() -> Result<()> {
+    let _server = TestServer::start().await?;
     // GIVEN: A processed kiln (files already in DB)
     let temp_dir = create_test_kiln()?;
     let kiln_path = temp_dir.path().to_path_buf();
@@ -540,7 +599,9 @@ async fn test_dry_run_respects_change_detection() -> Result<()> {
 }
 
 #[tokio::test]
+#[serial]
 async fn test_dry_run_with_force_shows_all_files() -> Result<()> {
+    let _server = TestServer::start().await?;
     // GIVEN: A processed kiln
     let temp_dir = create_test_kiln()?;
     let kiln_path = temp_dir.path().to_path_buf();
@@ -571,7 +632,9 @@ async fn test_dry_run_with_force_shows_all_files() -> Result<()> {
 }
 
 #[tokio::test]
+#[serial]
 async fn test_dry_run_shows_detailed_preview() -> Result<()> {
+    let _server = TestServer::start().await?;
     // GIVEN: A test kiln with varied content
     let temp_dir = create_test_kiln()?;
     let kiln_path = temp_dir.path().to_path_buf();
@@ -597,7 +660,9 @@ async fn test_dry_run_shows_detailed_preview() -> Result<()> {
 }
 
 #[tokio::test]
+#[serial]
 async fn test_dry_run_with_verbose() -> Result<()> {
+    let _server = TestServer::start().await?;
     // GIVEN: A test kiln
     let temp_dir = create_test_kiln()?;
     let kiln_path = temp_dir.path().to_path_buf();
@@ -861,7 +926,9 @@ impl Handler for CountingHandler {
 }
 
 #[tokio::test]
+#[serial]
 async fn test_process_emits_note_events_to_reactor() -> Result<()> {
+    let _server = TestServer::start().await?;
     // GIVEN: A test kiln with markdown files
     let temp_dir = create_test_kiln()?;
     let kiln_path = temp_dir.path().to_path_buf();
