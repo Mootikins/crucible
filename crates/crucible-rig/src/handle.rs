@@ -892,13 +892,18 @@ where
                         let StreamedUserContent::ToolResult { tool_result: tr, .. } = ui;
 
                         // Extract text from OneOrMany<ToolResultContent>
-                        let result_text: String = tr.content.iter()
+                        let raw_result: String = tr.content.iter()
                             .filter_map(|c| match c {
                                 ToolResultContent::Text(t) => Some(t.text.clone()),
                                 ToolResultContent::Image(_) => None, // Skip images for display
                             })
                             .collect::<Vec<_>>()
                             .join("\n");
+
+                        // Rig JSON-serializes tool outputs (wraps strings in quotes).
+                        // Unwrap to get the actual tool output for prefix detection and display.
+                        let result_text = serde_json::from_str::<String>(&raw_result)
+                            .unwrap_or(raw_result);
 
                         // Look up tool name from id mapping (ToolResult.id == ToolCall.id)
                         let tool_name = tool_id_to_name
