@@ -92,3 +92,140 @@ async fn github_copilot_list_models(token: &str) -> ModelListingResult<Vec<Strin
         Err(_) => Ok(vec![]),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crucible_config::BackendType;
+
+    #[tokio::test]
+    async fn test_dispatch_cohere_returns_empty() {
+        let result = list_models(BackendType::Cohere, "http://example.com", None).await;
+        assert_eq!(result.unwrap(), Vec::<String>::new());
+    }
+
+    #[tokio::test]
+    async fn test_dispatch_vertexai_returns_empty() {
+        let result = list_models(BackendType::VertexAI, "http://example.com", None).await;
+        assert_eq!(result.unwrap(), Vec::<String>::new());
+    }
+
+    #[tokio::test]
+    async fn test_dispatch_fastembed_returns_empty() {
+        let result = list_models(BackendType::FastEmbed, "", None).await;
+        assert_eq!(result.unwrap(), Vec::<String>::new());
+    }
+
+    #[tokio::test]
+    async fn test_dispatch_burn_returns_empty() {
+        let result = list_models(BackendType::Burn, "", None).await;
+        assert_eq!(result.unwrap(), Vec::<String>::new());
+    }
+
+    #[tokio::test]
+    async fn test_dispatch_custom_returns_empty() {
+        let result = list_models(BackendType::Custom, "", None).await;
+        assert_eq!(result.unwrap(), Vec::<String>::new());
+    }
+
+    #[tokio::test]
+    async fn test_dispatch_mock_returns_empty() {
+        let result = list_models(BackendType::Mock, "", None).await;
+        assert_eq!(result.unwrap(), Vec::<String>::new());
+    }
+
+    #[test]
+    fn test_model_listing_error_api_variant() {
+        let err = ModelListingError::Api("test error".to_string());
+        assert!(err.to_string().contains("test error"));
+    }
+
+    #[test]
+    fn test_model_listing_error_json_variant() {
+        let json_err = serde_json::from_str::<serde_json::Value>("{invalid").unwrap_err();
+        let err = ModelListingError::Json(json_err);
+        assert!(err.to_string().contains("JSON") || err.to_string().contains("parse"));
+    }
+
+    // --- Dispatch routing tests (mockito HTTP server) ---
+
+    #[tokio::test]
+    async fn test_dispatch_ollama_routes_to_ollama_wrapper() {
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("GET", "/api/tags")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"{"models": [{"name": "llama3.2:latest"}]}"#)
+            .create_async()
+            .await;
+
+        let result = list_models(BackendType::Ollama, &server.url(), None).await;
+        mock.assert_async().await;
+        assert_eq!(result.unwrap(), vec!["llama3.2:latest"]);
+    }
+
+    #[tokio::test]
+    async fn test_dispatch_openai_routes_to_openai_compat_wrapper() {
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("GET", "/models")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"{"data": [{"id": "gpt-4o"}]}"#)
+            .create_async()
+            .await;
+
+        let result = list_models(BackendType::OpenAI, &server.url(), Some("test-key")).await;
+        mock.assert_async().await;
+        assert_eq!(result.unwrap(), vec!["gpt-4o"]);
+    }
+
+    #[tokio::test]
+    async fn test_dispatch_zai_routes_to_openai_compat_wrapper() {
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("GET", "/models")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"{"data": [{"id": "glm-4-flash"}]}"#)
+            .create_async()
+            .await;
+
+        let result = list_models(BackendType::ZAI, &server.url(), Some("test-key")).await;
+        mock.assert_async().await;
+        assert_eq!(result.unwrap(), vec!["glm-4-flash"]);
+    }
+
+    #[tokio::test]
+    async fn test_dispatch_openrouter_routes_to_openai_compat_wrapper() {
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("GET", "/models")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"{"data": [{"id": "anthropic/claude-3-haiku"}]}"#)
+            .create_async()
+            .await;
+
+        let result = list_models(BackendType::OpenRouter, &server.url(), Some("test-key")).await;
+        mock.assert_async().await;
+        assert_eq!(result.unwrap(), vec!["anthropic/claude-3-haiku"]);
+    }
+
+    #[tokio::test]
+    async fn test_dispatch_anthropic_routes_to_anthropic_wrapper() {
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("GET", "/v1/models")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"{"data": [{"id": "claude-sonnet-4-20250514"}]}"#)
+            .create_async()
+            .await;
+
+        let result = list_models(BackendType::Anthropic, &server.url(), Some("test-key")).await;
+        mock.assert_async().await;
+        assert_eq!(result.unwrap(), vec!["claude-sonnet-4-20250514"]);
+    }
+}

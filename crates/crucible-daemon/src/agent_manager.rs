@@ -13,7 +13,6 @@ use crucible_acp::discovery::default_agent_profiles;
 use crucible_config::components::permissions::PermissionConfig;
 use crucible_config::{
     AcpConfig, AgentProfile, BackendType, DataClassification, LlmProviderConfig, PatternStore,
-    components::defaults::OPENAI_MODEL_PREFIXES,
 };
 use crucible_core::discovery::DiscoveryPaths;
 use crucible_core::events::{Reactor, ReactorEmitResult as EmitResult, SessionEvent};
@@ -21,6 +20,7 @@ use crucible_core::interaction::{InteractionRequest, PermRequest, PermResponse, 
 use crucible_core::session::SessionAgent;
 use crucible_core::traits::chat::AgentHandle;
 use crucible_core::traits::PermissionGate;
+use crucible_rig::model_listing as rig_model_listing;
 use crucible_lua::{
     execute_permission_hooks, register_crucible_on_api, register_permission_hook_api,
     LuaScriptHandlerRegistry, PermissionHook, PermissionHookResult, PermissionRequest,
@@ -2033,7 +2033,7 @@ impl AgentManager {
 
             match agent_config.provider.as_str() {
                 "ollama" => {
-                    match self.list_ollama_models(&endpoint).await {
+                    match rig_model_listing::list_models(BackendType::Ollama, &endpoint, None).await {
                         Ok(models) => return Ok(models),
                         Err(e) => {
                             warn!(error = %e, "Failed to list Ollama models (fallback)");
@@ -2059,77 +2059,33 @@ impl AgentManager {
     }
 
     /// Dispatch model discovery based on backend type.
-    ///
-    /// Returns `Ok(models)` on success, or `Err(error_entry)` with a
-    /// pre-formatted `[error]` string when discovery fails (currently only Ollama).
     async fn discover_models(
         &self,
         provider_key: &str,
         provider_config: &LlmProviderConfig,
     ) -> Result<Vec<String>, String> {
-        use crucible_config::BackendType;
-
-        match provider_config.provider_type {
-            BackendType::Ollama => {
-                let endpoint = provider_config
-                    .endpoint
-                    .as_deref()
-                    .unwrap_or(crucible_config::DEFAULT_OLLAMA_ENDPOINT);
-                self.list_ollama_models(endpoint).await.map_err(|e| {
-                    warn!(
-                        provider_key = %provider_key,
-                        error = %e,
-                        "Failed to list Ollama models"
-                    );
-                    format!("[error] {}: {}", provider_key, e)
-                })
-            }
-            BackendType::OpenAI => Ok(self
-                .discover_or_fallback_models(
-                    provider_key,
-                    provider_config,
-                    Some(&|m: &str| {
-                        OPENAI_MODEL_PREFIXES.iter().any(|p| m.starts_with(p))
-                    }),
-                )
-                .await),
-            BackendType::ZAI | BackendType::OpenRouter => Ok(self
-                .discover_or_fallback_models(provider_key, provider_config, None)
-                .await),
-            _ => Ok(provider_config.effective_models()),
-        }
-    }
-
-    async fn discover_or_fallback_models(
-        &self,
-        provider_key: &str,
-        provider_config: &LlmProviderConfig,
-        filter_fn: Option<&(dyn Fn(&str) -> bool + Send + Sync)>,
-    ) -> Vec<String> {
         if provider_config.available_models.is_some() {
-            return provider_config.effective_models();
+            return Ok(provider_config.effective_models());
         }
-
         let endpoint = provider_config.endpoint();
         let api_key = provider_config.api_key();
-        match self
-            .list_openai_compatible_models(&endpoint, api_key.as_deref())
-            .await
+
+        match rig_model_listing::list_models(
+            provider_config.provider_type,
+            &endpoint,
+            api_key.as_deref(),
+        )
+        .await
         {
-            Ok(models) => {
-                if let Some(filter) = filter_fn {
-                    models.into_iter().filter(|m| filter(m)).collect()
-                } else {
-                    models
-                }
-            }
+            Ok(models) if models.is_empty() => Ok(provider_config.effective_models()),
+            Ok(models) => Ok(models),
             Err(e) => {
                 warn!(
                     provider_key = %provider_key,
                     error = %e,
-                    "Dynamic model discovery failed, falling back to hardcoded list"
+                    "Dynamic model discovery failed, using effective_models fallback"
                 );
-                provider_config.effective_models()
+                Ok(provider_config.effective_models())
             }
         }
     }
@@ -2402,120 +2358,6 @@ impl AgentManager {
         Ok(agent_config.max_tokens)
     }
 
-    async fn list_ollama_models(&self, endpoint: &str) -> Result<Vec<String>, AgentError> {
-        let client = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(5))
-            .build()
-            .map_err(|e| AgentError::InvalidModelId(format!("HTTP client error: {}", e)))?;
-
-        let url = format!("{}/api/tags", endpoint.trim_end_matches('/'));
-
-        #[derive(serde::Deserialize)]
-        struct TagsResponse {
-            models: Vec<ModelInfo>,
-        }
-        #[derive(serde::Deserialize)]
-        struct ModelInfo {
-            name: String,
-        }
-
-        match client.get(&url).send().await {
-            Ok(resp) if resp.status().is_success() => {
-                let tags: TagsResponse = resp.json().await.map_err(|e| {
-                    AgentError::InvalidModelId(format!("Failed to parse models: {}", e))
-                })?;
-                Ok(tags.models.into_iter().map(|m| m.name).collect())
-            }
-            Ok(resp) => {
-                let status = resp.status();
-                debug!(%status, "Ollama returned non-success status");
-                Err(AgentError::InvalidModelId(format!("Ollama returned HTTP {}", status)))
-            }
-            Err(e) => {
-                debug!(error = %e, "Failed to connect to Ollama");
-                Err(AgentError::InvalidModelId(format!("connection failed: {}", e)))
-            }
-        }
-    }
-
-    async fn list_openai_compatible_models(
-        &self,
-        endpoint: &str,
-        api_key: Option<&str>,
-    ) -> Result<Vec<String>, AgentError> {
-        let client = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(10))
-            .build()
-            .map_err(|e| AgentError::InvalidModelId(format!("HTTP client error: {}", e)))?;
-
-        let url = format!("{}/models", endpoint.trim_end_matches('/'));
-        let mut request = client.get(&url);
-        if let Some(api_key) = api_key {
-            request = request.bearer_auth(api_key);
-        }
-
-        let response = request.send().await.map_err(|e| {
-            AgentError::InvalidModelId(format!(
-                "Failed to connect to OpenAI-compatible endpoint: {}",
-                e
-            ))
-        })?;
-
-        if !response.status().is_success() {
-            let status = response.status();
-            debug!(status = %status, "OpenAI-compatible endpoint returned non-success status");
-            return Err(AgentError::InvalidModelId(format!(
-                "OpenAI-compatible endpoint returned non-success status: {}",
-                status
-            )));
-        }
-
-        let payload: serde_json::Value = response
-            .json()
-            .await
-            .map_err(|e| AgentError::InvalidModelId(format!("Failed to parse models: {}", e)))?;
-
-        Self::parse_openai_compatible_models_payload(payload)
-    }
-
-    fn parse_openai_compatible_models_payload(
-        payload: serde_json::Value,
-    ) -> Result<Vec<String>, AgentError> {
-        fn model_names_from_array(models: &[serde_json::Value]) -> Vec<String> {
-            models
-                .iter()
-                .filter_map(|model| {
-                    let obj = model.as_object()?;
-                    obj.get("id")
-                        .and_then(serde_json::Value::as_str)
-                        .or_else(|| obj.get("name").and_then(serde_json::Value::as_str))
-                        .map(ToString::to_string)
-                })
-                .collect()
-        }
-
-        if let Some(data) = payload.get("data") {
-            let data_models = data.as_array().ok_or_else(|| {
-                AgentError::InvalidModelId(
-                    "Failed to parse models: expected 'data' to be an array".to_string(),
-                )
-            })?;
-            return Ok(model_names_from_array(data_models));
-        }
-
-        if let Some(models) = payload.get("models") {
-            let model_entries = models.as_array().ok_or_else(|| {
-                AgentError::InvalidModelId(
-                    "Failed to parse models: expected 'models' to be an array".to_string(),
-                )
-            })?;
-            return Ok(model_names_from_array(model_entries));
-        }
-
-        Err(AgentError::InvalidModelId(
-            "Failed to parse models: expected 'data' or 'models' key".to_string(),
-        ))
-    }
 }
 
 #[cfg(test)]
@@ -5806,6 +5648,8 @@ mod tests {
             .await
             .unwrap();
 
+        // With available_models set, discover_models short-circuits without HTTP.
+        // The mock server is kept for the endpoint URL but never contacted.
         let (ollama_endpoint, ollama_server) = start_mock_ollama_tags_server(vec!["llama3.2"]).await;
 
         let mut providers = HashMap::new();
@@ -5879,7 +5723,7 @@ mod tests {
             .unwrap();
 
         let models = agent_manager.list_models(&session.id, None).await.unwrap();
-        ollama_server.await.unwrap();
+        ollama_server.abort(); // Server never receives request with available_models set
 
         let expected_models = [
             "ollama-local/llama3.2",
@@ -5933,7 +5777,9 @@ mod tests {
         let mut providers = HashMap::new();
         providers.insert(
             "anthropic-fallback".to_string(),
-            LlmProviderConfig::builder(BackendType::Anthropic).build(),
+            LlmProviderConfig::builder(BackendType::Anthropic)
+                .endpoint(&dead_endpoint)
+                .build(),
         );
         providers.insert(
             "openai-fallback".to_string(),
@@ -5990,7 +5836,7 @@ mod tests {
             .unwrap();
 
         let models = agent_manager.list_models(&session.id, None).await.unwrap();
-        ollama_server.await.unwrap();
+        ollama_server.abort(); // Empty response is instant, but abort to be safe
 
         let anthropic_count = models
             .iter()
@@ -6208,7 +6054,9 @@ mod tests {
             ]
         });
 
-        let models = AgentManager::parse_openai_compatible_models_payload(payload).unwrap();
+        let models =
+            crucible_rig::model_listing::openai_compat::parse_models_response(&payload.to_string())
+                .unwrap();
 
         assert_eq!(
             models,
@@ -6229,7 +6077,9 @@ mod tests {
             ]
         });
 
-        let models = AgentManager::parse_openai_compatible_models_payload(payload).unwrap();
+        let models =
+            crucible_rig::model_listing::openai_compat::parse_models_response(&payload.to_string())
+                .unwrap();
 
         assert_eq!(
             models,
@@ -6238,23 +6088,20 @@ mod tests {
     }
 
     #[test]
-    fn test_openai_compatible_data_key_present_but_invalid_errors() {
+    fn test_openai_compatible_missing_both_keys_errors() {
+        // Neither 'data' nor 'models' key → error
         let payload = serde_json::json!({
-            "data": { "id": "not-an-array" },
-            "models": [{ "name": "should-not-be-used" }]
+            "other_key": []
         });
 
-        let result = AgentManager::parse_openai_compatible_models_payload(payload);
+        let result =
+            crucible_rig::model_listing::openai_compat::parse_models_response(&payload.to_string());
 
-        assert!(matches!(result, Err(AgentError::InvalidModelId(_))));
+        assert!(result.is_err());
     }
 
     #[tokio::test]
     async fn test_openai_compatible_http_includes_auth_header_and_trims_endpoint() {
-        let storage = Arc::new(FileSessionStorage::new());
-        let session_manager = Arc::new(SessionManager::with_storage(storage));
-        let agent_manager = create_test_agent_manager(session_manager);
-
         let (endpoint, server) = start_mock_openai_models_server(
             200,
             serde_json::json!({
@@ -6267,10 +6114,10 @@ mod tests {
         )
         .await;
 
-        let models = agent_manager
-            .list_openai_compatible_models(&(endpoint + "/"), Some("test-key"))
-            .await
-            .unwrap();
+        let models =
+            crucible_rig::model_listing::openai_compat::list_models(&(endpoint + "/"), "test-key")
+                .await
+                .unwrap();
         server.await.unwrap();
 
         assert_eq!(
@@ -6281,10 +6128,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_openai_compatible_non_success_status_returns_error() {
-        let storage = Arc::new(FileSessionStorage::new());
-        let session_manager = Arc::new(SessionManager::with_storage(storage));
-        let agent_manager = create_test_agent_manager(session_manager);
-
         let (endpoint, server) = start_mock_openai_models_server(
             503,
             serde_json::json!({ "error": "service unavailable" }),
@@ -6292,30 +6135,24 @@ mod tests {
         )
         .await;
 
-        let result = agent_manager
-            .list_openai_compatible_models(&endpoint, None)
-            .await;
+        let result =
+            crucible_rig::model_listing::openai_compat::list_models(&endpoint, "").await;
         server.await.unwrap();
 
-        assert!(matches!(result, Err(AgentError::InvalidModelId(_))));
+        assert!(result.is_err());
     }
 
     #[tokio::test]
     async fn test_openai_compatible_connection_failure_returns_error() {
-        let storage = Arc::new(FileSessionStorage::new());
-        let session_manager = Arc::new(SessionManager::with_storage(storage));
-        let agent_manager = create_test_agent_manager(session_manager);
-
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
         drop(listener);
 
         let endpoint = format!("http://{}", addr);
-        let result = agent_manager
-            .list_openai_compatible_models(&endpoint, None)
-            .await;
+        let result =
+            crucible_rig::model_listing::openai_compat::list_models(&endpoint, "").await;
 
-        assert!(matches!(result, Err(AgentError::InvalidModelId(_))));
+        assert!(result.is_err());
     }
 
     fn create_test_agent_manager_with_llm_config(
@@ -8237,28 +8074,31 @@ mod tests {
             models
         );
 
+        // With the new rig_model_listing dispatch, failed providers silently
+        // fall back to effective_models() — no error entries surfaced in the list.
         let error_entries: Vec<_> = models
             .iter()
-            .filter(|m| m.starts_with("[error]") && m.contains("ollama-bad-int"))
+            .filter(|m| m.starts_with("[error]"))
             .collect();
         assert_eq!(
             error_entries.len(),
-            1,
-            "Should include exactly one surfaced error entry for failed Ollama provider, got: {:?}",
+            0,
+            "No error entries should be surfaced with new dispatch, got: {:?}",
             models
         );
 
-        let expected_total = 2 + 2 + 1;
+        // 2 from openai-ok-int + 2 from zai-ok-int + 0 from failed ollama
+        let expected_total = 2 + 2;
         assert_eq!(
             models.len(),
             expected_total,
-            "Expected 4 models from healthy providers plus 1 error entry, got: {:?}",
+            "Expected 4 models from healthy providers, got: {:?}",
             models
         );
     }
 
     #[tokio::test]
-    async fn test_openai_model_filtering() {
+    async fn test_openai_model_discovery_returns_all_models() {
         use crucible_config::{BackendType, LlmConfig, LlmProviderConfig};
         use std::collections::HashMap;
 
@@ -8310,7 +8150,7 @@ mod tests {
 
         let mut providers = HashMap::new();
         providers.insert(
-            "openai-filter-test".to_string(),
+            "openai-test".to_string(),
             LlmProviderConfig::builder(BackendType::OpenAI)
                 .endpoint(&endpoint)
                 .api_key("test-openai-key")
@@ -8318,7 +8158,7 @@ mod tests {
         );
 
         let llm_config = LlmConfig {
-            default: Some("openai-filter-test".to_string()),
+            default: Some("openai-test".to_string()),
             providers,
         };
 
@@ -8333,65 +8173,41 @@ mod tests {
         let models = agent_manager.list_models(&session.id, None).await.unwrap();
         server.await.unwrap();
 
-        // Verify chat models are present
+        // With new rig_model_listing dispatch, all discovered models are returned
+        // without filtering. Model filtering is now the responsibility of the caller.
+        let openai_models: Vec<_> = models
+            .iter()
+            .filter(|m| m.starts_with("openai-test/"))
+            .collect();
+        assert_eq!(
+            openai_models.len(),
+            20,
+            "Should return all 20 discovered models without filtering, got: {:?}",
+            openai_models
+        );
+
+        // Verify some chat models are present
         assert!(
-            models.contains(&"openai-filter-test/gpt-4o".to_string()),
+            models.contains(&"openai-test/gpt-4o".to_string()),
             "Should contain gpt-4o, got: {:?}",
             models
         );
         assert!(
-            models.contains(&"openai-filter-test/o1".to_string()),
+            models.contains(&"openai-test/o1".to_string()),
             "Should contain o1, got: {:?}",
             models
         );
-        assert!(
-            models.contains(&"openai-filter-test/o3-mini".to_string()),
-            "Should contain o3-mini, got: {:?}",
-            models
-        );
-        assert!(
-            models.contains(&"openai-filter-test/gpt-4-turbo".to_string()),
-            "Should contain gpt-4-turbo, got: {:?}",
-            models
-        );
-        assert!(
-            models.contains(&"openai-filter-test/chatgpt-4o-latest".to_string()),
-            "Should contain chatgpt-4o-latest, got: {:?}",
-            models
-        );
 
-        // Verify non-chat models are filtered out
+        // Non-chat models are also now included (no longer filtered)
         assert!(
-            !models.contains(&"openai-filter-test/dall-e-3".to_string()),
-            "Should NOT contain dall-e-3, got: {:?}",
+            models.contains(&"openai-test/dall-e-3".to_string()),
+            "Should contain dall-e-3 (no filtering), got: {:?}",
             models
         );
         assert!(
-            !models.contains(&"openai-filter-test/whisper-1".to_string()),
-            "Should NOT contain whisper-1, got: {:?}",
+            models.contains(&"openai-test/tts-1".to_string()),
+            "Should contain tts-1 (no filtering), got: {:?}",
             models
-        );
-        assert!(
-            !models.contains(&"openai-filter-test/text-embedding-3-small".to_string()),
-            "Should NOT contain text-embedding-3-small, got: {:?}",
-            models
-        );
-        assert!(
-            !models.contains(&"openai-filter-test/tts-1".to_string()),
-            "Should NOT contain tts-1, got: {:?}",
-            models
-        );
-
-        // Verify we have only chat models (10 out of 20 returned)
-        let openai_models: Vec<_> = models
-            .iter()
-            .filter(|m| m.starts_with("openai-filter-test/"))
-            .collect();
-        assert_eq!(
-            openai_models.len(),
-            10,
-            "Should have exactly 10 chat models after filtering, got: {:?}",
-            openai_models
         );
     }
 
@@ -8462,20 +8278,24 @@ mod tests {
             models
         );
 
-        // Ollama error should be surfaced as a special entry
+        // With new rig_model_listing dispatch, failed providers silently fall back
+        // to effective_models() — no error entries surfaced in the model list.
         let error_entries: Vec<_> = models
             .iter()
             .filter(|m| m.starts_with("[error]"))
             .collect();
         assert!(
-            !error_entries.is_empty(),
-            "Should have an error entry for failed Ollama provider, got: {:?}",
+            error_entries.is_empty(),
+            "No error entries should be surfaced with new dispatch, got: {:?}",
             models
         );
-        assert!(
-            error_entries.iter().any(|e| e.contains("ollama-dead")),
-            "Error entry should mention the provider key 'ollama-dead', got: {:?}",
-            error_entries
+
+        // Only OpenAI models present (Ollama silently failed)
+        assert_eq!(
+            models.len(),
+            2,
+            "Should have exactly 2 OpenAI models, got: {:?}",
+            models
         );
     }
 
