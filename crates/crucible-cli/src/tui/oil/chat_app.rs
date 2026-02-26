@@ -578,7 +578,7 @@ impl App for OilChatApp {
                 tracing::debug!(tool_name = %name, ?call_id, error = %error, "Received ToolResultError");
                 self.container_list
                     .update_tool(&name, call_id.as_deref(), |t| {
-                        t.set_error(error);
+                        t.set_error(crucible_tools::strip_tool_error_prefix(&error));
                     });
                 Action::Continue
             }
@@ -3933,6 +3933,69 @@ mod tests {
         assert!(
             app.notification_area.is_empty(),
             "PluginStatusLoaded should not create notifications (runner init handles that)"
+        );
+    }
+
+    #[test]
+    fn tool_result_error_strips_prefix_chains() {
+        let mut app = OilChatApp::init();
+        app.on_message(ChatAppMsg::ToolCall {
+            name: "read".to_string(),
+            args: "{}".to_string(),
+            call_id: Some("c1".to_string()),
+        });
+        app.on_message(ChatAppMsg::ToolResultError {
+            name: "read".to_string(),
+            error: "ToolCallError: ToolCallError: ToolCallError: file not found".to_string(),
+            call_id: Some("c1".to_string()),
+        });
+        let tool = app.container_list().find_tool("read").unwrap();
+        assert_eq!(
+            tool.error.as_deref(),
+            Some("file not found"),
+            "Should strip nested ToolCallError prefixes"
+        );
+    }
+
+    #[test]
+    fn tool_result_error_strips_mixed_prefixes() {
+        let mut app = OilChatApp::init();
+        app.on_message(ChatAppMsg::ToolCall {
+            name: "search".to_string(),
+            args: "{}".to_string(),
+            call_id: None,
+        });
+        app.on_message(ChatAppMsg::ToolResultError {
+            name: "search".to_string(),
+            error: "ToolCallError: MCP gateway error: connection refused".to_string(),
+            call_id: None,
+        });
+        let tool = app.container_list().find_tool("search").unwrap();
+        assert_eq!(
+            tool.error.as_deref(),
+            Some("connection refused"),
+            "Should strip mixed prefix chain"
+        );
+    }
+
+    #[test]
+    fn tool_result_error_preserves_clean_errors() {
+        let mut app = OilChatApp::init();
+        app.on_message(ChatAppMsg::ToolCall {
+            name: "bash".to_string(),
+            args: "{}".to_string(),
+            call_id: None,
+        });
+        app.on_message(ChatAppMsg::ToolResultError {
+            name: "bash".to_string(),
+            error: "command not found".to_string(),
+            call_id: None,
+        });
+        let tool = app.container_list().find_tool("bash").unwrap();
+        assert_eq!(
+            tool.error.as_deref(),
+            Some("command not found"),
+            "Clean errors should pass through unchanged"
         );
     }
 }
