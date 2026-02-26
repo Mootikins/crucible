@@ -30,9 +30,11 @@ pub async fn list_models(endpoint: &str, api_key: &str) -> ModelListingResult<Ve
         .timeout(Duration::from_secs(10))
         .build()?;
 
-    let response = client
-        .get(&url)
-        .header("x-api-key", api_key)
+    let mut request = client.get(&url);
+    if !api_key.is_empty() {
+        request = request.header("x-api-key", api_key);
+    }
+    let response = request
         .header("anthropic-version", "2023-06-01")
         .send()
         .await?;
@@ -121,14 +123,21 @@ mod tests {
         assert!(result.is_err());
     }
 
-    #[test]
-    fn test_parse_models_response_uses_x_api_key_not_bearer() {
-        // This test documents the authentication difference:
-        // Anthropic uses 'x-api-key' header (NOT Bearer auth like OpenAI)
-        // The list_models() function sets the header directly.
-        // This is verified by the header setup in list_models().
-        let json = r#"{"data": [{"id": "claude-opus-4-5"}]}"#;
-        let result = parse_models_response(json).unwrap();
+    #[tokio::test]
+    async fn test_list_models_sends_x_api_key_header() {
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("GET", "/v1/models")
+            .match_header("x-api-key", "test-anthropic-key")
+            .match_header("anthropic-version", "2023-06-01")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"{"data": [{"id": "claude-opus-4-5"}]}"#)
+            .create_async()
+            .await;
+
+        let result = list_models(&server.url(), "test-anthropic-key").await.unwrap();
+        mock.assert_async().await;
         assert_eq!(result, vec!["claude-opus-4-5"]);
     }
 }
