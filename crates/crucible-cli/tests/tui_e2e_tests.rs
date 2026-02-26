@@ -520,7 +520,6 @@ fn chat_rapid_input() {
 #[ignore = "requires built binary"]
 fn oil_runner_does_not_freeze() {
     let config = TuiTestConfig::new("chat")
-        .with_args(&["--no-process"])
         .with_env("RUST_LOG", "warn")
         .with_timeout(Duration::from_secs(3));
 
@@ -554,7 +553,6 @@ fn oil_runner_does_not_freeze() {
 #[ignore = "requires built binary"]
 fn oil_quit_with_repl_command() {
     let config = TuiTestConfig::new("chat")
-        .with_args(&["--no-process"])
         .with_env("RUST_LOG", "warn")
         .with_timeout(Duration::from_secs(10));
 
@@ -581,7 +579,6 @@ fn oil_quit_with_repl_command() {
 #[ignore = "requires built binary"]
 fn oil_verify_pty_works() {
     let config = TuiTestConfig::new("chat")
-        .with_args(&["--no-process"])
         .with_env("RUST_LOG", "crucible_cli::tui::oil=debug")
         .with_timeout(Duration::from_secs(10));
 
@@ -615,7 +612,6 @@ fn oil_verify_pty_works() {
 #[ignore = "requires built binary"]
 fn oil_runner_stays_responsive_10s() {
     let config = TuiTestConfig::new("chat")
-        .with_args(&["--no-process"])
         .with_env("RUST_LOG", "warn")
         .with_timeout(Duration::from_secs(20));
 
@@ -659,7 +655,7 @@ fn oil_runner_stays_responsive_10s() {
 #[ignore = "requires built binary and Ollama"]
 fn oil_streaming_response_renders() {
     let config = TuiTestConfig::new("chat")
-        .with_args(&["--no-process", "--internal"])
+        .with_args(&["--internal"])
         .with_env("RUST_LOG", "warn")
         .with_timeout(Duration::from_secs(60));
 
@@ -686,7 +682,7 @@ fn oil_streaming_response_renders() {
 #[ignore = "requires built binary and Ollama"]
 fn oil_streaming_with_markdown_table() {
     let config = TuiTestConfig::new("chat")
-        .with_args(&["--no-process", "--internal"])
+        .with_args(&["--internal"])
         .with_env("RUST_LOG", "warn")
         .with_timeout(Duration::from_secs(90));
 
@@ -728,7 +724,7 @@ fn oil_streaming_with_markdown_table() {
 #[ignore = "requires built binary and Ollama"]
 fn oil_ctrl_c_during_streaming() {
     let config = TuiTestConfig::new("chat")
-        .with_args(&["--no-process", "--internal"])
+        .with_args(&["--internal"])
         .with_env("RUST_LOG", "warn")
         .with_timeout(Duration::from_secs(30));
 
@@ -765,7 +761,7 @@ fn oil_ctrl_c_during_streaming() {
 #[ignore = "requires built binary and Ollama"]
 fn oil_double_ctrl_c_exits_during_streaming() {
     let config = TuiTestConfig::new("chat")
-        .with_args(&["--no-process", "--internal"])
+        .with_args(&["--internal"])
         .with_env("RUST_LOG", "warn")
         .with_timeout(Duration::from_secs(30));
 
@@ -798,7 +794,6 @@ fn oil_double_ctrl_c_exits_during_streaming() {
 #[ignore = "requires built binary"]
 fn oil_ctrl_c_empty_input_notification() {
     let config = TuiTestConfig::new("chat")
-        .with_args(&["--no-process"])
         .with_env("RUST_LOG", "warn")
         .with_timeout(Duration::from_secs(10));
 
@@ -835,7 +830,6 @@ fn oil_ctrl_c_empty_input_notification() {
 #[ignore = "requires built binary"]
 fn oil_mode_cycle() {
     let config = TuiTestConfig::new("chat")
-        .with_args(&["--no-process"])
         .with_env("RUST_LOG", "warn")
         .with_timeout(Duration::from_secs(10));
 
@@ -860,7 +854,6 @@ fn oil_mode_cycle() {
 #[ignore = "requires built binary"]
 fn oil_explicit_mode_commands() {
     let config = TuiTestConfig::new("chat")
-        .with_args(&["--no-process"])
         .with_env("RUST_LOG", "warn")
         .with_timeout(Duration::from_secs(10));
 
@@ -898,7 +891,7 @@ fn oil_explicit_mode_commands() {
 #[ignore = "requires built binary and Ollama"]
 fn model_popup_shows_with_ollama() {
     let config = TuiTestConfig::new("chat")
-        .with_args(&["--no-process", "--internal"])
+        .with_args(&["--internal"])
         .with_env("RUST_LOG", "warn")
         .with_timeout(Duration::from_secs(15));
 
@@ -927,7 +920,6 @@ fn model_popup_shows_with_ollama() {
 #[ignore = "requires built binary"]
 fn model_popup_lazy_fetch_on_demand() {
     let config = TuiTestConfig::new("chat")
-        .with_args(&["--no-process"])
         .with_env("RUST_LOG", "crucible_cli::tui::oil=debug")
         .with_timeout(Duration::from_secs(15));
 
@@ -958,7 +950,7 @@ fn model_popup_lazy_fetch_on_demand() {
 #[ignore = "requires built binary and Ollama"]
 fn model_popup_filter_works() {
     let config = TuiTestConfig::new("chat")
-        .with_args(&["--no-process", "--internal"])
+        .with_args(&["--internal"])
         .with_env("RUST_LOG", "warn")
         .with_timeout(Duration::from_secs(15));
 
@@ -988,7 +980,7 @@ fn model_popup_filter_works() {
 #[ignore = "requires built binary and Ollama"]
 fn model_selection_updates_status() {
     let config = TuiTestConfig::new("chat")
-        .with_args(&["--no-process", "--internal"])
+        .with_args(&["--internal"])
         .with_env("RUST_LOG", "warn")
         .with_timeout(Duration::from_secs(15));
 
@@ -1020,7 +1012,7 @@ fn model_selection_updates_status() {
 #[ignore = "requires built binary and Ollama"]
 fn model_popup_navigation() {
     let config = TuiTestConfig::new("chat")
-        .with_args(&["--no-process", "--internal"])
+        .with_args(&["--internal"])
         .with_env("RUST_LOG", "warn")
         .with_timeout(Duration::from_secs(15));
 
@@ -1055,7 +1047,7 @@ fn model_popup_navigation() {
 #[ignore = "requires built binary and Ollama"]
 fn model_direct_switch_command() {
     let config = TuiTestConfig::new("chat")
-        .with_args(&["--no-process", "--internal"])
+        .with_args(&["--internal"])
         .with_env("RUST_LOG", "warn")
         .with_timeout(Duration::from_secs(15));
 
@@ -1083,7 +1075,6 @@ fn model_direct_switch_command() {
 #[ignore = "requires built binary without Ollama"]
 fn model_popup_no_models_message() {
     let config = TuiTestConfig::new("chat")
-        .with_args(&["--no-process"])
         .with_env("OLLAMA_HOST", "http://localhost:99999")
         .with_env("RUST_LOG", "warn")
         .with_timeout(Duration::from_secs(10));
@@ -1107,7 +1098,6 @@ fn model_popup_no_models_message() {
 #[ignore = "requires built binary"]
 fn oil_f1_popup_toggle() {
     let config = TuiTestConfig::new("chat")
-        .with_args(&["--no-process"])
         .with_env("RUST_LOG", "warn")
         .with_timeout(Duration::from_secs(10));
 
@@ -1136,7 +1126,6 @@ fn oil_f1_popup_toggle() {
 #[ignore = "requires built binary"]
 fn oil_popup_arrow_navigation() {
     let config = TuiTestConfig::new("chat")
-        .with_args(&["--no-process"])
         .with_env("RUST_LOG", "warn")
         .with_timeout(Duration::from_secs(10));
 
@@ -1175,7 +1164,6 @@ fn oil_popup_arrow_navigation() {
 #[ignore = "requires built binary"]
 fn oil_rapid_typing_stress() {
     let config = TuiTestConfig::new("chat")
-        .with_args(&["--no-process"])
         .with_env("RUST_LOG", "warn")
         .with_timeout(Duration::from_secs(15));
 
@@ -1213,7 +1201,6 @@ fn oil_rapid_typing_stress() {
 #[ignore = "requires built binary"]
 fn oil_alternating_input_commands() {
     let config = TuiTestConfig::new("chat")
-        .with_args(&["--no-process"])
         .with_env("RUST_LOG", "warn")
         .with_timeout(Duration::from_secs(15));
 
@@ -1251,7 +1238,6 @@ fn oil_alternating_input_commands() {
 #[ignore = "requires built binary"]
 fn oil_unknown_command_error() {
     let config = TuiTestConfig::new("chat")
-        .with_args(&["--no-process"])
         .with_env("RUST_LOG", "warn")
         .with_timeout(Duration::from_secs(10));
 
@@ -1280,7 +1266,6 @@ fn oil_unknown_command_error() {
 #[ignore = "requires built binary"]
 fn oil_clear_command() {
     let config = TuiTestConfig::new("chat")
-        .with_args(&["--no-process"])
         .with_env("RUST_LOG", "warn")
         .with_timeout(Duration::from_secs(10));
 
@@ -1314,7 +1299,6 @@ fn oil_clear_command() {
 #[ignore = "requires built binary"]
 fn oil_narrow_terminal_60_cols() {
     let config = TuiTestConfig::new("chat")
-        .with_args(&["--no-process"])
         .with_env("RUST_LOG", "warn")
         .with_dimensions(60, 24)
         .with_timeout(Duration::from_secs(10));
@@ -1335,7 +1319,6 @@ fn oil_narrow_terminal_60_cols() {
 #[ignore = "requires built binary"]
 fn ink_very_narrow_terminal_40_cols() {
     let config = TuiTestConfig::new("chat")
-        .with_args(&["--no-process"])
         .with_env("RUST_LOG", "warn")
         .with_dimensions(40, 24)
         .with_timeout(Duration::from_secs(10));
@@ -1355,7 +1338,6 @@ fn ink_very_narrow_terminal_40_cols() {
 #[ignore = "requires built binary"]
 fn oil_wide_terminal_120_cols() {
     let config = TuiTestConfig::new("chat")
-        .with_args(&["--no-process"])
         .with_env("RUST_LOG", "warn")
         .with_dimensions(120, 40)
         .with_timeout(Duration::from_secs(10));
@@ -1387,7 +1369,6 @@ fn oil_wide_terminal_120_cols() {
 #[ignore = "requires built binary"]
 fn oil_short_terminal_10_rows() {
     let config = TuiTestConfig::new("chat")
-        .with_args(&["--no-process"])
         .with_env("RUST_LOG", "warn")
         .with_dimensions(80, 10)
         .with_timeout(Duration::from_secs(10));
@@ -1643,7 +1624,6 @@ fn exit_code_process_nonexistent_path() {
 #[ignore = "requires built binary"]
 fn vt100_exemplar_screen_content_verification() {
     let config = TuiTestConfig::new("chat")
-        .with_args(&["--no-process"])
         .with_env("RUST_LOG", "warn")
         .with_timeout(Duration::from_secs(10));
 
@@ -1669,7 +1649,6 @@ fn vt100_exemplar_screen_content_verification() {
 #[ignore = "requires built binary"]
 fn vt100_exemplar_popup_lifecycle() {
     let config = TuiTestConfig::new("chat")
-        .with_args(&["--no-process"])
         .with_env("RUST_LOG", "warn")
         .with_timeout(Duration::from_secs(10));
 
@@ -1711,7 +1690,6 @@ fn vt100_exemplar_popup_lifecycle() {
 #[ignore = "requires built binary"]
 fn vt100_exemplar_mode_indicator() {
     let config = TuiTestConfig::new("chat")
-        .with_args(&["--no-process"])
         .with_env("RUST_LOG", "warn")
         .with_timeout(Duration::from_secs(10));
 
@@ -1747,7 +1725,6 @@ fn vt100_exemplar_mode_indicator() {
 fn vt100_exemplar_terminal_size_adaptation() {
     for (cols, rows, label) in [(60, 24, "narrow"), (120, 40, "wide")] {
         let config = TuiTestConfig::new("chat")
-            .with_args(&["--no-process"])
             .with_env("RUST_LOG", "warn")
             .with_dimensions(cols, rows)
             .with_timeout(Duration::from_secs(10));

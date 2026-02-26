@@ -77,7 +77,6 @@ fn session_list_without_daemon_is_graceful_error() {
         .env("CRUCIBLE_SOCKET", &bad_socket)
         .arg("--config")
         .arg(&config_path)
-        .arg("--no-process")
         .args(["session", "list"])
         .assert()
         .failure()
@@ -98,7 +97,6 @@ fn session_show_without_daemon_for_missing_id_is_graceful_error() {
         .env("CRUCIBLE_SOCKET", &bad_socket)
         .arg("--config")
         .arg(&config_path)
-        .arg("--no-process")
         .args(["session", "show", "chat-20260221-0000-dead"])
         .assert()
         .failure()
@@ -115,7 +113,6 @@ fn session_internal_lifecycle_with_real_daemon() {
 
     let create = daemon
         .command()
-        .arg("--no-process")
         .args(["session", "create", "-t", "chat"])
         .assert()
         .success()
@@ -126,7 +123,6 @@ fn session_internal_lifecycle_with_real_daemon() {
 
     daemon
         .command()
-        .arg("--no-process")
         .args(["session", "list"])
         .assert()
         .success()
@@ -134,7 +130,6 @@ fn session_internal_lifecycle_with_real_daemon() {
 
     daemon
         .command()
-        .arg("--no-process")
         .args(["session", "show", &session_id])
         .assert()
         .success()
@@ -142,7 +137,6 @@ fn session_internal_lifecycle_with_real_daemon() {
 
     daemon
         .command()
-        .arg("--no-process")
         .args(["session", "pause", &session_id])
         .assert()
         .success()
@@ -150,7 +144,6 @@ fn session_internal_lifecycle_with_real_daemon() {
 
     let mut send_cmd = daemon.command();
     send_cmd
-        .arg("--no-process")
         .args(["session", "send", &session_id, "hello from cli e2e"])
         .timeout(Duration::from_secs(20));
     let send_output = send_cmd.output().expect("failed to run session send");
@@ -162,7 +155,6 @@ fn session_internal_lifecycle_with_real_daemon() {
 
     daemon
         .command()
-        .arg("--no-process")
         .args(["session", "unpause", &session_id])
         .assert()
         .success()
@@ -170,7 +162,6 @@ fn session_internal_lifecycle_with_real_daemon() {
 
     daemon
         .command()
-        .arg("--no-process")
         .args(["session", "end", &session_id])
         .assert()
         .success()
