@@ -1429,6 +1429,113 @@ fn model_command_no_models_shows_message() {
 }
 
 #[test]
+fn model_popup_repl_command_keeps_open_when_typing_filter() {
+    let mut app = OilChatApp::default();
+    app.set_available_models(vec![
+        "ollama/llama3".to_string(),
+        "anthropic/claude-3".to_string(),
+        "openai/gpt-4".to_string(),
+    ]);
+
+    // Open popup via REPL command path (NOT autocomplete path)
+    for c in ":model".chars() {
+        app.update(Event::Key(key(KeyCode::Char(c))));
+    }
+    app.update(Event::Key(key(KeyCode::Enter)));
+
+    assert!(app.is_popup_visible(), "Popup should be open after ':model' + Enter");
+    assert_eq!(app.input_content(), ":model ", "Input should be ':model ' after REPL command opens popup");
+
+    // Type a filter character — this is the regression: popup must NOT close
+    app.update(Event::Key(key(KeyCode::Char('o'))));
+
+    assert!(
+        app.is_popup_visible(),
+        "Popup must stay open when typing filter character after ':model' + Enter (regression: was closing immediately)"
+    );
+    assert_eq!(
+        app.current_popup_filter(),
+        "o",
+        "Filter should be 'o' after typing 'o'"
+    );
+}
+
+#[test]
+fn model_popup_repl_command_not_loaded_keeps_open_after_models_arrive() {
+    let mut app = OilChatApp::default();
+    // State is NotLoaded by default — do NOT call set_available_models
+
+    // Open popup via REPL command (triggers lazy fetch)
+    for c in ":model".chars() {
+        app.update(Event::Key(key(KeyCode::Char(c))));
+    }
+    app.update(Event::Key(key(KeyCode::Enter)));
+
+    assert!(app.is_popup_visible(), "Popup should open immediately (showing 'Fetching...' state)");
+
+    // Simulate models arriving
+    app.on_message(ChatAppMsg::ModelsLoaded(vec![
+        "ollama/llama3".to_string(),
+        "ollama/llama2".to_string(),
+        "anthropic/claude-3".to_string(),
+    ]));
+
+    // Type a filter character
+    app.update(Event::Key(key(KeyCode::Char('l'))));
+
+    assert!(
+        app.is_popup_visible(),
+        "Popup must stay open when typing filter after ':model' + Enter with lazy-loaded models"
+    );
+    assert_eq!(
+        app.current_popup_filter(),
+        "l",
+        "Filter should be 'l' after typing 'l'"
+    );
+}
+
+#[test]
+fn model_popup_repl_command_multi_char_filter_narrows_results() {
+    let mut app = OilChatApp::default();
+    app.set_available_models(vec![
+        "ollama/llama3".to_string(),
+        "ollama/llama2".to_string(),
+        "anthropic/claude-3".to_string(),
+        "openai/gpt-4".to_string(),
+    ]);
+
+    // Open via REPL command path
+    for c in ":model".chars() {
+        app.update(Event::Key(key(KeyCode::Char(c))));
+    }
+    app.update(Event::Key(key(KeyCode::Enter)));
+
+    // Type multi-char filter
+    for c in "lla".chars() {
+        app.update(Event::Key(key(KeyCode::Char(c))));
+    }
+
+    assert!(app.is_popup_visible(), "Popup must stay open with multi-char filter");
+    assert_eq!(
+        app.current_popup_filter(),
+        "lla",
+        "Filter should be 'lla' after typing 'lla'"
+    );
+
+    // Verify filtered content — llama models should show, claude/gpt should not
+    let tree = view_with_default_ctx(&app);
+    let output = render_to_string(&tree, 80);
+    assert!(
+        output.contains("llama3") || output.contains("llama2"),
+        "Filtered popup should show llama models matching 'lla'"
+    );
+    assert!(
+        !output.contains("claude") && !output.contains("gpt"),
+        "Filtered popup should NOT show non-matching models"
+    );
+}
+
+#[test]
 fn model_repl_command_in_popup_list() {
     let mut app = OilChatApp::default();
 
