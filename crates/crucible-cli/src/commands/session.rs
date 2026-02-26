@@ -579,7 +579,6 @@ async fn resume(config: CliConfig, id: String) -> Result<()> {
         None,
         false,
         false,
-        false,
         None,
         None,
         16384,
