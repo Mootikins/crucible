@@ -62,7 +62,11 @@ type PendingRequests = Arc<Mutex<HashMap<u64, oneshot::Sender<serde_json::Value>
 fn parse_models_response(result: &serde_json::Value) -> Vec<String> {
     result["models"]
         .as_array()
-        .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect()
+        })
         .unwrap_or_default()
 }
 
@@ -536,12 +540,27 @@ impl DaemonClient {
     // =========================================================================
 
     pub async fn kiln_open(&self, path: &Path) -> Result<()> {
-        self.call(
-            "kiln.open",
-            serde_json::json!({ "path": path.to_string_lossy() }),
-        )
-        .await?;
+        self.kiln_open_with_options(path, false, false).await?;
         Ok(())
+    }
+
+    pub async fn kiln_open_with_options(
+        &self,
+        path: &Path,
+        process: bool,
+        force: bool,
+    ) -> Result<serde_json::Value> {
+        let result = self
+            .call(
+                "kiln.open",
+                serde_json::json!({
+                    "path": path.to_string_lossy(),
+                    "process": process,
+                    "force": force
+                }),
+            )
+            .await?;
+        Ok(result)
     }
 
     pub async fn kiln_set_classification(&self, path: &Path, classification: &str) -> Result<()> {
