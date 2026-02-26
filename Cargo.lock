@@ -3544,6 +3544,7 @@ dependencies = [
  "crucible-core",
  "crucible-tools",
  "futures",
+ "mockito",
  "once_cell",
  "regex",
  "reqwest",
