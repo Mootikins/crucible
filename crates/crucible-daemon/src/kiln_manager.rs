@@ -566,6 +566,42 @@ async fn create_storage_handle(db_path: &Path) -> Result<StorageHandle> {
     }
 }
 
+// ===========================================================================
+// File Discovery
+// ===========================================================================
+
+/// Check if a path is a markdown file
+fn is_markdown_file(path: &Path) -> bool {
+    path.extension().and_then(|s| s.to_str()) == Some("md")
+}
+
+/// Check if a directory should be excluded from file discovery
+fn is_excluded_dir(path: &Path) -> bool {
+    path.file_name()
+        .and_then(|name| name.to_str())
+        .map(|name| {
+            matches!(
+                name,
+                ".crucible" | ".git" | ".obsidian" | "node_modules" | ".trash"
+            )
+        })
+        .unwrap_or(false)
+}
+
+/// Discover markdown files in a kiln directory
+fn discover_markdown_files(kiln_path: &Path) -> Vec<PathBuf> {
+    use walkdir::WalkDir;
+
+    WalkDir::new(kiln_path)
+        .follow_links(false)
+        .into_iter()
+        .filter_entry(|e| !is_excluded_dir(e.path()))
+        .filter_map(|e| e.ok())
+        .filter(|e| e.path().is_file() && is_markdown_file(e.path()))
+        .map(|e| e.path().to_path_buf())
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
