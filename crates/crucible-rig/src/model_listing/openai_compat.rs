@@ -177,5 +177,24 @@ mod tests {
         let result = parse_models_response(json).unwrap();
         assert_eq!(result, vec!["model-with-id", "model-with-name-only"]);
     }
+
+    #[test]
+    fn test_parse_models_response_data_not_array_falls_through_to_models() {
+        // When 'data' exists but is not an array, fall through to 'models' key
+        let json = r#"{
+            "data": {"id": "not-an-array"},
+            "models": [{"name": "fallback-model"}]
+        }"#;
+        let result = parse_models_response(json).unwrap();
+        assert_eq!(result, vec!["fallback-model"]);
+    }
+
+    #[test]
+    fn test_parse_models_response_data_not_array_no_models_key_errors() {
+        // When 'data' exists but is not an array and no 'models' key either
+        let json = r#"{"data": "not-an-array"}"#;
+        let result = parse_models_response(json);
+        assert!(result.is_err());
+    }
 }
 
