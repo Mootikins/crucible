@@ -250,6 +250,40 @@ impl KilnManager {
         Ok(())
     }
 
+    /// Open a kiln and process all markdown files through the pipeline.
+    ///
+    /// Returns (processed_count, skipped_count, errors).
+    /// If the kiln is already open, still runs processing.
+    pub async fn open_and_process(
+        &self,
+        kiln_path: &Path,
+        force: bool,
+    ) -> Result<(usize, usize, Vec<(PathBuf, String)>)> {
+        // Ensure kiln is open
+        self.open(kiln_path).await?;
+
+        // Discover files
+        let files = discover_markdown_files(kiln_path);
+
+        if files.is_empty() {
+            info!("No markdown files found in {:?}", kiln_path);
+            return Ok((0, 0, Vec::new()));
+        }
+
+        info!(
+            "Discovered {} markdown files in {:?}",
+            files.len(),
+            kiln_path
+        );
+
+        // TODO: `force` flag will be wired when pipeline supports skipping change detection
+        if force {
+            warn!("--force flag accepted but not yet forwarded to pipeline");
+        }
+
+        self.process_batch(kiln_path, &files).await
+    }
+
     /// Close a kiln connection
     pub async fn close(&self, kiln_path: &Path) -> Result<()> {
         let canonical = kiln_path
