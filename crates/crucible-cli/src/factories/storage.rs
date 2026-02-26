@@ -73,8 +73,12 @@ pub async fn get_storage(config: &CliConfig) -> Result<StorageHandle> {
     let client = DaemonClient::connect_or_start().await?;
     let kiln_path = config.kiln_path.clone();
 
-    // Open the kiln in the daemon (required before any queries)
-    client.kiln_open(&kiln_path).await?;
+    // Open the kiln in the daemon (required before any queries).
+    // process=true ensures files are processed on open, replacing the old
+    // separate process_files_with_change_detection call.
+    client
+        .kiln_open_with_options(&kiln_path, true, false)
+        .await?;
 
     let client = Arc::new(client);
     Ok(StorageHandle::Daemon(Arc::new(DaemonStorageClient::new(
