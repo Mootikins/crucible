@@ -193,8 +193,26 @@ impl DaemonClient {
 
     async fn start_daemon() -> Result<()> {
         use std::process::Command;
-        // Fork ourselves with `daemon serve` — single binary pattern
+
         let exe = std::env::current_exe()?;
+
+        // Guard: only spawn if current binary is the real `cru` CLI.
+        // Test binaries (e.g. `storage_factory_integration-<hash>`) interpret
+        // `daemon serve` as test filter patterns, which causes recursive fork
+        // bombs — each spawned test binary runs tests that call connect_or_start()
+        // again, spawning yet another copy of themselves.
+        let exe_name = exe
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("");
+        if exe_name != "cru" {
+            anyhow::bail!(
+                "Cannot auto-start daemon: current binary {:?} is not `cru`. \
+                 Start the daemon manually with `cru daemon serve`.",
+                exe
+            );
+        }
+
         tracing::info!("Starting daemon: {:?} daemon serve", exe);
 
         Command::new(&exe)
