@@ -8,7 +8,7 @@ use colored::Colorize;
 use crucible_config::credentials::{
     env_var_for_provider, CredentialSource, CredentialStore, SecretsFile,
 };
-use crucible_rig::github_copilot::{CopilotAuth, CopilotError};
+use crucible_daemon::provider::copilot::{CopilotAuth, CopilotError};
 
 use crate::cli::AuthCommands;
 
