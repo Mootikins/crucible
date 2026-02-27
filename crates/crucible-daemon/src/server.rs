@@ -865,12 +865,13 @@ async fn handle_kiln_open(
 
     if process {
         match km.open_and_process(kiln_path, force).await {
-            Ok((processed, skipped, errors)) => {
+            Ok((discovered, processed, skipped, errors)) => {
                 let _ = event_tx.send(SessionEventMessage::new(
                     "process",
                     "process_complete",
                     serde_json::json!({
                         "kiln": path,
+                        "discovered": discovered,
                         "processed": processed,
                         "skipped": skipped,
                         "errors": errors.len()
@@ -881,6 +882,7 @@ async fn handle_kiln_open(
                     req.id,
                     serde_json::json!({
                         "status": "ok",
+                        "discovered": discovered,
                         "processed": processed,
                         "skipped": skipped,
                         "errors": errors.iter().map(|(p, e)| {

@@ -100,6 +100,10 @@ pub async fn execute(
         .await?;
 
     // Parse response
+    let discovered = result
+        .get("discovered")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
     let processed = result
         .get("processed")
         .and_then(|v| v.as_u64())
@@ -112,6 +116,7 @@ pub async fn execute(
         .unwrap_or(0);
 
     println!("Pipeline processing complete!");
+    println!("  Discovered: {} markdown files", discovered);
     println!("  Processed: {} files", processed);
     println!("  Skipped (unchanged): {} files", skipped);
     if errors > 0 {
