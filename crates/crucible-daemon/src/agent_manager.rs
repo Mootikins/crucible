@@ -261,6 +261,17 @@ struct PendingPermission {
     response_tx: oneshot::Sender<PermResponse>,
 }
 
+#[derive(Clone)]
+struct StreamContext {
+    session_id: String,
+    message_id: String,
+    event_tx: broadcast::Sender<SessionEventMessage>,
+    session_state: Arc<Mutex<SessionEventState>>,
+    pending_permissions: Arc<DashMap<String, HashMap<PermissionId, PendingPermission>>>,
+    workspace_path: PathBuf,
+    model: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ResolvedProvider {
     /// Backend/provider type
@@ -797,13 +808,16 @@ impl AgentManager {
         };
 
         let session_id_owned = session_id.to_string();
-        let message_id_clone = message_id.clone();
         let request_state = self.request_state.clone();
-        let session_state = self.get_or_create_session_state(session_id);
-        let workspace_path = session.workspace.clone();
-
-        let pending_permissions = self.pending_permissions.clone();
-        let model = agent_config.model.clone();
+        let stream_ctx = StreamContext {
+            session_id: session_id_owned.clone(),
+            message_id: message_id.clone(),
+            event_tx: event_tx_clone.clone(),
+            session_state: self.get_or_create_session_state(session_id),
+            pending_permissions: self.pending_permissions.clone(),
+            workspace_path: session.workspace.clone(),
+            model: agent_config.model.clone(),
+        };
 
         let task = tokio::spawn(async move {
             let mut accumulated_response = String::new();
@@ -821,15 +835,9 @@ impl AgentManager {
                 _ = Self::execute_agent_stream(
                     agent,
                     content,
-                    &session_id_owned,
-                    &message_id_clone,
-                    &event_tx_clone,
+                    stream_ctx,
                     &mut accumulated_response,
-                    session_state,
                     false,
-                    pending_permissions,
-                    workspace_path,
-                    model,
                 ) => {}
             }
 
@@ -1103,20 +1111,23 @@ impl AgentManager {
         )
     }
 
-    #[allow(clippy::too_many_arguments)]
     async fn execute_agent_stream(
         agent: Arc<Mutex<BoxedAgentHandle>>,
         content: String,
-        session_id: &str,
-        message_id: &str,
-        event_tx: &broadcast::Sender<SessionEventMessage>,
+        stream_ctx: StreamContext,
         accumulated_response: &mut String,
-        session_state: Arc<Mutex<SessionEventState>>,
         is_continuation: bool,
-        pending_permissions: Arc<DashMap<String, HashMap<PermissionId, PendingPermission>>>,
-        workspace_path: PathBuf,
-        model: String,
     ) {
+        let StreamContext {
+            session_id,
+            message_id,
+            event_tx,
+            session_state,
+            pending_permissions,
+            workspace_path,
+            model,
+        } = stream_ctx;
+
         let content = {
             let mut state = session_state.lock().await;
             let pre_event = SessionEvent::PreLlmCall {
@@ -1135,9 +1146,9 @@ impl AgentManager {
                 Ok(EmitResult::Cancelled { by_handler, .. }) => {
                     warn!(session_id = %session_id, handler = %by_handler, "PreLlmCall cancelled by handler");
                     if !emit_event(
-                        event_tx,
+                        &event_tx,
                         SessionEventMessage::ended(
-                            session_id,
+                            &session_id,
                             format!("cancelled by handler: {}", by_handler),
                         ),
                     ) {
@@ -1184,8 +1195,8 @@ impl AgentManager {
                                 "Sending text_delta event"
                             );
                             let send_result = emit_event(
-                                event_tx,
-                                SessionEventMessage::text_delta(session_id, &chunk.delta),
+                                &event_tx,
+                                SessionEventMessage::text_delta(&session_id, &chunk.delta),
                             );
                             if !send_result {
                                 warn!(session_id = %session_id, "No subscribers for text_delta event");
@@ -1196,8 +1207,8 @@ impl AgentManager {
                     if let Some(reasoning) = &chunk.reasoning {
                         debug!(session_id = %session_id, "Sending thinking event");
                         if !emit_event(
-                            event_tx,
-                            SessionEventMessage::thinking(session_id, reasoning),
+                            &event_tx,
+                            SessionEventMessage::thinking(&session_id, reasoning),
                         ) {
                             warn!(session_id = %session_id, "No subscribers for thinking event");
                         }
@@ -1228,9 +1239,9 @@ impl AgentManager {
                                         let error_msg =
                                             format!("Tool call denied by handler: {}", by_handler);
                                         if !emit_event(
-                                            event_tx,
+                                            &event_tx,
                                             SessionEventMessage::tool_result(
-                                                session_id,
+                                                &session_id,
                                                 &call_id,
                                                 &tc.name,
                                                 serde_json::json!({ "error": error_msg }),
@@ -1286,7 +1297,7 @@ impl AgentManager {
                                         &session_state,
                                         &tc.name,
                                         &args,
-                                        session_id,
+                                        &session_id,
                                     )
                                     .await;
 
@@ -1312,9 +1323,9 @@ impl AgentManager {
                                             );
 
                                             if !emit_event(
-                                                event_tx,
+                                                &event_tx,
                                                 SessionEventMessage::tool_result(
-                                                    session_id,
+                                                    &session_id,
                                                     &call_id,
                                                     &tc.name,
                                                     serde_json::json!({ "error": error_msg }),
@@ -1361,9 +1372,9 @@ impl AgentManager {
 
                                             // Emit the interaction request event
                                             if !emit_event(
-                                                event_tx,
+                                                &event_tx,
                                                 SessionEventMessage::interaction_requested(
-                                                    session_id,
+                                                    &session_id,
                                                     &permission_id,
                                                     &interaction_request,
                                                 ),
@@ -1466,9 +1477,9 @@ impl AgentManager {
 
                                                 // Emit tool_result with error so LLM sees the denial
                                                 if !emit_event(
-                                                    event_tx,
+                                                    &event_tx,
                                                     SessionEventMessage::tool_result(
-                                                        session_id,
+                                                        &session_id,
                                                         &call_id,
                                                         &tc.name,
                                                         serde_json::json!({ "error": error_msg }),
@@ -1489,9 +1500,9 @@ impl AgentManager {
                             }
 
                             if !emit_event(
-                                event_tx,
+                                &event_tx,
                                 SessionEventMessage::tool_call(
-                                    session_id, &call_id, &tc.name, args,
+                                    &session_id, &call_id, &tc.name, args,
                                 ),
                             ) {
                                 warn!(session_id = %session_id, tool = %tc.name, "No subscribers for tool_call event");
@@ -1508,9 +1519,9 @@ impl AgentManager {
                                 serde_json::json!({ "result": tr.result })
                             };
                             if !emit_event(
-                                event_tx,
+                                &event_tx,
                                 SessionEventMessage::tool_result(
-                                    session_id, &call_id, &tr.name, result,
+                                    &session_id, &call_id, &tr.name, result,
                                 ),
                             ) {
                                 warn!(session_id = %session_id, tool = %tr.name, "No subscribers for tool_result event");
@@ -1526,10 +1537,10 @@ impl AgentManager {
                             "Sending message_complete event"
                         );
                         if !emit_event(
-                            event_tx,
+                            &event_tx,
                             SessionEventMessage::message_complete(
-                                session_id,
-                                message_id,
+                                &session_id,
+                                &message_id,
                                 accumulated_response.clone(),
                                 chunk.usage.as_ref(),
                             ),
@@ -1538,8 +1549,8 @@ impl AgentManager {
                         }
 
                         let injection = Self::dispatch_turn_complete_handlers(
-                            session_id,
-                            message_id,
+                            &session_id,
+                            &message_id,
                             accumulated_response,
                             &session_state,
                             is_continuation,
@@ -1555,9 +1566,9 @@ impl AgentManager {
                             );
 
                             if !emit_event(
-                                event_tx,
+                                &event_tx,
                                 SessionEventMessage::new(
-                                    session_id,
+                                    &session_id,
                                     "injection_pending",
                                     serde_json::json!({
                                         "content": &injected_content,
@@ -1575,18 +1586,22 @@ impl AgentManager {
                             accumulated_response.clear();
                             let injection_message_id = format!("msg-{}", uuid::Uuid::new_v4());
 
+                            let continuation_ctx = StreamContext {
+                                session_id: session_id.clone(),
+                                message_id: injection_message_id,
+                                event_tx: event_tx.clone(),
+                                session_state: session_state.clone(),
+                                pending_permissions: pending_permissions.clone(),
+                                workspace_path: workspace_path.clone(),
+                                model: model.clone(),
+                            };
+
                             Box::pin(Self::execute_agent_stream(
                                 agent,
                                 injected_content,
-                                session_id,
-                                &injection_message_id,
-                                event_tx,
+                                continuation_ctx,
                                 accumulated_response,
-                                session_state.clone(),
                                 true,
-                                pending_permissions.clone(),
-                                workspace_path.clone(),
-                                model.clone(),
                             ))
                             .await;
                         }
@@ -1597,8 +1612,8 @@ impl AgentManager {
                 Err(e) => {
                     error!(session_id = %session_id, error = %e, "Agent stream error");
                     if !emit_event(
-                        event_tx,
-                        SessionEventMessage::ended(session_id, format!("error: {}", e)),
+                        &event_tx,
+                        SessionEventMessage::ended(&session_id, format!("error: {}", e)),
                     ) {
                         warn!(session_id = %session_id, "No subscribers for error event");
                     }
@@ -1613,9 +1628,9 @@ impl AgentManager {
             warn!(session_id = %session_id, "PostLlmCall model string is empty, possible upstream issue");
         }
         if !emit_event(
-            event_tx,
+            &event_tx,
             SessionEventMessage::new(
-                session_id,
+                &session_id,
                 "post_llm_call",
                 serde_json::json!({
                     "response_summary": &response_summary,
