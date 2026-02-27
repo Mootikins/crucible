@@ -157,7 +157,7 @@ async fn create_internal_mcp_tool_defs(
 }
 
 fn is_plan_mode_tool(name: &str) -> bool {
-    crucible_tools::in_process_adapter::PLAN_TOOL_NAMES.contains(&name)
+    crucible_tools::tool_modes::PLAN_TOOL_NAMES.contains(&name)
 }
 
 #[cfg(test)]
