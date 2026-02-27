@@ -65,9 +65,9 @@ pub fn parse_models_response(body: &str) -> ModelListingResult<Vec<String>> {
     let data = payload
         .get("data")
         .and_then(Value::as_array)
-        .ok_or_else(|| ModelListingError::Api(
-            "expected 'data' key with array value in response".into(),
-        ))?;
+        .ok_or_else(|| {
+            ModelListingError::Api("expected 'data' key with array value in response".into())
+        })?;
 
     // Extract 'id' field from each model entry
     let models = data
@@ -99,7 +99,10 @@ mod tests {
             "has_more": false
         }"#;
         let result = parse_models_response(json).unwrap();
-        assert_eq!(result, vec!["claude-opus-4-5", "claude-sonnet-4", "claude-haiku-4-5"]);
+        assert_eq!(
+            result,
+            vec!["claude-opus-4-5", "claude-sonnet-4", "claude-haiku-4-5"]
+        );
     }
 
     #[test]
@@ -136,7 +139,9 @@ mod tests {
             .create_async()
             .await;
 
-        let result = list_models(&server.url(), "test-anthropic-key").await.unwrap();
+        let result = list_models(&server.url(), "test-anthropic-key")
+            .await
+            .unwrap();
         mock.assert_async().await;
         assert_eq!(result, vec!["claude-opus-4-5"]);
     }

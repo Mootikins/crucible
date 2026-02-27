@@ -173,8 +173,12 @@ fn chat_ctrl_c_exits() {
     // Double Ctrl+C within 300ms triggers quit
     session.send_control('c').expect("Failed to send Ctrl+C");
     session.wait(Duration::from_millis(100));
-    session.send_control('c').expect("Failed to send second Ctrl+C");
-    session.expect_eof().expect("Should exit after double Ctrl+C");
+    session
+        .send_control('c')
+        .expect("Failed to send second Ctrl+C");
+    session
+        .expect_eof()
+        .expect("Should exit after double Ctrl+C");
 }
 
 // =============================================================================

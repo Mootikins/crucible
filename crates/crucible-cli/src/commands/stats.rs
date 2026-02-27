@@ -222,8 +222,16 @@ mod tests {
         let stats = service.collect(temp.path()).unwrap();
 
         // Should only count the root.md file, not the ones in excluded directories
-        assert_eq!(stats.total_files, 1, "Expected 1 file (root.md), but got {}", stats.total_files);
-        assert_eq!(stats.markdown_files, 1, "Expected 1 markdown file, but got {}", stats.markdown_files);
+        assert_eq!(
+            stats.total_files, 1,
+            "Expected 1 file (root.md), but got {}",
+            stats.total_files
+        );
+        assert_eq!(
+            stats.markdown_files, 1,
+            "Expected 1 markdown file, but got {}",
+            stats.markdown_files
+        );
     }
 
     #[test]

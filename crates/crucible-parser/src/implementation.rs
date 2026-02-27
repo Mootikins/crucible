@@ -379,7 +379,8 @@ impl MarkdownParser for CrucibleParser {
         if let Some(frontmatter_text) = &frontmatter_raw {
             match frontmatter_format {
                 crate::types::FrontmatterFormat::Yaml => {
-                    if let Err(error) = serde_yaml::from_str::<serde_yaml::Value>(frontmatter_text) {
+                    if let Err(error) = serde_yaml::from_str::<serde_yaml::Value>(frontmatter_text)
+                    {
                         let (line, column) = error
                             .location()
                             .map(|location| {

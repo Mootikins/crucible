@@ -86,14 +86,15 @@ pub fn build_model_iden(backend: &BackendType, model: &str) -> Option<ModelIden>
 ///
 /// Panics if the backend type is not supported for chat (e.g., FastEmbed, Burn, Mock).
 pub fn build_genai_client(config: &crucible_config::LlmProviderConfig) -> genai::Client {
-    let _adapter = backend_to_adapter(&config.provider_type).expect("Backend does not support chat");
+    let _adapter =
+        backend_to_adapter(&config.provider_type).expect("Backend does not support chat");
 
     let mut builder = genai::Client::builder();
 
     // Set up authentication if API key is available
     if let Some(api_key) = config.api_key() {
         builder = builder.with_auth_resolver(AuthResolver::from_resolver_fn(
-            move |_: genai::ModelIden| Ok(Some(AuthData::from_single(api_key.clone())))
+            move |_: genai::ModelIden| Ok(Some(AuthData::from_single(api_key.clone()))),
         ));
     }
 
@@ -105,7 +106,7 @@ pub fn build_genai_client(config: &crucible_config::LlmProviderConfig) -> genai:
             move |mut st: genai::ServiceTarget| {
                 st.endpoint = Endpoint::from_owned(endpoint.clone());
                 Ok(st)
-            }
+            },
         ));
     }
 
@@ -155,10 +156,7 @@ mod tests {
     #[test]
     fn test_backend_to_adapter_vertexai() {
         // VertexAI is not supported in genai 0.5.3
-        assert_eq!(
-            backend_to_adapter(&BackendType::VertexAI),
-            None
-        );
+        assert_eq!(backend_to_adapter(&BackendType::VertexAI), None);
     }
 
     #[test]
@@ -258,7 +256,10 @@ mod tests {
     #[test]
     fn test_build_model_iden_vertexai() {
         // VertexAI is not supported in genai 0.5.3
-        assert_eq!(build_model_iden(&BackendType::VertexAI, "gemini-1.5-pro"), None);
+        assert_eq!(
+            build_model_iden(&BackendType::VertexAI, "gemini-1.5-pro"),
+            None
+        );
     }
 
     #[test]

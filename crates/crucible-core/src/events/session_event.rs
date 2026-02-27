@@ -1438,7 +1438,9 @@ impl SessionEvent {
 /// Used for glob pattern matching against event handlers.
 fn identifier_for_event(event: &SessionEvent) -> String {
     match event {
-        SessionEvent::MessageReceived { participant_id, .. } => format!("message:{}", participant_id),
+        SessionEvent::MessageReceived { participant_id, .. } => {
+            format!("message:{}", participant_id)
+        }
         SessionEvent::AgentResponded { .. } => "agent:responded".into(),
         SessionEvent::AgentThinking { .. } => "agent:thinking".into(),
         SessionEvent::PreToolCall { name, .. } => format!("pre:tool:{}", name),
@@ -1566,9 +1568,7 @@ fn payload_for_event(event: &SessionEvent) -> Option<String> {
         SessionEvent::SubagentCompleted { result, .. } => Some(result.clone()),
         SessionEvent::SubagentFailed { error, .. } => Some(error.clone()),
         SessionEvent::DelegationSpawned { prompt, .. } => Some(prompt.clone()),
-        SessionEvent::DelegationCompleted { result_summary, .. } => {
-            Some(result_summary.clone())
-        }
+        SessionEvent::DelegationCompleted { result_summary, .. } => Some(result_summary.clone()),
         SessionEvent::DelegationFailed { error, .. } => Some(error.clone()),
         SessionEvent::BashTaskSpawned { command, .. } => Some(command.clone()),
         SessionEvent::BashTaskCompleted { output, .. } => Some(output.clone()),
@@ -1600,9 +1600,7 @@ fn payload_for_event(event: &SessionEvent) -> Option<String> {
             let schema_len = schema.as_ref().map(|s| s.to_string().len()).unwrap_or(0);
             Some(format!("{}: {:?}, schema_len={}", name, source, schema_len))
         }
-        SessionEvent::FileChanged { path, kind } => {
-            Some(format!("{}: {:?}", path.display(), kind))
-        }
+        SessionEvent::FileChanged { path, kind } => Some(format!("{}: {:?}", path.display(), kind)),
         SessionEvent::FileDeleted { path } => Some(path.display().to_string()),
         SessionEvent::FileMoved { from, to } => {
             Some(format!("{} -> {}", from.display(), to.display()))
@@ -1629,9 +1627,7 @@ fn payload_for_event(event: &SessionEvent) -> Option<String> {
             to_id,
             relation_type,
         } => Some(format!("{} -> {} ({})", from_id, to_id, relation_type)),
-        SessionEvent::TagAssociated { entity_id, tag } => {
-            Some(format!("{}#{}", entity_id, tag))
-        }
+        SessionEvent::TagAssociated { entity_id, tag } => Some(format!("{}#{}", entity_id, tag)),
         SessionEvent::EmbeddingRequested {
             entity_id,
             priority,
@@ -1674,21 +1670,15 @@ fn payload_for_event(event: &SessionEvent) -> Option<String> {
             "session={}, state={:?}, previous={:?}",
             session_id, state, previous_state
         )),
-        SessionEvent::SessionPaused { session_id } => {
-            Some(format!("session={}", session_id))
-        }
-        SessionEvent::SessionResumed { session_id } => {
-            Some(format!("session={}", session_id))
-        }
+        SessionEvent::SessionPaused { session_id } => Some(format!("session={}", session_id)),
+        SessionEvent::SessionResumed { session_id } => Some(format!("session={}", session_id)),
         SessionEvent::TerminalOutput { content_base64, .. } => Some(content_base64.clone()),
         SessionEvent::PrecognitionComplete {
             notes_count,
             query_summary,
             ..
         } => Some(format!("notes={}, query={}", notes_count, query_summary)),
-        SessionEvent::ClassificationRequired { kiln_path } => {
-            Some(kiln_path.display().to_string())
-        }
+        SessionEvent::ClassificationRequired { kiln_path } => Some(kiln_path.display().to_string()),
     }
 }
 

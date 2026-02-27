@@ -1,8 +1,8 @@
 //! Interactive utilities for CLI
 
 use anyhow::Result;
-use crucible_core::SearchResult;
 use crucible_core::fuzzy::FuzzyMatcher;
+use crucible_core::SearchResult;
 use std::io::{self, Write};
 
 /// Compatibility wrapper for search results with display information

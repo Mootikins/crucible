@@ -533,9 +533,7 @@ async fn dev_kiln_code_references_exist() {
         dev_kiln.join("Meta/Research"),
         dev_kiln.join("research"),
     ];
-    let excluded_files: Vec<PathBuf> = vec![
-        dev_kiln.join("Meta/backlog.md"),
-    ];
+    let excluded_files: Vec<PathBuf> = vec![dev_kiln.join("Meta/backlog.md")];
 
     let mut failures = Vec::new();
     let mut total_refs = 0;
@@ -586,7 +584,10 @@ async fn dev_kiln_code_references_exist() {
         );
     }
 
-    println!("✅ All {} code references exist in repository ({} historical files skipped)", total_refs, skipped_files);
+    println!(
+        "✅ All {} code references exist in repository ({} historical files skipped)",
+        total_refs, skipped_files
+    );
 }
 
 // ============================================================================

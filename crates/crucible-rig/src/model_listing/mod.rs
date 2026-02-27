@@ -57,9 +57,7 @@ pub async fn list_models(
             openai_compat::list_models(endpoint, api_key.unwrap_or("")).await
         }
 
-        BackendType::Anthropic => {
-            anthropic::list_models(endpoint, api_key.unwrap_or("")).await
-        }
+        BackendType::Anthropic => anthropic::list_models(endpoint, api_key.unwrap_or("")).await,
 
         BackendType::GitHubCopilot => {
             if let Some(token) = api_key {

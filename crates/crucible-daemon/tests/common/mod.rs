@@ -111,7 +111,6 @@ impl TestDaemon {
         anyhow::bail!("Daemon failed to start within 10 seconds");
     }
 
-
     /// Manually stop the daemon process
     pub async fn stop(&mut self) -> Result<()> {
         if let Some(mut p) = self.process.take() {

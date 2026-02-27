@@ -234,7 +234,11 @@ fn profile_to_agent_info(name: &str, profile: &AgentProfile) -> Result<AgentInfo
 pub async fn discover_agent(preferred: Option<&str>, acp_config: &AcpConfig) -> Result<AgentInfo> {
     // Check cache first (unless a specific agent is preferred)
     if preferred.is_none() {
-        if let Some(cached) = AGENT_CACHE.lock().expect("AGENT_CACHE: poisoned while reading cached agent").clone() {
+        if let Some(cached) = AGENT_CACHE
+            .lock()
+            .expect("AGENT_CACHE: poisoned while reading cached agent")
+            .clone()
+        {
             trace!("Using cached agent: {}", cached.name);
             return Ok(cached);
         }
@@ -251,7 +255,10 @@ pub async fn discover_agent(preferred: Option<&str>, acp_config: &AcpConfig) -> 
                     info!("Using preferred agent: {}", agent_name);
                     let agent = profile_to_agent_info(agent_name, profile)?;
                     // Cache the result
-                    *AGENT_CACHE.lock().expect("AGENT_CACHE: poisoned while caching preferred agent") = Some(agent.clone());
+                    *AGENT_CACHE
+                        .lock()
+                        .expect("AGENT_CACHE: poisoned while caching preferred agent") =
+                        Some(agent.clone());
                     return Ok(agent);
                 }
             }
@@ -293,7 +300,10 @@ pub async fn discover_agent(preferred: Option<&str>, acp_config: &AcpConfig) -> 
             info!("Discovered agent: {}", name);
             let agent = profile_to_agent_info(&name, &profile)?;
             // Cache the result
-            *AGENT_CACHE.lock().expect("AGENT_CACHE: poisoned while caching discovered agent") = Some(agent.clone());
+            *AGENT_CACHE
+                .lock()
+                .expect("AGENT_CACHE: poisoned while caching discovered agent") =
+                Some(agent.clone());
             return Ok(agent);
         }
     }
@@ -323,7 +333,9 @@ pub async fn discover_agent(preferred: Option<&str>, acp_config: &AcpConfig) -> 
 /// Clear the agent cache (useful for testing or when agent availability changes)
 #[allow(dead_code)]
 pub fn clear_agent_cache() {
-    *AGENT_CACHE.lock().expect("AGENT_CACHE: poisoned while clearing agent cache") = None;
+    *AGENT_CACHE
+        .lock()
+        .expect("AGENT_CACHE: poisoned while clearing agent cache") = None;
 }
 
 /// Get help text about available ACP agents and installation instructions

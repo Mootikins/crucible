@@ -103,8 +103,7 @@ fn bench_single_vs_batch(c: &mut Criterion) {
 
         b.iter(|| {
             let rt = tokio::runtime::Runtime::new().unwrap();
-            rt.block_on(provider.embed_batch(&["single text"]))
-                .unwrap();
+            rt.block_on(provider.embed_batch(&["single text"])).unwrap();
         });
     });
 

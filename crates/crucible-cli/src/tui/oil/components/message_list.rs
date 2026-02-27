@@ -133,7 +133,6 @@ pub fn render_thinking_block(content: &str, token_count: usize, width: usize) ->
     col([header, content_node, text("")])
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;

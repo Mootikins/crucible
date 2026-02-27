@@ -201,10 +201,7 @@ impl DaemonClient {
         // `daemon serve` as test filter patterns, which causes recursive fork
         // bombs — each spawned test binary runs tests that call connect_or_start()
         // again, spawning yet another copy of themselves.
-        let exe_name = exe
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .unwrap_or("");
+        let exe_name = exe.file_stem().and_then(|s| s.to_str()).unwrap_or("");
         if exe_name != "cru" {
             anyhow::bail!(
                 "Cannot auto-start daemon: current binary {:?} is not `cru`. \

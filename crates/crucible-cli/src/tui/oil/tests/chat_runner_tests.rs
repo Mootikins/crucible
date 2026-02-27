@@ -929,112 +929,102 @@ mod daemon_event_to_tui_tests {
         );
     }
 
-// =============================================================================
-// Background Task Cleanup Tests (Regression for bc335a7a)
-// =============================================================================
+    // =============================================================================
+    // Background Task Cleanup Tests (Regression for bc335a7a)
+    // =============================================================================
 
-/// Regression test for task-leak fix (commit bc335a7a).
-/// Ensures that abort_background_tasks() actually cancels spawned tasks.
-/// Without this fix, TUI would hang on quit because tokio tasks were never aborted.
-#[tokio::test]
-async fn abort_background_tasks_cancels_spawned_tasks() {
-    // Create a vector of spawned tasks that sleep forever
-    let mut background_tasks = vec![
-        tokio::spawn(async {
+    /// Regression test for task-leak fix (commit bc335a7a).
+    /// Ensures that abort_background_tasks() actually cancels spawned tasks.
+    /// Without this fix, TUI would hang on quit because tokio tasks were never aborted.
+    #[tokio::test]
+    async fn abort_background_tasks_cancels_spawned_tasks() {
+        // Create a vector of spawned tasks that sleep forever
+        let mut background_tasks = vec![
+            tokio::spawn(async {
+                tokio::time::sleep(tokio::time::Duration::from_secs(u64::MAX)).await;
+            }),
+            tokio::spawn(async {
+                tokio::time::sleep(tokio::time::Duration::from_secs(u64::MAX)).await;
+            }),
+            tokio::spawn(async {
+                tokio::time::sleep(tokio::time::Duration::from_secs(u64::MAX)).await;
+            }),
+        ];
+
+        // Verify tasks are running (not completed)
+        assert_eq!(background_tasks.len(), 3, "Should have 3 spawned tasks");
+
+        // Call the function under test
+        OilChatRunner::abort_background_tasks(&mut background_tasks);
+
+        // Verify all tasks were drained
+        assert_eq!(background_tasks.len(), 0, "All tasks should be drained");
+
+        // Verify tasks are actually cancelled (not just drained)
+        // We need to re-spawn to check cancellation status
+        let task1 = tokio::spawn(async {
             tokio::time::sleep(tokio::time::Duration::from_secs(u64::MAX)).await;
-        }),
-        tokio::spawn(async {
+        });
+        let task2 = tokio::spawn(async {
             tokio::time::sleep(tokio::time::Duration::from_secs(u64::MAX)).await;
-        }),
-        tokio::spawn(async {
+        });
+        let task3 = tokio::spawn(async {
             tokio::time::sleep(tokio::time::Duration::from_secs(u64::MAX)).await;
-        }),
-    ];
+        });
 
-    // Verify tasks are running (not completed)
-    assert_eq!(background_tasks.len(), 3, "Should have 3 spawned tasks");
+        let mut tasks = vec![task1, task2, task3];
+        OilChatRunner::abort_background_tasks(&mut tasks);
 
-    // Call the function under test
-    OilChatRunner::abort_background_tasks(&mut background_tasks);
+        // Wait a bit for cancellation to propagate
+        tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
 
-    // Verify all tasks were drained
-    assert_eq!(background_tasks.len(), 0, "All tasks should be drained");
+        // Verify each task is cancelled by checking JoinError::is_cancelled()
+        // We need to re-create tasks to verify the abort behavior
+        let task = tokio::spawn(async {
+            loop {
+                tokio::time::sleep(tokio::time::Duration::from_millis(1)).await;
+            }
+        });
 
-    // Verify tasks are actually cancelled (not just drained)
-    // We need to re-spawn to check cancellation status
-    let task1 = tokio::spawn(async {
-        tokio::time::sleep(tokio::time::Duration::from_secs(u64::MAX)).await;
-    });
-    let task2 = tokio::spawn(async {
-        tokio::time::sleep(tokio::time::Duration::from_secs(u64::MAX)).await;
-    });
-    let task3 = tokio::spawn(async {
-        tokio::time::sleep(tokio::time::Duration::from_secs(u64::MAX)).await;
-    });
+        task.abort();
 
-    let mut tasks = vec![task1, task2, task3];
-    OilChatRunner::abort_background_tasks(&mut tasks);
+        // Use timeout to ensure we don't hang
+        let result = tokio::time::timeout(tokio::time::Duration::from_millis(100), task).await;
 
-    // Wait a bit for cancellation to propagate
-    tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
-
-    // Verify each task is cancelled by checking JoinError::is_cancelled()
-    // We need to re-create tasks to verify the abort behavior
-    let task = tokio::spawn(async {
-        loop {
-            tokio::time::sleep(tokio::time::Duration::from_millis(1)).await;
-        }
-    });
-
-    task.abort();
-
-    // Use timeout to ensure we don't hang
-    let result = tokio::time::timeout(
-        tokio::time::Duration::from_millis(100),
-        task,
-    )
-    .await;
-
-    // The task should be cancelled
-    match result {
-        Ok(join_result) => {
-            assert!(
-                join_result.is_err(),
-                "Aborted task should return JoinError"
-            );
-            let err = join_result.unwrap_err();
-            assert!(
-                err.is_cancelled(),
-                "JoinError should indicate cancellation"
-            );
-        }
-        Err(_) => {
-            panic!("Timeout waiting for aborted task - task may not have been cancelled");
+        // The task should be cancelled
+        match result {
+            Ok(join_result) => {
+                assert!(join_result.is_err(), "Aborted task should return JoinError");
+                let err = join_result.unwrap_err();
+                assert!(err.is_cancelled(), "JoinError should indicate cancellation");
+            }
+            Err(_) => {
+                panic!("Timeout waiting for aborted task - task may not have been cancelled");
+            }
         }
     }
-}
 
-/// Test that abort_background_tasks handles empty vector gracefully.
-#[tokio::test]
-async fn abort_background_tasks_handles_empty_vector() {
-    let mut background_tasks: Vec<tokio::task::JoinHandle<()>> = Vec::new();
-    OilChatRunner::abort_background_tasks(&mut background_tasks);
-    assert_eq!(background_tasks.len(), 0);
-}
+    /// Test that abort_background_tasks handles empty vector gracefully.
+    #[tokio::test]
+    async fn abort_background_tasks_handles_empty_vector() {
+        let mut background_tasks: Vec<tokio::task::JoinHandle<()>> = Vec::new();
+        OilChatRunner::abort_background_tasks(&mut background_tasks);
+        assert_eq!(background_tasks.len(), 0);
+    }
 
-/// Test that abort_background_tasks drains all tasks even with mixed task types.
-#[tokio::test]
-async fn abort_background_tasks_drains_all_tasks() {
-    let mut background_tasks = vec![
-        tokio::spawn(async { () }),
-        tokio::spawn(async { () }),
-        tokio::spawn(async { () }),
-        tokio::spawn(async { () }),
-        tokio::spawn(async { () }),
-    ];
+    /// Test that abort_background_tasks drains all tasks even with mixed task types.
+    #[tokio::test]
+    async fn abort_background_tasks_drains_all_tasks() {
+        let mut background_tasks = vec![
+            tokio::spawn(async { () }),
+            tokio::spawn(async { () }),
+            tokio::spawn(async { () }),
+            tokio::spawn(async { () }),
+            tokio::spawn(async { () }),
+        ];
 
-    assert_eq!(background_tasks.len(), 5);
-    OilChatRunner::abort_background_tasks(&mut background_tasks);
-    assert_eq!(background_tasks.len(), 0, "All tasks should be drained");
-}
+        assert_eq!(background_tasks.len(), 5);
+        OilChatRunner::abort_background_tasks(&mut background_tasks);
+        assert_eq!(background_tasks.len(), 0, "All tasks should be drained");
+    }
 }

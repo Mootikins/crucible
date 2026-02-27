@@ -201,7 +201,8 @@ impl Tool for InProcessRigTool {
         };
 
         if result.is_error.unwrap_or(false) {
-            let cleaned = normalize_tool_error_message(first_text(&result).unwrap_or("Unknown error"));
+            let cleaned =
+                normalize_tool_error_message(first_text(&result).unwrap_or("Unknown error"));
             return Ok(format!("Error: {cleaned}"));
         }
 
@@ -241,16 +242,15 @@ fn parse_params<T: serde::de::DeserializeOwned>(
         .map_err(|err| rmcp::ErrorData::invalid_params(err.to_string(), None))
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::Arc;
-    use crucible_core::traits::KnowledgeRepository;
     use crucible_core::enrichment::EmbeddingProvider;
     use crucible_core::parser::ParsedNote;
     use crucible_core::traits::knowledge::NoteInfo;
+    use crucible_core::traits::KnowledgeRepository;
     use crucible_core::types::SearchResult;
+    use std::sync::Arc;
 
     // Minimal mock implementations for testing
     #[derive(Clone)]
@@ -266,7 +266,10 @@ mod tests {
             Ok(vec![])
         }
 
-        async fn search_vectors(&self, _vector: Vec<f32>) -> crucible_core::Result<Vec<SearchResult>> {
+        async fn search_vectors(
+            &self,
+            _vector: Vec<f32>,
+        ) -> crucible_core::Result<Vec<SearchResult>> {
             Ok(vec![])
         }
     }

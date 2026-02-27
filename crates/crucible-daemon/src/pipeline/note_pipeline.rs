@@ -177,11 +177,7 @@ impl NotePipeline {
             .map(|error| {
                 format!(
                     "{:?} [{}:{}] (offset {}): {}",
-                    error.error_type,
-                    error.line,
-                    error.column,
-                    error.offset,
-                    error.message
+                    error.error_type, error.line, error.column, error.offset, error.message
                 )
             })
             .collect::<Vec<_>>();

@@ -496,10 +496,10 @@ fn truncate_json_preview(val: Option<&serde_json::Value>, max_len: usize) -> Str
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::session_manager::SessionManager;
     use crate::agent_manager::AgentManager;
-    use crate::kiln_manager::KilnManager;
     use crate::background_manager::BackgroundJobManager;
+    use crate::kiln_manager::KilnManager;
+    use crate::session_manager::SessionManager;
 
     #[test]
     fn test_daemon_session_bridge_construction() {

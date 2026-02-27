@@ -397,8 +397,8 @@ mod tests {
 
     #[test]
     fn add_search_path_appends() {
-        let loader = ConfigLoader::with_search_paths(vec![PathBuf::from("/base")])
-            .add_search_path("/extra");
+        let loader =
+            ConfigLoader::with_search_paths(vec![PathBuf::from("/base")]).add_search_path("/extra");
         assert_eq!(loader.search_paths.len(), 2);
         assert_eq!(loader.search_paths[1], PathBuf::from("/extra"));
     }
@@ -428,7 +428,11 @@ mod tests {
             show_thinking = true
         "#;
         let result = ConfigLoader::load_from_str(toml_content, ConfigFormat::Toml);
-        assert!(result.is_ok(), "valid TOML should parse: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "valid TOML should parse: {:?}",
+            result.err()
+        );
         let config = result.unwrap();
         // Chat section should have been parsed
         assert!(config.chat.is_some());
@@ -438,7 +442,11 @@ mod tests {
     fn load_from_str_valid_json() {
         let json_content = r#"{"profile": "test"}"#;
         let result = ConfigLoader::load_from_str(json_content, ConfigFormat::Json);
-        assert!(result.is_ok(), "valid JSON should parse: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "valid JSON should parse: {:?}",
+            result.err()
+        );
         let config = result.unwrap();
         assert_eq!(config.profile, Some("test".to_string()));
     }
@@ -463,7 +471,11 @@ mod tests {
             profile = "auto-detected"
         "#;
         let result = ConfigLoader::load_from_str(toml_content, ConfigFormat::Auto);
-        assert!(result.is_ok(), "Auto format should detect TOML: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "Auto format should detect TOML: {:?}",
+            result.err()
+        );
         let config = result.unwrap();
         assert_eq!(config.profile, Some("auto-detected".to_string()));
     }
@@ -472,7 +484,10 @@ mod tests {
     fn load_from_str_auto_unparseable_returns_err() {
         let garbage = "<<<not any known format>>>";
         let result = ConfigLoader::load_from_str(garbage, ConfigFormat::Auto);
-        assert!(result.is_err(), "completely unparseable input must return Err");
+        assert!(
+            result.is_err(),
+            "completely unparseable input must return Err"
+        );
     }
 
     // =========================================================================
@@ -494,7 +509,11 @@ mod tests {
         std::fs::write(&config_path, r#"profile = "from-file""#).unwrap();
 
         let result = ConfigLoader::load_from_file_sync(&config_path);
-        assert!(result.is_ok(), "valid TOML file should load: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "valid TOML file should load: {:?}",
+            result.err()
+        );
         let config = result.unwrap();
         assert_eq!(config.profile, Some("from-file".to_string()));
     }
@@ -531,9 +550,14 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let nested_path = tmp.path().join("a").join("b").join("c").join("config.toml");
 
-        let config = ConfigLoader::load_from_str("profile = \"nested\"", ConfigFormat::Toml).unwrap();
+        let config =
+            ConfigLoader::load_from_str("profile = \"nested\"", ConfigFormat::Toml).unwrap();
         let result = ConfigLoader::save_to_file_sync(&config, &nested_path);
-        assert!(result.is_ok(), "should create parent dirs: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "should create parent dirs: {:?}",
+            result.err()
+        );
         assert!(nested_path.exists());
     }
 
@@ -542,7 +566,8 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let config_path = tmp.path().join("roundtrip.json");
 
-        let original = ConfigLoader::load_from_str(r#"{"profile": "json-rt"}"#, ConfigFormat::Json).unwrap();
+        let original =
+            ConfigLoader::load_from_str(r#"{"profile": "json-rt"}"#, ConfigFormat::Json).unwrap();
         ConfigLoader::save_to_file_sync(&original, &config_path).unwrap();
 
         let loaded = ConfigLoader::load_from_file_sync(&config_path).unwrap();
@@ -555,10 +580,22 @@ mod tests {
 
     #[test]
     fn config_format_from_path_known_extensions() {
-        assert_eq!(ConfigFormat::from_path("config.toml").unwrap(), ConfigFormat::Toml);
-        assert_eq!(ConfigFormat::from_path("config.yaml").unwrap(), ConfigFormat::Yaml);
-        assert_eq!(ConfigFormat::from_path("config.yml").unwrap(), ConfigFormat::Yaml);
-        assert_eq!(ConfigFormat::from_path("config.json").unwrap(), ConfigFormat::Json);
+        assert_eq!(
+            ConfigFormat::from_path("config.toml").unwrap(),
+            ConfigFormat::Toml
+        );
+        assert_eq!(
+            ConfigFormat::from_path("config.yaml").unwrap(),
+            ConfigFormat::Yaml
+        );
+        assert_eq!(
+            ConfigFormat::from_path("config.yml").unwrap(),
+            ConfigFormat::Yaml
+        );
+        assert_eq!(
+            ConfigFormat::from_path("config.json").unwrap(),
+            ConfigFormat::Json
+        );
     }
 
     #[test]
@@ -590,14 +627,15 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let config_dir = tmp.path().join("config");
         std::fs::create_dir(&config_dir).unwrap();
-        std::fs::write(
-            config_dir.join("crucible.toml"),
-            r#"profile = "found-it""#,
-        ).unwrap();
+        std::fs::write(config_dir.join("crucible.toml"), r#"profile = "found-it""#).unwrap();
 
         let loader = ConfigLoader::with_search_paths(vec![config_dir]);
         let result = loader.load_from_search_paths_sync("crucible.toml");
-        assert!(result.is_ok(), "should find config in search path: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "should find config in search path: {:?}",
+            result.err()
+        );
         assert_eq!(result.unwrap().profile, Some("found-it".to_string()));
     }
 
@@ -605,14 +643,15 @@ mod tests {
     fn load_from_search_paths_sync_tries_extensions() {
         let tmp = TempDir::new().unwrap();
         // Place a .toml file but search without extension
-        std::fs::write(
-            tmp.path().join("crucible.toml"),
-            r#"profile = "auto-ext""#,
-        ).unwrap();
+        std::fs::write(tmp.path().join("crucible.toml"), r#"profile = "auto-ext""#).unwrap();
 
         let loader = ConfigLoader::with_search_paths(vec![tmp.path().to_path_buf()]);
         let result = loader.load_from_search_paths_sync("crucible");
-        assert!(result.is_ok(), "should auto-discover .toml extension: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "should auto-discover .toml extension: {:?}",
+            result.err()
+        );
         assert_eq!(result.unwrap().profile, Some("auto-ext".to_string()));
     }
 

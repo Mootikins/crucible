@@ -14,8 +14,8 @@ use tracing::{info, warn};
 
 use crate::config::CliConfig;
 use crate::{factories, output};
-use crucible_rpc::DaemonClient;
 use crucible_core::EXCLUDED_DIRS;
+use crucible_rpc::DaemonClient;
 
 /// Execute the process command
 ///

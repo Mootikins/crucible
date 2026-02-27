@@ -18,8 +18,8 @@ use crucible_core::traits::{KnowledgeRepository, NoteInfo};
 use crucible_core::EXCLUDED_DIRS;
 use crucible_watch::{EventFilter, WatchManager, WatchManagerConfig};
 
-use crate::file_watch_bridge::create_event_bridge;
 use crate::embedding::get_or_create_embedding_provider;
+use crate::file_watch_bridge::create_event_bridge;
 use crate::protocol::SessionEventMessage;
 
 use crucible_config::EmbeddingProviderConfig;
@@ -35,9 +35,6 @@ use crucible_sqlite::{adapters as sqlite_adapters, SqliteClientHandle, SqliteCon
 /// Directories to exclude from file discovery and watching
 /// (Re-exported from crucible-core)
 /// (Re-exported from crucible-core)
-
-
-
 
 // ===========================================================================
 // Backend Abstraction
@@ -285,8 +282,7 @@ impl KilnManager {
 
         info!(
             "Discovered {} markdown files in {:?}",
-            discovered,
-            kiln_path
+            discovered, kiln_path
         );
 
         let (processed, skipped, errors) = self.process_batch(kiln_path, &files, force).await?;
@@ -744,7 +740,10 @@ mod tests {
 
         // No crucible.toml exists in the temp dir
         let enrichment = load_enrichment_config(kiln_path).await;
-        assert!(enrichment.is_none(), "Expected None when no crucible.toml exists");
+        assert!(
+            enrichment.is_none(),
+            "Expected None when no crucible.toml exists"
+        );
 
         // Pipeline config should skip enrichment
         let config = pipeline_config(enrichment.as_ref());
@@ -818,7 +817,11 @@ batch_size = 16
         let kiln_path = tmp.path();
 
         // Valid TOML but no enrichment section
-        std::fs::write(kiln_path.join("crucible.toml"), "[storage]\npath = \"/tmp\"").unwrap();
+        std::fs::write(
+            kiln_path.join("crucible.toml"),
+            "[storage]\npath = \"/tmp\"",
+        )
+        .unwrap();
 
         let enrichment = load_enrichment_config(kiln_path).await;
         assert!(
@@ -1067,24 +1070,15 @@ batch_size = 16
         let note_store = handle.as_note_store();
 
         note_store
-            .upsert(
-                NoteRecord::new("alpha.md", BlockHash::zero())
-                    .with_title("Alpha"),
-            )
+            .upsert(NoteRecord::new("alpha.md", BlockHash::zero()).with_title("Alpha"))
             .await
             .unwrap();
         note_store
-            .upsert(
-                NoteRecord::new("beta.md", BlockHash::zero())
-                    .with_title("Beta"),
-            )
+            .upsert(NoteRecord::new("beta.md", BlockHash::zero()).with_title("Beta"))
             .await
             .unwrap();
         note_store
-            .upsert(
-                NoteRecord::new("gamma.md", BlockHash::zero())
-                    .with_title("Gamma"),
-            )
+            .upsert(NoteRecord::new("gamma.md", BlockHash::zero()).with_title("Gamma"))
             .await
             .unwrap();
 
@@ -1097,11 +1091,11 @@ batch_size = 16
         std::fs::remove_file(&beta_abs).unwrap();
 
         // Handle the deletion through KilnManager
-        let existed = km
-            .handle_file_deleted(&kiln_path, &beta_abs)
-            .await
-            .unwrap();
-        assert!(existed, "handle_file_deleted should report the note existed");
+        let existed = km.handle_file_deleted(&kiln_path, &beta_abs).await.unwrap();
+        assert!(
+            existed,
+            "handle_file_deleted should report the note existed"
+        );
 
         // Verify DB now has exactly 2 notes
         let notes = note_store.list().await.unwrap();
