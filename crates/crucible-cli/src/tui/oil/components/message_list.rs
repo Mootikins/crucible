@@ -17,6 +17,7 @@ use crate::tui::oil::ViewContext;
 use super::shell_render::render_shell_execution;
 use super::subagent_render::render_subagent;
 use super::tool_render::render_tool_call;
+use crate::tui::oil::utils::wrap_words;
 
 pub struct MessageList<'a> {
     items: &'a [&'a CachedChatItem],
@@ -80,7 +81,7 @@ pub fn render_user_prompt(content: &str, width: usize) -> Node {
     let prefix = " > ";
     let continuation_prefix = "   ";
     let content_width = width.saturating_sub(prefix.len() + 1);
-    let lines = wrap_content(content, content_width);
+    let lines = wrap_words(content, content_width);
 
     let mut rows: Vec<Node> = Vec::with_capacity(lines.len() + 3);
     rows.push(text(""));
@@ -132,19 +133,6 @@ pub fn render_thinking_block(content: &str, token_count: usize, width: usize) ->
     col([header, content_node, text("")])
 }
 
-fn wrap_content(content: &str, width: usize) -> Vec<String> {
-    use textwrap::{wrap, Options, WordSplitter};
-
-    if width == 0 {
-        return vec![content.to_string()];
-    }
-
-    let options = Options::new(width).word_splitter(WordSplitter::NoHyphenation);
-    wrap(content, options)
-        .into_iter()
-        .map(|cow| cow.into_owned())
-        .collect()
-}
 
 #[cfg(test)]
 mod tests {
