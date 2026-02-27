@@ -54,6 +54,13 @@ pub struct OilChatRunner {
     is_replay: bool,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DrainMessagesOutcome {
+    Idle,
+    Quit,
+    Processed,
+}
+
 impl OilChatRunner {
     pub fn new() -> io::Result<Self> {
         Ok(Self::with_terminal(Terminal::new()?))
@@ -467,29 +474,19 @@ impl OilChatRunner {
                 app.mark_graduated(graduated_keys);
             }
 
-            while let Ok(msg) = msg_rx.try_recv() {
-                if self.is_replay {
-                    if matches!(msg, ChatAppMsg::Status(ref s) if s == "Replay complete") {
-                        self.replay_remaining_completes = 0;
-                        if self.replay_auto_exit.is_some() {
-                            replay_auto_exit_deadline = Some(tokio::time::Instant::now());
-                        }
-                    }
-                    let action = app.on_message(msg);
-                    if action.is_quit() {
-                        return Ok(());
-                    }
-                    continue;
-                }
-                let mut action =
-                    Self::process_message(&msg, app, agent, bridge, &mut active_stream);
-                while let Action::Send(follow_up) = action {
-                    action =
-                        Self::process_message(&follow_up, app, agent, bridge, &mut active_stream);
-                }
-                if action.is_quit() {
-                    return Ok(());
-                }
+            let drain_outcome = self.drain_pending_messages(
+                app,
+                agent,
+                bridge,
+                &mut active_stream,
+                &mut msg_rx,
+                &mut replay_auto_exit_deadline,
+            );
+            if drain_outcome == DrainMessagesOutcome::Quit {
+                return Ok(());
+            }
+            if !Self::should_wait_for_event(drain_outcome) {
+                continue;
             }
 
             let event = tokio::select! {
@@ -783,6 +780,54 @@ impl OilChatRunner {
             _ => {}
         }
         app.on_message(msg.clone())
+    }
+
+    fn drain_pending_messages<A: AgentHandle>(
+        &mut self,
+        app: &mut OilChatApp,
+        agent: &mut A,
+        bridge: &AgentEventBridge,
+        active_stream: &mut Option<BoxStream<'static, ChatResult<ChatChunk>>>,
+        msg_rx: &mut mpsc::UnboundedReceiver<ChatAppMsg>,
+        replay_auto_exit_deadline: &mut Option<tokio::time::Instant>,
+    ) -> DrainMessagesOutcome {
+        let mut processed_any = false;
+
+        while let Ok(msg) = msg_rx.try_recv() {
+            processed_any = true;
+
+            if self.is_replay {
+                if matches!(msg, ChatAppMsg::Status(ref s) if s == "Replay complete") {
+                    self.replay_remaining_completes = 0;
+                    if self.replay_auto_exit.is_some() {
+                        *replay_auto_exit_deadline = Some(tokio::time::Instant::now());
+                    }
+                }
+                let action = app.on_message(msg);
+                if action.is_quit() {
+                    return DrainMessagesOutcome::Quit;
+                }
+                continue;
+            }
+
+            let mut action = Self::process_message(&msg, app, agent, bridge, active_stream);
+            while let Action::Send(follow_up) = action {
+                action = Self::process_message(&follow_up, app, agent, bridge, active_stream);
+            }
+            if action.is_quit() {
+                return DrainMessagesOutcome::Quit;
+            }
+        }
+
+        if processed_any {
+            DrainMessagesOutcome::Processed
+        } else {
+            DrainMessagesOutcome::Idle
+        }
+    }
+
+    fn should_wait_for_event(outcome: DrainMessagesOutcome) -> bool {
+        matches!(outcome, DrainMessagesOutcome::Idle)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -1380,5 +1425,109 @@ async fn replay_event_consumer(
                 return;
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use async_trait::async_trait;
+    use crucible_core::events::EventRing;
+    use crucible_core::traits::chat::{ChatError, ChatResult};
+    use futures::stream::{self, BoxStream};
+    use std::sync::Arc;
+
+    struct EmptyAgent;
+
+    #[async_trait]
+    impl AgentHandle for EmptyAgent {
+        fn send_message_stream(&mut self, _message: String) -> BoxStream<'static, ChatResult<ChatChunk>> {
+            Box::pin(stream::empty())
+        }
+
+        fn is_connected(&self) -> bool {
+            true
+        }
+
+        async fn set_mode_str(&mut self, _mode_id: &str) -> ChatResult<()> {
+            Ok(())
+        }
+
+        fn get_mode_id(&self) -> &str {
+            "normal"
+        }
+
+        async fn cancel(&self) -> ChatResult<()> {
+            Ok(())
+        }
+
+        async fn clear_history(&mut self) {}
+
+        async fn switch_model(&mut self, _model_id: &str) -> ChatResult<()> {
+            Ok(())
+        }
+
+        async fn fetch_available_models(&mut self) -> Vec<String> {
+            Vec::new()
+        }
+
+        async fn set_thinking_budget(&mut self, _budget: i64) -> ChatResult<()> {
+            Err(ChatError::NotSupported("set_thinking_budget".to_string()))
+        }
+
+        fn get_thinking_budget(&self) -> Option<i64> {
+            None
+        }
+
+        async fn set_temperature(&mut self, _temperature: f64) -> ChatResult<()> {
+            Ok(())
+        }
+
+        fn get_temperature(&self) -> Option<f64> {
+            None
+        }
+
+        async fn set_max_tokens(&mut self, _max_tokens: Option<u32>) -> ChatResult<()> {
+            Ok(())
+        }
+
+        fn get_max_tokens(&self) -> Option<u32> {
+            None
+        }
+    }
+
+    #[test]
+    fn drain_pending_messages_marks_user_turn_active() {
+        let mut runner = OilChatRunner::with_terminal(Terminal::with_size(80, 24));
+        let mut app = OilChatApp::default();
+        let mut agent = EmptyAgent;
+        let bridge = AgentEventBridge::new(Arc::new(EventRing::new(16)));
+        let (msg_tx, mut msg_rx) = mpsc::unbounded_channel();
+        let mut active_stream = None;
+        let mut replay_deadline = None;
+
+        msg_tx
+            .send(ChatAppMsg::UserMessage("show spinner".to_string()))
+            .unwrap();
+
+        let outcome = runner.drain_pending_messages(
+            &mut app,
+            &mut agent,
+            &bridge,
+            &mut active_stream,
+            &mut msg_rx,
+            &mut replay_deadline,
+        );
+
+        assert_eq!(outcome, DrainMessagesOutcome::Processed);
+        assert!(app.is_streaming());
+    }
+
+    #[test]
+    fn processed_messages_should_not_wait_for_next_event() {
+        assert!(
+            !OilChatRunner::should_wait_for_event(DrainMessagesOutcome::Processed),
+            "Processed messages should trigger immediate rerender"
+        );
     }
 }
