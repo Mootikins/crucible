@@ -607,7 +607,7 @@ impl AgentManager {
             .ok_or_else(|| AgentError::SessionNotFound(session_id.to_string()))
     }
 
-    fn build_available_agents(&self) -> HashMap<String, AgentProfile> {
+    pub fn build_available_agents(&self) -> HashMap<String, AgentProfile> {
         let mut available = default_agent_profiles();
         if let Some(config) = &self.acp_config {
             for name in config.agents.keys() {

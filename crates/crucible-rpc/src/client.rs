@@ -1773,6 +1773,17 @@ impl DaemonClient {
         }
         self.call("skills.search", params).await
     }
+
+    /// List all available agent profiles (builtins + configured).
+    pub async fn agents_list_profiles(&self) -> Result<serde_json::Value> {
+        self.call("agents.list_profiles", serde_json::json!({})).await
+    }
+
+    /// Resolve a named agent profile.
+    pub async fn agents_resolve_profile(&self, name: &str) -> Result<serde_json::Value> {
+        self.call("agents.resolve_profile", serde_json::json!({ "name": name }))
+            .await
+    }
 }
 
 #[cfg(test)]
