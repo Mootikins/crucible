@@ -7,7 +7,6 @@ use crate::event_emitter::emit_event;
 #[cfg(test)]
 use crate::event_emitter::stamp_event;
 use crate::kiln_manager::KilnManager;
-use crate::optional_bool_param;
 use crate::project_manager::ProjectManager;
 use crate::protocol::{
     Request, Response, SessionEventMessage, INTERNAL_ERROR, INVALID_PARAMS, METHOD_NOT_FOUND,
@@ -16,10 +15,7 @@ use crate::protocol::{
 use crate::recording::RecordingWriter;
 use crate::replay::ReplaySession;
 use crate::rpc::{RpcContext, RpcDispatcher};
-use crate::rpc_helpers::{
-    optional_i64_param, optional_str_param, optional_u64_param, require_array_param,
-    require_f64_param, require_obj_param, require_str_param,
-};
+use crate::rpc_helpers::{optional_param, require_param};
 use crate::session_manager::SessionManager;
 use crate::session_storage::{FileSessionStorage, SessionStorage};
 use anyhow::Result;
@@ -833,11 +829,11 @@ async fn handle_kiln_open(
     plugin_loader: &Arc<Mutex<Option<DaemonPluginLoader>>>,
     event_tx: &broadcast::Sender<SessionEventMessage>,
 ) -> Response {
-    let path = require_str_param!(req, "path");
+    let path = require_param!(req, "path", as_str);
     let kiln_path = Path::new(path);
 
-    let process = optional_bool_param!(req, "process").unwrap_or(false);
-    let force = optional_bool_param!(req, "force").unwrap_or(false);
+    let process = optional_param!(req, "process", as_bool).unwrap_or(false);
+    let force = optional_param!(req, "force", as_bool).unwrap_or(false);
 
     if let Err(e) = km.open(kiln_path).await {
         return internal_error(req.id, e);
@@ -898,7 +894,7 @@ async fn handle_kiln_open(
 }
 
 async fn handle_kiln_close(req: Request, km: &Arc<KilnManager>) -> Response {
-    let path = require_str_param!(req, "path");
+    let path = require_param!(req, "path", as_str);
 
     match km.close(Path::new(path)).await {
         Ok(()) => Response::success(req.id, serde_json::json!({"status": "ok"})),
@@ -921,8 +917,8 @@ async fn handle_kiln_list(req: Request, km: &Arc<KilnManager>) -> Response {
 }
 
 async fn handle_kiln_set_classification(req: Request, _km: &Arc<KilnManager>) -> Response {
-    let path_str = require_str_param!(req, "path");
-    let classification_str = require_str_param!(req, "classification");
+    let path_str = require_param!(req, "path", as_str);
+    let classification_str = require_param!(req, "classification", as_str);
 
     let classification = match DataClassification::from_str_insensitive(classification_str) {
         Some(c) => c,
@@ -1023,13 +1019,13 @@ async fn handle_kiln_set_classification(req: Request, _km: &Arc<KilnManager>) ->
 }
 
 async fn handle_search_vectors(req: Request, km: &Arc<KilnManager>) -> Response {
-    let kiln_path = require_str_param!(req, "kiln");
-    let vector_arr = require_array_param!(req, "vector");
+    let kiln_path = require_param!(req, "kiln", as_str);
+    let vector_arr = require_param!(req, "vector", as_array);
     let vector: Vec<f32> = vector_arr
         .iter()
         .filter_map(|v: &serde_json::Value| v.as_f64().map(|f| f as f32))
         .collect();
-    let limit = optional_u64_param!(req, "limit").unwrap_or(20) as usize;
+    let limit = optional_param!(req, "limit", as_u64).unwrap_or(20) as usize;
 
     // Get or open connection to the kiln
     let handle = match km.get_or_open(Path::new(kiln_path)).await {
@@ -1056,8 +1052,8 @@ async fn handle_search_vectors(req: Request, km: &Arc<KilnManager>) -> Response 
 }
 
 async fn handle_list_notes(req: Request, km: &Arc<KilnManager>) -> Response {
-    let kiln_path = require_str_param!(req, "kiln");
-    let path_filter = optional_str_param!(req, "path_filter");
+    let kiln_path = require_param!(req, "kiln", as_str);
+    let path_filter = optional_param!(req, "path_filter", as_str);
 
     let handle = match km.get_or_open(Path::new(kiln_path)).await {
         Ok(c) => c,
@@ -1085,8 +1081,8 @@ async fn handle_list_notes(req: Request, km: &Arc<KilnManager>) -> Response {
 }
 
 async fn handle_get_note_by_name(req: Request, km: &Arc<KilnManager>) -> Response {
-    let kiln_path = require_str_param!(req, "kiln");
-    let name = require_str_param!(req, "name");
+    let kiln_path = require_param!(req, "kiln", as_str);
+    let name = require_param!(req, "name", as_str);
 
     let handle = match km.get_or_open(Path::new(kiln_path)).await {
         Ok(c) => c,
@@ -1116,7 +1112,7 @@ async fn handle_get_note_by_name(req: Request, km: &Arc<KilnManager>) -> Respons
 async fn handle_note_upsert(req: Request, km: &Arc<KilnManager>) -> Response {
     use crucible_core::storage::{NoteRecord, NoteStore};
 
-    let kiln_path = require_str_param!(req, "kiln");
+    let kiln_path = require_param!(req, "kiln", as_str);
 
     let note_json = match req.params.get("note") {
         Some(n) => n,
@@ -1155,8 +1151,8 @@ async fn handle_note_upsert(req: Request, km: &Arc<KilnManager>) -> Response {
 async fn handle_note_get(req: Request, km: &Arc<KilnManager>) -> Response {
     use crucible_core::storage::NoteStore;
 
-    let kiln_path = require_str_param!(req, "kiln");
-    let path = require_str_param!(req, "path");
+    let kiln_path = require_param!(req, "kiln", as_str);
+    let path = require_param!(req, "path", as_str);
 
     let handle = match km.get_or_open(Path::new(kiln_path)).await {
         Ok(c) => c,
@@ -1177,8 +1173,8 @@ async fn handle_note_get(req: Request, km: &Arc<KilnManager>) -> Response {
 async fn handle_note_delete(req: Request, km: &Arc<KilnManager>) -> Response {
     use crucible_core::storage::NoteStore;
 
-    let kiln_path = require_str_param!(req, "kiln");
-    let path = require_str_param!(req, "path");
+    let kiln_path = require_param!(req, "kiln", as_str);
+    let path = require_param!(req, "path", as_str);
 
     let handle = match km.get_or_open(Path::new(kiln_path)).await {
         Ok(c) => c,
@@ -1195,7 +1191,7 @@ async fn handle_note_delete(req: Request, km: &Arc<KilnManager>) -> Response {
 async fn handle_note_list(req: Request, km: &Arc<KilnManager>) -> Response {
     use crucible_core::storage::NoteStore;
 
-    let kiln_path = require_str_param!(req, "kiln");
+    let kiln_path = require_param!(req, "kiln", as_str);
 
     let handle = match km.get_or_open(Path::new(kiln_path)).await {
         Ok(c) => c,
@@ -1217,8 +1213,8 @@ async fn handle_note_list(req: Request, km: &Arc<KilnManager>) -> Response {
 // =============================================================================
 
 async fn handle_process_file(req: Request, km: &Arc<KilnManager>) -> Response {
-    let kiln_path = require_str_param!(req, "kiln");
-    let file_path = require_str_param!(req, "path");
+    let kiln_path = require_param!(req, "kiln", as_str);
+    let file_path = require_param!(req, "path", as_str);
 
     match km
         .process_file(Path::new(kiln_path), Path::new(file_path))
@@ -1241,8 +1237,8 @@ async fn handle_process_batch(
     event_tx: &broadcast::Sender<SessionEventMessage>,
 ) -> Response {
     let request_id = req.id.clone();
-    let kiln_path = require_str_param!(req, "kiln");
-    let paths_arr = require_array_param!(req, "paths");
+    let kiln_path = require_param!(req, "kiln", as_str);
+    let paths_arr = require_param!(req, "paths", as_array);
     let paths: Vec<std::path::PathBuf> = paths_arr
         .iter()
         .filter_map(|v: &serde_json::Value| v.as_str().map(std::path::PathBuf::from))
@@ -1404,7 +1400,7 @@ async fn handle_session_create(
     pm: &Arc<ProjectManager>,
     llm_config: &Option<LlmConfig>,
 ) -> Response {
-    let session_type_str = optional_str_param!(req, "type").unwrap_or("chat");
+    let session_type_str = optional_param!(req, "type", as_str).unwrap_or("chat");
     let session_type = match session_type_str {
         "chat" => SessionType::Chat,
         "agent" => SessionType::Agent,
@@ -1418,11 +1414,11 @@ async fn handle_session_create(
         }
     };
 
-    let kiln = optional_str_param!(req, "kiln")
+    let kiln = optional_param!(req, "kiln", as_str)
         .map(PathBuf::from)
         .unwrap_or_else(crucible_config::crucible_home);
 
-    let workspace = optional_str_param!(req, "workspace").map(PathBuf::from);
+    let workspace = optional_param!(req, "workspace", as_str).map(PathBuf::from);
 
     let provider_trust_level = resolve_provider_trust_level_for_create(&req, llm_config);
     let classification = resolve_kiln_classification_for_create(&kiln, workspace.as_ref());
@@ -1444,8 +1440,8 @@ async fn handle_session_create(
         .unwrap_or_default();
 
     let recording_mode =
-        optional_str_param!(req, "recording_mode").and_then(|s| s.parse::<RecordingMode>().ok());
-    let custom_recording_path = optional_str_param!(req, "recording_path").map(PathBuf::from);
+        optional_param!(req, "recording_mode", as_str).and_then(|s| s.parse::<RecordingMode>().ok());
+    let custom_recording_path = optional_param!(req, "recording_path", as_str).map(PathBuf::from);
 
     let project_path = workspace.as_ref().unwrap_or(&kiln);
     if let Err(e) = pm.register_if_missing(project_path) {
@@ -1516,11 +1512,11 @@ fn resolve_provider_trust_level_for_create(
     req: &Request,
     llm_config: &Option<LlmConfig>,
 ) -> TrustLevel {
-    if optional_str_param!(req, "agent_type") == Some("acp") {
+    if optional_param!(req, "agent_type", as_str) == Some("acp") {
         return TrustLevel::Cloud;
     }
 
-    if let Some(provider_key) = optional_str_param!(req, "provider_key") {
+    if let Some(provider_key) = optional_param!(req, "provider_key", as_str) {
         if let Some(config) = llm_config
             .as_ref()
             .and_then(|cfg| cfg.get_provider(provider_key))
@@ -1529,7 +1525,7 @@ fn resolve_provider_trust_level_for_create(
         }
     }
 
-    if let Some(provider_name) = optional_str_param!(req, "provider") {
+    if let Some(provider_name) = optional_param!(req, "provider", as_str) {
         if let Ok(backend) = provider_name.parse::<crucible_config::BackendType>() {
             return backend.default_trust_level();
         }
@@ -1552,15 +1548,15 @@ fn resolve_kiln_classification_for_create(
 
 async fn handle_session_list(req: Request, sm: &Arc<SessionManager>) -> Response {
     // Parse optional filters
-    let kiln = optional_str_param!(req, "kiln").map(PathBuf::from);
-    let workspace = optional_str_param!(req, "workspace").map(PathBuf::from);
-    let session_type = optional_str_param!(req, "type").and_then(|s| match s {
+    let kiln = optional_param!(req, "kiln", as_str).map(PathBuf::from);
+    let workspace = optional_param!(req, "workspace", as_str).map(PathBuf::from);
+    let session_type = optional_param!(req, "type", as_str).and_then(|s| match s {
         "chat" => Some(SessionType::Chat),
         "agent" => Some(SessionType::Agent),
         "workflow" => Some(SessionType::Workflow),
         _ => None,
     });
-    let state = optional_str_param!(req, "state").and_then(|s| match s {
+    let state = optional_param!(req, "state", as_str).and_then(|s| match s {
         "active" => Some(SessionState::Active),
         "paused" => Some(SessionState::Paused),
         "compacting" => Some(SessionState::Compacting),
@@ -1597,9 +1593,9 @@ async fn handle_session_list(req: Request, sm: &Arc<SessionManager>) -> Response
 }
 
 async fn handle_session_search(req: Request, sm: &Arc<SessionManager>) -> Response {
-    let query = require_str_param!(req, "query");
-    let kiln = optional_str_param!(req, "kiln").map(PathBuf::from);
-    let limit = optional_u64_param!(req, "limit").unwrap_or(20) as usize;
+    let query = require_param!(req, "query", as_str);
+    let kiln = optional_param!(req, "kiln", as_str).map(PathBuf::from);
+    let limit = optional_param!(req, "limit", as_u64).unwrap_or(20) as usize;
 
     // Determine sessions directory
     let sessions_path = if let Some(kiln_path) = kiln {
@@ -1713,7 +1709,7 @@ async fn handle_session_search(req: Request, sm: &Arc<SessionManager>) -> Respon
 }
 
 async fn handle_session_get(req: Request, sm: &Arc<SessionManager>) -> Response {
-    let session_id = require_str_param!(req, "session_id");
+    let session_id = require_param!(req, "session_id", as_str);
 
     match sm.get_session(session_id) {
         Some(session) => {
@@ -1745,7 +1741,7 @@ async fn handle_session_get(req: Request, sm: &Arc<SessionManager>) -> Response 
 }
 
 async fn handle_session_pause(req: Request, sm: &Arc<SessionManager>) -> Response {
-    let session_id = require_str_param!(req, "session_id");
+    let session_id = require_param!(req, "session_id", as_str);
 
     match sm.pause_session(session_id).await {
         Ok(previous_state) => Response::success(
@@ -1761,7 +1757,7 @@ async fn handle_session_pause(req: Request, sm: &Arc<SessionManager>) -> Respons
 }
 
 async fn handle_session_resume(req: Request, sm: &Arc<SessionManager>) -> Response {
-    let session_id = require_str_param!(req, "session_id");
+    let session_id = require_param!(req, "session_id", as_str);
 
     match sm.resume_session(session_id).await {
         Ok(previous_state) => Response::success(
@@ -1777,12 +1773,12 @@ async fn handle_session_resume(req: Request, sm: &Arc<SessionManager>) -> Respon
 }
 
 async fn handle_session_resume_from_storage(req: Request, sm: &Arc<SessionManager>) -> Response {
-    let session_id = require_str_param!(req, "session_id");
-    let kiln = PathBuf::from(require_str_param!(req, "kiln"));
+    let session_id = require_param!(req, "session_id", as_str);
+    let kiln = PathBuf::from(require_param!(req, "kiln", as_str));
 
     // Optional pagination params
-    let limit = optional_u64_param!(req, "limit").map(|n| n as usize);
-    let offset = optional_u64_param!(req, "offset").map(|n| n as usize);
+    let limit = optional_param!(req, "limit", as_u64).map(|n| n as usize);
+    let offset = optional_param!(req, "offset", as_u64).map(|n| n as usize);
 
     // Resume session from storage
     let session = match sm.resume_session_from_storage(session_id, &kiln).await {
@@ -1838,7 +1834,7 @@ async fn handle_session_end(
     sm: &Arc<SessionManager>,
     am: &Arc<AgentManager>,
 ) -> Response {
-    let session_id = require_str_param!(req, "session_id");
+    let session_id = require_param!(req, "session_id", as_str);
 
     match sm.end_session(session_id).await {
         Ok(session) => {
@@ -1861,7 +1857,7 @@ async fn handle_session_replay(
     sm: &Arc<SessionManager>,
     event_tx: &broadcast::Sender<SessionEventMessage>,
 ) -> Response {
-    let recording_path = require_str_param!(req, "recording_path");
+    let recording_path = require_param!(req, "recording_path", as_str);
     let speed = req
         .params
         .get("speed")
@@ -1895,7 +1891,7 @@ async fn handle_session_replay(
 }
 
 async fn handle_session_compact(req: Request, sm: &Arc<SessionManager>) -> Response {
-    let session_id = require_str_param!(req, "session_id");
+    let session_id = require_param!(req, "session_id", as_str);
 
     match sm.request_compaction(session_id).await {
         Ok(session) => Response::success(
@@ -1912,7 +1908,7 @@ async fn handle_session_compact(req: Request, sm: &Arc<SessionManager>) -> Respo
 
 // ─────────────────────────────────────────────────────────────────────────────
 async fn handle_session_configure_agent(req: Request, am: &Arc<AgentManager>) -> Response {
-    let session_id = require_str_param!(req, "session_id");
+    let session_id = require_param!(req, "session_id", as_str);
 
     let agent_json = match req.params.get("agent") {
         Some(v) => v.clone(),
@@ -1949,8 +1945,8 @@ async fn handle_session_send_message(
     am: &Arc<AgentManager>,
     event_tx: &broadcast::Sender<SessionEventMessage>,
 ) -> Response {
-    let session_id = require_str_param!(req, "session_id");
-    let content = require_str_param!(req, "content");
+    let session_id = require_param!(req, "session_id", as_str);
+    let content = require_param!(req, "content", as_str);
 
     match am
         .send_message(session_id, content.to_string(), event_tx)
@@ -1968,7 +1964,7 @@ async fn handle_session_send_message(
 }
 
 async fn handle_session_cancel(req: Request, am: &Arc<AgentManager>) -> Response {
-    let session_id = require_str_param!(req, "session_id");
+    let session_id = require_param!(req, "session_id", as_str);
 
     let cancelled = am.cancel(session_id).await;
     Response::success(
@@ -1985,9 +1981,9 @@ async fn handle_session_interaction_respond(
     am: &Arc<AgentManager>,
     event_tx: &broadcast::Sender<SessionEventMessage>,
 ) -> Response {
-    let session_id = require_str_param!(req, "session_id");
-    let request_id = require_str_param!(req, "request_id");
-    let response_obj = require_obj_param!(req, "response");
+    let session_id = require_param!(req, "session_id", as_str);
+    let request_id = require_param!(req, "request_id", as_str);
+    let response_obj = require_param!(req, "response", as_object);
 
     let response: crucible_core::interaction::InteractionResponse =
         match serde_json::from_value(serde_json::Value::Object(response_obj.clone())) {
@@ -2037,7 +2033,7 @@ async fn handle_session_test_interaction(
     req: Request,
     event_tx: &broadcast::Sender<SessionEventMessage>,
 ) -> Response {
-    let session_id = require_str_param!(req, "session_id");
+    let session_id = require_param!(req, "session_id", as_str);
 
     let get_str = |key: &str| -> Option<&str> { req.params.get(key)?.as_str() };
 
@@ -2108,8 +2104,8 @@ async fn handle_session_switch_model(
     am: &Arc<AgentManager>,
     event_tx: &broadcast::Sender<SessionEventMessage>,
 ) -> Response {
-    let session_id = require_str_param!(req, "session_id");
-    let model_id = require_str_param!(req, "model_id");
+    let session_id = require_param!(req, "session_id", as_str);
+    let model_id = require_param!(req, "model_id", as_str);
 
     match am.switch_model(session_id, model_id, Some(event_tx)).await {
         Ok(()) => Response::success(
@@ -2144,7 +2140,7 @@ async fn handle_session_switch_model(
 }
 
 async fn handle_session_list_models(req: Request, am: &Arc<AgentManager>) -> Response {
-    let session_id = require_str_param!(req, "session_id");
+    let session_id = require_param!(req, "session_id", as_str);
 
     let classification = match am.get_session_with_agent(session_id) {
         Ok((session, _)) => {
@@ -2219,8 +2215,8 @@ async fn handle_session_set_thinking_budget(
     am: &Arc<AgentManager>,
     event_tx: &broadcast::Sender<SessionEventMessage>,
 ) -> Response {
-    let session_id = require_str_param!(req, "session_id");
-    let budget = optional_i64_param!(req, "thinking_budget");
+    let session_id = require_param!(req, "session_id", as_str);
+    let budget = optional_param!(req, "thinking_budget", as_i64);
 
     // When budget is None, clear the thinking budget override
     let effective_budget = budget.unwrap_or(0);
@@ -2241,7 +2237,7 @@ async fn handle_session_set_thinking_budget(
 }
 
 async fn handle_session_get_thinking_budget(req: Request, am: &Arc<AgentManager>) -> Response {
-    let session_id = require_str_param!(req, "session_id");
+    let session_id = require_param!(req, "session_id", as_str);
 
     match am.get_thinking_budget(session_id) {
         Ok(budget) => Response::success(
@@ -2266,8 +2262,8 @@ async fn handle_session_set_precognition(
     am: &Arc<AgentManager>,
     event_tx: &broadcast::Sender<SessionEventMessage>,
 ) -> Response {
-    let session_id = require_str_param!(req, "session_id");
-    let enabled = optional_bool_param!(req, "enabled").unwrap_or(true);
+    let session_id = require_param!(req, "session_id", as_str);
+    let enabled = optional_param!(req, "enabled", as_bool).unwrap_or(true);
 
     match am
         .set_precognition(session_id, enabled, Some(event_tx))
@@ -2285,7 +2281,7 @@ async fn handle_session_set_precognition(
 }
 
 async fn handle_session_get_precognition(req: Request, am: &Arc<AgentManager>) -> Response {
-    let session_id = require_str_param!(req, "session_id");
+    let session_id = require_param!(req, "session_id", as_str);
 
     match am.get_precognition(session_id) {
         Ok(enabled) => Response::success(
@@ -2310,8 +2306,8 @@ async fn handle_session_add_notification(
     am: &Arc<AgentManager>,
     event_tx: &broadcast::Sender<SessionEventMessage>,
 ) -> Response {
-    let session_id = require_str_param!(req, "session_id");
-    let notification_obj = require_obj_param!(req, "notification");
+    let session_id = require_param!(req, "session_id", as_str);
+    let notification_obj = require_param!(req, "notification", as_object);
 
     let notification = match serde_json::from_value::<crucible_core::types::Notification>(
         serde_json::Value::Object(notification_obj.clone()),
@@ -2339,7 +2335,7 @@ async fn handle_session_add_notification(
 }
 
 async fn handle_session_list_notifications(req: Request, am: &Arc<AgentManager>) -> Response {
-    let session_id = require_str_param!(req, "session_id");
+    let session_id = require_param!(req, "session_id", as_str);
 
     match am.list_notifications(session_id).await {
         Ok(notifications) => Response::success(
@@ -2361,8 +2357,8 @@ async fn handle_session_dismiss_notification(
     am: &Arc<AgentManager>,
     event_tx: &broadcast::Sender<SessionEventMessage>,
 ) -> Response {
-    let session_id = require_str_param!(req, "session_id");
-    let notification_id = require_str_param!(req, "notification_id");
+    let session_id = require_param!(req, "session_id", as_str);
+    let notification_id = require_param!(req, "notification_id", as_str);
 
     match am
         .dismiss_notification(session_id, notification_id, Some(event_tx))
@@ -2388,8 +2384,8 @@ async fn handle_session_set_temperature(
     am: &Arc<AgentManager>,
     event_tx: &broadcast::Sender<SessionEventMessage>,
 ) -> Response {
-    let session_id = require_str_param!(req, "session_id");
-    let temperature = require_f64_param!(req, "temperature");
+    let session_id = require_param!(req, "session_id", as_str);
+    let temperature = require_param!(req, "temperature", as_f64);
 
     match am
         .set_temperature(session_id, temperature, Some(event_tx))
@@ -2407,7 +2403,7 @@ async fn handle_session_set_temperature(
 }
 
 async fn handle_session_get_temperature(req: Request, am: &Arc<AgentManager>) -> Response {
-    let session_id = require_str_param!(req, "session_id");
+    let session_id = require_param!(req, "session_id", as_str);
 
     match am.get_temperature(session_id) {
         Ok(temperature) => Response::success(
@@ -2432,9 +2428,9 @@ async fn handle_session_set_max_tokens(
     am: &Arc<AgentManager>,
     event_tx: &broadcast::Sender<SessionEventMessage>,
 ) -> Response {
-    let session_id = require_str_param!(req, "session_id");
+    let session_id = require_param!(req, "session_id", as_str);
     // max_tokens can be null to clear the limit, so we use optional
-    let max_tokens = optional_u64_param!(req, "max_tokens").map(|v| v as u32);
+    let max_tokens = optional_param!(req, "max_tokens", as_u64).map(|v| v as u32);
 
     match am
         .set_max_tokens(session_id, max_tokens, Some(event_tx))
@@ -2452,7 +2448,7 @@ async fn handle_session_set_max_tokens(
 }
 
 async fn handle_session_get_max_tokens(req: Request, am: &Arc<AgentManager>) -> Response {
-    let session_id = require_str_param!(req, "session_id");
+    let session_id = require_param!(req, "session_id", as_str);
 
     match am.get_max_tokens(session_id) {
         Ok(max_tokens) => Response::success(
@@ -2476,7 +2472,7 @@ async fn handle_plugin_reload(
     req: Request,
     plugin_loader: &Arc<Mutex<Option<DaemonPluginLoader>>>,
 ) -> Response {
-    let name = require_str_param!(req, "name");
+    let name = require_param!(req, "name", as_str);
 
     let mut loader_guard = plugin_loader.lock().await;
     let loader = match loader_guard.as_mut() {
@@ -2534,7 +2530,7 @@ async fn handle_plugin_list(
 // --- Project handlers ---
 
 async fn handle_project_register(req: Request, pm: &Arc<ProjectManager>) -> Response {
-    let path = require_str_param!(req, "path");
+    let path = require_param!(req, "path", as_str);
 
     match pm.register(Path::new(path)) {
         Ok(project) => match serde_json::to_value(project) {
@@ -2546,7 +2542,7 @@ async fn handle_project_register(req: Request, pm: &Arc<ProjectManager>) -> Resp
 }
 
 async fn handle_project_unregister(req: Request, pm: &Arc<ProjectManager>) -> Response {
-    let path = require_str_param!(req, "path");
+    let path = require_param!(req, "path", as_str);
 
     match pm.unregister(Path::new(path)) {
         Ok(()) => Response::success(req.id, serde_json::json!({"status": "ok"})),
@@ -2563,7 +2559,7 @@ async fn handle_project_list(req: Request, pm: &Arc<ProjectManager>) -> Response
 }
 
 async fn handle_project_get(req: Request, pm: &Arc<ProjectManager>) -> Response {
-    let path = require_str_param!(req, "path");
+    let path = require_param!(req, "path", as_str);
 
     match pm.get(Path::new(path)) {
         Some(project) => match serde_json::to_value(project) {
