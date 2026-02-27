@@ -976,11 +976,40 @@ impl AgentManager {
         workspace: &std::path::Path,
         event_tx: &broadcast::Sender<SessionEventMessage>,
     ) -> Result<Arc<Mutex<BoxedAgentHandle>>, AgentError> {
+        // Check cache first
         if let Some(cached) = self.agent_cache.get(session_id) {
             debug!(session_id = %session_id, "Using cached agent");
             return Ok(cached.clone());
         }
 
+        // Build the agent handle from configuration
+        let (agent, resolved_config) = self
+            .build_agent_from_config(session_id, agent_config, workspace, event_tx)
+            .await?;
+
+        // Register delegation/permission handlers if configured
+        self.setup_permission_handlers(session_id, &resolved_config);
+
+        // Cache and return
+        let agent = Arc::new(Mutex::new(agent));
+        self.agent_cache
+            .insert(session_id.to_string(), agent.clone());
+
+        Ok(agent)
+    }
+
+    /// Create the appropriate agent handle from session configuration.
+    ///
+    /// Resolves provider endpoint, acquires knowledge repository and embedding
+    /// provider from the session's kiln, builds ACP permission handler if needed,
+    /// and creates the agent handle via the agent factory.
+    async fn build_agent_from_config(
+        &self,
+        session_id: &str,
+        agent_config: &SessionAgent,
+        workspace: &std::path::Path,
+        event_tx: &broadcast::Sender<SessionEventMessage>,
+    ) -> Result<(BoxedAgentHandle, SessionAgent), AgentError> {
         let resolved_config = if agent_config.endpoint.is_none() {
             let provider_key = agent_config
                 .provider_key
@@ -1074,8 +1103,20 @@ impl AgentManager {
             .await?
         };
 
+        Ok((agent, resolved_config))
+    }
+
+    /// Register delegation context and permission handlers for an agent session.
+    ///
+    /// If the agent has delegation configuration, registers a subagent context
+    /// with the background manager for cross-agent delegation support.
+    fn setup_permission_handlers(
+        &self,
+        session_id: &str,
+        resolved_config: &SessionAgent,
+    ) {
         if resolved_config.delegation_config.is_some() {
-            if let Some(session) = session_for_factory {
+            if let Some(session) = self.session_manager.get_session(session_id) {
                 let parent_session_id = session
                     .parent_session_id
                     .clone()
@@ -1096,12 +1137,6 @@ impl AgentManager {
                 );
             }
         }
-
-        let agent = Arc::new(Mutex::new(agent));
-        self.agent_cache
-            .insert(session_id.to_string(), agent.clone());
-
-        Ok(agent)
     }
 
     fn build_acp_permission_handler(
