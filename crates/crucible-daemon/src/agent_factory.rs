@@ -13,19 +13,22 @@ use crucible_acp::client::PermissionRequestHandler;
 use crucible_config::credentials::resolve_copilot_oauth_token;
 use crucible_config::{BackendType, DataClassification, LlmProviderConfig};
 use crucible_core::background::BackgroundSpawner;
+use crucible_core::traits::auth::AuthHeaders;
 use crucible_core::enrichment::EmbeddingProvider;
 use crucible_core::session::SessionAgent;
 use crucible_core::traits::chat::AgentHandle;
 use crucible_core::traits::llm::LlmToolDefinition;
 use crucible_core::traits::mcp::McpToolInfo;
 use crucible_core::traits::KnowledgeRepository;
+use crucible_lua::auth_plugin::{fire_provider_auth_hooks, get_provider_auth_hooks};
 use crucible_tools::mcp_server::CrucibleMcpServer;
 use crucible_tools::DelegationContext;
+use mlua::Lua;
 use std::path::Path;
 use std::sync::Arc;
 use thiserror::Error;
 use tokio::sync::broadcast;
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
 /// Build a `DelegationContext` for the internal agent's MCP server.
 ///
@@ -221,6 +224,7 @@ pub enum AgentFactoryError {
 #[allow(clippy::too_many_arguments)]
 pub async fn create_agent_from_session_config(
     agent_config: &SessionAgent,
+    lua: Option<&Lua>,
     workspace: &Path,
     kiln_path: Option<&Path>,
     parent_session_id: Option<&str>,
@@ -259,6 +263,71 @@ pub async fn create_agent_from_session_config(
         )));
     }
 
+    let provider_type = agent_config.provider;
+
+    let mut llm_config = LlmProviderConfig::builder(provider_type);
+    if let Some(endpoint) = agent_config.endpoint.clone() {
+        llm_config = llm_config.endpoint(endpoint);
+    }
+    let mut llm_config = llm_config
+        .model(agent_config.model.clone())
+        .with_api_key_env_var_name()
+        .build();
+
+    if let Some(lua) = lua {
+        match get_provider_auth_hooks(lua) {
+            Ok(hooks) if !hooks.is_empty() => {
+                let provider_name = match provider_type {
+                    BackendType::GitHubCopilot => "github-copilot".to_string(),
+                    _ => format!("{provider_type:?}").to_lowercase(),
+                };
+
+                match fire_provider_auth_hooks(lua, &hooks, &provider_name, &agent_config.model) {
+                    Ok(Some(auth_headers)) => {
+                        let auth_headers: AuthHeaders = auth_headers;
+                        if let Some(auth_value) = auth_headers.get("Authorization") {
+                            let api_key = auth_value.strip_prefix("Bearer ").unwrap_or(auth_value);
+                            llm_config.api_key = Some(api_key.to_string());
+                            debug!(
+                                provider = %provider_name,
+                                model = %agent_config.model,
+                                "Lua auth hook provided API key"
+                            );
+                        } else {
+                            debug!(
+                                provider = %provider_name,
+                                model = %agent_config.model,
+                                "Lua auth hook returned headers without Authorization; using config API key fallback"
+                            );
+                        }
+                    }
+                    Ok(None) => {
+                        debug!(
+                            provider = %provider_name,
+                            model = %agent_config.model,
+                            "No Lua auth hook matched provider; using config API key fallback"
+                        );
+                    }
+                    Err(e) => {
+                        warn!(
+                            provider = %provider_name,
+                            model = %agent_config.model,
+                            "Lua auth hook error: {e}; using config API key fallback"
+                        );
+                    }
+                }
+            }
+            Ok(_) => {}
+            Err(e) => {
+                warn!(
+                    provider = %agent_config.provider,
+                    model = %agent_config.model,
+                    "Failed to get Lua auth hooks: {e}; using config API key fallback"
+                );
+            }
+        }
+    }
+
     let mode = "auto";
     let delegation_context = build_internal_delegation_context(
         agent_config,
@@ -286,17 +355,6 @@ pub async fn create_agent_from_session_config(
         workspace = %workspace.display(),
         "Creating agent from session config"
     );
-
-    let provider_type = agent_config.provider;
-
-    let mut llm_config = LlmProviderConfig::builder(provider_type);
-    if let Some(endpoint) = agent_config.endpoint.clone() {
-        llm_config = llm_config.endpoint(endpoint);
-    }
-    let mut llm_config = llm_config
-        .model(agent_config.model.clone())
-        .with_api_key_env_var_name()
-        .build();
 
     if agent_config.provider == BackendType::GitHubCopilot {
         if let Some(oauth_token) = resolve_copilot_oauth_token(llm_config.api_key.as_deref()) {
@@ -390,6 +448,7 @@ mod tests {
             let (event_tx, _) = broadcast::channel(16);
             create_agent_from_session_config(
                 &config,
+                None,
                 Path::new("/tmp"),
                 None,
                 None,
@@ -476,6 +535,7 @@ mod tests {
         let (event_tx, _) = broadcast::channel(16);
         let result = create_agent_from_session_config(
             &config,
+            None,
             Path::new("/tmp"),
             None,
             None,
@@ -641,6 +701,7 @@ mod tests {
         let (event_tx, _) = broadcast::channel(16);
         let result = create_agent_from_session_config(
             &config,
+            None,
             Path::new("/tmp"),
             None,
             None,
@@ -672,6 +733,7 @@ mod tests {
         let (event_tx, _) = broadcast::channel(16);
         let result = create_agent_from_session_config(
             &config,
+            None,
             Path::new("/tmp"),
             None,
             None,
@@ -702,6 +764,73 @@ mod tests {
                 panic!("Should not reach ClientCreation for ACP agent type");
             }
         }
+    }
+
+    #[test]
+    fn lua_auth_headers_override_config_when_authorization_present() {
+        std::env::set_var("OPENAI_API_KEY", "config-key");
+
+        let lua = Lua::new();
+        let globals = lua.globals();
+        let crucible = lua.create_table().unwrap();
+        globals.set("crucible", crucible.clone()).unwrap();
+        crucible_lua::auth_plugin::register_auth_module(&lua, &crucible).unwrap();
+        lua.load(
+            r#"
+            crucible.on_provider_auth(function(ctx)
+                if ctx.provider == "openai" then
+                    return {
+                        headers = {
+                            ["Authorization"] = "Bearer lua-key"
+                        }
+                    }
+                end
+                return nil
+            end)
+            "#,
+        )
+        .exec()
+        .unwrap();
+
+        let hooks = get_provider_auth_hooks(&lua).unwrap();
+        let auth_headers = fire_provider_auth_hooks(&lua, &hooks, "openai", "gpt-4o")
+            .unwrap()
+            .unwrap();
+        let from_lua = auth_headers.get("Authorization").unwrap();
+        let selected = from_lua.strip_prefix("Bearer ").unwrap_or(from_lua);
+
+        assert_eq!(selected, "lua-key");
+
+        std::env::remove_var("OPENAI_API_KEY");
+    }
+
+    #[test]
+    fn lua_auth_none_keeps_config_fallback() {
+        std::env::set_var("OPENAI_API_KEY", "config-key");
+
+        let lua = Lua::new();
+        let globals = lua.globals();
+        let crucible = lua.create_table().unwrap();
+        globals.set("crucible", crucible.clone()).unwrap();
+        crucible_lua::auth_plugin::register_auth_module(&lua, &crucible).unwrap();
+        lua.load(
+            r#"
+            crucible.on_provider_auth(function(_ctx)
+                return nil
+            end)
+            "#,
+        )
+        .exec()
+        .unwrap();
+
+        let hooks = get_provider_auth_hooks(&lua).unwrap();
+        let auth_headers = fire_provider_auth_hooks(&lua, &hooks, "openai", "gpt-4o").unwrap();
+
+        assert!(auth_headers.is_none());
+        let fallback_key = std::env::var("OPENAI_API_KEY").unwrap();
+        assert_eq!(fallback_key, "config-key");
+
+        std::env::remove_var("OPENAI_API_KEY");
     }
 
     #[tokio::test]
