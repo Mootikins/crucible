@@ -1169,6 +1169,503 @@ impl AgentManager {
         )
     }
 
+    async fn apply_pre_llm_call_handlers(content: String, stream_ctx: &StreamContext) -> Option<String> {
+        let mut state = stream_ctx.session_state.lock().await;
+        let pre_event = SessionEvent::PreLlmCall {
+            prompt: content.clone(),
+            model: stream_ctx.model.clone(),
+        };
+
+        match state.reactor.emit(pre_event).await {
+            Ok(EmitResult::Completed { event, .. }) => {
+                if let SessionEvent::PreLlmCall { prompt, .. } = event {
+                    Some(prompt)
+                } else {
+                    warn!(
+                        session_id = %stream_ctx.session_id,
+                        "PreLlmCall handler returned unexpected event type, using original prompt"
+                    );
+                    Some(content)
+                }
+            }
+            Ok(EmitResult::Cancelled { by_handler, .. }) => {
+                warn!(
+                    session_id = %stream_ctx.session_id,
+                    handler = %by_handler,
+                    "PreLlmCall cancelled by handler"
+                );
+                if !emit_event(
+                    &stream_ctx.event_tx,
+                    SessionEventMessage::ended(
+                        &stream_ctx.session_id,
+                        format!("cancelled by handler: {}", by_handler),
+                    ),
+                ) {
+                    warn!(
+                        session_id = %stream_ctx.session_id,
+                        "No subscribers for cancelled event"
+                    );
+                }
+                None
+            }
+            Ok(EmitResult::Failed { handler, error, .. }) => {
+                warn!(
+                    session_id = %stream_ctx.session_id,
+                    handler = %handler,
+                    error = %error,
+                    "PreLlmCall handler failed, using original prompt (fail-open)"
+                );
+                Some(content)
+            }
+            Err(error) => {
+                warn!(
+                    session_id = %stream_ctx.session_id,
+                    error = %error,
+                    "PreLlmCall emit failed, using original prompt (fail-open)"
+                );
+                Some(content)
+            }
+        }
+    }
+
+    async fn handle_permission_request(
+        stream_ctx: &StreamContext,
+        tool_call: &crucible_core::traits::chat::ChatToolCall,
+        call_id: &str,
+        args: &serde_json::Value,
+    ) -> bool {
+        let project_path = stream_ctx.workspace_path.to_string_lossy();
+        let pattern_store = PatternStore::load_sync(&project_path).unwrap_or_default();
+        let pattern_matched = Self::check_pattern_match(&tool_call.name, args, &pattern_store);
+
+        if pattern_matched {
+            debug!(
+                session_id = %stream_ctx.session_id,
+                tool = %tool_call.name,
+                "Tool call matches whitelisted pattern, skipping permission prompt"
+            );
+            return true;
+        }
+
+        let hook_result = Self::execute_permission_hooks_with_timeout(
+            &stream_ctx.session_state,
+            &tool_call.name,
+            args,
+            &stream_ctx.session_id,
+        )
+        .await;
+
+        match hook_result {
+            PermissionHookResult::Allow => {
+                debug!(
+                    session_id = %stream_ctx.session_id,
+                    tool = %tool_call.name,
+                    "Lua hook allowed tool, skipping permission prompt"
+                );
+                true
+            }
+            PermissionHookResult::Deny => {
+                debug!(
+                    session_id = %stream_ctx.session_id,
+                    tool = %tool_call.name,
+                    "Lua hook denied tool"
+                );
+                let resource_desc = Self::brief_resource_description(args);
+                let error_msg = format!(
+                    "Lua hook denied permission to {} {}",
+                    tool_call.name, resource_desc
+                );
+
+                if !emit_event(
+                    &stream_ctx.event_tx,
+                    SessionEventMessage::tool_result(
+                        &stream_ctx.session_id,
+                        call_id,
+                        &tool_call.name,
+                        serde_json::json!({ "error": error_msg }),
+                    ),
+                ) {
+                    warn!(
+                        session_id = %stream_ctx.session_id,
+                        tool = %tool_call.name,
+                        "No subscribers for hook denied tool_result event"
+                    );
+                }
+                false
+            }
+            PermissionHookResult::Prompt => {
+                let perm_request = PermRequest::tool(&tool_call.name, args.clone());
+                let interaction_request = InteractionRequest::Permission(perm_request.clone());
+                let permission_id = format!("perm-{}", uuid::Uuid::new_v4());
+                let (response_tx, response_rx) = oneshot::channel();
+
+                let pending = PendingPermission {
+                    request: perm_request,
+                    response_tx,
+                };
+
+                stream_ctx
+                    .pending_permissions
+                    .entry(stream_ctx.session_id.to_string())
+                    .or_default()
+                    .insert(permission_id.clone(), pending);
+
+                debug!(
+                    session_id = %stream_ctx.session_id,
+                    tool = %tool_call.name,
+                    permission_id = %permission_id,
+                    "Emitting permission request for destructive tool"
+                );
+
+                if !emit_event(
+                    &stream_ctx.event_tx,
+                    SessionEventMessage::interaction_requested(
+                        &stream_ctx.session_id,
+                        &permission_id,
+                        &interaction_request,
+                    ),
+                ) {
+                    warn!(
+                        session_id = %stream_ctx.session_id,
+                        tool = %tool_call.name,
+                        "No subscribers for permission request event"
+                    );
+                }
+
+                debug!(
+                    session_id = %stream_ctx.session_id,
+                    tool = %tool_call.name,
+                    permission_id = %permission_id,
+                    "Waiting for permission response"
+                );
+
+                let (permission_granted, deny_reason) = match response_rx.await {
+                    Ok(response) => {
+                        debug!(
+                            session_id = %stream_ctx.session_id,
+                            tool = %tool_call.name,
+                            permission_id = %permission_id,
+                            allowed = response.allowed,
+                            pattern = ?response.pattern,
+                            "Permission response received"
+                        );
+
+                        if response.allowed {
+                            if let Some(ref pattern) = response.pattern {
+                                if response.scope == PermissionScope::Project {
+                                    if let Err(e) =
+                                        Self::store_pattern(&tool_call.name, pattern, &project_path)
+                                    {
+                                        warn!(
+                                            session_id = %stream_ctx.session_id,
+                                            tool = %tool_call.name,
+                                            pattern = %pattern,
+                                            error = %e,
+                                            "Failed to store pattern"
+                                        );
+                                    } else {
+                                        info!(
+                                            session_id = %stream_ctx.session_id,
+                                            tool = %tool_call.name,
+                                            pattern = %pattern,
+                                            "Pattern stored for future use"
+                                        );
+                                    }
+                                }
+                            }
+                            (true, None)
+                        } else {
+                            (false, response.reason)
+                        }
+                    }
+                    Err(_) => {
+                        warn!(
+                            session_id = %stream_ctx.session_id,
+                            tool = %tool_call.name,
+                            permission_id = %permission_id,
+                            "Permission channel dropped, treating as deny"
+                        );
+                        (false, None)
+                    }
+                };
+
+                if permission_granted {
+                    return true;
+                }
+
+                let resource_desc = Self::brief_resource_description(args);
+                let error_msg = if let Some(reason) = &deny_reason {
+                    format!(
+                        "User denied permission to {} {}. Feedback: {}",
+                        tool_call.name, resource_desc, reason
+                    )
+                } else {
+                    format!(
+                        "User denied permission to {} {}",
+                        tool_call.name, resource_desc
+                    )
+                };
+
+                debug!(
+                    session_id = %stream_ctx.session_id,
+                    tool = %tool_call.name,
+                    error = %error_msg,
+                    "Permission denied, emitting error result"
+                );
+
+                if !emit_event(
+                    &stream_ctx.event_tx,
+                    SessionEventMessage::tool_result(
+                        &stream_ctx.session_id,
+                        call_id,
+                        &tool_call.name,
+                        serde_json::json!({ "error": error_msg }),
+                    ),
+                ) {
+                    warn!(
+                        session_id = %stream_ctx.session_id,
+                        tool = %tool_call.name,
+                        "No subscribers for permission denied tool_result event"
+                    );
+                }
+                false
+            }
+        }
+    }
+
+    async fn handle_tool_call_in_stream(
+        stream_ctx: &StreamContext,
+        tool_call: &crucible_core::traits::chat::ChatToolCall,
+    ) {
+        let call_id = tool_call
+            .id
+            .clone()
+            .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+        let args = tool_call
+            .arguments
+            .clone()
+            .unwrap_or(serde_json::Value::Null);
+
+        {
+            let mut state = stream_ctx.session_state.lock().await;
+            let pre_tool_event = SessionEvent::PreToolCall {
+                name: tool_call.name.clone(),
+                args: args.clone(),
+            };
+            match state.reactor.emit(pre_tool_event).await {
+                Ok(EmitResult::Cancelled { by_handler, .. }) => {
+                    warn!(
+                        session_id = %stream_ctx.session_id,
+                        tool = %tool_call.name,
+                        handler = %by_handler,
+                        "PreToolCall cancelled by handler"
+                    );
+                    let error_msg = format!("Tool call denied by handler: {}", by_handler);
+                    if !emit_event(
+                        &stream_ctx.event_tx,
+                        SessionEventMessage::tool_result(
+                            &stream_ctx.session_id,
+                            &call_id,
+                            &tool_call.name,
+                            serde_json::json!({ "error": error_msg }),
+                        ),
+                    ) {
+                        warn!(
+                            session_id = %stream_ctx.session_id,
+                            tool = %tool_call.name,
+                            "No subscribers for handler denied tool_result event"
+                        );
+                    }
+                    return;
+                }
+                Ok(EmitResult::Failed { handler, error, .. }) => {
+                    warn!(
+                        session_id = %stream_ctx.session_id,
+                        tool = %tool_call.name,
+                        handler = %handler,
+                        error = %error,
+                        "PreToolCall handler failed, continuing (fail-open)"
+                    );
+                }
+                Ok(EmitResult::Completed { .. }) => {}
+                Err(error) => {
+                    warn!(
+                        session_id = %stream_ctx.session_id,
+                        tool = %tool_call.name,
+                        error = %error,
+                        "PreToolCall emit failed, continuing (fail-open)"
+                    );
+                }
+            }
+        }
+
+        if !is_safe(&tool_call.name)
+            && !Self::handle_permission_request(stream_ctx, tool_call, &call_id, &args).await
+        {
+            return;
+        }
+
+        if !emit_event(
+            &stream_ctx.event_tx,
+            SessionEventMessage::tool_call(
+                &stream_ctx.session_id,
+                &call_id,
+                &tool_call.name,
+                args,
+            ),
+        ) {
+            warn!(
+                session_id = %stream_ctx.session_id,
+                tool = %tool_call.name,
+                "No subscribers for tool_call event"
+            );
+        }
+    }
+
+    async fn emit_stream_events(
+        stream_ctx: &StreamContext,
+        chunk: &crucible_core::traits::chat::ChatChunk,
+        accumulated_response: &mut String,
+    ) {
+        if !chunk.delta.is_empty() {
+            if !accumulated_response.is_empty() && chunk.delta == *accumulated_response {
+                debug!(
+                    session_id = %stream_ctx.session_id,
+                    delta_len = chunk.delta.len(),
+                    "Skipping duplicate full-text delta (matches accumulated response)"
+                );
+            } else {
+                accumulated_response.push_str(&chunk.delta);
+                debug!(
+                    session_id = %stream_ctx.session_id,
+                    delta_len = chunk.delta.len(),
+                    "Sending text_delta event"
+                );
+                if !emit_event(
+                    &stream_ctx.event_tx,
+                    SessionEventMessage::text_delta(&stream_ctx.session_id, &chunk.delta),
+                ) {
+                    warn!(
+                        session_id = %stream_ctx.session_id,
+                        "No subscribers for text_delta event"
+                    );
+                }
+            }
+        }
+
+        if let Some(reasoning) = &chunk.reasoning {
+            debug!(session_id = %stream_ctx.session_id, "Sending thinking event");
+            if !emit_event(
+                &stream_ctx.event_tx,
+                SessionEventMessage::thinking(&stream_ctx.session_id, reasoning),
+            ) {
+                warn!(
+                    session_id = %stream_ctx.session_id,
+                    "No subscribers for thinking event"
+                );
+            }
+        }
+
+        if let Some(tool_calls) = &chunk.tool_calls {
+            for tool_call in tool_calls {
+                Self::handle_tool_call_in_stream(stream_ctx, tool_call).await;
+            }
+        }
+
+        if let Some(tool_results) = &chunk.tool_results {
+            for tool_result in tool_results {
+                let call_id = uuid::Uuid::new_v4().to_string();
+                let result = if let Some(err) = &tool_result.error {
+                    serde_json::json!({ "error": err })
+                } else {
+                    serde_json::json!({ "result": tool_result.result })
+                };
+
+                if !emit_event(
+                    &stream_ctx.event_tx,
+                    SessionEventMessage::tool_result(
+                        &stream_ctx.session_id,
+                        &call_id,
+                        &tool_result.name,
+                        result,
+                    ),
+                ) {
+                    warn!(
+                        session_id = %stream_ctx.session_id,
+                        tool = %tool_result.name,
+                        "No subscribers for tool_result event"
+                    );
+                }
+            }
+        }
+    }
+
+    async fn run_reactor_handlers(
+        stream_ctx: &StreamContext,
+        chunk: &crucible_core::traits::chat::ChatChunk,
+        accumulated_response: &mut String,
+        is_continuation: bool,
+    ) -> Option<(String, String)> {
+        debug!(
+            session_id = %stream_ctx.session_id,
+            message_id = %stream_ctx.message_id,
+            response_len = accumulated_response.len(),
+            "Sending message_complete event"
+        );
+        if !emit_event(
+            &stream_ctx.event_tx,
+            SessionEventMessage::message_complete(
+                &stream_ctx.session_id,
+                &stream_ctx.message_id,
+                accumulated_response.clone(),
+                chunk.usage.as_ref(),
+            ),
+        ) {
+            warn!(
+                session_id = %stream_ctx.session_id,
+                "No subscribers for message_complete event"
+            );
+        }
+
+        let injection = Self::dispatch_turn_complete_handlers(
+            &stream_ctx.session_id,
+            &stream_ctx.message_id,
+            accumulated_response,
+            &stream_ctx.session_state,
+            is_continuation,
+        )
+        .await;
+
+        if let Some((injected_content, position)) = &injection {
+            info!(
+                session_id = %stream_ctx.session_id,
+                content_len = injected_content.len(),
+                position = %position,
+                "Processing handler injection"
+            );
+
+            if !emit_event(
+                &stream_ctx.event_tx,
+                SessionEventMessage::new(
+                    &stream_ctx.session_id,
+                    "injection_pending",
+                    serde_json::json!({
+                        "content": injected_content,
+                        "position": position,
+                        "is_continuation": true,
+                    }),
+                ),
+            ) {
+                warn!(
+                    session_id = %stream_ctx.session_id,
+                    "No subscribers for injection_pending event"
+                );
+            }
+        }
+
+        injection
+    }
+
     async fn execute_agent_stream(
         agent: Arc<Mutex<BoxedAgentHandle>>,
         content: String,
@@ -1176,482 +1673,41 @@ impl AgentManager {
         accumulated_response: &mut String,
         is_continuation: bool,
     ) {
-        let StreamContext {
-            session_id,
-            message_id,
-            event_tx,
-            session_state,
-            pending_permissions,
-            workspace_path,
-            model,
-        } = stream_ctx;
-
-        let content = {
-            let mut state = session_state.lock().await;
-            let pre_event = SessionEvent::PreLlmCall {
-                prompt: content.clone(),
-                model: model.clone(),
-            };
-            match state.reactor.emit(pre_event).await {
-                Ok(EmitResult::Completed { event, .. }) => {
-                    if let SessionEvent::PreLlmCall { prompt, .. } = event {
-                        prompt
-                    } else {
-                        warn!(session_id = %session_id, "PreLlmCall handler returned unexpected event type, using original prompt");
-                        content
-                    }
-                }
-                Ok(EmitResult::Cancelled { by_handler, .. }) => {
-                    warn!(session_id = %session_id, handler = %by_handler, "PreLlmCall cancelled by handler");
-                    if !emit_event(
-                        &event_tx,
-                        SessionEventMessage::ended(
-                            &session_id,
-                            format!("cancelled by handler: {}", by_handler),
-                        ),
-                    ) {
-                        warn!(session_id = %session_id, "No subscribers for cancelled event");
-                    }
-                    return;
-                }
-                Ok(EmitResult::Failed { handler, error, .. }) => {
-                    warn!(session_id = %session_id, handler = %handler, error = %error, "PreLlmCall handler failed, using original prompt (fail-open)");
-                    content
-                }
-                Err(error) => {
-                    warn!(session_id = %session_id, error = %error, "PreLlmCall emit failed, using original prompt (fail-open)");
-                    content
-                }
-            }
+        let Some(content) = Self::apply_pre_llm_call_handlers(content, &stream_ctx).await else {
+            return;
         };
 
         let stream_start = Instant::now();
-
         let mut agent_guard = agent.lock().await;
         let mut stream = agent_guard.send_message_stream(content);
 
         while let Some(result) = stream.next().await {
             match result {
                 Ok(chunk) => {
-                    if !chunk.delta.is_empty() {
-                        // Guard: some LLM backends (both internal and ACP) re-send the
-                        // full accumulated response as a final streaming delta. Detect
-                        // this by checking if the incoming delta exactly matches what
-                        // we've already accumulated, and skip it to prevent duplication.
-                        if !accumulated_response.is_empty() && chunk.delta == *accumulated_response
-                        {
-                            debug!(
-                                session_id = %session_id,
-                                delta_len = chunk.delta.len(),
-                                "Skipping duplicate full-text delta (matches accumulated response)"
-                            );
-                        } else {
-                            accumulated_response.push_str(&chunk.delta);
-                            debug!(
-                                session_id = %session_id,
-                                delta_len = chunk.delta.len(),
-                                "Sending text_delta event"
-                            );
-                            let send_result = emit_event(
-                                &event_tx,
-                                SessionEventMessage::text_delta(&session_id, &chunk.delta),
-                            );
-                            if !send_result {
-                                warn!(session_id = %session_id, "No subscribers for text_delta event");
-                            }
-                        }
-                    }
-
-                    if let Some(reasoning) = &chunk.reasoning {
-                        debug!(session_id = %session_id, "Sending thinking event");
-                        if !emit_event(
-                            &event_tx,
-                            SessionEventMessage::thinking(&session_id, reasoning),
-                        ) {
-                            warn!(session_id = %session_id, "No subscribers for thinking event");
-                        }
-                    }
-
-                    if let Some(tool_calls) = &chunk.tool_calls {
-                        for tc in tool_calls {
-                            let call_id = tc
-                                .id
-                                .clone()
-                                .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
-                            let args = tc.arguments.clone().unwrap_or(serde_json::Value::Null);
-
-                            {
-                                let mut state = session_state.lock().await;
-                                let pre_tool_event = SessionEvent::PreToolCall {
-                                    name: tc.name.clone(),
-                                    args: args.clone(),
-                                };
-                                match state.reactor.emit(pre_tool_event).await {
-                                    Ok(EmitResult::Cancelled { by_handler, .. }) => {
-                                        warn!(
-                                            session_id = %session_id,
-                                            tool = %tc.name,
-                                            handler = %by_handler,
-                                            "PreToolCall cancelled by handler"
-                                        );
-                                        let error_msg =
-                                            format!("Tool call denied by handler: {}", by_handler);
-                                        if !emit_event(
-                                            &event_tx,
-                                            SessionEventMessage::tool_result(
-                                                &session_id,
-                                                &call_id,
-                                                &tc.name,
-                                                serde_json::json!({ "error": error_msg }),
-                                            ),
-                                        ) {
-                                            warn!(
-                                                session_id = %session_id,
-                                                tool = %tc.name,
-                                                "No subscribers for handler denied tool_result event"
-                                            );
-                                        }
-                                        continue;
-                                    }
-                                    Ok(EmitResult::Failed { handler, error, .. }) => {
-                                        warn!(
-                                            session_id = %session_id,
-                                            tool = %tc.name,
-                                            handler = %handler,
-                                            error = %error,
-                                            "PreToolCall handler failed, continuing (fail-open)"
-                                        );
-                                    }
-                                    Ok(EmitResult::Completed { .. }) => {}
-                                    Err(error) => {
-                                        warn!(
-                                            session_id = %session_id,
-                                            tool = %tc.name,
-                                            error = %error,
-                                            "PreToolCall emit failed, continuing (fail-open)"
-                                        );
-                                    }
-                                }
-                            }
-
-                            if !is_safe(&tc.name) {
-                                // Check if tool call matches a whitelisted pattern
-                                let project_path = workspace_path.to_string_lossy();
-                                let pattern_store =
-                                    PatternStore::load_sync(&project_path).unwrap_or_default();
-
-                                let pattern_matched =
-                                    Self::check_pattern_match(&tc.name, &args, &pattern_store);
-
-                                if pattern_matched {
-                                    debug!(
-                                        session_id = %session_id,
-                                        tool = %tc.name,
-                                        "Tool call matches whitelisted pattern, skipping permission prompt"
-                                    );
-                                } else {
-                                    // Check Lua permission hooks (with 1-second timeout)
-                                    let hook_result = Self::execute_permission_hooks_with_timeout(
-                                        &session_state,
-                                        &tc.name,
-                                        &args,
-                                        &session_id,
-                                    )
-                                    .await;
-
-                                    match hook_result {
-                                        PermissionHookResult::Allow => {
-                                            debug!(
-                                                session_id = %session_id,
-                                                tool = %tc.name,
-                                                "Lua hook allowed tool, skipping permission prompt"
-                                            );
-                                        }
-                                        PermissionHookResult::Deny => {
-                                            debug!(
-                                                session_id = %session_id,
-                                                tool = %tc.name,
-                                                "Lua hook denied tool"
-                                            );
-                                            let resource_desc =
-                                                Self::brief_resource_description(&args);
-                                            let error_msg = format!(
-                                                "Lua hook denied permission to {} {}",
-                                                tc.name, resource_desc
-                                            );
-
-                                            if !emit_event(
-                                                &event_tx,
-                                                SessionEventMessage::tool_result(
-                                                    &session_id,
-                                                    &call_id,
-                                                    &tc.name,
-                                                    serde_json::json!({ "error": error_msg }),
-                                                ),
-                                            ) {
-                                                warn!(
-                                                    session_id = %session_id,
-                                                    tool = %tc.name,
-                                                    "No subscribers for hook denied tool_result event"
-                                                );
-                                            }
-                                            continue;
-                                        }
-                                        PermissionHookResult::Prompt => {
-                                            // No pattern match, no hook decision - emit permission request
-                                            let perm_request =
-                                                PermRequest::tool(&tc.name, args.clone());
-                                            let interaction_request =
-                                                InteractionRequest::Permission(
-                                                    perm_request.clone(),
-                                                );
-
-                                            // Register pending permission and get receiver
-                                            let permission_id =
-                                                format!("perm-{}", uuid::Uuid::new_v4());
-                                            let (response_tx, response_rx) = oneshot::channel();
-
-                                            let pending = PendingPermission {
-                                                request: perm_request,
-                                                response_tx,
-                                            };
-
-                                            pending_permissions
-                                                .entry(session_id.to_string())
-                                                .or_default()
-                                                .insert(permission_id.clone(), pending);
-
-                                            debug!(
-                                                session_id = %session_id,
-                                                tool = %tc.name,
-                                                permission_id = %permission_id,
-                                                "Emitting permission request for destructive tool"
-                                            );
-
-                                            // Emit the interaction request event
-                                            if !emit_event(
-                                                &event_tx,
-                                                SessionEventMessage::interaction_requested(
-                                                    &session_id,
-                                                    &permission_id,
-                                                    &interaction_request,
-                                                ),
-                                            ) {
-                                                warn!(
-                                                    session_id = %session_id,
-                                                    tool = %tc.name,
-                                                    "No subscribers for permission request event"
-                                                );
-                                            }
-
-                                            // Block until user responds to permission request
-                                            debug!(
-                                                session_id = %session_id,
-                                                tool = %tc.name,
-                                                permission_id = %permission_id,
-                                                "Waiting for permission response"
-                                            );
-
-                                            let (permission_granted, deny_reason) =
-                                                match response_rx.await {
-                                                    Ok(response) => {
-                                                        debug!(
-                                                            session_id = %session_id,
-                                                            tool = %tc.name,
-                                                            permission_id = %permission_id,
-                                                            allowed = response.allowed,
-                                                            pattern = ?response.pattern,
-                                                            "Permission response received"
-                                                        );
-
-                                                        if response.allowed {
-                                                            if let Some(ref pattern) =
-                                                                response.pattern
-                                                            {
-                                                                if response.scope
-                                                                    == PermissionScope::Project
-                                                                {
-                                                                    if let Err(e) =
-                                                                        Self::store_pattern(
-                                                                            &tc.name,
-                                                                            pattern,
-                                                                            &project_path,
-                                                                        )
-                                                                    {
-                                                                        warn!(
-                                                                            session_id = %session_id,
-                                                                            tool = %tc.name,
-                                                                            pattern = %pattern,
-                                                                            error = %e,
-                                                                            "Failed to store pattern"
-                                                                        );
-                                                                    } else {
-                                                                        info!(
-                                                                            session_id = %session_id,
-                                                                            tool = %tc.name,
-                                                                            pattern = %pattern,
-                                                                            "Pattern stored for future use"
-                                                                        );
-                                                                    }
-                                                                }
-                                                            }
-                                                            (true, None)
-                                                        } else {
-                                                            (false, response.reason)
-                                                        }
-                                                    }
-                                                    Err(_) => {
-                                                        warn!(
-                                                            session_id = %session_id,
-                                                            tool = %tc.name,
-                                                            permission_id = %permission_id,
-                                                            "Permission channel dropped, treating as deny"
-                                                        );
-                                                        (false, None)
-                                                    }
-                                                };
-
-                                            if !permission_granted {
-                                                let resource_desc =
-                                                    Self::brief_resource_description(&args);
-                                                let error_msg = if let Some(reason) = &deny_reason {
-                                                    format!(
-                                                        "User denied permission to {} {}. Feedback: {}",
-                                                        tc.name, resource_desc, reason
-                                                    )
-                                                } else {
-                                                    format!(
-                                                        "User denied permission to {} {}",
-                                                        tc.name, resource_desc
-                                                    )
-                                                };
-
-                                                debug!(
-                                                    session_id = %session_id,
-                                                    tool = %tc.name,
-                                                    error = %error_msg,
-                                                    "Permission denied, emitting error result"
-                                                );
-
-                                                // Emit tool_result with error so LLM sees the denial
-                                                if !emit_event(
-                                                    &event_tx,
-                                                    SessionEventMessage::tool_result(
-                                                        &session_id,
-                                                        &call_id,
-                                                        &tc.name,
-                                                        serde_json::json!({ "error": error_msg }),
-                                                    ),
-                                                ) {
-                                                    warn!(
-                                                        session_id = %session_id,
-                                                        tool = %tc.name,
-                                                        "No subscribers for permission denied tool_result event"
-                                                    );
-                                                }
-
-                                                continue;
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-
-                            if !emit_event(
-                                &event_tx,
-                                SessionEventMessage::tool_call(
-                                    &session_id, &call_id, &tc.name, args,
-                                ),
-                            ) {
-                                warn!(session_id = %session_id, tool = %tc.name, "No subscribers for tool_call event");
-                            }
-                        }
-                    }
-
-                    if let Some(tool_results) = &chunk.tool_results {
-                        for tr in tool_results {
-                            let call_id = uuid::Uuid::new_v4().to_string();
-                            let result = if let Some(err) = &tr.error {
-                                serde_json::json!({ "error": err })
-                            } else {
-                                serde_json::json!({ "result": tr.result })
-                            };
-                            if !emit_event(
-                                &event_tx,
-                                SessionEventMessage::tool_result(
-                                    &session_id, &call_id, &tr.name, result,
-                                ),
-                            ) {
-                                warn!(session_id = %session_id, tool = %tr.name, "No subscribers for tool_result event");
-                            }
-                        }
-                    }
+                    Self::emit_stream_events(&stream_ctx, &chunk, accumulated_response).await;
 
                     if chunk.done {
-                        debug!(
-                            session_id = %session_id,
-                            message_id = %message_id,
-                            response_len = accumulated_response.len(),
-                            "Sending message_complete event"
-                        );
-                        if !emit_event(
-                            &event_tx,
-                            SessionEventMessage::message_complete(
-                                &session_id,
-                                &message_id,
-                                accumulated_response.clone(),
-                                chunk.usage.as_ref(),
-                            ),
-                        ) {
-                            warn!(session_id = %session_id, "No subscribers for message_complete event");
-                        }
-
-                        let injection = Self::dispatch_turn_complete_handlers(
-                            &session_id,
-                            &message_id,
+                        let injection = Self::run_reactor_handlers(
+                            &stream_ctx,
+                            &chunk,
                             accumulated_response,
-                            &session_state,
                             is_continuation,
                         )
                         .await;
 
-                        if let Some((injected_content, position)) = injection {
-                            info!(
-                                session_id = %session_id,
-                                content_len = injected_content.len(),
-                                position = %position,
-                                "Processing handler injection"
-                            );
-
-                            if !emit_event(
-                                &event_tx,
-                                SessionEventMessage::new(
-                                    &session_id,
-                                    "injection_pending",
-                                    serde_json::json!({
-                                        "content": &injected_content,
-                                        "position": &position,
-                                        "is_continuation": true,
-                                    }),
-                                ),
-                            ) {
-                                warn!(session_id = %session_id, "No subscribers for injection_pending event");
-                            }
-
+                        if let Some((injected_content, _)) = injection {
                             drop(stream);
                             drop(agent_guard);
 
                             accumulated_response.clear();
-                            let injection_message_id = format!("msg-{}", uuid::Uuid::new_v4());
-
                             let continuation_ctx = StreamContext {
-                                session_id: session_id.clone(),
-                                message_id: injection_message_id,
-                                event_tx: event_tx.clone(),
-                                session_state: session_state.clone(),
-                                pending_permissions: pending_permissions.clone(),
-                                workspace_path: workspace_path.clone(),
-                                model: model.clone(),
+                                session_id: stream_ctx.session_id.clone(),
+                                message_id: format!("msg-{}", uuid::Uuid::new_v4()),
+                                event_tx: stream_ctx.event_tx.clone(),
+                                session_state: stream_ctx.session_state.clone(),
+                                pending_permissions: stream_ctx.pending_permissions.clone(),
+                                workspace_path: stream_ctx.workspace_path.clone(),
+                                model: stream_ctx.model.clone(),
                             };
 
                             Box::pin(Self::execute_agent_stream(
@@ -1668,12 +1724,12 @@ impl AgentManager {
                     }
                 }
                 Err(e) => {
-                    error!(session_id = %session_id, error = %e, "Agent stream error");
+                    error!(session_id = %stream_ctx.session_id, error = %e, "Agent stream error");
                     if !emit_event(
-                        &event_tx,
-                        SessionEventMessage::ended(&session_id, format!("error: {}", e)),
+                        &stream_ctx.event_tx,
+                        SessionEventMessage::ended(&stream_ctx.session_id, format!("error: {}", e)),
                     ) {
-                        warn!(session_id = %session_id, "No subscribers for error event");
+                        warn!(session_id = %stream_ctx.session_id, "No subscribers for error event");
                     }
                     break;
                 }
@@ -1682,35 +1738,46 @@ impl AgentManager {
 
         let duration_ms = stream_start.elapsed().as_millis() as u64;
         let response_summary: String = accumulated_response.chars().take(200).collect();
-        if model.is_empty() {
-            warn!(session_id = %session_id, "PostLlmCall model string is empty, possible upstream issue");
+
+        if stream_ctx.model.is_empty() {
+            warn!(
+                session_id = %stream_ctx.session_id,
+                "PostLlmCall model string is empty, possible upstream issue"
+            );
         }
+
         if !emit_event(
-            &event_tx,
+            &stream_ctx.event_tx,
             SessionEventMessage::new(
-                &session_id,
+                &stream_ctx.session_id,
                 "post_llm_call",
                 serde_json::json!({
                     "response_summary": &response_summary,
-                    "model": &model,
+                    "model": &stream_ctx.model,
                     "duration_ms": duration_ms,
                     "token_count": Option::<u64>::None,
                 }),
             ),
         ) {
-            warn!(session_id = %session_id, "No subscribers for post_llm_call event");
+            warn!(
+                session_id = %stream_ctx.session_id,
+                "No subscribers for post_llm_call event"
+            );
         }
-        {
-            let mut state = session_state.lock().await;
-            let post_event = SessionEvent::PostLlmCall {
-                response_summary,
-                model,
-                duration_ms,
-                token_count: None,
-            };
-            if let Err(e) = state.reactor.emit(post_event).await {
-                warn!(session_id = %session_id, error = %e, "PostLlmCall Reactor emit failed (fail-open)");
-            }
+
+        let mut state = stream_ctx.session_state.lock().await;
+        let post_event = SessionEvent::PostLlmCall {
+            response_summary,
+            model: stream_ctx.model.clone(),
+            duration_ms,
+            token_count: None,
+        };
+        if let Err(e) = state.reactor.emit(post_event).await {
+            warn!(
+                session_id = %stream_ctx.session_id,
+                error = %e,
+                "PostLlmCall Reactor emit failed (fail-open)"
+            );
         }
     }
 
