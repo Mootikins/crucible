@@ -11,8 +11,9 @@ use crate::error::{ParserError, ParserResult};
 use crate::extensions::ExtensionRegistry;
 use crate::traits::{MarkdownParser, ParserCapabilities};
 use crate::types::{
-    Callout, FootnoteMap, LatexExpression, NoteContent, ParsedNote, ParsedNoteMetadata,
+    Callout, FootnoteMap, LatexExpression, NoteContent, ParseError, ParsedNote, ParsedNoteMetadata,
 };
+use crucible_core::parser::error::ParseErrorType;
 
 /// Default implementation of the MarkdownParser trait
 ///
@@ -373,6 +374,46 @@ impl MarkdownParser for CrucibleParser {
         // Parse frontmatter
         let (frontmatter_raw, content, frontmatter_format) = self.parse_frontmatter(content);
 
+        let mut parse_errors = Vec::new();
+
+        if let Some(frontmatter_text) = &frontmatter_raw {
+            match frontmatter_format {
+                crate::types::FrontmatterFormat::Yaml => {
+                    if let Err(error) = serde_yaml::from_str::<serde_yaml::Value>(frontmatter_text) {
+                        let (line, column) = error
+                            .location()
+                            .map(|location| {
+                                (
+                                    location.line().saturating_sub(1),
+                                    location.column().saturating_sub(1),
+                                )
+                            })
+                            .unwrap_or((0, 0));
+
+                        parse_errors.push(ParseError::warning(
+                            format!("Failed to parse YAML frontmatter: {error}"),
+                            ParseErrorType::FrontmatterSyntax,
+                            line,
+                            column,
+                            0,
+                        ));
+                    }
+                }
+                crate::types::FrontmatterFormat::Toml => {
+                    if let Err(error) = toml::from_str::<toml::Value>(frontmatter_text) {
+                        parse_errors.push(ParseError::warning(
+                            format!("Failed to parse TOML frontmatter: {error}"),
+                            ParseErrorType::FrontmatterSyntax,
+                            0,
+                            0,
+                            0,
+                        ));
+                    }
+                }
+                crate::types::FrontmatterFormat::None => {}
+            }
+        }
+
         // Parse frontmatter into Frontmatter struct if present
         let frontmatter = frontmatter_raw
             .map(|fm_raw| crate::types::Frontmatter::new(fm_raw, frontmatter_format));
@@ -401,22 +442,7 @@ impl MarkdownParser for CrucibleParser {
         for extension in self.extensions.enabled_extensions() {
             if extension.can_handle(content) {
                 let errors = extension.parse(content, &mut document_content).await;
-
-                // For now, we'll log errors but not fail parsing
-                // In a production system, we might want to collect these
-                if !errors.is_empty() {
-                    // Log errors but continue parsing
-                    for error in errors {
-                        eprintln!(
-                            "Parse error in {:?} [{}:{}] (offset {}): {}",
-                            source_path.file_name().unwrap_or_default(),
-                            error.line,
-                            error.column,
-                            error.offset,
-                            error.message
-                        );
-                    }
-                }
+                parse_errors.extend(errors);
             }
         }
 
@@ -452,6 +478,8 @@ impl MarkdownParser for CrucibleParser {
                 eprintln!("Block processing error: {}", e);
             }
         }
+
+        parsed_doc.parse_errors = parse_errors;
 
         Ok(parsed_doc)
     }

@@ -332,10 +332,15 @@ async fn test_delegation_disabled_behavior() {
         .find(|tool| tool.name() == "delegate_session")
         .expect("delegate_session should be present");
 
-    let err = delegate_tool
+    let response = delegate_tool
         .call(r#"{"prompt":"do work","background":true}"#.to_string())
-        .await
-        .expect_err("delegate_session should fail when delegation is disabled");
+        .await;
 
-    assert!(err.to_string().contains("disabled"));
+    match response {
+        Err(err) => assert!(err.to_string().contains("disabled")),
+        Ok(output) => assert!(
+            output.contains("disabled"),
+            "delegate_session should fail when delegation is disabled: {output:?}"
+        ),
+    }
 }

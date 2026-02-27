@@ -16,6 +16,8 @@ pub enum ProcessingResult {
         changed_blocks: usize,
         /// Whether embeddings were generated
         embeddings_generated: bool,
+        /// Non-fatal warnings encountered during processing
+        warnings: Vec<String>,
     },
     /// Note was skipped (unchanged file hash)
     Skipped,
@@ -26,9 +28,19 @@ pub enum ProcessingResult {
 impl ProcessingResult {
     /// Create a success result
     pub fn success(changed_blocks: usize, embeddings_generated: bool) -> Self {
+        Self::success_with_warnings(changed_blocks, embeddings_generated, Vec::new())
+    }
+
+    /// Create a success result with non-fatal warnings
+    pub fn success_with_warnings(
+        changed_blocks: usize,
+        embeddings_generated: bool,
+        warnings: Vec<String>,
+    ) -> Self {
         Self::Success {
             changed_blocks,
             embeddings_generated,
+            warnings,
         }
     }
 
@@ -68,6 +80,14 @@ impl ProcessingResult {
                 ..
             } => *embeddings_generated,
             _ => false,
+        }
+    }
+
+    /// Get warnings, if applicable
+    pub fn warnings(&self) -> Option<&[String]> {
+        match self {
+            ProcessingResult::Success { warnings, .. } => Some(warnings),
+            _ => None,
         }
     }
 }
@@ -183,6 +203,21 @@ mod tests {
         assert!(result.is_success());
         assert_eq!(result.changed_blocks(), Some(5));
         assert!(result.embeddings_generated());
+        assert_eq!(result.warnings(), Some(&[] as &[String]));
+    }
+
+    #[test]
+    fn test_processing_result_success_with_warnings() {
+        let result = ProcessingResult::success_with_warnings(
+            2,
+            false,
+            vec!["frontmatter parse warning".to_string()],
+        );
+
+        assert!(result.is_success());
+        assert_eq!(result.changed_blocks(), Some(2));
+        assert!(!result.embeddings_generated());
+        assert_eq!(result.warnings().map(|w| w.len()), Some(1));
     }
 
     #[test]
