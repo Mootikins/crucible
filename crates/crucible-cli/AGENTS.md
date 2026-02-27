@@ -107,6 +107,19 @@ Ask: "Would a different client (web UI, API, another TUI) need this same logic?"
 - **YES** → Put in daemon/core
 - **NO** → OK for CLI (it's truly presentation-only)
 
+## Thin-Client Domain Dependencies
+
+The CLI imports a **minimal set of domain crates** for display purposes only. These are intentional and do NOT violate the view-layer rule:
+
+| Crate | What We Use | Why | Scope |
+|-------|------------|-----|-------|
+| `crucible-lua` | `LuaNode`, `FennelCompiler` types | Render Lua execution results in chat | Display only |
+| `crucible-acp` | `humanize_tool_title()`, `get_known_agents()` | Format tool names and agent lists for display | Display only |
+| `crucible-observe` | `SessionId`, `LogEvent` types | Render session metadata and event logs | Display only |
+
+**Key principle:** We import *types and display utilities*, never *execution logic*. The daemon owns all business logic.
+
+
 ## File Organization
 
 | Directory | Purpose |
