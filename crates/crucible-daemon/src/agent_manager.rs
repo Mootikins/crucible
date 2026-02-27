@@ -8,6 +8,7 @@ use crate::kiln_manager::KilnManager;
 use crate::multi_kiln_search::{search_across_kilns, KilnSearchSource};
 use crate::permission_bridge::{DaemonPermissionGate, PermissionPromptCallback};
 use crate::protocol::SessionEventMessage;
+use crate::provider::model_listing;
 use crate::session_manager::{SessionError, SessionManager};
 use crate::trust_resolution::resolve_provider_trust;
 use crucible_acp::discovery::default_agent_profiles;
@@ -21,7 +22,6 @@ use crucible_core::interaction::{InteractionRequest, PermRequest, PermResponse, 
 use crucible_core::session::SessionAgent;
 use crucible_core::traits::chat::AgentHandle;
 use crucible_core::traits::PermissionGate;
-use crate::provider::model_listing;
 use crucible_lua::{
     execute_permission_hooks, register_crucible_on_api, register_permission_hook_api,
     LuaScriptHandlerRegistry, PermissionHook, PermissionHookResult, PermissionRequest,
@@ -273,6 +273,7 @@ struct StreamContext {
 }
 
 #[derive(Clone)]
+#[allow(dead_code)] // Fields extracted for future LLM config pass-through
 struct AgentStreamConfig {
     model: String,
     temperature: Option<f64>,
@@ -305,7 +306,10 @@ impl AgentCache {
         }
     }
 
-    fn get(&self, key: &str) -> Option<dashmap::mapref::one::Ref<String, Arc<Mutex<BoxedAgentHandle>>>> {
+    fn get(
+        &self,
+        key: &str,
+    ) -> Option<dashmap::mapref::one::Ref<'_, String, Arc<Mutex<BoxedAgentHandle>>>> {
         self.inner.get(key)
     }
 
@@ -317,6 +321,7 @@ impl AgentCache {
         self.inner.remove(key)
     }
 
+    #[cfg(test)]
     fn contains_key(&self, key: &str) -> bool {
         self.inner.contains_key(key)
     }
@@ -334,7 +339,11 @@ impl SessionStateCache {
         }
     }
 
-    fn get(&self, key: &str) -> Option<dashmap::mapref::one::Ref<String, Arc<tokio::sync::Mutex<SessionEventState>>>> {
+    fn get(
+        &self,
+        key: &str,
+    ) -> Option<dashmap::mapref::one::Ref<'_, String, Arc<tokio::sync::Mutex<SessionEventState>>>>
+    {
         self.inner.get(key)
     }
 
@@ -346,6 +355,7 @@ impl SessionStateCache {
         self.inner.remove(key)
     }
 
+    #[cfg(test)]
     fn contains_key(&self, key: &str) -> bool {
         self.inner.contains_key(key)
     }
@@ -1133,11 +1143,7 @@ impl AgentManager {
     ///
     /// If the agent has delegation configuration, registers a subagent context
     /// with the background manager for cross-agent delegation support.
-    fn setup_permission_handlers(
-        &self,
-        session_id: &str,
-        resolved_config: &SessionAgent,
-    ) {
+    fn setup_permission_handlers(&self, session_id: &str, resolved_config: &SessionAgent) {
         if resolved_config.delegation_config.is_some() {
             if let Some(session) = self.session_manager.get_session(session_id) {
                 let parent_session_id = session
@@ -1629,12 +1635,7 @@ impl AgentManager {
 
         if !emit_event(
             &stream_ctx.event_tx,
-            SessionEventMessage::tool_call(
-                &stream_ctx.session_id,
-                &call_id,
-                &tool_call.name,
-                args,
-            ),
+            SessionEventMessage::tool_call(&stream_ctx.session_id, &call_id, &tool_call.name, args),
         ) {
             warn!(
                 session_id = %stream_ctx.session_id,
@@ -2067,8 +2068,14 @@ impl AgentManager {
         };
 
         let state = session_state.lock().await;
-        let hooks_guard = state.permission_hooks.lock().expect("permission_hooks: poisoned while executing Lua permission hook");
-        let functions_guard = state.permission_functions.lock().expect("permission_functions: poisoned while executing Lua permission hook");
+        let hooks_guard = state
+            .permission_hooks
+            .lock()
+            .expect("permission_hooks: poisoned while executing Lua permission hook");
+        let functions_guard = state
+            .permission_functions
+            .lock()
+            .expect("permission_functions: poisoned while executing Lua permission hook");
 
         if hooks_guard.is_empty() {
             return PermissionHookResult::Prompt;
@@ -2293,7 +2300,10 @@ impl AgentManager {
         if let Some(ref llm_config) = self.llm_config {
             for (provider_key, provider_config) in &llm_config.providers {
                 if let Some(ref classification) = classification {
-                    if !provider_config.effective_trust_level().satisfies(*classification) {
+                    if !provider_config
+                        .effective_trust_level()
+                        .satisfies(*classification)
+                    {
                         continue;
                     }
                 }
@@ -2331,7 +2341,8 @@ impl AgentManager {
             }
         }
 
-        if classification.is_none() && !all_models.iter().any(|model| model.starts_with("[error]")) {
+        if classification.is_none() && !all_models.iter().any(|model| model.starts_with("[error]"))
+        {
             self.model_cache
                 .insert("all".to_string(), (all_models.clone(), Instant::now()));
         }
@@ -2641,7 +2652,6 @@ impl AgentManager {
         let (_, agent_config) = self.get_session_with_agent(session_id)?;
         Ok(agent_config.max_tokens)
     }
-
 }
 
 #[cfg(test)]
@@ -5646,7 +5656,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_list_models_trust_excludes_cloud_for_confidential_kiln() {
-        use crucible_config::{BackendType, DataClassification, LlmConfig, LlmProviderConfig, TrustLevel};
+        use crucible_config::{
+            BackendType, DataClassification, LlmConfig, LlmProviderConfig, TrustLevel,
+        };
         use std::collections::HashMap;
 
         let tmp = TempDir::new().unwrap();
@@ -5693,8 +5705,8 @@ mod tests {
 
         let models = agent_manager
             .list_models(&session.id, Some(DataClassification::Confidential))
-        .await
-        .unwrap();
+            .await
+            .unwrap();
 
         assert!(
             models.contains(&"local-custom/local-model".to_string()),
@@ -5710,7 +5722,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_list_models_trust_returns_all_for_public_kiln() {
-        use crucible_config::{BackendType, DataClassification, LlmConfig, LlmProviderConfig, TrustLevel};
+        use crucible_config::{
+            BackendType, DataClassification, LlmConfig, LlmProviderConfig, TrustLevel,
+        };
         use std::collections::HashMap;
 
         let tmp = TempDir::new().unwrap();
@@ -5757,8 +5771,8 @@ mod tests {
 
         let models = agent_manager
             .list_models(&session.id, Some(DataClassification::Public))
-        .await
-        .unwrap();
+            .await
+            .unwrap();
 
         assert!(
             models.contains(&"local-custom/local-model".to_string()),
@@ -5819,10 +5833,7 @@ mod tests {
             .await
             .unwrap();
 
-        let models = agent_manager
-            .list_models(&session.id, None)
-            .await
-            .unwrap();
+        let models = agent_manager.list_models(&session.id, None).await.unwrap();
 
         assert!(
             models.contains(&"local-custom/local-model".to_string()),
@@ -5893,8 +5904,8 @@ mod tests {
 
         let models = agent_manager
             .list_models(&session.id, Some(DataClassification::Internal))
-        .await
-        .unwrap();
+            .await
+            .unwrap();
 
         assert!(
             models.contains(&"local-custom/local-model".to_string()),
@@ -5935,7 +5946,8 @@ mod tests {
 
         // With available_models set, discover_models short-circuits without HTTP.
         // The mock server is kept for the endpoint URL but never contacted.
-        let (ollama_endpoint, ollama_server) = start_mock_ollama_tags_server(vec!["llama3.2"]).await;
+        let (ollama_endpoint, ollama_server) =
+            start_mock_ollama_tags_server(vec!["llama3.2"]).await;
 
         let mut providers = HashMap::new();
         providers.insert(
@@ -6153,11 +6165,10 @@ mod tests {
         );
 
         assert!(
-            models
-                .iter()
-                .all(|m| !m.starts_with("ollama-empty/") && !m.starts_with("openrouter-empty/")
-                    && !m.starts_with("cohere-empty/")
-                    && !m.starts_with("custom-empty/")),
+            models.iter().all(|m| !m.starts_with("ollama-empty/")
+                && !m.starts_with("openrouter-empty/")
+                && !m.starts_with("cohere-empty/")
+                && !m.starts_with("custom-empty/")),
             "Providers without fallback models should contribute no entries, got: {:?}",
             models
         );
@@ -6266,7 +6277,10 @@ mod tests {
         let models = agent_manager.list_models(&session.id, None).await.unwrap();
 
         assert!(
-            models.is_empty() || models.iter().all(|m| m.starts_with("[error]") || !m.contains('/')),
+            models.is_empty()
+                || models
+                    .iter()
+                    .all(|m| m.starts_with("[error]") || !m.contains('/')),
             "Should not prefix models when llm_config is None"
         );
     }
@@ -6341,9 +6355,10 @@ mod tests {
             ]
         });
 
-        let models =
-            crate::provider::model_listing::openai_compat::parse_models_response(&payload.to_string())
-                .unwrap();
+        let models = crate::provider::model_listing::openai_compat::parse_models_response(
+            &payload.to_string(),
+        )
+        .unwrap();
 
         assert_eq!(
             models,
@@ -6364,9 +6379,10 @@ mod tests {
             ]
         });
 
-        let models =
-            crate::provider::model_listing::openai_compat::parse_models_response(&payload.to_string())
-                .unwrap();
+        let models = crate::provider::model_listing::openai_compat::parse_models_response(
+            &payload.to_string(),
+        )
+        .unwrap();
 
         assert_eq!(
             models,
@@ -6381,8 +6397,9 @@ mod tests {
             "other_key": []
         });
 
-        let result =
-            crate::provider::model_listing::openai_compat::parse_models_response(&payload.to_string());
+        let result = crate::provider::model_listing::openai_compat::parse_models_response(
+            &payload.to_string(),
+        );
 
         assert!(result.is_err());
     }
@@ -6401,10 +6418,12 @@ mod tests {
         )
         .await;
 
-        let models =
-            crate::provider::model_listing::openai_compat::list_models(&(endpoint + "/"), "test-key")
-                .await
-                .unwrap();
+        let models = crate::provider::model_listing::openai_compat::list_models(
+            &(endpoint + "/"),
+            "test-key",
+        )
+        .await
+        .unwrap();
         server.await.unwrap();
 
         assert_eq!(
@@ -6460,7 +6479,9 @@ mod tests {
         )
     }
 
-    async fn start_mock_ollama_tags_server(models: Vec<&str>) -> (String, tokio::task::JoinHandle<()>) {
+    async fn start_mock_ollama_tags_server(
+        models: Vec<&str>,
+    ) -> (String, tokio::task::JoinHandle<()>) {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
 
@@ -8365,10 +8386,7 @@ mod tests {
 
         // With the new rig_model_listing dispatch, failed providers silently
         // fall back to effective_models() — no error entries surfaced in the list.
-        let error_entries: Vec<_> = models
-            .iter()
-            .filter(|m| m.starts_with("[error]"))
-            .collect();
+        let error_entries: Vec<_> = models.iter().filter(|m| m.starts_with("[error]")).collect();
         assert_eq!(
             error_entries.len(),
             0,
@@ -8569,10 +8587,7 @@ mod tests {
 
         // With new rig_model_listing dispatch, failed providers silently fall back
         // to effective_models() — no error entries surfaced in the model list.
-        let error_entries: Vec<_> = models
-            .iter()
-            .filter(|m| m.starts_with("[error]"))
-            .collect();
+        let error_entries: Vec<_> = models.iter().filter(|m| m.starts_with("[error]")).collect();
         assert!(
             error_entries.is_empty(),
             "No error entries should be surfaced with new dispatch, got: {:?}",
@@ -8754,6 +8769,9 @@ mod tests {
 
         // Verify cache contains the same models
         let (cached_models, _) = agent_manager.model_cache.get("all").unwrap().clone();
-        assert_eq!(models1, cached_models, "Cached models should match returned models");
+        assert_eq!(
+            models1, cached_models,
+            "Cached models should match returned models"
+        );
     }
 }

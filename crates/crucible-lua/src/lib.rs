@@ -45,6 +45,7 @@
 
 pub mod annotations;
 mod ask;
+pub mod auth_plugin;
 pub mod capability_gate;
 mod commands;
 pub mod core_handler;
@@ -99,6 +100,7 @@ pub use ask::{
     register_ask_module_with_context, EventPushCallback, LuaAgentAskContext, LuaAskBatch,
     LuaAskBatchResponse, LuaAskContext, LuaAskError, LuaAskQuestion, LuaQuestionAnswer,
 };
+pub use auth_plugin::{fire_provider_auth_hooks, get_provider_auth_hooks};
 pub use capability_gate::{check_module_access, module_capability_map, ModuleCapabilityMapping};
 pub use commands::{command_to_descriptor, LuaCommandHandler};
 pub use config::{get_statusline_config, ConfigLoader, ConfigState};

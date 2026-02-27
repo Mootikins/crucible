@@ -227,6 +227,7 @@ impl TestHarness {
             None,
             None,
             None,
+            None,
         );
 
         let session = session_manager
