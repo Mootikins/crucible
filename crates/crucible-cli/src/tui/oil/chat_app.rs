@@ -552,84 +552,14 @@ impl App for OilChatApp {
                 }
                 Action::Continue
             }
-            ChatAppMsg::TextDelta(delta) => {
-                self.container_list.append_text(&delta);
-                Action::Continue
-            }
-            ChatAppMsg::ThinkingDelta(delta) => {
-                self.container_list.append_thinking(&delta);
-                Action::Continue
-            }
-            ChatAppMsg::ToolCall {
-                name,
-                args,
-                call_id,
-            } => {
-                if !self.container_list.is_streaming() {
-                    self.container_list.mark_turn_active();
-                }
-                self.message_queue.message_counter += 1;
-                let tool_id = format!("tool-{}", self.message_queue.message_counter);
-                tracing::debug!(
-                    tool_name = %name,
-                    ?call_id,
-                    args_len = args.len(),
-                    counter = self.message_queue.message_counter,
-                    "Adding ToolCall"
-                );
-                let mut tool = CachedToolCall::new(tool_id, &name, &args);
-                tool.call_id = call_id;
-                self.container_list.add_tool_call(tool);
-                Action::Continue
-            }
-            ChatAppMsg::ToolResultDelta {
-                name,
-                delta,
-                call_id,
-            } => {
-                tracing::debug!(
-                    tool_name = %name,
-                    ?call_id,
-                    delta_len = delta.len(),
-                    "Received ToolResultDelta"
-                );
-                self.container_list
-                    .update_tool(&name, call_id.as_deref(), |t| {
-                        t.append_output(&delta);
-                    });
-                self.maybe_spill_tool_output(&name);
-                Action::Continue
-            }
-            ChatAppMsg::ToolResultComplete { name, call_id } => {
-                tracing::debug!(tool_name = %name, ?call_id, "Received ToolResultComplete");
-                self.maybe_spill_tool_output(&name);
-                self.container_list
-                    .update_tool(&name, call_id.as_deref(), |t| {
-                        t.mark_complete();
-                    });
-                Action::Continue
-            }
-            ChatAppMsg::ToolResultError {
-                name,
-                error,
-                call_id,
-            } => {
-                tracing::debug!(tool_name = %name, ?call_id, error = %error, "Received ToolResultError");
-                self.container_list
-                    .update_tool(&name, call_id.as_deref(), |t| {
-                        t.set_error(crucible_tools::strip_tool_error_prefix(&error));
-                    });
-                Action::Continue
-            }
-            ChatAppMsg::StreamComplete => {
-                self.finalize_streaming();
-                self.process_deferred_queue()
-            }
-            ChatAppMsg::StreamCancelled => {
-                self.finalize_streaming();
-                self.add_notification(crucible_core::types::Notification::toast("Cancelled"));
-                self.process_deferred_queue()
-            }
+            msg @ (ChatAppMsg::TextDelta(_)
+            | ChatAppMsg::ThinkingDelta(_)
+            | ChatAppMsg::ToolCall { .. }
+            | ChatAppMsg::ToolResultDelta { .. }
+            | ChatAppMsg::ToolResultComplete { .. }
+            | ChatAppMsg::ToolResultError { .. }
+            | ChatAppMsg::StreamComplete
+            | ChatAppMsg::StreamCancelled) => self.handle_stream_msg(msg),
             ChatAppMsg::QueueMessage(content) => {
                 if self.is_streaming() {
                     self.message_queue.deferred_messages.push_back(content);
@@ -800,6 +730,90 @@ impl App for OilChatApp {
 }
 
 impl OilChatApp {
+    fn handle_stream_msg(&mut self, msg: ChatAppMsg) -> Action<ChatAppMsg> {
+        match msg {
+            ChatAppMsg::TextDelta(delta) => {
+                self.container_list.append_text(&delta);
+                Action::Continue
+            }
+            ChatAppMsg::ThinkingDelta(delta) => {
+                self.container_list.append_thinking(&delta);
+                Action::Continue
+            }
+            ChatAppMsg::ToolCall {
+                name,
+                args,
+                call_id,
+            } => {
+                if !self.container_list.is_streaming() {
+                    self.container_list.mark_turn_active();
+                }
+                self.message_queue.message_counter += 1;
+                let tool_id = format!("tool-{}", self.message_queue.message_counter);
+                tracing::debug!(
+                    tool_name = %name,
+                    ?call_id,
+                    args_len = args.len(),
+                    counter = self.message_queue.message_counter,
+                    "Adding ToolCall"
+                );
+                let mut tool = CachedToolCall::new(tool_id, &name, &args);
+                tool.call_id = call_id;
+                self.container_list.add_tool_call(tool);
+                Action::Continue
+            }
+            ChatAppMsg::ToolResultDelta {
+                name,
+                delta,
+                call_id,
+            } => {
+                tracing::debug!(
+                    tool_name = %name,
+                    ?call_id,
+                    delta_len = delta.len(),
+                    "Received ToolResultDelta"
+                );
+                self.container_list
+                    .update_tool(&name, call_id.as_deref(), |t| {
+                        t.append_output(&delta);
+                    });
+                self.maybe_spill_tool_output(&name);
+                Action::Continue
+            }
+            ChatAppMsg::ToolResultComplete { name, call_id } => {
+                tracing::debug!(tool_name = %name, ?call_id, "Received ToolResultComplete");
+                self.maybe_spill_tool_output(&name);
+                self.container_list
+                    .update_tool(&name, call_id.as_deref(), |t| {
+                        t.mark_complete();
+                    });
+                Action::Continue
+            }
+            ChatAppMsg::ToolResultError {
+                name,
+                error,
+                call_id,
+            } => {
+                tracing::debug!(tool_name = %name, ?call_id, error = %error, "Received ToolResultError");
+                self.container_list
+                    .update_tool(&name, call_id.as_deref(), |t| {
+                        t.set_error(crucible_tools::strip_tool_error_prefix(&error));
+                    });
+                Action::Continue
+            }
+            ChatAppMsg::StreamComplete => {
+                self.finalize_streaming();
+                self.process_deferred_queue()
+            }
+            ChatAppMsg::StreamCancelled => {
+                self.finalize_streaming();
+                self.add_notification(crucible_core::types::Notification::toast("Cancelled"));
+                self.process_deferred_queue()
+            }
+            _ => Action::Continue,
+        }
+    }
+
     pub fn with_on_submit<F>(mut self, callback: F) -> Self
     where
         F: Fn(String) + Send + Sync + 'static,
