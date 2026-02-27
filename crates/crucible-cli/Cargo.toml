@@ -54,7 +54,7 @@ crucible-acp = { path = "../crucible-acp" }
 
 crucible-daemon = { path = "../crucible-daemon" }
 crucible-rpc = { path = "../crucible-rpc" }
-crucible-skills = { path = "../crucible-skills" }
+
 
 crucible-observe = { path = "../crucible-observe" }
 crucible-oil = { path = "../crucible-oil" }
