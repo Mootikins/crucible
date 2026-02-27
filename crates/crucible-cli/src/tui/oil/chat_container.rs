@@ -13,6 +13,7 @@ use crate::tui::oil::components::{
 };
 use crate::tui::oil::markdown::{markdown_to_node_styled, Margins, RenderStyle};
 use crate::tui::oil::node::{col, row, scrollback, spinner, text, Node};
+use crate::tui::oil::render_state::RenderState;
 use crate::tui::oil::style::Padding;
 use crate::tui::oil::viewport_cache::{CachedShellExecution, CachedSubagent, CachedToolCall};
 
@@ -23,9 +24,7 @@ use crate::tui::oil::viewport_cache::{CachedShellExecution, CachedSubagent, Cach
 /// `(data, view_fn)` pairs using the `ContainerView` trait.
 #[derive(Debug, Clone, Copy)]
 pub struct ViewParams {
-    pub width: usize,
-    pub spinner_frame: usize,
-    pub show_thinking: bool,
+    pub render_state: RenderState,
     /// Whether this container is a continuation after a tool call (no bullet shown).
     pub is_continuation: bool,
     /// Whether this response is complete (derived from turn state + position).
@@ -163,9 +162,11 @@ impl ChatContainer {
         is_complete: bool,
     ) -> Node {
         self.view_with_params(&ViewParams {
-            width,
-            spinner_frame,
-            show_thinking,
+            render_state: RenderState {
+                terminal_width: width as u16,
+                spinner_frame,
+                show_thinking,
+            },
             is_continuation,
             is_complete,
         })
@@ -192,14 +193,12 @@ impl ChatContainer {
                 blocks,
                 thinking.as_ref(),
                 params.is_complete,
-                params.width,
-                params.show_thinking,
                 params.is_continuation,
-                params.spinner_frame,
+                &params.render_state,
             ),
 
             Self::ToolGroup { id, tools } => {
-                let content = render_tool_group(tools, params.spinner_frame);
+                let content = render_tool_group(tools, &params.render_state);
                 // Only wrap in scrollback (allow graduation) when all tools are
                 // complete AND this container is "done" (turn ended or more content
                 // follows). This prevents a completed ToolGroup from graduating
@@ -214,7 +213,7 @@ impl ChatContainer {
             }
 
             Self::Subagent { id, subagent } => {
-                let content = render_subagent(subagent, params.spinner_frame);
+                let content = render_subagent(subagent, params.render_state.spinner_frame);
                 use crate::tui::oil::viewport_cache::SubagentStatus;
                 let is_complete = matches!(
                     subagent.status,
@@ -228,7 +227,7 @@ impl ChatContainer {
             }
 
             Self::Delegation { id, delegation } => {
-                let content = render_subagent(delegation, params.spinner_frame);
+                let content = render_subagent(delegation, params.render_state.spinner_frame);
                 let is_complete = matches!(
                     delegation.status,
                     crate::tui::oil::viewport_cache::SubagentStatus::Completed
@@ -266,17 +265,16 @@ fn render_assistant_blocks_with_graduation(
     blocks: &[String],
     thinking: Option<&ThinkingBlock>,
     complete: bool,
-    width: usize,
-    show_thinking: bool,
     is_continuation: bool,
-    spinner_frame: usize,
+    render_state: &RenderState,
 ) -> Node {
     let mut nodes = Vec::new();
 
     // Render thinking block if present and enabled
-    if show_thinking {
+    if render_state.show_thinking {
         if let Some(tb) = thinking {
-            let thinking_node = render_thinking_block(&tb.content, tb.token_count, width);
+            let thinking_node =
+                render_thinking_block(&tb.content, tb.token_count, render_state.width());
             let thinking_with_margin = thinking_node.with_margin(Padding {
                 top: 1,
                 ..Default::default()
@@ -300,12 +298,12 @@ fn render_assistant_blocks_with_graduation(
 
     // Show spinner when streaming and no text yet
     if !complete && blocks.is_empty() {
-        let spinner_node = if thinking.is_some() && show_thinking {
+        let spinner_node = if thinking.is_some() && render_state.show_thinking {
             // Thinking is visible, show plain spinner below it
-            row([text(" "), spinner(None, spinner_frame)])
+            row([text(" "), spinner(None, render_state.spinner_frame)])
         } else {
             // No content at all yet — show spinner as the only indicator
-            row([text(" "), spinner(None, spinner_frame)])
+            row([text(" "), spinner(None, render_state.spinner_frame)])
         };
         nodes.push(spinner_node.with_margin(Padding {
             top: 1,
@@ -327,7 +325,7 @@ fn render_assistant_blocks_with_graduation(
         } else {
             Margins::assistant()
         };
-        let style = RenderStyle::natural_with_margins(width, margins);
+        let style = RenderStyle::natural_with_margins(render_state.width(), margins);
         let md_node = markdown_to_node_styled(block, style);
 
         // First block gets top margin, all get bottom margin
@@ -355,17 +353,17 @@ fn render_assistant_blocks_with_graduation(
 
     // Show spinner after text blocks while still streaming
     if !complete && !blocks.is_empty() {
-        nodes.push(row([text(" "), spinner(None, spinner_frame)]));
+        nodes.push(row([text(" "), spinner(None, render_state.spinner_frame)]));
     }
 
     col(nodes)
 }
 
 /// Render a group of tool calls compactly.
-fn render_tool_group(tools: &[CachedToolCall], spinner_frame: usize) -> Node {
+fn render_tool_group(tools: &[CachedToolCall], render_state: &RenderState) -> Node {
     let tool_nodes: Vec<Node> = tools
         .iter()
-        .map(|t| render_tool_call_with_frame(t, spinner_frame))
+        .map(|t| render_tool_call_with_frame(t, render_state.spinner_frame))
         .collect();
 
     // Tool calls are rendered tightly grouped (no gap)

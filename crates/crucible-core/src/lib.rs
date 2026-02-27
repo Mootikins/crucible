@@ -17,6 +17,7 @@ pub mod http;
 pub mod interaction;
 pub mod interaction_context;
 pub mod interaction_registry;
+pub mod kiln;
 pub mod merkle;
 pub mod note;
 pub mod parser;
@@ -42,6 +43,7 @@ pub use content_category::{ContentCategory, ContentCategoryError};
 pub use crucible_core::CrucibleCore;
 pub use discovery::{DiscoveryConfig, DiscoveryPaths};
 pub use interaction_context::{EventPushCallback, InteractionContext};
+pub use kiln::EXCLUDED_DIRS;
 
 // Re-export enrichment traits and types (implementations in crucible-daemon::enrichment)
 pub use enrichment::{

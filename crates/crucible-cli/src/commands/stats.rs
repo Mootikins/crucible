@@ -1,6 +1,6 @@
 use crate::config::CliConfig;
 use anyhow::{anyhow, Result};
-use crucible_daemon::kiln_manager::EXCLUDED_DIRS;
+use crucible_core::EXCLUDED_DIRS;
 use std::fs;
 use std::path::Path;
 use std::sync::Arc;

@@ -13,6 +13,7 @@ use crate::tui::oil::markdown::{
     markdown_to_node_styled, markdown_to_node_with_width, Margins, RenderStyle,
 };
 use crate::tui::oil::node::*;
+use crate::tui::oil::render_state::RenderState;
 use crate::tui::oil::style::{Color, Gap, Padding, Style};
 use crate::tui::oil::theme::ThemeTokens;
 use crate::tui::oil::viewport_cache::{CachedShellExecution, CachedSubagent, CachedToolCall};
@@ -2456,10 +2457,13 @@ impl OilChatApp {
             .map(|(i, c)| {
                 use crate::tui::oil::chat_container::ViewParams;
                 let abs_idx = self.container_list.viewport_start_index() + i;
-                let params = ViewParams {
-                    width: term_width,
+                let render_state = RenderState {
+                    terminal_width: term_width as u16,
                     spinner_frame: self.spinner_frame,
                     show_thinking: self.show_thinking,
+                };
+                let params = ViewParams {
+                    render_state,
                     is_continuation: self.container_list.is_continuation(abs_idx),
                     is_complete: self.container_list.is_response_complete(abs_idx),
                 };
@@ -2530,11 +2534,15 @@ impl OilChatApp {
         let input_mode = ComponentInputMode::from_content(self.input.content());
         let is_focused = !self.popup.show || ctx.is_focused(FOCUS_INPUT);
 
-        InputComponent::new(self.input.content(), self.input.cursor(), ctx.terminal_size.0 as usize)
-            .mode(input_mode)
-            .focused(is_focused)
-            .show_popup(self.popup.show)
-            .view(ctx)
+        InputComponent::new(
+            self.input.content(),
+            self.input.cursor(),
+            ctx.terminal_size.0 as usize,
+        )
+        .mode(input_mode)
+        .focused(is_focused)
+        .show_popup(self.popup.show)
+        .view(ctx)
     }
 
     fn get_popup_items(&self) -> Vec<PopupItemNode> {
