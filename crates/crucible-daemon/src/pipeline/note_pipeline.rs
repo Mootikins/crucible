@@ -166,6 +166,20 @@ impl NotePipeline {
             )
         })?;
         let phase2_duration = phase2_start.elapsed().as_millis() as u64;
+        let warnings = parsed
+            .parse_errors
+            .iter()
+            .map(|error| {
+                format!(
+                    "{:?} [{}:{}] (offset {}): {}",
+                    error.error_type,
+                    error.line,
+                    error.column,
+                    error.offset,
+                    error.message
+                )
+            })
+            .collect::<Vec<_>>();
         debug!("Phase 2: Parsed note successfully");
 
         let path_str = path.to_string_lossy();
@@ -234,9 +248,10 @@ impl NotePipeline {
         // Count of blocks enriched (embeddings generated)
         let blocks_enriched = enriched.embeddings.len();
 
-        Ok(ProcessingResult::success(
+        Ok(ProcessingResult::success_with_warnings(
             blocks_enriched,
             embeddings_generated,
+            warnings,
         ))
     }
 
@@ -701,5 +716,25 @@ mod tests {
             !result.is_skipped(),
             "empty markdown should process, not skip"
         );
+    }
+
+    #[tokio::test]
+    async fn malformed_frontmatter_returns_success_with_warnings() {
+        let enrichment = Arc::new(MockEnrichmentService::new());
+        let store = Arc::new(MockNoteStore::new());
+        let pipeline = create_pipeline(enrichment, store);
+
+        let tmp = write_temp_note("---\ntitle: [unterminated\n---\n\n# Heading\n");
+        let result = pipeline.process(tmp.path()).await.unwrap();
+
+        match result {
+            ProcessingResult::Success { warnings, .. } => {
+                assert!(
+                    !warnings.is_empty(),
+                    "malformed frontmatter should produce parse warnings"
+                );
+            }
+            other => panic!("expected success result, got: {other:?}"),
+        }
     }
 }
