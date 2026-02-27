@@ -48,6 +48,7 @@ pub mod tool_discovery;
 pub mod toon_response;
 pub mod utils;
 pub mod workspace;
+pub mod tool_modes;
 
 // ===== PUBLIC API EXPORTS =====
 
