@@ -16,10 +16,12 @@ mod storage;
 
 pub use agent::DaemonAgentHandle;
 pub use client::{
-    DaemonCapabilities, DaemonClient, LuaExecuteHookRequest, LuaExecuteHookResponse,
-    LuaInitSessionRequest, LuaInitSessionResponse, LuaRegisterHooksRequest,
-    LuaRegisterHooksResponse, LuaShutdownSessionRequest, LuaShutdownSessionResponse, SessionEvent,
-    VersionCheck,
+    DaemonCapabilities, DaemonClient, LuaDiscoverPluginsRequest, LuaDiscoverPluginsResponse,
+    LuaExecuteHookRequest, LuaExecuteHookResponse, LuaGenerateStubsRequest,
+    LuaGenerateStubsResponse, LuaInitSessionRequest, LuaInitSessionResponse,
+    LuaPluginHealthRequest, LuaPluginHealthResponse, LuaRegisterHooksRequest,
+    LuaRegisterHooksResponse, LuaRunPluginTestsRequest, LuaRunPluginTestsResponse,
+    LuaShutdownSessionRequest, LuaShutdownSessionResponse, SessionEvent, VersionCheck,
 };
 pub use storage::{DaemonNoteStore, DaemonStorageClient};
 
