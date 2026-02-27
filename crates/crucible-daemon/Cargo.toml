@@ -39,6 +39,7 @@ crucible-watch = { path = "../crucible-watch" }
 crucible-lua = { path = "../crucible-lua" }
 crucible-tools = { path = "../crucible-tools" }
 crucible-acp = { path = "../crucible-acp" }
+crucible-skills = { path = "../crucible-skills" }
 crucible-web = { path = "../crucible-web", optional = true }
 crucible-llm = { path = "../crucible-llm", default-features = false }
 genai = "0.5"
