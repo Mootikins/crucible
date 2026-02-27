@@ -15,6 +15,7 @@ use crate::pipeline::{NotePipeline, NotePipelineConfig, ParserBackend};
 use crucible_core::processing::InMemoryChangeDetectionStore;
 use crucible_core::storage::note_store::NoteRecord;
 use crucible_core::traits::{KnowledgeRepository, NoteInfo};
+use crucible_core::EXCLUDED_DIRS;
 use crucible_watch::{EventFilter, WatchManager, WatchManagerConfig};
 
 use crate::file_watch_bridge::create_event_bridge;
@@ -32,7 +33,10 @@ use crucible_sqlite::{adapters as sqlite_adapters, SqliteClientHandle, SqliteCon
 // ===========================================================================
 
 /// Directories to exclude from file discovery and watching
-pub const EXCLUDED_DIRS: &[&str] = &[".crucible", ".git", ".obsidian", "node_modules", ".trash"];
+/// (Re-exported from crucible-core)
+/// (Re-exported from crucible-core)
+
+
 
 
 // ===========================================================================
