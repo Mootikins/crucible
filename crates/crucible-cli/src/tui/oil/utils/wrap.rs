@@ -2,6 +2,10 @@
 //!
 //! Canonical implementations for wrapping text to terminal width
 //! while preserving ANSI escape codes.
+//!
+//! - [`wrap_to_width`] / [`wrap_to_width_indented`]: ANSI-aware, returns `String`
+//! - [`wrap_chars`]: Character-boundary splitting, returns `Vec<String>`
+//! - [`wrap_words`]: Word-aware wrapping via `textwrap`, returns `Vec<String>`
 
 pub use crucible_oil::ansi::wrap_styled_text;
 
@@ -105,6 +109,62 @@ pub fn wrap_to_width_indented(s: &str, max_width: usize, indent: usize) -> Strin
         .collect();
 
     result_lines.join("\n")
+}
+
+/// Wrap text by splitting at exact character boundaries.
+///
+/// This performs hard character-based wrapping without word awareness.
+/// Used for input fields where cursor arithmetic depends on fixed-width lines.
+///
+/// Returns at least one (possibly empty) string.
+pub fn wrap_chars(content: &str, max_width: usize) -> Vec<String> {
+    if content.is_empty() || max_width == 0 {
+        return vec![String::new()];
+    }
+
+    let chars: Vec<char> = content.chars().collect();
+    let mut lines = Vec::new();
+    let mut start = 0;
+
+    while start < chars.len() {
+        let end = (start + max_width).min(chars.len());
+        lines.push(chars[start..end].iter().collect());
+        start = end;
+    }
+
+    if lines.is_empty() {
+        lines.push(String::new());
+    }
+
+    lines
+}
+
+/// Wrap text using word-aware line breaking (via `textwrap`).
+///
+/// Preserves existing newlines. Does not hyphenate.
+/// Used for message display and viewport content wrapping.
+pub fn wrap_words(content: &str, width: usize) -> Vec<String> {
+    use textwrap::{wrap, Options, WordSplitter};
+
+    if width == 0 {
+        return vec![content.to_string()];
+    }
+
+    let options = Options::new(width).word_splitter(WordSplitter::NoHyphenation);
+
+    content
+        .lines()
+        .flat_map(|line| {
+            if line.is_empty() {
+                vec![String::new()]
+            } else {
+                wrap(line, &options)
+                    .into_iter()
+                    .map(|cow| cow.into_owned())
+                    .collect()
+            }
+        })
+        .collect()
 }
 
 #[cfg(test)]

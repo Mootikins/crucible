@@ -16,6 +16,7 @@ use crate::tui::oil::node::*;
 use crate::tui::oil::render_state::RenderState;
 use crate::tui::oil::style::{Color, Gap, Padding, Style};
 use crate::tui::oil::theme::ThemeTokens;
+use crate::tui::oil::utils::wrap_chars;
 use crate::tui::oil::viewport_cache::{CachedShellExecution, CachedSubagent, CachedToolCall};
 use crossterm::event::KeyCode;
 use crossterm::terminal::{EnterAlternateScreen, LeaveAlternateScreen};
@@ -39,27 +40,6 @@ pub const INPUT_MAX_CONTENT_LINES: usize = 3;
 const MAX_DISPLAY_ITEMS: usize = 512;
 const MAX_SHELL_HISTORY: usize = 100;
 
-fn wrap_content(content: &str, max_width: usize) -> Vec<String> {
-    if content.is_empty() || max_width == 0 {
-        return vec![String::new()];
-    }
-
-    let chars: Vec<char> = content.chars().collect();
-    let mut lines = Vec::new();
-    let mut start = 0;
-
-    while start < chars.len() {
-        let end = (start + max_width).min(chars.len());
-        lines.push(chars[start..end].iter().collect());
-        start = end;
-    }
-
-    if lines.is_empty() {
-        lines.push(String::new());
-    }
-
-    lines
-}
 
 #[derive(Debug, Clone)]
 pub enum ChatAppMsg {
@@ -2761,7 +2741,7 @@ impl OilChatApp {
             content
         };
         let content_width = width.saturating_sub(4);
-        let lines = wrap_content(display_content, content_width);
+        let lines = wrap_chars(display_content, content_width);
         let visible_lines = lines.len().min(INPUT_MAX_CONTENT_LINES);
         visible_lines + 2
     }

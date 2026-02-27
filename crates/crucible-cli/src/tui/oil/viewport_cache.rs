@@ -1,7 +1,7 @@
 use std::collections::VecDeque;
 use std::path::PathBuf;
 use std::sync::Arc;
-use textwrap::{wrap, Options, WordSplitter};
+use crate::tui::oil::utils::wrap_words;
 
 use super::chat_app::Role;
 
@@ -29,7 +29,7 @@ impl CachedMessage {
 
     pub fn wrapped_lines(&mut self, width: usize) -> &[String] {
         if self.wrapped.as_ref().map(|(w, _)| *w) != Some(width) {
-            let lines = wrap_content(&self.content, width);
+            let lines = wrap_words(&self.content, width);
             self.wrapped = Some((width, lines));
         }
         self.wrapped
@@ -296,24 +296,3 @@ impl CachedChatItem {
     }
 }
 
-fn wrap_content(content: &str, width: usize) -> Vec<String> {
-    if width == 0 {
-        return vec![content.to_string()];
-    }
-
-    let options = Options::new(width).word_splitter(WordSplitter::NoHyphenation);
-
-    content
-        .lines()
-        .flat_map(|line| {
-            if line.is_empty() {
-                vec![String::new()]
-            } else {
-                wrap(line, &options)
-                    .into_iter()
-                    .map(|cow| cow.into_owned())
-                    .collect()
-            }
-        })
-        .collect()
-}
