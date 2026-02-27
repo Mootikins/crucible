@@ -128,7 +128,7 @@ async fn async_main(cli: Cli, standalone_sock: Option<std::path::PathBuf>) -> Re
     };
 
     // Build env filter: RUST_LOG overrides, with base_level as fallback
-    // This allows: RUST_LOG=crucible_rig=info,crucible_cli=debug cargo run -- chat
+    // This allows: RUST_LOG=crucible_daemon=info,crucible_cli=debug cargo run -- chat
     let env_filter = tracing_subscriber::EnvFilter::builder()
         .with_default_directive(base_level.into())
         .from_env_lossy();
