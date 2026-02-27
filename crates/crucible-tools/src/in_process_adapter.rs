@@ -1,18 +1,10 @@
 use std::collections::HashSet;
 use std::sync::Arc;
 
-use rmcp::handler::server::wrapper::Parameters;
 use rmcp::model::{CallToolResult, Tool as McpTool};
 
 use crucible_core::error_utils::strip_tool_error_prefix;
-use crate::mcp_server::{
-    CancelJobParams, CrucibleMcpServer, DelegateSessionParams, GetJobResultParams, ListJobsParams,
-};
-use crate::notes::{
-    CreateNoteParams, DeleteNoteParams, ListNotesParams, ReadMetadataParams, ReadNoteParams,
-    UpdateNoteParams,
-};
-use crate::search::{PropertySearchParams, SemanticSearchParams, TextSearchParams};
+use crate::mcp_server::CrucibleMcpServer;
 use crate::tool_modes::PLAN_TOOL_NAMES;
 
 
@@ -42,6 +34,7 @@ impl InProcessMcpAdapter {
 
 }
 
+#[allow(dead_code)]
 fn filter_plan_tools(all_tools: Vec<McpTool>) -> Vec<McpTool> {
     let plan_names: HashSet<&str> = PLAN_TOOL_NAMES.iter().copied().collect();
     all_tools
@@ -52,11 +45,13 @@ fn filter_plan_tools(all_tools: Vec<McpTool>) -> Vec<McpTool> {
 
 
 
+#[allow(dead_code)]
 fn normalize_tool_error_message(message: &str) -> String {
     let unquoted = serde_json::from_str::<String>(message).unwrap_or_else(|_| message.to_string());
     strip_tool_error_prefix(&unquoted)
 }
 
+#[allow(dead_code)]
 fn first_text(result: &CallToolResult) -> Option<&str> {
     result
         .content
@@ -64,6 +59,7 @@ fn first_text(result: &CallToolResult) -> Option<&str> {
         .find_map(|content| content.as_text().map(|text| text.text.as_str()))
 }
 
+#[allow(dead_code)]
 fn into_object(
     value: serde_json::Value,
 ) -> Result<serde_json::Map<String, serde_json::Value>, rmcp::ErrorData> {
@@ -77,6 +73,7 @@ fn into_object(
     }
 }
 
+#[allow(dead_code)]
 fn parse_params<T: serde::de::DeserializeOwned>(
     map: serde_json::Map<String, serde_json::Value>,
 ) -> Result<T, rmcp::ErrorData> {
