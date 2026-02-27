@@ -908,6 +908,8 @@ async fn handle_legacy_request(
         "skills.list" => handle_skills_list(req).await,
         "skills.get" => handle_skills_get(req).await,
         "skills.search" => handle_skills_search(req).await,
+        "agents.list_profiles" => handle_agents_list_profiles(req, agent_manager).await,
+        "agents.resolve_profile" => handle_agents_resolve_profile(req, agent_manager).await,
         _ => {
             tracing::warn!("Unknown RPC method: {:?}", req.method);
             Response::error(
@@ -3877,6 +3879,55 @@ async fn handle_skills_search(req: Request) -> Response {
         Err(e) => internal_error(req.id, e),
     }
 }
+
+async fn handle_agents_list_profiles(req: Request, agent_manager: &Arc<AgentManager>) -> Response {
+    let profiles = agent_manager.build_available_agents();
+    let builtins = crucible_acp::discovery::default_agent_profiles();
+
+    let mut entries: Vec<serde_json::Value> = profiles
+        .iter()
+        .map(|(name, profile)| {
+            serde_json::json!({
+                "name": name,
+                "description": profile.description.clone().unwrap_or_default(),
+                "command": profile.command.clone().unwrap_or_default(),
+                "is_builtin": builtins.contains_key(name),
+            })
+        })
+        .collect();
+    entries.sort_by(|a, b| {
+        a["name"]
+            .as_str()
+            .unwrap_or("")
+            .cmp(b["name"].as_str().unwrap_or(""))
+    });
+    Response::success(req.id, serde_json::json!({ "profiles": entries }))
+}
+
+async fn handle_agents_resolve_profile(
+    req: Request,
+    agent_manager: &Arc<AgentManager>,
+) -> Response {
+    let name = require_param!(req, "name", as_str).to_string();
+    let profiles = agent_manager.build_available_agents();
+    let builtins = crucible_acp::discovery::default_agent_profiles();
+
+    match profiles.get(&name) {
+        Some(profile) => Response::success(
+            req.id,
+            serde_json::json!({
+                "name": name,
+                "description": profile.description.clone().unwrap_or_default(),
+                "command": profile.command.clone().unwrap_or_default(),
+                "is_builtin": builtins.contains_key(&name),
+                "args": profile.args.clone().unwrap_or_default(),
+                "env": profile.env,
+            }),
+        ),
+        None => Response::success(req.id, serde_json::Value::Null),
+    }
+}
+
 
 #[cfg(test)]
 mod tests {
