@@ -88,11 +88,7 @@ async fn test_e2e_lua_degraded_daemon_starts_with_broken_plugin() {
         .expect("Failed to connect to daemon");
 
     // 1. Ping should work — core daemon is functional
-    let response = rpc_call(
-        &mut stream,
-        r#"{"jsonrpc":"2.0","id":1,"method":"ping"}"#,
-    )
-    .await;
+    let response = rpc_call(&mut stream, r#"{"jsonrpc":"2.0","id":1,"method":"ping"}"#).await;
     assert_eq!(
         response.get("result").and_then(|v| v.as_str()),
         Some("pong"),
@@ -126,7 +122,9 @@ async fn test_e2e_lua_degraded_daemon_starts_with_broken_plugin() {
         kiln_path
     );
     let response = rpc_call(&mut stream, &create_req).await;
-    let result = response.get("result").expect("Session create should succeed");
+    let result = response
+        .get("result")
+        .expect("Session create should succeed");
     assert!(
         result.get("session_id").is_some(),
         "Should get session_id even in degraded Lua mode"
@@ -210,7 +208,9 @@ async fn test_e2e_lua_degraded_state_detectable_via_rpc() {
         kiln_path
     );
     let response = rpc_call(&mut stream, &create_req).await;
-    let result = response.get("result").expect("Session create should succeed");
+    let result = response
+        .get("result")
+        .expect("Session create should succeed");
     let session_id = result
         .get("session_id")
         .and_then(|v| v.as_str())
@@ -222,7 +222,9 @@ async fn test_e2e_lua_degraded_state_detectable_via_rpc() {
         session_id
     );
     let response = rpc_call(&mut stream, &pause_req).await;
-    let result = response.get("result").expect("Session pause should succeed");
+    let result = response
+        .get("result")
+        .expect("Session pause should succeed");
     let state = result.get("state").and_then(|v| v.as_str()).unwrap_or("");
     assert!(
         state.to_lowercase().contains("paused"),
@@ -236,7 +238,9 @@ async fn test_e2e_lua_degraded_state_detectable_via_rpc() {
         session_id
     );
     let response = rpc_call(&mut stream, &resume_req).await;
-    let result = response.get("result").expect("Session resume should succeed");
+    let result = response
+        .get("result")
+        .expect("Session resume should succeed");
     let state = result.get("state").and_then(|v| v.as_str()).unwrap_or("");
     assert!(
         state.to_lowercase().contains("active"),

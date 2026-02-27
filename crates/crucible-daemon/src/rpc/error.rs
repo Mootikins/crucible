@@ -51,7 +51,6 @@ pub fn anyhow_to_rpc_error(e: anyhow::Error) -> RpcError {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;

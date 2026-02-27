@@ -30,11 +30,14 @@ fn is_write_tool_name(tool_name: &str) -> bool {
     false
 }
 
-
 fn usage_to_token_usage(usage: &genai::chat::Usage) -> TokenUsage {
     let to_u32 = |v: Option<i32>| -> u32 {
         let n = v.unwrap_or(0);
-        if n < 0 { 0 } else { n as u32 }
+        if n < 0 {
+            0
+        } else {
+            n as u32
+        }
     };
 
     TokenUsage {
@@ -88,7 +91,9 @@ impl GenaiAgentHandle {
         system: &str,
         tools: Vec<LlmToolDefinition>,
     ) -> Self {
-        let backend = provider.parse::<BackendType>().unwrap_or(BackendType::OpenAI);
+        let backend = provider
+            .parse::<BackendType>()
+            .unwrap_or(BackendType::OpenAI);
 
         let config = LlmProviderConfig::builder(backend).model(model).build();
         let client = build_genai_client(&config);
@@ -112,7 +117,10 @@ impl GenaiAgentHandle {
         }
     }
 
-    fn send_mock_contract_stream(&mut self, message: String) -> BoxStream<'static, ChatResult<ChatChunk>> {
+    fn send_mock_contract_stream(
+        &mut self,
+        message: String,
+    ) -> BoxStream<'static, ChatResult<ChatChunk>> {
         self.history.push(ChatMessage::user(&message));
 
         let mut chunks: Vec<ChatResult<ChatChunk>> = Vec::new();
@@ -336,7 +344,10 @@ impl GenaiAgentHandle {
 
 #[async_trait]
 impl AgentHandle for GenaiAgentHandle {
-    fn send_message_stream(&mut self, message: String) -> BoxStream<'static, ChatResult<ChatChunk>> {
+    fn send_message_stream(
+        &mut self,
+        message: String,
+    ) -> BoxStream<'static, ChatResult<ChatChunk>> {
         if self.max_tool_depth == 0 {
             return self.send_mock_contract_stream(message);
         }
@@ -362,7 +373,11 @@ impl AgentHandle for GenaiAgentHandle {
             }
         }
 
-        let req_tools: Vec<Tool> = self.visible_tools().iter().map(super::tool_bridge::llm_tool_to_genai).collect();
+        let req_tools: Vec<Tool> = self
+            .visible_tools()
+            .iter()
+            .map(super::tool_bridge::llm_tool_to_genai)
+            .collect();
         let request = ChatRequest::new(messages)
             .with_system(self.system_prompt.clone())
             .with_tools(req_tools);
@@ -373,7 +388,9 @@ impl AgentHandle for GenaiAgentHandle {
             .with_capture_usage(true)
             .with_capture_reasoning_content(true);
         let options = if let Some(budget) = self.thinking_budget {
-            options.with_reasoning_effort(ReasoningEffort::Budget(budget.clamp(0, u32::MAX as i64) as u32))
+            options.with_reasoning_effort(ReasoningEffort::Budget(
+                budget.clamp(0, u32::MAX as i64) as u32
+            ))
         } else {
             options
         };
@@ -529,9 +546,8 @@ mod tests {
             .model("gpt-4o-mini")
             .build();
         let client = build_genai_client(&config);
-        let model = build_model_iden(&BackendType::OpenAI, "gpt-4o-mini").unwrap_or_else(|| {
-            ModelIden::new(genai::adapter::AdapterKind::OpenAI, "gpt-4o-mini")
-        });
+        let model = build_model_iden(&BackendType::OpenAI, "gpt-4o-mini")
+            .unwrap_or_else(|| ModelIden::new(genai::adapter::AdapterKind::OpenAI, "gpt-4o-mini"));
 
         let negative_budget_handle = GenaiAgentHandle::new(
             client.clone(),
@@ -542,13 +558,8 @@ mod tests {
         );
         assert_eq!(negative_budget_handle.thinking_budget, Some(-5));
 
-        let max_budget_handle = GenaiAgentHandle::new(
-            client,
-            model,
-            "system",
-            Vec::new(),
-            Some(i64::MAX),
-        );
+        let max_budget_handle =
+            GenaiAgentHandle::new(client, model, "system", Vec::new(), Some(i64::MAX));
         assert_eq!(max_budget_handle.thinking_budget, Some(i64::MAX));
 
         let clamped_negative = (-5_i64).clamp(0, u32::MAX as i64) as u32;

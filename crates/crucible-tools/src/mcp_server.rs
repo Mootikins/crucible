@@ -291,7 +291,6 @@ impl CrucibleMcpServer {
         self.kiln_tools.get_kiln_info().await
     }
 
-
     #[tool(
         description = "Delegate a task to another AI agent (e.g., cursor, opencode). The target agent receives the prompt, executes the task, and returns the result. Use this when asked to hand off work to a specific agent."
     )]

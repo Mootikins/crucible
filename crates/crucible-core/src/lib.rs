@@ -105,10 +105,6 @@ pub use types::{
 };
 
 // Re-export consumed database types from their canonical location in types::database
-pub use types::database::{
-    DbError, DbResult, DocumentId, QueryResult, Record, RecordId, SearchResult,
-    UnifiedSearchResult,
-};
 pub use note::{NoteNode, ViewportState};
 pub use parser::{
     // Parser types (canonical definitions in crucible-core::parser::types)
@@ -131,6 +127,9 @@ pub use parser::{
     // Note: MarkdownParser trait is exported from traits:: module above
 };
 pub use properties::{AttributeValue, PropertyMap};
+pub use types::database::{
+    DbError, DbResult, DocumentId, QueryResult, Record, RecordId, SearchResult, UnifiedSearchResult,
+};
 
 // Re-export interaction protocol types
 pub use interaction::{

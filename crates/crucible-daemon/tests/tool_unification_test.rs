@@ -77,7 +77,6 @@ impl EmbeddingProvider for MockEmbeddingProvider {
     }
 }
 
-
 fn to_set(names: &[&str]) -> HashSet<String> {
     names.iter().map(|name| (*name).to_string()).collect()
 }
@@ -191,4 +190,3 @@ async fn list_tool_names_over_http(host: &InProcessMcpHost) -> Vec<String> {
         })
         .collect()
 }
-

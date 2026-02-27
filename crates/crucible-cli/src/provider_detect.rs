@@ -409,5 +409,4 @@ mod tests {
         assert!(result.is_some());
         assert!(result.unwrap() > 0);
     }
-
 }

@@ -495,7 +495,6 @@ impl CopilotClient {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -543,5 +542,4 @@ mod tests {
         assert!(debug.contains("REDACTED"));
         assert!(!debug.contains("gho_secret_token"));
     }
-
 }

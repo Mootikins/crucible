@@ -27,7 +27,10 @@ impl KilnTools {
         // Extract kiln name from path
         let name = std::path::Path::new(&self.kiln_path)
             .file_name()
-            .map_or_else(|| "unknown".to_string(), |n| n.to_string_lossy().into_owned());
+            .map_or_else(
+                || "unknown".to_string(),
+                |n| n.to_string_lossy().into_owned(),
+            );
 
         // Calculate statistics
         let mut total_files = 0;
