@@ -51,9 +51,7 @@ crucible-lua = { path = "../crucible-lua" }
 
 crucible-tools = { path = "../crucible-tools" }
 crucible-acp = { path = "../crucible-acp" }
-crucible-rig = { path = "../crucible-rig" }
 
-crucible-watch = { path = "../crucible-watch" }
 crucible-daemon = { path = "../crucible-daemon" }
 crucible-rpc = { path = "../crucible-rpc" }
 crucible-skills = { path = "../crucible-skills" }
