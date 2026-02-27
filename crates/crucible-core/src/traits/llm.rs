@@ -157,21 +157,15 @@ pub enum ToolChoice {
     },
 }
 
-/// Chat completion request
+/// Model configuration and sampling parameters
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ChatCompletionRequest {
-    /// Model to use
-    pub model: String,
-    /// Conversation messages
-    pub messages: Vec<ContextMessage>,
+pub struct ModelConfig {
     /// Maximum tokens to generate
     pub max_tokens: Option<u32>,
     /// Temperature for generation (0.0-2.0)
     pub temperature: Option<f32>,
     /// Top p for nucleus sampling (0.0-1.0)
     pub top_p: Option<f32>,
-    /// System prompt (alternative to system message)
-    pub system: Option<String>,
     /// Stop sequences
     pub stop: Option<Vec<String>>,
     /// Frequency penalty (-2.0 to 2.0)
@@ -180,12 +174,23 @@ pub struct ChatCompletionRequest {
     pub presence_penalty: Option<f32>,
     /// Logit bias
     pub logit_bias: Option<HashMap<i32, f32>>,
+    /// Seed for deterministic generation
+    pub seed: Option<i64>,
+}
+
+/// Chat completion request
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChatCompletionRequest {
+    /// Model to use
+    pub model: String,
+    /// Conversation messages
+    pub messages: Vec<ContextMessage>,
+    /// System prompt (alternative to system message)
+    pub system: Option<String>,
     /// User identifier
     pub user: Option<String>,
     /// Response format
     pub response_format: Option<ResponseFormat>,
-    /// Seed for deterministic generation
-    pub seed: Option<i64>,
     /// Tool choice configuration
     pub tool_choice: Option<ToolChoice>,
     /// Available tools
@@ -194,6 +199,9 @@ pub struct ChatCompletionRequest {
     pub functions: Option<Vec<FunctionDefinition>>,
     /// Function call behavior (legacy, prefer tool_choice)
     pub function_call: Option<FunctionCallBehavior>,
+    /// Model configuration and sampling parameters
+    #[serde(flatten)]
+    pub model_config: ModelConfig,
 }
 
 impl ChatCompletionRequest {
@@ -202,21 +210,23 @@ impl ChatCompletionRequest {
         Self {
             model,
             messages,
-            max_tokens: None,
-            temperature: None,
-            top_p: None,
             system: None,
-            stop: None,
-            frequency_penalty: None,
-            presence_penalty: None,
-            logit_bias: None,
             user: None,
             response_format: None,
-            seed: None,
             tool_choice: None,
             tools: None,
             functions: None,
             function_call: None,
+            model_config: ModelConfig {
+                max_tokens: None,
+                temperature: None,
+                top_p: None,
+                stop: None,
+                frequency_penalty: None,
+                presence_penalty: None,
+                logit_bias: None,
+                seed: None,
+            },
         }
     }
 
@@ -228,13 +238,13 @@ impl ChatCompletionRequest {
 
     /// Set max tokens
     pub fn with_max_tokens(mut self, tokens: u32) -> Self {
-        self.max_tokens = Some(tokens);
+        self.model_config.max_tokens = Some(tokens);
         self
     }
 
     /// Set temperature
     pub fn with_temperature(mut self, temp: f32) -> Self {
-        self.temperature = Some(temp.clamp(0.0, 2.0));
+        self.model_config.temperature = Some(temp.clamp(0.0, 2.0));
         self
     }
 
@@ -596,8 +606,8 @@ mod tests {
                 .with_max_tokens(100)
                 .with_temperature(0.7);
 
-        assert_eq!(request.max_tokens, Some(100));
-        assert_eq!(request.temperature, Some(0.7));
+        assert_eq!(request.model_config.max_tokens, Some(100));
+        assert_eq!(request.model_config.temperature, Some(0.7));
     }
 
     #[test]
