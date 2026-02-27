@@ -76,7 +76,6 @@ serde_yaml = "0.9"
 
 # Additional dependencies for migration
 futures = "0.3"
-rig = { package = "rig-core", version = "0.30", features = [] }
 
 # Search tools
 grep = "0.4"
