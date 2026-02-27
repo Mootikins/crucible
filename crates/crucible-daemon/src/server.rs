@@ -7,6 +7,7 @@ use crate::event_emitter::emit_event;
 #[cfg(test)]
 use crate::event_emitter::stamp_event;
 use crate::kiln_manager::KilnManager;
+use crate::mcp_server::McpServerManager;
 use crate::project_manager::ProjectManager;
 use crate::protocol::{
     Request, Response, SessionEventMessage, INTERNAL_ERROR, INVALID_PARAMS, METHOD_NOT_FOUND,
@@ -111,6 +112,7 @@ pub struct Server {
     llm_config: Option<LlmConfig>,
     #[cfg(feature = "web")]
     web_config: Option<crucible_config::WebConfig>,
+    mcp_server_manager: Arc<McpServerManager>,
 }
 
 struct NoopSessionRpc;
@@ -272,6 +274,7 @@ impl Server {
             crucible_config::crucible_home().join("projects.json"),
         ));
         let lua_sessions = Arc::new(DashMap::new());
+        let mcp_server_manager = Arc::new(McpServerManager::new());
 
         let ctx = RpcContext::new(
             kiln_manager.clone(),
@@ -299,6 +302,7 @@ impl Server {
             plugin_loader,
             plugin_watch,
             llm_config,
+            mcp_server_manager,
             #[cfg(feature = "web")]
             web_config,
         })
@@ -569,6 +573,7 @@ impl Server {
                                 event_tx: self.event_tx.clone(),
                                 plugin_loader: self.plugin_loader.clone(),
                                 llm_config: self.llm_config.clone(),
+                                mcp_server_manager: self.mcp_server_manager.clone(),
                             });
                             let event_rx = ctx.event_tx.subscribe();
                             tokio::spawn(async move {
@@ -621,6 +626,7 @@ struct ServerContext {
     event_tx: broadcast::Sender<SessionEventMessage>,
     plugin_loader: Arc<Mutex<Option<DaemonPluginLoader>>>,
     llm_config: Option<LlmConfig>,
+    mcp_server_manager: Arc<McpServerManager>,
 }
 
 async fn handle_client(
@@ -782,6 +788,7 @@ async fn handle_request(req: Request, client_id: ClientId, ctx: &ServerContext) 
                 &ctx.event_tx,
                 &ctx.plugin_loader,
                 &ctx.llm_config,
+                &ctx.mcp_server_manager,
             )
             .await;
         }
@@ -801,6 +808,7 @@ async fn handle_legacy_request(
     event_tx: &broadcast::Sender<SessionEventMessage>,
     plugin_loader: &Arc<Mutex<Option<DaemonPluginLoader>>>,
     llm_config: &Option<LlmConfig>,
+    mcp_server_manager: &Arc<McpServerManager>,
 ) -> Response {
     tracing::debug!("Legacy handler for method={:?}", req.method);
 
@@ -887,6 +895,9 @@ async fn handle_legacy_request(
         "lua.register_hooks" => handle_lua_register_hooks(req, lua_sessions).await,
         "lua.execute_hook" => handle_lua_execute_hook(req, lua_sessions).await,
         "lua.shutdown_session" => handle_lua_shutdown_session(req, lua_sessions).await,
+        "mcp.start" => handle_mcp_start(req, kiln_manager, mcp_server_manager).await,
+        "mcp.stop" => handle_mcp_stop(req, mcp_server_manager).await,
+        "mcp.status" => handle_mcp_status(req, mcp_server_manager).await,
         _ => {
             tracing::warn!("Unknown RPC method: {:?}", req.method);
             Response::error(
@@ -3295,6 +3306,39 @@ async fn handle_session_reindex(req: Request, km: &Arc<KilnManager>) -> Response
             "errors": errors,
         }),
     )
+}
+
+// =============================================================================
+// MCP Server RPC Handlers
+// =============================================================================
+
+async fn handle_mcp_start(
+    req: Request,
+    km: &Arc<KilnManager>,
+    mcp_mgr: &Arc<McpServerManager>,
+) -> Response {
+    let kiln_path = require_param!(req, "kiln_path", as_str);
+    let transport = optional_param!(req, "transport", as_str).unwrap_or("sse");
+    let port = optional_param!(req, "port", as_u64).unwrap_or(3847) as u16;
+    let no_just = optional_param!(req, "no_just", as_bool).unwrap_or(false);
+    let just_dir = optional_param!(req, "just_dir", as_str);
+
+    match mcp_mgr.start(km, transport, port, kiln_path, no_just, just_dir).await {
+        Ok(result) => Response::success(req.id, result),
+        Err(e) => Response::error(req.id, INVALID_PARAMS, e),
+    }
+}
+
+async fn handle_mcp_stop(req: Request, mcp_mgr: &Arc<McpServerManager>) -> Response {
+    match mcp_mgr.stop().await {
+        Ok(result) => Response::success(req.id, result),
+        Err(e) => Response::error(req.id, INVALID_PARAMS, e),
+    }
+}
+
+async fn handle_mcp_status(req: Request, mcp_mgr: &Arc<McpServerManager>) -> Response {
+    let status = mcp_mgr.status().await;
+    Response::success(req.id, status)
 }
 
 #[cfg(test)]
