@@ -3,6 +3,7 @@ use crate::tui::oil::components::InputMode;
 use crate::tui::oil::node::*;
 use crate::tui::oil::style::Style;
 use crate::tui::oil::ViewContext;
+use crate::tui::oil::utils::wrap_chars;
 
 use super::INPUT_MAX_CONTENT_LINES;
 
@@ -71,27 +72,6 @@ impl<'a> InputComponent<'a> {
     }
 }
 
-fn wrap_content(content: &str, max_width: usize) -> Vec<String> {
-    if content.is_empty() || max_width == 0 {
-        return vec![String::new()];
-    }
-
-    let chars: Vec<char> = content.chars().collect();
-    let mut lines = Vec::new();
-    let mut start = 0;
-
-    while start < chars.len() {
-        let end = (start + max_width).min(chars.len());
-        lines.push(chars[start..end].iter().collect());
-        start = end;
-    }
-
-    if lines.is_empty() {
-        lines.push(String::new());
-    }
-
-    lines
-}
 
 impl Component for InputComponent<'_> {
     fn view(&self, _ctx: &ViewContext<'_>) -> Node {
@@ -117,7 +97,7 @@ impl Component for InputComponent<'_> {
         let display_cursor = self.cursor.saturating_sub(cursor_offset);
 
         let content_width = self.width.saturating_sub(prompt.len() + 1);
-        let all_lines = wrap_content(display_content, content_width);
+        let all_lines = wrap_chars(display_content, content_width);
 
         let (cursor_line, cursor_col) = if content_width > 0 && !all_lines.is_empty() {
             let line_idx = display_cursor / content_width;
