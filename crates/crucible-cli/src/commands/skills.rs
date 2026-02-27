@@ -3,7 +3,7 @@
 //! Provides CLI commands for listing, showing, and searching skills.
 
 use anyhow::Result;
-use crucible_skills::discovery::{default_discovery_paths, FolderDiscovery};
+use crucible_rpc::DaemonClient;
 
 use crate::cli::SkillsCommands;
 use crate::config::CliConfig;
@@ -19,10 +19,13 @@ pub async fn execute(config: CliConfig, command: SkillsCommands) -> Result<()> {
 
 /// List discovered skills
 async fn list(config: &CliConfig, scope_filter: Option<String>) -> Result<()> {
-    let paths = default_discovery_paths(Some(&std::env::current_dir()?), Some(&config.kiln_path));
+    let client = DaemonClient::connect_or_start().await?;
+    let response = client.skills_list(&config.kiln_path, scope_filter.as_deref()).await?;
 
-    let discovery = FolderDiscovery::new(paths);
-    let skills = discovery.discover()?;
+    let skills = response["skills"]
+        .as_array()
+        .unwrap_or(&vec![])
+        .to_vec();
 
     if skills.is_empty() {
         println!("No skills discovered.");
@@ -35,19 +38,16 @@ async fn list(config: &CliConfig, scope_filter: Option<String>) -> Result<()> {
 
     println!("Discovered {} skill(s):\n", skills.len());
 
-    for (name, resolved) in &skills {
-        let scope = resolved.skill.source.scope.to_string();
-
-        if let Some(ref filter) = scope_filter {
-            if &scope != filter {
-                continue;
-            }
-        }
+    for skill in skills {
+        let name = skill["name"].as_str().unwrap_or("unknown");
+        let scope = skill["scope"].as_str().unwrap_or("unknown");
+        let description = skill["description"].as_str().unwrap_or("");
+        let shadowed_count = skill["shadowed_count"].as_u64().unwrap_or(0);
 
         println!("  {} [{}]", name, scope);
-        println!("    {}", resolved.skill.description);
-        if !resolved.shadowed.is_empty() {
-            println!("    (shadows {} other(s))", resolved.shadowed.len());
+        println!("    {}", description);
+        if shadowed_count > 0 {
+            println!("    (shadows {} other(s))", shadowed_count);
         }
         println!();
     }
@@ -57,35 +57,35 @@ async fn list(config: &CliConfig, scope_filter: Option<String>) -> Result<()> {
 
 /// Show skill details
 async fn show(config: &CliConfig, name: String) -> Result<()> {
-    let paths = default_discovery_paths(Some(&std::env::current_dir()?), Some(&config.kiln_path));
+    let client = DaemonClient::connect_or_start().await?;
+    let response = client.skills_get(&name, &config.kiln_path).await?;
 
-    let discovery = FolderDiscovery::new(paths);
-    let skills = discovery.discover()?;
-
-    match skills.get(&name) {
-        Some(resolved) => {
-            let skill = &resolved.skill;
-            println!("Name: {}", skill.name);
-            println!("Scope: {}", skill.source.scope);
-            println!("Description: {}", skill.description);
-            println!("Source: {}", skill.source.path.display());
-            if let Some(agent) = &skill.source.agent {
-                println!("Agent: {}", agent);
-            }
-            if let Some(license) = &skill.license {
-                println!("License: {}", license);
-            }
-            println!("\n--- Instructions ---\n");
-            println!("{}", skill.body);
-        }
-        None => {
-            println!("Skill not found: {}", name);
-            println!("\nAvailable skills:");
-            for skill_name in skills.keys() {
-                println!("  - {}", skill_name);
+    if response.is_null() || response.get("name").is_none() {
+        println!("Skill not found: {}", name);
+        println!("\nAvailable skills:");
+        let list_response = client.skills_list(&config.kiln_path, None).await?;
+        if let Some(skills) = list_response["skills"].as_array() {
+            for skill in skills {
+                if let Some(skill_name) = skill["name"].as_str() {
+                    println!("  - {}", skill_name);
+                }
             }
         }
+        return Ok(());
     }
+
+    println!("Name: {}", response["name"].as_str().unwrap_or("unknown"));
+    println!("Scope: {}", response["scope"].as_str().unwrap_or("unknown"));
+    println!("Description: {}", response["description"].as_str().unwrap_or(""));
+    println!("Source: {}", response["source_path"].as_str().unwrap_or("unknown"));
+    if let Some(agent) = response["agent"].as_str() {
+        println!("Agent: {}", agent);
+    }
+    if let Some(license) = response["license"].as_str() {
+        println!("License: {}", license);
+    }
+    println!("\n--- Instructions ---\n");
+    println!("{}", response["body"].as_str().unwrap_or(""));
 
     Ok(())
 }
@@ -94,32 +94,24 @@ async fn show(config: &CliConfig, name: String) -> Result<()> {
 async fn search(config: &CliConfig, query: String, limit: usize) -> Result<()> {
     println!("Searching for: '{}' (limit: {})", query, limit);
 
-    let paths = default_discovery_paths(Some(&std::env::current_dir()?), Some(&config.kiln_path));
+    let client = DaemonClient::connect_or_start().await?;
+    let response = client.skills_search(&query, &config.kiln_path, Some(limit)).await?;
 
-    let discovery = FolderDiscovery::new(paths);
-    let skills = discovery.discover()?;
-
-    let query_lower = query.to_lowercase();
-    let matches: Vec<_> = skills
-        .iter()
-        .filter(|(name, resolved)| {
-            name.to_lowercase().contains(&query_lower)
-                || resolved
-                    .skill
-                    .description
-                    .to_lowercase()
-                    .contains(&query_lower)
-        })
-        .take(limit)
-        .collect();
+    let matches = response["skills"]
+        .as_array()
+        .unwrap_or(&vec![])
+        .to_vec();
 
     if matches.is_empty() {
         println!("\nNo skills matched '{}'", query);
     } else {
         println!("\nFound {} matching skill(s):\n", matches.len());
-        for (name, resolved) in matches {
-            println!("  {} [{}]", name, resolved.skill.source.scope);
-            println!("    {}", resolved.skill.description);
+        for skill in matches {
+            let name = skill["name"].as_str().unwrap_or("unknown");
+            let scope = skill["scope"].as_str().unwrap_or("unknown");
+            let description = skill["description"].as_str().unwrap_or("");
+            println!("  {} [{}]", name, scope);
+            println!("    {}", description);
             println!();
         }
     }
