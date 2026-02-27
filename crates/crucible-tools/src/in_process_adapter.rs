@@ -6,7 +6,7 @@ use rig::tool::Tool;
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::model::{CallToolResult, Tool as McpTool};
 
-use crate::error_utils::strip_tool_error_prefix;
+use crucible_core::error_utils::strip_tool_error_prefix;
 use crate::mcp_server::{
     CancelJobParams, CrucibleMcpServer, DelegateSessionParams, GetJobResultParams, ListJobsParams,
 };
