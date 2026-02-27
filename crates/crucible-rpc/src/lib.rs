@@ -15,7 +15,12 @@ pub mod lifecycle;
 mod storage;
 
 pub use agent::DaemonAgentHandle;
-pub use client::{DaemonCapabilities, DaemonClient, SessionEvent, VersionCheck};
+pub use client::{
+    DaemonCapabilities, DaemonClient, LuaExecuteHookRequest, LuaExecuteHookResponse,
+    LuaInitSessionRequest, LuaInitSessionResponse, LuaRegisterHooksRequest,
+    LuaRegisterHooksResponse, LuaShutdownSessionRequest, LuaShutdownSessionResponse, SessionEvent,
+    VersionCheck,
+};
 pub use storage::{DaemonNoteStore, DaemonStorageClient};
 
 pub use crucible_core::protocol::socket_path;
