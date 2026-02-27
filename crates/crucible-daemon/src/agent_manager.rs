@@ -272,6 +272,64 @@ struct StreamContext {
     model: String,
 }
 
+#[derive(Clone)]
+struct AgentCache {
+    inner: Arc<DashMap<String, Arc<Mutex<BoxedAgentHandle>>>>,
+}
+
+impl AgentCache {
+    fn new() -> Self {
+        Self {
+            inner: Arc::new(DashMap::new()),
+        }
+    }
+
+    fn get(&self, key: &str) -> Option<dashmap::mapref::one::Ref<String, Arc<Mutex<BoxedAgentHandle>>>> {
+        self.inner.get(key)
+    }
+
+    fn insert(&self, key: String, value: Arc<Mutex<BoxedAgentHandle>>) {
+        self.inner.insert(key, value);
+    }
+
+    fn remove(&self, key: &str) -> Option<(String, Arc<Mutex<BoxedAgentHandle>>)> {
+        self.inner.remove(key)
+    }
+
+    fn contains_key(&self, key: &str) -> bool {
+        self.inner.contains_key(key)
+    }
+}
+
+#[derive(Clone)]
+struct SessionStateCache {
+    inner: Arc<DashMap<String, Arc<tokio::sync::Mutex<SessionEventState>>>>,
+}
+
+impl SessionStateCache {
+    fn new() -> Self {
+        Self {
+            inner: Arc::new(DashMap::new()),
+        }
+    }
+
+    fn get(&self, key: &str) -> Option<dashmap::mapref::one::Ref<String, Arc<tokio::sync::Mutex<SessionEventState>>>> {
+        self.inner.get(key)
+    }
+
+    fn insert(&self, key: String, value: Arc<tokio::sync::Mutex<SessionEventState>>) {
+        self.inner.insert(key, value);
+    }
+
+    fn remove(&self, key: &str) -> Option<(String, Arc<tokio::sync::Mutex<SessionEventState>>)> {
+        self.inner.remove(key)
+    }
+
+    fn contains_key(&self, key: &str) -> bool {
+        self.inner.contains_key(key)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ResolvedProvider {
     /// Backend/provider type
@@ -287,12 +345,12 @@ pub(crate) struct ResolvedProvider {
 pub struct AgentManager {
     request_state: Arc<DashMap<String, RequestState>>,
     // TODO: invalidate agent_cache entries on kiln hot-swap (multi-kiln support)
-    agent_cache: Arc<DashMap<String, Arc<Mutex<BoxedAgentHandle>>>>,
+    agent_cache: AgentCache,
     pub(crate) model_cache: Arc<DashMap<String, (Vec<String>, Instant)>>,
     kiln_manager: Arc<KilnManager>,
     session_manager: Arc<SessionManager>,
     background_manager: Arc<BackgroundJobManager>,
-    session_states: Arc<DashMap<String, Arc<tokio::sync::Mutex<SessionEventState>>>>,
+    session_states: SessionStateCache,
     pending_permissions: Arc<DashMap<String, HashMap<PermissionId, PendingPermission>>>,
     mcp_gateway: Option<Arc<tokio::sync::RwLock<crucible_tools::mcp_gateway::McpGatewayManager>>>,
     llm_config: Option<crucible_config::LlmConfig>,
@@ -316,12 +374,12 @@ impl AgentManager {
     ) -> Self {
         Self {
             request_state: Arc::new(DashMap::new()),
-            agent_cache: Arc::new(DashMap::new()),
+            agent_cache: AgentCache::new(),
             model_cache: Arc::new(DashMap::new()),
             kiln_manager,
             session_manager,
             background_manager,
-            session_states: Arc::new(DashMap::new()),
+            session_states: SessionStateCache::new(),
             pending_permissions: Arc::new(DashMap::new()),
             mcp_gateway,
             llm_config,
