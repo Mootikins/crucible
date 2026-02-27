@@ -366,6 +366,44 @@ impl KilnManager {
         }
     }
 
+    pub async fn handle_file_deleted(&self, kiln_path: &Path, file_path: &Path) -> Result<bool> {
+        use crucible_core::events::SessionEvent;
+        use crucible_core::storage::NoteStore;
+
+        if !is_markdown_file(file_path) {
+            return Ok(false);
+        }
+
+        self.open(kiln_path).await?;
+
+        let canonical = kiln_path
+            .canonicalize()
+            .unwrap_or_else(|_| kiln_path.to_path_buf());
+
+        let mut conns = self.connections.write().await;
+        let conn = conns
+            .get_mut(&canonical)
+            .ok_or_else(|| anyhow::anyhow!("Kiln not found after opening"))?;
+
+        conn.last_access = Instant::now();
+
+        let relative_path = match file_path
+            .strip_prefix(&canonical)
+            .or_else(|_| file_path.strip_prefix(kiln_path))
+        {
+            Ok(path) => path,
+            Err(_) => return Ok(false),
+        };
+
+        let relative_path = relative_path.to_string_lossy().replace('\\', "/");
+        let event = conn.handle.as_note_store().delete(&relative_path).await?;
+
+        match event {
+            SessionEvent::NoteDeleted { existed, .. } => Ok(existed),
+            _ => Ok(false),
+        }
+    }
+
     /// Process multiple files through the kiln's pipeline
     ///
     /// Returns (processed_count, skipped_count, errors)
@@ -396,8 +434,14 @@ impl KilnManager {
 
         for path in file_paths {
             match conn.pipeline.process(path).await {
-                Ok(ProcessingResult::Success { .. }) => {
+                Ok(ProcessingResult::Success { warnings, .. }) => {
                     processed += 1;
+
+                    if !warnings.is_empty() {
+                        for warning in warnings {
+                            warn!("Parse warning for {}: {}", path.display(), warning);
+                        }
+                    }
                 }
                 Ok(ProcessingResult::Skipped) | Ok(ProcessingResult::NoChanges) => {
                     skipped += 1;
