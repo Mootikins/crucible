@@ -28,6 +28,7 @@ use crucible_lua::{
     ScriptHandlerResult, Session as LuaSession, SessionConfigRpc,
 };
 use crucible_lua::stubs::StubGenerator;
+use crucible_skills::discovery::{default_discovery_paths, FolderDiscovery};
 use dashmap::DashMap;
 
 use crate::protocol::RequestId;
@@ -904,6 +905,9 @@ async fn handle_legacy_request(
         "mcp.start" => handle_mcp_start(req, kiln_manager, mcp_server_manager).await,
         "mcp.stop" => handle_mcp_stop(req, mcp_server_manager).await,
         "mcp.status" => handle_mcp_status(req, mcp_server_manager).await,
+        "skills.list" => handle_skills_list(req).await,
+        "skills.get" => handle_skills_get(req).await,
+        "skills.search" => handle_skills_search(req).await,
         _ => {
             tracing::warn!("Unknown RPC method: {:?}", req.method);
             Response::error(
@@ -3744,6 +3748,134 @@ async fn handle_mcp_stop(req: Request, mcp_mgr: &Arc<McpServerManager>) -> Respo
 async fn handle_mcp_status(req: Request, mcp_mgr: &Arc<McpServerManager>) -> Response {
     let status = mcp_mgr.status().await;
     Response::success(req.id, status)
+}
+
+async fn handle_skills_list(req: Request) -> Response {
+    let kiln_path = require_param!(req, "kiln_path", as_str).to_string();
+    let scope_filter = optional_param!(req, "scope_filter", as_str).map(|s| s.to_string());
+
+    let result = tokio::task::spawn_blocking(move || {
+        let cwd = std::env::current_dir().unwrap_or_default();
+        let kiln = PathBuf::from(&kiln_path);
+        let paths = default_discovery_paths(Some(&cwd), Some(&kiln));
+        let discovery = FolderDiscovery::new(paths);
+        discovery.discover()
+    })
+    .await;
+
+    match result {
+        Ok(Ok(skills)) => {
+            let mut entries: Vec<serde_json::Value> = skills
+                .iter()
+                .filter(|(_, resolved)| {
+                    if let Some(ref filter) = scope_filter {
+                        resolved.skill.source.scope.to_string() == *filter
+                    } else {
+                        true
+                    }
+                })
+                .map(|(name, resolved)| {
+                    serde_json::json!({
+                        "name": name,
+                        "scope": resolved.skill.source.scope.to_string(),
+                        "description": resolved.skill.description,
+                        "shadowed_count": resolved.shadowed.len(),
+                    })
+                })
+                .collect();
+            entries.sort_by(|a, b| {
+                a["name"].as_str().unwrap_or("").cmp(&b["name"].as_str().unwrap_or(""))
+            });
+            Response::success(req.id, serde_json::json!({ "skills": entries }))
+        }
+        Ok(Err(e)) => internal_error(req.id, e),
+        Err(e) => internal_error(req.id, e),
+    }
+}
+
+async fn handle_skills_get(req: Request) -> Response {
+    let name = require_param!(req, "name", as_str).to_string();
+    let kiln_path = require_param!(req, "kiln_path", as_str).to_string();
+
+    let result = tokio::task::spawn_blocking(move || {
+        let cwd = std::env::current_dir().unwrap_or_default();
+        let kiln = PathBuf::from(&kiln_path);
+        let paths = default_discovery_paths(Some(&cwd), Some(&kiln));
+        let discovery = FolderDiscovery::new(paths);
+        discovery.discover()
+    })
+    .await;
+
+    match result {
+        Ok(Ok(skills)) => match skills.get(&name) {
+            Some(resolved) => {
+                let skill = &resolved.skill;
+                Response::success(
+                    req.id,
+                    serde_json::json!({
+                        "name": skill.name,
+                        "scope": skill.source.scope.to_string(),
+                        "description": skill.description,
+                        "source_path": skill.source.path.to_string_lossy(),
+                        "agent": skill.source.agent,
+                        "license": skill.license,
+                        "body": skill.body,
+                    }),
+                )
+            }
+            None => Response::error(
+                req.id,
+                INVALID_PARAMS,
+                format!("Skill not found: {}", name),
+            ),
+        },
+        Ok(Err(e)) => internal_error(req.id, e),
+        Err(e) => internal_error(req.id, e),
+    }
+}
+
+async fn handle_skills_search(req: Request) -> Response {
+    let query = require_param!(req, "query", as_str).to_string();
+    let kiln_path = require_param!(req, "kiln_path", as_str).to_string();
+    let limit = optional_param!(req, "limit", as_u64).unwrap_or(20) as usize;
+
+    let result = tokio::task::spawn_blocking(move || {
+        let cwd = std::env::current_dir().unwrap_or_default();
+        let kiln = PathBuf::from(&kiln_path);
+        let paths = default_discovery_paths(Some(&cwd), Some(&kiln));
+        let discovery = FolderDiscovery::new(paths);
+        discovery.discover()
+    })
+    .await;
+
+    match result {
+        Ok(Ok(skills)) => {
+            let query_lower = query.to_lowercase();
+            let matches: Vec<serde_json::Value> = skills
+                .iter()
+                .filter(|(name, resolved)| {
+                    name.to_lowercase().contains(&query_lower)
+                        || resolved
+                            .skill
+                            .description
+                            .to_lowercase()
+                            .contains(&query_lower)
+                })
+                .take(limit)
+                .map(|(name, resolved)| {
+                    serde_json::json!({
+                        "name": name,
+                        "scope": resolved.skill.source.scope.to_string(),
+                        "description": resolved.skill.description,
+                        "shadowed_count": resolved.shadowed.len(),
+                    })
+                })
+                .collect();
+            Response::success(req.id, serde_json::json!({ "skills": matches }))
+        }
+        Ok(Err(e)) => internal_error(req.id, e),
+        Err(e) => internal_error(req.id, e),
+    }
 }
 
 #[cfg(test)]

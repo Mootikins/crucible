@@ -3066,6 +3066,7 @@ dependencies = [
  "crucible-observe",
  "crucible-parser",
  "crucible-rpc",
+ "crucible-skills",
  "crucible-sqlite",
  "crucible-tools",
  "crucible-watch",
