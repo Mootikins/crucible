@@ -6,7 +6,7 @@ use crate::connection::SqlitePool;
 use crate::note_store::SqliteNoteStore;
 use crate::SqliteConfig;
 use anyhow::Result;
-use crucible_core::database::{QueryResult, Record, RecordId};
+use crucible_core::{QueryResult, Record, RecordId};
 use crucible_core::storage::NoteStore;
 use std::collections::HashMap;
 use std::sync::Arc;

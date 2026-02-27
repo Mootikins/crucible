@@ -49,9 +49,9 @@
 use async_trait::async_trait;
 use std::collections::HashMap;
 
-// Re-export database types to avoid duplication
+// Re-export database types from their canonical location
 // These are the canonical definitions for database operations
-pub use crate::database::{DbError, DbResult, QueryResult, Record, RecordId};
+pub use crate::types::database::{DbError, DbResult, QueryResult, Record, RecordId};
 
 // Alias for backward compatibility - prefer DbError/DbResult in new code
 pub type StorageError = DbError;
@@ -127,8 +127,8 @@ pub trait Storage: Send + Sync {
     async fn initialize_schema(&self) -> StorageResult<()>;
 }
 
-// Note: QueryResult, Record, and RecordId are now re-exported from database.rs
-// Tests for those types are in database.rs
+// Note: QueryResult, Record, and RecordId are defined in types::database
+// Tests for those types are in types/database.rs
 
 #[cfg(test)]
 mod tests {

@@ -3,7 +3,7 @@
 use anyhow::Result;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use crucible_core::database::DocumentId;
+use crucible_core::DocumentId;
 use crucible_core::events::SessionEvent;
 use crucible_core::parser::{BlockHash, ParsedNote};
 use crucible_core::storage::{
