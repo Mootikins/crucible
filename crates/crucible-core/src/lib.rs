@@ -9,6 +9,7 @@ pub mod crdt;
 pub mod crucible_core;
 pub mod discovery;
 pub mod enrichment;
+pub mod error_utils;
 pub mod events;
 pub mod fuzzy;
 pub mod hashing;
@@ -43,6 +44,7 @@ pub use crucible_core::CrucibleCore;
 pub use discovery::{DiscoveryConfig, DiscoveryPaths};
 pub use interaction_context::{EventPushCallback, InteractionContext};
 pub use kiln::EXCLUDED_DIRS;
+pub use error_utils::strip_tool_error_prefix;
 
 // Re-export enrichment traits and types (implementations in crucible-daemon::enrichment)
 pub use enrichment::{

@@ -666,7 +666,7 @@ impl OilChatApp {
                 tracing::debug!(tool_name = %name, ?call_id, error = %error, "Received ToolResultError");
                 self.container_list
                     .update_tool(&name, call_id.as_deref(), |t| {
-                        t.set_error(crucible_tools::strip_tool_error_prefix(&error));
+                        t.set_error(crucible_core::error_utils::strip_tool_error_prefix(&error));
                     });
                 Action::Continue
             }
