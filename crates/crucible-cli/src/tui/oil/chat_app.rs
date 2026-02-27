@@ -595,54 +595,15 @@ impl App for OilChatApp {
                 Action::Continue
             }
             ChatAppMsg::ClearHistory => Action::Continue,
-            ChatAppMsg::SwitchModel(model) => {
-                self.model = model;
-                self.status = format!("Model: {}", self.model);
-                Action::Continue
-            }
-            ChatAppMsg::FetchModels => {
-                self.model_list_state = ModelListState::Loading;
-                self.status = "Fetching models...".to_string();
-                Action::Continue
-            }
-            ChatAppMsg::ModelsLoaded(models) => {
-                self.available_models = models;
-                self.model_list_state = ModelListState::Loaded;
-                if self.popup.kind == AutocompleteKind::Model && self.popup.show {
-                    self.popup.selected = 0;
-                }
-                Action::Continue
-            }
-            ChatAppMsg::ModelsFetchFailed(reason) => {
-                self.model_list_state = ModelListState::Failed(reason.clone());
-                self.notification_area
-                    .add(crucible_core::types::Notification::warning(format!(
-                        "Failed to fetch models: {}",
-                        reason
-                    )));
-                Action::Continue
-            }
-            ChatAppMsg::McpStatusLoaded(servers) => {
-                let connected = servers.iter().filter(|s| s.connected).count();
-                let tools: usize = servers.iter().map(|s| s.tool_count).sum();
-                self.set_mcp_servers(servers.clone());
-                if connected > 0 {
-                    self.add_notification(crucible_core::types::Notification::toast(format!(
-                        "MCP: {} server(s) connected, {} tools",
-                        connected, tools
-                    )));
-                }
-                Action::Continue
-            }
-            ChatAppMsg::PluginStatusLoaded(entries) => {
-                // Error notifications are surfaced once during runner init
-                // (see OilChatRunner::setup_app). Only store status here.
-                self.plugin_status = entries;
-                Action::Continue
-            }
-            ChatAppMsg::SetThinkingBudget(_) => Action::Continue,
-            ChatAppMsg::SetTemperature(_) => Action::Continue,
-            ChatAppMsg::SetMaxTokens(_) => Action::Continue,
+            msg @ (ChatAppMsg::SwitchModel(_)
+            | ChatAppMsg::FetchModels
+            | ChatAppMsg::ModelsLoaded(_)
+            | ChatAppMsg::ModelsFetchFailed(_)
+            | ChatAppMsg::SetThinkingBudget(_)
+            | ChatAppMsg::SetTemperature(_)
+            | ChatAppMsg::SetMaxTokens(_)
+            | ChatAppMsg::McpStatusLoaded(_)
+            | ChatAppMsg::PluginStatusLoaded(_)) => self.handle_config_msg(msg),
             ChatAppMsg::SubagentSpawned { id, prompt } => {
                 if !self.container_list.is_streaming() {
                     self.container_list.mark_turn_active();
@@ -810,6 +771,60 @@ impl OilChatApp {
                 self.add_notification(crucible_core::types::Notification::toast("Cancelled"));
                 self.process_deferred_queue()
             }
+            _ => Action::Continue,
+        }
+    }
+
+    fn handle_config_msg(&mut self, msg: ChatAppMsg) -> Action<ChatAppMsg> {
+        match msg {
+            ChatAppMsg::SwitchModel(model) => {
+                self.model = model;
+                self.status = format!("Model: {}", self.model);
+                Action::Continue
+            }
+            ChatAppMsg::FetchModels => {
+                self.model_list_state = ModelListState::Loading;
+                self.status = "Fetching models...".to_string();
+                Action::Continue
+            }
+            ChatAppMsg::ModelsLoaded(models) => {
+                self.available_models = models;
+                self.model_list_state = ModelListState::Loaded;
+                if self.popup.kind == AutocompleteKind::Model && self.popup.show {
+                    self.popup.selected = 0;
+                }
+                Action::Continue
+            }
+            ChatAppMsg::ModelsFetchFailed(reason) => {
+                self.model_list_state = ModelListState::Failed(reason.clone());
+                self.notification_area
+                    .add(crucible_core::types::Notification::warning(format!(
+                        "Failed to fetch models: {}",
+                        reason
+                    )));
+                Action::Continue
+            }
+            ChatAppMsg::McpStatusLoaded(servers) => {
+                let connected = servers.iter().filter(|s| s.connected).count();
+                let tools: usize = servers.iter().map(|s| s.tool_count).sum();
+                self.set_mcp_servers(servers.clone());
+                if connected > 0 {
+                    self.add_notification(crucible_core::types::Notification::toast(format!(
+                        "MCP: {} server(s) connected, {} tools",
+                        connected, tools
+                    )));
+                }
+                Action::Continue
+            }
+            ChatAppMsg::PluginStatusLoaded(entries) => {
+                // Error notifications are surfaced once during runner init
+                // (see OilChatRunner::setup_app). Only store status here.
+                self.plugin_status = entries;
+                Action::Continue
+            }
+            ChatAppMsg::SetThinkingBudget(_) => Action::Continue,
+            ChatAppMsg::SetTemperature(_) => Action::Continue,
+            ChatAppMsg::SetMaxTokens(_) => Action::Continue,
             _ => Action::Continue,
         }
     }
