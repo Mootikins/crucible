@@ -30,7 +30,6 @@
 | `crucible-sqlite` | SQLite storage (default); fast, lightweight | `SqliteStorage` |
 | `crucible-lua` | Lua/Luau with Fennel support | `LuaExecutor`, `FennelCompiler` |
 | `crucible-llm` | Embedding backends | `EmbeddingBackend` (FastEmbed, Burn, LlamaCpp) |
-| `crucible-rig` | LLM chat via Rig | Ollama, OpenAI, Anthropic adapters |
 | `crucible-parser` | Markdown parsing | `MarkdownParser` |
 | `crucible-config` | Configuration types and loading | `AppConfig`, provider configs |
 | `crucible-watch` | File system watching | Change detection |
@@ -221,7 +220,6 @@ crucible/
 │   ├── crucible-lance/          # LanceDB vector storage
 │   ├── crucible-lua/            # Lua/Luau with Fennel
 │   ├── crucible-llm/            # Embedding backends
-│   ├── crucible-rig/            # LLM chat via Rig
 │   ├── crucible-parser/         # Markdown parsing
 │   ├── crucible-config/         # Configuration types
 │   ├── crucible-watch/          # File watching
