@@ -5,7 +5,6 @@
 use crate::cli::SessionCommands;
 use crate::config::CliConfig;
 use anyhow::{anyhow, Result};
-use crucible_acp::discovery::default_agent_profiles;
 use crucible_config::BackendType;
 use crucible_core::session::SessionAgent;
 use crucible_observe::{LogEvent, SessionId, SessionType};
@@ -959,8 +958,9 @@ async fn daemon_create(
     let session_id = result["session_id"].as_str().unwrap_or("unknown");
 
     if let Some(agent_name) = agent {
-        let profile = resolve_acp_profile(config, agent_name)
-            .ok_or_else(|| anyhow!("Unknown ACP agent profile: {}", agent_name))?;
+        let profile = resolve_acp_profile(&client, agent_name)
+            .await
+            .map_err(|e| anyhow!("Failed to resolve ACP agent profile: {}", e))?;
         let session_agent = SessionAgent::from_profile(&profile, agent_name);
         client
             .session_configure_agent(session_id, &session_agent)
@@ -980,16 +980,14 @@ async fn daemon_create(
     Ok(())
 }
 
-fn resolve_acp_profile(
-    config: &CliConfig,
+async fn resolve_acp_profile(
+    client: &DaemonClient,
     agent_name: &str,
-) -> Option<crucible_config::AgentProfile> {
-    let builtins = default_agent_profiles();
-    if let Some(profile) = builtins.get(agent_name) {
-        return Some(profile.clone());
-    }
-
-    config.acp.agents.get(agent_name).cloned()
+) -> Result<crucible_config::AgentProfile> {
+    let profile_json = client.agents_resolve_profile(agent_name).await?;
+    let profile: crucible_config::AgentProfile = serde_json::from_value(profile_json)
+        .map_err(|e| anyhow!("Failed to deserialize agent profile: {}", e))?;
+    Ok(profile)
 }
 
 /// Pause a daemon session
