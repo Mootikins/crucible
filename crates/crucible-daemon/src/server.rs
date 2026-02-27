@@ -20,7 +20,13 @@ use crate::session_manager::SessionManager;
 use crate::session_storage::{FileSessionStorage, SessionStorage};
 use anyhow::Result;
 use crucible_config::{DataClassification, LlmConfig, TrustLevel};
+use crucible_core::events::SessionEvent;
 use crucible_core::session::RecordingMode;
+use crucible_lua::{
+    register_crucible_on_api, LuaExecutor, LuaScriptHandlerRegistry, ScriptHandlerResult,
+    Session as LuaSession, SessionConfigRpc,
+};
+use dashmap::DashMap;
 
 use crate::protocol::RequestId;
 use crate::subscription::{ClientId, SubscriptionManager};
@@ -97,6 +103,7 @@ pub struct Server {
     background_manager: Arc<BackgroundJobManager>,
     subscription_manager: Arc<SubscriptionManager>,
     project_manager: Arc<ProjectManager>,
+    lua_sessions: Arc<DashMap<String, Arc<Mutex<LuaSessionState>>>>,
     event_tx: broadcast::Sender<SessionEventMessage>,
     dispatcher: Arc<RpcDispatcher>,
     plugin_loader: Arc<Mutex<Option<DaemonPluginLoader>>>,
@@ -104,6 +111,69 @@ pub struct Server {
     llm_config: Option<LlmConfig>,
     #[cfg(feature = "web")]
     web_config: Option<crucible_config::WebConfig>,
+}
+
+struct NoopSessionRpc;
+
+impl SessionConfigRpc for NoopSessionRpc {
+    fn get_temperature(&self) -> Option<f64> {
+        None
+    }
+
+    fn set_temperature(&self, _temp: f64) -> Result<(), String> {
+        Ok(())
+    }
+
+    fn get_max_tokens(&self) -> Option<u32> {
+        None
+    }
+
+    fn set_max_tokens(&self, _tokens: Option<u32>) -> Result<(), String> {
+        Ok(())
+    }
+
+    fn get_thinking_budget(&self) -> Option<i64> {
+        None
+    }
+
+    fn set_thinking_budget(&self, _budget: i64) -> Result<(), String> {
+        Ok(())
+    }
+
+    fn get_model(&self) -> Option<String> {
+        None
+    }
+
+    fn switch_model(&self, _model: &str) -> Result<(), String> {
+        Ok(())
+    }
+
+    fn list_models(&self) -> Vec<String> {
+        Vec::new()
+    }
+
+    fn get_mode(&self) -> String {
+        "chat".to_string()
+    }
+
+    fn set_mode(&self, _mode: &str) -> Result<(), String> {
+        Ok(())
+    }
+
+    fn notify(&self, _notification: crucible_core::types::Notification) {}
+
+    fn toggle_messages(&self) {}
+
+    fn show_messages(&self) {}
+
+    fn hide_messages(&self) {}
+
+    fn clear_messages(&self) {}
+}
+
+struct LuaSessionState {
+    executor: LuaExecutor,
+    registry: LuaScriptHandlerRegistry,
 }
 
 impl Server {
@@ -201,6 +271,7 @@ impl Server {
         let project_manager = Arc::new(ProjectManager::new(
             crucible_config::crucible_home().join("projects.json"),
         ));
+        let lua_sessions = Arc::new(DashMap::new());
 
         let ctx = RpcContext::new(
             kiln_manager.clone(),
@@ -222,6 +293,7 @@ impl Server {
             background_manager,
             subscription_manager,
             project_manager,
+            lua_sessions,
             event_tx,
             dispatcher,
             plugin_loader,
@@ -493,6 +565,7 @@ impl Server {
                                 agent_manager: self.agent_manager.clone(),
                                 subscription_manager: self.subscription_manager.clone(),
                                 project_manager: self.project_manager.clone(),
+                                lua_sessions: self.lua_sessions.clone(),
                                 event_tx: self.event_tx.clone(),
                                 plugin_loader: self.plugin_loader.clone(),
                                 llm_config: self.llm_config.clone(),
@@ -544,6 +617,7 @@ struct ServerContext {
     agent_manager: Arc<AgentManager>,
     subscription_manager: Arc<SubscriptionManager>,
     project_manager: Arc<ProjectManager>,
+    lua_sessions: Arc<DashMap<String, Arc<Mutex<LuaSessionState>>>>,
     event_tx: broadcast::Sender<SessionEventMessage>,
     plugin_loader: Arc<Mutex<Option<DaemonPluginLoader>>>,
     llm_config: Option<LlmConfig>,
@@ -704,6 +778,7 @@ async fn handle_request(req: Request, client_id: ClientId, ctx: &ServerContext) 
                 &ctx.session_manager,
                 &ctx.agent_manager,
                 &ctx.project_manager,
+                &ctx.lua_sessions,
                 &ctx.event_tx,
                 &ctx.plugin_loader,
                 &ctx.llm_config,
@@ -722,6 +797,7 @@ async fn handle_legacy_request(
     session_manager: &Arc<SessionManager>,
     agent_manager: &Arc<AgentManager>,
     project_manager: &Arc<ProjectManager>,
+    lua_sessions: &Arc<DashMap<String, Arc<Mutex<LuaSessionState>>>>,
     event_tx: &broadcast::Sender<SessionEventMessage>,
     plugin_loader: &Arc<Mutex<Option<DaemonPluginLoader>>>,
     llm_config: &Option<LlmConfig>,
@@ -807,6 +883,10 @@ async fn handle_legacy_request(
         "session.export_to_file" => handle_session_export_to_file(req).await,
         "session.cleanup" => handle_session_cleanup(req).await,
         "session.reindex" => handle_session_reindex(req, kiln_manager).await,
+        "lua.init_session" => handle_lua_init_session(req, lua_sessions).await,
+        "lua.register_hooks" => handle_lua_register_hooks(req, lua_sessions).await,
+        "lua.execute_hook" => handle_lua_execute_hook(req, lua_sessions).await,
+        "lua.shutdown_session" => handle_lua_shutdown_session(req, lua_sessions).await,
         _ => {
             tracing::warn!("Unknown RPC method: {:?}", req.method);
             Response::error(
@@ -1335,6 +1415,193 @@ async fn handle_process_batch(
                     })
                 })
                 .collect::<Vec<_>>()
+        }),
+    )
+}
+
+async fn handle_lua_init_session(
+    req: Request,
+    lua_sessions: &Arc<DashMap<String, Arc<Mutex<LuaSessionState>>>>,
+) -> Response {
+    let session_id = require_param!(req, "session_id", as_str).to_string();
+    let kiln_root = optional_param!(req, "kiln_path", as_str)
+        .or_else(|| optional_param!(req, "kiln", as_str))
+        .map(PathBuf::from)
+        .unwrap_or_else(crucible_config::crucible_home);
+
+    let mut executor = match LuaExecutor::new() {
+        Ok(executor) => executor,
+        Err(e) => return internal_error(req.id, e),
+    };
+
+    if let Err(e) = executor.load_config(Some(&kiln_root)) {
+        warn!(
+            session_id = %session_id,
+            kiln = %kiln_root.display(),
+            error = %e,
+            "Failed to load Lua config"
+        );
+    }
+
+    let session = LuaSession::new("chat".to_string());
+    session.bind(Box::new(NoopSessionRpc));
+    executor.session_manager().set_current(session.clone());
+
+    if let Err(e) = executor.sync_session_start_hooks() {
+        warn!(session_id = %session_id, error = %e, "Failed to sync session_start hooks");
+    }
+    if let Err(e) = executor.fire_session_start_hooks(&session) {
+        warn!(session_id = %session_id, error = %e, "Failed to fire session_start hooks");
+    }
+
+    let registry = LuaScriptHandlerRegistry::new();
+    if let Err(e) = register_crucible_on_api(
+        executor.lua(),
+        registry.runtime_handlers(),
+        registry.handler_functions(),
+    ) {
+        warn!(session_id = %session_id, error = %e, "Failed to register crucible.on API");
+    }
+
+    lua_sessions.insert(
+        session_id.clone(),
+        Arc::new(Mutex::new(LuaSessionState { executor, registry })),
+    );
+
+    Response::success(
+        req.id,
+        serde_json::json!({
+            "session_id": session_id,
+            "commands": [],
+            "views": [],
+        }),
+    )
+}
+
+async fn handle_lua_register_hooks(
+    req: Request,
+    lua_sessions: &Arc<DashMap<String, Arc<Mutex<LuaSessionState>>>>,
+) -> Response {
+    let session_id = require_param!(req, "session_id", as_str);
+    let hooks = require_param!(req, "hooks", as_array);
+
+    let Some(state) = lua_sessions.get(session_id) else {
+        return session_not_found(req.id, session_id);
+    };
+
+    let state = state.value().clone();
+    let state = state.lock().await;
+    let initial_count = state
+        .registry
+        .runtime_handlers()
+        .lock()
+        .map(|handlers| handlers.len())
+        .unwrap_or(0);
+
+    for hook in hooks {
+        let source = if let Some(source) = hook.as_str() {
+            Some(source)
+        } else if let Some(obj) = hook.as_object() {
+            obj.get("source")
+                .and_then(|v| v.as_str())
+                .or_else(|| obj.get("code").and_then(|v| v.as_str()))
+        } else {
+            None
+        };
+
+        if let Some(source) = source {
+            if let Err(e) = state.executor.lua().load(source).exec() {
+                warn!(session_id = %session_id, error = %e, "Failed to register Lua hook source");
+            }
+        }
+    }
+
+    let final_count = state
+        .registry
+        .runtime_handlers()
+        .lock()
+        .map(|handlers| handlers.len())
+        .unwrap_or(initial_count);
+    let registered = final_count.saturating_sub(initial_count);
+    Response::success(
+        req.id,
+        serde_json::json!({
+            "status": "ok",
+            "registered": registered,
+        }),
+    )
+}
+
+async fn handle_lua_execute_hook(
+    req: Request,
+    lua_sessions: &Arc<DashMap<String, Arc<Mutex<LuaSessionState>>>>,
+) -> Response {
+    let session_id = require_param!(req, "session_id", as_str);
+    let hook_name = require_param!(req, "hook_name", as_str);
+    let context = req
+        .params
+        .get("context")
+        .cloned()
+        .unwrap_or_else(|| serde_json::json!({}));
+
+    let Some(state) = lua_sessions.get(session_id) else {
+        return session_not_found(req.id, session_id);
+    };
+
+    let state = state.value().clone();
+    let state = state.lock().await;
+    let handlers = state.registry.runtime_handlers_for(hook_name);
+    let mut results = Vec::new();
+
+    for handler in handlers {
+        let event = SessionEvent::Custom {
+            name: hook_name.to_string(),
+            payload: context.clone(),
+        };
+
+        let result = match state
+            .registry
+            .execute_runtime_handler(state.executor.lua(), &handler.name, &event)
+        {
+            Ok(ScriptHandlerResult::Transform(payload)) => {
+                serde_json::json!({"handler": handler.name, "type": "transform", "payload": payload})
+            }
+            Ok(ScriptHandlerResult::PassThrough) => {
+                serde_json::json!({"handler": handler.name, "type": "pass_through"})
+            }
+            Ok(ScriptHandlerResult::Cancel { reason }) => {
+                serde_json::json!({"handler": handler.name, "type": "cancel", "reason": reason})
+            }
+            Ok(ScriptHandlerResult::Inject { content, position }) => serde_json::json!({
+                "handler": handler.name,
+                "type": "inject",
+                "content": content,
+                "position": position,
+            }),
+            Err(e) => serde_json::json!({"handler": handler.name, "type": "error", "error": e.to_string()}),
+        };
+        results.push(result);
+    }
+
+    Response::success(
+        req.id,
+        serde_json::json!({
+            "executed": results.len(),
+            "results": results,
+        }),
+    )
+}
+
+async fn handle_lua_shutdown_session(
+    req: Request,
+    lua_sessions: &Arc<DashMap<String, Arc<Mutex<LuaSessionState>>>>,
+) -> Response {
+    let session_id = require_param!(req, "session_id", as_str);
+    let removed = lua_sessions.remove(session_id).is_some();
+    Response::success(
+        req.id,
+        serde_json::json!({
+            "shutdown": removed,
         }),
     )
 }
