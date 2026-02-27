@@ -8,7 +8,7 @@
 //! Domain types are currently defined in their respective modules:
 //! - ACP types: `acp` (SessionConfig, SessionId, ToolInvocation, etc.)
 //! - Parser types: `parser::types` (ParsedNote, Wikilink, Tag, etc.)
-//! - Database types: `database` (Record, QueryResult, Node, Edge, Note, etc.)
+//! - Database types: `types::database` (DbError, SearchResult, DocumentId, Record, etc.)
 //! - Note types: `note` (NoteNode, ViewportState)
 //! - Property types: `properties` (PropertyMap, AttributeValue)
 //! - Hashing types: `hashing` (FileHash, BlockHash, HashAlgorithm, etc.)
@@ -23,35 +23,16 @@ pub mod notification;
 pub mod popup;
 pub mod tool_ref;
 pub mod undo_tree;
-
+pub mod database;
 // Re-export parser domain types
 pub use crate::parser::types::{
     CodeBlock, Frontmatter, FrontmatterFormat, Heading, ListBlock, ListItem, ListType, NoteContent,
     Paragraph, ParsedNote, Tag, TaskStatus, Wikilink,
 };
 
-// Re-export database domain types
-pub use crate::database::{
-    // Additional types
-    BatchResult,
-    // Note: Other database types remain in database module for now
-    // Core types
-    DbError,
-    DbResult,
-    // Graph types
-    Direction,
-    DocumentId,
-    DocumentMetadata,
-    Edge,
-    EdgeId,
-    Node,
-    NodeId,
-    // Note types
-    Note,
-    QueryResult,
-    Record,
-    RecordId,
-    SearchResult,
+// Re-export database domain types (canonical definitions in types::database)
+pub use self::database::{
+    DbError, DbResult, DocumentId, QueryResult, Record, RecordId, SearchResult,
     UnifiedSearchResult,
 };
 

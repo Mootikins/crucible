@@ -7,7 +7,6 @@ pub mod canvas;
 pub mod content_category;
 pub mod crdt;
 pub mod crucible_core;
-pub mod database;
 pub mod discovery;
 pub mod enrichment;
 pub mod events;
@@ -105,76 +104,10 @@ pub use types::{
     ToolOutput,
 };
 
-pub use database::{
-    AggregateFunction,
-    AggregateQuery,
-    AggregateType,
-    AggregationPipeline,
-    AggregationResult,
-    AggregationStage,
-    AnalyticsResult,
-    BatchResult,
-    ColumnDefinition,
-    CommunityAlgorithm,
-    DataType,
-    DbError,
-    // Core types
-    DbResult,
-    Direction,
-    DocumentDB,
-    DocumentFieldType,
-    DocumentFilter,
-    // Note types
-    DocumentId,
-    DocumentMetadata,
-    DocumentQuery,
-    DocumentSchema,
-    DocumentSort,
-    DocumentUpdates,
-    Edge,
-    EdgeFilter,
-    EdgeId,
-    EdgePattern,
-    EdgeProperties,
-    FieldDefinition,
-    FilterClause,
-    ForeignKey,
-    GraphAnalysis,
-    GraphDB,
-    GroupOperation,
-    IndexDefinition,
-    IndexType,
-    JoinClause,
-    JoinQuery,
-    JoinType,
-    Node,
-    // Graph types
-    NodeId,
-    NodePattern,
-    NodeProperties,
-    Note,
-    OrderClause,
-    OrderDirection,
-    Path,
-    QueryResult,
-    Record,
-    RecordId,
-    ReferentialAction,
-    RelationalDB,
-    SearchIndexOptions,
-    SearchOptions,
-    SearchResult,
-    SelectQuery,
-    Subgraph,
-    SubgraphPattern,
-    // Relational types
-    TableSchema,
-    TransactionId,
-    TraversalPattern,
-    TraversalResult,
-    TraversalStep,
-    UpdateClause,
-    ValidationRules,
+// Re-export consumed database types from their canonical location in types::database
+pub use types::database::{
+    DbError, DbResult, DocumentId, QueryResult, Record, RecordId, SearchResult,
+    UnifiedSearchResult,
 };
 pub use note::{NoteNode, ViewportState};
 pub use parser::{
