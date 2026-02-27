@@ -38,6 +38,7 @@ pub mod permission_bridge;
 pub mod pipeline;
 pub mod project_manager;
 pub mod protocol;
+pub mod provider;
 pub mod recording;
 pub mod replay;
 pub mod rpc;

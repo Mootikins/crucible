@@ -215,6 +215,7 @@ end
         crucible.set("json_decode", json_decode)?;
 
         register_hooks_module(lua, &crucible)?;
+        crate::auth_plugin::register_auth_module(lua, &crucible)?;
         crate::notify::register_notify_module(lua, &crucible)?;
 
         globals.set("crucible", crucible.clone())?;

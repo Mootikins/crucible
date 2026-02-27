@@ -6,16 +6,16 @@
 
 use crate::acp_handle::AcpAgentHandle;
 use crate::empty_providers::{EmptyEmbeddingProvider, EmptyKnowledgeRepository};
+use crate::protocol::SessionEventMessage;
 use crate::provider::adapter_mapping::{build_genai_client, build_model_iden};
 use crate::provider::genai_handle::GenaiAgentHandle;
-use crate::protocol::SessionEventMessage;
 use crucible_acp::client::PermissionRequestHandler;
 use crucible_config::credentials::resolve_copilot_oauth_token;
 use crucible_config::{BackendType, DataClassification, LlmProviderConfig};
 use crucible_core::background::BackgroundSpawner;
-use crucible_core::traits::auth::AuthHeaders;
 use crucible_core::enrichment::EmbeddingProvider;
 use crucible_core::session::SessionAgent;
+use crucible_core::traits::auth::AuthHeaders;
 use crucible_core::traits::chat::AgentHandle;
 use crucible_core::traits::llm::LlmToolDefinition;
 use crucible_core::traits::mcp::McpToolInfo;
@@ -157,7 +157,7 @@ async fn create_internal_mcp_tool_defs(
 }
 
 fn is_plan_mode_tool(name: &str) -> bool {
-    crucible_tools::mcp_server::PLAN_TOOL_NAMES.contains(&name)
+    crucible_tools::in_process_adapter::PLAN_TOOL_NAMES.contains(&name)
 }
 
 #[cfg(test)]
@@ -184,10 +184,7 @@ async fn create_internal_mcp_tool_names_for_tests(
         gateway_all_tools_override,
     )
     .await;
-    tools
-        .into_iter()
-        .map(|t| t.function.name)
-        .collect()
+    tools.into_iter().map(|t| t.function.name).collect()
 }
 
 #[derive(Error, Debug)]
@@ -697,7 +694,7 @@ mod tests {
         // that the function successfully creates an agent handle for internal agents.
         let config = test_agent_config();
         assert_eq!(config.agent_type, "internal");
-        
+
         let (event_tx, _) = broadcast::channel(16);
         let result = create_agent_from_session_config(
             &config,
@@ -714,13 +711,10 @@ mod tests {
             None,
         )
         .await;
-        
+
         // The internal branch should succeed in creating an agent handle.
         // (Ollama client creation doesn't validate connectivity, just creates the object.)
-        assert!(
-            result.is_ok(),
-            "Internal agent creation should succeed"
-        );
+        assert!(result.is_ok(), "Internal agent creation should succeed");
     }
 
     #[tokio::test]
@@ -729,7 +723,7 @@ mod tests {
         // (not the internal path). This test validates the dispatch logic.
         let mut config = test_agent_config();
         config.agent_type = "acp".to_string();
-        
+
         let (event_tx, _) = broadcast::channel(16);
         let result = create_agent_from_session_config(
             &config,
@@ -746,7 +740,7 @@ mod tests {
             None,
         )
         .await;
-        
+
         // The result will be an error because ACP agent creation requires
         // proper ACP config and spawner setup, but it should be an AgentBuild error
         // (from the ACP branch), not an UnsupportedAgentType error.
@@ -838,10 +832,8 @@ mod tests {
         let temp_dir = tempfile::TempDir::new().expect("Failed to create temp dir");
         let kiln_path = temp_dir.path();
 
-        let knowledge_repo: Arc<dyn KnowledgeRepository> =
-            Arc::new(EmptyKnowledgeRepository);
-        let embedding_provider: Arc<dyn EmbeddingProvider> =
-            Arc::new(EmptyEmbeddingProvider);
+        let knowledge_repo: Arc<dyn KnowledgeRepository> = Arc::new(EmptyKnowledgeRepository);
+        let embedding_provider: Arc<dyn EmbeddingProvider> = Arc::new(EmptyEmbeddingProvider);
 
         let tools = create_internal_mcp_tool_defs(
             Path::new("/tmp"),

@@ -27,6 +27,7 @@
 //! ```
 
 pub mod acp;
+pub mod auth;
 pub mod change_detection;
 pub mod chat;
 pub mod completion_backend;

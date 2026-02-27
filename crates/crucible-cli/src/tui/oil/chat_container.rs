@@ -180,7 +180,7 @@ impl ChatContainer {
     pub fn view_with_params(&self, params: &ViewParams) -> Node {
         match self {
             Self::UserMessage { id, content } => {
-                let content_node = render_user_prompt(content, params.width);
+                let content_node = render_user_prompt(content, params.render_state.width());
                 scrollback(id.clone(), [content_node])
             }
 
@@ -266,7 +266,6 @@ struct RenderBlocksParams<'a> {
     pub complete: bool,
     pub is_continuation: bool,
 }
-
 
 /// Render assistant text blocks with graduation support.
 ///
@@ -367,7 +366,6 @@ fn render_assistant_blocks_with_graduation(
     }
 
     col(nodes)
-
 }
 
 /// Render a group of tool calls compactly.
